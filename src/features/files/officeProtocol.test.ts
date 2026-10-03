@@ -188,6 +188,24 @@ describe('office host protocol', () => {
     ).toBe(true);
   });
 
+  it('accepts a DOCX ready with or without valid timings', () => {
+    const ready = (timings?: unknown) => ({
+      analysis: { format: 'docx', pageCount: 3 },
+      revision: 1,
+      timings,
+      type: 'ready',
+      version: OFFICE_PROTOCOL_VERSION,
+    });
+    expect(isOfficeRuntimeMessage(ready())).toBe(true);
+    expect(isOfficeRuntimeMessage(ready({ loadMs: 120, paintMs: 840 }))).toBe(
+      true
+    );
+    expect(isOfficeRuntimeMessage(ready({ loadMs: 120 }))).toBe(false);
+    expect(isOfficeRuntimeMessage(ready({ loadMs: -1, paintMs: 840 }))).toBe(
+      false
+    );
+  });
+
   it('tells a runtime from another protocol version apart from a malformed message', () => {
     expect(isOutdatedOfficeRuntime({ type: 'initialized', version: 5 })).toBe(
       true

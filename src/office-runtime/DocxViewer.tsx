@@ -3,7 +3,10 @@ import {
   type DisplayList,
   rasterizeDisplayPage,
 } from '@betteroffice/docx/layout/render';
-import { DocxDisplayListViewer } from '@betteroffice/docx-react';
+import {
+  DOCX_PAGES_PRESENTED_EVENT,
+  DocxDisplayListViewer,
+} from '@betteroffice/docx-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type {
   OfficeAnalysis,
@@ -27,7 +30,6 @@ type WorkerResponse =
       displayList: DisplayList;
       faces: OfficeFace[];
       id: number;
-      pageCount: number;
       type: 'ready';
     }
   | { id: number; message: string; type: 'error' };
@@ -138,13 +140,11 @@ export function DocxViewer({
       // parser, transient Yrs projection, and viewer WASM memory are released
       // during ordinary reading rather than waiting for edit/unmount.
       stopWorker();
-      const { displayList, faces, pageCount } = event.data;
+      const { displayList, faces } = event.data;
       // Paint with the faces the worker measured, under their Office names.
       void registerOfficeFaces(faces).then(
         () => {
-          if (cancelled) return;
-          setDisplayList(displayList);
-          onAnalysis({ format: 'docx', pageCount });
+          if (!cancelled) setDisplayList(displayList);
         },
         (value: unknown) => {
           if (!cancelled)
@@ -162,7 +162,17 @@ export function DocxViewer({
       cancelled = true;
       stopWorker();
     };
-  }, [bytes, onAnalysis, onError]);
+  }, [bytes, onError]);
+
+  // Ready once the first pages are painted.
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!displayList || !host) return;
+    const painted = () =>
+      onAnalysis({ format: 'docx', pageCount: displayList.pages.length });
+    host.addEventListener(DOCX_PAGES_PRESENTED_EVENT, painted, { once: true });
+    return () => host.removeEventListener(DOCX_PAGES_PRESENTED_EVENT, painted);
+  }, [displayList, onAnalysis]);
 
   useLayoutEffect(() => {
     if (!displayList) return;

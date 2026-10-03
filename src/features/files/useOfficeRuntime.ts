@@ -132,6 +132,8 @@ export function useOfficeRuntime({
   }, [mode, pausedAtOpen, setMode]);
   const sourceRef = useRef(source);
   sourceRef.current = source;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   const revisionRef = useRef(revision);
   const publishedRevision = useRef(revision);
   const initializedFrame = useRef(-1);
@@ -451,7 +453,8 @@ export function useOfficeRuntime({
       }
       if (message.type === 'ready') {
         setAnalysis(message.analysis);
-        setError(null);
+        // DOCX edit frames report ready too (for their timings); their errors stay.
+        if (modeRef.current === 'view') setError(null);
         return;
       }
       if (message.type === 'error') {

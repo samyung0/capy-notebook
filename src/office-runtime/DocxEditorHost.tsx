@@ -1,13 +1,18 @@
 import { configureDefaultFonts } from '@betteroffice/docx/layout';
 import { setGoogleFontsEnabled } from '@betteroffice/docx/utils';
 import {
+  DOCX_PAGES_PRESENTED_EVENT,
   DocxEditor,
   type DocxEditorRef,
   type DocxMenuModel,
+  type DocxPagesPresentedDetail,
 } from '@betteroffice/docx-react';
 import { useCallback, useEffect, useRef } from 'react';
 import { DOCUMENT_COLORS } from '@/components/ui/ColorPicker';
-import type { OfficeLocale } from '@/features/files/officeProtocol';
+import type {
+  OfficeAnalysis,
+  OfficeLocale,
+} from '@/features/files/officeProtocol';
 import { docxIcons } from './docxIcons';
 import { docxStrings, editorMenus } from './docxMenus';
 import type {
@@ -33,6 +38,7 @@ export function DocxEditorHost({
   colorMode,
   locale,
   narrow,
+  onAnalysis,
   onExporter,
   onMenus,
   onRenderer,
@@ -47,6 +53,8 @@ export function DocxEditorHost({
   locale: OfficeLocale;
   /** Below lg: no zoom (as the PDF toolbar), font picker or size box. */
   narrow: boolean;
+  /** Once the first pages are painted. */
+  onAnalysis: (analysis: OfficeAnalysis) => void;
   onExporter: (exporter: OfficeExporter | null) => void;
   onFlusher: (flusher: OfficeFlusher | null) => void;
   onMenus: OfficeMenuReporter;
@@ -56,7 +64,20 @@ export function DocxEditorHost({
   onSave: () => void;
 }) {
   const editorRef = useRef<DocxEditorRef>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
   useEffect(() => onOfficeFontFailure(onError), [onError]);
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const painted = (event: Event) =>
+      onAnalysis({
+        format: 'docx',
+        pageCount: (event as CustomEvent<DocxPagesPresentedDetail>).detail
+          .pageCount,
+      });
+    host.addEventListener(DOCX_PAGES_PRESENTED_EVENT, painted, { once: true });
+    return () => host.removeEventListener(DOCX_PAGES_PRESENTED_EVENT, painted);
+  }, [onAnalysis]);
   useEffect(() => {
     onExporter(async () => {
       const bytes = await editorRef.current?.save();
@@ -92,7 +113,7 @@ export function DocxEditorHost({
     [locale, onMenus]
   );
   return (
-    <div className="office-editor-host">
+    <div className="office-editor-host" ref={hostRef}>
       <DocxEditor
         className="office-editor-host"
         collaboration={collaboration}

@@ -19,7 +19,7 @@ Raw run artifacts sit in a sibling `YYYY-MM-DD-<machine>/` directory.
 
 | Family                     | Measures                                                                                        | Run with                                    |
 | -------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle                | `pnpm bench:editor`                         |
+| [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle; DOCX open, View to Edit and typing in the Office runtime | `pnpm bench:editor`, `pnpm bench:office` |
 | [`parsers/`](parsers/)     | Ingest-host parser accuracy and capacity: OCR modes, concurrency, worker memory, OOM behavior    | `python bench/parsers/scripts/…` (needs VM) |
 | [`grading/`](grading/)     | Small local models against the production quiz-grading rubric, native and in-browser             | `python bench/grading/scripts/benchmark.py` |
 | [`rag/`](rag/scripts/)     | Retrieval and chat-agent quality: live diagnostic plus four frozen experiments                   | see below                                   |
@@ -31,6 +31,15 @@ production promotion. Budgets are regression tripwires, not UX targets; snapshot
 deltas stay warn-only. Details: [editor-perf.md](../openwiki/editor-perf.md).
 Results land in the gitignored `editor/.results/`, so this family has no
 committed reports.
+
+`pnpm bench:office` is the Office runtime's spec (`editor/scripts/docx.office.ts`):
+a production build with MSW, the runtime on a second origin, and two DOCX
+fixtures, the 15-page `exchange-plan.docx` and the generated 62-page
+`editor/fixtures/office/long-handbook.docx` (`editor/scripts/gen_long_docx.py`;
+its checkpoint comes from `scripts/dev/seed-scenario-office.ts`). It reports
+open to first paint, View to Edit ready and keystroke to painted frame, and
+fails only on unpainted keys or a fallback to the main-thread engine. It has no
+budgets and no CI job yet.
 
 ### parsers
 

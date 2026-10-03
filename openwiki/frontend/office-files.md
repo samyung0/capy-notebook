@@ -102,7 +102,10 @@ the user presses Edit. DOCX lowering runs in a disposable worker that terminates
 as soon as it transfers the immutable display list, so its parser, transient
 Yrs projection, and viewer linear memory are absent during ordinary reading.
 Viewer analysis reuses the already-open handle, so sheet/slide metadata does not
-trigger a second parse.
+trigger a second parse. A DOCX frame sends `ready` once its first pages are
+painted, in edit mode too, with the runtime's own `timings` (frame start to
+`load`, `load` to first paint) for `pnpm bench:office`; an edit frame's `ready`
+leaves the host's error state alone.
 
 The DOCX editor lays pages out in a resident engine worker. A request's timeout
 starts when the worker begins it; a request the worker never starts gives up
@@ -113,7 +116,8 @@ layout answers from its current shifted pages. In documents over 12 pages the
 screen-reader mirror under the canvas is positioned only for pages within two of
 the viewport; the others get a plain-text copy (roles, links and language kept),
 swapped in at idle, so screen readers reach the whole document while scrolling
-stays cheap.
+stays cheap. The positioned mirror follows the viewport only once the scroll
+has held still for 300 ms, so pages that scroll past keep their plain text.
 
 Viewing shows the last saved state, not only the last published blob. View
 mode reads `GET /api/files/{id}/source-session?view=true`, a lock-free read

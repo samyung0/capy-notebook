@@ -268,10 +268,11 @@ export function frameStats(frames: number[]) {
 export async function reportMetrics(
   testInfo: TestInfo,
   name: string,
-  data: unknown
+  data: unknown,
+  conditions = `cpu x${CPU_RATE}`
 ): Promise<void> {
   const body = JSON.stringify(data, null, 2);
-  console.log(`[perf] ${name} (cpu x${CPU_RATE}):\n${body}`);
+  console.log(`[perf] ${name} (${conditions}):\n${body}`);
   await testInfo.attach(name, { body, contentType: 'application/json' });
 
   const snapshotDir = process.env.PERF_SNAPSHOT_DIR;

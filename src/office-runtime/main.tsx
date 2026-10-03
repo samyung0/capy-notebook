@@ -85,6 +85,8 @@ function OfficeRuntime() {
   const menuSourceRef = useRef<OfficeMenuSource | null>(null);
   const rendererRef = useRef<OfficeRenderer | null>(null);
   const revisionRef = useRef<number | null>(null);
+  // When `load` arrived, for the DOCX ready timings.
+  const loadedAtRef = useRef(0);
   const epochRef = useRef<number | null>(null);
   const replicaRef = useRef<OfficeReplica | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
@@ -263,6 +265,7 @@ function OfficeRuntime() {
         const nextMode =
           message.mode === 'edit' && message.canEdit ? 'edit' : 'view';
         if (revisionRef.current !== null) return;
+        loadedAtRef.current = performance.now();
         revisionRef.current = message.revision;
         epochRef.current = message.collaboration?.epoch ?? null;
         setCanEdit(message.canEdit);
@@ -435,7 +438,15 @@ function OfficeRuntime() {
   const reportAnalysis = useCallback(
     (analysis: OfficeAnalysis) => {
       if (runtimeRevision === undefined) return;
-      post({ analysis, revision: runtimeRevision, type: 'ready' });
+      // DOCX reports once its first pages are painted, so the timings end there.
+      const timings =
+        analysis.format === 'docx'
+          ? {
+              loadMs: Math.round(loadedAtRef.current),
+              paintMs: Math.round(performance.now() - loadedAtRef.current),
+            }
+          : undefined;
+      post({ analysis, revision: runtimeRevision, timings, type: 'ready' });
     },
     [runtimeRevision]
   );
@@ -526,6 +537,7 @@ function OfficeRuntime() {
               colorMode={dark ? 'dark' : 'light'}
               locale={locale}
               narrow={narrow}
+              onAnalysis={reportAnalysis}
               onError={reportError}
               onExporter={reportExporter}
               onFlusher={reportFlusher}

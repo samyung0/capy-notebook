@@ -121,6 +121,17 @@ export type OfficeHostMessage =
       kind: 'print' | 'png';
     };
 
+/**
+ * DOCX `ready`: the runtime's own clock (`performance.now()` in its frame),
+ * which the host cannot read across origins.
+ */
+export interface OfficeReadyTimings {
+  /** Frame start → the host's `load` arrived: frame boot plus the host's fetch. */
+  loadMs: number;
+  /** `load` arrived → the first pages painted: parse, fonts, layout, raster. */
+  paintMs: number;
+}
+
 export type OfficeRuntimeMessage =
   | { version: typeof OFFICE_PROTOCOL_VERSION; type: 'initialized' }
   | {
@@ -155,6 +166,8 @@ export type OfficeRuntimeMessage =
       type: 'ready';
       analysis: OfficeAnalysis;
       revision: number;
+      /** DOCX only, sent once its first pages are painted, in both modes. */
+      timings?: OfficeReadyTimings;
     }
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;
@@ -325,7 +338,8 @@ export function isOfficeRuntimeMessage(
     typeof candidate.revision === 'number' &&
     isRevision(candidate.revision) &&
     ((candidate.type === 'ready' &&
-      isOfficeAnalysis((candidate as { analysis?: unknown }).analysis)) ||
+      isOfficeAnalysis((candidate as { analysis?: unknown }).analysis) &&
+      isReadyTimings((candidate as { timings?: unknown }).timings)) ||
       (candidate.type === 'mode' &&
         ['edit', 'view'].includes(
           String((candidate as { mode?: unknown }).mode)
@@ -347,6 +361,13 @@ function isRenderedPage(value: unknown): value is OfficeRenderedPage {
     isFiniteNumber(page.width) &&
     isFiniteNumber(page.height)
   );
+}
+
+function isReadyTimings(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!value || typeof value !== 'object') return false;
+  const timings = value as Record<string, unknown>;
+  return isFiniteNumber(timings.loadMs) && isFiniteNumber(timings.paintMs);
 }
 
 function isRevision(value: number): boolean {

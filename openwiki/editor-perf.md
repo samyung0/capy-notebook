@@ -34,6 +34,27 @@ deltas.
 
 `.github/workflows/ci.yml` does not run `pnpm bench:editor`.
 
+## Office runtime (`pnpm bench:office`)
+
+[`bench/editor/scripts/docx.office.ts`](../bench/editor/scripts/docx.office.ts)
+runs against a production build ([`playwright.office.config.ts`](../bench/editor/scripts/playwright.office.config.ts)
+builds with `NODE_ENV=production`, MSW and `VITE_LOAD_TEST_SEED`, then serves it
+with the runtime on `127.0.0.1` against the app's `localhost`, so the iframe is
+cross-origin as in production). The build takes a few minutes. Per DOCX fixture
+(15 and 62 pages) it reports:
+
+- open to first paint: the file click to the runtime's `ready`, on the host's
+  clock, plus the runtime's own `timings` (`loadMs` frame start to `load`,
+  `paintMs` `load` to first painted pages; `OfficeReadyTimings`);
+- View to Edit ready: the mode toggle click to the edit frame's `ready`;
+- keystroke to frame: 40 keys at 120 ms, each key to the next
+  `docx-pages-presented` event in the frame (p50, p90, max, unpainted keys).
+
+It runs unthrottled: CDP's CPU throttle reaches neither the runtime frame nor
+the engine workers. It fails only on unpainted keys or a worker fallback. It has
+no budgets yet and is not in the `Editor perf` workflow; budgets follow the
+first runs on the CI runner, as above.
+
 ## GitHub Actions
 
 Workflow [`Editor perf`](../.github/workflows/perf.yml) runs on manual

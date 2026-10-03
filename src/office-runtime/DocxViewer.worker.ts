@@ -18,7 +18,6 @@ type Response =
       displayList: DisplayList;
       faces: OfficeFace[];
       id: number;
-      pageCount: number;
       type: 'ready';
     }
   | { id: number; message: string; type: 'error' };
@@ -42,7 +41,6 @@ self.onmessage = (event: MessageEvent<Request>) => {
           displayList,
           faces: usedOfficeFaces(),
           id,
-          pageCount: displayList.pages.length,
           type: 'ready',
         });
       } catch (value) {
