@@ -87,6 +87,8 @@ export interface MermaidElement extends MaterialElement {
   /** Unset draws in DEFAULT_MERMAID_THEME. */
   theme?: MermaidTheme;
   type: 'mermaid';
+  /** Percentage of the block, set by the resize handles; unset fills it. */
+  width?: string;
 }
 
 export type MaterialRefKind = 'quiz' | 'flashcards';

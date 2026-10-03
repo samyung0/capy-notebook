@@ -211,9 +211,12 @@ note's material route, so standalone notes upload too (see
 [backend-storage-quota.md](../backend-storage-quota.md)). Renderers resolve signed URLs
 at runtime.
 
-Image and YouTube blocks share `MediaFrame`: a toolbar docked top-right that
-shows on hover, and in edit mode two side handles that resize the block
-symmetrically and store `width` as a percentage string (`"62%"`). Exports scale a
+Image, YouTube and mermaid blocks share `MediaFrame`: a toolbar docked top-right
+that shows on hover, and in edit mode two side handles that resize the block
+symmetrically and store `width` as a percentage string (`"62%"`). Frames stop at
+48rem wide and images and diagrams at `min(70vh, 48rem)` tall. Clicking an image
+or diagram opens `MediaPreview`, a full-screen view on a dark backdrop with the
+name above and the caption below, in every editor mode. Exports scale a
 percentage against the 560px image cap. In edit mode the image toolbar adds a
 caption (Plate `CaptionPlugin`; the field focuses in place and an empty one hides
 on blur), open in new tab and replace; replace keeps the node id, width and
@@ -280,9 +283,9 @@ font stacks containing hyphens. Hand Drawn gets per-diagram roughen filters
 after rendering. Preset fonts (Excalifont, vendored Latin subset in
 `src/assets/fonts`; Comic Neue from `@fontsource/comic-neue`) load through
 `FontFace` before the render, since mermaid measures labels while drawing; a
-failed font load draws in the fallback font. Selecting the block in edit mode shows the
-shared floating block toolbar under it (as for tables and columns): theme
-dropdown, caption, edit, copy, delete. The
+failed font load draws in the fallback font. In edit mode the hover toolbar has
+theme (a swatch), caption, edit, copy and delete. A resized diagram stretches
+past its natural width. The
 caption is typed in a field under the diagram that rewrites the
 `mermaid_caption` text with `voids: true`. The node stays void, so a DOM
 selection inside it maps to the caption element; `fixMermaidSelection` moves

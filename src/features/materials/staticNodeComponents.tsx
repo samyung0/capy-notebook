@@ -10,7 +10,7 @@ import {
   SlateLeaf,
   type SlateLeafProps,
 } from 'platejs/static';
-import type { CSSProperties, MouseEvent } from 'react';
+import { type CSSProperties, type MouseEvent, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { CalloutIcon } from '@/features/notes/CalloutIcon';
@@ -83,6 +83,7 @@ import {
   openEditorAsset,
 } from './MediaAssetView';
 import { MediaFrame } from './MediaFrame';
+import { MermaidPreview } from './MediaPreview';
 import { Mermaid } from './Mermaid';
 import {
   YouTubeEmbed,
@@ -420,14 +421,25 @@ function MaterialRefElement(props: SlateElementProps) {
 
 function MermaidElement(props: SlateElementProps) {
   const element = props.element as unknown as MermaidNode;
+  const [previewing, setPreviewing] = useState(false);
   return (
-    <SlateElement
-      {...props}
-      className={cn('my-3 border border-transparent', MEDIA_MAX_WIDTH_CLASS)}
-    >
+    <SlateElement {...props} className="my-3 border border-transparent">
       <StandaloneMaterialTitle kinds={['mindmap', 'diagram']} />
-      <Mermaid code={element.source} theme={element.theme} />
+      <MediaFrame fill onOpen={() => setPreviewing(true)} width={element.width}>
+        <Mermaid
+          code={element.source}
+          fill={element.width !== undefined}
+          theme={element.theme}
+        />
+      </MediaFrame>
       {props.children}
+      <MermaidPreview
+        caption={NodeApi.string(props.element)}
+        code={element.source}
+        onOpenChange={setPreviewing}
+        open={previewing}
+        theme={element.theme}
+      />
     </SlateElement>
   );
 }

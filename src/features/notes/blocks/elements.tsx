@@ -8,8 +8,9 @@ import {
 } from '@platejs/floating';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useRouter } from '@tanstack/react-router';
-import { NodeApi } from 'platejs';
+import { NodeApi, type TElement } from 'platejs';
 import {
+  type PlateEditor,
   PlateElement,
   type PlateElementProps,
   useEditorRef,
@@ -44,6 +45,8 @@ import {
 } from '@/features/materials/document';
 import { MaterialRefCard } from '@/features/materials/MaterialRefCard';
 import { StandaloneMaterialTitle } from '@/features/materials/MaterialRenderContext';
+import { MediaFrame } from '@/features/materials/MediaFrame';
+import { MermaidPreview } from '@/features/materials/MediaPreview';
 import { Mermaid, MermaidSwatch } from '@/features/materials/Mermaid';
 import {
   MERMAID_THEME_LABEL,
@@ -504,6 +507,26 @@ export function MaterialRefElement(props: PlateElementProps) {
 
 const MermaidSourceDialog = lazy(() => import('./MermaidSourceDialog'));
 
+/** Copies one block as rich HTML and plain text, through the editor's own fragment. */
+async function copyBlock(editor: PlateEditor, element: TElement) {
+  const at = editor.api.findPath(element);
+  if (!at) return;
+  editor.tf.select(editor.api.range(at));
+  editor.tf.focus();
+  const data = new DataTransfer();
+  editor.tf.setFragmentData(data, 'copy');
+  await navigator.clipboard.write([
+    new ClipboardItem({
+      'text/html': new Blob([data.getData('text/html')], {
+        type: 'text/html',
+      }),
+      'text/plain': new Blob([data.getData('text/plain')], {
+        type: 'text/plain',
+      }),
+    }),
+  ]);
+}
+
 function EmbedShell({
   props,
   onEdit,
@@ -529,24 +552,6 @@ function EmbedShell({
   const active = selected && collapsed && !readOnly;
   const scrollArea = useEditorScrollArea();
   const locate = () => editor.api.findPath(props.element);
-  async function copy() {
-    const at = locate();
-    if (!at) return;
-    editor.tf.select(editor.api.range(at));
-    editor.tf.focus();
-    const data = new DataTransfer();
-    editor.tf.setFragmentData(data, 'copy');
-    await navigator.clipboard.write([
-      new ClipboardItem({
-        'text/html': new Blob([data.getData('text/html')], {
-          type: 'text/html',
-        }),
-        'text/plain': new Blob([data.getData('text/plain')], {
-          type: 'text/plain',
-        }),
-      }),
-    ]);
-  }
   const className = cn(
     'relative my-4 rounded-md border border-transparent p-2',
     media && MEDIA_MAX_WIDTH_CLASS,
@@ -581,7 +586,9 @@ function EmbedShell({
       </ToolbarButton>
       <ToolbarButton
         label={m.action_copy()}
-        onClick={() => void copy().catch(showErrorToast)}
+        onClick={() =>
+          void copyBlock(editor, props.element).catch(showErrorToast)
+        }
       >
         <EditorIcon name="copy" />
       </ToolbarButton>
@@ -645,15 +652,12 @@ function MermaidThemeMenu({
   return (
     <Popover modal={false} onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
+        {/* Swatch only: the hover toolbar keeps square buttons. */}
         <ToolbarButton
-          className="px-1.5 text-sm"
-          dropdown
-          label={m.mermaid_theme()}
+          label={`${m.mermaid_theme()}: ${MERMAID_THEME_LABEL[theme]()}`}
+          tooltipSide="top"
         >
           <MermaidSwatch theme={theme} />
-          <span className="translate-y-px pl-1">
-            {MERMAID_THEME_LABEL[theme]()}
-          </span>
         </ToolbarButton>
       </PopoverTrigger>
       <ToolbarPopoverContent align="end" className="w-46" open={open}>
@@ -679,37 +683,94 @@ export function MermaidElement(props: PlateElementProps) {
   const caption = NodeApi.string(props.element);
   const [editing, setEditing] = useState(false);
   const [captioning, setCaptioning] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
   const captionRef = useRef<HTMLInputElement>(null);
   const locate = () => editor.api.findPath(props.element);
+  const update = (patch: Partial<MermaidNode>) => {
+    const at = locate();
+    if (at) editor.tf.setNodes(patch, { at });
+  };
   useEffect(() => {
     if (captioning) captionRef.current?.focus();
   }, [captioning]);
   return (
-    <>
-      <EmbedShell
-        media
-        onEdit={() => setEditing(true)}
-        props={props}
-        tools={
-          <>
-            <MermaidThemeMenu
-              onTheme={(next) => {
-                const at = locate();
-                if (at) editor.tf.setNodes({ theme: next }, { at });
-              }}
-              theme={theme}
-            />
-            <ToolbarButton
-              label={m.editor_caption_add()}
-              onClick={() => setCaptioning(true)}
-            >
-              <EditorIcon name="closedCaption" />
-            </ToolbarButton>
-          </>
-        }
+    <PlateElement {...props} className="relative my-3">
+      <div
+        contentEditable={false}
+        onMouseDown={(event) => {
+          // Fields and controls inside the block take their own focus.
+          if (
+            readOnly ||
+            (event.target as Element).closest(
+              'input, button, [data-media-resize-handle]'
+            )
+          )
+            return;
+          event.preventDefault();
+          const at = locate();
+          if (at) {
+            editor.tf.select(editor.api.start(at));
+            editor.tf.focus();
+          }
+        }}
       >
         <StandaloneMaterialTitle kinds={['mindmap', 'diagram']} />
-        <Mermaid code={element.source} theme={theme} />
+        <MediaFrame
+          fill
+          onOpen={() => setPreviewing(true)}
+          onWidthChange={readOnly ? undefined : (width) => update({ width })}
+          toolbar={
+            readOnly ? undefined : (
+              <>
+                <MermaidThemeMenu
+                  onTheme={(next) => update({ theme: next })}
+                  theme={theme}
+                />
+                <ToolbarButton
+                  label={m.editor_caption_add()}
+                  onClick={() => setCaptioning(true)}
+                  tooltipSide="top"
+                >
+                  <EditorIcon name="closedCaption" />
+                </ToolbarButton>
+                <ToolbarButton
+                  label={m.action_edit()}
+                  onClick={() => setEditing(true)}
+                  tooltipSide="top"
+                >
+                  <EditorIcon name="pencil" />
+                </ToolbarButton>
+                <ToolbarButton
+                  label={m.action_copy()}
+                  onClick={() =>
+                    void copyBlock(editor, props.element).catch(showErrorToast)
+                  }
+                  tooltipSide="top"
+                >
+                  <EditorIcon name="copy" />
+                </ToolbarButton>
+                <ToolbarButton
+                  label={m.action_delete()}
+                  onClick={() => {
+                    const at = locate();
+                    if (at) editor.tf.removeNodes({ at });
+                  }}
+                  tooltipSide="top"
+                  variant="danger-light"
+                >
+                  <EditorIcon name="trash" />
+                </ToolbarButton>
+              </>
+            )
+          }
+          width={element.width}
+        >
+          <Mermaid
+            code={element.source}
+            fill={element.width !== undefined}
+            theme={theme}
+          />
+        </MediaFrame>
         {readOnly
           ? caption.trim() && <p className={MERMAID_CAPTION_CLASS}>{caption}</p>
           : (captioning || caption) && (
@@ -737,21 +798,28 @@ export function MermaidElement(props: PlateElementProps) {
                 value={caption}
               />
             )}
-      </EmbedShell>
+      </div>
+      {/* Slate's void spacer is already invisible; display:none would leave
+       * the caret without a position, so focusing scrolled the page away. */}
+      <span className="absolute top-0 left-0">{props.children}</span>
+      <MermaidPreview
+        caption={caption}
+        code={element.source}
+        onOpenChange={setPreviewing}
+        open={previewing}
+        theme={theme}
+      />
       {editing && (
         <Suspense fallback={null}>
           <MermaidSourceDialog
             onClose={() => setEditing(false)}
-            onSave={(source) => {
-              const at = locate();
-              if (at) editor.tf.setNodes({ source }, { at });
-            }}
+            onSave={(source) => update({ source })}
             source={element.source}
             theme={theme}
           />
         </Suspense>
       )}
-    </>
+    </PlateElement>
   );
 }
 

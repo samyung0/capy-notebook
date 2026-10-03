@@ -4,6 +4,7 @@ import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { MediaFrame } from './MediaFrame';
+import { MediaPreview } from './MediaPreview';
 
 /** Persisted media node shape for workspace-backed asset elements. */
 export interface MediaAssetNode {
@@ -85,6 +86,7 @@ export function MediaAssetView({
   // fit-to-image frame, so it fills the block instead.
   const [fill, setFill] = useState(false);
   const [aspectRatio, setAspectRatio] = useState<number>();
+  const [previewing, setPreviewing] = useState(false);
   // A presigned URL is short-lived; seeking past the buffered range re-reads
   // it. Re-resolve once, then let a second failure surface.
   const retried = useRef(false);
@@ -117,6 +119,7 @@ export function MediaAssetView({
         <MediaFrame
           aspectRatio={aspectRatio}
           fill={fill}
+          onOpen={() => setPreviewing(true)}
           onWidthChange={onWidthChange}
           toolbar={toolbar}
           width={element.width}
@@ -136,6 +139,23 @@ export function MediaAssetView({
             src={asset.url}
           />
         </MediaFrame>
+      )}
+      {asset.status === 'ready' && element.type === 'img' && (
+        <MediaPreview
+          caption={element.caption?.map((node) => node.text).join('')}
+          onOpenChange={setPreviewing}
+          open={previewing}
+          title={element.name || asset.name}
+        >
+          <img
+            alt={element.name || asset.name}
+            className={cn(
+              'max-h-full max-w-full rounded-card object-contain',
+              fill && 'size-full'
+            )}
+            src={asset.url}
+          />
+        </MediaPreview>
       )}
       {asset.status === 'ready' && element.type === 'audio' && (
         <audio

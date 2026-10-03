@@ -76,11 +76,17 @@ export function renderMermaid(
  * without it a failed parse shows the message and the raw source.
  */
 export function Mermaid({
+  className,
   code,
+  fill = false,
   theme,
   onError,
 }: {
+  /** Extra classes for the rendered diagram box. */
+  className?: string;
   code: string;
+  /** Stretch past the diagram's natural width to fill the box (a resized block). */
+  fill?: boolean;
   theme?: MermaidTheme;
   onError?: (message: string | null) => void;
 }) {
@@ -158,6 +164,9 @@ export function Mermaid({
         'mermaid-render flex justify-center overflow-auto rounded-lg p-3',
         // Matches MediaFrame's MAX_HEIGHT; the SVG scales down to fit.
         '[&>svg]:max-h-[min(70vh,48rem)]',
+        // Mermaid caps the SVG at its natural width with an inline style.
+        fill && '[&>svg]:max-w-none!',
+        className,
         MERMAID_TEXT_CLASS
       )}
       // eslint-disable-next-line react/no-danger -- mermaid returns sanitized SVG (securityLevel: strict)

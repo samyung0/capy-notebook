@@ -24,6 +24,10 @@ export function MaterialRenderProvider({
   );
 }
 
+export function useMaterialRender() {
+  return useContext(MaterialRenderContext);
+}
+
 export function StandaloneMaterialTitle({
   kinds,
 }: {
