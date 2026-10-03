@@ -5,16 +5,18 @@ For the agent picking up the remaining BetterOffice DOCX items. It replaces the
 
 ## State
 
-- Landed: follow-up rounds 1 and 2 (`dcf7d9b5`, Capy `3b725d4e`), then the
-  toolbar track (2026-10-02, `capy-ci` = `86744da3`, Capy commit "Match the
-  DOCX editor toolbar to Capy's toolbars", deployed to UAT). Production has
-  none of it and holds no Office data, so a pin bump there needs no
-  maintenance window.
-- In flight on local fork branches (not pushed): `capy/docx-followup-3`
-  (round 3 of items 1–6, see Remaining items) and `capy/docx-perf`
-  (Performance track). Both branch from `dcf7d9b5` and rebase onto the
-  current `capy-ci` before landing; `capy/docx-perf` also edits
-  `DocxEditor.tsx`, which the toolbar track changed.
+- Landed: follow-up rounds 1 and 2 (`dcf7d9b5`), the toolbar track (`86744da3`,
+  Capy `ea24fffa`) and round 3 of items 1–6 (2026-10-03, `capy-ci` =
+  `50caf83a`, Capy commit "Land DOCX follow-up round 3", deployed to UAT).
+  Production has none of it and holds no Office data, so a pin bump there
+  needs no maintenance window.
+- In flight on local fork branches (not pushed): `capy/docx-perf`
+  (Performance track, accessibility mirror option B), and the 2026-10-03
+  header redesign (`capy/office-header`, `capy/xlsx-toolbar`,
+  `capy/pptx-toolbar`; decisions are the 2026-10-03 lines in
+  `human/frontend/office-files.md`, mock at
+  `artifacts/2026-10-03-office-header-mocks.html`). Each rebases onto the
+  current `capy-ci` before landing.
 - Capy ships the engine's CJK faces (`c254fcee`), loaded on demand. Before
   that, CJK text overlapped in view mode and vanished in edit mode. Check CJK
   files (`e2e/fixtures/files/rich-content/exchange-plan.docx`) in both modes
@@ -44,40 +46,43 @@ For the agent picking up the remaining BetterOffice DOCX items. It replaces the
 
 ## Remaining items
 
-1. **Concurrent join of a just-split field.** Enter inside a projected link,
-   TOC entry or field result splits the field across paragraphs. Backspace or
-   Delete rejoins it. The problem is two peers acting on the same split at
-   once: both joining, or one deleting or typing in the moved text while the
-   other joins. This can:
-   - duplicate text;
-   - revive a deletion;
-   - misplace typed text.
+Landed from BetterOffice `capy/docx-followup-3` at `50caf83a` (2026-10-03).
+Status per item; the decisions are the 2026-10-02 and 2026-10-03 lines in
+`human/frontend/office-files.md`.
 
-   The cause is that the join deletes the moved text and rewrites it into the
-   field, so peer edits don't merge. The fix is a split that keeps text in
-   place (a multi-paragraph field whose end marker moves). Repro:
-   `rv5-w2.ts`, 13 of 40 flows fail.
-2. **The join drops formatting.** Bold applied to the moved text between Enter
-   and the join is lost, because matching compares text only. Repro:
-   `rv5-fmt.ts`.
-3. **Redo after Enter moves the field end.** With a single multi-character run
-   (`L(AA)yy`), Enter, Undo, Redo puts the field end one unit early. Text is
-   safe. Repro: `rv5-ur2.ts`.
-4. **V: typing at the end of a paragraph whose field result continues** into
-   the next paragraph. The save puts the text inside the result, as Word does,
-   but the editor shows it after the field. These are 6 accepted `exact+moved`
-   rows in `docx-fields.tsv`. An attempt that rewrote field data per keystroke
-   was reverted: it lost concurrent typing and grew the state by about 18 KB
-   per key. A fix must type into the result as an ordinary text unit.
-5. **Comment coverage refusal widened by ±1.** A comment range that typing
-   reversed counts its neighbour units as covered, so joins beside it refuse.
-   That affects 15 rows that landed with `timing+unstable` before. The safe
-   side is acceptable; narrow it only if it can be done without silent rows.
-6. **Small:**
-   - The matrix README lists a tracked-move split refusal that no baseline row
-     holds. Add the row or drop the line.
-   - After a join, a field's shown text keeps a tab (`"y\tz"`) where the seed
-     shows `"yz"`. The save is the same.
+1. **Concurrent join of a just-split field:** accepted known limitation. The
+   join keeps rewriting the moved text into the field (2026-10-02, "the DOCX
+   join after an Enter split keeps rewriting").
+2. **The join drops formatting:** accepted known limitation (same line).
+3. **Redo after Enter moves the field end:** done. The vendored yrs keeps the
+   offset into a redone item, and after Undo/Redo a continued field's end is
+   re-anchored when its own text was restored (2026-10-02, "the vendored yrs
+   also carries a follow_redone fix").
+4. **V, typing at the end of a paragraph whose field result continues:** done.
+   The plain tail of the first paragraph's result is text after the field
+   marker (2026-10-02, "to land DOCX item 4"; 2026-10-03, "after the item 4
+   recheck").
+5. **Comment coverage refusal widened by ±1:** done. A reversed range covers
+   what lies between its ends, and no matrix row turned silent.
+6. **Small:** done. The tracked-move split refusal has its matrix rows, and a
+   join's shown text drops tabs as the seed does.
+
+Also done: Backspace and Delete step over an invisible field marker (2026-10-02,
+"Backspace and Delete beside an invisible DOCX field marker").
+
+## Follow-ups
+
+- Shown text after an Enter split differs from the seed in two cases: a
+  nested complex field before a projected link (`[REF|[PAGE|7]L(AA)yy]` shows
+  "7"), and a `w:ptab` in a moved run, which doesn't rejoin and saves one link
+  as two.
+- A continued result whose first-paragraph tail holds a break or a comment
+  reference keeps the behaviour from before item 4: text typed at that
+  paragraph's end shows after the field in the editor while the save puts it
+  inside the result.
+- DOCX Insert/Update table of contents, as its own engine track.
+- The six DOCX table-menu items (vertical alignment, table alignment, header
+  row, distribute columns, auto-fit, no-wrap), as a later engine task.
 
 Behaviour choices beyond these need a new decision from the developer, recorded
 in `human/` before you implement (see the `human` skill).

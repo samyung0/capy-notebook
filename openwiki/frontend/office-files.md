@@ -234,8 +234,8 @@ field as the capture does (a bookmark hand-off renumbers the surviving
 paragraph's fields as the seed does); text typed at a link's end stays in that
 link, so a captured slot holding two links lands exactly. A DOCX rebase also
 refuses when an edit after the capture touches a comment that would cover
-other content than in the latest state (a range typing reversed counts the
-units beside it), when a comment would lose both its range and its reference,
+other content than in the latest state (a range typing reversed covers what lies
+between its ends), when a comment would lose both its range and its reference,
 when a restored field would lose its separate or end in a later paragraph, and
 when the capture's save wrote a new comment's reference ahead of breaks that
 open the latest paragraph or a bookmark sits right before such a reference.
@@ -314,11 +314,15 @@ both direct and rebased saves. Empty-comment behavior is the same in body text,
 table cells, header cells and endnotes when tested with the same session ids.
 
 BetterOffice builds with a patched yrs 0.27.3 (`third_party/yrs`, through
-`[patch.crates-io]`): its `clean_format_gap` counts a map embed (a field,
-paragraph mark or break) as content, as JS Yjs does, so a delete before a
-field no longer spreads the deleted text's link and field marker onto the
-field. Without it, one Backspace at the end of a table of contents' first
-entry removed the whole TOC field from the saved file. The native viewer,
+`[patch.crates-io]`) carrying two fixes until a fixed yrs release exists. Its
+`clean_format_gap` counts a map embed (a field, paragraph mark or break) as
+content, as JS Yjs does, so a delete before a field no longer spreads the
+deleted text's link and field marker onto the field. Without it, one Backspace
+at the end of a table of contents' first entry removed the whole TOC field from
+the saved file. Its `follow_redone` keeps the offset into an item Undo or Redo
+restored, as Yjs's `followRedone` does, so a position inside restored text
+stays on its unit and an Undo after delete, Undo, Redo removes only its own
+step. The native viewer,
 Python bindings and fuzz workspaces use that same copy, including the native
 viewer's UTF-8 validation in both update decoders. WASM fingerprints include
 the vendored source so changes rebuild the engines.
@@ -345,7 +349,13 @@ the two (`merge_paragraphs` in `crates/docx-edit`):
 
 Delete or Backspace right next to a table or block content control never
 deletes it: the user selects it to delete it. A break next to the caret goes
-like any character. One engine edit (`delete_at`, `deleteAt` in the session)
+like any character. Backspace and Delete beside a field that shows nothing (a
+table of contents' own marker, a REF over links only, the first half of a
+split field, a comment reference) step over it and delete the visible
+character past it, or join at the paragraph mark there; Delete before one that
+ends a story does nothing. Only a selection covering such a field removes it.
+A field that shows text (DATE, a TOC entry's page number) deletes as one unit,
+Undo restoring it. One engine edit (`delete_at`, `deleteAt` in the session)
 makes every Backspace and Delete, resident or not, so suggesting mode,
 headers, footers and notes delete and place the caret as the resident path
 does. Suggesting mode marks what it removes deleted; only the author's own
@@ -412,11 +422,18 @@ runs sit there, in order; otherwise the split stays, keeping every run and
 typed character. A field whose result holds a kept insertion, a content
 control or foreign markup after the split point keeps the old Enter (the text
 after it leaves the field). Text typed at the end of a paragraph whose field
-code continues into the next lands ahead of the field. Follow-up fork task:
-two peers joining a just-split field at once can duplicate or revive text, the
-join drops formatting applied to the moved text, and text typed at the end of
-a paragraph whose field result continues saves inside the result while the
-editor shows it after the field.
+code continues into the next lands ahead of the field. Two peers joining a
+just-split field at once can duplicate or revive text, and the join drops
+formatting applied to the moved text (both accepted).
+
+The plain runs (text, and tabs without their own formatting) that end the
+first paragraph's part of a continued field's result seed as editable text
+after the field marker, as the result in later paragraphs does: text typed at
+that paragraph's end stays where it was typed in the editor and the save, and
+Backspace there deletes one character. A run holding a break, a comment
+reference or a formatted tab stays in the field with the runs before it, so
+untouched files save as before. After Enter in such a field's link, the join
+stops at that text while the field continues past the joined paragraph.
 
 Bookmarks use zero-width positions in the shared `bookmarks` root, covered by
 Undo and publication rebasing. Typing moves their boundaries, Enter leaves one
@@ -424,15 +441,19 @@ copy, and joins or accepted paragraph-mark deletions retain them. Markers in
 links and inline controls survive export. Empty ranges remain together before
 new text. Coincident bookmark and field markers keep their source order, every
 bookmark start saves before its end (also when a join collapses several to one
-point), and Undo and Redo re-anchor bookmarks where they stand, so the editor
-and the save agree. Generated comment paragraph ids reserve the ids already used by the
+point), and after Undo or Redo a bookmark, comment range or continued field
+end whose own text the step restored is re-anchored onto it (one beside
+restored text keeps its anchor until the Undo that restores its own), so the
+editor, peers and the save agree. Generated comment paragraph ids reserve the ids already used by the
 document, headers, footers and notes.
 
 Seeds changed with the break and field-container rules, bookmark anchors,
 formatting revisions, multi-paragraph fields, Word comment references
-before leading breaks, result runs after projected simple fields and source
-order for bookmarks in paragraphs holding continued field characters, so these pins ship in a
-[maintenance window](#maintenance-window).
+before leading breaks, result runs after projected simple fields, source
+order for bookmarks in paragraphs holding continued field characters and the
+plain tails of continued field results, so these pins ship in a
+[maintenance window](#maintenance-window). UAT rooms of files holding a
+continued result with a plain tail are refused until republished.
 
 The DOCX toolbar has no Editing/Suggesting/Viewing dropdown: the editor always
 edits directly, and Capy's View/Edit control is the only mode (the engine's
