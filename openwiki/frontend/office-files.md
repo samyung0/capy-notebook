@@ -102,6 +102,17 @@ Yrs projection, and viewer linear memory are absent during ordinary reading.
 Viewer analysis reuses the already-open handle, so sheet/slide metadata does not
 trigger a second parse.
 
+The DOCX editor lays pages out in a resident engine worker. A request's timeout
+starts when the worker begins it; a request the worker never starts gives up
+after 60 s. Either way the main thread then takes over, and editing continues on
+the main thread's frames rather than failing the editor. Range and caret queries
+read only the pages a range touches, and a query object superseded by a newer
+layout answers from its current shifted pages. In documents over 12 pages the
+screen-reader mirror under the canvas is positioned only for pages within two of
+the viewport; the others get a plain-text copy (roles, links and language kept),
+swapped in at idle, so screen readers reach the whole document while scrolling
+stays cheap.
+
 Viewing shows the last saved state, not only the last published blob. View
 mode reads `GET /api/files/{id}/source-session?view=true`, a lock-free read
 (read authorization only, no `source_documents` row is created, no account
