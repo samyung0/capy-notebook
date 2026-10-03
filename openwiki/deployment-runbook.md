@@ -2397,7 +2397,7 @@ first. Roll back compatible Ops changes by selecting a previous passing SHA.
    the required target. A failed backend lookup stops the run.
 2. Repair the fixture and tune only documented budgets or exclusions. Do not
    weaken authorization assertions or allow-host guards to make a run green.
-3. Dispatch **Editor perf** once so later runs have a baseline to diff. No
+3. Dispatch **Performance** (`perf.yml`) once so later runs have a baseline to diff. No
    workflow has a schedule and no workflow stages UAT on push.
 4. Before a promotion, on the developer machine with `gh auth login` done:
    run `pnpm review:source:codex` on the clean candidate checkout, and

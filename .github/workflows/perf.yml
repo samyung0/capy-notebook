@@ -1,13 +1,25 @@
-name: Editor perf
+# Every performance benchmark that runs on GitHub, dispatched by hand.
+# Production promotion calls this file for the editor budgets (job `perf`);
+# the Office runtime bench runs on dispatch only until it has CI budgets.
+name: Performance
 
 on:
   workflow_dispatch:
+    inputs:
+      office:
+        description: Also run the Office runtime bench
+        default: true
+        type: boolean
   workflow_call:
     inputs:
       revision:
         description: Full Git SHA to measure
         required: true
         type: string
+      office:
+        description: Also run the Office runtime bench
+        default: false
+        type: boolean
 
 jobs:
   perf:
@@ -91,3 +103,63 @@ jobs:
       - name: Enforce absolute performance budgets
         if: always() && steps.perf.outcome == 'failure'
         run: exit 1
+
+  office:
+    if: inputs.office
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    # Its budgets come from a laptop until three runs here recalibrate them,
+    # so a miss is shown on the job without failing the run (green runs are
+    # the editor job's baselines).
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+          submodules: recursive
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: ./vendor/betteroffice/.github/actions/wasm-toolchain
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack@0.15.0
+      - uses: ./.github/actions/cache-betteroffice
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          cache: pnpm
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      # The production build imports the fork's WASM and stylesheet.
+      - run: pnpm office:prepare
+      - run: pnpm run e2e:install
+      - name: Run Office runtime bench
+        run: pnpm bench:office
+        env:
+          PERF_SNAPSHOT_DIR: bench/editor/.results/office
+      - name: Write Office results
+        if: always()
+        run: |
+          shopt -s nullglob
+          for file in bench/editor/.results/office/*.json; do
+            echo "### $(basename "$file" .json)"
+            echo '```json'
+            cat "$file"
+            echo '```'
+          done >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload Office results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          if-no-files-found: ignore
+          name: office-perf-results
+          path: |
+            bench/editor/.results/office/
+            test-results/
+          retention-days: 90

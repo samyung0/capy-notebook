@@ -6,8 +6,7 @@ import { percentile, reportMetrics } from './metrics';
  * DOCX in the Office runtime, on a production build (see
  * playwright.office.config.ts): open to first paint, View to Edit ready, and
  * keystroke to painted frame, for the 15-page CJK fixture and the 62-page
- * generated one. No budgets yet: they come from the first runs on the CI
- * runner, as the editor budgets did (openwiki/editor-perf.md).
+ * generated one.
  *
  * The runtime sends `ready` once its first pages are painted, with its own
  * timings (officeProtocol.ts, OfficeReadyTimings). The host measures from the
@@ -17,6 +16,27 @@ import { percentile, reportMetrics } from './metrics';
  * nor the engine workers, so a multiplier would skew main thread against
  * worker.
  */
+
+/**
+ * Provisional: ~1.3x the median of three local runs (2026-10-04, M-series
+ * Mac, production build, load 16-24), the same rule as the editor budgets.
+ * Recalibrate from three runs of the Performance workflow, whose Office job
+ * does not fail the run until then.
+ */
+const BUDGET = {
+  'bio-office-docx': {
+    editReadyMs: 2800, // median 2,147
+    keyToFrameP50Ms: 180, // median 138
+    keyToFrameP90Ms: 210, // median 160
+    openFirstPaintMs: 6200, // median 4,775 (MSW adds ~1.1 s per call)
+  },
+  'bio-office-docx-long': {
+    editReadyMs: 7300, // median 5,627
+    keyToFrameP50Ms: 990, // median 762
+    keyToFrameP90Ms: 2500, // median 1,931
+    openFirstPaintMs: 9500, // median 7,310
+  },
+};
 
 const FIXTURES = [
   { id: 'bio-office-docx', name: 'exchange-plan.docx' },
@@ -180,5 +200,14 @@ for (const fixture of FIXTURES) {
     }, 'unthrottled');
     expect(typing.unpaintedKeys).toBe(0);
     expect(fallbacks).toEqual([]);
+    const budget = BUDGET[fixture.id];
+    expect.soft(open.ms).toBeLessThanOrEqual(budget.openFirstPaintMs);
+    expect.soft(edit.ms).toBeLessThanOrEqual(budget.editReadyMs);
+    expect.soft(typing.keyToFrameP50Ms).toBeLessThanOrEqual(
+      budget.keyToFrameP50Ms
+    );
+    expect.soft(typing.keyToFrameP90Ms).toBeLessThanOrEqual(
+      budget.keyToFrameP90Ms
+    );
   });
 }

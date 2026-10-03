@@ -26,7 +26,8 @@ Raw run artifacts sit in a sibling `YYYY-MM-DD-<machine>/` directory.
 
 ### editor
 
-The only CI-wired suite, run manually via the `Editor perf` workflow and on
+The only CI-wired suite, run manually via the `Performance` workflow
+(`.github/workflows/perf.yml`, formerly `Editor perf`) and on
 production promotion. Budgets are regression tripwires, not UX targets; snapshot
 deltas stay warn-only. Details: [editor-perf.md](../openwiki/editor-perf.md).
 Results land in the gitignored `editor/.results/`, so this family has no
@@ -37,9 +38,11 @@ a production build with MSW, the runtime on a second origin, and two DOCX
 fixtures, the 15-page `exchange-plan.docx` and the generated 62-page
 `editor/fixtures/office/long-handbook.docx` (`editor/scripts/gen_long_docx.py`;
 its checkpoint comes from `scripts/dev/seed-scenario-office.ts`). It reports
-open to first paint, View to Edit ready and keystroke to painted frame, and
-fails only on unpainted keys or a fallback to the main-thread engine. It has no
-budgets and no CI job yet.
+open to first paint, View to Edit ready and keystroke to painted frame against
+provisional budgets (from three laptop runs), and fails on unpainted keys or a
+fallback to the main-thread engine. It runs as the `office` job of the same
+`Performance` workflow, on dispatch only, without failing the run until its
+budgets are recalibrated there.
 
 ### parsers
 

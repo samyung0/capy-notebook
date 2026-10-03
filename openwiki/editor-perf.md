@@ -51,16 +51,33 @@ cross-origin as in production). The build takes a few minutes. Per DOCX fixture
   `docx-pages-presented` event in the frame (p50, p90, max, unpainted keys).
 
 It runs unthrottled: CDP's CPU throttle reaches neither the runtime frame nor
-the engine workers. It fails only on unpainted keys or a worker fallback. It has
-no budgets yet and is not in the `Editor perf` workflow; budgets follow the
-first runs on the CI runner, as above.
+the engine workers. It fails on unpainted keys, a worker fallback, or a missed
+budget (`BUDGET` in the spec: open, View to Edit, key p50 and p90 per fixture).
+The budgets are provisional, ~1.3x the median of three laptop runs; a fourth
+run at load 24 missed four of the eight, so treat a local miss as noise.
+Recalibrate them from three runs of the `office` job below, as the editor
+budgets were.
 
 ## GitHub Actions
 
-Workflow [`Editor perf`](../.github/workflows/perf.yml) runs on manual
+Workflow [`Performance`](../.github/workflows/perf.yml) (named `Editor perf`
+before the Office job joined it) runs on manual
 dispatch and by `workflow_call` from `promote-production.yml`, which passes the
 candidate SHA as `revision`. Pin is `ubuntu-24.04`. Typical wall time is 15 to
 25 minutes.
+
+It has two jobs. `perf` is the editor suite below; production promotion's
+`editor_perf` job calls the file and `deploy_production` needs it, so these
+budgets gate promotion (check name `editor_perf / perf`).
+`scripts/review/validate-review-boundaries.mjs` fails CI if promotion stops
+calling `perf.yml` or the file stops being dispatchable and callable. `office`
+runs `pnpm bench:office` on dispatch only (input `office`, default true; a
+`workflow_call` defaults it to false, so promotion skips it) and, while its
+budgets are provisional, has `continue-on-error`: a miss shows on the job, the
+run stays green, and the run's editor snapshot still counts as a baseline. Its
+results go to the job summary and the `office-perf-results` artifact.
+
+Steps of the `perf` job:
 
 1. Run `pnpm bench:editor` with `PERF_SNAPSHOT_DIR` set. `reportMetrics` writes one JSON
    file per budget case.
