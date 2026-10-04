@@ -339,6 +339,16 @@ clones release the fence, so a clone cannot leave an orphan counter behind.
 remain in `material_yjs_documents.state`. Idle rooms whose stored state is at
 least `max(256 KiB, material.size_bytes * 4)` are compaction candidates.
 
+Source text states are not compacted. Their history grows with the number of
+separate edits (and the contributor markers each save writes and clears), not
+with the file's size: garbage collection drops deleted content and merges
+adjacent deletions, leaving a few bytes per edit, so a paste deleted again
+costs a few bytes. Three publications of 1 KB typed into a 2 KB `.md` left
+195 bytes charged (bench/parsers/reports/2026-10-05-office-storage-charging.md).
+Compacting at publication would move the lineage (epoch) every time a text
+file auto-publishes, so it is deferred; if history ever matters, compact past
+a size threshold while the room is empty, as the Office rebuild does.
+
 Compaction takes a Redis eviction lease so every collaboration instance
 flushes, closes clients, and unloads the room; rebuilds a fresh Y.Doc from
 the projected Plate `materials.content`; clears in-memory pending
