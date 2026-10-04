@@ -311,6 +311,13 @@ func (s *Store) lockAccountSessionsTx(
 	tx pgx.Tx,
 	userIDs ...string,
 ) error {
+	return checkAccountSessions(ctx, tx, true, userIDs...)
+}
+
+// checkAccountSessions refuses missing and locked (deleted, deletion-pending,
+// suspended) accounts; with lock it also takes their rows (see
+// lockAccountSessionsTx), without it it only reads them.
+func checkAccountSessions(ctx context.Context, q rowsQueryer, lock bool, userIDs ...string) error {
 	unique := make(map[string]struct{}, len(userIDs))
 	ids := make([]string, 0, len(userIDs))
 	for _, id := range userIDs {
@@ -326,9 +333,13 @@ func (s *Store) lockAccountSessionsTx(
 	if len(ids) == 0 {
 		return ErrNotFound
 	}
-	rows, err := tx.Query(ctx, `SELECT id, deleted_at, deletion_requested_at,
+	query := `SELECT id, deleted_at, deletion_requested_at,
 			suspended_at, suspended_reason
-		FROM users WHERE id=ANY($1::text[]) ORDER BY id FOR NO KEY UPDATE`, ids)
+		FROM users WHERE id=ANY($1::text[]) ORDER BY id`
+	if lock {
+		query += ` FOR NO KEY UPDATE`
+	}
+	rows, err := q.Query(ctx, query, ids)
 	if err != nil {
 		return err
 	}

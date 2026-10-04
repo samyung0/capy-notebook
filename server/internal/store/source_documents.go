@@ -147,20 +147,26 @@ func (s *Store) sourceLockTx(ctx context.Context, tx pgx.Tx, fileID string, acto
 	if err = s.lockAccountSessionsTx(ctx, tx, append([]string{owner}, actors...)...); err != nil {
 		return "", "", err
 	}
+	return ws, owner, sourceActorsAllowed(ctx, tx, ws, actors, edit)
+}
+
+// sourceActorsAllowed refuses an actor without read (edit: write) access to
+// the workspace.
+func sourceActorsAllowed(ctx context.Context, q rowQueryer, ws string, actors []string, edit bool) error {
 	for _, actor := range actors {
 		if actor == "" {
-			return "", "", ErrForbidden
+			return ErrForbidden
 		}
 		var allowed bool
-		err = tx.QueryRow(ctx, `SELECT w.user_id=$2 OR EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=$2 AND (NOT $3 OR m.role IN ('owner','editor'))) OR (w.privacy IN ('link','public') AND (NOT $3 OR w.share_role='editor')) FROM workspaces w WHERE w.id=$1`, ws, actor, edit).Scan(&allowed)
+		err := q.QueryRow(ctx, `SELECT w.user_id=$2 OR EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=$2 AND (NOT $3 OR m.role IN ('owner','editor'))) OR (w.privacy IN ('link','public') AND (NOT $3 OR w.share_role='editor')) FROM workspaces w WHERE w.id=$1`, ws, actor, edit).Scan(&allowed)
 		if err != nil {
-			return "", "", err
+			return err
 		}
 		if !allowed {
-			return "", "", ErrNotFound
+			return ErrNotFound
 		}
 	}
-	return ws, owner, nil
+	return nil
 }
 
 // sourceEditLockTx admits an owner's refresh: sourceLockTx with edit access,
@@ -251,23 +257,41 @@ func (s *Store) ViewSourceSession(ctx context.Context, fileID string) (SourceSes
 }
 
 // CheckSourceAccess revalidates each incoming edit without loading or encoding
-// the complete current and indexed document states.
+// the complete current and indexed document states. It is a read and takes no
+// locks: it commits nothing, so a lock would only make it wait for a
+// concurrent ACL, account or publication change, and a change committing just
+// after the check is missed either way. The save that persists the edit
+// rechecks every contributor under sourceLockTx, and ACL and account changes
+// evict the room. Locking here serialized every writer's recheck with every
+// write in the workspace.
 func (s *Store) CheckSourceAccess(ctx context.Context, actor, fileID string, epoch int64, edit bool) error {
-	tx, err := s.pool.Begin(ctx)
+	if actor == "" {
+		return ErrForbidden
+	}
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	_, owner, err := s.sourceLockTx(ctx, tx, fileID, []string{actor}, edit)
-	if err == nil && edit {
-		err = s.assertContentEditableTx(ctx, tx, owner, actor)
+	var ws, owner string
+	var current bool
+	err = tx.QueryRow(ctx, `SELECT f.workspace_id,w.user_id,EXISTS(SELECT 1 FROM source_documents d WHERE d.file_id=f.id AND d.epoch=$2 AND d.base_revision=f.revision) FROM files f JOIN workspaces w ON w.id=f.workspace_id WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID, epoch).Scan(&ws, &owner, &current)
+	if isNoRows(err) {
+		return ErrNotFound
 	}
 	if err != nil {
 		return err
 	}
-	var current bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1 AND d.epoch=$2 AND d.base_revision=f.revision AND f.trashed_at IS NULL)`, fileID, epoch).Scan(&current); err != nil {
+	if err = checkAccountSessions(ctx, tx, false, owner, actor); err != nil {
 		return err
+	}
+	if err = sourceActorsAllowed(ctx, tx, ws, []string{actor}, edit); err != nil {
+		return err
+	}
+	if edit {
+		if err = s.assertContentEditableTx(ctx, tx, owner, actor); err != nil {
+			return err
+		}
 	}
 	if !current {
 		return ErrConflict

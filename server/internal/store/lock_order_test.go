@@ -127,3 +127,31 @@ func TestIngestJobPayloadStaysOnItsTransaction(t *testing.T) {
 		t.Fatalf("payload inside the only connection's transaction: %v", err)
 	}
 }
+
+// A writer's recheck reads; it must not queue behind a workspace write (a
+// checkpoint or a note save holding the workspace and the account).
+func TestSourceAccessCheckTakesNoLocks(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	owner := newBlobTestUser(t, s, "source_check_owner")
+	ws, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+	doc := sourceTestSeed(t, s, owner, file.ID)
+	writer, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Rollback(context.Background())
+	if _, err := writer.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, file.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Exec(ctx, `SELECT 1 FROM workspaces WHERE id=$1 FOR UPDATE`, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Exec(ctx, `SELECT 1 FROM users WHERE id=$1 FOR NO KEY UPDATE`, owner); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CheckSourceAccess(ctx, owner, file.ID, doc.Epoch, true); err != nil {
+		t.Fatalf("edit admission behind a workspace writer: %v", err)
+	}
+}
