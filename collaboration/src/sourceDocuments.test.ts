@@ -6,6 +6,7 @@ import { signCollaborationToken, verifyCollaborationToken } from './auth.js';
 import {
   attachDocumentContributorTracker,
   documentContributors,
+  roomSnapshot,
 } from './contributors.js';
 import * as officeRuntime from './officeRuntime.js';
 import {
@@ -21,6 +22,7 @@ import {
   textState,
   trimEffect,
 } from './sourceDocuments.js';
+import { lostSourceAccess, sourceSaveRefused } from './storeFailure.js';
 
 const REFRESH_CANDIDATE_PATH = /\/refresh-candidate$/;
 const SHA256 = /^[a-f0-9]{64}$/;
@@ -1205,5 +1207,61 @@ test('a forgotten room saves from a fresh session read', async () => {
   });
   await store.store(session.room, roomSnapshot(room));
   expect(sessions).toHaveBeenCalledTimes(2);
+  room.destroy();
+});
+
+// An ended epoch is final but not lost access: the save is not retried, and
+// a retry that finds a newer epoch reports epoch_changed, not a 403, so the
+// browsers keep their drafts in recovery instead of dropping them.
+test('a save over an ended epoch fails as epoch_changed without retrying', async () => {
+  const store = new SourceDocumentStore({} as Pool, 'http://gateway', 'secret');
+  const session = {
+    access: 'write',
+    baseSourceSHA256: 'sha',
+    checkpoint: 3,
+    epoch: 1,
+    fileId: 'f_1',
+    format: 'text',
+    pendingEffects: [],
+    room: 'source:f_1:epoch:1',
+    sourceURL: 'http://base',
+    state: Buffer.from(Y.encodeStateAsUpdate(new Y.Doc())).toString('base64'),
+  } as unknown as SourceSession;
+  vi.spyOn(store, 'effects').mockResolvedValue([]);
+  const room = new Y.Doc();
+  attachDocumentContributorTracker(room, 'instance');
+  const writer = {
+    connection: { context: { access: 'write', userId: 'u1' } },
+    source: 'connection',
+  };
+  room.transact(() => room.getText('source').insert(0, 'typed'), writer);
+
+  // The gateway refuses the epoch: one attempt, no retry.
+  vi.spyOn(store, 'session').mockResolvedValue(session);
+  const ended = vi
+    .spyOn(store, 'request')
+    .mockRejectedValue(
+      new SourceRequestError(409, 'Source epoch changed', 'epoch_changed')
+    );
+  await expect(
+    store.store(session.room, roomSnapshot(room))
+  ).rejects.toMatchObject({
+    code: 'epoch_changed',
+  });
+  expect(ended).toHaveBeenCalledTimes(1);
+
+  // A moved checkpoint retries, and the retry finds the next epoch.
+  vi.spyOn(store, 'session')
+    .mockResolvedValueOnce(session)
+    .mockResolvedValueOnce({ ...session, epoch: 2 });
+  vi.spyOn(store, 'request').mockRejectedValue(
+    new SourceRequestError(409, 'Source checkpoint moved', 'checkpoint_moved')
+  );
+  const error = await store
+    .store(session.room, roomSnapshot(room))
+    .catch((value: unknown) => value);
+  expect(error).toMatchObject({ code: 'epoch_changed', status: 409 });
+  expect(lostSourceAccess(error)).toBe(false);
+  expect(sourceSaveRefused(error)).toBe(true);
   room.destroy();
 });

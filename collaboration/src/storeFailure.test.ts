@@ -4,12 +4,14 @@ import { MaterialDocumentLimitError } from './limits.js';
 import { MaterialDocumentValidationError } from './materialDocument.js';
 import { OfficeEngineError } from './officeRuntime.js';
 import { CollaborationAuthorizationError } from './persistence.js';
+import { SourceRequestError } from './sourceDocuments.js';
 import {
-  ENGINE_ATTEMPTS,
-  engineFailures,
-  engineRefused,
   handlePermanentStoreFailure,
   pendingSourceSave,
+  SLOW_SAVE_LIMIT_MS,
+  SlowSaveClock,
+  SourcePendingError,
+  sourceSaveRefused,
 } from './storeFailure.js';
 
 function actions() {
@@ -67,25 +69,45 @@ describe('permanent store failures', () => {
   });
 });
 
-describe('Office engine store failures', () => {
-  it('retries timeouts and lost workers until ENGINE_ATTEMPTS in a row', () => {
-    const timeout = new OfficeEngineError('Office stateOf timed out', true);
-    let failures = 0;
-    for (let attempt = 1; attempt < ENGINE_ATTEMPTS; attempt++) {
-      failures = engineFailures(timeout, failures);
-      expect(engineRefused(timeout, failures)).toBe(false);
-    }
-    failures = engineFailures(timeout, failures);
-    expect(engineRefused(timeout, failures)).toBe(true);
-    // Any other failure breaks the run.
-    expect(engineFailures(new Error('gateway 503'), failures)).toBe(0);
+describe('source save failures', () => {
+  it('refuses only failures that will always fail', () => {
+    for (const refused of [
+      new OfficeEngineError('stale_target: changed'),
+      new SourceRequestError(413, 'Source checkpoint exceeds byte limit'),
+      new SourceRequestError(422, 'invalid checkpoint'),
+      new SourceRequestError(403, 'forbidden'),
+      new SourceRequestError(404, 'gone'),
+      new SourceRequestError(409, 'Source epoch changed', 'epoch_changed'),
+    ])
+      expect(sourceSaveRefused(refused)).toBe(true);
+    // Slow failures keep the room editable and are retried.
+    for (const slow of [
+      new OfficeEngineError('Office stateOf timed out', true),
+      new SourceRequestError(409, 'checkpoint moved'),
+      new SourceRequestError(503, 'unavailable'),
+      new TypeError('fetch failed'),
+    ])
+      expect(sourceSaveRefused(slow)).toBe(false);
   });
+});
 
-  it('refuses a refusal or trap at once', () => {
-    const refusal = new OfficeEngineError('stale_target: changed');
-    expect(engineRefused(refusal, engineFailures(refusal, undefined))).toBe(
-      true
-    );
+describe('the slow-save cap', () => {
+  // Pending content is never refused by itself, but no successful save for
+  // SLOW_SAVE_LIMIT_MS sends the room to recovery whatever the cause.
+  it('counts pending content like any failed save until a save succeeds', () => {
+    expect(sourceSaveRefused(new SourcePendingError())).toBe(false);
+    let now = 0;
+    const clock = new SlowSaveClock(() => now);
+    const room = 'source:f:epoch:1';
+    expect(clock.failed(room)).toBe(false);
+    now = SLOW_SAVE_LIMIT_MS - 1;
+    expect(clock.failed(room)).toBe(false);
+    now = SLOW_SAVE_LIMIT_MS;
+    expect(clock.failed(room)).toBe(true);
+    // A successful save starts the count over.
+    clock.clear(room);
+    now += 1000;
+    expect(clock.failed(room)).toBe(false);
   });
 });
 

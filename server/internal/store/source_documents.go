@@ -335,7 +335,7 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 	var out SourceCheckpointSaved
 	var effects []json.RawMessage
 	if len(in.State) == 0 || len(in.State) > 100<<20 || in.NetTokens < 0 || json.Unmarshal(in.PendingEffects, &effects) != nil || effects == nil {
-		return out, ErrConflict
+		return out, ErrInvalidCheckpoint
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -377,26 +377,29 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 			return out, ErrOfficeEditingPaused
 		}
 	}
-	if epoch != in.Epoch || out.Checkpoint != in.ExpectedCheckpoint {
-		return out, ErrConflict
+	if epoch != in.Epoch {
+		return out, ErrSourceEpochChanged
+	}
+	if out.Checkpoint != in.ExpectedCheckpoint {
+		return out, ErrCheckpointMoved
 	}
 	var revision int64
 	if err = tx.QueryRow(ctx, `SELECT revision FROM files WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, fileID).Scan(&revision); err != nil {
 		return out, err
 	}
 	if revision != baseRevision || in.BaseRevision != baseRevision {
-		return out, ErrConflict
+		return out, ErrCheckpointMoved
 	}
 	// The first save over seed(base) binds the source SHA once, and a text
 	// source records its seed's size then; later saves carry neither, and
 	// Office sources never carry a seed size.
 	text := format == "text"
 	if (seeded && text) != (in.SeedBytes > 0) || (!seeded && in.BaseSourceSHA256 != "") {
-		return out, ErrConflict
+		return out, ErrInvalidCheckpoint
 	}
 	if seeded {
 		if len(in.BaseSourceSHA256) != 64 || (sha != "" && sha != in.BaseSourceSHA256) {
-			return out, ErrConflict
+			return out, ErrInvalidCheckpoint
 		}
 		sha = in.BaseSourceSHA256
 		if text {
@@ -408,7 +411,7 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 	}
 	// An Office state is stored as its change over seed(base); text is complete.
 	if text != (in.StateSeedSHA256 == "") || (!text && !sha256Hex(in.StateSeedSHA256)) {
-		return out, ErrConflict
+		return out, ErrInvalidCheckpoint
 	}
 	// A refresh that captured the state being replaced keeps its own copy from
 	// now on; until a save lands, its NULL state reads this row's.

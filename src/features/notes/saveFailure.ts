@@ -35,7 +35,8 @@ function useSoleEditor(
 }
 
 /**
- * A failed save's toast. `retrying`: the server keeps retrying while the
+ * A failed save's toast. `delayed`: a source save failing slowly (the room
+ * stays editable while the server retries with backoff). `retrying`: the server keeps retrying while the
  * editor holds the edits; a sole editor can keep working, anyone else should
  * reload. `undone`: the edits could not be saved and the editor went back to
  * the last saved version.
@@ -46,7 +47,18 @@ export function useSaveFailureToast(
 ) {
   const soleEditor = useSoleEditor(workspaceId, standaloneOwner);
   return useCallback(
-    (kind: 'retrying' | 'undone') => {
+    (kind: 'retrying' | 'undone' | 'delayed') => {
+      // A slow save failure (the server keeps retrying): editing goes on
+      // and reloading would not help.
+      if (kind === 'delayed') {
+        userToast({
+          description: m.editor_save_delayed_description(),
+          id: 'save-failed',
+          title: m.editor_save_delayed(),
+          variant: 'error',
+        });
+        return;
+      }
       if (kind === 'undone') {
         userToast({
           description: m.editor_save_failed_undone(),

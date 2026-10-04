@@ -2,8 +2,6 @@ import { SOURCE_ROOM_PATTERN } from './auth.js';
 import { captureError, withEventId } from './observability.js';
 export interface FailedStoreSnapshot {
   checkpointIds: readonly string[];
-  /** Office engine timeouts and worker losses in a row on this room. */
-  engineFailures?: number;
   eventId?: string;
   state: Uint8Array;
 }
@@ -65,6 +63,16 @@ export class FailedStoreRetryRunner {
     } finally {
       this.running = false;
     }
+  }
+
+  /**
+   * Whether a failed room is still waiting out its backoff. A source room's
+   * live saves wait too, so a state that keeps timing out in the shared
+   * Office worker is tried once per backoff step, not on every debounce.
+   */
+  waiting(room: string) {
+    const wait = this.backoff.get(room);
+    return !!wait && this.failedStores.has(room) && this.now() < wait.due;
   }
 
   private clearIfCurrent(room: string, snapshot: FailedStoreSnapshot) {

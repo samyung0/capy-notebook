@@ -1158,16 +1158,16 @@ func TestSourceCheckpointStateKind(t *testing.T) {
 		} else {
 			wrong.StateSeedSHA256 = ""
 		}
-		if _, err := s.SaveSourceCheckpoint(ctx, file.ID, wrong); !errors.Is(err, ErrConflict) {
+		if _, err := s.SaveSourceCheckpoint(ctx, file.ID, wrong); !errors.Is(err, ErrInvalidCheckpoint) {
 			t.Fatalf("%s: wrong state kind saved: %v", tc.name, err)
 		}
 		if doc.Format != "text" {
 			wrong.StateSeedSHA256, wrong.SeedBytes = strings.Repeat("C", 64), 0
-			if _, err := s.SaveSourceCheckpoint(ctx, file.ID, wrong); !errors.Is(err, ErrConflict) {
+			if _, err := s.SaveSourceCheckpoint(ctx, file.ID, wrong); !errors.Is(err, ErrInvalidCheckpoint) {
 				t.Fatalf("malformed seed hash saved: %v", err)
 			}
 			wrong.StateSeedSHA256, wrong.SeedBytes = sourceTestStateSeed, 4
-			if _, err := s.SaveSourceCheckpoint(ctx, file.ID, wrong); !errors.Is(err, ErrConflict) {
+			if _, err := s.SaveSourceCheckpoint(ctx, file.ID, wrong); !errors.Is(err, ErrInvalidCheckpoint) {
 				t.Fatalf("Office seed size saved: %v", err)
 			}
 		}
@@ -1355,5 +1355,31 @@ func TestOfficeRebaseSeedExportMigration(t *testing.T) {
 	}
 	if err = exec(`UPDATE source_documents SET state_seed_sha256=NULL WHERE file_id=$1`, change.ID); err == nil || !strings.Contains(err.Error(), "source_documents_office_state_seed_check") {
 		t.Fatalf("an Office state without its seed: %v", err)
+	}
+}
+
+// The collaboration service retries a moved checkpoint (it reloads and
+// merges), ends an old epoch's room and gives up at once on invalid input,
+// so the three answers stay distinct.
+func TestSourceCheckpointConflictKinds(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "source_conflict_kinds")
+	_, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+	doc := sourceTestSeed(t, s, owner, file.ID)
+	moved := sourceTestSave(doc, owner, "state")
+	moved.ExpectedCheckpoint++
+	if _, err := s.SaveSourceCheckpoint(ctx, file.ID, moved); !errors.Is(err, ErrCheckpointMoved) {
+		t.Fatalf("moved checkpoint: %v", err)
+	}
+	ended := sourceTestSave(doc, owner, "state")
+	ended.Epoch++
+	if _, err := s.SaveSourceCheckpoint(ctx, file.ID, ended); !errors.Is(err, ErrSourceEpochChanged) {
+		t.Fatalf("ended epoch: %v", err)
+	}
+	invalid := sourceTestSave(doc, owner, "state")
+	invalid.PendingEffects = json.RawMessage(`{}`)
+	if _, err := s.SaveSourceCheckpoint(ctx, file.ID, invalid); !errors.Is(err, ErrInvalidCheckpoint) || errors.Is(err, ErrConflict) {
+		t.Fatalf("invalid input: %v", err)
 	}
 }

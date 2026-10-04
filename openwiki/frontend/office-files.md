@@ -797,7 +797,11 @@ resyncing forever. A save that still finds pending content is reported once
 per room load: an Office room fails it as transient (the clients hear a
 recoverable `source-checkpoint-failed` for its ids, the room counts as unsaved
 for handoff, pause and eviction, and the next change saves it), and a text
-room saves its whole state with it, as before.
+room saves its whole state with it, as before. Pending content is never
+refused by itself, but it counts toward the slow-save cap like any failed
+save: no successful save for `SLOW_SAVE_LIMIT_MS` (5 minutes) sends the room
+to recovery whatever the cause (see
+[error handling](error-handling.md#collaborative-source-failures)).
 
 DOCX and PPTX measure and paint with the fork's bundled metric-compatible
 fonts (`@betteroffice/fonts`: Carlito for Calibri, Caladea for Cambria,
@@ -1169,10 +1173,11 @@ WebAssembly trap or a timeout fails that call and replaces the worker, while
 engine refusals such as `stale_target` are ordinary results. wasm-bindgen's
 broken-object errors (for example "attempted to take ownership of Rust value
 while it was borrowed") count as traps, because the engine's cleanup throws
-them in place of the trap. A save that fails
-inside the engine is not queued for the failed-store retry: the room is
-discarded and reopens at the last good save, while clients with unsaved edits
-enter recovery with them (see
+them in place of the trap. A save the engine refuses (or traps on) is not
+retried: the room is discarded and reopens at the last good save, while
+clients with unsaved edits enter recovery with them. An engine timeout or a
+lost worker is a slow failure, retried with backoff while the room stays
+editable, until five minutes pass without a successful save (see
 [error handling](error-handling.md#collaborative-source-failures)).
 
 ## Maintenance window

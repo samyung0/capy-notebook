@@ -411,7 +411,9 @@ Saved. Receipts stay out of the Y.Doc deliberately: a marker written into the
 document would be an edit, so acknowledging it would dirty the room and force a
 second store and projection for every save. Failed stores are retried per
 room with backoff (5 s, then doubling to 60 s,
-`collaboration/src/failedStoreRetry.ts`). A room that is still loaded retries
+`collaboration/src/failedStoreRetry.ts`). A source room's live saves wait out
+the same backoff, so a state that keeps timing out in the shared Office worker
+is tried once per step instead of on every debounce. A room that is still loaded retries
 through its own store path (Hocuspocus's debouncer and save mutex, and a
 source room's save queue), so a retry never races the live save, which holds
 everything the failed snapshot did and answers its pending receipts. Only an

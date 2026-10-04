@@ -36,9 +36,9 @@ test('one click fails a real source save and retry preserves the mounted editor'
   expect(current).toBeTruthy();
   const input = page.getByRole('textbox', { exact: true, name: current! });
   await expect(input).toHaveValue(new RegExp(marker));
-  // A failed save toasts and marks the header; the editor keeps its edits.
+  // A slow save failure toasts "Saving is delayed" and marks the header; the editor keeps its edits.
   await expect(page.locator('[data-sonner-toast]')).toContainText(
-    'Failed to save'
+    'Saving is delayed'
   );
   await expect(page.getByTestId('editor-save-state')).toHaveText(
     'Not saved. Retrying…'
@@ -127,7 +127,7 @@ for (const format of ['docx', 'xlsx', 'pptx']) {
     const frame = page.locator('iframe[src*="office-runtime"]');
     const mounted = await frame.elementHandle();
     await expect(page.locator('[data-sonner-toast]')).toContainText(
-      'Failed to save'
+      'Saving is delayed'
     );
     await expect(page.getByTestId('editor-save-state')).toHaveText(
       'Not saved. Retrying…'

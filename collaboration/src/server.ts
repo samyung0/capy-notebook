@@ -98,12 +98,13 @@ import {
   SourcePublishingError,
 } from './sourceHandoff.js';
 import {
-  engineFailures,
-  engineRefused,
   handlePermanentStoreFailure,
   lostSourceAccess,
   pendingSourceSave,
+  SlowSaveClock,
+  SourceBackoffError,
   SourcePendingError,
+  sourceSaveRefused,
 } from './storeFailure.js';
 import { armTokenExpiry, clearTokenExpiry } from './tokenExpiry.js';
 import {
@@ -147,6 +148,8 @@ const failedStores = new Map<string, FailedStoreSnapshot>();
 // save succeeds. Rooms that reported pending content, once per load.
 const pendingSources = new Set<string>();
 const pendingReported = new WeakSet<Y.Doc>();
+// When each source room's saves started failing (cleared by a success).
+const slowSaves = new SlowSaveClock();
 const activeStores = new Map<string, Set<Promise<void>>>();
 const storeFailureGenerations = new Map<string, number>();
 const roomEvictions = new RoomEvictionState();
@@ -343,6 +346,7 @@ function evictLocalRoom(
         );
       failedStores.delete(room);
       pendingSources.delete(room);
+      slowSaves.clear(room);
       unloaded = true;
     } finally {
       roomEvictions.end(room, mode);
@@ -1106,6 +1110,9 @@ async function storeSource(document: Document) {
       pendingSources.add(room);
       throw new SourcePendingError();
     }
+    // A room in slow-failure backoff calls the engine again only when its
+    // retry is due (the retry runner then saves through this same path).
+    if (failedStoreRetries.waiting(room)) throw new SourceBackoffError();
     const saved = await sources.store(
       room,
       snapshot,
@@ -1113,6 +1120,7 @@ async function storeSource(document: Document) {
     );
     failedStores.delete(room);
     pendingSources.delete(room);
+    slowSaves.clear(room);
     clearDocumentContributors(document, saved.contributors);
     sourceReceipt(document, claimed, saved.checkpoint);
   } catch (error) {
@@ -1122,18 +1130,17 @@ async function storeSource(document: Document) {
       (storeFailureGenerations.get(room) ?? 0) + 1
     );
     // A storage or frozen refusal drops every writer to view (their unsaved
-    // edits are discarded); a state the engine refused (engineRefused) or the
-    // gateway refused for good cannot be retried, so the room is discarded
-    // and its clients reload the last saved version. Anything else is retried
-    // here while the clients keep editing.
+    // edits are discarded). A failure that will always fail
+    // (sourceSaveRefused), or failed saves of any cause (pending content
+    // included) without a success for SLOW_SAVE_LIMIT_MS, discard the room:
+    // it reopens at the last good save and the clients keep their edits in
+    // recovery. Anything else is retried with backoff while the clients keep
+    // editing.
     const readOnly = readOnlyRefusal(error);
     const previous = failedStores.get(room);
-    const failures = engineFailures(error, previous?.engineFailures);
-    const refused = engineRefused(error, failures);
-    const recoverable =
-      !(readOnly || refused) &&
-      (!(error instanceof SourceRequestError) ||
-        ![401, 403, 404, 409, 413, 422].includes(error.status));
+    const refused =
+      !readOnly && (sourceSaveRefused(error) || slowSaves.failed(room));
+    const recoverable = !(readOnly || refused);
     document.broadcastStateless(
       JSON.stringify(
         readOnly
@@ -1150,6 +1157,7 @@ async function storeSource(document: Document) {
     if (refused) {
       reportFailedStore(undefined, error, room);
       failedStores.delete(room);
+      slowSaves.clear(room);
       rejectAuthorizationRoom(room);
     } else if (error instanceof SourcePendingError) {
       // Reported above; the live room, not this snapshot, is what saves
@@ -1158,7 +1166,6 @@ async function storeSource(document: Document) {
       const eventId = reportFailedStore(previous, error, room);
       failedStores.set(room, {
         checkpointIds: claimed,
-        engineFailures: failures,
         eventId,
         state: rawState,
       });
@@ -1686,15 +1693,11 @@ const failedStoreRetries = new FailedStoreRetryRunner(
         // As in storeSource: a refusal for good tells the clients (read-only,
         // or reset to the last saved version) and discards the room.
         const readOnly = readOnlyRefusal(error);
-        const failures = engineFailures(error, failed.engineFailures);
-        const refused = engineRefused(error, failures);
-        if (
-          readOnly ||
-          refused ||
-          (error instanceof SourceRequestError &&
-            [401, 403, 404, 409, 413, 422].includes(error.status))
-        ) {
+        const refused =
+          !readOnly && (sourceSaveRefused(error) || slowSaves.failed(room));
+        if (readOnly || refused) {
           if (refused) reportFailedStore(failed, error, room);
+          slowSaves.clear(room);
           server.hocuspocus.documents.get(room)?.broadcastStateless(
             JSON.stringify(
               readOnly
@@ -1710,10 +1713,7 @@ const failedStoreRetries = new FailedStoreRetryRunner(
           );
           clearIfCurrent();
           rejectAuthorizationRoom(room);
-        } else {
-          failed.engineFailures = failures;
-          reportFailedStore(failed, error, room);
-        }
+        } else reportFailedStore(failed, error, room);
         return;
       }
       if (

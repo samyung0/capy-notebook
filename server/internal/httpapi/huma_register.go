@@ -154,8 +154,22 @@ func mapHTTPError(err error) error {
 	if errors.Is(err, store.ErrProcessingStarted) {
 		return conflictError("processing_started", "processing has already started")
 	}
+	if errors.Is(err, store.ErrCheckpointMoved) {
+		return conflictError("checkpoint_moved", "the source checkpoint moved")
+	}
+	if errors.Is(err, store.ErrSourceEpochChanged) {
+		return conflictError("epoch_changed", "the source editing epoch changed")
+	}
 	if errors.Is(err, store.ErrConflict) {
 		return conflictError("revision_conflict", "someone else changed this first")
+	}
+	if errors.Is(err, store.ErrInvalidCheckpoint) {
+		return &huma.ErrorModel{
+			Status: http.StatusUnprocessableEntity,
+			Title:  http.StatusText(http.StatusUnprocessableEntity),
+			Detail: store.ErrInvalidCheckpoint.Error(),
+			Errors: []*huma.ErrorDetail{{Message: "invalid_checkpoint"}},
+		}
 	}
 	if errors.Is(err, store.ErrNothingToProcess) {
 		return conflictError("nothing_to_process", "no saved changes to process")

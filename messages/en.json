@@ -932,6 +932,8 @@
   "editor_save_failed": "Failed to save",
   "editor_save_failed_retrying": "You can keep working while we retry.",
   "editor_save_failed_reload": "Please reload the page.",
+  "editor_save_delayed": "Saving is delayed",
+  "editor_save_delayed_description": "You can keep working. Your changes are kept and will save when saving recovers.",
   "editor_save_failed_undone": "Your latest changes couldn't be saved and were undone.",
   "editor_access_lost": "You no longer have access",
   "editor_access_lost_body": "Ask the owner to share it with you again.",

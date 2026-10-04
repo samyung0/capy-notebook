@@ -932,6 +932,8 @@
   "editor_save_failed": "保存失败",
   "editor_save_failed_retrying": "你可以继续编辑，我们会自动重试。",
   "editor_save_failed_reload": "请重新加载页面。",
+  "editor_save_delayed": "保存已延迟",
+  "editor_save_delayed_description": "你可以继续编辑。你的更改已保留，保存恢复后会自动保存。",
   "editor_save_failed_undone": "你最近的更改无法保存，已被撤销。",
   "editor_access_lost": "你已无权访问",
   "editor_access_lost_body": "请让所有者重新与你共享。",

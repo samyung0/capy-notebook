@@ -349,10 +349,20 @@ unsaved, error and recovery states, shown in the header like the note editor's
 Saved requires an explicit durable checkpoint receipt. A failed save the
 server retries keeps the mounted editor and its pending receipts, shows Not
 saved and raises the failed-save toast; the retry's receipt brings Saved back.
-An Office engine timeout or lost worker is retried like a gateway 5xx, up to
-three in a row (`ENGINE_ATTEMPTS`, `collaboration/src/storeFailure.ts`). A save
-refused for good (an engine refusal or trap, the third engine timeout in a
-row, a 409/413/422 from the gateway, the byte limit) discards the room, which reopens at the last good save. Each
+A source save that fails slowly (an Office engine timeout or a dead worker, a
+checkpoint that moved again after the reload and merge, a network error or a
+5xx) keeps the room editable: the server retries it with per-room backoff
+(5 s, doubling to 60 s; the room's live saves wait out the same backoff), the
+editor shows "Saving is delayed" and its drafts stay. After
+`SLOW_SAVE_LIMIT_MS` (5 minutes) of failed saves without one success, whatever
+the cause (a slow failure, a save held back by the backoff, or pending content
+waiting for a client's sync, which is never refused by itself), the room takes
+the refused-save path below. A save refused for good
+(an engine refusal or trap, a rebuild check, the byte limit or 413, invalid
+input (422 `invalid_checkpoint`), an editing epoch that ended
+(`epoch_changed`, whether the gateway refuses the checkpoint or the session a
+retry reloads names a newer epoch; it is never retried and never counts as lost
+access)) discards the room at once, and it reopens at the last good save. Each
 editor with unsaved edits keeps its drafts, marked refused, and enters
 recovery: the editor is inert, Download draft exports the edits applied to the
 base, and Discard this draft returns to editing the last good save. Refused

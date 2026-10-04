@@ -76,6 +76,14 @@ var (
 	// ErrProcessingStarted means a file's processing left the queue, so it
 	// can no longer be cancelled.
 	ErrProcessingStarted = fmt.Errorf("%w: processing has already started", ErrConflict)
+	// A source checkpoint whose expected checkpoint or base moved on (another
+	// save or a publication landed): the service reloads, merges and retries.
+	ErrCheckpointMoved = fmt.Errorf("%w: the source checkpoint moved", ErrConflict)
+	// A source checkpoint for an editing epoch that ended (a handoff).
+	ErrSourceEpochChanged = fmt.Errorf("%w: the source editing epoch changed", ErrConflict)
+	// A source checkpoint request that can never be stored (malformed state,
+	// effects or seed binding); retrying it would fail the same way.
+	ErrInvalidCheckpoint = errors.New("invalid source checkpoint")
 )
 
 // ErrNothingToProcess means a file has no saved source edits to process.

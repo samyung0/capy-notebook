@@ -695,12 +695,16 @@ export class SourceDocumentStore {
   ) {
     const { fileId, epoch } = sourceRoom(room);
     const session = await this.session(fileId, actorId);
-    if (
-      session.epoch !== epoch ||
-      (access === 'write' && session.access !== 'write')
-    ) {
-      throw new SourceRequestError(403, 'Source access or epoch changed');
-    }
+    // An ended epoch (a handoff) is not lost access: its saves go to
+    // recovery with the drafts kept, like the gateway's epoch_changed.
+    if (session.epoch !== epoch)
+      throw new SourceRequestError(
+        409,
+        'Source epoch changed',
+        'epoch_changed'
+      );
+    if (access === 'write' && session.access !== 'write')
+      throw new SourceRequestError(403, 'Source access changed');
     return session;
   }
 
@@ -1026,7 +1030,11 @@ export class SourceDocumentStore {
         [fileId, epoch]
       );
       if (!result.rowCount)
-        throw new SourceRequestError(409, 'Source epoch changed');
+        throw new SourceRequestError(
+          409,
+          'Source epoch changed',
+          'epoch_changed'
+        );
       return { checkpoint: Number(result.rows[0].checkpoint), contributors };
     }
     const actors = [...new Set(contributors.map((c) => c.userId))];
@@ -1078,9 +1086,12 @@ export class SourceDocumentStore {
           return { checkpoint: saved.checkpoint, contributors };
         } catch (error) {
           this.durable.delete(room);
+          // A moved checkpoint reloads and merges again; an ended epoch never
+          // will.
           if (
             !(error instanceof SourceRequestError) ||
             error.status !== 409 ||
+            error.code === 'epoch_changed' ||
             attempt === 3
           )
             throw error;
@@ -1260,9 +1271,12 @@ export class SourceDocumentStore {
           return { receipt: saved.operation, room, state: update };
         } catch (error) {
           this.durable.delete(room);
+          // A moved checkpoint reloads and merges again; an ended epoch never
+          // will.
           if (
             !(error instanceof SourceRequestError) ||
             error.status !== 409 ||
+            error.code === 'epoch_changed' ||
             attempt === 3
           )
             throw error;

@@ -98,4 +98,29 @@ describe('failed-store retries', () => {
     await runner.run();
     expect(attempts.length).toBe(before + 1);
   });
+
+  it('holds live saves back until a failing room is due again', async () => {
+    const room = 'source:f:epoch:1';
+    const queued = new Map<string, FailedStoreSnapshot>([
+      [room, { checkpointIds: [], state: new Uint8Array([1]) }],
+    ]);
+    let now = 0;
+    const runner = new FailedStoreRetryRunner(
+      queued,
+      async () => {},
+      () => now
+    );
+    // Not yet retried: a live save may run.
+    expect(runner.waiting(room)).toBe(false);
+    await runner.run();
+    // The retry failed: live saves wait for the 5 s step.
+    now = 4000;
+    expect(runner.waiting(room)).toBe(true);
+    now = 5000;
+    expect(runner.waiting(room)).toBe(false);
+    // A save that succeeded clears the wait.
+    queued.clear();
+    now = 1000;
+    expect(runner.waiting(room)).toBe(false);
+  });
 });

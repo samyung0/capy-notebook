@@ -659,13 +659,14 @@ export function useSourceSession(
               else refuse();
               return;
             }
-            // The server retries this save; its receipt answers the same
-            // checkpoint ids, so they stay pending.
+            // A slow failure: the server retries this save with backoff and
+            // its receipt answers the same checkpoint ids, so they stay
+            // pending and the drafts stay.
             setStatus('unsaved');
-            rejectWaiters(new SourceSessionError(m.editor_save_failed()));
+            rejectWaiters(new SourceSessionError(m.editor_save_delayed()));
             if (!(lost || sourceChangesCovered(active))) {
               lost = true;
-              saveFailed.current('retrying');
+              saveFailed.current('delayed');
             }
             return;
           }

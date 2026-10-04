@@ -38,23 +38,65 @@ export function handlePermanentStoreFailure(
   return false;
 }
 
-// An Office engine timeout or lost worker is retried like a gateway 5xx, up
-// to this many in a row; after that, as after a refusal or trap, the state is
-// taken as one the engine cannot store, and its room resets.
-export const ENGINE_ATTEMPTS = 3;
-export function engineFailures(error: unknown, previous: number | undefined) {
-  return error instanceof OfficeEngineError && error.transient
-    ? (previous ?? 0) + 1
-    : 0;
-}
-export function engineRefused(error: unknown, failures: number) {
+/**
+ * A source save failure that will always fail, so its room resets and the
+ * browsers go to recovery at once: the engine refusing the state (a trap, a
+ * rebuild check), the byte limit (413), invalid input (422), an editing epoch
+ * that ended, or lost access or a missing file (401/403/404). Anything slow instead (an engine timeout or
+ * a dead worker, a checkpoint that moved again after the reload and merge, a
+ * network error or a 5xx) keeps the room editable and is retried with backoff.
+ */
+export function sourceSaveRefused(error: unknown) {
   return (
-    error instanceof OfficeEngineError &&
-    (!error.transient || failures >= ENGINE_ATTEMPTS)
+    (error instanceof OfficeEngineError && !error.transient) ||
+    (error instanceof SourceRequestError &&
+      ([401, 403, 404, 413, 422].includes(error.status) ||
+        // The room's editing epoch ended (a handoff): its saves never land.
+        error.code === 'epoch_changed'))
   );
 }
 
-/** A source room held back by pending content: transient, never a refusal. */
+/** How long a room's saves may keep failing, without one success, before it
+ * goes to the refused-save recovery path. */
+export const SLOW_SAVE_LIMIT_MS = 5 * 60_000;
+
+/**
+ * When each source room's saves started failing without a success. Every
+ * failed save counts, whatever the cause (a slow failure, pending content, a
+ * save held back by the backoff); a successful save clears the room.
+ */
+export class SlowSaveClock {
+  private readonly since = new Map<string, number>();
+  private readonly now: () => number;
+
+  constructor(now: () => number = Date.now) {
+    this.now = now;
+  }
+
+  /** Records a failed save: true once the room has gone SLOW_SAVE_LIMIT_MS
+   * without one success. */
+  failed(room: string) {
+    const since = this.since.get(room) ?? this.now();
+    this.since.set(room, since);
+    return this.now() - since >= SLOW_SAVE_LIMIT_MS;
+  }
+
+  clear(room: string) {
+    this.since.delete(room);
+  }
+}
+
+/** A source save skipped while its room waits out a failed save's backoff. */
+export class SourceBackoffError extends Error {
+  constructor() {
+    super('source room is waiting out a failed save; saved on its next retry');
+  }
+}
+
+/** A source room held back by pending content. Never refused by itself
+ * (sourceSaveRefused is false), but it is a failed save like any other: no
+ * successful save for SLOW_SAVE_LIMIT_MS sends the room to recovery whatever
+ * the cause (SlowSaveClock). */
 export class SourcePendingError extends Error {
   constructor() {
     super('source room holds pending updates; saved once they integrate');
