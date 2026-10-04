@@ -183,3 +183,30 @@ export async function evictMaterialRoomEpoch(options: {
     room = current;
   }
 }
+
+/**
+ * Unloads a room. Hocuspocus skips the unload while a save or a connection is
+ * still there, and one admitted before the eviction can land late, so until
+ * `deadline` this closes, flushes and unloads again; past it, a room still
+ * loaded throws.
+ */
+export async function unloadRoom<T>(options: {
+  close: () => void;
+  deadline: number;
+  flush: () => Promise<unknown>;
+  loaded: () => T | undefined;
+  unload: (document: T) => Promise<unknown>;
+  pauseMs?: number;
+}) {
+  for (;;) {
+    const loaded = options.loaded();
+    if (!loaded) return;
+    await options.unload(loaded);
+    if (!options.loaded()) return;
+    if (Date.now() >= options.deadline)
+      throw new Error('collaboration document remained loaded after eviction');
+    options.close();
+    await options.flush();
+    await new Promise((resolve) => setTimeout(resolve, options.pauseMs ?? 250));
+  }
+}

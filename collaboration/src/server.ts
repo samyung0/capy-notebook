@@ -34,6 +34,7 @@ import {
   RoomEvictionState,
   shouldCloseUserConnections,
   shouldPreserveMaterialConnections,
+  unloadRoom,
 } from './eviction.js';
 import {
   FailedStoreRetryRunner,
@@ -312,17 +313,33 @@ function evictLocalRoom(
       }
       if (document) {
         await waitForConnections(room);
-        await server.hocuspocus.unloadDocument(document);
-        const remaining = server.hocuspocus.documents.get(room);
-        if (remaining) {
-          await server.hocuspocus.unloadDocument(remaining);
-        }
-        if (server.hocuspocus.documents.get(room)) {
-          throw new Error(
-            'collaboration document remained loaded after eviction'
-          );
-        }
+        await unloadRoom({
+          close: () => server.hocuspocus.closeConnections(room),
+          deadline: Date.now() + UNLOAD_RETRY_MS,
+          flush: () =>
+            flushRoomStores(
+              server.hocuspocus,
+              room,
+              waitForStores,
+              EVICTION_TIMEOUT_MS
+            ),
+          loaded: () => server.hocuspocus.documents.get(room),
+          unload: (loaded) => server.hocuspocus.unloadDocument(loaded),
+        });
       }
+      // A save the unload loop flushed may have failed: a drain then keeps
+      // the failed snapshot for its retry instead of clearing it below.
+      if (
+        mode === 'drain' &&
+        !drainIsDurable(
+          initialFailureGeneration,
+          storeFailureGenerations.get(room) ?? 0,
+          failedStores.has(room) || pendingSources.has(room)
+        )
+      )
+        throw new Error(
+          'collaboration document could not be persisted before eviction'
+        );
       failedStores.delete(room);
       pendingSources.delete(room);
       unloaded = true;
@@ -331,9 +348,27 @@ function evictLocalRoom(
       if (unloaded) {
         roomEvictions.accept(room);
         storeFailureGenerations.delete(room);
-      }
+      } else if (mode === 'discard') retryDiscard(room);
     }
   });
+}
+
+// A rejected room refuses every message and login until a discard unloads
+// it, so a discard that failed is always retried: the room never stays
+// rejected with nothing pending to clear it.
+const UNLOAD_RETRY_MS = 30_000;
+const DISCARD_RETRY_MS = 5000;
+const discardRetries = new Set<string>();
+function retryDiscard(room: string) {
+  if (discardRetries.has(room)) return;
+  discardRetries.add(room);
+  setTimeout(() => {
+    discardRetries.delete(room);
+    if (!roomEvictions.isRejected(room)) return;
+    void evictLocalRoom(room).catch((error) => {
+      captureError(error, { room, stage: 'discard_retry' });
+    });
+  }, DISCARD_RETRY_MS).unref();
 }
 
 function persistLocalRoom(room: string, operationId?: string) {
@@ -653,6 +688,8 @@ const server = new Server<CollaborationContext>({
             context.access
           )
         );
+        // A reset may have begun while the check waited on the gateway.
+        assertRoomAvailable(document.name);
         const format = sourceFormats.get(document);
         let refusal: string | null = null;
         if (
@@ -695,6 +732,7 @@ const server = new Server<CollaborationContext>({
       await recheckWriterAccess(connection, document.name, () =>
         store.assertConnectionAccess(document.name, context.userId, 'write')
       );
+      assertRoomAvailable(document.name);
       store.validateUpdate(document.name, document, yjsUpdate);
     } catch (error) {
       // Throwing closes only this connection. Tell it why first so it can drop
@@ -762,6 +800,8 @@ const server = new Server<CollaborationContext>({
         : store
       ).assertConnectionAccess(documentName, claims.sub, claims.access);
       connectionConfig.readOnly = readOnly;
+      // A reset that began during the checks above admits no one.
+      assertRoomAvailable(documentName);
       return claimsContext(claims);
     } catch (error) {
       endSourceJoin(socketId, documentName);
@@ -812,6 +852,7 @@ const server = new Server<CollaborationContext>({
       );
       sourceFormats.set(document, session.format);
     } else await store.load(documentName, document);
+    assertRoomAvailable(documentName);
   },
   async onStateless({ connection, document, payload }) {
     const context = connection.context as CollaborationContext | undefined;
@@ -987,6 +1028,7 @@ const server = new Server<CollaborationContext>({
       ? sources
       : store
     ).assertConnectionAccess(documentName, claims.sub, claims.access);
+    assertRoomAvailable(documentName);
     connection.context = claimsContext(claims);
     connection.readOnly = claims.access === 'read';
     // It may have closed during the checks above; its timers are gone then.

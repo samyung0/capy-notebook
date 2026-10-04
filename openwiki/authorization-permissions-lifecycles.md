@@ -405,7 +405,13 @@ and [material editor checks](../server/internal/store/share.go#L209).
   delivery resolves the current Yjs room epoch and rechecks it after eviction,
   so an event enqueued beside compaction cannot acknowledge only an obsolete
   room. A failed discard keeps the room blocked until a later retry verifies
-  that unload succeeded.
+  that unload succeeded. Within one eviction an unload that Hocuspocus skips
+  (a save or a connection admitted before the reset landed late) closes,
+  flushes and unloads again for up to 30 s, and a discard that still fails is
+  retried every 5 s, so a blocked room always has a retry pending. Message
+  handling, authentication, token sync and room loads recheck that the room is
+  available after each await, so nothing admitted before a reset lands after
+  it.
 - Comment creation, replies, edits, and deletion also lock the
   workspace and re-evaluate actor lifecycle and effective role in the database
   transaction that writes the row. Comments count as editing: creating,

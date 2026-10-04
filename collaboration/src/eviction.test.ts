@@ -9,6 +9,7 @@ import {
   RoomEvictionState,
   shouldCloseUserConnections,
   shouldPreserveMaterialConnections,
+  unloadRoom,
 } from './eviction.js';
 
 function deferred() {
@@ -245,5 +246,37 @@ describe('material room epoch eviction', () => {
       'material:mat_1:schema:2',
       'material:mat_1:schema:3',
     ]);
+  });
+});
+
+describe('unloadRoom', () => {
+  it('closes, flushes and unloads again until the room is gone', async () => {
+    let attempts = 0;
+    const calls: string[] = [];
+    await unloadRoom({
+      close: () => calls.push('close'),
+      deadline: Date.now() + 5000,
+      flush: async () => calls.push('flush'),
+      loaded: () => (attempts < 3 ? 'room' : undefined),
+      pauseMs: 1,
+      unload: async () => {
+        attempts += 1;
+      },
+    });
+    expect(attempts).toBe(3);
+    expect(calls).toEqual(['close', 'flush', 'close', 'flush']);
+  });
+
+  it('throws once the deadline passes with the room still loaded', async () => {
+    await expect(
+      unloadRoom({
+        close: () => {},
+        deadline: Date.now() + 20,
+        flush: async () => {},
+        loaded: () => 'room',
+        pauseMs: 5,
+        unload: async () => {},
+      })
+    ).rejects.toThrow('collaboration document remained loaded after eviction');
   });
 });
