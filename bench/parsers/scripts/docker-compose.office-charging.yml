@@ -1,0 +1,20 @@
+# Layered on deploy/docker-compose.e2e.yml and
+# bench/collaboration/scripts/docker-compose.stress.yml (its fake S3) by
+# office_storage_charging.config.ts. Prebuilt images only: the server image
+# names the release being measured (OFFICE_CHARGING_SERVER_IMAGE), so a
+# before/after pair runs the same collaboration service and BetterOffice pin.
+# The fake S3's plain HTTP port is published so the run can read object sizes
+# and the browser can fetch sources; the pipeline secret lets the run stand in
+# for the ingest worker's publication of a text refresh (no parser, no index
+# provider, nothing leaves this machine).
+services:
+  s3:
+    image: ${OFFICE_CHARGING_COLLABORATION_IMAGE:?set by the config}
+    ports:
+      - "127.0.0.1:${OFFICE_CHARGING_S3_PORT:?set by the config}:9000"
+  collaboration:
+    image: ${OFFICE_CHARGING_COLLABORATION_IMAGE:?set by the config}
+  server:
+    image: ${OFFICE_CHARGING_SERVER_IMAGE:?set by the config}
+    environment:
+      PIPELINE_SECRET: ${OFFICE_CHARGING_PIPELINE_SECRET:?set by the config}

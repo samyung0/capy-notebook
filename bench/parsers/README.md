@@ -109,6 +109,17 @@ then writes exact JSON and numeric Markdown tables. Add the report's interpretat
 after generation. Local ZIP bytes and calculated overlap remain separate from
 persistent payloads.
 
+The [October 5 charging run](reports/2026-10-05-office-storage-charging.md)
+measures what the owner pays through edit, deferred publication, rebuild and
+the blob reaper on the local e2e stack, with the collaboration stress test's
+fake S3: `office_storage_charging.config.ts` (see its header for the image and
+output variables) runs `office_storage_charging.spec.ts`, which edits
+store-only Office fixtures in the browser and stands in for the ingest worker
+on a Markdown file's text publications. Build the server image of each release
+to compare (`git archive <sha>:server | docker build -t <tag> -`) and one
+collaboration image, then run the config once per server image. Call
+`node_modules/.bin/playwright` directly in a worktree.
+
 The August 28 accuracy harness belonged to the previous parser stack. The
 September 8 OpenDataLoader comparison instead freezes source PDFs and evaluates
 native parser outputs plus Capy's actual chunker and figure selector.
