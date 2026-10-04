@@ -7,7 +7,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
-	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 // Conversation CRUD is plain JSON, so it lives on huma (and in the OpenAPI spec
@@ -52,35 +51,7 @@ func (a *api) listConversations(ctx context.Context, in *wsConversationsInput) (
 }
 
 func (a *api) createConversation(ctx context.Context, in *createConversationInput) (*conversationOutput, error) {
-	// A curate thread exists to write materials from the library; without edit
-	// access its turns would have no library tools, so refuse it at creation.
-	if in.Body.Curate {
-		role, err := a.s.WorkspaceEffectiveRole(ctx, userID(ctx), in.ID)
-		if err != nil {
-			return nil, hErr(err)
-		}
-		if !store.RoleCanEdit(role) {
-			return nil, &huma.ErrorModel{
-				Status: http.StatusBadRequest,
-				Title:  http.StatusText(http.StatusBadRequest),
-				Detail: curateRequiresEditorMessage,
-				Errors: []*huma.ErrorDetail{{Message: curateRequiresEditorCode}},
-			}
-		}
-		// Curating writes materials, which a frozen requester or owner cannot,
-		// nor an owner at its storage limit.
-		ownerID, err := a.s.WorkspaceOwnerID(ctx, in.ID)
-		if err != nil {
-			return nil, hErr(err)
-		}
-		if err := a.editErr(ctx, ownerID); err != nil {
-			return nil, hErr(err)
-		}
-		if err := a.s.StorageFullErr(ctx, ownerID); err != nil {
-			return nil, hErr(err)
-		}
-	}
-	res, err := a.s.CreateConversation(ctx, userID(ctx), in.ID, string(in.Body.Title), in.Body.Curate)
+	res, err := a.s.CreateConversation(ctx, userID(ctx), in.ID, string(in.Body.Title))
 	if err != nil {
 		return nil, hErr(err)
 	}

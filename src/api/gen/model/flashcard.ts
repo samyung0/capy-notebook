@@ -4,7 +4,6 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { SrsState } from './srsState.ts';
 
 export interface Flashcard {
   /** A URL to the JSON Schema for this object. */
@@ -12,8 +11,6 @@ export interface Flashcard {
   back: string;
   front: string;
   id: string;
-  known: boolean;
   materialId: string;
   revision: number;
-  srs: SrsState;
 }

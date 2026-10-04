@@ -3,7 +3,6 @@ package store
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,7 +18,6 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/models"
-	"github.com/samyung0/capy-notebook/server/internal/questions"
 )
 
 /* ------------------------------------------------------------------ patches */
@@ -58,11 +56,6 @@ type CardContentPatch struct {
 	Front            *string `json:"front"`
 	Back             *string `json:"back"`
 	UpdatedBy        string  `json:"-"`
-}
-type CardStudyStatePatch struct {
-	Known     *bool            `json:"known"`
-	Srs       *json.RawMessage `json:"srs"`
-	UpdatedBy string           `json:"-"`
 }
 type TaskPatch struct {
 	Title *string `json:"title"`
@@ -759,6 +752,13 @@ func (s *Store) deleteWorkspaceWithResultTx(
 
 const chFiles = `COALESCE((SELECT array_agg(f.id ORDER BY f.position, f.added_at DESC) FROM files f WHERE f.chapter_id=c.id AND f.trashed_at IS NULL), '{}')`
 
+// ChapterInWorkspace reports whether the chapter belongs to the workspace.
+func (s *Store) ChapterInWorkspace(ctx context.Context, chapterID, wsID string) (bool, error) {
+	var ok bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM chapters WHERE id=$1 AND workspace_id=$2)`, chapterID, wsID).Scan(&ok)
+	return ok, err
+}
+
 func (s *Store) ListChapters(ctx context.Context, wsID string) ([]Chapter, error) {
 	rows, err := s.pool.Query(ctx, `SELECT c.id, c.workspace_id, c.name, c.position, `+chFiles+`
 		FROM chapters c WHERE c.workspace_id=$1 ORDER BY c.position`, wsID)
@@ -1245,7 +1245,7 @@ func (s *Store) createMaterialTx(ctx context.Context, tx pgx.Tx, mt Material) (s
 		return "", err
 	}
 	if mt.Kind == "flashcards" {
-		if err := syncCardStatsTx(ctx, tx, mt.ID, cardIDs); err != nil {
+		if err := syncFlashcardCardsTx(ctx, tx, mt.ID, cardIDs); err != nil {
 			return "", err
 		}
 	}
@@ -1271,8 +1271,13 @@ type MaterialDraft struct {
 	TimeLimitMin *int
 	// Flashcards, as front/back pairs; ids are minted here.
 	Cards [][2]string
-	// Mindmap, diagram and note markdown (a mermaid block for the first two).
-	Content        string
+	// Mindmap and diagram markdown (a mermaid block), or a note's document.
+	Content string
+	// The chapter the material is filed in; nil leaves it unfiled.
+	ChapterID *string
+	// A note's embedded quizzes and flashcard sets, created with it; their
+	// references in Content already point at the draft ids.
+	Embedded       []EmbeddedDraft
 	ScopeChapters  []string
 	ScopeFileNames []string
 	Color          UserColor
@@ -1287,7 +1292,7 @@ func (d MaterialDraft) material() (Material, error) {
 	mt := Material{
 		ID: d.ID, CreatedBy: d.ActorUserID, WorkspaceID: d.WorkspaceID, WorkspaceName: d.WorkspaceName,
 		Kind: d.Kind, Title: d.Title, ScopeChapters: d.ScopeChapters, ScopeFileNames: d.ScopeFileNames,
-		Privacy: "private", Color: d.Color, Provenance: d.Provenance,
+		Privacy: "private", Color: d.Color, Provenance: d.Provenance, ChapterID: d.ChapterID,
 	}
 	switch d.Kind {
 	case "quiz":
@@ -1378,6 +1383,10 @@ func (s *Store) CreateMaterialOperation(ctx context.Context, draft MaterialDraft
 	if err != nil {
 		return AgentOperation{}, err
 	}
+	mt.ID = id
+	if err := s.createEmbeddedTx(ctx, tx, mt, draft.Embedded); err != nil {
+		return AgentOperation{}, err
+	}
 	op.Kind = "create_material"
 	op.Outcome = agenttools.OutcomeSucceeded
 	op.Error = nil
@@ -1438,6 +1447,31 @@ func (s *Store) MaterialTitleTaken(ctx context.Context, workspaceID, title strin
 			WHERE workspace_id=$1 AND lower(btrim(title)) = lower(btrim($2::text))
 		)`, workspaceID, title).Scan(&taken)
 	return taken, err
+}
+
+// disambiguateTitleTx is DisambiguateMaterialTitle inside a transaction, also
+// avoiding titles the transaction has already used (lower-cased in taken).
+func disambiguateTitleTx(ctx context.Context, q rowQueryer, workspaceID, desired string, taken map[string]bool) (string, error) {
+	desired = fieldlimits.Clamp(strings.TrimSpace(desired), fieldlimits.MaterialTitle)
+	for n := 1; n < 10000; n++ {
+		candidate := desired
+		if n > 1 {
+			suffix := fmt.Sprintf(" %d", n)
+			candidate = fieldlimits.Clamp(desired, fieldlimits.MaterialTitle-utf8.RuneCountInString(suffix)) + suffix
+		}
+		if taken[strings.ToLower(candidate)] {
+			continue
+		}
+		var used bool
+		if err := q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM materials
+			WHERE workspace_id=$1 AND lower(btrim(title)) = lower(btrim($2::text)))`, workspaceID, candidate).Scan(&used); err != nil {
+			return "", err
+		}
+		if !used {
+			return candidate, nil
+		}
+	}
+	return "", ErrTitleTaken
 }
 
 // DisambiguateMaterialTitle returns desired if it is free, otherwise
@@ -1703,7 +1737,7 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 		return Material{}, ErrNotFound
 	}
 	if p.Content != nil && contentKind == "flashcards" {
-		if err := syncCardStatsTx(ctx, tx, id, contentCardIDs); err != nil {
+		if err := syncFlashcardCardsTx(ctx, tx, id, contentCardIDs); err != nil {
 			return Material{}, err
 		}
 	}
@@ -1901,10 +1935,6 @@ func (s *Store) UpdateQuizMetadata(ctx context.Context, id string, p QuizMetadat
 	return s.GetQuiz(ctx, id)
 }
 
-// ReviewMistakesQuizID is the virtual quiz assembled from the user's mistakes
-// pool. It is not a material, so attempts against it carry a null material_id.
-const ReviewMistakesQuizID = "review_mistakes"
-
 func (s *Store) ListAttempts(ctx context.Context, userID string) ([]Attempt, error) {
 	rows, err := s.pool.Query(ctx, `SELECT id, material_id, quiz_name, workspace_name, chapters, correct, total, pct, taken_at
 		FROM attempts WHERE user_id=$1 ORDER BY taken_at DESC`, userID)
@@ -1923,18 +1953,19 @@ func (s *Store) ListAttempts(ctx context.Context, userID string) ([]Attempt, err
 	return out, rows.Err()
 }
 
+// CreateAttempt stores the attempt and, for a workspace quiz, rates each
+// question and marks the quiz done in the user's study progress.
 func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, correct, total float64, answers, questions json.RawMessage) (Attempt, error) {
-	quizName, workspaceName := "Review mistakes", ""
-	chapters := []string{}
-	var linkedMaterial *string
-	if materialID != ReviewMistakesQuizID {
-		q, err := s.GetQuiz(ctx, materialID)
-		if err != nil {
-			return Attempt{}, err
-		}
-		quizName, workspaceName, chapters = q.Name, q.WorkspaceName, q.Chapters
-		linkedMaterial = &materialID
+	q, err := s.GetQuiz(ctx, materialID)
+	if err != nil {
+		return Attempt{}, err
 	}
+	mt, err := s.GetMaterial(ctx, materialID)
+	if err != nil {
+		return Attempt{}, err
+	}
+	quizName, workspaceName, chapters := q.Name, q.WorkspaceName, q.Chapters
+	linkedMaterial := &materialID
 	pct := 0
 	if total > 0 {
 		pct = int(float64(correct) / float64(total) * 100.0)
@@ -1965,6 +1996,9 @@ func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, co
 	if err != nil {
 		return Attempt{}, err
 	}
+	if err := rateAttemptTx(ctx, tx, userID, mt, questions, a.TakenAt); err != nil {
+		return Attempt{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return Attempt{}, err
 	}
@@ -1989,12 +2023,9 @@ func (s *Store) GetAttempt(ctx context.Context, id, userID string) (AttemptDetai
 
 /* -------------------------------------------------------------- flashcards */
 
-// flashcardSetStatsExpr derives a flashcardSet's card_count / known_pct / due_count from the
-// per-card scheduling rows in card_stats (m is the aliased materials row).
+// flashcardSetStatsExpr counts a set's cards (m is the aliased materials row).
 const flashcardSetStatsExpr = `
-	(SELECT count(*) FROM card_stats cs WHERE cs.material_id=m.id),
-	COALESCE((SELECT round(100.0*count(*) FILTER (WHERE cs.known)/NULLIF(count(*),0))::int FROM card_stats cs WHERE cs.material_id=m.id), 0),
-	(SELECT count(*) FROM card_stats cs WHERE cs.material_id=m.id AND (cs.srs->>'due')::timestamptz <= now())`
+	(SELECT count(*) FROM flashcard_cards fc WHERE fc.material_id=m.id)`
 
 // flashcardSetCols is the shared column list every flashcard-set read starts
 // with; callers append their own request-scoped columns after it.
@@ -2006,7 +2037,7 @@ func scanFlashcardSetRow(row pgx.Row, extra ...any) (FlashcardSet, error) {
 	var d FlashcardSet
 	var provenance []byte
 	dest := append([]any{&d.ID, &d.Name, &d.WorkspaceID, &d.WorkspaceName, &d.Color,
-		&d.Privacy, &d.CardCount, &d.KnownPct, &d.DueCount, &provenance, &d.Revision, &d.ParentMaterialID}, extra...)
+		&d.Privacy, &d.CardCount, &provenance, &d.Revision, &d.ParentMaterialID}, extra...)
 	err := row.Scan(dest...)
 	if err == nil {
 		d.Provenance, err = decodeProvenance(provenance)
@@ -2096,30 +2127,6 @@ func (s *Store) CreateFlashcardSetWithCards(
 	return created, nil
 }
 
-// cardStat is a per-card scheduling row joined onto the authored front/back.
-type cardStat struct {
-	srs   SrsState
-	known bool
-}
-
-func (s *Store) cardStats(ctx context.Context, materialID string) (map[string]cardStat, error) {
-	rows, err := s.pool.Query(ctx, `SELECT card_id, srs, known FROM card_stats WHERE material_id=$1`, materialID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	m := map[string]cardStat{}
-	for rows.Next() {
-		var id string
-		var st cardStat
-		if err := rows.Scan(&id, &st.srs, &st.known); err != nil {
-			return nil, err
-		}
-		m[id] = st
-	}
-	return m, rows.Err()
-}
-
 func (s *Store) ListCards(ctx context.Context, flashcardSetID string) ([]Flashcard, error) {
 	mt, err := s.GetMaterial(ctx, flashcardSetID)
 	if err != nil {
@@ -2129,26 +2136,16 @@ func (s *Store) ListCards(ctx context.Context, flashcardSetID string) ([]Flashca
 	if err != nil {
 		return nil, err
 	}
-	stats, err := s.cardStats(ctx, flashcardSetID)
-	if err != nil {
-		return nil, err
-	}
 	out := make([]Flashcard, 0, len(cards))
 	for _, c := range cards {
-		st, ok := stats[c.ID]
-		if !ok {
-			st = cardStat{srs: newSrsState()}
-		}
-		out = append(out, Flashcard{ID: c.ID, MaterialID: flashcardSetID, Revision: mt.Revision, Front: c.Front, Back: c.Back, Known: st.known, Srs: st.srs})
+		out = append(out, Flashcard{ID: c.ID, MaterialID: flashcardSetID, Revision: mt.Revision, Front: c.Front, Back: c.Back})
 	}
 	return out, nil
 }
 
 func (s *Store) GetCard(ctx context.Context, id string) (Flashcard, error) {
-	var materialID string
-	var st cardStat
-	err := s.pool.QueryRow(ctx, `SELECT material_id, srs, known FROM card_stats WHERE card_id=$1`, id).Scan(&materialID, &st.srs, &st.known)
-	if isNoRows(err) {
+	materialID, err := s.CardMaterialID(ctx, id)
+	if errors.Is(err, ErrNotFound) {
 		return Flashcard{}, ErrNotFound
 	}
 	if err != nil {
@@ -2164,7 +2161,7 @@ func (s *Store) GetCard(ctx context.Context, id string) (Flashcard, error) {
 	}
 	for _, c := range cards {
 		if c.ID == id {
-			return Flashcard{ID: c.ID, MaterialID: materialID, Revision: mt.Revision, Front: c.Front, Back: c.Back, Known: st.known, Srs: st.srs}, nil
+			return Flashcard{ID: c.ID, MaterialID: materialID, Revision: mt.Revision, Front: c.Front, Back: c.Back}, nil
 		}
 	}
 	return Flashcard{}, ErrNotFound
@@ -2194,11 +2191,8 @@ func (s *Store) CreateCard(ctx context.Context, actorID, flashcardSetID, front, 
 }
 
 func (s *Store) UpdateCardContent(ctx context.Context, id string, p CardContentPatch) (Flashcard, error) {
-	var materialID string
-	if err := s.pool.QueryRow(ctx, `SELECT material_id FROM card_stats WHERE card_id=$1`, id).Scan(&materialID); err != nil {
-		if isNoRows(err) {
-			return Flashcard{}, ErrNotFound
-		}
+	materialID, err := s.CardMaterialID(ctx, id)
+	if err != nil {
 		return Flashcard{}, err
 	}
 	if p.Front != nil || p.Back != nil {
@@ -2270,56 +2264,9 @@ func (s *Store) UpdateFlashcardContent(ctx context.Context, actorID, id string, 
 	return s.ListCards(ctx, id)
 }
 
-func (s *Store) UpdateCardStudyState(ctx context.Context, id string, p CardStudyStatePatch) (Flashcard, error) {
-	var materialID string
-	if err := s.pool.QueryRow(ctx, `SELECT material_id FROM card_stats WHERE card_id=$1`, id).Scan(&materialID); err != nil {
-		if isNoRows(err) {
-			return Flashcard{}, ErrNotFound
-		}
-		return Flashcard{}, err
-	}
-	if p.Known != nil || p.Srs != nil {
-		tx, err := s.pool.Begin(ctx)
-		if err != nil {
-			return Flashcard{}, err
-		}
-		defer tx.Rollback(ctx)
-		var ownerID string
-		var workspaceID *string
-		if err := tx.QueryRow(ctx, `SELECT owner_user_id, workspace_id
-			FROM materials WHERE id=$1 AND trashed_at IS NULL`, materialID).Scan(&ownerID, &workspaceID); err != nil {
-			return Flashcard{}, err
-		}
-		if workspaceID != nil {
-			if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, *workspaceID, p.UpdatedBy); err != nil {
-				return Flashcard{}, err
-			}
-		} else if err := s.lockAccountSessionsTx(ctx, tx, ownerID, p.UpdatedBy); err != nil {
-			return Flashcard{}, err
-		} else if err := s.assertEditableTx(ctx, tx, ownerID, p.UpdatedBy); err != nil {
-			return Flashcard{}, err
-		}
-		var srs []byte
-		if p.Srs != nil {
-			srs = []byte(*p.Srs)
-		}
-		if _, err := tx.Exec(ctx, `UPDATE card_stats SET known=COALESCE($2,known), srs=COALESCE($3,srs) WHERE card_id=$1`,
-			id, p.Known, srs); err != nil {
-			return Flashcard{}, err
-		}
-		if err := tx.Commit(ctx); err != nil {
-			return Flashcard{}, err
-		}
-	}
-	return s.GetCard(ctx, id)
-}
-
 func (s *Store) DeleteCard(ctx context.Context, actorID, id string, expectedRevision int64) error {
-	var materialID string
-	if err := s.pool.QueryRow(ctx, `SELECT material_id FROM card_stats WHERE card_id=$1`, id).Scan(&materialID); err != nil {
-		if isNoRows(err) {
-			return ErrNotFound
-		}
+	materialID, err := s.CardMaterialID(ctx, id)
+	if err != nil {
 		return err
 	}
 	mt, err := s.GetMaterial(ctx, materialID)
@@ -2348,148 +2295,17 @@ func (s *Store) DeleteCard(ctx context.Context, actorID, id string, expectedRevi
 	return nil
 }
 
-// syncCardStatsTx keeps relational FSRS state aligned with authored card IDs.
-// Existing IDs retain their scheduling data; new IDs start fresh; removed IDs
-// are deleted by cascade-equivalent reconciliation.
-func syncCardStatsTx(ctx context.Context, tx pgx.Tx, materialID string, cardIDs []string) error {
+// syncFlashcardCardsTx keeps the card -> set lookup aligned with the
+// authored card ids.
+func syncFlashcardCardsTx(ctx context.Context, tx pgx.Tx, materialID string, cardIDs []string) error {
 	if _, err := tx.Exec(ctx,
-		`DELETE FROM card_stats WHERE material_id=$1 AND NOT (card_id = ANY($2))`,
+		`DELETE FROM flashcard_cards WHERE material_id=$1 AND NOT (card_id = ANY($2))`,
 		materialID, cardIDs); err != nil {
 		return err
 	}
-	for _, cardID := range cardIDs {
-		if _, err := tx.Exec(ctx, `INSERT INTO card_stats (card_id, material_id, srs, known)
-			SELECT $1,$2,$3,false
-			WHERE NOT EXISTS (
-				SELECT 1 FROM card_stats WHERE card_id=$1 AND material_id=$2
-			)`, cardID, materialID, newSrsBytes()); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// newSrsState returns a fresh FSRS "new" state as a typed struct (due now).
-func newSrsState() SrsState {
-	var st SrsState
-	_ = json.Unmarshal(newSrsBytes(), &st)
-	return st
-}
-
-// newSrsBytes returns a fresh FSRS "new" state (due now) matching SrsState in
-// src/api/types.ts. The frontend recomputes real intervals on each review.
-func newSrsBytes() []byte {
-	b, _ := json.Marshal(map[string]any{
-		"due":            time.Now().UTC().Format(time.RFC3339Nano),
-		"stability":      0,
-		"difficulty":     0,
-		"elapsed_days":   0,
-		"scheduled_days": 0,
-		"reps":           0,
-		"lapses":         0,
-		"state":          0,
-		"learning_steps": 0,
-	})
-	return b
-}
-
-/* ---------------------------------------------------------------- mistakes */
-
-// AddMistakes upserts each missed question into the user's mistakes pool so it
-// can be re-studied via the "Review mistakes" quiz.
-func (s *Store) AddMistakes(ctx context.Context, userID string, wrong []json.RawMessage) error {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
-		return err
-	}
-	for _, raw := range wrong {
-		var head struct {
-			ID string `json:"id"`
-		}
-		if json.Unmarshal(raw, &head) != nil || head.ID == "" {
-			continue
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO mistakes (user_id, question_id, question, updated_at)
-			VALUES ($1,$2,$3,now())
-			ON CONFLICT (user_id, question_id) DO UPDATE SET question=EXCLUDED.question, updated_at=now()`,
-			userID, head.ID, []byte(raw)); err != nil {
-			return err
-		}
-	}
-	return tx.Commit(ctx)
-}
-
-// ClearReviewedMistakes removes only the correctly answered questions in this batch.
-func (s *Store) ClearReviewedMistakes(ctx context.Context, userID string, attemptedIDs, keepIDs []string) error {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(ctx, `DELETE FROM mistakes
-		WHERE user_id=$1 AND question_id = ANY($2) AND NOT (question_id = ANY($3))`, userID, attemptedIDs, keepIDs); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
-}
-
-// MistakesQuiz assembles an ad-hoc quiz from the user's missed questions.
-func (s *Store) MistakesQuiz(ctx context.Context, userID string) (Quiz, error) {
-	rows, err := s.pool.Query(ctx, `SELECT question FROM mistakes WHERE user_id=$1 ORDER BY updated_at DESC, question_id LIMIT $2`, userID, fieldlimits.QuestionCount)
-	if err != nil {
-		return Quiz{}, err
-	}
-	defer rows.Close()
-	items := []json.RawMessage{}
-	kept := []map[string]any{}
-	size := 2
-	for rows.Next() {
-		var q json.RawMessage
-		if err := rows.Scan(&q); err != nil {
-			return Quiz{}, err
-		}
-		var question map[string]any
-		if err := json.Unmarshal(q, &question); err != nil {
-			return Quiz{}, err
-		}
-		// The review quiz is a quiz, so it stops at the quiz part bounds too.
-		if questions.QuizBounds(append(kept, question)) != nil {
-			break
-		}
-		kept = append(kept, question)
-		// Source materials own their part IDs. Give the virtual aggregate its own namespace.
-		if parts, ok := question["parts"].([]any); ok {
-			for _, raw := range parts {
-				if part, ok := raw.(map[string]any); ok {
-					part["id"] = fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprint(question["id"])+"\x00"+fmt.Sprint(part["id"]))))
-				}
-			}
-		}
-		q, err = json.Marshal(question)
-		if err != nil {
-			return Quiz{}, err
-		}
-		if len(items) > 0 && size+len(q)+1 > materialdoc.MaxDocumentBytes {
-			break
-		}
-		items = append(items, q)
-		size += len(q) + 1
-	}
-	if err := rows.Err(); err != nil {
-		return Quiz{}, err
-	}
-	payload, _ := json.Marshal(items)
-	return Quiz{
-		ID: "review_mistakes", Name: "Review mistakes", WorkspaceName: "",
-		Chapters: []string{}, Questions: payload, CreatedAt: time.Now().UTC(), Privacy: "private",
-	}, nil
+	_, err := tx.Exec(ctx, `INSERT INTO flashcard_cards (card_id, material_id)
+		SELECT unnest($2::text[]), $1 ON CONFLICT (card_id) DO NOTHING`, materialID, cardIDs)
+	return err
 }
 
 /* ---------------------------------------------------------------- schedule */

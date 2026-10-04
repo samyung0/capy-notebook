@@ -98,10 +98,10 @@ describe('mock user scenarios', () => {
     server.use(...getMockScenarioHandlers('flashcard-progress'));
     expect(
       (
-        await fetch(
-          'http://localhost/api/flashcards/cards/card_1/study-state',
-          { method: 'PATCH' }
-        )
+        await fetch('http://localhost/api/review/ratings', {
+          body: '{}',
+          method: 'POST',
+        })
       ).status
     ).toBe(500);
   });
@@ -121,7 +121,7 @@ describe('mock user scenarios', () => {
     server.use(...getMockScenarioHandlers('chat-pending-sources'));
     await streamChat(
       'ws_bio',
-      { curate: false, text: 'Preview' },
+      { library: false, text: 'Preview' },
       { onBlockDelta, onError, onPendingSources }
     );
     expect(onPendingSources).toHaveBeenCalledWith({
@@ -135,7 +135,7 @@ describe('mock user scenarios', () => {
     server.use(...getMockScenarioHandlers('chat-undo-refused'));
     await streamChat(
       'ws_bio',
-      { curate: false, text: 'Preview' },
+      { library: false, text: 'Preview' },
       { onError, onToolEnd }
     );
     expect(onToolEnd).toHaveBeenCalledWith(
@@ -150,28 +150,6 @@ describe('mock user scenarios', () => {
       })
     );
     expect(onError).not.toHaveBeenCalled();
-  });
-
-  it('turns each curate refusal into its own chat message', async () => {
-    for (const [scenario, message] of [
-      [
-        'chat-curate-mismatch',
-        "This chat's mode was set when it started. Start a new chat to change it.",
-      ],
-      [
-        'chat-curate-requires-editor',
-        'Curating from the library needs edit access to this workspace.',
-      ],
-    ] as const) {
-      const onError = vi.fn();
-      server.use(...getMockScenarioHandlers(scenario));
-      await streamChat(
-        'ws_bio',
-        { curate: true, text: 'Teach me' },
-        { onError }
-      );
-      expect(onError).toHaveBeenCalledWith(message, undefined);
-    }
   });
 
   it('builds the Huma coded envelope consumed by the API client', () => {
@@ -213,9 +191,7 @@ describe('mock user scenarios', () => {
       expect(
         (await write('POST', 'files/f_shared_test/annotations')).status
       ).toBe(204);
-      expect(
-        (await write('PATCH', 'flashcards/cards/c_any/study-state')).status
-      ).toBe(204);
+      expect((await write('POST', 'review/ratings')).status).toBe(204);
     } finally {
       workspaces.splice(workspaces.indexOf(shared), 1);
       files.splice(

@@ -64,7 +64,7 @@ function Markdown({
 /**
  * The answer body of an assistant bubble: an OpenUI Lang program rendered
  * through the chat library, or plain Markdown for answers stored before the
- * program format (and for curate replies, which stay prose).
+ * program format.
  */
 export function LangAnswer({
   content,

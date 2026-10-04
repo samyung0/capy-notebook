@@ -9,7 +9,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-// A curate turn keeps its progress ledger outside the message list, so the
+// A build turn keeps its todo ledger outside the message list, so the
 // retrieval service writes it back through here at turn end and reads it from
 // the next turn's stream request. The JSON is opaque to Go: the pipeline owns
 // the shape, Go owns who may write it and how large it may get.
@@ -24,11 +24,11 @@ type internalLedgerReq struct {
 
 // refuseLedgerWrite answers a refused ledger write and logs it. The pipeline
 // writes the ledger fire and forget, so without this line a dropped turn of
-// curate progress leaves no trace on the gateway at all. The conversation id is
+// build progress leaves no trace on the gateway at all. The conversation id is
 // empty when the body never parsed, which is the only refusal reached before it
 // is known; the trace id on the context still ties the line to the request.
 func refuseLedgerWrite(w http.ResponseWriter, r *http.Request, status int, code, message, convID string) {
-	obs.Log(r.Context()).Warn("curate ledger write refused",
+	obs.Log(r.Context()).Warn("ledger write refused",
 		"code", code,
 		"status", status,
 		"conversation_id", convID,
@@ -59,14 +59,8 @@ func (a *api) internalWriteConversationLedger(w http.ResponseWriter, r *http.Req
 		a.fail(w, store.ErrNotFound)
 		return
 	}
-	conv, err := a.s.GetConversation(ctx, req.UserID, convID)
-	if err != nil {
+	if _, err := a.s.GetConversation(ctx, req.UserID, convID); err != nil {
 		a.fail(w, err)
-		return
-	}
-	if !conv.Curate {
-		refuseLedgerWrite(w, r, http.StatusBadRequest, "invalid_input",
-			"only a curate conversation keeps a ledger", convID)
 		return
 	}
 	// The write is fenced inside the UPDATE: the pipeline writes from a finally

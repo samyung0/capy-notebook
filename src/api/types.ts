@@ -43,6 +43,8 @@ import type {
   PublicQuiz as GenPublicQuiz,
   Quiz as GenQuiz,
   ResourceEffectOperation as GenResourceEffectOperation,
+  ReviewItem as GenReviewItem,
+  ReviewSession as GenReviewSession,
   SearchResult as GenSearchResult,
   UpdateCommentReq as GenUpdateCommentReq,
   UpdateQuizContentReq as GenUpdateQuizContentReq,
@@ -123,14 +125,13 @@ export type {
   SetModelPrefsReq,
   SourceImportStatus,
   SourceUploadPolicy,
-  SrsState,
+  StudyPreferences,
   SubscriptionBlocker,
   Tag,
   TagInput,
   Task,
   TransferWorkspaceReq,
   UpdateCardReq,
-  UpdateCardStudyStateReq,
   UpdateChapterReq,
   UpdateEventReq,
   UpdateFileReq,
@@ -222,6 +223,23 @@ export type PublicQuiz = Omit<GenPublicQuiz, 'questions'> & {
   questions: Question[];
 };
 
+/** A card or question in a review session; `question` is the rich union. */
+export type ReviewItem = Omit<GenReviewItem, 'question'> & {
+  question?: Question;
+};
+export type ReviewSession = Omit<GenReviewSession, 'items'> & {
+  items: ReviewItem[];
+};
+export type {
+  HardItem,
+  RateReviewItemReq,
+  ReviewSet,
+  SetStudyEnabledReq,
+  SetStudyItemReq,
+  StudyItem,
+  StudySummary,
+} from './gen/model';
+
 /* ---------------- overridden request bodies ----------------
    Same wire contract with the UI-facing shape restored: the Question union,
    Plate values, and roles that cannot be granted through a normal write. */
@@ -234,12 +252,8 @@ export type UpdateQuizContentReq = Omit<
 > & {
   questions?: Question[];
 };
-export type CreateAttemptReq = Omit<
-  GenCreateAttemptReq,
-  'questions' | 'wrong'
-> & {
+export type CreateAttemptReq = Omit<GenCreateAttemptReq, 'questions'> & {
   questions?: Question[];
-  wrong?: Question[];
 };
 
 /** Both faces are optional on the wire; nothing in the UI creates a blank card. */

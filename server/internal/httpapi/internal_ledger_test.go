@@ -10,15 +10,13 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-// curateMessage is seedAssistantMessage on a curate thread, which is the only
-// kind of conversation that keeps a ledger.
-func curateMessage(t *testing.T, st *store.Store, userID, wsID string) (msgID, convID string) {
+// ledgerMessage is seedAssistantMessage with its conversation id; any
+// conversation keeps a ledger.
+func ledgerMessage(t *testing.T, st *store.Store, userID, wsID string) (msgID, convID string) {
 	t.Helper()
 	msgID = seedAssistantMessage(t, st, userID, wsID)
 	if err := st.Pool().QueryRow(t.Context(),
-		`UPDATE conversations SET curate=true
-		   WHERE id=(SELECT conversation_id FROM messages WHERE id=$1) RETURNING id`, msgID).
-		Scan(&convID); err != nil {
+		`SELECT conversation_id FROM messages WHERE id=$1`, msgID).Scan(&convID); err != nil {
 		t.Fatal(err)
 	}
 	return msgID, convID
@@ -44,7 +42,7 @@ func ledgerBody(msgID, userID string) map[string]any {
 // and hands it back on the conversation's next turn.
 func TestInternalConversationLedgerRoundTrips(t *testing.T) {
 	h, st := openInternalHTTP(t)
-	msgID, convID := curateMessage(t, st, "u_editor", "ws_e2e_private")
+	msgID, convID := ledgerMessage(t, st, "u_editor", "ws_e2e_private")
 
 	rec := doInternal(t, h, http.MethodPost, "/api/internal/conversations/ledger", pipeSecret,
 		ledgerBody(msgID, "u_editor"))
@@ -73,24 +71,11 @@ func TestInternalConversationLedgerRoundTrips(t *testing.T) {
 	}
 }
 
-// Only curate threads carry one, so an ordinary chat is refused rather than
-// silently growing a column nothing reads back.
-func TestInternalConversationLedgerRefusesAnOrdinaryChat(t *testing.T) {
-	h, st := openInternalHTTP(t)
-	msgID := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
-
-	rec := doInternal(t, h, http.MethodPost, "/api/internal/conversations/ledger", pipeSecret,
-		ledgerBody(msgID, "u_editor"))
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
-	}
-}
-
 // The trusted context is verified against the assistant row, so a claimed
 // actor who does not own the conversation is not found.
 func TestInternalConversationLedgerRejectsAForeignMessage(t *testing.T) {
 	h, st := openInternalHTTP(t)
-	msgID, _ := curateMessage(t, st, "u_editor", "ws_e2e_private")
+	msgID, _ := ledgerMessage(t, st, "u_editor", "ws_e2e_private")
 
 	rec := doInternal(t, h, http.MethodPost, "/api/internal/conversations/ledger", pipeSecret,
 		ledgerBody(msgID, "u_other"))
@@ -103,7 +88,7 @@ func TestInternalConversationLedgerRejectsAForeignMessage(t *testing.T) {
 // /api/internal route.
 func TestInternalConversationLedgerRequiresThePipelineSecret(t *testing.T) {
 	h, st := openInternalHTTP(t)
-	msgID, _ := curateMessage(t, st, "u_editor", "ws_e2e_private")
+	msgID, _ := ledgerMessage(t, st, "u_editor", "ws_e2e_private")
 
 	rec := doInternal(t, h, http.MethodPost, "/api/internal/conversations/ledger", "wrong-secret",
 		ledgerBody(msgID, "u_editor"))
@@ -117,7 +102,7 @@ func TestInternalConversationLedgerRequiresThePipelineSecret(t *testing.T) {
 // stops writing rows.
 func TestInternalConversationLedgerRefusesALockedActor(t *testing.T) {
 	h, st := openInternalHTTP(t)
-	msgID, _ := curateMessage(t, st, "u_editor", "ws_e2e_private")
+	msgID, _ := ledgerMessage(t, st, "u_editor", "ws_e2e_private")
 	if _, err := st.Pool().Exec(t.Context(),
 		`UPDATE users SET suspended_at=now(), suspended_reason='test' WHERE id='u_editor'`); err != nil {
 		t.Fatal(err)
@@ -140,7 +125,7 @@ func TestInternalConversationLedgerRefusesALockedActor(t *testing.T) {
 // fence lives in the UPDATE, so a refused write leaves the stored row alone.
 func TestInternalConversationLedgerFencesAnOlderTurn(t *testing.T) {
 	h, st := openInternalHTTP(t)
-	older, convID := curateMessage(t, st, "u_editor", "ws_e2e_private")
+	older, convID := ledgerMessage(t, st, "u_editor", "ws_e2e_private")
 	newer := older + "_next"
 	if _, err := st.Pool().Exec(t.Context(),
 		`INSERT INTO messages (id, conversation_id, role, status, created_at)
@@ -196,7 +181,7 @@ func TestInternalConversationLedgerFencesAnOlderTurn(t *testing.T) {
 // without the gateway buffering the whole body.
 func TestInternalConversationLedgerRefusesAnOversizedBody(t *testing.T) {
 	h, st := openInternalHTTP(t)
-	msgID, _ := curateMessage(t, st, "u_editor", "ws_e2e_private")
+	msgID, _ := ledgerMessage(t, st, "u_editor", "ws_e2e_private")
 
 	body := ledgerBody(msgID, "u_editor")
 	ledger, ok := body["ledger"].(map[string]any)

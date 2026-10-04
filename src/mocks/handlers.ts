@@ -22,6 +22,7 @@ import type {
   SourceCollaborationToken,
   SourceFile,
   SourceSession,
+  StudyPreferences,
   Tag,
   TagInput,
   Task,
@@ -51,7 +52,6 @@ import {
 } from '@/features/settings/llmOptions';
 import { getFileKind } from '@/features/workspace/sourceUpload';
 import { DEV_SHARE_LINK_SECRET, sharePath } from '@/lib/shareLink';
-import { isKnown, newSrsState } from '@/lib/srs';
 import { mockChatStream } from './chatStream';
 import {
   savedSourceState,
@@ -704,6 +704,10 @@ export const handlers = [
     const body = (await request.json()) as { locale?: string };
     if (body.locale === 'en' || body.locale === 'zh')
       db.user.locale = body.locale;
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.patch('/api/me/study-preferences', async ({ request }) => {
+    db.user.studyPreferences = (await request.json()) as StudyPreferences;
     return new HttpResponse(null, { status: 204 });
   }),
   http.get('/api/models', async ({ request }) => {
@@ -1460,11 +1464,7 @@ export const handlers = [
         db.refreshMaterialContentBytes(cloned);
         db.materials.push(cloned);
         for (const card of clonedCards) {
-          db.cardStats[card.id] = {
-            known: false,
-            materialId,
-            srs: newSrsState(),
-          };
+          db.flashcardCards[card.id] = { materialId };
         }
       });
     return HttpResponse.json({ workspace }, { status: 201 });
@@ -2151,13 +2151,11 @@ export const handlers = [
     '/api/workspaces/:id/conversations',
     async ({ params, request }) => {
       const body = (await request.json().catch(() => ({}))) as {
-        curate?: boolean;
         title?: string;
       };
       const now = new Date().toISOString();
       const conv = {
         createdAt: now,
-        curate: body.curate ?? false,
         id: uid('conv'),
         title: body.title ?? '',
         updatedAt: now,
@@ -2379,7 +2377,7 @@ export const handlers = [
     }
 
     if (opts.kind === 'flashcards') {
-      // Persist a flashcards markdown material; per-card FSRS lives in cardStats.
+      // Persist a flashcards markdown material; its card -> set lookup lives in flashcardCards.
       const id = uid('dk');
       const name = title;
       const cardContents = Array.from({ length: opts.count }, (_, i) => ({
@@ -2404,11 +2402,7 @@ export const handlers = [
       });
       db.materials.unshift(material);
       for (const c of cardContents)
-        db.cardStats[c.id] = {
-          known: false,
-          materialId: id,
-          srs: newSrsState(),
-        };
+        db.flashcardCards[c.id] = { materialId: id };
       return HttpResponse.json({
         cards: db.cardsFromMaterial(material),
         kind: 'flashcards',
@@ -2496,41 +2490,7 @@ export const handlers = [
     db.materials.unshift(material);
     return HttpResponse.json(db.quizFromMaterial(material), { status: 201 });
   }),
-  /** Ad-hoc quiz built from the recently-missed question pool. */
-  http.get('/api/mistakes', async () => {
-    const quiz: Quiz = {
-      canEdit: true,
-      canEditContent: true,
-      chapters: [],
-      createdAt: new Date().toISOString(),
-      id: 'review_mistakes',
-      isOwner: true,
-      name: 'Review mistakes',
-      privacy: 'private',
-      questions: db.mistakes,
-      revision: 1,
-      workspaceId: '',
-      workspaceName: 'From your missed questions',
-    };
-    return HttpResponse.json(quiz);
-  }),
   http.get('/api/quizzes/:id', async ({ params }) => {
-    if (params.id === 'review_mistakes') {
-      return HttpResponse.json({
-        canEdit: true,
-        canEditContent: true,
-        chapters: [],
-        createdAt: new Date().toISOString(),
-        id: 'review_mistakes',
-        isOwner: true,
-        name: 'Review mistakes',
-        privacy: 'private',
-        questions: db.mistakes,
-        revision: 1,
-        workspaceId: '',
-        workspaceName: 'From your missed questions',
-      } satisfies Quiz);
-    }
     const mt = db.materials.find(
       (x) => x.id === params.id && x.kind === 'quiz'
     );
@@ -2627,7 +2587,6 @@ export const handlers = [
     const body = (await request.json()) as {
       correct: number;
       total: number;
-      wrong?: Question[];
       answers?: Record<string, unknown>;
       questions?: Question[];
     };
@@ -2635,33 +2594,12 @@ export const handlers = [
       (x) => x.id === params.id && x.kind === 'quiz'
     );
     const quiz = quizMt ? db.quizFromMaterial(quizMt) : undefined;
-    // Fold any missed questions into the review-mistakes pool (deduped by id).
-    if (body.wrong?.length && params.id !== 'review_mistakes') {
-      for (const q of body.wrong) {
-        const i = db.mistakes.findIndex((m) => m.id === q.id);
-        if (i >= 0) db.mistakes[i] = q;
-        else db.mistakes.push(q);
-      }
-    }
-    // Correctly answered review-mistakes questions leave the pool.
-    if (params.id === 'review_mistakes') {
-      const wrongIds = new Set((body.wrong ?? []).map((q) => q.id));
-      const attemptedIds = new Set((body.questions ?? []).map((q) => q.id));
-      for (let i = db.mistakes.length - 1; i >= 0; i--) {
-        if (
-          attemptedIds.has(db.mistakes[i].id) &&
-          !wrongIds.has(db.mistakes[i].id)
-        )
-          db.mistakes.splice(i, 1);
-      }
-    }
     const at = {
       answers: body.answers ?? {},
       chapters: quiz?.chapters ?? [],
       correct: body.correct,
       id: uid('at'),
-      materialId:
-        String(params.id) === 'review_mistakes' ? null : String(params.id),
+      materialId: String(params.id),
       pct: Math.round((body.correct / Math.max(1, body.total)) * 100),
       questions: body.questions ?? [],
       quizName: quiz?.name ?? 'Quiz',
@@ -2734,14 +2672,10 @@ export const handlers = [
     db.refreshMaterialContentBytes(mt);
     for (const card of current)
       if (!cards.some((next) => next.id === card.id))
-        delete db.cardStats[card.id];
+        delete db.flashcardCards[card.id];
     for (const card of cards)
-      if (!db.cardStats[card.id])
-        db.cardStats[card.id] = {
-          known: false,
-          materialId: mt.id,
-          srs: newSrsState(),
-        };
+      if (!db.flashcardCards[card.id])
+        db.flashcardCards[card.id] = { materialId: mt.id };
     return HttpResponse.json(db.cardsFromMaterial(mt));
   }),
   http.patch('/api/flashcards/:id/metadata', async ({ params, request }) => {
@@ -2797,11 +2731,7 @@ export const handlers = [
     });
     db.materials.unshift(material);
     cards.forEach((card) => {
-      db.cardStats[card.id] = {
-        known: false,
-        materialId: id,
-        srs: newSrsState(),
-      };
+      db.flashcardCards[card.id] = { materialId: id };
     });
     return HttpResponse.json(db.flashcardSetFromMaterial(material), {
       status: 201,
@@ -2833,7 +2763,7 @@ export const handlers = [
     mt.content = flashcardsDocument(cards, mt.id);
     mt.revision += 1;
     db.refreshMaterialContentBytes(mt);
-    db.cardStats[id] = { known: false, materialId: mt.id, srs: newSrsState() };
+    db.flashcardCards[id] = { materialId: mt.id };
     return HttpResponse.json(
       db.cardsFromMaterial(mt).find((c) => c.id === id)!,
       { status: 201 }
@@ -2842,7 +2772,7 @@ export const handlers = [
   http.patch(
     '/api/flashcards/cards/:id/content',
     async ({ params, request }) => {
-      const stat = db.cardStats[String(params.id)];
+      const stat = db.flashcardCards[String(params.id)];
       if (!stat) return new HttpResponse(null, { status: 404 });
       const mt = db.materials.find(
         (x) => x.id === stat.materialId && x.kind === 'flashcards'
@@ -2871,31 +2801,8 @@ export const handlers = [
         : new HttpResponse(null, { status: 404 });
     }
   ),
-  http.patch(
-    '/api/flashcards/cards/:id/study-state',
-    async ({ params, request }) => {
-      const stat = db.cardStats[String(params.id)];
-      if (!stat) return new HttpResponse(null, { status: 404 });
-      const material = db.materials.find(
-        (item) => item.id === stat.materialId && item.kind === 'flashcards'
-      );
-      if (!material) return new HttpResponse(null, { status: 404 });
-      const body = (await request.json()) as Partial<
-        Pick<Flashcard, 'known' | 'srs'>
-      >;
-      if (body.srs !== undefined) stat.srs = body.srs;
-      if (body.known !== undefined) stat.known = body.known;
-      else if (body.srs !== undefined) stat.known = isKnown(body.srs);
-      const card = db
-        .cardsFromMaterial(material)
-        .find((item) => item.id === params.id);
-      return card
-        ? HttpResponse.json(card)
-        : new HttpResponse(null, { status: 404 });
-    }
-  ),
   http.delete('/api/flashcards/cards/:id', async ({ params, request }) => {
-    const stat = db.cardStats[String(params.id)];
+    const stat = db.flashcardCards[String(params.id)];
     if (!stat) return new HttpResponse(null, { status: 404 });
     const mt = db.materials.find(
       (x) => x.id === stat.materialId && x.kind === 'flashcards'
@@ -2910,9 +2817,15 @@ export const handlers = [
     mt.content = flashcardsDocument(kept, mt.id);
     mt.revision += 1;
     db.refreshMaterialContentBytes(mt);
-    delete db.cardStats[String(params.id)];
+    delete db.flashcardCards[String(params.id)];
     return new HttpResponse(null, { status: 204 });
   }),
+
+  /* ---------------- review ---------------- */
+  http.post(
+    '/api/review/ratings',
+    async () => new HttpResponse(null, { status: 204 })
+  ),
 
   /* ---------------- schedule ---------------- */
   http.get('/api/events', async () => HttpResponse.json(db.events)),

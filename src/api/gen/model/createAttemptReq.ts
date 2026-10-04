@@ -6,7 +6,6 @@
  */
 import type { CreateAttemptReqAnswers } from './createAttemptReqAnswers.ts';
 import type { CreateAttemptReqQuestionsItem } from './createAttemptReqQuestionsItem.ts';
-import type { CreateAttemptReqWrongItem } from './createAttemptReqWrongItem.ts';
 
 export interface CreateAttemptReq {
   /** A URL to the JSON Schema for this object. */
@@ -22,9 +21,4 @@ export interface CreateAttemptReq {
   questions?: CreateAttemptReqQuestionsItem[] | null;
   /** @exclusiveMinimum 0 */
   total: number;
-  /**
-     * Questions answered incorrectly
-     * @nullable
-     */
-  wrong?: CreateAttemptReqWrongItem[] | null;
 }

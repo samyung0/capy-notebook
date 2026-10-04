@@ -1,7 +1,4 @@
-import { encodeUrlIfNeeded, validateUrl } from '@platejs/link';
-import { MarkdownPlugin } from '@platejs/markdown';
 import type { QueryClient } from '@tanstack/react-query';
-import { KEYS } from 'platejs';
 import type { PlateEditor } from 'platejs/react';
 import { resolveEditorAsset } from '@/api/editorAssets';
 import { cardsQuery, quizQuery } from '@/api/hooks';
@@ -12,22 +9,13 @@ import {
   isCustomMaterialElement,
   isMaterialRefElement,
   type MaterialDocument,
-  type MaterialElement,
   type MaterialNode,
   type MaterialValue,
   quizNode,
 } from '@/features/materials/document';
 import { questionAssetIds } from '@/features/questions/types';
 import type { ExportFormat } from './export/render';
-
-type MarkdownEditor = PlateEditor & {
-  getApi: (plugin: typeof MarkdownPlugin) => {
-    markdown: {
-      deserialize: (source: string) => MaterialValue;
-      serialize: () => string;
-    };
-  };
-};
+import { importMarkdownValue, sanitizeLinks } from './markdownImport';
 
 /** Loaded only when the user imports/exports a .docx — keeps mammoth/jszip/xml
  * out of the initial editor chunk. */
@@ -35,47 +23,18 @@ function loadDocxIo() {
   return import('@platejs/docx-io');
 }
 
-function sanitizeImportedDocument(
-  editor: PlateEditor,
-  document: MaterialDocument
-): MaterialDocument {
-  const sanitizeNode = (node: MaterialNode): MaterialNode => {
-    if ('text' in node) return { ...node };
-
-    const sanitized = {
-      ...node,
-      children: node.children.map(sanitizeNode),
-    };
-    if (node.type !== editor.getType(KEYS.link)) return sanitized;
-
-    const url =
-      typeof node.url === 'string' ? encodeUrlIfNeeded(node.url.trim()) : '';
-    return {
-      ...sanitized,
-      url: url && validateUrl(editor, url) ? url : '',
-    };
-  };
-
-  return createMaterialDocument(
-    document.value.map((node) => sanitizeNode(node) as MaterialElement)
-  );
-}
-
 export function importMarkdownDocument(
   editor: PlateEditor,
   source: string
 ): MaterialDocument {
-  const value = (editor as MarkdownEditor)
-    .getApi(MarkdownPlugin)
-    .markdown.deserialize(source);
-  return sanitizeImportedDocument(editor, createMaterialDocument(value));
+  return importMarkdownValue(editor, source);
 }
 
 export function importJsonDocument(
   editor: PlateEditor,
   source: string
 ): MaterialDocument {
-  return sanitizeImportedDocument(editor, assertMaterialDocument(source));
+  return sanitizeLinks(editor, assertMaterialDocument(source));
 }
 
 /** Resolve a snapshot once for both formats. A failed read must not result in
@@ -159,7 +118,7 @@ export async function importDocxDocument(
 ): Promise<MaterialDocument> {
   const { importDocx } = await loadDocxIo();
   const result = await importDocx(editor, buffer);
-  return sanitizeImportedDocument(
+  return sanitizeLinks(
     editor,
     createMaterialDocument(result.nodes as MaterialValue)
   );

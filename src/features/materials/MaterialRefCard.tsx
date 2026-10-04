@@ -151,13 +151,7 @@ function FlashcardsRefBody({
   });
   if (isError) return <Unavailable refKind="flashcards" />;
   if (isPending || !data) return <Loading />;
-  const meta = [
-    m.material_ref_cards({ count: data.cardCount }),
-    m.material_ref_known({ pct: data.knownPct }),
-    data.dueCount > 0 ? m.flashcards_due_count({ count: data.dueCount }) : '',
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  const meta = m.material_ref_cards({ count: data.cardCount });
   return (
     <RefBody
       action={

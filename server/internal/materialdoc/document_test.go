@@ -735,3 +735,24 @@ func TestExtractIndexTextRendersMarkdownLikeBlocks(t *testing.T) {
 		t.Fatalf("index text = %q, want %q", text, want)
 	}
 }
+
+func TestResolvePendingRefsPointsFencesAtTheirRows(t *testing.T) {
+	raw := `{"schemaVersion":1,"value":[` +
+		`{"type":"material_ref","id":"r1","materialId":"","refKind":"quiz","pending":"questions: []","children":[{"text":""}]},` +
+		`{"type":"p","children":[{"text":"between"}]},` +
+		`{"type":"material_ref","id":"r2","materialId":"","refKind":"flashcards","pending":"cards: []","children":[{"text":""}]}]}`
+	out, err := ResolvePendingRefs(raw, []string{"mat_q", "mat_f"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs, err := ExtractMaterialRefs(out)
+	if err != nil || len(refs) != 2 || refs[0].MaterialID != "mat_q" || refs[1].MaterialID != "mat_f" {
+		t.Fatalf("refs = %+v, err = %v", refs, err)
+	}
+	if strings.Contains(out, "pending") {
+		t.Fatalf("a resolved reference kept its fence body: %s", out)
+	}
+	if _, err := ResolvePendingRefs(raw, []string{"mat_q"}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("a count mismatch was accepted: %v", err)
+	}
+}

@@ -308,7 +308,7 @@ func (s *Store) FileWorkspaceID(ctx context.Context, fileID string) (string, err
 // CardMaterialID resolves the flashcardSet (flashcards material) owning a card.
 func (s *Store) CardMaterialID(ctx context.Context, cardID string) (string, error) {
 	var matID string
-	err := s.pool.QueryRow(ctx, `SELECT material_id FROM card_stats WHERE card_id=$1`, cardID).Scan(&matID)
+	err := s.pool.QueryRow(ctx, `SELECT material_id FROM flashcard_cards WHERE card_id=$1`, cardID).Scan(&matID)
 	if isNoRows(err) {
 		return "", ErrNotFound
 	}
@@ -431,9 +431,9 @@ func (s *Store) ListPublicFlashcardSets(ctx context.Context) ([]PublicFlashcardS
 
 /* -------------------------------------------------------------------- cloning */
 
-// rewriteCardIDs re-keys every card in a flashcards document. card_stats.card_id
-// is a global primary key, so a cloned flashcardSet must mint fresh card ids before
-// fresh (reset) SRS rows can be inserted for them.
+// rewriteCardIDs re-keys every card in a flashcards document.
+// flashcard_cards.card_id is a global primary key, so a cloned set mints fresh
+// card ids before its lookup rows are inserted.
 func rewriteCardIDs(_ string, content string) (newContent string, newIDs []string, err error) {
 	return rewriteCardIDsWithMap(content, map[string]string{})
 }
@@ -1076,8 +1076,8 @@ func (s *Store) cloneWorkspaceOnce(
 				return Workspace{}, err
 			}
 			for _, cid := range materialSnapshot.cardIDs {
-				if _, err := tx.Exec(ctx, `INSERT INTO card_stats (card_id, material_id, srs, known) VALUES ($1,$2,$3,false)`,
-					cid, nid, newSrsBytes()); err != nil {
+				if _, err := tx.Exec(ctx, `INSERT INTO flashcard_cards (card_id, material_id) VALUES ($1,$2)`,
+					cid, nid); err != nil {
 					return Workspace{}, err
 				}
 			}
@@ -1459,8 +1459,8 @@ func (s *Store) cloneMaterialKindOnce(
 			return Material{}, err
 		}
 		for _, cid := range clone.cardIDs {
-			if _, err := tx.Exec(ctx, `INSERT INTO card_stats (card_id, material_id, srs, known) VALUES ($1,$2,$3,false)`,
-				cid, clone.newID, newSrsBytes()); err != nil {
+			if _, err := tx.Exec(ctx, `INSERT INTO flashcard_cards (card_id, material_id) VALUES ($1,$2)`,
+				cid, clone.newID); err != nil {
 				return Material{}, err
 			}
 		}
@@ -1480,8 +1480,8 @@ func (s *Store) cloneMaterialKindOnce(
 		}
 	}
 	for _, cid := range cardIDs {
-		if _, err := tx.Exec(ctx, `INSERT INTO card_stats (card_id, material_id, srs, known) VALUES ($1,$2,$3,false)`,
-			cid, nid, newSrsBytes()); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO flashcard_cards (card_id, material_id) VALUES ($1,$2)`,
+			cid, nid); err != nil {
 			return Material{}, err
 		}
 	}

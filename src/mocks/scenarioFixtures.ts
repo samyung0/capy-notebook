@@ -8,7 +8,6 @@ import {
   flashcardsNode,
   quizNode,
 } from '@/features/materials/document';
-import { newSrsState } from '@/lib/srs';
 import pdfURL from '../../e2e/fixtures/files/basic/digital.pdf?url';
 import xlsxURL from '../../e2e/fixtures/files/basic/grades.xlsx?url';
 import docxURL from '../../e2e/fixtures/files/basic/lesson.docx?url';
@@ -149,11 +148,7 @@ export function seedScenarioFixtures() {
       })
     );
   }
-  db.cardStats['mock-scenario-card'] = {
-    known: false,
-    materialId: scenarioCards,
-    srs: newSrsState(),
-  };
+  db.flashcardCards['mock-scenario-card'] = { materialId: scenarioCards };
   db.tasks.push({
     ...structuredClone(db.tasks[0]),
     id: 'mock-scenario-task',
@@ -337,9 +332,6 @@ export async function resetScenarioFixtures(captureAccount: boolean) {
       db.chatMessages.splice(i, 1);
   for (let i = db.attempts.length - 1; i >= 0; i--)
     if (db.attempts[i].materialId === scenarioQuiz) db.attempts.splice(i, 1);
-  for (let i = db.mistakes.length - 1; i >= 0; i--)
-    if (db.mistakes[i].id.startsWith('mock-scenario-'))
-      db.mistakes.splice(i, 1);
   for (let i = db.tasks.length - 1; i >= 0; i--)
     if (db.tasks[i].id.startsWith('mock-scenario-')) db.tasks.splice(i, 1);
   for (let i = db.trash.length - 1; i >= 0; i--)

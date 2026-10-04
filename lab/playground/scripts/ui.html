@@ -168,20 +168,25 @@ img.capture {
       <label>Quality file <span class="muted" id="quality">none</span></label>
     </div>
     <div class="row">
-      <label><input id="curate" type="checkbox"> Curate mode</label>
-      <span class="muted"
-        >library tools, curate prompt, progress ledger; materials are written as
-        JSON files under the run</span
-      >
+      <label><input id="library" type="checkbox"> Library</label>
+      <label>Open <select id="openFile"><option value="">nothing</option></select></label>
+      <span class="muted">materials are written as JSON files under the run</span>
+    </div>
+    <div class="row">
+      <label>Explainer <select id="prefExplainer"><option>brief</option><option>standard</option><option>detailed</option></select></label>
+      <label>Practice <select id="prefPractice"><option>none</option><option>quiz</option><option>flashcards</option><option>both</option></select></label>
+      <label>Questions <input id="prefQuiz" type="number" min="1" max="50" style="width:4em"></label>
+      <label>Cards <input id="prefCards" type="number" min="1" max="100" style="width:4em"></label>
+      <label><input id="prefChecks" type="checkbox"> Mini checks</label>
+      <label>Visuals <select id="prefVisuals"><option>fewer</option><option>more</option></select></label>
+      <label><input id="decks" type="checkbox"> Decks</label>
+      <label>Main <select id="mainFormat"><option>auto</option><option>note</option><option>deck</option></select></label>
     </div>
     <textarea id="json" spellcheck="false"></textarea>
     <div class="muted">
       Fields absent from the JSON use the defaults shown in the browser console
-      (<code>defaults</code>). Tools: search_workspace, list_sources,
-      read_document, capture_page, create_material,
-      inspect_document, edit_document; curate adds search_knowledge,
-      browse_knowledge, read_knowledge, capture_knowledge_page, create_ledger,
-      create_material, edit_document. capture.mode: pixels | ocr | caption.
+      (<code>defaults</code>). <code>tools: null</code> offers what production
+      offers; a list narrows it. capture.mode: pixels | ocr | caption.
     </div>
     <details open>
       <summary>Effective system prompt (what the turn sends)</summary>
@@ -246,7 +251,7 @@ img.capture {
   <div class="col">
     <b>Progress ledger</b>
     <div class="card" id="ledger">
-      <span class="muted">curate turns only</span>
+      <span class="muted">no ledger yet</span>
     </div>
     <b>Materials</b>
     <div class="card" id="materials"><span class="muted">none yet</span></div>
@@ -260,6 +265,7 @@ img.capture {
     <button id="closeMaterial" type="button" autofocus>Close</button>
   </div>
   <p id="materialMeta" class="muted"></p>
+  <p><a id="materialDownload" hidden download>Download .pptx</a></p>
   <pre id="materialContent"></pre>
   <details>
     <summary>Saved JSON</summary>
@@ -353,7 +359,16 @@ function setConfig(c, resetDrafts = false) {
   });
   $('models').value = modelOption?.value || '';
   $('workspaces').value = c.workspace_id || state.defaults.workspace_id;
-  $('curate').checked = !!c.curate;
+  $('library').checked = c.library !== false;
+  const prefs = { ...PREF_DEFAULTS, ...(c.study_preferences || {}) };
+  $('prefExplainer').value = prefs.explainerStyle;
+  $('prefPractice').value = prefs.practice;
+  $('prefQuiz').value = prefs.quizLength;
+  $('prefCards').value = prefs.flashcardsPerChapter;
+  $('prefChecks').checked = !!prefs.miniChecks;
+  $('prefVisuals').value = prefs.visualAids;
+  $('decks').checked = c.decks?.offer !== false;
+  $('mainFormat').value = c.decks?.main_format || 'auto';
   // A config may carry the frozen request it was written for.
   if (c.question && !$('question').value) $('question').value = c.question;
   $('quality').textContent = state.quality_files.includes(
@@ -393,6 +408,15 @@ function setConfig(c, resetDrafts = false) {
       $('files').textContent = files
         .map((f) => `${f.id}  ${f.name}  ${f.chunks} chunks  ${f.status}`)
         .join('\n');
+      const open = c.open_resource?.id || '';
+      $('openFile').innerHTML =
+        '<option value="">nothing</option>' +
+        files
+          .map(
+            (f) =>
+              `<option value="${esc(f.id)}"${f.id === open ? ' selected' : ''}>${esc(f.name)}</option>`
+          )
+          .join('');
     });
 }
 async function loadConfig(name) {
@@ -437,25 +461,47 @@ $('workspaces').onchange = () => {
   c.workspace_id = $('workspaces').value;
   setConfig(c);
 };
-$('curate').onchange = () => {
+// Mirrors pipeline/prompts/preferences.py DEFAULTS.
+const PREF_DEFAULTS = {
+  explainerStyle: 'standard',
+  flashcardsPerChapter: 15,
+  miniChecks: true,
+  practice: 'quiz',
+  quizLength: 8,
+  visualAids: 'more',
+};
+$('library').onchange = () => {
   const c = currentConfig();
-  c.curate = $('curate').checked;
-  // The switch alone changes nothing unless the curate tools are offered.
-  if (c.curate)
-    c.tools = [
-      ...new Set([
-        ...(c.tools || []),
-        'search_knowledge',
-        'browse_knowledge',
-        'read_knowledge',
-        'capture_knowledge_page',
-        'create_ledger',
-        'create_material',
-        'edit_document',
-      ]),
-    ];
+  c.library = $('library').checked;
   setConfig(c);
 };
+$('openFile').onchange = () => {
+  const c = currentConfig();
+  const option = $('openFile').selectedOptions[0];
+  c.open_resource = option.value
+    ? { id: option.value, kind: 'file', title: option.textContent }
+    : null;
+  setConfig(c);
+};
+for (const id of ['prefExplainer', 'prefPractice', 'prefQuiz', 'prefCards', 'prefChecks', 'prefVisuals'])
+  $(id).onchange = () => {
+    const c = currentConfig();
+    c.study_preferences = {
+      explainerStyle: $('prefExplainer').value,
+      flashcardsPerChapter: Number($('prefCards').value),
+      miniChecks: $('prefChecks').checked,
+      practice: $('prefPractice').value,
+      quizLength: Number($('prefQuiz').value),
+      visualAids: $('prefVisuals').value,
+    };
+    setConfig(c);
+  };
+for (const id of ['decks', 'mainFormat'])
+  $(id).onchange = () => {
+    const c = currentConfig();
+    c.decks = { main_format: $('mainFormat').value, offer: $('decks').checked };
+    setConfig(c);
+  };
 $('clear').onclick = () => {
   if (active) active.abort();
   active = null;
@@ -470,7 +516,7 @@ function resetPanels() {
   if ($('materialDialog').open) $('materialDialog').close();
   for (const id of Object.keys(materials)) delete materials[id];
   renderMaterials();
-  $('ledger').innerHTML = `<span class="muted">curate turns only</span>`;
+  $('ledger').innerHTML = `<span class="muted">no ledger yet</span>`;
 }
 $('json').onchange = () => {
   try {
@@ -555,34 +601,17 @@ const esc = (s) =>
 const tools = {};
 const materials = {};
 function renderLedger(l) {
-  const requests = l.requests || [];
-  if (!requests.length) {
-    $('ledger').innerHTML = `<span class="muted">no ledger yet</span>`;
-    return;
-  }
-  const asked = requests
-    .map((r) => `<div class="cite"><b>${esc(r)}</b></div>`)
-    .join('');
   const todos = (l.todos || [])
     .map(
       (t) =>
-        `<div class="cite">${t.done ? '☑' : '☐'} ${t.id}. ${esc(t.text)}${t.materialId ? ` <span class="muted">→ ${esc(t.materialId)}</span>` : ''}</div>`
-    )
-    .join('');
-  const mats = (l.materials || [])
-    .map(
-      (m) =>
-        `<div class="cite muted">${m.kind === 'edit' ? `appended to ${esc(m.id)}` : `${esc(m.kind)} '${esc(m.title)}' (${esc(m.id)})`} · ${esc(m.size)}${m.todo == null ? '' : ` · todo ${m.todo}`}</div>`
+        `<div class="cite">${t.done ? '☑' : '☐'} ${t.id}. ${esc(t.text)}</div>`
     )
     .join('');
   const reads = (l.reads || []).length
     ? `<details><summary class="muted">${l.reads.length} reads this turn</summary>${l.reads.map((r) => `<div class="cite muted">${esc(r.excerpt_id)} from ${r.start} · ${esc(r.section)}</div>`).join('')}</details>`
     : '';
   $('ledger').innerHTML =
-    asked +
-    todos +
-    (mats ? `<div class="muted">materials on the ledger</div>${mats}` : '') +
-    reads;
+    todos + reads || `<span class="muted">no ledger yet</span>`;
 }
 function renderMaterials() {
   $('materials').innerHTML =
@@ -595,6 +624,9 @@ function renderMaterials() {
 }
 function materialText(m) {
   const parts = m.content ? [m.content] : [];
+  for (const [i, slide] of (m.deck?.slides || []).entries()) {
+    parts.push(`Slide ${i + 1} · ${slide.title} · ${slide.svg ? 'written' : 'to write'}\n${slide.brief}`);
+  }
   for (const [i, q] of (m.questions || []).entries()) {
     const lines = [`Question ${i + 1}: ${q.prompt ?? q.question ?? ''}`];
     for (const [j, option] of (q.options || []).entries()) {
@@ -622,6 +654,8 @@ $('materials').onclick = (event) => {
     ...(m.provenance?.books || []).map((b) => b.title)].join(' · ');
   $('materialContent').textContent = materialText(m);
   $('materialJson').textContent = JSON.stringify(m, null, 2);
+  $('materialDownload').hidden = !m.pptx;
+  if (m.pptx) $('materialDownload').href = `/api/${m.pptx}`;
   $('materialDialog').showModal();
 };
 $('closeMaterial').onclick = () => $('materialDialog').close();
@@ -638,12 +672,10 @@ function configCard(label, c, prompt) {
     m.transport && m.transport.url
       ? ` via ${esc(new URL(m.transport.url).host)}`
       : '';
-  const cit = c.curate
-    ? 'none (curate)'
-    : (c.answer && c.answer.citations) || 'as_is';
+  const cit = (c.answer && c.answer.citations) || 'as_is';
   card(
     'stat',
-    `<b>${esc(label)}</b> · ${esc(m.provider_slug)}/${esc(m.model_slug)} (${esc(m.thinking || '')})${via} · ${esc(c.workspace_id)}${c.curate ? ' · curate' : ''} · tools: ${esc((c.tools || []).join(', '))} · capture ${esc(cap)} · ${esc(q)} · citations ${esc(cit)}` +
+    `<b>${esc(label)}</b> · ${esc(m.provider_slug)}/${esc(m.model_slug)} (${esc(m.thinking || '')})${via} · ${esc(c.workspace_id)}${c.library !== false ? ' · library' : ''} · tools: ${esc(c.tools ? c.tools.join(', ') : 'production')} · capture ${esc(cap)} · ${esc(q)} · citations ${esc(cit)}` +
       `<details><summary>config JSON</summary><pre>${esc(JSON.stringify(c, null, 2))}</pre></details>` +
       (prompt
         ? `<details><summary>system prompt sent</summary><pre>${esc(prompt)}</pre></details>`

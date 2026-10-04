@@ -123,7 +123,7 @@ it.each([
     const onToolEnd = vi.fn();
     await streamChat(
       'ws_bio',
-      { curate: false, text: 'Preview "quotes" and\nnewlines' },
+      { library: false, text: 'Preview "quotes" and\nnewlines' },
       {
         onBlockDelta: (_id, text) => {
           streamed += text;

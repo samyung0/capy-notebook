@@ -192,10 +192,13 @@ class Config:
     confidence_note_below: float = float(_env("CAPY_CONFIDENCE_NOTE_BELOW", "0.9"))
     # ---- knowledge library ------------------------------------------------
     # The shared textbook library lives in its own database (deploy/
-    # docker-compose.library-db.yml). Unset leaves curate-mode library tools
+    # docker-compose.library-db.yml). Unset leaves the Library switch's tools
     # unavailable. Every environment reads the same live library; books carry
     # their own versions, so there is nothing to pin.
     library_dsn: str = _env("LIBRARY_DATABASE_URL", "")
+    # The question bank's reader (server/bankmigrations); the agent searches it
+    # with the Library switch on.
+    bank_dsn: str = _env("BANK_DATABASE_URL", "")
     # Tags below this confidence, or whose evidence quote was not found in the
     # excerpt body, never act as filters.
     library_tag_min_confidence: float = float(
@@ -218,7 +221,6 @@ class Config:
     # Longest edge of a rendered page or box. GLM prices images on a 28-pixel
     # patch grid, so this and the model's bbox decide the image-token cost.
     capture_max_edge: int = int(_env("CAPY_CAPTURE_MAX_EDGE", "1568"))
-    captures_per_turn: int = int(_env("CAPY_CAPTURES_PER_TURN", "8"))
 
     # Uploaded audio awaits ElevenLabs Scribe v2 in the ingest attempt. Starter
     # admits 12 weighted units; a call costs min(4, ceil(duration / 480 seconds)).
@@ -314,9 +316,6 @@ if not 0 < cfg.confidence_note_below <= 1:
 
 if cfg.capture_cache_max_bytes <= 0 or cfg.capture_max_edge <= 0:
     raise ValueError("capture cache size and edge must be positive")
-
-if cfg.captures_per_turn <= 0:
-    raise ValueError("CAPY_CAPTURES_PER_TURN must be positive")
 
 if cfg.ingest_timeout <= 0:
     raise ValueError("CAPY_INGEST_TIMEOUT must be positive")

@@ -18,6 +18,9 @@ family per conversion kind (decimal shift, non-10 factor, formula, approximate),
 algebra covers expression rewrites (rational, trig, log, radical, roots, intervals).
 rubric grades open answers the way the app does, one noul per marking point and no
 model answer, over 16 hand-written multi-rubric essays and the 8 English seed files.
+--provider clef|clef-flash sends the same requests to Cloudflare Workers AI
+(CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID) and suffixes the raw file names.
+
 route asks whether grading a question needs calculation or derivation checking, from
 the question alone, with the model answer, and with model answer plus rubrics.
 """
@@ -29,6 +32,8 @@ import os
 import sys
 import time
 import urllib.request
+
+import jev_context
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -48,6 +53,7 @@ RUBRIC_OUT = ROOT / "data/grading-benchmark/runs/typesafe-rubric.jsonl"
 ROUTE_FIXTURE = ROOT / "bench/grading/fixtures/typesafe_route_cases.json"
 ROUTE_OUT = ROOT / "data/grading-benchmark/runs/typesafe-route.jsonl"
 URL = "https://api.typesafe.ai/v1/systemone"
+PROVIDER = "jev"
 
 QUESTIONS = {
     "correct": {
@@ -127,21 +133,30 @@ def rubric_question(rubric: str) -> dict:
     }
 
 
+def out_path(path: Path) -> Path:
+    return path if PROVIDER == "jev" else path.with_name(f"{path.stem}-{PROVIDER}{path.suffix}")
+
+
 def call(key: str, state: dict, questions: dict = QUESTIONS) -> dict:
-    body = json.dumps({"model": "jev-latest", "state": state, "questions": questions}).encode()
+    url, model = jev_context.PROVIDERS[PROVIDER]
+    url = url.format(account=os.environ.get("CLOUDFLARE_ACCOUNT_ID"))
+    body = json.dumps({"model": model, "state": state, "questions": questions}).encode()
     req = urllib.request.Request(
-        URL, data=body, method="POST",
+        url, data=body, method="POST",
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
     )
     t = time.time()
     with urllib.request.urlopen(req, timeout=120) as r:
         out = json.load(r)
+    if PROVIDER != "jev":
+        out = out["result"]
     out["latency_s"] = round(time.time() - t, 2)
     return out
 
 
 def run_pairs(key: str, fixture: Path, out: Path, group_keys: tuple[str, ...], questions: dict = EQUIV_QUESTIONS) -> int:
     pairs = json.loads(fixture.read_text(encoding="utf-8"))["pairs"]
+    out = out_path(out)
 
     def run(p):
         res = call(key, {"question": p["question"], "correct_answer": p["correct"], "user_answer": p["user"]}, questions)
@@ -194,10 +209,11 @@ def run_rubric(key: str) -> int:
         res = call(key, {"question": j["question"], "user_answer": j["text"]}, qs)
         return {**j, "noul": [res["answers"][f"r{i}"]["noul"] for i in range(len(j["rubrics"]))], "input_tokens": res["usage"]["input_tokens"]}
 
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    with ThreadPoolExecutor(max_workers=4) as pool:
         rows = list(pool.map(run, jobs))
-    RUBRIC_OUT.parent.mkdir(parents=True, exist_ok=True)
-    RUBRIC_OUT.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n", encoding="utf-8")
+    out = out_path(RUBRIC_OUT)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n", encoding="utf-8")
 
     def award(flags):  # app mapping: all rubrics -> 1, some -> 0.5, none -> 0
         k = sum(flags)
@@ -234,7 +250,7 @@ def run_rubric(key: str) -> int:
                 if m != p:
                     print(f"{r['domain']:12} {r['label']:22} r{i} truth={m} noul={v:.2f}  {r['rubrics'][i][:80]}")
     print(f"requests {len(rows)}  input tokens {sum(r['input_tokens'] for r in rows)}")
-    print(f"raw: {RUBRIC_OUT}")
+    print(f"raw: {out}")
     return 0
 
 
@@ -255,10 +271,11 @@ def run_route(key: str) -> int:
         a = res["answers"]
         return {**q, "cond": c, "compute_noul": a["compute"]["noul"], "kind_choice": a["kind"]["choice"], "kind_conf": a["kind"]["confidence"], "kind_probs": a["kind"]["probabilities"]}
 
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    with ThreadPoolExecutor(max_workers=4) as pool:
         rows = list(pool.map(run, jobs))
-    ROUTE_OUT.parent.mkdir(parents=True, exist_ok=True)
-    ROUTE_OUT.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n", encoding="utf-8")
+    out = out_path(ROUTE_OUT)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n", encoding="utf-8")
 
     def summary(name, sub):
         strict = [r for r in sub if not r.get("arguable")]
@@ -283,14 +300,23 @@ def run_route(key: str) -> int:
         for r in rows:
             if r["cond"] == c and not r.get("arguable") and (r["compute_noul"] >= 0.5) != r["compute"]:
                 print(f"{c:17} {r['kind']:9} {'DECEPTIVE' if r.get('deceptive') else '':9} noul={r['compute_noul']:.2f} choice={r['kind_choice']:22} {r['question'][:70]}")
-    print(f"raw: {ROUTE_OUT}")
+    print(f"raw: {out}")
     return 0
 
 
 def main() -> int:
-    key = os.environ.get("TYPESAFE_API_KEY")
+    global PROVIDER
+    if "--provider" in sys.argv:
+        i = sys.argv.index("--provider")
+        PROVIDER = sys.argv[i + 1]
+        del sys.argv[i : i + 2]
+        if PROVIDER not in jev_context.PROVIDERS:
+            print(f"--provider must be one of {', '.join(jev_context.PROVIDERS)}", file=sys.stderr)
+            return 2
+    env = "TYPESAFE_API_KEY" if PROVIDER == "jev" else "CLOUDFLARE_API_TOKEN"
+    key = os.environ.get(env)
     if not key:
-        print("TYPESAFE_API_KEY is required", file=sys.stderr)
+        print(f"{env} is required", file=sys.stderr)
         return 2
     if sys.argv[1:] == ["equiv"]:
         return run_pairs(key, EQUIV_FIXTURE, EQUIV_OUT, ("group",))
@@ -331,8 +357,9 @@ def main() -> int:
     with ThreadPoolExecutor(max_workers=4) as pool:
         rows = list(pool.map(run, jobs))
 
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n", encoding="utf-8")
+    out = out_path(OUT)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n", encoding="utf-8")
 
     # Per-answer table: noul "correct" and award score per condition (0 = no ref, F = final-only ref, R = worked ref).
     by = {(r["case"], r["label"], r["cond"]): r for r in rows}
@@ -369,7 +396,7 @@ def main() -> int:
     tok = sum(r["input_tokens"] for r in rows)
     lat = sorted(r["latency_s"] for r in rows)
     print(f"requests {len(rows)}  input tokens {tok}  latency p50 {lat[len(lat)//2]}s max {lat[-1]}s")
-    print(f"raw: {OUT}")
+    print(f"raw: {out}")
     return 0
 
 

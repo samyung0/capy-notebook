@@ -24,7 +24,6 @@ import type {
   Question,
   Quiz,
   SourceFile,
-  SrsState,
   Task,
   ThinkingCanvas,
   TrashItem,
@@ -49,7 +48,6 @@ import {
   quizElementToBlock,
   quizNode,
 } from '@/features/materials/document';
-import { isDue, isKnown, newSrsState, reviewSrs } from '@/lib/srs';
 import { biologyQuizQuestions } from './biologyQuiz';
 import {
   chatFixtures,
@@ -117,28 +115,13 @@ const ct = (...ids: string[]) =>
     return { id: t.id, value: t.value };
   });
 
-/**
- * Seed SRS scheduling state. Unknown cards stay due now (they surface in the
- * study queue); "known" cards get a couple of Good reviews to push their due
- * date out so they are not immediately due.
- */
-function seedSrs(known: boolean): SrsState {
-  let s = newSrsState();
-  if (known) {
-    s = reviewSrs(s, 'good');
-    s = reviewSrs(s, 'good');
-  }
-  return s;
-}
 function seedCard(
   id: string,
   materialId: string,
   front: string,
-  back: string,
-  known: boolean
+  back: string
 ): Flashcard {
-  const srs = seedSrs(known);
-  return { back, front, id, known: isKnown(srs), materialId, revision: 1, srs };
+  return { back, front, id, materialId, revision: 1 };
 }
 
 const now = Date.now();
@@ -177,6 +160,8 @@ export const user: Omit<User, 'account'> = {
   name: 'Kate Malone',
   planTier: 'pro',
   streak: 0,
+  studyPreferences: {},
+  studyProgress: true,
   subscriptionStatus: 'active',
 };
 
@@ -1228,10 +1213,8 @@ const seedFlashcardSets: FlashcardSet[] = [
     canEditContent: true,
     cardCount: 32,
     color: 'green',
-    dueCount: 0,
     id: 'dk_1',
     isOwner: true,
-    knownPct: 80,
     name: 'Cell organelles',
     privacy: 'private',
     revision: 1,
@@ -1243,10 +1226,8 @@ const seedFlashcardSets: FlashcardSet[] = [
     canEditContent: true,
     cardCount: 24,
     color: 'purple',
-    dueCount: 0,
     id: 'dk_2',
     isOwner: true,
-    knownPct: 55,
     name: 'Integration rules',
     privacy: 'private',
     revision: 1,
@@ -1258,10 +1239,8 @@ const seedFlashcardSets: FlashcardSet[] = [
     canEditContent: true,
     cardCount: 40,
     color: 'amber',
-    dueCount: 0,
     id: 'dk_3',
     isOwner: true,
-    knownPct: 30,
     name: 'History dates',
     privacy: 'private',
     revision: 1,
@@ -1275,66 +1254,24 @@ const seedCards: Flashcard[] = [
     'c_1',
     'dk_1',
     'Mitochondria',
-    'Powerhouse of the cell — produces ATP.',
-    true
+    'Powerhouse of the cell — produces ATP.'
   ),
-  seedCard(
-    'c_2',
-    'dk_1',
-    'Nucleus',
-    'Stores DNA and controls cell activity.',
-    true
-  ),
-  seedCard('c_3', 'dk_1', 'Ribosome', 'Site of protein synthesis.', false),
-  seedCard(
-    'c_4',
-    'dk_1',
-    'Golgi apparatus',
-    'Packages and ships proteins.',
-    false
-  ),
-  seedCard(
-    'c_7',
-    'dk_1',
-    'Lysosome',
-    'Digests waste with hydrolytic enzymes.',
-    false
-  ),
+  seedCard('c_2', 'dk_1', 'Nucleus', 'Stores DNA and controls cell activity.'),
+  seedCard('c_3', 'dk_1', 'Ribosome', 'Site of protein synthesis.'),
+  seedCard('c_4', 'dk_1', 'Golgi apparatus', 'Packages and ships proteins.'),
+  seedCard('c_7', 'dk_1', 'Lysosome', 'Digests waste with hydrolytic enzymes.'),
   seedCard(
     'c_8',
     'dk_1',
     'Endoplasmic reticulum',
-    'Rough ER makes proteins; smooth ER makes lipids.',
-    false
+    'Rough ER makes proteins; smooth ER makes lipids.'
   ),
-  seedCard('c_5', 'dk_2', '∫ eˣ dx', 'eˣ + C', true),
-  seedCard('c_6', 'dk_2', '∫ 1/x dx', 'ln|x| + C', false),
-  seedCard('c_9', 'dk_2', '∫ cos x dx', 'sin x + C', false),
-  seedCard('c_10', 'dk_3', 'Fall of the Berlin Wall', '1989', false),
-  seedCard('c_11', 'dk_3', 'End of WWII', '1945', false),
+  seedCard('c_5', 'dk_2', '∫ eˣ dx', 'eˣ + C'),
+  seedCard('c_6', 'dk_2', '∫ 1/x dx', 'ln|x| + C'),
+  seedCard('c_9', 'dk_2', '∫ cos x dx', 'sin x + C'),
+  seedCard('c_10', 'dk_3', 'Fall of the Berlin Wall', '1989'),
+  seedCard('c_11', 'dk_3', 'End of WWII', '1945'),
 ];
-
-/**
- * Pool of questions the user has recently missed (across quizzes). Feeds the
- * "Review mistakes" quiz. Deduped by question id.
- */
-const mistakeIds = new Set([
-  'q6',
-  'q8',
-  'q12',
-  'q16',
-  'q17',
-  'q20',
-  'q21',
-  'q22',
-  'q27',
-  'q28',
-  'q29',
-  'q30',
-]);
-export const mistakes: Question[] = seedQuizzes
-  .flatMap((quiz) => quiz.questions)
-  .filter((question) => mistakeIds.has(question.id));
 
 export const labels: Label[] = [
   { color: 'green', id: 'lb_bio', name: 'Biology' },
@@ -1713,7 +1650,6 @@ for (let index = 1; index <= 85; index++) {
 export const conversations: Conversation[] = [
   {
     createdAt: days(1),
-    curate: false,
     id: 'conv_seed1',
     title: 'What is a cell?',
     updatedAt: hours(3),
@@ -1810,7 +1746,6 @@ chatFixtures.forEach((fixture, index) => {
   const result = fixtureResult(fixture);
   conversations.push({
     createdAt,
-    curate: false,
     id: conversationId,
     title: fixture.label,
     updatedAt: createdAt,
@@ -1926,21 +1861,16 @@ export const publicFlashcardSets: PublicFlashcardSet[] = [
 
 /* ---------------- unified markdown materials + derived views ----------------
    Markdown (materials[].content) is the source of truth for quiz/flashcard
-   content; per-card FSRS state lives in cardStats. The seed quizzes/flashcards/cards
+   content; the card -> set lookup lives in flashcardCards. The seed quizzes/flashcards/cards
    above are authored as typed data, then folded into markdown materials here so
    the mock mirrors the backend's single-table model. */
 
-/** Per-card scheduling state, keyed by card id (the flashcards fence owns the
- * front/back; this owns FSRS + known). */
 /** Comment discussions on materials; the handlers own their writes. */
 export const discussions: MaterialDiscussion[] = [];
 
-export const cardStats: Record<
-  string,
-  { materialId: string; srs: SrsState; known: boolean }
-> = {};
-for (const c of seedCards)
-  cardStats[c.id] = { known: c.known, materialId: c.materialId, srs: c.srs };
+/** card id -> its flashcard set, like flashcard_cards on the server. */
+export const flashcardCards: Record<string, { materialId: string }> = {};
+for (const c of seedCards) flashcardCards[c.id] = { materialId: c.materialId };
 
 seedQuizzes.forEach((q) => {
   materials.push(
@@ -2154,7 +2084,7 @@ export function quizFromMaterial(mt: Material): Quiz {
   };
 }
 
-/** Derive the typed cards for a flashcards material (fence + cardStats join). */
+/** Derive the typed cards for a flashcards material (from the fence). */
 export function cardsFromMaterial(mt: Material): Flashcard[] {
   const cards =
     typeof mt.content === 'string'
@@ -2164,34 +2094,25 @@ export function cardsFromMaterial(mt: Material): Flashcard[] {
             (node) => node.type === 'flashcards'
           ) as FlashcardsElement
         );
-  return cards.map((c) => {
-    const st = cardStats[c.id];
-    const srs = st?.srs ?? newSrsState();
-    return {
-      back: c.back,
-      front: c.front,
-      id: c.id,
-      known: st?.known ?? false,
-      materialId: mt.id,
-      revision: mt.revision,
-      srs,
-    };
-  });
+  return cards.map((c) => ({
+    back: c.back,
+    front: c.front,
+    id: c.id,
+    materialId: mt.id,
+    revision: mt.revision,
+  }));
 }
 
-/** Derive the typed FlashcardSet view (counts computed live from cardStats). */
+/** Derive the typed FlashcardSet view (counts computed live). */
 export function flashcardSetFromMaterial(mt: Material): FlashcardSet {
   const cs = cardsFromMaterial(mt);
-  const known = cs.filter((c) => c.known).length;
   return {
     canEdit: true,
     canEditContent: true,
     cardCount: cs.length,
     color: mt.color ?? 'green',
-    dueCount: cs.filter((c) => isDue(c.srs)).length,
     id: mt.id,
     isOwner: true,
-    knownPct: cs.length ? Math.round((100 * known) / cs.length) : 0,
     name: mt.title,
     privacy: mt.privacy,
     revision: mt.revision,
@@ -2232,8 +2153,6 @@ export function materialListItem(mt: Material): MaterialListItem {
     ...(set
       ? {
           cardCount: set.cardCount,
-          dueCount: set.dueCount,
-          knownPct: set.knownPct,
         }
       : {}),
   };

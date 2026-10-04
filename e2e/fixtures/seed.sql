@@ -4,7 +4,10 @@
 BEGIN;
 
 DELETE FROM attempts WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
-DELETE FROM mistakes WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
+DELETE FROM review_log WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
+DELETE FROM review_states WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
+DELETE FROM study_progress WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
+DELETE FROM workspace_study WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
 DELETE FROM materials WHERE created_by IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
 DELETE FROM workspace_members WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
 DELETE FROM workspaces WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
@@ -159,11 +162,11 @@ ON CONFLICT (id) DO UPDATE SET
   privacy = EXCLUDED.privacy,
   revision = 1;
 
-INSERT INTO card_stats (card_id, material_id, srs, known) VALUES
-  ('c_e2e_priv_1', 'dk_e2e_private', '{"due":"1970-01-01T00:00:00Z","stability":0,"difficulty":0,"elapsed_days":0,"scheduled_days":0,"reps":0,"lapses":0,"state":0,"last_review":null}'::jsonb, false),
-  ('c_e2e_link_1', 'dk_e2e_link',    '{"due":"1970-01-01T00:00:00Z","stability":0,"difficulty":0,"elapsed_days":0,"scheduled_days":0,"reps":0,"lapses":0,"state":0,"last_review":null}'::jsonb, false),
-  ('c_e2e_pub_1',  'dk_e2e_public',  '{"due":"1970-01-01T00:00:00Z","stability":0,"difficulty":0,"elapsed_days":0,"scheduled_days":0,"reps":0,"lapses":0,"state":0,"last_review":null}'::jsonb, false),
-  ('c_e2e_mut_1',  'dk_e2e_mutate',  '{"due":"1970-01-01T00:00:00Z","stability":0,"difficulty":0,"elapsed_days":0,"scheduled_days":0,"reps":0,"lapses":0,"state":0,"last_review":null}'::jsonb, false)
+INSERT INTO flashcard_cards (card_id, material_id) VALUES
+  ('c_e2e_priv_1', 'dk_e2e_private'),
+  ('c_e2e_link_1', 'dk_e2e_link'),
+  ('c_e2e_pub_1',  'dk_e2e_public'),
+  ('c_e2e_mut_1',  'dk_e2e_mutate')
 ON CONFLICT (card_id) DO NOTHING;
 
 COMMIT;

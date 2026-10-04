@@ -320,9 +320,7 @@ export default function WorkspaceOpen() {
                   : { id: ref.id, kind: 'file' }
               )
             }
-            // Curate writes materials, which an owner at its storage limit
-            // refuses: its switch hides with content editing.
-            readOnly={readOnly || !ws.capabilities.canEditContent}
+            openResource={openItem}
             renderTabRow={railTab === 'chat' ? railRow : noRow}
             workspaceId={workspaceId}
           />

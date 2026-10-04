@@ -17,6 +17,7 @@ import (
 
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/internal/pipeline"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -59,6 +60,9 @@ func openInternalHTTPWithPipeline(
 		t.Fatalf("registry: %v", err)
 	}
 	st.SetModelRegistry(reg)
+	converter := httptest.NewServer(withConverter(http.NotFoundHandler()))
+	t.Cleanup(converter.Close)
+	st.ConfigureMarkdownConverter(converter.URL, "collab-test-secret")
 	mem := blob.NewMemory()
 	h := httpapi.New(st, mem, pipe, nil, "docling", httpapi.Config{
 		AuthDisabled:   true,
@@ -584,5 +588,107 @@ func TestInternalGetAgentOperationRequiresItsActorAndWorkspace(t *testing.T) {
 	}
 	if decodeReceipt(t, ok).OperationID != opID {
 		t.Fatalf("receipt = %s", ok.Body.String())
+	}
+}
+
+// An agent note's quiz and flashcards fences become rows under the note, made
+// in the note's transaction with the references already pointing at them.
+func TestInternalCreateNoteCreatesItsMiniChecks(t *testing.T) {
+	h, st := openInternalHTTP(t)
+	msgID := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
+	question := `{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"Is a tangent perpendicular to the radius?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}`
+	title := "Tangents " + msgID
+	markdown := "# Tangents\n\n```quiz\n{\"questions\":[" + question + "]}\n```\n\nRecap.\n\n" +
+		"```quiz\n{\"questions\":[" + question + "]}\n```\n\n" +
+		"```flashcards\n{\"cards\":[{\"front\":\"Tangent\",\"back\":\"One point\"}]}\n```"
+	body := noteBody(msgID, "call_checks", title, markdown)
+	rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	noteID := store.ChatMaterialID(msgID, "call_checks")
+	type child struct{ ID, Kind, Title string }
+	children := func() []child {
+		rows, err := st.Pool().Query(t.Context(),
+			`SELECT id, kind, title FROM materials WHERE parent_material_id=$1 ORDER BY title`, noteID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		var out []child
+		for rows.Next() {
+			var c child
+			if err := rows.Scan(&c.ID, &c.Kind, &c.Title); err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, c)
+		}
+		return out
+	}
+	got := children()
+	if len(got) != 3 {
+		t.Fatalf("embedded rows = %+v", got)
+	}
+	titles := map[string]bool{}
+	for _, c := range got {
+		titles[c.Title] = true
+	}
+	if len(titles) != 3 || !titles[title+" · Quiz"] || !titles[title+" · Quiz 2"] {
+		t.Fatalf("embedded titles = %+v", got)
+	}
+	note, err := st.GetMaterial(t.Context(), noteID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs, err := materialdoc.ExtractMaterialRefs(note.Content)
+	if err != nil || len(refs) != 3 {
+		t.Fatalf("note refs = %+v err = %v", refs, err)
+	}
+	for _, ref := range refs {
+		found := false
+		for _, c := range got {
+			found = found || c.ID == ref.MaterialID
+		}
+		if !found {
+			t.Fatalf("reference %+v points at no embedded row", ref)
+		}
+	}
+
+	if replay := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body); replay.Code != http.StatusOK {
+		t.Fatalf("replay status = %d body=%s", replay.Code, replay.Body.String())
+	}
+	if again := children(); len(again) != 3 {
+		t.Fatalf("a replay created rows again: %+v", again)
+	}
+
+	broken := noteBody(msgID, "call_broken", "Broken "+msgID, "```quiz\nquestions: [\n```")
+	rec = doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, broken)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_input") {
+		t.Fatalf("broken fence: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// create_material files the material in the chapter it names, and only in a
+// chapter of the same workspace.
+func TestInternalCreateMaterialFilesItInTheChapter(t *testing.T) {
+	h, st := openInternalHTTP(t)
+	msgID := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
+	body := noteBody(msgID, "call_chapter", "Filed "+msgID, "Filed note.")
+	body["chapterId"] = "ch_e2e_private"
+	if rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body); rec.Code != http.StatusOK {
+		t.Fatalf("create status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	mt, err := st.GetMaterial(t.Context(), store.ChatMaterialID(msgID, "call_chapter"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupMaterial(t, st, mt.ID)
+	if mt.ChapterID == nil || *mt.ChapterID != "ch_e2e_private" {
+		t.Fatalf("chapter = %v", mt.ChapterID)
+	}
+	foreign := noteBody(msgID, "call_foreign_chapter", "Foreign "+msgID, "Foreign.")
+	foreign["chapterId"] = "ch_e2e_public"
+	if rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, foreign); rec.Code != http.StatusBadRequest {
+		t.Fatalf("foreign chapter: status = %d body=%s", rec.Code, rec.Body.String())
 	}
 }

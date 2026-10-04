@@ -209,8 +209,7 @@ view-only for owner and members alike:
   `CheckSourceAccess` refuses a source edit with the same code;
 - capabilities carry `canEditContent` (edit mode, comments, annotations)
   beside `canEdit`, which keeps renaming, moving, reordering and trashing;
-- workspace chat drops the agent's create and edit tools and refuses curate
-  threads and turns, and generation is refused with `storage_quota_exceeded`
+- workspace chat drops the agent's create and edit tools, and generation is refused with `storage_quota_exceeded`
   (`StorageFullErr`) before any credits are reserved or spent.
 
 Enforcement is at admission only, like frozen: the collaboration service's

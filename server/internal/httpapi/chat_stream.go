@@ -28,18 +28,20 @@ import (
 type chatStreamReq struct {
 	ConversationID string `json:"conversationId"`
 	Text           string `json:"text"`
-	// Curate only opens a new thread. An existing thread's stored value governs;
-	// a disagreeing flag is rejected rather than silently ignored.
-	Curate bool `json:"curate"`
+	// Library is the per-turn switch: the shared knowledge library is a source.
+	Library bool `json:"library"`
+	// OpenResource is the file or material the learner has open, if any.
+	OpenResource *chatOpenResource `json:"openResource"`
+}
+
+type chatOpenResource struct {
+	ID   string `json:"id"`
+	Kind string `json:"kind"`
 }
 
 const (
 	chatQueryMaxEstimatedTokens = 8192
 	chatQueryMaxBytes           = 65_536
-
-	// Shared by the stream and the conversation create route.
-	curateRequiresEditorCode    = "curate_requires_editor"
-	curateRequiresEditorMessage = "Curating from the library needs edit access to this workspace."
 )
 
 func estimateChatQueryTokens(text string) int {
@@ -134,16 +136,6 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "text is required"})
 		return
 	}
-	// Curate reads the shared library to write materials. Without edit access,
-	// or with the owner at its storage limit (no create tool), the turn would
-	// stall, so refuse it here.
-	if req.Curate && (!access.canEdit || access.full) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"code": curateRequiresEditorCode, "message": curateRequiresEditorMessage,
-		})
-		return
-	}
-
 	ctx := r.Context()
 	userID := uid(r)
 	ctx, cancelLiveAuthorization := a.liveWorkspaceContext(ctx, userID, wsID)
@@ -156,15 +148,14 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg := llm.Cfg
 
-	conv, err := a.resolveConversation(ctx, userID, wsID, req.ConversationID, req.Curate)
+	conv, err := a.resolveConversation(ctx, userID, wsID, req.ConversationID)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
-	if conv.Curate != req.Curate {
-		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"code": "curate_mismatch", "message": "This chat's mode was fixed when it was created.",
-		})
+	turn, err := a.chatTurnContext(ctx, userID, conv.WorkspaceID, req)
+	if err != nil {
+		a.fail(w, err)
 		return
 	}
 
@@ -245,8 +236,8 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		errorCode    string
 	)
 
-	// library.read is granted per curate turn; the actor can edit, because a
-	// curate request from anyone else was refused above.
+	// library.read is granted per turn with the Library switch, to any role
+	// that can chat; writing from it still needs the role's write operations.
 	operations := agenttools.OperationsForRole(string(access.role))
 	if access.readOnly || access.full {
 		// A frozen actor or owner keeps reading and deleting, not creating,
@@ -257,11 +248,11 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 				(access.readOnly && op == agenttools.OpTrashRestore)
 		})
 	}
-	if conv.Curate {
+	if req.Library {
 		operations = append(operations, agenttools.OpLibraryRead)
 	}
 
-	streamErr := a.relayChat(ctx, userID, operations, conv, llm, charge.id, req.Text, assistant.ID, prompt, func(ev pipeChatEvent) {
+	streamErr := a.relayChat(ctx, userID, operations, conv, turn, llm, charge.id, req.Text, assistant.ID, prompt, func(ev pipeChatEvent) {
 		switch ev.Type {
 		case "checkpoint":
 			cpCtx, cpCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -370,9 +361,40 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (a *api) resolveConversation(ctx context.Context, userID, wsID, convID string, curate bool) (store.Conversation, error) {
+// chatTurn is the trusted per-turn context the pipeline receives beside the
+// query: the Library switch, the open item as stored (never the browser's
+// title), whether study progress is on for the requester here, and their
+// study preferences.
+type chatTurn struct {
+	library          bool
+	openResource     map[string]string
+	studyProgress    bool
+	studyPreferences store.StudyPreferences
+}
+
+func (a *api) chatTurnContext(ctx context.Context, userID, wsID string, req chatStreamReq) (chatTurn, error) {
+	turn := chatTurn{library: req.Library}
+	if o := req.OpenResource; o != nil && o.ID != "" {
+		title, found, err := a.s.ChatOpenResource(ctx, wsID, o.Kind, o.ID)
+		if err != nil {
+			return turn, err
+		}
+		if found {
+			turn.openResource = map[string]string{"id": o.ID, "kind": o.Kind, "title": title}
+		}
+	}
+	on, err := a.s.StudyEnabled(ctx, userID, wsID)
+	if err != nil {
+		return turn, err
+	}
+	turn.studyProgress = on
+	turn.studyPreferences, err = a.s.StudyPreferencesOf(ctx, userID)
+	return turn, err
+}
+
+func (a *api) resolveConversation(ctx context.Context, userID, wsID, convID string) (store.Conversation, error) {
 	if convID == "" {
-		return a.s.CreateConversation(ctx, userID, wsID, "", curate)
+		return a.s.CreateConversation(ctx, userID, wsID, "")
 	}
 	conv, err := a.s.GetConversation(ctx, userID, convID)
 	if err != nil {
@@ -393,6 +415,7 @@ func (a *api) relayChat(
 	userID string,
 	operations []agenttools.Operation,
 	conv store.Conversation,
+	turn chatTurn,
 	llm resolvedLLM,
 	spendSessionID string,
 	query, assistantID string,
@@ -428,10 +451,13 @@ func (a *api) relayChat(
 		"assistantMessageId": assistantID,
 		"spendSessionId":     spendSessionID,
 		"locale":             a.userLocale(ctx, userID),
-		"curate":             conv.Curate,
+		"library":            turn.library,
+		"openResource":       turn.openResource,
+		"studyProgress":      turn.studyProgress,
+		"studyPreferences":   turn.studyPreferences,
 		"conversationId":     conv.ID,
-		// The curate ledger lives outside the message list; null until a curate
-		// turn has written one back through /api/internal/conversations/ledger.
+		// The build ledger lives outside the message list; null until a turn
+		// has written one back through /api/internal/conversations/ledger.
 		"ledger": conv.Ledger,
 	}
 	if prompt.Checkpoint != nil {

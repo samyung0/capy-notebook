@@ -978,7 +978,7 @@ export async function runJourney(
       fail();
       await ui.click(m.flashcards_show_answer());
       await ui.click(m.srs_good());
-      return 'The application currently suppresses flashcard progress failures.';
+      return;
     case 'task-save':
       await go('/');
       await dialog('task-edit');

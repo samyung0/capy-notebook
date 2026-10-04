@@ -18,10 +18,7 @@ type Conversation struct {
 	ID          string `json:"id"`
 	WorkspaceID string `json:"workspaceId"`
 	Title       string `json:"title"`
-	// Curate is fixed at creation: the thread either reads the shared knowledge
-	// library and writes materials for its whole life, or never does.
-	Curate bool `json:"curate"`
-	// Ledger is the curate progress ledger, opaque JSON owned by the retrieval
+	// Ledger is the build todo ledger, opaque JSON owned by the retrieval
 	// service. It is prompt state, not browser state, so it is never serialized
 	// with the conversation.
 	Ledger    json.RawMessage `json:"-"`
@@ -177,7 +174,7 @@ func (s *Store) ListConversations(ctx context.Context, userID, wsID string) ([]C
 		return nil, err
 	}
 	rows, err := s.pool.Query(ctx,
-		`SELECT id, workspace_id, COALESCE(title,''), curate, created_at, updated_at
+		`SELECT id, workspace_id, COALESCE(title,''), created_at, updated_at
 		   FROM conversations WHERE user_id=$1 AND workspace_id=$2
 		   ORDER BY updated_at DESC`, userID, wsID)
 	if err != nil {
@@ -187,7 +184,7 @@ func (s *Store) ListConversations(ctx context.Context, userID, wsID string) ([]C
 	out := make([]Conversation, 0)
 	for rows.Next() {
 		var c Conversation
-		if err := rows.Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.Curate, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.CreatedAt, &c.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -199,7 +196,7 @@ func (s *Store) ListConversations(ctx context.Context, userID, wsID string) ([]C
 // any effective role.
 // The model is resolved per assistant turn, not snapshotted here: Settings
 // changes apply to the next message in an existing thread.
-func (s *Store) CreateConversation(ctx context.Context, userID, wsID, title string, curate bool) (Conversation, error) {
+func (s *Store) CreateConversation(ctx context.Context, userID, wsID, title string) (Conversation, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Conversation{}, err
@@ -211,11 +208,11 @@ func (s *Store) CreateConversation(ctx context.Context, userID, wsID, title stri
 	id := uid("conv")
 	var c Conversation
 	err = tx.QueryRow(ctx,
-		`INSERT INTO conversations (id, user_id, workspace_id, title, curate)
-		   VALUES ($1,$2,$3,NULLIF($4,''),$5)
-		   RETURNING id, workspace_id, COALESCE(title,''), curate, created_at, updated_at`,
-		id, userID, wsID, title, curate).
-		Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.Curate, &c.CreatedAt, &c.UpdatedAt)
+		`INSERT INTO conversations (id, user_id, workspace_id, title)
+		   VALUES ($1,$2,$3,NULLIF($4,''))
+		   RETURNING id, workspace_id, COALESCE(title,''), created_at, updated_at`,
+		id, userID, wsID, title).
+		Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
 		return Conversation{}, err
 	}
@@ -231,9 +228,9 @@ func (s *Store) CreateConversation(ctx context.Context, userID, wsID, title stri
 func (s *Store) GetConversation(ctx context.Context, userID, convID string) (Conversation, error) {
 	var c Conversation
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, workspace_id, COALESCE(title,''), curate, ledger, created_at, updated_at
+		`SELECT id, workspace_id, COALESCE(title,''), ledger, created_at, updated_at
 		   FROM conversations WHERE id=$1 AND user_id=$2`, convID, userID).
-		Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.Curate, &c.Ledger, &c.CreatedAt, &c.UpdatedAt)
+		Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.Ledger, &c.CreatedAt, &c.UpdatedAt)
 	if isNoRows(err) {
 		return Conversation{}, ErrNotFound
 	}
@@ -246,11 +243,11 @@ func (s *Store) GetConversation(ctx context.Context, userID, convID string) (Con
 	return c, nil
 }
 
-// ErrStaleTurn is a curate ledger write whose assistant message is no longer
+// ErrStaleTurn is a ledger write whose assistant message is no longer
 // the conversation's newest, so it carries a snapshot older than the row.
 var ErrStaleTurn = errors.New("a newer turn has started in this conversation")
 
-// SetConversationLedger stores the curate progress ledger the retrieval
+// SetConversationLedger stores the build todo ledger the retrieval
 // service wrote at turn end. The JSON is opaque here: the pipeline owns its
 // shape and this row is only handed back on the next turn.
 //
@@ -637,4 +634,24 @@ func (s *Store) PersistCheckpoint(ctx context.Context, convID string, cp Convers
 		)`,
 		convID, cp.ThroughMessageID, cp.Summary, cp.ProviderSlug, cp.ModelSlug, cp.ModelVersion, cp.EstimatedTokens)
 	return err
+}
+
+// ChatOpenResource is the title of the file or material the learner has open,
+// when it is a live item of this workspace. found is false for anything else:
+// the open item is context for the turn, and a stale one is simply not sent.
+func (s *Store) ChatOpenResource(ctx context.Context, wsID, kind, id string) (title string, found bool, err error) {
+	var q string
+	switch kind {
+	case "file":
+		q = `SELECT name FROM files WHERE id=$1 AND workspace_id=$2 AND trashed_at IS NULL`
+	case "material":
+		q = `SELECT title FROM materials WHERE id=$1 AND workspace_id=$2 AND trashed_at IS NULL`
+	default:
+		return "", false, nil
+	}
+	err = s.pool.QueryRow(ctx, q, id, wsID).Scan(&title)
+	if isNoRows(err) {
+		return "", false, nil
+	}
+	return title, err == nil, err
 }

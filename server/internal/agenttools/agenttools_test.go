@@ -92,7 +92,7 @@ func TestOperationsForRole(t *testing.T) {
 	if OperationsForRole("") != nil {
 		t.Fatal("no role grants nothing")
 	}
-	// The library is not a workspace resource: curate mode grants library.read
+	// The library is not a workspace resource: the Library switch grants library.read
 	// per turn, no role ever does.
 	for _, ops := range [][]Operation{owner, editor, viewer} {
 		if has(ops, OpLibraryRead) {

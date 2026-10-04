@@ -14,18 +14,35 @@ import (
 // existing frontend (camelCase, nullable fields as pointers).
 
 type User struct {
-	ID                 string             `json:"id"`
-	Name               string             `json:"name"`
-	Email              string             `json:"email"`
-	AvatarIconID       string             `json:"avatarIconId,omitempty"`
-	AvatarURL          string             `json:"avatarUrl,omitempty"`
-	ClassLabel         string             `json:"classLabel,omitempty"`
-	Streak             int                `json:"streak"`
-	Locale             string             `json:"locale"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Email        string `json:"email"`
+	AvatarIconID string `json:"avatarIconId,omitempty"`
+	AvatarURL    string `json:"avatarUrl,omitempty"`
+	ClassLabel   string `json:"classLabel,omitempty"`
+	Streak       int    `json:"streak"`
+	Locale       string `json:"locale"`
+	// StudyProgress is the default for workspaces without their own setting.
+	StudyProgress bool `json:"studyProgress"`
+	// StudyPreferences shape what the chat agent builds; empty fields take the
+	// pipeline's defaults.
+	StudyPreferences   StudyPreferences   `json:"studyPreferences"`
 	ChatModel          models.Ref         `json:"chatModel"`
 	EditorModel        models.Ref         `json:"editorModel"`
 	PlanTier           PlanTier           `json:"planTier"`
 	SubscriptionStatus SubscriptionStatus `json:"subscriptionStatus"`
+}
+
+// StudyPreferences are the learner's defaults for what the agent builds
+// (todo-learning.md, 1.4). Zero values are unset, so the pipeline's defaults
+// apply to them.
+type StudyPreferences struct {
+	ExplainerStyle       string `json:"explainerStyle,omitempty" enum:"brief,standard,detailed"`
+	Practice             string `json:"practice,omitempty" enum:"none,quiz,flashcards,both"`
+	QuizLength           int    `json:"quizLength,omitempty" minimum:"1" maximum:"50"`
+	FlashcardsPerChapter int    `json:"flashcardsPerChapter,omitempty" minimum:"1" maximum:"100"`
+	MiniChecks           *bool  `json:"miniChecks,omitempty"`
+	VisualAids           string `json:"visualAids,omitempty" enum:"fewer,more"`
 }
 
 type Workspace struct {
@@ -158,9 +175,8 @@ type Quiz struct {
 
 type Attempt struct {
 	ID string `json:"id"`
-	// MaterialID is null for the virtual "review mistakes" quiz, and becomes
-	// null when the source quiz is deleted. QuizName and WorkspaceName are the
-	// submit-time snapshot that keeps the row readable either way.
+	// MaterialID becomes null when the source quiz is deleted. QuizName and
+	// WorkspaceName are the submit-time snapshot that keeps the row readable.
 	MaterialID    *string   `json:"materialId"`
 	QuizName      string    `json:"quizName"`
 	WorkspaceName string    `json:"workspaceName"`
@@ -192,8 +208,6 @@ type FlashcardSet struct {
 	SharePath        string `json:"sharePath,omitempty"`
 	ParentMaterialID string `json:"-"`
 	CardCount        int    `json:"cardCount"`
-	KnownPct         int    `json:"knownPct"`
-	DueCount         int    `json:"dueCount"`
 	// Provenance is the source material's attribution record; the study page
 	// renders it as a footer.
 	Provenance *Provenance `json:"provenance,omitempty"`
@@ -206,16 +220,12 @@ type FlashcardSet struct {
 	CanEditContent bool `json:"canEditContent"`
 }
 
-// Srs is the FSRS scheduling state persisted as jsonb; the shape mirrors
-// SrsState in src/api/types.ts (the frontend owns the algorithm).
 type Flashcard struct {
-	Revision   int64    `json:"revision"`
-	ID         string   `json:"id"`
-	MaterialID string   `json:"materialId"`
-	Front      string   `json:"front"`
-	Back       string   `json:"back"`
-	Known      bool     `json:"known"`
-	Srs        SrsState `json:"srs"`
+	Revision   int64  `json:"revision"`
+	ID         string `json:"id"`
+	MaterialID string `json:"materialId"`
+	Front      string `json:"front"`
+	Back       string `json:"back"`
 }
 
 // Material is a persisted versioned Plate document scoped to chapters and/or

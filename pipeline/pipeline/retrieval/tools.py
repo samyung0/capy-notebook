@@ -27,10 +27,9 @@ import requests
 from .. import obs
 from ..config import cfg
 from ..generated import MATERIAL_TITLE_MAX
-from ..prompts import curate as curate_prompts
-from . import capture, contract, library, pending, store
+from . import bank, capture, contract, library, pending, store
 from .chunking import clip_to_tokens, estimate_tokens
-from .library_evidence import CurateEvidence
+from .library_evidence import LibraryEvidence
 from .limits import TurnBudget
 from .search import Passage, SearchStats, search
 
@@ -72,39 +71,24 @@ class ToolResult:
         return "\n\n".join(part for part in self.text_parts if part)
 
 
-# What a stored ledger keeps of a long conversation. The gateway refuses a
-# ledger over 64 KiB, and the model pays for every rendered line on every call,
-# so the tail is what a later turn can still act on.
-STORED_MATERIALS = 50
-STORED_REQUESTS = 5
+# Open todos a ledger may hold. The gateway refuses a ledger over 64 KiB, and
+# the model pays for every rendered line on every call.
 STORED_TODOS = 10
 
 
 @dataclass
 class LedgerTodo:
-    """One material or section the turn promised to produce.
+    """One material or section the build promised to produce.
 
     ``id`` comes from the conversation's own counter and never changes, so the
     number the model writes down in one message still names this todo in the
-    next one. ``done`` and ``material_id`` live for the turn that completes it:
-    a done todo leaves the ledger when it is stored.
+    next one. ``done`` lives for the turn that completes it: a done todo leaves
+    the ledger when it is stored.
     """
 
     id: int
     text: str
     done: bool = False
-    material_id: str = ""
-
-
-@dataclass
-class LedgerMaterial:
-    """A material created, or a section appended to one (``kind`` "edit")."""
-
-    id: str
-    kind: str
-    title: str
-    size: str
-    todo: int | None = None
 
 
 @dataclass
@@ -116,17 +100,11 @@ class LedgerRead:
     section: str
 
 
-def _stored_list(stored: dict[str, Any], key: str) -> list[Any]:
-    """One array of a stored ledger. Raised into ``from_stored``'s log."""
-    value = stored.get(key) or []
-    if not isinstance(value, list):
-        raise TypeError(f"{key} is {type(value).__name__}, not a list")
-    return value
-
-
 def _stored_objects(stored: dict[str, Any], key: str) -> list[dict[str, Any]]:
     """One array of a stored ledger whose entries are objects."""
-    entries = _stored_list(stored, key)
+    entries = stored.get(key) or []
+    if not isinstance(entries, list):
+        raise TypeError(f"{key} is {type(entries).__name__}, not a list")
     for entry in entries:
         if not isinstance(entry, dict):
             raise TypeError(f"{key} holds a {type(entry).__name__}, not an object")
@@ -135,22 +113,17 @@ def _stored_objects(stored: dict[str, Any], key: str) -> list[dict[str, Any]]:
 
 @dataclass
 class Ledger:
-    """One curate conversation's progress ledger.
+    """A conversation's todo list for multi-item builds.
 
-    It belongs to the conversation, not the turn: the requests the learner has
-    made, the todos they were broken into and the materials produced all carry
-    across turns through ``conversations.ledger``. A turn loads it, adds its own
-    request and updates todos with ``create_ledger``, marks todos done as the writes
-    land, and stores it again at turn end. Retained full library evidence can also satisfy reads.
-
-    It rides right after the query on every call and is never part of the
-    message history, so it is the one place the model sees what it has done.
+    It belongs to the conversation, not the turn: open todos carry across
+    turns through ``conversations.ledger``. A turn loads it, edits todos with
+    ``create_ledger``, marks todos done as writes land, and stores it at turn
+    end. It rides right after the query on every call and is never part of the
+    message history.
     """
 
-    requests: list[str] = field(default_factory=list)
     todos: list[LedgerTodo] = field(default_factory=list)
-    materials: list[LedgerMaterial] = field(default_factory=list)
-    # The conversation's todo counter: the next id ``add`` hands out. It is
+    # The conversation's todo counter: the next id a new todo gets. It is
     # stored, so an id is never reused after its todo leaves the ledger.
     next_todo_id: int = 0
     # This turn only, and never stored: what the model read to write with.
@@ -159,9 +132,8 @@ class Ledger:
     written: bool = False
     # Something this turn changed has to be written back at turn end.
     dirty: bool = False
-    # Monotonic count of this turn's real progress: its create_ledger call, then
-    # each completed todo. The stall guard compares it across a response, so a
-    # repeated read leaves it alone.
+    # Monotonic count of this turn's real progress: its first plan write, then
+    # each completed todo. The stall guard compares it across a response.
     progress: int = 0
 
     @classmethod
@@ -171,10 +143,8 @@ class Ledger:
         Total: the row is read again on every turn, so a shape this code does
         not understand would otherwise break the conversation for good. It is
         logged against the conversation and the turn starts from nothing. A
-        shape that is not the one ``stored`` writes is malformed rather than
-        something to coerce: a dict where a list belongs would otherwise read
-        as its keys, and a todo id the counter has already handed out would
-        let two todos answer to the same number.
+        todo id the counter has already handed out would let two todos answer
+        to the same number, so that is malformed too.
         """
         if stored is None:
             return cls()
@@ -182,23 +152,10 @@ class Ledger:
             if not isinstance(stored, dict):
                 raise TypeError(f"ledger is {type(stored).__name__}, not an object")
             ledger = cls(
-                requests=[str(request) for request in _stored_list(stored, "requests")],
                 next_todo_id=int(stored.get("next_todo_id") or 0),
                 todos=[
                     LedgerTodo(id=int(todo.get("id")), text=str(todo.get("text") or ""))
                     for todo in _stored_objects(stored, "todos")
-                ],
-                materials=[
-                    LedgerMaterial(
-                        id=str(material.get("id") or ""),
-                        kind=str(material.get("kind") or ""),
-                        title=str(material.get("title") or ""),
-                        size=str(material.get("size") or ""),
-                        todo=None
-                        if material.get("todo") is None
-                        else int(material["todo"]),
-                    )
-                    for material in _stored_objects(stored, "materials")
                 ],
             )
             if any(todo.id >= ledger.next_todo_id for todo in ledger.todos):
@@ -206,61 +163,28 @@ class Ledger:
             return ledger
         except (AttributeError, TypeError, ValueError) as exc:
             log.error(
-                "stored curate ledger is malformed (%s); starting this turn from "
-                "an empty ledger. conversation=%s",
+                "stored ledger is malformed (%s); starting this turn from an "
+                "empty ledger. conversation=%s",
                 exc,
                 conversation or "unknown",
             )
             return cls()
 
     def stored(self) -> dict[str, Any]:
-        """The ledger as the gateway persists it, bounded so a long conversation
-        stays under the gateway's 64 KiB cap.
-
-        Only what the next turn still needs: the newest ``STORED_TODOS`` open
-        todos, the last ``STORED_MATERIALS`` materials and the last
-        ``STORED_REQUESTS`` requests. Done todos drop because the material
-        entry records what they produced, and it keeps the id of the todo it
-        completed even when that todo has dropped. Ids never move, so nothing
-        here is renumbered. Reads are this turn's only and are never stored.
-        """
+        """The open todos and the counter, as the gateway persists them."""
         return {
-            "requests": self.requests[-STORED_REQUESTS:],
             "next_todo_id": self.next_todo_id,
             "todos": [
                 {"id": todo.id, "text": todo.text}
                 for todo in self.todos
                 if not todo.done
             ][-STORED_TODOS:],
-            "materials": [
-                {
-                    "id": material.id,
-                    "kind": material.kind,
-                    "title": material.title,
-                    "size": material.size,
-                    "todo": material.todo,
-                }
-                for material in self.materials[-STORED_MATERIALS:]
-            ],
         }
 
     @property
-    def exists(self) -> bool:
-        return bool(self.requests)
-
-    def add(self, request: str, todos: list[str]) -> list[LedgerTodo]:
-        """Add this turn's request and its todos, each with a fresh id."""
-        self.requests.append(request)
-        added = [
-            LedgerTodo(id=self.next_todo_id + n, text=text)
-            for n, text in enumerate(todos)
-        ]
-        self.next_todo_id += len(added)
-        self.todos.extend(added)
-        self.written = True
-        self.dirty = True
-        self.progress += 1
-        return added
+    def active(self) -> bool:
+        """The turn builds on the ledger: it has todos, open or done."""
+        return bool(self.todos)
 
     def open_todos(self) -> list[int]:
         """The ids the write tools accept right now."""
@@ -281,28 +205,34 @@ class Ledger:
     def read_ids(self) -> set[str]:
         return {read.excerpt_id for read in self.reads}
 
-    def note_material(self, material: LedgerMaterial) -> None:
-        self.materials.append(material)
-        self.dirty = True
-        todo = None if material.todo is None else self.todo(material.todo)
-        if todo is None:
+    def complete(self, todo_id: int | None) -> None:
+        """Mark the todo a successful write completed."""
+        todo = None if todo_id is None else self.todo(todo_id)
+        if todo is None or todo.done:
             return
-        if not todo.done:
-            todo.done = True
-            self.progress += 1
-        todo.material_id = material.id
+        todo.done = True
+        self.dirty = True
+        self.progress += 1
 
 
 @dataclass
 class ToolContext:
     workspace_id: str
     user_id: str = ""
-    # Curate mode: the library tools are offered, materials carry library
-    # provenance, and the conversation keeps a progress ledger instead of
-    # citations. The ledger is loaded from the chat request at turn start.
-    curate: bool = False
+    # The Library switch: the knowledge library is a source this turn, so its
+    # tools are offered and materials written from it carry its provenance.
+    library: bool = False
+    # The conversation's todo list for multi-item builds, loaded from the chat
+    # request at turn start.
     ledger: Ledger = field(default_factory=Ledger)
-    library_evidence: CurateEvidence = field(default_factory=CurateEvidence)
+    # What the turn message tells the model about the learner: the file or
+    # material they have open, and their saved study preferences.
+    open_resource: dict[str, Any] = field(default_factory=dict)
+    study_preferences: dict[str, Any] = field(default_factory=dict)
+    # The requester's study progress is on in this workspace, so the agent may
+    # read it.
+    study_progress: bool = False
+    library_evidence: LibraryEvidence = field(default_factory=LibraryEvidence)
     # The library's subjects that hold excerpts, fetched once per turn for the
     # browse_knowledge description, and the topics of each subject browsed
     # this turn, which is where search_knowledge topic ids come from.
@@ -607,20 +537,28 @@ def _source_listing(
         ):
             continue
         by_chapter.setdefault(file["chapter_id"], []).append(file)
+    # Materials sit under the chapter they are filed in, so the model sees
+    # which chapters already have their practice.
+    materials: dict[str | None, list[dict[str, Any]]] = {}
+    for item in documents:
+        if item["kind"] == "material":
+            materials.setdefault(item.get("chapterId"), []).append(item)
     for chapter in outline["chapters"]:
         files = by_chapter.pop(chapter["id"], [])
-        if not files:
+        filed = materials.pop(chapter["id"], [])
+        if not files and not filed:
             continue
-        lines.append(f"\n## {chapter['name']}")
+        lines.append(f"\n## {chapter['name']} (chapter_id={chapter['id']})")
         lines.extend(_file_line(f, sources[f["id"]]["editable"]) for f in files)
+        lines.extend(_material_line(item) for item in filed)
     unfiled = [f for files in by_chapter.values() for f in files]
     if unfiled:
         lines.append("\n## Unfiled")
         lines.extend(_file_line(f, sources[f["id"]]["editable"]) for f in unfiled)
-    materials = [item for item in documents if item["kind"] == "material"]
-    if materials:
-        lines.append("\n## Study materials")
-        lines.extend(_material_line(item) for item in materials)
+    loose = [item for items in materials.values() for item in items]
+    if loose:
+        lines.append("\n## Unfiled study materials")
+        lines.extend(_material_line(item) for item in loose)
     return _result(
         "\n".join(lines)
         if lines
@@ -696,14 +634,8 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     browse the document by pixels, and a capture adds no citation of its own:
     the tool result names the numbers already covering that page.
     """
-    # No per-turn cap in curate mode: a capture is dropped when its exchange
-    # folds into the turn note anyway, and a whole set of materials is one turn.
-    if not ctx.curate and len(ctx.captures) >= cfg.captures_per_turn:
-        return _refused(
-            f"This turn already used its {cfg.captures_per_turn} capture_page calls. "
-            "Answer from what you have seen.",
-            code="limit_reached",
-        )
+    # No per-turn cap: a capture is dropped when its exchange folds into the
+    # turn note anyway, and a whole set of materials can be one turn.
     file_id, page, bbox = args["file_id"], args["page"], args.get("bbox")
     refused = await _refuse_note_as_file(ctx, file_id)
     if refused is not None:
@@ -762,7 +694,7 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
 async def load_library_catalog(ctx: ToolContext) -> None:
     """Read the library's subject list once, for the tool descriptions."""
-    if not ctx.curate or ctx.library_catalog is not None or not library.enabled():
+    if not ctx.library or ctx.library_catalog is not None or not library.enabled():
         return
     db = await library.pool()
     async with db.connection() as conn:
@@ -1011,13 +943,8 @@ async def _read_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
 
 async def _create_ledger(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    """Apply ledger edits atomically, preserving work and stable todo IDs."""
+    """Apply todo edits atomically, preserving work and stable todo IDs."""
     ledger = ctx.ledger
-    body = args.get("body")
-    if not ledger.exists and body is None:
-        return _refused(
-            "Supply body to create the first ledger; null only keeps an existing body."
-        )
     todos = {todo.id: replace(todo) for todo in ledger.todos}
     next_id = ledger.next_todo_id
     for item in args.get("todos", []):
@@ -1040,21 +967,18 @@ async def _create_ledger(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
                 todos[todo_id].text = text
     if sum(not todo.done for todo in todos.values()) > STORED_TODOS:
         return _refused(
-            "The ledger can hold at most 10 unfinished todos; this update changed nothing."
+            f"The ledger can hold at most {STORED_TODOS} unfinished todos; this update changed nothing."
         )
-    requests = ledger.requests if body is None else [body]
     updated = list(todos.values())
-    if updated == ledger.todos and requests == ledger.requests:
+    if updated == ledger.todos:
         return _result("Ledger unchanged.")
-    ledger.requests, ledger.todos, ledger.next_todo_id = requests, updated, next_id
-    # Only the first plan write in a turn counts as progress, as in production.
+    ledger.todos, ledger.next_todo_id = updated, next_id
+    # Only the first plan write in a turn counts as progress.
     if not ledger.written:
         ledger.progress += 1
     ledger.written = ledger.dirty = True
     listing = "\n".join(f"[ ] {t.id}. {t.text}" for t in ledger.todos if not t.done)
-    return _result(
-        f"Ledger updated.\nBody: {ledger.requests[-1]}\n\nOpen todos:\n{listing or '(none)'}"
-    )
+    return _result(f"Ledger updated.\n\nOpen todos:\n{listing or '(none)'}")
 
 
 async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
@@ -1063,8 +987,7 @@ async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> Too
     The excerpt is the unit the model works in, so only its own pages and the
     pages of its figures can be captured, never a page the book withholds (a
     reprinted text the library does not reproduce). Like ``capture_page`` it adds no
-    citation: a curate turn has none, and the attribution lives on the material.
-    Curate mode has no per-turn capture cap.
+    citation: the attribution lives on the material.
     """
     excerpt_id, page, bbox = args["excerpt_id"], args["page"], args.get("bbox")
     try:
@@ -1186,7 +1109,7 @@ async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult
     call_id = str(args.get("_tool_call_id") or "")
     if not call_id:
         return _refused("create_material is missing its tool-call id.")
-    prepared = await curate_write(ctx, "create_material", args)
+    prepared = await ledger_write(ctx, "create_material", args)
     if isinstance(prepared, ToolResult):
         return prepared
     books, todo = prepared
@@ -1214,6 +1137,7 @@ async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult
         "content": args.get("content") or "",
         "fileIds": resolved.file_ids,
         "chapterIds": resolved.chapter_ids,
+        "chapterId": str(args.get("chapter_id") or ""),
     }
     if books:
         # Go validates the shape and computes the material's own licence.
@@ -1223,20 +1147,12 @@ async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult
     result = await _post_operation(
         "/api/internal/materials", payload, op_id, ctx, failure=f"create the {kind}"
     )
-    if ctx.curate and result.effects:
-        note_created(ctx, result.effects[0], kind, args, todo)
+    if result.effects:
+        ctx.ledger.complete(todo)
     return result
 
 
-def _material_size(kind: str, args: dict[str, Any]) -> str:
-    if kind == "quiz":
-        return f"{len(args.get('questions') or [])} questions"
-    if kind == "flashcards":
-        return f"{len(args.get('cards') or [])} cards"
-    return f"{estimate_tokens(str(args.get('content') or ''))} tokens"
-
-
-# ------------------------------------------------------- curate-mode writes
+# ------------------------------------------------------------ material writes
 
 
 def _next_move(ledger: Ledger) -> str:
@@ -1251,14 +1167,14 @@ def _next_move(ledger: Ledger) -> str:
     return f"Open todos: {listing}."
 
 
-async def curate_write(
+async def ledger_write(
     ctx: ToolContext,
     tool: str,
     args: dict[str, Any],
     *,
     material: bool = True,
 ) -> tuple[list[dict[str, Any]], int | None] | ToolResult:
-    """Check a curate write and resolve its provenance, or refuse it.
+    """Check a material write and resolve its provenance, or refuse it.
 
     Returns the provenance books (one entry per source book) and the ledger
     todo this write completes. Shared with the playground's local write stubs,
@@ -1266,15 +1182,10 @@ async def curate_write(
     the user's own source file, which carries no provenance and no todo.
     """
     excerpt_ids = [str(e) for e in (args.get("excerpt_ids") or [])]
-    if not ctx.curate:
-        if excerpt_ids:
-            return _refused("excerpt_ids are only available in curate mode.")
-        return [], None
     if not material:
         # Provenance is what a work was written from; a workspace source file is
-        # the user's own text, so the ledger rules do not reach it. Both are
-        # refused rather than ignored: a silently dropped todo would leave the
-        # model believing it closed one.
+        # the user's own text. Both are refused rather than ignored: a silently
+        # dropped todo would leave the model believing it closed one.
         if excerpt_ids:
             return _refused(
                 "excerpt_ids belong to a study material written from the "
@@ -1286,28 +1197,34 @@ async def curate_write(
                 "todo, so it takes no todo. Call it again without one."
             )
         return [], None
-    if not ctx.ledger.exists:
-        return _refused(
-            f"There is no ledger yet. Call create_ledger with the plan before {tool}."
-        )
+    todo: int | None = None
     raw_todo = args.get("todo")
-    if raw_todo is None:
-        return _refused(
-            f"{tool} needs todo, the id of the ledger todo it completes. "
-            f"{_next_move(ctx.ledger)}"
-        )
-    todo = int(raw_todo)
-    entry = ctx.ledger.todo(todo)
-    if entry is None:
-        return _refused(f"todo {todo} is not on the ledger. {_next_move(ctx.ledger)}")
-    if entry.done:
-        return _refused(f"todo {todo} is already done. {_next_move(ctx.ledger)}")
+    if raw_todo is not None:
+        todo = int(raw_todo)
+        entry = ctx.ledger.todo(todo)
+        if entry is None:
+            return _refused(
+                f"todo {todo} is not on the ledger. {_next_move(ctx.ledger)}"
+            )
+        if entry.done:
+            return _refused(f"todo {todo} is already done. {_next_move(ctx.ledger)}")
     read = ctx.ledger.read_ids()
+    # Name every missing field at once: a write resent per field costs a round
+    # trip of the whole content each time.
+    missing = []
+    if raw_todo is None and ctx.ledger.open_todos():
+        missing.append("todo, the id of the ledger todo it completes")
     if read and not excerpt_ids:
-        return _refused(
-            f"{tool} needs excerpt_ids naming the library excerpts this content "
-            "was written from."
+        missing.append(
+            "excerpt_ids naming the library excerpts this content was written from"
         )
+    if missing:
+        hint = (
+            f" {_next_move(ctx.ledger)}"
+            if raw_todo is None and ctx.ledger.open_todos()
+            else ""
+        )
+        return _refused(f"{tool} needs {'; and '.join(missing)}.{hint}")
     unread = [e for e in excerpt_ids if e not in read]
     if unread:
         return _refused(
@@ -1322,39 +1239,6 @@ async def curate_write(
         return _refused(f"{tool}: {exc}")
 
 
-def note_created(
-    ctx: ToolContext,
-    effect: dict[str, Any],
-    kind: str,
-    args: dict[str, Any],
-    todo: int | None,
-) -> None:
-    """Record a created material on the ledger and mark the todo it completes."""
-    resource = effect.get("resource") or {}
-    ctx.ledger.note_material(
-        LedgerMaterial(
-            id=str(resource.get("id") or ""),
-            kind=kind,
-            title=str(resource.get("title") or ""),
-            size=_material_size(kind, args),
-            todo=todo,
-        )
-    )
-
-
-def note_appended(ctx: ToolContext, rid: str, commands: int, todo: int | None) -> None:
-    """Record an appended section on the ledger and mark the todo it completes."""
-    ctx.ledger.note_material(
-        LedgerMaterial(
-            id=rid,
-            kind="edit",
-            title="",
-            size=f"{commands} edits",
-            todo=todo,
-        )
-    )
-
-
 async def store_ledger(ctx: ToolContext) -> None:
     """Write the conversation ledger back through the gateway at turn end.
 
@@ -1363,10 +1247,10 @@ async def store_ledger(ctx: ToolContext) -> None:
     stall guard or an error. A failed write loses the turn's ledger changes,
     not the turn: the materials themselves are already durable.
     """
-    if not ctx.curate or not ctx.ledger.dirty:
+    if not ctx.ledger.dirty:
         return
     if not _gateway_ready() or not ctx.user_id or not ctx.assistant_message_id:
-        log.warning("curate ledger not stored: no gateway route for this turn")
+        log.warning("ledger not stored: no gateway route for this turn")
         return
     payload = {
         "workspaceId": ctx.workspace_id,
@@ -1386,11 +1270,11 @@ async def store_ledger(ctx: ToolContext) -> None:
     try:
         resp = await asyncio.to_thread(_post)
     except requests.RequestException as exc:
-        log.warning("curate ledger write failed: %s", exc)
+        log.warning("ledger write failed: %s", exc)
         return
     if resp.status_code >= 300:
         log.warning(
-            "curate ledger write failed: %s %s",
+            "ledger write failed: %s %s",
             resp.status_code,
             _response_detail(resp),
         )
@@ -1759,7 +1643,7 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         )
     call_id = str(args.get("_tool_call_id") or "")
     kind, rid = _target(args)
-    prepared = await curate_write(
+    prepared = await ledger_write(
         ctx, "edit_document", args, material=kind == "material"
     )
     if isinstance(prepared, ToolResult):
@@ -1796,9 +1680,80 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         ctx._scope_outline = None
         if kind == "source_file":
             ctx.pending_sources = await pending.load(ctx.workspace_id, ctx.file_ids)
-        elif ctx.curate:
-            note_appended(ctx, rid, len(commands), todo)
+        else:
+            ctx.ledger.complete(todo)
     return result
+
+
+async def _search_questions(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    rows = await bank.search(
+        str(args["query"]),
+        exam=args.get("exam") or None,
+        topics=args.get("topics") or None,
+        types=args.get("types") or None,
+    )
+    if not rows:
+        return _result(
+            "No bank question matches. Relax a filter or write new practice."
+        )
+    return _result("\n\n".join(bank.card(row) for row in rows))
+
+
+async def _read_question(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    row = await bank.read(str(args["question_id"]))
+    if row is None:
+        return _refused("No bank question has that id.", code="unavailable_target")
+    return _result(bank.full(row))
+
+
+def render_progress(progress: dict[str, Any]) -> str:
+    """The learner's progress as the model reads it."""
+    lines: list[str] = []
+    for state in ("done", "started", "removed"):
+        items = [i for i in progress.get("items") or [] if i.get("state") == state]
+        if items:
+            lines.append(f"{state.capitalize()}:")
+            lines.extend(f"- {i['title']} ({i['kind']} {i['id']})" for i in items)
+    attempts = progress.get("recentAttempts") or []
+    if attempts:
+        lines.append("Recent quizzes:")
+        lines.extend(
+            f"- {a['quizName']}: {a['pct']}% on {str(a['takenAt'])[:10]}"
+            + (f" ({', '.join(a['chapters'])})" if a.get("chapters") else "")
+            for a in attempts
+        )
+    weak = progress.get("weakChapters") or []
+    if weak:
+        lines.append("Least retained chapters:")
+        lines.extend(
+            f"- {w['chapter'] or 'Unfiled'}: {round(100 * w['retention'])}% retained "
+            f"across {w['items']} rated questions and cards"
+            for w in weak
+        )
+    return "\n".join(lines) or "No study progress recorded in this workspace yet."
+
+
+async def _read_study_progress(_args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    if not _gateway_ready() or not ctx.user_id:
+        return _refused(
+            "Study progress is unavailable for this user.", code="lifecycle_rejected"
+        )
+
+    def _post() -> requests.Response:
+        return requests.post(
+            _material_url("/api/internal/study-progress"),
+            headers=_material_headers(),
+            data=json.dumps({"workspaceId": ctx.workspace_id, "userId": ctx.user_id}),
+            timeout=10,
+        )
+
+    resp = await asyncio.to_thread(_post)
+    if resp.status_code >= 300:
+        return _refused(
+            f"Study progress could not be read: {_response_detail(resp)}",
+            code="unavailable_target",
+        )
+    return _result(render_progress(resp.json()))
 
 
 REGISTRY: dict[str, ToolSpec] = {}
@@ -1816,6 +1771,9 @@ _register("search_knowledge", _search_knowledge)
 _register("browse_knowledge", _browse_knowledge)
 _register("read_knowledge", _read_knowledge)
 _register("create_ledger", _create_ledger)
+_register("read_study_progress", _read_study_progress)
+_register("search_questions", _search_questions)
+_register("read_question", _read_question)
 _register("capture_knowledge_page", _capture_knowledge_page)
 _register("list_sources", _list_sources)
 _register("read_document", _read_document)
@@ -1829,15 +1787,14 @@ _register("list_trashed_files", _list_trashed_files)
 _register("restore_file", _restore_file)
 
 
-# Offered only in a curate turn against a configured library. create_ledger is
-# here too: the ledger only exists in curate mode.
+# Offered only with the Library switch on and a configured library.
 KNOWLEDGE_TOOLS = (
     "search_knowledge",
     "browse_knowledge",
     "read_knowledge",
-    "create_ledger",
 )
 KNOWLEDGE_CAPTURE = "capture_knowledge_page"
+BANK_TOOLS = ("search_questions", "read_question")
 
 
 def _offered(spec: ToolSpec, ctx: ToolContext) -> bool:
@@ -1851,11 +1808,16 @@ def _offered(spec: ToolSpec, ctx: ToolContext) -> bool:
         and not (_gateway_ready() and ctx.user_id)
     ):
         return False
+    if spec.name == "read_study_progress":
+        return ctx.study_progress
+    if spec.name in BANK_TOOLS:
+        # Bank vectors use the library's embedding pin, so both are needed.
+        return ctx.library and library.enabled() and bank.enabled()
     if spec.name == KNOWLEDGE_CAPTURE:
         # Without the knowledge-base bucket there is nothing to render.
-        return ctx.curate and library.enabled() and bool(cfg.knowledge_base_b2_bucket)
+        return ctx.library and library.enabled() and bool(cfg.knowledge_base_b2_bucket)
     if spec.name in KNOWLEDGE_TOOLS:
-        return ctx.curate and library.enabled()
+        return ctx.library and library.enabled()
     if spec.name != "resolve_source_change":
         return True
     return bool(
@@ -1875,14 +1837,6 @@ def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
         for spec in REGISTRY.values()
         if _offered(spec, ctx)
     ]
-    if not ctx.curate:
-        return schemas
-    # Curate changes what several tools mean, so the prompt package owns their
-    # descriptions here; the shared contract text stays the ordinary-chat one.
-    for schema in schemas:
-        override = curate_prompts.TOOL_DESCRIPTIONS.get(schema["function"]["name"])
-        if override:
-            schema["function"]["description"] = override
     if not ctx.library_catalog:
         return schemas
     # The model maps the learner's words onto a subject, browses it for topic

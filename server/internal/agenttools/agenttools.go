@@ -35,7 +35,11 @@ var questionJSONDescription = fmt.Sprintf("Question JSON: id, stem typed blocks,
 // v8: ledger upserts and material-backed library excerpt retention.
 // v9: every question part has marks; only open parts have a markscheme of
 // {text, marks} items adding up to them.
-const ContractVersion = 9
+// v10: Library is a per-turn switch instead of a curate thread mode; the
+// stream request carries library, openResource and studyProgress, and the
+// curate-only tools and ledger rules apply to any build. Notes are markdown
+// converted by the editor's own import: insert_markdown replaces insert_block.
+const ContractVersion = 10
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -55,7 +59,7 @@ const (
 	OpTrashRead      Operation = "trash.read"
 	OpTrashRestore   Operation = "trash.restore"
 	// OpLibraryRead is not derived from a role: the shared knowledge library is
-	// not a workspace resource. Curate mode grants it per turn.
+	// not a workspace resource. The chat's Library switch grants it per turn.
 	OpLibraryRead Operation = "library.read"
 )
 
@@ -68,7 +72,7 @@ var AllOperations = []Operation{
 // OperationsForRole maps a workspace effective role onto the operations the
 // chat turn may offer. Viewers read; editors (member or share role) also
 // create, edit and trash; only the owner reads or restores trash.
-// library.read is deliberately absent: curate mode adds it.
+// library.read is deliberately absent: the Library switch adds it.
 func OperationsForRole(role string) []Operation {
 	switch role {
 	case "owner":
@@ -335,10 +339,10 @@ func editCommandSchema() map[string]any {
 				"expected_text": text("Exact text to replace; must occur once in the target."),
 				"text":          text("Replacement text; empty deletes the expected text."),
 			}, "expected_text", "text"),
-			variant("insert_block", map[string]any{
+			variant("insert_markdown", map[string]any{
 				"after_block_id": map[string]any{"type": []string{"string", "null"}, "description": "Insert after this block; null inserts at the start."},
-				"text":           text("Plain text; each line becomes a paragraph."),
-			}, "after_block_id", "text"),
+				"markdown":       text("Note markdown, in the format create_material takes for a note, fences included."),
+			}, "after_block_id", "markdown"),
 			variant("remove_block", map[string]any{
 				"block_id":      str(""),
 				"expected_text": text("The block's current text."),
@@ -376,6 +380,19 @@ func editCommandSchema() map[string]any {
 		},
 	}
 }
+
+// noteMarkdownDescription is the fence format notes are written in; the
+// editor's markdown import reads the same fences (src/features/notes/blocks).
+const noteMarkdownDescription = "mindmap/diagram/note only. Markdown. A mindmap or diagram is one " +
+	"```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; " +
+	"```quiz fences (YAML `questions:` list, each in the quiz question format) and " +
+	"```flashcards fences (YAML `cards:` list of `front`/`back`), each a mini check of 2 to 4 " +
+	"items; and ```html-embed fences for an interactive (YAML: `title`, `fallback`, `html: |`). " +
+	"The html is one self-contained snippet under 64 KB: inline CSS and script, no network, " +
+	"no external URLs, colours from the variables --bg, --fg, --muted, --accent and --border so " +
+	"it follows the light and dark theme, height fitting its content. The fallback is the plain " +
+	"text a reader sees in export or where scripts cannot run, so it states what the interactive " +
+	"shows. Use an interactive only where moving something teaches more than a diagram."
 
 func chatTool(def Definition) Definition {
 	def.AllowedSlots = []Slot{SlotChat}
@@ -453,15 +470,29 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpSourceRead},
 		}),
 		chatTool(Definition{
+			Name:      "read_study_progress",
+			Retention: RetainFull,
+			Description: "Read the learner's own study progress in this workspace: the files " +
+				"and materials marked done, started or removed, recent quiz results, and the " +
+				"chapters whose questions and cards they retain least. Use it to decide what " +
+				"to build or practise next; it is read-only.",
+			InputSchema:        obj(map[string]any{}),
+			Concurrency:        "read",
+			RequiredOperations: []Operation{OpSourceRead},
+		}),
+		chatTool(Definition{
 			Name:      "search_knowledge",
 			Retention: RetainNone,
-			Description: "Search the shared knowledge library of verified textbook excerpts. " +
-				"One excerpt is one section of one book. `roles` filters what the excerpt " +
-				"teaches: introduction, formal, worked_example, exercise, summary, reference. " +
-				"`topics` takes exact topic_id values returned by browse_knowledge with a subject. " +
-				"Subject IDs and labels are not topic filters; omit topics for a direct search. An " +
-				"empty result under a role filter reports what those topics do hold by role, " +
-				"so relax the filter on purpose instead of rewording.",
+			Description: "Search the shared knowledge library of verified textbook excerpts. One " +
+				"excerpt is one section of one book. `roles` filters what the excerpt teaches: " +
+				"introduction, formal, worked_example, exercise, summary, reference. Results " +
+				"include the hit passage and reviewed scope; full notes are in read_knowledge. " +
+				"`topics` takes the exact `topic_id` values returned by " +
+				"browse_knowledge({\"subject\": \"<subject ID>\"}); omit it for a direct or " +
+				"cross-topic search. Subject IDs and labels are not topic filters. Use this when " +
+				"you need a specific role or a specific idea; an empty result under a role " +
+				"filter reports what those topics do hold by role, so relax the filter on " +
+				"purpose instead of rewording.",
 			InputSchema: obj(map[string]any{
 				"query":  str(""),
 				"topics": idList("Exact topic_id values returned by browse_knowledge with a subject. Subject IDs and labels are not accepted. Omit for a direct search.", 0, 8),
@@ -474,12 +505,13 @@ func Definitions() []Definition {
 		chatTool(Definition{
 			Name:      "browse_knowledge",
 			Retention: RetainNone,
-			Description: "List what the library holds. Pass exactly one of subject or topic. " +
+			Description: "List what the library holds. Pass exactly one of `subject` or `topic`. " +
 				"Use a subject browse call listed below to retrieve its topics with excerpt counts. " +
-				"Subject IDs are only for subject; use the returned topic_id values in " +
-				"search_knowledge.topics or this tool's topic. A topic ID returns verified " +
-				"excerpt counts by role and by book, then a page of excerpts with their " +
-				"section paths and reviewed scope. A direct search needs no preceding browse.",
+				"Subject IDs are only for `subject`; use the returned `topic_id` values in " +
+				"search_knowledge.topics or this tool's `topic`. A topic ID returns verified " +
+				"excerpt counts by role and by book, then a page of excerpts with their section " +
+				"paths and reviewed scope. Browse when you need topic IDs or coverage; a direct " +
+				"search needs no preceding browse.",
 			InputSchema: obj(map[string]any{
 				"subject": str("Subject ID from a browse call in this tool's description. Retrieves topic IDs for search_knowledge.topics."),
 				"topic":   str("Exact topic_id returned by a subject browse. Retrieves excerpt coverage; do not pass a subject ID or label."),
@@ -491,13 +523,45 @@ func Definitions() []Definition {
 		chatTool(Definition{
 			Name:      "read_knowledge",
 			Retention: RetainUsedExcerpts,
-			Description: "Read a library excerpt in full, in order from a chunk index. Always " +
-				"read an excerpt before writing a material from it; a search hit is one " +
-				"chunk of it.",
+			Description: "Read an excerpt's full reviewed notes and original source chunks, in " +
+				"order from a chunk index. Always read an excerpt before writing a material from " +
+				"it; a search hit is one chunk of it. The scope field explains applicability and " +
+				"when linked source context is needed; follow links relevant to the chosen " +
+				"example or claim. Use next start to continue an excerpt; notes appear on its " +
+				"first page.",
 			InputSchema: obj(map[string]any{
 				"excerpt_id": str(""),
 				"start":      map[string]any{"type": "integer", "minimum": 0, "default": 0},
 			}, "excerpt_id"),
+			Concurrency:        "read",
+			RequiredOperations: []Operation{OpLibraryRead},
+		}),
+		chatTool(Definition{
+			Name:      "search_questions",
+			Retention: RetainNone,
+			Description: "Search the question bank of reviewed exam questions for practice " +
+				"to reuse before writing new questions. Ranks by meaning within the " +
+				"filters. `exam` and `topics` narrow by exam and topic ids; `types` " +
+				"narrows by question type, such as an IELTS task type. Results are " +
+				"compact cards; read_question returns a question in full.",
+			InputSchema: obj(map[string]any{
+				"query":  str("What the practice should cover."),
+				"exam":   str("Exam id, such as hkdse or ielts."),
+				"topics": idList("Topic ids to restrict to.", 0, 8),
+				"types":  idList("Question types to restrict to.", 0, 8),
+			}, "query"),
+			UsesEmbedding:      true,
+			Concurrency:        "read",
+			RequiredOperations: []Operation{OpLibraryRead},
+		}),
+		chatTool(Definition{
+			Name:      "read_question",
+			Retention: RetainFull,
+			Description: "Read one question-bank question in full: its JSON, to copy into a " +
+				"quiz unchanged, with its worked solution, marking scheme and sources.",
+			InputSchema: obj(map[string]any{
+				"question_id": str(""),
+			}, "question_id"),
 			Concurrency:        "read",
 			RequiredOperations: []Operation{OpLibraryRead},
 		}),
@@ -527,16 +591,14 @@ func Definitions() []Definition {
 		chatTool(Definition{
 			Name:      "create_ledger",
 			Retention: RetainNone,
-			Description: "Create or update the conversation's progress ledger. A non-null body replaces " +
-				"the current body; null or omission preserves it. Each string in todos adds a new " +
-				"todo with an assigned ID. An object {id, todo} adds that ID or overwrites its text. " +
-				"Use fresh IDs for new todos; completed IDs are not reused. Unmentioned todos stay " +
-				"unchanged. Pass only additions or edits, not the whole list. You may correct the " +
-				"ledger again in the same turn. At most 10 unfinished todos may exist, each a " +
-				"material or section to write. Material writes mark their todo done automatically; " +
-				"editing todo text does not change completion.",
+			Description: "Add or edit todos on the conversation's ledger when building more than " +
+				"one item: one todo per material or section to write. Each string in todos adds " +
+				"a new todo with an assigned ID. An object {id, todo} adds that ID or overwrites " +
+				"its text. Use fresh IDs for new todos; completed IDs are not reused. Unmentioned " +
+				"todos stay unchanged. Pass only additions or edits, not the whole list. At most " +
+				"10 unfinished todos may exist. A material write marks its todo done; editing " +
+				"todo text does not change completion.",
 			InputSchema: obj(map[string]any{
-				"body": map[string]any{"type": []string{"string", "null"}, "maxLength": 2000},
 				"todos": map[string]any{
 					"type": "array", "maxItems": 10,
 					"items": map[string]any{"anyOf": []any{
@@ -547,19 +609,24 @@ func Definitions() []Definition {
 						}, "id", "todo"),
 					}},
 				},
-			}),
+			}, "todos"),
 			Mutates:            true,
 			Concurrency:        "mutate",
-			RequiredOperations: []Operation{OpLibraryRead},
+			RequiredOperations: []Operation{OpMaterialCreate},
 		}),
 		chatTool(Definition{
 			Name:      "create_material",
 			Retention: RetainFull,
-			Description: "Create a study material in this workspace from content you " +
-				"already authored: a quiz, flashcard deck, mindmap, diagram or note. " +
-				"Only call this when the user asked for one. Ground the content in " +
-				"passages you already retrieved. Do not mix this call with " +
-				"retrieval tools in the same response.",
+			Description: "Create a study material in this workspace from content you already " +
+				"wrote: a note, quiz, flashcard deck, mindmap or diagram. A learner asking to " +
+				"learn, make or practise something is a request for materials, so do not ask " +
+				"whether to create one. Ground the content in passages or excerpts you have " +
+				"read. While the ledger has open todos, pass todo, the id of the todo this " +
+				"material completes. Pass excerpt_ids for every library excerpt it was written " +
+				"from; they become its attribution footer, and each must have been read this " +
+				"turn or have its full text retained in context. A search card or compacted " +
+				"summary alone is not a read. Do not mix this call with retrieval tools in the " +
+				"same response.",
 			InputSchema: obj(map[string]any{
 				"kind": map[string]any{
 					"type": "string",
@@ -582,9 +649,11 @@ func Definitions() []Definition {
 				},
 				"content": map[string]any{
 					"type":        "string",
-					"description": "mindmap/diagram/note only; markdown with a mermaid block",
+					"description": noteMarkdownDescription,
 				},
 				"scope": scopeSchema(),
+				"chapter_id": str("The chapter this material is filed in, as list_sources shows it; " +
+					"omit to leave it unfiled. A standalone quiz or flashcard set goes in the chapter it practises."),
 				"excerpt_ids": idList(
 					"Library excerpt ids this material was written from. Required for every "+
 						"material built from the knowledge library; they become its attribution footer.",
@@ -593,7 +662,7 @@ func Definitions() []Definition {
 				"todo": map[string]any{
 					"type":        "integer",
 					"minimum":     0,
-					"description": "Curate mode: id of the ledger todo this write completes, as shown on the ledger.",
+					"description": "Id of the open ledger todo this write completes, as the turn context shows it.",
 				},
 			}, "kind"),
 			Mutates:            true,
@@ -636,7 +705,11 @@ func Definitions() []Definition {
 				"a stable target from inspect_document and the exact text or value it " +
 				"expects to find; the whole call is refused if any expectation is stale. " +
 				"Edits save directly and each result has an Undo the user can trigger. " +
-				"Formatting, images, media, layout and PDF edits are not supported.",
+				"Formatting, images, media, layout and PDF edits are not supported. To grow a " +
+				"material section by section, append the next section per call rather than " +
+				"rewriting the whole note; editing a material takes todo while todos are open " +
+				"and excerpt_ids for appended library content. Editing one of the user's own " +
+				"source files takes neither.",
 			InputSchema: obj(map[string]any{
 				"target": resourceTarget("The document to edit."),
 				"commands": map[string]any{
@@ -646,14 +719,14 @@ func Definitions() []Definition {
 					"items":    editCommandSchema(),
 				},
 				"excerpt_ids": idList(
-					"Curate mode: library excerpt ids the appended content was written from; "+
+					"Library excerpt ids the appended content was written from; "+
 						"they join the material's attribution footer.",
 					0, 32,
 				),
 				"todo": map[string]any{
 					"type":        "integer",
 					"minimum":     0,
-					"description": "Curate mode: id of the ledger todo this write completes, as shown on the ledger.",
+					"description": "Id of the open ledger todo this write completes, as the turn context shows it.",
 				},
 			}, "target", "commands"),
 			Mutates:            true,

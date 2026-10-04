@@ -25,7 +25,7 @@ def pack(ctx: tools.ToolContext, cited_order: list[int]) -> dict[str, Any]:
             continue
         seen.add(passage.chunk_id)
         payload["passages"].append(asdict(passage))
-    if ctx.curate:
+    if ctx.library:
         payload["libraryExcerpts"] = ctx.library_evidence.pack()
     return payload
 
@@ -50,7 +50,7 @@ async def history_turns(
     }
     library_parts = (
         await ctx.library_evidence.history_parts(history or [], ctx)
-        if ctx.curate and "library.read" in ctx.operations
+        if ctx.library and "library.read" in ctx.operations
         else {}
     )
     out = []

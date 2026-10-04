@@ -1,5 +1,6 @@
 /**
- * Spaced-repetition helpers — a thin wrapper around `ts-fsrs`.
+ * Spaced-repetition helpers for signed-out study, a thin wrapper around
+ * `ts-fsrs`. Signed-in review state lives on the server.
  *
  * The rest of the app works with the serialized `SrsState` (ISO date strings) so
  * scheduling state round-trips through JSON / the mock API. These helpers convert
@@ -13,7 +14,20 @@ import {
   generatorParameters,
   Rating,
 } from 'ts-fsrs';
-import type { SrsState } from '@/api/types';
+
+/** A card's ts-fsrs state with ISO date strings, as stored in IndexedDB. */
+export interface SrsState {
+  difficulty: number;
+  due: string;
+  elapsed_days: number;
+  lapses: number;
+  last_review?: string;
+  learning_steps?: number;
+  reps: number;
+  scheduled_days: number;
+  stability: number;
+  state: number;
+}
 
 const scheduler = fsrs(generatorParameters({ enable_fuzz: true }));
 
@@ -81,19 +95,9 @@ export function reviewSrs(
   return toState(card);
 }
 
-/** True once a card is a graduated Review-state card (used for the `known` flag). */
-export function isKnown(state: SrsState): boolean {
-  return state.state === 2; // State.Review
-}
-
 /** Whether a card is due for review at `now`. */
 export function isDue(state: SrsState, now: Date = new Date()): boolean {
   return new Date(state.due).getTime() <= now.getTime();
-}
-
-/** Count how many cards in a list are currently due. */
-export function dueCount(states: SrsState[], now: Date = new Date()): number {
-  return states.reduce((n, s) => (isDue(s, now) ? n + 1 : n), 0);
 }
 
 /** Short human interval preview for each rating, e.g. { good: '3d' }. */

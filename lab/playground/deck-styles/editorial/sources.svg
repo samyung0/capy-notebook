@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" lang="{lang}" data-pptx-page-role="ending" font-family="Arial" font-size="20">
+  <rect id="background" data-pptx-role="background" x="0" y="0" width="1280" height="720" fill="#FAF8F4"/>
+  <g id="header" data-pptx-bounds="64 56 1152 100" fill="#1C1C1A">
+    <rect x="64" y="58" width="4" height="26" fill="#12525C"/>
+    <text x="80" y="78" font-size="18" font-weight="bold" letter-spacing="1.6" fill="#12525C">{kicker}</text>
+    <text x="64" y="128" font-family="Cambria" font-size="44" font-weight="bold">{title}</text>
+    <line x1="64" y1="152" x2="1216" y2="152" stroke="#D8D3C8" stroke-width="1"/>
+  </g>
+  <g id="sources" data-pptx-bounds="64 180 1152 480" fill="#1C1C1A">
+{rows}
+  </g>
+  <g id="footer" data-pptx-role="footer" data-pptx-bounds="64 675 1152 24" fill="#8A8A82" font-size="15">
+    <text x="1216" y="690" text-anchor="end">{page}</text>
+  </g>
+</svg>

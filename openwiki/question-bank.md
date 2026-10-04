@@ -146,7 +146,8 @@ each item. Matching pairs and `gaps` score item by item: each right item earns i
 share of the part's marks, rounded down to a half mark; other closed parts are
 all or nothing. A `gaps` part writes numbered blanks, (1) ______, in its text, 1 to n in order
 (all three validators check this), and keeps one accepted list per blank, which
-may be several words. `QuestionRunner` renders each blank as a small field inside
+may be several words. A blank is right only when it equals an accepted answer,
+ignoring case and spacing; unlike short answers there is no typo tolerance. `QuestionRunner` renders each blank as a small field inside
 the sentence, green or red on review with the accepted answers after a wrong one. It is authored only, so in-app generation does not offer it. A question with one part shows its
 marks once, in the header. Multiple-choice options sit two by two (A B / C D)
 when a paper-layout answer area is at least 36rem wide (a container query);
@@ -215,18 +216,14 @@ solution. The graph SVG is rendered from its stored JSXGraph recipe. The seeded
 for inspecting review states. Image examples are deferred.
 
 The separate bank database and B2 buckets are provisioned; the public asset
-hostname is configured in Cloudflare. The pilot covers all 18 HKDSE Mathematics
-Compulsory units (50 questions each) and all 11 IELTS Academic Reading task types
-(18 passage-based questions each, 4-7 items per passage). Every published
-question passed blind solving from its learner render with exact comparison,
-open-answer judging, full review-render inspection (passage fidelity for IELTS),
-Go validation and the 12-word copy check; repairs were re-rendered, re-solved
-and rechecked. The 50 short generated-passage IELTS multiple-choice questions of
-the first round were deleted and replaced by the library-passage set. See the
-[handoff](../question-bank-handoff.md) for exact state. Cloudflare serves a
-published graph with HTTP 200, immutable cache headers and a cache hit.
-Coordinate the old-quiz data cutover before application rollout.
-Do not deploy the new readers over old question records without that cutover.
+hostname is configured in Cloudflare, which serves a published graph with HTTP
+200, immutable cache headers and a cache hit. The live bank holds the round-2
+batch: 32 questions across three HKDSE units and two IELTS subject areas. Every
+published question passed blind solving from its learner render with exact
+comparison, full review-render inspection (passage fidelity and readability for
+IELTS), Go validation and the 12-word copy check; repairs were re-rendered,
+re-solved and rechecked. Current state, local run data and next steps are in
+[todo-question-bank.md](../todo-question-bank.md).
 
 The [test catalog](test-catalog.md#question-bank-and-shared-question-format)
 lists contract parity, revision rejection, bank grants/assets/review, exact
@@ -243,7 +240,6 @@ list and detail SQL checks with no write privileges. A local actual-handler chec
 also read the live bank successfully and verified that learner responses hide
 answers, marking schemes and solutions. These do not replace deployed API
 verification. Email
-delivery, the CI editor performance gate and the remaining pilot admission remain
-to verify. The final responsive recheck covers the approved desktop and phone
+delivery and the CI editor performance gate remain to verify. The final responsive recheck covers the approved desktop and phone
 layouts, dedicated quiz edit routing and MathLive touch/physical entry; a focused
 browser regression test verifies formula input survives commit and reopening.

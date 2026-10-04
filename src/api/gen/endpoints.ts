@@ -106,14 +106,18 @@ import type {
   PublicWorkspace,
   PurgeTrashedParams,
   Quiz,
+  RateReviewItemReq,
   ReadSourceRefreshParams,
   ReorderChaptersReq,
   ReorderContentReq,
   RequestAccountDeletionReq,
+  ReviewSession,
   SaveCanvasReq,
   SearchParams,
   SearchResult,
   SetModelPrefsReq,
+  SetStudyEnabledReq,
+  SetStudyItemReq,
   SourceCandidateReadOutputBody,
   SourceCandidateResponse,
   SourceCheckpoint,
@@ -130,6 +134,8 @@ import type {
   SourceSession,
   SourceUploadPolicy,
   SourceUploadReservation,
+  StudyPreferences,
+  StudySummary,
   Syllabus,
   Tag,
   Task,
@@ -139,7 +145,6 @@ import type {
   URLResp,
   UndoEditReq,
   UpdateCardReq,
-  UpdateCardStudyStateReq,
   UpdateChapterReq,
   UpdateCommentReq,
   UpdateEventReq,
@@ -2664,57 +2669,6 @@ export const updateCard = async (id: string,
 
 
 
-export type updateCardStudyStateResponse200 = {
-  data: Flashcard
-  status: 200
-}
-
-export type updateCardStudyStateResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type updateCardStudyStateResponseSuccess = (updateCardStudyStateResponse200) & {
-  headers: Headers;
-};
-export type updateCardStudyStateResponseError = (updateCardStudyStateResponseDefault) & {
-  headers: Headers;
-};
-
-export type updateCardStudyStateResponse = (updateCardStudyStateResponseSuccess | updateCardStudyStateResponseError)
-
-export const getUpdateCardStudyStateUrl = (id: string,) => {
-
-
-
-
-  return `/api/flashcards/cards/${id}/study-state`
-}
-
-/**
- * @summary Update card study state
- */
-export const updateCardStudyState = async (id: string,
-    updateCardStudyStateReq: NonReadonly<UpdateCardStudyStateReq>, options?: RequestInit): Promise<updateCardStudyStateResponse> => {
-
-  const res = await fetch(getUpdateCardStudyStateUrl(id),
-  {
-    ...options,
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(updateCardStudyStateReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: updateCardStudyStateResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as updateCardStudyStateResponse
-}
-
-
-
 export type getFlashcardSetResponse200 = {
   data: FlashcardSet
   status: 200
@@ -4390,52 +4344,102 @@ export const setModelPrefs = async (setModelPrefsReq: NonReadonly<SetModelPrefsR
 
 
 
-export type getMistakesResponse200 = {
-  data: Quiz
-  status: 200
+export type setStudyPreferencesResponse204 = {
+  data: void
+  status: 204
 }
 
-export type getMistakesResponseDefault = {
+export type setStudyPreferencesResponseDefault = {
   data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
+  status: Exclude<HTTPStatusCodes, 204>
 }
 
-export type getMistakesResponseSuccess = (getMistakesResponse200) & {
+export type setStudyPreferencesResponseSuccess = (setStudyPreferencesResponse204) & {
   headers: Headers;
 };
-export type getMistakesResponseError = (getMistakesResponseDefault) & {
+export type setStudyPreferencesResponseError = (setStudyPreferencesResponseDefault) & {
   headers: Headers;
 };
 
-export type getMistakesResponse = (getMistakesResponseSuccess | getMistakesResponseError)
+export type setStudyPreferencesResponse = (setStudyPreferencesResponseSuccess | setStudyPreferencesResponseError)
 
-export const getGetMistakesUrl = () => {
-
-
+export const getSetStudyPreferencesUrl = () => {
 
 
-  return `/api/mistakes`
+
+
+  return `/api/me/study-preferences`
 }
 
 /**
- * @summary Review-mistakes quiz
+ * @summary Save study preferences
  */
-export const getMistakes = async ( options?: RequestInit): Promise<getMistakesResponse> => {
+export const setStudyPreferences = async (studyPreferences: NonReadonly<StudyPreferences>, options?: RequestInit): Promise<setStudyPreferencesResponse> => {
 
-  const res = await fetch(getGetMistakesUrl(),
+  const res = await fetch(getSetStudyPreferencesUrl(),
   {
     ...options,
-    method: 'GET'
-
-
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(studyPreferences)
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: getMistakesResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getMistakesResponse
+  const data: setStudyPreferencesResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as setStudyPreferencesResponse
+}
+
+
+
+export type setStudyProgressDefaultResponse204 = {
+  data: void
+  status: 204
+}
+
+export type setStudyProgressDefaultResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type setStudyProgressDefaultResponseSuccess = (setStudyProgressDefaultResponse204) & {
+  headers: Headers;
+};
+export type setStudyProgressDefaultResponseError = (setStudyProgressDefaultResponseDefault) & {
+  headers: Headers;
+};
+
+export type setStudyProgressDefaultResponse = (setStudyProgressDefaultResponseSuccess | setStudyProgressDefaultResponseError)
+
+export const getSetStudyProgressDefaultUrl = () => {
+
+
+
+
+  return `/api/me/study-progress`
+}
+
+/**
+ * @summary Default study progress setting
+ */
+export const setStudyProgressDefault = async (setStudyEnabledReq: NonReadonly<SetStudyEnabledReq>, options?: RequestInit): Promise<setStudyProgressDefaultResponse> => {
+
+  const res = await fetch(getSetStudyProgressDefaultUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(setStudyEnabledReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setStudyProgressDefaultResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as setStudyProgressDefaultResponse
 }
 
 
@@ -5616,6 +5620,56 @@ export const updateQuizSharing = async (id: string,
 
   const data: updateQuizSharingResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateQuizSharingResponse
+}
+
+
+
+export type rateReviewItemResponse204 = {
+  data: void
+  status: 204
+}
+
+export type rateReviewItemResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type rateReviewItemResponseSuccess = (rateReviewItemResponse204) & {
+  headers: Headers;
+};
+export type rateReviewItemResponseError = (rateReviewItemResponseDefault) & {
+  headers: Headers;
+};
+
+export type rateReviewItemResponse = (rateReviewItemResponseSuccess | rateReviewItemResponseError)
+
+export const getRateReviewItemUrl = () => {
+
+
+
+
+  return `/api/review/ratings`
+}
+
+/**
+ * @summary Record a review rating
+ */
+export const rateReviewItem = async (rateReviewItemReq: NonReadonly<RateReviewItemReq>, options?: RequestInit): Promise<rateReviewItemResponse> => {
+
+  const res = await fetch(getRateReviewItemUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(rateReviewItemReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: rateReviewItemResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as rateReviewItemResponse
 }
 
 
@@ -7541,6 +7595,56 @@ export const updateWorkspaceMember = async (id: string,
 
 
 
+export type getWorkspaceReviewResponse200 = {
+  data: ReviewSession
+  status: 200
+}
+
+export type getWorkspaceReviewResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getWorkspaceReviewResponseSuccess = (getWorkspaceReviewResponse200) & {
+  headers: Headers;
+};
+export type getWorkspaceReviewResponseError = (getWorkspaceReviewResponseDefault) & {
+  headers: Headers;
+};
+
+export type getWorkspaceReviewResponse = (getWorkspaceReviewResponseSuccess | getWorkspaceReviewResponseError)
+
+export const getGetWorkspaceReviewUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/review`
+}
+
+/**
+ * @summary Next mixed review session
+ */
+export const getWorkspaceReview = async (id: string, options?: RequestInit): Promise<getWorkspaceReviewResponse> => {
+
+  const res = await fetch(getGetWorkspaceReviewUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getWorkspaceReviewResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getWorkspaceReviewResponse
+}
+
+
+
 export type updateWorkspaceSharingResponse200 = {
   data: Workspace
   status: 200
@@ -7971,6 +8075,208 @@ export const getWorkspaceStats = async (id: string, options?: RequestInit): Prom
 
   const data: getWorkspaceStatsResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getWorkspaceStatsResponse
+}
+
+
+
+export type getWorkspaceStudyResponse200 = {
+  data: StudySummary
+  status: 200
+}
+
+export type getWorkspaceStudyResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getWorkspaceStudyResponseSuccess = (getWorkspaceStudyResponse200) & {
+  headers: Headers;
+};
+export type getWorkspaceStudyResponseError = (getWorkspaceStudyResponseDefault) & {
+  headers: Headers;
+};
+
+export type getWorkspaceStudyResponse = (getWorkspaceStudyResponseSuccess | getWorkspaceStudyResponseError)
+
+export const getGetWorkspaceStudyUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/study`
+}
+
+/**
+ * @summary Study progress in a workspace
+ */
+export const getWorkspaceStudy = async (id: string, options?: RequestInit): Promise<getWorkspaceStudyResponse> => {
+
+  const res = await fetch(getGetWorkspaceStudyUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getWorkspaceStudyResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getWorkspaceStudyResponse
+}
+
+
+
+export type setWorkspaceStudyResponse204 = {
+  data: void
+  status: 204
+}
+
+export type setWorkspaceStudyResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type setWorkspaceStudyResponseSuccess = (setWorkspaceStudyResponse204) & {
+  headers: Headers;
+};
+export type setWorkspaceStudyResponseError = (setWorkspaceStudyResponseDefault) & {
+  headers: Headers;
+};
+
+export type setWorkspaceStudyResponse = (setWorkspaceStudyResponseSuccess | setWorkspaceStudyResponseError)
+
+export const getSetWorkspaceStudyUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/study/enabled`
+}
+
+/**
+ * @summary Turn study progress on or off in a workspace
+ */
+export const setWorkspaceStudy = async (id: string,
+    setStudyEnabledReq: NonReadonly<SetStudyEnabledReq>, options?: RequestInit): Promise<setWorkspaceStudyResponse> => {
+
+  const res = await fetch(getSetWorkspaceStudyUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(setStudyEnabledReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setWorkspaceStudyResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as setWorkspaceStudyResponse
+}
+
+
+
+export type setStudyItemResponse204 = {
+  data: void
+  status: 204
+}
+
+export type setStudyItemResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type setStudyItemResponseSuccess = (setStudyItemResponse204) & {
+  headers: Headers;
+};
+export type setStudyItemResponseError = (setStudyItemResponseDefault) & {
+  headers: Headers;
+};
+
+export type setStudyItemResponse = (setStudyItemResponseSuccess | setStudyItemResponseError)
+
+export const getSetStudyItemUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/study/items`
+}
+
+/**
+ * @summary Mark a file or material read, unread or removed
+ */
+export const setStudyItem = async (id: string,
+    setStudyItemReq: NonReadonly<SetStudyItemReq>, options?: RequestInit): Promise<setStudyItemResponse> => {
+
+  const res = await fetch(getSetStudyItemUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(setStudyItemReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setStudyItemResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as setStudyItemResponse
+}
+
+
+
+export type resetWorkspaceStudyResponse204 = {
+  data: void
+  status: 204
+}
+
+export type resetWorkspaceStudyResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type resetWorkspaceStudyResponseSuccess = (resetWorkspaceStudyResponse204) & {
+  headers: Headers;
+};
+export type resetWorkspaceStudyResponseError = (resetWorkspaceStudyResponseDefault) & {
+  headers: Headers;
+};
+
+export type resetWorkspaceStudyResponse = (resetWorkspaceStudyResponseSuccess | resetWorkspaceStudyResponseError)
+
+export const getResetWorkspaceStudyUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/study/reset`
+}
+
+/**
+ * @summary Clear study progress in a workspace
+ */
+export const resetWorkspaceStudy = async (id: string, options?: RequestInit): Promise<resetWorkspaceStudyResponse> => {
+
+  const res = await fetch(getResetWorkspaceStudyUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: resetWorkspaceStudyResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as resetWorkspaceStudyResponse
 }
 
 

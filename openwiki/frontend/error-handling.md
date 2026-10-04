@@ -158,7 +158,7 @@ opens the same details dialog as the toast's Details action. With no file
 open, the header shows both icons after the workspace picker and no strip.
 Frozen read-only and view-only at the storage limit need no client logic
 inside workspaces: the server's capabilities drop `canEdit` for a frozen
-account, so edit mode, comments, curate and create controls disappear, and
+account, so edit mode, comments and create controls disappear, and
 drop only `canEditContent` while the owner is at or over its limit (full or
 grace), so edit mode, comments, PDF marks and quiz or card edits disappear
 while rename, move and delete stay. `?mode=edit` falls back to view in both.
@@ -172,9 +172,8 @@ annotation strip and the generate panel) hands each refusal once to
 account, so one with numbers seen by a member (a clone charged to the member)
 is about the member's own storage and keeps the surface's copy. The
 `quota_blocked` analytics event is recorded before the deferral (by the
-mutation cache, or by the source transfer and clone surfaces for their own). At the
-limit the chat's curate switch hides with `canEditContent`, since the server
-refuses curate there. Its `refusalHandler` refetches the workspace and
+mutation cache, or by the source transfer and clone surfaces for their own).
+`WorkspaceHealth`'s `refusalHandler` refetches the workspace and
 `/me` and shows the status as a new toast (fresh id including the status
 kind, full timer), in own-account wording for the owner and owner wording for
 members. Refusals arriving while that refetch runs share its toast. If the
@@ -212,10 +211,7 @@ Chat SSE failures stay on the assistant turn. A `response_flagged` error clears 
 stream that closes before a terminal `done` frame, both mark that turn as errored;
 they do not crash a page boundary or emit the default mutation toast. A
 `model_unavailable` (422) response before the stream opens is the same surface,
-with copy that sends the user to Settings → LLM. So are the two curate
-refusals, both 400 before the stream opens: `curate_mismatch` when the request
-disagrees with the mode the chat was created in (either direction), and
-`curate_requires_editor` when the actor cannot write to the workspace. A
+with copy that sends the user to Settings → LLM. A
 rejected or unclear user
 provider key (`invalid_llm_key` / `llm_key_failed`, or the matching stream
 `invalid_key` / `key_failed` frames) stays on that same chat/editor/quiz

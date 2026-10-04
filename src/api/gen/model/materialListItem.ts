@@ -13,10 +13,8 @@ export interface MaterialListItem {
   chapterId: string | null;
   chapterName: string;
   createdAt: string;
-  dueCount?: number;
   id: string;
   kind: MaterialKind;
-  knownPct?: number;
   parentMaterialId: string;
   parentTitle: string;
   privacy: Privacy;

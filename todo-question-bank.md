@@ -1,78 +1,102 @@
-# Question bank follow-ups
+# Question bank: status and remaining work
 
-Product follow-ups after the initial bank implementation. The original mocks are in
-`artifacts/2026-09-25-question-bank-mocks.html`. Each item below needs its own
-design pass before implementation.
+The one working file for the bank. How the bank, format, grading and pipeline
+work is in [openwiki/question-bank.md](openwiki/question-bank.md) and
+[lab/questions/README.md](lab/questions/README.md); Epo's decisions are in
+`human/question-bank.md` (and older ones in `human/agentic-retrieval.md`,
+`human/frontend/plate-editor.md`, `human/miscellaneous.md`).
 
-Approved small-screen layout A is in
-`artifacts/2026-09-27-question-bank-responsive-mocks.html`: sequential bank
-navigation, no redundant exam/subject heading, and standard named minimum
-breakpoints only. [Open the interactive preview](https://faflav2lddl1.postplan.dev).
+## State (2026-10-03)
 
-## Studying from the bank
+- **Live bank.** 32 round-2 questions, all unreviewed: Basic properties of
+  circles, More about trigonometry and Measures of dispersion (10 each), and
+  one IELTS passage each in Society and culture and Health and medicine. The
+  other 15 HKDSE units and 5 IELTS subject areas are empty. Topics use the EDB
+  unit names and the seven IELTS subject areas; IELTS task types are stored per
+  question in `questions.question_types` (bank migration 0002).
+- **Code.** On `main`; UAT runs it. Production is not promoted and must not be
+  until Epo says UAT is ready.
+- **Before round 2.** The 1,098 pilot questions are gone from the bank. Their
+  dump is `data/question-bank/backups/bank-2026-10-03-before-round2.dump`; the
+  pilot run evidence is archived in the private bank bucket.
 
-- [ ] Define how learners study from the question bank page. Superseded in part
-  by "Question-bank progress" in `todo-learning-outputs.md` (separate progress
-  by topic and exam, no learning plan). The current idea is not final. The page shows a question without answers, marking scheme or
-  worked solution. Check answer adds the question to a learning plan if it is
-  not on one yet, grades it and stores the attempt on that plan. The question
-  list shows a check for correct and a cross for incorrect, read from the plan.
+## Local data (`data/question-bank/`, ignored)
 
-## Answer types
+| Path | What |
+| --- | --- |
+| `analysis/` | Analyses of real papers (HKDSE 2021–2025, Cambridge IELTS 19/20); copies in the private bucket under `analysis/` |
+| `references/` | Private past-paper texts for the copy check and readability calibration. Never redistribute |
+| `style/` | One writer guide per exam; each topic's `style.md` copies it |
+| `round2-2026-10-03/` | The published run: five topic dirs, `REVIEW-BRIEF.md`, `dispatch-log.md`, `gallery/` |
+| `web-candidates/` | Openly licensed web passages found for IELTS, with licence evidence |
+| `tools/` | Run helpers, called from the repository root (below) |
+| `ops/` | Bank provisioning and backup records: `operations.md`, `backup-verification.md`, backup scripts. Do not rerun `setup-backup.py` |
+| `backups/` | Bank dumps taken before destructive changes |
 
-- [ ] Design the answer control for each answer type. The True / False / Not
-  given control in the split-view mock is a placeholder. Decide whether the
-  current seven types are too many.
-- [ ] Multiple choice options are text only for now. Graph or image options are
-  out of scope.
-- [x] Implement the approved separate matching choice pool beside correct
-  pairs, retaining unused options and permitting reuse where the exam allows.
-- [x] Implement fixed-unit quantity entry: the author prescribes the unit,
-  the control displays it, and the learner enters only the value. Reject
-  typed units; accepted answers use the same unit. Neither Jev nor fuzzy
-  matching converts units. Include sign-preservation and unit-rejection tests.
+## Running a round
 
-## Grading
+Read `lab/questions/README.md` first. Every stage is a fresh `qb-worker`
+subagent (Opus 5.5, medium, defined in the ignored `.claude/agents/`) that owns
+one topic.
 
-The [September 27 input review](bench/grading/reports/2026-09-27-jev-question-bank.md)
-records the JSON request, archived results and a completed 192-call context
-comparison: 368/384 item labels with question text, 365/384 without, with no
-request failures. This does not validate item-level half-credit or missing
-visual context.
+- **Tools.**
+  - `tools/bind.py <packet-list> <agent-id>` binds every packet in a list.
+  - `tools/closed.py <topic>` lists closed-answer disagreements.
+  - `tools/fixq.py <topic> <issues.json>` turns review findings
+    (`[{"id", "issue"}]`) into fix packets; run until it prints "applied". It
+    cannot change a question's part count: rebuild the topic instead.
+  - `tools/apply_packet.py <topic> <packet>` applies an admitted fix packet
+    from its frozen input when the payload has since changed.
+- **Tunnel.** `ssh -i <key> -N -L 127.0.0.1:15433:10.77.0.2:5433 root@159.195.61.195`;
+  the key is `~/.ssh/id_ed25519_capy_ingest` on the Mac and
+  `capy_ingest_159_195_61_195` on the Windows PC.
+  `.env.local` has CRLF line endings; strip `\r` when reading values.
+- **IELTS provenance.** Publishing library passages reads the library database;
+  `localhost` hangs on IPv6 through the tunnel:
 
-The [partial-credit screening](bench/grading/reports/2026-09-27-jev-partial-credit.md)
-adds 288 successful calls across explicit grade criteria and plain marking
-items. With question context, direct grading matched 66/66 and 62/66
-respectively, versus 56/66 and 55/66 for probability bands. These are synthetic
-diagnostics, not production approval; missing-evidence cases have unknown gold.
+  ```bash
+  export LIBRARY_DATABASE_URL="$(grep '^LIBRARY_DATABASE_URL=' ../.env.local | cut -d= -f2- | tr -d '\r' | sed 's/@localhost:/@127.0.0.1:/')"
+  ```
 
-- [ ] Implement Epo's September 27 grading direction after the benchmark:
-  text-only Jev for non-computational open/essay questions, deterministic
-  types for computational questions. Generation instructions enforce the
-  split. Keep calls on the backend under the existing grading policy.
-- [x] Screen per-item direct 0/0.5/1 decisions against `noul` probability bands
-  below 0.35 = 0, below 0.65 = 0.5, otherwise 1. Every marking item is one
-  mark and a part's marks are its item count. Add item-level half-credit
-  examples, omissions, contradictions and keyword stuffing. The new fixture
-  supplies genuine item-level partial-credit labels; old archived binary
-  labels remain separate.
-- [ ] Choose the per-item scoring contract after reviewing the direct-choice
-  recommendation, then evaluate held-out realistic answers and less explicit
-  schemes. Preserve the planned plain-string marking-item format unless a
-  separate decision adds stored partial-credit criteria.
-- [x] Run paired grading requests for the 96 saved essay answers with identical
-  marking schemes and student answers, with and without question context,
-  192 requests for the two variants.
-- [x] Add synthetic paired context cases for shared stems,
-  references between parts and figure-dependent questions. Record whether
-  the marking scheme supplies enough text; text-only JSON cannot convey a
-  missing graph or image by itself.
-- [ ] Extend the existing computation-routing benchmark with conceptual math,
-  proofs and figure-dependent non-computational questions. Test computation
-  and sufficient text separately before selecting the review/edit check's
-  threshold and reject/warn behavior.
-- [ ] Preserve previous reports and raw responses. New fixtures, runners and
-  reports belong under `bench/grading`; use a new run path and record actual
-  model identity. The new `jev_context.py` accepts hidden credential input
-  or `TYPESAFE_API_KEY`. The old `typesafe_math.py` runner uses fixed archive paths,
-  so do not rerun it unchanged over existing results.
+- **Traps.**
+  - Editing a prompt in `lab/questions/prompts/` after dispatch changes the
+    packet hash. Revert it to admit the packet, then restore it.
+  - Bind every agent before rerunning a stage, or the comparison runs on stale
+    outputs.
+  - Figure sizes are whole pixels; graph terms use `x*0.017453292519943295`,
+    not `PI`; write JSON with `json.dump` (heredocs turn `\frac` into a form
+    feed).
+  - Library excerpts sometimes repeat a paragraph (parser artefact); passage
+    writers drop the repeat.
+  - Production and UAT both read the bank database. Dump it before deleting or
+    relabelling anything, and only with Epo's go-ahead.
+
+## Next
+
+- [ ] **Epo's UAT review** of the 32 live questions. Open point: Health and
+      medicine item 10, where the Not given / False call is close.
+- [ ] **Full run.** Decide the per-topic totals (exam share from the analyses
+      times a subject total) and the floor, then generate every topic in the
+      style of `round2-2026-10-03`.
+- [ ] **Production.** Promote only after Epo signs off UAT. The bank needs the
+      same environment values as UAT (`BANK_*` in `deploy/env-manifest.json`)
+      and editor grants as `bank_editors` rows in the production app database.
+- [ ] **Backups.** The nightly 03:15 Europe/Berlin dump covers the bank; the
+      last restore test was at 200 questions. Repeat it with
+      `ops/verify-checkpoint-backup.py` once the full run is published.
+
+## Later
+
+- [ ] **Bank page UI** (handed to a separate session, 2026-10-03): the
+      question-type filter and fixes to the editing screens.
+- [ ] **Learners answering on `/bank`** (today its runner is read-only) and
+      reviewing their mistakes. Waits for the learning-plan refactor; progress
+      storage and the retraction flag are "Question-bank progress" in
+      `todo-learning.md`.
+- [ ] **Copy to quiz.** The quiz validator must accept bank image URLs; waits
+      for the question-image upload work.
+- [ ] **Agent search** over the bank, filterable by question type.
+- [ ] **Jev grading for bank open parts.** Round 2 writes closed parts only,
+      so this waits until a subject needs open answers.
+- [ ] **Answer options** stay plain strings; graph or image options are out of
+      scope until decided otherwise.

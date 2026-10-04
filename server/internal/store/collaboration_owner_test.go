@@ -107,7 +107,7 @@ func TestFrozenIsReadOnlyBothWays(t *testing.T) {
 			wantOverQuotaLock(t, "rename", err)
 			_, err = s.CreateCommentDiscussion(ctx, c.mt.ID, c.who, nil, nil, nil, 1, "", rich)
 			wantOverQuotaLock(t, "comment", err)
-			if _, err := s.CreateConversation(ctx, c.who, c.ws.ID, "Chat", false); err != nil {
+			if _, err := s.CreateConversation(ctx, c.who, c.ws.ID, "Chat"); err != nil {
 				t.Fatalf("workspace chat is open to frozen accounts: %v", err)
 			}
 		})
@@ -406,9 +406,11 @@ func TestFrozenEdges(t *testing.T) {
 		t.Fatalf("standalone narrowing: %v", err)
 	}
 
-	known := true
-	_, err = s.UpdateCardStudyState(ctx, cards[0].ID, CardStudyStatePatch{Known: &known, UpdatedBy: frozenUser})
-	wantOverQuotaLock(t, "study progress", err)
+	// Study progress is the user's own data and charges no storage.
+	good := 3
+	if err := s.RateItem(ctx, frozenUser, Rating{MaterialID: set.ID, ItemID: cards[0].ID, Rating: &good}, time.Now()); err != nil {
+		t.Fatalf("frozen study progress: %v", err)
+	}
 	_, err = s.CreateCard(ctx, frozenUser, set.ID, "e", "f", cards[0].Revision)
 	wantOverQuotaLock(t, "card creation", err)
 	wantOverQuotaLock(t, "deleting one flashcard", s.DeleteCard(ctx, frozenUser, cards[0].ID, cards[0].Revision))

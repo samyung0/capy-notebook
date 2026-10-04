@@ -87,7 +87,7 @@ func TestConversationFollowsEffectiveRole(t *testing.T) {
 		t.Fatal(err)
 	}
 	addWorkspaceEditor(t, s, workspace.ID, editorID)
-	conversation, err := s.CreateConversation(ctx, editorID, workspace.ID, "Private chat", false)
+	conversation, err := s.CreateConversation(ctx, editorID, workspace.ID, "Private chat")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,13 +107,13 @@ func TestConversationFollowsEffectiveRole(t *testing.T) {
 		t.Fatalf("owner reading another user's thread error = %v, want not found", err)
 	}
 	// Non-members chat only while the workspace is link/public.
-	if _, err := s.CreateConversation(ctx, visitorID, workspace.ID, "", false); !errors.Is(err, ErrNotFound) {
+	if _, err := s.CreateConversation(ctx, visitorID, workspace.ID, ""); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("private workspace visitor chat error = %v, want not found", err)
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='link' WHERE id=$1`, workspace.ID); err != nil {
 		t.Fatal(err)
 	}
-	visitorConv, err := s.CreateConversation(ctx, visitorID, workspace.ID, "", false)
+	visitorConv, err := s.CreateConversation(ctx, visitorID, workspace.ID, "")
 	if err != nil {
 		t.Fatalf("link visitor chat error = %v", err)
 	}

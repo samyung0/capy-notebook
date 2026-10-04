@@ -229,6 +229,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	if cfg.PipelineSecret != "" {
 		r.Post("/api/internal/materials", a.internalCreateMaterial)
 		r.Post("/api/internal/conversations/ledger", a.internalWriteConversationLedger)
+		r.Post("/api/internal/study-progress", a.internalStudyProgress)
 		r.Post("/api/internal/source-changes/resolve", a.internalSourceAuthority)
 		r.Post("/api/internal/source-changes/caption", a.internalSourceCaption)
 		r.Post("/api/internal/source-refresh/publish", a.internalSourceAuthority)
@@ -523,7 +524,7 @@ func (a *api) assertWS(w http.ResponseWriter, r *http.Request, wsID string) bool
 type chatAccess struct {
 	// canEdit follows the effective role (owner, member editor, or share-role
 	// editor) unless a frozen account makes the workspace read-only: it unlocks
-	// the pending-sources notice and curate. role is what the agent-tool
+	// the pending-sources notice. role is what the agent-tool
 	// operations table is evaluated from; readOnly (frozen) and full (the
 	// owner at its storage limit) narrow it.
 	canEdit  bool

@@ -179,7 +179,6 @@ type UpdateQuizMetadataReq struct {
 type CreateAttemptReq struct {
 	Correct   float64          `json:"correct" minimum:"0"`
 	Total     float64          `json:"total" exclusiveMinimum:"0"`
-	Wrong     []map[string]any `json:"wrong,omitempty" doc:"Questions answered incorrectly"`
 	Answers   map[string]any   `json:"answers,omitempty" doc:"User answers keyed by stable part id"`
 	Questions []map[string]any `json:"questions,omitempty" doc:"Question snapshot taken at submit time"`
 }
@@ -301,11 +300,6 @@ type UpdateCardReq struct {
 	Back             *string `json:"back,omitempty" minLength:"1" maxLength:"4000"`
 }
 
-type UpdateCardStudyStateReq struct {
-	Known *bool           `json:"known,omitempty"`
-	Srs   *store.SrsState `json:"srs,omitempty"`
-}
-
 type CreateEventReq struct {
 	Title    EventTitle     `json:"title" minLength:"1"`
 	Start    time.Time      `json:"start"`
@@ -337,8 +331,6 @@ type UpdateTaskReq struct {
 
 type CreateConversationReq struct {
 	Title ConversationTitle `json:"title,omitempty" doc:"Optional thread title"`
-	// Fixed for the thread's life; the chat stream rejects a disagreeing flag.
-	Curate bool `json:"curate,omitempty" doc:"Open the thread in curate mode (knowledge library)"`
 }
 
 type CreateCanvasReq struct {
@@ -428,4 +420,26 @@ func EncodeRaw(v any) json.RawMessage {
 type RequestAccountDeletionReq struct {
 	ConfirmEmail        Email `json:"confirmEmail" required:"true" minLength:"1"`
 	LifecycleGeneration int64 `json:"lifecycleGeneration" required:"true" minimum:"0"`
+}
+
+// SetStudyEnabledReq turns study progress on or off, for one workspace or as
+// the account default.
+type SetStudyEnabledReq struct {
+	Enabled bool `json:"enabled"`
+}
+
+// SetStudyItemReq marks one file or material; an omitted state marks it unread.
+type SetStudyItemReq struct {
+	FileID     *string `json:"fileId,omitempty"`
+	MaterialID *string `json:"materialId,omitempty"`
+	State      *string `json:"state,omitempty" enum:"done,removed" doc:"Omitted marks the item unread"`
+}
+
+// RateReviewItemReq rates a flashcard (rating) or a question answered in
+// review (score).
+type RateReviewItemReq struct {
+	MaterialID string   `json:"materialId" minLength:"1"`
+	ItemID     string   `json:"itemId" minLength:"1"`
+	Rating     *int     `json:"rating,omitempty" minimum:"1" maximum:"4" doc:"A flashcard's button: 1 Again .. 4 Easy"`
+	Score      *float64 `json:"score,omitempty" minimum:"0" maximum:"1" doc:"A question's awarded marks over its marks"`
 }

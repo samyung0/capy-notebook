@@ -82,12 +82,14 @@ import type {
   PublicQuiz,
   PublicWorkspace,
   Quiz,
+  RateReviewItemReq,
   RequestAccountDeletionReq,
   SaveCanvasReq,
   SearchResult,
   SetModelPrefsReq,
   SourceFile,
   SourceUploadPolicy,
+  StudyPreferences,
   Tag,
   Task,
   ThinkingCanvas,
@@ -96,7 +98,6 @@ import type {
   TrashPage,
   UndoEditReq,
   UpdateCardReq,
-  UpdateCardStudyStateReq,
   UpdateChapterReq,
   UpdateCommentReq,
   UpdateEventReq,
@@ -537,6 +538,31 @@ export function useSetNotificationPrefs() {
       void qc.invalidateQueries({ queryKey: qk.notificationPrefs });
     },
     onSuccess: (prefs) => qc.setQueryData(qk.notificationPrefs, prefs),
+  });
+}
+
+/** Saves the whole preferences object; changes queue so a fast second
+ * change cannot land before the first. */
+export function useSetStudyPreferences() {
+  const qc = useQueryClient();
+  const queue = useRef(Promise.resolve());
+  return useMutation({
+    mutationFn: (prefs: StudyPreferences) => {
+      const request = queue.current.then(() =>
+        api.patch<void>('/me/study-preferences', prefs)
+      );
+      queue.current = request.then(
+        () => undefined,
+        () => undefined
+      );
+      return request;
+    },
+    onMutate: (prefs) => {
+      qc.setQueryData<User>(qk.me, (me) =>
+        me ? { ...me, studyPreferences: prefs } : me
+      );
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: qk.me }),
   });
 }
 
@@ -2084,19 +2110,13 @@ export function useUpdateCard(flashcardSetId: string) {
     },
   });
 }
-/** Persist an SRS review result for a card (updates scheduling + known flag). */
-export function useReviewCard(flashcardSetId: string) {
-  const qc = useQueryClient();
+/* ---------------- review ---------------- */
+/** Records one rating; the study page toasts a failure once. */
+export function useRateReviewItem() {
   return useMutation({
     meta: { errorToast: false },
-    mutationFn: ({ id, srs, known }: Pick<Flashcard, 'id' | 'srs' | 'known'>) =>
-      api.patch<Flashcard>(`/flashcards/cards/${id}/study-state`, {
-        known,
-        srs,
-      } satisfies UpdateCardStudyStateReq),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.flashcardSet(flashcardSetId) });
-    },
+    mutationFn: (body: RateReviewItemReq) =>
+      api.post<void>('/review/ratings', body),
   });
 }
 

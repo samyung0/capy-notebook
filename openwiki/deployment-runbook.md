@@ -928,7 +928,7 @@ key is handed to the retrieval service and to the loader on the developer PC.
    set none and the tool is simply unoffered. A **partial set raises while the
    module is imported**, so the retrieval service — the only service that
    declares these five, under `retrieval` in both Compose files — fails to
-   start, which stops chat, generate and curate in that environment. The ingest
+   start, which stops chat and generate in that environment. The ingest
    host's workers never receive them, so ingest keeps running. Paste all five in
    one save, or none:
 

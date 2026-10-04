@@ -64,9 +64,10 @@ const TOOL_OUTCOMES: readonly ToolOutcome[] = [
 
 export interface ChatStreamBody {
   conversationId?: string;
-  /** Fixed for the thread: it opens a new chat in curate mode, and must match
-   * the stored value of an existing one. */
-  curate: boolean;
+  /** The per-turn Library switch: the shared knowledge library is a source. */
+  library: boolean;
+  /** What the learner has open; the server looks up its title. */
+  openResource?: { id: string; kind: 'file' | 'material' };
   text: string;
 }
 
@@ -81,10 +82,6 @@ export function chatErrorMessage(payload: unknown, fallback: string): string {
     case 'agent_failed':
     case 'invalid_answer':
       return m.chat_failed();
-    case 'curate_mismatch':
-      return m.chat_curate_locked();
-    case 'curate_requires_editor':
-      return m.chat_curate_requires_editor();
     case 'model_unavailable':
       return m.chat_model_unavailable();
     case 'provider_busy':

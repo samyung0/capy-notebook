@@ -148,7 +148,7 @@ function FlashcardSetPreviewActions({
     });
   const navigate = useNavigate();
   const summary = flashcardSetData
-    ? `${flashcardSetData.cardCount} card${flashcardSetData.cardCount === 1 ? '' : 's'} · ${flashcardSetData.knownPct}% known`
+    ? m.material_ref_cards({ count: flashcardSetData.cardCount })
     : flashcardSetIsLoading
       ? 'Loading flashcards…'
       : 'Flashcards';

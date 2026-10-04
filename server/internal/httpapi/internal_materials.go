@@ -4,6 +4,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -39,7 +40,9 @@ type internalMaterialReq struct {
 	Kind               string   `json:"kind"`
 	Title              string   `json:"title"`
 	ChapterIDs         []string `json:"chapterIds"`
-	FileIDs            []string `json:"fileIds"`
+	// ChapterID is where the material is filed; empty leaves it unfiled.
+	ChapterID string   `json:"chapterId"`
+	FileIDs   []string `json:"fileIds"`
 
 	Questions json.RawMessage `json:"questions"`
 	Cards     []struct {
@@ -58,6 +61,7 @@ func (r internalMaterialReq) hashPayload() map[string]any {
 		"kind": r.Kind, "title": strings.TrimSpace(r.Title), "questions": r.Questions,
 		"cards": r.Cards, "content": r.Content,
 		"fileIds": r.FileIDs, "chapterIds": r.ChapterIDs, "provenance": r.Provenance,
+		"chapterId": r.ChapterID,
 	}
 }
 
@@ -227,14 +231,36 @@ func (a *api) internalCreateMaterial(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
+	var chapterID *string
+	if req.ChapterID != "" {
+		ok, err := a.s.ChapterInWorkspace(ctx, req.ChapterID, req.WorkspaceID)
+		if err != nil {
+			a.fail(w, err)
+			return
+		}
+		if !ok {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"code": "invalid_input", "message": "chapter_id is not a chapter of this workspace; list_sources shows them",
+			})
+			return
+		}
+		chapterID = &req.ChapterID
+	}
 	cards := make([][2]string, 0, len(req.Cards))
 	for _, c := range req.Cards {
 		cards = append(cards, [2]string{c.Front, c.Back})
 	}
+	content, embedded := req.Content, []store.EmbeddedDraft(nil)
+	if req.Kind == "note" {
+		var ok bool
+		if content, embedded, ok = a.convertAgentNote(w, r, req); !ok {
+			return
+		}
+	}
 	op, err := a.s.CreateMaterialOperation(ctx, store.MaterialDraft{
 		ID: store.ChatMaterialID(req.AssistantMessageID, req.ToolCallID), ActorUserID: req.UserID,
 		WorkspaceID: req.WorkspaceID, WorkspaceName: ws.Name, Kind: store.MaterialKind(req.Kind), Title: title,
-		Questions: req.Questions, Cards: cards, Content: req.Content,
+		Questions: req.Questions, Cards: cards, Content: content, Embedded: embedded, ChapterID: chapterID,
 		ScopeChapters: chapterNames, ScopeFileNames: fileNames, Provenance: req.Provenance,
 	}, store.AgentOperation{
 		ID: opID, ToolVersion: 1, RequestHash: hash, ActorUserID: req.UserID,
@@ -256,6 +282,34 @@ func (a *api) internalCreateMaterial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, op)
+}
+
+// convertAgentNote turns the agent's note markdown into the editor's document
+// through the collaboration service, with each quiz or flashcards fence
+// pointed at the row created beside the note. The row ids derive from the
+// tool call, so a replay creates nothing twice. ok is false once a response
+// has been written.
+func (a *api) convertAgentNote(w http.ResponseWriter, r *http.Request, req internalMaterialReq) (string, []store.EmbeddedDraft, bool) {
+	converted, err := a.s.ConvertAgentMarkdown(r.Context(), req.Content)
+	var refusal *store.EditRefusal
+	if errors.As(err, &refusal) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": refusal.Message})
+		return "", nil, false
+	}
+	if err != nil {
+		a.failDocument(w, err)
+		return "", nil, false
+	}
+	ids := make([]string, len(converted.Embedded))
+	for i := range ids {
+		ids[i] = store.ChatMaterialID(req.AssistantMessageID, fmt.Sprintf("%s/embedded/%d", req.ToolCallID, i))
+	}
+	content, err := materialdoc.ResolvePendingRefs(string(converted.Document), ids)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": err.Error()})
+		return "", nil, false
+	}
+	return content, converted.EmbeddedDrafts(ids), true
 }
 
 // internalGetAgentOperation is the reconciliation read for a lost response:

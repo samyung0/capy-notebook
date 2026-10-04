@@ -3,7 +3,6 @@ import { useParams } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 import { anonymousFlashcardsQuery } from '@/api/anonymous';
 import { isApiError } from '@/api/client';
-import type { SrsState } from '@/api/types';
 import { PublicPage } from '@/components/app/PublicHeader';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Badge } from '@/components/ui/Badge';
@@ -23,6 +22,7 @@ import {
   reviewSrs,
   SRS_RATINGS,
   type SrsRating,
+  type SrsState,
 } from '@/lib/srs';
 import { RATING_LABEL, RATING_STYLE } from './FlashcardStudy';
 

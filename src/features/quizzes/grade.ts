@@ -107,7 +107,8 @@ function shortCorrect(
   return accepted.some((expected) => fuzzyMatch(expected, value));
 }
 /** Whether each scored item is right: matching pairs and gaps score one by
- * one, every other closed answer is a single item. */
+ * one, every other closed answer is a single item. A gap must equal one of its
+ * accepted answers, ignoring case and spacing; there is no typo tolerance. */
 function itemResults(part: QuestionPart, value: Answer | undefined): boolean[] {
   const answer = part.answer;
   if (answer.type === 'matching')
@@ -122,7 +123,9 @@ function itemResults(part: QuestionPart, value: Answer | undefined): boolean[] {
     return answer.accepted.map((accepted, i) => {
       const typed = Array.isArray(value) ? value[i] : undefined;
       return (
-        typeof typed === 'string' && shortCorrect(accepted, typed, undefined)
+        typeof typed === 'string' &&
+        norm(typed) !== '' &&
+        accepted.some((expected) => norm(expected) === norm(typed))
       );
     });
   return [closedCorrect(part, value)];

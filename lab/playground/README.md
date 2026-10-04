@@ -79,11 +79,10 @@ and materials are read-only; materials created in the current run are editable.
 Runs land in `local/runs/<id>/run.json` with the effective config,
 the exact system prompt and offered tool schemas, every tool call with the text the model saw, every
 provider call with token counts, captured images, citations and the answer.
-A curate run also records the progress ledger twice: the turn as the model saw
-it (`requests`, `next_todo_id`, `todos` with the id the rendered ledger showed,
-their done state and the material that closed each, `materials`, plus the turn's
-own `progress` and `reads`), and under `stored` exactly what the gateway would
-have persisted — the newest 10 open todos, the last 5 requests and 50 materials.
+A run also records the ledger twice: the turn as the model saw it
+(`next_todo_id`, `todos` with the id the turn context showed and their done
+state, plus the turn's own `progress` and `reads`), and under `stored` exactly
+what the gateway would have persisted, the newest 10 open todos.
 It records the incoming `ledger_in`, stall events and every material with its provenance books too;
 the materials themselves are written as
 `local/runs/<id>/materials/<id>.json`.
@@ -107,10 +106,12 @@ Fields absent from a config take the defaults in `DEFAULT_CONFIG`
 | `answer.citations` | `as_is` (production numbering), `renumber` (markers rewritten to 1, 2, … in first-appearance order while streaming; the final list holds only the passages used) or `structured` (the answer is JSON: claims with the passages that ground each; the playground writes the prose and numbers) |
 | `system_prompt` / `prompt_addon` | `null` keeps the production prompt; a string replaces it. The addon is appended either way |
 | `tool_descriptions` | Map of tool names to replacement descriptions, for example `{"search_knowledge": "Find relevant excerpts."}`. Unspecified tools keep their production descriptions; `browse_knowledge` still receives the live subject catalog |
-| `curate` | Run the real curate loop: library tools, the curate prompt, curate limits, the progress ledger and the stall guard (see below) |
-| `ledger` | Path to a stored ledger the curate turn continues: a previous `run.json`, or a bare ledger. `--ledger <path>` sets it for every config that does not carry its own |
-| `tools` | Subset of `search_workspace`, `list_sources`, `read_document`, `capture_page`, `create_material`, `inspect_document`, `edit_document`, and in curate mode `search_knowledge`, `browse_knowledge`, `read_knowledge`, `capture_knowledge_page`, `create_ledger`, `create_material`, `edit_document` |
-| `limits` | Ordinary-chat production defaults are 8 planning responses, 4 tools per response and 32 per turn. `planning_responses`, `tools_per_response`, `tools_per_turn`, `captures_per_turn` for ordinary chat; `knowledge_tools_per_response` and `stall_responses` for curate; `tools_per_turn` applies to both |
+| `library` | The per-turn Library switch (default on): the shared library is a source and its tools are offered |
+| `open_resource` | What the learner has open, `{"id", "kind", "title"}` or `null`; the turn context names it |
+| `study_preferences` | The learner's saved preferences; missing fields take the defaults in `pipeline/prompts/preferences.py` |
+| `study_progress` | `null` leaves `read_study_progress` unoffered; a dict is the fixture it returns, shaped like `/api/internal/study-progress` (`items`, `recentAttempts`, `weakChapters`) |
+| `ledger` | Path to a stored ledger the turn continues: a previous `run.json`, or a bare ledger. `--ledger <path>` sets it for every config that does not carry its own |
+| `tools` | `null` (default) offers what production offers for an editor; a list of tool names narrows it for an experiment. Limits are production's (`pipeline/retrieval/limits.py`) |
 | `search` | `top_k`, `per_file_cap` |
 | `capture.mode` | `pixels` attaches the JPEG to the conversation (needs a vision chat model); `ocr` sends it to Qwen3.5-OCR (`ocr_route` `docparse` or `chat`) and returns the transcript as a passage; `caption` asks the captioning model, question-aware when `question_aware` is true |
 | `capture.require_seen_page` | Refuse captures of pages no retrieved passage has shown |
@@ -132,61 +133,48 @@ the image rides in a user message placed after the tool results of that step,
 because chat-completions tool messages carry text only. Captures get a citation
 with the rendered box as its region.
 
-## Curate mode
+## Building
 
-Select the `curate` preset to load the saved curate prompt, tool list and caps.
-The Curate mode checkbox changes the mode and adds its tools while preserving
-an explicit custom `system_prompt`. Library tools require the header to show a
-configured library. The local review launcher on port 18766 now provides both
-the read-only frozen workspace and the read-only shared library, with a local
-copy of the saved `curate` preset alongside its workspace presets.
+Every turn runs the production prompt and loop: it answers a question or builds
+materials. The Library checkbox, the Open picker and the preference controls
+write `library`, `open_resource` and `study_preferences` into the config, and
+the turn context message shows them to the model. Library tools require the
+header to show a configured library; a library that is down leaves the turn on
+the workspace.
 
-`curate: true` runs the production curate loop (`configs/curate.json`; its
-`question` field prefills the question box). The other config, `configs/chat.json`,
-is ordinary chat with the production prompt, tools and caps against a UAT
-workspace. The header shows the library the curate turns read (current books,
-excerpts, topics) next to the target; workspace chunk counts are the UAT app
-database and matter only to chat. The agent gets the curate system prompt, the
-library tools and `create_ledger`, no planning ceiling, and the curate caps from `limits.knowledge_tools_per_response`,
-`limits.tools_per_turn` and `limits.stall_responses`. The consolidated `curate`
-preset uses the application prompt with four tools per response, 160 per turn
-and five responses without progress. It retains GLM high on the production route.
-
-The initial `browse_knowledge` catalog shows explicit subject browse calls,
-such as `browse_knowledge({"subject": "general-biology"})`, with excerpt counts.
-It omits subject aliases and the full topic list. Each subject call returns
-`topic_id` values for `search_knowledge.topics` or `browse_knowledge.topic`.
-Direct searches can omit `topics` entirely.
-The answer is plain prose with no citations, and the page shows the ledger's
-requests, its todos with their state, its materials and the turn's reads beside
-the runs list. The config's
-`planning_responses`, `tools_per_response` and `captures_per_turn` are inert
-in curate mode. The total tool cap ends with one tools-off response, reported
-as `tool_cap`; the stall guard still reports `curate_stall`.
+A turn without ledger todos gets 8 responses, the last with tools off. Once the
+ledger has todos, 160 tool calls per turn and the stall guard govern it: five
+responses without completing a todo turn tools off, and the turn reports
+`stall` (or `tool_cap` when the call cap ended it). The page shows the ledger's
+todos with their state and the turn's reads beside the runs list.
 
 There is no gateway, so `create_material` and `edit_document` are handled in
 process: a created material is written to `materials/<id>.json` under the run
 with the provenance `library.provenance` resolved for its `excerpt_ids`, an edit
 appends its commands to that file and merges its own books into the record by
-book id the way Go does, and both return the receipt the gateway would
-have produced. Both go through `tools.curate_write` and the ledger helpers the
-real handlers use, so the ledger rules — ledger first, a required todo id that
-is on the ledger and still open, excerpts read this turn or retained in full — are the
-production ones rather than a copy. There is no gateway to store the ledger in
-either, so `tools.store_ledger` is stubbed and `run.json` holds it. The page carries
-the stored ledger into the next turn automatically. `--ledger` can also seed a
-conversation from a saved run, starting from its `stored` ledger the way the
-gateway hands one back: done todos gone, open todos under their existing ids.
+book id the way Go does, and both return the receipt the gateway would have
+produced. Both go through `tools.ledger_write`, the production write guard (a
+todo while todos are open, excerpts read this turn or retained in full), and a
+quiz goes through `server/cmd/quizcheck`, the app's own quiz validation, so a
+saved quiz is one the app accepts. A note's fences are checked the way the
+editor's import and the interactive block will take them (`check_note`):
+quiz fences through `quizcheck`, flashcards with a front and back, and
+`html-embed` with a fallback, under 64 KB and without network access. There is no gateway to store the ledger in
+either, so `tools.store_ledger` is stubbed and `run.json` holds it. The page
+carries the stored ledger into the next turn automatically. `--ledger` can also
+seed a conversation from a saved run, starting from its `stored` ledger the way
+the gateway hands one back: done todos gone, open todos under their existing ids.
 
-The shared application `create_ledger` accepts strings to add new todos and
-`{"id": 0, "todo": "Replacement text"}` to add or overwrite a todo by ID.
-New explicit IDs advance the counter; completed IDs are not reused.
-Unmentioned todos stay unchanged. A non-null `body` replaces the current ledger
-body; null or omission preserves it. A body-only call is allowed. Repeated calls
-can correct a plan within the same turn, but only the first changed plan counts
-as progress. Updates preserve material history, reads, todo IDs and completion;
-invalid or over-capacity updates change nothing. The ten-open-todo limit remains.
-The playground uses the application handler and shared schema directly.
+`create_ledger` accepts strings to add new todos and `{"id": 0, "todo":
+"Replacement text"}` to add or overwrite a todo by ID. Completed IDs are not
+reused, unmentioned todos stay unchanged, and only the first changed plan in a
+turn counts as progress. At most ten todos may be open.
+
+`search_questions` and `read_question` read the question bank at
+`CAPY_PLAYGROUND_BANK_URL`, by default a local restore on port 15499 of a dump
+(see `bench/rag/scripts/bank_search.py` for the commands); the playground never
+reads the live bank. They need Library on and a configured library, whose
+embedding model the bank search shares.
 
 The library reads, `capture_knowledge_page` and compaction use the real
 code path. `capture_knowledge_page` renders from the knowledge-base bucket into
@@ -232,7 +220,7 @@ tokens for about 360), so a very small forced limit ends in
 built for long histories.
 
 Follow-ups send the user/assistant history, each completed answer's
-`toolEvidence`, the checkpoint and the stored curate ledger. Application curate turns retain `toolEvidence.libraryExcerpts`: exact bounded read results
+`toolEvidence`, the checkpoint and the stored ledger. Library turns retain `toolEvidence.libraryExcerpts`: exact bounded read results
 for excerpt IDs used in successful material creation or editing. Unused reads
 and refused writes add no retained evidence. Paginated reads keep the pages the
 model actually received; repeated use replays each page only once.
@@ -277,3 +265,37 @@ First observations are in
 [`../reports/2026-09-12-capture-page-playground.md`](../reports/2026-09-12-capture-page-playground.md).
 
 Chat turns require thinking to be enabled. The turn endpoint rejects `instant` before opening a stream; the production agent also enforces this policy. Protocol markup leaked into response text ends the turn with `response_flagged`.
+
+### Decks
+
+`create_deck` and `write_slide` exist only here until decks land in the app
+(`todo-learning.md`, 2.6). They follow ppt-master's Quick route: `create_deck`
+takes an outline of titles and briefs and returns the style (`deck-styles/`,
+default `editorial`) with its reference slides; `write_slide` takes one slide
+as SVG, which ppt-master's checker must pass (text inside its module's
+bounds, no overlapping modules), and once every slide is written the deck is
+exported with ppt-master's exporter to `materials/<id>.pptx`, closed by a
+Sources slide from its provenance. Figures are this turn's bbox captures,
+referenced as `../images/p<page>.jpg`. ppt-master is cloned on first use into
+`local/ppt-master` at the commit pinned in `deck.py`, and its scripts run
+under `uv` with their own dependencies. `DECKS.md` is the adoption guide:
+how ppt-master works, what we use, and how to add a style.
+
+The Decks checkbox writes `decks.offer`, and Main writes `decks.main_format`
+(`note`, `deck` or `auto`), which reaches the model through `deck.ADDON` in the
+system prompt rather than the study preferences, since production has no decks
+yet. Mocks: `artifacts/2026-10-04-deck-layouts.html`.
+
+When the agent withholds a response for carrying tool-call markup (reported as
+"Response flagged due to safety concern"), `run.json` keeps the text under that
+provider call's `flagged_text`.
+
+### Acceptance (todo-learning.md, 1.9)
+
+`configs/acceptance-*.json` are the scenarios for the end-to-end prompt tuning,
+each on `chat.json`'s target and workspace with its own `question` and an
+`expect` line saying what a good run does: a vague request (asks), a broad one
+(proposes, then builds on the ledger), the open file (pick it with Open first),
+a question (answers, builds nothing), Library off, brief and detailed
+explainers, question-bank reuse, a deck, and a note with every fence. Load one,
+run it, and save the run; a prompt change is judged against the saved runs.

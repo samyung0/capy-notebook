@@ -145,6 +145,7 @@ func TestRelayChatNilPipeDoesNotInventTokens(t *testing.T) {
 		"",
 		nil,
 		store.Conversation{ID: "c", WorkspaceID: "w"},
+		chatTurn{},
 		resolvedLLM{},
 		"cr_1",
 		"hello?",
@@ -172,6 +173,7 @@ func TestRelayChatRejectsEOFBeforeDone(t *testing.T) {
 		"",
 		nil,
 		store.Conversation{ID: "c", WorkspaceID: "w"},
+		chatTurn{},
 		resolvedLLM{},
 		"cr_1",
 		"hello?",
@@ -204,7 +206,7 @@ func TestRelayChatPreservesResponseFlagged(t *testing.T) {
 	}))
 	defer upstream.Close()
 	a := &api{pipe: pipeline.New(upstream.URL, "")}
-	err := a.relayChat(context.Background(), "", nil, store.Conversation{ID: "c", WorkspaceID: "w"}, resolvedLLM{}, "cr_1", "hello", "m1", store.ConversationPrompt{}, func(pipeChatEvent) {})
+	err := a.relayChat(context.Background(), "", nil, store.Conversation{ID: "c", WorkspaceID: "w"}, chatTurn{}, resolvedLLM{}, "cr_1", "hello", "m1", store.ConversationPrompt{}, func(pipeChatEvent) {})
 	var event *chatEventError
 	if !errors.As(err, &event) || event.Code != "response_flagged" {
 		t.Fatalf("safety error became generic: %v", err)

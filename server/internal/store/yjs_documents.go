@@ -176,12 +176,7 @@ func (s *Store) ProjectMaterialContent(
 		for i, card := range cards {
 			cardIDs[i] = card.ID
 		}
-		if err := syncCardStatsTx(ctx, tx, materialID, cardIDs); err != nil {
-			return Material{}, err
-		}
-		// A chat Undo that re-inserted a removed card retained its study row;
-		// put it back over the fresh default once this version is projected.
-		if err := applyCardStateRestoresTx(ctx, tx, materialID, yjsVersion, cardIDs, now); err != nil {
+		if err := syncFlashcardCardsTx(ctx, tx, materialID, cardIDs); err != nil {
 			return Material{}, err
 		}
 	}

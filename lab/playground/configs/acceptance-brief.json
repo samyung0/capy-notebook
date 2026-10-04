@@ -1,0 +1,31 @@
+{
+  "target": "uat",
+  "workspace_id": "ws_b5ac136d14",
+  "library": true,
+  "open_resource": null,
+  "study_preferences": {
+    "explainerStyle": "brief"
+  },
+  "question": "Make notes for the first chapter.",
+  "model": {
+    "provider_slug": "zai",
+    "model_slug": "glm-5.3-flash",
+    "version": 1,
+    "thinking": "high",
+    "transport": null
+  },
+  "system_prompt": null,
+  "capture": {
+    "mode": "pixels",
+    "max_edge": 1568,
+    "addon": false
+  },
+  "quality": {
+    "show": false
+  },
+  "prompt_addon": "",
+  "answer": {
+    "citations": "as_is"
+  },
+  "expect": "short note, key points first"
+}

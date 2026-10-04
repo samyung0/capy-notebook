@@ -4,9 +4,9 @@ import { chatFixtureOptions, chatFixtures } from './chatFixtures';
 import { mockChatStream } from './chatStream';
 import {
   accountStatus,
-  cardStats,
   discussions,
   files,
+  flashcardCards,
   flashcardSetFromMaterial,
   listWorkspaces,
   materials,
@@ -163,8 +163,6 @@ export const mockScenarioOptions = [
   { id: 'workspace-flaky', label: 'Workspace: intermittent request failed' },
   { id: 'chat-sse-error', label: 'Chat SSE error frame' },
   { id: 'chat-stream-close', label: 'Chat stream closes early' },
-  { id: 'chat-curate-mismatch', label: 'Chat curate flag disagrees' },
-  { id: 'chat-curate-requires-editor', label: 'Chat curate needs edit access' },
   { id: 'collaboration-token', label: 'Collaboration token 503' },
   { id: 'collab-chaos', label: 'Collaboration: chaos peers join and edit' },
   { id: 'offline', label: 'Offline status preview' },
@@ -706,24 +704,6 @@ export function getMockScenarioHandlers(
           ])
         ),
       ];
-    // A chat's mode is fixed when it is created and only an editor may curate,
-    // so both refusals arrive before the stream opens.
-    case 'chat-curate-mismatch':
-    case 'chat-curate-requires-editor':
-      return [
-        http.post('/api/workspaces/:id/chat/stream', () =>
-          HttpResponse.json(
-            {
-              code:
-                scenario === 'chat-curate-mismatch'
-                  ? 'curate_mismatch'
-                  : 'curate_requires_editor',
-              message: 'Mock curate refusal.',
-            },
-            { status: 400 }
-          )
-        ),
-      ];
     case 'collaboration-token':
       return [
         http.post('/api/materials/:id/collaboration-token', () =>
@@ -801,15 +781,16 @@ const readOnlyWorkspace = (workspace: (typeof workspaces)[number]) => ({
 });
 
 // What a frozen account keeps: reading, deleting whole items, narrowing
-// exposure, transfer, chat, quiz attempts, notifications, billing, account
-// settings and the question bank. Deleting one flashcard or PDF mark is an
-// edit.
+// exposure, transfer, chat, quiz attempts, study progress and review
+// ratings, notifications, billing, account settings and the question bank.
+// Deleting one flashcard or PDF mark is an edit.
 const keptWhenFrozen = [
   /^DELETE \/api\/(?!files\/[^/]+\/annotations\/|flashcards\/cards\/)/,
   /^PATCH \/api\/[a-z]+\/[^/]+\/sharing$/,
   /^POST \/api\/workspaces\/[^/]+\/(transfer|chat\/stream)$/,
   /^POST \/api\/(materials|files)\/[^/]+\/collaboration-token$/,
   /^POST \/api\/quizzes\/[^/]+\/(attempts|grade)$/,
+  /^(POST|PUT) \/api\/(review\/ratings|workspaces\/[^/]+\/study\/)/,
   /^POST \/api\/(notifications|billing|account)\//,
   /^(PATCH|PUT|DELETE) \/api\/(me|notification-prefs)(\/|$)/,
   /^[A-Z]+ \/api\/bank\//,
@@ -820,18 +801,13 @@ const ownerContent =
 
 /** The server's `account_over_quota` for every write it refuses: anything a
  * frozen `account` does apart from what it keeps, or writes into a frozen
- * `owner`'s content. A curate thread counts; an ordinary chat thread does not. */
+ * `owner`'s content. Opening a chat thread is not refused. */
 function frozenWrites(scope: 'account' | 'owner'): RequestHandler {
-  return http.all('/api/*', async ({ request }) => {
+  return http.all('/api/*', ({ request }) => {
     if (request.method === 'GET' || request.method === 'HEAD') return;
     const path = new URL(request.url).pathname;
-    if (path.endsWith('/conversations')) {
-      const body = (await request
-        .clone()
-        .json()
-        .catch(() => null)) as { curate?: boolean } | null;
-      if (!body?.curate) return;
-    } else if (
+    if (
+      path.endsWith('/conversations') ||
       keptWhenFrozen.some((rule) => rule.test(`${request.method} ${path}`)) ||
       (scope === 'owner' && !ownerContent.test(path))
     )
@@ -903,7 +879,7 @@ const contentWrites: [RegExp, (id: string) => string | null][] = [
   ],
   [
     /^(?:PATCH \/api\/flashcards\/cards\/([^/]+)\/content|DELETE \/api\/flashcards\/cards\/([^/]+))$/,
-    (id) => materialWorkspace(cardStats[id]?.materialId),
+    (id) => materialWorkspace(flashcardCards[id]?.materialId),
   ],
 ];
 

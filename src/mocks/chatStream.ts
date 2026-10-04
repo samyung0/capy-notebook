@@ -24,7 +24,6 @@ export function mockChatStream(fixture?: ChatFixture) {
       if (!conversation) {
         conversation = {
           createdAt: now,
-          curate: body.curate,
           id: uid('conv'),
           title: '',
           updatedAt: now,

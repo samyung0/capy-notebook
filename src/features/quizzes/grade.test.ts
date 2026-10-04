@@ -43,6 +43,12 @@ describe('part grading', () => {
     expect(scoreQuestion(gaps, { 'gaps-part': ['oil', 'Tenors', ''] })).toEqual(
       { awarded: 2, max: 3 }
     );
+    // Gaps take exact answers only: "chordss" would pass fuzzy matching.
+    expect(fuzzyMatch('chords', 'chordss')).toBe(true);
+    expect(
+      scoreQuestion(gaps, { 'gaps-part': ['oil', ' TENORS ', 'chordss'] })
+        .awarded
+    ).toBe(2);
     // Two of three right on a 2-mark part is 1.33, rounded down to 1.
     gaps.parts[0].marks = 2;
     expect(

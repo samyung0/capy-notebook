@@ -102,11 +102,7 @@ export type GuardTarget =
 
 export interface EditOutcome {
   guards: GuardTarget[];
-  /** Flashcard ids inserted by this edit. */
-  insertedCardIds: string[];
   inverse: DocumentCommand[];
-  /** Flashcard ids removed by this edit (their study rows need retaining). */
-  removedCardIds: string[];
 }
 
 const MEDIA_TYPES = new Set([
@@ -342,8 +338,6 @@ export function applyMaterialCommands(
   const { editor, sharedRoot } = openHeadlessEditor(document);
   const inverse: DocumentCommand[] = [];
   const guardTargets: Array<() => GuardTarget> = [];
-  const removedCardIds: string[] = [];
-  const insertedCardIds: string[] = [];
   try {
     Editor.withoutNormalizing(editor, () => {
       for (const command of commands) {
@@ -531,8 +525,6 @@ export function applyMaterialCommands(
               parentType: command.parentType,
               type: 'remove_child',
             });
-            if (command.parentType === 'flashcards')
-              insertedCardIds.push(stableId(command.node));
             const parentId = stableId(parent);
             const nodeId = stableId(command.node);
             guardTargets.push(() =>
@@ -568,8 +560,6 @@ export function applyMaterialCommands(
               parentType: command.parentType,
               type: 'insert_child',
             });
-            if (command.parentType === 'flashcards')
-              removedCardIds.push(command.nodeId);
             const parentId = stableId(parent);
             guardTargets.push(() =>
               childGapGuard(
@@ -635,7 +625,7 @@ export function applyMaterialCommands(
       }
     }
     const guards = dedupeGuards(captured);
-    return { guards, insertedCardIds, inverse, removedCardIds };
+    return { guards, inverse };
   } finally {
     if (YjsEditor.connected(editor)) YjsEditor.disconnect(editor);
   }

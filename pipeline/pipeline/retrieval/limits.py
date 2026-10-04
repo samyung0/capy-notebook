@@ -10,36 +10,34 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-# Planning responses and the per-response cap are the binding limits; the
-# per-turn cap is their product on purpose, so a turn that uses every call
-# ends on the tools-off last response rather than on a limit_reached refusal.
-PLANNING_RESPONSES = 8
+# Every turn: at most this many tool calls in one response.
 TOOLS_PER_RESPONSE = 4
-TOOLS_PER_TURN = PLANNING_RESPONSES * TOOLS_PER_RESPONSE
 MAX_CONCURRENT = 4
 
-# Curate mode builds materials instead of answering, so it has no planning
-# ceiling for any payer. The tool cap bounds productive turns; the stall guard
-# ends a turn whose responses stop completing ledger todos.
-KNOWLEDGE_TOOLS_PER_RESPONSE = 4
-CURATE_TOOLS_PER_TURN = 160
-CURATE_STALL_RESPONSES = 5
+# A turn without ledger todos (an answer or a single-item build) gets this many
+# responses, the last with tools off. A turn that needs more room creates a
+# ledger.
+PLANNING_RESPONSES = 8
+
+# Once the turn's ledger has todos there is no response ceiling: the tool cap
+# bounds productive turns, and the stall guard ends one whose responses stop
+# completing todos.
+LEDGER_TOOLS_PER_TURN = 160
+STALL_RESPONSES = 5
 # A write that errors is an attempt at progress: each of the first two errored
 # create_material or edit_document calls in a turn grants the stall guard two
 # more responses, so the threshold is at most 5 + 4.
-CURATE_WRITE_ERROR_GRACE = 2
-CURATE_WRITE_ERROR_GRACE_MAX = 2
-# A learner's request has to fit the library evidence of a whole turn.
-CURATE_MIN_CONTEXT_WINDOW_TOKENS = 200_000
+WRITE_ERROR_GRACE = 2
+WRITE_ERROR_GRACE_MAX = 2
 
 STOP_ANSWER = "answer"
 STOP_PLANNING_CAP = "planning_cap"
 STOP_TOOL_CAP = "tool_cap"
-# Curate only: the stall guard ran the last response with tools off, whether or
-# not that response answered. The credit guard's terminal call is not this: a
-# silent one reports planning_cap, the same as outside curate, so operators
-# sizing CURATE_STALL_RESPONSES do not read billing cutoffs as stalls.
-STOP_CURATE_STALL = "curate_stall"
+# Ledger turns only: the stall guard ran the last response with tools off,
+# whether or not that response answered. The credit guard's terminal call is
+# not this: a silent one reports planning_cap, so operators sizing
+# STALL_RESPONSES do not read billing cutoffs as stalls.
+STOP_STALL = "stall"
 STOP_ERROR = "error"
 STOP_TURN_FAILED = "turn_failed"
 STOP_CLIENT_GONE = "client_gone"

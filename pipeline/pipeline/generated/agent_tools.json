@@ -1,5 +1,5 @@
 {
-  "version": 9,
+  "version": 10,
   "operations": [
     "source.read",
     "material.read",
@@ -178,9 +178,29 @@
       "retention": "none"
     },
     {
+      "name": "read_study_progress",
+      "version": 1,
+      "description": "Read the learner's own study progress in this workspace: the files and materials marked done, started or removed, recent quiz results, and the chapters whose questions and cards they retain least. Use it to decide what to build or practise next; it is read-only.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": false,
+      "concurrency": "read",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "source.read"
+      ],
+      "retention": "full"
+    },
+    {
       "name": "search_knowledge",
       "version": 1,
-      "description": "Search the shared knowledge library of verified textbook excerpts. One excerpt is one section of one book. `roles` filters what the excerpt teaches: introduction, formal, worked_example, exercise, summary, reference. `topics` takes exact topic_id values returned by browse_knowledge with a subject. Subject IDs and labels are not topic filters; omit topics for a direct search. An empty result under a role filter reports what those topics do hold by role, so relax the filter on purpose instead of rewording.",
+      "description": "Search the shared knowledge library of verified textbook excerpts. One excerpt is one section of one book. `roles` filters what the excerpt teaches: introduction, formal, worked_example, exercise, summary, reference. Results include the hit passage and reviewed scope; full notes are in read_knowledge. `topics` takes the exact `topic_id` values returned by browse_knowledge({\"subject\": \"\u003csubject ID\u003e\"}); omit it for a direct or cross-topic search. Subject IDs and labels are not topic filters. Use this when you need a specific role or a specific idea; an empty result under a role filter reports what those topics do hold by role, so relax the filter on purpose instead of rewording.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -226,7 +246,7 @@
     {
       "name": "browse_knowledge",
       "version": 1,
-      "description": "List what the library holds. Pass exactly one of subject or topic. Use a subject browse call listed below to retrieve its topics with excerpt counts. Subject IDs are only for subject; use the returned topic_id values in search_knowledge.topics or this tool's topic. A topic ID returns verified excerpt counts by role and by book, then a page of excerpts with their section paths and reviewed scope. A direct search needs no preceding browse.",
+      "description": "List what the library holds. Pass exactly one of `subject` or `topic`. Use a subject browse call listed below to retrieve its topics with excerpt counts. Subject IDs are only for `subject`; use the returned `topic_id` values in search_knowledge.topics or this tool's `topic`. A topic ID returns verified excerpt counts by role and by book, then a page of excerpts with their section paths and reviewed scope. Browse when you need topic IDs or coverage; a direct search needs no preceding browse.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -262,7 +282,7 @@
     {
       "name": "read_knowledge",
       "version": 1,
-      "description": "Read a library excerpt in full, in order from a chunk index. Always read an excerpt before writing a material from it; a search hit is one chunk of it.",
+      "description": "Read an excerpt's full reviewed notes and original source chunks, in order from a chunk index. Always read an excerpt before writing a material from it; a search hit is one chunk of it. The scope field explains applicability and when linked source context is needed; follow links relevant to the chosen example or claim. Use next start to continue an excerpt; notes appear on its first page.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -291,6 +311,86 @@
         "library.read"
       ],
       "retention": "used_excerpts"
+    },
+    {
+      "name": "search_questions",
+      "version": 1,
+      "description": "Search the question bank of reviewed exam questions for practice to reuse before writing new questions. Ranks by meaning within the filters. `exam` and `topics` narrow by exam and topic ids; `types` narrows by question type, such as an IELTS task type. Results are compact cards; read_question returns a question in full.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "exam": {
+            "description": "Exam id, such as hkdse or ielts.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "query": {
+            "description": "What the practice should cover.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "topics": {
+            "description": "Topic ids to restrict to.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "types": {
+            "description": "Question types to restrict to.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 8,
+            "type": "array"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": true,
+      "concurrency": "read",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "library.read"
+      ],
+      "retention": "none"
+    },
+    {
+      "name": "read_question",
+      "version": 1,
+      "description": "Read one question-bank question in full: its JSON, to copy into a quiz unchanged, with its worked solution, marking scheme and sources.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "question_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "question_id"
+        ],
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": false,
+      "concurrency": "read",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "library.read"
+      ],
+      "retention": "full"
     },
     {
       "name": "capture_knowledge_page",
@@ -339,17 +439,10 @@
     {
       "name": "create_ledger",
       "version": 1,
-      "description": "Create or update the conversation's progress ledger. A non-null body replaces the current body; null or omission preserves it. Each string in todos adds a new todo with an assigned ID. An object {id, todo} adds that ID or overwrites its text. Use fresh IDs for new todos; completed IDs are not reused. Unmentioned todos stay unchanged. Pass only additions or edits, not the whole list. You may correct the ledger again in the same turn. At most 10 unfinished todos may exist, each a material or section to write. Material writes mark their todo done automatically; editing todo text does not change completion.",
+      "description": "Add or edit todos on the conversation's ledger when building more than one item: one todo per material or section to write. Each string in todos adds a new todo with an assigned ID. An object {id, todo} adds that ID or overwrites its text. Use fresh IDs for new todos; completed IDs are not reused. Unmentioned todos stay unchanged. Pass only additions or edits, not the whole list. At most 10 unfinished todos may exist. A material write marks its todo done; editing todo text does not change completion.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "body": {
-            "maxLength": 2000,
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "todos": {
             "items": {
               "anyOf": [
@@ -383,6 +476,9 @@
             "type": "array"
           }
         },
+        "required": [
+          "todos"
+        ],
         "type": "object"
       },
       "mutates": true,
@@ -392,14 +488,14 @@
         "chat"
       ],
       "requiredOperations": [
-        "library.read"
+        "material.create"
       ],
       "retention": "none"
     },
     {
       "name": "create_material",
       "version": 1,
-      "description": "Create a study material in this workspace from content you already authored: a quiz, flashcard deck, mindmap, diagram or note. Only call this when the user asked for one. Ground the content in passages you already retrieved. Do not mix this call with retrieval tools in the same response.",
+      "description": "Create a study material in this workspace from content you already wrote: a note, quiz, flashcard deck, mindmap or diagram. A learner asking to learn, make or practise something is a request for materials, so do not ask whether to create one. Ground the content in passages or excerpts you have read. While the ledger has open todos, pass todo, the id of the todo this material completes. Pass excerpt_ids for every library excerpt it was written from; they become its attribution footer, and each must have been read this turn or have its full text retained in context. A search card or compacted summary alone is not a read. Do not mix this call with retrieval tools in the same response.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -423,8 +519,13 @@
             },
             "type": "array"
           },
+          "chapter_id": {
+            "description": "The chapter this material is filed in, as list_sources shows it; omit to leave it unfiled. A standalone quiz or flashcard set goes in the chapter it practises.",
+            "minLength": 1,
+            "type": "string"
+          },
           "content": {
-            "description": "mindmap/diagram/note only; markdown with a mermaid block",
+            "description": "mindmap/diagram/note only. Markdown. A mindmap or diagram is one ```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; ```quiz fences (YAML `questions:` list, each in the quiz question format) and ```flashcards fences (YAML `cards:` list of `front`/`back`), each a mini check of 2 to 4 items; and ```html-embed fences for an interactive (YAML: `title`, `fallback`, `html: |`). The html is one self-contained snippet under 64 KB: inline CSS and script, no network, no external URLs, colours from the variables --bg, --fg, --muted, --accent and --border so it follows the light and dark theme, height fitting its content. The fallback is the plain text a reader sees in export or where scripts cannot run, so it states what the interactive shows. Use an interactive only where moving something teaches more than a diagram.",
             "type": "string"
           },
           "excerpt_ids": {
@@ -480,7 +581,7 @@
             "type": "string"
           },
           "todo": {
-            "description": "Curate mode: id of the ledger todo this write completes, as shown on the ledger.",
+            "description": "Id of the open ledger todo this write completes, as the turn context shows it.",
             "minimum": 0,
             "type": "integer"
           }
@@ -601,7 +702,7 @@
     {
       "name": "edit_document",
       "version": 1,
-      "description": "Apply content edits to one inspected document. Each command names a stable target from inspect_document and the exact text or value it expects to find; the whole call is refused if any expectation is stale. Edits save directly and each result has an Undo the user can trigger. Formatting, images, media, layout and PDF edits are not supported.",
+      "description": "Apply content edits to one inspected document. Each command names a stable target from inspect_document and the exact text or value it expects to find; the whole call is refused if any expectation is stale. Edits save directly and each result has an Undo the user can trigger. Formatting, images, media, layout and PDF edits are not supported. To grow a material section by section, append the next section per call rather than rewriting the whole note; editing a material takes todo while todos are open and excerpt_ids for appended library content. Editing one of the user's own source files takes neither.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -646,19 +747,19 @@
                         "null"
                       ]
                     },
-                    "text": {
-                      "description": "Plain text; each line becomes a paragraph.",
+                    "markdown": {
+                      "description": "Note markdown, in the format create_material takes for a note, fences included.",
                       "maxLength": 200000,
                       "type": "string"
                     },
                     "type": {
-                      "const": "insert_block"
+                      "const": "insert_markdown"
                     }
                   },
                   "required": [
                     "type",
                     "after_block_id",
-                    "text"
+                    "markdown"
                   ],
                   "type": "object"
                 },
@@ -880,7 +981,7 @@
             "type": "array"
           },
           "excerpt_ids": {
-            "description": "Curate mode: library excerpt ids the appended content was written from; they join the material's attribution footer.",
+            "description": "Library excerpt ids the appended content was written from; they join the material's attribution footer.",
             "items": {
               "minLength": 1,
               "type": "string"
@@ -911,7 +1012,7 @@
             "type": "object"
           },
           "todo": {
-            "description": "Curate mode: id of the ledger todo this write completes, as shown on the ledger.",
+            "description": "Id of the open ledger todo this write completes, as the turn context shows it.",
             "minimum": 0,
             "type": "integer"
           }

@@ -487,16 +487,13 @@ Sources: [quiz read/attempt rules](../server/internal/httpapi/huma_quizzes.go#L7
   both. Suspended, deletion-pending, deleted, and access-revoked actors cannot
   start or continue billed work.
 - Workspace chat stays open to frozen accounts. A frozen actor or owner leaves
-  the agent its read and trash tools (no edit, create or restore tools, no
-  curate mode), creating a curate thread is refused with `account_over_quota`,
-  and generation refuses before spending credits.
+  the agent its read and trash tools (no edit, create or restore tools), and
+  generation refuses before spending credits. The chat's Library switch grants
+  `library.read` per turn to any role that can chat; it adds no write tools.
 - An owner at or over its storage limit (full or grace) leaves the agent
   without its create and edit tools (restoring from trash stays, since it
   grows nothing), and generation is refused with `storage_quota_exceeded`
-  before any credits are reserved or spent. Curate is refused like frozen:
-  creating a curate thread with `storage_quota_exceeded`, a curate turn with
-  `curate_requires_editor` before any model runs, and the chat's curate
-  switch hides with `canEditContent`.
+  before any credits are reserved or spent.
 
 Sources: [chat effective-role guard](../server/internal/store/chat.go#L191),
 [chat stream admission](../server/internal/httpapi/server.go#L487), and
@@ -528,11 +525,11 @@ during a write. Severity is ordered as deleted, deletion pending, suspended,
 then storage state. The same boundary is enforced for Clerk, development, and
 E2E identities.
 
-| Account state       | Hold/use a session | Read, download, chat | Create/upload/clone                                                    | Edits, comments, widening exposure, deleting a card or PDF mark, curate threads      | Trash whole items, narrow exposure | Material document editing                          |
+| Account state       | Hold/use a session | Read, download, chat | Create/upload/clone                                                    | Edits, comments, widening exposure, deleting a card or PDF mark                     | Trash whole items, narrow exposure | Material document editing                          |
 | ------------------- | ------------------ | -------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------- | -------------------------------------------------- |
 | `active`            | Yes                | Yes                  | Yes, subject to role and hard quota                                    | Yes                                                                                  | Yes                                | Full write                                         |
-| `active` at `full`  | Yes                | Yes                  | Storage growth fails the hard quota                                    | Organizing, sharing and curate threads yes; content, comments, cards and PDF marks view-only where this account pays | Yes                                | View only where this account pays                  |
-| `over_quota_grace`  | Yes                | Yes                  | Yes, but storage growth fails the hard quota against the Free limit    | Organizing, sharing and curate threads yes; content, comments, cards and PDF marks view-only where this account pays | Yes                                | View only where this account pays                  |
+| `active` at `full`  | Yes                | Yes                  | Storage growth fails the hard quota                                    | Organizing and sharing yes; content, comments, cards and PDF marks view-only where this account pays | Yes                                | View only where this account pays                  |
+| `over_quota_grace`  | Yes                | Yes                  | Yes, but storage growth fails the hard quota against the Free limit    | Organizing and sharing yes; content, comments, cards and PDF marks view-only where this account pays | Yes                                | View only where this account pays                  |
 | `over_quota_frozen` | Yes                | Yes                  | No                                                                     | No, nowhere for the actor, and for nobody where this account pays                    | Yes, subject to role               | Read only, as actor or as storage owner            |
 | `deletion_pending`  | No                 | No API access        | No                                                                     | No                                                                                   | No                                 | No                                                 |
 | `suspended`         | No                 | No API access        | No                                                                     | No                                                                                   | No                                 | No                                                 |

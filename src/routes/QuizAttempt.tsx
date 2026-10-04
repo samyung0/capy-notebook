@@ -28,7 +28,7 @@ import { Skeleton } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { PublicAssetUrlContext } from '@/features/questions/QuestionView';
-import { type Answer, scoreQuestion } from '@/features/quizzes/grade';
+import type { Answer } from '@/features/quizzes/grade';
 import { isAnswered } from '@/features/quizzes/QuestionRunner';
 import {
   QuizPageHeader,
@@ -171,10 +171,6 @@ function Attempt({ quizId, shared }: { quizId: string; shared: boolean }) {
       provenance={quiz.provenance}
       questions={quiz.questions}
       save={(answers, graded) => {
-        const wrong = graded.questions.filter((question) => {
-          const score = scoreQuestion(question, answers);
-          return score.awarded < score.max;
-        });
         // The result is already on screen; a failed save only loses history.
         submit(
           {
@@ -183,7 +179,6 @@ function Attempt({ quizId, shared }: { quizId: string; shared: boolean }) {
             questions: graded.questions,
             quizId,
             total: graded.max,
-            wrong,
           },
           {
             onError: (err) =>

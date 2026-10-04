@@ -1,7 +1,8 @@
 import { USE_MSW } from '@/api/auth';
-import type { Question, SrsState } from '@/api/types';
+import type { Question } from '@/api/types';
 import type { Answers } from '@/features/quizzes/grade';
 import type { SrsRating } from '@/lib/srs';
+import type { SrsState } from './srs';
 
 /**
  * Browser-local study data for signed-out visitors: quiz attempts and

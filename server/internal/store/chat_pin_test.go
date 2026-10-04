@@ -33,7 +33,7 @@ func TestAssistantMessagePinsTheResolvedChatModel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	conv, err := s.CreateConversation(ctx, userID, ws.ID, "rest", false)
+	conv, err := s.CreateConversation(ctx, userID, ws.ID, "rest")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestConversationPromptLoadsEveryMessageAfterCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conv, err := s.CreateConversation(ctx, userID, ws.ID, "history", false)
+	conv, err := s.CreateConversation(ctx, userID, ws.ID, "history")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestConversationPromptLoadsEveryMessageAfterCheckpoint(t *testing.T) {
 	}
 }
 
-// The curate ledger write carries its own fence. The pipeline writes it from a
+// The ledger write carries its own fence. The pipeline writes it from a
 // finally block, so an aborted turn's write can arrive once the next turn's
 // assistant row exists; the write itself refuses it, rather than a check the
 // caller performs separately and the next turn's row can commit behind.
@@ -166,7 +166,7 @@ func TestSetConversationLedgerRefusesAnOlderTurn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conv, err := s.CreateConversation(ctx, userID, ws.ID, "curate", true)
+	conv, err := s.CreateConversation(ctx, userID, ws.ID, "ledger")
 	if err != nil {
 		t.Fatal(err)
 	}

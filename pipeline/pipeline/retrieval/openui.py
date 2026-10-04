@@ -355,7 +355,7 @@ def to_text(program: Program) -> str:
 
 def text_of(answer: str) -> str:
     """Plain text for a stored answer: the program's strings, or the answer
-    itself when it is not a program (older prose answers, curate replies)."""
+    itself when it is not a program (older prose answers)."""
     if not is_lang_shaped(answer):
         return answer
     try:
@@ -371,34 +371,6 @@ def _inside_string(text: str) -> bool:
         return _tokenize(text)[1]
     except ParseError:
         return True
-
-
-class PlainRenderer:
-    """Pass-through renderer for a mode whose answer is prose, not a program.
-
-    Curate turns cite nothing (attribution lives on the created materials), so
-    the deltas stream as they arrive and ``order`` stays empty. It presents the
-    same surface as :class:`LangRenderer` so the agent loop has one path.
-    """
-
-    def __init__(self) -> None:
-        self.raw = ""
-        self.text = ""
-        self.answer_shaped = True
-        self.complete = True
-        self.invalid = False
-        self.order: list[int] = []
-
-    def push(self, delta: str) -> str:
-        self.raw += delta
-        self.text += delta
-        return delta
-
-    def finish(self) -> str:
-        return ""
-
-    def reading_order(self) -> list[int]:
-        return []
 
 
 _FENCE_LINE = re.compile(r"`{3,}[\w-]*[ \t]*\n")

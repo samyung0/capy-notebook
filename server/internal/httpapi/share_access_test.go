@@ -342,21 +342,21 @@ func TestShareHTTPExploreAndAttempts(t *testing.T) {
 	}
 
 	rec = doReq(t, h, http.MethodPost, "/api/quizzes/qz_e2e_link/attempts", "", map[string]any{
-		"correct": 1, "total": 1, "wrong": []any{}, "answers": map[string]any{}, "questions": []any{},
+		"correct": 1, "total": 1, "answers": map[string]any{}, "questions": []any{},
 	})
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("anon attempt = %d", rec.Code)
 	}
 
 	rec = doReq(t, h, http.MethodPost, "/api/quizzes/qz_e2e_private/attempts", "u_other", map[string]any{
-		"correct": 0, "total": 1, "wrong": []any{}, "answers": map[string]any{}, "questions": []any{},
+		"correct": 0, "total": 1, "answers": map[string]any{}, "questions": []any{},
 	})
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("private attempt by other = %d %s", rec.Code, rec.Body.String())
 	}
 
 	rec = doReq(t, h, http.MethodPost, "/api/quizzes/qz_e2e_link/attempts", "u_other", map[string]any{
-		"correct": 1, "total": 1, "wrong": []any{}, "answers": map[string]any{}, "questions": []any{},
+		"correct": 1, "total": 1, "answers": map[string]any{}, "questions": []any{},
 	})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("link attempt = %d %s", rec.Code, rec.Body.String())
@@ -364,7 +364,7 @@ func TestShareHTTPExploreAndAttempts(t *testing.T) {
 
 	// Flashcard material IDs must not accept quiz attempts.
 	rec = doReq(t, h, http.MethodPost, "/api/quizzes/dk_e2e_link/attempts", "u_other", map[string]any{
-		"correct": 1, "total": 1, "wrong": []any{}, "answers": map[string]any{}, "questions": []any{},
+		"correct": 1, "total": 1, "answers": map[string]any{}, "questions": []any{},
 	})
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("non-quiz attempt = %d %s", rec.Code, rec.Body.String())
@@ -468,19 +468,30 @@ func TestStudyToolMutationPathsSeparateContentMetadataSharingAndStudyState(t *te
 		"front":            "Updated front", "back": "Updated back", "known": true,
 	})
 	if rec.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("study state on card authoring path = %d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("unknown field on card authoring path = %d body=%s", rec.Code, rec.Body.String())
 	}
-	rec = doReq(t, h, http.MethodPatch, "/api/flashcards/cards/c_e2e_priv_1/study-state", "u_editor", map[string]any{
-		"known": true, "front": "must not be accepted",
-	})
-	if rec.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("card content on study-state path = %d body=%s", rec.Code, rec.Body.String())
+}
+
+// Review ratings need read access only: a workspace viewer and a link visitor
+// record their own progress.
+func TestShareHTTPReadersRecordReviewRatings(t *testing.T) {
+	h := openShareHTTP(t)
+	for _, tc := range []struct{ set, card, user string }{
+		{"dk_e2e_private", "c_e2e_priv_1", "u_viewer"},
+		{"dk_e2e_link", "c_e2e_link_1", "u_other"},
+	} {
+		rec := doReq(t, h, http.MethodPost, "/api/review/ratings", tc.user, map[string]any{
+			"materialId": tc.set, "itemId": tc.card, "rating": 3,
+		})
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("rate %s as %s = %d body=%s", tc.set, tc.user, rec.Code, rec.Body.String())
+		}
 	}
-	rec = doReq(t, h, http.MethodPatch, "/api/flashcards/cards/c_e2e_priv_1/study-state", "u_editor", map[string]any{
-		"known": true,
+	rec := doReq(t, h, http.MethodPost, "/api/review/ratings", "u_other", map[string]any{
+		"materialId": "dk_e2e_private", "itemId": "c_e2e_priv_1", "rating": 3,
 	})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("card study-state update = %d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("rate without access = %d", rec.Code)
 	}
 }
 

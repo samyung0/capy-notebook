@@ -184,6 +184,11 @@ def prepare_environment(target: str) -> str:
             env["LIBRARY_DATABASE_URL"], LIBRARY_PORT
         )
     os.environ["DATABASE_URL"] = dsn
+    # Bank tools read a local restore of a dump, never the live bank that UAT
+    # and production read (see bench/rag/scripts/bank_search.py).
+    os.environ["BANK_DATABASE_URL"] = os.environ.get(
+        "CAPY_PLAYGROUND_BANK_URL", "postgresql://postgres:lab@127.0.0.1:15499/bank"
+    )
     os.environ.setdefault("CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S", "60")
     return dsn
 

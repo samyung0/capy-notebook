@@ -30,7 +30,6 @@ import { LangAnswer } from './chat/LangAnswer';
 import { QuestionBlock } from './chat/QuestionBlock';
 import { extractQuestions } from './chat/questions';
 import { chatInputLimit } from './chatInputLimit';
-import { curateToggleDisabled, curateToggleVisible } from './curateToggle';
 import type { TabAction } from './PanelTabRow';
 import { toolErrorMessage } from './toolErrorMessage';
 import { toChatMessage, useChatStream } from './useChatStream';
@@ -381,7 +380,7 @@ export function ChatPanel({
   workspaceId,
   color,
   canReprocess,
-  readOnly,
+  openResource,
   onOpenCitation,
   onOpenResource,
   renderTabRow,
@@ -392,8 +391,8 @@ export function ChatPanel({
   renderTabRow: (actions: TabAction[]) => ReactNode;
   /** Owner-only: shows the process-changes button under the pending notice. */
   canReprocess?: boolean;
-  /** Hides the curate switch: a visitor who cannot write cannot curate. */
-  readOnly?: boolean;
+  /** What the learner has open in the center pane, sent with each turn. */
+  openResource?: { id: string; kind: 'file' | 'material' } | null;
   /** Opens and highlights a cited source in the center pane. */
   onOpenCitation?: (citation: Citation) => void;
   /** Opens a resource a tool created, edited or restored, in the center pane. */
@@ -421,9 +420,8 @@ export function ChatPanel({
   const inputLimit = chatInputLimit(text);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [selectId, setSelectId] = useState<string | null>(null);
-  // A chat is curate or ordinary for its whole life; the toggle only opens a
-  // new one, and an opened chat shows its stored mode.
-  const [curate, setCurate] = useState(false);
+  // The Library switch applies per turn; it stays where the learner left it.
+  const [library, setLibrary] = useState(true);
   const { data: history } = useMessages(selectId, { errorBoundary: false });
   const hydratedRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -435,13 +433,10 @@ export function ChatPanel({
   const last = messages.at(-1);
   const questions = useMemo(
     () =>
-      !streaming &&
-      !curate &&
-      last?.role === 'assistant' &&
-      last.status === 'complete'
+      !streaming && last?.role === 'assistant' && last.status === 'complete'
         ? extractQuestions(last.content)
         : [],
-    [curate, last, streaming]
+    [last, streaming]
   );
 
   // Seed local state when a previously-saved conversation is opened.
@@ -457,27 +452,28 @@ export function ChatPanel({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages]);
 
+  // Only the id and kind leave the browser; the server looks up the title.
+  function turn() {
+    return {
+      library,
+      openResource: openResource
+        ? { id: openResource.id, kind: openResource.kind }
+        : undefined,
+    };
+  }
+
   function submit() {
     const trimmed = text.trim();
     if (!trimmed || streaming || inputLimit.exceeded) return;
     setText('');
-    void send(trimmed, curate);
+    void send(trimmed, turn());
   }
 
   function openNew() {
     hydratedRef.current = null;
     setSelectId(null);
-    setCurate(false);
     startNew();
   }
-
-  // A selected thread's stored mode arrives with its messages; until then the
-  // switch must not be flipped.
-  const curateDisabled = curateToggleDisabled({
-    hydrating: selectId !== null && history === undefined,
-    messageCount: messages.length,
-    streaming,
-  });
 
   return (
     <div
@@ -522,7 +518,6 @@ export function ChatPanel({
                   onClick={() => {
                     hydratedRef.current = null;
                     setSelectId(c.id);
-                    setCurate(c.curate);
                     setHistoryOpen(false);
                   }}
                   type="button"
@@ -531,11 +526,6 @@ export function ChatPanel({
                   <span className="wrap-anywhere min-w-0 flex-1 whitespace-normal">
                     {c.title || m.chat_untitled()}
                   </span>
-                  {c.curate && (
-                    <span className="shrink-0 rounded-full bg-tint-info px-2 py-0.5 text-[11px] text-tint-info-fg">
-                      {m.chat_curate()}
-                    </span>
-                  )}
                   {c.id === conversationId && <Icon name="check" size={16} />}
                 </Button>
               ))
@@ -609,7 +599,7 @@ export function ChatPanel({
         <QuestionBlock
           disabled={streaming}
           key={last.id}
-          onSend={(answer) => void send(answer, curate)}
+          onSend={(answer) => void send(answer, turn())}
           questions={questions}
         />
       ) : null}
@@ -628,46 +618,35 @@ export function ChatPanel({
             )}
             onChange={(e) => setText(e.target.value)}
             placeholder={
-              curate
-                ? m.chat_curate_placeholder()
-                : questions.length
-                  ? m.chat_question_placeholder()
-                  : m.chat_placeholder()
+              questions.length
+                ? m.chat_question_placeholder()
+                : m.chat_placeholder()
             }
             rows={2}
             value={text}
           />
           <div className="flex items-center gap-2">
-            {curateToggleVisible({ readOnly }) && (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <span className="inline-flex">
-                      <Button
-                        aria-pressed={curate}
-                        className={cn(
-                          'h-7.5 rounded-full px-2.5 font-semibold text-[13px]',
-                          curate &&
-                            'border-transparent bg-tint-accent-1 text-tint-accent-1-fg hover:bg-tint-accent-1'
-                        )}
-                        disabled={curateDisabled}
-                        iconLeft={curateDisabled ? 'lock' : 'book'}
-                        onClick={() => setCurate((value) => !value)}
-                        size="sm"
-                        variant="outline"
-                      >
-                        {m.chat_curate()}
-                      </Button>
-                    </span>
-                  }
-                />
-                <TooltipContent>
-                  {messages.length > 0
-                    ? m.chat_curate_locked()
-                    : m.chat_curate_hint()}
-                </TooltipContent>
-              </Tooltip>
-            )}
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    aria-pressed={library}
+                    className={cn(
+                      'h-7.5 rounded-full px-2.5 font-semibold text-[13px]',
+                      library &&
+                        'border-transparent bg-tint-accent-1 text-tint-accent-1-fg hover:bg-tint-accent-1'
+                    )}
+                    iconLeft="book"
+                    onClick={() => setLibrary((value) => !value)}
+                    size="sm"
+                    variant="outline"
+                  >
+                    {m.chat_library()}
+                  </Button>
+                }
+              />
+              <TooltipContent>{m.chat_library_hint()}</TooltipContent>
+            </Tooltip>
             <span className="ml-auto" />
             {inputLimit.visible && (
               <span
@@ -710,7 +689,7 @@ export function ChatPanel({
         </div>
         {/* TODO: update workdings to sth like answer generated may not be accurate etc  */}
         <p className="mt-2 text-center text-[11px] text-fg-muted">
-          {curate ? m.chat_curate_grounded() : m.chat_grounded()}
+          {library ? m.chat_grounded_library() : m.chat_grounded()}
         </p>
       </div>
     </div>

@@ -16,13 +16,13 @@ func TestInternalEditAppendsProvenance(t *testing.T) {
 	var sent struct {
 		Provenance *store.Provenance `json:"provenance"`
 	}
-	authority := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	authority := httptest.NewServer(withConverter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&sent); err != nil {
 			t.Error(err)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"operationId":"op","outcome":"succeeded","kind":"edit_document"}`))
-	}))
+	})))
 	t.Cleanup(authority.Close)
 	st.ConfigureCollaboration(authority.URL, "collab-test-secret")
 
@@ -45,7 +45,7 @@ func TestInternalEditAppendsProvenance(t *testing.T) {
 		"workspaceId": "ws_e2e_private", "userId": "u_editor",
 		"assistantMessageId": msgID, "toolCallId": "call_edit_prov",
 		"target":   map[string]any{"kind": "material", "id": materialID},
-		"commands": []map[string]any{{"type": "insert_block", "text": "A second section."}},
+		"commands": []map[string]any{{"type": "insert_markdown", "after_block_id": nil, "markdown": "A second section."}},
 		"provenance": map[string]any{"books": []map[string]any{{
 			"id": "osp", "title": "OpenStax Prealgebra",
 			"license": "CC BY-SA 4.0", "excerptIds": []string{"e_9"}, "version": 1,
@@ -128,7 +128,7 @@ func TestMaterialUpdateCannotTouchProvenance(t *testing.T) {
 func TestInternalDocumentsReachEmbeddedMaterials(t *testing.T) {
 	h, st := openInternalHTTP(t)
 	var targets []string
-	authority := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	authority := httptest.NewServer(withConverter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Target struct {
 				ID string `json:"id"`
@@ -142,7 +142,7 @@ func TestInternalDocumentsReachEmbeddedMaterials(t *testing.T) {
 			return
 		}
 		_, _ = w.Write([]byte(`{"operationId":"op","outcome":"succeeded","kind":"edit_document"}`))
-	}))
+	})))
 	t.Cleanup(authority.Close)
 	st.ConfigureCollaboration(authority.URL, "collab-test-secret")
 
@@ -180,5 +180,74 @@ func TestInternalDocumentsReachEmbeddedMaterials(t *testing.T) {
 	}
 	if len(targets) != 2 || targets[0] != quiz.ID || targets[1] != quiz.ID {
 		t.Fatalf("authority targets = %v, want the embedded quiz twice", targets)
+	}
+}
+
+// insert_markdown converts through the collaboration service; a quiz fence
+// becomes a row under the note before the reference block is inserted, and a
+// retried edit finds that row instead of creating another.
+func TestInsertMarkdownCreatesItsMiniCheckFirst(t *testing.T) {
+	h, st := openInternalHTTP(t)
+	var sent []struct {
+		Commands []struct {
+			Type   string           `json:"type"`
+			Blocks []map[string]any `json:"blocks"`
+		} `json:"commands"`
+	}
+	authority := httptest.NewServer(withConverter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Commands []struct {
+				Type   string           `json:"type"`
+				Blocks []map[string]any `json:"blocks"`
+			} `json:"commands"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		sent = append(sent, body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"code":"stale_target","message":"retry"}`))
+	})))
+	t.Cleanup(authority.Close)
+	st.ConfigureCollaboration(authority.URL, "collab-test-secret")
+
+	msgID := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
+	rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret,
+		noteBody(msgID, "call_insert_note", "Insert "+msgID, "# Lecture"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	noteID := store.ChatMaterialID(msgID, "call_insert_note")
+	cleanupMaterial(t, st, noteID)
+	question := `{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}`
+	edit := map[string]any{
+		"workspaceId": "ws_e2e_private", "userId": "u_editor",
+		"assistantMessageId": msgID, "toolCallId": "call_insert",
+		"target": map[string]any{"kind": "material", "id": noteID},
+		"commands": []map[string]any{{"type": "insert_markdown", "after_block_id": nil,
+			"markdown": "Check yourself.\n\n```quiz\n{\"questions\":[" + question + "]}\n```"}},
+	}
+	for range 2 { // the authority refuses, so the second call is a retry
+		doInternal(t, h, http.MethodPost, "/api/internal/documents/edit", pipeSecret, edit)
+	}
+	var embedded []string
+	rows, err := st.Pool().Query(t.Context(), `SELECT id FROM materials WHERE parent_material_id=$1`, noteID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var id string
+		_ = rows.Scan(&id)
+		embedded = append(embedded, id)
+	}
+	rows.Close()
+	if len(embedded) != 1 {
+		t.Fatalf("embedded rows = %v, want one across the retry", embedded)
+	}
+	if len(sent) != 2 || len(sent[0].Commands) != 1 || sent[0].Commands[0].Type != "insert_block" {
+		t.Fatalf("authority commands = %+v", sent)
+	}
+	blocks := sent[0].Commands[0].Blocks
+	if len(blocks) != 2 || blocks[1]["type"] != "material_ref" || blocks[1]["materialId"] != embedded[0] || blocks[1]["pending"] != nil {
+		t.Fatalf("inserted blocks = %+v", blocks)
 	}
 }

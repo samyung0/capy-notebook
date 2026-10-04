@@ -248,12 +248,17 @@ class ChatStreamReq(LLMPin):
     spendSessionId: str
     # Account locale from the gateway (users.locale). Do not trust a browser field.
     locale: str | None = None
-    # Curate mode, fixed on the conversation row by the gateway: the turn reads
-    # the shared knowledge library and builds materials instead of answering.
-    curate: bool = False
-    # The conversation's stored progress ledger (conversations.ledger), null
-    # until its first curate turn writes one. The turn continues it and the
-    # pipeline stores it again at turn end.
+    # The per-turn Library switch: the shared knowledge library is a source.
+    library: bool = False
+    # The file or material the learner has open: {"id", "kind", "title"}.
+    openResource: dict | None = None
+    # The requester's saved study preferences; missing fields take defaults.
+    studyPreferences: dict | None = None
+    # Study progress is on for the requester in this workspace.
+    studyProgress: bool = False
+    # The conversation's stored todo list (conversations.ledger), null until a
+    # build first writes one. The turn continues it and the pipeline stores it
+    # again at turn end.
     ledger: dict | None = None
     # Only for naming the conversation in a log line. The gateway identifies the
     # turn by its assistant message, which resolves to the conversation, so this
@@ -418,7 +423,10 @@ async def _chat_events(req: ChatStreamReq, request: Request):
             operations=frozenset(req.operations),
             file_ids=None if req.fileIds is None else list(req.fileIds),
             assistant_message_id=req.assistantMessageId or "",
-            curate=req.curate,
+            library=req.library,
+            open_resource=dict(req.openResource or {}),
+            study_preferences=dict(req.studyPreferences or {}),
+            study_progress=req.studyProgress,
             ledger=Ledger.from_stored(
                 req.ledger, req.conversationId or req.assistantMessageId or ""
             ),

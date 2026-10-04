@@ -447,9 +447,9 @@ export const failureScenarios = [
   },
   {
     id: 'flashcard-progress',
-    label: 'Flashcard progress save 500',
-    method: 'patch',
-    paths: ['/api/flashcards/cards/:id/study-state'],
+    label: 'Review rating save 500',
+    method: 'post',
+    paths: ['/api/review/ratings'],
     status: 500,
   },
   {

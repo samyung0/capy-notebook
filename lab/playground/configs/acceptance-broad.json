@@ -1,0 +1,29 @@
+{
+  "target": "uat",
+  "workspace_id": "ws_b5ac136d14",
+  "library": true,
+  "open_resource": null,
+  "study_preferences": {},
+  "question": "Build me a study set for the whole document: an explainer and practice for each chapter.",
+  "model": {
+    "provider_slug": "zai",
+    "model_slug": "glm-5.3-flash",
+    "version": 1,
+    "thinking": "high",
+    "transport": null
+  },
+  "system_prompt": null,
+  "capture": {
+    "mode": "pixels",
+    "max_edge": 1568,
+    "addon": false
+  },
+  "quality": {
+    "show": false
+  },
+  "prompt_addon": "",
+  "answer": {
+    "citations": "as_is"
+  },
+  "expect": "proposes chapters, then builds them on the ledger"
+}

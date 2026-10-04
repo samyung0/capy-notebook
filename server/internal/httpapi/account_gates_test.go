@@ -130,8 +130,8 @@ func overQuotaFixture(t *testing.T, lapsedDays int) quotaFixture {
 
 // Grace behaves like an active account at its hard quota: growth fails the
 // quota check against the Free limit and the content is view-only for owner
-// and member (capabilities, read room tokens, refused comments, generation and
-// curate), while renaming, ordinary chat and publishing stay open.
+// and member (capabilities, read room tokens, refused comments and generation),
+// while renaming, ordinary chat and publishing stay open.
 func TestGraceOwnerIsHeldOnlyByTheQuota(t *testing.T) {
 	f := overQuotaFixture(t, 2)
 	h := f.owner
@@ -196,18 +196,6 @@ func TestGraceOwnerIsHeldOnlyByTheQuota(t *testing.T) {
 		if rec.Code != http.StatusForbidden || errorCode(t, rec) != "storage_quota_exceeded" {
 			t.Fatalf("%q generate = %d body=%s", side.actor, rec.Code, rec.Body.String())
 		}
-		// Curate writes materials: its thread and its turn are refused (the turn
-		// before any model runs), while an ordinary thread is created.
-		rec = doReq(t, side.h, http.MethodPost, "/api/workspaces/"+f.workspaceID+"/conversations", side.actor,
-			map[string]any{"title": "Curate", "curate": true})
-		if rec.Code != http.StatusForbidden || errorCode(t, rec) != "storage_quota_exceeded" {
-			t.Fatalf("%q curate thread = %d body=%s", side.actor, rec.Code, rec.Body.String())
-		}
-		rec = doReq(t, side.h, http.MethodPost, "/api/workspaces/"+f.workspaceID+"/chat/stream", side.actor,
-			map[string]any{"text": "Write a note from the library", "curate": true})
-		if rec.Code != http.StatusBadRequest || errorCode(t, rec) != "curate_requires_editor" {
-			t.Fatalf("%q curate turn = %d body=%s", side.actor, rec.Code, rec.Body.String())
-		}
 		rec = doReq(t, side.h, http.MethodPost, "/api/workspaces/"+f.workspaceID+"/conversations", side.actor,
 			map[string]any{"title": "Ask"})
 		if rec.Code != http.StatusCreated {
@@ -263,12 +251,7 @@ func TestFrozenOwnersWorkspaceIsReadOnly(t *testing.T) {
 		if rec.Code != http.StatusForbidden {
 			t.Fatalf("%q comment = %d body=%s", side.actor, rec.Code, rec.Body.String())
 		}
-		// Chat stays open; a curate thread (it writes materials) does not.
-		rec = doReq(t, side.h, http.MethodPost, "/api/workspaces/"+f.workspaceID+"/conversations", side.actor,
-			map[string]any{"title": "Curate", "curate": true})
-		if rec.Code != http.StatusForbidden || errorCode(t, rec) != "account_over_quota" {
-			t.Fatalf("%q curate thread = %d body=%s", side.actor, rec.Code, rec.Body.String())
-		}
+		// Chat stays open.
 		rec = doReq(t, side.h, http.MethodPost, "/api/workspaces/"+f.workspaceID+"/conversations", side.actor,
 			map[string]any{"title": "Ask"})
 		if rec.Code != http.StatusCreated {

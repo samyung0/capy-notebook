@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,6 +31,7 @@ type documentListItem struct {
 	Title        string                  `json:"title"`
 	Format       string                  `json:"format"`
 	MaterialKind string                  `json:"materialKind"`
+	ChapterID    *string                 `json:"chapterId,omitempty"`
 	Editable     bool                    `json:"editable"`
 	Reason       string                  `json:"reason,omitempty"`
 }
@@ -101,7 +103,7 @@ func (a *api) internalListDocuments(w http.ResponseWriter, r *http.Request) {
 	for _, m := range refs {
 		items = append(items, documentListItem{
 			Kind: agenttools.KindMaterial, ID: m.ID, Title: m.Title, Format: "plate",
-			MaterialKind: string(m.Type), Editable: true,
+			MaterialKind: string(m.Type), ChapterID: m.ChapterID, Editable: true,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
@@ -260,7 +262,7 @@ func materialOperations(kind string) []string {
 	case "mindmap", "diagram":
 		return []string{"set_mermaid"}
 	default:
-		return []string{"replace_text", "insert_block", "remove_block"}
+		return []string{"replace_text", "insert_markdown", "remove_block"}
 	}
 }
 
@@ -343,7 +345,9 @@ func (a *api) internalEditDocument(w http.ResponseWriter, r *http.Request) {
 			a.fail(w, err)
 			return
 		}
-		normalized, err = normalizeMaterialCommands(string(mt.Kind), req.Commands)
+		normalized, err = normalizeMaterialCommands(string(mt.Kind), req.Commands, func(i int, markdown string) ([]any, error) {
+			return a.noteBlocksFromMarkdown(ctx, req, i, markdown)
+		})
 		if err != nil {
 			a.failDocument(w, err)
 			return
@@ -396,11 +400,51 @@ func (a *api) internalEditDocument(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, receipt)
 }
 
+// noteBlocksFromMarkdown converts an insert_markdown command through the
+// collaboration service. Its quiz and flashcards fences become rows under the
+// note first, the order the editor uses, with ids derived from the tool call
+// and command so a retried edit finds them instead of creating them again.
+func (a *api) noteBlocksFromMarkdown(ctx context.Context, req internalDocumentsEditReq, command int, markdown string) ([]any, error) {
+	converted, err := a.s.ConvertAgentMarkdown(ctx, markdown)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, len(converted.Embedded))
+	for i := range ids {
+		ids[i] = store.ChatMaterialID(req.AssistantMessageID, fmt.Sprintf("%s/%d/embedded/%d", req.ToolCallID, command, i))
+	}
+	content, err := materialdoc.ResolvePendingRefs(string(converted.Document), ids)
+	if err != nil {
+		return nil, refusal(agenttools.ErrInvalidInput, "%s", strings.TrimPrefix(err.Error(), materialdoc.ErrInvalid.Error()+": "))
+	}
+	for _, draft := range converted.EmbeddedDrafts(ids) {
+		if err := a.s.EnsureEmbeddedMaterial(ctx, req.UserID, req.Target.ID, draft); err != nil {
+			if errors.Is(err, materialdoc.ErrInvalid) {
+				return nil, refusal(agenttools.ErrInvalidInput, "%s", err.Error())
+			}
+			return nil, err
+		}
+	}
+	doc, err := materialdoc.Parse(content)
+	if err != nil {
+		return nil, err
+	}
+	blocks := make([]any, len(doc.Value))
+	for i, node := range doc.Value {
+		blocks[i] = node
+	}
+	if len(blocks) == 0 {
+		return nil, refusal(agenttools.ErrInvalidInput, "insert_markdown needs markdown")
+	}
+	return blocks, nil
+}
+
 type rawCommand struct {
 	Type            string          `json:"type"`
 	TargetID        string          `json:"target_id"`
 	ExpectedText    string          `json:"expected_text"`
 	Text            string          `json:"text"`
+	Markdown        string          `json:"markdown"`
 	AfterBlockID    *string         `json:"after_block_id"`
 	BlockID         string          `json:"block_id"`
 	Sheet           string          `json:"sheet"`
@@ -426,9 +470,12 @@ func refusal(code agenttools.ErrorCode, format string, args ...any) error {
 // normalizeMaterialCommands turns model-facing study commands into node-level
 // authority commands, building Plate nodes with the same validated builders
 // the material routes use. Text and block commands pass through.
-func normalizeMaterialCommands(kind string, raw []json.RawMessage) ([]json.RawMessage, error) {
+//
+// insertMarkdown turns the markdown of the i-th command into the blocks to
+// insert; it is nil where no note is being edited.
+func normalizeMaterialCommands(kind string, raw []json.RawMessage, insertMarkdown func(i int, markdown string) ([]any, error)) ([]json.RawMessage, error) {
 	out := make([]json.RawMessage, 0, len(raw))
-	for _, item := range raw {
+	for i, item := range raw {
 		var c rawCommand
 		if err := json.Unmarshal(item, &c); err != nil {
 			return nil, refusal(agenttools.ErrInvalidInput, "invalid command: %v", err)
@@ -443,19 +490,19 @@ func normalizeMaterialCommands(kind string, raw []json.RawMessage) ([]json.RawMe
 				return nil, refusal(agenttools.ErrInvalidInput, "replace_text on a material needs target_id")
 			}
 			normalized = map[string]any{"type": "replace_text", "blockId": c.TargetID, "expectedText": c.ExpectedText, "text": c.Text}
-		case "insert_block":
+		case "insert_markdown":
 			if kind != "note" {
 				return nil, refusal(agenttools.ErrUnsupportedOperation, "use the %s commands for this material", kind)
 			}
-			blocks := []any{}
-			for _, line := range strings.Split(strings.ReplaceAll(c.Text, "\r\n", "\n"), "\n") {
-				if strings.TrimSpace(line) == "" {
-					continue
-				}
-				blocks = append(blocks, materialdoc.ParagraphNode(line))
+			if strings.TrimSpace(c.Markdown) == "" {
+				return nil, refusal(agenttools.ErrInvalidInput, "insert_markdown needs markdown")
 			}
-			if len(blocks) == 0 {
-				return nil, refusal(agenttools.ErrInvalidInput, "insert_block needs text")
+			if insertMarkdown == nil {
+				return nil, refusal(agenttools.ErrUnsupportedOperation, "insert_markdown is not available here")
+			}
+			blocks, err := insertMarkdown(i, c.Markdown)
+			if err != nil {
+				return nil, err
 			}
 			normalized = map[string]any{"type": "insert_block", "afterBlockId": c.AfterBlockID, "blocks": blocks}
 		case "remove_block":

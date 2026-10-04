@@ -312,19 +312,3 @@ const (
 func (SearchKind) Schema(r huma.Registry) *huma.Schema {
 	return enumRef(r, "SearchKind", "workspace", "file", "event", "flashcards", "thinking")
 }
-
-// SrsState is the serialized FSRS scheduling state persisted per flashcard as
-// jsonb. Shape mirrors SrsState in src/api/types.ts; the frontend owns the
-// algorithm and round-trips this object unchanged.
-type SrsState struct {
-	Due           string  `json:"due"`
-	Stability     float64 `json:"stability"`
-	Difficulty    float64 `json:"difficulty"`
-	ElapsedDays   int     `json:"elapsed_days"`
-	ScheduledDays int     `json:"scheduled_days"`
-	Reps          int     `json:"reps"`
-	Lapses        int     `json:"lapses"`
-	State         int     `json:"state"`
-	LastReview    *string `json:"last_review,omitempty"`
-	LearningSteps *int    `json:"learning_steps,omitempty"`
-}

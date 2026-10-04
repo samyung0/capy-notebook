@@ -425,6 +425,31 @@ func RewriteMaterialRefIDs(raw string, ids map[string]string) (string, error) {
 	return Marshal(doc)
 }
 
+// ResolvePendingRefs points the document's pending references, in order, at
+// the rows created for them and drops their fence bodies. References are
+// top-level blocks, as everywhere else; a count that does not match ids (a
+// fence nested in another block) is refused.
+func ResolvePendingRefs(raw string, ids []string) (string, error) {
+	doc, err := Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	var pending []map[string]any
+	for _, node := range doc.Value {
+		if body, _ := node["pending"].(string); node["type"] == RefType && body != "" {
+			pending = append(pending, node)
+		}
+	}
+	if len(pending) != len(ids) {
+		return "", fmt.Errorf("%w: quiz and flashcards blocks must be top-level blocks", ErrInvalid)
+	}
+	for i, node := range pending {
+		node["materialId"] = ids[i]
+		delete(node, "pending")
+	}
+	return Marshal(doc)
+}
+
 func validateNode(node map[string]any, depth int) error {
 	if depth > depthCeiling {
 		return errors.New("document nesting is too deep to decode")

@@ -181,7 +181,7 @@ async def test_decorative_and_excluded_figures_never_reach_a_model(library_db):
 
     # No decorative or excluded id anywhere a model reads: read, browse, search.
     ctx = ToolContext(
-        workspace_id="ws", operations=frozenset({"library.read"}), curate=True
+        workspace_id="ws", operations=frozenset({"library.read"}), library=True
     )
     outputs = [
         (await tools._read_knowledge({"excerpt_id": "e_intro"}, ctx)).text(),
@@ -196,7 +196,7 @@ async def test_decorative_and_excluded_figures_never_reach_a_model(library_db):
 
 async def test_read_knowledge_lists_figures_after_the_text(monkeypatch):
     ctx = ToolContext(
-        workspace_id="ws", operations=frozenset({"library.read"}), curate=True
+        workspace_id="ws", operations=frozenset({"library.read"}), library=True
     )
     figures = [
         {

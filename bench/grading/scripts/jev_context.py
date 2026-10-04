@@ -25,6 +25,14 @@ from typesafe_math import URL
 
 ROOT = Path(__file__).resolve().parents[3]
 MODEL = "jev-latest"
+CLEF_URL = "https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/@cf/cloudflare/{model}"
+# provider -> (endpoint, model). Clef speaks the same SystemOne shape on Workers AI,
+# wrapped in Cloudflare's {"result": ...} envelope; {account} is filled at call time.
+PROVIDERS = {
+    "jev": (URL, MODEL),
+    "clef": (CLEF_URL.format(account="{account}", model="clef"), "clef"),
+    "clef-flash": (CLEF_URL.format(account="{account}", model="clef-flash"), "clef-flash"),
+}
 VARIANTS = ("with_question", "without_question")
 
 
@@ -88,17 +96,18 @@ def safe_response(value, key):
     return value
 
 
-def call(job, key):
+def call(job, key, provider="jev", account=None):
     result = dict(job)
     start = time.perf_counter()
-    endpoint = urlsplit(URL)
+    url, model = PROVIDERS[provider]
+    endpoint = urlsplit(url.format(account=account))
     connection = http.client.HTTPSConnection(endpoint.hostname, timeout=60)
     try:
         connection.request(
             "POST",
             endpoint.path,
             body=json.dumps(
-                {"model": MODEL, "state": job["state"], "questions": job["questions"]},
+                {"model": model, "state": job["state"], "questions": job["questions"]},
                 ensure_ascii=False,
             ).encode("utf-8"),
             headers={
@@ -113,6 +122,8 @@ def call(job, key):
         if len(raw) > 1_048_576:
             raise ValueError("Response exceeded size limit")
         payload = json.loads(raw)
+        if provider != "jev" and response.status == 200:
+            payload = payload["result"]
         result["response"] = safe_response(payload, key)
         if response.status != 200:
             raise ValueError("Non-success HTTP status")

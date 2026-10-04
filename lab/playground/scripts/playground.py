@@ -8,8 +8,8 @@ telemetry write is disabled. Every turn is recorded under local/runs/.
 
   uv run --with pymupdf==1.28.2 python lab/playground/scripts/playground.py --target lab
 
-`--ledger local/runs/<id>/run.json` starts curate turns from that run's stored
-ledger, which is how a follow-up turn on the same conversation is tested.
+`--ledger local/runs/<id>/run.json` starts turns from that run's stored ledger,
+which is how a follow-up turn on the same conversation is tested.
 """
 
 from __future__ import annotations
@@ -20,13 +20,17 @@ import copy
 import hashlib
 import json
 import os
+import re
 import sys
 import time
 import uuid
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import deck
 from common import (
     CONFIGS,
     LOCAL,
@@ -46,37 +50,37 @@ from fastapi.responses import (
 )
 
 RUNS = LOCAL / "runs"
-# Curate turns read the shared library and write materials. Production derives
-# document.edit from the actor's role; the playground grants it so the prompt's
-# "grow the note with edit_document" rhythm is actually available.
-CURATE_OPERATIONS = frozenset(
-    {"source.read", "material.read", "material.create", "document.edit", "library.read"}
+# Production derives the write operations from the actor's role; the playground
+# grants an editor's, plus library.read when the Library switch is on.
+BUILD_OPERATIONS = frozenset(
+    {"source.read", "material.read", "material.create", "document.edit"}
 )
-KNOWLEDGE_TOOLS = (
-    "search_knowledge",
-    "browse_knowledge",
-    "read_knowledge",
-    "capture_knowledge_page",
-    "create_ledger",
-)
-ALLOWED_TOOLS = {
-    "search_workspace",
-    "list_sources",
-    "read_document",
-    "capture_page",
-    *KNOWLEDGE_TOOLS,
-    "create_material",
-    "inspect_document",
-    "edit_document",
-}
+
+
+def operations_for(c: dict[str, Any]) -> frozenset[str]:
+    return BUILD_OPERATIONS | ({"library.read"} if c["library"] else set())
+
+
 DEFAULT_CONFIG: dict[str, Any] = {
     "target": "lab",
     "workspace_id": "odl_eval_odl",
     "scope_file_ids": None,
     "locale": "en",
-    # curate: run the real curate loop (library tools, curate prompt, progress
-    # ledger, stall guard) and write materials as files under the run directory.
-    "curate": False,
+    # library: the per-turn Library switch; the shared library is a source.
+    # Materials are written as files under the run directory either way.
+    "library": True,
+    # open_resource: what the learner has open, as the app sends it:
+    # {"id", "kind", "title"}, or null.
+    "open_resource": None,
+    # study_preferences: the learner's saved preferences; missing fields take
+    # the defaults in pipeline/prompts/preferences.py.
+    "study_preferences": {},
+    # study_progress: null leaves read_study_progress unoffered; a dict is the
+    # fixture it returns, shaped like /api/internal/study-progress.
+    "study_progress": None,
+    # decks: offer the playground-only deck tools (deck.py), and the main
+    # explainer format the learner prefers: note, deck or auto.
+    "decks": {"offer": True, "main_format": "auto"},
     # ledger: path to a stored ledger (a previous run.json, or its `ledger`) the
     # turn continues, the way the gateway hands one back on a follow-up turn.
     # --ledger sets it for every config that does not carry its own.
@@ -84,9 +88,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # transport: send this pin to another OpenAI-compatible endpoint instead of the
     # production route, e.g. {"url": ".../v1/chat/completions", "key_env": "RELACE_API_KEY",
     # "wire_model": "z-ai/glm-5.3-flash", "body": "zai"}. body picks the request builder.
+    # The production chat default: GLM-5.3-Flash at high reasoning (0009, 0042).
     "model": {
-        "provider_slug": "deepseek",
-        "model_slug": "deepseek-flash",
+        "provider_slug": "zai",
+        "model_slug": "glm-5.3-flash",
         "version": 1,
         "thinking": "high",
         "transport": None,
@@ -95,21 +100,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "system_prompt": None,
     "prompt_addon": "",
     "tool_descriptions": {},
-    "tools": [
-        "search_workspace",
-        "list_sources",
-        "read_document",
-    ],
-    # tools_per_turn applies to both modes; curate additionally uses its
-    # knowledge_tools_per_response and stall_responses settings.
-    "limits": {
-        "planning_responses": 12,
-        "tools_per_response": 4,
-        "tools_per_turn": 12,
-        "captures_per_turn": 3,
-        "knowledge_tools_per_response": 4,
-        "stall_responses": 5,
-    },
+    # null offers what production offers; a list narrows it for an experiment.
+    "tools": None,
     "search": {"top_k": 5, "per_file_cap": 4},
     "capture": {
         "mode": "pixels",
@@ -150,12 +142,22 @@ def merged(raw: dict[str, Any]) -> dict[str, Any]:
             out[key].update(value)
         else:
             out[key] = value
+    from pipeline.retrieval import contract
+
+    known = set(contract.DEFINITIONS) | deck.NAMES
     descriptions = out["tool_descriptions"]
     if not isinstance(descriptions, dict) or any(
-        name not in ALLOWED_TOOLS or not isinstance(text, str)
+        name not in known or not isinstance(text, str)
         for name, text in descriptions.items()
     ):
         raise HTTPException(400, "tool_descriptions must map known tool names to text")
+    if out["tools"] is not None and (
+        not isinstance(out["tools"], list)
+        or any(name not in known for name in out["tools"])
+    ):
+        raise HTTPException(400, "tools must be null or a list of known tool names")
+    if out["decks"]["main_format"] not in deck.MAIN_FORMAT:
+        raise HTTPException(400, f"decks.main_format must be one of {sorted(deck.MAIN_FORMAT)}")
     return out
 
 
@@ -191,26 +193,27 @@ def model_spec(model: dict[str, Any]):
 
 
 def effective_prompt(c: dict[str, Any], base: str | None = None) -> str:
-    """The exact system prompt a turn sends: production text (curate mode has its
-    own), or the config's replacement, then the addon, then the capture_page rule."""
+    """The exact system prompt a turn sends: production text, or the config's
+    replacement, then the addon, then the capture_page rule."""
     import capture
     import citations
 
     from pipeline.prompts import chat as chat_prompts
-    from pipeline.prompts import curate as curate_prompts
 
     if base is None:
-        base = (curate_prompts if c["curate"] else chat_prompts).system_prompt(
-            c["locale"]
-        )
+        base = chat_prompts.system_prompt(c["locale"], library=c["library"])
     text = base if c["system_prompt"] is None else c["system_prompt"]
-    use_capture = capture.NAME in c["tools"] and c["capture"]["addon"]
-    # A curate answer is plain prose listing the materials; it has no citations.
-    structured = c["answer"]["citations"] == "structured" and not c["curate"]
+    offers_capture = c["tools"] is None or capture.NAME in c["tools"]
+    use_capture = offers_capture and c["capture"]["addon"]
+    offers_decks = c["decks"]["offer"] and (
+        c["tools"] is None or bool(deck.NAMES & set(c["tools"]))
+    )
+    structured = c["answer"]["citations"] == "structured"
     prompt = (
         text
         + (c["prompt_addon"] or "")
         + (capture.ADDON if use_capture else "")
+        + (deck.addon(c["decks"]["main_format"]) if offers_decks else "")
         + (citations.STRUCTURED_ADDON if structured else "")
     )
     return prompt
@@ -231,9 +234,10 @@ def configured_tools(c: dict[str, Any], schemas: list[dict]) -> list[dict]:
     import capture
 
     # The playground's configurable capture handler replaces the production tool.
+    offered = any(s["function"]["name"] == capture.NAME for s in schemas)
     result = copy.deepcopy(
         [s for s in schemas if s["function"]["name"] != capture.NAME]
-        + ([capture.SCHEMA] if capture.NAME in c["tools"] else [])
+        + ([capture.SCHEMA] if offered else [])
     )
     for schema in result:
         function = schema["function"]
@@ -276,7 +280,7 @@ async def list_sources_locally(ctx, state: dict[str, Any]):
     pool = await store.pool()
     async with pool.connection() as conn:
         cursor = await conn.execute(
-            "SELECT id, title, kind FROM materials WHERE workspace_id = %s "
+            "SELECT id, title, kind, chapter_id FROM materials WHERE workspace_id = %s "
             "AND trashed_at IS NULL AND parent_material_id IS NULL ORDER BY position, created_at",
             (ctx.workspace_id,),
         )
@@ -288,6 +292,7 @@ async def list_sources_locally(ctx, state: dict[str, Any]):
                 "title": m["title"],
                 "kind": "material",
                 "materialKind": m["kind"],
+                "chapterId": m.get("chapter_id"),
                 "editable": editable,
             }
             for m in items
@@ -301,15 +306,22 @@ async def create_material_locally(
     """create_material without a gateway: the material lands as JSON under the run
     directory and the model gets the receipt the gateway would have returned.
 
-    The ledger rules (ledger first, an open todo id, only excerpts this turn
-    read) are the production helpers, not a copy of them."""
+    The ledger rules (a todo while todos are open, only excerpts this turn
+    read) are the production helpers, and a quiz goes through the app's own
+    validation (server/cmd/quizcheck), so a saved quiz is one the app accepts."""
     from pipeline.retrieval import tools
 
     kind, call_id = str(args.get("kind") or ""), str(args.get("_tool_call_id") or "")
-    prepared = await tools.curate_write(ctx, "create_material", args)
+    prepared = await tools.ledger_write(ctx, "create_material", args)
     if isinstance(prepared, tools.ToolResult):
         return prepared
     books, todo = prepared
+    if kind == "quiz":
+        problem = await check_quiz(args.get("questions") or [])
+    else:
+        problem = await check_note(str(args.get("content") or ""))
+    if problem:
+        return tools._refused(f"create_material: {problem}")
     rid, title = material_id(message_id, call_id), str(args.get("title") or "").strip()
     record = {
         "id": rid,
@@ -320,7 +332,8 @@ async def create_material_locally(
         "questions": args.get("questions") or [],
         "excerpt_ids": [str(e) for e in (args.get("excerpt_ids") or [])],
         "provenance": {"books": books} if books else None,
-        "size": tools._material_size(kind, args),
+        "chapter_id": args.get("chapter_id") or None,
+        "size": material_size(kind, args),
         "edits": [],
     }
     state["materials"].append(record)
@@ -339,7 +352,7 @@ async def create_material_locally(
             },
         }
     )
-    tools.note_created(ctx, result.effects[0], kind, args, todo)
+    ctx.ledger.complete(todo)
     return result
 
 
@@ -356,18 +369,26 @@ async def edit_material_locally(args: dict[str, Any], ctx, state: dict[str, Any]
             f"edit_document: {rid} is not a material this run created.",
             code="unavailable_target",
         )
-    prepared = await tools.curate_write(ctx, "edit_document", args)
+    prepared = await tools.ledger_write(ctx, "edit_document", args)
     if isinstance(prepared, tools.ToolResult):
         return prepared
     books, todo = prepared
     commands = list(args.get("commands") or [])
+    problem = await check_note(
+        "\n".join(str(c.get("markdown") or "") for c in commands)
+    )
+    if problem:
+        return tools._refused(f"edit_document: {problem}")
     record["edits"].extend(commands)
     record["content"] = "\n".join(
         part
-        for part in [record["content"], *(str(c.get("text") or "") for c in commands)]
+        for part in [
+            record["content"],
+            *(str(c.get("markdown") or c.get("text") or "") for c in commands),
+        ]
         if part
     )
-    record["size"] = tools._material_size(record["kind"], record)
+    record["size"] = material_size(record["kind"], record)
     record["excerpt_ids"] = sorted(
         {*record["excerpt_ids"], *(str(e) for e in (args.get("excerpt_ids") or []))}
     )
@@ -389,34 +410,197 @@ async def edit_material_locally(args: dict[str, Any], ctx, state: dict[str, Any]
             },
         }
     )
-    tools.note_appended(ctx, rid, len(commands), todo)
+    ctx.ledger.complete(todo)
     return result
+
+
+async def deck_locally(
+    name: str, args: dict[str, Any], ctx, state: dict[str, Any], message_id: str
+):
+    """create_deck and write_slide: the deck lands as JSON and, once every slide
+    is written, as the .pptx ppt-master exports. A deck is a material, so the
+    ledger rules are the production ones (create_material for the outline,
+    edit_document for each slide)."""
+    from pipeline.retrieval import tools
+
+    clean = {k: v for k, v in args.items() if not k.startswith("_")}
+    problem = deck.validate(name, clean)
+    if problem:
+        return tools._refused(problem)
+    if name == "create_deck":
+        prepared = await tools.ledger_write(ctx, "create_material", clean)
+        if isinstance(prepared, tools.ToolResult):
+            return prepared
+        rid = material_id(message_id, str(args.get("_tool_call_id") or ""))
+        record = deck.create(clean, rid)
+        record.update(
+            excerpt_ids=[str(e) for e in clean.get("excerpt_ids") or []],
+            provenance=None,
+            edits=[],
+        )
+        state["materials"].append(record)
+        operation = "created"
+        outline = deck.created_text(record)
+    else:
+        rid = str(clean["deck_id"])
+        record = next(
+            (m for m in state["materials"] if m["id"] == rid and m["kind"] == "deck"),
+            None,
+        )
+        if record is None:
+            return tools._refused(
+                f"write_slide: {rid} is not a deck this run created.",
+                code="unavailable_target",
+            )
+        prepared = await tools.ledger_write(ctx, "edit_document", clean)
+        if isinstance(prepared, tools.ToolResult):
+            return prepared
+        # The model knows a capture by its page; a later capture of the same
+        # page wins. A whole page is refused: a slide shrinks it unreadable.
+        captures = {
+            cap["page"]: ""
+            if cap.get("bbox") and list(cap["bbox"]) != [0, 0, 1000, 1000]
+            else f"page {cap['page']} was captured whole; capture it again with a bbox around the figure"
+            for cap in state["captures"]
+        }
+        figures = {
+            cap["page"]: (state["run_dir"].parent.parent / cap["image"]).read_bytes()
+            for cap in state["captures"]
+            if cap.get("image")
+        }
+        project = state["run_dir"] / "materials" / rid
+        problem = await asyncio.to_thread(deck.write, record, clean, captures, figures, project)
+        if problem:
+            return tools._refused(f"write_slide: {problem}")
+        record["edits"].append({"slide": clean["slide"]})
+        record["excerpt_ids"] = sorted(
+            {*record["excerpt_ids"], *(str(e) for e in clean.get("excerpt_ids") or [])}
+        )
+        operation = "edited"
+        outline = deck.outline_text(record)
+    books, todo = prepared
+    if books:
+        existing = (record["provenance"] or {}).get("books") or []
+        record["provenance"] = {"books": merge_books(existing, books)}
+    if name == "write_slide" and deck.complete(record):
+        pptx = state["run_dir"] / "materials" / f"{rid}.pptx"
+        problem = await asyncio.to_thread(deck.save, record, project, pptx)
+        if problem:
+            outline += f"\n\nThe export failed; rewrite the slide it names: {problem}"
+        else:
+            # runs/<run>/materials/<id>.pptx, the path the download route serves.
+            record["pptx"] = str(pptx.relative_to(state["run_dir"].parent.parent))
+            outline += "\n\nEvery slide is written; the deck is exported."
+    slides = record["deck"]["slides"]
+    record["size"] = f"{sum(1 for s in slides if s['svg'])} of {len(slides)} slides written"
+    write_material(state, record)
+    result = tools._receipt_result(
+        {
+            "outcome": "succeeded",
+            "effect": {
+                "operation": operation,
+                "resource": {
+                    "kind": "material",
+                    "id": rid,
+                    "title": record["title"],
+                    "materialKind": "deck",
+                },
+            },
+        }
+    )
+    ctx.ledger.complete(todo)
+    result.text_parts.append(outline)
+    return result
+
+
+def material_size(kind: str, args: dict[str, Any]) -> str:
+    from pipeline.retrieval.chunking import estimate_tokens
+
+    if kind == "quiz":
+        return f"{len(args.get('questions') or [])} questions"
+    if kind == "flashcards":
+        return f"{len(args.get('cards') or [])} cards"
+    return f"{estimate_tokens(str(args.get('content') or ''))} tokens"
+
+
+async def check_quiz(questions: list[Any]) -> str:
+    """The app's quiz validation, or empty when the questions pass it."""
+    proc = await asyncio.create_subprocess_exec(
+        "go",
+        "run",
+        "./cmd/quizcheck",
+        cwd=REPO / "server",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    out, _ = await proc.communicate(json.dumps(questions).encode())
+    return "" if proc.returncode == 0 else out.decode().strip()[:600]
+
+
+FENCE = re.compile(r"^```([\w-]*)[^\n]*\n(.*?)^```[ \t]*$", re.M | re.S)
+EMBED_HTML_MAX = 64 * 1024
+EMBED_FALLBACK_MAX = 2000
+NETWORK = re.compile(r"https?://|\bfetch\(|XMLHttpRequest|WebSocket|EventSource|import\(")
+
+
+async def check_note(markdown: str) -> str:
+    """The note fences as the editor's import and phase 3's element will take
+    them, or empty when every fence passes."""
+    for n, match in enumerate(FENCE.finditer(markdown), 1):
+        lang, body = match.group(1), match.group(2)
+        where = f"fence {n} ({lang})"
+        if lang not in ("quiz", "flashcards", "html-embed"):
+            if lang == "mermaid" and not body.strip():
+                return f"{where} is empty"
+            continue
+        try:
+            data = yaml.safe_load(body)
+        except yaml.YAMLError as err:
+            return f"{where} is not YAML: {str(err).splitlines()[0]}"
+        if not isinstance(data, dict):
+            return f"{where} must be a YAML mapping"
+        if lang == "quiz":
+            questions = data.get("questions")
+            if not isinstance(questions, list) or not questions:
+                return f"{where} needs a non-empty questions list"
+            problem = await check_quiz(questions)
+            if problem:
+                return f"{where}: {problem}"
+        elif lang == "flashcards":
+            cards = data.get("cards")
+            if not isinstance(cards, list) or not cards:
+                return f"{where} needs a non-empty cards list"
+            for card in cards:
+                if not isinstance(card, dict) or not all(
+                    isinstance(card.get(k), str) and card[k].strip()
+                    for k in ("front", "back")
+                ):
+                    return f"{where}: every card needs a front and a back"
+        else:
+            html, fallback = data.get("html"), data.get("fallback")
+            if not isinstance(html, str) or not html.strip():
+                return f"{where} needs html"
+            if not isinstance(fallback, str) or not fallback.strip():
+                return f"{where} needs a fallback"
+            if len(html.encode()) > EMBED_HTML_MAX:
+                return f"{where}: html is {len(html.encode())} bytes, over {EMBED_HTML_MAX}"
+            if len(fallback) > EMBED_FALLBACK_MAX:
+                return f"{where}: fallback is over {EMBED_FALLBACK_MAX} characters"
+            if NETWORK.search(html):
+                return f"{where}: html must not reach the network ({NETWORK.search(html).group(0)})"
+    return ""
 
 
 def ledger_state(ledger) -> dict[str, Any]:
     """The ledger two ways. The top level is the turn as the model sees it: every
-    todo with the id the rendered ledger shows, plus this turn's reads and
-    progress. `stored` is what the gateway would persist at turn end - the
-    newest 10 open todos, the last 5 requests and 50 materials - so watching it
-    shrink is how the bound is checked. `--ledger` and the config's `ledger`
-    field read `stored`, so a follow-up turn starts where a real one would."""
+    todo with the id the turn context shows, plus this turn's reads and progress.
+    `stored` is what the gateway would persist at turn end, the newest 10 open
+    todos; `--ledger` and the config's `ledger` field read it, so a follow-up
+    turn starts where a real one would."""
     return {
-        "requests": list(ledger.requests),
         "next_todo_id": ledger.next_todo_id,
-        "todos": [
-            {"id": t.id, "text": t.text, "done": t.done, "materialId": t.material_id}
-            for t in ledger.todos
-        ],
-        "materials": [
-            {
-                "id": m.id,
-                "kind": m.kind,
-                "title": m.title,
-                "size": m.size,
-                "todo": m.todo,
-            }
-            for m in ledger.materials
-        ],
+        "todos": [{"id": t.id, "text": t.text, "done": t.done} for t in ledger.todos],
         "progress": ledger.progress,
         "reads": [
             {"excerpt_id": r.excerpt_id, "start": r.start, "section": r.section}
@@ -529,7 +713,6 @@ class Turn:
         from pipeline.config import cfg
         from pipeline.elitellm import client as llm_client
         from pipeline.prompts import chat as chat_prompts
-        from pipeline.prompts import curate as curate_prompts
         from pipeline.retrieval import (
             agent,
             compact,
@@ -541,14 +724,15 @@ class Turn:
         from pipeline.retrieval.chunking import estimate_tokens
 
         c, state = self.config, self.state
-        curate = bool(c["curate"])
+        library = bool(c["library"])
         spec = model_spec(c["model"])
         registry.bind_request_llm(thinking=c["model"]["thinking"])
         registry.set_job_pins(registry.JobPins(captioning=spec))
         obs.set_trace(obs.new_trace_id())
         obs.start_usage()
-        offered = set(c["tools"])
-        use_capture = capture.NAME in offered
+        # None offers what production offers.
+        offered = None if c["tools"] is None else set(c["tools"])
+        use_capture = offered is None or capture.NAME in offered
         handler = (
             capture.make_handler(c, self.resolver, state, self.question)
             if use_capture
@@ -559,20 +743,20 @@ class Turn:
         )
         ctx = tools.ToolContext(
             workspace_id=c["workspace_id"],
-            user_id="playground" if curate else "",
-            curate=curate,
-            operations=CURATE_OPERATIONS
-            if curate
-            else frozenset({"source.read", "material.read"}),
+            user_id="playground",
+            library=library,
+            operations=operations_for(c),
             file_ids=c["scope_file_ids"] or None,
             assistant_message_id=self.id,
             ledger=tools.Ledger.from_stored(self.ledger)
-            if curate and self.ledger is not None
-            else starting_ledger(c["ledger"] if curate else None),
+            if self.ledger is not None
+            else starting_ledger(c["ledger"]),
+            open_resource=dict(c["open_resource"] or {}),
+            study_preferences=dict(c["study_preferences"] or {}),
+            study_progress=bool(c["study_progress"]),
         )
         saved = {
             "system_prompt": chat_prompts.system_prompt,
-            "curate_prompt": curate_prompts.system_prompt,
             "schemas_for": tools.schemas_for,
             "run": tools.run,
             "store_ledger": tools.store_ledger,
@@ -585,33 +769,20 @@ class Turn:
             "llm_complete": elitellm.complete,
             "usable_input_limit": compact.usable_input_limit,
             "summarize": compact.summarize_checkpoint,
-            "agent_caps": (
-                agent.PLANNING_RESPONSES,
-                agent.TOOLS_PER_RESPONSE,
-                agent.TOOLS_PER_TURN,
-            ),
-            "curate_caps": (
-                agent.KNOWLEDGE_TOOLS_PER_RESPONSE,
-                agent.CURATE_STALL_RESPONSES,
-                agent.CURATE_TOOLS_PER_TURN,
-            ),
-            "cfg": (
-                cfg.agent_max_steps,
-                cfg.search_top_k,
-                cfg.search_per_file_cap,
-                cfg.captures_per_turn,
-            ),
+            "cfg": (cfg.search_top_k, cfg.search_per_file_cap),
         }
 
-        def system_prompt(locale):
-            base = saved["curate_prompt" if curate else "system_prompt"](locale)
-            return effective_prompt(c, base)
+        def system_prompt(locale, *, library=False):
+            return effective_prompt(c, saved["system_prompt"](locale, library=library))
 
         def schemas_for(ctx_):
             out = [
                 s
-                for s in saved["schemas_for"](ctx_)
-                if s["function"]["name"] in offered
+                for s in [
+                    *saved["schemas_for"](ctx_),
+                    *(deck.SCHEMAS if c["decks"]["offer"] else []),
+                ]
+                if offered is None or s["function"]["name"] in offered
             ]
             schemas = configured_tools(c, out)
             state["tool_schemas"] = schemas
@@ -631,7 +802,7 @@ class Turn:
                 if name in tools.contract.DEFINITIONS
                 else None
             )
-            if name not in offered:
+            if offered is not None and name not in offered:
                 result = tools._refused(
                     f"{name} is not offered in this configuration.",
                     code="unsupported_operation",
@@ -654,6 +825,10 @@ class Turn:
                 result = tools._refused(problem)
             elif name == "list_sources":
                 result = await list_sources_locally(ctx_, state)
+            elif name == "read_study_progress":
+                result = tools._result(tools.render_progress(c["study_progress"]))
+            elif name in deck.NAMES:
+                result = await deck_locally(name, args, ctx_, state, self.id)
             elif name == "create_material":
                 result = await create_material_locally(args, ctx_, state, self.id)
             elif name == "edit_document":
@@ -862,6 +1037,8 @@ class Turn:
                 "limit": usable_input_limit(spec),
             }
 
+        from pipeline.retrieval import response_guard
+
         async def stream(messages, **kw):
             started = time.perf_counter()
             state["last_messages"] = list(messages)
@@ -870,14 +1047,14 @@ class Turn:
             )
             context = context_breakdown(request, kw.get("tools"))
             call = len(state["provider_calls"]) + 1
-            if curate:
+            if ctx.ledger.active:
                 state["ledger"] = ledger_state(ctx.ledger)
                 state["extra"].append(
                     {"type": "ledger", "call": call, **state["ledger"]}
                 )
                 if kw.get("tools") is None:
-                    # In curate the only way tools go off is the stall guard (or
-                    # the terminal call after credits run out).
+                    # With ledger todos tools go off only on the stall guard, the
+                    # tool cap or the terminal call after credits run out.
                     stall = {
                         "call": call,
                         "progress": ctx.ledger.progress,
@@ -908,6 +1085,10 @@ class Turn:
                     "context": context,
                 }
             )
+            if response_guard.contains_tool_protocol(assembled.text):
+                # The agent withholds a response carrying tool-call markup and
+                # reports it as flagged; keep what the model wrote.
+                state["provider_calls"][-1]["flagged_text"] = assembled.text[:8000]
             state["extra"].append(
                 {
                     "type": "context",
@@ -936,7 +1117,7 @@ class Turn:
                 )
             return base
 
-        chat_prompts.system_prompt = curate_prompts.system_prompt = system_prompt
+        chat_prompts.system_prompt = system_prompt
         tools.schemas_for, tools.run, tools.store_ledger = (
             schemas_for,
             run,
@@ -956,36 +1137,14 @@ class Turn:
             usable_input_limit,
             summarize_checkpoint,
         )
-        agent.PLANNING_RESPONSES, agent.TOOLS_PER_RESPONSE, agent.TOOLS_PER_TURN = (
-            c["limits"]["planning_responses"],
-            c["limits"]["tools_per_response"],
-            c["limits"]["tools_per_turn"],
-        )
-        (
-            agent.KNOWLEDGE_TOOLS_PER_RESPONSE,
-            agent.CURATE_STALL_RESPONSES,
-            agent.CURATE_TOOLS_PER_TURN,
-        ) = (
-            c["limits"]["knowledge_tools_per_response"],
-            c["limits"]["stall_responses"],
-            c["limits"]["tools_per_turn"],
-        )
-        (
-            cfg.agent_max_steps,
-            cfg.search_top_k,
-            cfg.search_per_file_cap,
-            cfg.captures_per_turn,
-        ) = (
-            c["limits"]["planning_responses"],
+        cfg.search_top_k, cfg.search_per_file_cap = (
             c["search"]["top_k"],
             c["search"]["per_file_cap"],
-            c["limits"]["captures_per_turn"],
         )
         self.run_dir.mkdir(parents=True, exist_ok=True)
         started = time.perf_counter()
         recorded: list[dict[str, Any]] = []
-        # A curate turn carries no citations at all.
-        mode = "as_is" if curate else c["answer"]["citations"]
+        mode = c["answer"]["citations"]
         blocks: dict[str, str] = {}
         renum: citations.Renumberer | None = None
         version = 0
@@ -1122,10 +1281,7 @@ class Turn:
             recorded.append(event)
             yield event
         finally:
-            chat_prompts.system_prompt, curate_prompts.system_prompt = (
-                saved["system_prompt"],
-                saved["curate_prompt"],
-            )
+            chat_prompts.system_prompt = saved["system_prompt"]
             tools.schemas_for, tools.run, tools.store_ledger = (
                 saved["schemas_for"],
                 saved["run"],
@@ -1148,20 +1304,7 @@ class Turn:
                 saved["usable_input_limit"],
                 saved["summarize"],
             )
-            agent.PLANNING_RESPONSES, agent.TOOLS_PER_RESPONSE, agent.TOOLS_PER_TURN = (
-                saved["agent_caps"]
-            )
-            (
-                agent.KNOWLEDGE_TOOLS_PER_RESPONSE,
-                agent.CURATE_STALL_RESPONSES,
-                agent.CURATE_TOOLS_PER_TURN,
-            ) = saved["curate_caps"]
-            (
-                cfg.agent_max_steps,
-                cfg.search_top_k,
-                cfg.search_per_file_cap,
-                cfg.captures_per_turn,
-            ) = saved["cfg"]
+            cfg.search_top_k, cfg.search_per_file_cap = saved["cfg"]
             registry.set_job_pins(None)
         done = next((e for e in reversed(recorded) if e.get("type") == "done"), {})
         usage = obs.current_usage()
@@ -1172,7 +1315,7 @@ class Turn:
             "config": c,
             "question": self.question,
             "history": self.history,
-            "system_prompt": system_prompt(c["locale"]),
+            "system_prompt": system_prompt(c["locale"], library=library),
             "tool_schemas": state.get("tool_schemas", []),
             "answer": done.get("answer", ""),
             "answer_raw": done.get("answer_raw"),
@@ -1195,9 +1338,9 @@ class Turn:
             "checkpoint_in": self.checkpoint,
             "ledger_in": self.ledger,
             "events": recorded,
-            # Curate: what the loop read and wrote. Materials carry their own
+            # What the loop read and wrote. Materials carry their own
             # provenance books, which is the attribution a real material keeps.
-            "curate": curate,
+            "library": library,
             "ledger": ledger_state(ctx.ledger),
             "stall_events": state["stall_events"],
             "materials": state["materials"],
@@ -1217,7 +1360,6 @@ def build_app(target: str):
     from pipeline import registry
     from pipeline.config import cfg
     from pipeline.prompts import chat as chat_prompts
-    from pipeline.prompts import curate as curate_prompts
     from pipeline.retrieval import library, store, tools
 
     # There is no gateway here: create_material and edit_document are handled in
@@ -1230,13 +1372,10 @@ def build_app(target: str):
     turn_lock = asyncio.Lock()
     # A running turn temporarily patches prompts and schemas with its own config.
     production_schemas = tools.schemas_for
-    production_prompts = {
-        False: chat_prompts.system_prompt,
-        True: curate_prompts.system_prompt,
-    }
+    production_prompt = chat_prompts.system_prompt
 
     async def library_summary() -> dict[str, Any] | None:
-        """What curate turns read: the live library's current books, their
+        """What Library turns read: the live library's current books, their
         excerpts and the topic catalog, or None when no library URL is set."""
         if not library.enabled():
             return None
@@ -1335,30 +1474,24 @@ def build_app(target: str):
         from pipeline.retrieval import contract, tools
 
         c = merged(await request.json())
-        if c["curate"]:
+        ctx = tools.ToolContext(
+            workspace_id=c["workspace_id"],
+            user_id="playground",
+            library=c["library"],
+            operations=operations_for(c),
+        )
+        if c["library"]:
             # The pinned version's topic catalog rides in the knowledge tool
             # descriptions, so this reads the library exactly as a turn does.
-            ctx = tools.ToolContext(
-                workspace_id=c["workspace_id"],
-                user_id="playground",
-                curate=True,
-                operations=CURATE_OPERATIONS,
-            )
             await tools.load_library_catalog(ctx)
-            schemas = [
-                s
-                for s in production_schemas(ctx)
-                if s["function"]["name"] in c["tools"]
-            ]
-        else:
-            schemas = [
-                contract.model_schema(name)
-                for name in c["tools"]
-                if name in contract.DEFINITIONS
-            ]
+        schemas = [
+            s
+            for s in production_schemas(ctx)
+            if c["tools"] is None or s["function"]["name"] in c["tools"]
+        ]
         return {
             "prompt": effective_prompt(
-                c, production_prompts[bool(c["curate"])](c["locale"])
+                c, production_prompt(c["locale"], library=c["library"])
             ),
             "tools": configured_tools(c, schemas),
             "tool_prompts": {
@@ -1406,6 +1539,13 @@ def build_app(target: str):
             raise HTTPException(404)
         return FileResponse(path)
 
+    @app.get("/api/runs/{run_id}/materials/{name}")
+    def get_material_file(run_id: str, name: str):
+        path = RUNS / run_id / "materials" / name
+        if path.parent.parent.parent != RUNS or not path.exists():
+            raise HTTPException(404)
+        return FileResponse(path, filename=name)
+
     @app.get("/api/runs/{run_id}/captures/{name}")
     def get_capture(run_id: str, name: str):
         path = RUNS / run_id / "captures" / name
@@ -1427,10 +1567,83 @@ def build_app(target: str):
     return app
 
 
+def check_decks() -> None:
+    """Outline, slide checks, figures, export and the ledger rules, through the
+    local handler. Runs ppt-master's checker and exporter (cloned on first use)."""
+    from tempfile import TemporaryDirectory
+
+    from pipeline.retrieval import tools
+
+    def slide(body: str = '<text x="64" y="300">A tangent meets the radius at 90°.</text>', bounds: str = "64 260 1152 60", lang: str = "en-GB") -> str:
+        return (
+            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" lang="{lang}" '
+            'data-pptx-page-role="content" font-family="Arial" font-size="20">'
+            '<rect id="background" data-pptx-role="background" x="0" y="0" width="1280" height="720" fill="#FAF8F4"/>'
+            f'<g id="body" data-pptx-bounds="{bounds}" fill="#1C1C1A">{body}</g></svg>'
+        )
+
+    async def flow(run_dir: Path) -> None:
+        ctx = tools.ToolContext(workspace_id="ws", user_id="u", operations=BUILD_OPERATIONS)
+        state = {"materials": [], "captures": [], "run_dir": run_dir}
+        outline = {
+            "title": "Tangents",
+            "slides": [
+                {"title": "Tangent meets radius", "brief": "From: tangents are lines. To: the radius meets one at 90°."},
+                {"title": "Two tangents", "brief": "Contrast the rule TA = TB with why it holds (RHS)."},
+            ],
+            "_tool_call_id": "c1",
+        }
+        made = await deck_locally("create_deck", outline, ctx, state, "m1")
+        assert not made.refused, made.text()
+        record = state["materials"][0]
+        rid = record["id"]
+        assert "1. Tangent meets radius (to write)" in made.text() and "Reference slide toc" in made.text()
+        long = '<text x="64" y="300">' + "far too long for this box " * 8 + "</text>"
+        for args, says in (
+            ({"slide": 1, "svg": "<svg"}, "does not parse"),
+            ({"slide": 1, "svg": slide().replace('viewBox="0 0 1280 720"', 'viewBox="0 0 800 600"')}, "viewBox must be"),
+            ({"slide": 1, "svg": slide(lang="")}, "needs lang"),
+            ({"slide": 1, "svg": slide(body=long, bounds="64 260 300 60")}, "refused by the checker"),
+            ({"slide": 1, "svg": slide(body='<image href="../images/p13.jpg" x="64" y="260" width="40" height="30"/>')}, "was not captured"),
+            ({"slide": 9, "svg": slide()}, "the deck has 2 slides"),
+        ):
+            refused = await deck_locally("write_slide", {"deck_id": rid, **args}, ctx, state, "m1")
+            assert refused.refused and says in refused.text(), refused.text()
+        first = await deck_locally("write_slide", {"deck_id": rid, "slide": 1, "svg": slide()}, ctx, state, "m1")
+        assert not first.refused and "1. Tangent meets radius (written)" in first.text(), first.text()
+        assert "pptx" not in record and record["size"] == "1 of 2 slides written"
+        # Figures are captured pages, cropped to the figure.
+        from PIL import Image
+
+        image = run_dir / "captures" / "1.jpg"
+        image.parent.mkdir(parents=True)
+        Image.new("RGB", (40, 30), "white").save(image)
+        for page, bbox in ((12, [0, 0, 1000, 1000]), (14, [100, 200, 600, 700])):
+            state["captures"].append(
+                {"page": page, "bbox": bbox, "image": str(image.relative_to(run_dir.parent.parent))}
+            )
+        figure = '<image href="../images/p{}.jpg" x="64" y="260" width="40" height="30" preserveAspectRatio="xMidYMid meet"/>'
+        whole = await deck_locally("write_slide", {"deck_id": rid, "slide": 2, "svg": slide(body=figure.format(12))}, ctx, state, "m1")
+        assert whole.refused and "captured whole" in whole.text(), whole.text()
+        done = await deck_locally("write_slide", {"deck_id": rid, "slide": 2, "svg": slide(body=figure.format(14))}, ctx, state, "m1")
+        assert not done.refused and "the deck is exported" in done.text(), done.text()
+        assert (run_dir.parent.parent / record["pptx"]).stat().st_size > 10_000
+        assert (run_dir / "materials" / rid / "images" / "p14.jpg").exists()
+        # With todos open, a deck write names one, like any material write.
+        await tools._create_ledger({"todos": ["deck", "quiz"]}, ctx)
+        needs = await deck_locally("write_slide", {"deck_id": rid, "slide": 1, "svg": slide()}, ctx, state, "m1")
+        assert needs.refused and "needs todo" in needs.text()
+        bad_args = await deck_locally("create_deck", {"title": "x", "slides": []}, ctx, state, "m1")
+        assert bad_args.refused and "arguments invalid" in bad_args.text()
+
+    with TemporaryDirectory() as tmp:
+        asyncio.run(flow(Path(tmp) / "runs" / "r1"))
+
+
 def check() -> None:
-    assert merged({"limits": {"tools_per_turn": 3}})["limits"] == {
-        **DEFAULT_CONFIG["limits"],
-        "tools_per_turn": 3,
+    assert merged({"search": {"top_k": 3}})["search"] == {
+        **DEFAULT_CONFIG["search"],
+        "top_k": 3,
     }
     assert merged({"system_prompt": "x"})["system_prompt"] == "x"
     schemas = [
@@ -1473,6 +1686,19 @@ def check() -> None:
             assert exc.status_code == 400
         else:
             raise AssertionError(f"accepted invalid tool_descriptions: {invalid}")
+    # Note fences: flashcards and html-embed are checked here, quizzes by Go.
+    note = "```flashcards\ncards:\n- front: a\n  back: b\n```\n"
+    embed = "```html-embed\ntitle: t\nfallback: f\nhtml: |\n  <p>x</p>\n```\n"
+    assert asyncio.run(check_note("text\n" + note + embed + "```mermaid\nflowchart\n```\n")) == ""
+    for bad, says in (
+        ("```flashcards\ncards: []\n```\n", "non-empty cards"),
+        ("```flashcards\ncards:\n- front: a\n```\n", "front and a back"),
+        ("```html-embed\nhtml: <p>x</p>\n```\n", "fallback"),
+        ("```html-embed\nfallback: f\nhtml: <img src='https://x'>\n```\n", "network"),
+        ("```html-embed\n: [\n```\n", "not YAML"),
+    ):
+        assert says in asyncio.run(check_note(bad)), bad
+    check_decks()
     # Preview requests must not inherit the monkeypatches of an active turn.
     from tempfile import TemporaryDirectory
     from unittest.mock import AsyncMock, patch
@@ -1480,7 +1706,7 @@ def check() -> None:
     import httpx
 
     from pipeline import registry
-    from pipeline.prompts import chat, curate
+    from pipeline.prompts import chat
     from pipeline.retrieval import agent, evidence, tools
 
     async def check_preview():
@@ -1505,16 +1731,10 @@ def check() -> None:
             assert response.status_code == 400
             assert response.json() == {"detail": "model config not found: missing v1"}
             for mode in (False, True):
-                c = merged(
-                    {
-                        "curate": mode,
-                        "tools": [*DEFAULT_CONFIG["tools"], "capture_page"],
-                    }
-                )
+                c = merged({"library": mode})
                 expected = effective_prompt(c)
                 with (
                     patch.object(chat, "system_prompt", return_value="active turn"),
-                    patch.object(curate, "system_prompt", return_value="active turn"),
                     patch.object(tools, "load_library_catalog", new=AsyncMock()),
                 ):
                     response = await client.post("/api/prompt", json=c)
@@ -1523,10 +1743,8 @@ def check() -> None:
                 names = [s["function"]["name"] for s in response.json()["tools"]]
                 assert names.count("capture_page") == 1
             stored = {
-                "requests": ["Study cells"],
                 "next_todo_id": 2,
                 "todos": [{"id": 1, "text": "Make a quiz"}],
-                "materials": [],
             }
             history = [
                 {
@@ -1558,7 +1776,6 @@ def check() -> None:
                 updated = await tools.run(
                     "create_ledger",
                     {
-                        "body": "Updated study goals",
                         "todos": [{"id": 1, "todo": "Advanced quiz"}],
                         "_tool_call_id": "revise",
                     },
@@ -1570,7 +1787,7 @@ def check() -> None:
             c = merged(
                 {
                     "target": "local",
-                    "curate": True,
+                    "library": True,
                     "tools": ["create_ledger", "capture_page", "list_sources"],
                     "model": {"adhoc": {"provider_name": "test"}},
                 }
@@ -1603,10 +1820,14 @@ def check() -> None:
                 assert saved["ledger_in"] == stored
                 assert saved["ledger"]["stored"] == {
                     **stored,
-                    "requests": ["Updated study goals"],
                     "todos": [{"id": 1, "text": "Advanced quiz"}],
                 }
-        assert effective_prompt(merged({"system_prompt": ""}), "production") == ""
+        bare = merged(
+            {"system_prompt": "", "capture": {"addon": False}, "decks": {"offer": False}}
+        )
+        assert effective_prompt(bare, "production") == ""
+        decks = merged({"system_prompt": "", "capture": {"addon": False}})
+        assert effective_prompt(decks, "production") == deck.addon("auto")
 
     asyncio.run(check_preview())
     assert (
@@ -1623,17 +1844,8 @@ def check() -> None:
         ), path
         assert c["answer"]["citations"] in ("as_is", "renumber", "structured"), path
         assert c["capture"]["citation"] in ("page", "new"), path
-        assert set(c["tools"]) <= ALLOWED_TOOLS, path
+        assert isinstance(c["library"], bool), path
         assert c["ledger"] is None or isinstance(c["ledger"], str), path
-        knowledge = set(c["tools"]) & set(KNOWLEDGE_TOOLS)
-        assert c["curate"] or not knowledge, f"{path}: knowledge tools need curate"
-        assert not c["curate"] or knowledge, (
-            f"{path}: a curate config offers no knowledge tool"
-        )
-        # Without create_ledger a curate turn cannot write anything at all.
-        assert not c["curate"] or "create_ledger" in c["tools"], (
-            f"{path}: no create_ledger"
-        )
     print("playground checks passed")
 
 
@@ -1644,7 +1856,7 @@ def main() -> None:
     parser.add_argument("--check", action="store_true")
     parser.add_argument(
         "--ledger",
-        help="start curate turns from this stored ledger (a previous run.json), "
+        help="start turns from this stored ledger (a previous run.json), "
         "for configs that do not set `ledger` themselves",
     )
     args = parser.parse_args()

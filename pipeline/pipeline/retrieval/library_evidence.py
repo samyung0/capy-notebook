@@ -30,7 +30,7 @@ class ExcerptRead:
         )
 
 
-class CurateEvidence:
+class LibraryEvidence:
     def __init__(self):
         self.inherited: dict[tuple[str, int], ExcerptRead] = {}
         self.fresh: dict[tuple[str, int], ExcerptRead] = {}
@@ -51,7 +51,7 @@ class CurateEvidence:
                 read = ExcerptRead(**item)
                 latest[read.key] = (i, read)
         out: dict[int, list[str]] = {}
-        scratch = tools.ToolContext(workspace_id=ctx.workspace_id, curate=True)
+        scratch = tools.ToolContext(workspace_id=ctx.workspace_id, library=True)
         for i, turn in enumerate(history or []):
             for owner, read in latest.values():
                 if owner != i:

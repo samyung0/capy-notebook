@@ -48,7 +48,6 @@ type documentRequest struct {
 	UndoOf      string             `json:"undoOf,omitempty"`
 	Inverse     json.RawMessage    `json:"inverse,omitempty"`
 	Guards      json.RawMessage    `json:"guards,omitempty"`
-	StudyState  json.RawMessage    `json:"studyState,omitempty"`
 	// Provenance is the merged attribution record the authority writes onto the
 	// material in the edit's own transaction.
 	Provenance *Provenance `json:"provenance,omitempty"`
@@ -77,20 +76,24 @@ type SourceInspection struct {
 }
 
 func (s *Store) postDocumentAuthority(ctx context.Context, path string, body any, out any) error {
-	if s.collaborationURL == "" || s.collaborationSecret == "" {
+	return s.postCollaboration(ctx, s.collaborationURL, s.collaborationSecret, path, body, out)
+}
+
+func (s *Store) postCollaboration(ctx context.Context, baseURL, secret, path string, body any, out any) error {
+	if baseURL == "" || secret == "" {
 		return ErrAuthorityUnavailable
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.collaborationURL+path, bytes.NewReader(raw))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+path, bytes.NewReader(raw))
 	if err != nil {
 		return err
 	}
 	obs.Inject(ctx, req)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Collaboration-Secret", s.collaborationSecret)
+	req.Header.Set("X-Collaboration-Secret", secret)
 	response, err := s.collaborationHTTP.Do(req)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrAuthorityUnavailable, err)
@@ -172,15 +175,14 @@ func (s *Store) EditDocument(ctx context.Context, actorID string, target Documen
 // the licence risk.
 func (s *Store) UndoDocumentEdit(ctx context.Context, actorID string, inv EditInverse, op DocumentOperation) (AgentOperation, error) {
 	var payload struct {
-		Commands   json.RawMessage `json:"commands"`
-		StudyState json.RawMessage `json:"studyState"`
+		Commands json.RawMessage `json:"commands"`
 	}
 	if err := json.Unmarshal(inv.Inverse, &payload); err != nil || len(payload.Commands) == 0 {
 		return AgentOperation{}, ErrUndoUnavailable
 	}
 	req := documentRequest{
 		Target: DocumentTarget{Kind: inv.ResourceKind, ID: inv.ResourceID}, ActorUserID: actorID,
-		Operation: &op, UndoOf: inv.OperationID, Inverse: payload.Commands, Guards: inv.Guards, StudyState: payload.StudyState,
+		Operation: &op, UndoOf: inv.OperationID, Inverse: payload.Commands, Guards: inv.Guards,
 	}
 	if inv.ResourceKind == agenttools.KindMaterial {
 		room, err := s.MaterialRoom(ctx, inv.ResourceID)
@@ -198,4 +200,39 @@ func (s *Store) UndoDocumentEdit(ctx context.Context, actorID string, inv EditIn
 	var out AgentOperation
 	err := s.postDocumentAuthority(ctx, "/internal/documents/undo", req, &out)
 	return out, err
+}
+
+// ConvertedMarkdown is agent markdown as the editor's own import reads it: the
+// document, and the quiz or flashcard sets its fences describe, in order.
+type ConvertedMarkdown struct {
+	Document json.RawMessage `json:"document"`
+	Embedded []struct {
+		Kind      MaterialKind    `json:"kind"`
+		Questions json.RawMessage `json:"questions"`
+		Cards     []struct {
+			Front string `json:"front"`
+			Back  string `json:"back"`
+		} `json:"cards"`
+	} `json:"embedded"`
+}
+
+// ConvertAgentMarkdown converts through the collaboration service, which runs
+// the editor's markdown import. A fence that does not parse comes back as an
+// EditRefusal naming it.
+func (s *Store) ConvertAgentMarkdown(ctx context.Context, markdown string) (ConvertedMarkdown, error) {
+	var out ConvertedMarkdown
+	err := s.postCollaboration(ctx, s.markdownURL, s.markdownSecret, "/internal/markdown/convert", map[string]string{"markdown": markdown}, &out)
+	return out, err
+}
+
+// EmbeddedDrafts are the converted fences as drafts with the given row ids.
+func (c ConvertedMarkdown) EmbeddedDrafts(ids []string) []EmbeddedDraft {
+	drafts := make([]EmbeddedDraft, len(c.Embedded))
+	for i, e := range c.Embedded {
+		drafts[i] = EmbeddedDraft{ID: ids[i], Kind: e.Kind, Questions: e.Questions}
+		for _, card := range e.Cards {
+			drafts[i].Cards = append(drafts[i].Cards, [2]string{card.Front, card.Back})
+		}
+	}
+	return drafts
 }

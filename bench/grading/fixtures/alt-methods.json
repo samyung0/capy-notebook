@@ -1,0 +1,450 @@
+{
+  "provenance": "Written 2026-10-03 by the agent running the benchmark. Labels are AI-authored, not human-certified. Policy behind every label: any correct method earns the marks the scheme gives for its own method, unless the question names a method; a value mark is earned when the value is stated or clearly implied by later correct working; an answer that does not follow from the student's own working earns nothing for that answer; every reason must justify its step. 'lines' and 'claims' are the structured form a MathLive input would give the deterministic checker; 'text' is what Jev reads.",
+  "questions": [
+    {
+      "id": "triangle_area",
+      "question": "In triangle PQR, PQ = 7 cm, PR = 5 cm and angle QPR = 40°. Find the area of the triangle, giving your answer to 3 significant figures.",
+      "markscheme": [
+        "Uses area = ½ × 7 × 5 × sin 40°",
+        "Area = 11.2 cm²"
+      ],
+      "reference": "Area = ½ × 7 × 5 × sin 40° = 17.5 × 0.6428 = 11.2 cm² (3 s.f.)",
+      "answers": [
+        {
+          "kind": "scheme_method",
+          "text": "Area = ½ × 7 × 5 × sin 40° = 17.5 × 0.6428 = 11.2 cm²",
+          "lines": [
+            "A = 1/2*7*5*sin(40) = 11.2"
+          ],
+          "final": 11.2,
+          "gold": [
+            1,
+            1
+          ]
+        },
+        {
+          "kind": "alt_cosine_heron",
+          "text": "Third side QR: QR² = 7² + 5² − 2 × 7 × 5 × cos 40° = 74 − 53.62 = 20.38, so QR = 4.51 cm. s = (7 + 5 + 4.51)/2 = 8.255. Area = √(8.255 × 1.255 × 3.255 × 3.745) = 11.2 cm²",
+          "lines": [
+            "c**2 = 7**2 + 5**2 - 2*7*5*cos(40) = 20.38",
+            "c = 4.51",
+            "s = (7 + 5 + 4.51)/2 = 8.255",
+            "A = sqrt(8.255*1.255*3.255*3.745) = 11.2"
+          ],
+          "final": 11.2,
+          "gold": [
+            1,
+            1
+          ],
+          "note": "Valid alternative method; the scheme's formula is never used."
+        },
+        {
+          "kind": "alt_height",
+          "text": "Height from R to PQ: h = 5 sin 40° = 3.214 cm. Area = ½ × base × height = ½ × 7 × 3.214 = 11.2 cm²",
+          "lines": [
+            "h = 5*sin(40) = 3.214",
+            "A = 1/2*7*3.214 = 11.2"
+          ],
+          "final": 11.2,
+          "gold": [
+            1,
+            1
+          ],
+          "note": "Same formula derived inline, written differently."
+        },
+        {
+          "kind": "alt_heron_slip",
+          "text": "QR² = 7² + 5² − 2 × 7 × 5 × cos 40° = 20.38, so QR = 4.51. s = 8.26. Area = √(8.26 × 1.26 × 3.26 × 3.75) = 13.1 cm²",
+          "lines": [
+            "c**2 = 7**2 + 5**2 - 2*7*5*cos(40) = 20.38",
+            "c = 4.51",
+            "s = 8.26",
+            "A = sqrt(8.26*1.26*3.26*3.75) = 13.1"
+          ],
+          "final": 13.1,
+          "gold": [
+            1,
+            0
+          ],
+          "note": "Valid alternative method, arithmetic slip in the last line: method mark, no answer mark."
+        },
+        {
+          "kind": "wrong_formula",
+          "text": "Area = ½ × 7 × 5 × cos 40° = 17.5 × 0.766 = 13.4 cm²",
+          "lines": [
+            "A = 1/2*7*5*cos(40) = 13.4"
+          ],
+          "final": 13.4,
+          "gold": [
+            0,
+            0
+          ]
+        },
+        {
+          "kind": "inconsistent_working",
+          "text": "QR² = 7² + 5² − 2 × 7 × 5 × cos 40° = 38.4, so QR = 6.2. s = 9.1. Area = √(9.1 × 2.1 × 4.1 × 2.9) = 11.2 cm²",
+          "lines": [
+            "c**2 = 7**2 + 5**2 - 2*7*5*cos(40) = 38.4",
+            "c = 6.2",
+            "s = (7 + 5 + 6.2)/2 = 9.1",
+            "A = sqrt(9.1*2.1*4.1*2.9) = 11.2"
+          ],
+          "final": 11.2,
+          "gold": [
+            0,
+            0
+          ],
+          "note": "Right final answer that the working does not produce (true value of the last root is 15.1)."
+        },
+        {
+          "kind": "bare_answer",
+          "text": "11.2 cm²",
+          "lines": [],
+          "final": 11.2,
+          "gold": [
+            1,
+            1
+          ],
+          "note": "No 'show your working'; method mark implied by the correct answer."
+        },
+        {
+          "kind": "split_arithmetic",
+          "text": "½ × 7 × 5 = 17.5\nsin 40° = 0.6428\nArea = 17.5 × 0.6428 = 11.2 cm²",
+          "lines": [
+            "1/2*7*5 = 17.5",
+            "sin(40) = 0.6428",
+            "A = 17.5*0.6428 = 11.2"
+          ],
+          "final": 11.2,
+          "gold": [
+            1,
+            1
+          ],
+          "note": "The scheme's method written as separate arithmetic lines, which are not quantities of the triangle."
+        }
+      ]
+    },
+    {
+      "id": "circle_angle",
+      "question": "Points A, B, C and D lie on a circle with centre O, in that order around the circle. AC is a diameter. Angle BAC = 32°. Find angle BDC. Give a reason for each step of your working.",
+      "markscheme": [
+        "Angle BDC = 32°",
+        "Reason: angles in the same segment are equal"
+      ],
+      "reference": "Angle BDC = angle BAC = 32° (angles in the same segment are equal).",
+      "answers": [
+        {
+          "kind": "scheme_method",
+          "text": "BDC = BAC = 32° (angles in the same segment are equal)",
+          "claims": [
+            {
+              "claim": "BDC = BAC",
+              "value": 32,
+              "reason": "same_segment"
+            }
+          ],
+          "gold": [
+            1,
+            1
+          ]
+        },
+        {
+          "kind": "alt_semicircle",
+          "text": "Angle ABC = 90° (angle in a semicircle). Angle ACB = 180 − 90 − 32 = 58° (angles in a triangle add up to 180°). Angle ADB = angle ACB = 58° (angles in the same segment). Angle ADC = 90° (angle in a semicircle). So angle BDC = 90 − 58 = 32°.",
+          "claims": [
+            {
+              "claim": "ABC = 90",
+              "value": 90,
+              "reason": "semicircle"
+            },
+            {
+              "claim": "ACB = 180 - ABC - BAC",
+              "value": 58,
+              "reason": "triangle_sum"
+            },
+            {
+              "claim": "ADB = ACB",
+              "value": 58,
+              "reason": "same_segment"
+            },
+            {
+              "claim": "ADC = 90",
+              "value": 90,
+              "reason": "semicircle"
+            },
+            {
+              "claim": "BDC = ADC - ADB",
+              "value": 32,
+              "reason": "angle_split"
+            }
+          ],
+          "gold": [
+            1,
+            1
+          ],
+          "note": "Longer valid proof that reaches the same angle another way."
+        },
+        {
+          "kind": "alt_centre",
+          "text": "Angle BOC = 2 × 32 = 64° (the angle at the centre is twice the angle at the circumference). Angle BDC = 64 ÷ 2 = 32° (angle at the circumference is half the angle at the centre).",
+          "claims": [
+            {
+              "claim": "BOC = 2*BAC",
+              "value": 64,
+              "reason": "centre"
+            },
+            {
+              "claim": "BDC = BOC/2",
+              "value": 32,
+              "reason": "centre"
+            }
+          ],
+          "gold": [
+            1,
+            1
+          ]
+        },
+        {
+          "kind": "wrong_reason",
+          "text": "BDC = BAC = 32° (opposite angles in a cyclic quadrilateral are equal)",
+          "claims": [
+            {
+              "claim": "BDC = BAC",
+              "value": 32,
+              "reason": "cyclic_opposite"
+            }
+          ],
+          "gold": [
+            1,
+            0
+          ],
+          "note": "Right angle, wrong theorem (opposite angles sum to 180°, and these are not opposite)."
+        },
+        {
+          "kind": "alt_with_wrong_reason",
+          "text": "Angle ABC = 90° (angle in a semicircle). Angle ACB = 180 − 90 − 32 = 58° (angles in a triangle). Angle ADB = angle ACB = 58° (alternate segment theorem). Angle ADC = 90° (angle in a semicircle). So angle BDC = 90 − 58 = 32°.",
+          "claims": [
+            {
+              "claim": "ABC = 90",
+              "value": 90,
+              "reason": "semicircle"
+            },
+            {
+              "claim": "ACB = 180 - ABC - BAC",
+              "value": 58,
+              "reason": "triangle_sum"
+            },
+            {
+              "claim": "ADB = ACB",
+              "value": 58,
+              "reason": "alternate_segment"
+            },
+            {
+              "claim": "ADC = 90",
+              "value": 90,
+              "reason": "semicircle"
+            },
+            {
+              "claim": "BDC = ADC - ADB",
+              "value": 32,
+              "reason": "angle_split"
+            }
+          ],
+          "gold": [
+            1,
+            0
+          ],
+          "note": "Valid route and true claims, one step cites a theorem that needs a tangent."
+        },
+        {
+          "kind": "wrong_answer",
+          "text": "ABCD is a cyclic quadrilateral, so BDC = 180 − 32 = 148° (opposite angles in a cyclic quadrilateral add up to 180°).",
+          "claims": [
+            {
+              "claim": "BDC = 180 - BAC",
+              "value": 148,
+              "reason": "cyclic_opposite"
+            }
+          ],
+          "gold": [
+            0,
+            0
+          ]
+        },
+        {
+          "kind": "bare_answer",
+          "text": "32°",
+          "claims": [],
+          "final": 32,
+          "gold": [
+            1,
+            0
+          ]
+        },
+        {
+          "kind": "alt_isosceles",
+          "text": "OA = OB (radii), so triangle OAB is isosceles and angle OBA = angle BAO = 32°. Angle AOB = 180 − 32 − 32 = 116° (angles in a triangle). Angle BOC = 180 − 116 = 64° (angles on a straight line, AOC is a diameter). Angle BDC = 64 ÷ 2 = 32° (angle at the centre is twice the angle at the circumference).",
+          "claims": [
+            {
+              "claim": "OBA = BAO",
+              "value": 32,
+              "reason": "isosceles"
+            },
+            {
+              "claim": "AOB = 180 - OBA - BAO",
+              "value": 116,
+              "reason": "triangle_sum"
+            },
+            {
+              "claim": "BOC = 180 - AOB",
+              "value": 64,
+              "reason": "straight_line"
+            },
+            {
+              "claim": "BDC = BOC/2",
+              "value": 32,
+              "reason": "centre"
+            }
+          ],
+          "gold": [
+            1,
+            1
+          ],
+          "note": "Valid proof using radii, an isosceles triangle and a straight line; names the given angle BAO, not BAC."
+        }
+      ]
+    },
+    {
+      "id": "linear_equation",
+      "question": "Solve 3(x − 2) = 2x + 5. Show your working.",
+      "requires_working": true,
+      "markscheme": [
+        "Expands the bracket: 3x − 6",
+        "Collects terms: 3x − 2x = 5 + 6",
+        "x = 11"
+      ],
+      "reference": "3x − 6 = 2x + 5, 3x − 2x = 5 + 6, x = 11",
+      "answers": [
+        {
+          "kind": "scheme_method",
+          "text": "3x − 6 = 2x + 5\n3x − 2x = 5 + 6\nx = 11",
+          "lines": [
+            "3*x - 6 = 2*x + 5",
+            "3*x - 2*x = 5 + 6",
+            "x = 11"
+          ],
+          "gold": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "kind": "skipped_step",
+          "text": "3x − 6 = 2x + 5, so x = 11",
+          "lines": [
+            "3*x - 6 = 2*x + 5",
+            "x = 11"
+          ],
+          "gold": [
+            1,
+            1,
+            1
+          ],
+          "note": "Collection done mentally; implied by the correct next line."
+        },
+        {
+          "kind": "alt_other_side",
+          "text": "3x − 6 = 2x + 5\n−6 − 5 = 2x − 3x\n−11 = −x\nx = 11",
+          "lines": [
+            "3*x - 6 = 2*x + 5",
+            "-6 - 5 = 2*x - 3*x",
+            "-11 = -x",
+            "x = 11"
+          ],
+          "gold": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "kind": "alt_substitution",
+          "text": "Let y = x − 2. Then 3y = 2(y + 2) + 5, so 3y = 2y + 9, y = 9 and x = 11.",
+          "lines": [
+            "let y = x - 2",
+            "3*y = 2*(y + 2) + 5",
+            "3*y = 2*y + 9",
+            "y = 9",
+            "x = 11"
+          ],
+          "gold": [
+            1,
+            1,
+            1
+          ],
+          "note": "Different method with a substitution line that is not a transformation of the equation."
+        },
+        {
+          "kind": "invalid_jump",
+          "text": "3x − 2 = 2x + 5\nx = 11",
+          "lines": [
+            "3*x - 2 = 2*x + 5",
+            "x = 11"
+          ],
+          "gold": [
+            0,
+            0,
+            0
+          ],
+          "note": "Wrong expansion; x = 11 does not follow from it (it gives x = 7)."
+        },
+        {
+          "kind": "wrong_expansion",
+          "text": "3x − 2 = 2x + 5\n3x − 2x = 5 + 2\nx = 7",
+          "lines": [
+            "3*x - 2 = 2*x + 5",
+            "3*x - 2*x = 5 + 2",
+            "x = 7"
+          ],
+          "gold": [
+            0,
+            1,
+            0
+          ],
+          "arguable": true,
+          "note": "Collecting is correct follow-through from a wrong line; whether that earns the mark is a policy choice."
+        },
+        {
+          "kind": "bare_answer",
+          "text": "x = 11",
+          "lines": [
+            "x = 11"
+          ],
+          "gold": [
+            0,
+            0,
+            1
+          ],
+          "arguable": true,
+          "note": "'Show your working' with no working; boards differ."
+        },
+        {
+          "kind": "expands_side_first",
+          "text": "3(x − 2) = 3x − 6\n3x − 6 = 2x + 5\nx = 11",
+          "lines": [
+            "3*(x - 2) = 3*x - 6",
+            "3*x - 6 = 2*x + 5",
+            "x = 11"
+          ],
+          "gold": [
+            1,
+            1,
+            1
+          ],
+          "note": "First line expands one side on its own; it is an identity, not a step of the equation."
+        }
+      ]
+    }
+  ]
+}

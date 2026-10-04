@@ -11,32 +11,26 @@ func TestSuspendedUserCannotWriteAttemptHistory(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	userID := newBlobTestUser(t, s, "u_attempt_suspended")
+	quiz, err := s.CreateQuiz(ctx, Quiz{UserID: userID, Name: "Q", Questions: json.RawMessage(`[]`), Privacy: PrivacyPrivate})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.pool.Exec(ctx, `UPDATE users SET
 		suspended_at=now(), suspended_reason='test' WHERE id=$1`, userID); err != nil {
 		t.Fatal(err)
 	}
-	wrong := []json.RawMessage{json.RawMessage(`{"id":"q_1"}`)}
-	if err := s.AddMistakes(ctx, userID, wrong); err == nil {
-		t.Fatal("suspended user added a mistake")
-	}
-	if err := s.ClearReviewedMistakes(ctx, userID, []string{"q_1"}, nil); err == nil {
-		t.Fatal("suspended user cleared mistakes")
-	}
 	if _, err := s.CreateAttempt(
-		ctx, userID, ReviewMistakesQuizID, 0, 1,
+		ctx, userID, quiz.ID, 0, 1,
 		json.RawMessage(`{}`), json.RawMessage(`[]`),
 	); err == nil {
 		t.Fatal("suspended user created an attempt")
 	}
-	var attempts, mistakes int
-	if err := s.pool.QueryRow(ctx, `SELECT
-		(SELECT count(*) FROM attempts WHERE user_id=$1),
-		(SELECT count(*) FROM mistakes WHERE user_id=$1)`, userID).
-		Scan(&attempts, &mistakes); err != nil {
+	var attempts int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM attempts WHERE user_id=$1`, userID).Scan(&attempts); err != nil {
 		t.Fatal(err)
 	}
-	if attempts != 0 || mistakes != 0 {
-		t.Fatalf("post-suspension rows: attempts=%d mistakes=%d", attempts, mistakes)
+	if attempts != 0 {
+		t.Fatalf("post-suspension attempts = %d", attempts)
 	}
 }
 

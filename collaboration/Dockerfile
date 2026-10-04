@@ -41,6 +41,10 @@ COPY collaboration/package.json collaboration/tsconfig.json ./collaboration/
 RUN pnpm install --frozen-lockfile --filter @capy-notebook/collaboration...
 RUN pnpm --filter @capy-notebook/collaboration deploy --prod /output
 COPY collaboration/src ./collaboration/src
+COPY collaboration/scripts ./collaboration/scripts
+# The markdown converter bundles the editor's own markdown import from the
+# frontend sources (scripts/build-markdown.mjs).
+COPY src ./src
 RUN pnpm --filter @capy-notebook/collaboration build
 
 FROM node:22-alpine

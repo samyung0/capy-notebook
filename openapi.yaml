@@ -798,8 +798,6 @@ components:
         createdAt:
           format: date-time
           type: string
-        curate:
-          type: boolean
         id:
           type: string
         title:
@@ -813,7 +811,6 @@ components:
         - id
         - workspaceId
         - title
-        - curate
         - createdAt
         - updatedAt
       type: object
@@ -846,13 +843,6 @@ components:
           format: double
           minimum: 0
           type: number
-        wrong:
-          description: Questions answered incorrectly
-          items:
-            additionalProperties: {}
-            type: object
-          nullable: true
-          type: array
       required:
         - correct
         - total
@@ -924,9 +914,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        curate:
-          description: Open the thread in curate mode (knowledge library)
-          type: boolean
         title:
           description: Optional thread title
           maxLength: 60
@@ -1626,23 +1613,17 @@ components:
           type: string
         id:
           type: string
-        known:
-          type: boolean
         materialId:
           type: string
         revision:
           format: int64
           type: integer
-        srs:
-          $ref: "#/components/schemas/SrsState"
       required:
         - revision
         - id
         - materialId
         - front
         - back
-        - known
-        - srs
       type: object
     FlashcardContentInput:
       additionalProperties: false
@@ -1679,16 +1660,10 @@ components:
           type: integer
         color:
           $ref: "#/components/schemas/UserColor"
-        dueCount:
-          format: int64
-          type: integer
         id:
           type: string
         isOwner:
           type: boolean
-        knownPct:
-          format: int64
-          type: integer
         name:
           type: string
         privacy:
@@ -1713,8 +1688,6 @@ components:
         - color
         - privacy
         - cardCount
-        - knownPct
-        - dueCount
         - isOwner
         - canEdit
         - canEditContent
@@ -1855,6 +1828,33 @@ components:
       required:
         - awarded
         - itemAwards
+      type: object
+    HardItem:
+      additionalProperties: false
+      properties:
+        itemId:
+          type: string
+        lapses:
+          format: int64
+          type: integer
+        materialId:
+          type: string
+        materialKind:
+          enum:
+            - quiz
+            - flashcards
+          type: string
+        materialTitle:
+          type: string
+        text:
+          type: string
+      required:
+        - materialId
+        - materialTitle
+        - materialKind
+        - itemId
+        - text
+        - lapses
       type: object
     ImportSourcesAccepted:
       additionalProperties: false
@@ -2315,16 +2315,10 @@ components:
         createdAt:
           format: date-time
           type: string
-        dueCount:
-          format: int64
-          type: integer
         id:
           type: string
         kind:
           $ref: "#/components/schemas/MaterialKind"
-        knownPct:
-          format: int64
-          type: integer
         parentMaterialId:
           type: string
         parentTitle:
@@ -2965,16 +2959,10 @@ components:
           type: integer
         color:
           $ref: "#/components/schemas/UserColor"
-        dueCount:
-          format: int64
-          type: integer
         id:
           type: string
         isOwner:
           type: boolean
-        knownPct:
-          format: int64
-          type: integer
         name:
           type: string
         privacy:
@@ -3001,8 +2989,6 @@ components:
         - color
         - privacy
         - cardCount
-        - knownPct
-        - dueCount
         - isOwner
         - canEdit
         - canEditContent
@@ -3200,6 +3186,37 @@ components:
         - canEdit
         - canEditContent
       type: object
+    RateReviewItemReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/RateReviewItemReq.json
+          format: uri
+          readOnly: true
+          type: string
+        itemId:
+          minLength: 1
+          type: string
+        materialId:
+          minLength: 1
+          type: string
+        rating:
+          description: "A flashcard's button: 1 Again .. 4 Easy"
+          format: int64
+          maximum: 4
+          minimum: 1
+          type: integer
+        score:
+          description: A question's awarded marks over its marks
+          format: double
+          maximum: 1
+          minimum: 0
+          type: number
+      required:
+        - materialId
+        - itemId
+      type: object
     Ref:
       additionalProperties: false
       properties:
@@ -3342,6 +3359,75 @@ components:
         - kind
         - id
       type: object
+    ReviewItem:
+      additionalProperties: false
+      properties:
+        back:
+          type: string
+        front:
+          type: string
+        itemId:
+          type: string
+        kind:
+          enum:
+            - card
+            - question
+          type: string
+        materialId:
+          type: string
+        materialTitle:
+          type: string
+        question:
+          additionalProperties: {}
+          type: object
+      required:
+        - materialId
+        - materialTitle
+        - itemId
+        - kind
+      type: object
+    ReviewSession:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ReviewSession.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/ReviewItem"
+          type: array
+        sets:
+          items:
+            $ref: "#/components/schemas/ReviewSet"
+          type: array
+      required:
+        - sets
+        - items
+      type: object
+    ReviewSet:
+      additionalProperties: false
+      properties:
+        items:
+          format: int64
+          type: integer
+        kind:
+          enum:
+            - quiz
+            - flashcards
+          type: string
+        materialId:
+          type: string
+        title:
+          type: string
+      required:
+        - materialId
+        - title
+        - kind
+        - items
+      type: object
     Row:
       additionalProperties: false
       properties:
@@ -3439,6 +3525,40 @@ components:
           type: string
         editorModel:
           $ref: "#/components/schemas/Ref"
+      type: object
+    SetStudyEnabledReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SetStudyEnabledReq.json
+          format: uri
+          readOnly: true
+          type: string
+        enabled:
+          type: boolean
+      required:
+        - enabled
+      type: object
+    SetStudyItemReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SetStudyItemReq.json
+          format: uri
+          readOnly: true
+          type: string
+        fileId:
+          type: string
+        materialId:
+          type: string
+        state:
+          description: Omitted marks the item unread
+          enum:
+            - done
+            - removed
+          type: string
       type: object
     ShareRole:
       enum:
@@ -4173,53 +4293,97 @@ components:
         - headers
         - expiresAt
       type: object
-    SrsState:
-      additionalProperties: false
-      properties:
-        difficulty:
-          format: double
-          type: number
-        due:
-          type: string
-        elapsed_days:
-          format: int64
-          type: integer
-        lapses:
-          format: int64
-          type: integer
-        last_review:
-          type: string
-        learning_steps:
-          format: int64
-          type: integer
-        reps:
-          format: int64
-          type: integer
-        scheduled_days:
-          format: int64
-          type: integer
-        stability:
-          format: double
-          type: number
-        state:
-          format: int64
-          type: integer
-      required:
-        - due
-        - stability
-        - difficulty
-        - elapsed_days
-        - scheduled_days
-        - reps
-        - lapses
-        - state
-      type: object
     StorageUsageLevel:
       enum:
         - ok
         - near_limit
         - full
       type: string
+    StudyItem:
+      additionalProperties: false
+      properties:
+        fileId:
+          type: string
+        materialId:
+          type: string
+        state:
+          enum:
+            - started
+            - done
+            - removed
+          type: string
+      required:
+        - state
+      type: object
+    StudyPreferences:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/StudyPreferences.json
+          format: uri
+          readOnly: true
+          type: string
+        explainerStyle:
+          enum:
+            - brief
+            - standard
+            - detailed
+          type: string
+        flashcardsPerChapter:
+          format: int64
+          maximum: 100
+          minimum: 1
+          type: integer
+        miniChecks:
+          type: boolean
+        practice:
+          enum:
+            - none
+            - quiz
+            - flashcards
+            - both
+          type: string
+        quizLength:
+          format: int64
+          maximum: 50
+          minimum: 1
+          type: integer
+        visualAids:
+          enum:
+            - fewer
+            - more
+          type: string
+      type: object
+    StudySummary:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/StudySummary.json
+          format: uri
+          readOnly: true
+          type: string
+        enabled:
+          type: boolean
+        hardest:
+          items:
+            $ref: "#/components/schemas/HardItem"
+          type: array
+        items:
+          items:
+            $ref: "#/components/schemas/StudyItem"
+          type: array
+        recentAttempts:
+          items:
+            $ref: "#/components/schemas/Attempt"
+          type: array
+      required:
+        - enabled
+        - items
+        - recentAttempts
+        - hardest
+      type: object
     Subject:
       additionalProperties: false
       properties:
@@ -4529,20 +4693,6 @@ components:
           type: string
       required:
         - expectedRevision
-      type: object
-    UpdateCardStudyStateReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/UpdateCardStudyStateReq.json
-          format: uri
-          readOnly: true
-          type: string
-        known:
-          type: boolean
-        srs:
-          $ref: "#/components/schemas/SrsState"
       type: object
     UpdateChapterReq:
       additionalProperties: false
@@ -4999,6 +5149,10 @@ components:
         streak:
           format: int64
           type: integer
+        studyPreferences:
+          $ref: "#/components/schemas/StudyPreferences"
+        studyProgress:
+          type: boolean
         subscriptionStatus:
           $ref: "#/components/schemas/SubscriptionStatus"
       required:
@@ -5008,6 +5162,8 @@ components:
         - email
         - streak
         - locale
+        - studyProgress
+        - studyPreferences
         - chatModel
         - editorModel
         - planTier
@@ -6566,37 +6722,6 @@ paths:
       summary: Update card content
       tags:
         - Flashcards
-  /api/flashcards/cards/{id}/study-state:
-    patch:
-      operationId: updateCardStudyState
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateCardStudyStateReq"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Flashcard"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Update card study state
-      tags:
-        - Flashcards
   /api/flashcards/{id}:
     get:
       operationId: getFlashcardSet
@@ -7478,25 +7603,48 @@ paths:
       summary: Set chat, generate and editor model preferences
       tags:
         - Account
-  /api/mistakes:
-    get:
-      operationId: getMistakes
+  /api/me/study-preferences:
+    patch:
+      operationId: setStudyPreferences
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudyPreferences"
+        required: true
       responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Quiz"
-          description: OK
+        "204":
+          description: No Content
         default:
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Review-mistakes quiz
+      summary: Save study preferences
       tags:
-        - Quizzes
+        - Study
+  /api/me/study-progress:
+    patch:
+      operationId: setStudyProgressDefault
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetStudyEnabledReq"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Default study progress setting
+      tags:
+        - Study
   /api/model-slots:
     get:
       operationId: listModelSlots
@@ -8101,6 +8249,27 @@ paths:
       summary: Update standalone quiz sharing
       tags:
         - Quizzes
+  /api/review/ratings:
+    post:
+      operationId: rateReviewItem
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RateReviewItemReq"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Record a review rating
+      tags:
+        - Study
   /api/search:
     get:
       operationId: search
@@ -9149,6 +9318,31 @@ paths:
       summary: Change a workspace member role
       tags:
         - Workspace collaboration
+  /api/workspaces/{id}/review:
+    get:
+      operationId: getWorkspaceReview
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewSession"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Next mixed review session
+      tags:
+        - Study
   /api/workspaces/{id}/sharing:
     patch:
       operationId: updateWorkspaceSharing
@@ -9431,6 +9625,106 @@ paths:
       summary: Workspace stats
       tags:
         - Workspaces
+  /api/workspaces/{id}/study:
+    get:
+      operationId: getWorkspaceStudy
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudySummary"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Study progress in a workspace
+      tags:
+        - Study
+  /api/workspaces/{id}/study/enabled:
+    put:
+      operationId: setWorkspaceStudy
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetStudyEnabledReq"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Turn study progress on or off in a workspace
+      tags:
+        - Study
+  /api/workspaces/{id}/study/items:
+    put:
+      operationId: setStudyItem
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetStudyItemReq"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Mark a file or material read, unread or removed
+      tags:
+        - Study
+  /api/workspaces/{id}/study/reset:
+    post:
+      operationId: resetWorkspaceStudy
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Clear study progress in a workspace
+      tags:
+        - Study
   /api/workspaces/{id}/transfer:
     post:
       operationId: transferWorkspace

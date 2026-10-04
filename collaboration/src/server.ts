@@ -45,6 +45,7 @@ import {
   MATERIAL_DOCUMENT_LIMITS,
   MaterialDocumentLimitError,
 } from './limits.js';
+import { convertAgentMarkdown } from './markdown.js';
 import {
   captureError,
   initErrorReporting,
@@ -1181,6 +1182,13 @@ async function handleHttpRequest(
   }
   if (
     request.method === 'POST' &&
+    request.url === '/internal/markdown/convert'
+  ) {
+    await handleMarkdownRequest(request, response);
+    return;
+  }
+  if (
+    request.method === 'POST' &&
     (request.url === '/internal/documents/inspect' ||
       request.url === '/internal/documents/edit' ||
       request.url === '/internal/documents/undo')
@@ -1291,17 +1299,60 @@ server.httpServer.on('request', (request, response) => {
  * committed delta is then fanned into the live room, so an uncommitted command
  * never reaches peers or a store snapshot.
  */
+function serviceSecretOK(request: IncomingMessage): boolean {
+  const header = request.headers['x-collaboration-secret'];
+  const provided = Array.isArray(header) ? header[0] : header;
+  return (
+    !!provided &&
+    Buffer.byteLength(provided) === Buffer.byteLength(config.secret) &&
+    timingSafeEqual(Buffer.from(provided), Buffer.from(config.secret))
+  );
+}
+
+/** Go sends an agent note's markdown here before storing it. */
+async function handleMarkdownRequest(
+  request: IncomingMessage,
+  response: ServerResponse
+) {
+  if (!serviceSecretOK(request)) {
+    jsonResponse(response, 401, { message: 'invalid service secret' });
+    return;
+  }
+  let body: { markdown?: unknown };
+  try {
+    body = (await readInternalCommandJson(request)) as { markdown?: unknown };
+  } catch {
+    jsonResponse(response, 400, {
+      code: 'invalid_input',
+      message: 'invalid JSON',
+    });
+    return;
+  }
+  if (typeof body?.markdown !== 'string') {
+    jsonResponse(response, 400, {
+      code: 'invalid_input',
+      message: 'markdown is required',
+    });
+    return;
+  }
+  let converted: Awaited<ReturnType<typeof convertAgentMarkdown>>;
+  try {
+    converted = await convertAgentMarkdown(body.markdown);
+  } catch (error) {
+    jsonResponse(response, 400, {
+      code: 'invalid_input',
+      message: (error as Error).message,
+    });
+    return;
+  }
+  jsonResponse(response, 200, converted);
+}
+
 async function handleDocumentRequest(
   request: IncomingMessage,
   response: ServerResponse
 ) {
-  const header = request.headers['x-collaboration-secret'];
-  const provided = Array.isArray(header) ? header[0] : header;
-  if (
-    !provided ||
-    Buffer.byteLength(provided) !== Buffer.byteLength(config.secret) ||
-    !timingSafeEqual(Buffer.from(provided), Buffer.from(config.secret))
-  ) {
+  if (!serviceSecretOK(request)) {
     jsonResponse(response, 401, { message: 'invalid service secret' });
     return;
   }
@@ -1346,7 +1397,6 @@ async function handleDocumentRequest(
         ? {
             guards: (body.guards ?? []) as never,
             inverse: (body.inverse ?? []) as never,
-            studyState: body.studyState,
             undoOf: String(body.undoOf ?? ''),
           }
         : undefined;
@@ -1478,7 +1528,6 @@ interface DocumentRequest {
   };
   provenance?: unknown;
   room?: string;
-  studyState?: Array<{ cardId: string; known: boolean; srs: unknown }>;
   target: { id: string; kind: 'material' | 'source_file' };
   undoOf?: string;
 }

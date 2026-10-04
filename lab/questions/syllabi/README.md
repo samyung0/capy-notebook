@@ -30,5 +30,5 @@ are the subject's `question_types`, with their official names. A bank question
 is one full passage in the real section 1, 2 or 3 pattern, filed under its
 subject area and tagged with the task types it contains.
 
-The round-2 plan is `question-bank-round-2-plan.md` at the repository root.
+Generation status is in `todo-question-bank.md` at the repository root.
 Catalog presence does not mean questions have been generated or published.

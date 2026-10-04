@@ -254,7 +254,8 @@ func TestOwnerColumnsAreCoveredByTransfer(t *testing.T) {
 		"workspace_members.user_id": "membership, rewritten as a role swap instead",
 		"notifications.user_id":     "recipient of a message about the workspace",
 		"workspace_invites.user_id": "the invited party, resolved before acceptance",
-		"card_stats.user_id":        "per-user study progress, not billable bytes",
+		"study_progress.user_id":    "per-user study progress, not billable bytes",
+		"workspace_study.user_id":   "per-user study setting, not billable bytes",
 		"conversations.user_id":     "who held the chat; history stays with them",
 	}
 	covered := map[string]bool{}

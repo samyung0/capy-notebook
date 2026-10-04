@@ -7,6 +7,7 @@
 import type { AccountStatus } from './accountStatus.ts';
 import type { PlanTier } from './planTier.ts';
 import type { Ref } from './ref.ts';
+import type { StudyPreferences } from './studyPreferences.ts';
 import type { SubscriptionStatus } from './subscriptionStatus.ts';
 
 export interface User {
@@ -24,5 +25,7 @@ export interface User {
   name: string;
   planTier: PlanTier;
   streak: number;
+  studyPreferences: StudyPreferences;
+  studyProgress: boolean;
   subscriptionStatus: SubscriptionStatus;
 }

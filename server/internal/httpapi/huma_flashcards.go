@@ -51,10 +51,6 @@ type updateCardInput struct {
 	ID   string `path:"id"`
 	Body apimodel.UpdateCardReq
 }
-type updateCardStudyStateInput struct {
-	ID   string `path:"id"`
-	Body apimodel.UpdateCardStudyStateReq
-}
 
 func (a *api) registerFlashcards(api huma.API) {
 	const tag = "Flashcards"
@@ -66,7 +62,6 @@ func (a *api) registerFlashcards(api huma.API) {
 	reg(api, http.MethodGet, "/api/flashcards/{id}/cards", "listCards", tag, "List cards", http.StatusOK, a.listCards)
 	reg(api, http.MethodPost, "/api/flashcards/{id}/cards", "createCard", tag, "Create a card", http.StatusCreated, a.createCard)
 	reg(api, http.MethodPatch, "/api/flashcards/cards/{id}/content", "updateCard", tag, "Update card content", http.StatusOK, a.updateCard)
-	reg(api, http.MethodPatch, "/api/flashcards/cards/{id}/study-state", "updateCardStudyState", tag, "Update card study state", http.StatusOK, a.updateCardStudyState)
 	reg(api, http.MethodDelete, "/api/flashcards/cards/{id}", "deleteCard", tag, "Delete a card", http.StatusNoContent, a.deleteCard)
 }
 
@@ -193,22 +188,6 @@ func (a *api) updateFlashcardContent(ctx context.Context, in *updateFlashcardCon
 		return nil, hErr(err)
 	}
 	return &cardsOutput{Body: res}, nil
-}
-
-func (a *api) updateCardStudyState(ctx context.Context, in *updateCardStudyStateInput) (*cardOutput, error) {
-	if err := a.assertCardEditor(ctx, in.ID); err != nil {
-		return nil, hErr(err)
-	}
-	p := store.CardStudyStatePatch{Known: in.Body.Known, UpdatedBy: userID(ctx)}
-	if in.Body.Srs != nil {
-		raw := apimodel.EncodeRaw(*in.Body.Srs)
-		p.Srs = &raw
-	}
-	res, err := a.s.UpdateCardStudyState(ctx, in.ID, p)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	return &cardOutput{Body: res}, nil
 }
 
 func (a *api) deleteCard(ctx context.Context, in *cardIDInput) (*Empty, error) {

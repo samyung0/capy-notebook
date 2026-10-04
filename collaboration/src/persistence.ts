@@ -71,12 +71,6 @@ export interface EditOperation {
   toolVersion?: number;
 }
 
-export interface CardStudyState {
-  cardId: string;
-  known: boolean;
-  srs: unknown;
-}
-
 export interface MaterialEditInput {
   actorUserId: string;
   commands: DocumentCommand[];
@@ -90,7 +84,6 @@ export interface MaterialEditInput {
   undo?: {
     guards: GuardTarget[];
     inverse: DocumentCommand[];
-    studyState?: CardStudyState[];
     undoOf: string;
   };
 }
@@ -958,28 +951,13 @@ export class YjsDocumentStore {
       const previous = measureMaterialValue(plateValue(merged));
 
       let commands = input.commands;
-      let studyState: CardStudyState[] = [];
       if (input.undo) {
         verifyMaterialGuards(merged, input.undo.guards);
         commands = input.undo.inverse;
-        studyState = input.undo.studyState ?? [];
       }
+      // Review state is per user and keyed by card id, so removing or
+      // restoring a card through Undo needs no study bookkeeping here.
       const outcome = applyMaterialCommands(merged, commands);
-      if (input.undo && outcome.removedCardIds.length) {
-        // Undoing an insertion must not discard study progress the user has
-        // since recorded on the inserted card.
-        const progressed = await client.query<{ card_id: string }>(
-          `SELECT card_id FROM card_stats WHERE material_id=$1 AND card_id=ANY($2)
-             AND (known OR COALESCE((srs->>'reps')::int, 0) > 0)`,
-          [materialId, outcome.removedCardIds]
-        );
-        if (progressed.rowCount) {
-          throw new EditError(
-            'stale_target',
-            'a card gained study progress after this edit'
-          );
-        }
-      }
       const value = plateValue(merged);
       assertCanonicalMaterialValue(value, boundary.materialKind);
       const metrics = measureMaterialValue(value);
@@ -1058,46 +1036,8 @@ export class YjsDocumentStore {
             'undo is no longer available for this edit'
           );
         }
-        // Retained study rows of re-inserted cards are restored by the Go
-        // projection once it reaches this version.
-        const reinserted = new Set(outcome.insertedCardIds);
-        for (const row of studyState) {
-          if (!reinserted.has(row.cardId)) continue;
-          await client.query(
-            `INSERT INTO agent_card_state_restores
-             (operation_id, material_id, card_id, srs, known, restore_at_version)
-             VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (operation_id, card_id) DO NOTHING`,
-            [
-              input.operation.id,
-              materialId,
-              row.cardId,
-              JSON.stringify(row.srs),
-              row.known,
-              version,
-            ]
-          );
-        }
       } else {
-        let retained: CardStudyState[] = [];
-        if (outcome.removedCardIds.length) {
-          const rows = await client.query<{
-            card_id: string;
-            srs: unknown;
-            known: boolean;
-          }>(
-            'SELECT card_id, srs, known FROM card_stats WHERE material_id=$1 AND card_id=ANY($2)',
-            [materialId, outcome.removedCardIds]
-          );
-          retained = rows.rows.map((row) => ({
-            cardId: row.card_id,
-            known: row.known,
-            srs: row.srs,
-          }));
-        }
-        const inverse = JSON.stringify({
-          commands: outcome.inverse,
-          studyState: retained,
-        });
+        const inverse = JSON.stringify({ commands: outcome.inverse });
         const guards = JSON.stringify(outcome.guards);
         const inverseBytes =
           Buffer.byteLength(inverse) + Buffer.byteLength(guards);

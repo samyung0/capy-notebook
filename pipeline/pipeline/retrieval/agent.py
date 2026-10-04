@@ -22,7 +22,6 @@ from typing import Any
 from .. import elitellm, obs, registry
 from ..config import cfg
 from ..prompts import chat as chat_prompts
-from ..prompts import curate as curate_prompts
 from . import (
     accounting,
     capture,
@@ -30,37 +29,34 @@ from . import (
     compact,
     events,
     evidence,
-    library,
     models,
     pending,
     store,
     tools,
+    turn_context,
 )
 from .chunking import estimate_tokens
 from .limits import (
-    CURATE_MIN_CONTEXT_WINDOW_TOKENS,
-    CURATE_STALL_RESPONSES,
-    CURATE_TOOLS_PER_TURN,
-    CURATE_WRITE_ERROR_GRACE,
-    CURATE_WRITE_ERROR_GRACE_MAX,
-    KNOWLEDGE_TOOLS_PER_RESPONSE,
+    LEDGER_TOOLS_PER_TURN,
     MAX_CONCURRENT,
     PLANNING_RESPONSES,
+    STALL_RESPONSES,
     STOP_ANSWER,
     STOP_CLIENT_GONE,
-    STOP_CURATE_STALL,
     STOP_ERROR,
     STOP_PLANNING_CAP,
+    STOP_STALL,
     STOP_TOOL_CAP,
     STOP_TURN_FAILED,
     TOOLS_PER_RESPONSE,
-    TOOLS_PER_TURN,
+    WRITE_ERROR_GRACE,
+    WRITE_ERROR_GRACE_MAX,
     TurnBudget,
 )
 
-# The curate write tools: an errored call is an attempt at progress.
+# The material write tools: an errored call is an attempt at progress.
 WRITE_TOOLS = frozenset({"create_material", "edit_document"})
-from .openui import LangRenderer, PlainRenderer
+from .openui import LangRenderer
 from .response_guard import (
     FLAGGED_CODE,
     FLAGGED_MESSAGE,
@@ -214,7 +210,7 @@ async def run_agent(
     """The turn, plus the one piece of it that outlives the turn.
 
     However the loop ends — the answer, the stall guard, a failure, a lost
-    client — a curate turn's ledger changes go back to the conversation.
+    client — the turn's ledger changes go back to the conversation.
     """
     try:
         async for event in _run_turn(
@@ -257,16 +253,15 @@ async def _run_turn(
         yield _with_usage(events.error(str(exc), "model_unavailable"))
         return
 
-    if ctx.curate:
-        reason = await _curate_unavailable(ctx, spec)
-        if reason:
-            log.warning("curate turn refused: %s", reason)
-            yield _with_usage(
-                events.error(
-                    "Curate mode is unavailable for this chat.", "model_unavailable"
-                )
-            )
-            return
+    if ctx.library:
+        # A library that is down or empty leaves the turn on the workspace
+        # alone rather than failing it.
+        try:
+            await tools.load_library_catalog(ctx)
+        except Exception:  # any failure to reach the library
+            log.warning("knowledge library unavailable for this turn", exc_info=True)
+        if not ctx.library_catalog:
+            ctx.library = False
 
     if ctx.file_ids is not None:
         active_scope = await tools.resolve_current_scope(ctx)
@@ -281,7 +276,7 @@ async def _run_turn(
         checkpoint=checkpoint,
         history=prior,
         query=query,
-        curate=ctx.curate,
+        library=ctx.library,
     )
     query_msg = messages[-1]
 
@@ -332,30 +327,32 @@ async def _run_turn(
         state and state.credits_exhausted and state.terminal_call_allowed
     )
     step = 0
-    # Curate has no planning ceiling; the stall guard is what ends a turn whose
-    # responses stop changing the ledger, and it is its own stop reason.
+    # A turn with ledger todos has no planning ceiling; the stall guard is what
+    # ends one whose responses stop completing todos, and it is its own stop
+    # reason.
     stalled = 0
     stall_stop = False
     tool_stop = False
-    # Errored writes earn the guard extra responses (limits.CURATE_WRITE_ERROR_GRACE).
+    # Errored writes earn the guard extra responses (limits.WRITE_ERROR_GRACE).
     write_errors = 0
 
-    while ctx.curate or step < planning_cap or terminal_pending:
+    while ctx.ledger.active or step < planning_cap or terminal_pending:
         if _client_gone(client):
             budget.stop_reason = STOP_CLIENT_GONE
             return
         terminal_call = terminal_pending
         terminal_pending = False
-        if ctx.curate:
-            stall_limit = CURATE_STALL_RESPONSES + CURATE_WRITE_ERROR_GRACE * min(
-                write_errors, CURATE_WRITE_ERROR_GRACE_MAX
-            )
-            tool_stop = budget.tool_calls_turn >= CURATE_TOOLS_PER_TURN
+        building = ctx.ledger.active
+        stall_limit = STALL_RESPONSES + WRITE_ERROR_GRACE * min(
+            write_errors, WRITE_ERROR_GRACE_MAX
+        )
+        if building:
+            tool_stop = budget.tool_calls_turn >= LEDGER_TOOLS_PER_TURN
             tools_off = terminal_call or tool_stop or stalled >= stall_limit
             if tools_off and not terminal_call and not tool_stop:
                 stall_stop = True
                 log.warning(
-                    "curate stall guard: %d responses completed no todo "
+                    "stall guard: %d responses completed no todo "
                     "(limit %d after %d errored writes); %d of %d ledger todos done",
                     stalled,
                     stall_limit,
@@ -381,22 +378,20 @@ async def _run_turn(
             # exchange over-counts its captures once; recompute inside compaction
             # if a turn ever fails on that margin.
             image_tokens = capture.image_tokens(ctx.captures, messages)
-            if ctx.curate:
+            if ctx.library:
                 ctx.library_evidence.activate(messages, ctx.ledger)
-            ledger_message = _ledger_message(ctx, query, final=tools_off)
             ledger_allowance = ""
-            if ledger_message and ctx.curate and not tools_off:
-                remaining = stall_limit - stalled
+            if building and not tools_off:
                 ledger_allowance = (
-                    f"\nResponses remaining without completing a todo: {remaining}. "
+                    f"\nResponses remaining without completing a todo: {stall_limit - stalled}. "
                     "Batch needed reads and page captures, then write from the evidence "
                     "already read. Searching does not reset this allowance. "
-                    f"Tool calls remaining this turn: {CURATE_TOOLS_PER_TURN - budget.tool_calls_turn}."
+                    f"Tool calls remaining this turn: {LEDGER_TOOLS_PER_TURN - budget.tool_calls_turn}."
                 )
-                ledger_message["content"] += ledger_allowance
-            ledger_tokens = (
-                estimate_tokens(str(ledger_message["content"])) if ledger_message else 0
+            ledger_message = turn_context.message(
+                ctx, final=tools_off, allowance=ledger_allowance
             )
+            ledger_tokens = estimate_tokens(str(ledger_message["content"]))
             outside = image_tokens + ledger_tokens
             pending_message, pending_reserve, omitted = pending.reserve(
                 messages, ctx.pending_sources, spec, active_schemas, extra=outside
@@ -435,12 +430,12 @@ async def _run_turn(
             if _client_gone(client):
                 budget.stop_reason = STOP_CLIENT_GONE
                 return
-            if ctx.curate:
+            if ctx.library:
                 # Compacted IDs/summaries cannot stand in for retained full reads.
                 ctx.library_evidence.activate(messages, ctx.ledger)
-                ledger_message = _ledger_message(ctx, query, final=tools_off)
-                if not tools_off:
-                    ledger_message["content"] += ledger_allowance
+            ledger_message = turn_context.message(
+                ctx, final=tools_off, allowance=ledger_allowance
+            )
             request_messages = capture.inject_images(
                 _inject_ledger(
                     pending.inject(messages, pending_message), ledger_message
@@ -488,11 +483,7 @@ async def _run_turn(
                     q.put_nowait(None)
 
             finisher = asyncio.create_task(_finish())
-            renderer = (
-                PlainRenderer()
-                if ctx.curate
-                else LangRenderer(lambda: len(ctx.citations))
-            )
+            renderer = LangRenderer(lambda: len(ctx.citations))
             # Text is held back until its shape is known: a program streams from
             # its first statement; plain prose (narration, or an answer that
             # ignored the format) is emitted once the response ends. The citation list
@@ -594,8 +585,8 @@ async def _run_turn(
         text = assembled.text.strip()
         state = accounting.current()
         exhausted = bool(state and state.credits_exhausted)
-        # A tools-off call ends the turn: curate has no planning ceiling, so a
-        # call the model emits anyway must not start another round.
+        # A tools-off call ends the turn: a ledger turn has no planning
+        # ceiling, so a call the model emits anyway must not start another round.
         if terminal_call or tools_off:
             calls = []
         if calls:
@@ -703,18 +694,6 @@ async def _run_turn(
                 started = True
                 yield events.block_delta(block_id, answer)
             yield events.block_end(block_id, "answer")
-            if ctx.curate:
-                # No citations in curate mode: the attribution the user sees is
-                # the provenance footer on each created material. An answer the
-                # stall guard forced still reports the guard.
-                budget.stop_reason = (
-                    STOP_TOOL_CAP
-                    if tool_stop
-                    else STOP_CURATE_STALL
-                    if stall_stop
-                    else STOP_ANSWER
-                )
-                break
             cited = [n for n in cited_order if 1 <= n <= len(ctx.citations)]
             final_citations = await citation_regions.refine(
                 ctx.workspace_id, [ctx.citations[n - 1] for n in cited]
@@ -727,35 +706,41 @@ async def _run_turn(
             if final_citations != sent_citations or not sent_citations:
                 citation_version += 1
                 yield events.citations(final_citations, citation_version, final=True)
-            budget.stop_reason = STOP_ANSWER
+            # An answer the stall guard or the tool cap forced still reports it.
+            budget.stop_reason = (
+                STOP_TOOL_CAP
+                if tool_stop
+                else STOP_STALL
+                if stall_stop
+                else STOP_ANSWER
+            )
             break
-        if not ctx.curate:
+        if not building:
             budget.stop_reason = STOP_ERROR
             await _record_searches(ctx, cited_order)
             yield _with_usage(
                 events.error("The model returned an empty answer.", "invalid_answer")
             )
             return
-        # No text and no tool calls. In curate that is one wasted response, not
-        # the end of the turn: it completes no todo, so it counts against the
-        # stall guard and the loop asks again. Once tools are already off there
-        # is nothing left to ask for. Only the stall guard reports itself: a
-        # silent terminal call is a billing cutoff, and it reports what the same
-        # call reports outside curate.
-        if ctx.curate and not tools_off:
+        # No text and no tool calls. In a ledger turn that is one wasted
+        # response, not the end of the turn: it completes no todo, so it counts
+        # against the stall guard and the loop asks again. Once tools are
+        # already off there is nothing left to ask for. Only the stall guard
+        # reports itself: a silent terminal call is a billing cutoff.
+        if not tools_off:
             stalled += 1
             continue
         budget.stop_reason = budget.stop_reason or (
             STOP_TOOL_CAP
             if tool_stop
-            else STOP_CURATE_STALL
+            else STOP_STALL
             if stall_stop
             else STOP_PLANNING_CAP
         )
         break
 
     if not budget.stop_reason:
-        # Only a non-curate turn can leave the loop: curate has no ceiling.
+        # Only a turn without ledger todos leaves the loop at its ceiling.
         budget.stop_reason = STOP_PLANNING_CAP
 
     await _record_searches(ctx, cited_order)
@@ -772,41 +757,6 @@ async def _run_turn(
         done["usage"] = usage.as_dict()
         done["tokenCount"] = usage.input_tokens + usage.output_tokens
     yield done
-
-
-async def _curate_unavailable(ctx: ToolContext, spec: models.ModelConfig) -> str:
-    """Why this turn cannot run in curate mode, or empty when it can.
-
-    The subject list read is the check: a library that is configured but down
-    has to become a typed ``model_unavailable`` here rather than a generic
-    ``agent_failed`` from the first tool call.
-    """
-    if not library.enabled():
-        return "the knowledge library is not configured"
-    window = registry.context_window(spec)
-    if window < CURATE_MIN_CONTEXT_WINDOW_TOKENS:
-        return (
-            f"{spec.provider_slug}/{spec.model_slug} has a {window}-token window, "
-            f"below the {CURATE_MIN_CONTEXT_WINDOW_TOKENS} curate mode needs"
-        )
-    try:
-        await tools.load_library_catalog(ctx)
-    except Exception as exc:  # noqa: BLE001 - any failure to reach the library
-        return f"the knowledge library did not answer: {exc}"
-    if not ctx.library_catalog:
-        # No subject holds an excerpt, so nothing is published: every knowledge
-        # call would come back empty or refused, which is not a workload the
-        # turn should spend its stall budget discovering.
-        return "the knowledge library has no published subjects"
-    return ""
-
-
-def _ledger_message(
-    ctx: ToolContext, query: str, *, final: bool = False
-) -> dict[str, Any] | None:
-    if not ctx.curate:
-        return None
-    return curate_prompts.ledger_message(query, ctx.ledger, final=final)
 
 
 def _inject_ledger(
@@ -909,7 +859,7 @@ async def _run_tools(
             budget,
             len(accepted),
             search_used=any(name == "search_workspace" for _, _, name in accepted),
-            curate=ctx.curate,
+            building=ctx.ledger.active,
         )
         if limit_text:
             result = tools._refused(limit_text, code="limit_reached")
@@ -982,7 +932,7 @@ async def _run_tools(
     for call, result in ordered:
         numbered = tools.assign_citations(ctx, result.passages)
         text = tools.limit_tool_result(tools.render_result(result, numbered))
-        if ctx.curate:
+        if ctx.library:
             args = _parse_args(call.arguments)
             ctx.library_evidence.observe(call.name, args, result, text, ctx.ledger)
             ctx.library_evidence.wrote(call.name, args, result)
@@ -1008,33 +958,22 @@ def _limit_for(
     accepted_here: int,
     *,
     search_used: bool = False,
-    curate: bool = False,
+    building: bool = False,
 ) -> str | None:
     if call.name == "search_workspace" and search_used:
         return (
             "This response already used search_workspace. Use those passages, "
             "or search again in the next step."
         )
-    if curate:
-        if budget.tool_calls_turn >= CURATE_TOOLS_PER_TURN:
-            return (
-                f"This turn already used its {CURATE_TOOLS_PER_TURN} tool-call limit. "
-                "Report the materials created and any remaining work."
-            )
-        if accepted_here >= KNOWLEDGE_TOOLS_PER_RESPONSE:
-            return (
-                f"This response already used its {KNOWLEDGE_TOOLS_PER_RESPONSE} "
-                "tool-call limit. Continue in the next step."
-            )
-        return None
     if accepted_here >= TOOLS_PER_RESPONSE:
         return (
             f"This response already used its {TOOLS_PER_RESPONSE} tool-call limit. "
-            "Answer from the results you have."
+            "Continue in the next step."
         )
-    if budget.tool_calls_turn >= TOOLS_PER_TURN:
+    # Without a ledger the response ceiling bounds the turn.
+    if building and budget.tool_calls_turn >= LEDGER_TOOLS_PER_TURN:
         return (
-            f"This turn already used its {TOOLS_PER_TURN} tool-call limit. "
-            "Answer from the results you have."
+            f"This turn already used its {LEDGER_TOOLS_PER_TURN} tool-call limit. "
+            "Report the materials created and any remaining work."
         )
     return None

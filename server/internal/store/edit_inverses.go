@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -38,14 +37,6 @@ type EditInverse struct {
 	UndoStatus   agenttools.UndoStatus `json:"undoStatus"`
 	UndoReason   string                `json:"undoReason,omitempty"`
 	UndoneBy     string                `json:"undoneBy,omitempty"`
-}
-
-// CardStateRestore is one flashcard study row retained by a supported removal
-// so an Undo can put the exact known/SRS state back through the projection.
-type CardStateRestore struct {
-	CardID string          `json:"cardId"`
-	SRS    json.RawMessage `json:"srs"`
-	Known  bool            `json:"known"`
 }
 
 // ErrUndoUnavailable means the edit's inverse was released or already used.
@@ -139,70 +130,4 @@ func (s *Store) UndoStatuses(ctx context.Context, operationIDs []string) (map[st
 		out[id] = agenttools.UndoRef{OperationID: id, Status: agenttools.UndoStatus(status), Reason: reason}
 	}
 	return out, rows.Err()
-}
-
-// cardStateRestoresTx records the study rows an Undo re-inserts, to be applied
-// by the projection once it reaches restoreAtVersion.
-func cardStateRestoresTx(ctx context.Context, tx pgx.Tx, operationID, materialID string, restoreAtVersion int64, restores []CardStateRestore) error {
-	for _, r := range restores {
-		if _, err := tx.Exec(ctx, `INSERT INTO agent_card_state_restores
-			(operation_id, material_id, card_id, srs, known, restore_at_version)
-			VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (operation_id, card_id) DO NOTHING`,
-			operationID, materialID, r.CardID, r.SRS, r.Known, restoreAtVersion); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// applyCardStateRestoresTx runs inside ProjectMaterialContent after the card
-// sync: every pending restoration whose version has been reached overwrites
-// the fresh default row with the retained state, exactly once. A card that has
-// since disappeared again keeps its restoration pending for the next reappear
-// projection, so a skipped or repeated projection cannot restore twice or lose
-// the retained state.
-func applyCardStateRestoresTx(ctx context.Context, tx pgx.Tx, materialID string, projectedVersion int64, presentCardIDs []string, now time.Time) error {
-	present := make(map[string]bool, len(presentCardIDs))
-	for _, id := range presentCardIDs {
-		present[id] = true
-	}
-	rows, err := tx.Query(ctx, `SELECT operation_id, card_id, srs, known FROM agent_card_state_restores
-		WHERE material_id=$1 AND applied_at IS NULL AND restore_at_version <= $2
-		ORDER BY restore_at_version, operation_id FOR UPDATE`, materialID, projectedVersion)
-	if err != nil {
-		return err
-	}
-	type pending struct {
-		op, card string
-		srs      json.RawMessage
-		known    bool
-	}
-	var due []pending
-	for rows.Next() {
-		var p pending
-		if err := rows.Scan(&p.op, &p.card, &p.srs, &p.known); err != nil {
-			rows.Close()
-			return err
-		}
-		due = append(due, p)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for _, p := range due {
-		if !present[p.card] {
-			continue
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO card_stats (card_id, material_id, srs, known) VALUES ($1,$2,$3,$4)
-			ON CONFLICT (card_id) DO UPDATE SET srs=EXCLUDED.srs, known=EXCLUDED.known`,
-			p.card, materialID, p.srs, p.known); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE agent_card_state_restores SET applied_at=$3
-			WHERE operation_id=$1 AND card_id=$2`, p.op, p.card, now); err != nil {
-			return err
-		}
-	}
-	return nil
 }

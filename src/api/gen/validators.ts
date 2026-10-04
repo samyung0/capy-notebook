@@ -903,10 +903,8 @@ export const ExploreFlashcardSetsResponseItem = zod.object({
   "cardCount": zod.int(),
   "clones": zod.int(),
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
-  "dueCount": zod.int(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
-  "knownPct": zod.int(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
@@ -1528,10 +1526,8 @@ export const CreateFlashcardSetResponse = zod.object({
   "canEditContent": zod.boolean(),
   "cardCount": zod.int(),
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
-  "dueCount": zod.int(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
-  "knownPct": zod.int(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
@@ -1606,67 +1602,8 @@ export const UpdateCardResponse = zod.object({
   "back": zod.string(),
   "front": zod.string(),
   "id": zod.string(),
-  "known": zod.boolean(),
   "materialId": zod.string(),
-  "revision": zod.int(),
-  "srs": zod.object({
-  "difficulty": zod.number(),
-  "due": zod.string(),
-  "elapsed_days": zod.int(),
-  "lapses": zod.int(),
-  "last_review": zod.string().optional(),
-  "learning_steps": zod.int().optional(),
-  "reps": zod.int(),
-  "scheduled_days": zod.int(),
-  "stability": zod.number(),
-  "state": zod.int()
-})
-})
-
-
-/**
- * @summary Update card study state
- */
-export const UpdateCardStudyStateParams = zod.object({
-  "id": zod.string()
-})
-
-export const UpdateCardStudyStateBody = zod.object({
-  "known": zod.boolean().optional(),
-  "srs": zod.object({
-  "difficulty": zod.number(),
-  "due": zod.string(),
-  "elapsed_days": zod.int(),
-  "lapses": zod.int(),
-  "last_review": zod.string().optional(),
-  "learning_steps": zod.int().optional(),
-  "reps": zod.int(),
-  "scheduled_days": zod.int(),
-  "stability": zod.number(),
-  "state": zod.int()
-}).optional()
-})
-
-export const UpdateCardStudyStateResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "back": zod.string(),
-  "front": zod.string(),
-  "id": zod.string(),
-  "known": zod.boolean(),
-  "materialId": zod.string(),
-  "revision": zod.int(),
-  "srs": zod.object({
-  "difficulty": zod.number(),
-  "due": zod.string(),
-  "elapsed_days": zod.int(),
-  "lapses": zod.int(),
-  "last_review": zod.string().optional(),
-  "learning_steps": zod.int().optional(),
-  "reps": zod.int(),
-  "scheduled_days": zod.int(),
-  "stability": zod.number(),
-  "state": zod.int()
-})
+  "revision": zod.int()
 })
 
 
@@ -1683,10 +1620,8 @@ export const GetFlashcardSetResponse = zod.object({
   "canEditContent": zod.boolean(),
   "cardCount": zod.int(),
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
-  "dueCount": zod.int(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
-  "knownPct": zod.int(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
@@ -1731,21 +1666,8 @@ export const ListCardsResponseItem = zod.object({
   "back": zod.string(),
   "front": zod.string(),
   "id": zod.string(),
-  "known": zod.boolean(),
   "materialId": zod.string(),
-  "revision": zod.int(),
-  "srs": zod.object({
-  "difficulty": zod.number(),
-  "due": zod.string(),
-  "elapsed_days": zod.int(),
-  "lapses": zod.int(),
-  "last_review": zod.string().optional(),
-  "learning_steps": zod.int().optional(),
-  "reps": zod.int(),
-  "scheduled_days": zod.int(),
-  "stability": zod.number(),
-  "state": zod.int()
-})
+  "revision": zod.int()
 })
 export const ListCardsResponse = zod.array(ListCardsResponseItem)
 
@@ -1775,21 +1697,8 @@ export const CreateCardResponse = zod.object({
   "back": zod.string(),
   "front": zod.string(),
   "id": zod.string(),
-  "known": zod.boolean(),
   "materialId": zod.string(),
-  "revision": zod.int(),
-  "srs": zod.object({
-  "difficulty": zod.number(),
-  "due": zod.string(),
-  "elapsed_days": zod.int(),
-  "lapses": zod.int(),
-  "last_review": zod.string().optional(),
-  "learning_steps": zod.int().optional(),
-  "reps": zod.int(),
-  "scheduled_days": zod.int(),
-  "stability": zod.number(),
-  "state": zod.int()
-})
+  "revision": zod.int()
 })
 
 
@@ -1806,10 +1715,8 @@ export const CloneFlashcardSetResponse = zod.object({
   "canEditContent": zod.boolean(),
   "cardCount": zod.int(),
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
-  "dueCount": zod.int(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
-  "knownPct": zod.int(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
@@ -1871,21 +1778,8 @@ export const UpdateFlashcardContentResponseItem = zod.object({
   "back": zod.string(),
   "front": zod.string(),
   "id": zod.string(),
-  "known": zod.boolean(),
   "materialId": zod.string(),
-  "revision": zod.int(),
-  "srs": zod.object({
-  "difficulty": zod.number(),
-  "due": zod.string(),
-  "elapsed_days": zod.int(),
-  "lapses": zod.int(),
-  "last_review": zod.string().optional(),
-  "learning_steps": zod.int().optional(),
-  "reps": zod.int(),
-  "scheduled_days": zod.int(),
-  "stability": zod.number(),
-  "state": zod.int()
-})
+  "revision": zod.int()
 })
 export const UpdateFlashcardContentResponse = zod.array(UpdateFlashcardContentResponseItem)
 
@@ -1912,10 +1806,8 @@ export const UpdateFlashcardSetResponse = zod.object({
   "canEditContent": zod.boolean(),
   "cardCount": zod.int(),
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
-  "dueCount": zod.int(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
-  "knownPct": zod.int(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
@@ -1965,10 +1857,8 @@ export const UpdateFlashcardSetSharingResponse = zod.object({
   "canEditContent": zod.boolean(),
   "cardCount": zod.int(),
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
-  "dueCount": zod.int(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
-  "knownPct": zod.int(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
@@ -2118,10 +2008,8 @@ export const ListOwnedMaterialsResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "chapterName": zod.string(),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "dueCount": zod.int().optional(),
   "id": zod.string(),
   "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
-  "knownPct": zod.int().optional(),
   "parentMaterialId": zod.string(),
   "parentTitle": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
@@ -2649,6 +2537,12 @@ export const UpdateMaterialSharingResponse = zod.object({
 /**
  * @summary Current user
  */
+export const getMeResponseStudyPreferencesFlashcardsPerChapterMax = 100;
+
+export const getMeResponseStudyPreferencesQuizLengthMax = 50;
+
+
+
 export const GetMeResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "account": zod.object({
@@ -2681,6 +2575,16 @@ export const GetMeResponse = zod.object({
   "name": zod.string(),
   "planTier": zod.enum(['free', 'pro']),
   "streak": zod.int(),
+  "studyPreferences": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "explainerStyle": zod.enum(['brief', 'standard', 'detailed']).optional(),
+  "flashcardsPerChapter": zod.int().min(1).max(getMeResponseStudyPreferencesFlashcardsPerChapterMax).optional(),
+  "miniChecks": zod.boolean().optional(),
+  "practice": zod.enum(['none', 'quiz', 'flashcards', 'both']).optional(),
+  "quizLength": zod.int().min(1).max(getMeResponseStudyPreferencesQuizLengthMax).optional(),
+  "visualAids": zod.enum(['fewer', 'more']).optional()
+}),
+  "studyProgress": zod.boolean(),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
 })
 
@@ -2697,6 +2601,12 @@ export const UpdateMeBody = zod.object({
   "avatarIconId": zod.string().regex(updateMeBodyAvatarIconIdRegExp).optional().describe('Curated icon ID; empty restores the current Clerk photo; omitted preserves the selection'),
   "name": zod.string().min(1).max(updateMeBodyNameMax).describe('Display name')
 })
+
+export const updateMeResponseStudyPreferencesFlashcardsPerChapterMax = 100;
+
+export const updateMeResponseStudyPreferencesQuizLengthMax = 50;
+
+
 
 export const UpdateMeResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
@@ -2730,6 +2640,16 @@ export const UpdateMeResponse = zod.object({
   "name": zod.string(),
   "planTier": zod.enum(['free', 'pro']),
   "streak": zod.int(),
+  "studyPreferences": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "explainerStyle": zod.enum(['brief', 'standard', 'detailed']).optional(),
+  "flashcardsPerChapter": zod.int().min(1).max(updateMeResponseStudyPreferencesFlashcardsPerChapterMax).optional(),
+  "miniChecks": zod.boolean().optional(),
+  "practice": zod.enum(['none', 'quiz', 'flashcards', 'both']).optional(),
+  "quizLength": zod.int().min(1).max(updateMeResponseStudyPreferencesQuizLengthMax).optional(),
+  "visualAids": zod.enum(['fewer', 'more']).optional()
+}),
+  "studyProgress": zod.boolean(),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
 })
 
@@ -2814,47 +2734,34 @@ export const SetModelPrefsResponse = zod.void()
 
 
 /**
- * @summary Review-mistakes quiz
+ * @summary Save study preferences
  */
-export const GetMistakesResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "canEdit": zod.boolean(),
-  "canEditContent": zod.boolean(),
-  "chapters": zod.array(zod.string()),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "id": zod.string(),
-  "isOwner": zod.boolean(),
-  "name": zod.string(),
-  "privacy": zod.enum(['private', 'public', 'link']),
-  "provenance": zod.object({
-  "books": zod.array(zod.object({
-  "authors": zod.array(zod.string()),
-  "edition": zod.string().optional(),
-  "excerptIds": zod.array(zod.string()),
-  "id": zod.string(),
-  "license": zod.string().optional(),
-  "licenseUrl": zod.string().optional(),
-  "sourceUrl": zod.string().optional(),
-  "title": zod.string(),
-  "version": zod.int()
-})),
-  "license": zod.string().optional(),
-  "web": zod.array(zod.object({
-  "authors": zod.array(zod.string()),
-  "license": zod.string(),
-  "licenseUrl": zod.string().optional(),
-  "publisher": zod.string().optional(),
-  "retrievedAt": zod.string(),
-  "title": zod.string(),
-  "url": zod.string()
-})).nullish()
-}).optional(),
-  "questions": zod.array(zod.record(zod.string(), zod.unknown())),
-  "revision": zod.int(),
-  "sharePath": zod.string().optional(),
-  "workspaceId": zod.string(),
-  "workspaceName": zod.string()
+export const setStudyPreferencesBodyFlashcardsPerChapterMax = 100;
+
+export const setStudyPreferencesBodyQuizLengthMax = 50;
+
+
+
+export const SetStudyPreferencesBody = zod.object({
+  "explainerStyle": zod.enum(['brief', 'standard', 'detailed']).optional(),
+  "flashcardsPerChapter": zod.int().min(1).max(setStudyPreferencesBodyFlashcardsPerChapterMax).optional(),
+  "miniChecks": zod.boolean().optional(),
+  "practice": zod.enum(['none', 'quiz', 'flashcards', 'both']).optional(),
+  "quizLength": zod.int().min(1).max(setStudyPreferencesBodyQuizLengthMax).optional(),
+  "visualAids": zod.enum(['fewer', 'more']).optional()
 })
+
+export const SetStudyPreferencesResponse = zod.void()
+
+
+/**
+ * @summary Default study progress setting
+ */
+export const SetStudyProgressDefaultBody = zod.object({
+  "enabled": zod.boolean()
+})
+
+export const SetStudyProgressDefaultResponse = zod.void()
 
 
 /**
@@ -3274,8 +3181,7 @@ export const CreateAttemptBody = zod.object({
   "answers": zod.record(zod.string(), zod.unknown()).optional().describe('User answers keyed by stable part id'),
   "correct": zod.number().min(createAttemptBodyCorrectMin),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())).nullish().describe('Question snapshot taken at submit time'),
-  "total": zod.number().gt(createAttemptBodyTotalExclusiveMin),
-  "wrong": zod.array(zod.record(zod.string(), zod.unknown())).nullish().describe('Questions answered incorrectly')
+  "total": zod.number().gt(createAttemptBodyTotalExclusiveMin)
 })
 
 export const CreateAttemptResponse = zod.object({
@@ -3524,6 +3430,28 @@ export const UpdateQuizSharingResponse = zod.object({
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
+
+
+/**
+ * @summary Record a review rating
+ */
+
+
+export const rateReviewItemBodyRatingMax = 4;
+
+export const rateReviewItemBodyScoreMin = 0;
+export const rateReviewItemBodyScoreMax = 1;
+
+
+
+export const RateReviewItemBody = zod.object({
+  "itemId": zod.string().min(1),
+  "materialId": zod.string().min(1),
+  "rating": zod.int().min(1).max(rateReviewItemBodyRatingMax).optional().describe('A flashcard\'s button: 1 Again .. 4 Easy'),
+  "score": zod.number().min(rateReviewItemBodyScoreMin).max(rateReviewItemBodyScoreMax).optional().describe('A question\'s awarded marks over its marks')
+})
+
+export const RateReviewItemResponse = zod.void()
 
 
 /**
@@ -4306,7 +4234,6 @@ export const ListConversationsParams = zod.object({
 export const ListConversationsResponseItem = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "curate": zod.boolean(),
   "id": zod.string(),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
@@ -4327,14 +4254,12 @@ export const createConversationBodyTitleMax = 60;
 
 
 export const CreateConversationBody = zod.object({
-  "curate": zod.boolean().optional().describe('Open the thread in curate mode (knowledge library)'),
   "title": zod.string().max(createConversationBodyTitleMax).optional().describe('Optional thread title')
 })
 
 export const CreateConversationResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "curate": zod.boolean(),
   "id": zod.string(),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
@@ -4611,6 +4536,33 @@ export const UpdateWorkspaceMemberBody = zod.object({
 })
 
 export const UpdateWorkspaceMemberResponse = zod.void()
+
+
+/**
+ * @summary Next mixed review session
+ */
+export const GetWorkspaceReviewParams = zod.object({
+  "id": zod.string()
+})
+
+export const GetWorkspaceReviewResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
+  "back": zod.string().optional(),
+  "front": zod.string().optional(),
+  "itemId": zod.string(),
+  "kind": zod.enum(['card', 'question']),
+  "materialId": zod.string(),
+  "materialTitle": zod.string(),
+  "question": zod.record(zod.string(), zod.unknown()).optional()
+})),
+  "sets": zod.array(zod.object({
+  "items": zod.int(),
+  "kind": zod.enum(['quiz', 'flashcards']),
+  "materialId": zod.string(),
+  "title": zod.string()
+}))
+})
 
 
 /**
@@ -4928,6 +4880,84 @@ export const GetWorkspaceStatsResponse = zod.object({
   "pendingNotes": zod.int(),
   "quizzes": zod.int()
 })
+
+
+/**
+ * @summary Study progress in a workspace
+ */
+export const GetWorkspaceStudyParams = zod.object({
+  "id": zod.string()
+})
+
+export const GetWorkspaceStudyResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "enabled": zod.boolean(),
+  "hardest": zod.array(zod.object({
+  "itemId": zod.string(),
+  "lapses": zod.int(),
+  "materialId": zod.string(),
+  "materialKind": zod.enum(['quiz', 'flashcards']),
+  "materialTitle": zod.string(),
+  "text": zod.string()
+})),
+  "items": zod.array(zod.object({
+  "fileId": zod.string().optional(),
+  "materialId": zod.string().optional(),
+  "state": zod.enum(['started', 'done', 'removed'])
+})),
+  "recentAttempts": zod.array(zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "chapters": zod.array(zod.string()),
+  "correct": zod.number(),
+  "id": zod.string(),
+  "materialId": zod.string().nullable(),
+  "pct": zod.int(),
+  "quizName": zod.string(),
+  "takenAt": zod.iso.datetime({"offset":true}),
+  "total": zod.number(),
+  "workspaceName": zod.string()
+}))
+})
+
+
+/**
+ * @summary Turn study progress on or off in a workspace
+ */
+export const SetWorkspaceStudyParams = zod.object({
+  "id": zod.string()
+})
+
+export const SetWorkspaceStudyBody = zod.object({
+  "enabled": zod.boolean()
+})
+
+export const SetWorkspaceStudyResponse = zod.void()
+
+
+/**
+ * @summary Mark a file or material read, unread or removed
+ */
+export const SetStudyItemParams = zod.object({
+  "id": zod.string()
+})
+
+export const SetStudyItemBody = zod.object({
+  "fileId": zod.string().optional(),
+  "materialId": zod.string().optional(),
+  "state": zod.enum(['done', 'removed']).optional().describe('Omitted marks the item unread')
+})
+
+export const SetStudyItemResponse = zod.void()
+
+
+/**
+ * @summary Clear study progress in a workspace
+ */
+export const ResetWorkspaceStudyParams = zod.object({
+  "id": zod.string()
+})
+
+export const ResetWorkspaceStudyResponse = zod.void()
 
 
 /**

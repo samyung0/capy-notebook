@@ -22,6 +22,7 @@ import { DeleteAccountDialog } from '@/features/settings/DeleteAccountDialog';
 import { KeysSection } from '@/features/settings/KeysSection';
 import { LanguageRow } from '@/features/settings/LanguageRow';
 import { ModelPicker } from '@/features/settings/ModelPicker';
+import { StudyPreferencesSection } from '@/features/settings/StudyPreferencesSection';
 import { m } from '@/i18n';
 import { features } from '@/lib/features';
 import type { SettingsTab } from '@/lib/tabSearch';
@@ -89,6 +90,8 @@ function CustomizationsTab() {
             </SelectContent>
           </Select>
         </SettingRow>
+        <div className="border-divider border-t" />
+        <StudyPreferencesSection />
       </div>
     </>
   );

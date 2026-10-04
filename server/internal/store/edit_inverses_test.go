@@ -6,10 +6,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
-	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
 // A source edit checkpoint commits its receipt and inverse together: the
@@ -118,86 +116,5 @@ func TestTrashReleasesAvailableUndo(t *testing.T) {
 	inv, _, err := s.GetEditInverse(ctx, edit.Receipt.ID)
 	if err != nil || inv.UndoStatus != agenttools.UndoUnavailable || inv.UndoReason == "" {
 		t.Fatalf("inverse after trash = %+v err = %v", inv, err)
-	}
-}
-
-// A removed flashcard keeps its study state through Undo: the restoration is
-// applied by the projection that first shows the card again at or after the
-// Undo version, exactly once, and never over progress recorded later.
-func TestCardStateRestoreAppliesOnceWhenTheCardReappears(t *testing.T) {
-	s := openAccessTestStore(t)
-	ctx := context.Background()
-	owner := newBlobTestUser(t, s, "restore_owner")
-	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Restore workspace", Tags: []TagRef{}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	cards := []materialdoc.Card{{ID: uid("card"), Front: "a", Back: "A"}, {ID: uid("card"), Front: "b", Back: "B"}}
-	both, err := materialdoc.FlashcardsDocument(cards)
-	if err != nil {
-		t.Fatal(err)
-	}
-	onlySecond, err := materialdoc.FlashcardsDocument(cards[1:])
-	if err != nil {
-		t.Fatal(err)
-	}
-	mt, err := s.CreateMaterial(ctx, Material{CreatedBy: owner, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "flashcards", Title: "Restore", Content: both})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.pool.Exec(ctx, `INSERT INTO material_yjs_documents (material_id, state, stored_version) VALUES ($1, '\x00'::bytea, 5)`, mt.ID); err != nil {
-		t.Fatal(err)
-	}
-	studied := `{"reps": 3, "due": "2026-01-01T00:00:00Z"}`
-	if _, err := s.pool.Exec(ctx, `UPDATE card_stats SET known=true, srs=$2::jsonb WHERE card_id=$1`, cards[0].ID, studied); err != nil {
-		t.Fatal(err)
-	}
-	// The agent removes the first card; the projection drops its study row.
-	if _, err := s.ProjectMaterialContent(ctx, mt.ID, onlySecond, 2); err != nil {
-		t.Fatal(err)
-	}
-	var count int
-	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM card_stats WHERE card_id=$1`, cards[0].ID).Scan(&count); err != nil || count != 0 {
-		t.Fatalf("removed card study row count = %d err = %v", count, err)
-	}
-	// Undo re-inserts the card at version 3 and files the retained state.
-	opID := "op_restore_" + mt.ID[:8]
-	if _, err := s.pool.Exec(ctx, `INSERT INTO agent_operations (id, kind, tool_version, request_hash, actor_user_id, workspace_id, outcome)
-		VALUES ($1,'undo_edit',1,'h',$2,$3,'succeeded')`, opID, owner, ws.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.pool.Exec(ctx, `INSERT INTO agent_card_state_restores (operation_id, material_id, card_id, srs, known, restore_at_version)
-		VALUES ($1,$2,$3,$4::jsonb,true,3)`, opID, mt.ID, cards[0].ID, studied); err != nil {
-		t.Fatal(err)
-	}
-	// A projection at the Undo version that still lacks the card (a lagging
-	// replica) keeps the restoration pending.
-	if _, err := s.ProjectMaterialContent(ctx, mt.ID, onlySecond, 3); err != nil {
-		t.Fatal(err)
-	}
-	var applied *time.Time
-	if err := s.pool.QueryRow(ctx, `SELECT applied_at FROM agent_card_state_restores WHERE operation_id=$1`, opID).Scan(&applied); err != nil || applied != nil {
-		t.Fatalf("restoration applied early: %v err = %v", applied, err)
-	}
-	if _, err := s.ProjectMaterialContent(ctx, mt.ID, both, 4); err != nil {
-		t.Fatal(err)
-	}
-	var known bool
-	var reps int
-	if err := s.pool.QueryRow(ctx, `SELECT known, (srs->>'reps')::int FROM card_stats WHERE card_id=$1`, cards[0].ID).Scan(&known, &reps); err != nil || !known || reps != 3 {
-		t.Fatalf("restored state known=%v reps=%d err=%v", known, reps, err)
-	}
-	if err := s.pool.QueryRow(ctx, `SELECT applied_at FROM agent_card_state_restores WHERE operation_id=$1`, opID).Scan(&applied); err != nil || applied == nil {
-		t.Fatalf("restoration not marked applied: err = %v", err)
-	}
-	// Later progress survives a repeated projection.
-	if _, err := s.pool.Exec(ctx, `UPDATE card_stats SET srs='{"reps": 4, "due": "2026-02-01T00:00:00Z"}'::jsonb WHERE card_id=$1`, cards[0].ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.ProjectMaterialContent(ctx, mt.ID, both+" ", 5); err != nil && !errors.Is(err, ErrConflict) {
-		t.Fatal(err)
-	}
-	if err := s.pool.QueryRow(ctx, `SELECT (srs->>'reps')::int FROM card_stats WHERE card_id=$1`, cards[0].ID).Scan(&reps); err != nil || reps != 4 {
-		t.Fatalf("later progress overwritten: reps=%d err=%v", reps, err)
 	}
 }

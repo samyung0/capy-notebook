@@ -391,7 +391,7 @@ async def test_live_compaction_folds_older_turn_exchanges_into_a_note(monkeypatc
 _EXCERPT = re.compile(r"ex_f\d+s\d+")
 
 
-def _curate_exchange(call_id: str, name: str, result: str) -> list[dict]:
+def _library_exchange(call_id: str, name: str, result: str) -> list[dict]:
     return [
         {
             "role": "assistant",
@@ -408,7 +408,7 @@ def _curate_exchange(call_id: str, name: str, result: str) -> list[dict]:
     ]
 
 
-def _curate_turn(files: int = 8, sections: int = 4) -> list[list[dict]]:
+def _library_turn(files: int = 8, sections: int = 4) -> list[list[dict]]:
     """One search, one full read and one material receipt per library section."""
     turn: list[list[dict]] = []
     for index in range(files * sections):
@@ -418,19 +418,19 @@ def _curate_turn(files: int = 8, sections: int = 4) -> list[list[dict]]:
             for n in range(12)
         )
         body = f"ex_{sid}\n" + "section prose sentence " * 220
-        turn.append(_curate_exchange(f"s{index}", "search_knowledge", hits))
-        turn.append(_curate_exchange(f"r{index}", "read_knowledge", body))
+        turn.append(_library_exchange(f"s{index}", "search_knowledge", hits))
+        turn.append(_library_exchange(f"r{index}", "read_knowledge", body))
         turn.append(
-            _curate_exchange(f"w{index}", "create_material", f"Created ex_{sid} note.")
+            _library_exchange(f"w{index}", "create_material", f"Created ex_{sid} note.")
         )
     return turn
 
 
 @pytest.mark.asyncio
-async def test_curate_turn_folds_every_section_without_losing_an_excerpt_id(
+async def test_library_turn_folds_every_section_without_losing_an_excerpt_id(
     monkeypatch,
 ):
-    """A 32-section curate turn on a 64k window: repeated folds, nothing dropped."""
+    """A 32-section library build on a 64k window: repeated folds, nothing dropped."""
     folds = {"count": 0}
 
     async def fake_complete(request, **_kwargs):
@@ -447,7 +447,7 @@ async def test_curate_turn_folds_every_section_without_losing_an_excerpt_id(
     ]
     kept_after_fold: list[int] = []
 
-    for exchange in _curate_turn():
+    for exchange in _library_turn():
         before = folds["count"]
         messages = await compact.compact_messages(
             messages, spec, protect_live_chain=True, allow_summary=True

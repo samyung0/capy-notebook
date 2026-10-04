@@ -91,38 +91,10 @@ INSERT INTO materials (id, created_by, workspace_id, workspace_name, kind, title
    '{}', '{}', 'private', 'amber', now())
 ON CONFLICT (id) DO NOTHING;
 
--- FSRS state per seeded card: already-known cards get a plausible "review"
--- state that isn't due yet (so knownPct / dueCount look realistic); the rest
--- start fresh. ON CONFLICT keeps real review progress across restarts.
-INSERT INTO card_stats (card_id, material_id, srs, known) VALUES
-  ('c_1', 'dk_1', jsonb_build_object(
-    'due', to_jsonb(now() + interval '3 days'),
-    'stability', 12, 'difficulty', 5, 'elapsed_days', 0, 'scheduled_days', 3,
-    'reps', 2, 'lapses', 0, 'state', 2, 'learning_steps', 0), true),
-  ('c_2', 'dk_1', jsonb_build_object(
-    'due', to_jsonb(now() + interval '3 days'),
-    'stability', 12, 'difficulty', 5, 'elapsed_days', 0, 'scheduled_days', 3,
-    'reps', 2, 'lapses', 0, 'state', 2, 'learning_steps', 0), true),
-  ('c_5', 'dk_2', jsonb_build_object(
-    'due', to_jsonb(now() + interval '3 days'),
-    'stability', 12, 'difficulty', 5, 'elapsed_days', 0, 'scheduled_days', 3,
-    'reps', 2, 'lapses', 0, 'state', 2, 'learning_steps', 0), true),
-  ('c_3', 'dk_1', jsonb_build_object(
-    'due', to_jsonb(now()),
-    'stability', 0, 'difficulty', 0, 'elapsed_days', 0, 'scheduled_days', 0,
-    'reps', 0, 'lapses', 0, 'state', 0, 'learning_steps', 0), false),
-  ('c_4', 'dk_1', jsonb_build_object(
-    'due', to_jsonb(now()),
-    'stability', 0, 'difficulty', 0, 'elapsed_days', 0, 'scheduled_days', 0,
-    'reps', 0, 'lapses', 0, 'state', 0, 'learning_steps', 0), false),
-  ('c_6', 'dk_2', jsonb_build_object(
-    'due', to_jsonb(now()),
-    'stability', 0, 'difficulty', 0, 'elapsed_days', 0, 'scheduled_days', 0,
-    'reps', 0, 'lapses', 0, 'state', 0, 'learning_steps', 0), false),
-  ('dk_3:card:1', 'dk_3', jsonb_build_object(
-    'due', to_jsonb(now()),
-    'stability', 0, 'difficulty', 0, 'elapsed_days', 0, 'scheduled_days', 0,
-    'reps', 0, 'lapses', 0, 'state', 0, 'learning_steps', 0), false)
+-- The card -> set lookup for each seeded card.
+INSERT INTO flashcard_cards (card_id, material_id) VALUES
+  ('c_1', 'dk_1'), ('c_2', 'dk_1'), ('c_3', 'dk_1'), ('c_4', 'dk_1'),
+  ('c_5', 'dk_2'), ('c_6', 'dk_2'), ('dk_3:card:1', 'dk_3')
 ON CONFLICT (card_id) DO NOTHING;
 
 INSERT INTO attempts (id, user_id, material_id, quiz_name, workspace_name, chapters, correct, total, pct, taken_at) VALUES

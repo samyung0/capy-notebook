@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -59,7 +58,6 @@ type attemptDetailOutput struct {
 func (a *api) registerQuizzes(api huma.API) {
 	const tag = "Quizzes"
 	regWithMaxBody(api, http.MethodPost, "/api/quizzes", "createQuiz", tag, "Create a quiz", http.StatusCreated, materialRequestMaxBytes, a.createQuiz)
-	reg(api, http.MethodGet, "/api/mistakes", "getMistakes", tag, "Review-mistakes quiz", http.StatusOK, a.getMistakes)
 	reg(api, http.MethodGet, "/api/quizzes/{id}", "getQuiz", tag, "Get a quiz", http.StatusOK, a.getQuiz)
 	regWithMaxBody(api, http.MethodPatch, "/api/quizzes/{id}/content", "updateQuizContent", tag, "Update quiz content", http.StatusOK, materialRequestMaxBytes, a.updateQuizContent)
 	reg(api, http.MethodPatch, "/api/quizzes/{id}/metadata", "updateQuizMetadata", tag, "Update quiz metadata", http.StatusOK, a.updateQuizMetadata)
@@ -72,21 +70,7 @@ func (a *api) registerQuizzes(api huma.API) {
 	a.registerComputationCheck(api)
 }
 
-func (a *api) getMistakes(ctx context.Context, _ *struct{}) (*quizOutput, error) {
-	res, err := a.s.MistakesQuiz(ctx, userID(ctx))
-	if err != nil {
-		return nil, hErr(err)
-	}
-	res.IsOwner = true
-	res.CanEdit, res.CanEditContent = true, true
-	return &quizOutput{Body: apimodel.FromQuiz(res)}, nil
-}
-
 func (a *api) getQuiz(ctx context.Context, in *quizIDInput) (*quizOutput, error) {
-	// "review_mistakes" is a virtual quiz assembled from the mistakes pool.
-	if in.ID == "review_mistakes" {
-		return a.getMistakes(ctx, nil)
-	}
 	// Owners plus link/public viewers (shared quizzes can be attempted).
 	if _, err := a.materialRead(ctx, in.ID); err != nil {
 		return nil, hErr(err)
@@ -232,44 +216,15 @@ func (a *api) createAttempt(ctx context.Context, in *createAttemptInput) (*attem
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
-	// review_mistakes is a virtual per-user quiz; real quizzes must be readable
-	// (owner/member or link/public) before an attempt can be recorded.
-	if in.ID != "review_mistakes" {
-		if _, err := a.materialRead(ctx, in.ID); err != nil {
-			return nil, hErr(err)
-		}
+	// The quiz must be readable (owner/member or link/public).
+	if _, err := a.materialRead(ctx, in.ID); err != nil {
+		return nil, hErr(err)
 	}
 	if in.Body.Correct > in.Body.Total {
 		return nil, huma.Error422UnprocessableEntity("correct cannot exceed total")
 	}
 	if err := questions.ValidateAll(in.Body.Questions, questions.Policy{Snapshot: true}); err != nil {
 		return nil, huma.Error422UnprocessableEntity("invalid question snapshot: " + err.Error())
-	}
-	if err := questions.ValidateAll(in.Body.Wrong, questions.Policy{Snapshot: true}); err != nil {
-		return nil, huma.Error422UnprocessableEntity("invalid missed questions: " + err.Error())
-	}
-	wrong := make([]json.RawMessage, 0, len(in.Body.Wrong))
-	ids := make([]string, 0, len(in.Body.Wrong))
-	for _, q := range in.Body.Wrong {
-		wrong = append(wrong, apimodel.EncodeRaw(questions.Authored(q)))
-		if id, ok := q["id"].(string); ok && id != "" {
-			ids = append(ids, id)
-		}
-	}
-	if len(wrong) > 0 && in.ID != store.ReviewMistakesQuizID {
-		if err := a.s.AddMistakes(ctx, userID(ctx), wrong); err != nil {
-			return nil, hErr(err)
-		}
-	}
-	// A review-mistakes attempt prunes everything answered correctly this round.
-	if in.ID == "review_mistakes" {
-		attempted := make([]string, 0, len(in.Body.Questions))
-		for _, q := range in.Body.Questions {
-			attempted = append(attempted, q["id"].(string))
-		}
-		if err := a.s.ClearReviewedMistakes(ctx, userID(ctx), attempted, ids); err != nil {
-			return nil, hErr(err)
-		}
 	}
 	res, err := a.s.CreateAttempt(ctx, userID(ctx), in.ID, in.Body.Correct, in.Body.Total,
 		apimodel.EncodeRaw(in.Body.Answers), apimodel.EncodeQuestions(in.Body.Questions))

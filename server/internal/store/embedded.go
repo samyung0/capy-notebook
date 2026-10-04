@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -17,8 +18,10 @@ import (
 // and are trashed when their reference leaves the note.
 
 // EmbeddedDraft is the authored content of a quiz or flashcard set inserted
-// into a note; card ids are minted here.
+// into a note; card ids are minted here. ID is set only when the note and its
+// embedded rows are created together (an agent note).
 type EmbeddedDraft struct {
+	ID           string
 	Kind         MaterialKind
 	Questions    json.RawMessage
 	TimeLimitMin *int
@@ -34,20 +37,7 @@ func (s *Store) CreateEmbeddedMaterial(
 	actorID, noteID string,
 	draft EmbeddedDraft,
 ) (Material, error) {
-	var content string
-	var err error
-	switch draft.Kind {
-	case "quiz":
-		content, err = materialdoc.QuizDocument(draft.Questions, draft.TimeLimitMin)
-	case "flashcards":
-		cards := make([]materialdoc.Card, len(draft.Cards))
-		for i, card := range draft.Cards {
-			cards[i] = materialdoc.Card{ID: uid("c"), Front: card[0], Back: card[1]}
-		}
-		content, err = materialdoc.FlashcardsDocument(cards)
-	default:
-		return Material{}, ErrNotFound
-	}
+	content, err := draft.content()
 	if err != nil {
 		return Material{}, err
 	}
@@ -63,19 +53,86 @@ func (s *Store) CreateEmbeddedMaterial(
 	if err != nil {
 		return Material{}, err
 	}
-	suffix := copytext.EmbeddedQuiz
-	if draft.Kind == "flashcards" {
-		suffix = copytext.EmbeddedFlashcards
-	}
-	title, err := s.DisambiguateMaterialTitle(ctx, workspaceID, parentTitle+" · "+copytext.T(locale, suffix))
+	title, err := s.DisambiguateMaterialTitle(ctx, workspaceID, draft.title(parentTitle, locale))
 	if err != nil {
 		return Material{}, err
 	}
 	return s.CreateMaterial(ctx, Material{
-		CreatedBy: actorID, WorkspaceID: workspaceID, WorkspaceName: workspaceName,
+		ID: draft.ID, CreatedBy: actorID, WorkspaceID: workspaceID, WorkspaceName: workspaceName,
 		Kind: draft.Kind, Title: title, Content: content, Privacy: "private",
 		ParentMaterialID: noteID,
 	})
+}
+
+// EnsureEmbeddedMaterial creates draft.ID under noteID unless it already
+// exists there, so a retried agent edit does not create its rows twice.
+func (s *Store) EnsureEmbeddedMaterial(ctx context.Context, actorID, noteID string, draft EmbeddedDraft) error {
+	var parent string
+	err := s.pool.QueryRow(ctx, `SELECT COALESCE(parent_material_id,'') FROM materials WHERE id=$1`, draft.ID).Scan(&parent)
+	if err == nil {
+		if parent != noteID {
+			return ErrNotFound
+		}
+		return nil
+	}
+	if !isNoRows(err) {
+		return err
+	}
+	_, err = s.CreateEmbeddedMaterial(ctx, actorID, noteID, draft)
+	return err
+}
+
+func (draft EmbeddedDraft) content() (string, error) {
+	switch draft.Kind {
+	case "quiz":
+		return materialdoc.QuizDocument(draft.Questions, draft.TimeLimitMin)
+	case "flashcards":
+		cards := make([]materialdoc.Card, len(draft.Cards))
+		for i, card := range draft.Cards {
+			cards[i] = materialdoc.Card{ID: uid("c"), Front: card[0], Back: card[1]}
+		}
+		return materialdoc.FlashcardsDocument(cards)
+	}
+	return "", ErrNotFound
+}
+
+// title is the default "<note title> · Quiz", before disambiguation.
+func (draft EmbeddedDraft) title(noteTitle, locale string) string {
+	suffix := copytext.EmbeddedQuiz
+	if draft.Kind == "flashcards" {
+		suffix = copytext.EmbeddedFlashcards
+	}
+	return noteTitle + " · " + copytext.T(locale, suffix)
+}
+
+// createEmbeddedTx creates a new note's embedded rows in the note's own
+// transaction. Titles are disambiguated against the workspace and against
+// each other, since none of them is visible to the pool yet.
+func (s *Store) createEmbeddedTx(ctx context.Context, tx pgx.Tx, note Material, drafts []EmbeddedDraft) error {
+	var locale string
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(locale,'') FROM users WHERE id=$1`, note.CreatedBy).Scan(&locale); err != nil && !isNoRows(err) {
+		return err
+	}
+	taken := map[string]bool{}
+	for _, draft := range drafts {
+		content, err := draft.content()
+		if err != nil {
+			return err
+		}
+		title, err := disambiguateTitleTx(ctx, tx, note.WorkspaceID, draft.title(note.Title, locale), taken)
+		if err != nil {
+			return err
+		}
+		taken[strings.ToLower(title)] = true
+		if _, err := s.createMaterialTx(ctx, tx, Material{
+			ID: draft.ID, CreatedBy: note.CreatedBy, WorkspaceID: note.WorkspaceID,
+			WorkspaceName: note.WorkspaceName, Kind: draft.Kind, Title: title, Content: content,
+			Privacy: "private", ParentMaterialID: note.ID,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // reconcileEmbeddedTx aligns the note's embedded rows with the references in

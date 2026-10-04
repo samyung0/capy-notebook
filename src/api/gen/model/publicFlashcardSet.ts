@@ -15,10 +15,8 @@ export interface PublicFlashcardSet {
   cardCount: number;
   clones: number;
   color: UserColor;
-  dueCount: number;
   id: string;
   isOwner: boolean;
-  knownPct: number;
   name: string;
   privacy: Privacy;
   provenance?: Provenance;

@@ -1,7 +1,11 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useRef, useState } from 'react';
-import { chatErrorMessage, streamChat } from '@/api/chatStream';
+import {
+  type ChatStreamBody,
+  chatErrorMessage,
+  streamChat,
+} from '@/api/chatStream';
 import { qk } from '@/api/client';
 import type {
   ActivityBlock,
@@ -147,7 +151,10 @@ export function useChatStream(workspaceId: string) {
   );
 
   const send = useCallback(
-    async (text: string, curate: boolean) => {
+    async (
+      text: string,
+      turn: Pick<ChatStreamBody, 'library' | 'openResource'>
+    ) => {
       const trimmed = text.trim();
       if (!trimmed || streaming) return;
 
@@ -220,7 +227,7 @@ export function useChatStream(workspaceId: string) {
           workspaceId,
           {
             conversationId: conversationId ?? undefined,
-            curate,
+            ...turn,
             text: trimmed,
           },
           {

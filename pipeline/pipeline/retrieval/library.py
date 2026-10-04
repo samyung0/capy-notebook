@@ -1,4 +1,4 @@
-"""Shared knowledge library: the reader side used by curate-mode tools.
+"""Shared knowledge library: the reader side the Library switch's tools use.
 
 The library is a separate database (deploy/docker-compose.library-db.yml)
 holding one live workspace, ``library``, with one file per book. Each book
@@ -171,7 +171,7 @@ def enabled() -> bool:
 async def pool() -> AsyncConnectionPool:
     """The library reader pool, opened once.
 
-    The lock matters because two curate turns starting together would
+    The lock matters because two library turns starting together would
     otherwise each build a pool and one would be dropped unclosed.
     """
     global _pool

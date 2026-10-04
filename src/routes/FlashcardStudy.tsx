@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { isApiError } from '@/api/client';
 import {
   cardsQuery,
@@ -9,7 +9,7 @@ import {
   useCloneFlashcardSet,
   useDeleteCard,
   useFlashcardSet,
-  useReviewCard,
+  useRateReviewItem,
   useUpdateFlashcardSetSharing,
 } from '@/api/hooks';
 import { showErrorToast } from '@/api/queryClient';
@@ -33,14 +33,7 @@ import { cardCountBucket, flashcardsStudySource } from '@/lib/analytics';
 import { toastCloneError } from '@/lib/authToasts';
 import { cn } from '@/lib/cn';
 import { track } from '@/lib/observability';
-import {
-  isDue,
-  isKnown,
-  ratingPreviews,
-  reviewSrs,
-  SRS_RATINGS,
-  type SrsRating,
-} from '@/lib/srs';
+import { SRS_RATINGS, type SrsRating } from '@/lib/srs';
 
 export const RATING_LABEL: Record<SrsRating, () => string> = {
   again: m.srs_again,
@@ -77,7 +70,7 @@ export default function FlashcardStudy() {
     isError: cardsError,
     error: cardsErr,
   } = useCards(flashcardSetId, { errorBoundary: false, fresh: true });
-  const { mutateAsync: reviewCard } = useReviewCard(flashcardSetId);
+  const { mutateAsync: rateItem } = useRateReviewItem();
   const { mutateAsync: deleteCard } = useDeleteCard(flashcardSetId);
   const queryClient = useQueryClient();
   const { isPending: cloneFlashcardSetIsPending, mutate: cloneFlashcardSet } =
@@ -123,20 +116,22 @@ export default function FlashcardStudy() {
     }
   }
 
-  const dueIds = useMemo(
-    () => (cards ? cards.filter((c) => isDue(c.srs)).map((c) => c.id) : []),
-    [cards]
-  );
+  // A session goes through every card in order; mixed review lives in Learning.
+  // Both sides blank is a new set's placeholder, which takes no rating.
+  const sessionIds = (list: Flashcard[]) =>
+    list.filter((c) => c.front.trim() || c.back.trim()).map((c) => c.id);
 
-  // Seed the session queue once, from the currently-due cards.
   useEffect(() => {
-    if (cards && cardsFetched && !cardsError && queue === null) {
-      setQueue(dueIds);
-      setSessionTotal(dueIds.length);
+    if (cards && cardsFetched && queue === null) {
+      const ids = sessionIds(cards);
+      setQueue(ids);
+      setSessionTotal(ids.length);
     }
-  }, [cards, queue, dueIds, cardsFetched, cardsError]);
+  }, [cards, cardsFetched, queue]);
 
-  function startSession(ids: string[]) {
+  function studyAgain() {
+    if (!cards) return;
+    const ids = sessionIds(cards);
     studyFinished.current = false;
     setQueue(ids);
     setSessionTotal(ids.length);
@@ -201,20 +196,23 @@ export default function FlashcardStudy() {
 
   function rate(rating: SrsRating) {
     if (!card) return;
-    const srs = reviewSrs(card.srs, rating);
-    // One toast however many ratings fail in a row.
-    if (canEdit)
-      reviewCard({ id: card.id, known: isKnown(srs), srs }).catch(() =>
-        userToast({
-          button: {
-            label: m.error_action_reload(),
-            onClick: () => window.location.reload(),
-          },
-          id: 'flashcard-review-failed',
-          title: m.flashcards_review_failed(),
-          variant: 'error',
-        })
-      );
+    // Every reader records their own progress. One toast however many
+    // ratings fail in a row.
+    rateItem({
+      itemId: card.id,
+      materialId: flashcardSetId,
+      rating: SRS_RATINGS.indexOf(rating) + 1,
+    }).catch(() =>
+      userToast({
+        button: {
+          label: m.error_action_reload(),
+          onClick: () => window.location.reload(),
+        },
+        id: 'flashcard-review-failed',
+        title: m.flashcards_review_failed(),
+        variant: 'error',
+      })
+    );
     setFlipped(false);
     setQueue((q) => {
       if (!q) return q;
@@ -291,7 +289,6 @@ export default function FlashcardStudy() {
 
   // Nothing left in the session (or a new set without cards).
   if (!card) {
-    const notDue = cards.length - dueIds.length;
     return (
       <PanelWithInvertedRadius>
         <div className="mx-auto flex h-full w-full max-w-2xl flex-col px-6 py-6">
@@ -303,13 +300,8 @@ export default function FlashcardStudy() {
             <h2 className="t-large-card-title">
               {cards.length === 0
                 ? m.flashcards_empty_flashcards()
-                : m.flashcards_all_caught_up()}
+                : m.flashcards_session_done()}
             </h2>
-            {cards.length > 0 && (
-              <p className="text-fg-muted">
-                {m.flashcards_scheduled_hint({ count: notDue })}
-              </p>
-            )}
             <div className="mt-2 flex gap-3">
               {canEditCards && (
                 <Button
@@ -323,10 +315,10 @@ export default function FlashcardStudy() {
               {cards.length > 0 && (
                 <Button
                   iconLeft="flashcards"
-                  onClick={() => startSession(cards.map((c) => c.id))}
+                  onClick={studyAgain}
                   variant="accent"
                 >
-                  {m.flashcards_study_all()}
+                  {m.flashcards_study_again()}
                 </Button>
               )}
             </div>
@@ -347,7 +339,6 @@ export default function FlashcardStudy() {
   }
 
   const done = sessionTotal - queue.length;
-  const previews = ratingPreviews(card.srs);
 
   return (
     <PanelWithInvertedRadius>
@@ -411,9 +402,6 @@ export default function FlashcardStudy() {
                 type="button"
               >
                 {RATING_LABEL[r]()}
-                <span className="font-normal text-[11px] tabular-nums opacity-70">
-                  {previews[r]}
-                </span>
               </button>
             ))}
           </div>

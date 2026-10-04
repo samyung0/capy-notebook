@@ -102,15 +102,18 @@ var ErrMaterialConflict = errors.New("material id already used with a different 
 var ErrAuthorityUnavailable = errors.New("collaboration authority unavailable")
 
 type Store struct {
-	pool                *pgxpool.Pool
-	registry            *models.Registry
-	collaborationURL    string
-	collaborationSecret string
-	collaborationHTTP   *http.Client
-	credKey             []byte
-	shareLinkSecret     []byte
-	planLimits          planlimits.Catalog
-	planLimitsMu        sync.Mutex
+	pool             *pgxpool.Pool
+	registry         *models.Registry
+	collaborationURL string
+	// The markdown converter runs in the collaboration service; tests point it
+	// at a stand-in without enabling the authority.
+	markdownURL, markdownSecret string
+	collaborationSecret         string
+	collaborationHTTP           *http.Client
+	credKey                     []byte
+	shareLinkSecret             []byte
+	planLimits                  planlimits.Catalog
+	planLimitsMu                sync.Mutex
 }
 
 // SetLLMCredentialKey installs the AES-256-GCM key used for user provider
@@ -195,6 +198,14 @@ func (s *Store) Close() { s.pool.Close() }
 func (s *Store) ConfigureCollaboration(rawURL, secret string) {
 	s.collaborationURL = strings.TrimRight(rawURL, "/")
 	s.collaborationSecret = secret
+	s.ConfigureMarkdownConverter(rawURL, secret)
+}
+
+// ConfigureMarkdownConverter points agent-note conversion at a collaboration
+// service without making it the document authority.
+func (s *Store) ConfigureMarkdownConverter(rawURL, secret string) {
+	s.markdownURL = strings.TrimRight(rawURL, "/")
+	s.markdownSecret = secret
 }
 
 // ConfigureShareLinks installs the key that signs summary links; the site

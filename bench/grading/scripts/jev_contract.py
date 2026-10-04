@@ -19,7 +19,9 @@ Three experiments against typesafe.ai SystemOne, standard library only:
 The criteria are PLAIN_CRITERIA from jev_partial_credit.py, verbatim. The instruction
 prefix differs from PLAIN_COMMON only in naming `marking_item`, because a part state
 carries several items. --check and --dry-run are offline. Live runs need a fresh --output
-directory and the key in TYPESAFE_API_KEY (or --key-stdin). At most four workers, 60 s
+directory and the key in TYPESAFE_API_KEY (or --key-stdin). --provider clef|clef-flash
+sends the same payloads to Cloudflare Workers AI with CLOUDFLARE_API_TOKEN and
+CLOUDFLARE_ACCOUNT_ID instead. At most four workers, 60 s
 timeout, no retries; the first planned request gates the rest. Gold labels and rationales
 never enter model-facing payloads.
 """
@@ -1226,7 +1228,7 @@ def headline(experiment, summary):
     return "\n".join(lines)
 
 
-def run(args, key):
+def run(args, key, account=None):
     arms = (
         tuple(args.arms.split(","))
         if args.arms
@@ -1237,8 +1239,9 @@ def run(args, key):
     args.output.mkdir(parents=True, exist_ok=False)
     manifest = {
         "experiment": args.experiment,
-        "model": jev_context.MODEL,
-        "endpoint": jev_context.URL,
+        "provider": args.provider,
+        "model": jev_context.PROVIDERS[args.provider][1],
+        "endpoint": jev_context.PROVIDERS[args.provider][0],
         "arms": list(arms) if args.experiment != "compute" else None,
         "kinds": sorted(kinds) if kinds else None,
         "base_run": str(args.base) if args.base else None,
@@ -1280,14 +1283,17 @@ def run(args, key):
     with (args.output / "results.jsonl").open(
         "x", encoding="utf-8", buffering=1
     ) as handle:
-        first = decode(jev_context.call(jobs[0], key))
+        first = decode(jev_context.call(jobs[0], key, args.provider, account))
         rows.append(first)
         handle.write(json.dumps(first, ensure_ascii=False) + "\n")
         # The first planned request is the auth/format gate; it is kept, never repeated.
         if "error" not in first:
             with ThreadPoolExecutor(max_workers=args.workers) as pool:
                 for row in pool.map(
-                    lambda job: decode(jev_context.call(job, key)), jobs[1:]
+                    lambda job: decode(
+                        jev_context.call(job, key, args.provider, account)
+                    ),
+                    jobs[1:],
                 ):
                     rows.append(row)
                     handle.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -1369,6 +1375,9 @@ def main():
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--rescore", type=Path, help="existing run directory")
+    parser.add_argument(
+        "--provider", choices=tuple(jev_context.PROVIDERS), default="jev"
+    )
     parser.add_argument("--key-stdin", action="store_true")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--workers", type=int, choices=range(1, 5), default=4)
@@ -1414,7 +1423,7 @@ def main():
                     ),
                     "decisions": sum(len(j["questions"]) for j in jobs),
                     "sample_request": {
-                        "model": jev_context.MODEL,
+                        "model": jev_context.PROVIDERS[args.provider][1],
                         "state": sample["state"],
                         "questions": sample["questions"],
                     },
@@ -1426,15 +1435,21 @@ def main():
         return 0
     if args.output is None or args.output.exists():
         parser.error("--output must name a fresh directory")
+    env = "TYPESAFE_API_KEY" if args.provider == "jev" else "CLOUDFLARE_API_TOKEN"
     if args.key_stdin:
         key = (
-            getpass.getpass("Jev key: ") if sys.stdin.isatty() else sys.stdin.readline()
+            getpass.getpass("Key: ") if sys.stdin.isatty() else sys.stdin.readline()
         ).strip()
     else:
-        key = os.environ.get("TYPESAFE_API_KEY", "").strip()
+        key = os.environ.get(env, "").strip()
     if not key:
-        parser.error("Provide --key-stdin or TYPESAFE_API_KEY")
-    return run(args, key)
+        parser.error(f"Provide --key-stdin or {env}")
+    account = None
+    if args.provider != "jev":
+        account = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
+        if not account:
+            parser.error("Clef needs CLOUDFLARE_ACCOUNT_ID")
+    return run(args, key, account)
 
 
 if __name__ == "__main__":

@@ -108,27 +108,6 @@ async def test_capture_attaches_the_image_and_adds_no_citation(rendered):
     assert list(record["pixels"]) == [134, 200]
 
 
-async def test_capture_stops_at_the_turn_cap_except_in_curate(rendered, monkeypatch):
-    monkeypatch.setattr(tools.cfg, "captures_per_turn", 1)
-    ctx = _ctx(1)
-    first = await tools._capture_page(
-        {"file_id": "f_1", "page": 1, "_tool_call_id": "a"}, ctx
-    )
-    second = await tools._capture_page(
-        {"file_id": "f_1", "page": 1, "_tool_call_id": "b"}, ctx
-    )
-    assert not first.refused
-    assert second.refused and second.error_code == "limit_reached"
-
-    # A whole set of materials is one curate turn, and captures leave the
-    # request when their exchange folds, so curate has no cap.
-    ctx.curate = True
-    third = await tools._capture_page(
-        {"file_id": "f_1", "page": 1, "_tool_call_id": "c"}, ctx
-    )
-    assert not third.refused
-
-
 async def test_capture_rejects_a_page_past_the_end_and_a_bad_box(rendered):
     ctx = _ctx(2, 9)
     past = await tools._capture_page(
@@ -372,7 +351,7 @@ async def test_knowledge_capture_refuses_a_withheld_page_as_withheld(monkeypatch
 
     monkeypatch.setattr(tools.library, "capture_target", _target)
     monkeypatch.setattr(capture, "render_knowledge", _render)
-    ctx = ToolContext(workspace_id="ws_1", curate=True)
+    ctx = ToolContext(workspace_id="ws_1", library=True)
     refused = await tools._capture_knowledge_page(
         {"excerpt_id": "e_1", "page": 339, "_tool_call_id": "a"}, ctx
     )
@@ -382,7 +361,7 @@ async def test_knowledge_capture_refuses_a_withheld_page_as_withheld(monkeypatch
 
 
 async def test_knowledge_capture_is_bounded_by_the_excerpt_pages(monkeypatch, pdf):
-    """An excerpt is the unit the curate model works in: it may look at its own
+    """An excerpt is the unit the model works in: it may look at its own
     pages and its figures' pages, not browse the book."""
     rendered: list[tuple] = []
 
@@ -396,7 +375,7 @@ async def test_knowledge_capture_is_bounded_by_the_excerpt_pages(monkeypatch, pd
 
     monkeypatch.setattr(tools.library, "capture_target", _target)
     monkeypatch.setattr(capture, "render_knowledge", _render)
-    ctx = ToolContext(workspace_id="ws_1", curate=True)
+    ctx = ToolContext(workspace_id="ws_1", library=True)
 
     outside = await tools._capture_knowledge_page(
         {"excerpt_id": "e_1", "page": 400, "_tool_call_id": "a"}, ctx
@@ -417,9 +396,8 @@ async def test_knowledge_capture_is_bounded_by_the_excerpt_pages(monkeypatch, pd
     assert rendered == [("books/aaa.pdf", 1024, 341)]
     assert ctx.captures[0]["fileId"] == "e_1" and ctx.captures[0]["page"] == 341
 
-    # Curate mode has no per-turn capture cap: a capture is dropped when its
+    # There is no per-turn capture cap: a capture is dropped when its
     # exchange folds into the turn note anyway.
-    monkeypatch.setattr(tools.cfg, "captures_per_turn", 1)
     again = await tools._capture_knowledge_page(
         {"excerpt_id": "e_1", "page": 338, "_tool_call_id": "c"}, ctx
     )

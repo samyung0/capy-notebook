@@ -111,6 +111,13 @@ python bench/grading/scripts/jev_partial_credit.py --scheme-mode plain --dry-run
 python bench/grading/scripts/jev_partial_credit.py --scheme-mode plain --key-stdin --output data/grading-benchmark/jev-partial-credit-reproduction
 ```
 
+`jev_contract.py` and `typesafe_math.py` take `--provider clef|clef-flash` to send
+the same payloads to Cloudflare Workers AI; see the
+[Clef report](reports/2026-10-03-clef-vs-jev.md).
+[`scripts/alt_methods.py`](scripts/alt_methods.py) compares a deterministic
+checker with Jev on answers that take a different route from the marking scheme;
+see the [alternative-methods report](reports/2026-10-03-alt-methods.md).
+
 The generative model runners use only the Python standard library. The Laya
 replay above uses its separately installed SDK. Install wllama 3.6.0
 in `data/grading-benchmark/browser-runtime` for the browser page. Downloaded
