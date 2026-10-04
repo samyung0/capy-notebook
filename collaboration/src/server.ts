@@ -1,6 +1,5 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { Redis as RedisExtension } from '@hocuspocus/extension-redis';
 import { type Document, Server } from '@hocuspocus/server';
 import { Redis as IORedis } from 'ioredis';
 import { Pool } from 'pg';
@@ -755,12 +754,6 @@ const server = new Server<CollaborationContext>({
   // sends per window rather than per update, at up to 30 ms added latency
   // (approved by Epo).
   flushDelay: 30,
-  extensions: [
-    new RedisExtension({
-      awaitInitialSyncTimeout: 1000,
-      redis,
-    }),
-  ],
   maxDebounce: config.maxDebounceMs,
   maxPendingDocuments: 8,
   // A writer typing through a slow login queues one message per keystroke;

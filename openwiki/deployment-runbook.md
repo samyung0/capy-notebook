@@ -369,6 +369,16 @@ The prod file runs `/migrate` once per deploy, starts the API with
 
    Redeploy or wait for the proxy to pick up the domains.
 
+   Run exactly one `collaboration` container per environment. A redeploy
+   (`docker compose up`) replaces it: the old container gets SIGTERM, flushes
+   its rooms and exits before the new one starts, so two never serve at once.
+   The sidecar has no Hocuspocus Redis extension, so a second instance would
+   not share document or awareness state with the first. Its stale entry in
+   the instance registry lingers up to 60 s after a restart, which only slows
+   an eviction or handoff in that window (they wait for its acknowledgement and
+   retry). Scaling out later means document-sticky routing, every connection
+   to a room reaching the instance that holds it, not Redis fan-out.
+
    A warm deploy rebuilds only what changed: `go build`, the Vite/collab
    bundles and the pipeline source copy. Dependency installs, the BetterOffice
    WASM toolchain and `uv sync` come from the layer cache until their lockfile

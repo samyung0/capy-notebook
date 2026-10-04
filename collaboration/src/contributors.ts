@@ -175,14 +175,16 @@ function freshClientId(document: Y.Doc) {
 
 /**
  * Yjs invokes this listener inside the same transaction that applies the
- * editor update. The marker therefore travels with that update across Redis;
- * a peer can never receive the content without its actor provenance.
+ * editor update. The marker therefore travels with that update in every
+ * broadcast; a peer can never receive the content without its actor
+ * provenance.
  *
  * Markers are written under a dedicated client id and the room's own id is
  * restored at once, so a remote transaction never advances the room's id
  * (which makes Yjs pick a new one and leave a fresh client per update). Client
- * updates under the marker id are rejected; any other write under it (a peer
- * over Redis) moves the markers to a new one.
+ * updates under the marker id are rejected; any other write under it (a
+ * stored state from another process loaded into the room) moves the markers
+ * to a new one.
  */
 export function attachDocumentContributorTracker(
   document: Y.Doc,

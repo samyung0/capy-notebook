@@ -1030,8 +1030,9 @@ export class SourceDocumentStore {
       return { checkpoint: Number(result.rows[0].checkpoint), contributors };
     }
     const actors = [...new Set(contributors.map((c) => c.userId))];
-    // Merge each persisted replica before CAS. Redis delivery and database
-    // flush order can differ; replacement of the durable state would lose edits.
+    // Merge the persisted state before CAS: another save (an agent edit, a
+    // retry, a previous process) may have committed since this room loaded,
+    // and replacing the durable state would lose its edits.
     for (let attempt = 0; attempt < 4; attempt++) {
       // The first attempt starts from this instance's durable copy while the
       // row still names it; the checkpoint CAS below refuses it otherwise,

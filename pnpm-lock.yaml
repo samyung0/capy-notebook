@@ -379,9 +379,6 @@ importers:
 
   collaboration:
     dependencies:
-      '@hocuspocus/extension-redis':
-        specifier: 4.5.0
-        version: 4.5.0(supports-color@10.2.2)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
       '@hocuspocus/server':
         specifier: 4.5.0
         version: 4.5.0(patch_hash=538d0ffda9cd2c02358a9a33c46cf3ed40fcdc9e41355f296121c0281366bd7a)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
@@ -1572,12 +1569,6 @@ packages:
 
   '@hocuspocus/common@4.5.0':
     resolution: {integrity: sha512-hz6IBLLNKOWrWf+8r236CFFhpkcjEVXtZH1XRrkY0b5dYoQgR5gmuV5/5dJm1Vvyc8I70D+SHCvOch2AsRXonA==}
-
-  '@hocuspocus/extension-redis@4.5.0':
-    resolution: {integrity: sha512-7UuA/Kbg3pikEpCUch5E3r4JWnMD7mG0ugRhz28+YafV8OKJb6vD6z1lMsQv8ballFfTMJ8E2floE2sYs13F7Q==}
-    peerDependencies:
-      y-protocols: ^1.0.6
-      yjs: ^13.6.8
 
   '@hocuspocus/provider@3.4.4':
     resolution: {integrity: sha512-KbsMAfdYcIJD8eMU/5QnpXcSOvIWAcCNI33FSRSaKCIpYBFtAwkYIwWnZJmPZ8a1BMAtqQc+uvy9+UQf7GHnGQ==}
@@ -4051,12 +4042,6 @@ packages:
   '@sentry/vite-plugin@5.4.0':
     resolution: {integrity: sha512-fFJgCxs5hDyAm9BbZJ+LbA+LK2tjX5OoD0v0ARU4StR6KQmGUduoPs69yJ9AfqZ0om3Rlp5JDliiwFcNkasORA==}
     engines: {node: '>= 18'}
-
-  '@sesamecare-oss/redlock@1.4.0':
-    resolution: {integrity: sha512-2z589R+yxKLN4CgKxP1oN4dsg6Y548SE4bVYam/R0kHk7Q9VrQ9l66q+k1ehhSLLY4or9hcchuF9/MhuuZdjJg==}
-    engines: {node: '>=16'}
-    peerDependencies:
-      ioredis: '>=5'
 
   '@shikijs/engine-oniguruma@3.23.0':
     resolution: {integrity: sha512-1nWINwKXxKKLqPibT5f4pAFLej9oZzQTsby8942OTlsJzOBZ0MWKiwzMsd+jhzu8YPCHAswGnnN1YtQfirL35g==}
@@ -9948,19 +9933,6 @@ snapshots:
     dependencies:
       lib0: 0.2.117
 
-  '@hocuspocus/extension-redis@4.5.0(supports-color@10.2.2)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)':
-    dependencies:
-      '@hocuspocus/common': 4.5.0
-      '@hocuspocus/server': 4.5.0(patch_hash=538d0ffda9cd2c02358a9a33c46cf3ed40fcdc9e41355f296121c0281366bd7a)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
-      '@sesamecare-oss/redlock': 1.4.0(ioredis@5.6.1(supports-color@10.2.2))
-      ioredis: 5.6.1(supports-color@10.2.2)
-      kleur: 4.1.5
-      y-protocols: 1.0.7(yjs@13.6.31)
-      yjs: 13.6.31
-    transitivePeerDependencies:
-      - srvx
-      - supports-color
-
   '@hocuspocus/provider@3.4.4(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)':
     dependencies:
       '@hocuspocus/common': 3.4.4
@@ -12837,10 +12809,6 @@ snapshots:
       - rollup
       - supports-color
       - webpack
-
-  '@sesamecare-oss/redlock@1.4.0(ioredis@5.6.1(supports-color@10.2.2))':
-    dependencies:
-      ioredis: 5.6.1(supports-color@10.2.2)
 
   '@shikijs/engine-oniguruma@3.23.0':
     dependencies:

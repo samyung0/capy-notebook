@@ -21,7 +21,11 @@ durable authority for material content after a room is initialized.
 
 The browser uses Plate 53, `@platejs/yjs` 53.2.x,
 `@hocuspocus/provider` 3.4.x, `@slate-yjs/core` 1.0.2, and Yjs 13.6.x.
-The collaboration sidecar uses Hocuspocus server and Redis extension 4.4.x.
+The collaboration sidecar uses Hocuspocus server 4.5.x (with a pnpm patch that
+skips its awareness scratch copy when no `beforeHandleAwareness` hook is set)
+and no Hocuspocus Redis extension: each environment runs one sidecar, and the
+sidecar's own Redis use (eviction delivery, handoff and publication locks, the
+instance registry) does not sync documents.
 Provider/server wire compatibility is covered by the collaboration package
 integration test.
 
@@ -785,8 +789,14 @@ validation and are not rendered.
   retry. Retry passes do not overlap within a sidecar process, and a retry only
   clears the exact queued snapshot it attempted; a newer failed snapshot stays
   queued.
-- Redis coordinates multi-instance document/awareness state; it is not durable
-  storage.
+- Redis carries eviction delivery, handoff and publication locks and the
+  instance registry; it is not durable storage and does not sync documents or
+  awareness between instances. Scaling out later means document-sticky
+  routing (every connection to a room reaches the instance that holds it),
+  not Redis fan-out.
+- Broadcasts merge over 30 ms windows (`flushDelay`), and a note editor
+  publishes its cursor at most once per 50 ms
+  (`src/features/notes/cursorThrottle.ts`).
 - Monitor active rooms/connections, Y.Doc size, store/projection latency and
   failures, projection version lag, event-loop lag, RSS, disconnects, and
   Redis/PostgreSQL latency.

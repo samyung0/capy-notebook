@@ -15,7 +15,6 @@
     "build:markdown": "node scripts/build-markdown.mjs"
   },
   "dependencies": {
-    "@hocuspocus/extension-redis": "4.5.0",
     "@hocuspocus/server": "4.5.0",
     "@sentry/node": "^10.70.0",
     "@slate-yjs/core": "1.0.2",
