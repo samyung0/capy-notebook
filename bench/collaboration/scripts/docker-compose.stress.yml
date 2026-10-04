@@ -9,6 +9,8 @@
 services:
   s3:
     image: capy-e2e-collaboration:local
+    # Built by the collaboration service (or loaded by CI); never pulled.
+    pull_policy: never
     command: ["node", "/stress/fake-s3.mjs"]
     volumes:
       - ${STRESS_FAKE_S3:?set by stress.ts}:/stress/fake-s3.mjs:ro

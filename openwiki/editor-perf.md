@@ -75,16 +75,18 @@ Plate note, then `STRESS_PEERS` peers (20) per room, with API tokens, type
 unique markers for `STRESS_MINUTES` (3), about one per `STRESS_EDIT_MS`
 (1500); each drops offline for 1 to 5 s at `STRESS_DROP_PER_SECOND` (0.02) and
 keeps typing, sending on reconnect. A watching peer that never drops times
-each marker typed online. Then:
+each marker typed while its peer was connected and synced, scanning only the
+text each change inserts, so the client's own cost stays flat. Then:
 
 - every peer and a late joiner hold the same text (convergence);
 - every typed marker is there exactly once (no lost or doubled update);
 - the collaboration service logged no error;
-- p95 marker latency within `STRESS_P95_BUDGET_MS`, provisional 50 ms
-  (~1.3x the slower room's median of three runs at load 6 to 8: Office 29,
-  Plate 37 ms).
+- p95 marker latency within `STRESS_P95_BUDGET_MS`, provisional 35 ms
+  (~1.3x the slower room's median of three runs at load 3 to 17: Office 26,
+  Plate 27 ms).
 
-A failed check exits 1, a missed budget alone exits 2. Under heavy load
+A failed check exits 1, a missed budget alone exits 2. SIGINT and SIGTERM tear
+the stack down and remove the throwaway key. Under heavy load
 (load 34) a run logged a projection deadlock (`40P01`), a store statement
 timeout and a source access 500, with p95 over 40 s: worth a look on the CI
 runner before the budget is trusted.
@@ -109,8 +111,9 @@ run stays green, and the run's editor snapshot still counts as a baseline. Its
 results go to the job summary and the `office-perf-results` artifact.
 `stress` runs `pnpm bench:stress` (below) on dispatch only (input `stress`,
 false on `workflow_call`) against the `e2e_stack` images, built from the same
-GitHub Actions layer cache; a failed check fails the job, while a missed
-latency budget (exit 2) only fails the `continue-on-error` budget step. Its
+GitHub Actions layer cache. Like `office` it has `continue-on-error`: a failed
+check (exit 1) or a missed latency budget (exit 2) fails the job, and its
+summary marks a correctness failure as such, but the run stays green.
 `stress.json` goes to the summary and the `collaboration-stress-results`
 artifact.
 

@@ -19,7 +19,7 @@
  */
 import { randomBytes, randomInt } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync } from 'node:fs';
+import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -39,10 +39,10 @@ const EDIT_MS = Number(process.env.STRESS_EDIT_MS ?? 1500);
 const DROP_PER_SECOND = Number(process.env.STRESS_DROP_PER_SECOND ?? 0.02);
 /**
  * Provisional: ~1.3x the slower room's median p95 of three local runs
- * (2026-10-04, M-series Mac, load 6-8: Office 26/29/36 ms, Plate 30/37/43 ms);
+ * (2026-10-04, M-series Mac, load 3-17: Office 26/26/15 ms, Plate 35/27/19 ms);
  * recalibrate from three runs of the Performance workflow's stress job.
  */
-const P95_BUDGET_MS = Number(process.env.STRESS_P95_BUDGET_MS ?? 50);
+const P95_BUDGET_MS = Number(process.env.STRESS_P95_BUDGET_MS ?? 35);
 const OUT = process.env.STRESS_OUT ?? path.join(root, 'bench/collaboration/.results');
 const WORKSPACE = 'ws_e2e_edit';
 const OWNER = 'u_owner';
@@ -105,6 +105,7 @@ async function api(method: string, route: string, body?: BodyInit, json?: unknow
       ...(json === undefined ? {} : { 'Content-Type': 'application/json' }),
     },
     method,
+    signal: AbortSignal.timeout(30_000),
   });
   if (!response.ok)
     throw new Error(`${method} ${route}: ${response.status} ${await response.text()}`);
@@ -249,12 +250,22 @@ function percentile(values: number[], p: number) {
   return Math.round(sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)]);
 }
 
+const online = ({ provider }: Peer) =>
+  (provider.configuration.websocketProvider as { status: string }).status === 'connected';
+
 async function stressRoom(room: Room) {
   const watcher = await connect(room, `${room.kind} watcher`);
-  watcher.doc.on('update', () => {
+  // Only the inserted text of each change is scanned, so the watcher's cost
+  // stays flat as the room grows and the latency is the server's.
+  const target = typingTarget(room, watcher.doc);
+  if (!target) throw new Error(`${room.kind}: no text to type into`);
+  target.observeDeep((events) => {
     const now = Date.now();
-    for (const [marker] of roomText(room, watcher.doc).matchAll(MARKER))
-      if (!room.seen.has(marker)) room.seen.set(marker, now);
+    for (const event of events)
+      for (const op of event.delta)
+        if (typeof op.insert === 'string')
+          for (const [marker] of op.insert.matchAll(MARKER))
+            if (!room.seen.has(marker)) room.seen.set(marker, now);
   });
   const peers = await Promise.all(
     Array.from({ length: PEERS }, (_, index) => connect(room, `${room.kind} peer ${index}`))
@@ -278,16 +289,17 @@ async function stressRoom(room: Room) {
           peer.provider.disconnect();
         }
         const marker = `[${room.kind[0]}${String(index).padStart(2, '0')}-${String(sequence).padStart(4, '0')}]`;
+        // Timed only when the peer is connected and synced: one typed while
+        // reconnecting also waits for the token, the socket and the sync.
+        const live = !offlineUntil && online(peer) && peer.provider.isSynced;
         if (insertMarker(room, peer.doc, marker)) {
-          room.typed.set(marker, { at: Date.now(), online: !offlineUntil });
+          room.typed.set(marker, { at: Date.now(), online: live });
           sequence += 1;
         }
       }
     })
   );
   const everyone = [watcher, ...peers];
-  const online = ({ provider }: Peer) =>
-    (provider.configuration.websocketProvider as { status: string }).status === 'connected';
   // Brings back peers that ended offline. A close still in flight leaves the
   // status connected for a moment, so this retries until the socket is up.
   const settled = await until(() => {
@@ -364,25 +376,32 @@ function collaborationErrors() {
 
 const { default: setup } = await import('../../../e2e/global-setup');
 const { default: teardown } = await import('../../../e2e/global-teardown');
+
+let cleaned: Promise<void> | undefined;
+// Once, from the end of the run or from a signal.
+function cleanUp() {
+  cleaned ??= (async () => {
+    try {
+      await teardown();
+    } finally {
+      rmSync(tlsDir, { force: true, recursive: true });
+    }
+  })();
+  return cleaned;
+}
+for (const signal of ['SIGINT', 'SIGTERM'] as const)
+  process.once(signal, () => {
+    console.error(`${signal}: tearing the stack down`);
+    void cleanUp().finally(() => process.exit(130));
+  });
+
 let exitCode = 1;
 try {
   await setup();
   const rooms = await createRooms();
   const results = await Promise.all(rooms.map(stressRoom));
   const errors = collaborationErrors();
-  const report = {
-    budgetP95Ms: P95_BUDGET_MS,
-    collaborationErrors: errors.length,
-    collaborationErrorSample: errors.slice(0, 10),
-    editMs: EDIT_MS,
-    minutes: MINUTES,
-    peers: PEERS,
-    rooms: results,
-  };
-  await mkdir(OUT, { recursive: true });
-  await writeFile(path.join(OUT, 'stress.json'), `${JSON.stringify(report, null, 2)}\n`);
-  console.log(JSON.stringify(report, null, 2));
-  const problems = [
+  const failures = [
     ...results.flatMap((room) => [
       ...(room.converged ? [] : [`${room.room}: peers did not converge`]),
       ...(room.missing ? [`${room.room}: ${room.missing} typed markers missing`] : []),
@@ -390,14 +409,28 @@ try {
     ]),
     ...(errors.length ? [`collaboration logged ${errors.length} errors`] : []),
   ];
-  const slow = results.flatMap((room) =>
+  const budgetMisses = results.flatMap((room) =>
     (room.latencyP95Ms ?? Number.POSITIVE_INFINITY) > P95_BUDGET_MS
       ? [`${room.room}: p95 ${room.latencyP95Ms} ms over the provisional ${P95_BUDGET_MS} ms budget`]
       : []
   );
-  for (const problem of [...problems, ...slow]) console.error(`FAIL ${problem}`);
-  exitCode = problems.length ? 1 : slow.length ? 2 : 0;
+  const report = {
+    budgetMisses,
+    budgetP95Ms: P95_BUDGET_MS,
+    collaborationErrors: errors.length,
+    collaborationErrorSample: errors.slice(0, 10),
+    editMs: EDIT_MS,
+    failures,
+    minutes: MINUTES,
+    peers: PEERS,
+    rooms: results,
+  };
+  await mkdir(OUT, { recursive: true });
+  await writeFile(path.join(OUT, 'stress.json'), `${JSON.stringify(report, null, 2)}\n`);
+  console.log(JSON.stringify(report, null, 2));
+  for (const problem of [...failures, ...budgetMisses]) console.error(`FAIL ${problem}`);
+  exitCode = failures.length ? 1 : budgetMisses.length ? 2 : 0;
 } finally {
-  await teardown();
+  await cleanUp();
 }
 process.exit(exitCode);

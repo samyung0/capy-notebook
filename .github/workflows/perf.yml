@@ -176,6 +176,9 @@ jobs:
     if: inputs.stress
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    # Like the Office job: a failure shows on the job and in its summary, the
+    # run stays green and its editor snapshot still counts as a baseline.
+    continue-on-error: true
     permissions:
       contents: read
     steps:
@@ -204,28 +207,31 @@ jobs:
           cache: pnpm
           node-version: 22
       - run: pnpm install --frozen-lockfile
-      # Exit 2 is a missed latency budget alone; the next step reports it.
+      # Exit 1: a failed check (convergence, lost updates, server errors);
+      # exit 2: only the provisional latency budget missed.
       - name: Run collaboration stress test
-        run: pnpm bench:stress || [ $? -eq 2 ]
+        run: pnpm bench:stress
         env:
           E2E_PREBUILT_IMAGES: "true"
           STRESS_OUT: bench/collaboration/.results
-      # Provisional until three runs here recalibrate it: shown, not failing.
-      - name: Check the provisional latency budget
-        continue-on-error: true
-        run: |
-          node -e '
-            const r = require("./bench/collaboration/.results/stress.json");
-            const slow = r.rooms.filter((room) => room.latencyP95Ms > r.budgetP95Ms);
-            for (const room of slow) console.log(`::warning::${room.room} p95 ${room.latencyP95Ms} ms > ${r.budgetP95Ms} ms`);
-            process.exit(slow.length ? 1 : 0);
-          '
       - name: Write stress results
         if: always()
         run: |
-          if [ -f bench/collaboration/.results/stress.json ]; then
-            { echo '### Collaboration stress'; echo '```json'; cat bench/collaboration/.results/stress.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-          fi
+          file=bench/collaboration/.results/stress.json
+          {
+            echo '### Collaboration stress'
+            if [ ! -f "$file" ]; then
+              echo '**FAILED: no results (the stack or the run broke; see the log).**'
+            else
+              node -e '
+                const r = require("./" + process.argv[1]);
+                for (const f of r.failures) console.log(`- **FAILED (correctness):** ${f}`);
+                for (const b of r.budgetMisses) console.log(`- Over the provisional budget: ${b}`);
+                if (!r.failures.length && !r.budgetMisses.length) console.log("All checks passed.");
+              ' "$file"
+              echo '```json'; cat "$file"; echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload stress results
         if: always()
         uses: actions/upload-artifact@v4
