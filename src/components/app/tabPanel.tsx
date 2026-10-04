@@ -12,7 +12,10 @@ export function TabContent({
   centered?: boolean;
 }) {
   return (
-    <div className="relative min-h-0 flex-1 overflow-auto px-4 pt-8 pb-8 sm:px-6 lg:px-10 xl:px-16">
+    <div
+      className="relative min-h-0 flex-1 overflow-auto px-4 pt-8 pb-8 sm:px-6 lg:px-10 xl:px-16"
+      data-slot="tab-content"
+    >
       <div className={cn('max-w-3xl', centered && 'mx-auto')}>{children}</div>
     </div>
   );
@@ -28,7 +31,7 @@ export function TabHeader({
   badge?: ReactNode;
 }) {
   return (
-    <div className="mb-7 flex flex-col gap-1">
+    <div className="mb-7 flex flex-col gap-1" data-slot="tab-header">
       <div className="flex items-center gap-2.5">
         <h2 className="t-card-title">{title}</h2>
         {badge}
@@ -50,7 +53,10 @@ export function SettingRow({
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+    <div
+      className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6"
+      data-slot="setting-row"
+    >
       <div className="flex min-w-0 flex-col gap-1">
         <InputTitle>{title}</InputTitle>
         {hint && <p className="t-meta text-fg-muted">{hint}</p>}

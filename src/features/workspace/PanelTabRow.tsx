@@ -60,6 +60,7 @@ export function PanelTabRow({
           ? 'h-12'
           : 'before:pointer-events-none before:absolute before:right-2 before:bottom-0 before:left-4.5 before:h-px before:bg-divider'
       )}
+      data-slot="workspace-tools-row"
     >
       {title ? (
         <h2 className="t-subtitle ml-1 min-w-0 flex-1 truncate">{title}</h2>

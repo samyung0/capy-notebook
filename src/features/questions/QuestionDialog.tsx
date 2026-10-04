@@ -317,6 +317,10 @@ function QuestionDialogSession({
           const asset = await uploadAsset(
             new File([svg], 'graph.svg', { type: 'image/svg+xml' })
           );
+          if (!('url' in asset))
+            throw new CopyError(
+              m.question_ui_bank_image_uploads_are_unavailable()
+            );
           block = { ...block, image: { url: asset.url } };
         } else block = { ...block, image: { svg } };
       }
@@ -842,7 +846,7 @@ function QuestionDialogSession({
                       : current
                   )
                 }
-                uploadAsset={policy === 'bank' ? uploadAsset : undefined}
+                uploadAsset={uploadAsset}
               />
             ) : (
               <div className="space-y-5">
@@ -899,7 +903,7 @@ function QuestionDialogSession({
                         'chart',
                         'graph',
                         'table',
-                        ...(policy === 'bank' ? ['image' as const] : []),
+                        ...(uploadAsset ? ['image' as const] : []),
                         'part',
                       ] as const
                     ).map((type) => (

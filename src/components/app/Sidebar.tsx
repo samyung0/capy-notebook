@@ -2,14 +2,17 @@ import { Link, useRouterState } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { useMediaQuery } from 'usehooks-ts';
 import { Icon, type IconName } from '@/components/ui/Icon';
+import { NotificationsBell } from '@/features/notification/NotificationBell';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { features } from '@/lib/features';
+import { useNotionLight } from '@/theme/theme';
 import { BASE_BUTTON_STYLE } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Drawer, DrawerContent, DrawerTrigger } from '../ui/Drawer';
 import { IconButton } from '../ui/IconButton';
 import { LogoMark } from '../ui/Logo';
+import { ProfilePill, SearchButton } from './AccountControls';
 
 interface NavItem {
   exact?: boolean;
@@ -92,6 +95,8 @@ function Row({
           ? 'bg-action font-bold text-action-fg'
           : 'font-medium text-fg hover:bg-page-hover'
       )}
+      data-active={active || undefined}
+      data-slot="app-nav-row"
       onClick={onNavigate}
       preload="intent"
       title={collapsed ? item.label : undefined}
@@ -117,6 +122,7 @@ export function Sidebar({
   // TODO: maybe switch to shadcn sidebar approach?
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const nav = items();
+  const notionLight = useNotionLight();
 
   // TODO: untested
   if (collapsed) {
@@ -159,11 +165,15 @@ export function Sidebar({
         'm-2.5 mr-0 ml-1 flex w-52 shrink-0 items-stretch gap-0 overflow-y-auto px-2.5 py-4',
         className
       )}
+      data-slot="app-sidebar"
       radius="card-xl"
       theme="page"
     >
       <nav>
-        <div className="flex items-center justify-between px-3 pt-1 pb-6">
+        <div
+          className="flex items-center justify-between px-3 pt-1 pb-6"
+          data-slot="sidebar-brand"
+        >
           <div className="flex items-center gap-3">
             {/* <LogoMark size={36} /> */}
             <h1 className={cn('t-card-title font-extrabold tracking-tight')}>
@@ -171,7 +181,7 @@ export function Sidebar({
             </h1>
           </div>
           <IconButton
-            className="lg:hidden"
+            className={onNavigate ? undefined : 'lg:hidden'}
             icon="x"
             label={m.action_close()}
             onClick={onNavigate}
@@ -180,10 +190,19 @@ export function Sidebar({
           />
         </div>
 
-        <div className="t-label px-3 pt-0 pb-1.5 text-fg-muted">
+        {notionLight && (
+          <div data-slot="sidebar-utilities">
+            <SearchButton />
+            <NotificationsBell />
+          </div>
+        )}
+        <div
+          className="t-label px-3 pt-0 pb-1.5 text-fg-muted"
+          data-slot="sidebar-section-label"
+        >
           {m.nav_section_general()}
         </div>
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1" data-slot="sidebar-links">
           {nav.general.map((i) => (
             <Row
               active={isActive(pathname, i)}
@@ -194,10 +213,14 @@ export function Sidebar({
             />
           ))}
         </div>
-        <div className="t-label mt-4 px-3 pt-0 pb-1.5 text-fg-muted">
+        <div
+          className="t-label mt-4 px-3 pt-0 pb-1.5 text-fg-muted"
+          data-section="tools"
+          data-slot="sidebar-section-label"
+        >
           {m.nav_section_tools()}
         </div>
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1" data-slot="sidebar-links">
           {nav.tools.map((i) => (
             <Row
               active={isActive(pathname, i)}
@@ -210,7 +233,10 @@ export function Sidebar({
         </div>
 
         <div className="mt-auto" />
-        <div className="mt-3 flex flex-col gap-1 border-divider border-t pt-2">
+        <div
+          className="mt-3 flex flex-col gap-1 border-divider border-t pt-2"
+          data-slot="sidebar-links"
+        >
           {nav.bottom.map((i) => (
             <Row
               active={isActive(pathname, i)}
@@ -221,6 +247,11 @@ export function Sidebar({
             />
           ))}
         </div>
+        {notionLight && (
+          <div data-slot="sidebar-account">
+            <ProfilePill />
+          </div>
+        )}
       </nav>
     </Card>
   );
@@ -231,8 +262,15 @@ export function Sidebar({
  * The trigger is meant to live in the top inset bar; the drawer closes
  * itself whenever the route changes.
  */
-export function MobileNavDrawer({ className }: { className?: string }) {
+export function MobileNavDrawer({
+  className,
+  allowDesktop = false,
+}: {
+  className?: string;
+  allowDesktop?: boolean;
+}) {
   const [open, setOpen] = useState(false);
+  const notionLight = useNotionLight();
   const isLg = useMediaQuery('(min-width: 1024px)');
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
@@ -241,10 +279,10 @@ export function MobileNavDrawer({ className }: { className?: string }) {
   }, [pathname]);
 
   useEffect(() => {
-    if (isLg && open) {
+    if (isLg && open && !allowDesktop) {
       setOpen(false);
     }
-  }, [isLg, open]);
+  }, [isLg, open, allowDesktop]);
 
   return (
     <Drawer
@@ -254,17 +292,18 @@ export function MobileNavDrawer({ className }: { className?: string }) {
       swipeDirection="left"
     >
       <DrawerTrigger
+        data-slot="iconbutton"
         render={
           <IconButton
             aria-label={m.a11y_open_navigation()}
             className={className}
             icon="menu"
             size="md"
-            variant="dark"
+            variant={notionLight ? 'ghost-hover' : 'dark'}
           />
         }
       />
-      <DrawerContent>
+      <DrawerContent data-app-navigation>
         <Sidebar
           className="m-0 h-full w-full min-w-62 rounded-none bg-surface text-fg"
           onNavigate={() => setOpen(false)}

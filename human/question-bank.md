@@ -3,3 +3,6 @@
 - Developer requested (2026-10-01) both quiz edit tabs use the Settings Account Save button styling: right-aligned, large accent pill with a pending spinner. src/routes/QuizEdit.tsx
 - Developer reported (2026-10-01) the whole quiz edit page scrolls alongside its content and requested reverting the formula change; contain positioned content at the tab scroll boundary so only the body scrolls. src/components/app/tabPanel.tsx
 - Developer requested (2026-10-01) Biology 101 mock quizzes demonstrate every supported answer type, formulas, graphs, charts, tables and varied worked solutions for visual inspection; image examples are deferred. src/mocks/biologyQuiz.ts src/mocks/noteContent/bio.ts src/mocks/db.ts
+- Developer decided (2026-10-02) answer options, matching options and ordering items stay plain strings; no image uploads or other rich content inside answer options. src/features/questions/types.ts server/internal/questions
+
+- Developer approved (2026-10-04) small fixes for the notion-light commit blockers: align image schema input/output with exclusive URL or asset-ID sources, narrow quiz export nodes, and reject bank graph upload results without a public URL. src/features/questions/validation.ts src/features/questions/QuestionDialog.tsx src/features/notes/documentAdapters.ts

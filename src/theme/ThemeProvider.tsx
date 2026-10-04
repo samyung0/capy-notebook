@@ -17,8 +17,12 @@ function readStored<T extends string>(
   fallback: T
 ): T {
   if (typeof localStorage === 'undefined') return fallback;
-  const v = localStorage.getItem(key) as T | null;
-  return v && allowed.includes(v) ? v : fallback;
+  let v = localStorage.getItem(key);
+  if (key === THEME_KEY && v === 'macchiato') {
+    v = 'frappe';
+    localStorage.setItem(key, v);
+  }
+  return v && allowed.includes(v as T) ? (v as T) : fallback;
 }
 
 function prefersDark(): boolean {

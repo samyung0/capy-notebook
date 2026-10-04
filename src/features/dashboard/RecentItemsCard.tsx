@@ -73,7 +73,7 @@ export function RecentItemsCard() {
   const isLoading = filesLoading || materialsLoading || workspacesLoading;
 
   return (
-    <div className="flex h-full flex-col gap-3">
+    <div className="flex h-full flex-col gap-3" data-slot="recent-items">
       <h3 className="t-card-title px-4">{m.dashboard_recent()}</h3>
       {paused ? (
         <QueryPausedState className="h-full min-h-full flex-1" />
@@ -88,6 +88,7 @@ export function RecentItemsCard() {
           {items.map((item) => (
             <div
               className="group relative flex items-start justify-between rounded-button hover:bg-surface-hover-bg"
+              data-slot="recent-item"
               key={`${item.kind}-${item.id}`}
             >
               <Link

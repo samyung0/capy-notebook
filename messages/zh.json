@@ -1693,6 +1693,7 @@
   "question_validation_bank_solution": "题库题目的每个小题都需要有解题过程。",
   "question_validation_asset_host": "图片必须使用已配置的题库资源地址。",
   "question_validation_upload_graphs": "保存题目前请先上传题库图形。",
+  "question_validation_image_source": "图片必须且只能有一个来源。",
   "question_validation_question_ids": "题目 ID 不能重复。",
   "question_validation_quiz_part_ids": "整份测验中的小题 ID 不能重复。"
 }

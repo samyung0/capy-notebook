@@ -238,13 +238,21 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
             'Pie and stacked charts need one nonnegative series with a positive total.',
         });
     }),
-  z.strictObject({
-    type: z.literal('image'),
-    url: z.url().max(limits.QUESTION_ASSET_URL_MAX),
-    ...imageSize,
-    attribution: meta.optional(),
-    description: text,
-  }),
+  // A discriminated union cannot hold two image shapes, so the source is
+  // an exclusive pair: url (bank) or assetId (quiz editor asset).
+  z
+    .strictObject({
+      assetId: identifier.optional(),
+      type: z.literal('image'),
+      url: z.url().max(limits.QUESTION_ASSET_URL_MAX).optional(),
+      ...imageSize,
+      attribution: meta.optional(),
+      description: text,
+    })
+    .refine(
+      (block) => (block.url === undefined) !== (block.assetId === undefined),
+      'An image needs exactly one source.'
+    ),
   z
     .strictObject({
       board: z.strictObject({
@@ -434,13 +442,16 @@ export function validateQuestion(value: unknown, policy: QuestionPolicy = {}) {
     ...question.stem,
     ...question.parts.flatMap((p) => [...p.blocks, ...p.solution]),
   ]) {
-    if (
+    if (block.type === 'image' && block.assetId !== undefined) {
+      if (policy.bank)
+        throw new Error('Figures must use the configured bank asset host.');
+    } else if (
       block.type === 'image' ||
       (block.type === 'graph' && 'url' in block.image)
     ) {
       const url =
         block.type === 'image'
-          ? block.url
+          ? (block.url ?? '')
           : 'url' in block.image
             ? block.image.url
             : '';

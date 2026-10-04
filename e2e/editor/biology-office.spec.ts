@@ -207,33 +207,58 @@ for (const [format, name] of [
   });
 }
 
-test('Office viewer keeps its iframe when the workspace layout changes', async ({
-  page,
-}) => {
-  test.setTimeout(120_000);
-  let sessions = 0;
-  page.on('request', (request) => {
-    if (request.url().includes('/source-session')) sessions++;
-  });
-  await page.setViewportSize({ height: 800, width: 1280 });
-  await page.goto('/workspaces/ws_bio?file=bio-office-docx');
-  const frame = page.frameLocator('iframe[src*="office-runtime"]');
-  await expect(frame.locator('canvas').first()).toBeVisible({
-    timeout: 60_000,
-  });
-  const iframe = page.locator('iframe[src*="office-runtime"]');
-  await iframe.evaluate((element) => {
-    element.dataset.layoutProbe = 'kept';
-  });
-  const opened = sessions;
+for (const style of ['classroom', 'notion']) {
+  test(`Office viewer keeps its iframe when the workspace layout changes (${style})`, async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await page.addInitScript((selectedStyle) => {
+      localStorage.setItem('capy.style', selectedStyle);
+      localStorage.setItem('capy.theme', 'latte');
+    }, style);
+    let sessions = 0;
+    page.on('request', (request) => {
+      if (request.url().includes('/source-session')) sessions++;
+    });
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await page.goto('/workspaces/ws_bio?file=bio-office-docx');
+    const frame = page.frameLocator('iframe[src*="office-runtime"]');
+    await expect(frame.locator('canvas').first()).toBeVisible({
+      timeout: 60_000,
+    });
+    const iframe = page.locator('iframe[src*="office-runtime"]');
+    await iframe.evaluate((element) => {
+      element.dataset.layoutProbe = 'kept';
+    });
+    const opened = sessions;
 
-  // One column below lg, two columns at lg: both switch the surrounding layout.
-  for (const width of [900, 1280]) {
-    await page.setViewportSize({ height: 800, width });
-    await expect(
-      page.getByRole('button', { name: 'Files' }).first()
-    ).toBeVisible();
-    await expect(iframe).toHaveAttribute('data-layout-probe', 'kept');
-  }
-  expect(sessions).toBe(opened);
-});
+    // One column below lg, two columns at lg: both switch the surrounding layout.
+    for (const width of [900, 1280]) {
+      await page.setViewportSize({ height: 800, width });
+      await expect(
+        page
+          .getByRole('button', {
+            exact: true,
+            name: style === 'notion' ? 'Workspace tools' : 'Files',
+          })
+          .first()
+      ).toBeVisible();
+      await expect(iframe).toHaveAttribute('data-layout-probe', 'kept');
+    }
+    if (style === 'notion') {
+      const tools = page.getByRole('button', {
+        exact: true,
+        name: 'Workspace tools',
+      });
+      await tools.click();
+      await page
+        .getByRole('menuitem', { name: 'Pin files to the left' })
+        .click();
+      await expect(iframe).toHaveAttribute('data-layout-probe', 'kept');
+      await tools.click();
+      await page.getByRole('menuitem', { exact: true, name: 'Files' }).click();
+      await expect(iframe).toHaveAttribute('data-layout-probe', 'kept');
+    }
+    expect(sessions).toBe(opened);
+  });
+}

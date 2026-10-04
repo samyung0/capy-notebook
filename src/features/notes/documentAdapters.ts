@@ -14,8 +14,10 @@ import {
   type MaterialElement,
   type MaterialNode,
   type MaterialValue,
+  type QuizQuestionElement,
   quizNode,
 } from '@/features/materials/document';
+import { questionAssetIds } from '@/features/questions/types';
 import type { ExportFormat } from './export/render';
 
 type MarkdownEditor = PlateEditor & {
@@ -126,6 +128,11 @@ export async function exportNoteDocument(
     nodes.forEach((node) => {
       if ('text' in node) return;
       if (typeof node.assetId === 'string') ids.add(node.assetId);
+      if (node.type === 'quiz_question')
+        for (const id of questionAssetIds(
+          (node as QuizQuestionElement).question
+        ))
+          ids.add(id);
       visit(node.children);
     });
   visit(value);

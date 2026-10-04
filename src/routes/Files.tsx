@@ -298,7 +298,10 @@ function ActiveFiles({
         sorts={sorts}
         view={view}
       />
-      <div className="min-h-0 flex-1 overflow-auto px-6 pt-2 pb-5">
+      <div
+        className="shrink-0 grow px-6 pt-2 pb-5"
+        data-slot="page-list-content"
+      >
         {fetchStatus === 'paused' && !data ? (
           <QueryPausedState />
         ) : isLoading ? (
@@ -461,7 +464,10 @@ function TrashTab({
   }
   return (
     <>
-      <div className="-mb-3 flex flex-wrap items-center justify-between gap-x-3 px-6">
+      <div
+        className="-mb-3 flex flex-wrap items-center justify-between gap-x-3 px-6"
+        data-slot="list-toolbar"
+      >
         {selection.selecting ? (
           <FileSelectionActions
             allSelected={
@@ -531,7 +537,10 @@ function TrashTab({
           <ListViewToggle onViewChange={onViewChange} view={view} />
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto px-6 pt-2 pb-5">
+      <div
+        className="shrink-0 grow px-6 pt-2 pb-5"
+        data-slot="page-list-content"
+      >
         <div className="flex flex-col gap-3">
           <p className="t-meta text-fg-muted" role="note">
             {m.trash_notice()}

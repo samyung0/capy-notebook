@@ -67,6 +67,7 @@ export function Card({
         className
       )}
       data-border={border}
+      data-interactive={interactive || undefined}
       data-radius={radius}
       data-slot="card"
       data-theme={theme}

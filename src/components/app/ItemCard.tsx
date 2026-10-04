@@ -59,6 +59,7 @@ export function ItemCard({
           'relative flex flex-col gap-1 border-divider border-t px-4 py-2.5 hover:bg-surface-hover-bg md:grid md:grid-cols-[minmax(200px,2.4fr)_minmax(160px,2fr)_1.5fr_1fr_40px] md:items-center md:gap-3',
           selected && 'bg-surface-hover-bg'
         )}
+        data-slot="item-list-row"
       >
         {overlay}
         <div className="flex min-w-0 items-center gap-3.5">
@@ -88,6 +89,7 @@ export function ItemCard({
         'relative gap-3 p-4 leading-tight xl:px-5',
         selected && 'ring-2 ring-accent'
       )}
+      data-gallery-card="item"
       interactive={!!link || !!selection}
     >
       {overlay}

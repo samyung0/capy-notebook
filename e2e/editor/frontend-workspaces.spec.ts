@@ -244,3 +244,75 @@ test('workspace sorting shows direction and stays open while reversing order', a
   await page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
 });
+
+test('Notion workspace tools preserve chat drafts and remain reachable on phones', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('capy.style', 'notion');
+    localStorage.setItem('capy.theme', 'latte');
+  });
+  await page.setViewportSize({ height: 900, width: 1440 });
+  await page.goto('/workspaces/ws_bio?material=mat_e2e_editor&mode=view');
+  const header = page.locator('[data-slot="document-header"]');
+  const tools = page.getByRole('button', {
+    exact: true,
+    name: 'Workspace tools',
+  });
+  const composer = page.getByRole('textbox', {
+    name: 'Ask about your sources…',
+  });
+  await composer.fill('Keep this draft while I check the sources');
+  for (const name of ['Files', 'Generate', 'Chat']) {
+    await tools.click();
+    await page.getByRole('menuitem', { exact: true, name }).click();
+  }
+  await expect(composer).toHaveValue(
+    'Keep this draft while I check the sources'
+  );
+  await tools.click();
+  await page.getByRole('menuitem', { name: 'Pin files to the left' }).click();
+  await expect(
+    page.getByRole('heading', { exact: true, name: 'Files' })
+  ).toBeVisible();
+  await expect(composer).toHaveValue(
+    'Keep this draft while I check the sources'
+  );
+  await tools.click();
+  await page.getByRole('menuitem', { exact: true, name: 'Files' }).click();
+  await expect(
+    page.getByRole('heading', { exact: true, name: 'Files' })
+  ).toBeHidden();
+  await expect(header).toHaveCount(1);
+  await expect(
+    page.getByRole('toolbar', { name: 'Document formatting' })
+  ).toHaveCount(0);
+
+  await page.setViewportSize({ height: 844, width: 390 });
+  const phoneTools = header.getByRole('button', { name: 'Workspace tools' });
+  await phoneTools.click();
+  await page.getByRole('menuitem', { exact: true, name: 'Chat' }).click();
+  const drawer = page.getByRole('dialog', {
+    exact: true,
+    name: 'Workspace tools',
+  });
+  await expect(drawer).toBeVisible();
+  await drawer
+    .getByRole('textbox', { name: 'Ask about your sources…' })
+    .fill('Keep the phone draft');
+  await page.keyboard.press('Escape');
+  await expect(drawer).toBeHidden();
+  await phoneTools.click();
+  await page.getByRole('menuitem', { exact: true, name: 'Chat' }).click();
+  await expect(
+    drawer.getByRole('textbox', { name: 'Ask about your sources…' })
+  ).toHaveValue('Keep the phone draft');
+  await page.keyboard.press('Escape');
+  await phoneTools.click();
+  await page
+    .getByRole('menuitem', { exact: true, name: 'Workspace settings' })
+    .click();
+  await expect(
+    page.getByRole('dialog', { exact: true, name: 'Workspace settings' })
+  ).toBeVisible();
+});

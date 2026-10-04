@@ -270,8 +270,14 @@ export default function QuestionBank() {
     );
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-1.5 sm:gap-2.5 lg:flex-row">
-      <div className="order-first flex shrink-0 flex-col gap-2.5 lg:order-last lg:h-full lg:w-(--top-inset-bar-width)">
+    <div
+      className="flex h-full min-h-0 flex-col gap-1.5 sm:gap-2.5 lg:flex-row"
+      data-slot="question-bank-page"
+    >
+      <div
+        className="order-first flex shrink-0 flex-col gap-2.5 lg:order-last lg:h-full lg:w-(--top-inset-bar-width)"
+        data-slot="question-bank-rail"
+      >
         <TopInsetBar />
         <Panel
           className="hidden min-h-0 flex-1 lg:flex"
@@ -332,7 +338,10 @@ export default function QuestionBank() {
                 : []
             }
           />
-          <div className="px-4 pt-8 pb-28 sm:px-6 lg:px-10 lg:pb-10 xl:px-16">
+          <div
+            className="px-4 pt-8 pb-28 sm:px-6 lg:px-10 lg:pb-10 xl:px-16"
+            data-slot="question-bank-body"
+          >
             <div className="max-w-3xl">{body}</div>
           </div>
         </Panel>

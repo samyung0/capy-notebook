@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { uploadEditorAsset } from '@/api/editorAssets';
 import { UpdateQuizMetadataBody } from '@/api/gen/validators';
 import {
   useQuiz,
@@ -155,6 +156,16 @@ function QuizEditor({ quizId }: { quizId: string }) {
                   name={name}
                   onQuestionsChange={setQuestions}
                   questions={questions}
+                  uploadAsset={
+                    quiz.workspaceId
+                      ? (file) =>
+                          uploadEditorAsset(
+                            quiz.workspaceId,
+                            file,
+                            'image'
+                          ).then(({ assetId }) => ({ assetId }))
+                      : undefined
+                  }
                 />
               </>
             )}

@@ -1025,31 +1025,6 @@ func RewriteFlashcardIDs(raw string, idMap map[string]string, mint func() string
 	return result, ids, err
 }
 
-// RewriteEditorAssetIDs updates embedded media references when a workspace is
-// cloned. Asset rows are copied with new logical IDs while their physical blob
-// paths may remain shared.
-func RewriteEditorAssetIDs(raw string, idMap map[string]string) (string, error) {
-	doc, err := Parse(raw)
-	if err != nil {
-		return "", err
-	}
-	var rewrite func(map[string]any)
-	rewrite = func(node map[string]any) {
-		if assetID, ok := node["assetId"].(string); ok {
-			if replacement := idMap[assetID]; replacement != "" {
-				node["assetId"] = replacement
-			}
-		}
-		for _, child := range children(node) {
-			rewrite(child)
-		}
-	}
-	for _, node := range doc.Value {
-		rewrite(node)
-	}
-	return Marshal(doc)
-}
-
 // EditorAssetIDs returns the distinct editor assets referenced anywhere in a
 // Plate document. Cloning uses this to copy only media that the retained
 // current content or revision history can actually render.
@@ -1063,6 +1038,11 @@ func EditorAssetIDs(raw string) ([]string, error) {
 	collect = func(node map[string]any) {
 		if assetID, ok := node["assetId"].(string); ok && assetID != "" {
 			seen[assetID] = struct{}{}
+		}
+		if q, ok := node["question"].(map[string]any); ok && node["type"] == "quiz_question" {
+			for _, assetID := range questions.AssetIDs(q) {
+				seen[assetID] = struct{}{}
+			}
 		}
 		for _, child := range children(node) {
 			collect(child)
@@ -1079,9 +1059,10 @@ func EditorAssetIDs(raw string) ([]string, error) {
 }
 
 // RewriteClonedEditorAssetIDs rewrites references to ready editor assets and
-// removes media nodes whose source asset was not copied. A clone never carries
-// pending or failed asset rows, so preserving those references would create a
-// document that can never render successfully.
+// removes media nodes and quiz images whose source asset was not copied (and a
+// question whose part loses all content). A clone never carries pending or
+// failed asset rows, so preserving those references would create a document
+// that can never render successfully.
 func RewriteClonedEditorAssetIDs(raw string, idMap map[string]string) (string, error) {
 	doc, err := Parse(raw)
 	if err != nil {
@@ -1089,6 +1070,9 @@ func RewriteClonedEditorAssetIDs(raw string, idMap map[string]string) (string, e
 	}
 	var rewrite func(map[string]any) (map[string]any, bool)
 	rewrite = func(node map[string]any) (map[string]any, bool) {
+		if q, ok := node["question"].(map[string]any); ok && node["type"] == "quiz_question" && !questions.RewriteAssetIDs(q, idMap) {
+			return nil, false
+		}
 		if assetID, ok := node["assetId"].(string); ok {
 			replacement := idMap[assetID]
 			if replacement == "" {

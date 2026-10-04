@@ -63,7 +63,9 @@ export function questionBlocks(blocks: QuestionBlock[]): MaterialValue {
             caption: [{ text: block.attribution || block.description }],
             height: block.height,
             name: block.description,
-            url: block.url,
+            ...('assetId' in block
+              ? { assetId: block.assetId }
+              : { url: block.url }),
             width: block.width,
           }),
         ];

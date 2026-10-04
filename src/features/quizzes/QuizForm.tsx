@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState } from 'react';
 import type { Question } from '@/api/types';
 import { Button } from '@/components/ui/Button';
+import type { UploadQuestionAsset } from '@/features/questions/BlockEditor';
 import { blankQuestion } from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
 import { m } from '@/i18n';
@@ -27,10 +28,13 @@ export function QuizForm({
   name,
   questions,
   onQuestionsChange,
+  uploadAsset,
 }: {
   name: string;
   questions: Question[];
   onQuestionsChange: (questions: Question[]) => void;
+  /** Absent for standalone quizzes: editor assets are workspace-scoped. */
+  uploadAsset?: UploadQuestionAsset;
 }) {
   const [editing, setEditing] = useState<Question | null>(null);
   return (
@@ -98,6 +102,7 @@ export function QuizForm({
                 ? questions.findIndex((q) => q.id === editing.id) + 1
                 : questions.length + 1
             }
+            uploadAsset={uploadAsset}
           />
         </Suspense>
       )}

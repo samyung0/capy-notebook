@@ -233,7 +233,10 @@ export default function FlashcardStudy() {
   }
 
   const header = (
-    <div className="mb-4 flex items-center gap-3">
+    <div
+      className="mb-4 flex items-center gap-3"
+      data-slot="flashcard-study-header"
+    >
       <Link
         className="text-fg-muted hover:text-fg"
         preload="intent"
@@ -291,7 +294,10 @@ export default function FlashcardStudy() {
     const notDue = cards.length - dueIds.length;
     return (
       <PanelWithInvertedRadius>
-        <div className="mx-auto flex h-full w-full max-w-2xl flex-col px-6 py-6">
+        <div
+          className="mx-auto flex h-full w-full max-w-2xl flex-col px-6 py-6"
+          data-slot="flashcard-study"
+        >
           {header}
           <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
             <span className="flex h-16 w-16 items-center justify-center rounded-card-lg bg-tint-success text-tint-success-fg">
@@ -348,7 +354,10 @@ export default function FlashcardStudy() {
 
   return (
     <PanelWithInvertedRadius>
-      <div className="mx-auto flex h-full w-full max-w-2xl flex-col px-6 py-6">
+      <div
+        className="mx-auto flex h-full w-full max-w-2xl flex-col px-6 py-6"
+        data-slot="flashcard-study"
+      >
         {header}
         <div className="mb-4 flex items-center gap-3">
           <div className="flex-1">
@@ -364,13 +373,16 @@ export default function FlashcardStudy() {
 
         <button
           className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-card-lg border border-line bg-surface p-8 text-center shadow-card transition-transform active:scale-[0.99]"
+          data-slot="flashcard-study-card"
           onClick={() => setFlipped((f) => !f)}
           type="button"
         >
           <p className="t-label text-fg-muted">
             {flipped ? m.flashcards_answer() : m.flashcards_term()}
           </p>
-          <h2 className="t-section mt-3">{flipped ? card.back : card.front}</h2>
+          <h2 className="t-section mt-3" data-slot="flashcard-study-text">
+            {flipped ? card.back : card.front}
+          </h2>
           <p className="t-meta mt-6 flex items-center gap-1 text-fg-muted">
             <Icon name="message" size={13} /> {m.flashcards_tap_flip()}
           </p>
@@ -403,6 +415,7 @@ export default function FlashcardStudy() {
                   'flex flex-col items-center gap-0.5 rounded-card border px-2 py-2.5 font-semibold text-sm transition-colors',
                   RATING_STYLE[r]
                 )}
+                data-slot="flashcard-study-rating"
                 key={r}
                 onClick={() => rate(r)}
                 type="button"

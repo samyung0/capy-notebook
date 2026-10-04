@@ -238,6 +238,7 @@ export function Header({
   readOnly,
   workspaceId,
   leading,
+  trailing,
   standalone = false,
   fileControls,
 }: {
@@ -246,6 +247,7 @@ export function Header({
   beforeFileDelete?: () => boolean;
   /** Workspace chrome drawn before the file: layout toggle and workspace menu. */
   leading?: ReactNode;
+  trailing?: ReactNode;
   chapters: Chapter[];
   color?: UserColor;
   item: OpenItem;
@@ -283,10 +285,14 @@ export function Header({
   return (
     <div
       className="flex h-14 items-center gap-2 border-divider border-b py-4 pr-2 pl-4"
+      data-slot="document-header"
       data-testid="content-header"
     >
       {leading}
-      <div className="-ml-2 flex min-w-0 items-center gap-2 sm:-ml-0.5 lg:ml-2">
+      <div
+        className="-ml-2 flex min-w-0 items-center gap-2 sm:-ml-0.5 lg:ml-2"
+        data-slot="document-title"
+      >
         <FileIcon
           className="size-4 shrink-0 -translate-y-px md:size-5"
           name={icon}
@@ -324,7 +330,10 @@ export function Header({
         )}
         <WorkspaceStatusButton workspaceId={standalone ? '' : workspaceId} />
       </div>
-      <div className="ml-auto flex items-center gap-0">
+      <div
+        className="ml-auto flex items-center gap-0"
+        data-slot="document-actions"
+      >
         {item.kind === 'file' && fileControls}
         {item.kind === 'material' && activeMode === 'view' && materialKind && (
           <MaterialViewActions kind={materialKind} materialId={item.id} />
@@ -397,6 +406,7 @@ export function Header({
           showMove={!standalone}
           workspaceId={workspaceId}
         />
+        {trailing}
       </div>
     </div>
   );

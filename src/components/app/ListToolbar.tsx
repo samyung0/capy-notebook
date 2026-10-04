@@ -98,7 +98,10 @@ export function ListToolbar<V extends string>({
     : m.workspaces_filter();
 
   return (
-    <div className="-mb-3 flex flex-wrap items-center justify-between gap-x-3 px-6">
+    <div
+      className="-mb-3 flex flex-wrap items-center justify-between gap-x-3 px-6"
+      data-slot="list-toolbar"
+    >
       <div className="flex h-11.5 items-center py-2">
         {selectionActions ?? (
           <div className="flex flex-wrap items-center gap-2">
@@ -128,7 +131,7 @@ export function ListToolbar<V extends string>({
                   variant="ghost"
                 >
                   {m.workspaces_sort_prefix({ label: current.label })}
-                  <span className="font-normal text-fg-muted text-xs">
+                  <span className="-translate-y-px font-normal text-fg-muted text-xs">
                     {sortDirectionLabel(current.order, ascending)}
                   </span>
                 </Button>

@@ -13,6 +13,7 @@ import { OnboardingDialog } from '@/features/auth/OnboardingDialog';
 import { RecentItemsCard } from '@/features/dashboard/RecentItemsCard';
 import { m } from '@/i18n';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
+import { useNotionLight } from '@/theme/theme';
 
 const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
@@ -38,7 +39,7 @@ function WorkspacesSection() {
   const hasMore = (data?.length ?? 0) > DASHBOARD_WORKSPACE_LIMIT;
   const revealRef = useLoadingReveal(isLoading);
   return (
-    <section>
+    <section data-slot="dashboard-workspaces">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="t-large-card-title">{m.dashboard_workspaces()}</h2>
         <Button
@@ -100,6 +101,20 @@ function WorkspacesSection() {
 }
 
 export default function Dashboard() {
+  const notionLight = useNotionLight();
+  if (notionLight) {
+    return (
+      <div className="h-full overflow-auto" data-slot="dashboard-page">
+        <div data-slot="dashboard-content">
+          <Greeting />
+          <DashboardBanner hideWelcome />
+          <WorkspacesSection />
+          <RecentItemsCard />
+        </div>
+        {CLERK_ACTIVE && <OnboardingDialog />}
+      </div>
+    );
+  }
   return (
     <div className="flex h-full min-h-full flex-col gap-1.5 sm:gap-2.5 lg:flex-row">
       <Panel

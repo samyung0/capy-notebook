@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import { Skeleton } from '@/components/ui/feedback';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
 export interface BillingColumn {
@@ -54,6 +56,35 @@ export function BillingTable({
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+export function BillingTableSkeleton({
+  columns,
+}: {
+  columns: BillingColumn[];
+}) {
+  return (
+    <div aria-busy="true" aria-label={m.a11y_loading()} role="status">
+      <BillingTable
+        columns={columns}
+        rows={Array.from({ length: 6 }, (_, i) => ({
+          cells: Object.fromEntries(
+            columns.map((column) => [
+              column.id,
+              <Skeleton
+                className={cn(
+                  'h-5 w-3/4 min-w-12 animate-none',
+                  column.align === 'right' && 'ml-auto'
+                )}
+                key={column.id}
+              />,
+            ])
+          ),
+          key: `loading-${i}`,
+        }))}
+      />
     </div>
   );
 }

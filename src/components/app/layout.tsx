@@ -32,10 +32,12 @@ export function PanelWithInvertedRadius({
         'flex h-full min-h-0 w-full flex-col gap-1.5 sm:gap-2.5',
         className
       )}
+      data-slot="page-panel-shell"
     >
       {topBar && <div className="shrink-0 lg:hidden">{topBar}</div>}
       <Card
         className="inverted-radius-large-panel-container min-h-0 w-full flex-1 p-0 shadow-card lg:rounded-card-xl"
+        data-page-panel
         radius="button"
         theme="transparent"
       >
@@ -44,6 +46,7 @@ export function PanelWithInvertedRadius({
             'relative h-full max-w-full overflow-hidden',
             sectionClassName
           )}
+          data-slot="page-panel-section"
         >
           <Card
             asChild
@@ -52,7 +55,10 @@ export function PanelWithInvertedRadius({
           >
             <div />
           </Card>
-          <div className="relative flex h-full flex-col items-stretch gap-2 overflow-auto p-0">
+          <div
+            className="relative flex h-full flex-col items-stretch gap-2 overflow-auto p-0"
+            data-slot="page-panel-content"
+          >
             <TopBarAbovePanel.Provider value={Boolean(topBar)}>
               {children}
             </TopBarAbovePanel.Provider>
@@ -82,6 +88,7 @@ export function Panel({
     <Card
       asChild
       className={cn('h-full overflow-hidden p-0 shadow-card', className)}
+      data-page-panel
       radius="card-xl"
     >
       <El>
@@ -90,6 +97,7 @@ export function Panel({
             'flex max-h-full flex-col items-stretch gap-2 overflow-auto p-0',
             sectionClassName
           )}
+          data-slot="page-panel-scroll"
           ref={scrollRef}
         >
           {children}
@@ -120,12 +128,16 @@ export function PageHeader({
 }) {
   const barAbove = useContext(TopBarAbovePanel);
   return (
-    <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-6">
+    <header
+      className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-6"
+      data-slot="page-header"
+    >
       <div
         className={cn(
           'flex min-w-0 items-center gap-10 px-6 pt-6 pb-2',
           className
         )}
+        data-slot="page-heading"
       >
         <div className={cn('min-w-0 translate-y-px', titleClassName)}>
           {typeof title === 'string' ? (

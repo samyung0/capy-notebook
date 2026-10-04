@@ -75,12 +75,14 @@ export function CenterContent({
   requestedMode = null,
   workspaceId,
   leading,
+  trailing,
   standalone = false,
 }: {
   standalone?: boolean;
   beforeFileDelete?: () => boolean;
   /** Workspace chrome drawn before the file name in the header. */
   leading?: ReactNode;
+  trailing?: ReactNode;
   chapters: Chapter[];
   item: OpenItem | null;
   readOnly?: boolean;
@@ -120,6 +122,7 @@ export function CenterContent({
     return (
       <EmptyCenter
         leading={leading}
+        trailing={trailing}
         workspaceId={standalone ? '' : workspaceId}
       />
     );
@@ -155,6 +158,7 @@ export function CenterContent({
               onToggleFullscreen={() => setIsFullscreen((value) => !value)}
               readOnly={readOnly}
               standalone={standalone}
+              trailing={trailing}
               workspaceId={workspaceId}
             />
             <div
@@ -376,14 +380,19 @@ function OpenQuizEditor({ quizId }: { quizId: string }) {
  * and workspace status icons. No strip renders, since strips belong to a file. */
 function EmptyCenter({
   leading,
+  trailing,
   workspaceId,
 }: {
   leading?: ReactNode;
+  trailing?: ReactNode;
   workspaceId: string;
 }) {
   return (
     <>
-      <div className="flex h-14 items-center gap-2 border-divider border-b px-4 py-4">
+      <div
+        className="flex h-14 items-center gap-2 border-divider border-b px-4 py-4"
+        data-slot="document-header"
+      >
         {leading ?? (
           <>
             <Icon className="size-5.5" name="files" />
@@ -392,6 +401,7 @@ function EmptyCenter({
         )}
         <OfflineStatus />
         <WorkspaceStatusButton workspaceId={workspaceId} />
+        {trailing && <div className="ml-auto shrink-0">{trailing}</div>}
       </div>
       <div className="grid flex-1 place-items-center p-6">
         <div className="flex flex-col items-center gap-3">

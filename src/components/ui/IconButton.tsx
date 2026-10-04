@@ -51,8 +51,8 @@ export interface IconButtonProps
 
 export function IconButton({
   icon,
-  variant,
-  size,
+  variant = 'ghost',
+  size = 'md',
   dot,
   strokeWidth,
   label,

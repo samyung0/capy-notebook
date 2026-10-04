@@ -1693,6 +1693,7 @@
   "question_validation_bank_solution": "Bank questions need a worked solution for every part.",
   "question_validation_asset_host": "Figures must use the configured bank asset host.",
   "question_validation_upload_graphs": "Upload bank graphs before saving the question.",
+  "question_validation_image_source": "An image needs exactly one source.",
   "question_validation_question_ids": "Question IDs must be unique.",
   "question_validation_quiz_part_ids": "Part IDs must be unique throughout the quiz."
 }

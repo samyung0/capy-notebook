@@ -15,7 +15,10 @@ import type { Citation, Region } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { LoadingLarge } from '@/components/app/LoadingLarge';
 import { Panel } from '@/components/app/layout';
-import { TopInsetBar } from '@/components/app/TopInsetBar';
+import {
+  NotionWorkspaceNavigation,
+  TopInsetBar,
+} from '@/components/app/TopInsetBar';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { FloatingToolbar } from '@/components/ui/BlockToolbar';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/Drawer';
@@ -54,10 +57,12 @@ import { PanelTabRow, type TabAction } from '@/features/workspace/PanelTabRow';
 import { WorkspaceHealth } from '@/features/workspace/WorkspaceHealth';
 import { WorkspacePicker } from '@/features/workspace/WorkspacePicker';
 import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
+import { WorkspaceToolMenu } from '@/features/workspace/WorkspaceToolMenu';
 import { m } from '@/i18n';
 import { toastCloneError } from '@/lib/authToasts';
 import { trackItemCloned } from '@/lib/observability';
 import { useMediaQuery } from '@/lib/useMediaQuery';
+import { useNotionLight } from '@/theme/theme';
 
 type PanelTab = 'files' | 'chat' | 'generate';
 const TAB_ICON: Record<PanelTab, IconName> = {
@@ -69,6 +74,7 @@ const TAB_ICON: Record<PanelTab, IconName> = {
 const PIN_KEY = 'capy.workspace.filesPinned';
 
 export default function WorkspaceOpen() {
+  const notionLight = useNotionLight();
   const params = useParams({ strict: false });
   const workspaceId = (params as { workspaceId: string }).workspaceId;
   const navigate = useNavigate();
@@ -217,8 +223,11 @@ export default function WorkspaceOpen() {
       ? m.workspace_tab_files()
       : t === 'chat'
         ? m.workspace_tab_chat()
-        : m.nav_create();
+        : notionLight
+          ? m.action_generate()
+          : m.nav_create();
   function showTab(next: PanelTab) {
+    if (notionLight && next === 'files' && layout === 'three') togglePinned();
     setTab(next);
     if (layout === 'one') setToolsOpen(true);
   }
@@ -233,7 +242,23 @@ export default function WorkspaceOpen() {
         onAddChapter: () => setChapterForm({ mode: 'add' }),
         onAddSource: setAddSource,
       };
-  const tabs = (
+  const toolMenu = (
+    <WorkspaceToolMenu
+      onChange={showTab}
+      onOpenSettings={layout === 'one' ? rowProps.onOpenSettings : undefined}
+      onTogglePinned={xl ? togglePinned : undefined}
+      pinned={pinned}
+      tools={panelTabs.map((t) => ({
+        icon: TAB_ICON[t],
+        label: tabLabel(t),
+        value: t,
+      }))}
+      value={railTab}
+    />
+  );
+  const tabs = notionLight ? (
+    <div className="min-w-0 flex-1">{toolMenu}</div>
+  ) : (
     <Tabs
       className="relative inset-shadow-none min-w-0 flex-1 shrink"
       onChange={(value) => showTab(value as PanelTab)}
@@ -331,14 +356,18 @@ export default function WorkspaceOpen() {
           item={openItem}
           leading={
             <>
-              <div className="mr-2 flex items-center gap-0 lg:mr-4">
+              <div
+                className="mr-2 flex items-center gap-0 lg:mr-4"
+                data-slot="document-leading"
+              >
+                {notionLight && <NotionWorkspaceNavigation />}
                 <ToolbarButton
                   label={m.workspace_back_to()}
                   onClick={() => navigate({ to: '/workspaces' })}
                 >
                   <Icon name="navigationBack" />
                 </ToolbarButton>
-                {xl && (
+                {xl && !notionLight && (
                   <ToolbarButton
                     aria-pressed={pinned}
                     label={
@@ -393,6 +422,7 @@ export default function WorkspaceOpen() {
           }}
           readOnly={readOnly}
           requestedMode={search.mode ?? null}
+          trailing={notionLight && layout === 'one' ? toolMenu : undefined}
           workspaceId={workspaceId}
         />
       </AppErrorBoundary>
@@ -400,8 +430,11 @@ export default function WorkspaceOpen() {
   );
 
   const railColumn = (
-    <div className="flex h-full w-full flex-col gap-2.5">
-      <TopInsetBar className="w-full" />
+    <div
+      className="flex h-full w-full flex-col gap-2.5"
+      data-slot="workspace-rail"
+    >
+      {!notionLight && <TopInsetBar className="w-full" />}
       <Panel className="flex-1" sectionClassName="h-full gap-0 overflow-hidden">
         {rail}
       </Panel>
@@ -413,10 +446,14 @@ export default function WorkspaceOpen() {
   // overflow-visible WITH important is so that shadow doesnt get clipped
   return (
     <>
-      <div className="flex h-full min-h-0 flex-col gap-2.5">
-        {layout === 'one' && <TopInsetBar className="w-full" />}
+      <div
+        className="flex h-full min-h-0 flex-col gap-2.5"
+        data-slot="workspace-layout"
+      >
+        {layout === 'one' && !notionLight && <TopInsetBar className="w-full" />}
         <ResizablePanelGroup
           className="overflow-visible! flex min-h-0 flex-1 gap-1.5"
+          data-slot="workspace-panel-group"
           orientation="horizontal"
         >
           {layout === 'three' && (
@@ -449,7 +486,7 @@ export default function WorkspaceOpen() {
           >
             <div className="relative h-full">
               {viewer}
-              {layout === 'one' && (
+              {layout === 'one' && !notionLight && (
                 <FloatingToolbar
                   aria-label={m.workspace_tools()}
                   className="gap-1.5 rounded-full! px-2.5 py-1 sm:gap-0 sm:px-2"

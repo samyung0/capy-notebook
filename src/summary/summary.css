@@ -240,3 +240,121 @@
     margin-left: 30px;
   }
 }
+
+/* Public summaries have their own shell outside AppShell. */
+:root[data-style="notion"][data-theme="latte"] {
+  .summary-page {
+    padding: 0;
+    font-size: 14px;
+    background: var(--surface-card-bg);
+  }
+
+  .summary-shell {
+    min-height: 100dvh;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .summary-header {
+    gap: 12px;
+    min-height: 56px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border-default);
+  }
+
+  .summary-brand {
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .summary-actions {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .summary-profile {
+    font-weight: 500;
+    border: 0;
+    border-radius: 6px;
+    transition: background-color 100ms ease-in-out;
+  }
+
+  .summary-profile:hover {
+    background: var(--surface-card-hover-bg);
+  }
+
+  .summary-panel {
+    width: min(100%, 830px);
+  }
+
+  .summary-meta {
+    padding: 40px 24px 28px;
+  }
+
+  .summary-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 6px;
+  }
+
+  .summary-meta h1 {
+    font-size: var(--page-title-font-size);
+    font-weight: var(--page-title-font-weight);
+    line-height: var(--page-title-line-height);
+    letter-spacing: var(--page-title-letter-spacing);
+  }
+
+  .summary-description {
+    line-height: 24px;
+  }
+
+  .summary-tags li {
+    padding: 1px 6px;
+    font-size: 12px;
+    line-height: 20px;
+    border-radius: 4px;
+  }
+
+  .summary-counts {
+    padding-inline: 24px;
+  }
+
+  .summary-outline {
+    margin-inline: 24px;
+  }
+
+  .summary-chapter h2 {
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 26px;
+  }
+
+  .summary-files li {
+    font-size: 14px;
+    line-height: 22px;
+  }
+
+  @media (min-width: 640px) {
+    .summary-header {
+      padding-inline: 24px;
+    }
+
+    .summary-meta {
+      padding: 64px 48px 28px;
+    }
+
+    .summary-counts {
+      padding-inline: 48px;
+    }
+
+    .summary-outline {
+      margin-inline: 48px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .summary-profile {
+      transition: none;
+    }
+  }
+}

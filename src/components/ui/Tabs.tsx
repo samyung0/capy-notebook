@@ -32,6 +32,7 @@ export function Tabs({
         bottomBorder && 'inset-shadow-[0_-1px_var(--color-divider)]',
         className
       )}
+      data-slot="tabs"
       ref={rowRef}
     >
       {tabs.map((tab) => {
@@ -50,6 +51,9 @@ export function Tabs({
                   ? 'border-solid-error text-solid-error'
                   : 'text-solid-error hover:text-tint-error-fg')
             )}
+            data-active={active || undefined}
+            data-slot="tab"
+            data-tone={t.tone}
             key={t.value}
             onClick={() => onChange?.(t.value)}
             type="button"

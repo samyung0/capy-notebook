@@ -40,7 +40,10 @@ export default function QuizAttempt() {
  * padding and has nowhere to go back to. */
 export function SharedQuizAttempt() {
   return (
-    <div className="t-body h-dvh bg-page p-1.5 text-fg sm:p-2.5">
+    <div
+      className="t-body h-dvh bg-page p-1.5 text-fg sm:p-2.5"
+      data-slot="shared-quiz-page"
+    >
       <QuizAttemptPage shared />
     </div>
   );

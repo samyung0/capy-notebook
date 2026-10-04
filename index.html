@@ -11,11 +11,15 @@
     (() => {
       try {
         const STYLES = ['classroom', 'notion'];
-        const THEMES = ['latte', 'mocha'];
-        const DARKTHEMES = ['mocha'];
+        const THEMES = ['latte', 'frappe', 'mocha'];
+        const DARKTHEMES = ['frappe', 'mocha'];
         const root = document.documentElement;
         const style = localStorage.getItem('capy.style');
-        const theme = localStorage.getItem('capy.theme');
+        let theme = localStorage.getItem('capy.theme');
+        if (theme === 'macchiato') {
+          theme = 'frappe';
+          localStorage.setItem('capy.theme', theme);
+        }
 
         root.dataset.style = STYLES.includes(style) ? style : 'classroom';
         root.dataset.theme = THEMES.includes(theme)
@@ -23,7 +27,7 @@
           : matchMedia('(prefers-color-scheme: dark)').matches
             ? 'mocha'
             : 'latte';
-        if (DARKTHEMES.includes(theme)) {
+        if (DARKTHEMES.includes(root.dataset.theme)) {
           root.classList.add('dark');
         }
       } catch {

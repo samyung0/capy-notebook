@@ -131,6 +131,9 @@ export function Input({
         actionIcon && actionSide === 'left' && 'pl-2',
         wrapperClassName
       )}
+      data-size={size ?? 'md'}
+      data-slot="input-wrapper"
+      data-variant={variant ?? 'light'}
     >
       {leftIcon && <InlineIcon name={leftIcon} />}
       {actionIcon && actionShowIcon && actionSide === 'left' && (

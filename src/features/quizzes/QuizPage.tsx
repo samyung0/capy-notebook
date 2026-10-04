@@ -43,12 +43,13 @@ export function QuizPageHeader({
   topBar?: boolean;
 }) {
   return (
-    <header className="flex items-start">
+    <header className="flex items-start" data-slot="quiz-page-header">
       <div
         className={cn(
           'flex min-w-0 flex-1 flex-col gap-2 px-4 pt-4 sm:px-6 sm:pt-6 lg:px-10 xl:px-16',
           className
         )}
+        data-slot="quiz-page-heading"
       >
         {(onBack || trail.length > 0) && (
           <div
@@ -84,7 +85,10 @@ export function QuizPageHeader({
             </nav>
           </div>
         )}
-        <div className="flex items-center justify-between gap-3">
+        <div
+          className="flex items-center justify-between gap-3"
+          data-slot="quiz-title-row"
+        >
           <h1 className="t-page-title min-w-0 truncate">{title}</h1>
           {actions && (
             <div className="flex shrink-0 items-center gap-2">{actions}</div>
@@ -117,7 +121,7 @@ export function QuizQuestionList({
   renderAfter?: (question: Question, index: number) => ReactNode;
 }) {
   return (
-    <ol className="grid gap-12">
+    <ol className="grid gap-12" data-slot="quiz-question-list">
       {questions.map((question, i) => (
         <li
           className="grid scroll-mt-6 gap-4"

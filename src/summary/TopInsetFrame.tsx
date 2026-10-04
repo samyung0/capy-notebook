@@ -16,6 +16,7 @@ export function TopInsetFrame({
         'top-inset-bar-shape flex-row items-center justify-between gap-2.5 py-1.5 pr-3 pl-4',
         className
       )}
+      data-top-inset-bar
       radius="unset"
       theme="surface-dark"
     >

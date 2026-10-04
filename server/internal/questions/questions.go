@@ -396,17 +396,24 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 			}
 		}
 	case "image":
-		if !policy.Bank {
-			return fail("image blocks require bank policy")
-		}
-		if err := keys(b, "type url width height description", "attribution"); err != nil {
-			return err
+		// Bank figures are public URLs; quiz figures are private workspace editor assets.
+		if policy.Bank {
+			if err := keys(b, "type url width height description", "attribution"); err != nil {
+				return err
+			}
+			if !assetURL(b["url"], policy.BankAssetsURL) {
+				return fail("invalid bank asset URL")
+			}
+		} else {
+			if err := keys(b, "type assetId width height description", "attribution"); err != nil {
+				return err
+			}
+			if !str(b["assetId"], fieldlimits.QuestionID, true) {
+				return fail("invalid image asset")
+			}
 		}
 		if err := imageFields(b); err != nil {
 			return err
-		}
-		if !assetURL(b["url"], policy.BankAssetsURL) {
-			return fail("invalid bank asset URL")
 		}
 	case "graph":
 		if err := keys(b, "type board elements image width height description", "attribution"); err != nil {
@@ -770,4 +777,74 @@ func LearnerView(q map[string]any) map[string]any {
 	}
 	out["parts"] = parts
 	return out
+}
+
+// AssetIDs returns the editor assets referenced by a quiz question's images.
+func AssetIDs(q map[string]any) []string {
+	var ids []string
+	for _, blocks := range blockLists(q) {
+		for _, raw := range blocks {
+			if id, ok := imageAssetID(raw); ok {
+				ids = append(ids, id)
+			}
+		}
+	}
+	return ids
+}
+
+// RewriteAssetIDs maps image assets through idMap and removes images whose
+// asset has no replacement. It returns false when a part is left without
+// content, because that question can no longer be stored.
+func RewriteAssetIDs(q map[string]any, idMap map[string]string) bool {
+	rewrite := func(raw any) []any {
+		blocks, _ := raw.([]any)
+		kept := []any{}
+		for _, block := range blocks {
+			if id, ok := imageAssetID(block); ok {
+				if idMap[id] == "" {
+					continue
+				}
+				block.(map[string]any)["assetId"] = idMap[id]
+			}
+			kept = append(kept, block)
+		}
+		return kept
+	}
+	q["stem"] = rewrite(q["stem"])
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		p, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		p["blocks"] = rewrite(p["blocks"])
+		p["solution"] = rewrite(p["solution"])
+		if len(p["blocks"].([]any)) == 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func blockLists(q map[string]any) [][]any {
+	stem, _ := q["stem"].([]any)
+	lists := [][]any{stem}
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		if p, ok := raw.(map[string]any); ok {
+			blocks, _ := p["blocks"].([]any)
+			solution, _ := p["solution"].([]any)
+			lists = append(lists, blocks, solution)
+		}
+	}
+	return lists
+}
+
+func imageAssetID(raw any) (string, bool) {
+	b, ok := raw.(map[string]any)
+	if !ok || b["type"] != "image" {
+		return "", false
+	}
+	id, ok := b["assetId"].(string)
+	return id, ok && id != ""
 }

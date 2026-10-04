@@ -88,6 +88,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
         <Card
           border="solid"
           className="relative h-full gap-4 p-4.5 xl:p-5.5"
+          data-gallery-card="workspace"
           interactive
         >
           <span className="size-fit rounded-card">
@@ -175,7 +176,11 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
 /** Loading placeholder that mirrors {@link WorkspaceCard}'s footprint. */
 export function WorkspaceCardSkeleton() {
   return (
-    <Card border="solid" className="gap-4 p-4.5 xl:p-5.5">
+    <Card
+      border="solid"
+      className="gap-4 p-4.5 xl:p-5.5"
+      data-gallery-card="workspace"
+    >
       <Skeleton className="size-11 rounded-card" />
       <div className="flex-1">
         <Skeleton className="h-4.5 w-3/5 rounded-button" />

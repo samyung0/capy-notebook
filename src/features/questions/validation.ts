@@ -174,7 +174,7 @@ const graphElement = z.discriminatedUnion('type', [
   }),
 ]);
 
-export const questionBlockSchema = z.discriminatedUnion('type', [
+export const questionBlockSchema = z.union([
   z.strictObject({ label: meta.optional(), text, type: z.literal('text') }),
   z
     .strictObject({
@@ -244,6 +244,13 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
   z.strictObject({
     type: z.literal('image'),
     url: z.url().max(limits.QUESTION_ASSET_URL_MAX),
+    ...imageSize,
+    attribution: meta.optional(),
+    description: text,
+  }),
+  z.strictObject({
+    assetId: identifier,
+    type: z.literal('image'),
     ...imageSize,
     attribution: meta.optional(),
     description: text,
@@ -444,7 +451,9 @@ export function validateQuestion(
     ...question.stem,
     ...question.parts.flatMap((p) => [...p.blocks, ...p.solution]),
   ]) {
-    if (
+    if (block.type === 'image' && 'assetId' in block) {
+      if (policy.bank) throw new CopyError(m.question_validation_asset_host());
+    } else if (
       block.type === 'image' ||
       (block.type === 'graph' && 'url' in block.image)
     ) {

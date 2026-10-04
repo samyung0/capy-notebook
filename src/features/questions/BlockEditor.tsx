@@ -15,7 +15,10 @@ import { QuestionBlockView } from './QuestionView';
 import { TextEditor } from './TextEditor';
 import type { ChartBlock, QuestionBlock } from './types';
 
-export type UploadQuestionAsset = (file: File) => Promise<{ url: string }>;
+/** Bank uploads return a public URL; quiz uploads return a workspace editor asset. */
+export type UploadQuestionAsset = (
+  file: File
+) => Promise<{ url: string } | { assetId: string }>;
 
 const chartLabels = {
   area: m.question_ui_area_chart,
@@ -363,12 +366,14 @@ export function BlockEditor({
                 const image = new Image();
                 image.src = local;
                 await image.decode();
-                const asset = await uploadAsset(file);
+                const source = await uploadAsset(file);
                 onChange({
-                  ...block,
+                  attribution: block.attribution,
+                  description: block.description,
                   height: image.naturalHeight,
-                  url: asset.url,
+                  type: 'image',
                   width: image.naturalWidth,
+                  ...source,
                 });
               } catch (error) {
                 setError(errorCopy(error, m.question_ui_upload_failed()));

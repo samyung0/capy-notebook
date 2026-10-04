@@ -434,6 +434,50 @@ func TestRewriteClonedEditorAssetIDsLeavesValidEmptyDocument(t *testing.T) {
 	}
 }
 
+func TestQuizImageEditorAssetsAreFoundAndRewrittenOnClone(t *testing.T) {
+	image := func(assetID string) map[string]any {
+		return map[string]any{"type": "image", "assetId": assetID, "width": 10, "height": 10, "description": "Figure"}
+	}
+	text := map[string]any{"type": "text", "text": "Answer?"}
+	question := func(id string, stem, blocks, solution []any) map[string]any {
+		q := map[string]any{
+			"id": id, "stem": stem, "layout": "paper", "labels": "letters",
+			"parts": []any{map[string]any{
+				"id": id + "-part", "blocks": blocks, "solution": solution,
+				"answer":     map[string]any{"type": "boolean", "correct": true},
+				"markscheme": []any{"Correct"},
+			}},
+		}
+		return map[string]any{"type": "quiz_question", "id": id, "question": q, "children": []any{textLeaf("")}}
+	}
+	raw, err := Marshal(Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{{
+		"type": "quiz", "id": "quiz", "children": []any{
+			question("kept", []any{image("asset-ready")}, []any{text}, []any{image("asset-gone")}),
+			question("dropped", []any{}, []any{image("asset-gone")}, []any{}),
+		},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, err := EditorAssetIDs(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 2 {
+		t.Fatalf("asset ids = %#v, want the two quiz image assets", ids)
+	}
+	rewritten, err := RewriteClonedEditorAssetIDs(raw, map[string]string{"asset-ready": "asset-clone"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Parse(rewritten); err != nil {
+		t.Fatalf("cloned quiz is invalid: %v", err)
+	}
+	if !strings.Contains(rewritten, `"assetId":"asset-clone"`) || strings.Contains(rewritten, "asset-gone") || strings.Contains(rewritten, `"dropped"`) {
+		t.Fatalf("quiz images were not rewritten: %s", rewritten)
+	}
+}
+
 func TestDiagramContract(t *testing.T) {
 	raw, err := FromLegacyMarkdown("diagram", "```mermaid\nflowchart LR\nA-->B\n```")
 	if err != nil {

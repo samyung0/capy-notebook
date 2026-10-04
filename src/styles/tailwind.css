@@ -6,6 +6,8 @@
 @import "./tokens/catppuccin.css";
 @import "tw-animate-css";
 @import "./tokens/motion.css";
+@import "./notion-app.css";
+@import "./notion-pages.css";
 
 @custom-variant dark (&:is(.dark *));
 

@@ -105,6 +105,8 @@ File viewers portal their mode/save controls into the center header. The shared
 contexts live in `fileModeContext.ts`, separate from the hot-reloaded control
 component, so the header and lazy file viewers retain the same context identity.
 
+Notion light uses one 48px document header beside a Files/Chat/Generate tool menu. Pinning Files and crossing the mobile breakpoint keep the same viewer parent and mounted chat/generate panels. The existing mode/save portal and Edit toolbar remain; workspace sharing stays in Workspace settings. Other palettes retain their prior layout.
+
 Materials opened from Create use the same `CenterContent` frame as workspace
 materials, using the same per-item mode preference. The `/materials/:id` route retains the app
 sidebar, uses only the navigation back icon before the title, and hides

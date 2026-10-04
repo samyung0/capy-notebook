@@ -30,7 +30,11 @@ function formatDate(iso?: string) {
  * problems take the default banner's place, one at a time (frozen, grace,
  * full, near the limit, offline, reconnecting), so nothing shifts the app shell.
  */
-export default function DashboardBanner() {
+export default function DashboardBanner({
+  hideWelcome = false,
+}: {
+  hideWelcome?: boolean;
+}) {
   const { data: me } = useMe({ errorBoundary: false });
   const online = useOnlineStatus();
   const { data: stream } = useQuery<EventStreamState>({
@@ -148,6 +152,7 @@ export default function DashboardBanner() {
         tone="warning"
       />
     );
+  if (hideWelcome) return null;
   return (
     <SlotCard
       body={m.dashboard_banner_body()}

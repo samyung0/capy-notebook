@@ -23,8 +23,15 @@ function shortDate(date: Date) {
 }
 
 export function UsageTab() {
-  const { data: billing } = useBilling();
-  const { data: usage } = useUsage();
+  const { data: billing, isPending: billingPending } = useBilling();
+  const { data: usage, isPending: usagePending } = useUsage();
+  const creditsPending = billingPending || usagePending;
+  const loadingValue = (
+    <span
+      aria-hidden="true"
+      className="inline-block h-[1lh] w-36 rounded-button bg-surface-hover-bg align-bottom"
+    />
+  );
   const purple = userColorPair('purple').bg;
 
   const periodStart = billing?.creditsPeriodStart
@@ -59,22 +66,41 @@ export function UsageTab() {
   const legend = reserved.amount > 0 ? [...areas, reserved] : areas;
 
   return (
-    <>
+    <div aria-busy={creditsPending}>
+      {creditsPending && (
+        <span className="sr-only" role="status">
+          {m.a11y_loading()}
+        </span>
+      )}
       <TabHeader
         badge={
-          billing && (
-            <Badge size="sm" tone="accent-1">
-              {planLabel(billing.planTier)}
-            </Badge>
+          billingPending ? (
+            <span
+              aria-hidden="true"
+              className="h-4.5 w-12 rounded-full bg-surface-hover-bg"
+            />
+          ) : (
+            billing && (
+              <Badge size="sm" tone="accent-1">
+                {planLabel(billing.planTier)}
+              </Badge>
+            )
           )
         }
         description={
-          periodStart && periodEnd
-            ? m.billing_usage_period({
-                end: shortDate(periodEnd),
-                start: shortDate(periodStart),
-              })
-            : ''
+          billingPending ? (
+            <span
+              aria-hidden="true"
+              className="block h-[1lh] w-48 max-w-full rounded-button bg-surface-hover-bg"
+            />
+          ) : periodStart && periodEnd ? (
+            m.billing_usage_period({
+              end: shortDate(periodEnd),
+              start: shortDate(periodStart),
+            })
+          ) : (
+            ''
+          )
         }
         title={m.billing_tab_usage()}
       />
@@ -82,10 +108,14 @@ export function UsageTab() {
         <div>
           <UsageHead
             title={m.billing_storage()}
-            value={m.billing_used_of({
-              limit: storageLimitLabel(storageLimit),
-              used: formatBytes(storageUsed),
-            })}
+            value={
+              billingPending
+                ? loadingValue
+                : m.billing_used_of({
+                    limit: storageLimitLabel(storageLimit),
+                    used: formatBytes(storageUsed),
+                  })
+            }
           />
           <UsageBar
             limit={storageLimit}
@@ -107,15 +137,25 @@ export function UsageTab() {
         <div>
           <UsageHead
             title={m.billing_credits()}
-            value={m.billing_used_of({
-              limit: formatCredits(creditsLimit),
-              used: formatCredits(billing?.creditsUsedMicros ?? 0),
-            })}
+            value={
+              billingPending
+                ? loadingValue
+                : m.billing_used_of({
+                    limit: formatCredits(creditsLimit),
+                    used: formatCredits(billing?.creditsUsedMicros ?? 0),
+                  })
+            }
           />
-          <UsageBar limit={creditsLimit} segments={[...areas, reserved]} />
-          {resetsAt && (
+          <UsageBar
+            limit={creditsLimit}
+            segments={creditsPending ? [] : [...areas, reserved]}
+          />
+          {(billingPending || resetsAt) && (
             <p className="t-meta mt-2 text-fg-muted">
-              {m.billing_credits_resets({ date: shortDate(resetsAt) })}
+              {billingPending
+                ? loadingValue
+                : resetsAt &&
+                  m.billing_credits_resets({ date: shortDate(resetsAt) })}
             </p>
           )}
           <p className="t-meta mt-6 mb-1 text-fg-muted">
@@ -124,13 +164,15 @@ export function UsageTab() {
           <UsageLegend
             segments={legend.map((segment) => ({
               ...segment,
-              value: m.billing_credits_amount({
-                amount: formatCredits(segment.amount),
-              }),
+              value: creditsPending
+                ? loadingValue
+                : m.billing_credits_amount({
+                    amount: formatCredits(segment.amount),
+                  }),
             }))}
           />
         </div>
       </div>
-    </>
+    </div>
   );
 }

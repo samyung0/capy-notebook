@@ -1,0 +1,102 @@
+/* Reading pages keep their existing scroll containers and answer controls. */
+:root[data-style="notion"][data-theme="latte"] {
+  [data-slot="quiz-page-heading"] {
+    gap: 12px;
+    padding: var(--notion-page-padding-top) var(--notion-page-padding-x) 0;
+  }
+
+  [data-slot="quiz-title-row"] {
+    flex-wrap: wrap;
+    align-items: baseline;
+  }
+
+  [data-slot="quiz-title-row"] > h1 {
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  [data-slot="quiz-question-list"],
+  [data-slot="question-bank-body"] {
+    font-size: 16px;
+    line-height: 24px;
+  }
+
+  [data-slot="question-bank-page"],
+  [data-slot="question-bank-rail"] {
+    gap: 0;
+  }
+
+  [data-slot="question-bank-body"] {
+    padding-inline: var(--notion-page-padding-x);
+  }
+
+  [data-slot="flashcard-study"] {
+    max-width: 880px;
+    padding: var(--notion-page-padding-top) var(--notion-page-padding-x) 24px;
+  }
+
+  [data-slot="flashcard-study-header"] {
+    flex-wrap: wrap;
+    margin-bottom: 28px;
+  }
+
+  [data-slot="flashcard-study-header"] > h1 {
+    font-size: var(--page-title-font-size);
+    font-weight: var(--page-title-font-weight);
+    line-height: var(--page-title-line-height);
+    letter-spacing: var(--page-title-letter-spacing);
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  [data-slot="flashcard-study-card"] {
+    border-radius: 10px;
+    box-shadow: var(--shadow-card);
+    transform: none;
+    scale: none;
+    translate: none;
+    transition: background-color 100ms ease-in-out;
+  }
+
+  [data-slot="flashcard-study-card"]:hover {
+    background: var(--surface-card-hover-bg);
+  }
+
+  [data-slot="flashcard-study-text"] {
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 24px;
+    overflow-wrap: anywhere;
+  }
+
+  [data-slot="flashcard-study-rating"] {
+    font-weight: 500;
+    border-radius: 6px;
+    transition: background-color 100ms ease-in-out;
+  }
+
+  [data-slot="shared-quiz-page"] {
+    padding: 0;
+    background: var(--surface-card-bg);
+  }
+
+  @media (min-width: 768px) {
+    [data-slot="flashcard-study"] {
+      padding-bottom: 40px;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    [data-slot="question-bank-rail"] {
+      width: 280px;
+      border-left: 1px solid var(--border-default);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-slot="flashcard-study-card"],
+    [data-slot="flashcard-study-rating"] {
+      transition: none;
+    }
+  }
+}
