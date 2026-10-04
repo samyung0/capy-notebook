@@ -47,8 +47,8 @@ large files' checkpoints come from `scripts/dev/seed-scenario-office.ts`. It
 reports open to first paint, View to Edit ready, keystroke to painted frame and
 the JS heap at each step, plus the heap over two full view-mode passes. It
 fails on unpainted keys, typing that reaches no edit, a fallback to the
-main-thread engine, or a missed DOCX budget (from three CI runs); the XLSX and
-PPTX timings and all heap figures are report-only until calibrated. It runs as
+main-thread engine, or a missed budget (from three CI runs per format); the
+heap figures are report-only until a ceiling is defined. It runs as
 the `office` job of the same `Performance` workflow, on dispatch only.
 
 ### collaboration

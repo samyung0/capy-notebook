@@ -89,15 +89,23 @@ only under `VITE_LOAD_TEST_SEED`; their checkpoints come from
 
 It runs unthrottled: CDP's CPU throttle reaches neither the runtime frame nor
 the engine workers. Every file fails on unpainted keys, typing that sends no
-edit to the room, or a worker fallback. Only the DOCX timings have budgets
-(`BUDGET` in the spec: open, View to Edit, key p50 and p90 per fixture),
-~1.3x the median of three runs of the `office` job below (2026-10-04; every
-metric within 3% of its median there). XLSX and PPTX timings and every heap
-figure are report-only: they go to the results JSON (`budget: "report-only"`),
-the job summary and the artifact, and fail nothing.
+edit to the room, a worker fallback, or a missed budget (`BUDGET` in the
+spec: open, View to Edit, key p50 and p90 per fixture). Budgets are ~1.3x the
+median of three runs of the `office` job below, rounded up to 5 ms below a
+second and 50 ms above: DOCX from 2026-10-04 runs 37174928433, 37174944257
+and 37174959817 (every metric within 3% of its median), XLSX and PPTX from
+2026-10-04 runs 37197306625, 37197311546 and 37197316994 on 15136468. All
+three of the latter ran on AMD EPYC 7763 runners, the slowest type seen on
+the workflow so far, so a faster runner sits well inside them. Their spread was
+within 8% of the median except the key timings of a few milliseconds
+(XLSX and PPTX p50 11 to 14 ms, up to 18% apart): the small files' p50
+budgets of 15 and 20 ms sit one or two milliseconds above the slowest run.
 
-TODO: calibrate the XLSX and PPTX timings and the heap figures from three CI
-runs, then gate.
+Heap figures stay report-only: they go to the results JSON (`budget.heap`,
+and `budget: "report-only"` in the view-heap cases), the job summary and the
+artifact, and fail nothing. TODO: decide what a heap ceiling means (retained
+after GC or peak, which of JS, array buffers and WASM, per format or per
+file), then gate it from three CI runs.
 
 A laptop run is faster than the runner on typing and slower under load, so a
 local miss is not a regression by itself.

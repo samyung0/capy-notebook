@@ -38,22 +38,23 @@ import { cdpSession, percentile, reportMetrics } from './metrics';
  */
 
 /**
- * ~1.3x the median of three runs of the Performance workflow on ubuntu-24.04
- * (2026-10-04, runs 37174928433, 37174944257, 37174959817; every metric
- * within 3% of its median), the same rule as the editor budgets. Fixtures
- * without an entry, and every heap figure, are report-only until calibrated
- * (openwiki/editor-perf.md).
+ * ~1.3x the median of three runs of the Performance workflow on ubuntu-24.04,
+ * the same rule as the editor budgets, rounded up to 5 ms below a second and
+ * 50 ms above. DOCX: 2026-10-04 runs 37174928433, 37174944257, 37174959817
+ * (every metric within 3% of its median). XLSX and PPTX: 2026-10-04 runs
+ * 37197306625, 37197311546, 37197316994 on 15136468, all three on AMD EPYC
+ * 7763 runners. For XLSX/PPTX `openFirstPaintMs` ends at `ready` and
+ * `editReadyMs` at `collaboration-ready` (see above). Heap figures are
+ * report-only (openwiki/editor-perf.md).
  */
-const BUDGET: Partial<
-  Record<
-    Fixture['id'],
-    {
-      editReadyMs: number;
-      keyToFrameP50Ms: number;
-      keyToFrameP90Ms: number;
-      openFirstPaintMs: number;
-    }
-  >
+const BUDGET: Record<
+  Fixture['id'],
+  {
+    editReadyMs: number;
+    keyToFrameP50Ms: number;
+    keyToFrameP90Ms: number;
+    openFirstPaintMs: number;
+  }
 > = {
   'bio-office-docx': {
     editReadyMs: 4250, // median 3,259
@@ -66,6 +67,30 @@ const BUDGET: Partial<
     keyToFrameP50Ms: 570, // median 436
     keyToFrameP90Ms: 1340, // median 1,031
     openFirstPaintMs: 10_350, // median 7,954
+  },
+  'bio-office-pptx': {
+    editReadyMs: 1050, // median 790
+    keyToFrameP50Ms: 15, // median 11
+    keyToFrameP90Ms: 25, // median 18
+    openFirstPaintMs: 3950, // median 3,038
+  },
+  'bio-office-pptx-long': {
+    editReadyMs: 3200, // median 2,442
+    keyToFrameP50Ms: 90, // median 69
+    keyToFrameP90Ms: 100, // median 75
+    openFirstPaintMs: 5900, // median 4,530
+  },
+  'bio-office-xlsx': {
+    editReadyMs: 1650, // median 1,244
+    keyToFrameP50Ms: 20, // median 14
+    keyToFrameP90Ms: 65, // median 47
+    openFirstPaintMs: 4050, // median 3,086
+  },
+  'bio-office-xlsx-long': {
+    editReadyMs: 6750, // median 5,188
+    keyToFrameP50Ms: 20, // median 12
+    keyToFrameP90Ms: 410, // median 313
+    openFirstPaintMs: 5000, // median 3,825
   },
 };
 
@@ -107,6 +132,8 @@ const FIXTURES = [
   },
 ] as const;
 
+const A1 = /^([A-Z]+)(\d+)$/;
+const FALLBACK = /falling back to the main-thread engine/;
 const KEYS = 40;
 const KEY_CADENCE_MS = 120;
 // Every sixth key: a space in text, Enter (commit, next row) in a sheet.
@@ -226,7 +253,7 @@ async function clickUntil(
     const last = messages.filter((m) => m.type === kind).at(-1)!;
     const analysis = last.analysis;
     return {
-      ms: Math.round(last.at - clicks[clicks.length - 1]),
+      ms: Math.round(last.at - clicks.at(-1)!),
       runtime: last.timings ?? null,
       // Pages, sheets or slides.
       units: analysis
@@ -334,7 +361,7 @@ async function placeCaret(page: Page, frame: Frame, fixture: Fixture) {
 }
 
 function cellAt(a1: string) {
-  const match = /^([A-Z]+)(\d+)$/.exec(a1);
+  const match = A1.exec(a1);
   if (!match) throw new Error(`Not a cell reference: ${a1}`);
   const col = [...match[1]].reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0);
   return { col, row: Number(match[2]) };
@@ -414,9 +441,9 @@ async function typeAndTime(page: Page, fixture: Fixture) {
     // Edits the runtime sent to the room while typing.
     edits: (await countMessages(page, 'update')) - updatesBefore,
     keys: lags.length,
+    keyToFrameMaxMs: Math.round(Math.max(0, ...painted)),
     keyToFrameP50Ms: Math.round(percentile(painted, 50)),
     keyToFrameP90Ms: Math.round(percentile(painted, 90)),
-    keyToFrameMaxMs: Math.round(Math.max(0, ...painted)),
     unpaintedKeys: lags.length - painted.length,
   };
 }
@@ -450,7 +477,9 @@ async function viewPass(frame: Frame, format: OfficeFormat) {
     // The element that scrolls the document (DOCX) or the active sheet.
     const scroller = () =>
       [...document.querySelectorAll<HTMLElement>('*')]
-        .filter((el) => /auto|scroll/.test(getComputedStyle(el).overflowY))
+        .filter((el) =>
+          ['auto', 'scroll'].includes(getComputedStyle(el).overflowY)
+        )
         .sort(
           (a, b) =>
             b.scrollHeight - b.clientHeight - (a.scrollHeight - a.clientHeight)
@@ -488,8 +517,7 @@ for (const fixture of FIXTURES) {
     test.setTimeout(600_000);
     const fallbacks: string[] = [];
     page.on('console', (message) => {
-      if (/falling back to the main-thread engine/.test(message.text()))
-        fallbacks.push(message.text());
+      if (FALLBACK.test(message.text())) fallbacks.push(message.text());
     });
 
     const open = await openInView(page, fixture);
@@ -515,10 +543,10 @@ for (const fixture of FIXTURES) {
       testInfo,
       `office-${fixture.format}-${fixture.id}`,
       {
-        budget: budget ? 'gated' : 'report-only',
+        budget: { ...budget, heap: 'report-only' },
         edit: { readyMs: edit.ms, runtime: edit.runtime },
         fixture: fixture.name,
-        // Report-only until calibrated.
+        // Report-only: a ceiling still needs defining.
         heap: {
           afterEdit: editHeap,
           afterOpen: openHeap,
@@ -534,7 +562,6 @@ for (const fixture of FIXTURES) {
     expect(typing.unpaintedKeys).toBe(0);
     expect(typing.edits).toBeGreaterThan(0);
     expect(fallbacks).toEqual([]);
-    if (!budget) return;
     expect.soft(open.ms).toBeLessThanOrEqual(budget.openFirstPaintMs);
     expect.soft(edit.ms).toBeLessThanOrEqual(budget.editReadyMs);
     expect
@@ -574,13 +601,13 @@ for (const fixture of FIXTURES) {
       `office-${fixture.format}-${fixture.id}-view-heap`,
       {
         budget: 'report-only',
+        firstPassGrowth: growth(first, open),
         fixture: fixture.name,
         heap: {
           afterFirstPass: first,
           afterOpen: open,
           afterSecondPass: second,
         },
-        firstPassGrowth: growth(first, open),
         passMs,
         secondPassGrowth: growth(second, first),
       },

@@ -95,6 +95,13 @@ screen-reader mirror settling 300 ms after scrolling.
   checks the highlight comes back (no mock chat cites an Office file).
 - **DOCX highlight picker** never ticks the current highlight; the editor
   doesn't report it.
+- **XLSX keyboard selection off screen.** Arrow keys to a cell outside the
+  viewport don't scroll the grid there, and typing into that cell is silently
+  dropped (no in-cell editor, no edit). Repro at 1280x800 with the side panel
+  open: open `course-guide.xlsx` in Edit, click B4 on `CC info`, press
+  ArrowRight six times and ArrowDown once; the name box shows H5 but the
+  column is off screen, and typing `7` then Enter leaves H5 at 2.
+  `bench:office` types into F5 for this reason.
 - **Fork icons left over** in the print preview, find/replace and shortcut
   dialogs, toasts and placeholders.
 - **Chrome/Edge 111–118:** dialog buttons and tooltips have no colour fallback
