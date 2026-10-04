@@ -161,10 +161,9 @@ test('text: browser edit automatically publishes durable UTF-8 source', async ({
     await fixture('notes.txt', marker)
   );
   await processed(run, fileId, [marker]);
-  await openFile(run, run.owner, workspaceId, fileId);
-  await run.owner.page
-    .getByRole('button', { exact: true, name: 'Material mode' })
-    .click();
+  // The URL's mode, not the Material mode toggle: a click can land before the
+  // toggle is ready, and the browser remembers the last mode per file.
+  await openFile(run, run.owner, workspaceId, fileId, 'edit');
   const edited = `${fact}\nThe launch code is CEDAR-42.\n${marker}\n`;
   const editor = run.owner.page.getByRole('textbox', {
     name: 'Edit source text',
