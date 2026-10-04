@@ -117,7 +117,24 @@ export function officeUpdateViolation(
     for (const item of chain) resolved.set(item, found);
     return found;
   };
+  // Yjs integrates each client's structs in clock order only, and applies a
+  // deletion only once it holds the deleted range: an update that starts past
+  // what the room holds of a client (an earlier update of that client never
+  // arrived, as when it types at a held position before a reconnect's sync
+  // step 2), skips a range, or deletes what neither side holds would stay
+  // pending in the room, and a room with pending content cannot be saved.
   let unheld = false;
+  const reach = new Map<number, number>();
+  for (const struct of structs) {
+    const client = struct.id.client;
+    const from = reach.get(client) ?? held(client);
+    if (struct instanceof Y.Skip || struct.id.clock > from) unheld = true;
+    reach.set(client, Math.max(from, struct.id.clock + struct.length));
+  }
+  for (const [client, ranges] of ds.clients) {
+    const until = reach.get(client) ?? held(client);
+    if (ranges.some(({ clock, len }) => clock + len > until)) unheld = true;
+  }
   for (const items of incoming.values()) {
     for (const item of items) {
       if (item.id.clock + item.length <= held(item.id.client)) continue;

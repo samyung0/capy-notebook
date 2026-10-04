@@ -779,12 +779,18 @@ The collaboration service refuses a client update that writes outside the
 engine's document roots (the bundle's `OFFICE_DOCUMENT_ROOTS`, the contributor
 map included) or, in PPTX, writes or deletes anything in `pptx:meta` other
 than `commentFlavor`. The refusal is the unrecoverable
-`source-checkpoint-failed` message, like an oversized update. An update that
-only refers to content the room does not hold (the room reloaded without a
-client's last unsaved typing, and the client typed before its sync step 2) is
-dropped instead, and that connection gets the room's sync step 1: its step 2
-reply carries everything the room lacks, the dropped update included, with no
-disconnect (`collaboration/src/officeRoots.ts`).
+`source-checkpoint-failed` message, like an oversized update. An update the
+room cannot integrate yet is dropped instead, and that connection gets the
+room's sync step 1: its step 2 reply carries everything the room lacks, the
+dropped update included, with no disconnect (`collaboration/src/officeRoots.ts`).
+That covers an update that refers to content the room does not hold (the room
+reloaded without a client's last unsaved typing, and the client typed before
+its sync step 2), and one that starts past the clocks the room holds of its
+client, skips a range, or deletes a range neither side holds (a reconnecting
+client typing anywhere before its sync step 2). Yjs would keep such an update
+pending, and a pending room cannot be saved. A save that still finds pending
+content fails as transient, without telling clients or resetting the room;
+the next change (the client's sync) saves it.
 
 DOCX and PPTX measure and paint with the fork's bundled metric-compatible
 fonts (`@betteroffice/fonts`: Carlito for Calibri, Caladea for Cambria,

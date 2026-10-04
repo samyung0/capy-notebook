@@ -1028,6 +1028,15 @@ async function storeSource(document: Document) {
   const room = document.name;
   // Awaited handoff callers must fail if their queued save was discarded.
   assertRoomAvailable(room, true);
+  // Content the room holds pending (a client update that arrived ahead of
+  // one it depends on) cannot be saved and is not the engine refusing it:
+  // the update it waits for (the client's sync) integrates it and its own
+  // change saves the room. Refusing here would reset the room and discard
+  // every edit since the last checkpoint.
+  if (document.store.pendingStructs || document.store.pendingDs)
+    throw new Error(
+      'source room holds pending updates; saved once they integrate'
+    );
   const snapshot = new Y.Doc();
   const rawState = Y.encodeStateAsUpdate(document);
   Y.applyUpdate(snapshot, rawState);
