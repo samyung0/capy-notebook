@@ -188,6 +188,10 @@ test('workspace statistics and indexing share a recoverable panel error', async 
   const error = await expectErrorSurface(page, 'panel', undefined, 30_000);
   await settings.getByRole('button', { exact: true, name: 'Indexing' }).click();
   await expect(error).toBeVisible();
+  // The error replaces the whole tab, as on Statistics.
+  await expect(
+    settings.getByRole('switch', { name: 'Auto process edits' })
+  ).toHaveCount(0);
   await page.evaluate(async () => {
     const browserPath = '/src/mocks/browser.ts';
     const { worker } = await import(browserPath);

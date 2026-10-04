@@ -9,7 +9,7 @@ import {
 } from '@/components/app/UsageMeter';
 import { Button } from '@/components/ui/Button';
 import { FileIcon } from '@/components/ui/FileIcon';
-import { Spinner } from '@/components/ui/feedback';
+import { Skeleton, SkeletonList, Spinner } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Switch } from '@/components/ui/Switch';
 import { relativeTime } from '@/features/materials/MaterialListCard';
@@ -154,78 +154,91 @@ function FileChanges({
   );
 }
 
+/** The tab's shape while the stats load: meter, legend, change list. */
+function IndexingSkeleton() {
+  return (
+    <div
+      aria-label={m.a11y_loading()}
+      className="flex flex-col gap-10"
+      role="status"
+    >
+      <div className="flex flex-col gap-3">
+        <Skeleton className="h-6 w-2/5" />
+        <Skeleton className="h-2.5 rounded-full" />
+        <SkeletonList count={3} rowHeight={24} />
+      </div>
+      <div className="flex flex-col gap-3">
+        <Skeleton className="h-6 w-1/3" />
+        <SkeletonList count={3} />
+      </div>
+    </div>
+  );
+}
+
 /** The workspace settings Indexing tab: what is searchable, the file changes
  * still to process, and the automatic processing switch. */
 export function IndexingTab({
-  fallback,
+  error,
   stats,
   workspace,
 }: {
-  /** Shown instead of the stats while they load or failed to. */
-  fallback: ReactNode;
+  /** Replaces the whole tab when the stats failed to load. */
+  error: ReactNode;
   stats: WorkspaceStats | undefined;
   workspace: Workspace;
 }) {
   const { mutateAsync: update, isPending: saving } = useUpdateWorkspace();
-  const total = stats
-    ? stats.indexed + stats.notIndexed + stats.notIndexable
-    : 0;
-  const sources: (Segment & { value: string })[] = stats
-    ? [
-        ['indexed', m.workspace_indexed(), 'green', stats.indexed] as const,
-        [
-          'notIndexed',
-          m.workspace_not_indexed(),
-          'amber',
-          stats.notIndexed,
-        ] as const,
-        [
-          'notIndexable',
-          m.workspace_not_indexable(),
-          'blue',
-          stats.notIndexable,
-        ] as const,
-      ].map(([key, label, tone, amount]) => ({
-        amount,
-        color: userColorPair(tone).bg,
-        key,
-        label,
-        value: String(amount),
-      }))
-    : [];
+  if (error) return error;
+  if (!stats) return <IndexingSkeleton />;
+  const total = stats.indexed + stats.notIndexed + stats.notIndexable;
+  const sources: (Segment & { value: string })[] = [
+    ['indexed', m.workspace_indexed(), 'green', stats.indexed] as const,
+    [
+      'notIndexed',
+      m.workspace_not_indexed(),
+      'amber',
+      stats.notIndexed,
+    ] as const,
+    [
+      'notIndexable',
+      m.workspace_not_indexable(),
+      'blue',
+      stats.notIndexable,
+    ] as const,
+  ].map(([key, label, tone, amount]) => ({
+    amount,
+    color: userColorPair(tone).bg,
+    key,
+    label,
+    value: String(amount),
+  }));
   return (
     <div className="flex flex-col gap-10">
-      {stats ? (
-        <>
-          <div>
-            <UsageHead
-              title={m.workspace_sources_title()}
-              value={m.workspace_sources_indexed_of({
-                indexed: String(stats.indexed),
-                total: String(total),
-              })}
-            />
-            {total ? (
-              <>
-                <UsageBar limit={total} segments={sources} />
-                <div className="mt-4">
-                  <UsageLegend segments={sources} />
-                </div>
-              </>
-            ) : (
-              <p className="mt-2 text-fg-muted">{m.workspace_no_sources()}</p>
-            )}
-          </div>
-          <FileChanges
-            changes={stats.fileChanges}
-            owner={workspace.isOwner}
-            pendingNotes={stats.pendingNotes}
-            workspaceId={workspace.id}
-          />
-        </>
-      ) : (
-        fallback
-      )}
+      <div>
+        <UsageHead
+          title={m.workspace_sources_title()}
+          value={m.workspace_sources_indexed_of({
+            indexed: String(stats.indexed),
+            total: String(total),
+          })}
+        />
+        {total ? (
+          <>
+            <UsageBar limit={total} segments={sources} />
+            <div className="mt-4">
+              <UsageLegend segments={sources} />
+            </div>
+          </>
+        ) : (
+          <p className="mt-2 text-fg-muted">{m.workspace_no_sources()}</p>
+        )}
+      </div>
+      <FileChanges
+        changes={stats.fileChanges}
+        owner={workspace.isOwner}
+        pendingNotes={stats.pendingNotes}
+        workspaceId={workspace.id}
+      />
       <label className="flex items-center justify-between gap-5">
         <span className="font-medium">{m.workspace_auto_process()}</span>
         <Switch

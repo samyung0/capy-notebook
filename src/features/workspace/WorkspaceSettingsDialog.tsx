@@ -11,6 +11,7 @@ import type { Workspace } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
 import { Button, ErrorAction } from '@/components/ui/Button';
 import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
+import { Skeleton } from '@/components/ui/feedback';
 import { InputTitle } from '@/components/ui/Input';
 import { NumberPopIn } from '@/components/ui/NumberPopIn';
 import { Tabs } from '@/components/ui/Tabs';
@@ -153,7 +154,15 @@ export function WorkspaceSettingsDialog({
           (isError ? (
             statsError
           ) : isPending ? (
-            <p role="status">{m.common_loading()}</p>
+            <div
+              aria-label={m.a11y_loading()}
+              className="grid grid-cols-2 gap-3"
+              role="status"
+            >
+              {Array.from({ length: 5 }, (_, i) => (
+                <Skeleton className="h-[73px] rounded-card" key={i} />
+              ))}
+            </div>
           ) : (
             stats && (
               <div className="grid grid-cols-2 gap-3">
@@ -178,11 +187,7 @@ export function WorkspaceSettingsDialog({
             )
           ))}
         {tab === 'indexing' && (
-          <IndexingTab
-            fallback={statsError ?? <p>{m.common_loading()}</p>}
-            stats={isError ? undefined : stats}
-            workspace={workspace}
-          />
+          <IndexingTab error={statsError} stats={stats} workspace={workspace} />
         )}
         {tab === 'others' && workspace.canClone && (
           <div className="flex flex-col gap-6">
