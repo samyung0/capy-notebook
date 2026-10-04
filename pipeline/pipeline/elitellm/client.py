@@ -538,6 +538,13 @@ def _call_timeout() -> float:
     return cfg.ingest_provider_timeout_s
 
 
+def _stream_idle() -> float:
+    """Silence allowed once a stream has sent its first event."""
+    if _interactive():
+        return cfg.interactive_stream_idle_s
+    return cfg.ingest_provider_timeout_s
+
+
 def _stream_backstop() -> float:
     if _interactive():
         return cfg.interactive_stream_max_s
@@ -607,39 +614,56 @@ async def _stream_sse(
 ) -> AsyncIterator[dict[str, Any]]:
     """Yield ``data:`` payloads. Each provider read gets the idle bound.
 
-    Only the awaits on the provider are timed, so a consumer may take as long
-    as it likes between chunks without that counting as provider silence.
-    Comment-only keep-alives (``: keep-alive``) do not count as activity, so a
-    provider that parks the request in a queue times out like a silent one.
-    The backstop bounds the whole stream and is what the receipt window is
-    derived from. httpx's own read timeout is off so this timer decides.
+    The wait for the first data payload is short: a provider that queues the
+    request or never starts is a real stall. Once data has arrived, silence
+    is allowed longer, since a model may be writing a tool call the provider
+    sends only when complete. Only the awaits on the provider are timed, so a
+    consumer may take as long as it likes between chunks without that counting
+    as provider silence. Comment-only keep-alives (``: keep-alive``) do not
+    count as activity, so a provider that parks the request in a queue times
+    out like a silent one. The backstop bounds the whole stream and is what
+    the receipt window is derived from. httpx's own read timeout is off so
+    this timer decides.
     """
-    idle = _call_timeout()
+    first_idle, later_idle = _call_timeout(), _stream_idle()
     loop = asyncio.get_running_loop()
-    backstop_at = loop.time() + _stream_backstop()
+    backstop = _stream_backstop()
+    backstop_at = loop.time() + backstop
     # Provider-wait time since the last data payload. Keep-alive comments and
     # blank lines add to it like no bytes at all; time the consumer spends
     # between chunks does not, because only the reads below are measured.
     silence = 0.0
+    started = False
+
+    def why(idle: float) -> str:
+        """Which bound ended the stream, so logs tell a stall from a long write."""
+        if loop.time() >= backstop_at:
+            return f"provider stream exceeded its {backstop:g} s backstop"
+        if started:
+            return f"provider stream went silent for {idle:g} s after it started"
+        return f"provider sent no first event within {idle:g} s"
 
     async def bounded(awaitable: Any) -> Any:
         nonlocal silence
+        idle = later_idle if started else first_idle
         remaining = min(idle - silence, backstop_at - loop.time())
         if remaining <= 0:
-            raise TimeoutError("provider stream went silent or exceeded its backstop")
-        started = loop.time()
+            raise TimeoutError(why(idle))
+        begun = loop.time()
         try:
             async with asyncio.timeout(remaining):
                 return await awaitable
+        except TimeoutError as exc:
+            raise TimeoutError(why(idle)) from exc
         finally:
-            silence += loop.time() - started
+            silence += loop.time() - begun
 
     stream = _client().stream(
         "POST",
         url,
         headers=headers,
         json=jsonable(body),
-        timeout=httpx.Timeout(idle, read=None),
+        timeout=httpx.Timeout(first_idle, read=None),
     )
     response = await bounded(stream.__aenter__())
     try:
@@ -662,6 +686,7 @@ async def _stream_sse(
             if not payload:
                 continue
             silence = 0.0
+            started = True
             yield json.loads(payload)
     finally:
         await stream.__aexit__(None, None, None)

@@ -178,6 +178,10 @@ applied first, pinned to the local container:
 `cd server && BANK_OWNER_DATABASE_URL=postgresql://postgres:lab@127.0.0.1:15499/bank go run ./cmd/bank migrate`
 (the 2026-10-03 dump lacks `questions.question_types`, and the bank tools fail
 without it). They are offered with Library on and a configured library.
+`copy_questions` (playground-only, `bank_copy.py`) goes with them: the model
+names bank question ids and one destination (a new quiz, a quiz or note this
+run made), and the questions are copied exactly with their bank sources
+instead of being written out.
 
 The library reads, `capture_knowledge_page` and compaction use the real
 code path. `capture_knowledge_page` renders from the knowledge-base bucket into

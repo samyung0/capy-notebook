@@ -76,11 +76,19 @@ class Config:
     # Age after which the idle sweep removes spool files no active job names.
     parse_spool_ttl_hours: int = int(_env("CAPY_PARSE_SPOOL_TTL_HOURS", "2"))
     # Interactive calls should fail while the browser request is still useful.
-    # For a stream this is an idle bound that restarts on every provider event;
-    # a non-streaming interactive call (embeddings) gets it as a whole-call
-    # bound. Background ingest has its own larger bound and remains retryable.
+    # For a stream this bounds the wait for its first event (a provider that
+    # queues or never starts); a non-streaming interactive call (embeddings)
+    # gets it as a whole-call bound. Background ingest has its own larger bound
+    # and remains retryable.
     interactive_provider_timeout_s: float = float(
         _env("CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S", "15")
+    )
+    # Silence allowed once an interactive stream has started, restarting on
+    # every event. Longer than the first-event bound because some providers
+    # (GLM-5.3-Flash on Relace) send a tool call's arguments in one piece when
+    # they are complete: a large write streams nothing for 40 s or more.
+    interactive_stream_idle_s: float = float(
+        _env("CAPY_INTERACTIVE_STREAM_IDLE_S", "120")
     )
     # Hard wall clock on one interactive stream. The receipt window for every
     # interactive call derives from it, so it must exceed the longest stream a
@@ -280,6 +288,7 @@ for key, value in (
     ("PARSER_TIMEOUT", cfg.parser_timeout),
     ("CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S", cfg.interactive_provider_timeout_s),
     ("CAPY_INTERACTIVE_STREAM_MAX_S", cfg.interactive_stream_max_s),
+    ("CAPY_INTERACTIVE_STREAM_IDLE_S", cfg.interactive_stream_idle_s),
     ("CAPY_INGEST_PROVIDER_TIMEOUT_S", cfg.ingest_provider_timeout_s),
     ("CAPY_ELEVENLABS_CONCURRENCY_UNITS", cfg.elevenlabs_concurrency_units),
     ("CAPY_ELEVENLABS_SYNC_TIMEOUT_S", cfg.elevenlabs_sync_timeout_s),
@@ -288,9 +297,12 @@ for key, value in (
     if value <= 0:
         raise ValueError(f"{key} must be positive")
 
-if cfg.interactive_stream_max_s <= cfg.interactive_provider_timeout_s:
+if cfg.interactive_stream_max_s <= max(
+    cfg.interactive_provider_timeout_s, cfg.interactive_stream_idle_s
+):
     raise ValueError(
-        "CAPY_INTERACTIVE_STREAM_MAX_S must exceed CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S"
+        "CAPY_INTERACTIVE_STREAM_MAX_S must exceed CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S "
+        "and CAPY_INTERACTIVE_STREAM_IDLE_S"
     )
 
 if cfg.parse_spool_ttl_hours <= 0:

@@ -519,9 +519,14 @@ the additional five minutes are receipt-only settlement grace.
 
 Interactive provider calls run over the streaming transport, generate, live
 compaction and checkpoint included (assembled back into a completion in
-`models.py`), under a 15-second idle timeout (`CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S`)
-that restarts on every provider `data:` event; comment-only keep-alives do not
-count, so a request parked in a provider queue times out like a silent one. The
+`models.py`). A stream must send its first `data:` event within 15 seconds
+(`CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S`); after that it may stay silent for 120
+seconds (`CAPY_INTERACTIVE_STREAM_IDLE_S`), restarting on every event, because
+GLM-5.3-Flash on Relace sends a tool call's arguments in one piece when they
+are complete and a large write streams nothing for 40 seconds or more. The
+timeout's message names the bound that fired: no first event, silence after
+the start, or the backstop. Comment-only keep-alives do not count as events,
+so a request parked in a provider queue times out like a silent one. The
 stream backstop bounds the whole stream. Non-streaming interactive calls such
 as query embeddings get the 15 seconds as a whole-call bound; a search rerank
 gets 5 seconds for admission and the request, busy retry included, and settles
@@ -1265,7 +1270,8 @@ the likelihood grew every time the registry was reconfigured.
 | `CORS_ALLOWED_ORIGINS` | gateway | comma separated; empty means `*` |
 | `RATE_LIMIT_DISABLED` | gateway | forced true under `APP_ENV=e2e` |
 | `RATE_LIMIT_AI_PER_HOUR` | gateway | overrides the default 200; 15/min burst and editor 120/min are code-only |
-| `CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S` | retrieval | idle bound per interactive stream, whole-call bound for non-streaming interactive calls; default 15 |
+| `CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S` | retrieval | wait for an interactive stream's first event, whole-call bound for non-streaming interactive calls; default 15 |
+| `CAPY_INTERACTIVE_STREAM_IDLE_S` | retrieval | silence allowed once an interactive stream has started; default 120 |
 | `CAPY_INTERACTIVE_STREAM_MAX_S` | retrieval | whole-stream backstop; the interactive receipt window is this plus five minutes; default 600 |
 | `GATEWAY_URL` / `PIPELINE_SECRET` | import worker | the gateway's private URL and shared secret for `/api/internal/import/*`; the gateway's empty `PIPELINE_SECRET` disables Drive imports |
 | `CAPY_IMPORT_JOB_TIMEOUT` / `CAPY_IMPORT_DOWNLOAD_HOSTS` | import worker | per-attempt transfer budget (600 s) and the provider download host allowlist |

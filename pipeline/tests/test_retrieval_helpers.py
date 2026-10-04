@@ -602,6 +602,10 @@ async def test_writes_need_a_todo_while_todos_are_open_and_excerpts_once_read():
     assert isinstance(missing, tools.ToolResult) and "needs excerpt_ids" in (
         missing.text()
     )
+    # Copied bank questions carry the bank's sources, so excerpts are not asked.
+    assert await tools.ledger_write(
+        ctx, "create_material", {"todo": 1}, excerpts=False
+    ) == ([], 1)
     both = await tools.ledger_write(ctx, "edit_document", {})
     assert isinstance(both, tools.ToolResult)
     assert "needs todo" in both.text() and "and excerpt_ids" in both.text()

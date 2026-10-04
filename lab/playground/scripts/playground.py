@@ -30,6 +30,7 @@ from typing import Any
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import bank_copy
 import deck
 from common import (
     CONFIGS,
@@ -144,7 +145,7 @@ def merged(raw: dict[str, Any]) -> dict[str, Any]:
             out[key] = value
     from pipeline.retrieval import contract
 
-    known = set(contract.DEFINITIONS) | deck.NAMES
+    known = set(contract.DEFINITIONS) | deck.NAMES | {bank_copy.NAME}
     descriptions = out["tool_descriptions"]
     if not isinstance(descriptions, dict) or any(
         name not in known or not isinstance(text, str)
@@ -209,11 +210,19 @@ def effective_prompt(c: dict[str, Any], base: str | None = None) -> str:
         c["tools"] is None or bool(deck.NAMES & set(c["tools"]))
     )
     structured = c["answer"]["citations"] == "structured"
+    from pipeline.retrieval import bank
+
+    offers_copy = (
+        c["library"]
+        and bank.enabled()
+        and (c["tools"] is None or bank_copy.NAME in c["tools"])
+    )
     prompt = (
         text
         + (c["prompt_addon"] or "")
         + (capture.ADDON if use_capture else "")
         + (deck.addon(c["decks"]["main_format"]) if offers_decks else "")
+        + (bank_copy.ADDON if offers_copy else "")
         + (citations.STRUCTURED_ADDON if structured else "")
     )
     return prompt
@@ -513,6 +522,92 @@ async def deck_locally(
     return result
 
 
+async def copy_locally(
+    args: dict[str, Any], ctx, state: dict[str, Any], message_id: str
+):
+    """copy_questions: bank questions copied by id into a new quiz, a quiz this run
+    made, or the end of a note this run made. Published questions passed the
+    bank's validation, so the copy is not checked again (Go will trust them the
+    same way); the material records each question's bank sources."""
+    from pipeline.retrieval import bank, tools
+
+    clean = {k: v for k, v in args.items() if not k.startswith("_")}
+    problem = bank_copy.validate(clean)
+    if problem:
+        return tools._refused(problem)
+    rows = [await bank.read(str(qid)) for qid in clean["question_ids"]]
+    missing = [qid for qid, row in zip(clean["question_ids"], rows, strict=True) if row is None]
+    if missing:
+        return tools._refused(
+            f"copy_questions: no bank question has id {', '.join(missing)}.",
+            code="unavailable_target",
+        )
+    questions = [row["content"] for row in rows]
+    copied = [bank_copy.source(row) for row in rows]
+    if clean.get("title"):
+        prepared = await tools.ledger_write(ctx, "create_material", clean, excerpts=False)
+        if isinstance(prepared, tools.ToolResult):
+            return prepared
+        _, todo = prepared
+        record = {
+            "id": material_id(message_id, str(args.get("_tool_call_id") or "")),
+            "kind": "quiz",
+            "title": str(clean["title"]).strip(),
+            "content": "",
+            "cards": [],
+            "questions": questions,
+            "excerpt_ids": [],
+            "provenance": {"bank": copied},
+            "chapter_id": clean.get("chapter_id") or None,
+            "edits": [],
+        }
+        state["materials"].append(record)
+        operation = "created"
+    else:
+        rid = str(clean.get("quiz_id") or clean.get("note_id"))
+        want = "quiz" if clean.get("quiz_id") else "note"
+        record = next(
+            (m for m in state["materials"] if m["id"] == rid and m["kind"] == want), None
+        )
+        if record is None:
+            return tools._refused(
+                f"copy_questions: {rid} is not a {want} this run created.",
+                code="unavailable_target",
+            )
+        prepared = await tools.ledger_write(ctx, "edit_document", clean, excerpts=False)
+        if isinstance(prepared, tools.ToolResult):
+            return prepared
+        _, todo = prepared
+        if want == "quiz":
+            record["questions"] = [*record["questions"], *questions]
+        else:
+            fence = yaml.safe_dump({"questions": questions}, allow_unicode=True, sort_keys=False)
+            record["content"] = f"{record['content']}\n\n```quiz\n{fence}```".lstrip()
+        provenance = record.get("provenance") or {}
+        record["provenance"] = {**provenance, "bank": [*(provenance.get("bank") or []), *copied]}
+        record["edits"].append({"copy": list(clean["question_ids"])})
+        operation = "edited"
+    record["size"] = material_size(record["kind"], record)
+    write_material(state, record)
+    result = tools._receipt_result(
+        {
+            "outcome": "succeeded",
+            "effect": {
+                "operation": operation,
+                "resource": {
+                    "kind": "material",
+                    "id": record["id"],
+                    "title": record["title"],
+                    "materialKind": record["kind"],
+                },
+            },
+        }
+    )
+    ctx.ledger.complete(todo)
+    result.text_parts.append(f"Copied {len(questions)} bank questions.")
+    return result
+
+
 def material_size(kind: str, args: dict[str, Any]) -> str:
     from pipeline.retrieval.chunking import estimate_tokens
 
@@ -776,11 +871,15 @@ class Turn:
             return effective_prompt(c, saved["system_prompt"](locale, library=library))
 
         def schemas_for(ctx_):
+            production = saved["schemas_for"](ctx_)
+            # Copying goes with the bank tools: offered when they are.
+            banked = any(s["function"]["name"] == "list_question_bank" for s in production)
             out = [
                 s
                 for s in [
-                    *saved["schemas_for"](ctx_),
+                    *production,
                     *(deck.SCHEMAS if c["decks"]["offer"] else []),
+                    *([bank_copy.SCHEMA] if banked else []),
                 ]
                 if offered is None or s["function"]["name"] in offered
             ]
@@ -829,6 +928,8 @@ class Turn:
                 result = tools._result(tools.render_progress(c["study_progress"]))
             elif name in deck.NAMES:
                 result = await deck_locally(name, args, ctx_, state, self.id)
+            elif name == bank_copy.NAME:
+                result = await copy_locally(args, ctx_, state, self.id)
             elif name == "create_material":
                 result = await create_material_locally(args, ctx_, state, self.id)
             elif name == "edit_document":
@@ -1641,6 +1742,52 @@ def check_decks() -> None:
         asyncio.run(flow(Path(tmp) / "runs" / "r1"))
 
 
+def check_copy() -> None:
+    """copy_questions into a new quiz, a run's quiz and a run's note, its
+    refusals, and no excerpt rule for copied bank questions."""
+    from tempfile import TemporaryDirectory
+    from unittest.mock import patch
+
+    from pipeline.retrieval import bank, tools
+
+    def row(qid: str) -> dict[str, Any]:
+        content = {"id": qid, "stem": [], "parts": [{"id": f"{qid}-p", "blocks": [{"type": "text", "text": "Q"}], "marks": 1}]}
+        return {"id": qid, "content": content, "exam": "ielts", "subject": "Academic Reading", "topic": "Headings", "sources": [{"title": "S"}]}
+
+    async def read(qid: str):
+        return row(qid) if qid.startswith("q") else None
+
+    async def flow(run_dir: Path) -> None:
+        ctx = tools.ToolContext(workspace_id="ws", user_id="u", operations=BUILD_OPERATIONS)
+        ctx.ledger.note_read("exc_1", 0, "1.1")  # a library read does not ask copies for excerpts
+        note = {"id": "mat_note", "kind": "note", "title": "Reading", "content": "# Reading", "questions": [], "cards": [], "edits": [], "provenance": None}
+        state = {"materials": [note], "captures": [], "run_dir": run_dir}
+        for args, says in (
+            ({"question_ids": ["q1"]}, "exactly one destination"),
+            ({"question_ids": ["q1"], "title": "T", "quiz_id": "x"}, "exactly one destination"),
+            ({"question_ids": ["q1"], "note_id": "mat_note", "chapter_id": "c"}, "goes with title"),
+            ({"question_ids": ["q1", "nope"], "title": "T"}, "no bank question has id nope"),
+            ({"question_ids": ["q1"], "quiz_id": "mat_note"}, "is not a quiz this run created"),
+        ):
+            refused = await copy_locally(args, ctx, state, "m1")
+            assert refused.refused and says in refused.text(), refused.text()
+        made = await copy_locally({"question_ids": ["q1", "q2"], "title": "IELTS reading", "_tool_call_id": "c1"}, ctx, state, "m1")
+        assert not made.refused and "Copied 2 bank questions." in made.text(), made.text()
+        quiz = state["materials"][-1]
+        assert [q["id"] for q in quiz["questions"]] == ["q1", "q2"]
+        assert [b["id"] for b in quiz["provenance"]["bank"]] == ["q1", "q2"]
+        more = await copy_locally({"question_ids": ["q3"], "quiz_id": quiz["id"]}, ctx, state, "m1")
+        assert not more.refused and len(quiz["questions"]) == 3
+        embedded = await copy_locally({"question_ids": ["q4"], "note_id": "mat_note"}, ctx, state, "m1")
+        assert not embedded.refused and "```quiz" in note["content"] and "q4" in note["content"]
+        await tools._create_ledger({"todos": ["quiz"]}, ctx)
+        needs = await copy_locally({"question_ids": ["q5"], "title": "T2"}, ctx, state, "m1")
+        assert needs.refused and "needs todo" in needs.text()
+
+    with TemporaryDirectory() as tmp, patch.object(bank, "read", new=read):
+        asyncio.run(flow(Path(tmp) / "runs" / "r1"))
+
+
 def check() -> None:
     assert merged({"search": {"top_k": 3}})["search"] == {
         **DEFAULT_CONFIG["search"],
@@ -1700,6 +1847,7 @@ def check() -> None:
     ):
         assert says in asyncio.run(check_note(bad)), bad
     check_decks()
+    check_copy()
     # Preview requests must not inherit the monkeypatches of an active turn.
     from tempfile import TemporaryDirectory
     from unittest.mock import AsyncMock, patch

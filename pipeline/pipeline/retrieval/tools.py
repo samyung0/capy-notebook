@@ -1182,6 +1182,7 @@ async def ledger_write(
     args: dict[str, Any],
     *,
     material: bool = True,
+    excerpts: bool = True,
 ) -> tuple[list[dict[str, Any]], int | None] | ToolResult:
     """Check a material write and resolve its provenance, or refuse it.
 
@@ -1189,6 +1190,9 @@ async def ledger_write(
     todo this write completes. Shared with the playground's local write stubs,
     so the rules have one implementation. ``material`` is false for an edit of
     the user's own source file, which carries no provenance and no todo.
+    ``excerpts`` is false for a write whose content comes from somewhere other
+    than the library (a copied bank question carries the bank's sources), so
+    the excerpt rules do not apply.
     """
     excerpt_ids = [str(e) for e in (args.get("excerpt_ids") or [])]
     if not material:
@@ -1223,7 +1227,7 @@ async def ledger_write(
     missing = []
     if raw_todo is None and ctx.ledger.open_todos():
         missing.append("todo, the id of the ledger todo it completes")
-    if read and not excerpt_ids:
+    if excerpts and read and not excerpt_ids:
         missing.append(
             "excerpt_ids naming the library excerpts this content was written from"
         )

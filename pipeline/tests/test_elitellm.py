@@ -582,6 +582,7 @@ async def _collect(monkeypatch, stream: httpx.AsyncByteStream) -> list[dict]:
 
 async def test_stream_idle_timer_restarts_on_every_data_event(monkeypatch):
     monkeypatch.setattr(cfg, "interactive_provider_timeout_s", 0.5)
+    monkeypatch.setattr(cfg, "interactive_stream_idle_s", 0.5)
     monkeypatch.setattr(cfg, "interactive_stream_max_s", 10.0)
     # Eight events 0.1 s apart run 0.8 s in total, past the idle bound, with a
     # five-fold margin on each gap for a slow CI scheduler.
@@ -611,13 +612,33 @@ async def test_consumer_stalls_are_not_provider_silence(monkeypatch):
 
 async def test_stream_silence_past_the_idle_bound_times_out(monkeypatch):
     monkeypatch.setattr(cfg, "interactive_provider_timeout_s", 0.5)
+    monkeypatch.setattr(cfg, "interactive_stream_idle_s", 0.5)
     monkeypatch.setattr(cfg, "interactive_stream_max_s", 10.0)
-    with pytest.raises(TimeoutError):
+    with pytest.raises(TimeoutError, match="went silent for 0.5 s after it started"):
         await _collect(monkeypatch, _sse([(0.05, '{"n": 0}'), (1.5, '{"n": 1}')]))
+
+
+async def test_a_started_stream_may_stay_silent_longer_than_the_first_wait(monkeypatch):
+    # A model writing a tool call the provider sends whole: silent after its
+    # reasoning, well past the first-event bound.
+    monkeypatch.setattr(cfg, "interactive_provider_timeout_s", 0.3)
+    monkeypatch.setattr(cfg, "interactive_stream_idle_s", 3.0)
+    monkeypatch.setattr(cfg, "interactive_stream_max_s", 10.0)
+    events = await _collect(monkeypatch, _sse([(0.05, '{"n": 0}'), (0.9, '{"n": 1}')]))
+    assert [event["n"] for event in events] == [0, 1]
+
+
+async def test_a_stream_that_never_starts_times_out_on_the_first_wait(monkeypatch):
+    monkeypatch.setattr(cfg, "interactive_provider_timeout_s", 0.3)
+    monkeypatch.setattr(cfg, "interactive_stream_idle_s", 3.0)
+    monkeypatch.setattr(cfg, "interactive_stream_max_s", 10.0)
+    with pytest.raises(TimeoutError, match="no first event within 0.3 s"):
+        await _collect(monkeypatch, _sse([(0.9, '{"n": 0}')]))
 
 
 async def test_keep_alive_comments_do_not_count_as_activity(monkeypatch):
     monkeypatch.setattr(cfg, "interactive_provider_timeout_s", 0.5)
+    monkeypatch.setattr(cfg, "interactive_stream_idle_s", 0.5)
     monkeypatch.setattr(cfg, "interactive_stream_max_s", 10.0)
     # Comment keep-alives and empty data frames both leave the clock running.
     parts = [(0.05, b'data: {"n": 0}\n\n')] + [
@@ -630,8 +651,9 @@ async def test_keep_alive_comments_do_not_count_as_activity(monkeypatch):
 
 async def test_stream_backstop_bounds_a_trickling_stream(monkeypatch):
     monkeypatch.setattr(cfg, "interactive_provider_timeout_s", 5.0)
+    monkeypatch.setattr(cfg, "interactive_stream_idle_s", 5.0)
     monkeypatch.setattr(cfg, "interactive_stream_max_s", 0.5)
-    with pytest.raises(TimeoutError):
+    with pytest.raises(TimeoutError, match="backstop"):
         await _collect(monkeypatch, _sse([(0.05, f'{{"n": {n}}}') for n in range(60)]))
 
 

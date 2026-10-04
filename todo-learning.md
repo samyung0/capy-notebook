@@ -720,9 +720,18 @@ Found before the test (2026-10-04): GLM-5.3-Flash on Relace sends a tool
 call's arguments in one piece when they are complete, with no keep-alive, so
 a large write (a quiz copying eight IELTS questions with their passages, a
 long note) leaves the stream silent for 40 s or more. The interactive idle
-bound (`CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S`, 15 s) then fails the turn with
+bound (`CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S`, 15 s) then failed the turn with
 `agent_failed`; two of three live bank turns ended this way at the quiz
-write. Waiting for Epo: a separate, longer idle bound for streams.
+write. Fixed with Epo's agreement: a stream must start within 15 s, then may
+stay silent for `CAPY_INTERACTIVE_STREAM_IDLE_S` (120 s), and the timeout
+names which bound fired. Bank questions are now copied by id
+(`copy_questions`, playground-only), so they never stream back at all.
+A live "practise my English comprehension" turn then listed IELTS reading,
+copied three questions of different task types into a quiz and answered in
+five calls and 70k tokens. For the test: GLM once sent its OpenUI answer as
+a malformed tool call (the answer text as the tool name, ending
+`</arg_value>`); it was refused as an unknown tool and the next response
+answered, at the cost of one call. Related to the "Response flagged" leaks.
 
 Deck items for the test (Epo, 2026-10-04; the output looks good):
 
@@ -803,8 +812,11 @@ wiring it in.
 
 - The retrieval service gets the bank reader role; listing needs no index or
   stored vectors.
-- Copying a bank question into a workspace quiz carries the provenance decided
-  in 1.7. The quiz validator must accept bank image URLs first, which waits for
+- `copy_questions` moves from the playground (`lab/playground/scripts/bank_copy.py`)
+  into the contract with a Go internal route: Go already holds the bank's DSN,
+  copies the questions into a new quiz, an existing quiz or the end of a note
+  (as an embedded quiz), and records each question's bank sources. Copying a
+  bank question into a workspace quiz carries the provenance decided in 1.7. The quiz validator must accept bank image URLs first, which waits for
   the question-image upload work (`todo-question-bank.md`, Copy to quiz).
 
 **2.6 Decks**
