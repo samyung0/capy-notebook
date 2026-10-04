@@ -2174,15 +2174,17 @@ build, and the knowledge library is one more source while the switch is on.
   `store.AgentStudyProgress`: items marked done, started or removed, recent
   quiz results, and the chapters whose rated questions and cards are least
   retained. `tools.render_progress` turns it into the text the model reads.
-- **Question bank** (`retrieval/bank.py`). `search_questions(query, exam?,
-  topics?, types?)` and `read_question(question_id)` require `library.read` and
+- **Question bank** (`retrieval/bank.py`). `list_question_bank(subject?,
+  topic?, offset?)` and `read_question(question_id)` require `library.read` and
   are offered with Library on, a configured library and `BANK_DATABASE_URL`.
-  Search filters by exam, topic ids and question types in SQL, then ranks the
-  matches by embedding similarity under the library's embedding pin, returning
-  eight compact cards; question vectors live in process memory, keyed by a hash
-  of the question text. `read_question` returns the question's JSON, to copy
-  into a quiz unchanged, and its sources. Keyword search missed most concept
-  requests (`bench/rag/reports/2026-10-04-bank-search.md`).
+  The bank's syllabus is fixed, so the agent walks it rather than searching:
+  with no arguments the exams and subjects with question counts, with
+  `subject` its topics with counts, with `topic` 50 question cards per page
+  (the stem's opening, such as a reading passage, then what the parts ask).
+  `read_question` returns the question's JSON, to copy into a quiz unchanged,
+  and its sources. An embedding search came first
+  (`bench/rag/reports/2026-10-04-bank-search.md`); Epo chose listing on
+  2026-10-04.
 - **Provenance.** Provenance is the excerpts a work was written from. Both
   writes resolve their `excerpt_ids` through `library.provenance` and send the
   books to Go, which bounds the shape, requires each book's version (the
@@ -2261,8 +2263,8 @@ build, and the knowledge library is one more source while the switch is on.
 | `search_knowledge` | none | Library on only. Excerpt-level hybrid search of the knowledge library with verified `topics` / `roles` predicates; topic ids come from a subject browse and unknown ones are refused by name; an empty result reports what those topics hold by role, or, with no topics, says the search had no topic filter. Retains nothing |
 | `browse_knowledge` | none | Library on only. Exactly one of `subject` or `topic` (enforced in Python). A subject id: its topics with search-eligible excerpt counts, one line each. A topic id: eligible excerpt counts by role and by book, then a page of excerpts with section paths and compact reviewed scope. Full notes come from `read_knowledge`. The library's subject list is appended to this description at runtime. Retains nothing |
 | `read_knowledge` | none | Library on only. One excerpt's chunks from chunk index `start`, with the excerpt's chunk range in the header and a next-start marker. Retains exact bounded reads used in successful material writes |
-| `search_questions` | none | Library on only, with a configured library and `BANK_DATABASE_URL`. Question-bank search filtered by `exam`, `topics` and `types`, ranked by embedding similarity; eight compact cards. Retains nothing |
-| `read_question` | none | Same gating as `search_questions`. One bank question's JSON, to copy into a quiz unchanged, with its sources |
+| `list_question_bank` | none | Library on only, with a configured library and `BANK_DATABASE_URL`. The bank's exams and subjects, a subject's topics, or a topic's questions 50 per page; compact cards. Retains nothing |
+| `read_question` | none | Same gating as `list_question_bank`. One bank question's JSON, to copy into a quiz unchanged, with its sources |
 | `read_study_progress` | none | Offered only when study progress is on for the requester in this workspace (Go `/api/internal/study-progress`): items done, started or removed, recent quiz results and the least retained chapters |
 | `create_ledger` | conversation ledger | Offered to any turn with `material.create`. String todos add IDs, `{id, todo}` adds or overwrites that ID. Unmentioned todos remain, max ten unfinished. Repeated edits are allowed but only the first changed plan in a turn counts as progress. Retains no source evidence |
 | `capture_knowledge_page` | none | Library on only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. No per-turn capture cap. Adds no citation. Retains nothing |
@@ -2702,7 +2704,7 @@ current chunk, with full coverage in the large-document reduction path.
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
 | Search | `CAPY_SEARCH_CANDIDATES`, `CAPY_SEARCH_TOP_K`, `CAPY_SEARCH_PER_FILE_CAP` | |
 | Knowledge library | `LIBRARY_DATABASE_URL`, `CAPY_LIBRARY_TAG_MIN_CONFIDENCE` | Unset URL leaves library tools unavailable. Every environment reads the same live library; books carry their own versions, so there is nothing to pin. Tags below 0.8 confidence, or with an unverified evidence quote, never act as filters. |
-| Question bank | `BANK_DATABASE_URL` | The bank's read-only DSN for `search_questions` and `read_question`, which also need the library's embedding pin. Unset leaves both unoffered; the compose files pass it only to the Go server, so deployed chats do not offer them yet. |
+| Question bank | `BANK_DATABASE_URL` | The bank's read-only DSN for `list_question_bank` and `read_question`. Unset leaves both unoffered; the compose files pass it only to the Go server, so deployed chats do not offer them yet. |
 | Library source PDFs | `KNOWLEDGE_BASE_B2_ENDPOINT`, `KNOWLEDGE_BASE_B2_REGION`, `KNOWLEDGE_BASE_B2_BUCKET`, `KNOWLEDGE_BASE_B2_KEY_ID`, `KNOWLEDGE_BASE_B2_APP_KEY` | A dedicated private bucket with its own restricted key, not a prefix of the app bucket. All five or none; unset leaves `capture_knowledge_page` unoffered. |
 | Agent | `CAPY_AGENT_MAX_STEPS` | Default and maximum 8 (`PLANNING_RESPONSES`): the responses a turn without ledger todos gets, the last with tools off. 4 tool calls per response on every turn (`retrieval/limits.py`). Cap is the design, not a safety valve. A turn whose ledger holds todos has no response ceiling: `LEDGER_TOOLS_PER_TURN` (160) and the `STALL_RESPONSES` guard (5, plus `WRITE_ERROR_GRACE` 2 per errored write for at most 2 errors) bound it. No context-window minimum |
 | Extraction confidence | `CAPY_CONFIDENCE_NOTE_BELOW` | Default 0.9. A passage whose chunk confidence is below this carries `[extraction confidence 0.72: reasons]` in its header. Visual facts require capture even above this threshold |

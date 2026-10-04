@@ -1484,6 +1484,7 @@ def build_app(target: str):
             # The pinned version's topic catalog rides in the knowledge tool
             # descriptions, so this reads the library exactly as a turn does.
             await tools.load_library_catalog(ctx)
+            await tools.load_bank_catalog(ctx)
         schemas = [
             s
             for s in production_schemas(ctx)
@@ -1736,6 +1737,7 @@ def check() -> None:
                 with (
                     patch.object(chat, "system_prompt", return_value="active turn"),
                     patch.object(tools, "load_library_catalog", new=AsyncMock()),
+                    patch.object(tools, "load_bank_catalog", new=AsyncMock()),
                 ):
                     response = await client.post("/api/prompt", json=c)
                 assert response.status_code == 200

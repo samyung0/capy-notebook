@@ -38,12 +38,14 @@ flashcards).
   curate tool descriptions folded into the Go contract, and the playground on
   the Library switch with `server/cmd/quizcheck` validating local quizzes. The
   Go side of curate (conversation flag, ledger route check) waits for phase 2.
-- Step 1.7 is done (uncommitted, 2026-10-04): `retrieval/bank.py` with
-  `search_questions` and `read_question`, offered with Library on and a bank
-  configured. Embeddings beat keyword search on concepts and task types became
-  filters (`bench/rag/reports/2026-10-04-bank-search.md`). The playground reads
-  the local restore on port 15499 (`CAPY_PLAYGROUND_BANK_URL`), never the live
-  bank.
+- Step 1.7 is done (2026-10-04): `retrieval/bank.py` with
+  `list_question_bank` and `read_question`, offered with Library on and a bank
+  configured. An embedding search came first
+  (`bench/rag/reports/2026-10-04-bank-search.md`: embeddings beat keyword
+  search on maths concepts but missed IELTS task types and let a passage
+  dominate); Epo chose listing the fixed syllabus instead (contract v11). A
+  live turn reused eight HKDSE questions. The playground reads the local
+  restore on port 15499 (`CAPY_PLAYGROUND_BANK_URL`), never the live bank.
 - Step 1.8 is mostly done (uncommitted, 2026-10-04). Notes: the fence format
   (mermaid, quiz, flashcards, `html-embed` with YAML `title`/`fallback`/`html`)
   is in the `create_material` contract, and the playground checks it
@@ -632,12 +634,13 @@ experiments stay under Later.
   `data/question-bank/backups/bank-2026-10-03-before-round2.dump` (1,098 pilot
   questions in the older format), never the live bank, which UAT reads. Drop
   the local copy when done.
-- **Index.** Done: embeddings from the library's model ranked after SQL filters
-  (precision@5 0.71 against keyword 0.38). Vectors are held in process memory
-  for now; phase 2 stores them in the bank at publication.
-- **Tools.** `search_questions(query, topics?, exam?, type?)` returning compact
-  cards, filterable by `questions.question_types`, and a read for one question
-  with its worked solution and marking scheme.
+- **Tools.** `list_question_bank(subject?, topic?, offset?)`: the exams and
+  subjects, a subject's topics with counts, or a topic's questions as compact
+  cards 50 per page; and `read_question` for one question with its worked
+  solution and marking scheme. Epo, 2026-10-04: the syllabi are fixed and the
+  exams well known, so listing replaces the embedding search (precision@5 0.71
+  against keyword 0.38 on maths, but 0.20 on IELTS task types). Revisit search
+  when topics outgrow a few pages.
 - **Prompt.** With Library on, practice reuses bank questions and library
   exercises before generating new ones.
 - Before phase 2: the retrieval service's reader role, the provenance record
@@ -712,6 +715,14 @@ single-item request with a file open (builds directly), a question (answers
 with citations, no build), Library off (workspace only), a preference change
 (brief vs detailed), practice that reuses bank questions, and each output format
 including a deck. Epo tunes the prompts against them at the end.
+
+Found before the test (2026-10-04): GLM-5.3-Flash on Relace sends a tool
+call's arguments in one piece when they are complete, with no keep-alive, so
+a large write (a quiz copying eight IELTS questions with their passages, a
+long note) leaves the stream silent for 40 s or more. The interactive idle
+bound (`CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S`, 15 s) then fails the turn with
+`agent_failed`; two of three live bank turns ended this way at the quiz
+write. Waiting for Epo: a separate, longer idle bound for streams.
 
 Deck items for the test (Epo, 2026-10-04; the output looks good):
 
@@ -790,7 +801,8 @@ wiring it in.
 
 **2.5 Question-bank search**
 
-- The retrieval service gets the bank reader role and the index chosen in 1.7.
+- The retrieval service gets the bank reader role; listing needs no index or
+  stored vectors.
 - Copying a bank question into a workspace quiz carries the provenance decided
   in 1.7. The quiz validator must accept bank image URLs first, which waits for
   the question-image upload work (`todo-question-bank.md`, Copy to quiz).

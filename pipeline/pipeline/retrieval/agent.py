@@ -262,6 +262,11 @@ async def _run_turn(
             log.warning("knowledge library unavailable for this turn", exc_info=True)
         if not ctx.library_catalog:
             ctx.library = False
+    if ctx.library:
+        try:
+            await tools.load_bank_catalog(ctx)
+        except Exception:  # any failure to reach the bank
+            log.warning("question bank unavailable for this turn", exc_info=True)
 
     if ctx.file_ids is not None:
         active_scope = await tools.resolve_current_scope(ctx)

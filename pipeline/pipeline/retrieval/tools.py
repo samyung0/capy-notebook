@@ -237,6 +237,7 @@ class ToolContext:
     # browse_knowledge description, and the topics of each subject browsed
     # this turn, which is where search_knowledge topic ids come from.
     library_catalog: list[dict[str, Any]] | None = None
+    bank_catalog: list[dict[str, Any]] | None = None
     subject_topics: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     # Resource operations the gateway granted this actor for the turn
     # (contract.OPERATIONS names). Tools whose required operations are not all
@@ -699,6 +700,14 @@ async def load_library_catalog(ctx: ToolContext) -> None:
     db = await library.pool()
     async with db.connection() as conn:
         ctx.library_catalog = await library.catalog(conn)
+
+
+async def load_bank_catalog(ctx: ToolContext) -> None:
+    """Read the question bank's exams and subjects once, for list_question_bank's
+    description."""
+    if not ctx.library or ctx.bank_catalog is not None or not bank.enabled():
+        return
+    ctx.bank_catalog = await bank.subjects()
 
 
 def _catalog_lines(catalog: list[dict[str, Any]]) -> str:
@@ -1685,18 +1694,45 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     return result
 
 
-async def _search_questions(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    rows = await bank.search(
-        str(args["query"]),
-        exam=args.get("exam") or None,
-        topics=args.get("topics") or None,
-        types=args.get("types") or None,
-    )
-    if not rows:
-        return _result(
-            "No bank question matches. Relax a filter or write new practice."
+async def _list_question_bank(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    """The bank's table of contents: a subject's topics, or a page of a topic's
+    questions. The exams and subjects ride in the tool description."""
+    # A topic id is unique on its own, so a subject passed with it is ignored.
+    topic, subject = args.get("topic"), args.get("subject")
+    if not (topic or subject):
+        return _refused(
+            "list_question_bank takes subject (a bank subject from its description, "
+            "not a library subject) or topic (from a subject's list)."
         )
-    return _result("\n\n".join(bank.card(row) for row in rows))
+    if topic:
+        offset = int(args.get("offset") or 0)
+        total, rows = await bank.questions(str(topic), offset)
+        if not rows:
+            return _refused(
+                f"No bank questions under topic {topic} from offset {offset}; list "
+                "the subject's topics for their ids and counts.",
+                code="unavailable_target",
+            )
+        head = (
+            f"{rows[0]['exam']} · {rows[0]['subject']} · {rows[0]['topic']}: "
+            f"questions {offset + 1}-{offset + len(rows)} of {total}."
+        )
+        more = offset + len(rows)
+        tail = f"\nNext page: offset {more}." if more < total else ""
+        return _result(head + "\n\n" + "\n\n".join(bank.card(r) for r in rows) + tail)
+    rows = await bank.topics(str(subject))
+    if not rows:
+        return _refused(
+            f"No bank subject has id {subject}; the bank's subjects are in the "
+            "list_question_bank description.",
+            code="unavailable_target",
+        )
+    return _result(
+        f"Topics of {subject}:\n"
+        + "\n".join(
+            f"- {r['id']}: {r['label']} · {r['questions']} questions" for r in rows
+        )
+    )
 
 
 async def _read_question(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
@@ -1772,7 +1808,7 @@ _register("browse_knowledge", _browse_knowledge)
 _register("read_knowledge", _read_knowledge)
 _register("create_ledger", _create_ledger)
 _register("read_study_progress", _read_study_progress)
-_register("search_questions", _search_questions)
+_register("list_question_bank", _list_question_bank)
 _register("read_question", _read_question)
 _register("capture_knowledge_page", _capture_knowledge_page)
 _register("list_sources", _list_sources)
@@ -1794,7 +1830,7 @@ KNOWLEDGE_TOOLS = (
     "read_knowledge",
 )
 KNOWLEDGE_CAPTURE = "capture_knowledge_page"
-BANK_TOOLS = ("search_questions", "read_question")
+BANK_TOOLS = ("list_question_bank", "read_question")
 
 
 def _offered(spec: ToolSpec, ctx: ToolContext) -> bool:
@@ -1811,8 +1847,8 @@ def _offered(spec: ToolSpec, ctx: ToolContext) -> bool:
     if spec.name == "read_study_progress":
         return ctx.study_progress
     if spec.name in BANK_TOOLS:
-        # Bank vectors use the library's embedding pin, so both are needed.
-        return ctx.library and library.enabled() and bank.enabled()
+        # Part of the Library switch; a bank that is down or empty is not offered.
+        return ctx.library and bool(ctx.bank_catalog)
     if spec.name == KNOWLEDGE_CAPTURE:
         # Without the knowledge-base bucket there is nothing to render.
         return ctx.library and library.enabled() and bool(cfg.knowledge_base_b2_bucket)
@@ -1837,17 +1873,27 @@ def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
         for spec in REGISTRY.values()
         if _offered(spec, ctx)
     ]
-    if not ctx.library_catalog:
-        return schemas
-    # The model maps the learner's words onto a subject, browses it for topic
-    # ids, and searches with those. The list rides on browse_knowledge only.
-    catalog = (
-        "\n\nSubjects this library holds (browse one for its topic ids):\n"
-        + _catalog_lines(ctx.library_catalog)
-    )
+    # The model maps the learner's words onto a subject from these lists, then
+    # browses or lists it for topic ids.
+    extra = {}
+    if ctx.library_catalog:
+        extra["browse_knowledge"] = (
+            "\n\nSubjects this library holds (browse one for its topic ids):\n"
+            + _catalog_lines(ctx.library_catalog)
+        )
+    if ctx.bank_catalog:
+        extra["list_question_bank"] = (
+            "\n\nExams and subjects this bank holds (list one for its topics):\n"
+            + "\n".join(
+                f"- list_question_bank({json.dumps({'subject': s['id']})}): "
+                f"{s['exam_label']} {s['label']} ({s['questions']} questions)"
+                for s in ctx.bank_catalog
+            )
+        )
     for schema in schemas:
-        if schema["function"]["name"] == "browse_knowledge":
-            schema["function"]["description"] += catalog
+        name = schema["function"]["name"]
+        if name in extra:
+            schema["function"]["description"] += extra[name]
     return schemas
 
 

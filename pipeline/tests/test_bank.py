@@ -1,93 +1,123 @@
-"""Question-bank search: SQL filters, ranking by meaning, and vectors reused
-until a question's text changes."""
+"""Question bank listing: exams and subjects in the tool description, a
+subject's topics, a topic's questions a page at a time, and cards that show
+what a question asks."""
 
 from __future__ import annotations
 
-from pipeline.retrieval import bank
+from pipeline.retrieval import bank, tools
 
 
-def _question(qid: str, text: str) -> dict:
+def _question(qid: str, stem: str, asks: str) -> dict:
     content = {
         "id": qid,
-        "stem": [],
-        "parts": [{"blocks": [{"type": "text", "text": text}], "marks": 2}],
+        "stem": [{"type": "text", "text": stem}] if stem else [],
+        "parts": [{"blocks": [{"type": "text", "text": asks}], "marks": 2}],
     }
     return {
         "id": qid,
         "content": content,
-        "question_types": [],
+        "question_types": ["matching_headings"],
         "sources": [],
-        "topic_id": "t",
-        "topic": "Circle geometry",
-        "subject": "Maths",
-        "exam": "hkdse",
+        "topic_id": "ielts-headings",
+        "topic": "Choosing paragraph headings",
+        "subject": "Academic Reading",
+        "exam": "ielts",
     }
 
 
-class _Pool:
-    def __init__(self, rows):
-        self.rows, self.queries = rows, []
-
-    def connection(self):
-        pool = self
-
-        class _Conn:
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *exc):
-                return False
-
-            async def execute(self, sql, params=()):
-                pool.queries.append((sql, list(params)))
-
-                class _Cur:
-                    async def fetchall(self):
-                        return pool.rows
-
-                return _Cur()
-
-        return _Conn()
-
-
-async def test_search_filters_ranks_by_meaning_and_reuses_vectors(monkeypatch):
-    rows = [
-        _question("q_tangent", "tangent lengths"),
-        _question("q_mean", "mean of data"),
-    ]
-    fake = _Pool(rows)
-    embedded: list[str] = []
-
-    async def _pool():
-        return fake
-
-    async def _spec():
-        return object()
-
-    async def _embed(texts, *, spec):
-        embedded.extend(texts)
-        return [[1.0, 0.0] if "tangent" in t else [0.0, 1.0] for t in texts]
-
-    monkeypatch.setattr(bank, "pool", _pool)
-    monkeypatch.setattr(bank, "_embedding_spec", _spec)
-    monkeypatch.setattr(bank.models, "embed", _embed)
-    monkeypatch.setattr(bank.models, "format_query", lambda query, spec: query)
-    bank._vectors.clear()
-
-    hits = await bank.search("tangent from a point", exam="hkdse", types=["x"])
-
-    assert [h["id"] for h in hits] == ["q_tangent", "q_mean"]
-    sql, params = fake.queries[0]
-    assert "e.id = %s" in sql and "q.question_types && %s" in sql
-    assert params == ["hkdse", ["x"]]
-    assert "q_tangent" in bank.card(hits[0]) and "1 part, 2 marks" in bank.card(hits[0])
-
-    embedded.clear()
-    await bank.search("mean")
-    assert embedded == ["mean"], "unchanged questions keep their vectors"
-    rows[1]["content"]["parts"][0]["blocks"][0]["text"] = "median of data"
-    embedded.clear()
-    await bank.search("mean")
-    assert embedded == ["median of data", "mean"], (
-        "an edited question is embedded again"
+def test_a_card_shows_the_passage_opening_then_what_is_asked():
+    passage = "The nineteenth century is a period often called the Romantic era. " * 4
+    text = bank.card(
+        _question("q1", passage, "Choose the correct heading for each paragraph.")
     )
+    head, opening, asks = text.split("\n")
+    assert head == "q1 · 1 part, 2 marks · matching_headings"
+    assert opening.startswith("The nineteenth century") and opening.endswith("…")
+    assert asks == "Choose the correct heading for each paragraph."
+
+
+async def test_listing_walks_exams_subjects_topics_and_pages(monkeypatch):
+    async def _subjects():
+        return [
+            {
+                "exam": "hkdse",
+                "exam_label": "HKDSE",
+                "id": "hkdse-maths",
+                "label": "Mathematics",
+                "questions": 900,
+            },
+            {
+                "exam": "ielts",
+                "exam_label": "IELTS",
+                "id": "ielts-reading",
+                "label": "Academic Reading",
+                "questions": 198,
+            },
+        ]
+
+    async def _topics(subject_id):
+        if subject_id != "ielts-reading":
+            return []
+        return [
+            {
+                "id": "ielts-headings",
+                "label": "Choosing paragraph headings",
+                "questions": 60,
+            }
+        ]
+
+    async def _questions(topic_id, offset):
+        if topic_id != "ielts-headings":
+            return 0, []
+        rows = [
+            _question(f"q{n}", "", "Choose a heading.")
+            for n in range(offset, min(offset + bank.PAGE, 60))
+        ]
+        return 60, rows
+
+    monkeypatch.setattr(bank, "subjects", _subjects)
+    monkeypatch.setattr(bank, "topics", _topics)
+    monkeypatch.setattr(bank, "questions", _questions)
+    monkeypatch.setattr(bank, "enabled", lambda: True)
+    ctx = tools.ToolContext(
+        workspace_id="ws", operations=frozenset({"library.read"}), library=True
+    )
+
+    # The exams and subjects ride in the description, as calls to make.
+    await tools.load_bank_catalog(ctx)
+    described = next(
+        s["function"]["description"]
+        for s in tools.schemas_for(ctx)
+        if s["function"]["name"] == "list_question_bank"
+    )
+    assert (
+        '- list_question_bank({"subject": "ielts-reading"}): IELTS Academic Reading '
+        "(198 questions)"
+    ) in described
+
+    listed = (await tools._list_question_bank({"subject": "ielts-reading"}, ctx)).text()
+    assert "- ielts-headings: Choosing paragraph headings · 60 questions" in listed
+
+    # A subject passed with its topic is ignored: the topic id is enough.
+    first = (
+        await tools._list_question_bank(
+            {"subject": "ielts-reading", "topic": "ielts-headings"}, ctx
+        )
+    ).text()
+    assert first.startswith(
+        "ielts · Academic Reading · Choosing paragraph headings: questions 1-50 of 60."
+    )
+    assert first.endswith("Next page: offset 50.")
+    last = (
+        await tools._list_question_bank({"topic": "ielts-headings", "offset": 50}, ctx)
+    ).text()
+    assert "questions 51-60 of 60." in last and "Next page" not in last
+
+    for args in (
+        {},
+        {"subject": "nope"},
+        {"topic": "nope"},
+        {"topic": "ielts-headings", "offset": 60},
+    ):
+        refused = await tools._list_question_bank(args, ctx)
+        assert refused.refused, args

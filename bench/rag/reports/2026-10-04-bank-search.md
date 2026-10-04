@@ -51,3 +51,13 @@ but is still weak.
 Open for phase 2: where the vectors live. The playground embeds bank questions
 on first use and keeps them in memory; production should store them in the bank
 database at publication, so a search never waits on embedding.
+
+## Superseded (2026-10-04)
+
+Epo chose listing over search: the syllabi are fixed and the exams well known,
+so `list_question_bank` walks exams and subjects, a subject's topics, then a
+topic's questions 50 per page. A request such as "practise my English
+comprehension" reached IELTS reading with search too (7 of the top 10), but
+statistics questions that mention "an English test" crept in and one passage
+filled most of the top five. Revisit search when topics outgrow a few pages.
+

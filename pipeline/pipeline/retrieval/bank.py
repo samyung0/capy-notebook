@@ -1,33 +1,28 @@
-"""Question bank, read-only: search and read published questions for the agent.
+"""Question bank, read-only: list and read published questions for the agent.
 
 The bank is its own database (server/bankmigrations) that UAT and production
-share. Search filters by exam, topic and question type in SQL, then ranks by
-embedding similarity with the library's embedding model: keyword search missed
-most concept requests in bench/rag/reports/2026-10-04-bank-search.md.
+share. Its syllabus (exams, subjects, topics) is fixed by the syllabus files,
+so the agent walks it like a table of contents instead of searching: exams and
+subjects, a subject's topics, then a topic's questions a page at a time.
 """
 
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
-import math
 from typing import Any
 
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
-from .. import registry
 from ..config import cfg
 from ..jobs import TerminalError
-from . import library, models
+from . import library
+
+PAGE = 50  # questions per listed page
 
 _pool: AsyncConnectionPool | None = None
 _pool_lock = asyncio.Lock()
-# ponytail: question vectors live in process memory, embedded on the first
-# search that needs them and re-embedded when the text changes. Store them in
-# the bank at publication before production, so a search never waits on this.
-_vectors: dict[str, tuple[str, list[float]]] = {}
 
 
 def enabled() -> bool:
@@ -69,14 +64,14 @@ async def close_pool() -> None:
         _pool = None
 
 
-def question_text(content: dict[str, Any]) -> str:
-    """Stem and part text, without solutions or marking schemes."""
-    blocks = list(content.get("stem") or [])
-    for part in content.get("parts") or []:
-        blocks.extend(part.get("blocks") or [])
+def _text(blocks: list[dict[str, Any]]) -> str:
     return " ".join(
         str(b.get("text") or "") for b in blocks if b.get("type") == "text"
     ).strip()
+
+
+def _clip(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[:limit].rsplit(" ", 1)[0] + "…"
 
 
 _SELECT = """
@@ -89,78 +84,52 @@ _SELECT = """
 """
 
 
-async def _embedding_spec() -> registry.ModelConfig:
-    """The library's embedding pin, so bank and library vectors agree."""
-    db = await library.pool()
+async def _rows(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+    db = await pool()
     async with db.connection() as conn:
-        cur = await conn.execute(
-            "SELECT embedding_provider_slug, embedding_model_slug, embedding_model_version "
-            "FROM workspaces WHERE id = %s",
-            (library.WORKSPACE,),
-        )
-        pin = await cur.fetchone()
-    if pin is None:
-        raise TerminalError("the library has no embedding pin")
-    return registry.resolve_pinned(
-        pin["embedding_provider_slug"],
-        pin["embedding_model_slug"],
-        pin["embedding_model_version"],
-        registry.Slot.RETRIEVAL,
+        return await (await conn.execute(sql, params)).fetchall()
+
+
+async def subjects() -> list[dict[str, Any]]:
+    """Every exam's subjects in syllabus order, with their question counts."""
+    return await _rows(
+        """
+        SELECT e.id AS exam, e.label AS exam_label, s.id, s.label,
+               count(q.id) AS questions
+        FROM exams e
+        JOIN subjects s ON s.exam_id = e.id
+        LEFT JOIN topics t ON t.subject_id = s.id
+        LEFT JOIN questions q ON q.topic_id = t.id
+        GROUP BY e.id, e.label, e.position, s.id, s.label, s.position
+        ORDER BY e.position, s.position
+        """
     )
 
 
-def _unit(vector: list[float]) -> list[float]:
-    norm = math.sqrt(sum(x * x for x in vector)) or 1.0
-    return [x / norm for x in vector]
+async def topics(subject_id: str) -> list[dict[str, Any]]:
+    """A subject's topics in syllabus order, with their question counts."""
+    return await _rows(
+        """
+        SELECT t.id, t.label, count(q.id) AS questions
+        FROM topics t LEFT JOIN questions q ON q.topic_id = t.id
+        WHERE t.subject_id = %s
+        GROUP BY t.id, t.label, t.position
+        ORDER BY t.position
+        """,
+        (subject_id,),
+    )
 
 
-async def search(
-    query: str,
-    *,
-    exam: str | None = None,
-    topics: list[str] | None = None,
-    types: list[str] | None = None,
-    limit: int = 8,
-) -> list[dict[str, Any]]:
-    """The questions that best practise ``query`` among those matching the filters."""
-    where, params = [], []
-    if exam:
-        where.append("e.id = %s")
-        params.append(exam)
-    if topics:
-        where.append("t.id = ANY(%s)")
-        params.append(topics)
-    if types:
-        where.append("q.question_types && %s")
-        params.append(types)
-    sql = _SELECT + (" WHERE " + " AND ".join(where) if where else "")
-    db = await pool()
-    async with db.connection() as conn:
-        rows = await (await conn.execute(sql, params)).fetchall()
-    if not rows:
-        return []
-    spec = await _embedding_spec()
-    texts = {r["id"]: question_text(r["content"]) for r in rows}
-    stale = [
-        qid
-        for qid, text in texts.items()
-        if _vectors.get(qid, ("",))[0] != hashlib.sha256(text.encode()).hexdigest()
-    ]
-    for start in range(0, len(stale), 64):
-        batch = stale[start : start + 64]
-        vectors = await models.embed([texts[q][:4000] for q in batch], spec=spec)
-        for qid, vector in zip(batch, vectors, strict=True):
-            digest = hashlib.sha256(texts[qid].encode()).hexdigest()
-            _vectors[qid] = (digest, _unit(vector))
-    (query_vector,) = await models.embed([models.format_query(query, spec)], spec=spec)
-    query_vector = _unit(query_vector)
-
-    def score(row: dict[str, Any]) -> float:
-        vector = _vectors[row["id"]][1]
-        return sum(a * b for a, b in zip(vector, query_vector, strict=True))
-
-    ranked = sorted(rows, key=score, reverse=True)[:limit]
-    return [{**row, "text": texts[row["id"]]} for row in ranked]
+async def questions(topic_id: str, offset: int) -> tuple[int, list[dict[str, Any]]]:
+    """A topic's question count and one page of its questions, in bank order."""
+    total = await _rows(
+        "SELECT count(*) AS n FROM questions WHERE topic_id = %s", (topic_id,)
+    )
+    rows = await _rows(
+        _SELECT + " WHERE t.id = %s ORDER BY q.position LIMIT %s OFFSET %s",
+        (topic_id, PAGE, offset),
+    )
+    return total[0]["n"], rows
 
 
 async def read(question_id: str) -> dict[str, Any] | None:
@@ -171,18 +140,22 @@ async def read(question_id: str) -> dict[str, Any] | None:
 
 
 def card(row: dict[str, Any]) -> str:
-    """One search hit as the model reads it."""
+    """One listed question as the model reads it: the opening of its stem (a
+    reading passage, for passage questions) and then what it asks."""
     content = row["content"]
     parts = content.get("parts") or []
     marks = sum(int(p.get("marks") or 0) for p in parts)
     types = (
         f" · {', '.join(row['question_types'])}" if row.get("question_types") else ""
     )
-    text = row["text"]
-    snippet = text if len(text) <= 300 else text[:300].rsplit(" ", 1)[0] + "…"
+    stem = _text(content.get("stem") or [])
+    asks = _text([b for p in parts for b in p.get("blocks") or []])
+    lines = [_clip(stem, 120)] if stem else []
+    if asks:
+        lines.append(_clip(asks, 200))
     return (
-        f"{row['id']} · {row['exam']} · {row['topic']}{types} · "
-        f"{len(parts)} part{'s' if len(parts) != 1 else ''}, {marks} marks\n{snippet}"
+        f"{row['id']} · {len(parts)} part{'s' if len(parts) != 1 else ''}, "
+        f"{marks} marks{types}\n" + "\n".join(lines)
     )
 
 

@@ -39,7 +39,9 @@ var questionJSONDescription = fmt.Sprintf("Question JSON: id, stem typed blocks,
 // stream request carries library, openResource and studyProgress, and the
 // curate-only tools and ledger rules apply to any build. Notes are markdown
 // converted by the editor's own import: insert_markdown replaces insert_block.
-const ContractVersion = 10
+// v11: list_question_bank (a subject's topics or a topic's questions, the
+// exams and subjects listed in its description) replaces search_questions.
+const ContractVersion = 11
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -537,20 +539,18 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpLibraryRead},
 		}),
 		chatTool(Definition{
-			Name:      "search_questions",
+			Name:      "list_question_bank",
 			Retention: RetainNone,
-			Description: "Search the question bank of reviewed exam questions for practice " +
-				"to reuse before writing new questions. Ranks by meaning within the " +
-				"filters. `exam` and `topics` narrow by exam and topic ids; `types` " +
-				"narrows by question type, such as an IELTS task type. Results are " +
-				"compact cards; read_question returns a question in full.",
+			Description: "List the question bank of reviewed exam questions, for practice to " +
+				"reuse before writing new questions. Pass subject, a bank subject listed " +
+				"below (not a library subject), for its syllabus topics and question " +
+				"counts, or topic for its questions as compact cards, 50 at a time from " +
+				"offset. read_question returns a question in full.",
 			InputSchema: obj(map[string]any{
-				"query":  str("What the practice should cover."),
-				"exam":   str("Exam id, such as hkdse or ielts."),
-				"topics": idList("Topic ids to restrict to.", 0, 8),
-				"types":  idList("Question types to restrict to.", 0, 8),
-			}, "query"),
-			UsesEmbedding:      true,
+				"subject": str("A bank subject id from this description."),
+				"topic":   str("A topic id from a subject's list."),
+				"offset":  map[string]any{"type": "integer", "minimum": 0, "default": 0},
+			}),
 			Concurrency:        "read",
 			RequiredOperations: []Operation{OpLibraryRead},
 		}),
