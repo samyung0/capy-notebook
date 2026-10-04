@@ -44,6 +44,8 @@ export interface Room {
   format?: 'text' | 'docx' | 'xlsx' | 'pptx';
   name: string;
   participants: Set<Participant>;
+  /** Updates since the last checkpoint, which appends them. */
+  pending: Uint8Array[];
   retired?: boolean;
   target: { kind: 'material'; id: string } | { kind: 'source'; id: string };
   version: number;
@@ -51,7 +53,21 @@ export interface Room {
 
 export const rooms = new Map<string, Room>();
 // Encoded checkpoints outlive a room, like the other in-memory mock records.
-const checkpoints = new Map<string, { state: Uint8Array; version: number }>();
+// A checkpoint appends the room's updates since the last one instead of
+// re-encoding the document: on a near-limit note that encode cost ~40ms of
+// main thread per save at CPU x4, inside the save cycle the editor bench
+// budgets, for work the real service does server-side.
+interface Checkpoint {
+  updates: Uint8Array[];
+  version: number;
+}
+const checkpoints = new Map<string, Checkpoint>();
+
+function checkpointState(checkpoint: Checkpoint): Uint8Array {
+  if (checkpoint.updates.length !== 1)
+    checkpoint.updates = [Y.mergeUpdates(checkpoint.updates)];
+  return checkpoint.updates[0];
+}
 const REMOTE = 'mock-room';
 
 function createRoom(name: string, target: Room['target']): Room {
@@ -66,23 +82,25 @@ function createRoom(name: string, target: Room['target']): Room {
     if (saved) {
       const parsed = JSON.parse(saved) as { state: number[]; version: number };
       checkpoint = {
-        state: new Uint8Array(parsed.state),
+        updates: [new Uint8Array(parsed.state)],
         version: parsed.version,
       };
       checkpoints.set(name, checkpoint);
     }
   }
-  if (checkpoint) Y.applyUpdate(document, checkpoint.state);
+  if (checkpoint) Y.applyUpdate(document, checkpointState(checkpoint));
   const room: Room = {
     dirty: false,
     document,
     name,
     participants: new Set(),
+    pending: [],
     target,
     version: checkpoint?.version ?? 0,
   };
   document.on('update', (update: Uint8Array, origin: unknown) => {
     room.dirty = true;
+    room.pending.push(update);
     for (const participant of room.participants) {
       if (participant !== origin)
         Y.applyUpdate(participant.document, update, participant.origin);
@@ -173,9 +191,10 @@ export function checkpointRoom(room: Room) {
 
 function rememberCheckpoint(room: Room) {
   checkpoints.set(room.name, {
-    state: Y.encodeStateAsUpdate(room.document),
+    updates: [...(checkpoints.get(room.name)?.updates ?? []), ...room.pending],
     version: room.version,
   });
+  room.pending = [];
   if (
     room.target.id.startsWith('mock-scenario-') &&
     typeof sessionStorage !== 'undefined'
@@ -199,15 +218,16 @@ export function sourceRoomState(room: Room): string {
  * a save landed, null while the published bytes are current. Saving does not
  * publish: the file's link keeps its bytes. */
 export function savedSourceState(fileId: string): string | null {
-  let latest: { epoch: number; state: Uint8Array; version: number } | null =
-    null;
+  let latest: { checkpoint: Checkpoint; epoch: number } | null = null;
   for (const [name, checkpoint] of checkpoints) {
     const match = /^source:(.+):epoch:(\d+)$/.exec(name);
     const epoch = Number(match?.[2]);
     if (match?.[1] === fileId && (!latest || epoch > latest.epoch))
-      latest = { ...checkpoint, epoch };
+      latest = { checkpoint, epoch };
   }
-  return latest && latest.version > 0 ? base64(latest.state) : null;
+  return latest && latest.checkpoint.version > 0
+    ? base64(checkpointState(latest.checkpoint))
+    : null;
 }
 
 function base64(bytes: Uint8Array): string {

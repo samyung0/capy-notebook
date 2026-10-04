@@ -286,7 +286,9 @@ Other caveats that already apply to the absolute budgets:
 - Dev-build inflation (unminified, React StrictMode). Deltas are not
   user-facing SLOs.
 - MSW save-cycle work runs on the main thread. A real collab server does that
-  work elsewhere.
+  work elsewhere. The mock keeps it to the projection write: a checkpoint
+  appends the room's updates since the last one rather than re-encoding the
+  whole Y.Doc (`src/mocks/collaboration.ts`).
 - Artifacts expire after 90 days. A green run may still be listed with no file
   left to download; it is skipped.
 
