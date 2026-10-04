@@ -30,6 +30,7 @@ import {
   recoversMaterialLimits,
 } from './limits.js';
 import { assertCanonicalMaterialValue } from './materialDocument.js';
+import { inspectUpdate } from './officeRoots.js';
 
 const CONTENT_ROOT = 'content';
 const CONTRIBUTORS_ROOT = '__capy_pending_contributors';
@@ -512,6 +513,24 @@ export function assertMaterialDocumentRoots(document: Y.Doc) {
   }
 }
 
+/**
+ * Whether `update` keeps `current`'s roots as assertMaterialDocumentRoots
+ * requires, read from the update's own structs instead of a merged copy of
+ * the room: true or false, or null when it cannot tell (either side refers to
+ * content not held yet), which leaves the answer to the merged copy.
+ */
+function updateKeepsMaterialRoots(current: Y.Doc, update: Uint8Array) {
+  if (current.store.pendingStructs || current.store.pendingDs) return null;
+  const { containers, unheld } = inspectUpdate(current, update);
+  if (unheld) return null;
+  // Content takes children only; contributors take map entries only.
+  return containers.every(({ key, root }) =>
+    root === CONTENT_ROOT
+      ? key === null
+      : root === CONTRIBUTORS_ROOT && key !== null
+  );
+}
+
 function plateValue(document: Y.Doc): unknown[] {
   assertMaterialDocumentRoots(document);
   const root = yTextToSlateElement(document.get(CONTENT_ROOT, Y.XmlText)) as {
@@ -551,7 +570,12 @@ export class YjsDocumentStore {
     }
     validator.pendingBytes += update.byteLength;
     assertMaterialDocumentRoots(current);
-    const candidate = new Y.Doc({ gc: true });
+    const measure = validator.shouldMeasure();
+    // The common case: no measurement due and the roots provably kept, so
+    // the room is not copied for every keystroke.
+    if (!measure && updateKeepsMaterialRoots(current, update)) return;
+    // A fixed guid: the default one costs a webcrypto UUID per document.
+    const candidate = new Y.Doc({ gc: true, guid: 'validate' });
     try {
       Y.applyUpdate(candidate, Y.encodeStateAsUpdate(current));
       Y.applyUpdate(candidate, update);
@@ -560,7 +584,7 @@ export class YjsDocumentStore {
       candidate.destroy();
       throw error;
     }
-    if (!validator.shouldMeasure()) {
+    if (!measure) {
       candidate.destroy();
       return;
     }

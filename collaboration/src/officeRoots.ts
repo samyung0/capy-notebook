@@ -17,7 +17,7 @@ const PPTX_META = 'pptx:meta';
 const PPTX_WRITABLE_META_KEY = 'commentFlavor';
 
 /** Where a struct sits: its top-level root and, in a map root, its key. */
-interface Container {
+export interface Container {
   key: string | null;
   root: string;
 }
@@ -31,7 +31,14 @@ type Found = Container | typeof GONE | typeof UNKNOWN;
  * What a client update holds that the room does not: the container of each
  * new struct, and whether the room cannot integrate it yet (`unheld`).
  */
-function inspectUpdate(document: Y.Doc, update: Uint8Array) {
+export function inspectUpdate(
+  document: Y.Doc,
+  update: Uint8Array
+): {
+  containers: Container[];
+  ds: ReturnType<typeof Y.decodeUpdate>['ds'];
+  unheld: boolean;
+} {
   const held = (client: number) => Y.getState(document.store, client);
   const rootNames = new Map<unknown, string>();
   for (const [name, type] of document.share) rootNames.set(type, name);

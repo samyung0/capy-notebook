@@ -166,6 +166,65 @@ describe('inbound update validation', () => {
     document.destroy();
   });
 
+  // Once measured, a keystroke is checked from its own structs, not a copy of
+  // the room; the shortcut must still refuse every root violation.
+  it('keeps refusing root violations between measurements', () => {
+    const store = validator();
+    const document = documentWithValue([paragraph('small')]);
+    const typing = (edit: (peer: Y.Doc) => void) => {
+      const peer = new Y.Doc({ gc: true });
+      Y.applyUpdate(peer, Y.encodeStateAsUpdate(document));
+      edit(peer);
+      const update = Y.encodeStateAsUpdate(peer, Y.encodeStateVector(document));
+      peer.destroy();
+      return update;
+    };
+    const insert = (peer: Y.Doc) => {
+      const block = peer.get('content', Y.XmlText).toDelta()[0]
+        .insert as Y.XmlText;
+      block.insert(1, 'x');
+    };
+    // The first update measures; the next ones take the shortcut.
+    for (let index = 0; index < 3; index += 1) {
+      const update = typing(insert);
+      store.validateUpdate(room, document, update);
+      Y.applyUpdate(document, update);
+    }
+    expect(() =>
+      store.validateUpdate(
+        room,
+        document,
+        typing((peer) => peer.getText('unmetered').insert(0, 'x'))
+      )
+    ).toThrow('unsupported collaboration document root: unmetered');
+    expect(() =>
+      store.validateUpdate(
+        room,
+        document,
+        typing((peer) => peer.get('content', Y.XmlText).setAttribute('a', 'b'))
+      )
+    ).toThrow('invalid collaboration content root');
+    expect(() =>
+      store.validateUpdate(
+        room,
+        document,
+        typing((peer) =>
+          peer.getMap('__capy_pending_contributors').set('c', 'd')
+        )
+      )
+    ).not.toThrow();
+    expect(() =>
+      store.validateUpdate(
+        room,
+        document,
+        typing((peer) =>
+          peer.getArray('__capy_pending_contributors').insert(0, ['e'])
+        )
+      )
+    ).toThrow('invalid collaboration contributor root');
+    document.destroy();
+  });
+
   it('rejects an update that pushes the document past a limit', () => {
     const store = validator();
     const document = documentWithValue([paragraph('small')]);
