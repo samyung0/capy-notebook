@@ -27,3 +27,7 @@ allowBuilds:
 # upstream; drop once a release skips it.
 patchedDependencies:
   "@hocuspocus/server@4.5.0": patches/@hocuspocus__server@4.5.0.patch
+  # Capy patch: provider 3.4.4 sends back every awareness change it applies
+  # from the server, so each change returns N-1 times. Fixed upstream in
+  # hocuspocus PR #1129 (4.5); drop once @platejs/yjs allows ^4.
+  "@hocuspocus/provider@3.4.4": patches/@hocuspocus__provider@3.4.4.patch

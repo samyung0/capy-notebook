@@ -1,0 +1,58 @@
+diff --git a/dist/hocuspocus-provider.cjs b/dist/hocuspocus-provider.cjs
+index 7edc091..a82ad32 100644
+--- a/dist/hocuspocus-provider.cjs
++++ b/dist/hocuspocus-provider.cjs
+@@ -2055,6 +2055,24 @@ class HocuspocusProvider extends EventEmitter {
+         this.send(UpdateMessage, { update, documentName: this.configuration.name });
+     }
+     awarenessUpdateHandler({ added, updated, removed }, origin) {
++        // Capy patch: a change this provider applied from the server is not
++        // sent back (every peer echoed every change, N² awareness traffic).
++        // The one exception is our own state: when the server's update
++        // removes or outdates it, y-protocols re-asserts it with a newer
++        // clock under this same origin, and that answer must still go out.
++        // Upstream fix: hocuspocus PR #1129 (provider 4.5); drop this patch
++        // once @platejs/yjs allows provider ^4.
++        if (origin === this) {
++            const own = this.document.clientID;
++            if (updated.includes(own) || removed.includes(own)) {
++                this.send(AwarenessMessage, {
++                    awareness: this.awareness,
++                    clients: [own],
++                    documentName: this.configuration.name,
++                });
++            }
++            return;
++        }
+         const changedClients = added.concat(updated).concat(removed);
+         this.send(AwarenessMessage, {
+             awareness: this.awareness,
+diff --git a/dist/hocuspocus-provider.esm.js b/dist/hocuspocus-provider.esm.js
+index 144f2f1..ab106ad 100644
+--- a/dist/hocuspocus-provider.esm.js
++++ b/dist/hocuspocus-provider.esm.js
+@@ -2034,6 +2034,24 @@ class HocuspocusProvider extends EventEmitter {
+         this.send(UpdateMessage, { update, documentName: this.configuration.name });
+     }
+     awarenessUpdateHandler({ added, updated, removed }, origin) {
++        // Capy patch: a change this provider applied from the server is not
++        // sent back (every peer echoed every change, N² awareness traffic).
++        // The one exception is our own state: when the server's update
++        // removes or outdates it, y-protocols re-asserts it with a newer
++        // clock under this same origin, and that answer must still go out.
++        // Upstream fix: hocuspocus PR #1129 (provider 4.5); drop this patch
++        // once @platejs/yjs allows provider ^4.
++        if (origin === this) {
++            const own = this.document.clientID;
++            if (updated.includes(own) || removed.includes(own)) {
++                this.send(AwarenessMessage, {
++                    awareness: this.awareness,
++                    clients: [own],
++                    documentName: this.configuration.name,
++                });
++            }
++            return;
++        }
+         const changedClients = added.concat(updated).concat(removed);
+         this.send(AwarenessMessage, {
+             awareness: this.awareness,
