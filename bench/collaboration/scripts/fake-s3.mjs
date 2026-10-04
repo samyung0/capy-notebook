@@ -12,6 +12,10 @@ import { createServer } from 'node:http';
 import { createServer as createTlsServer } from 'node:https';
 
 const objects = new Map(); // "bucket/key" -> { data, type, etag, modified }
+// Multipart uploads (the SDK's upload manager splits large files):
+// uploadId -> { id, type, parts: Map<partNumber, Buffer> }
+const uploads = new Map();
+let nextUpload = 0;
 
 function xml(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/xml' });
@@ -86,6 +90,51 @@ async function handle(req, res) {
           200,
           `<ListBucketResult><Name>${bucket}</Name><Prefix>${escape(prefix)}</Prefix><KeyCount>${keys.length}</KeyCount><IsTruncated>false</IsTruncated>${contents}</ListBucketResult>`
         );
+      }
+    }
+    const uploadId = url.searchParams.get('uploadId');
+    if (req.method === 'POST' && url.searchParams.has('uploads')) {
+      const upload = `u${(nextUpload += 1)}`;
+      uploads.set(upload, {
+        id,
+        parts: new Map(),
+        type: String(req.headers['content-type'] ?? 'application/octet-stream'),
+      });
+      return xml(
+        res,
+        200,
+        `<InitiateMultipartUploadResult><Bucket>${bucket}</Bucket><Key>${escape(key)}</Key><UploadId>${upload}</UploadId></InitiateMultipartUploadResult>`
+      );
+    }
+    if (uploadId) {
+      const upload = uploads.get(uploadId);
+      if (!upload) return xml(res, 404, '<Error><Code>NoSuchUpload</Code></Error>');
+      if (req.method === 'PUT') {
+        const raw = await readBody(req);
+        const chunked =
+          String(req.headers['content-encoding'] ?? '').includes('aws-chunked') ||
+          String(req.headers['x-amz-content-sha256'] ?? '').startsWith('STREAMING-');
+        const data = chunked ? decodeChunked(raw) : raw;
+        upload.parts.set(Number(url.searchParams.get('partNumber')), data);
+        res.writeHead(200, { ETag: `"${createHash('md5').update(data).digest('hex')}"` });
+        return res.end();
+      }
+      if (req.method === 'POST') {
+        await readBody(req);
+        const data = Buffer.concat(
+          [...upload.parts].sort(([a], [b]) => a - b).map(([, part]) => part)
+        );
+        const etag = put(upload.id, data, upload.type);
+        uploads.delete(uploadId);
+        return xml(
+          res,
+          200,
+          `<CompleteMultipartUploadResult><Bucket>${bucket}</Bucket><Key>${escape(key)}</Key><ETag>${escape(etag)}</ETag></CompleteMultipartUploadResult>`
+        );
+      }
+      if (req.method === 'DELETE') {
+        uploads.delete(uploadId);
+        return res.writeHead(204).end();
       }
     }
     if (req.method === 'PUT') {

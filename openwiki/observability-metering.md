@@ -82,12 +82,17 @@ increment, nothing allocates):
 | `updates_per_s`, `awareness_per_s` | Inbound sync frames (document updates and sync steps) and awareness frames per second |
 | `material_stores`, `source_stores` | Per kind of room: `count`, `failures`, `p95_ms`, `max_ms` of the saves in the minute |
 | `connections`, `rooms` | Open connections and loaded rooms at the line |
+| `office` | The Office engine worker (one, serial): `calls` finished, `busy_ms` running, `wait_p95_ms`/`wait_max_ms` queued behind other calls, `run_p95_ms`/`run_max_ms`, `queue_max` calls waiting, `timeouts` |
 
 Read it from the delay first. A single Node process handles every room, so
 an event-loop p99 near or above about 100 ms means the server is near
 capacity: every message, save and access check waits that long. Store
 duration that grows while the delay stays low points at Postgres or the
 gateway instead; `failures` say which kind of room is failing to save.
+An `office.busy_ms` near the whole interval means the engine worker is
+saturated: Office saves queue behind each other and their duration grows
+while edits stay fast. `COLLAB_HEALTH_INTERVAL_MS` shortens the interval for
+capacity runs ([2026-10-05 report](../bench/collaboration/reports/2026-10-05-prod-capacity.md)).
 
 `obs.ClientIP` prefers `CF-Connecting-IP`. That header is only trustworthy while
 the origin refuses non-Cloudflare traffic; see step 3 of the runbook. If the

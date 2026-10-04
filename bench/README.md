@@ -69,6 +69,10 @@ and reports a missed p95 latency budget (from three CI runs) with exit 2. The
 the gitignored `collaboration/.results/`. `STRESS_TARGET=uat` runs it against UAT with disposable
 journey-style users and store-only, unindexed rooms (see
 [editor-perf.md](../openwiki/editor-perf.md#collaboration-stress-pnpm-benchstress)).
+Capacity reports live in `collaboration/reports/`: the
+[2026-10-05 production-box run](collaboration/reports/2026-10-05-prod-capacity.md)
+ladders Plate and Office rooms, concurrent large Office files and idle
+connections with the collaboration service on 1 and 2 cores.
 
 ### parsers
 

@@ -136,9 +136,51 @@ const BROKEN_OBJECT =
 interface Call {
   args: unknown[];
   method: string;
+  queuedAt: number;
   reject(error: Error): void;
   resolve(value: unknown): void;
+  startedAt?: number;
   timer?: NodeJS.Timeout;
+}
+
+// One interval of engine calls for the collab_health line: time queued
+// behind other calls, time running in the worker, the longest queue and
+// timeouts.
+let waits: number[] = [];
+let runs: number[] = [];
+let busyMs = 0;
+let queueMax = 0;
+let timeouts = 0;
+const quantile = (values: number[], p: number) =>
+  values.length
+    ? Math.round(
+        [...values].sort((a, b) => a - b)[
+          Math.min(values.length - 1, Math.ceil(p * values.length) - 1)
+        ]
+      )
+    : 0;
+/** This interval's engine queue summary; the next interval starts empty. */
+export function takeOfficeStats() {
+  const now = performance.now();
+  // A call still running counts its time so far in this interval.
+  const running = active?.startedAt === undefined ? 0 : now - active.startedAt;
+  const summary = {
+    busy_ms: Math.round(busyMs + running),
+    calls: runs.length,
+    queue_max: queueMax,
+    run_max_ms: Math.round(runs.length ? Math.max(...runs) : 0),
+    run_p95_ms: quantile(runs, 0.95),
+    timeouts,
+    wait_max_ms: Math.round(waits.length ? Math.max(...waits) : 0),
+    wait_p95_ms: quantile(waits, 0.95),
+  };
+  if (active?.startedAt !== undefined) active.startedAt = now;
+  waits = [];
+  runs = [];
+  busyMs = 0;
+  queueMax = queue.length;
+  timeouts = 0;
+  return summary;
 }
 
 // One worker keeps synchronous WASM parsing/export off the WebSocket event loop,
@@ -218,6 +260,11 @@ function finish() {
   const call = active;
   active = undefined;
   clearTimeout(call?.timer);
+  if (call?.startedAt !== undefined) {
+    const ran = performance.now() - call.startedAt;
+    busyMs += ran;
+    runs.push(ran);
+  }
   return call;
 }
 
@@ -235,10 +282,13 @@ function next() {
     return;
   }
   active = call;
+  call.startedAt = performance.now();
+  waits.push(call.startedAt - call.queuedAt);
   worker ??= startWorker();
   worker.ref();
   call.timer = setTimeout(() => {
     if (active !== call) return;
+    timeouts += 1;
     finish();
     call.reject(new OfficeEngineError(`Office ${call.method} timed out`, true));
     restart();
@@ -252,8 +302,10 @@ export function runOffice<K extends keyof Runtime>(
   ...args: Parameters<Runtime[K]>
 ): ReturnType<Runtime[K]> {
   return new Promise((resolve, reject) => {
-    queue.push({ args, method, reject, resolve });
+    queue.push({ args, method, queuedAt: performance.now(), reject, resolve });
     next();
+    // Calls waiting behind the one in flight.
+    queueMax = Math.max(queueMax, queue.length);
   }) as ReturnType<Runtime[K]>;
 }
 

@@ -22,6 +22,16 @@
  *   node --env-file=deploy/.env.uat --import tsx bench/collaboration/scripts/stress.ts
  * STRESS_ROOMS rooms (2), alternately Office and Plate, get STRESS_PEERS peers
  * each.
+ *
+ * Capacity runs (bench/collaboration/reports/2026-10-05-prod-capacity.md):
+ * - STRESS_STACK=external uses a stack someone else started and tears down
+ *   (E2E_API_URL, seeded), and leaves its logs to that harness;
+ * - STRESS_KINDS (office,plate) is the kinds the rooms cycle through;
+ * - STRESS_OFFICE_FILES (the DOCX fixture) is the files, relative to the
+ *   repository, Office rooms cycle through: DOCX and PPTX peers type into
+ *   story text, XLSX peers write their own cells of the first sheet;
+ * - STRESS_JOIN_CONCURRENCY caps peers joining at once (16 on UAT);
+ * - STRESS_IDLE=true keeps the peers connected without typing.
  */
 import { randomBytes, randomInt } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
@@ -40,6 +50,14 @@ import * as Y from 'yjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const REMOTE = process.env.STRESS_TARGET === 'uat';
+const EXTERNAL = process.env.STRESS_STACK === 'external';
+if (process.env.STRESS_STACK && !EXTERNAL) throw new Error('STRESS_STACK must be external or unset');
+const KINDS = (process.env.STRESS_KINDS ?? 'office,plate').split(',') as Kind[];
+if (!KINDS.length || KINDS.some((kind) => kind !== 'office' && kind !== 'plate'))
+  throw new Error('STRESS_KINDS must list office and plate');
+const OFFICE_FILES = (
+  process.env.STRESS_OFFICE_FILES ?? 'e2e/fixtures/files/rich-content/exchange-plan.docx'
+).split(',');
 if (process.env.STRESS_TARGET && !REMOTE) throw new Error('STRESS_TARGET must be uat or unset');
 const ROOMS = Number(process.env.STRESS_ROOMS ?? 2);
 const PEERS = Number(process.env.STRESS_PEERS ?? 20);
@@ -48,6 +66,8 @@ const MINUTES = Number(process.env.STRESS_MINUTES ?? 3);
 const EDIT_MS = Number(process.env.STRESS_EDIT_MS ?? 1500);
 // Per peer and second, the chance of dropping offline for 1-5 s.
 const DROP_PER_SECOND = Number(process.env.STRESS_DROP_PER_SECOND ?? 0.02);
+// Idle connections: peers stay connected with awareness renewal and never type.
+const IDLE = process.env.STRESS_IDLE === 'true';
 /**
  * Local: ~1.3x the slower room's median p95 over three runs of the Performance
  * workflow (2026-10-04 runs 37200395852, 37200390235, 37200383976: Office
@@ -59,9 +79,10 @@ const DROP_PER_SECOND = Number(process.env.STRESS_DROP_PER_SECOND ?? 0.02);
  */
 const P95_BUDGET_MS = Number(process.env.STRESS_P95_BUDGET_MS ?? (REMOTE ? 1000 : 45));
 const OUT = process.env.STRESS_OUT ?? path.join(root, 'bench/collaboration/.results');
-const MARKER = /\[[op]\d{2}-\d{4}\]/g;
+const MARKER = /\[[op]\d{2,3}-\d{4}\]/g;
 
 type Kind = 'office' | 'plate';
+type Format = 'docx' | 'xlsx' | 'pptx' | 'plate';
 interface RoomToken {
   token: string;
   url: string;
@@ -69,6 +90,7 @@ interface RoomToken {
 }
 interface Room {
   kind: Kind;
+  format: Format;
   /** A fresh room token, as the app asks for one on every (re)connect. */
   token: () => Promise<RoomToken>;
   /** Markers typed into this room: when, and whether the peer was online. */
@@ -124,12 +146,11 @@ async function createWorkspaceRooms(
   kinds: Kind[],
   uploadFields: Record<string, string> = {}
 ): Promise<Room[]> {
-  const docx = await readFile(
-    path.join(root, 'e2e/fixtures/files/rich-content/exchange-plan.docx')
-  );
   const rooms: Room[] = [];
+  let offices = 0;
   for (const kind of kinds) {
     let tokenPath: string;
+    let format: Format = 'plate';
     if (kind === 'plate') {
       const material = await call('POST', `/api/workspaces/${workspace}/materials`, undefined, {
         content: {
@@ -145,14 +166,18 @@ async function createWorkspaceRooms(
       });
       tokenPath = `/api/materials/${material.id}/collaboration-token`;
     } else {
+      const file = OFFICE_FILES[offices++ % OFFICE_FILES.length];
+      format = path.extname(file).slice(1) as Format;
+      if (!['docx', 'xlsx', 'pptx'].includes(format)) throw new Error(`${file}: not an Office file`);
       const form = new FormData();
-      form.append('file', new Blob([docx]), 'exchange-plan.docx');
-      form.append('name', `stress-${randomBytes(3).toString('hex')}.docx`);
+      form.append('file', new Blob([await readFile(path.join(root, file))]), path.basename(file));
+      form.append('name', `stress-${randomBytes(3).toString('hex')}.${format}`);
       for (const [name, value] of Object.entries(uploadFields)) form.append(name, value);
-      const file = await call('POST', `/api/workspaces/${workspace}/sources`, form);
-      tokenPath = `/api/files/${file.id}/collaboration-token`;
+      const uploaded = await call('POST', `/api/workspaces/${workspace}/sources`, form);
+      tokenPath = `/api/files/${uploaded.id}/collaboration-token`;
     }
     rooms.push({
+      format,
       kind,
       seen: new Map(),
       token: async () => (await call('POST', tokenPath)) as unknown as RoomToken,
@@ -163,7 +188,7 @@ async function createWorkspaceRooms(
 }
 
 const kindsFor = (count: number) =>
-  Array.from({ length: count }, (_, index): Kind => (index % 2 ? 'plate' : 'office'));
+  Array.from({ length: count }, (_, index) => KINDS[index % KINDS.length]);
 
 /** Error lines of collaboration logs: JSON level error, or text error lines. */
 function errorLines(logs: string) {
@@ -257,6 +282,32 @@ async function localTarget(): Promise<Target> {
   };
 }
 
+/**
+ * A seeded e2e-style stack another harness runs (capacity runs on one box):
+ * E2E_API_URL, E2E_AUTH_SECRET and E2E_BASE_URL name it. That harness reads
+ * the collaboration logs and tears the stack down.
+ */
+function externalTarget(): Target {
+  const api = required('E2E_API_URL');
+  const headers = { 'X-E2E-Secret': required('E2E_AUTH_SECRET'), 'X-E2E-User-Id': 'u_owner' };
+  const call: Call = (...args) => request(api, headers, ...args);
+  return {
+    origin: required('E2E_BASE_URL'),
+    async setup() {
+      const health = await fetch(`${api}/healthz`, { signal: AbortSignal.timeout(10_000) });
+      if (!health.ok) throw new Error(`API unhealthy: ${health.status}`);
+    },
+    // One seeded owner workspace per generator keeps each under 100 files.
+    createRooms: (count) =>
+      // Store-only uploads, as on UAT: no ingest job, so no per-user ingest lease cap.
+      createWorkspaceRooms(call, process.env.STRESS_WORKSPACE ?? 'ws_e2e_edit', kindsFor(count), {
+        parseMode: 'none',
+      }),
+    collaborationErrors: () => [],
+    cleanUp: async () => {},
+  };
+}
+
 const UAT = {
   api: 'https://uat-api.capynotebook.com',
   app: 'https://app.uat.capynotebook.com',
@@ -265,7 +316,7 @@ const UAT = {
 
 function required(name: string) {
   const value = process.env[name]?.trim();
-  if (!value) throw new Error(`${name} is required for STRESS_TARGET=uat`);
+  if (!value) throw new Error(`${name} is required for STRESS_TARGET=uat or STRESS_STACK=external`);
   return value;
 }
 
@@ -508,28 +559,57 @@ async function uatTarget(): Promise<Target> {
   };
 }
 
-const target = REMOTE ? await uatTarget() : await localTarget();
+const target = REMOTE ? await uatTarget() : EXTERNAL ? externalTarget() : await localTarget();
 
-/** The text a room's peers type into: the DOCX body story, or the Plate tree. */
-function typingTarget(room: Room, doc: Y.Doc): Y.Text | null {
-  if (room.kind === 'office') {
+/**
+ * What a room's peers type into: the DOCX body story, the PPTX stories, the
+ * XLSX sheets (each peer writes cells of the first sheet) or the Plate tree.
+ */
+function typingTarget(room: Room, doc: Y.Doc): Y.Text | Y.Map<unknown> | null {
+  if (room.format === 'docx') {
     const body = doc.getMap('stories').get('body');
     return body instanceof Y.Text ? body : null;
   }
+  if (room.format === 'pptx') return doc.getMap('pptx:stories');
+  if (room.format === 'xlsx') return doc.getMap('xlsx:sheets');
   return doc.get('content', Y.XmlText);
 }
 
+/** The cell contents of the first XLSX sheet. */
+function xlsxContents(doc: Y.Doc) {
+  const sheets = doc.getMap('xlsx:sheets');
+  const first = [...sheets.keys()].sort()[0];
+  const sheet = first === undefined ? undefined : sheets.get(first);
+  const contents = sheet instanceof Y.Map ? sheet.get('contents') : undefined;
+  return contents instanceof Y.Map ? (contents as Y.Map<unknown>) : null;
+}
+
+/** The text of an XLSX cell's stored content, or ''. */
+function cellText(content: unknown) {
+  if (typeof content !== 'string') return '';
+  const { value } = JSON.parse(content) as { value?: { kind?: string; value?: unknown } };
+  return value?.kind === 'text' && typeof value.value === 'string' ? value.value : '';
+}
+
 /** The room's characters in document order (DOCX paragraph marks and Plate
- * element boundaries left out). */
+ * element boundaries left out; XLSX cells in key order). */
 function roomText(room: Room, doc: Y.Doc) {
+  if (room.format === 'xlsx') {
+    const contents = xlsxContents(doc);
+    if (!contents) return '';
+    return [...contents.keys()]
+      .sort()
+      .map((key) => cellText(contents.get(key)))
+      .join('');
+  }
   return runs(room, doc)
     .map((run) => run.value)
     .join('');
 }
 
 /**
- * Text runs a marker may go into: DOCX body runs, or Plate paragraph runs,
- * each with its Y.Text and the run's start index in it.
+ * Text runs a marker may go into: DOCX body runs, PPTX story runs, or Plate
+ * paragraph runs, each with its Y.Text and the run's start index in it.
  */
 function runs(room: Room, doc: Y.Doc) {
   const target = typingTarget(room, doc);
@@ -547,12 +627,35 @@ function runs(room: Room, doc: Y.Doc) {
       }
     }
   };
-  collect(target);
+  // PPTX stories sit in a map, in key order so every peer reads the same text.
+  const walk = (type: unknown) => {
+    if (type instanceof Y.Text) collect(type);
+    else if (type instanceof Y.Map)
+      for (const key of [...type.keys()].sort()) walk(type.get(key));
+    else if (type instanceof Y.Array) for (const item of type.toArray()) walk(item);
+  };
+  walk(target);
   return out;
 }
 
+// XLSX: each peer writes its own column of cells, one marker per cell, so
+// concurrent writes never replace each other.
+const XLSX_COLUMN_BASE = 40;
+const XLSX_ROWS_PER_PEER = 2000;
+
 /** Inside a run, never inside a marker already there, so markers stay whole. */
-function insertMarker(room: Room, doc: Y.Doc, marker: string) {
+function insertMarker(room: Room, doc: Y.Doc, marker: string, peer: number, sequence: number) {
+  if (room.format === 'xlsx') {
+    const contents = xlsxContents(doc);
+    if (!contents || sequence >= XLSX_ROWS_PER_PEER) return false;
+    // The engine's stable cell identity: base row and column points.
+    const key = JSON.stringify([
+      { run: 'base', offset: 1 + sequence },
+      { run: 'base', offset: XLSX_COLUMN_BASE + peer },
+    ]);
+    contents.set(key, JSON.stringify({ value: { kind: 'text', value: marker }, formula: null }));
+    return true;
+  }
   const candidates = runs(room, doc).filter((run) => run.value.length >= 2);
   if (!candidates.length) return false;
   const run = candidates[randomInt(candidates.length)];
@@ -585,7 +688,9 @@ let joining = 0;
 /** Reconnect token requests that failed (a peer then stays offline). */
 const tokenFailures: string[] = [];
 const joinQueue: (() => void)[] = [];
-const JOIN_CONCURRENCY = REMOTE ? 16 : Number.POSITIVE_INFINITY;
+const JOIN_CONCURRENCY = Number(
+  process.env.STRESS_JOIN_CONCURRENCY ?? (REMOTE ? 16 : Number.POSITIVE_INFINITY)
+);
 
 async function connect(room: Room, name: string): Promise<Peer> {
   while (joining >= JOIN_CONCURRENCY) await new Promise<void>((resolve) => joinQueue.push(resolve));
@@ -660,11 +765,18 @@ async function stressRoom(room: Room) {
   if (!target) throw new Error(`${room.kind}: no text to type into`);
   target.observeDeep((events) => {
     const now = Date.now();
-    for (const event of events)
-      for (const op of event.delta)
-        if (typeof op.insert === 'string')
-          for (const [marker] of op.insert.matchAll(MARKER))
-            if (!room.seen.has(marker)) room.seen.set(marker, now);
+    const scan = (text: string) => {
+      for (const [marker] of text.matchAll(MARKER))
+        if (!room.seen.has(marker)) room.seen.set(marker, now);
+    };
+    for (const event of events) {
+      // XLSX cells are map entries; text changes come as deltas.
+      if (event.target instanceof Y.Map) {
+        for (const [key, change] of event.changes.keys)
+          if (change.action !== 'delete') scan(cellText(event.target.get(key)));
+      } else
+        for (const op of event.delta) if (typeof op.insert === 'string') scan(op.insert);
+    }
   });
   const peers = await Promise.all(
     Array.from({ length: PEERS }, (_, index) => connect(room, `${room.kind} peer ${index}`))
@@ -675,7 +787,8 @@ async function stressRoom(room: Room) {
     peers.map(async (peer, index) => {
       let sequence = 0;
       let offlineUntil = 0;
-      while (Date.now() < deadline) {
+      if (IDLE) await sleep(deadline - Date.now());
+      while (!IDLE && Date.now() < deadline) {
         await sleep(randomInt(EDIT_MS / 2, (EDIT_MS * 3) / 2));
         const now = Date.now();
         if (offlineUntil && now >= offlineUntil) {
@@ -691,7 +804,7 @@ async function stressRoom(room: Room) {
         // Timed only when the peer is connected and synced: one typed while
         // reconnecting also waits for the token, the socket and the sync.
         const live = !offlineUntil && online(peer) && peer.provider.isSynced;
-        if (insertMarker(room, peer.doc, marker)) {
+        if (insertMarker(room, peer.doc, marker, index, sequence)) {
           room.typed.set(marker, { at: Date.now(), online: live });
           sequence += 1;
         }
@@ -753,6 +866,7 @@ async function stressRoom(room: Room) {
     // Peers still offline, unsynced or holding unsent changes after 120 s.
     unsettled,
     room: room.kind,
+    format: room.format,
     typed: room.typed.size,
   };
 }
@@ -846,6 +960,19 @@ try {
   };
   await mkdir(OUT, { recursive: true });
   await writeFile(path.join(OUT, 'stress.json'), `${JSON.stringify(report, null, 2)}\n`);
+  // Capacity harnesses merge several generator processes' latencies.
+  if (EXTERNAL)
+    await writeFile(
+      path.join(OUT, 'latencies.json'),
+      JSON.stringify(
+        Object.fromEntries(
+          [...new Set(results.map(({ format }) => format))].map((format) => [
+            format,
+            results.filter((room) => room.format === format).flatMap((room) => room.latencies),
+          ])
+        )
+      )
+    );
   console.log(JSON.stringify(report, null, 2));
   for (const problem of [...failures, ...budgetMisses]) console.error(`FAIL ${problem}`);
   exitCode = failures.length ? 1 : budgetMisses.length ? 2 : 0;

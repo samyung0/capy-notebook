@@ -69,6 +69,7 @@ import {
   closeOfficeRuntime,
   officeDocumentRoots,
   type SourceFormat,
+  takeOfficeStats,
 } from './officeRuntime.js';
 import {
   CollaborationAuthorizationError,
@@ -137,10 +138,17 @@ const subscriber = new IORedis(config.redisUrl, {
 });
 const store = new YjsDocumentStore(pool);
 // The per-minute collab_health line (observability-metering.md).
-const health = startHealthLog(() => ({
-  connections: server.hocuspocus.getConnectionsCount(),
-  rooms: server.hocuspocus.documents.size,
-}));
+const health = startHealthLog(
+  () => ({
+    connections: server.hocuspocus.getConnectionsCount(),
+    office: takeOfficeStats(),
+    rooms: server.hocuspocus.documents.size,
+  }),
+  // Capacity runs log more often than the minute production uses.
+  process.env.COLLAB_HEALTH_INTERVAL_MS
+    ? Number(process.env.COLLAB_HEALTH_INTERVAL_MS)
+    : undefined
+);
 const sources = new SourceDocumentStore(pool, config.apiUrl, config.secret);
 // Source room size estimates from applied update bytes (updateFitsRoom).
 const sourceSizes = new WeakMap<Y.Doc, number>();

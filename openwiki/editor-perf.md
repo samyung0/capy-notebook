@@ -159,6 +159,17 @@ the stack down and remove the throwaway key. Under heavy load
 timeout and a source access 500, with p95 over 40 s: worth a look on the CI
 runner before the budget is trusted.
 
+Capacity runs on one box start the stack themselves and run several
+generator processes against it: `STRESS_STACK=external` (`E2E_API_URL`,
+`E2E_AUTH_SECRET`, `E2E_BASE_URL` name the seeded stack, store-only uploads,
+`STRESS_WORKSPACE` per process, raw latencies in `latencies.json`),
+`STRESS_KINDS` (room kinds to cycle), `STRESS_OFFICE_FILES` (Office files to
+cycle: DOCX and PPTX peers type into story text, XLSX peers write their own
+cells of the first sheet), `STRESS_JOIN_CONCURRENCY` and `STRESS_IDLE=true`
+(connected peers that never type). The fake S3 takes multipart uploads, so
+large files work. Method and results:
+[2026-10-05 production-box capacity](../bench/collaboration/reports/2026-10-05-prod-capacity.md).
+
 `STRESS_TARGET=uat` runs the same peers against the UAT deployment
 (`node --env-file=deploy/.env.uat --import tsx bench/collaboration/scripts/stress.ts`,
 never `pnpm run` in a worktree). `STRESS_ROOMS` rooms (2), alternately Office
