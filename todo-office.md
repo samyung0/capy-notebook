@@ -34,7 +34,9 @@ screen-reader mirror settling 300 ms after scrolling.
   candidate is the `materials` `FOR SHARE` → `FOR UPDATE` upgrade in
   `persistence.ts`, and `ProjectMaterialContent` doesn't retry 40P01.
 - **View-mode memory** still creeps about 2 MB per open and close (232 → 271 MB
-  over 20 rounds); cause unknown, not the font loading.
+  over 20 rounds); cause unknown, not the font loading. `bench:office` now
+  records the heap over two full view-mode passes per file (`*-view-heap`,
+  report-only).
 - **Stale shown text after a two-peer half-link delete.** Two peers each
   deleting half of the last link of a field with a nested field
   (`[REF|[PAGE|7]L(AA)]`) leave the editor showing `REF=` until publication; the

@@ -36,29 +36,71 @@ deltas.
 
 ## Office runtime (`pnpm bench:office`)
 
-[`bench/editor/scripts/docx.office.ts`](../bench/editor/scripts/docx.office.ts)
+[`bench/editor/scripts/runtime.office.ts`](../bench/editor/scripts/runtime.office.ts)
 runs against a production build ([`playwright.office.config.ts`](../bench/editor/scripts/playwright.office.config.ts)
 builds with `NODE_ENV=production`, MSW and `VITE_LOAD_TEST_SEED`, then serves it
 with the runtime on the next port of `localhost`: another origin on the same
 site, as `office.capynotebook.com` is to the app, so the iframe is cross-origin
 and shares the app's renderer process as in production). The build takes a few
-minutes. Per DOCX fixture
-(15 and 62 pages) it reports:
+minutes. It covers one small and one large file per format:
+
+| Format | Small | Large |
+| --- | --- | --- |
+| DOCX | `exchange-plan.docx` (15 pages, 66 KB) | `long-handbook.docx` (62 pages, 41 KB, [`gen_long_docx.py`](../bench/editor/scripts/gen_long_docx.py)) |
+| XLSX | `course-guide.xlsx` (3 sheets, ~55k styled cells, 145 KB) | `large-gradebook.xlsx` (8 class sheets of 2,000 rows with SUM, AVERAGE and IF per row, plus a cross-sheet Summary; 224k cells, 48k formulas, 1.4 MB, [`gen_large_xlsx.py`](../bench/editor/scripts/gen_large_xlsx.py)) |
+| PPTX | `lecture.pptx` (20 slides, 25 pictures, 311 KB) | `jp_llm2.pptx` (84 slides, 69 pictures, 24 MB; the committed parser fixture in `bench/parsers/fixtures/docs/`) |
+
+The small files are the e2e rich-content fixtures. The large files are seeded
+only under `VITE_LOAD_TEST_SEED`; their checkpoints come from
+`scripts/dev/seed-scenario-office.ts`. Per file it reports:
 
 - open to first paint: the file click to the runtime's `ready`, on the host's
-  clock, plus the runtime's own `timings` (`loadMs` frame start to `load`,
-  `paintMs` `load` to first painted pages; `OfficeReadyTimings`);
-- View to Edit ready: the mode toggle click to the edit frame's `ready`;
-- keystroke to frame: 40 keys at 120 ms, each key to the next
-  `docx-pages-presented` event in the frame (p50, p90, max, unpainted keys).
+  clock. DOCX sends it once its first pages are painted, with the runtime's
+  own `timings` (`loadMs` frame start to `load`, `paintMs` `load` to first
+  painted pages; `OfficeReadyTimings`). XLSX and PPTX send `ready` without
+  timings once the file is parsed and laid out: one frame before the grid
+  paints (XLSX), before the first slide's pictures decode (PPTX). So their
+  figure ends slightly before the paint, measured from outside;
+- View to Edit ready: the mode toggle click to the edit frame's `ready`
+  (DOCX), or to its `collaboration-ready` (XLSX, PPTX: the editor's replica,
+  reported in the same React commit as the editor's first real paint);
+- keystroke to frame: 40 keys at 120 ms (p50, p90, max, unpainted keys).
+  DOCX types `a` and a space into body text and waits for the next
+  `docx-pages-presented` in the frame. XLSX types `7` with Enter every sixth
+  key from a visible cell (`F5`; `E3` in the large file, which its formulas
+  read), and PPTX double-clicks a text box on the first slide and types at the
+  end of its text; both apply input on the frame's main thread, so a
+  key's frame is the first task after the next animation frame following its
+  last event (keydown, keypress, input);
+- heap after open, after View to Edit and after typing: CDP
+  `Runtime.getHeapUsage` after a forced GC (`jsMB` V8 heap, `backingMB` array
+  buffers and external strings) for the page's isolate, which holds the
+  runtime frame (same site, same process), plus `wasmMB`, the linear memory of
+  the WASM instances still alive in any frame (an init script keeps a weak
+  handle on each instance's exported memory; CDP does not count WASM memory).
+  Workers, such as the DOCX engine and its lowering worker, are not counted.
+  `performance.measureUserAgentSpecificMemory` would need cross-origin
+  isolation, which the app does not have;
+- view-mode heap (a second case per file, for the view-mode creep item in
+  `todo-office.md`): open in View, then two full passes (every page, every
+  sheet's rows and columns, or every slide, then back to the start), with the
+  heap after open and after each pass. The first pass warms caches; growth on
+  the second is what keeps creeping.
 
 It runs unthrottled: CDP's CPU throttle reaches neither the runtime frame nor
-the engine workers. It fails on unpainted keys, a worker fallback, or a missed
-budget (`BUDGET` in the spec: open, View to Edit, key p50 and p90 per fixture).
-The budgets are ~1.3x the median of three runs of the `office` job below
-(2026-10-04; every metric within 3% of its median there). A laptop run is
-faster than the runner on typing and slower under load, so a local miss is
-not a regression by itself.
+the engine workers. Every file fails on unpainted keys, typing that sends no
+edit to the room, or a worker fallback. Only the DOCX timings have budgets
+(`BUDGET` in the spec: open, View to Edit, key p50 and p90 per fixture),
+~1.3x the median of three runs of the `office` job below (2026-10-04; every
+metric within 3% of its median there). XLSX and PPTX timings and every heap
+figure are report-only: they go to the results JSON (`budget: "report-only"`),
+the job summary and the artifact, and fail nothing.
+
+TODO: calibrate the XLSX and PPTX timings and the heap figures from three CI
+runs, then gate.
+
+A laptop run is faster than the runner on typing and slower under load, so a
+local miss is not a regression by itself.
 
 ## Collaboration stress (`pnpm bench:stress`)
 

@@ -128,7 +128,7 @@ export async function installPerfInstrumentation(page: Page): Promise<void> {
  * leaves the earlier slowdown in place. */
 const cdpSessions = new WeakMap<Page, Promise<CDPSession>>();
 
-function cdpSession(page: Page): Promise<CDPSession> {
+export function cdpSession(page: Page): Promise<CDPSession> {
   let session = cdpSessions.get(page);
   if (!session) {
     session = page.context().newCDPSession(page);

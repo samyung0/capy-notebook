@@ -1,8 +1,12 @@
+import longXlsxURL from '../../bench/editor/fixtures/office/large-gradebook.xlsx?url';
 import longDocxURL from '../../bench/editor/fixtures/office/long-handbook.docx?url';
+import longPptxURL from '../../bench/parsers/fixtures/docs/jp_llm2.pptx?url';
 import xlsxURL from '../../e2e/fixtures/files/rich-content/course-guide.xlsx?url';
 import docxURL from '../../e2e/fixtures/files/rich-content/exchange-plan.docx?url';
 import pptxURL from '../../e2e/fixtures/files/rich-content/lecture.pptx?url';
 import longDocxStateURL from './fixtures/long-docx-checkpoint.bin?url';
+import longPptxStateURL from './fixtures/long-pptx-checkpoint.bin?url';
+import longXlsxStateURL from './fixtures/long-xlsx-checkpoint.bin?url';
 import docxStateURL from './fixtures/rich-docx-checkpoint.bin?url';
 import pptxStateURL from './fixtures/rich-pptx-checkpoint.bin?url';
 import xlsxStateURL from './fixtures/rich-xlsx-checkpoint.bin?url';
@@ -35,7 +39,7 @@ export const biologyOfficeFixtures = [
     sourceURL: pptxURL,
     stateURL: pptxStateURL,
   },
-  // The 62-page document of the Office perf spec (bench/editor), seeded by
+  // The large files of the Office perf spec (bench/editor), seeded by
   // VITE_LOAD_TEST_SEED like the editor perf notes.
   ...(import.meta.env.VITE_LOAD_TEST_SEED === 'true'
     ? ([
@@ -47,6 +51,24 @@ export const biologyOfficeFixtures = [
           sizeBytes: 41_117,
           sourceURL: longDocxURL,
           stateURL: longDocxStateURL,
+        },
+        {
+          format: 'xlsx',
+          id: 'bio-office-xlsx-long',
+          kind: 'sheet',
+          name: 'large-gradebook.xlsx',
+          sizeBytes: 1_362_647,
+          sourceURL: longXlsxURL,
+          stateURL: longXlsxStateURL,
+        },
+        {
+          format: 'pptx',
+          id: 'bio-office-pptx-long',
+          kind: 'slides',
+          name: 'jp_llm2.pptx',
+          sizeBytes: 24_390_706,
+          sourceURL: longPptxURL,
+          stateURL: longPptxStateURL,
         },
       ] as const)
     : []),

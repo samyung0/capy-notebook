@@ -21,7 +21,7 @@ Raw run artifacts sit in a sibling `YYYY-MM-DD-<machine>/` directory.
 | Family                     | Measures                                                                                        | Run with                                    |
 | -------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------- |
 | [`collaboration/`](collaboration/) | Collaboration stress: many peers typing with reconnects in one Office and one Plate room; convergence, lost updates, latency | `pnpm bench:stress` (Docker)     |
-| [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle; DOCX open, View to Edit and typing in the Office runtime | `pnpm bench:editor`, `pnpm bench:office` |
+| [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle; DOCX, XLSX and PPTX open, View to Edit, typing and heap in the Office runtime | `pnpm bench:editor`, `pnpm bench:office` |
 | [`parsers/`](parsers/)     | Ingest-host parser accuracy and capacity: OCR modes, concurrency, worker memory, OOM behavior    | `python bench/parsers/scripts/…` (needs VM) |
 | [`grading/`](grading/)     | Small local models against the production quiz-grading rubric, native and in-browser             | `python bench/grading/scripts/benchmark.py` |
 | [`rag/`](rag/scripts/)     | Retrieval and chat-agent quality: live diagnostic plus four frozen experiments                   | see below                                   |
@@ -35,16 +35,21 @@ deltas stay warn-only. Details: [editor-perf.md](../openwiki/editor-perf.md).
 Results land in the gitignored `editor/.results/`, so this family has no
 committed reports.
 
-`pnpm bench:office` is the Office runtime's spec (`editor/scripts/docx.office.ts`):
+`pnpm bench:office` is the Office runtime's spec (`editor/scripts/runtime.office.ts`):
 a production build with MSW, the runtime on a second port of `localhost` (another
-origin on the same site, as in production), and two DOCX
-fixtures, the 15-page `exchange-plan.docx` and the generated 62-page
-`editor/fixtures/office/long-handbook.docx` (`editor/scripts/gen_long_docx.py`;
-its checkpoint comes from `scripts/dev/seed-scenario-office.ts`). It reports
-open to first paint, View to Edit ready and keystroke to painted frame, and
-fails on unpainted keys, a fallback to the main-thread engine, or a missed
-budget (from three CI runs). It runs as the `office` job of the same
-`Performance` workflow, on dispatch only.
+origin on the same site, as in production), and a small and a large file per
+format: DOCX `exchange-plan.docx` and the generated 62-page
+`editor/fixtures/office/long-handbook.docx` (`editor/scripts/gen_long_docx.py`),
+XLSX `course-guide.xlsx` and the generated 8-sheet, 16,000-row
+`editor/fixtures/office/large-gradebook.xlsx` (`editor/scripts/gen_large_xlsx.py`),
+PPTX `lecture.pptx` and the 84-slide `parsers/fixtures/docs/jp_llm2.pptx`. The
+large files' checkpoints come from `scripts/dev/seed-scenario-office.ts`. It
+reports open to first paint, View to Edit ready, keystroke to painted frame and
+the JS heap at each step, plus the heap over two full view-mode passes. It
+fails on unpainted keys, typing that reaches no edit, a fallback to the
+main-thread engine, or a missed DOCX budget (from three CI runs); the XLSX and
+PPTX timings and all heap figures are report-only until calibrated. It runs as
+the `office` job of the same `Performance` workflow, on dispatch only.
 
 ### collaboration
 
