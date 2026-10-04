@@ -87,7 +87,7 @@ room concurrently or notify a later reloaded room, while a later distinct
 eviction still runs normally. A failed Redis publish or acknowledgement is
 reported and the durable sender retries, but it cannot
 skip the mandatory local unload; a rejected room remains unavailable unless
-that unload succeeds. Before unloading, the sidecar waits for the target room's Hocuspocus store hooks and save mutex as well as every queued application save. A Redis lock acquired before the application store hook is part of that wait. Intentional discard skips pending stores without reporting a failed save; drain still requires a successful durable save. Each active instance must return a positive delivery
+that unload succeeds. Before unloading, the sidecar waits for the target room's Hocuspocus store hooks and save mutex as well as every queued application save. Intentional discard skips pending stores without reporting a failed save; drain still requires a successful durable save. Each active instance must return a positive delivery
 acknowledgement. A negative acknowledgement leaves the outbox item retryable.
 Durable material events carry the material identity as
 well as their original room. Each instance resolves and evicts the current room
