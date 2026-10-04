@@ -751,6 +751,10 @@ const server = new Server<CollaborationContext>({
     connection.onClose(() => clearTokenExpiry(connection));
   },
   debounce: config.debounceMs,
+  // Broadcasts merge over 30 ms windows instead of one event-loop turn: N
+  // sends per window rather than per update, at up to 30 ms added latency
+  // (approved by Epo).
+  flushDelay: 30,
   extensions: [
     new RedisExtension({
       awaitInitialSyncTimeout: 1000,
