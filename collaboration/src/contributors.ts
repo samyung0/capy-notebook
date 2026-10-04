@@ -221,6 +221,12 @@ export function attachDocumentContributorTracker(
   });
 }
 
+/** Whether the room holds a writer's update that no store has committed yet:
+ * each successful store clears the markers it saved. */
+export function hasPendingContributors(document: Y.Doc) {
+  return document.getMap<unknown>(CONTRIBUTORS_ROOT).size > 0;
+}
+
 /** Remove only the marker generations represented by a committed snapshot. */
 export function clearDocumentContributors(
   document: Y.Doc,

@@ -25,6 +25,7 @@ import {
 } from './contributors.js';
 import { EditError } from './editCommands.js';
 import {
+  discardMovesLineage,
   drainIsDurable,
   evictMaterialRoomEpoch,
   flushRoomStores,
@@ -288,6 +289,16 @@ function evictLocalRoom(
   return localEvictions.run(room, operationId, async () => {
     let unloaded = false;
     const initialFailureGeneration = storeFailureGenerations.get(room) ?? 0;
+    // Read before the discard clears the failed snapshot. Source rooms keep
+    // their epoch here (a refused-save reset is a separate decision).
+    const movesLineage =
+      mode === 'discard' &&
+      !SOURCE_ROOM_PATTERN.test(room) &&
+      discardMovesLineage({
+        document: server.hocuspocus.documents.get(room),
+        failedSnapshot: failedStores.has(room),
+        rejected: roomEvictions.isRejected(room),
+      });
     if (mode === 'discard') roomEvictions.reject(room);
     roomEvictions.begin(room, mode);
     try {
@@ -350,6 +361,9 @@ function evictLocalRoom(
         throw new Error(
           'collaboration document could not be persisted before eviction'
         );
+      // Before the room is accepted again: a failure keeps it refused and
+      // retries the discard, which then moves it (the room stays rejected).
+      if (movesLineage) await store.resetLineage(room);
       failedStores.delete(room);
       pendingSources.delete(room);
       slowSaves.clear(room);

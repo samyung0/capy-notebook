@@ -1,4 +1,6 @@
 import type { Hocuspocus } from '@hocuspocus/server';
+import type * as Y from 'yjs';
+import { hasPendingContributors } from './contributors.js';
 
 /** Waits for extension hooks and queued app saves, not just the database call. */
 export async function flushRoomStores(
@@ -161,6 +163,29 @@ export class RoomEvictionState {
   private rooms(mode: RoomEvictionMode) {
     return mode === 'drain' ? this.draining : this.discarding;
   }
+}
+
+/**
+ * A discard throws room state away, and a client disconnected at that moment
+ * still holds it: back in a room reloaded under the same name, its sync would
+ * resend that state, attributed to itself. So a discard that threw anything
+ * away moves a material room to a new schema before the room reopens (the
+ * room name is the editors' lineage, and a client holding the old one goes to
+ * recovery instead of merging): one that a store-time rejection started (its
+ * snapshot can never be saved), or one whose room held a writer's unsaved
+ * update or a failed snapshot. A clean room's discard throws nothing away and
+ * keeps its name, so offline editors of it still sync.
+ */
+export function discardMovesLineage(room: {
+  document: Y.Doc | undefined;
+  failedSnapshot: boolean;
+  rejected: boolean;
+}) {
+  return (
+    room.rejected ||
+    room.failedSnapshot ||
+    (!!room.document && hasPendingContributors(room.document))
+  );
 }
 
 /**

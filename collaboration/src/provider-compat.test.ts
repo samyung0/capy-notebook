@@ -63,4 +63,41 @@ describe('v3 provider and v4 server compatibility', () => {
     reader.destroy();
     writer.destroy();
   });
+
+  it('applies edits a client holds before a request it sends at synced', async () => {
+    // A reopened editor applies its stored edits before connecting, and a
+    // reconnecting one resends its checkpoint requests at `synced`; either
+    // way a receipt counts as covering those edits. That holds because the
+    // server answers a client's step 1 with its own step 1 first (the
+    // client's step 2 carries the edits) and handles a connection's messages
+    // in order.
+    const seen: string[] = [];
+    const server = new Server({
+      address: '127.0.0.1',
+      async onStateless({ document }) {
+        seen.push(document.getText('probe').toString());
+      },
+      port: 0,
+      quiet: true,
+    });
+    servers.push(server);
+    await server.listen();
+    const document = new Y.Doc();
+    document.getText('probe').insert(0, 'restored');
+    const provider = new HocuspocusProvider({
+      document,
+      name: 'material:offline:schema:1',
+      token: 'write',
+      url: server.webSocketURL,
+    });
+    await new Promise<void>((resolve) =>
+      provider.on('synced', () => {
+        provider.sendStateless('checkpoint-request');
+        resolve();
+      })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(seen).toEqual(['restored']);
+    provider.destroy();
+  });
 });

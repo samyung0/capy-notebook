@@ -1,6 +1,13 @@
 import { Document, Hocuspocus } from '@hocuspocus/server';
 import { describe, expect, it, vi } from 'vitest';
+import * as Y from 'yjs';
 import {
+  attachDocumentContributorTracker,
+  clearDocumentContributors,
+  documentContributors,
+} from './contributors.js';
+import {
+  discardMovesLineage,
   drainIsDurable,
   evictMaterialRoomEpoch,
   flushRoomStores,
@@ -220,6 +227,41 @@ describe('room eviction state', () => {
     expect(drainIsDurable(3, 4, false)).toBe(false);
     expect(drainIsDurable(3, 3, true)).toBe(false);
     expect(drainIsDurable(3, 3, false)).toBe(true);
+  });
+});
+
+describe('discard lineage', () => {
+  it('moves a room only when the discard throws unsaved state away', () => {
+    const room = new Y.Doc();
+    attachDocumentContributorTracker(room, 'instance-a');
+    const clean = { failedSnapshot: false, rejected: false };
+    expect(discardMovesLineage({ ...clean, document: room })).toBe(false);
+    expect(discardMovesLineage({ ...clean, document: undefined })).toBe(false);
+    // A writer's update the room has not stored yet.
+    const client = new Y.Doc();
+    client.getText('content').insert(0, 'unsaved');
+    Y.applyUpdate(room, Y.encodeStateAsUpdate(client), {
+      connection: { context: { access: 'write', userId: 'u_a' } },
+      source: 'connection',
+    });
+    expect(discardMovesLineage({ ...clean, document: room })).toBe(true);
+    // A successful store clears the markers it saved.
+    clearDocumentContributors(room, documentContributors(room));
+    expect(discardMovesLineage({ ...clean, document: room })).toBe(false);
+    // A failed snapshot or a store-time rejection always throws state away,
+    // loaded or not.
+    expect(
+      discardMovesLineage({ ...clean, document: undefined, rejected: true })
+    ).toBe(true);
+    expect(
+      discardMovesLineage({
+        ...clean,
+        document: undefined,
+        failedSnapshot: true,
+      })
+    ).toBe(true);
+    room.destroy();
+    client.destroy();
   });
 });
 
