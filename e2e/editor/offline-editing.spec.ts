@@ -74,6 +74,13 @@ test('offline edits outlive a reload and save once the room is back', async ({
   await type(page, ' Written offline.');
   await expect.poll(() => storedDrafts(page)).toBeGreaterThan(0);
   await shot(page, 'offline');
+  // The workspace's offline toast goes after its 7 s; the banner stays.
+  const toast = page
+    .locator('[data-sonner-toast]')
+    .filter({ hasText: 'Changes will resume when you reconnect.' });
+  await expect(toast).toBeVisible();
+  await expect(toast).toHaveCount(0, { timeout: 9000 });
+  await expect(banner).toHaveText(offlineCopy);
 
   // Back online while the service stays unreachable, then reload: the
   // edits come back from this device, not from the room.
