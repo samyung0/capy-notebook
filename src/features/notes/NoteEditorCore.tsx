@@ -52,6 +52,7 @@ import {
   materialLimitMessage,
   parseCollaborationEvent,
 } from './collaborationEvents';
+import { type CursorSender, throttleCursorPosition } from './cursorThrottle';
 import {
   contentSizeKilobytes,
   formatContentSize,
@@ -734,6 +735,10 @@ export function NoteEditorCore({
       onEditorStatusChange?.(null);
     };
   }, [collaborationToken.room, editor, onEditorStatusChange, setStatus]);
+
+  // Cursor awareness goes to every peer through the server: at most one per
+  // 50 ms (withCursors installs sendCursorPosition when the editor is made).
+  useEffect(() => throttleCursorPosition(editor as CursorSender), [editor]);
 
   useEffect(() => {
     // A blip the socket survived brings no provider event, so the status comes
