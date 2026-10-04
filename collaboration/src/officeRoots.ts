@@ -1,5 +1,6 @@
 import { type Connection, OutgoingMessage } from '@hocuspocus/server';
 import * as Y from 'yjs';
+import { captureError } from './observability.js';
 import type { OfficeFormat } from './officeRuntime.js';
 
 /**
@@ -211,8 +212,18 @@ export const MAX_UNPLACED_STEPS = 2;
 export function resyncUnheld(connection: Connection, step2: boolean) {
   const unplaced = step2 ? (unplacedSteps.get(connection) ?? 0) + 1 : 0;
   unplacedSteps.set(connection, unplaced);
-  if (unplaced >= MAX_UNPLACED_STEPS)
-    throw new Error('source sync step 2 cannot be placed in the room');
+  if (unplaced >= MAX_UNPLACED_STEPS) {
+    const error = new Error('source sync step 2 cannot be placed in the room');
+    // The gateway's field names, so a user_id grep spans both services.
+    captureError(error, {
+      room: connection.document.name,
+      socket_id: connection.socketId,
+      stage: 'source_step2_unplaced',
+      user_id:
+        (connection.context as { userId?: string } | undefined)?.userId ?? '',
+    });
+    throw error;
+  }
   resyncOfficeConnection(connection);
 }
 

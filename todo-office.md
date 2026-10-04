@@ -77,6 +77,12 @@ screen-reader mirror settling 300 ms after scrolling.
   distribute columns, auto-fit and no-wrap. Hidden until the engine supports
   them.
 - **XLSX view-mode zoom.**
+- **Unplaceable sync step 2 (lowest priority).** A client whose own sync step 2
+  the room cannot place (it holds content out of order) is closed after 2 tries
+  (`resyncUnheld`, `collaboration/src/officeRoots.ts`) and then reconnects
+  forever with its edits unsent. The fix is a new stateless signal that makes
+  the client call `replace()` and enter recovery with a download. Build it only
+  if `source_step2_unplaced` ever shows up in the collaboration logs.
 
 ## Unverified or small
 

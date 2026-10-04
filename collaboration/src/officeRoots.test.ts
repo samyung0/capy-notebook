@@ -228,13 +228,21 @@ test("a text update that skips its client's clocks is unheld", () => {
 // A step 2 that cannot be placed means the client holds content out of
 // order; resyncing it again would loop, so the connection closes instead.
 test('step 2 replies the room cannot place close the connection', () => {
+  const document = Object.assign(new Y.Doc(), { name: 'source:f:epoch:1' });
   const connection = {
+    context: { userId: 'u_writer' },
+    document,
     messageAddress: 'source:f:epoch:1',
     readOnly: false,
     send: vi.fn(),
+    socketId: 'socket-1',
   } as unknown as Connection;
-  const document = new Y.Doc();
-  Object.assign(connection, { document });
+  const lines: unknown[] = [];
+  const record = (...args: unknown[]) => {
+    lines.push(...args);
+  };
+  const errors = vi.spyOn(console, 'error').mockImplementation(record);
+  const infos = vi.spyOn(console, 'info').mockImplementation(record);
   // Keystrokes ahead of a sync resync without limit.
   for (let index = 0; index < 5; index += 1) {
     resyncUnheld(connection, false);
@@ -247,6 +255,15 @@ test('step 2 replies the room cannot place close the connection', () => {
   expect(() => resyncUnheld(connection, true)).toThrow(
     'source sync step 2 cannot be placed in the room'
   );
+  // One greppable line names the room, the writer and the socket.
+  const line = lines
+    .map(String)
+    .find((entry) => entry.includes('source_step2_unplaced'));
+  expect(line).toContain('u_writer');
+  expect(line).toContain('socket-1');
+  expect(line).toContain('source:f:epoch:1');
+  errors.mockRestore();
+  infos.mockRestore();
   // A placed update starts the count over.
   placedUpdate(connection);
   expect(() => resyncUnheld(connection, true)).not.toThrow();
