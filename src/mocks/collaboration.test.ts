@@ -4,13 +4,9 @@ import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { qk } from '@/api/client';
 import { queryClient } from '@/api/queryClient';
-import {
-  clearSourceDrafts,
-  readSourceDrafts,
-  writeSourceDraft,
-} from '@/features/files/sourceDraft';
 import { createSourceProvider } from '@/features/files/sourceProvider';
 import { parseMaterialDocument } from '@/features/materials/document';
+import { deleteDrafts, putDrafts, readDrafts } from '@/lib/editDrafts';
 import { setChaosPeers } from './chaosPeers';
 import {
   checkpointRoom,
@@ -95,7 +91,7 @@ it('persists a note when leaving before the editor checkpoint debounce fires', (
     options: {
       initialValue,
       materialId: material.id,
-      name: 'material:test-note',
+      name: 'material:test-note:schema:1',
     },
   });
   cleanups.push(() => provider.destroy());
@@ -115,7 +111,7 @@ it('persists a note when leaving before the editor checkpoint debounce fires', (
   expect(client.document.get('content', Y.XmlText).toDelta()).toHaveLength(2);
   expect(paragraph.toString()).toBe('base!');
   // A clean checkpoint/close must not make merely viewing look like an edit.
-  const room = rooms.get('material:test-note')!;
+  const room = rooms.get('material:test-note:schema:1')!;
   const savedVersion = room.version;
   material.updatedAt = '2026-09-01T00:00:00Z';
   checkpointRoom(room);
@@ -145,16 +141,18 @@ it('keeps MSW source drafts out of the durable browser database', async () => {
   });
   vi.stubGlobal('indexedDB', { open });
   const draft = {
-    baseSourceSHA256: 'mock-base',
-    epoch: 1,
-    fileId: 'mock-user:mock-file',
-    id: 'draft',
-    state: new Uint8Array(),
-    version: '1',
+    data: new Uint8Array(),
+    id: 'draft:state',
+    key: 'mock-user:file:mock-file',
+    kind: 'state' as const,
+    lineage: 'source:mock-file:epoch:1@mock-base',
+    savedAt: 0,
+    seq: 1,
+    session: 'draft',
   };
-  expect(await readSourceDrafts(draft.fileId)).toEqual([]);
-  await writeSourceDraft(draft, new Uint8Array());
-  await clearSourceDrafts([draft]);
+  expect(await readDrafts(draft.key)).toEqual([]);
+  await putDrafts([draft], new Uint8Array());
+  await deleteDrafts([draft]);
   expect(open).not.toHaveBeenCalled();
 });
 

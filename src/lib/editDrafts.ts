@@ -9,11 +9,13 @@ import { USE_MSW } from '@/api/auth';
  * room's sync alone is not durable.
  *
  * `lineage` names the room state the edits grew from: the room name (a note's
- * `material:<id>:schema:<n>`, a source's `source:<id>:epoch:<n>`, plus the
- * base SHA for Office). Rows of another lineage, or refused ones, are never
- * merged into a live document; they open read-only for copying.
+ * `material:<id>:schema:<n>`, a source's `source:<id>:epoch:<n>@<baseSHA>`).
+ * Rows of another lineage, or refused ones, are never merged into a live
+ * document; they open read-only for copying.
  */
 export interface EditDraft {
+  /** A source's base (`bases` store), which recovery opens the edits over. */
+  base?: string;
   data: Uint8Array;
   /** `${session}:state`, or `${session}:${seq}` for a run of updates. */
   id: string;
@@ -29,43 +31,81 @@ export interface EditDraft {
   session: string;
 }
 
+export function draftKey(
+  actorId: string,
+  kind: 'material' | 'file',
+  id: string
+) {
+  return `${actorId}:${kind}:${id}`;
+}
+
+/** A source session's draft lineage: its room (the epoch) and base. Text
+ * drafts stay compatible across the base hashes of one epoch (a text
+ * publication keeps the epoch); Office ones need the same base. */
+export function sourceLineage(session: {
+  baseSourceSHA256: string;
+  room: string;
+}) {
+  return `${session.room}@${session.baseSourceSHA256}`;
+}
+export function sameSourceLineage(format: string) {
+  return (left: string, right: string) =>
+    format === 'text'
+      ? left.split('@')[0] === right.split('@')[0]
+      : left === right;
+}
+
 // Only explicit MSW scenario fixtures use storage: MSW resets its database on
 // reload, so any other stored edit belongs to a room that no longer exists.
 function stored(key: string) {
   return !USE_MSW || key.split(':').at(-1)?.startsWith('mock-scenario-');
 }
 
-function open(): Promise<IDBDatabase> {
+const DATABASE = USE_MSW
+  ? 'capy-edit-drafts-msw-scenarios'
+  : 'capy-edit-drafts';
+// The database before notes kept drafts: copied over once, then deleted.
+const SOURCE_DATABASE = USE_MSW
+  ? 'capy-source-drafts-msw-scenarios'
+  : 'capy-source-drafts';
+
+function request<T>(work: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
-    if (typeof indexedDB === 'undefined') {
-      reject(new Error('IndexedDB is unavailable'));
-      return;
-    }
-    const request = indexedDB.open(
-      USE_MSW ? 'capy-edit-drafts-msw-scenarios' : 'capy-edit-drafts',
-      1
-    );
-    request.onupgradeneeded = () => {
-      const drafts = request.result.createObjectStore('drafts', {
-        keyPath: 'id',
-      });
-      drafts.createIndex('key', 'key');
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    work.onsuccess = () => resolve(work.result);
+    work.onerror = () => reject(work.error);
   });
 }
 
+function open(): Promise<IDBDatabase> {
+  if (typeof indexedDB === 'undefined')
+    return Promise.reject(new Error('IndexedDB is unavailable'));
+  const opening = indexedDB.open(DATABASE, 1);
+  opening.onupgradeneeded = () => {
+    const drafts = opening.result.createObjectStore('drafts', {
+      keyPath: 'id',
+    });
+    drafts.createIndex('key', 'key');
+    drafts.createIndex('base', ['key', 'base']);
+    opening.result.createObjectStore('bases');
+  };
+  return request(opening);
+}
+
+type Stores = { drafts: IDBObjectStore; bases: IDBObjectStore };
+
 async function transact<T>(
   mode: IDBTransactionMode,
-  work: (store: IDBObjectStore) => IDBRequest<T> | undefined
+  work: (stores: Stores) => IDBRequest<T> | undefined
 ): Promise<T | undefined> {
   const database = await open();
   try {
     return await new Promise((resolve, reject) => {
-      const transaction = database.transaction('drafts', mode);
-      const request = work(transaction.objectStore('drafts'));
-      transaction.oncomplete = () => resolve(request?.result);
+      const transaction = database.transaction(['drafts', 'bases'], mode);
+      const result = work({
+        bases: transaction.objectStore('bases'),
+        drafts: transaction.objectStore('drafts'),
+      });
+      transaction.oncomplete = () => resolve(result?.result);
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
@@ -74,10 +114,86 @@ async function transact<T>(
   }
 }
 
+/** Delete `row` and, with the last row using it, its base. */
+function deleteRow(stores: Stores, row: EditDraft) {
+  stores.drafts.delete(row.id);
+  if (row.base === undefined) return;
+  const key = [row.key, row.base];
+  const users = stores.drafts.index('base').count(key);
+  users.onsuccess = () => {
+    if (!users.result) stores.bases.delete(key);
+  };
+}
+
+interface OldSourceDraft {
+  baseSourceSHA256: string;
+  epoch: number;
+  fileId: string;
+  id: string;
+  refused?: true;
+  state: Uint8Array;
+}
+
+/** Copy the old source-draft database's rows over once, then delete it. */
+async function migrateSourceDrafts() {
+  if (typeof indexedDB === 'undefined') return;
+  const listed = await indexedDB.databases?.().catch(() => undefined);
+  if (listed && !listed.some((entry) => entry.name === SOURCE_DATABASE)) return;
+  const old = await request(indexedDB.open(SOURCE_DATABASE));
+  let rows: OldSourceDraft[] = [];
+  let baseKeys: IDBValidKey[] = [];
+  let baseBytes: Uint8Array[] = [];
+  try {
+    if (old.objectStoreNames.contains('sessionDrafts')) {
+      const transaction = old.transaction(['sessionDrafts', 'bases']);
+      const bases = transaction.objectStore('bases');
+      [rows, baseKeys, baseBytes] = await Promise.all([
+        request<OldSourceDraft[]>(
+          transaction.objectStore('sessionDrafts').getAll()
+        ),
+        request(bases.getAllKeys()),
+        request<Uint8Array[]>(bases.getAll()),
+      ]);
+    }
+  } finally {
+    old.close();
+  }
+  const bases = new Map(
+    baseKeys.map((key, index) => [String(key), baseBytes[index]])
+  );
+  await transact('readwrite', (stores) => {
+    for (const row of rows) {
+      // `fileId` was `${actorId}:${fileId}`; bases were keyed by it and SHA.
+      const [actorId, fileId] = row.fileId.split(':');
+      const base = bases.get(String([row.fileId, row.baseSourceSHA256]));
+      if (!(base && actorId && fileId)) continue;
+      const key = draftKey(actorId, 'file', fileId);
+      stores.drafts.put({
+        base: row.baseSourceSHA256,
+        data: row.state,
+        id: `${row.id}:state`,
+        key,
+        kind: 'state',
+        lineage: `source:${fileId}:epoch:${row.epoch}@${row.baseSourceSHA256}`,
+        savedAt: Date.now(),
+        seq: 1,
+        session: row.id,
+        ...(row.refused && { refused: row.refused }),
+      } satisfies EditDraft);
+      stores.bases.put(base, [key, row.baseSourceSHA256]);
+    }
+  });
+  await request(indexedDB.deleteDatabase(SOURCE_DATABASE));
+}
+
 // One queue for every read and write, so a read sees each write queued before
 // it (a note that remounts onto a moved room reads what the old mount wrote).
-let queue: Promise<unknown> = Promise.resolve();
+// The old database is copied before the first.
+let queue: Promise<unknown> | null = null;
 function enqueue<T>(work: () => Promise<T>): Promise<T> {
+  queue ??= migrateSourceDrafts().catch((error) =>
+    console.warn('Draft migration failed:', error)
+  );
   const next = queue.then(work);
   queue = next.catch(() => undefined);
   return next;
@@ -87,18 +203,37 @@ export function readDrafts(key: string): Promise<EditDraft[]> {
   if (!stored(key)) return Promise.resolve([]);
   return enqueue(
     async () =>
-      ((await transact('readonly', (store) =>
-        store.index('key').getAll(key)
+      ((await transact('readonly', ({ drafts }) =>
+        drafts.index('key').getAll(key)
       )) ?? []) as EditDraft[]
   );
 }
 
-export function putDrafts(rows: EditDraft[]): Promise<void> {
+/** A source base stored beside its drafts. */
+export function readDraftBase(key: string, base: string) {
+  return enqueue(
+    async () =>
+      (await transact('readonly', ({ bases }) => bases.get([key, base]))) as
+        | Uint8Array
+        | undefined
+  );
+}
+
+/** Write rows, and their source base when it is not stored yet. */
+export function putDrafts(rows: EditDraft[], base?: Uint8Array): Promise<void> {
   const kept = rows.filter((row) => stored(row.key));
   if (!kept.length) return Promise.resolve();
   return enqueue(async () => {
-    await transact('readwrite', (store) => {
-      for (const row of kept) store.put(row);
+    await transact('readwrite', (stores) => {
+      for (const row of kept) {
+        stores.drafts.put(row);
+        if (row.base === undefined || !base) continue;
+        const key = [row.key, row.base];
+        const present = stores.bases.getKey(key);
+        present.onsuccess = () => {
+          if (present.result === undefined) stores.bases.put(base, key);
+        };
+      }
     });
   });
 }
@@ -111,12 +246,12 @@ export function deleteDrafts(
   const kept = rows.filter((row) => stored(row.key));
   if (!kept.length) return Promise.resolve();
   return enqueue(async () => {
-    await transact('readwrite', (store) => {
+    await transact('readwrite', (stores) => {
       for (const row of kept) {
-        const current = store.get(row.id);
+        const current = stores.drafts.get(row.id);
         current.onsuccess = () => {
-          if ((current.result as EditDraft | undefined)?.seq === row.seq)
-            store.delete(row.id);
+          const found = current.result as EditDraft | undefined;
+          if (found?.seq === row.seq) deleteRow(stores, found);
         };
       }
     });
@@ -127,28 +262,68 @@ export function deleteDrafts(
 export function deleteDocumentDrafts(key: string): Promise<void> {
   if (!stored(key)) return Promise.resolve();
   return enqueue(async () => {
-    await transact('readwrite', (store) => {
-      const keys = store.index('key').getAllKeys(key);
-      keys.onsuccess = () => {
-        for (const id of keys.result) store.delete(id);
+    await transact('readwrite', (stores) => {
+      const rows = stores.drafts.index('key').getAll(key);
+      rows.onsuccess = () => {
+        for (const row of rows.result as EditDraft[]) deleteRow(stores, row);
       };
     });
   });
 }
 
 /**
+ * Once per app start: delete the stored edits of every document of this
+ * account that `gone` says it no longer has (403/404). A failed check keeps
+ * them.
+ */
+export async function sweepDrafts(
+  actorId: string,
+  gone: (kind: 'material' | 'file', id: string) => Promise<boolean>
+) {
+  const prefix = `${actorId}:`;
+  const keys = await enqueue(async () => {
+    const found = new Set<string>();
+    await transact('readonly', ({ drafts }) => {
+      const cursor = drafts
+        .index('key')
+        .openKeyCursor(IDBKeyRange.bound(prefix, `${prefix}￿`), 'nextunique');
+      cursor.onsuccess = () => {
+        if (!cursor.result) return;
+        found.add(String(cursor.result.key));
+        cursor.result.continue();
+      };
+    });
+    return [...found];
+  });
+  for (const key of keys) {
+    const [, kind, id] = key.split(':');
+    if ((kind === 'material' || kind === 'file') && id) {
+      const missing = await gone(kind, id).catch(() => false);
+      if (missing) await deleteDocumentDrafts(key);
+    }
+  }
+}
+
+/**
  * Split a document's rows against the room it opens: `current` merges into
  * the live document; `recovery` is one group (refused rows, or one other
  * lineage) to show read-only first. Further groups wait for the next open.
+ * `same` compares lineages (text sources ignore the base).
  */
-export function draftGroups(rows: EditDraft[], lineage: string) {
-  const first = rows.find((row) => row.refused || row.lineage !== lineage);
+export function draftGroups(
+  rows: EditDraft[],
+  lineage: string,
+  same: (left: string, right: string) => boolean = (left, right) =>
+    left === right
+) {
+  const first = rows.find((row) => row.refused || !same(row.lineage, lineage));
   return {
-    current: rows.filter((row) => !row.refused && row.lineage === lineage),
+    current: rows.filter((row) => !row.refused && same(row.lineage, lineage)),
     recovery: first
       ? rows.filter(
           (row) =>
-            row.lineage === first.lineage && !!row.refused === !!first.refused
+            same(row.lineage, first.lineage) &&
+            !!row.refused === !!first.refused
         )
       : [],
   };
@@ -165,13 +340,27 @@ export function applyDrafts(doc: Y.Doc, rows: EditDraft[], origin: unknown) {
   Y.applyUpdate(doc, Y.mergeUpdates(ordered.map((row) => row.data)), origin);
 }
 
+/** A recovery group as one document, or null when it cannot be drawn: update
+ * rows whose base was never stored (a tab closed online, then the room moved). */
+export function recoveryDocument(rows: EditDraft[]): Y.Doc | null {
+  const doc = new Y.Doc();
+  applyDrafts(doc, rows, null);
+  if (doc.store.pendingStructs || doc.store.pendingDs) {
+    doc.destroy();
+    return null;
+  }
+  return doc;
+}
+
 let persistenceRequested = false;
 /** Ask once per page load for storage the browser will not evict under
- * pressure. Best effort: Firefox may ask the user, Safari still deletes
- * script storage after 7 days without a visit, private windows on close. */
+ * pressure, where asking is silent: Firefox shows a permission prompt, so it
+ * is skipped there. Safari still deletes script storage after 7 days without
+ * a visit, and private windows delete it on close. */
 function requestPersistence() {
   if (persistenceRequested) return;
   persistenceRequested = true;
+  if (navigator.userAgent.includes('Firefox')) return;
   void navigator.storage?.persist?.().catch(() => undefined);
 }
 
@@ -182,6 +371,8 @@ const MAX_UPDATE_ROWS = 64;
 export interface DraftRecorderOptions {
   /** Rows of earlier sessions applied into `doc`: they count as edit 1. */
   adopted?: EditDraft[];
+  /** A source's base, stored once beside its rows. */
+  base?: { sha: string; bytes: Uint8Array };
   doc: Y.Doc;
   /** Write the whole state, latest only (sources), instead of appending local
    * updates (notes, whose full encode is too slow for the typing path). */
@@ -194,26 +385,33 @@ export interface DraftRecorderOptions {
   limitBytes: number;
   lineage: string;
   onLimit?: (over: boolean) => void;
+  /** Whether the last write reached storage (false: private mode, a full
+   * disk). Editing goes on either way. */
+  onStorage?: (ok: boolean) => void;
 }
 
 /**
  * Records a session's unsaved work as it happens. The host reports the
- * connection (`disconnected`, `connected`) and each receipt (`covered` with
- * the highest local edit count it acknowledges, read from `sequence` when the
- * checkpoint was requested).
+ * connection (`disconnected` once it treats the room as unreachable,
+ * `connected` on sync) and each receipt (`covered` with the highest local
+ * edit count it acknowledges, read from `sequence` when the checkpoint was
+ * requested).
  */
 export function recordDrafts({
-  doc,
-  key,
-  lineage,
-  ignore,
-  fullState = false,
-  limitBytes,
-  onLimit,
   adopted = [],
+  base,
+  doc,
+  fullState = false,
+  ignore,
+  key,
+  limitBytes,
+  lineage,
+  onLimit,
+  onStorage,
 }: DraftRecorderOptions) {
   const session = crypto.randomUUID();
-  let sequence = adopted.length ? 1 : 0;
+  const start = adopted.length ? 1 : 0;
+  let sequence = start;
   let covered = 0;
   let pendingAdopted = adopted;
   // Local updates not yet written, and written update rows a receipt has not
@@ -225,6 +423,7 @@ export function recordDrafts({
   let snapshotDue = false;
   let over = false;
   let stopped = false;
+  let storageOk = true;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   const row = (
@@ -241,6 +440,7 @@ export function recordDrafts({
     savedAt: Date.now(),
     seq,
     session,
+    ...(base && { base: base.sha }),
     ...(refused && { refused }),
   });
   const unsavedBytes = () =>
@@ -254,12 +454,26 @@ export function recordDrafts({
     }
   };
   const write = (work: Promise<void>) =>
-    work.catch((error) => console.warn('Draft storage failed:', error));
+    work.then(
+      () => {
+        if (storageOk) return;
+        storageOk = true;
+        onStorage?.(true);
+      },
+      (error) => {
+        console.warn('Draft storage failed:', error);
+        if (!storageOk) return;
+        storageOk = false;
+        onStorage?.(false);
+      }
+    );
 
   const flush = (snapshot = false) => {
     clearTimeout(timer);
     timer = undefined;
-    if (stopped || sequence <= covered) return Promise.resolve();
+    // Nothing of this session's own to write (adopted rows are stored).
+    if (stopped || sequence <= Math.max(covered, start))
+      return Promise.resolve();
     const writes: EditDraft[] = [];
     const removed: { id: string; seq: number }[] = [];
     if (fullState) {
@@ -287,7 +501,9 @@ export function recordDrafts({
             },
           ];
         }
-        writes.push(...rows.slice(-1).map((r) => row('update', r.seq, r.data)));
+        writes.push(
+          ...rows.slice(-1).map((last) => row('update', last.seq, last.data))
+        );
       }
       // The whole document once per offline episode (and at unmount): the
       // base later updates need when they open in recovery.
@@ -300,10 +516,14 @@ export function recordDrafts({
     }
     checkLimit();
     if (offline) requestPersistence();
+    // Both queued now, in order, so a read queued next sees them.
     return write(
-      putDrafts(writes).then(() =>
-        deleteDrafts(removed.map((r) => ({ id: r.id, key, seq: r.seq })))
-      )
+      Promise.all([
+        putDrafts(writes, base?.bytes),
+        deleteDrafts(
+          removed.map((item) => ({ id: item.id, key, seq: item.seq }))
+        ),
+      ]).then(() => undefined)
     );
   };
 
@@ -328,7 +548,7 @@ export function recordDrafts({
   };
   // Every row this session wrote or adopted, as written.
   const ownRows = () => [
-    ...rows.map((r) => ({ id: r.id, key, seq: r.seq })),
+    ...rows.map((item) => ({ id: item.id, key, seq: item.seq })),
     ...(state ? [{ id: `${session}:state`, key, seq: state.seq }] : []),
     ...pendingAdopted,
   ];
@@ -347,13 +567,10 @@ export function recordDrafts({
     covered(seq: number) {
       if (seq <= covered) return Promise.resolve();
       covered = Math.min(seq, sequence);
-      const done: Pick<EditDraft, 'id' | 'key' | 'seq'>[] = [];
-      done.push(
-        ...rows
-          .filter((r) => r.seq <= covered)
-          .map((r) => ({ id: r.id, key, seq: r.seq }))
-      );
-      rows = rows.filter((r) => r.seq > covered);
+      const done: Pick<EditDraft, 'id' | 'key' | 'seq'>[] = rows
+        .filter((item) => item.seq <= covered)
+        .map((item) => ({ id: item.id, key, seq: item.seq }));
+      rows = rows.filter((item) => item.seq > covered);
       buffer = buffer.filter((item) => item.seq > covered);
       if (state && state.seq <= covered && sequence <= covered) {
         done.push({ id: `${session}:state`, key, seq: state.seq });
@@ -363,17 +580,20 @@ export function recordDrafts({
       pendingAdopted = [];
       return write(deleteDrafts(done));
     },
-    /** Unsaved work is discarded (the room turned read-only): delete it. */
+    /** Unsaved work is discarded (the room turned read-only, or recovery was
+     * left): delete what this session wrote or adopted, and stop. */
     discard() {
       const previous = ownRows();
       stop();
       return write(deleteDrafts(previous));
     },
+    /** The room is unreachable: edits from now on are what this device alone
+     * holds, so the whole document is written once and the bound applies. */
     disconnected() {
       offline = true;
       snapshotDue = !fullState;
       checkLimit();
-      if (sequence > covered) void flush();
+      if (sequence > Math.max(covered, start)) void flush();
     },
     /** Write what is buffered (with the whole document when unsaved work
      * remains, for a remount into recovery) and stop. */
@@ -385,15 +605,23 @@ export function recordDrafts({
     /** Write what is buffered now. */
     flush: () => flush(),
     /** A save refused for good: keep the whole document as one refused row
-     * (shown for copying, never merged) and stop recording. */
-    refuse() {
+     * (shown for copying, never merged) and stop recording. Returns that
+     * row, which a later delete (queued after the write) removes. */
+    refuse(): Pick<EditDraft, 'id' | 'key' | 'seq'> {
       const previous = ownRows();
       const data = Y.encodeStateAsUpdate(doc);
       stop();
       const refused = row('state', sequence, data, true);
-      return write(deleteDrafts(previous).then(() => putDrafts([refused])));
+      void write(
+        Promise.all([
+          deleteDrafts(previous),
+          putDrafts([refused], base?.bytes),
+        ]).then(() => undefined)
+      );
+      return refused;
     },
-    /** Local edits so far: a checkpoint request records it. */
+    /** Local edits so far (1 for adopted rows): a checkpoint request
+     * records it. */
     get sequence() {
       return sequence;
     },
@@ -405,3 +633,41 @@ export function recordDrafts({
 }
 
 export type DraftRecorder = ReturnType<typeof recordDrafts>;
+
+/** Whether the server says this account no longer has the document. */
+async function documentGone(probe: () => Promise<unknown>) {
+  try {
+    await probe();
+    return false;
+  } catch (error) {
+    const status = (error as { status?: unknown } | null)?.status;
+    return status === 403 || status === 404;
+  }
+}
+
+let swept = false;
+/**
+ * Once per page load, when idle: delete stored edits of documents this
+ * account no longer has. Notes ask for a collaboration token (as the editor
+ * would), files for their detail.
+ */
+export function sweepDraftsOnce(
+  actorId: string,
+  api: {
+    get: (path: string) => Promise<unknown>;
+    post: (path: string, body: unknown) => Promise<unknown>;
+  }
+) {
+  if (swept) return;
+  swept = true;
+  const run = () =>
+    void sweepDrafts(actorId, (kind, id) =>
+      documentGone(() =>
+        kind === 'material'
+          ? api.post(`/materials/${id}/collaboration-token`, {})
+          : api.get(`/files/${id}`)
+      )
+    ).catch((error) => console.warn('Draft sweep failed:', error));
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(run);
+  else setTimeout(run, 0);
+}

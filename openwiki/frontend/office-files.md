@@ -577,7 +577,8 @@ actions stay usable, and the runtime drops any other `menu-command` or
 id too. A case-by-case standard per pause state is a later task. Recovery also
 sends `selectable`: instead of an inert host, the runtime passes `readOnly` to
 the editor and lets pointer and keys through, so the unsaved content can be
-selected and copied (DOCX text, XLSX cells; the PPTX engine has no copy yet).
+selected and copied (DOCX text, XLSX cells, PPTX slide text and speaker
+notes).
 
 In edit mode the DOCX editor shows one toolbar row under the header, in Google
 Docs' order (`singleRowToolbar` with the menus in the host, `DocxEditor`'s
@@ -1031,32 +1032,53 @@ exact size computed; an update over the cap gets an unrecoverable
 version instead of reconnecting and resending. The exact limit at save still
 applies and is final too (a 413 `SourceRequestError`, never retried).
 
-The browser retains unacknowledged edits in an IndexedDB draft for each actor,
-file and editing session. The draft is encoded and written at most every 250 ms,
-latest state only, and not at all once a receipt covers it, so a saved draft
-never returns as a recovery prompt. The source base is stored once per file and
-SHA beside the drafts (database version 3; older draft layouts are dropped) and
-removed with the last draft that uses it. Reopening merges compatible drafts; a
-receipt removes only the exact draft versions it covers. Another tab's newer
-draft remains available. Save, export and handoff first commit open spreadsheet
-inputs and wait for active composition or gestures. Pending input counts as
-unsaved even before it reaches the shared document. Draft storage that fails
-(private mode, a full disk, a draft whose base is gone) is skipped, never an
-editing error. A save refused for good keeps the session's drafts, marked
-refused (never merged back), and enters recovery; one refused
-for lost access or a missing file clears them (see
+The browser retains unacknowledged edits in IndexedDB, in the draft store notes
+share (`src/lib/editDrafts.ts`, database `capy-edit-drafts`; the old
+`capy-source-drafts` rows are copied over once and that database deleted).
+A session (one editor mount) writes its whole state, latest only, at most
+every 250 ms, and not at all once a receipt covers it, so a saved draft never
+returns as a recovery prompt. Each row names its lineage, the room and base it
+grew from (`source:<id>:epoch:<n>@<baseSHA>`; text drafts stay compatible
+across the base hashes of one epoch). The source base is stored once per file
+and SHA beside the rows and removed with the last row that uses it. Reopening
+merges the rows of the current lineage; a receipt removes only the exact rows
+it covers, and another tab's newer row remains. Save, export and handoff first
+commit open spreadsheet inputs and wait for active composition or gestures.
+Pending input counts as unsaved even before it reaches the shared document.
+Draft storage that fails (private mode, a full disk, a draft whose base is
+gone) is skipped, never an editing error; a reopened draft whose base is gone
+is dropped with "Some unsaved edits from your last session couldn't be
+restored." A save refused for good keeps the session's state as one refused
+row (never merged back) and enters recovery; one refused for lost access or a
+missing file deletes every row of the file (see
 [error handling](error-handling.md#collaborative-source-failures)).
 Network and recoverable save failures leave drafts available. Before sending
-buffered updates after reconnect, the parent verifies the current epoch. An old
-epoch with unsaved changes enters recovery instead of merging incompatible
-updates. Recovery merges drafts from the same old epoch/base and shows them
-read-only for copying (see
+buffered updates after reconnect, the token request verifies the current
+epoch. An old epoch with unsaved changes enters recovery instead of merging
+incompatible updates, under "This file changed while your edits were waiting
+to sync."; rows of another lineage on reopen do the same. Recovery shows the
+group read-only for copying (see
 [error handling](error-handling.md#collaborative-source-failures)); its Reload
-removes only those exact versions and advances to the next retained group,
-then the current file. A client whose changes were all
-saved when it learns about a completed handoff (from the room or on reconnect)
-shows the newer-version banner instead; a client with unsaved changes enters
-recovery.
+removes only those exact rows and advances to the next retained group, then
+the current file. A client whose changes were all saved when it learns about a
+completed handoff (from the room or on reconnect) shows the newer-version
+banner instead; a client with unsaved changes enters recovery.
+
+A source editor keeps editing while its room cannot be reached, as a note
+does (see [plate-editor.md](plate-editor.md#offline-editing-and-drafts)): the
+`offline` banner, the header's Offline, and its rows written as it edits. Past
+the source state cap (`SOURCE_STATE_MAX_BYTES`, 100 MB, the service's
+`MAX_SOURCE_STATE_BYTES`) of unsaved state while offline the editor stops
+taking edits (`offlineLimit`: Office `canEdit: false`, a paused textarea)
+until it reconnects. When the collaboration service discards a source room
+that held unsaved state (a save refused for good, the 5-minute slow-save
+limit, a read-only or access refusal, an outbox access discard), it asks the
+gateway to move the file to its next editing epoch before the room opens
+again (`POST /internal/collaboration/files/{id}/epoch-reset`, an epoch that
+already moved on is left alone). A client that missed the discard then sees
+a new epoch and opens recovery instead of resyncing the thrown-away state;
+a fully saved one sees the newer-version banner. A refresh captured under the
+old epoch is superseded, as after any epoch change.
 
 Office automatic refresh starts only after a prior successful parse, at least
 3,000 trimmed net-change tokens or saved changes left unedited for 7 days, and

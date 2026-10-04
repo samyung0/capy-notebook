@@ -119,8 +119,8 @@ part of adding development tools.
   replacement with pending edits enters the existing recovery UI. Dedicated
   text and valid DOCX/XLSX/PPTX fixtures preserve encoded checkpoint identities
   in session storage. Ordinary mock rooms remain in memory.
-- **Draft recovery:** explicit `mock-scenario-*` files use the existing draft
-  transaction code in `capy-source-drafts-msw-scenarios`. The seeded older
+- **Draft recovery:** explicit `mock-scenario-*` files and notes use the real
+  draft store (`src/lib/editDrafts.ts`) in `capy-edit-drafts-msw-scenarios`. The seeded older
   lineage opens through the real recovery logic: the read-only draft and the
   banner's Reload. Reset clears only dedicated scenario drafts. Browser tests
   reload and read this database without replacing the storage functions.
@@ -177,7 +177,11 @@ one-shot development fault at the real runtime export operation and invokes
 that operation by switching to View. The iframe stays mounted. These previews
 do not verify a remote Office worker or a live collaboration socket.
 
-Offline previews drive Query's online status, not `navigator.onLine`. Use
+Offline previews drive Query's online status, not `navigator.onLine`. The
+collaboration mock does follow browser offline emulation (its note providers
+leave the room), and `setCollaborationReachable` and `moveMockMaterialRoom` in
+`src/mocks/collaboration.ts` drive the offline-editing journeys
+(`e2e/editor/offline-editing.spec.ts`). Use
 `e2e/errors/error-surfaces.spec.ts` for browser network emulation and
 `workers/site/src/index.test.ts` for server-rendered public summary errors.
 Neither is equivalent to an MSW response override.

@@ -10,6 +10,11 @@ export const MATERIAL_DOCUMENT_LIMITS = {
   maxNodes: 10_000,
 } as const;
 
+// A source room's state cap, which also bounds the edits a device holds while
+// offline. IMPORTANT: KEEP IN SYNC WITH MAX_SOURCE_STATE_BYTES IN
+// collaboration/src/sourceDocuments.ts
+export const SOURCE_STATE_MAX_BYTES = 100 * 1024 * 1024;
+
 /**
  * When to warn before opening a document, deliberately NOT derived from
  * MATERIAL_DOCUMENT_LIMITS. Those caps protect the collaboration service and

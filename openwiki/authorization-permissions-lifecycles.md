@@ -394,7 +394,11 @@ and [material editor checks](../server/internal/store/share.go#L209).
   acknowledgement. A negative or lost acknowledgement keeps the item retryable
   and replays a deduplicated eviction. Revocation,
   deletion, ownership/placement changes, plan downgrades, and account locks use
-  discard. Provably monotonic ACL changes use drain: they block new room
+  discard; a discard that throws unsaved room state away also moves the room
+  (a material's `room_schema`, a source's epoch) so a disconnected client
+  cannot resync it (see
+  [plate-editor.md](frontend/plate-editor.md#document-limits-and-rejection)).
+  Provably monotonic ACL changes use drain: they block new room
   traffic, persist accepted pending edits, and refuse acknowledgement when that
   final store fails. Account and plan restoration flushes pending stores but
   leaves the room loaded and every connection open. Workspace monotonicity compares

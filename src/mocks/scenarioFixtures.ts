@@ -1,13 +1,10 @@
 import type { Question, SourceFile, SourceSession } from '@/api/types';
 import {
-  clearSourceDrafts,
-  readSourceDrafts,
-} from '@/features/files/sourceDraft';
-import {
   createMaterialDocument,
   flashcardsNode,
   quizNode,
 } from '@/features/materials/document';
+import { deleteDocumentDrafts, draftKey } from '@/lib/editDrafts';
 import pdfURL from '../../e2e/fixtures/files/basic/digital.pdf?url';
 import xlsxURL from '../../e2e/fixtures/files/basic/grades.xlsx?url';
 import docxURL from '../../e2e/fixtures/files/basic/lesson.docx?url';
@@ -348,7 +345,7 @@ export async function resetScenarioFixtures(captureAccount: boolean) {
       .map((row) => row.id),
   ]);
   for (const fileId of fileIds) {
-    await clearSourceDrafts(await readSourceDrafts(`${db.user.id}:${fileId}`));
+    await deleteDocumentDrafts(draftKey(db.user.id, 'file', fileId));
     delete db.fileLinks[fileId];
     sessionStorage.removeItem(`capy.scenario.epoch.${fileId}`);
   }

@@ -232,7 +232,11 @@ leading icon and `text-fg` on a grey (info, ingest progress, newer version,
 maintenance pause) or red-tint (error) background, `role="status"` or
 `role="alert"` respectively. Its close button hides it until the message
 changes or the page remounts it. Actions are small ghost underlined buttons on a
-new line, aligned right. An Office or text source opened in edit mode while the
+new line, aligned right. The save banner uses its one-row form (`inline`): the
+message scrolls sideways without a visible scrollbar (`scroll-fade-x`, the
+note toolbar's scroller and `useHorizontalWheelScroll`), and its action takes
+the close button's place, so every save banner state has the same 40px
+height. An Office or text source opened in edit mode while the
 maintenance pause refuses the session falls back to view mode in the same frame
 and shows the pause as a grey strip. Office recovery and pause strips render
 directly under the file header, above the page-count row. The PDF annotation
@@ -321,7 +325,12 @@ not publish: view mode reads them from `source-session?view=true`
 (`savedSourceState` in `src/mocks/collaboration.ts`).
 
 Offline and reconnecting buttons only preview application status. Real network
-loss requires Playwright browser offline emulation; public summary failures
+loss requires Playwright browser offline emulation; the collaboration mock
+follows it (its providers leave the room while the browser is offline), and
+`setCollaborationReachable(false)` in `src/mocks/collaboration.ts` keeps the
+service unreachable across a reload, so a reopened editor waits for it.
+`moveMockMaterialRoom` moves a note's room to its next schema, as a discard
+or compaction does, for the lineage journey; public summary failures
 require the site worker tests. Feature-flagged pages keep their existing gates.
 When the application suppresses an error or a parent guard handles it first,
 the journey explains that behavior instead of inventing an inner error state.
@@ -351,9 +360,16 @@ server retries keeps the mounted editor and its pending receipts, shows Not
 saved and the save banner; the retry's receipt brings Saved back.
 
 The save banner (`SaveBanner`, `src/components/banners/SaveBanner.tsx`) is one
-error strip under the file or note header with one state at a time:
-`delayed` ("Saving is delayed. Your recent changes aren't saved yet.") and
-`recovery` (below). `delayed` shows on a server-reported failure with unsaved
+strip under the file or note header with one state at a time:
+`delayed` ("Saving is delayed. Your recent changes aren't saved yet."); the
+offline states (grey `offline`: "Can't connect to Capy. Your edits are saved
+on this device and will sync when you reconnect. They may be rejected or
+lost."; red `offline-unstored`: "Your edits can't be saved on this device.
+Keep this tab open until you reconnect."; grey `offline-limit`: "You've
+reached the offline edit limit for this file. Reconnect to keep editing.",
+see [plate-editor.md](plate-editor.md#offline-editing-and-drafts)); and the
+recovery states `refused` and `changed` (below). Offline takes over from
+`delayed` while the room cannot be reached, and recovery from both. `delayed` shows on a server-reported failure with unsaved
 work (`source-checkpoint-failed` recoverable, `checkpoint-failed`), and also
 when the client's oldest checkpoint request stays unanswered past a threshold,
 without waiting for the server's 60 to 120 s timeouts: `SOURCE_SAVE_DELAY_MS`
@@ -363,7 +379,8 @@ time only (`SaveDelayClock` in `src/features/notes/saveDelay.ts`). An edit is
 counted from the request that carries it, sent 1 s after typing stops. The
 banner stays until a receipt covers every change. Closing it hides it for that
 episode only; the next failure shows it again. A connection still lost after
-30 s shows only the header's red status, with no banner or toast.
+30 s puts an editor that synced once into offline mode; before the first sync
+it shows only the header's red status.
 
 A source save that fails slowly (an Office engine timeout or a dead worker, a
 checkpoint that moved again after the reload and merge, a network error or a
@@ -393,19 +410,23 @@ strips carry localized copy only. An epoch
 change reloads a fully acknowledged editor; unacknowledged edits instead enter
 recovery, as do drafts of another version found on open.
 
-Every recovery path (a save refused for good, a newer version over unsaved
-edits, a draft from another version) shows the `recovery` banner ("These
-changes couldn't be saved. Copy anything you need, then reload to continue
-from the last saved version."). The unsaved content stays on screen read-only
-and selectable, with no download or discard; a page refresh reopens the same
-view. The banner's Reload clears the drafts on display (checking versions, so
-another tab's newer write stays) and reopens the last saved version, after any
-other retained draft group. A text source shows the content in a read-only
+Every recovery path shows a recovery banner: a save refused for good the
+`refused` one ("These changes couldn't be saved. Copy anything you need, then
+reload to continue from the last saved version."), and edits from another
+lineage (a newer version over unsaved edits, a draft from another version, a
+note room that moved on) the `changed` one ("This file changed while your
+edits were waiting to sync. Copy anything you need, then reload."). The
+unsaved content stays on screen read-only and selectable, with no download or
+discard; a page refresh reopens the same view. A recovery banner has no close
+button: its Reload, in the close button's place, is the only way out. It
+clears the drafts on display (matching exact rows, so another tab's newer
+write stays) and reopens the last saved version, after any other retained
+draft group. Notes show the content through the static renderer
+(`NoteRecovery`). A text source shows the content in a read-only
 textarea. Office recovery sends `set-capabilities` with `selectable`, so the
 runtime hands the engine `readOnly` instead of making the editor inert: DOCX
-text and XLSX cells can be selected and copied, while PPTX slides can only be
-viewed (the PPTX engine has no copy yet). File › Download in the Office menus
-still exports what the editor shows.
+text, XLSX cells and PPTX slide text can be selected and copied. File ›
+Download in the Office menus still exports what the editor shows.
 Failed processing does not invalidate saved edits,
 and credits are required for processing rather than persistence.
 

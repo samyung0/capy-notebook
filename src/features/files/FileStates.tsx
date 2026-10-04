@@ -5,6 +5,7 @@ import {
   type FileBannerAction,
 } from '@/components/banners/FileBanner';
 import {
+  isRecoveryBanner,
   SaveBanner,
   type SaveBannerState,
 } from '@/components/banners/SaveBanner';
@@ -179,7 +180,7 @@ export function SourceBanners({
       {/* Recovery content is only copied: no download. */}
       {error && (
         <FileBanner
-          actions={banner === 'recovery' ? [] : actions}
+          actions={isRecoveryBanner(banner) ? [] : actions}
           message={error}
           tone="error"
         />

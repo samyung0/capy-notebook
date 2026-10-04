@@ -1,8 +1,10 @@
 import { Outlet, useRouterState } from '@tanstack/react-router';
 import { useEffect } from 'react';
-import { useEventStream } from '@/api/hooks';
+import { api } from '@/api/client';
+import { useEventStream, useMe } from '@/api/hooks';
 import { scheduleAutoScroll } from '@/features/schedule/scrollState';
 import { cn } from '@/lib/cn';
+import { sweepDraftsOnce } from '@/lib/editDrafts';
 import { AccountBlockedScreen } from './AccountBlockedScreen';
 import { Sidebar } from './Sidebar';
 
@@ -22,6 +24,13 @@ export function AppShell() {
   useEffect(() => {
     if (pathname !== '/schedule') scheduleAutoScroll.reset();
   }, [pathname]);
+
+  // Stored edits of documents this account no longer has go, once per load.
+  const { data: me } = useMe({ errorBoundary: false });
+  const actorId = me?.id;
+  useEffect(() => {
+    if (actorId) sweepDraftsOnce(actorId, api);
+  }, [actorId]);
 
   return (
     <div className="t-body relative flex h-dvh overflow-hidden bg-page text-fg">

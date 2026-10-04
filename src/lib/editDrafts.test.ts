@@ -8,8 +8,12 @@ import {
   draftGroups,
   type EditDraft,
   putDrafts,
+  readDraftBase,
   readDrafts,
   recordDrafts,
+  recoveryDocument,
+  sameSourceLineage,
+  sweepDrafts,
 } from './editDrafts';
 
 const ROOM = 'material:mat_1:schema:1';
@@ -51,6 +55,85 @@ describe('the draft store', () => {
     await deleteDocumentDrafts(key);
     expect(await readDrafts(key)).toEqual([]);
   });
+
+  it('keeps a source base once, until its last row goes', async () => {
+    const key = 'u_1:file:base';
+    const bytes = new Uint8Array([1, 2, 3]);
+    await putDrafts(
+      [draft('a', { base: 'sha', key }), draft('b', { base: 'sha', key })],
+      bytes
+    );
+    await deleteDrafts([{ id: 'a', key, seq: 1 }]);
+    expect(await readDraftBase(key, 'sha')).toEqual(bytes);
+    await deleteDrafts([{ id: 'b', key, seq: 1 }]);
+    expect(await readDraftBase(key, 'sha')).toBeUndefined();
+  });
+
+  it('sweeps the documents an account no longer has', async () => {
+    await putDrafts([
+      draft('kept', { key: 'u_sweep:material:kept' }),
+      draft('gone', { key: 'u_sweep:file:gone' }),
+      draft('other', { key: 'u_other:file:gone' }),
+    ]);
+    const checked: string[] = [];
+    await sweepDrafts('u_sweep', async (kind, id) => {
+      checked.push(`${kind}:${id}`);
+      return id === 'gone';
+    });
+    expect(checked.sort()).toEqual(['file:gone', 'material:kept']);
+    expect(await readDrafts('u_sweep:file:gone')).toEqual([]);
+    expect(await readDrafts('u_sweep:material:kept')).toHaveLength(1);
+    // Another account's rows are never checked.
+    expect(await readDrafts('u_other:file:gone')).toHaveLength(1);
+  });
+
+  it('copies the old source drafts over once and deletes their database', async () => {
+    const state = new Uint8Array([7]);
+    const base = new Uint8Array([9]);
+    await new Promise<void>((resolve, reject) => {
+      const opening = indexedDB.open('capy-source-drafts', 3);
+      opening.onupgradeneeded = () => {
+        const database = opening.result;
+        database.createObjectStore('sessionDrafts', { keyPath: 'id' });
+        database.createObjectStore('bases');
+      };
+      opening.onsuccess = () => {
+        const database = opening.result;
+        const transaction = database.transaction(
+          ['sessionDrafts', 'bases'],
+          'readwrite'
+        );
+        transaction.objectStore('sessionDrafts').put({
+          baseSourceSHA256: 'sha',
+          epoch: 4,
+          fileId: 'u_old:f_old',
+          id: 'old-session',
+          refused: true,
+          state,
+          version: 'v',
+        });
+        transaction.objectStore('bases').put(base, ['u_old:f_old', 'sha']);
+        transaction.oncomplete = () => {
+          database.close();
+          resolve();
+        };
+        transaction.onerror = () => reject(transaction.error);
+      };
+    });
+    vi.resetModules();
+    const fresh = await import('./editDrafts');
+    const [row] = await fresh.readDrafts('u_old:file:f_old');
+    expect(row).toMatchObject({
+      base: 'sha',
+      data: state,
+      kind: 'state',
+      lineage: 'source:f_old:epoch:4@sha',
+      refused: true,
+    });
+    expect(await fresh.readDraftBase('u_old:file:f_old', 'sha')).toEqual(base);
+    const names = (await indexedDB.databases()).map((entry) => entry.name);
+    expect(names).not.toContain('capy-source-drafts');
+  });
 });
 
 describe('lineage', () => {
@@ -72,6 +155,39 @@ describe('lineage', () => {
     );
     expect(later.current.map((row) => row.id)).toEqual([]);
     expect(later.recovery.map((row) => row.id)).toEqual(['refused']);
+  });
+
+  it('keeps same-epoch text drafts current across published base hashes', () => {
+    const text = sameSourceLineage('text');
+    const rows = [
+      draft('old-hash', { lineage: 'source:t:epoch:2@old' }),
+      draft('older-epoch', { lineage: 'source:t:epoch:1@old' }),
+    ];
+    const opened = draftGroups(rows, 'source:t:epoch:2@new', text);
+    expect(opened.current.map((row) => row.id)).toEqual(['old-hash']);
+    expect(opened.recovery.map((row) => row.id)).toEqual(['older-epoch']);
+    // Office compares the base too.
+    expect(
+      draftGroups(
+        rows,
+        'source:t:epoch:2@new',
+        sameSourceLineage('docx')
+      ).recovery.map((row) => row.id)
+    ).toEqual(['old-hash']);
+  });
+
+  it('cannot draw update rows whose base was never stored', () => {
+    const { client } = syncedClient('base');
+    let update: Uint8Array = new Uint8Array();
+    client.on('update', (next: Uint8Array) => {
+      update = next;
+    });
+    client.getText('content').insert(4, ' typed');
+    expect(recoveryDocument([draft('typed', { data: update })])).toBeNull();
+    const whole = recoveryDocument([
+      draft('state', { data: Y.encodeStateAsUpdate(client), kind: 'state' }),
+    ]);
+    expect(whole?.getText('content').toString()).toBe('base typed');
   });
 });
 
@@ -198,6 +314,32 @@ describe('recording a note session', () => {
     expect(text.getText('content').toString()).toBe(`y${'x'.repeat(100)}`);
     recorder.connected();
     expect(onLimit).toHaveBeenLastCalledWith(false);
+  });
+
+  it('reports a storage failure and its recovery, and keeps editing', async () => {
+    const key = 'u_1:material:storage';
+    const onStorage = vi.fn();
+    const { client } = syncedClient('');
+    const recorder = recordDrafts({
+      doc: client,
+      ignore: (origin) => origin === REMOTE,
+      key,
+      limitBytes: 1024 * 1024,
+      lineage: ROOM,
+      onStorage,
+    });
+    const put = vi
+      .spyOn(IDBObjectStore.prototype, 'put')
+      .mockImplementation(() => {
+        throw new DOMException('full', 'QuotaExceededError');
+      });
+    client.getText('content').insert(0, 'a');
+    await recorder.flush();
+    expect(onStorage).toHaveBeenLastCalledWith(false);
+    put.mockRestore();
+    client.getText('content').insert(1, 'b');
+    await recorder.flush();
+    expect(onStorage).toHaveBeenLastCalledWith(true);
   });
 
   it('keeps a refused session as one whole refused document', async () => {

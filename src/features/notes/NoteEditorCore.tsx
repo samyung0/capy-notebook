@@ -37,6 +37,12 @@ import { NoteToolbar } from '@/features/notes/toolbar/NoteToolbar';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { MATERIAL_DOCUMENT_LIMITS } from '@/lib/const';
+import {
+  applyDrafts,
+  type DraftRecorder,
+  type EditDraft,
+  recordDrafts,
+} from '@/lib/editDrafts';
 import { editorAiEnabled } from '@/lib/features';
 import { AiMenu } from './ai/AiMenu';
 import { NoteBlockDialogsProvider } from './blocks/dialogContext';
@@ -78,6 +84,10 @@ import {
 import { NOTE_SAVE_DELAY_MS, SaveDelayClock } from './saveDelay';
 
 const CHECKPOINT_DEBOUNCE_MS = 1000;
+const RESTORE_ORIGIN = Symbol('restore');
+
+/** The save banner while the room cannot be reached. */
+export type NoteOfflineState = 'offline' | 'offline-unstored' | 'offline-limit';
 
 interface StatelessProviderWrapper {
   isConnected: boolean;
@@ -207,9 +217,12 @@ function NoteEditorSurface({ children, ...props }: ComponentProps<'div'>) {
  */
 const NoteEditorContent = memo(function NoteEditorContent({
   discussions,
+  readOnly,
   shouldShowStats,
 }: {
   discussions: NonNullable<ReturnType<typeof useMaterialDiscussions>['data']>;
+  /** Offline past what this device may hold: no more edits until reconnect. */
+  readOnly: boolean;
   shouldShowStats: boolean;
 }) {
   const editor = useEditorRef();
@@ -285,6 +298,7 @@ const NoteEditorContent = memo(function NoteEditorContent({
         decorate={decorate}
         onKeyDown={onKeyDown}
         placeholder={showEditorPlaceholder ? m.editor_placeholder() : undefined}
+        readOnly={readOnly}
         scrollSelectionIntoView={scrollSelectionIntoView}
         spellCheck={false}
       />
@@ -318,8 +332,11 @@ export function NoteEditorCore({
   currentUserId,
   currentUserName,
   collaborationToken,
+  draftKey,
+  restored,
   onEditorStatusChange,
   onDocumentRejected,
+  onOffline,
   onReadOnly,
   onSaveDelayed,
   onUnavailable,
@@ -330,14 +347,24 @@ export function NoteEditorCore({
   currentUserId: string;
   currentUserName: string;
   collaborationToken: MaterialCollaborationToken;
+  /** Where this editor's unsaved work is stored (editDrafts). */
+  draftKey: string;
+  /** Stored edits of this room's lineage (a reload, another tab): applied
+   * before the room connects, then synced and saved like any edit. */
+  restored: EditDraft[];
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
   /** The room refused this editor's copy for good (a limit, an invalid
    * document, or an update from a writer who lost access): the caller
-   * remounts onto the last saved version. `lostEdits`: unsaved work went. */
+   * remounts onto the last saved version. Unsaved edits are `kept` as a
+   * refused draft (the remount shows them for copying), or `lost` when this
+   * device could not store them. */
   onDocumentRejected?: (
     code: MaterialLimitCode | 'invalid_document' | 'revoked',
-    lostEdits: boolean
+    edits: 'none' | 'kept' | 'lost'
   ) => void;
+  /** The room cannot be reached and edits stay on this device (the banner to
+   * show), or null once it syncs again. */
+  onOffline?: (state: NoteOfflineState | null) => void;
   /** The room turned read-only (a frozen account or an owner at its storage
    * limit): the caller drops to view, discarding unsaved edits. */
   onReadOnly?: () => void;
@@ -356,8 +383,15 @@ export function NoteEditorCore({
   const checkpointTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Every unacknowledged receipt has to be tracked: a second edit before the
   // service answers the first must not orphan the earlier request.
-  const pendingCheckpoints = useRef(new Set<string>());
-  const unsavedChanges = useRef(false);
+  // Each request's local edit count, so a receipt covers the stored drafts.
+  const pendingCheckpoints = useRef(new Map<string, number>());
+  const unsavedChanges = useRef(restored.length > 0);
+  const recorder = useRef<DraftRecorder | null>(null);
+  // The room is unreachable: the editor keeps editing on this device.
+  const offlineMode = useRef(false);
+  const storageOk = useRef(true);
+  const overLimit = useRef(false);
+  const [offlineLimit, setOfflineLimit] = useState(false);
   const rejected = useRef(false);
   // After the first sync a dropped connection keeps the editor on screen.
   const hasSynced = useRef(false);
@@ -438,6 +472,28 @@ export function NoteEditorCore({
   );
   useEffect(() => () => saveDelay.dispose(), [saveDelay]);
   const reportUnavailable = useRef(onUnavailable);
+  const reportOffline = useRef(onOffline);
+  const showOffline = useCallback(() => {
+    if (!offlineMode.current) return;
+    reportOffline.current?.(
+      overLimit.current
+        ? 'offline-limit'
+        : storageOk.current
+          ? 'offline'
+          : 'offline-unstored'
+    );
+  }, []);
+  // Reconnecting kept failing or the browser went offline after the first
+  // sync: edits go on, stored on this device, until the room syncs again.
+  const goOffline = useCallback(() => {
+    if (rejected.current || !hasSynced.current || offlineMode.current) return;
+    offlineMode.current = true;
+    setStatus('offline');
+    recorder.current?.disconnected();
+    showOffline();
+  }, [setStatus, showOffline]);
+  const goOfflineNow = useRef(goOffline);
+  goOfflineNow.current = goOffline;
   // Set once the editor exists; reports a room that turned read-only once.
   const readOnlyNow = useRef(() => {});
   const projectionStale = useRef(false);
@@ -467,11 +523,18 @@ export function NoteEditorCore({
             ? `${materialLimitMessage(event.limitCode)} ${m.editor_limit_remove_only()}`
             : null
         );
-        let acknowledged = false;
-        for (const id of event.checkpointIds) {
-          if (pendingCheckpoints.current.delete(id)) acknowledged = true;
+        // A receipt also answers earlier requests it covers (one sent while
+        // offline, say), and deletes the stored drafts it covers.
+        let covered = -1;
+        for (const id of event.checkpointIds)
+          covered = Math.max(covered, pendingCheckpoints.current.get(id) ?? -1);
+        const acknowledged = covered >= 0;
+        if (acknowledged) {
+          for (const [id, sequence] of pendingCheckpoints.current)
+            if (sequence <= covered) pendingCheckpoints.current.delete(id);
+          void recorder.current?.covered(covered);
         }
-        saveDelay.retain(pendingCheckpoints.current);
+        saveDelay.retain(pendingCheckpoints.current.keys());
         if (!hasUnsavedWork()) reportSaveDelayed.current?.(false);
         if (
           acknowledged &&
@@ -503,13 +566,16 @@ export function NoteEditorCore({
       ) {
         if (rejected.current) return;
         rejected.current = true;
-        const lostEdits = hasUnsavedWork();
+        // Unsaved edits are kept as one refused draft: the remount shows
+        // them read-only for copying, never merged back.
+        const unsaved = hasUnsavedWork() || !!recorder.current?.unsaved;
+        if (unsaved) recorder.current?.refuse();
         pendingCheckpoints.current.clear();
         saveDelay.retain([]);
         setStatus('error');
         reportRejection.current?.(
           event.type === 'document-rejected' ? event.code : 'revoked',
-          lostEdits
+          unsaved ? (storageOk.current ? 'kept' : 'lost') : 'none'
         );
         return;
       }
@@ -580,8 +646,10 @@ export function NoteEditorCore({
           onDisconnect: () => {
             saveDelay.disconnected();
             reconnector.current?.disconnected();
-            if (navigator.onLine) connecting();
-            else setStatus('offline');
+            if (!navigator.onLine) {
+              if (hasSynced.current) goOfflineNow.current();
+              else setStatus('offline');
+            } else if (!offlineMode.current) connecting();
           },
           onError: ({ error }) => {
             console.warn('Yjs collaboration provider error:', error);
@@ -592,13 +660,20 @@ export function NoteEditorCore({
             hasSynced.current = true;
             reconnector.current?.connected();
             saveDelay.connected();
+            if (offlineMode.current) {
+              offlineMode.current = false;
+              recorder.current?.connected();
+              reportOffline.current?.(null);
+            }
             setStatus(
               unsavedChanges.current || pendingCheckpoints.current.size > 0
                 ? 'syncing'
                 : 'synced'
             );
-            // Receipts requested while offline never reached the service.
+            // Receipts requested while offline never reached the service,
+            // and restored edits have none yet.
             resendCheckpoints.current();
+            if (unsavedChanges.current) saveNow.current();
           },
           providers: [
             USE_MSW
@@ -626,7 +701,10 @@ export function NoteEditorCore({
                       if (refusal === 'readOnly') readOnlyNow.current();
                       else if (refusal === 'retry')
                         reconnector.current?.refused();
-                      else reportUnavailable.current?.(refusal);
+                      else {
+                        void recorder.current?.discard();
+                        reportUnavailable.current?.(refusal);
+                      }
                     },
                     onClose: () => {
                       reconnector.current?.closed(
@@ -713,10 +791,46 @@ export function NoteEditorCore({
   const editorRef = useRef(editor);
   editorRef.current = editor;
 
+  // Unsaved work is written to this device as it happens and deleted by the
+  // receipts that cover it. Restored edits go in first, before the room
+  // connects (init waits a task), and count as unsaved.
+  useEffect(() => {
+    applyDrafts(ydoc, restored, RESTORE_ORIGIN);
+    const current = recordDrafts({
+      adopted: restored,
+      doc: ydoc,
+      ignore: (origin) => {
+        if (origin === RESTORE_ORIGIN) return true;
+        const room = roomProvider(editorRef.current);
+        return !!room && (origin === room || origin === room.provider);
+      },
+      key: draftKey,
+      limitBytes: MATERIAL_DOCUMENT_LIMITS.maxContentBytes,
+      lineage: collaborationToken.room,
+      onLimit: (over) => {
+        overLimit.current = over;
+        setOfflineLimit(over);
+        showOffline();
+      },
+      onStorage: (ok) => {
+        storageOk.current = ok;
+        showOffline();
+      },
+    });
+    recorder.current = current;
+    return () => {
+      void current.dispose();
+      if (recorder.current === current) recorder.current = null;
+    };
+  }, [ydoc]);
+
   useEffect(() => {
     const current = roomReconnector({
-      // The header's status says the connection is lost.
-      onStuck: () => setStatus('error'),
+      // Lost for good before the first sync: nothing to edit offline.
+      onStuck: () => {
+        if (hasSynced.current) goOfflineNow.current();
+        else setStatus('error');
+      },
       provider: () =>
         rejected.current ? null : roomProvider(editor)?.provider,
     });
@@ -767,11 +881,13 @@ export function NoteEditorCore({
       if (reportedStatus.current !== 'offline') return;
       if (roomProvider(editor)?.isSynced)
         setStatus(hasUnsavedWork() ? 'syncing' : 'synced');
-      else connecting();
+      // Offline mode lasts until the room syncs again.
+      else if (!offlineMode.current) connecting();
     };
     const offline = () => {
       saveDelay.disconnected();
-      setStatus('offline');
+      if (hasSynced.current) goOfflineNow.current();
+      else setStatus('offline');
     };
     window.addEventListener('online', online);
     window.addEventListener('offline', offline);
@@ -789,7 +905,7 @@ export function NoteEditorCore({
     if (!unsavedChanges.current && pendingCheckpoints.current.size === 0)
       return;
     const id = crypto.randomUUID();
-    pendingCheckpoints.current.add(id);
+    pendingCheckpoints.current.set(id, recorder.current?.sequence ?? 0);
     saveDelay.requested(id);
     unsavedChanges.current = false;
     // Enter the pending state before dispatching: a provider that answers
@@ -818,7 +934,7 @@ export function NoteEditorCore({
   }, [requestCheckpoint]);
 
   const resendPendingCheckpoints = useCallback(() => {
-    for (const id of pendingCheckpoints.current) {
+    for (const id of pendingCheckpoints.current.keys()) {
       sendCheckpointRequest(editor, id);
     }
   }, [editor]);
@@ -827,16 +943,20 @@ export function NoteEditorCore({
     reportRejection.current = onDocumentRejected;
     reportSaveDelayed.current = onSaveDelayed;
     reportUnavailable.current = onUnavailable;
+    reportOffline.current = onOffline;
     let reported = false;
     readOnlyNow.current = () => {
       if (reported) return;
       reported = true;
+      // The room refused the unsaved edits: they are discarded.
+      void recorder.current?.discard();
       onReadOnly?.();
     };
     resendCheckpoints.current = resendPendingCheckpoints;
     saveNow.current = saveImmediately;
   }, [
     onDocumentRejected,
+    onOffline,
     onReadOnly,
     onSaveDelayed,
     onUnavailable,
@@ -868,6 +988,7 @@ export function NoteEditorCore({
                     <EditorScrollAreaContext.Provider value={scrollArea}>
                       <NoteEditorContent
                         discussions={discussions}
+                        readOnly={offlineLimit}
                         shouldShowStats={shouldShowDocumentStats(documentStats)}
                       />
                     </EditorScrollAreaContext.Provider>

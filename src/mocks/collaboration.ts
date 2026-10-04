@@ -337,6 +337,65 @@ export function join(room: Room, participant: Participant) {
   };
 }
 
+// The collaboration service as the browser reaches it: not while offline,
+// nor while a journey marks it unreachable (kept across a reload, so a
+// reopened editor can wait for it).
+const UNREACHABLE = 'capy.mock.collaboration.unreachable';
+const REACHABILITY = 'capy:mock-collaboration-reachability';
+// Unit tests run without a window: always reachable there.
+const browser = typeof window !== 'undefined';
+function reachable() {
+  return (
+    !browser ||
+    (navigator.onLine && sessionStorage.getItem(UNREACHABLE) !== 'true')
+  );
+}
+export function setCollaborationReachable(value: boolean) {
+  if (value) sessionStorage.removeItem(UNREACHABLE);
+  else sessionStorage.setItem(UNREACHABLE, 'true');
+  window.dispatchEvent(new Event(REACHABILITY));
+}
+
+// A note's current room schema, as the service's material_yjs_documents
+// row names it (1 until a room moves).
+const SCHEMA = 'capy.scenario.schema.';
+export function mockMaterialRoom(materialId: string) {
+  const schema = browser
+    ? Number(sessionStorage.getItem(`${SCHEMA}${materialId}`) ?? 1)
+    : 1;
+  return `material:${materialId}:schema:${schema}`;
+}
+
+/**
+ * The service moved a note's room to its next schema while a client was
+ * away: a discard of unsaved room state keeps the saved state (`keepState`),
+ * a compaction reseeds it from the projection with fresh identities.
+ */
+export function moveMockMaterialRoom(materialId: string, keepState: boolean) {
+  const old = mockMaterialRoom(materialId);
+  const schema = Number(old.split(':').at(-1)) + 1;
+  const next = `material:${materialId}:schema:${schema}`;
+  sessionStorage.setItem(`${SCHEMA}${materialId}`, String(schema));
+  const live = rooms.get(old);
+  if (live) {
+    if (live.dirty) checkpointRoom(live);
+    if (!live.participants.size) {
+      rooms.delete(old);
+      live.document.destroy();
+    }
+    live.retired = true;
+  }
+  const saved = checkpoints.get(old);
+  if (keepState && saved) {
+    checkpoints.set(next, {
+      updates: [...saved.updates],
+      version: saved.version,
+    });
+    const stored = sessionStorage.getItem(`capy.scenario.room.${old}`);
+    if (stored) sessionStorage.setItem(`capy.scenario.room.${next}`, stored);
+  }
+}
+
 interface MockCollaborationOptions {
   initialValue: MaterialValue;
   materialId: string;
@@ -361,6 +420,12 @@ class MockCollaborationProvider implements UnifiedProvider {
   private readonly options: MockCollaborationOptions;
   private room?: Room;
   private leave?: () => void;
+  // Connected unless disconnected on purpose: a lost service reconnects.
+  private wanted = false;
+  private readonly onReachability = () => {
+    if (!reachable()) this.drop();
+    else if (this.wanted) this.connect();
+  };
 
   constructor({
     awareness,
@@ -381,10 +446,22 @@ class MockCollaborationProvider implements UnifiedProvider {
     this.onError = onError;
     this.onSyncChange = onSyncChange;
     this.options = options;
+    if (browser)
+      for (const type of ['online', 'offline', REACHABILITY])
+        window.addEventListener(type, this.onReachability);
   }
 
   connect = () => {
-    if (this.isConnected) return;
+    this.wanted = true;
+    if (this.isConnected || !reachable()) return;
+    // The room moved while this editor was away: its token request names the
+    // new room, and the editor remounts onto it (NoteEditorCore's token()).
+    if (this.options.name !== mockMaterialRoom(this.options.materialId)) {
+      void queryClient.invalidateQueries({
+        queryKey: ['material', this.options.materialId, 'collaboration-token'],
+      });
+      return;
+    }
     const room = materialRoom(this.options.name, this.options.initialValue);
     this.room = room;
     materialProviders.add(this);
@@ -400,6 +477,11 @@ class MockCollaborationProvider implements UnifiedProvider {
   };
 
   disconnect = () => {
+    this.wanted = false;
+    this.drop();
+  };
+
+  private drop() {
     if (!this.isConnected) return;
     materialProviders.delete(this);
     this.leave?.();
@@ -409,9 +491,14 @@ class MockCollaborationProvider implements UnifiedProvider {
     this.isSynced = false;
     this.onSyncChange?.(false);
     this.onDisconnect?.();
-  };
+  }
 
-  destroy = () => this.disconnect();
+  destroy = () => {
+    if (browser)
+      for (const type of ['online', 'offline', REACHABILITY])
+        window.removeEventListener(type, this.onReachability);
+    this.disconnect();
+  };
 
   announceReadOnly() {
     // The service refused this writer's pending update: nothing after the
@@ -606,7 +693,9 @@ export function resetScenarioRooms() {
     if (name.includes(':mock-scenario-')) checkpoints.delete(name);
   }
   for (const key of Object.keys(sessionStorage))
-    if (key.startsWith('capy.scenario.room.')) sessionStorage.removeItem(key);
+    if (key.startsWith('capy.scenario.room.') || key.startsWith(SCHEMA))
+      sessionStorage.removeItem(key);
+  sessionStorage.removeItem(UNREACHABLE);
 }
 
 export function registerMockCollaborationProvider() {

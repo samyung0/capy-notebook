@@ -191,6 +191,7 @@ export function SourceTextView({
                 !canEdit ||
                 source.handoff ||
                 source.replaced ||
+                source.offlineLimit ||
                 source.status === 'recovery'
               }
               registerFlush={source.flushHandler}

@@ -370,6 +370,7 @@ export function useOfficeRuntime({
     canEdit &&
     !source.handoff &&
     !source.replaced &&
+    !source.offlineLimit &&
     source.status !== 'recovery' &&
     (mode !== 'edit' ||
       (!!source.doc && !source.discarding && source.status !== 'connecting'));

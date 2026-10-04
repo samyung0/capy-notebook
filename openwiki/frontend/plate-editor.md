@@ -362,9 +362,11 @@ The editor reports:
 - `Synced`: the initial room sync completed with no local work pending;
 - `Saved`: the sidecar confirmed that a state containing this client's work was
   committed;
-- `Offline`: the browser is offline;
+- `Offline`: the room cannot be reached (the browser is offline, or
+  reconnecting kept failing for 30 s); an editor that synced once keeps
+  editing on this device (see [Offline editing](#offline-editing-and-drafts));
 - `Not saved. Retrying…`: a store failed and the sidecar is retrying it;
-- `Collaboration unavailable`: reconnecting kept failing for 30 s, or the
+- `Collaboration unavailable`: the first connection never synced, or the
   provider could not start.
 
 The header shows these as Hugeicons cloud icons beside the title: Sync for
@@ -391,7 +393,8 @@ under the read-only strip, `collaboration-not-found` (trashed or deleted) and
 `collaboration-forbidden` (lost access) replace the editor with the
 file-missing or no-access panel, and anything else (an expired token, a room
 being reset or compacted) is retried. A loss still unresolved after 30 s while
-online turns the status red. A failed first token request shows the panel for its status (not found,
+online puts an editor that synced once into offline mode (before the first
+sync it turns the status red). A failed first token request shows the panel for its status (not found,
 no access, or unavailable with Retry).
 
 A transient store failure broadcasts `checkpoint-failed`; the editor keeps its
@@ -433,6 +436,58 @@ relational metadata and standalone sharing use separate endpoints so a privacy
 or metadata failure cannot be reported as though it rolled back an
 already-durable Yjs command.
 
+## Offline editing and drafts
+
+An editor that can edit keeps editing while its room cannot be reached: the
+browser went offline, or reconnecting failed for 30 s. Its header shows
+Offline and the `offline` save banner reads "Can't connect to Capy. Your edits
+are saved on this device and will sync when you reconnect. They may be
+rejected or lost." until the room syncs again. Read-only viewers and View
+mode never join a room and are unchanged; opening the app offline is not
+supported.
+
+Unsaved work lives in IndexedDB (`src/lib/editDrafts.ts`, database
+`capy-edit-drafts`, shared with Office and text sources). Each editor mount is
+a session; its local Yjs updates (origin neither the room provider nor a
+restore) are merged and written every 250 ms as `update` rows, and once per
+offline episode (and at unmount or `pagehide` with unsaved work) the whole
+document is written as a `state` row, the base later updates need when they
+open in recovery. Encoding a near-limit note takes 30–80 ms, too slow to write
+the whole state as often as sources do. Each row carries its lineage, the
+room name the token named (`material:<id>:schema:<n>`). Rows are deleted only
+by checkpoint receipts: each request records the session's edit count, and a
+receipt deletes the rows it covers (it also answers earlier requests it
+covers, such as one sent while offline). The room's sync alone never deletes
+them. Deletes match the exact row, so another tab's newer write survives.
+
+On reconnect the provider's normal sync sends the unsent updates. The server
+answers a client's step 1 with its own step 1 and handles a connection's
+messages in order, so the step 2 carrying them lands before the checkpoint
+request the editor resends at `synced` (`provider-compat.test.ts`). On the
+next open of the note `NoteEditor` reads its rows beside the token: rows of
+the token's room are applied before the room connects (updates whose base is
+missing stay pending until the sync brings it) and saved like any edit; rows
+of another room, and refused rows, open read-only in copy-only recovery
+(`NoteRecovery`: the static renderer under a `changed` or `refused` banner
+whose Reload deletes them, one group at a time). A group with no `state` row
+cannot be drawn (a tab closed online, then the room moved): it is dropped
+with "Some unsaved edits from your last session couldn't be restored."
+
+While offline a session may hold up to `maxContentBytes` (2 MiB) of unsaved
+local updates; past that the editor turns read-only under the `offline-limit`
+banner until it reconnects, and nothing is dropped. When storage fails
+(private mode, a full disk) editing continues in memory under the
+`offline-unstored` banner. `navigator.storage.persist()` is asked once, at the
+first row written while offline, except on Firefox, which prompts. Safari
+deletes script storage of a site not visited for 7 days, and private windows
+delete it on close. Rows of a note the account no longer has go on a 403/404
+(token, refusal) and in a once-per-load idle sweep that asks each stored
+document's token endpoint.
+
+The lineage moves whenever the server throws away room state a client may
+hold (see below), so stored or in-memory edits from another lineage are never
+merged into a live note.
+
 ## Document limits and rejection
 
 The collaboration service owns limit enforcement; the browser never measures the
@@ -467,13 +522,31 @@ mean it silently never persists again. A structurally invalid snapshot is
 discarded the same way (`document-rejected` with code `invalid_document`), and
 an `authorization-revoked` eviction makes every editor drop its copy too.
 `NoteEditor` responds by remounting `NoteEditorCore` under a new generation
-key, which reconnects onto the last durable state; a limit shows the
-too-large toast, the others the changes-undone toast when unsaved work was lost. Invalidating the collaboration token alone is not enough, because
+key, which reconnects onto the last durable state. Unsaved edits are kept as
+one refused draft first, so the remount shows them read-only for copying until
+Reload; a limit also shows the too-large toast, and only edits this device
+could not store end in the changes-undone toast. Invalidating the collaboration token alone is not enough, because
 an unchanged room string leaves the editor mounted on its forked document.
 Failed-store retries use the same terminal path. If a queued snapshot later
 fails a document or quota limit, the sidecar drops it, broadcasts the rejection
 when the room is still live, and discard-evicts the room back to durable Yjs
 state.
+
+A discard reloads the room from durable state, and a client disconnected at
+that moment still holds what was thrown away: resyncing it would bring it back
+attributed to that client. So a discard that threw anything away moves the
+room to the next `room_schema` after the unload and before the room opens
+again (`evictLocalRoom`, `discardMovesLineage` in `eviction.ts`,
+`resetLineage` in `persistence.ts`): one a store-time rejection started, or
+one whose room held a writer's unsaved update (a contributor marker) or a
+failed snapshot. A clean room keeps its name, so offline editors of it still
+sync. If the move fails, the room stays refused and the discard is retried.
+Tokens, outbox events and commands already resolve the current schema, and
+`load`/`store` refuse a stale one, so a stale client sees another room before
+it syncs anything and opens copy-only recovery; item identities do not change,
+so comment anchors and AI Undo guards stay valid. A co-editor still connected
+during such a discard, with a few seconds of unsaved typing, lands in recovery
+too (Epo, 2026-10-04).
 
 Connection admission, token refresh, and each durable store also re-read actor
 lifecycle, membership/share role, owner lifecycle, and quota state from

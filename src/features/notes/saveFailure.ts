@@ -11,3 +11,13 @@ export function toastSaveUndone() {
     variant: 'error',
   });
 }
+
+/** Stored edits from an earlier visit had nothing to draw them over (a tab
+ * closed online, then the file moved on) and were dropped. */
+export function toastDraftsLost() {
+  userToast({
+    id: 'drafts-lost',
+    title: m.editor_drafts_lost(),
+    variant: 'error',
+  });
+}

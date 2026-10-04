@@ -3,9 +3,9 @@ import * as Y from 'yjs';
 import { qk } from '@/api/client';
 import { queryClient } from '@/api/queryClient';
 import type { MockDialogId } from '@/components/dev/mockDialogOptions';
-import { writeSourceDraft } from '@/features/files/sourceDraft';
 import { decodeSourceState } from '@/features/files/useSourceSession';
 import { m } from '@/i18n';
+import { draftKey, putDrafts, sourceLineage } from '@/lib/editDrafts';
 import { features } from '@/lib/features';
 import { router } from '@/router';
 import { worker } from './browser';
@@ -259,15 +259,20 @@ export async function runJourney(
     doc
       .getText('source')
       .insert(doc.getText('source').length, `\n${scenarioMarker}`);
-    await writeSourceDraft(
-      {
-        baseSourceSHA256: session.baseSourceSHA256,
-        epoch: session.epoch,
-        fileId: `${db.user.id}:${scenarioText}`,
-        id: 'mock-scenario-recovered',
-        state: Y.encodeStateAsUpdate(doc),
-        version: crypto.randomUUID(),
-      },
+    await putDrafts(
+      [
+        {
+          base: session.baseSourceSHA256,
+          data: Y.encodeStateAsUpdate(doc),
+          id: 'mock-scenario-recovered:state',
+          key: draftKey(db.user.id, 'file', scenarioText),
+          kind: 'state',
+          lineage: sourceLineage(session),
+          savedAt: Date.now(),
+          seq: 1,
+          session: 'mock-scenario-recovered',
+        },
+      ],
       new TextEncoder().encode('A source for trying application errors.\n')
     );
     doc.destroy();

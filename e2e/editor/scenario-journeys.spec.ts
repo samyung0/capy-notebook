@@ -74,20 +74,24 @@ test('one click fails a real source save and retry preserves the mounted editor'
 // Every recovery path (a save refused for good, a replaced session, a draft
 // from another version) leaves the edits on screen read-only for copying,
 // with no download or discard; a page reload keeps them until Reload.
-for (const id of [
-  'source-replaced',
-  'source-draft-recovery',
-  'source-save-refused',
-]) {
+const refusedCopy =
+  "These changes couldn't be saved. Copy anything you need, then reload to continue from the last saved version.";
+const changedCopy =
+  'This file changed while your edits were waiting to sync. Copy anything you need, then reload.';
+for (const [id, copy] of [
+  ['source-replaced', changedCopy],
+  ['source-draft-recovery', changedCopy],
+  ['source-save-refused', refusedCopy],
+] as const) {
   test(`${id} shows the edits for copying until Reload`, async ({ page }) => {
     await launch(page, id);
     const draft = page.locator('textarea[readonly]');
     const banner = page.getByTestId('save-banner');
     const shown = async () => {
       await expect(draft).toHaveValue(new RegExp(marker), { timeout: 30_000 });
-      await expect(banner).toContainText(
-        "These changes couldn't be saved. Copy anything you need, then reload to continue from the last saved version."
-      );
+      await expect(banner).toContainText(copy);
+      // Reload replaces the close button: recovery cannot be dismissed.
+      await expect(banner.getByRole('button')).toHaveText(['Reload']);
       for (const name of ['Download draft', 'Discard this draft'])
         await expect(
           page.getByRole('button', { exact: true, name })
@@ -120,12 +124,13 @@ for (const id of [
     await expect
       .poll(() =>
         page.evaluate(async () => {
-          const modulePath = '/src/features/files/sourceDraft.ts';
+          const modulePath = '/src/lib/editDrafts.ts';
           const dbPath = '/src/mocks/db.ts';
-          const { readSourceDrafts } = await import(modulePath);
+          const { draftKey, readDrafts } = await import(modulePath);
           const { user } = await import(dbPath);
-          return (await readSourceDrafts(`${user.id}:mock-scenario-text`))
-            .length;
+          return (
+            await readDrafts(draftKey(user.id, 'file', 'mock-scenario-text'))
+          ).length;
         })
       )
       .toBe(0);
@@ -188,6 +193,55 @@ test('a refused DOCX save keeps the edit copyable until Reload', async ({
   await expect(banner).toContainText("These changes couldn't be saved.", {
     timeout: 60_000,
   });
+  await banner.getByRole('button', { exact: true, name: 'Reload' }).click();
+  await expect(banner).toHaveCount(0);
+  await expect(page.getByTestId('editor-save-state')).toHaveText('Saved', {
+    timeout: 60_000,
+  });
+});
+
+// PPTX recovery copies too: the engine's read-only mode still selects and
+// copies slide text.
+test('a refused PPTX save keeps the slide text copyable until Reload', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await launch(page, 'office-pptx-save');
+  await page.evaluate(async () => {
+    const modulePath = '/src/mocks/collaboration.ts';
+    const { refuseNextSourceSave } = await import(modulePath);
+    refuseNextSourceSave('mock-scenario-pptx');
+  });
+  await saveOffice(page);
+  const banner = page.getByTestId('save-banner');
+  await expect(banner).toContainText(refusedCopy);
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  const input = frame.getByTestId('pptx-text-input');
+  await expect(input).toHaveAttribute('readonly', '');
+  const copied = frame
+    .locator('body')
+    .evaluate(
+      () =>
+        new Promise<string>((resolve) =>
+          window.addEventListener(
+            'copy',
+            (event) =>
+              resolve(event.clipboardData?.getData('text/plain') ?? ''),
+            { once: true }
+          )
+        )
+    );
+  // The edit opens the first text box (lesson.pptx: 10%–90% across, its
+  // first line at about 16% down the slide); drag across that line.
+  const canvas = frame.getByTestId('pptx-slide-canvas');
+  const box = (await canvas.boundingBox())!;
+  const y = box.y + box.height * 0.16;
+  await page.mouse.move(box.x + box.width * 0.11, y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.89, y, { steps: 8 });
+  await page.mouse.up();
+  await page.keyboard.press('ControlOrMeta+C');
+  expect(await copied).toContain(marker);
   await banner.getByRole('button', { exact: true, name: 'Reload' }).click();
   await expect(banner).toHaveCount(0);
   await expect(page.getByTestId('editor-save-state')).toHaveText('Saved', {

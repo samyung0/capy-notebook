@@ -54,6 +54,7 @@ import { getFileKind } from '@/features/workspace/sourceUpload';
 import { DEV_SHARE_LINK_SECRET, sharePath } from '@/lib/shareLink';
 import { mockChatStream } from './chatStream';
 import {
+  mockMaterialRoom,
   savedSourceState,
   sourceRoom,
   sourceRoomName,
@@ -1887,7 +1888,7 @@ export const handlers = [
       {
         access: 'write',
         expiresAt: Math.floor(Date.now() / 1000) + 5 * 60,
-        room: `material:${material.id}:schema:1`,
+        room: mockMaterialRoom(material.id),
         token: 'mock-collaboration-token',
         url: 'mock://collaboration',
       },

@@ -4,7 +4,10 @@ import * as Y from 'yjs';
 import { api, isApiError, qk } from '@/api/client';
 import { useMe } from '@/api/hooks';
 import type { SourceCollaborationToken, SourceSession } from '@/api/types';
-import type { SaveBannerState } from '@/components/banners/SaveBanner';
+import {
+  isRecoveryBanner,
+  type SaveBannerState,
+} from '@/components/banners/SaveBanner';
 import { COLLABORATION_READ_ONLY_REASON } from '@/features/notes/collaborationEvents';
 import type { NoteEditorSaveState } from '@/features/notes/editorMode';
 import {
@@ -16,17 +19,23 @@ import {
   SaveDelayClock,
   SOURCE_SAVE_DELAY_MS,
 } from '@/features/notes/saveDelay';
-import { toastSaveUndone } from '@/features/notes/saveFailure';
+import { toastDraftsLost, toastSaveUndone } from '@/features/notes/saveFailure';
 import { m } from '@/i18n';
-import { CopyError, errorCopy } from '@/lib/errors';
+import { SOURCE_STATE_MAX_BYTES } from '@/lib/const';
 import {
-  clearSourceDrafts,
-  readSourceBase,
-  readSourceDrafts,
-  type SourceDraft,
-  sourceRecoveryDrafts,
-  writeSourceDraft,
-} from './sourceDraft';
+  type DraftRecorder,
+  deleteDocumentDrafts,
+  deleteDrafts,
+  draftKey as documentDraftKey,
+  draftGroups,
+  type EditDraft,
+  readDraftBase,
+  readDrafts,
+  recordDrafts,
+  sameSourceLineage,
+  sourceLineage,
+} from '@/lib/editDrafts';
+import { CopyError, errorCopy } from '@/lib/errors';
 import {
   createSourceProvider,
   OFFICE_EDITING_PAUSED_REASON,
@@ -46,8 +55,7 @@ export type SourceSaveState =
   | 'recovery';
 export const SOURCE_IFRAME_ORIGIN = Symbol('source-iframe');
 const RESTORE_ORIGIN = Symbol('restore');
-// Drafts are encoded and written at most this often, latest state only.
-const DRAFT_WRITE_MS = 250;
+const LINEAGE_EPOCH = /:epoch:(\d+)@/;
 
 export function decodeSourceState(state: string): Uint8Array {
   return Uint8Array.from(atob(state), (character) => character.charCodeAt(0));
@@ -160,9 +168,13 @@ export function useSourceSession(
   } | null>(null);
   const [status, setStatus] = useState<SourceSaveState>('connecting');
   const [error, setError] = useState<string | null>(null);
-  // Saves failing or unconfirmed (`delayed`), or recovery (the session shows
-  // unsaved content it cannot save read-only, for copying, until Reload).
+  // Saves failing or unconfirmed (`delayed`), the room unreachable
+  // (`offline…`), or recovery (`refused`, `changed`: the session shows unsaved
+  // content it cannot save read-only, for copying, until Reload).
   const [banner, setBanner] = useState<SaveBannerState | null>(null);
+  // Offline past the bound this device may hold: the editor stops taking
+  // edits until the room is back.
+  const [offlineLimit, setOfflineLimit] = useState(false);
   // The file was trashed or deleted, or access to it lost, while editing.
   const [unavailable, setUnavailable] = useState<
     'notFound' | 'forbidden' | null
@@ -237,32 +249,26 @@ export function useSourceSession(
 
   useEffect(() => {
     if (!enabled || !fileId || !actorId) return;
-    const draftKey = `${actorId}:${fileId}`;
-    const draftId = crypto.randomUUID();
-    let restoredDrafts: SourceDraft[] = [];
-    let latestDraft: SourceDraft | undefined;
-    let recoveryDrafts: SourceDraft[] | null = null;
+    const draftKey = documentDraftKey(actorId, 'file', fileId);
+    // A stored group shown in recovery (Reload deletes it), or the live
+    // session's recorder (Reload discards what it wrote).
+    let recoveryDrafts: Pick<EditDraft, 'id' | 'key' | 'seq'>[] | null = null;
+    let recorder: DraftRecorder | null = null;
     let cancelled = false;
     let provider: SourceProvider | null = null;
     let doc: Y.Doc | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let flushDraft = () => {};
     let disposeReconnect = () => {};
-    let draftWrites = Promise.resolve();
+    let goOffline = () => {};
     const delay = new SaveDelayClock(SOURCE_SAVE_DELAY_MS, () => {
-      if (!cancelled && !runtime.current?.recovery) setBanner('delayed');
+      if (!cancelled && !runtime.current?.recovery)
+        setBanner((current) => current ?? 'delayed');
     });
-    const offline = () => delay.disconnected();
-    window.addEventListener('offline', offline);
-    // Drafts only outlive a reload; editing goes on without them (private
-    // mode, a full disk). Offline and recovery handling come next.
-    const queueDraftWrite = (write: () => Promise<void>) => {
-      const previous = draftWrites;
-      draftWrites = (async () => {
-        await previous;
-        await bestEffort(write);
-      })();
+    const offline = () => {
+      delay.disconnected();
+      goOffline();
     };
+    window.addEventListener('offline', offline);
     const rejectWaiters = (reason: Error) => {
       for (const waiter of flushWaiters.current.splice(0))
         waiter.reject(reason);
@@ -275,6 +281,8 @@ export function useSourceSession(
         return;
       }
       if (isApiError(value) && (value.status === 404 || value.status === 403)) {
+        // The user no longer has this file: its stored edits go too.
+        void bestEffort(() => deleteDocumentDrafts(draftKey));
         setUnavailable(value.status === 404 ? 'notFound' : 'forbidden');
         return;
       }
@@ -288,12 +296,8 @@ export function useSourceSession(
       rejectWaiters(next);
     };
     discardHandler.current = async () => {
-      const presented = recoveryDrafts ?? [
-        ...restoredDrafts,
-        ...(latestDraft ? [latestDraft] : []),
-      ];
-      await draftWrites;
-      await clearSourceDrafts(presented);
+      if (recoveryDrafts) await deleteDrafts(recoveryDrafts);
+      else await recorder?.discard();
       if (!cancelled) {
         pendingInput(false);
         setGeneration((value) => value + 1);
@@ -309,6 +313,7 @@ export function useSourceSession(
     setSynced(false);
     setError(null);
     setBanner(null);
+    setOfflineLimit(false);
     setLoaded(null);
     void (async () => {
       const [session, credentials, storedDrafts] = await Promise.all([
@@ -317,7 +322,7 @@ export function useSourceSession(
           `/files/${fileId}/collaboration-token`,
           {}
         ),
-        bestEffort(() => readSourceDrafts(draftKey)),
+        bestEffort(() => readDrafts(draftKey)),
       ]);
       if (cancelled) return;
       if (
@@ -335,40 +340,49 @@ export function useSourceSession(
       // from the room's sync (the stored state may be a change over the seed).
       if (session.state && session.format === 'text')
         Y.applyUpdate(shared, decodeSourceState(session.state), RESTORE_ORIGIN);
-      const found = sourceRecoveryDrafts(storedDrafts ?? [], session);
-      const draft = found[0];
-      const base = draft ? await bestEffort(() => readSourceBase(draft)) : null;
-      if (cancelled) return;
-      // A draft whose base this device no longer holds cannot be opened.
-      if (draft && !base) await bestEffort(() => clearSourceDrafts(found));
-      const drafts = (storedDrafts ?? []).filter(
-        (entry) => !(draft && !base && found.includes(entry))
+      const lineage = sourceLineage(session);
+      const { current: restoredDrafts, recovery: found } = draftGroups(
+        storedDrafts ?? [],
+        lineage,
+        sameSourceLineage(session.format)
       );
+      const draft = found[0];
+      const base =
+        draft?.base === undefined
+          ? null
+          : await bestEffort(() => readDraftBase(draftKey, draft.base!));
+      if (cancelled) return;
       if (draft && base) {
         recoveryDrafts = found;
         shared.destroy();
         const recovered = new Y.Doc();
         doc = recovered;
         for (const snapshot of found)
-          Y.applyUpdate(recovered, snapshot.state, RESTORE_ORIGIN);
+          Y.applyUpdate(recovered, snapshot.data, RESTORE_ORIGIN);
+        // The lineage names the epoch and base the edits grew from.
+        const [, epoch] = LINEAGE_EPOCH.exec(draft.lineage) ?? [];
         setLoaded({
           bytes: base,
           doc: recovered,
           session: {
             ...session,
-            baseSourceSHA256: draft.baseSourceSHA256,
-            epoch: draft.epoch,
+            baseSourceSHA256: draft.base!,
+            epoch: Number(epoch),
           },
         });
         setStatus('recovery');
         setDirty(true);
-        setBanner('recovery');
+        setBanner(draft.refused ? 'refused' : 'changed');
         return;
       }
+      // A draft whose base this device no longer holds cannot be opened.
+      if (draft) {
+        await bestEffort(() => deleteDrafts(found));
+        toastDraftsLost();
+      }
       recoveryDrafts = null;
-      restoredDrafts = drafts;
       for (const restored of restoredDrafts)
-        Y.applyUpdate(shared, restored.state, RESTORE_ORIGIN);
+        Y.applyUpdate(shared, restored.data, RESTORE_ORIGIN);
       if (restoredDrafts.length) setDirty(true);
       let initialToken: SourceCollaborationToken | null = credentials;
       const pending = new Map<string, number>();
@@ -383,7 +397,10 @@ export function useSourceSession(
         pending,
         provider: null as unknown as SourceProvider,
         recovery: false,
-        sequence: restoredDrafts.length ? 1 : 0,
+        // The recorder counts local edits (restored drafts are edit 1).
+        get sequence() {
+          return recorder?.sequence ?? 0;
+        },
       };
       const unsyncedWaiters: (() => void)[] = [];
       // Only a client that synced once has an editor to keep on screen.
@@ -391,13 +408,38 @@ export function useSourceSession(
       // The token request that failed, if one did (the provider only reports
       // its own text for it).
       let tokenError: unknown = null;
-      // Set by reset(): later typing and the unmount flush write no draft of
-      // the refused state.
+      // Set by reset() and refuse(): later typing changes nothing stored.
       let discarded = false;
+      // The room is unreachable and this session keeps editing on the
+      // device: the offline banner, until the room syncs again.
+      let offlineMode = false;
+      let storageOk = true;
+      let overLimit = false;
+      const offlineBanner = (): SaveBannerState =>
+        overLimit
+          ? 'offline-limit'
+          : storageOk
+            ? 'offline'
+            : 'offline-unstored';
+      const showOffline = () => {
+        if (offlineMode)
+          setBanner((current) =>
+            isRecoveryBanner(current) ? current : offlineBanner()
+          );
+      };
+      goOffline = () => {
+        if (cancelled || active.recovery || !everSynced || offlineMode) return;
+        offlineMode = true;
+        setStatus('offline');
+        recorder?.disconnected();
+        showOffline();
+      };
       const reconnect = roomReconnector({
-        // The header's status says the connection is lost.
+        // Reconnecting kept failing: edit on this device until it is back.
         onStuck: () => {
-          if (!(cancelled || active.recovery)) setStatus('error');
+          if (cancelled || active.recovery) return;
+          if (everSynced) goOffline();
+          else setStatus('error');
         },
         // A closed session never reconnects (replaced, paused, reset).
         provider: () => (cancelled || active.recovery ? null : provider),
@@ -411,18 +453,12 @@ export function useSourceSession(
           toastSaveUndone();
         cancelled = true;
         discarded = true;
-        draftDue = false;
         clearTimeout(timer);
         provider?.disconnect();
         rejectWaiters(new SourceSessionError(m.editor_save_failed_undone()));
         void (async () => {
-          await draftWrites;
-          await bestEffort(() =>
-            clearSourceDrafts([
-              ...restoredDrafts,
-              ...(latestDraft ? [latestDraft] : []),
-            ])
-          );
+          await recorder?.discard();
+          await bestEffort(() => deleteDocumentDrafts(draftKey));
           pendingInput(false);
           setGeneration((value) => value + 1);
         })();
@@ -438,41 +474,25 @@ export function useSourceSession(
           reset();
           return;
         }
-        const latest = takeDraft();
-        const refused = [
-          ...restoredDrafts,
-          ...(latest ? [latest] : latestDraft ? [latestDraft] : []),
-        ].map(
-          (draft): SourceDraft => ({
-            ...draft,
-            refused: true,
-            version: crypto.randomUUID(),
-          })
-        );
         discarded = true;
-        draftDue = false;
         clearTimeout(timer);
-        recoveryDrafts = refused;
-        for (const draft of refused)
-          queueDraftWrite(() => writeSourceDraft(draft, bytes));
+        // One refused row of the whole state replaces this session's rows;
+        // Reload deletes it.
+        const refused = recorder?.refuse();
+        recoveryDrafts = refused ? [refused] : [];
         rejectWaiters(new SourceSessionError(m.source_edit_recovery()));
         active.recovery = true;
         setLoaded({ bytes, doc: shared, session });
         setStatus('recovery');
-        setBanner('recovery');
+        setBanner('refused');
         setSynced(false);
         provider?.disconnect();
       };
-      // Nothing local is pending any more: forget this session's drafts.
+      // Nothing local is pending any more: the receipt deletes the drafts.
       const settle = () => {
         setDirty(false);
         setError(null);
-        const settledDrafts = [
-          ...restoredDrafts,
-          ...(latestDraft ? [latestDraft] : []),
-        ];
-        restoredDrafts = [];
-        queueDraftWrite(() => clearSourceDrafts(settledDrafts));
+        void recorder?.covered(active.acknowledged);
       };
       const markSaved = () => {
         setStatus('saved');
@@ -492,7 +512,9 @@ export function useSourceSession(
           cancelled = true;
           active.acknowledged = active.sequence;
           pendingInput(false);
-          settle();
+          setDirty(false);
+          setError(null);
+          void recorder?.discard();
           setBanner(null);
           setLoaded(null);
           setHandoff(false);
@@ -509,10 +531,13 @@ export function useSourceSession(
           setPaused(reason === 'paused');
           setReplaced(true);
         } else {
+          // The file moved on while edits waited: they open read-only, and
+          // this session's rows stay until Reload discards them.
           active.recovery = true;
+          void recorder?.flush();
           setLoaded({ bytes, doc: shared, session });
           setStatus('recovery');
-          setBanner('recovery');
+          setBanner('changed');
           setSynced(false);
         }
         provider?.disconnect();
@@ -556,6 +581,8 @@ export function useSourceSession(
           else if (!cancelled) {
             cancelled = true;
             provider?.disconnect();
+            void recorder?.discard();
+            void bestEffort(() => deleteDocumentDrafts(draftKey));
             setUnavailable(refusal);
           }
         },
@@ -567,14 +594,12 @@ export function useSourceSession(
           reconnect.disconnected();
           if (!cancelled) setHandoff(false);
           if (!cancelled && !active.recovery) {
-            setStatus(
-              navigator.onLine
-                ? everSynced
-                  ? 'reconnecting'
-                  : 'connecting'
-                : 'offline'
-            );
             setSynced(false);
+            if (!navigator.onLine) {
+              if (everSynced) goOffline();
+              else setStatus('offline');
+            } else if (!offlineMode)
+              setStatus(everSynced ? 'reconnecting' : 'connecting');
           }
         },
         onStateless: ({ payload }) => {
@@ -671,7 +696,8 @@ export function useSourceSession(
             // pending and the drafts stay.
             setStatus('unsaved');
             rejectWaiters(new SourceSessionError(m.editor_save_delayed()));
-            if (!sourceChangesCovered(active)) setBanner('delayed');
+            if (!sourceChangesCovered(active))
+              setBanner((current) => current ?? 'delayed');
             return;
           }
           if (
@@ -695,6 +721,13 @@ export function useSourceSession(
           if (state && !cancelled && !active.recovery) {
             reconnect.connected();
             delay.connected();
+            if (offlineMode) {
+              offlineMode = false;
+              recorder?.connected();
+              setBanner((current) =>
+                isRecoveryBanner(current) ? current : null
+              );
+            }
             if (everSynced) setStatus('saving');
             everSynced = true;
             setLoaded({ bytes, doc: shared, session });
@@ -740,41 +773,35 @@ export function useSourceSession(
       active.provider = provider;
       runtime.current = active;
       disposeReconnect = reconnect.dispose;
-      let draftDue = false;
-      // A draft a receipt already covers is never written, so a saved draft
-      // cannot come back as a recovery prompt.
-      const takeDraft = () => {
-        draftDue = false;
-        if (sourceChangesCovered(active)) return;
-        latestDraft = {
-          baseSourceSHA256: session.baseSourceSHA256,
-          epoch: session.epoch,
-          fileId: draftKey,
-          id: draftId,
-          state: Y.encodeStateAsUpdate(shared),
-          version: crypto.randomUUID(),
-        };
-        return latestDraft;
-      };
-      flushDraft = () => {
-        if (discarded) return;
-        const next = draftDue ? takeDraft() : undefined;
-        if (next) queueDraftWrite(() => writeSourceDraft(next, bytes));
-      };
+      // Unsaved work is written as it happens (the latest whole state) and
+      // deleted by the receipts that cover it. Storage that fails never
+      // blocks editing; offline, the banner says the device holds nothing.
+      recorder = recordDrafts({
+        adopted: restoredDrafts,
+        base: { bytes, sha: session.baseSourceSHA256 },
+        doc: shared,
+        fullState: true,
+        ignore: (origin) => origin === provider || origin === RESTORE_ORIGIN,
+        key: draftKey,
+        limitBytes: SOURCE_STATE_MAX_BYTES,
+        lineage,
+        onLimit: (over) => {
+          overLimit = over;
+          if (!cancelled) setOfflineLimit(over);
+          showOffline();
+        },
+        onStorage: (ok) => {
+          storageOk = ok;
+          showOffline();
+        },
+      });
       shared.on('update', (_update: Uint8Array, origin: unknown) => {
         if (origin === provider || origin === RESTORE_ORIGIN || discarded)
           return;
-        active.sequence++;
         setDirty(true);
-        setStatus(active.recovery ? 'recovery' : 'saving');
-        if (!draftDue) {
-          draftDue = true;
-          queueDraftWrite(async () => {
-            await new Promise((resolve) => setTimeout(resolve, DRAFT_WRITE_MS));
-            const next = draftDue && !discarded ? takeDraft() : undefined;
-            if (next) await writeSourceDraft(next, bytes);
-          });
-        }
+        setStatus(
+          active.recovery ? 'recovery' : offlineMode ? 'offline' : 'saving'
+        );
         clearTimeout(timer);
         timer = setTimeout(() => checkpoint(), 1000);
       });
@@ -784,7 +811,7 @@ export function useSourceSession(
       clearTimeout(timer);
       delay.dispose();
       window.removeEventListener('offline', offline);
-      flushDraft();
+      void recorder?.dispose();
       runtime.current = null;
       discardHandler.current = null;
       disposeReconnect();
@@ -814,6 +841,7 @@ export function useSourceSession(
     error,
     flushHandler,
     handoff,
+    offlineLimit,
     paused,
     pendingInput,
     readOnly,

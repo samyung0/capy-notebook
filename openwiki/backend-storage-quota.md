@@ -327,7 +327,9 @@ the projected Plate `materials.content`; clears in-memory pending
 checkpoints; keeps `stored_version` / `projected_version` equal; and
 increments `room_schema`. Tokens, Redis events, service commands, and client
 Y.Docs bind to that epoch so a stale client cannot merge pre-compaction state
-back in.
+back in. A discard that throws unsaved room state away increments
+`room_schema` too, keeping the state (see
+[plate-editor.md](frontend/plate-editor.md#document-limits-and-rejection)).
 
 Ordinary persistence embeds server-owned actor provenance in the same Yjs
 transaction as each edit and rechecks every contributor in the exact debounced
