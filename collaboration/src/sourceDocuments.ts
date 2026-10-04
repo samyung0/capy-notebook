@@ -6,7 +6,6 @@ import {
   applyContentUpdate,
   type RoomSnapshot,
   removeDocumentContributors,
-  roomSnapshot,
 } from './contributors.js';
 import {
   applyTextCommands,
@@ -1012,13 +1011,9 @@ export class SourceDocumentStore {
     };
   }
 
-  store(room: string, snapshot: Y.Doc | RoomSnapshot, eventId?: string) {
-    return withRetryEvent(eventId, () =>
-      this.storeSnapshot(
-        room,
-        snapshot instanceof Y.Doc ? roomSnapshot(snapshot) : snapshot
-      )
-    );
+  /** Stores a room read at one instant (roomSnapshot). */
+  store(room: string, snapshot: RoomSnapshot, eventId?: string) {
+    return withRetryEvent(eventId, () => this.storeSnapshot(room, snapshot));
   }
 
   private async storeSnapshot(room: string, snapshot: RoomSnapshot) {

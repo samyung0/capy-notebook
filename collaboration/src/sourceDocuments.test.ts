@@ -196,7 +196,7 @@ test('a delayed source store merges a newer durable replica before saving', asyn
       return { ...session, checkpoint: 9 };
     }
   );
-  const saved = await store.store(session.room, left);
+  const saved = await store.store(session.room, roomSnapshot(left));
   expect(persisted).toBe('B base A');
   expect(saved.checkpoint).toBe(9);
   base.destroy();
@@ -497,7 +497,7 @@ test('a NULL state loads seed(base), a save without edits stores nothing, and th
   Y.applyUpdate(room, Y.encodeStateAsUpdate(other), writer);
   expect(room.getText('source').toString()).toBe('﻿base text');
   expect(documentContributors(room)).toHaveLength(1);
-  expect(await store.store(session.room, room)).toMatchObject({
+  expect(await store.store(session.room, roomSnapshot(room))).toMatchObject({
     checkpoint: 0,
   });
   expect(request).not.toHaveBeenCalled();
@@ -507,7 +507,7 @@ test('a NULL state loads seed(base), a save without edits stores nothing, and th
     () => room.getText('source').insert(room.getText('source').length, '!'),
     writer
   );
-  await store.store(session.room, room);
+  await store.store(session.room, roomSnapshot(room));
   expect(request).toHaveBeenCalledWith(
     'f_1',
     'checkpoint',
@@ -882,7 +882,7 @@ test('a save starts from the durable copy while the row names it, and reads the 
     room.transact(() => room.getText('source').insert(0, value), writer);
     const snapshot = new Y.Doc();
     Y.applyUpdate(snapshot, Y.encodeStateAsUpdate(room));
-    return store.store(session.room, snapshot);
+    return store.store(session.room, roomSnapshot(snapshot));
   };
   await type('A ');
   await type('B ');
@@ -1024,7 +1024,7 @@ test('after a text publication a save reads the session again and counts only th
     room.transact(() => room.getText('source').insert(0, value), writer);
     const snapshot = new Y.Doc();
     Y.applyUpdate(snapshot, Y.encodeStateAsUpdate(room));
-    return store.store(session.room, snapshot);
+    return store.store(session.room, roomSnapshot(snapshot));
   };
   await type('A ');
   const reads = sessions.mock.calls.length;
@@ -1113,7 +1113,7 @@ test.each([4, 5])(
       source: 'connection',
     });
     request.mockResolvedValue({ checkpoint: 6 });
-    await store.store(session.room, room);
+    await store.store(session.room, roomSnapshot(room));
     // The store read the session again instead of trusting the replayed state.
     expect(sessions).toHaveBeenCalledTimes(2);
     expect(
@@ -1203,7 +1203,7 @@ test('a forgotten room saves from a fresh session read', async () => {
     connection: { context: { access: 'write', userId: 'u1' } },
     source: 'connection',
   });
-  await store.store(session.room, room);
+  await store.store(session.room, roomSnapshot(room));
   expect(sessions).toHaveBeenCalledTimes(2);
   room.destroy();
 });

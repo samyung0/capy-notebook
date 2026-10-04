@@ -6,6 +6,7 @@ import { accessRecheck } from './accessRecheck.js';
 import {
   attachDocumentContributorTracker,
   documentContributors,
+  roomSnapshot,
 } from './contributors.js';
 import { MaterialDocumentValidationError } from './materialDocument.js';
 import {
@@ -471,7 +472,10 @@ describe('live collaboration authorization', () => {
         }
       );
       try {
-        const stored = await store.store('material:mat_1:schema:1', document);
+        const stored = await store.store(
+          'material:mat_1:schema:1',
+          roomSnapshot(document)
+        );
         expect(stored).toMatchObject({ version: 1 });
         const durable = new Y.Doc();
         try {
@@ -557,7 +561,7 @@ describe('live collaboration authorization', () => {
       );
     try {
       await expect(
-        store.store('material:mat_1:schema:1', document)
+        store.store('material:mat_1:schema:1', roomSnapshot(document))
       ).resolves.toMatchObject({ version: 1 });
     } finally {
       document.destroy();
@@ -640,7 +644,7 @@ describe('live collaboration authorization', () => {
 
     try {
       await expect(
-        store.store('material:mat_1:schema:1', document)
+        store.store('material:mat_1:schema:1', roomSnapshot(document))
       ).rejects.toBeInstanceOf(MaterialDocumentValidationError);
     } finally {
       document.destroy();
@@ -864,7 +868,7 @@ describe('live collaboration authorization', () => {
     }
     try {
       await expect(
-        store.store('material:mat_1:schema:1', document)
+        store.store('material:mat_1:schema:1', roomSnapshot(document))
       ).rejects.toBeInstanceOf(CollaborationAuthorizationError);
     } finally {
       document.destroy();

@@ -405,10 +405,15 @@ commits broadcasts `checkpoint-persisted` with those IDs, the stored version, an
 the current document metrics. Only that receipt changes the browser status to
 Saved. Receipts stay out of the Y.Doc deliberately: a marker written into the
 document would be an edit, so acknowledging it would dirty the room and force a
-second store and projection for every save. A failed-store retry carries the
-IDs claimed with its snapshot and acknowledges only those IDs if the retry
-commits. Checkpoints queued after that snapshot remain pending for a later
-store.
+second store and projection for every save. Failed stores are retried per
+room with backoff (5 s, then doubling to 60 s,
+`collaboration/src/failedStoreRetry.ts`). A room that is still loaded retries
+through its own store path (Hocuspocus's debouncer and save mutex, and a
+source room's save queue), so a retry never races the live save, which holds
+everything the failed snapshot did and answers its pending receipts. Only an
+unloaded room retries its failed snapshot directly; that retry carries the IDs
+claimed with the snapshot and acknowledges only those IDs if it commits.
+Checkpoints queued after that snapshot remain pending for a later store.
 
 `mod+s` stays bound so the browser's own save dialog never opens; it flushes the
 debounce through the same path rather than running a second one. A client tracks

@@ -7,6 +7,7 @@ import {
   attachDocumentContributorTracker,
   documentContributors,
   removeDocumentContributors,
+  roomSnapshot,
 } from './contributors.js';
 import {
   EditError,
@@ -418,7 +419,7 @@ test.each([
       source: 'connection',
     };
     Y.applyUpdate(room, seed.state, writer);
-    expect(await store.store(session.room, room)).toMatchObject({
+    expect(await store.store(session.room, roomSnapshot(room))).toMatchObject({
       checkpoint: 0,
     });
     expect(request).not.toHaveBeenCalled();
@@ -429,7 +430,7 @@ test.each([
       setText(format, target, 'Edited by Capy'),
     ]);
     Y.applyUpdate(room, edited.state, writer);
-    await store.store(session.room, room);
+    await store.store(session.room, roomSnapshot(room));
     // The first edit binds the base and stores only its change over the seed,
     // which a store holding nothing else rebuilds into the saved document.
     const body = request.mock.calls[0][2] as {

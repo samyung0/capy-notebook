@@ -11,7 +11,6 @@ import {
   documentContributors,
   type RoomSnapshot,
   removeDocumentContributors,
-  roomSnapshot,
 } from './contributors.js';
 import {
   applyMaterialCommands,
@@ -711,13 +710,10 @@ export class YjsDocumentStore {
     }
   }
 
-  async store(
-    room: string,
-    current: Y.Doc | RoomSnapshot
-  ): Promise<StoredDocument> {
-    // The merge below checks the roots too (plateValue).
-    const { contributors, state: currentState } =
-      current instanceof Y.Doc ? roomSnapshot(current) : current;
+  /** Stores a room read at one instant (roomSnapshot). The merge below checks
+   * the roots too (plateValue). */
+  async store(room: string, current: RoomSnapshot): Promise<StoredDocument> {
+    const { contributors, state: currentState } = current;
     const materialId = materialIdFromRoom(room);
     const roomSchema = roomSchemaFromRoom(room);
     const actors = [...new Set(contributors.map(({ userId }) => userId))];

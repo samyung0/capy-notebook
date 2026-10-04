@@ -52,7 +52,8 @@ describe('failed-store retries', () => {
       }
       clearIfCurrent();
     });
-    const runner = new FailedStoreRetryRunner(queued, retry);
+    let now = 0;
+    const runner = new FailedStoreRetryRunner(queued, retry, () => now);
 
     const firstPass = runner.run();
     await vi.waitFor(() => expect(retry).toHaveBeenCalledOnce());
@@ -61,8 +62,40 @@ describe('failed-store retries', () => {
     await firstPass;
 
     expect(queued.get(room)).toBe(newer);
+    // A newer failure waits out the room's backoff.
+    now = 5000;
     await runner.run();
     expect(retry).toHaveBeenCalledTimes(2);
     expect(queued.has(room)).toBe(false);
+  });
+
+  it('backs a failing room off from 5 s to 60 s', async () => {
+    const queued = new Map<string, FailedStoreSnapshot>([
+      ['source:f:epoch:1', { checkpointIds: [], state: new Uint8Array([1]) }],
+    ]);
+    let now = 0;
+    const attempts: number[] = [];
+    const runner = new FailedStoreRetryRunner(
+      queued,
+      async () => {
+        attempts.push(now);
+      },
+      () => now
+    );
+    // A pass every second for five minutes; the room keeps failing.
+    for (; now <= 300_000; now += 1000) await runner.run();
+    const gaps = attempts.slice(1).map((at, index) => at - attempts[index]);
+    expect(gaps.slice(0, 5)).toEqual([5000, 10_000, 20_000, 40_000, 60_000]);
+    expect(Math.max(...gaps)).toBe(60_000);
+    // A save that clears it resets the backoff.
+    queued.clear();
+    await runner.run();
+    queued.set('source:f:epoch:1', {
+      checkpointIds: [],
+      state: new Uint8Array([2]),
+    });
+    const before = attempts.length;
+    await runner.run();
+    expect(attempts.length).toBe(before + 1);
   });
 });

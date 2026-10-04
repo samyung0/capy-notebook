@@ -1615,18 +1615,41 @@ interface DocumentRequest {
 const failedStoreRetries = new FailedStoreRetryRunner(
   failedStores,
   async (room, failed, clearIfCurrent) => {
+    if (
+      roomEvictions.isDiscarding(room) ||
+      roomEvictions.isDraining(room) ||
+      roomEvictions.isRejected(room)
+    )
+      return;
+    // A loaded room saves through its own store path (Hocuspocus's debouncer
+    // and save mutex; a source room's save queue behind it), so the retry
+    // never races its live save; that save holds everything the failed
+    // snapshot did and reports the outcome as usual.
+    const live = server.hocuspocus.documents.get(room);
+    if (live) {
+      await server.hocuspocus.storeDocumentHooks(
+        live,
+        {
+          clientsCount: live.getConnectionsCount(),
+          document: live,
+          documentName: room,
+          instance: server.hocuspocus,
+          lastContext: {},
+          lastTransactionOrigin: { source: 'local' },
+        },
+        true
+      );
+      return;
+    }
+    // A room that unloaded with a failed save (a drain whose last flush
+    // failed) retries its failed snapshot here.
     const finish = beginStore(room);
     const document = scratchDoc();
     try {
-      if (
-        roomEvictions.isDiscarding(room) ||
-        roomEvictions.isDraining(room) ||
-        roomEvictions.isRejected(room)
-      )
-        return;
       Y.applyUpdate(document, failed.state);
+      const snapshot = roomSnapshot(document);
       if (SOURCE_ROOM_PATTERN.test(room)) {
-        const stored = await sources.store(room, document, failed.eventId);
+        const stored = await sources.store(room, snapshot, failed.eventId);
         clearIfCurrent();
         const live = server.hocuspocus.documents.get(room);
         if (live) {
@@ -1635,7 +1658,7 @@ const failedStoreRetries = new FailedStoreRetryRunner(
         }
         return;
       }
-      const stored = await store.store(room, document);
+      const stored = await store.store(room, snapshot);
       clearIfCurrent();
       const live = server.hocuspocus.documents.get(room);
       if (live) {
