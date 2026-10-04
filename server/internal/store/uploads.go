@@ -236,7 +236,7 @@ func (s *Store) finalizeUploadSessionTx(
 		if err != nil {
 			return File{}, err
 		}
-		payload, err := s.ingestJobPayload(ctx, actor, map[string]any{
+		payload, err := s.ingestJobPayload(ctx, tx, actor, map[string]any{
 			"fileId": fileID, "workspaceId": u.WorkspaceID, "blobPath": u.FinalPath,
 			"kind": u.Kind, "parser": parser,
 			"parseMode":      u.ParseMode,

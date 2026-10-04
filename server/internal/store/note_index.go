@@ -56,16 +56,32 @@ func (s *Store) RequestMaterialIndex(ctx context.Context, materialID string) (st
 		return "", err
 	}
 	defer tx.Rollback(ctx)
-	var workspaceID, ownerID string
+	// Workspace, owner account, then material: the order every workspace write
+	// and projection takes. Locking the material (or the account) first
+	// deadlocked against them.
+	var workspaceID string
+	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM materials
+		WHERE id=$1 AND kind='note' AND workspace_id IS NOT NULL AND trashed_at IS NULL`, materialID).
+		Scan(&workspaceID); err != nil {
+		if isNoRows(err) {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+	ownerID, err := s.lockWorkspaceMutationTx(ctx, tx, workspaceID, "")
+	if err != nil {
+		return "", err
+	}
 	var autoProcess bool
 	var dirtyAt *time.Time
 	var runningJob, indexError *string
 	var revision int64
-	if err := tx.QueryRow(ctx, `SELECT m.workspace_id, w.user_id, w.auto_process, m.index_dirty_at,
+	if err := tx.QueryRow(ctx, `SELECT w.auto_process, m.index_dirty_at,
 			m.index_job_id, m.index_error, m.revision
 		FROM materials m JOIN workspaces w ON w.id=m.workspace_id
-		WHERE m.id=$1 AND m.kind='note' AND m.trashed_at IS NULL FOR UPDATE OF m`, materialID).
-		Scan(&workspaceID, &ownerID, &autoProcess, &dirtyAt, &runningJob, &indexError, &revision); err != nil {
+		WHERE m.id=$1 AND m.workspace_id=$2 AND m.kind='note' AND m.trashed_at IS NULL FOR UPDATE OF m`,
+		materialID, workspaceID).
+		Scan(&autoProcess, &dirtyAt, &runningJob, &indexError, &revision); err != nil {
 		if isNoRows(err) {
 			return "", ErrNotFound
 		}
@@ -78,7 +94,7 @@ func (s *Store) RequestMaterialIndex(ctx context.Context, materialID string) (st
 	if err != nil {
 		return "", err
 	}
-	payload, err := s.ingestJobPayload(ctx, ownerID, map[string]any{
+	payload, err := s.ingestJobPayload(ctx, tx, ownerID, map[string]any{
 		"materialId": materialID, "workspaceId": workspaceID, "revision": revision,
 		"reservationId": reservation, "automatic": true,
 	})

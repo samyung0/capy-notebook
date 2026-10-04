@@ -408,7 +408,7 @@ func (s *Store) reprocessTx(ctx context.Context, tx pgx.Tx, result SourceProcess
 	if err != nil {
 		return result, err
 	}
-	payload, err := s.ingestJobPayload(ctx, owner, map[string]any{"fileId": result.FileID, "workspaceId": ws, "blobPath": blobPath, "kind": kind, "parseMode": mode, "processingPlan": plan, "sourceETag": etag, "sourceRevision": revision, "reservationId": reservation, "paidBy": models.PaidBySystem})
+	payload, err := s.ingestJobPayload(ctx, tx, owner, map[string]any{"fileId": result.FileID, "workspaceId": ws, "blobPath": blobPath, "kind": kind, "parseMode": mode, "processingPlan": plan, "sourceETag": etag, "sourceRevision": revision, "reservationId": reservation, "paidBy": models.PaidBySystem})
 	if err != nil {
 		return result, err
 	}

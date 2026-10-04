@@ -592,7 +592,7 @@ func (s *Store) requestSourceRefresh(ctx context.Context, actor, fileID string, 
 	if rebuildRefusal != nil {
 		fields["rebuildRefusal"] = *rebuildRefusal
 	}
-	payload, err := s.ingestJobPayload(ctx, payer, fields)
+	payload, err := s.ingestJobPayload(ctx, tx, payer, fields)
 	if err != nil {
 		return result, err
 	}

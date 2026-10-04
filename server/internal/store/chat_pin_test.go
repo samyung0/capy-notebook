@@ -218,7 +218,7 @@ func TestIngestJobPayloadPinsActorAndModels(t *testing.T) {
 	}
 	s.SetModelRegistry(reg)
 
-	raw, err := s.ingestJobPayload(ctx, "u_actor", map[string]any{
+	raw, err := s.ingestJobPayload(ctx, s.pool, "u_actor", map[string]any{
 		"fileId": "f_1", "workspaceId": "ws_1",
 	})
 	if err != nil {
@@ -258,7 +258,7 @@ func TestIngestJobPayloadRefusesWithoutActor(t *testing.T) {
 	}
 	s.SetModelRegistry(reg)
 
-	if _, err := s.ingestJobPayload(ctx, "", map[string]any{
+	if _, err := s.ingestJobPayload(ctx, s.pool, "", map[string]any{
 		"fileId": "f_1", "workspaceId": "ws_1",
 	}); !errors.Is(err, ErrIngestUnpinnable) {
 		t.Fatalf("expected ErrIngestUnpinnable, got %v", err)
@@ -269,7 +269,7 @@ func TestIngestJobPayloadRefusesWithoutActor(t *testing.T) {
 // its own current defaults are and settle at those rates.
 func TestIngestJobPayloadRefusesWithoutRegistry(t *testing.T) {
 	s := openAccessTestStore(t)
-	if _, err := s.ingestJobPayload(context.Background(), "u_actor", map[string]any{
+	if _, err := s.ingestJobPayload(context.Background(), s.pool, "u_actor", map[string]any{
 		"fileId": "f_1", "workspaceId": "ws_1",
 	}); !errors.Is(err, ErrIngestUnpinnable) {
 		t.Fatalf("expected ErrIngestUnpinnable, got %v", err)

@@ -48,7 +48,13 @@ type ResourceRate struct {
 }
 
 func (s *Store) ActiveResourceRates(ctx context.Context, keys []string) (map[string]ResourceRate, error) {
-	rows, err := s.pool.Query(ctx, `
+	return activeResourceRates(ctx, s.pool, keys)
+}
+
+// activeResourceRates reads on q, so a caller inside a transaction stays on
+// its own connection instead of waiting on the pool for a second one.
+func activeResourceRates(ctx context.Context, q rowsQueryer, keys []string) (map[string]ResourceRate, error) {
+	rows, err := q.Query(ctx, `
 		SELECT resource_key, version, unit, credit_micros_per_unit
 		FROM resource_credit_rates
 		WHERE active AND resource_key = ANY($1)`, keys)

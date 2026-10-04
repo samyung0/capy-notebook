@@ -60,7 +60,7 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, 
 	}
 
 	jobID := uid("job")
-	payload, err := s.ingestJobPayload(ctx, createdBy, map[string]any{
+	payload, err := s.ingestJobPayload(ctx, tx, createdBy, map[string]any{
 		"fileId": fileID, "workspaceId": wsID, "blobPath": blobPath, "kind": kind,
 		"parser": parser, "parseMode": parseMode,
 		"processingPlan": processingPlan,
@@ -178,7 +178,11 @@ var ErrIngestUnpinnable = errors.New("ingest cannot be enqueued without an actor
 // The embedding model is not snapshotted here: it belongs to the workspace
 // (the workspace embedding provider/model/version pin), which the worker reads directly. A per-job
 // copy could only ever agree with it or corrupt the workspace's vector space.
-func (s *Store) ingestJobPayload(ctx context.Context, actorUserID string, base map[string]any) ([]byte, error) {
+//
+// Callers enqueue under workspace and account locks, so the rates are read on
+// their transaction (q): a second pool connection could wait behind requests
+// that are themselves waiting on those locks, and starve the pool.
+func (s *Store) ingestJobPayload(ctx context.Context, q rowsQueryer, actorUserID string, base map[string]any) ([]byte, error) {
 	if actorUserID == "" {
 		return nil, fmt.Errorf("%w: no actor", ErrIngestUnpinnable)
 	}
@@ -197,7 +201,7 @@ func (s *Store) ingestJobPayload(ctx context.Context, actorUserID string, base m
 	base["captioningProviderSlug"] = captioning.ProviderSlug
 	base["captioningModelSlug"] = captioning.ModelSlug
 	base["captioningModelVersion"] = captioning.Version
-	rates, err := s.ActiveResourceRates(ctx, ingestResourceKeys)
+	rates, err := activeResourceRates(ctx, q, ingestResourceKeys)
 	if err != nil {
 		eventID := obs.CaptureErr(ctx, err, map[string]string{"stage": "ingest_resource_rates"})
 		return nil, obs.WithEventID(fmt.Errorf("%w: %v", ErrIngestUnpinnable, err), eventID)

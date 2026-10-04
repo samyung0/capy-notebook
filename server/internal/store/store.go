@@ -26,6 +26,10 @@ type rowQueryer interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 }
 
+type rowsQueryer interface {
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+}
+
 // lifecycleDB is satisfied by both *pgxpool.Pool and the *pgxpool.Conn that
 // holds an account-lifecycle lock, so work under that lock stays on its
 // connection instead of waiting on the pool for a second one.
