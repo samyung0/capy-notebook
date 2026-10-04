@@ -12,6 +12,7 @@ import {
   SLOW_SAVE_LIMIT_MS,
   SlowSaveClock,
   SourcePendingError,
+  serviceSecretRejected,
   sourceSaveRefused,
 } from './storeFailure.js';
 
@@ -89,6 +90,20 @@ describe('source save failures', () => {
       new TypeError('fetch failed'),
     ])
       expect(sourceSaveRefused(slow)).toBe(false);
+  });
+
+  it('keeps a rejected service secret editable: slow, not lost access', () => {
+    const secret = new SourceRequestError(
+      401,
+      'invalid collaboration service secret'
+    );
+    expect(serviceSecretRejected(secret)).toBe(true);
+    // Retried with backoff under the slow-save cap, drafts kept.
+    expect(sourceSaveRefused(secret)).toBe(false);
+    expect(lostSourceAccess(secret)).toBe(false);
+    expect(
+      serviceSecretRejected(new SourceRequestError(403, 'forbidden'))
+    ).toBe(false);
   });
 
   it('counts a lost file or access as lost, not an account lock', () => {

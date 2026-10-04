@@ -108,6 +108,7 @@ import {
   SlowSaveClock,
   SourceBackoffError,
   SourcePendingError,
+  serviceSecretRejected,
   sourceSaveRefused,
 } from './storeFailure.js';
 import { armTokenExpiry, clearTokenExpiry } from './tokenExpiry.js';
@@ -1140,6 +1141,17 @@ function persistSource(document: Document) {
   return queueSourceSave(document).finally(finish);
 }
 
+/** Every rejected service secret, loudly: a mismatch between this service
+ * and the gateway stops every source save until it is fixed. */
+function reportServiceSecret(error: unknown, room: string) {
+  if (!serviceSecretRejected(error)) return;
+  console.error(
+    'collaboration service secret rejected by the gateway; source saves fail until it matches',
+    { room }
+  );
+  captureError(error, { room, stage: 'service_secret_rejected' });
+}
+
 async function storeSource(document: Document) {
   const room = document.name;
   // Awaited handoff callers must fail if their queued save was discarded.
@@ -1187,6 +1199,7 @@ async function storeSource(document: Document) {
   } catch (error) {
     health.source.record(performance.now() - started, false);
     storeFailures++;
+    reportServiceSecret(error, room);
     storeFailureGenerations.set(
       room,
       (storeFailureGenerations.get(room) ?? 0) + 1
@@ -1762,6 +1775,7 @@ const failedStoreRetries = new FailedStoreRetryRunner(
     } catch (error) {
       storeFailures += 1;
       if (SOURCE_ROOM_PATTERN.test(room)) {
+        reportServiceSecret(error, room);
         // As in storeSource: a refusal for good tells the clients (read-only,
         // or reset to the last saved version) and discards the room.
         const readOnly = readOnlyRefusal(error);

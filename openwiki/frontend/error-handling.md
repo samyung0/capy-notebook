@@ -385,7 +385,9 @@ it shows only the header's red status.
 
 A source save that fails slowly (an Office engine timeout or a dead worker, a
 checkpoint that moved again after the reload and merge, a network error or a
-5xx) keeps the room editable: the server retries it with per-room backoff
+5xx, or a 401 from the gateway's internal source routes, which means the
+collaboration service's own secret was rejected and is reported on every
+failure with the `service_secret_rejected` stage) keeps the room editable: the server retries it with per-room backoff
 (5 s, doubling to 60 s; the room's live saves wait out the same backoff), the
 editor shows the `delayed` banner and its drafts stay. After
 `SLOW_SAVE_LIMIT_MS` (5 minutes) of failed saves without one success, whatever
@@ -400,8 +402,9 @@ access)) discards the room at once, and it reopens at the last good save. Each
 editor with unsaved edits keeps its drafts, marked refused, and enters
 recovery. Refused drafts are never merged back on open (they would replay the
 refused state). An editor with nothing unsaved just reloads. A save
-refused because access was lost or the file is gone (401/403/404,
-`lostAccess` on the failure message) clears the drafts and reloads to the
+refused because access was lost or the file is gone (403/404 for the file,
+not for the account itself; `lostAccess` on the failure message) clears the
+drafts and reloads to the
 file-missing or no-access panel, with no download: the user may no longer see
 that content. A storage or frozen refusal at save drops every writer to view
 under the read-only strip. A trashed or deleted file, or lost access, replaces

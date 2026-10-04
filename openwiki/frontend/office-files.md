@@ -1052,9 +1052,11 @@ gone) is skipped, never an editing error; a reopened draft whose base is gone
 is dropped with "Some unsaved edits from your last session couldn't be
 restored." A save refused for good keeps the session's state as one refused
 row (never merged back) and enters recovery; one refused for lost access or a
-missing file deletes every row of the file, other tabs' included (not for a
-403 about the account itself, which keeps them); a refusal with nothing
-unsaved deletes only this session's rows (see
+missing file (403/404) deletes every row of the file, other tabs' included
+(not for a 403 about the account itself, which keeps them); a refusal with
+nothing unsaved deletes only this session's rows, and a 401 (the gateway
+rejecting the collaboration service's own secret) is a slow failure that
+keeps the room editable and the drafts (see
 [error handling](error-handling.md#collaborative-source-failures)).
 Network and recoverable save failures leave drafts available. Before sending
 buffered updates after reconnect, the token request verifies the current

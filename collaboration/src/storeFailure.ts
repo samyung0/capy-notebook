@@ -42,15 +42,16 @@ export function handlePermanentStoreFailure(
  * A source save failure that will always fail, so its room resets and the
  * browsers go to recovery at once: the engine refusing the state (a trap, a
  * rebuild check), the byte limit (413), invalid input (422), an editing epoch
- * that ended, or lost access or a missing file (401/403/404). Anything slow instead (an engine timeout or
- * a dead worker, a checkpoint that moved again after the reload and merge, a
- * network error or a 5xx) keeps the room editable and is retried with backoff.
+ * that ended, or lost access or a missing file (403/404). Anything slow
+ * instead (an engine timeout or a dead worker, a checkpoint that moved again
+ * after the reload and merge, a network error or a 5xx, or a 401: see
+ * serviceSecretRejected) keeps the room editable and is retried with backoff.
  */
 export function sourceSaveRefused(error: unknown) {
   return (
     (error instanceof OfficeEngineError && !error.transient) ||
     (error instanceof SourceRequestError &&
-      ([401, 403, 404, 413, 422].includes(error.status) ||
+      ([403, 404, 413, 422].includes(error.status) ||
         // The room's editing epoch ended (a handoff): its saves never land.
         error.code === 'epoch_changed'))
   );
@@ -121,16 +122,27 @@ export function pendingSourceSave(
 
 /**
  * A save refused because the writers lost access or the file is gone
- * (401/403/404, not an account lock): the browser drops its drafts and shows
- * the no-access or missing panel. Any other refusal for good keeps them for
+ * (403/404, not an account lock): the browser drops its drafts and shows the
+ * no-access or missing panel. Any other refusal for good keeps them for
  * recovery.
  */
 export function lostSourceAccess(error: unknown) {
   return (
     error instanceof SourceRequestError &&
-    [401, 403, 404].includes(error.status) &&
+    [403, 404].includes(error.status) &&
     !ACCOUNT_LOCK_CODES.has(error.code ?? '')
   );
+}
+
+/**
+ * The gateway refused the collaboration service's own secret (a 401 from an
+ * internal source route; user tokens are verified at connect and never reach
+ * a save). That is our infrastructure, not the user's access: the save is a
+ * slow failure (the room stays editable, the drafts stay, the clients hear
+ * "Saving is delayed") and is logged loudly.
+ */
+export function serviceSecretRejected(error: unknown) {
+  return error instanceof SourceRequestError && error.status === 401;
 }
 
 /** A 403 about the account itself, not the file: the browser keeps its
