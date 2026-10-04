@@ -795,7 +795,12 @@ validation and are not rendered.
   actions) must be identity-stable; the `decorate` and `onKeyDown` props of
   `PlateContent` must be stable, because Plate treats new editable props as a
   full re-render; and save/footer state must not reach `NoteEditorContent`,
-  which is memoized for that reason. `bench/editor/scripts/editor.perf.ts` guards this with
+  which is memoized for that reason. The save status is not React state
+  above the note either: `NoteEditorCore` keeps only "still handshaking", and
+  `CenterContent` passes a per-pane store (`createEditorStatusStore`) that only
+  the header's status icon subscribes to. Saved to Syncing happens on the first
+  keystroke of every edit, so as state it re-rendered the header, toolbar and
+  command palette inside that keystroke. `bench/editor/scripts/editor.perf.ts` guards this with
   a save-cycle blocking budget, and `saveCycleProfile.perf.ts` attributes a
   regression to functions. How to run those specs and the manual GitHub Actions
   checkpoint is in [editor-perf.md](../editor-perf.md).

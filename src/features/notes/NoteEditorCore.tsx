@@ -383,16 +383,17 @@ export function NoteEditorCore({
   const [documentLimitError, setDocumentLimitError] = useState<string | null>(
     null
   );
-  const [saveState, setSaveState] =
-    useState<NoteEditorStatus['saveState']>('connecting');
+  // Only the first handshake changes this tree; every later status lives in the
+  // header. Holding the full status here re-rendered the toolbar and palette on
+  // the first keystroke of every edit (Saved to Syncing).
+  const [handshaking, setHandshaking] = useState(true);
   const name = currentUserName;
 
-  // The parent stores the reported status in state, so re-announcing a status it
-  // already holds re-renders the whole document for nothing.
+  // Re-announcing a status the header already shows re-renders it for nothing.
   const reportedStatus = useRef<string | null>(null);
   const setStatus = useCallback(
     (next: NoteEditorStatus['saveState']) => {
-      setSaveState(next);
+      setHandshaking(next === 'connecting');
       if (reportedStatus.current === next) return;
       reportedStatus.current = next;
       onEditorStatusChange?.({ saveState: next });
@@ -831,7 +832,7 @@ export function NoteEditorCore({
                  * than a healthy handshake still paints, otherwise a broken
                  * collaboration service would leave a readable note hidden
                  * behind a spinner. */}
-                {saveState === 'connecting' ? (
+                {handshaking ? (
                   <FileLoading message={m.editor_connecting()} />
                 ) : (
                   <>

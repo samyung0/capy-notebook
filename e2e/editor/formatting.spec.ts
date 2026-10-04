@@ -209,9 +209,13 @@ test.describe('formatting', () => {
     await expect(bold.locator('svg')).toHaveCSS('width', '16px');
     await expect(bold.locator('svg')).toHaveAttribute('stroke-width', '1.8');
     await page.mouse.move(0, 0);
-    const activeColor = await bold.evaluate(
-      (element) => getComputedStyle(element).backgroundColor
-    );
+    // Read the pressed colour once its transition has finished, not midway.
+    const activeColor = await bold.evaluate(async (element) => {
+      await Promise.all(
+        element.getAnimations().map((animation) => animation.finished)
+      );
+      return getComputedStyle(element).backgroundColor;
+    });
     expect(activeColor).not.toBe('rgba(0, 0, 0, 0)');
     await expect(floatingBold).toHaveCSS('background-color', activeColor);
 

@@ -32,7 +32,7 @@ import {
 } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { Header } from './CenterContentHeader';
+import { createEditorStatusStore, Header } from './CenterContentHeader';
 import {
   type MaterialDocument,
   type QuizElement,
@@ -100,9 +100,9 @@ export function CenterContent({
   const materialMode =
     requestedMode ?? (item ? readDocumentMode(item) : 'view');
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [editorStatus, setEditorStatus] = useState<NoteEditorStatus | null>(
-    null
-  );
+  const [editorStatus] = useState(createEditorStatusStore);
+  // Stable: the store's own setter, so reporting never re-renders this pane.
+  const setEditorStatus = editorStatus.getState().report;
 
   useEffect(() => {
     setImageZoom(IMAGE_MIN_ZOOM);

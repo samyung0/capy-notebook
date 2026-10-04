@@ -269,15 +269,21 @@ export async function runJourney(
     const editable = await ui.element<HTMLElement>('[contenteditable="true"]');
     // A normal typed edit, still inside the checkpoint debounce when the
     // room turns read-only.
-    editable.focus();
-    getSelection()?.selectAllChildren(editable);
-    getSelection()?.collapseToEnd();
-    // Slate reads the DOM selection on a throttled selectionchange.
-    const since = performance.now();
-    await ui.wait(
-      () => performance.now() - since > 250,
-      'editor selection synced'
-    );
+    const placeCaret = () => {
+      editable.focus();
+      getSelection()?.selectAllChildren(editable);
+      getSelection()?.collapseToEnd();
+      return performance.now();
+    };
+    // Slate reads the DOM selection on a throttled selectionchange, and a
+    // render that lands first clears a caret it has not read yet: place it
+    // again until one survives that long.
+    let since = placeCaret();
+    await ui.wait(() => {
+      const anchor = getSelection()?.anchorNode;
+      if (!(anchor && editable.contains(anchor))) since = placeCaret();
+      return performance.now() - since > 250;
+    }, 'editor selection synced');
     // Typed text as the browser delivers it; Slate applies it to the document.
     editable.dispatchEvent(
       new InputEvent('beforeinput', {

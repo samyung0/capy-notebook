@@ -1,5 +1,6 @@
 import { useNavigate } from '@tanstack/react-router';
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
+import { createStore, type StoreApi } from 'zustand';
 import {
   useFile,
   useFlashcardSet,
@@ -67,6 +68,79 @@ const STATUS_ICON = {
   syncing: 'cloudSync',
   unsaved: 'cloudAlert',
 } satisfies Record<NoteEditorSaveState, IconName>;
+
+/** The open editor's save status. A store rather than `CenterContent` state:
+ * it changes on the first keystroke of every edit (Saved to Syncing), and as
+ * state it re-rendered the whole header and the open note for one icon. */
+export type EditorStatusStore = StoreApi<{
+  report: (status: NoteEditorStatus | null) => void;
+  status: NoteEditorStatus | null;
+}>;
+
+export const createEditorStatusStore = (): EditorStatusStore =>
+  createStore((set) => ({
+    report: (status) => set({ status }),
+    status: null,
+  }));
+
+function EditorSaveStatus({
+  layout,
+  store,
+}: {
+  layout: 'office' | 'default';
+  store: EditorStatusStore;
+}) {
+  // Subscribed in an effect rather than with `useStore`: an external-store
+  // update renders synchronously, and the first one (Synced, from the room's
+  // sync callback) made a near-limit note render twice on open.
+  const [editorStatus, setEditorStatus] = useState(store.getState().status);
+  useEffect(() => {
+    setEditorStatus(store.getState().status);
+    return store.subscribe((state) => setEditorStatus(state.status));
+  }, [store]);
+  const online = useOnlineStatus();
+  const statusLabel = noteEditorStatusLabel(editorStatus);
+  if (!(online && editorStatus && statusLabel)) return null;
+  const failed =
+    editorStatus.saveState === 'error' || editorStatus.saveState === 'unsaved';
+  if (layout === 'office')
+    return (
+      <span
+        className={cn(
+          'ml-2 inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[0.8125rem] text-fg-muted',
+          failed && 'text-solid-error'
+        )}
+        data-testid="editor-save-state"
+        role="status"
+      >
+        <Icon
+          className="size-[15px]"
+          name={STATUS_ICON[editorStatus.saveState]}
+        />
+        {statusLabel}
+      </span>
+    );
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        className={cn(
+          'ml-1 inline-flex shrink-0 items-center rounded-sm px-1 outline-none focus-visible:ring-2 focus-visible:ring-focus',
+          failed && 'text-solid-error'
+        )}
+        data-testid="editor-save-state"
+        render={<span role="status" />}
+        tabIndex={0}
+      >
+        <Icon
+          className="size-4 lg:size-5"
+          name={STATUS_ICON[editorStatus.saveState]}
+        />
+        <span className="sr-only">{statusLabel}</span>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{statusLabel}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 function useHeader(
   item: OpenItem,
@@ -263,7 +337,7 @@ export function Header({
   isFullscreen: boolean;
   onDeleted: () => void;
   onToggleFullscreen: () => void;
-  editorStatus: NoteEditorStatus | null;
+  editorStatus: EditorStatusStore;
   readOnly: boolean;
   workspaceId: string;
 }) {
@@ -283,8 +357,6 @@ export function Header({
     : materialMode && modes?.includes(materialMode)
       ? materialMode
       : defaultMode;
-  const statusLabel = noteEditorStatusLabel(editorStatus);
-  const online = useOnlineStatus();
   // Phones have no room to go fuller than the panel already is.
   const sm = useMediaQuery('(min-width: 640px)');
   const office = !!file && !!officeFormatOf(file);
@@ -409,24 +481,7 @@ export function Header({
         </div>
         <div className="col-span-2 row-start-2 flex min-w-0 items-center sm:col-span-1">
           {menuBar}
-          {online && editorStatus && statusLabel && (
-            <span
-              className={cn(
-                'ml-2 inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[0.8125rem] text-fg-muted',
-                (editorStatus.saveState === 'error' ||
-                  editorStatus.saveState === 'unsaved') &&
-                  'text-solid-error'
-              )}
-              data-testid="editor-save-state"
-              role="status"
-            >
-              <Icon
-                className="size-[15px]"
-                name={STATUS_ICON[editorStatus.saveState]}
-              />
-              {statusLabel}
-            </span>
-          )}
+          <EditorSaveStatus layout="office" store={editorStatus} />
         </div>
         <div className="col-start-2 row-start-1 flex items-center gap-0 sm:row-span-2 max-sm:[&_[data-slot=button]]:size-6 max-sm:[&_[data-slot=dropdown-menu-trigger]]:size-6">
           {right}
@@ -453,28 +508,7 @@ export function Header({
           {title ?? '--'}
         </h2>
         <OfflineStatus />
-        {online && editorStatus && statusLabel && (
-          <Tooltip>
-            <TooltipTrigger
-              className={cn(
-                'ml-1 inline-flex shrink-0 items-center rounded-sm px-1 outline-none focus-visible:ring-2 focus-visible:ring-focus',
-                (editorStatus.saveState === 'error' ||
-                  editorStatus.saveState === 'unsaved') &&
-                  'text-solid-error'
-              )}
-              data-testid="editor-save-state"
-              render={<span role="status" />}
-              tabIndex={0}
-            >
-              <Icon
-                className="size-4 lg:size-5"
-                name={STATUS_ICON[editorStatus.saveState]}
-              />
-              <span className="sr-only">{statusLabel}</span>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">{statusLabel}</TooltipContent>
-          </Tooltip>
-        )}
+        <EditorSaveStatus layout="default" store={editorStatus} />
         <WorkspaceStatusButton workspaceId={standalone ? '' : workspaceId} />
       </div>
       <div className="ml-auto flex items-center gap-0">{right}</div>
