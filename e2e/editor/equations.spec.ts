@@ -325,13 +325,21 @@ for (const kind of ['block', 'inline'] as const) {
     await expect(caret).toHaveCount(1);
     const caretStyle = await caret.evaluate((element) => {
       const style = getComputedStyle(element, '::after');
+      // Resolve the app theme's text colour to rgb() for comparison.
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--text-primary)';
+      document.body.append(probe);
+      const textPrimary = getComputedStyle(probe).color;
+      probe.remove();
       return {
         color: style.borderRightColor,
         fontSize: Number.parseFloat(style.fontSize),
         height: Number.parseFloat(style.height),
+        textPrimary,
       };
     });
-    expect(caretStyle.color).toBe('rgb(0, 0, 0)');
+    // The caret follows the light app theme, not the dark system.
+    expect(caretStyle.color).toBe(caretStyle.textPrimary);
     expect(caretStyle.height).toBeGreaterThanOrEqual(caretStyle.fontSize - 0.1);
 
     const formula = field.locator('.ML__latex');
