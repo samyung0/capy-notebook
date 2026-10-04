@@ -619,13 +619,13 @@ Office runtime (`pnpm bench:office`, production build, [editor-perf.md](editor-p
 
 | File                                                                    | About                                                                                                                                       |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`bench/editor/scripts/docx.office.ts`](../bench/editor/scripts/docx.office.ts) | 2 cases (15- and 62-page DOCX): open to first paint, View to Edit ready, keystroke to painted frame; fails on unpainted keys, a worker fallback or a missed provisional budget. Runs in the `Performance` workflow's `office` job (dispatch only). |
+| [`bench/editor/scripts/docx.office.ts`](../bench/editor/scripts/docx.office.ts) | 2 cases (15- and 62-page DOCX): open to first paint, View to Edit ready, keystroke to painted frame; fails on unpainted keys, a worker fallback or a missed budget (calibrated on CI). Runs in the `Performance` workflow's `office` job (dispatch only). |
 
 Collaboration stress (`pnpm bench:stress`, Docker, [editor-perf.md](editor-perf.md#collaboration-stress-pnpm-benchstress)):
 
 | File | About |
 | ---- | ----- |
-| [`bench/collaboration/scripts/stress.ts`](../bench/collaboration/scripts/stress.ts) | 20 peers per room type markers into one Office (`exchange-plan.docx`) and one Plate room for 3 minutes with offline drops and rejoins, against the e2e stack plus a fake S3; fails on non-convergence, a missing or doubled marker or a collaboration error, exit 2 on a missed provisional p95 budget. Runs in the `Performance` workflow's `stress` job (dispatch only). |
+| [`bench/collaboration/scripts/stress.ts`](../bench/collaboration/scripts/stress.ts) | 20 peers per room type markers into one Office (`exchange-plan.docx`) and one Plate room for 3 minutes with offline drops and rejoins, against the e2e stack plus a fake S3; fails on non-convergence, a missing or doubled marker or a collaboration error, exit 2 on a missed p95 budget (calibrated on CI). Runs in the `Performance` workflow's `stress` job (dispatch only). |
 
 Supporting (not tests): [`bench/editor/scripts/metrics.ts`](../bench/editor/scripts/metrics.ts) instrumentation and per-case snapshot output,
 [`bench/editor/scripts/snapshot.ts`](../bench/editor/scripts/snapshot.ts) typed assembly/comparison,

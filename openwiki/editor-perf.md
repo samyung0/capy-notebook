@@ -55,11 +55,10 @@ minutes. Per DOCX fixture
 It runs unthrottled: CDP's CPU throttle reaches neither the runtime frame nor
 the engine workers. It fails on unpainted keys, a worker fallback, or a missed
 budget (`BUDGET` in the spec: open, View to Edit, key p50 and p90 per fixture).
-The budgets are provisional, ~1.3x the median of three laptop runs at load 7
-to 10; an earlier set from runs at load 16 to 24 sat 20 to 50% higher, so a
-local miss on a busy machine is noise.
-Recalibrate them from three runs of the `office` job below, as the editor
-budgets were.
+The budgets are ~1.3x the median of three runs of the `office` job below
+(2026-10-04; every metric within 3% of its median there). A laptop run is
+faster than the runner on typing and slower under load, so a local miss is
+not a regression by itself.
 
 ## Collaboration stress (`pnpm bench:stress`)
 
@@ -81,9 +80,9 @@ text each change inserts, so the client's own cost stays flat. Then:
 - every peer and a late joiner hold the same text (convergence);
 - every typed marker is there exactly once (no lost or doubled update);
 - the collaboration service logged no error;
-- p95 marker latency within `STRESS_P95_BUDGET_MS`, provisional 35 ms
-  (~1.3x the slower room's median of three runs at load 3 to 17: Office 26,
-  Plate 27 ms).
+- p95 marker latency within `STRESS_P95_BUDGET_MS`, 10 ms (~1.3x the slower
+  room's median of three CI runs: Office 5/5/3, Plate 8/9/5 ms; a laptop
+  measures 15 to 35 ms, so set the variable for local runs).
 
 A failed check exits 1, a missed budget alone exits 2. SIGINT and SIGTERM tear
 the stack down and remove the throwaway key. Under heavy load
@@ -105,20 +104,25 @@ budgets gate promotion (check name `editor_perf / perf`).
 `scripts/review/validate-review-boundaries.mjs` fails CI if promotion stops
 calling `perf.yml` or the file stops being dispatchable and callable. `office`
 runs `pnpm bench:office` on dispatch only (input `office`, default true; a
-`workflow_call` defaults it to false, so promotion skips it) and, while its
-budgets are provisional, has `continue-on-error`: a miss shows on the job, the
-run stays green, and the run's editor snapshot still counts as a baseline. Its
-results go to the job summary and the `office-perf-results` artifact.
+`workflow_call` defaults it to false, so promotion skips it); its CI-calibrated
+budgets fail the job and the run. Its results go to the job summary and the
+`office-perf-results` artifact.
 `stress` runs `pnpm bench:stress` (below) on dispatch only (input `stress`,
 false on `workflow_call`) against the `e2e_stack` images, built from the same
-GitHub Actions layer cache. Like `office` it has `continue-on-error`: a failed
-check (exit 1) or a missed latency budget (exit 2) fails the job, and its
-summary marks a correctness failure as such, but the run stays green.
+GitHub Actions layer cache. It has `continue-on-error` (its p95 is a few
+milliseconds with a 40% run-to-run spread): a failed check (exit 1) or a
+missed latency budget (exit 2) fails the job, and its summary marks a
+correctness failure as such, but the run stays green and its editor snapshot
+still counts as a baseline.
 `stress.json` goes to the summary and the `collaboration-stress-results`
 artifact.
 
 Steps of the `perf` job:
 
+0. Check out the BetterOffice submodule and run `pnpm office:prepare` (with
+   the BetterOffice WASM cache), as `ci.yml`'s `e2e_editor` does: the app
+   imports the fork, and without it Vite's dependency scan fails before any
+   budget runs.
 1. Run `pnpm bench:editor` with `PERF_SNAPSHOT_DIR` set. `reportMetrics` writes one JSON
    file per budget case.
 2. [`bench/editor/scripts/compare-cli.ts`](../bench/editor/scripts/compare-cli.ts) assembles a

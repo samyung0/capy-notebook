@@ -43,9 +43,8 @@ fixtures, the 15-page `exchange-plan.docx` and the generated 62-page
 its checkpoint comes from `scripts/dev/seed-scenario-office.ts`). It reports
 open to first paint, View to Edit ready and keystroke to painted frame, and
 fails on unpainted keys, a fallback to the main-thread engine, or a missed
-provisional budget (from three laptop runs). It runs as the `office` job of the same
-`Performance` workflow, on dispatch only, without failing the run until its
-budgets are recalibrated there.
+budget (from three CI runs). It runs as the `office` job of the same
+`Performance` workflow, on dispatch only.
 
 ### collaboration
 
@@ -59,7 +58,7 @@ markers into an Office room (`exchange-plan.docx`) and a Plate note for
 STRESS_MINUTES (3), each dropping offline for 1-5 s now and then and typing on.
 It fails when the peers and a late joiner do not converge, a typed marker is
 missing or duplicated, or the collaboration service logs an error (exit 1),
-and reports a missed provisional p95 latency budget with exit 2. The
+and reports a missed p95 latency budget (from three CI runs) with exit 2. The
 `Performance` workflow's `stress` job runs it on dispatch only. Results land in
 the gitignored `collaboration/.results/`.
 

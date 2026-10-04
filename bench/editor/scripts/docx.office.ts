@@ -18,23 +18,22 @@ import { percentile, reportMetrics } from './metrics';
  */
 
 /**
- * Provisional: ~1.3x the median of three local runs (2026-10-04, M-series
- * Mac, production build, runtime same-site on localhost, load 7-10), the same
- * rule as the editor budgets. Recalibrate from three runs of the Performance
- * workflow, whose Office job does not fail the run until then.
+ * ~1.3x the median of three runs of the Performance workflow on ubuntu-24.04
+ * (2026-10-04, runs 37174928433, 37174944257, 37174959817; every metric
+ * within 3% of its median), the same rule as the editor budgets.
  */
 const BUDGET = {
   'bio-office-docx': {
-    editReadyMs: 2100, // median 1,625
-    keyToFrameP50Ms: 110, // median 83
-    keyToFrameP90Ms: 120, // median 94
-    openFirstPaintMs: 5500, // median 4,257 (MSW adds ~1.1 s per call)
+    editReadyMs: 4250, // median 3,259
+    keyToFrameP50Ms: 180, // median 138
+    keyToFrameP90Ms: 195, // median 150
+    openFirstPaintMs: 6900, // median 5,289 (MSW adds ~1.1 s per call)
   },
   'bio-office-docx-long': {
-    editReadyMs: 4900, // median 3,771
-    keyToFrameP50Ms: 810, // median 621
-    keyToFrameP90Ms: 1700, // median 1,276
-    openFirstPaintMs: 7900, // median 6,041
+    editReadyMs: 8100, // median 6,230
+    keyToFrameP50Ms: 570, // median 436
+    keyToFrameP90Ms: 1340, // median 1,031
+    openFirstPaintMs: 10_350, // median 7,954
   },
 };
 

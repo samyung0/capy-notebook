@@ -38,11 +38,11 @@ const EDIT_MS = Number(process.env.STRESS_EDIT_MS ?? 1500);
 // Per peer and second, the chance of dropping offline for 1-5 s.
 const DROP_PER_SECOND = Number(process.env.STRESS_DROP_PER_SECOND ?? 0.02);
 /**
- * Provisional: ~1.3x the slower room's median p95 of three local runs
- * (2026-10-04, M-series Mac, load 3-17: Office 26/26/15 ms, Plate 35/27/19 ms);
- * recalibrate from three runs of the Performance workflow's stress job.
+ * ~1.3x the slower room's median p95 over three runs of the Performance
+ * workflow (2026-10-04: Office 5/5/3 ms, Plate 8/9/5 ms). Milliseconds with a
+ * wide relative spread, so the CI job keeps continue-on-error.
  */
-const P95_BUDGET_MS = Number(process.env.STRESS_P95_BUDGET_MS ?? 35);
+const P95_BUDGET_MS = Number(process.env.STRESS_P95_BUDGET_MS ?? 10);
 const OUT = process.env.STRESS_OUT ?? path.join(root, 'bench/collaboration/.results');
 const WORKSPACE = 'ws_e2e_edit';
 const OWNER = 'u_owner';
