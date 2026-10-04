@@ -179,7 +179,7 @@ test.describe('quiz sharing', () => {
       const attempt = await anonymousApi.post(
         `/api/quizzes/${quiz.id}/attempts`,
         {
-          data: { answers: {}, correct: 0, questions: [], total: 1, wrong: [] },
+          data: { answers: {}, correct: 0, questions: [], total: 1 },
         }
       );
       expect(attempt.status()).toBe(401);
@@ -198,7 +198,6 @@ test.describe('quiz sharing', () => {
           correct: 0,
           questions: [],
           total: 1,
-          wrong: [],
         },
       }
     );
