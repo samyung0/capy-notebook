@@ -77,6 +77,8 @@ export function XlsxViewer({
   const a11yWindowKeyRef = useRef('');
   const frameRef = useRef<DisplayList | null>(null);
   const selectionRef = useRef<SheetSelection>(ORIGIN);
+  // The open workbook's analysis, reported with the first painted grid.
+  const pendingAnalysisRef = useRef<WorkbookAnalysis | null>(null);
   const tabsId = useId();
   const [sheetNames, setSheetNames] = useState<string[]>([]);
   const [activeSheet, setActiveSheet] = useState(0);
@@ -165,11 +167,14 @@ export function XlsxViewer({
           );
         }
         context.restore();
+        const analysis = pendingAnalysisRef.current;
+        pendingAnalysisRef.current = null;
+        if (analysis) onAnalysis(analysis);
       }
     } catch (value) {
       onError(toError(value));
     }
-  }, [onError]);
+  }, [onAnalysis, onError]);
 
   useEffect(() => {
     let disposed = false;
@@ -179,6 +184,7 @@ export function XlsxViewer({
     sheetNamesRef.current = [];
     frameRef.current = null;
     selectionRef.current = ORIGIN;
+    pendingAnalysisRef.current = null;
     setFormula({ address: '', text: '' });
     setA11yGrid(null);
     setActiveSheet(0);
@@ -207,7 +213,7 @@ export function XlsxViewer({
           setActiveSheet(info.activeSheet);
           setExtent({ height: info.contentHeight, width: info.contentWidth });
           select(handle, ORIGIN.cell);
-          onAnalysis(analysis);
+          pendingAnalysisRef.current = analysis;
           requestAnimationFrame(paint);
         } catch (value) {
           onError(toError(value));

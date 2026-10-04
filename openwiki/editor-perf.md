@@ -55,15 +55,14 @@ only under `VITE_LOAD_TEST_SEED`; their checkpoints come from
 `scripts/dev/seed-scenario-office.ts`. Per file it reports:
 
 - open to first paint: the file click to the runtime's `ready`, on the host's
-  clock. DOCX sends it once its first pages are painted, with the runtime's
-  own `timings` (`loadMs` frame start to `load`, `paintMs` `load` to first
-  painted pages; `OfficeReadyTimings`). XLSX and PPTX send `ready` without
-  timings once the file is parsed and laid out: one frame before the grid
-  paints (XLSX), before the first slide's pictures decode (PPTX). So their
-  figure ends slightly before the paint, measured from outside;
+  clock. Every viewer sends it once its first pages, grid or slide (pictures
+  included) are painted, with the runtime's own `timings` (`loadMs` frame
+  start to `load`, `paintMs` `load` to first paint; `OfficeReadyTimings`);
 - View to Edit ready: the mode toggle click to the edit frame's `ready`
-  (DOCX), or to its `collaboration-ready` (XLSX, PPTX: the editor's replica,
-  reported in the same React commit as the editor's first real paint);
+  (DOCX, with timings), or to its `collaboration-ready` (XLSX, PPTX: the
+  editor's replica, reported in the same React commit as the editor's first
+  real paint). Their editors send no `ready`; that needs a first-paint
+  callback from BetterOffice's XLSX and PPTX editors (`todo-office.md`);
 - keystroke to frame: 40 keys at 120 ms (p50, p90, max, unpainted keys).
   DOCX types `a` and a space into body text and waits for the next
   `docx-pages-presented` in the frame. XLSX types `7` with Enter every sixth
@@ -81,28 +80,39 @@ only under `VITE_LOAD_TEST_SEED`; their checkpoints come from
   Workers, such as the DOCX engine and its lowering worker, are not counted.
   `performance.measureUserAgentSpecificMemory` would need cross-origin
   isolation, which the app does not have;
-- view-mode heap (a second case per file, for the view-mode creep item in
-  `todo-office.md`): open in View, then two full passes (every page, every
-  sheet's rows and columns, or every slide, then back to the start), with the
-  heap after open and after each pass. The first pass warms caches; growth on
-  the second is what keeps creeping.
+- view-mode heap over full passes (a second case per file, for the view-mode
+  creep item in `todo-office.md`): open in View, then two full passes (every
+  page, every sheet's rows and columns, or every slide, then back to the
+  start), with the heap after open and after each pass. The first pass warms
+  caches; growth on the second is what keeps creeping;
+- view-mode heap over open and close (a third case for the small files and
+  the long DOCX): with a plain text file open, open the Office file in View,
+  then switch back to the text file (the workspace has no close button), five
+  times, with the heap after each close. Every sample also counts the
+  renderer's live `documents`: a closed runtime frame that stays counted is a
+  leak, and its WASM memory would no longer be visible to the probe.
 
 It runs unthrottled: CDP's CPU throttle reaches neither the runtime frame nor
 the engine workers. Every file fails on unpainted keys, typing that sends no
-edit to the room, a worker fallback, or a missed budget (`BUDGET` in the
-spec: open, View to Edit, key p50 and p90 per fixture). Budgets are ~1.3x the
-median of three runs of the `office` job below, rounded up to 5 ms below a
-second and 50 ms above: DOCX from 2026-10-04 runs 37174928433, 37174944257
-and 37174959817 (every metric within 3% of its median), XLSX and PPTX from
-2026-10-04 runs 37197306625, 37197311546 and 37197316994 on 15136468. All
-three of the latter ran on AMD EPYC 7763 runners, the slowest type seen on
-the workflow so far, so a faster runner sits well inside them. Their spread was
-within 8% of the median except the key timings of a few milliseconds
-(XLSX and PPTX p50 11 to 14 ms, up to 18% apart): the small files' p50
-budgets of 15 and 20 ms sit one or two milliseconds above the slowest run.
+edit to the room, a viewer `ready` without timings, a worker fallback, or a
+missed budget (open, View to Edit, key p50 and p90 per fixture). The spec
+keeps the medians (`MEDIANS`) and derives each budget (`budgetOf`): 1.3x the
+median, rounded up to 5 ms below a second and 50 ms above, and no keystroke
+budget below `KEY_BUDGET_FLOOR_MS` (30 ms), since a one-frame wobble fails
+anything smaller. The medians come from three runs of the `office` job below:
+DOCX from 2026-10-04 runs 37174928433, 37174944257 and 37174959817 (every
+metric within 3% of its median), XLSX and PPTX from 2026-10-04 runs
+37197306625, 37197311546 and 37197316994 on 15136468. All three of the latter
+ran on AMD EPYC 7763 runners, the slowest type seen on the workflow so far,
+so a faster runner sits well inside them. Their spread was within 8% of the
+median except the key timings of a few milliseconds (XLSX and PPTX p50 11 to
+14 ms, up to 18% apart), which the floor covers. Those runs predate the XLSX
+and PPTX viewers' `ready` moving to after the first paint, so their open
+medians end one frame (XLSX) or the first slide's picture decode (PPTX)
+early. TODO: recheck those open medians on three CI runs.
 
 Heap figures stay report-only: they go to the results JSON (`budget.heap`,
-and `budget: "report-only"` in the view-heap cases), the job summary and the
+and `budget: "report-only"` in the heap cases), the job summary and the
 artifact, and fail nothing. TODO: decide what a heap ceiling means (retained
 after GC or peak, which of JS, array buffers and WASM, per format or per
 file), then gate it from three CI runs.

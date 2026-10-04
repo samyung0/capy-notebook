@@ -35,8 +35,9 @@ screen-reader mirror settling 300 ms after scrolling.
   `persistence.ts`, and `ProjectMaterialContent` doesn't retry 40P01.
 - **View-mode memory** still creeps about 2 MB per open and close (232 → 271 MB
   over 20 rounds); cause unknown, not the font loading. `bench:office` now
-  records the heap over two full view-mode passes per file (`*-view-heap`,
-  report-only).
+  records the heap over two full view-mode passes per file (`*-view-heap`) and
+  after each of five closes (`*-open-close-heap`, with the live document
+  count), both report-only.
 - **Stale shown text after a two-peer half-link delete.** Two peers each
   deleting half of the last link of a field with a nested field
   (`[REF|[PAGE|7]L(AA)]`) leave the editor showing `REF=` until publication; the
@@ -102,6 +103,12 @@ screen-reader mirror settling 300 ms after scrolling.
   ArrowRight six times and ArrowDown once; the name box shows H5 but the
   column is off screen, and typing `7` then Enter leaves H5 at 2.
   `bench:office` types into F5 for this reason.
+- **XLSX/PPTX edit-mode first paint.** Their editors send no `ready`, so
+  `bench:office` times View to Edit to `collaboration-ready` from outside.
+  Timing the first painted frame needs a first-paint callback from
+  BetterOffice's `XlsxEditor` and `PptxEditor` (as the DOCX editor's
+  `docx-pages-presented`), which `XlsxEditorHost`/`PptxEditorHost` would turn
+  into `ready` with timings.
 - **Fork icons left over** in the print preview, find/replace and shortcut
   dialogs, toasts and placeholders.
 - **Chrome/Edge 111–118:** dialog buttons and tooltips have no colour fallback

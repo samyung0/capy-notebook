@@ -53,6 +53,8 @@ export function PptxViewer({
   const handleRef = useRef<PresentationViewerHandle | null>(null);
   const imagesRef = useRef(new PptxImageCache());
   const paintGenerationRef = useRef(0);
+  // The open deck's analysis, reported once the first slide is painted.
+  const pendingAnalysisRef = useRef<PresentationAnalysis | null>(null);
   const [slideIndex, setSlideIndex] = useState(0);
   // Every slide, laid out at open as the editor's strip does; null while opening.
   // ponytail: eager layout of the whole deck; lay thumbnails out on scroll if large decks open slowly.
@@ -112,6 +114,7 @@ export function PptxViewer({
     let handle: PresentationViewerHandle | null = null;
     setSlides(null);
     setSlideIndex(0);
+    pendingAnalysisRef.current = null;
     void Promise.all([initWasm(), loadPptxFonts()]).then(
       ([, fonts]) => {
         if (disposed) return;
@@ -120,13 +123,14 @@ export function PptxViewer({
           handleRef.current = handle;
           const analysis = analyzeOpenPresentation(handle);
           const open = handle;
-          setSlides(
-            open.snapshot().slides.map((slide, index) => ({
-              frame: open.layoutSlide(index),
-              notes: slide.notes ?? '',
-            }))
-          );
-          onAnalysis(analysis);
+          const laidOut = open.snapshot().slides.map((slide, index) => ({
+            frame: open.layoutSlide(index),
+            notes: slide.notes ?? '',
+          }));
+          setSlides(laidOut);
+          // A deck without slides has nothing to paint.
+          if (laidOut.length === 0) onAnalysis(analysis);
+          else pendingAnalysisRef.current = analysis;
         } catch (value) {
           onError(toError(value));
         }
@@ -221,6 +225,9 @@ export function PptxViewer({
         sizeCanvasForSlide(visibleCanvas, frame, dpr, scale);
         const visibleContext = visibleCanvas.getContext('2d');
         if (visibleContext) visibleContext.drawImage(renderCanvas, 0, 0);
+        const analysis = pendingAnalysisRef.current;
+        pendingAnalysisRef.current = null;
+        if (analysis) onAnalysis(analysis);
       },
       (value: unknown) => {
         if (generation === paintGenerationRef.current) onError(toError(value));
@@ -229,7 +236,15 @@ export function PptxViewer({
     return () => {
       paintGenerationRef.current += 1;
     };
-  }, [frame, onError, resolveImage, stageSize, highlight, slideIndex]);
+  }, [
+    frame,
+    onAnalysis,
+    onError,
+    resolveImage,
+    stageSize,
+    highlight,
+    slideIndex,
+  ]);
 
   const selectSlide = (next: number) => {
     if (next >= 0 && next < slideCount) setSlideIndex(next);

@@ -11,17 +11,17 @@ import { cdpSession, percentile, reportMetrics } from './metrics';
  * DOCX, XLSX and PPTX in the Office runtime, on a production build (see
  * playwright.office.config.ts), one small and one large file each: open to
  * first paint, View to Edit ready, keystroke to painted frame and the JS heap
- * at each step, plus a view-mode memory probe over two full passes.
+ * at each step, plus two view-mode memory probes: two full passes through the
+ * file, and closing and reopening it.
  *
  * Timings are on the host's clock, from the click to a runtime message:
- * - DOCX: `ready`, sent once its first pages are painted (in edit mode too),
- *   carrying the runtime's own `timings` (officeProtocol.ts,
- *   OfficeReadyTimings).
- * - XLSX/PPTX open: `ready` without timings, sent once the file is parsed and
- *   laid out: one frame before the grid paints (XLSX), before the slide's
- *   pictures decode (PPTX).
+ * - open, every format: `ready`, sent once the first pages, grid or slide are
+ *   painted, carrying the runtime's own `timings` (officeProtocol.ts,
+ *   OfficeReadyTimings);
+ * - DOCX edit: the edit frame's `ready`, with timings too;
  * - XLSX/PPTX edit: `collaboration-ready`, the editor's replica, reported in
- *   the same React commit as the editor's first real paint.
+ *   the same React commit as the editor's first real paint. Their editors
+ *   send no `ready`: that needs a first-paint callback from BetterOffice.
  * Typing reads the frame directly, since Playwright can evaluate inside the
  * cross-origin runtime: DOCX to the next `docx-pages-presented`; XLSX/PPTX,
  * which apply input on the frame's main thread, to the first task after the
@@ -37,62 +37,85 @@ import { cdpSession, percentile, reportMetrics } from './metrics';
  * needs cross-origin isolation, which the app does not have.
  */
 
+interface Timings {
+  editReadyMs: number;
+  keyToFrameP50Ms: number;
+  keyToFrameP90Ms: number;
+  openFirstPaintMs: number;
+}
+
 /**
- * ~1.3x the median of three runs of the Performance workflow on ubuntu-24.04,
- * the same rule as the editor budgets, rounded up to 5 ms below a second and
- * 50 ms above. DOCX: 2026-10-04 runs 37174928433, 37174944257, 37174959817
- * (every metric within 3% of its median). XLSX and PPTX: 2026-10-04 runs
- * 37197306625, 37197311546, 37197316994 on 15136468, all three on AMD EPYC
- * 7763 runners. For XLSX/PPTX `openFirstPaintMs` ends at `ready` and
- * `editReadyMs` at `collaboration-ready` (see above). Heap figures are
+ * Medians of three runs of the Performance workflow on ubuntu-24.04. DOCX:
+ * 2026-10-04 runs 37174928433, 37174944257, 37174959817 (every metric within
+ * 3% of its median). XLSX and PPTX: 2026-10-04 runs 37197306625, 37197311546,
+ * 37197316994 on 15136468, all three on AMD EPYC 7763 runners, when their
+ * `ready` still came before the first paint (one frame for XLSX, the slide's
+ * pictures for PPTX); recheck those open medians on CI. For XLSX/PPTX
+ * `editReadyMs` ends at `collaboration-ready` (see above). Heap figures are
  * report-only (openwiki/editor-perf.md).
  */
-const BUDGET: Record<
-  Fixture['id'],
-  {
-    editReadyMs: number;
-    keyToFrameP50Ms: number;
-    keyToFrameP90Ms: number;
-    openFirstPaintMs: number;
-  }
-> = {
+const MEDIANS: Record<Fixture['id'], Timings> = {
+  // MSW adds ~1.1 s per call to every open.
   'bio-office-docx': {
-    editReadyMs: 4250, // median 3,259
-    keyToFrameP50Ms: 180, // median 138
-    keyToFrameP90Ms: 195, // median 150
-    openFirstPaintMs: 6900, // median 5,289 (MSW adds ~1.1 s per call)
+    editReadyMs: 3259,
+    keyToFrameP50Ms: 138,
+    keyToFrameP90Ms: 150,
+    openFirstPaintMs: 5289,
   },
   'bio-office-docx-long': {
-    editReadyMs: 8100, // median 6,230
-    keyToFrameP50Ms: 570, // median 436
-    keyToFrameP90Ms: 1340, // median 1,031
-    openFirstPaintMs: 10_350, // median 7,954
+    editReadyMs: 6230,
+    keyToFrameP50Ms: 436,
+    keyToFrameP90Ms: 1031,
+    openFirstPaintMs: 7954,
   },
   'bio-office-pptx': {
-    editReadyMs: 1050, // median 790
-    keyToFrameP50Ms: 15, // median 11
-    keyToFrameP90Ms: 25, // median 18
-    openFirstPaintMs: 3950, // median 3,038
+    editReadyMs: 790,
+    keyToFrameP50Ms: 11,
+    keyToFrameP90Ms: 18,
+    openFirstPaintMs: 3038,
   },
   'bio-office-pptx-long': {
-    editReadyMs: 3200, // median 2,442
-    keyToFrameP50Ms: 90, // median 69
-    keyToFrameP90Ms: 100, // median 75
-    openFirstPaintMs: 5900, // median 4,530
+    editReadyMs: 2442,
+    keyToFrameP50Ms: 69,
+    keyToFrameP90Ms: 75,
+    openFirstPaintMs: 4530,
   },
   'bio-office-xlsx': {
-    editReadyMs: 1650, // median 1,244
-    keyToFrameP50Ms: 20, // median 14
-    keyToFrameP90Ms: 65, // median 47
-    openFirstPaintMs: 4050, // median 3,086
+    editReadyMs: 1244,
+    keyToFrameP50Ms: 14,
+    keyToFrameP90Ms: 47,
+    openFirstPaintMs: 3086,
   },
   'bio-office-xlsx-long': {
-    editReadyMs: 6750, // median 5,188
-    keyToFrameP50Ms: 20, // median 12
-    keyToFrameP90Ms: 410, // median 313
-    openFirstPaintMs: 5000, // median 3,825
+    editReadyMs: 5188,
+    keyToFrameP50Ms: 12,
+    keyToFrameP90Ms: 313,
+    openFirstPaintMs: 3825,
   },
 };
+
+/** No keystroke budget goes below this: a one-frame wobble fails anything smaller. */
+const KEY_BUDGET_FLOOR_MS = 30;
+
+/**
+ * 1.3x the median, the same rule as the editor budgets, rounded up to 5 ms
+ * below a second and 50 ms above; keystroke budgets at least the floor.
+ */
+function budgetOf(median: Timings): Timings {
+  const limit = (ms: number) => {
+    // Rounded first, so 150 x 1.3 stays 195 rather than 195.00000000000003.
+    const scaled = Math.round(ms * 130) / 100;
+    const step = scaled < 1000 ? 5 : 50;
+    return Math.ceil(scaled / step) * step;
+  };
+  const key = (ms: number) => Math.max(KEY_BUDGET_FLOOR_MS, limit(ms));
+  return {
+    editReadyMs: limit(median.editReadyMs),
+    keyToFrameP50Ms: key(median.keyToFrameP50Ms),
+    keyToFrameP90Ms: key(median.keyToFrameP90Ms),
+    openFirstPaintMs: limit(median.openFirstPaintMs),
+  };
+}
 
 type Fixture = (typeof FIXTURES)[number];
 
@@ -283,6 +306,7 @@ async function heap(page: Page) {
   const session = await cdpSession(page);
   await session.send('HeapProfiler.collectGarbage');
   const usage = await session.send('Runtime.getHeapUsage');
+  const { documents } = await session.send('Memory.getDOMCounters');
   let wasm = 0;
   for (const frame of page.frames())
     wasm += await frame.evaluate(() => {
@@ -297,21 +321,40 @@ async function heap(page: Page) {
   return {
     // ArrayBuffers and external strings; WASM memory is not among them.
     backingMB: mb(usage.backingStorageSize),
+    // Live documents in the renderer: a closed frame that stays counted leaks.
+    documents,
     jsMB: mb(usage.usedSize),
     wasmMB: mb(wasm),
   };
 }
 
-async function openInView(page: Page, fixture: Fixture) {
+type Heap = Awaited<ReturnType<typeof heap>>;
+
+const delta = (a: number, b: number) => Math.round((a - b) * 10) / 10;
+const growth = (to: Heap, from: Heap) => ({
+  backingMB: delta(to.backingMB, from.backingMB),
+  documents: to.documents - from.documents,
+  jsMB: delta(to.jsMB, from.jsMB),
+  wasmMB: delta(to.wasmMB, from.wasmMB),
+});
+
+async function openWorkspace(page: Page) {
   await installHostProbe(page);
   await installWasmProbe(page);
   await page.goto(`/workspaces/${PERF_WORKSPACE_ID}`);
   await page.getByRole('button', { exact: true, name: 'Files' }).click();
-  const link = page.locator(
-    `[data-workspace-file-tree] a[href$="file=${fixture.id}"]`
-  );
+}
+
+/** Click a file in the tree; for an Office file, wait for its `ready`. */
+async function openFile(page: Page, id: string) {
+  const link = page.locator(`[data-workspace-file-tree] a[href$="file=${id}"]`);
   await expect(link).toBeVisible({ timeout: 60_000 });
   return clickUntil(page, 'ready', () => link.click());
+}
+
+async function openInView(page: Page, fixture: Fixture) {
+  await openWorkspace(page);
+  return openFile(page, fixture.id);
 }
 
 /** Click where typing should start and check the caret is there. */
@@ -538,7 +581,7 @@ for (const fixture of FIXTURES) {
     await page.waitForTimeout(2000);
     const typingHeap = await heap(page);
 
-    const budget = BUDGET[fixture.id];
+    const budget = budgetOf(MEDIANS[fixture.id]);
     await reportMetrics(
       testInfo,
       `office-${fixture.format}-${fixture.id}`,
@@ -559,6 +602,8 @@ for (const fixture of FIXTURES) {
       },
       'unthrottled'
     );
+    // Every viewer reports its first paint with the runtime's own timings.
+    expect(open.runtime).not.toBeNull();
     expect(typing.unpaintedKeys).toBe(0);
     expect(typing.edits).toBeGreaterThan(0);
     expect(fallbacks).toEqual([]);
@@ -590,12 +635,6 @@ for (const fixture of FIXTURES) {
     await viewPass(frame, fixture.format);
     await page.waitForTimeout(1000);
     const second = await heap(page);
-    const delta = (a: number, b: number) => Math.round((a - b) * 10) / 10;
-    const growth = (to: typeof open, from: typeof open) => ({
-      backingMB: delta(to.backingMB, from.backingMB),
-      jsMB: delta(to.jsMB, from.jsMB),
-      wasmMB: delta(to.wasmMB, from.wasmMB),
-    });
     await reportMetrics(
       testInfo,
       `office-${fixture.format}-${fixture.id}-view-heap`,
@@ -615,3 +654,54 @@ for (const fixture of FIXTURES) {
     );
   });
 }
+
+// A plain text file to switch to: opening it closes the Office file, as the
+// workspace has no close button. Seeded in the same workspace (src/mocks/db.ts).
+const TEXT_FILE = 'bio-state-ready';
+const CYCLES = 5;
+const CYCLED = FIXTURES.filter(
+  (fixture) => !fixture.id.endsWith('-long') || fixture.format === 'docx'
+);
+
+// The view-mode creep item (todo-office.md) as it was seen: open a file in
+// View, close it, again and again, with the heap after each close.
+for (const fixture of CYCLED)
+  test(`${fixture.format} ${fixture.name}: view-mode heap over open and close`, async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(600_000);
+    await openWorkspace(page);
+    const text = page.locator(
+      `[data-workspace-file-tree] a[href$="file=${TEXT_FILE}"]`
+    );
+    await text.click();
+    await page.waitForTimeout(2000);
+    const beforeOpen = await heap(page);
+    const afterClose: Heap[] = [];
+    for (let cycle = 0; cycle < CYCLES; cycle += 1) {
+      await openFile(page, fixture.id);
+      await page.waitForTimeout(1000);
+      await text.click();
+      await expect
+        .poll(() =>
+          page.frames().some((frame) => frame.url().includes('office-runtime'))
+        )
+        .toBe(false);
+      await page.waitForTimeout(1000);
+      afterClose.push(await heap(page));
+    }
+    await reportMetrics(
+      testInfo,
+      `office-${fixture.format}-${fixture.id}-open-close-heap`,
+      {
+        afterClose,
+        beforeOpen,
+        budget: 'report-only',
+        cycles: CYCLES,
+        fixture: fixture.name,
+        // The first close keeps the Office host code; later ones should not grow.
+        growthAfterFirstClose: growth(afterClose.at(-1)!, afterClose[0]),
+      },
+      'unthrottled'
+    );
+  });

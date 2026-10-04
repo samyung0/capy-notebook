@@ -627,7 +627,7 @@ Office runtime (`pnpm bench:office`, production build, [editor-perf.md](editor-p
 
 | File                                                                    | About                                                                                                                                       |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`bench/editor/scripts/runtime.office.ts`](../bench/editor/scripts/runtime.office.ts) | 12 cases, two per file (small and large DOCX, XLSX and PPTX): open to first paint, View to Edit ready, keystroke to painted frame and heap after each; then heap over two full view-mode passes. Fails on unpainted keys, typing that sends no edit, a worker fallback or a missed budget (calibrated on CI); heap is report-only. Runs in the `Performance` workflow's `office` job (dispatch only). |
+| [`bench/editor/scripts/runtime.office.ts`](../bench/editor/scripts/runtime.office.ts) | 16 cases. Per file (small and large DOCX, XLSX and PPTX): open to first paint, View to Edit ready, keystroke to painted frame and heap after each, then heap over two full view-mode passes; for the small files and the long DOCX, heap after each of five view-mode closes. Fails on unpainted keys, typing that sends no edit, a viewer `ready` without timings, a worker fallback or a missed budget (calibrated on CI, 30 ms keystroke floor); heap is report-only. Runs in the `Performance` workflow's `office` job (dispatch only). |
 
 Collaboration stress (`pnpm bench:stress`, Docker, [editor-perf.md](editor-perf.md#collaboration-stress-pnpm-benchstress)):
 

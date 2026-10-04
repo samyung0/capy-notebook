@@ -85,7 +85,7 @@ function OfficeRuntime() {
   const menuSourceRef = useRef<OfficeMenuSource | null>(null);
   const rendererRef = useRef<OfficeRenderer | null>(null);
   const revisionRef = useRef<number | null>(null);
-  // When `load` arrived, for the DOCX ready timings.
+  // When `load` arrived, for the ready timings.
   const loadedAtRef = useRef(0);
   const epochRef = useRef<number | null>(null);
   const replicaRef = useRef<OfficeReplica | null>(null);
@@ -438,14 +438,11 @@ function OfficeRuntime() {
   const reportAnalysis = useCallback(
     (analysis: OfficeAnalysis) => {
       if (runtimeRevision === undefined) return;
-      // DOCX reports once its first pages are painted, so the timings end there.
-      const timings =
-        analysis.format === 'docx'
-          ? {
-              loadMs: Math.round(loadedAtRef.current),
-              paintMs: Math.round(performance.now() - loadedAtRef.current),
-            }
-          : undefined;
+      // Every caller reports once its first paint is done, so the timings end there.
+      const timings = {
+        loadMs: Math.round(loadedAtRef.current),
+        paintMs: Math.round(performance.now() - loadedAtRef.current),
+      };
       post({ analysis, revision: runtimeRevision, timings, type: 'ready' });
     },
     [runtimeRevision]

@@ -122,8 +122,8 @@ export type OfficeHostMessage =
     };
 
 /**
- * DOCX `ready`: the runtime's own clock (`performance.now()` in its frame),
- * which the host cannot read across origins.
+ * `ready` after the first paint: the runtime's own clock (`performance.now()`
+ * in its frame), which the host cannot read across origins.
  */
 export interface OfficeReadyTimings {
   /** Frame start → the host's `load` arrived: frame boot plus the host's fetch. */
@@ -166,7 +166,10 @@ export type OfficeRuntimeMessage =
       type: 'ready';
       analysis: OfficeAnalysis;
       revision: number;
-      /** DOCX only, sent once its first pages are painted, in both modes. */
+      /**
+       * Sent once the first pages, grid or slide are painted: by every viewer
+       * and by the DOCX editor (the XLSX and PPTX editors send no `ready`).
+       */
       timings?: OfficeReadyTimings;
     }
   | {
