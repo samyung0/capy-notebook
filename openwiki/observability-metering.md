@@ -258,7 +258,7 @@ Postgres, written in the same transaction as the counter it feeds.
 | --- | --- | --- |
 | Paid by | workspace **owner** | the **actor** |
 | Why | the bytes sit in their account | the cost is the request itself, and it is gone whether or not anything was kept |
-| Enforced by | `gateStorageTx` | `BeginProviderSession` / `BeginIngestSpend` |
+| Enforced by | `gateStorageTx` | `BeginProviderSession` / `beginIngestSpendTx` |
 | Error | `storage_quota_exceeded` | `llm_credits_exhausted` |
 
 An editor generating into someone else's workspace spends **their own** credits

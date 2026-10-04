@@ -850,28 +850,6 @@ func (s *Store) IngestSlots(ctx context.Context, actorUserID string) (IngestSlot
 	return out, nil
 }
 
-func (s *Store) BeginIngestSpend(
-	ctx context.Context,
-	actorUserID, workspaceID string,
-) (string, error) {
-	if actorUserID == "" {
-		return "", ErrNotFound
-	}
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	id, err := s.beginIngestSpendTx(ctx, tx, actorUserID, workspaceID)
-	if err != nil {
-		return "", err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return "", err
-	}
-	return id, nil
-}
-
 func (s *Store) beginIngestSpendTx(
 	ctx context.Context,
 	tx pgx.Tx,

@@ -26,6 +26,21 @@ func newCreditsTestUser(t *testing.T, s *Store) string {
 	return id
 }
 
+// beginIngestSpend opens an ingest session in its own transaction, as the
+// enqueueing paths do inside theirs.
+func beginIngestSpend(ctx context.Context, s *Store, actorUserID, workspaceID string) (string, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback(ctx)
+	id, err := s.beginIngestSpendTx(ctx, tx, actorUserID, workspaceID)
+	if err != nil {
+		return "", err
+	}
+	return id, tx.Commit(ctx)
+}
+
 func platformSessionRates() (TokenRates, TokenRates) {
 	return TokenRates{Model: models.Ref{ProviderSlug: "test", ModelSlug: "test-llm"}, ModelVersion: 1},
 		TokenRates{Model: models.Ref{ProviderSlug: "test", ModelSlug: "test-embed"}, ModelVersion: 1}
@@ -659,7 +674,7 @@ func TestSweepAbandonsOnlyProviderCallsPastReceiptDeadline(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
-	sessionID, err := s.BeginIngestSpend(ctx, userID, "")
+	sessionID, err := beginIngestSpend(ctx, s, userID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -703,7 +718,7 @@ func TestProviderReceiptCannotSettleAfterDeadlineBeforeSweep(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
-	sessionID, err := s.BeginIngestSpend(ctx, userID, "")
+	sessionID, err := beginIngestSpend(ctx, s, userID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -898,20 +913,20 @@ func TestUserUsageReportScopesToActorAndGroupsCurrentPeriod(t *testing.T) {
 	}
 }
 
-func TestBeginIngestSpendCapsAndSettles(t *testing.T) {
+func TestIngestSpendCapsAndSettles(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
 
 	var ids []string
 	for range ConcurrentIngestLeases {
-		id, err := s.BeginIngestSpend(ctx, userID, "")
+		id, err := beginIngestSpend(ctx, s, userID, "")
 		if err != nil {
 			t.Fatal(err)
 		}
 		ids = append(ids, id)
 	}
-	if _, err := s.BeginIngestSpend(ctx, userID, ""); !errors.Is(err, ErrTooManyIngestLeases) {
+	if _, err := beginIngestSpend(ctx, s, userID, ""); !errors.Is(err, ErrTooManyIngestLeases) {
 		t.Fatalf("21st ingest lease: %v", err)
 	}
 	slots, err := s.IngestSlots(ctx, userID)
@@ -942,7 +957,7 @@ func TestBeginIngestSpendCapsAndSettles(t *testing.T) {
 	}
 }
 
-func TestBeginIngestSpendRejectsWhenUsedAtLimit(t *testing.T) {
+func TestIngestSpendRejectsWhenUsedAtLimit(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
@@ -951,7 +966,7 @@ func TestBeginIngestSpendRejectsWhenUsedAtLimit(t *testing.T) {
 		VALUES ($1, $2)`, userID, limit); err != nil {
 		t.Fatal(err)
 	}
-	_, err := s.BeginIngestSpend(ctx, userID, "")
+	_, err := beginIngestSpend(ctx, s, userID, "")
 	var exhausted *CreditsExhaustedError
 	if !errors.As(err, &exhausted) {
 		t.Fatalf("begin ingest at used limit: %v", err)
@@ -962,7 +977,7 @@ func TestBeginIngestSpendRejectsWhenUsedAtLimit(t *testing.T) {
 		(user_id, used_micros, reserved_micros) VALUES ($1, 0, $2)`, reservedID, limit); err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.BeginIngestSpend(ctx, reservedID, "")
+	_, err = beginIngestSpend(ctx, s, reservedID, "")
 	if !errors.As(err, &exhausted) {
 		t.Fatalf("begin ingest at reserved limit: %v", err)
 	}
@@ -972,7 +987,7 @@ func TestSweepReleasesOrphanIngestReservation(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
-	id, err := s.BeginIngestSpend(ctx, userID, "")
+	id, err := beginIngestSpend(ctx, s, userID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1000,7 +1015,7 @@ func TestSweepKeepsReservationOwnedByPendingParseStage(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
-	id, err := s.BeginIngestSpend(ctx, userID, "")
+	id, err := beginIngestSpend(ctx, s, userID, "")
 	if err != nil {
 		t.Fatal(err)
 	}

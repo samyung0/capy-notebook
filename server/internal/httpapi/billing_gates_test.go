@@ -229,7 +229,12 @@ func TestIngestSlotsArePerActor(t *testing.T) {
 		t.Fatalf("empty slots %#v", slots)
 	}
 
-	if _, err := fx.store.BeginIngestSpend(ctx, fx.actorID, fx.workspaceID); err != nil {
+	// An open ingest session on the actor's slots (the enqueueing paths open
+	// them inside their own transactions).
+	if _, err := fx.store.Pool().Exec(ctx, `INSERT INTO provider_sessions
+		(id, actor_user_id, workspace_id, surface, reserved_micros, expires_at)
+		VALUES ('cr_slot_test', $1, $2, $3, 0, now() + interval '1 hour')`,
+		fx.actorID, fx.workspaceID, store.SurfaceIngest); err != nil {
 		t.Fatal(err)
 	}
 	held := doReq(t, fx.handler, http.MethodGet, "/api/me/ingest-slots", fx.actorID, nil)

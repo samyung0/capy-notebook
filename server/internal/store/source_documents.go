@@ -260,15 +260,18 @@ func (s *Store) ViewSourceSession(ctx context.Context, fileID string) (SourceSes
 // the complete current and indexed document states. It is a read and takes no
 // locks: it commits nothing, so a lock would only make it wait for a
 // concurrent ACL, account or publication change, and a change committing just
-// after the check is missed either way. The save that persists the edit
-// rechecks every contributor under sourceLockTx, and ACL and account changes
-// evict the room. Locking here serialized every writer's recheck with every
-// write in the workspace.
+// after the check is missed either way. Its reads share one snapshot, so the
+// owner it reads is the one whose account state it tests. The save that
+// persists the edit rechecks every contributor's role and locked account
+// (deleted, deletion pending, suspended) under sourceLockTx, and ACL and
+// account changes evict the room; frozen accounts and the storage limit are
+// enforced at admission only, so they rely on this 5 s recheck window. Locking
+// here serialized every writer's recheck with every write in the workspace.
 func (s *Store) CheckSourceAccess(ctx context.Context, actor, fileID string, epoch int64, edit bool) error {
 	if actor == "" {
 		return ErrForbidden
 	}
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly, IsoLevel: pgx.RepeatableRead})
 	if err != nil {
 		return err
 	}

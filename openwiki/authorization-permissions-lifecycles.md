@@ -233,8 +233,11 @@ Important boundaries:
   its transaction's connection (an ingest job payload reads its rates there),
   since a second pool connection can wait behind requests that themselves wait
   on those locks. Read-only admission rechecks take no locks: a source edit
-  recheck (`CheckSourceAccess`) and a note writer recheck read committed state,
-  and the save that persists the edits rechecks under the locks.
+  recheck (`CheckSourceAccess`, one repeatable-read snapshot) and a note writer
+  recheck read committed state. The save that persists the edits rechecks roles
+  and locked accounts (deleted, deletion pending, suspended) under the locks;
+  frozen accounts and the storage limit are admission-only and rely on the 5 s
+  writer recheck window.
 
 Sources: [role resolution and access rules](../server/internal/store/share.go#L13),
 [transactional editor checks](../server/internal/store/storage.go#L183), and
