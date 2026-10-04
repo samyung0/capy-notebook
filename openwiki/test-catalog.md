@@ -617,7 +617,7 @@ MSW + Vite (`pnpm bench:editor`). 6 cases total: 4 budget specs always run; 2 di
 
 | File                                                                        | About                                                                                                                                                   |
 | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`bench/editor/scripts/editor.perf.ts`](../bench/editor/scripts/editor.perf.ts)                     | 4 cases: open cost (near-limit), typing latency (small), typing + save cycle (near-limit), scroll FPS (near-limit).                                     |
+| [`bench/editor/scripts/editor.perf.ts`](../bench/editor/scripts/editor.perf.ts)                     | 4 cases: open cost (near-limit), typing latency (small; p95 key event and blocking per keystroke gated, worst keystroke a warning), typing + save cycle (near-limit; same typing gate), scroll FPS (near-limit). |
 | [`bench/editor/scripts/saveCycleProfile.perf.ts`](../bench/editor/scripts/saveCycleProfile.perf.ts) | 1 case, opt-in (`PERF_PROFILE=1`): V8 CPU profile of the near-limit save cycle (diagnostic, no budget assert).                                          |
 | [`bench/editor/scripts/typingProfile.perf.ts`](../bench/editor/scripts/typingProfile.perf.ts)       | 1 case, opt-in (`PERF_PROFILE=1`): V8 CPU profile of idle, heading typing, and body typing with per-suspect attribution (diagnostic, no budget assert). |
 

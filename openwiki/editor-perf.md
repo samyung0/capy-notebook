@@ -166,11 +166,25 @@ CPU throttle is a multiplier of the host, so it does not cancel that spread.
 ## Why this stays warn-only
 
 Absolute ceilings are the gate. They were set on 2026-09-03 to about 1.3x the
-median of three GHA runs on the same SHA (large-document INP is held at 1.5x
-because one unlucky keystroke sets it). A human lowers a ceiling when a real
+median of three GHA runs on the same SHA. A human lowers a ceiling when a real
 improvement lands; nothing raises one automatically. Recalibrate the same way:
 dispatch the workflow three times, download the `perf-snapshot` artifacts,
 take the median per metric.
+
+Typing is gated on the p95 key event and on blocking per keystroke (large: 395
+and 275 ms, 1.3x the medians 304 and 209; small: 84 ms, 1.5x the median 56,
+because event durations come in 8 ms steps and 1.3x would sit one step above
+the median, plus the 10 ms blocking floor). The single worst keystroke
+(`inpApproxMs`) is still reported. Over 85 ms (small) or 500 ms (large) it adds
+a `warning` annotation and a `[perf]` log line. It never fails the run: it
+measures one GC pause, or two keystrokes queued into one frame, because at x4 a
+near-limit keystroke costs ~200 ms while the harness types every 40 ms. On one
+SHA it spread 80 to 128 ms (small) and 336 to 528 ms (large) across six runs.
+
+The near-limit read-only open was rebaselined on 2026-10-04 to 4,050 ms (1.3x
+the median 3,118 of six runs on 37fa7e53; it was 1,952 on 2026-09-03). The
+read-only render itself did not change (click to text 65 to 90 ms). The time is
+the workspace page's startup in the dev build, see the open item below.
 
 Standard GitHub-hosted runners are a mixed CPU pool. Independent PassMark
 samples of ubuntu-24.04 x64 (same Azure fleet, mid-2026) land around 2200 to 2670
@@ -192,3 +206,16 @@ pool. Larger GitHub runners need a Team/Enterprise org. A labeled self-hosted
 Linux box is the cleanest signal and a snowflake. Do not pay for dedicated
 third-party runners until a few manual GHA series show that host mix is what
 breaks the deltas.
+
+## Open items
+
+- **Trim the workspace page's startup imports** to bring the read-only open
+  back under 2,600 ms. Since 2026-09-03 the page went from 399 to 806 loaded
+  modules (309 to 518 before the first API request), the i18n message bundle
+  on that path from 6.2 to 10.6 MB, and the generated zod validators
+  (`src/api/gen/validators.ts`, 2,911 to 5,449 lines) hold 12.8 MB of heap
+  after open. Split the workspace route's static imports, load the generated
+  validators and the active locale's paraglide messages lazily, and keep the
+  mocks and the mock scenario panel out of the startup graph (`chaosPeers`
+  pulls the whole note plugin kit into every MSW page). Then lower
+  `readOnlyOpenMs` again.

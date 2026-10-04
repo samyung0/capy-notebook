@@ -203,8 +203,9 @@ export function blockingStats(state: PerfState) {
  * Summarize keystroke responsiveness. `keystrokes` is the number of characters
  * typed. Only events slower than the observer's 16ms threshold are reported at
  * all, so `slowKeyEventRatio` saturates near 1 under CPU throttling and is kept
- * as context rather than as an assertion; per-keystroke blocking and the worst
- * interaction are the numbers that still move when the editor gets slower.
+ * as context rather than as an assertion. The spec gates on per-keystroke
+ * blocking and the p95 key event; the worst interaction (`inpApproxMs`) is
+ * reported as a warning only, since one GC pause or two queued keystrokes set it.
  */
 export function typingStats(state: PerfState, keystrokes: number) {
   const keyEvents = state.events.filter(
