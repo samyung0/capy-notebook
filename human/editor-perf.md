@@ -5,3 +5,4 @@
 - Developer Epo decided (2026-10-04) the near-limit read-only open budget is rebaselined to the post-fix runs while a separate task trims the workspace page's startup imports. bench/editor/scripts/editor.perf.ts openwiki/editor-perf.md
 - Developer Epo decided (2026-10-04) editor typing is gated on p95 keystroke and blocking per keystroke; the single worst keystroke is reported as a warning only, since it measures one GC pause or queued keystrokes. bench/editor/scripts/editor.perf.ts
 - Developer Epo decided (2026-10-04) Office keystroke budgets have a 30 ms floor, since a one-frame wobble fails anything smaller. bench/editor/scripts/runtime.office.ts
+- Developer Epo decided (2026-10-04) the stress p95 budget is recalibrated after the 30 ms broadcast batching (flushDelay) was approved. bench/collaboration/scripts/stress.ts collaboration/src/server.ts

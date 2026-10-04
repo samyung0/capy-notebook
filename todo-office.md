@@ -18,9 +18,11 @@ screen-reader mirror settling 300 ms after scrolling.
 
 ## Open from the 2026-10-04 rounds
 
-- **Provisional budgets.** `bench:office` and `bench:stress` budgets come from
-  local runs; recalibrate after three CI runs of the Performance workflow, then
-  drop the jobs' `continue-on-error`.
+- **Stress job `continue-on-error`.** `bench:office` and `bench:stress`
+  budgets now come from CI runs (the stress p95 budget, 45 ms, from three runs
+  after the 30 ms broadcast batching, at 33 to 35 ms within 3% of each other).
+  The `stress` job still has `continue-on-error`; drop it once that spread
+  holds.
 - **Server errors under collaboration stress.** At high local load (20 peers per
   room) the stress test saw a projection deadlock (Postgres 40P01), a store
   statement timeout and a source-access 500, with p95 41–64 s. Reviewer's read:

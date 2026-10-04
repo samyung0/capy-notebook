@@ -45,14 +45,18 @@ interface Timings {
 }
 
 /**
- * Medians of three runs of the Performance workflow on ubuntu-24.04. DOCX:
- * 2026-10-04 runs 37174928433, 37174944257, 37174959817 (every metric within
- * 3% of its median). XLSX and PPTX: 2026-10-04 runs 37197306625, 37197311546,
- * 37197316994 on 15136468, all three on AMD EPYC 7763 runners, when their
- * `ready` still came before the first paint (one frame for XLSX, the slide's
- * pictures for PPTX); recheck those open medians on CI. For XLSX/PPTX
- * `editReadyMs` ends at `collaboration-ready` (see above). Heap figures are
- * report-only (openwiki/editor-perf.md).
+ * Medians of three runs of the Performance workflow on ubuntu-24.04, all
+ * 2026-10-04:
+ * - DOCX: runs 37174928433, 37174944257, 37174959817 (every metric within 3%
+ *   of its median);
+ * - XLSX/PPTX View to Edit and keys: runs 37197306625, 37197311546,
+ *   37197316994 on 15136468, all three on AMD EPYC 7763 runners;
+ * - XLSX/PPTX open: runs 37200395852, 37200390235, 37200383976 on 253762ea
+ *   (one EPYC 9V45, two EPYC 7763), the first runs with `ready` after the
+ *   first paint. Those runs kept the other XLSX/PPTX metrics within 80% of
+ *   their budgets.
+ * For XLSX/PPTX `editReadyMs` ends at `collaboration-ready` (see above). Heap
+ * figures are report-only (openwiki/editor-perf.md).
  */
 const MEDIANS: Record<Fixture['id'], Timings> = {
   // MSW adds ~1.1 s per call to every open.
@@ -72,25 +76,25 @@ const MEDIANS: Record<Fixture['id'], Timings> = {
     editReadyMs: 790,
     keyToFrameP50Ms: 11,
     keyToFrameP90Ms: 18,
-    openFirstPaintMs: 3038,
+    openFirstPaintMs: 3183,
   },
   'bio-office-pptx-long': {
     editReadyMs: 2442,
     keyToFrameP50Ms: 69,
     keyToFrameP90Ms: 75,
-    openFirstPaintMs: 4530,
+    openFirstPaintMs: 5728,
   },
   'bio-office-xlsx': {
     editReadyMs: 1244,
     keyToFrameP50Ms: 14,
     keyToFrameP90Ms: 47,
-    openFirstPaintMs: 3086,
+    openFirstPaintMs: 3148,
   },
   'bio-office-xlsx-long': {
     editReadyMs: 5188,
     keyToFrameP50Ms: 12,
     keyToFrameP90Ms: 313,
-    openFirstPaintMs: 3825,
+    openFirstPaintMs: 3732,
   },
 };
 

@@ -188,8 +188,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     # A failure shows on the job and in its summary while the run stays green,
-    # so its editor snapshot still counts as a baseline: the p95 is a few
-    # milliseconds with a 40% run-to-run spread, too noisy to fail the run.
+    # so its editor snapshot still counts as a baseline. The p95 was a few
+    # milliseconds with a 40% run-to-run spread when this was added; with the
+    # 30 ms broadcast batching it sits at 33 to 35 ms (todo-office.md).
     continue-on-error: true
     permissions:
       contents: read

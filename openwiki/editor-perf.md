@@ -99,17 +99,23 @@ missed budget (open, View to Edit, key p50 and p90 per fixture). The spec
 keeps the medians (`MEDIANS`) and derives each budget (`budgetOf`): 1.3x the
 median, rounded up to 5 ms below a second and 50 ms above, and no keystroke
 budget below `KEY_BUDGET_FLOOR_MS` (30 ms), since a one-frame wobble fails
-anything smaller. The medians come from three runs of the `office` job below:
-DOCX from 2026-10-04 runs 37174928433, 37174944257 and 37174959817 (every
-metric within 3% of its median), XLSX and PPTX from 2026-10-04 runs
-37197306625, 37197311546 and 37197316994 on 15136468. All three of the latter
-ran on AMD EPYC 7763 runners, the slowest type seen on the workflow so far,
-so a faster runner sits well inside them. Their spread was within 8% of the
-median except the key timings of a few milliseconds (XLSX and PPTX p50 11 to
-14 ms, up to 18% apart), which the floor covers. Those runs predate the XLSX
-and PPTX viewers' `ready` moving to after the first paint, so their open
-medians end one frame (XLSX) or the first slide's picture decode (PPTX)
-early. TODO: recheck those open medians on three CI runs.
+anything smaller. The medians come from three runs of the `office` job below,
+all on 2026-10-04:
+
+- DOCX: runs 37174928433, 37174944257 and 37174959817 (every metric within
+  3% of its median).
+- XLSX and PPTX View to Edit and keys: runs 37197306625, 37197311546 and
+  37197316994 on 15136468, all three on AMD EPYC 7763 runners. Their spread
+  was within 8% of the median except the key timings of a few milliseconds
+  (p50 11 to 14 ms, up to 18% apart), which the floor covers.
+- XLSX and PPTX open: runs 37200395852, 37200390235 and 37200383976 on
+  253762ea (one EPYC 9V45, two EPYC 7763), the first runs since their
+  viewers' `ready` moved to after the first paint. Against the earlier
+  medians, open moved +2% for course-guide.xlsx, -2% for
+  large-gradebook.xlsx, +5% for lecture.pptx and +26% for jp_llm2.pptx, whose
+  first slide's pictures now count (5,728 against 4,530 ms). The other XLSX
+  and PPTX metrics of those runs stayed within 80% of their budgets, so their
+  medians are unchanged.
 
 Heap figures stay report-only: they go to the results JSON (`budget.heap`,
 and `budget: "report-only"` in the heap cases), the job summary and the
@@ -140,9 +146,12 @@ text each change inserts, so the client's own cost stays flat. Then:
 - every peer and a late joiner hold the same text (convergence);
 - every typed marker is there exactly once (no lost or doubled update);
 - the collaboration service logged no error;
-- p95 marker latency within `STRESS_P95_BUDGET_MS`, 10 ms (~1.3x the slower
-  room's median of three CI runs: Office 5/5/3, Plate 8/9/5 ms; a laptop
-  measures 15 to 35 ms, so set the variable for local runs).
+- p95 marker latency within `STRESS_P95_BUDGET_MS`, 45 ms (~1.3x the slower
+  room's median of three CI runs on 2026-10-04: Office 34/33/34, Plate
+  35/34/35 ms). The service's 30 ms broadcast batching (`flushDelay` in
+  `collaboration/src/server.ts`) put most of that there: before it the runs
+  gave Office 5/5/3 and Plate 8/9/5 ms against a 10 ms budget. A loaded laptop
+  measures more, so set the variable for local runs.
 
 A failed check exits 1, a missed budget alone exits 2. SIGINT and SIGTERM tear
 the stack down and remove the throwaway key. Under heavy load
@@ -188,8 +197,9 @@ budgets fail the job and the run. Its results go to the job summary and the
 `office-perf-results` artifact.
 `stress` runs `pnpm bench:stress` (below) on dispatch only (input `stress`,
 false on `workflow_call`) against the `e2e_stack` images, built from the same
-GitHub Actions layer cache. It has `continue-on-error` (its p95 is a few
-milliseconds with a 40% run-to-run spread): a failed check (exit 1) or a
+GitHub Actions layer cache. It has `continue-on-error` (its p95 was a few
+milliseconds with a 40% run-to-run spread when it was added; with the 30 ms
+broadcast batching it sits at 33 to 35 ms): a failed check (exit 1) or a
 missed latency budget (exit 2) fails the job, and its summary marks a
 correctness failure as such, but the run stays green and its editor snapshot
 still counts as a baseline.
