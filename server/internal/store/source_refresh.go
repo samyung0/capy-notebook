@@ -358,29 +358,30 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 			return doc, ErrConflict
 		}
 	}
-	// The file's new bytes plus its storage_bytes afterwards (migration 0039's
-	// rule: a text state keeps its seed size, an Office state is charged as
-	// stored) minus before.
+	// A deferred publication keeps the captured state on the old base: pending
+	// effects are measured against it until the rebuild. The candidate row
+	// goes below, so it is copied first. It is what the export was built from.
+	var captured []byte
+	var capturedSeed *string
+	var replacedSHA string
+	if err = tx.QueryRow(ctx, `SELECT CASE WHEN c.checkpoint=d.checkpoint THEN d.state ELSE c.state END,CASE WHEN c.checkpoint=d.checkpoint THEN d.state_seed_sha256 ELSE c.state_seed_sha256 END,COALESCE(f.source_sha256,'') FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2`, fileID, in.JobID).Scan(&captured, &capturedSeed, &replacedSHA); err != nil {
+		return doc, err
+	}
+	// The file's new bytes plus its storage_bytes afterwards (migration 0054's
+	// rule) minus before. A text state's seed size moves with the file's size,
+	// and a deferred Office state is charged beyond the capture the file now
+	// holds; any other Office state as stored.
 	if in.Deferred {
 		state = doc.State
 	}
-	var growth int64
-	if err = tx.QueryRow(ctx, `SELECT ($2::bigint-f.size_bytes)+COALESCE(octet_length(NULLIF($3::jsonb,'[]'::jsonb)::text),0)+CASE WHEN d.format='text' THEN GREATEST(0,COALESCE(octet_length(d.state),0)-d.seed_bytes) ELSE COALESCE(octet_length($4::bytea),0) END-d.storage_bytes FROM files f JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1`, fileID, size, effects, state).Scan(&growth); err != nil {
+	var growth, resized int64
+	if err = tx.QueryRow(ctx, `SELECT ($2::bigint-f.size_bytes)+COALESCE(octet_length(NULLIF($3::jsonb,'[]'::jsonb)::text),0)+CASE WHEN d.format='text' THEN GREATEST(0,COALESCE(octet_length(d.state),0)-(d.seed_bytes+$2::bigint-f.size_bytes)) WHEN $5 THEN GREATEST(0,COALESCE(octet_length($4::bytea),0)-COALESCE(octet_length($6::bytea),0)) ELSE COALESCE(octet_length($4::bytea),0) END-d.storage_bytes,$2::bigint-f.size_bytes FROM files f JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1`, fileID, size, effects, state, in.Deferred, captured).Scan(&growth, &resized); err != nil {
 		return doc, err
 	}
 	if growth > 0 && !job.system {
 		if err = s.gateStorageTx(ctx, tx, owner, growth); err != nil {
 			return doc, err
 		}
-	}
-	// A deferred publication keeps the captured state on the old base: pending
-	// effects are measured against it until the rebuild. The candidate row
-	// goes below, so it is copied first.
-	var captured []byte
-	var capturedSeed *string
-	var replacedSHA string
-	if err = tx.QueryRow(ctx, `SELECT CASE WHEN c.checkpoint=d.checkpoint THEN d.state ELSE c.state END,CASE WHEN c.checkpoint=d.checkpoint THEN d.state_seed_sha256 ELSE c.state_seed_sha256 END,COALESCE(f.source_sha256,'') FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2`, fileID, in.JobID).Scan(&captured, &capturedSeed, &replacedSHA); err != nil {
-		return doc, err
 	}
 	if job.exportOnly {
 		if err = applyExportTx(ctx, tx, fileID, exportPublication{jobID: in.JobID, sourcePath: source, sha: sha, etag: in.SourceETag, size: size, checkpoint: in.Checkpoint, attemptID: in.AttemptID, state: state, stateSeed: stateSeed, effects: effects, netTokens: netTokens, deferred: in.Deferred, captured: captured, capturedSeed: capturedSeed}); err != nil {
@@ -422,7 +423,9 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 		}
 	case doc.Format == "text":
 		// Text keeps its lineage; its baseline is the exported blob decoded.
-		_, err = tx.Exec(ctx, `UPDATE source_documents SET indexed_checkpoint=$2,base_revision=base_revision+1,base_blob_path=$3,base_source_sha256=$4,pending_effects=$5,net_tokens=$6,desired_manual=desired_manual AND $5::jsonb<>'[]'::jsonb,desired_checkpoint=CASE WHEN $5::jsonb='[]'::jsonb THEN NULL ELSE desired_checkpoint END,running_job_id=NULL,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, source, sha, effects, netTokens)
+		// The published text is the file's bytes now, so the seed size takes
+		// the change in its size (Yjs stores the text as its UTF-8 bytes).
+		_, err = tx.Exec(ctx, `UPDATE source_documents SET indexed_checkpoint=$2,base_revision=base_revision+1,base_blob_path=$3,base_source_sha256=$4,pending_effects=$5,net_tokens=$6,seed_bytes=seed_bytes+$7,desired_manual=desired_manual AND $5::jsonb<>'[]'::jsonb,desired_checkpoint=CASE WHEN $5::jsonb='[]'::jsonb THEN NULL ELSE desired_checkpoint END,running_job_id=NULL,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, source, sha, effects, netTokens, resized)
 	default:
 		// Indexed now, so an export-only publication's reprocess mark is done.
 		_, err = tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,indexed_checkpoint=$2,state=$3,state_seed_sha256=NULLIF($8,''),reprocess_at=NULL,rebuild_pending=false,rebuild_refusal=NULL,published_state=NULL,published_state_seed_sha256=NULL,base_revision=d.base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$6,net_tokens=$7,running_job_id=NULL,desired_checkpoint=CASE WHEN $6::jsonb='[]'::jsonb THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $6::jsonb<>'[]'::jsonb,refresh_error=NULL,updated_at=now() WHERE d.file_id=$1`, fileID, in.Checkpoint, state, source, sha, effects, netTokens, stateSeed)

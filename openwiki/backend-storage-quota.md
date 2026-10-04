@@ -234,26 +234,44 @@ transaction before best-effort blob cleanup (cleanup details in the
 authorization doc).
 
 A collaborative source is charged its source bytes (`files.size_bytes`) plus
-the generated `source_documents.storage_bytes` (migration 0039): its serialized
+the generated `source_documents.storage_bytes` (migration 0054): its serialized
 pending effects (an empty list costs nothing, so opening a file charges only
-its source), plus its stored editing state (migration 0043 dropped the stored
-baseline; it derives from the base). An Office state is charged as stored: the
-change over seed(base) that the service stores for every Office state,
-including one a publication rebased onto seed(export) (a one-edit DOCX or PPTX
-row is under 1 KB). A text state keeps
-its lineage across publications and is stored whole, so it is charged its
-growth beyond the seed it started from (`max(0, state - seed_bytes)`), and
-`seed_bytes` is recorded for text only (a CHECK keeps it 0 for Office rows). A
-NULL state is the seed and costs nothing: a save with nothing changed stores
+its source), plus its stored editing state beyond what the file's bytes already
+hold (migration 0043 dropped the stored baseline; it derives from the base).
+Edits a publication captured are charged once, in the file:
+
+- An Office state is charged as stored: the change over seed(base) that the
+  service stores for every Office state, including one a publication rebased
+  onto seed(export) (a one-edit DOCX or PPTX row is under 1 KB).
+- While a deferred publication waits for its rebuild (`rebuild_pending`), the
+  file is the published capture, and the state still holds that capture over
+  seed(old base) plus the edits saved since. The state is charged only beyond
+  the capture (`max(0, state - published_state)`, both changes over the same
+  seed); a refused rebuild keeps that charge, and a republication measures it
+  against its own capture. The rebuild's state, a change over seed(published),
+  is charged as stored again, and the trigger books the difference.
+- A text state keeps its lineage across publications and is stored whole, so
+  it is charged its growth beyond `seed_bytes` (`max(0, state - seed_bytes)`).
+  The first save records the seed's size, and each text publication adds the
+  change in the file's size: the published text is in the file's bytes now,
+  and Yjs stores text as its UTF-8 bytes. What stays charged is Yjs history
+  (deleted structs and item metadata; source states are never compacted, and
+  the 100 MiB state cap bounds them) and edits after the capture. Migration
+  0054 gave every existing text state the seed size of its file (seed(text) is
+  the text plus 15–18 bytes). `seed_bytes` is recorded for text only (a CHECK
+  keeps it 0 for Office rows).
+
+A NULL state is the seed and costs nothing: a save with nothing changed stores
 nothing, so opening and saving leaves the state NULL, and a publication without
-later edits returns the state to NULL. A refresh candidate is uncharged while
-transient: admission does not gate on it, and publication gates the net change
-of the file's bytes and its source row. Before a parse is paid for, finalize
-refuses (except for system jobs) what publication would certainly refuse: the
-new bytes minus the old, plus a source row with no state or effects, minus
-the current row. Reconciliation sums the same columns. Owner changes
-transfer the charge with the file. A checkpoint is not gated on quota (edits
-are admitted by the room, see view-only at the limit); finalize and
+later edits returns the state to NULL. A refresh candidate, its export, the old
+base and the published capture's own copy (`published_state`) are uncharged
+while transient: admission does not gate on them, and publication gates the net
+change of the file's bytes and its source row. Before a parse is paid for,
+finalize refuses (except for system jobs) what publication would certainly
+refuse: the new bytes minus the old, plus a source row with no state or
+effects, minus the current row. Reconciliation sums the same columns. Owner
+changes transfer the charge with the file. A checkpoint is not gated on quota
+(edits are admitted by the room, see view-only at the limit); finalize and
 publication run under source/workspace/account locks and gate the net growth.
 Negative changes remain negative ledger deltas.
 

@@ -581,6 +581,20 @@ func (s *Store) ReconcileStorage(
 	return scanned, repaired, errorCount, rows.Err()
 }
 
+// storageRecountSQL is reconciliation's count of a user's ($1) used and
+// reserved bytes from the authoritative rows.
+const storageRecountSQL = `SELECT
+	COALESCE((SELECT sum(size_bytes) FROM files WHERE user_id=$1), 0)
+	+ COALESCE((SELECT sum(storage_bytes) FROM source_documents WHERE user_id=$1),0)
+	+ COALESCE((SELECT sum(size_bytes) FROM editor_assets
+		WHERE user_id=$1 AND status='ready'), 0)
+	+ COALESCE((SELECT sum(size_bytes) FROM materials
+		WHERE owner_user_id=$1), 0)
+	+ COALESCE((SELECT sum(inverse_bytes) FROM agent_edit_inverses
+		WHERE owner_user_id=$1), 0),
+	COALESCE((SELECT sum(COALESCE(reserved_size, declared_size)) FROM upload_sessions
+		WHERE user_id=$1 AND status='pending' AND expires_at > now()), 0)`
+
 func (s *Store) reconcileStorageUserTx(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -630,18 +644,7 @@ func (s *Store) reconcileStorageUserTx(
 		return false, err
 	}
 	var used, reserved int64
-	if err := tx.QueryRow(ctx, `SELECT
-		COALESCE((SELECT sum(size_bytes) FROM files WHERE user_id=$1), 0)
-		+ COALESCE((SELECT sum(storage_bytes) FROM source_documents WHERE user_id=$1),0)
-		+ COALESCE((SELECT sum(size_bytes) FROM editor_assets
-			WHERE user_id=$1 AND status='ready'), 0)
-		+ COALESCE((SELECT sum(size_bytes) FROM materials
-			WHERE owner_user_id=$1), 0)
-		+ COALESCE((SELECT sum(inverse_bytes) FROM agent_edit_inverses
-			WHERE owner_user_id=$1), 0),
-		COALESCE((SELECT sum(COALESCE(reserved_size, declared_size)) FROM upload_sessions
-			WHERE user_id=$1 AND status='pending' AND expires_at > now()), 0)`,
-		userID).Scan(&used, &reserved); err != nil {
+	if err := tx.QueryRow(ctx, storageRecountSQL, userID).Scan(&used, &reserved); err != nil {
 		return false, err
 	}
 	changed := oldUsed != used || oldReserved != reserved
