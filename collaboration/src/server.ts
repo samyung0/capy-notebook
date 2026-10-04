@@ -76,6 +76,7 @@ import {
   YjsDocumentStore,
 } from './persistence.js';
 import { ProjectionService } from './projection.js';
+import { scratchDoc } from './scratchDoc.js';
 import {
   executeServiceCommand,
   handleServiceCommandRequest,
@@ -929,7 +930,7 @@ const server = new Server<CollaborationContext>({
       lastContext?.serviceCommandId,
       async () => {
         const finish = beginStore(documentName);
-        const snapshot = new Y.Doc({ gc: true });
+        const snapshot = scratchDoc();
         Y.applyUpdate(snapshot, Y.encodeStateAsUpdate(document));
         // Claimed before the store reads the document, so the committed state is
         // guaranteed to contain everything these receipts were asked about.
@@ -1084,7 +1085,7 @@ async function storeSource(document: Document) {
   const room = document.name;
   // Awaited handoff callers must fail if their queued save was discarded.
   assertRoomAvailable(room, true);
-  const snapshot = new Y.Doc();
+  const snapshot = scratchDoc();
   const rawState = Y.encodeStateAsUpdate(document);
   Y.applyUpdate(snapshot, rawState);
   const claimed = [...(pendingCheckpoints.get(room) ?? [])];
@@ -1617,7 +1618,7 @@ const failedStoreRetries = new FailedStoreRetryRunner(
   failedStores,
   async (room, failed, clearIfCurrent) => {
     const finish = beginStore(room);
-    const document = new Y.Doc({ gc: true });
+    const document = scratchDoc();
     try {
       if (
         roomEvictions.isDiscarding(room) ||

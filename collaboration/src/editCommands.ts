@@ -10,6 +10,7 @@ import {
 import * as Y from 'yjs';
 import { fullGuard, type GuardRun, guardsEqual, rangeGuard } from './guards.js';
 import { MATERIAL_REF_TYPE } from './materialDocument.js';
+import { scratchDoc } from './scratchDoc.js';
 
 /**
  * Direct AI content edits on a Plate material or a plain-text source.
@@ -943,7 +944,7 @@ function officeRuns(
 }
 
 function officeDocument(state: Uint8Array): Y.Doc {
-  const document = new Y.Doc({ gc: false });
+  const document = scratchDoc(false);
   Y.applyUpdate(document, state);
   return document;
 }

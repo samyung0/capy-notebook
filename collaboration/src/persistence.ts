@@ -31,6 +31,7 @@ import {
 } from './limits.js';
 import { assertCanonicalMaterialValue } from './materialDocument.js';
 import { inspectUpdate } from './officeRoots.js';
+import { scratchDoc } from './scratchDoc.js';
 
 const CONTENT_ROOT = 'content';
 const CONTRIBUTORS_ROOT = '__capy_pending_contributors';
@@ -540,7 +541,7 @@ function plateValue(document: Y.Doc): unknown[] {
 }
 
 function measureState(state: Buffer | Uint8Array): MaterialDocumentMetrics {
-  const document = new Y.Doc({ gc: true });
+  const document = scratchDoc();
   try {
     applyStoredState(document, state);
     return measureMaterialValue(plateValue(document));
@@ -574,8 +575,7 @@ export class YjsDocumentStore {
     // The common case: no measurement due and the roots provably kept, so
     // the room is not copied for every keystroke.
     if (!measure && updateKeepsMaterialRoots(current, update)) return;
-    // A fixed guid: the default one costs a webcrypto UUID per document.
-    const candidate = new Y.Doc({ gc: true, guid: 'validate' });
+    const candidate = scratchDoc();
     try {
       Y.applyUpdate(candidate, Y.encodeStateAsUpdate(current));
       Y.applyUpdate(candidate, update);
@@ -676,7 +676,7 @@ export class YjsDocumentStore {
         if (envelope?.schemaVersion !== 1 || !Array.isArray(envelope.value)) {
           throw new Error('material content is not a valid Plate envelope');
         }
-        const bootstrap = new Y.Doc({ gc: true });
+        const bootstrap = scratchDoc();
         bootstrap
           .get(CONTENT_ROOT, Y.XmlText)
           .applyDelta(slateNodesToInsertDelta(envelope.value as never));
@@ -716,7 +716,7 @@ export class YjsDocumentStore {
     const contributors = documentContributors(current);
     const actors = [...new Set(contributors.map(({ userId }) => userId))];
     const client = await this.pool.connect();
-    const merged = new Y.Doc({ gc: true });
+    const merged = scratchDoc();
     try {
       await client.query('BEGIN');
       await lockMaterial(client, materialId);
@@ -813,7 +813,7 @@ export class YjsDocumentStore {
       throw new Error('command material does not match room');
     const roomSchema = roomSchemaFromRoom(command.room);
     const client = await this.pool.connect();
-    const merged = new Y.Doc({ gc: true });
+    const merged = scratchDoc();
     try {
       await client.query('BEGIN');
       await lockMaterial(client, materialId);
@@ -906,7 +906,7 @@ export class YjsDocumentStore {
     const materialId = materialIdFromRoom(input.room);
     const roomSchema = roomSchemaFromRoom(input.room);
     const client = await this.pool.connect();
-    const merged = new Y.Doc({ gc: true });
+    const merged = scratchDoc();
     try {
       await client.query('BEGIN');
       await client.query(
@@ -1131,7 +1131,7 @@ export class YjsDocumentStore {
   }> {
     const materialId = materialIdFromRoom(room);
     const roomSchema = roomSchemaFromRoom(room);
-    const document = new Y.Doc({ gc: true });
+    const document = scratchDoc();
     try {
       const row = await this.pool.query<{
         state: Buffer;
@@ -1195,7 +1195,7 @@ export class YjsDocumentStore {
     if (envelope?.schemaVersion !== 1 || !Array.isArray(envelope.value)) {
       throw new Error('material content is not a valid Plate envelope');
     }
-    const bootstrap = new Y.Doc({ gc: true });
+    const bootstrap = scratchDoc();
     bootstrap
       .get(CONTENT_ROOT, Y.XmlText)
       .applyDelta(slateNodesToInsertDelta(envelope.value as never));
@@ -1244,7 +1244,7 @@ export class YjsDocumentStore {
     const materialId = materialIdFromRoom(room);
     const roomSchema = roomSchemaFromRoom(room);
     const client = await this.pool.connect();
-    const compacted = new Y.Doc({ gc: true });
+    const compacted = scratchDoc();
     try {
       await client.query('BEGIN');
       await lockMaterial(client, materialId);
@@ -1340,7 +1340,7 @@ export class YjsDocumentStore {
   }
 
   contentFromState(state: Uint8Array) {
-    const document = new Y.Doc({ gc: true });
+    const document = scratchDoc();
     try {
       Y.applyUpdate(document, state);
       return { schemaVersion: 1 as const, value: plateValue(document) };
@@ -1414,7 +1414,7 @@ export function updateFitsRoom(
   if ((sizes.get(document) ?? 0) + update.byteLength <= cap) return true;
   const state = Y.encodeStateAsUpdate(document);
   sizes.set(document, state.byteLength);
-  const candidate = new Y.Doc();
+  const candidate = scratchDoc();
   try {
     Y.applyUpdate(candidate, state);
     Y.applyUpdate(candidate, update);

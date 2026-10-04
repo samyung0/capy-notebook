@@ -37,6 +37,7 @@ import {
   type EditOperation,
   type Receipt,
 } from './persistence.js';
+import { scratchDoc } from './scratchDoc.js';
 import type { SourcePublish } from './sourceHandoff.js';
 
 /** Publishes a finalized candidate through the handoff (SourceHandoff.publish). */
@@ -200,7 +201,7 @@ export function sourceRoom(room: string) {
 }
 
 export function textState(state: Uint8Array) {
-  const document = new Y.Doc();
+  const document = scratchDoc();
   try {
     Y.applyUpdate(document, state);
     return document.getText('source').toString();
@@ -222,7 +223,7 @@ function decodeText(bytes: Uint8Array) {
  * engines seed under their own fixed client).
  */
 export function textSeed(bytes: Uint8Array) {
-  const document = new Y.Doc();
+  const document = scratchDoc();
   try {
     document.clientID = 0;
     document.getText('source').insert(0, decodeText(bytes));
@@ -249,7 +250,7 @@ export class SourceStateRebuildError extends OfficeEngineError {}
  * change refers to must be in the seed, so nothing may stay pending.
  */
 export function rebuildState(seed: Uint8Array, change: Uint8Array) {
-  const document = new Y.Doc();
+  const document = scratchDoc();
   try {
     // One transaction, as a fresh document applies a whole state, so the
     // rebuild encodes as canonically as seedChange's comparison expects.
@@ -279,7 +280,7 @@ export function seedChange(
   state: Uint8Array,
   seedVector = Y.encodeStateVectorFromUpdate(seed)
 ) {
-  const document = new Y.Doc();
+  const document = scratchDoc();
   try {
     Y.applyUpdate(document, state);
     const change = Y.encodeStateAsUpdate(document, seedVector);
@@ -1039,7 +1040,7 @@ export class SourceDocumentStore {
       const session =
         known?.session ??
         (await this.bound(await this.sessionForRoom(room, actors[0], 'write')));
-      const merged = new Y.Doc();
+      const merged = scratchDoc();
       try {
         Y.applyUpdate(merged, known?.state ?? (await this.stateOf(session)));
         // Only markers beyond the durable state (a writer that opened and
@@ -1096,7 +1097,7 @@ export class SourceDocumentStore {
   async inspect(fileId: string, actorId: string): Promise<SourceInspection> {
     const session = await this.session(fileId, actorId);
     const room = `source:${fileId}:epoch:${session.epoch}`;
-    const document = new Y.Doc();
+    const document = scratchDoc();
     try {
       const current = await this.load(room, document, actorId, session);
       if (session.format === 'text') {
@@ -1154,7 +1155,7 @@ export class SourceDocumentStore {
           'the source was rebased since this edit'
         );
       }
-      const document = new Y.Doc();
+      const document = scratchDoc();
       try {
         // The checkpoint CAS below compares against this same session, so a
         // commit landing after it conflicts instead of being overwritten.
