@@ -256,7 +256,10 @@ async def _fold_turn(
         for message in turn
         if message.get("_kind") == "turn_note" and message.get("_note")
     ).strip()
-    groups = _exchanges([m for m in turn if m.get("_kind") != "turn_note"])
+    # Earlier turn contexts are stale snapshots; the next call sends a current one.
+    groups = _exchanges(
+        [m for m in turn if m.get("_kind") not in ("turn_note", "ledger")]
+    )
     fold = [m for group in groups[:-TURN_KEEP_EXCHANGES] for m in group]
     keep = [m for group in groups[-TURN_KEEP_EXCHANGES:] for m in group]
     if not fold:

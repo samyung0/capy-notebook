@@ -149,6 +149,11 @@ function codeCopy(code: string): ErrorDescription | null {
         description: m.error_title_taken_body(),
         title: m.error_title_taken_title(),
       };
+    case 'too_many_chapters':
+      return {
+        description: m.error_too_many_chapters_body(),
+        title: m.error_too_many_chapters_title(),
+      };
     case 'transfer_self':
       return {
         description: m.error_transfer_self_body(),

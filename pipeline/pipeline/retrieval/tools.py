@@ -27,7 +27,7 @@ import requests
 from .. import obs
 from ..config import cfg
 from ..generated import MATERIAL_TITLE_MAX
-from . import bank, capture, contract, library, pending, store
+from . import bank, capture, contract, library, pending, skills, store
 from .chunking import clip_to_tokens, estimate_tokens
 from .library_evidence import LibraryEvidence
 from .limits import TurnBudget
@@ -229,6 +229,12 @@ class ToolContext:
     # material they have open, and their saved study preferences.
     open_resource: dict[str, Any] = field(default_factory=dict)
     study_preferences: dict[str, Any] = field(default_factory=dict)
+    # The workspace's chapters in order ({id, name}), loaded at turn start so
+    # "chapter 2" resolves without a tool call; at most 20 (the server's cap).
+    chapters: list[dict[str, Any]] = field(default_factory=list)
+    # Skills whose read_skill result is still in the request; the writes they
+    # cover are refused until it is (skills.retained recomputes it per call).
+    skills_read: set[str] = field(default_factory=set)
     # The requester's study progress is on in this workspace, so the agent may
     # read it.
     study_progress: bool = False
@@ -1238,11 +1244,16 @@ async def ledger_write(
             else ""
         )
         return _refused(f"{tool} needs {'; and '.join(missing)}.{hint}")
+    if excerpt_ids and not ctx.library:
+        return _refused(
+            "excerpt_ids name library excerpts, and the library is not a source this "
+            "turn; workspace passages need none. Call it again without excerpt_ids."
+        )
     unread = [e for e in excerpt_ids if e not in read]
     if unread:
         return _refused(
             f"Excerpts {unread} have no read or retained full text in this turn. read_knowledge each "
-            "of them before writing from it."
+            "of them before writing from it; workspace passages need no excerpt_ids."
         )
     if not excerpt_ids:
         return [], todo
@@ -1698,6 +1709,17 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     return result
 
 
+async def _read_skill(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    name = str(args["name"]).strip()
+    skill = skills.SKILLS.get(name)
+    if skill is None:
+        return _refused(
+            f"No skill named {name}. Skills: {', '.join(skills.SKILLS)}.",
+            code="unavailable_target",
+        )
+    return _result(skills.render(name, skill.text(ctx.library)))
+
+
 async def _list_question_bank(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     """The bank's table of contents: a subject's topics, or a page of a topic's
     questions. The exams and subjects ride in the tool description."""
@@ -1811,6 +1833,7 @@ _register("search_knowledge", _search_knowledge)
 _register("browse_knowledge", _browse_knowledge)
 _register("read_knowledge", _read_knowledge)
 _register("create_ledger", _create_ledger)
+_register("read_skill", _read_skill)
 _register("read_study_progress", _read_study_progress)
 _register("list_question_bank", _list_question_bank)
 _register("read_question", _read_question)
@@ -1879,7 +1902,7 @@ def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
     ]
     # The model maps the learner's words onto a subject from these lists, then
     # browses or lists it for topic ids.
-    extra = {}
+    extra = {"read_skill": skills.catalog()}
     if ctx.library_catalog:
         extra["browse_knowledge"] = (
             "\n\nSubjects this library holds (browse one for its topic ids):\n"
@@ -1898,7 +1921,25 @@ def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
         name = schema["function"]["name"]
         if name in extra:
             schema["function"]["description"] += extra[name]
-    return schemas
+    return schemas if ctx.library else [without_excerpts(s) for s in schemas]
+
+
+def without_excerpts(schema: dict[str, Any]) -> dict[str, Any]:
+    """A write tool without excerpt_ids, for a turn the library is not a
+    source of: the model otherwise fills it with workspace passage ids."""
+    parameters = schema["function"]["parameters"]
+    if "excerpt_ids" not in parameters.get("properties", {}):
+        return schema
+    properties = {
+        k: v for k, v in parameters["properties"].items() if k != "excerpt_ids"
+    }
+    return {
+        **schema,
+        "function": {
+            **schema["function"],
+            "parameters": {**parameters, "properties": properties},
+        },
+    }
 
 
 def spec_for(name: str) -> ToolSpec | None:
@@ -1925,6 +1966,9 @@ async def run(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     )
     if problem:
         return _refused(problem)
+    need = skills.missing(name, args, ctx.skills_read)
+    if need:
+        return _refused(skills.refusal(need))
     try:
         return await spec.handler(args, ctx)
     except (TurnFailed, pending.SourceChanged):

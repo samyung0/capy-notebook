@@ -15,7 +15,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-SUPPORTED_VERSION = 11
+SUPPORTED_VERSION = 12
 
 
 def _load() -> dict[str, Any]:
@@ -39,6 +39,8 @@ OPERATIONS: frozenset[str] = frozenset(CONTRACT["operations"])
 OUTCOMES: frozenset[str] = frozenset(CONTRACT["outcomes"])
 ERROR_CODES: frozenset[str] = frozenset(CONTRACT["errorCodes"])
 DEFINITIONS: dict[str, dict[str, Any]] = {t["name"]: t for t in CONTRACT["tools"]}
+# The note and question formats the materials skill quotes.
+FORMATS: dict[str, str] = CONTRACT["formats"]
 
 _validators: dict[str, Draft202012Validator] = {}
 for _name, _definition in DEFINITIONS.items():

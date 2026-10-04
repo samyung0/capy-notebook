@@ -101,6 +101,14 @@ var ErrForbidden = errors.New("forbidden")
 // title (case-insensitive, trimmed). Standalone materials are not in this set.
 var ErrTitleTaken = errors.New("material title already used in this workspace")
 
+// MaxChaptersPerWorkspace bounds a workspace's chapters; the chat agent's turn
+// context lists every chapter on each model call.
+const MaxChaptersPerWorkspace = 20
+
+// ErrTooManyChapters means the workspace already has MaxChaptersPerWorkspace
+// chapters.
+var ErrTooManyChapters = errors.New("workspace already has the maximum number of chapters")
+
 // ErrMaterialIDTaken means INSERT hit materials_pkey. The caller looks up
 // the row and either returns the original or reports ErrMaterialConflict.
 var ErrMaterialIDTaken = errors.New("material id already exists")

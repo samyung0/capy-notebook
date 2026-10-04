@@ -1317,6 +1317,8 @@
   "error_clone_source_changed_body": "The original changed while it was being copied. Try again.",
   "error_title_taken_title": "That name is taken",
   "error_title_taken_body": "Another item in this workspace already uses this name.",
+  "error_too_many_chapters_title": "Chapter limit reached",
+  "error_too_many_chapters_body": "A workspace can have up to 20 chapters. Remove or merge one to add another.",
   "error_transfer_self_title": "You already own this workspace",
   "error_transfer_self_body": "Choose another member to transfer it to.",
   "error_nothing_to_process_title": "Nothing to process",

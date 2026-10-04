@@ -38,7 +38,7 @@ The Quick route, with the chat agent as the Executor.
 | Scripts' dependencies | Run under `uv run --no-project --with ...` (`deck.PPT_MASTER_DEPS`), separate from the pipeline's environment |
 | Strategist, `design_spec.md` | `create_deck`: one title and brief per slide (audience move, how the points relate, content and source) |
 | `spec_lock.md` | The style's `style.md`: palette, type sizes with their calibration, page chrome, components |
-| Executor rules | `deck.RULES` in the `write_slide` description (a short distillation) plus the style's reference slides, returned once by `create_deck` |
+| Executor rules | The `deck` skill (`deck.skill_text`, read with `read_skill`): the method, `deck.RULES` (a short distillation) and the style with its reference slides. The deck tools are refused until it is in the request |
 | Per-page authoring | `write_slide`: one SVG per call |
 | Checker | Run on each slide alone (`deck.write`); its errors go back to the model as the refusal. Our own checks first: XML parses, the 1280x720 canvas, `lang` on the root, figures only from this turn's bbox captures |
 | Final check and export | Once every slide is written (`deck.save`): the Sources slide is added from the style's `sources.svg`, then `svg_quality_checker.py --quick-generate --canonical-authoring --stage final --json` and `svg_to_pptx.py --quick-generate --no-notes` |
@@ -125,3 +125,8 @@ todo a grouped write had already closed (the tools now ask for one todo per
 slide), 1 by the checker. To bring the cost down: prompt caching on the GLM
 route, replacing a written slide's SVG in the history with a stub, and fewer
 refusals.
+
+Since 2026-10-05 every request extends the previous one (the turn context is
+appended and left in place), which is what GLM's cache needs; a build turn of
+a note and a quiz read 63% of its input from cache. The style and rules come
+once, as the `deck` skill.

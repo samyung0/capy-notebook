@@ -166,16 +166,7 @@ SCHEMAS = [
         "type": "function",
         "function": {
             "name": "create_deck",
-            "description": (
-                "Create a slide deck, the brief or lecture-like main explainer, from an outline: "
-                "one title and brief per slide, in order. Plan one slide per idea, 8 to 20 per "
-                "chapter, opening with a cover. A brief says the slide's audience move (what the "
-                "student knows before and after), how its points relate, and the content with its "
-                "source. The result gives the deck's style, its rules and reference slides; then "
-                "write the slides one per call with write_slide. Each write_slide completes the "
-                "ledger todo it names, so plan one todo per slide. Pass excerpt_ids for the library "
-                "excerpts the outline was planned from, and todo while the ledger has open todos."
-            ),
+            "description": "Create a slide deck from an outline, one title and brief per slide, as the deck skill describes.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -206,13 +197,7 @@ SCHEMAS = [
         "type": "function",
         "function": {
             "name": "write_slide",
-            "description": (
-                "Write one slide of a deck as SVG, from what you just read; writing a slide again "
-                "replaces it. A slide the checker refuses comes back with its errors: fix those and "
-                "send the whole slide again. The deck is exported once every slide is written.\n"
-                + RULES
-                + "\nPass excerpt_ids for library content and todo while todos are open."
-            ),
+            "description": "Write one slide of a deck as SVG in the deck skill's rules; writing a slide again replaces it.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -230,11 +215,12 @@ SCHEMAS = [
 ]
 NAMES = frozenset(s["function"]["name"] for s in SCHEMAS)
 ADDON = (
-    "\n\nDecks: create_deck and write_slide make a deck, the other main explainer. "
-    "Choose it for brief or lecture-like learning, a note for detailed, text-dense "
-    "learning. Outline the deck first, then write one slide per call, each grounded "
-    "in what you read for it."
+    "\n\nDecks are the other main explainer: a deck for brief or lecture-like "
+    "learning, a note for detailed, text-dense learning."
 )
+WHEN = "read before making a slide deck (create_deck, write_slide)"
+# The skill each deck tool needs; the playground adds these to skills.REQUIRES.
+REQUIRES = {"create_deck": "deck", "write_slide": "deck"}
 MAIN_FORMAT = {
     "note": "Main explainer: a note for every chapter.",
     "deck": "Main explainer: a deck for every chapter.",
@@ -288,14 +274,26 @@ def create(args: dict[str, Any], rid: str) -> dict[str, Any]:
     }
 
 
-def created_text(record: dict[str, Any]) -> str:
-    style = record["deck"]["style"]
+def skill_text() -> str:
+    """The deck skill: the method, the slide rules and the default style."""
     return (
-        outline_text(record)
-        + "\n\nEach write_slide completes the ledger todo it names: keep one open todo per slide "
-        + f"still to write (create_ledger adds them). Write every slide in the {style} style:\n\n"
-        + style_text(style)
+        "How to make a slide deck, the brief or lecture-like main explainer.\n\n"
+        "Plan:\n"
+        "- Outline with create_deck: one title and brief per slide, in order, one slide per idea, "
+        "8 to 20 per chapter, opening with a cover. A brief says the slide's audience move (what "
+        "the student knows before and after), how its points relate, and the content with its source.\n"
+        "- Then write the slides one per write_slide call, each from what you just read for it. "
+        "Each write_slide completes the ledger todo it names, so keep one open todo per slide still "
+        "to write. Pass excerpt_ids for library content and todo while todos are open.\n"
+        "- A slide the checker refuses comes back with its errors: fix those and send the whole "
+        "slide again. The deck is exported once every slide is written.\n\n"
+        f"Slides:\n{RULES}\n\n"
+        f"Write every slide in the {DEFAULT_STYLE} style:\n\n{style_text(DEFAULT_STYLE)}"
     )
+
+
+def created_text(record: dict[str, Any]) -> str:
+    return outline_text(record) + "\n\nWrite the slides one per write_slide call."
 
 
 def _file(n: int, title: str) -> str:

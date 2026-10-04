@@ -237,11 +237,9 @@ def test_subject_list_rides_on_browse_knowledge_only(monkeypatch):
     )
     assert "Statistics" not in described["browse_knowledge"]
     assert "also: stats" not in described["browse_knowledge"]
-    assert "Subject IDs are only for `subject`" in described["browse_knowledge"]
     assert "statistics" not in described["search_knowledge"], (
         "the list is long; it is listed once"
     )
-    assert "omit it for a direct or cross-topic search" in described["search_knowledge"]
     assert "statistics" not in described["read_knowledge"]
     assert "statistics" not in contract.DEFINITIONS["browse_knowledge"]["description"]
 
@@ -619,6 +617,19 @@ async def test_writes_need_a_todo_while_todos_are_open_and_excerpts_once_read():
     finished = await tools.ledger_write(ctx, "create_material", {"todo": 1})
     assert isinstance(finished, tools.ToolResult)
     assert "Every todo on the ledger is done" in finished.text()
+
+
+async def test_without_the_library_writes_offer_and_take_no_excerpt_ids(monkeypatch):
+    """Offered anyway, the model fills excerpt_ids with workspace passage ids."""
+    monkeypatch.setattr(tools, "_gateway_ready", lambda: True)
+    ctx = ToolContext(workspace_id="ws", user_id="u_1", operations=_EDITOR)
+    for schema in tools.schemas_for(ctx):
+        assert "excerpt_ids" not in schema["function"]["parameters"]["properties"]
+    refused = await tools.ledger_write(
+        ctx, "create_material", {"excerpt_ids": ["attention#1"]}
+    )
+    assert isinstance(refused, tools.ToolResult)
+    assert "library is not a source this turn" in refused.text()
 
 
 async def test_an_edit_of_a_source_file_carries_no_ledger_rules():
@@ -1304,7 +1315,8 @@ def test_one_prompt_adds_the_library_rules_only_with_library_on():
 
     assert "Library (a source this turn)" in on and "Library (a source" not in off
     for prompt in (off, on):
-        assert "Before building more than one item, propose the plan" in prompt
+        assert "read the skill for the work with read_skill" in prompt
+        assert "propose the plan" not in prompt, "the materials skill holds it"
         assert f"{limits.LEDGER_TOOLS_PER_TURN} tool calls" in prompt
         assert (
             f"Without ledger todos a turn has {limits.PLANNING_RESPONSES} responses"

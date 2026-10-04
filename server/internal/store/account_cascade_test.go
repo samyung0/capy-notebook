@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -159,5 +160,31 @@ func TestChapterReferencesCannotCrossWorkspaces(t *testing.T) {
 		uid("f"), first.ID, ownerID, foreignChapter.ID)
 	if err == nil {
 		t.Fatal("a file was filed under a chapter from another workspace")
+	}
+}
+
+func TestAddChapterStopsAtTheWorkspaceLimit(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+
+	ownerID := uid("u_chapter")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO users (id, name, email)
+		VALUES ($1, 'Chapter Test', $2)`, ownerID, fmt.Sprintf("%s@example.test", ownerID)); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = s.pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, ownerID)
+	})
+	ws, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Full", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for n := range MaxChaptersPerWorkspace {
+		if _, err := s.AddChapter(ctx, ws.ID, ownerID, fmt.Sprintf("Chapter %d", n+1)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.AddChapter(ctx, ws.ID, ownerID, "One too many"); !errors.Is(err, ErrTooManyChapters) {
+		t.Fatalf("chapter past the limit: err = %v, want ErrTooManyChapters", err)
 	}
 }

@@ -229,13 +229,18 @@ def effective_prompt(c: dict[str, Any], base: str | None = None) -> str:
 
 
 SUBJECT_CATALOG = "\n\nSubjects this library holds (browse one for its topic ids):\n"
+# The lists production appends per turn, kept when a config replaces the text.
+CATALOGS = {
+    "browse_knowledge": SUBJECT_CATALOG,
+    "list_question_bank": "\n\nExams and subjects this bank holds",
+    "read_skill": "\n\nSkills:\n",
+}
 
 
 def tool_prompt(function: dict[str, Any]) -> str:
+    marker = CATALOGS.get(function["name"])
     description = function["description"]
-    if function["name"] == "browse_knowledge":
-        return description.partition(SUBJECT_CATALOG)[0]
-    return description
+    return description.partition(marker)[0] if marker else description
 
 
 def configured_tools(c: dict[str, Any], schemas: list[dict]) -> list[dict]:
@@ -255,6 +260,33 @@ def configured_tools(c: dict[str, Any], schemas: list[dict]) -> list[dict]:
             catalog = function["description"][len(tool_prompt(function)) :]
             function["description"] = c["tool_descriptions"][name] + catalog
     return result
+
+
+def turn_tools(c: dict[str, Any], production: list[dict]) -> list[dict]:
+    """What a turn offers: production's tools, the playground's deck and copy
+    tools, the configured descriptions, and the deck skill on read_skill."""
+    from pipeline.retrieval import skills, tools
+
+    # Copying goes with the bank tools: offered when they are.
+    banked = any(s["function"]["name"] == "list_question_bank" for s in production)
+    decks = deck.SCHEMAS if c["library"] else [tools.without_excerpts(s) for s in deck.SCHEMAS]
+    out = [
+        s
+        for s in [
+            *production,
+            *(decks if c["decks"]["offer"] else []),
+            *([bank_copy.SCHEMA] if banked else []),
+        ]
+        if c["tools"] is None or s["function"]["name"] in c["tools"]
+    ]
+    schemas = configured_tools(c, out)
+    if c["decks"]["offer"]:
+        for schema in schemas:
+            if schema["function"]["name"] == "read_skill":
+                schema["function"]["description"] += "\n" + skills.catalog_line(
+                    "deck", deck.WHEN
+                )
+    return schemas
 
 
 def material_id(assistant_message_id: str, call_id: str) -> str:
@@ -813,6 +845,7 @@ class Turn:
             compact,
             models,
             search,
+            skills,
             store,
             tools,
         )
@@ -871,19 +904,7 @@ class Turn:
             return effective_prompt(c, saved["system_prompt"](locale, library=library))
 
         def schemas_for(ctx_):
-            production = saved["schemas_for"](ctx_)
-            # Copying goes with the bank tools: offered when they are.
-            banked = any(s["function"]["name"] == "list_question_bank" for s in production)
-            out = [
-                s
-                for s in [
-                    *production,
-                    *(deck.SCHEMAS if c["decks"]["offer"] else []),
-                    *([bank_copy.SCHEMA] if banked else []),
-                ]
-                if offered is None or s["function"]["name"] in offered
-            ]
-            schemas = configured_tools(c, out)
+            schemas = turn_tools(c, saved["schemas_for"](ctx_))
             state["tool_schemas"] = schemas
             return schemas
 
@@ -922,6 +943,16 @@ class Turn:
                     )
             elif problem:
                 result = tools._refused(problem)
+            elif need := skills.missing(
+                name, record["args"], ctx_.skills_read, {**skills.REQUIRES, **deck.REQUIRES}
+            ):
+                result = tools._refused(skills.refusal(need))
+            elif (
+                name == "read_skill"
+                and record["args"].get("name") == "deck"
+                and c["decks"]["offer"]
+            ):
+                result = tools._result(skills.render("deck", deck.skill_text()))
             elif name == "list_sources":
                 result = await list_sources_locally(ctx_, state)
             elif name == "read_study_progress":
@@ -1583,22 +1614,21 @@ def build_app(target: str):
         )
         if c["library"]:
             # The pinned version's topic catalog rides in the knowledge tool
-            # descriptions, so this reads the library exactly as a turn does.
+            # descriptions, so this reads the library exactly as a turn does;
+            # like a turn, a bank that is down leaves its tools out.
             await tools.load_library_catalog(ctx)
-            await tools.load_bank_catalog(ctx)
-        schemas = [
-            s
-            for s in production_schemas(ctx)
-            if c["tools"] is None or s["function"]["name"] in c["tools"]
-        ]
+            try:
+                await tools.load_bank_catalog(ctx)
+            except Exception as exc:
+                print(f"question bank unavailable for the preview: {exc}", flush=True)
         return {
             "prompt": effective_prompt(
                 c, production_prompt(c["locale"], library=c["library"])
             ),
-            "tools": configured_tools(c, schemas),
+            "tools": turn_tools(c, production_schemas(ctx)),
             "tool_prompts": {
                 s["function"]["name"]: tool_prompt(s["function"])
-                for s in configured_tools({**c, "tool_descriptions": {}}, schemas)
+                for s in turn_tools({**c, "tool_descriptions": {}}, production_schemas(ctx))
             },
         }
 
@@ -1699,7 +1729,8 @@ def check_decks() -> None:
         assert not made.refused, made.text()
         record = state["materials"][0]
         rid = record["id"]
-        assert "1. Tangent meets radius (to write)" in made.text() and "Reference slide toc" in made.text()
+        assert "1. Tangent meets radius (to write)" in made.text()
+        assert "Reference slide toc" in deck.skill_text()
         long = '<text x="64" y="300">' + "far too long for this box " * 8 + "</text>"
         for args, says in (
             ({"slide": 1, "svg": "<svg"}, "does not parse"),

@@ -138,9 +138,13 @@ with the rendered box as its region.
 Every turn runs the production prompt and loop: it answers a question or builds
 materials. The Library checkbox, the Open picker and the preference controls
 write `library`, `open_resource` and `study_preferences` into the config, and
-the turn context message shows them to the model. Library tools require the
-header to show a configured library; a library that is down leaves the turn on
-the workspace.
+the turn context message shows them to the model, with the workspace's
+chapters in order. Library tools require the header to show a configured
+library; a library that is down leaves the turn on the workspace. Build
+instructions are skills the model reads with `read_skill` (`materials` from
+production, `deck` from the playground); the write tools are refused until the
+skill's text is in the request. Without the library the writes offer no
+`excerpt_ids`.
 
 A turn without ledger todos gets 8 responses, the last with tools off. Once the
 ledger has todos, 160 tool calls per turn and the stall guard govern it: five
@@ -172,8 +176,9 @@ turn counts as progress. At most ten todos may be open.
 
 `list_question_bank` and `read_question` read the question bank at
 `CAPY_PLAYGROUND_BANK_URL`, by default a local restore on port 15499 of a dump
-(see `bench/rag/scripts/bank_search.py` for the commands); the playground never
-reads the live bank. A restore older than the newest bank migration needs it
+(see `bench/rag/scripts/bank_search.py` for the commands; the container
+survives a restart, `docker start capy-bank-search-lab`); the playground never
+reads the live bank. With the bank down the tools are not offered, as in a turn. A restore older than the newest bank migration needs it
 applied first, pinned to the local container:
 `cd server && BANK_OWNER_DATABASE_URL=postgresql://postgres:lab@127.0.0.1:15499/bank go run ./cmd/bank migrate`
 (the 2026-10-03 dump lacks `questions.question_types`, and the bank tools fail
@@ -276,9 +281,11 @@ Chat turns require thinking to be enabled. The turn endpoint rejects `instant` b
 ### Decks
 
 `create_deck` and `write_slide` exist only here until decks land in the app
-(`todo-learning.md`, 2.6). They follow ppt-master's Quick route: `create_deck`
-takes an outline of titles and briefs and returns the style (`deck-styles/`,
-default `editorial`) with its reference slides; `write_slide` takes one slide
+(`todo-learning.md`, 2.6). They follow ppt-master's Quick route. The `deck`
+skill (`deck.skill_text`, read with `read_skill` before either tool) carries
+the method, the slide rules and the style (`deck-styles/`, default
+`editorial`) with its reference slides; `create_deck` takes an outline of
+titles and briefs; `write_slide` takes one slide
 as SVG, which ppt-master's checker must pass (text inside its module's
 bounds, no overlapping modules), and once every slide is written the deck is
 exported with ppt-master's exporter to `materials/<id>.pptx`, closed by a

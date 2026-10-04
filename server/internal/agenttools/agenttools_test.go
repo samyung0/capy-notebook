@@ -2,9 +2,12 @@ package agenttools
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/samyung0/capy-notebook/server/internal/questions"
 )
 
 // Every input schema must be a closed object so unknown model arguments are
@@ -115,5 +118,17 @@ func TestGeneratedContractIsCurrent(t *testing.T) {
 	}
 	if !bytes.Equal(got, want) {
 		t.Fatalf("%s is stale; run pnpm gen:openapi", path)
+	}
+}
+
+// The materials skill shows this example as the shape to copy, so it must be a
+// question the quiz validator accepts.
+func TestQuestionExampleIsValid(t *testing.T) {
+	var q map[string]any
+	if err := json.Unmarshal([]byte(questionExample), &q); err != nil {
+		t.Fatal(err)
+	}
+	if err := questions.Validate(q, questions.Policy{}); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -67,6 +67,9 @@ func resolveUploadChapterID(
 		Scan(&position); err != nil {
 		return nil, err
 	}
+	if position >= MaxChaptersPerWorkspace {
+		return nil, ErrTooManyChapters
+	}
 	newID := uid("ch")
 	if _, err := tx.Exec(ctx,
 		`INSERT INTO chapters (id, workspace_id, name, position) VALUES ($1,$2,$3,$4)`,

@@ -141,6 +141,9 @@ func mapHTTPError(err error) error {
 	if errors.Is(err, store.ErrTitleTaken) {
 		return conflictError("title_taken", "a material with this name already exists in this workspace")
 	}
+	if errors.Is(err, store.ErrTooManyChapters) {
+		return conflictError("too_many_chapters", "this workspace already has the maximum number of chapters")
+	}
 	// The specific conflicts wrap ErrConflict, so they come first.
 	if errors.Is(err, store.ErrAccountDeletionBusy) {
 		return conflictError("account_deletion_busy", "account deletion is still being processed")

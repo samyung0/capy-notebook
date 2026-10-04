@@ -100,9 +100,25 @@ flashcards).
   `SECURITY.md` (attack path 11) for the first security audit.
 - The lab database (`capy-odl-agentic-db`) had migrations 0044 and 0050's
   catalog updates applied by hand on 2026-10-04 (generate and quiz slots
-  removed; the three OpenAI rows that served only those now serve chat). It
-  still has no `rag_material_contents`, so `list_sources` fails there; live deck
-  runs narrowed `tools` to the library and deck tools.
+  removed; the three OpenAI rows that served only those now serve chat). On
+  2026-10-05 an empty `rag_material_contents` and the nullable
+  `materials.trashed_at` and `parent_material_id` were added by hand, so
+  `list_sources` works there.
+- Skills and caching (2026-10-05, Epo's prompt review): the base prompt keeps
+  grounding, answer-or-build and the budget; build instructions are skills read
+  with `read_skill` (`materials` in production with the note and question
+  formats and a validated example question; `deck` in the playground), and the
+  writes are refused until the skill's text is in the request. Tool
+  descriptions were cut to what the schema cannot say (contract v12). Per call,
+  Library on: about 6.8k tokens of prompt and tools, from 8.7k. The turn
+  context now goes last and stays where it was sent, so each request extends
+  the previous one: GLM on Relace caches per server and only at an earlier
+  request's end, and the moving context had left every build step uncached.
+  It also lists the workspace's chapters in order (at most 20, now a server
+  cap). Without the library the writes offer no `excerpt_ids`. A live build
+  (note and quiz on the attention paper): 7 calls, 107k input, 63% cached,
+  both written first try; before, 12 calls, about 290k input, 23% cached and
+  nothing written (quiz fences guessed wrong, workspace ids in `excerpt_ids`).
 - Signed-out study shipped on 2026-10-02 (`anonymous-study-plan.md`). Signed-out
   flashcards keep `ts-fsrs` and a review log in IndexedDB. Jev grades every open
   quiz part, signed in or not.
@@ -735,15 +751,30 @@ answered, at the cost of one call. Related to the "Response flagged" leaks.
 
 Deck items for the test (Epo, 2026-10-04; the output looks good):
 
-- The deck prompts: `deck.RULES`, the `create_deck` and `write_slide`
-  descriptions, `deck.ADDON` and the `editorial` style text. Watch for
+- The deck prompts: the `deck` skill (`deck.skill_text`: the method,
+  `deck.RULES` and the `editorial` style text), the one-line `create_deck` and
+  `write_slide` descriptions and `deck.ADDON`. Watch for
   slides refused over ledger fields, todos a grouped write closes early, and
   thin or invented content.
 - Cost: the first live deck took 944k input tokens with 35k read from cache
   (about 160 credits). Check whether the GLM route caches the stable prefix
   (system prompt, tools, the style returned by `create_deck`), and whether
   replacing a written slide's SVG in the history with a short stub keeps
-  quality while cutting the context.
+  quality while cutting the context. Since 2026-10-05 requests are
+  append-only, so rerun a deck and compare.
+
+Skills and prompts for the test (Epo, 2026-10-05):
+
+- The lean base prompt, the `materials` skill (`prompts/skills.py`) and the
+  one-line tool descriptions (contract v12). Watch whether the model reads
+  the skill before writing (the writes refuse otherwise, which costs a call)
+  and whether answers to plain questions still skip it.
+- Caching: per-call `cached_read_tokens` in `run.json`. Captured images ride
+  into the next request only, so a capture still breaks the cache once;
+  keeping them for the turn would trade context for hits.
+- The answer format (`LANG_RULE`, about 2k tokens on every call) is the
+  largest part of the base prompt; splitting rich components into a skill
+  waits for Epo.
 
 ### Phase 2: application
 

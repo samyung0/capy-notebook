@@ -134,11 +134,6 @@ def make_handler(
     run_dir: Path = state["run_dir"]
 
     async def handler(args: dict[str, Any], ctx) -> tools.ToolResult:
-        if len(state["captures"]) >= config["limits"]["captures_per_turn"]:
-            return tools._refused(
-                "capture_page attempt limit for this turn is used up.",
-                code="limit_reached",
-            )
         file_id, page, bbox = args.get("file_id"), args.get("page"), args.get("bbox")
         if not isinstance(file_id, str) or type(page) is not int:
             return tools._refused("capture_page needs file_id and an integer page.")

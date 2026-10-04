@@ -31,6 +31,7 @@ from . import (
     evidence,
     models,
     pending,
+    skills,
     store,
     tools,
     turn_context,
@@ -267,6 +268,11 @@ async def _run_turn(
             await tools.load_bank_catalog(ctx)
         except Exception:  # any failure to reach the bank
             log.warning("question bank unavailable for this turn", exc_info=True)
+    ctx.chapters, open_chapter = await store.workspace_chapters(
+        ctx.workspace_id, ctx.open_resource.get("id")
+    )
+    if open_chapter:
+        ctx.open_resource["chapter_id"] = open_chapter
 
     if ctx.file_ids is not None:
         active_scope = await tools.resolve_current_scope(ctx)
@@ -438,13 +444,13 @@ async def _run_turn(
             if ctx.library:
                 # Compacted IDs/summaries cannot stand in for retained full reads.
                 ctx.library_evidence.activate(messages, ctx.ledger)
-            ledger_message = turn_context.message(
-                ctx, final=tools_off, allowance=ledger_allowance
+            ctx.skills_read = skills.retained(messages)
+            _append_turn_context(
+                messages,
+                turn_context.message(ctx, final=tools_off, allowance=ledger_allowance),
             )
             request_messages = capture.inject_images(
-                _inject_ledger(
-                    pending.inject(messages, pending_message), ledger_message
-                ),
+                pending.inject(messages, pending_message),
                 ctx.pending_images,
                 spec.provider_slug,
             )
@@ -764,14 +770,20 @@ async def _run_turn(
     yield done
 
 
-def _inject_ledger(
-    messages: list[dict[str, Any]], message: dict[str, Any] | None
-) -> list[dict[str, Any]]:
-    """Place the ledger right after the query, outside the message list."""
-    if message is None:
-        return messages
-    index = compact._current_query_index(messages)
-    return [*messages[: index + 1], message, *messages[index + 1 :]]
+def _append_turn_context(
+    messages: list[dict[str, Any]], message: dict[str, Any]
+) -> None:
+    """Send this call's turn context last and keep it where it was sent.
+
+    Each request then extends the previous one exactly. GLM-5.3-Flash reuses
+    its cache only at the end of an earlier request, so a context that moved
+    or changed in place would leave every later step uncached. A context not
+    yet followed by a step is replaced.
+    """
+    if messages and messages[-1].get("_kind") == "ledger":
+        messages[-1] = message
+    else:
+        messages.append(message)
 
 
 def _ordered_citations(ctx: ToolContext, order: list[int]) -> list[dict[str, Any]]:

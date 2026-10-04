@@ -1317,6 +1317,8 @@
   "error_clone_source_changed_body": "复制过程中原内容发生了变化，请重试。",
   "error_title_taken_title": "名称已被使用",
   "error_title_taken_body": "此工作区中已有项目使用这个名称。",
+  "error_too_many_chapters_title": "章节数量已达上限",
+  "error_too_many_chapters_body": "每个工作区最多可有 20 个章节。请删除或合并一个章节后再添加。",
   "error_transfer_self_title": "你已拥有此工作区",
   "error_transfer_self_body": "请选择其他成员进行转让。",
   "error_nothing_to_process_title": "没有需要处理的内容",

@@ -1221,6 +1221,32 @@ async def record_search_events(events: list[dict[str, Any]]) -> None:
 # ------------------------------------------------------- structure & summaries
 
 
+async def workspace_chapters(
+    workspace_id: str, open_id: str | None = None
+) -> tuple[list[dict[str, Any]], str | None]:
+    """The chapters in order, and the chapter the open file or material is in."""
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            "SELECT id, name FROM chapters WHERE workspace_id = %s ORDER BY position, id",
+            (workspace_id,),
+        )
+        chapters = [dict(row) for row in await cur.fetchall()]
+        if not open_id:
+            return chapters, None
+        cur = await conn.execute(
+            """
+            SELECT chapter_id FROM files WHERE id = %s AND workspace_id = %s
+            UNION ALL
+            SELECT chapter_id FROM materials WHERE id = %s AND workspace_id = %s
+            LIMIT 1
+            """,
+            (open_id, workspace_id, open_id, workspace_id),
+        )
+        row = await cur.fetchone()
+    return chapters, (row["chapter_id"] if row else None)
+
+
 async def workspace_outline(workspace_id: str) -> dict[str, Any]:
     """Chapters, their files, and the per-file descriptor the listing tool prints."""
     db = await pool()

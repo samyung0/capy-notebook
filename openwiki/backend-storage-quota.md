@@ -426,3 +426,9 @@ LLM-authored material titles, editor asset names and the multipart upload's
 `Content-Disposition` filename when no `name` part is sent (both
 extension-preserving), workspace clone names (suffix-preserving), and
 auto-derived conversation titles.
+
+A workspace holds at most 20 chapters (`MaxChaptersPerWorkspace` in
+`store/store.go`), checked when a chapter is added and when an upload creates
+one by name; the 21st is refused as 409 `too_many_chapters`. The chat agent
+lists every chapter on each model call, which is what the cap bounds. A clone
+copies its source's chapters as they are.

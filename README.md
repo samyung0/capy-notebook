@@ -90,7 +90,7 @@ Everything local, on the Clerk development instance (UAT).
 
  **Clerk Webhook Events**:
 
-  - Set `CLERK_WEBHOOK_HOST=dev-<yourname>.uat.capynotebook.com`
+  - Set `CLERK_WEBHOOK_HOST=dev-<yourname>.uat.capynotebook.com` (any name is fine, as long as its not used already)
   - Give `dev-<yourname>.uat.capynotebook.com/webhooks/clerk` to Epo, ask the big bro to add a webhook in clerk uat development instance with that url. Subscribed to `user.created`, `user.deleted`, `user.updated`.
   - update `CLERK_WEBHOOK_SECRET` with the webhook secret
 

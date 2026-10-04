@@ -94,11 +94,15 @@ network and no pin.
 | `captioning.py` | `captioning` | Whole-image captions for standalone image uploads |
 | `retrieval.py` | `retrieval` | The Qwen3 instruct prefix for embedding queries |
 | `preferences.py` | `chat` | The learner's study preferences as build instructions, rendered into the turn context |
+| `skills.py` | `chat` | The skills `read_skill` returns: `materials` (build flow, output rules, note and question formats) |
 | `locale.py` | shared | The account-locale rule appended by chat, generate, and editor |
 
 Agent tool descriptions come from the shared contract
 (`retrieval/contract.py`) alone; `tools.schemas_for` only appends the
-library's subject list to `browse_knowledge`. Curate mode's prompt module
+library's subject list to `browse_knowledge`, the bank's exams to
+`list_question_bank` and the skill list to `read_skill`, and drops
+`excerpt_ids` from the write tools when the library is not a source this turn
+(the model otherwise fills it with workspace passage ids). Curate mode's prompt module
 (`prompts/curate.py`) was deleted on 2026-10-04. Almost nothing model-facing is
 written in `retrieval/`: `LANG_RULE` lives in `chat.py`, and `retrieval/`
 keeps tool results and refusal strings, which the model reads as data rather
@@ -2051,34 +2055,53 @@ build, and the knowledge library is one more source while the switch is on.
   were not is validated against the library in one query; unknown ids are
   refused naming them.
 - **Prompt** (`prompts/chat.py`). `system_prompt(locale, library=...)` is one
-  prompt for every turn: grounding rules; answer or build (a question gets an
-  answer with citations, a request to learn, make, expand or practise gets
-  materials without asking first); the build flow (ask while the request is
-  vague and offer a default, survey with read-only tools first, propose the
-  plan before building more than one item and build a single item directly,
-  keep a ledger todo per item when building more than one, write each item as
-  soon as its evidence is in hand); output rules (one main explainer note per
-  chapter; mindmaps, diagrams and interactive blocks inside the note unless a
-  standalone one is asked for; quizzes and flashcards standalone in the chapter
-  they practise, an embed in a note being a mini check of a few items; follow
-  the study preferences unless the request overrides them; after building,
-  list the materials made, what each covers, its size and the open work); and
+  prompt for every turn and stays lean: grounding rules; answer or build (a
+  question gets an answer with citations, a request to learn, make, expand or
+  practise gets materials without asking first, a vague build request is asked
+  about with a default offered, and a build starts by reading its skill); and
   the budget, with its numbers read from `retrieval/limits.py`. The
   account-language, follow-references and capture rules follow. With Library
-  on, `LIBRARY_RULES` is appended: read excerpts before writing from them, pass
-  `excerpt_ids` for attribution, subject ids only for browsing, reuse
-  question-bank questions and library exercises before writing new practice,
-  keep a worked example whole, state applicability and gaps, one primary
-  excerpt and one book's notation per section, `capture_knowledge_page` when
-  numbers or formulas look corrupted, and `[Diagram description: ...]` never
-  quoted as the book's text. The OpenUI Lang rules close every prompt. Tool
-  descriptions come from the contract alone; there is no per-mode swap.
+  on, `LIBRARY_RULES` is appended: subject ids only for browsing, a search hit
+  is not a read, state applicability and gaps, relax a missed topic filter,
+  `capture_knowledge_page` when numbers or formulas look corrupted, and
+  `[Diagram description: ...]` never quoted as the book's text. The OpenUI Lang
+  rules close every prompt.
+- **Skills** (`retrieval/skills.py`, text in `prompts/skills.py`). Build
+  instructions are read on demand, so a turn that only answers a question does
+  not pay for them on every call. `read_skill(name)` lists each skill with when
+  to read it (appended to its description by `tools.schemas_for`) and returns
+  the skill's text under a `# Skill: <name>` header. Production has one,
+  `materials`: the build flow (survey, propose the plan before building more
+  than one item, one ledger todo per item, write as soon as the evidence is in
+  hand), output rules (one main explainer note per chapter, mindmaps, diagrams
+  and interactive blocks inside it, quizzes and flashcards standalone in the
+  chapter they practise, study preferences, grow a long note by appending
+  sections), the note and question formats with a worked example question
+  (`Formats` in the contract: `noteMarkdownDescription`, `questionJSONDescription`
+  and `questionExample`, which `TestQuestionExampleIsValid` runs through the
+  quiz validator), and with Library on the library writing rules (excerpt_ids,
+  one primary excerpt, question-bank and exercise reuse). The writes that use
+  the formats are refused until the skill's result is in the request:
+  `create_material` always, `edit_document` when a command is
+  `insert_markdown`, `add_question` or `replace_question`
+  (`skills.missing`, checked in `tools.run`). The agent recomputes
+  `ctx.skills_read` from the message list before every call
+  (`skills.retained`), so a turn note that folded the result away asks for a
+  re-read. `read_skill` retains nothing, so each turn reads afresh. The
+  playground adds a `deck` skill the same way (`lab/playground/DECKS.md`).
 - **Turn context** (`retrieval/turn_context.py`). One user message, rebuilt
-  before every model call and placed right after the query (`_inject_ledger`
-  in `agent.py`). It is never part of the message history and never
-  compacted; its tokens count against the request budget beside the history.
-  It names the open item (`Open: <title> (<kind> <id>).` or `Open: nothing.`),
-  lists the study preferences (`prompts/preferences.py`: explainer style,
+  before every model call and appended last (`_append_turn_context` in
+  `agent.py`). Earlier copies stay where they were sent, so every request
+  extends the previous one exactly: GLM-5.3-Flash on Relace reuses its prompt
+  cache only at the end of an earlier request (a hybrid-attention model can
+  only resume from saved states), and a context that moved or changed in place
+  left every later step uncached. A copy not yet followed by a step is
+  replaced; a turn note drops the stale copies (`compact._fold_turn`), and none
+  reaches the stored conversation. It names the open item
+  (`Open: <title> (<kind> <id>), in chapter <n>.` or `Open: nothing.`), lists
+  every workspace chapter in order with its id (`store.workspace_chapters`,
+  loaded once per turn; at most 20, `MaxChaptersPerWorkspace` in Go) so "chapter
+  2" resolves without a tool call, lists the study preferences (`prompts/preferences.py`: explainer style,
   practice per chapter, quiz length, flashcards per chapter, mini checks and
   visual aids, saved values over `DEFAULTS`), the ledger's todos with their
   done state and ids, and one line per library excerpt read for this message.
@@ -2263,13 +2286,14 @@ build, and the knowledge library is one more source while the switch is on.
 | `search_knowledge` | none | Library on only. Excerpt-level hybrid search of the knowledge library with verified `topics` / `roles` predicates; topic ids come from a subject browse and unknown ones are refused by name; an empty result reports what those topics hold by role, or, with no topics, says the search had no topic filter. Retains nothing |
 | `browse_knowledge` | none | Library on only. Exactly one of `subject` or `topic` (enforced in Python). A subject id: its topics with search-eligible excerpt counts, one line each. A topic id: eligible excerpt counts by role and by book, then a page of excerpts with section paths and compact reviewed scope. Full notes come from `read_knowledge`. The library's subject list is appended to this description at runtime. Retains nothing |
 | `read_knowledge` | none | Library on only. One excerpt's chunks from chunk index `start`, with the excerpt's chunk range in the header and a next-start marker. Retains exact bounded reads used in successful material writes |
+| `read_skill` | none | Requires `material.create`. A skill's instructions by name; the description lists the skills and when to read each. Retains nothing |
 | `list_question_bank` | none | Library on only, with a configured library and `BANK_DATABASE_URL`. The bank's exams and subjects, a subject's topics, or a topic's questions 50 per page; compact cards. Retains nothing |
 | `read_question` | none | Same gating as `list_question_bank`. One bank question's JSON, to copy into a quiz unchanged, with its sources |
 | `read_study_progress` | none | Offered only when study progress is on for the requester in this workspace (Go `/api/internal/study-progress`): items done, started or removed, recent quiz results and the least retained chapters |
 | `create_ledger` | conversation ledger | Offered to any turn with `material.create`. String todos add IDs, `{id, todo}` adds or overwrites that ID. Unmentioned todos remain, max ten unfinished. Repeated edits are allowed but only the first changed plan in a turn counts as progress. Retains no source evidence |
 | `capture_knowledge_page` | none | Library on only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. No per-turn capture cap. Adds no citation. Retains nothing |
 | `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source, or an uploaded image as its single page 1, as a JPEG for the model; refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); no per-turn cap; adds no citation |
-| `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, quizzes and flashcard sets. Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record; a material with provenance is grounded in the library and does not require indexed workspace content. `todo` is required while the ledger has open todos and marks the todo this write completes; see Write guard. The `content` description carries the note fence format (mermaid, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`). Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration/scripts/build-markdown.mjs` from `src/features/notes/markdownConvert.ts`), so it gets the nodes a paste would. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences stay code blocks until the phase 3 element |
+| `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, quizzes and flashcard sets. Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record; a material with provenance is grounded in the library and does not require indexed workspace content. `todo` is required while the ledger has open todos and marks the todo this write completes; see Write guard. The note fence format (mermaid, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration/scripts/build-markdown.mjs` from `src/features/notes/markdownConvert.ts`), so it gets the nodes a paste would. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences stay code blocks until the phase 3 element |
 | `inspect_document` | none | Plate blocks with stable ids, text-source lines, or Office paragraphs/cells with target ids, paged by `start`/`count`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it) |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt with an Undo ref. A material target follows the same `todo` and `excerpt_ids` rules as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes neither and may not carry provenance |
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
@@ -2345,8 +2369,12 @@ or topic, and points `search_knowledge` topic ids at a subject browse. Version
 marks and open-part mark schemes. Version 10 (2026-10-04) replaces the curate
 thread mode with the per-turn Library switch: the stream request carries
 `library`, `openResource` and `studyProgress`, and the ledger and write rules
-apply to any build (`ContractVersion` in `agenttools.go`, `SUPPORTED_VERSION`
-in `retrieval/contract.py`). `cmd/openapi -agent-tools`
+apply to any build. Version 11 replaces `search_questions` with
+`list_question_bank`. Version 12 (2026-10-05) adds `read_skill`, shortens every
+tool description to what the schema cannot say, and moves the note and
+question formats out of the write tools into the contract's `formats`, which
+the materials skill quotes (`ContractVersion` in `agenttools.go`,
+`SUPPORTED_VERSION` in `retrieval/contract.py`). `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
 tools, while the same Go types reach TypeScript through the OpenAPI schema. Go

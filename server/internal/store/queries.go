@@ -791,6 +791,9 @@ func (s *Store) AddChapter(ctx context.Context, wsID, actorID, name string) (Cha
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM chapters WHERE workspace_id=$1`, wsID).Scan(&pos); err != nil {
 		return Chapter{}, err
 	}
+	if pos >= MaxChaptersPerWorkspace {
+		return Chapter{}, ErrTooManyChapters
+	}
 	if _, err := tx.Exec(ctx, `INSERT INTO chapters (id, workspace_id, name, position) VALUES ($1,$2,$3,$4)`, id, wsID, name, pos); err != nil {
 		return Chapter{}, err
 	}

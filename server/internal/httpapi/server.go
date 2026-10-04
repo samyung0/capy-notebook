@@ -337,6 +337,13 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		})
 		return
 	}
+	if errors.Is(err, store.ErrTooManyChapters) {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"code":    "too_many_chapters",
+			"message": "this workspace already has the maximum number of chapters",
+		})
+		return
+	}
 	if errors.Is(err, store.ErrStorageQuotaExceeded) {
 		// The code alone; failFor adds the charged account's own numbers.
 		writeJSON(w, http.StatusForbidden, map[string]any{

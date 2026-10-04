@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import itertools
 import json
 import re
 from dataclasses import replace
@@ -26,7 +27,11 @@ def no_pending_sources(monkeypatch):
     async def load(*_args, **_kwargs):
         return pending.PendingSources()
 
+    async def chapters(*_args, **_kwargs):
+        return [], None
+
     monkeypatch.setattr(pending, "load", load)
+    monkeypatch.setattr(agent.store, "workspace_chapters", chapters)
 
 
 def _model() -> ModelConfig:
@@ -2276,11 +2281,12 @@ async def test_captured_images_ride_into_the_next_request_only(monkeypatch):
 
     events = await _collect("q", ToolContext(workspace_id="ws_1"))
 
+    # The turn context comes last; the images follow their tool results.
     roles = [m["role"] for m in seen[2]["messages"]]
-    assert roles[-3:] == ["assistant", "tool", "user"]
-    image_message = seen[2]["messages"][-1]
+    assert roles[-4:] == ["assistant", "tool", "user", "user"]
+    image_message = seen[2]["messages"][-2]
     assert image_message["content"][-1]["type"] == "image_url"
-    assert seen[1]["messages"][-1]["role"] == "tool"
+    assert seen[1]["messages"][-2]["role"] == "tool"
     activity = events[-1]["activity"]
     capture_block = next(b for b in activity if b.get("name") == "capture_page")
     assert capture_block["capture"] == {
@@ -2416,9 +2422,7 @@ async def test_a_library_that_is_down_or_empty_leaves_the_turn_on_the_workspace(
     assert "pool timeout" in caplog.text
 
 
-async def test_turn_context_follows_the_query_and_tracks_the_todos(
-    monkeypatch, library_on
-):
+async def test_turn_context_comes_last_and_tracks_the_todos(monkeypatch, library_on):
     stream, seen = _script_stream(
         [
             _assembled(
@@ -2461,12 +2465,18 @@ async def test_turn_context_follows_the_query_and_tracks_the_todos(
     events = await _collect("teach me regression", ctx, model=_build_model())
 
     def _ledger(messages):
-        return next(m for m in messages if m.get("_kind") == "ledger")
+        return [m for m in messages if m.get("_kind") == "ledger"][-1]
 
     first = _script_messages(seen, 0)
     assert "Open: nothing." in _ledger(first)["content"]
     assert "Ledger todos" not in _ledger(first)["content"]
-    assert first.index(_ledger(first)) == first.index(_query(first)) + 1
+    # Sent last and left in place: every request extends the one before it, so
+    # the provider's cache covers all but the newest step.
+    for before, after in itertools.pairwise(seen):
+        assert after["messages"][-1] is _ledger(after["messages"])
+        assert [m["content"] for m in after["messages"][: len(before["messages"])]] == [
+            m["content"] for m in before["messages"]
+        ]
 
     second = _ledger(_script_messages(seen, 1))["content"]
     assert "[ ] 0. a note" in second and "[ ] 1. a quiz" in second
@@ -2482,10 +2492,6 @@ async def test_turn_context_follows_the_query_and_tracks_the_todos(
 
 def _script_messages(seen: list[dict], index: int) -> list[dict]:
     return seen[index]["messages"]
-
-
-def _query(messages: list[dict]) -> dict:
-    return next(m for m in messages if m.get("_kind") == "query")
 
 
 async def test_a_ledger_turn_has_no_response_ceiling_while_todos_complete(
@@ -2996,8 +3002,11 @@ async def test_the_ledger_tool_cap_runs_one_terminal_response(
         "refused"
     ) == 1
     assert seen[-1]["tools"] is None
-    assert agent.turn_context.FINAL_NOTICE in next(
-        m["content"] for m in seen[-1]["messages"] if m.get("_kind") == "ledger"
+    assert (
+        agent.turn_context.FINAL_NOTICE
+        in [m["content"] for m in seen[-1]["messages"] if m.get("_kind") == "ledger"][
+            -1
+        ]
     )
     assert events[-1]["telemetry"]["toolCallsTurn"] == 3
     assert events[-1]["telemetry"]["stopReason"] == "tool_cap"

@@ -4,7 +4,7 @@ Runs against a local restore of a bank dump (never the live bank, which UAT
 reads). Relevance is judged at the topic level: a hit counts when its topic is
 one the query names. Report: bench/rag/reports/2026-10-04-bank-search.md.
 
-  docker run -d --rm --name capy-bank-search-lab -e POSTGRES_PASSWORD=lab \\
+  docker run -d --name capy-bank-search-lab -e POSTGRES_PASSWORD=lab \\
     -e POSTGRES_DB=bank -p 127.0.0.1:15499:5432 postgres:16
   pg_restore -h 127.0.0.1 -p 15499 -U postgres -d bank --no-owner --no-privileges \\
     data/question-bank/backups/bank-2026-10-03-before-round2.dump
