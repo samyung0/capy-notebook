@@ -352,11 +352,18 @@ saved and raises the failed-save toast; the retry's receipt brings Saved back.
 An Office engine timeout or lost worker is retried like a gateway 5xx, up to
 three in a row (`ENGINE_ATTEMPTS`, `collaboration/src/storeFailure.ts`). A save
 refused for good (an engine refusal or trap, the third engine timeout in a
-row, a 401/403/404/409/413/422 from the gateway, the byte limit) discards the room and resets the editor to the last
-saved version with the "couldn't be saved and were undone" toast, clearing its
-drafts; a storage or frozen refusal at save drops every writer to view under
-the read-only strip. A trashed or deleted file, or lost access, replaces the
-editor with the file-missing or no-access panel. Draft storage failures
+row, a 409/413/422 from the gateway, the byte limit) discards the room, which reopens at the last good save. Each
+editor with unsaved edits keeps its drafts, marked refused, and enters
+recovery: the editor is inert, Download draft exports the edits applied to the
+base, and Discard this draft returns to editing the last good save. Refused
+drafts are never merged back on open (they would replay the refused state);
+they reopen in recovery. An editor with nothing unsaved just reloads. A save
+refused because access was lost or the file is gone (401/403/404,
+`lostAccess` on the failure message) clears the drafts and reloads to the
+file-missing or no-access panel, with no download: the user may no longer see
+that content. A storage or frozen refusal at save drops every writer to view
+under the read-only strip. A trashed or deleted file, or lost access, replaces
+the editor with the file-missing or no-access panel. Draft storage failures
 (private mode, a full disk, a missing draft base) never block editing. Error
 strips carry localized copy only. An epoch
 change reloads a fully acknowledged editor; unacknowledged edits instead enter

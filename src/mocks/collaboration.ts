@@ -474,6 +474,20 @@ class MockSourceProvider implements SourceProvider {
     if (event.type !== 'checkpoint-request' || typeof event.id !== 'string')
       return;
     const fileId = this.room.target.id;
+    if (refusedSourceSaves.delete(fileId)) {
+      // Refused for good: the room goes back to its last checkpoint (it is
+      // never saved again) and the client keeps its edits for recovery.
+      this.room.retired = true;
+      const refusal = JSON.stringify({
+        checkpointIds: [event.id],
+        epoch: Number(this.config.name.split(':')[3]),
+        fileId,
+        recoverable: false,
+        type: 'source-checkpoint-failed',
+      });
+      queueMicrotask(() => this.config.onStateless?.({ payload: refusal }));
+      return;
+    }
     if (failedSourceSaves.delete(fileId)) {
       this.room.checkpointFailed = true;
       const receipt = JSON.stringify({
@@ -550,12 +564,17 @@ const failedSourceSaves = new Set<string>();
 export function failNextSourceSave(fileId: string) {
   failedSourceSaves.add(fileId);
 }
+const refusedSourceSaves = new Set<string>();
+export function refuseNextSourceSave(fileId: string) {
+  refusedSourceSaves.add(fileId);
+}
 export function announceSourceEpoch(fileId: string, epoch: number) {
   for (const provider of [...sourceProviders])
     provider.announceEpoch(fileId, epoch);
 }
 export function resetScenarioRooms() {
   failedSourceSaves.clear();
+  refusedSourceSaves.clear();
   for (const [name, room] of rooms) {
     if (!room.target.id.startsWith('mock-scenario-')) continue;
     if (room.participants.size)

@@ -99,6 +99,7 @@ import {
   engineFailures,
   engineRefused,
   handlePermanentStoreFailure,
+  lostSourceAccess,
   pendingSourceSave,
   SourcePendingError,
 } from './storeFailure.js';
@@ -1099,6 +1100,7 @@ async function storeSource(document: Document) {
               type: 'source-checkpoint-failed',
               ...sourceRoom(room),
               checkpointIds: claimed,
+              ...(lostSourceAccess(error) && { lostAccess: true }),
               recoverable,
             }
       )
@@ -1638,6 +1640,7 @@ const failedStoreRetries = new FailedStoreRetryRunner(
                     type: 'source-checkpoint-failed',
                     ...sourceRoom(room),
                     checkpointIds: failed.checkpointIds,
+                    ...(lostSourceAccess(error) && { lostAccess: true }),
                     recoverable: false,
                   }
             )

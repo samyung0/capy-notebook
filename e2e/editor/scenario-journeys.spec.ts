@@ -64,7 +64,13 @@ test('one click fails a real source save and retry preserves the mounted editor'
   expect((await input.inputValue()).split(marker)).toHaveLength(2);
 });
 
-for (const id of ['source-replaced', 'source-draft-recovery']) {
+// A save refused for good keeps the edits as a download-only draft: after a
+// reload they reopen in recovery, not merged into the editor.
+for (const id of [
+  'source-replaced',
+  'source-draft-recovery',
+  'source-save-refused',
+]) {
   test(`${id} downloads, persists across reload, and discards through the app`, async ({
     page,
   }) => {

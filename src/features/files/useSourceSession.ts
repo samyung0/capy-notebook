@@ -349,7 +349,11 @@ export function useSourceSession(
         });
         setStatus('recovery');
         setDirty(true);
-        setError(m.source_edit_recovery());
+        setError(
+          draft.refused
+            ? m.source_edit_refused_recovery()
+            : m.source_edit_recovery()
+        );
         return;
       }
       recoveryDrafts = null;
@@ -394,8 +398,9 @@ export function useSourceSession(
         // A closed session never reconnects (replaced, paused, reset).
         provider: () => (cancelled || active.recovery ? null : provider),
       });
-      // A save the server refused for good: go back to the last saved
-      // version, dropping this session's drafts so they cannot come back.
+      // Lost access or a file gone: go back to the last saved version,
+      // dropping this session's drafts (the reopened session shows the
+      // missing or no-access panel).
       const reset = () => {
         if (cancelled) return;
         if (!sourceChangesCovered(active) || bufferDirtyRef.current)
@@ -417,6 +422,42 @@ export function useSourceSession(
           pendingInput(false);
           setGeneration((value) => value + 1);
         })();
+      };
+      // A save the server refused for good: the room went back to the last
+      // good save. Unsaved edits stay in this session's drafts, marked
+      // refused so no later open merges them back (they would replay the
+      // refused state), and the editor enters recovery: download them, or
+      // Discard to edit the last good save.
+      const refuse = () => {
+        if (cancelled || active.recovery) return;
+        if (sourceChangesCovered(active) && !bufferDirtyRef.current) {
+          reset();
+          return;
+        }
+        const latest = takeDraft();
+        const refused = [
+          ...restoredDrafts,
+          ...(latest ? [latest] : latestDraft ? [latestDraft] : []),
+        ].map(
+          (draft): SourceDraft => ({
+            ...draft,
+            refused: true,
+            version: crypto.randomUUID(),
+          })
+        );
+        discarded = true;
+        draftDue = false;
+        clearTimeout(timer);
+        recoveryDrafts = refused;
+        for (const draft of refused)
+          queueDraftWrite(() => writeSourceDraft(draft, bytes));
+        rejectWaiters(new SourceSessionError(m.source_edit_refused_recovery()));
+        active.recovery = true;
+        setLoaded({ bytes, doc: shared, session });
+        setStatus('recovery');
+        setError(m.source_edit_refused_recovery());
+        setSynced(false);
+        provider?.disconnect();
       };
       // Nothing local is pending any more: forget this session's drafts.
       const settle = () => {
@@ -540,6 +581,7 @@ export function useSourceSession(
             checkpointIds?: string[];
             message?: string;
             recoverable?: boolean;
+            lostAccess?: boolean;
             room?: string;
           };
           try {
@@ -613,7 +655,8 @@ export function useSourceSession(
             event.epoch === session.epoch
           ) {
             if (event.recoverable === false) {
-              reset();
+              if (event.lostAccess) reset();
+              else refuse();
               return;
             }
             // The server retries this save; its receipt answers the same

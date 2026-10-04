@@ -1031,8 +1031,10 @@ draft remains available. Save, export and handoff first commit open spreadsheet
 inputs and wait for active composition or gestures. Pending input counts as
 unsaved even before it reaches the shared document. Draft storage that fails
 (private mode, a full disk, a draft whose base is gone) is skipped, never an
-editing error. A save refused for good clears the session's drafts before it
-resets the editor.
+editing error. A save refused for good keeps the session's drafts, marked
+refused (download only, never merged back), and enters recovery; one refused
+for lost access or a missing file clears them (see
+[error handling](error-handling.md#collaborative-source-failures)).
 Network and recoverable save failures leave drafts available. Before sending
 buffered updates after reconnect, the parent verifies the current epoch. An old
 epoch with unsaved changes enters recovery and permits draft download instead
@@ -1168,7 +1170,8 @@ broken-object errors (for example "attempted to take ownership of Rust value
 while it was borrowed") count as traps, because the engine's cleanup throws
 them in place of the trap. A save that fails
 inside the engine is not queued for the failed-store retry: the room is
-discarded and its clients reset to the last saved version (see
+discarded and reopens at the last good save, while clients with unsaved edits
+enter recovery with them (see
 [error handling](error-handling.md#collaborative-source-failures)).
 
 ## Maintenance window

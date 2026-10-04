@@ -1273,6 +1273,7 @@
   "pdf_private_annotations": "Private annotations",
   "pdf_annotation_color": "Annotation color {color}",
   "source_edit_recovery": "This file has a newer editing version. Your unsaved draft is preserved. Download it to keep a copy, then discard this draft to continue.",
+  "source_edit_refused_recovery": "These changes couldn't be saved, so the file went back to its last saved version. Your unsaved draft is preserved. Download it to keep a copy, then discard this draft to continue.",
   "source_edit_session_changed": "The editing session changed. Reopen the file to continue.",
   "source_edit_save_failed": "Changes could not be saved. Your draft is still here.",
   "source_edit_offline": "Offline. Changes are kept on this device.",

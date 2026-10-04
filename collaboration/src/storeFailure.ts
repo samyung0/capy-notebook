@@ -3,6 +3,7 @@ import { MaterialDocumentLimitError } from './limits.js';
 import { MaterialDocumentValidationError } from './materialDocument.js';
 import { OfficeEngineError, type SourceFormat } from './officeRuntime.js';
 import { CollaborationAuthorizationError } from './persistence.js';
+import { SourceRequestError } from './sourceDocuments.js';
 
 interface PermanentStoreFailureActions {
   clearFailedStore: () => void;
@@ -74,4 +75,16 @@ export function pendingSourceSave(
   if (!(document.store.pendingStructs || document.store.pendingDs))
     return 'none';
   return format === 'text' ? 'save' : 'wait';
+}
+
+/**
+ * A save refused because the writers lost access or the file is gone
+ * (401/403/404): the browser drops its drafts and shows the no-access or
+ * missing panel. Any other refusal for good keeps them for recovery.
+ */
+export function lostSourceAccess(error: unknown) {
+  return (
+    error instanceof SourceRequestError &&
+    [401, 403, 404].includes(error.status)
+  );
 }

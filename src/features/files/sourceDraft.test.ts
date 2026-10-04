@@ -74,3 +74,23 @@ it('keeps same-epoch text drafts compatible across published source hashes', () 
     })
   ).toEqual(drafts);
 });
+
+it('never merges refused drafts back, even of the current lineage', () => {
+  const draft = (id: string, refused?: true): SourceDraft => ({
+    baseSourceSHA256: 'current',
+    epoch: 3,
+    fileId: 'actor:file',
+    id,
+    state: new Uint8Array(),
+    version: id,
+    ...(refused && { refused }),
+  });
+  const drafts = [draft('kept'), draft('refused', true), draft('also', true)];
+  const session = { baseSourceSHA256: 'current', epoch: 3, format: 'docx' };
+  // The refused ones open in recovery; the ordinary one stays mergeable.
+  expect(sourceRecoveryDrafts(drafts, session).map((d) => d.id)).toEqual([
+    'refused',
+    'also',
+  ]);
+  expect(sourceRecoveryDrafts([drafts[0]], session)).toEqual([]);
+});

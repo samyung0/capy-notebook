@@ -10,6 +10,9 @@ export interface SourceDraft {
   epoch: number;
   fileId: string;
   id: string;
+  /** Unsaved edits of a save the server refused for good: offered for
+   * download only, never merged back (they would replay the refused state). */
+  refused?: true;
   state: Uint8Array;
   version: string;
 }
@@ -154,7 +157,8 @@ export async function clearSourceDrafts(
   }
 }
 
-/** Return one recoverable lineage, leaving current and other lineages untouched. */
+/** Return one recoverable lineage (another epoch or base, or refused drafts of
+ * any), leaving current and other lineages untouched. */
 export function sourceRecoveryDrafts(
   drafts: SourceDraft[],
   session: { epoch: number; baseSourceSHA256: string; format: string }
@@ -166,6 +170,13 @@ export function sourceRecoveryDrafts(
     left.epoch === right.epoch &&
     (session.format === 'text' ||
       left.baseSourceSHA256 === right.baseSourceSHA256);
-  const first = drafts.find((draft) => !sameLineage(draft, session));
-  return first ? drafts.filter((draft) => sameLineage(draft, first)) : [];
+  const first = drafts.find(
+    (draft) => draft.refused || !sameLineage(draft, session)
+  );
+  return first
+    ? drafts.filter(
+        (draft) =>
+          sameLineage(draft, first) && !!draft.refused === !!first.refused
+      )
+    : [];
 }

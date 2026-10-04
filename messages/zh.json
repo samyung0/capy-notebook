@@ -1273,6 +1273,7 @@
   "pdf_private_annotations": "私人批注",
   "pdf_annotation_color": "批注颜色 {color}",
   "source_edit_recovery": "此文件已有更新的编辑版本，您尚未保存的草稿已保留。可先下载以保留副本，再丢弃此草稿以继续。",
+  "source_edit_refused_recovery": "这些更改无法保存，文件已恢复到上次保存的版本。您尚未保存的草稿已保留。可先下载以保留副本，再丢弃此草稿以继续。",
   "source_edit_session_changed": "编辑会话已更改，请重新打开文件。",
   "source_edit_save_failed": "无法保存更改，草稿仍然保留。",
   "source_edit_offline": "离线，更改已保存在此设备上。",

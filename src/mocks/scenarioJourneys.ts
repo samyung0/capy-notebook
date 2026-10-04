@@ -15,6 +15,7 @@ import {
   announceReadOnly,
   announceSourceEpoch,
   failNextSourceSave,
+  refuseNextSourceSave,
   rooms,
   savedSourceState,
   sourceRoomName,
@@ -43,6 +44,7 @@ import {
 
 export const editorScenarios = [
   { id: 'source-save-failed', label: 'Text source: save failed' },
+  { id: 'source-save-refused', label: 'Text source: save refused for good' },
   { id: 'source-replaced', label: 'Text source: replaced with unsaved edits' },
   {
     id: 'source-draft-recovery',
@@ -209,6 +211,22 @@ export async function runJourney(
           ?.textContent === m.editor_status_unsaved(),
       'failed save status'
     );
+  if (id === 'source-save-refused') {
+    await sourceOpen();
+    await ui.wait(
+      () =>
+        [...document.querySelectorAll('[role="status"]')].some(
+          (node) => node.textContent === m.editor_status_saved()
+        ),
+      'initial source checkpoint'
+    );
+    refuseNextSourceSave(scenarioText);
+    await textEdit();
+    await ui.click(m.action_save());
+    // Refused for good: the unsaved edits go to recovery, the error strip.
+    await ui.element('[role="alert"]');
+    return;
+  }
   if (id === 'source-save-failed' || id === 'source-replaced') {
     await sourceOpen();
     await ui.wait(
