@@ -85,6 +85,10 @@ export type OfficeHostMessage =
       version: typeof OFFICE_PROTOCOL_VERSION;
       type: 'set-capabilities';
       canEdit: boolean;
+      /** With canEdit false: the editor still shows its document for
+       * selection and copy (recovery), its engine read-only. Otherwise a
+       * paused editor is inert. */
+      selectable?: boolean;
     }
   /** Capy's appearance, sent when the runtime starts and on every change. */
   | {

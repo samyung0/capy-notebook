@@ -348,12 +348,28 @@ unsaved, error and recovery states, shown in the header like the note editor's
 (see [plate-editor.md](plate-editor.md#connection-lifetime-and-refusals)).
 Saved requires an explicit durable checkpoint receipt. A failed save the
 server retries keeps the mounted editor and its pending receipts, shows Not
-saved and raises the failed-save toast; the retry's receipt brings Saved back.
+saved and the save banner; the retry's receipt brings Saved back.
+
+The save banner (`SaveBanner`, `src/components/banners/SaveBanner.tsx`) is one
+error strip under the file or note header with one state at a time:
+`delayed` ("Saving is delayed. Your recent changes aren't saved yet.") and
+`refused` (below). `delayed` shows on a server-reported failure with unsaved
+work (`source-checkpoint-failed` recoverable, `checkpoint-failed`), and also
+when the client's oldest checkpoint request stays unanswered past a threshold,
+without waiting for the server's 60 to 120 s timeouts: `SOURCE_SAVE_DELAY_MS`
+(45 s; a source room stores at most 30 s after a change) and
+`NOTE_SAVE_DELAY_MS` (25 s; a note room at most 10 s), counted in connected
+time only (`SaveDelayClock` in `src/features/notes/saveDelay.ts`). An edit is
+counted from the request that carries it, sent 1 s after typing stops. The
+banner stays until a receipt covers every change. Closing it hides it for that
+episode only; the next failure shows it again. A connection still lost after
+30 s shows only the header's red status, with no banner or toast.
+
 A source save that fails slowly (an Office engine timeout or a dead worker, a
 checkpoint that moved again after the reload and merge, a network error or a
 5xx) keeps the room editable: the server retries it with per-room backoff
 (5 s, doubling to 60 s; the room's live saves wait out the same backoff), the
-editor shows "Saving is delayed" and its drafts stay. After
+editor shows the `delayed` banner and its drafts stay. After
 `SLOW_SAVE_LIMIT_MS` (5 minutes) of failed saves without one success, whatever
 the cause (a slow failure, a save held back by the backoff, or pending content
 waiting for a client's sync, which is never refused by itself), the room takes
@@ -364,10 +380,16 @@ input (422 `invalid_checkpoint`), an editing epoch that ended
 retry reloads names a newer epoch; it is never retried and never counts as lost
 access)) discards the room at once, and it reopens at the last good save. Each
 editor with unsaved edits keeps its drafts, marked refused, and enters
-recovery: the editor is inert, Download draft exports the edits applied to the
-base, and Discard this draft returns to editing the last good save. Refused
-drafts are never merged back on open (they would replay the refused state);
-they reopen in recovery. An editor with nothing unsaved just reloads. A save
+recovery under the `refused` banner ("These changes couldn't be saved. Copy
+anything you need, then reload to continue from the last saved version."): the
+unsaved content stays on screen read-only and selectable, with no download or
+discard, and the banner's Reload clears the refused drafts and reopens the last
+saved version. A text source shows it in a read-only textarea. Office recovery
+sends `set-capabilities` with `selectable`, so the runtime hands the engine
+`readOnly` instead of making the editor inert: DOCX text and XLSX cells can be
+selected and copied, while PPTX slides can only be viewed (the PPTX engine has
+no copy). Refused drafts are never merged back on open (they would replay the
+refused state); a page refresh reopens them in the same view until Reload. An editor with nothing unsaved just reloads. A save
 refused because access was lost or the file is gone (401/403/404,
 `lostAccess` on the failure message) clears the drafts and reloads to the
 file-missing or no-access panel, with no download: the user may no longer see
@@ -471,7 +493,8 @@ PDF annotation-load failures use `userToast` with Retry to refetch private marks
 without reloading the PDF. The file viewer reports the request failure even
 while PDF bytes are loading or the PDF cannot render. Repeated failures reuse one toast per file; recovery
 or closing the viewer dismisses it. Office/text recovery and PDF annotation
-write errors use `FileBanner`, with recovery actions passed as `actions`. Statistics and
+write errors use `FileBanner`, with recovery actions passed as `actions`; save
+states use `SaveBanner`. Statistics and
 indexing tabs share an `ErrorState` panel with normalized copy and manual retry.
 
 Non-toast error actions use `ErrorAction` from `Button.tsx`: ghost-hover with the

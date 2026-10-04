@@ -26,6 +26,20 @@ it('keeps later authored changes dirty when an earlier or unrelated checkpoint i
   expect(acknowledgeSourceCheckpoint(state, ['second'])).toBe(false);
 });
 
+it('answers an earlier request a later receipt covers', () => {
+  // The first request was lost on a reconnect; the second's receipt covers it.
+  const state = {
+    acknowledged: -1,
+    pending: new Map([
+      ['lost', 1],
+      ['second', 2],
+    ]),
+    sequence: 2,
+  };
+  expect(acknowledgeSourceCheckpoint(state, ['second'])).toBe(true);
+  expect([...state.pending.keys()]).toEqual([]);
+});
+
 it('keeps a replaced view under the banner only when the server holds its changes, and skips drafts only for receipts', () => {
   const state = { acknowledged: 2, sequence: 3 };
   // A silent editor never answered ready: its unsaved change goes to recovery.

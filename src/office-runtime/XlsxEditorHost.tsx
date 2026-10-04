@@ -28,6 +28,7 @@ export function XlsxEditorHost({
   onPendingChange,
   fileName,
   onSave,
+  readOnly,
 }: {
   bytes: Uint8Array;
   collaboration: OfficeCollaboration;
@@ -41,6 +42,8 @@ export function XlsxEditorHost({
   onPendingChange: (pending: boolean) => void;
   fileName: string;
   onSave: () => void;
+  /** Recovery: selection and copy only. */
+  readOnly: boolean;
 }) {
   const apiRef = useRef<XlsxEditorApi | null>(null);
   useEffect(() => {
@@ -103,6 +106,7 @@ export function XlsxEditorHost({
           };
         }}
         onSave={onSave}
+        readOnly={readOnly}
         showCustomNumberFormat={false}
         showFontPicker={!narrow}
         showFontSizePicker={!narrow}

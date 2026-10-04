@@ -4,6 +4,10 @@ import {
   FileBanner,
   type FileBannerAction,
 } from '@/components/banners/FileBanner';
+import {
+  SaveBanner,
+  type SaveBannerState,
+} from '@/components/banners/SaveBanner';
 import { ErrorAction } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/feedback';
 import type { IconName } from '@/components/ui/Icon';
@@ -141,27 +145,45 @@ export function FileNotIndexedBanner({
   );
 }
 
-/** The source editor's banners: pause at open, replaced session, errors. */
+/** The source editor's banners: pause at open, replaced session, save
+ * state, errors. */
 export function SourceBanners({
   actions,
+  banner,
   error,
+  onReload,
   paused,
   pausedAtOpen,
   readOnly = false,
+  reloading,
   replaced,
 }: {
   actions: FileBannerAction[];
+  banner: SaveBannerState | null;
   error: string | null;
+  /** Leaves a refused save's read-only view for the last saved version. */
+  onReload: () => void;
   paused: boolean;
   pausedAtOpen: boolean;
   /** The room turned read-only (a frozen account). */
   readOnly?: boolean;
+  reloading: boolean;
   replaced: boolean;
 }) {
   return (
     <>
       {readOnly && <FileBanner message={m.editor_read_only_strip()} />}
-      {error && <FileBanner actions={actions} message={error} tone="error" />}
+      {banner && (
+        <SaveBanner onReload={onReload} reloading={reloading} state={banner} />
+      )}
+      {/* A refused save's content is only copied: no download or discard. */}
+      {error && (
+        <FileBanner
+          actions={banner === 'refused' ? [] : actions}
+          message={error}
+          tone="error"
+        />
+      )}
       {pausedAtOpen ? (
         <FileBanner message={m.source_edit_paused_error()} />
       ) : (

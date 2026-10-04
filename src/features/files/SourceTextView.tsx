@@ -37,15 +37,10 @@ export function SourceTextView({
   const [leaving, setLeaving] = useState(false);
   // The room turned read-only (a storage or frozen refusal): the session
   // discarded its unsaved edits, and the file drops to view mode.
-  const source = useSourceSession(
-    file.id,
-    joined,
-    () => {
-      setJoined(false);
-      setMode('view');
-    },
-    file.workspaceId
-  );
+  const source = useSourceSession(file.id, joined, () => {
+    setJoined(false);
+    setMode('view');
+  });
   // The maintenance pause refused editing before the room opened.
   const pausedAtOpen = source.paused && !source.doc;
   useEffect(() => {
@@ -185,10 +180,15 @@ export function SourceTextView({
               ]
             : []),
         ]}
+        banner={source.banner}
         error={source.error}
+        onReload={() => {
+          void source.discardDraft();
+        }}
         paused={source.paused}
         pausedAtOpen={pausedAtOpen}
         readOnly={source.readOnly}
+        reloading={source.discarding}
         replaced={source.replaced}
       />
       <div className="min-h-0 flex-1 overflow-auto">

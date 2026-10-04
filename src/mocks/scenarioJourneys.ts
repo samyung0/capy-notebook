@@ -203,7 +203,8 @@ export async function runJourney(
     await ui.click(local ? m.action_upload() : m.action_import());
   };
 
-  // A failed save marks the header and toasts; the editor keeps its edits.
+  // A failed save marks the header and shows the save banner; the editor
+  // keeps its edits.
   const saveFailedStatus = () =>
     ui.wait(
       () =>
@@ -223,7 +224,8 @@ export async function runJourney(
     refuseNextSourceSave(scenarioText);
     await textEdit();
     await ui.click(m.action_save());
-    // Refused for good: the unsaved edits go to recovery, the error strip.
+    // Refused for good: the unsaved edits stay on screen read-only under the
+    // refused strip.
     await ui.element('[role="alert"]');
     return;
   }

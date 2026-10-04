@@ -574,7 +574,10 @@ with nothing left to run disabled too (`pausedMenus`); Download, Print, PNG,
 the View menu (except XLSX's freeze, which edits the workbook) and the header
 actions stay usable, and the runtime drops any other `menu-command` or
 `menu-file` (`runsWhilePaused`). The DOCX menu model refuses a disabled item's
-id too. A case-by-case standard per pause state is a later task.
+id too. A case-by-case standard per pause state is a later task. Recovery also
+sends `selectable`: instead of an inert host, the runtime passes `readOnly` to
+the editor and lets pointer and keys through, so the unsaved content can be
+selected and copied (DOCX text, XLSX cells; the PPTX engine has no copy).
 
 In edit mode the DOCX editor shows one toolbar row under the header, in Google
 Docs' order (`singleRowToolbar` with the menus in the host, `DocxEditor`'s
@@ -663,7 +666,8 @@ its root, sets its own locale, passes `colorMode` and the editor's zh-CN
 strings for `zh` to `DocxEditor`, and hides the narrow controls. `set-capabilities`
 also follows every boot, after the boot's `load` (which carries the raw
 `canEdit`), so a runtime that reloads during a handoff, a replacement,
-recovery, a discard or while connecting stays inert. Pages stay white in
+recovery, a discard or while connecting stays inert (recovery read-only and
+selectable). Pages stay white in
 dark themes, as PDF pages do. The chrome uses Capy's Fustat (latin 400, 500
 and 600 from `@fontsource/fustat` 5.3.0, self-hosted in
 `src/office-runtime/fonts/` because the runtime's CSP allows no font host; the
@@ -1039,7 +1043,8 @@ inputs and wait for active composition or gestures. Pending input counts as
 unsaved even before it reaches the shared document. Draft storage that fails
 (private mode, a full disk, a draft whose base is gone) is skipped, never an
 editing error. A save refused for good keeps the session's drafts, marked
-refused (download only, never merged back), and enters recovery; one refused
+refused (shown read-only for copying until Reload, never merged back), and
+enters recovery; one refused
 for lost access or a missing file clears them (see
 [error handling](error-handling.md#collaborative-source-failures)).
 Network and recoverable save failures leave drafts available. Before sending

@@ -75,6 +75,7 @@ import {
   roomRefusal,
   socketOpen,
 } from './roomConnection';
+import { NOTE_SAVE_DELAY_MS, SaveDelayClock } from './saveDelay';
 
 const CHECKPOINT_DEBOUNCE_MS = 1000;
 
@@ -320,7 +321,7 @@ export function NoteEditorCore({
   onEditorStatusChange,
   onDocumentRejected,
   onReadOnly,
-  onSaveFailed,
+  onSaveDelayed,
   onUnavailable,
 }: {
   material: Material;
@@ -340,8 +341,10 @@ export function NoteEditorCore({
   /** The room turned read-only (a frozen account or an owner at its storage
    * limit): the caller drops to view, discarding unsaved edits. */
   onReadOnly?: () => void;
-  /** Saving failed and the server (or the reconnect) is retrying. */
-  onSaveFailed?: () => void;
+  /** Saves are failing (the server retries them) or unconfirmed past
+   * NOTE_SAVE_DELAY_MS while the editor keeps its edits; false once the
+   * receipts catch up. */
+  onSaveDelayed?: (delayed: boolean) => void;
   /** The note was trashed or deleted, or this user lost access to it. */
   onUnavailable?: (kind: 'notFound' | 'forbidden') => void;
 }) {
@@ -426,7 +429,14 @@ export function NoteEditorCore({
   const saveNow = useRef(() => {});
   const resendCheckpoints = useRef(() => {});
   const reportRejection = useRef(onDocumentRejected);
-  const reportSaveFailed = useRef(onSaveFailed);
+  const reportSaveDelayed = useRef(onSaveDelayed);
+  const [saveDelay] = useState(
+    () =>
+      new SaveDelayClock(NOTE_SAVE_DELAY_MS, () =>
+        reportSaveDelayed.current?.(true)
+      )
+  );
+  useEffect(() => () => saveDelay.dispose(), [saveDelay]);
   const reportUnavailable = useRef(onUnavailable);
   // Set once the editor exists; reports a room that turned read-only once.
   const readOnlyNow = useRef(() => {});
@@ -461,6 +471,8 @@ export function NoteEditorCore({
         for (const id of event.checkpointIds) {
           if (pendingCheckpoints.current.delete(id)) acknowledged = true;
         }
+        saveDelay.retain(pendingCheckpoints.current);
+        if (!hasUnsavedWork()) reportSaveDelayed.current?.(false);
         if (
           acknowledged &&
           pendingCheckpoints.current.size === 0 &&
@@ -477,10 +489,10 @@ export function NoteEditorCore({
         event.materialId === material.id
       ) {
         // The receipts stay pending: the server's retry answers them. Every
-        // failed store is rebroadcast; toast once, and only for lost work.
+        // failed store is rebroadcast; the banner is only for unsaved work.
         if (reportedStatus.current === 'unsaved') return;
         setStatus('unsaved');
-        if (hasUnsavedWork()) reportSaveFailed.current?.();
+        if (hasUnsavedWork()) reportSaveDelayed.current?.(true);
         return;
       }
       if (
@@ -493,6 +505,7 @@ export function NoteEditorCore({
         rejected.current = true;
         const lostEdits = hasUnsavedWork();
         pendingCheckpoints.current.clear();
+        saveDelay.retain([]);
         setStatus('error');
         reportRejection.current?.(
           event.type === 'document-rejected' ? event.code : 'revoked',
@@ -542,7 +555,14 @@ export function NoteEditorCore({
         });
       }
     },
-    [collaborationToken.room, hasUnsavedWork, qc, material.id, setStatus]
+    [
+      collaborationToken.room,
+      hasUnsavedWork,
+      qc,
+      material.id,
+      saveDelay,
+      setStatus,
+    ]
   );
 
   const plugins = useMemo(
@@ -558,6 +578,7 @@ export function NoteEditorCore({
           },
           onConnect: connecting,
           onDisconnect: () => {
+            saveDelay.disconnected();
             reconnector.current?.disconnected();
             if (navigator.onLine) connecting();
             else setStatus('offline');
@@ -570,6 +591,7 @@ export function NoteEditorCore({
             if (!isSynced || rejected.current) return;
             hasSynced.current = true;
             reconnector.current?.connected();
+            saveDelay.connected();
             setStatus(
               unsavedChanges.current || pendingCheckpoints.current.size > 0
                 ? 'syncing'
@@ -669,6 +691,7 @@ export function NoteEditorCore({
       material.workspaceId,
       name,
       qc,
+      saveDelay,
       setStatus,
       ydoc,
     ]
@@ -692,11 +715,8 @@ export function NoteEditorCore({
 
   useEffect(() => {
     const current = roomReconnector({
-      onStuck: () => {
-        if (reportedStatus.current === 'error') return;
-        setStatus('error');
-        if (hasUnsavedWork()) reportSaveFailed.current?.();
-      },
+      // The header's status says the connection is lost.
+      onStuck: () => setStatus('error'),
       provider: () =>
         rejected.current ? null : roomProvider(editor)?.provider,
     });
@@ -705,7 +725,7 @@ export function NoteEditorCore({
       current.dispose();
       if (reconnector.current === current) reconnector.current = null;
     };
-  }, [editor, hasUnsavedWork, setStatus]);
+  }, [editor, setStatus]);
 
   useEffect(() => {
     let active = true;
@@ -749,14 +769,17 @@ export function NoteEditorCore({
         setStatus(hasUnsavedWork() ? 'syncing' : 'synced');
       else connecting();
     };
-    const offline = () => setStatus('offline');
+    const offline = () => {
+      saveDelay.disconnected();
+      setStatus('offline');
+    };
     window.addEventListener('online', online);
     window.addEventListener('offline', offline);
     return () => {
       window.removeEventListener('online', online);
       window.removeEventListener('offline', offline);
     };
-  }, [connecting, editor, hasUnsavedWork, setStatus]);
+  }, [connecting, editor, hasUnsavedWork, saveDelay, setStatus]);
 
   const requestCheckpoint = useCallback(() => {
     if (rejected.current) return;
@@ -767,13 +790,14 @@ export function NoteEditorCore({
       return;
     const id = crypto.randomUUID();
     pendingCheckpoints.current.add(id);
+    saveDelay.requested(id);
     unsavedChanges.current = false;
     // Enter the pending state before dispatching: a provider that answers
     // synchronously — the mock one does — would otherwise have its `saved`
     // acknowledgement overwritten by this line.
     markSyncing();
     sendCheckpointRequest(editor, id);
-  }, [editor, markSyncing]);
+  }, [editor, markSyncing, saveDelay]);
 
   const scheduleCheckpoint = useCallback(() => {
     if (rejected.current) return;
@@ -801,7 +825,7 @@ export function NoteEditorCore({
 
   useEffect(() => {
     reportRejection.current = onDocumentRejected;
-    reportSaveFailed.current = onSaveFailed;
+    reportSaveDelayed.current = onSaveDelayed;
     reportUnavailable.current = onUnavailable;
     let reported = false;
     readOnlyNow.current = () => {
@@ -814,7 +838,7 @@ export function NoteEditorCore({
   }, [
     onDocumentRejected,
     onReadOnly,
-    onSaveFailed,
+    onSaveDelayed,
     onUnavailable,
     resendPendingCheckpoints,
     saveImmediately,

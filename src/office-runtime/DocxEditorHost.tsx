@@ -46,6 +46,7 @@ export function DocxEditorHost({
   onError,
   onPendingChange,
   onSave,
+  readOnly,
 }: {
   bytes: Uint8Array;
   collaboration: OfficeCollaboration;
@@ -62,6 +63,8 @@ export function DocxEditorHost({
   onError: (error: Error) => void;
   onPendingChange: (pending: boolean) => void;
   onSave: () => void;
+  /** Recovery: selection and copy only. */
+  readOnly: boolean;
 }) {
   const editorRef = useRef<DocxEditorRef>(null);
   const hostRef = useRef<HTMLDivElement>(null);
@@ -130,7 +133,7 @@ export function DocxEditorHost({
         onSaveRequest={() => {
           onSave();
         }}
-        readOnly={false}
+        readOnly={readOnly}
         ref={editorRef}
         showFileOpen={false}
         showFontPicker={!narrow}

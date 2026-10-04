@@ -107,20 +107,15 @@ export function useOfficeRuntime({
   const [leaving, setLeaving] = useState(false);
   // The room turned read-only (a storage or frozen refusal): the session
   // discarded its unsaved edits, and the frame reloads the saved view.
-  const source = useSourceSession(
-    file.id,
-    joined,
-    () => {
-      setJoined(false);
-      initializedFrame.current = -1;
-      setFrameLoaded(false);
-      setFrameGeneration((value) => value + 1);
-      setViewBytes(null);
-      setAnalysis(null);
-      setMode('view');
-    },
-    file.workspaceId
-  );
+  const source = useSourceSession(file.id, joined, () => {
+    setJoined(false);
+    initializedFrame.current = -1;
+    setFrameLoaded(false);
+    setFrameGeneration((value) => value + 1);
+    setViewBytes(null);
+    setAnalysis(null);
+    setMode('view');
+  });
   // The maintenance pause refused editing before the room opened: show the
   // saved view instead. The frame was never loaded for editing, so view mode
   // loads into the same frame.
@@ -378,15 +373,18 @@ export function useOfficeRuntime({
     source.status !== 'recovery' &&
     (mode !== 'edit' ||
       (!!source.doc && !source.discarding && source.status !== 'connecting'));
+  // Recovery shows its unsaved content read-only, for selecting and copying.
+  const recovery = source.status === 'recovery';
   // After the load above, and again whenever the runtime document boots.
   useEffect(() => {
     if (frameLoaded)
       post({
         canEdit: editable,
+        selectable: recovery,
         type: 'set-capabilities',
         version: OFFICE_PROTOCOL_VERSION,
       });
-  }, [editable, frameBoot, frameLoaded, post]);
+  }, [editable, recovery, frameBoot, frameLoaded, post]);
 
   useEffect(() => {
     const doc = source.doc;
@@ -653,6 +651,7 @@ export function useOfficeRuntime({
 
   return {
     analysis,
+    banner: source.banner,
     dirty: source.dirty,
     discardDraft: source.discardDraft,
     discarding: source.discarding,

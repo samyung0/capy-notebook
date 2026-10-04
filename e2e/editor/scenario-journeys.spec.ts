@@ -4,6 +4,7 @@ import { officeEditMenu, saveOffice } from '../helpers/office';
 
 const marker = 'My unsaved scenario edit.';
 const savedMarker = 'My saved scenario edit.';
+const delayedCopy = "Saving is delayed. Your recent changes aren't saved yet.";
 async function launch(page: Page, id: string) {
   const panel = page.getByTestId('mock-scenario-panel');
   await panel.evaluate((node: HTMLDetailsElement) => {
@@ -36,13 +37,17 @@ test('one click fails a real source save and retry preserves the mounted editor'
   expect(current).toBeTruthy();
   const input = page.getByRole('textbox', { exact: true, name: current! });
   await expect(input).toHaveValue(new RegExp(marker));
-  // A slow save failure toasts "Saving is delayed" and marks the header; the editor keeps its edits.
-  await expect(page.locator('[data-sonner-toast]')).toContainText(
-    'Saving is delayed'
-  );
+  // A slow save failure shows the save banner and marks the header; the
+  // editor keeps its edits.
+  const banner = page.getByTestId('save-banner');
+  await expect(banner).toContainText(delayedCopy);
+  await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
   await expect(page.getByTestId('editor-save-state')).toHaveText(
     'Not saved. Retrying…'
   );
+  // Closing hides it for this episode only.
+  await banner.getByRole('button', { exact: true, name: 'Close' }).click();
+  await expect(banner).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(0);
   const mounted = await input.elementHandle();
   const currentURL = page.url();
@@ -57,20 +62,19 @@ test('one click fails a real source save and retry preserves the mounted editor'
   await expect(page.getByTestId('editor-save-state')).toHaveText('Saved');
   await expect(input).toHaveValue(new RegExp(marker));
   expect(await mounted!.evaluate((node) => node.isConnected)).toBe(true);
+  // The next failure is a new episode: the banner shows again.
   await launch(page, 'source-save-failed');
+  await expect(banner).toContainText(delayedCopy);
   await expect(input).toHaveValue(
     new RegExp(`^[\\s\\S]*${marker.replaceAll('.', '\\.')}\\s*$`)
   );
   expect((await input.inputValue()).split(marker)).toHaveLength(2);
 });
 
-// A save refused for good keeps the edits as a download-only draft: after a
-// reload they reopen in recovery, not merged into the editor.
-for (const id of [
-  'source-replaced',
-  'source-draft-recovery',
-  'source-save-refused',
-]) {
+// A replaced session or a draft from another version keeps the edits as a
+// draft to download: after a reload they reopen in recovery, not merged into
+// the editor.
+for (const id of ['source-replaced', 'source-draft-recovery']) {
   test(`${id} downloads, persists across reload, and discards through the app`, async ({
     page,
   }) => {
@@ -117,6 +121,56 @@ for (const id of [
   });
 }
 
+// A save refused for good leaves the edits on screen read-only for copying,
+// with no download or discard; a page reload keeps them until Reload.
+test('source-save-refused shows the edits for copying until Reload', async ({
+  page,
+}) => {
+  await launch(page, 'source-save-refused');
+  const draft = page.locator('textarea[readonly]');
+  const banner = page.getByTestId('save-banner');
+  const shown = async () => {
+    await expect(draft).toHaveValue(new RegExp(marker), { timeout: 30_000 });
+    await expect(banner).toContainText(
+      "These changes couldn't be saved. Copy anything you need, then reload to continue from the last saved version."
+    );
+    for (const name of ['Download draft', 'Discard this draft'])
+      await expect(page.getByRole('button', { exact: true, name })).toHaveCount(
+        0
+      );
+    await draft.selectText();
+    expect(
+      await draft.evaluate(
+        (node: HTMLTextAreaElement) => node.selectionEnd - node.selectionStart
+      )
+    ).toBeGreaterThan(marker.length);
+  };
+  await shown();
+  await page.reload();
+  // A full dev-server reload takes about 5 s before the mode button renders.
+  await expect(
+    page.getByRole('button', { name: 'Material mode' })
+  ).toHaveAttribute('aria-pressed', 'true', { timeout: 30_000 });
+  await shown();
+  await banner.getByRole('button', { exact: true, name: 'Reload' }).click();
+  await expect(banner).toHaveCount(0);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(
+    page.locator('textarea[aria-label]').filter({ visible: true }).first()
+  ).not.toHaveValue(new RegExp(marker));
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const modulePath = '/src/features/files/sourceDraft.ts';
+        const dbPath = '/src/mocks/db.ts';
+        const { readSourceDrafts } = await import(modulePath);
+        const { user } = await import(dbPath);
+        return (await readSourceDrafts(`${user.id}:mock-scenario-text`)).length;
+      })
+    )
+    .toBe(0);
+});
+
 for (const format of ['docx', 'xlsx', 'pptx']) {
   test(`${format} opens valid bytes, edits, fails save, and retries without replacing the iframe`, async ({
     page,
@@ -126,14 +180,13 @@ for (const format of ['docx', 'xlsx', 'pptx']) {
     await launch(page, `office-${format}-save`);
     const frame = page.locator('iframe[src*="office-runtime"]');
     const mounted = await frame.elementHandle();
-    await expect(page.locator('[data-sonner-toast]')).toContainText(
-      'Saving is delayed'
-    );
+    await expect(page.getByTestId('save-banner')).toContainText(delayedCopy);
     await expect(page.getByTestId('editor-save-state')).toHaveText(
       'Not saved. Retrying…'
     );
     await saveOffice(page);
     await expect(page.getByTestId('editor-save-state')).toHaveText('Saved');
+    await expect(page.getByTestId('save-banner')).toHaveCount(0);
     expect(await mounted!.evaluate((node) => node.isConnected)).toBe(true);
     const mode = page.getByRole('button', { name: 'Material mode' });
     await expect(page).toHaveURL(/mode=edit/);

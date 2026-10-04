@@ -8,6 +8,7 @@ import {
   useMe,
 } from '@/api/hooks';
 import type { Material, WorkspaceRole } from '@/api/types';
+import { SaveBanner } from '@/components/banners/SaveBanner';
 import { Spinner } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
 import { FileError, FileLoading } from '@/features/files/FileStates';
@@ -23,7 +24,7 @@ import {
 } from './EditorRuntime';
 import type { NoteEditorStatus } from './editorMode';
 import { NoteEditorCore } from './NoteEditorCore';
-import { useSaveFailureToast } from './saveFailure';
+import { toastSaveUndone } from './saveFailure';
 
 /** Shared so a pending discussions query does not hand the editor a new array
  * identity on every render. */
@@ -121,11 +122,8 @@ function CollaborativeNoteEditor({
   // Remounting is the only way back onto the authoritative state: invalidating
   // the token alone can return the same room and leave this editor mounted.
   const [editorGeneration, setEditorGeneration] = useState(0);
-  const saveFailed = useSaveFailureToast(
-    material.workspaceId,
-    material.isOwner
-  );
-  const onSaveFailed = useCallback(() => saveFailed('retrying'), [saveFailed]);
+  // Saves are failing or unconfirmed while the editor keeps its edits.
+  const [saveDelayed, setSaveDelayed] = useState(false);
   const onDocumentRejected = useCallback(
     (
       code: MaterialLimitCode | 'invalid_document' | 'revoked',
@@ -139,13 +137,14 @@ function CollaborativeNoteEditor({
           title: m.editor_too_large_title(),
           variant: 'error',
         });
-      else if (lostEdits) saveFailed('undone');
+      else if (lostEdits) toastSaveUndone();
+      setSaveDelayed(false);
       setEditorGeneration((generation) => generation + 1);
       void qc.invalidateQueries({
         queryKey: ['material', material.id, 'collaboration-token'],
       });
     },
-    [qc, material.id, saveFailed]
+    [qc, material.id]
   );
   // Trashed, deleted, or access lost while open: the room refused to let the
   // editor back in.
@@ -271,6 +270,7 @@ function CollaborativeNoteEditor({
     <MaterialRenderProvider value={renderContext}>
       <EditorRuntimeProvider value={runtime}>
         <div className="flex h-full flex-col gap-0 overflow-hidden">
+          {saveDelayed && <SaveBanner state="delayed" />}
           <NoteEditorCore
             allowExternalAssets={allowExternalAssets}
             collaborationToken={collaborationTokenData}
@@ -282,7 +282,7 @@ function CollaborativeNoteEditor({
             onDocumentRejected={onDocumentRejected}
             onEditorStatusChange={onEditorStatusChange}
             onReadOnly={reportReadOnly}
-            onSaveFailed={onSaveFailed}
+            onSaveDelayed={setSaveDelayed}
             onUnavailable={onUnavailable}
           />
         </div>

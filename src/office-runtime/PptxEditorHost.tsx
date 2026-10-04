@@ -33,6 +33,7 @@ export function PptxEditorHost({
   onPendingChange,
   onRenderer,
   onSave,
+  readOnly,
 }: {
   bytes: Uint8Array;
   collaboration: OfficeCollaboration;
@@ -47,6 +48,8 @@ export function PptxEditorHost({
   onPendingChange: (pending: boolean) => void;
   onRenderer: (renderer: OfficeRenderer | null) => void;
   onSave: () => void;
+  /** Recovery: selection and copy only. */
+  readOnly: boolean;
 }) {
   const apiRef = useRef<PptxEditorApi | null>(null);
   const [commandState, setCommandState] = useState<PptxCommandState | null>(
@@ -180,6 +183,7 @@ export function PptxEditorHost({
           onSave();
         }}
         onSpeakerNotesChange={(visible) => writeSpeakerNotes(visible)}
+        readOnly={readOnly}
         // Present is a header action and Capy has no PPTX agent proposals.
         showFontPicker={!narrow}
         showFontSizePicker={!narrow}

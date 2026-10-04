@@ -139,6 +139,9 @@ function OfficeRuntime() {
     await flusherRef.current?.();
   }, []);
   const [canEdit, setCanEdit] = useState(false);
+  // Paused but still selectable: the engines' read-only mode (recovery).
+  const [selectable, setSelectable] = useState(false);
+  const selectableRef = useRef(false);
   const hostRef = useRef<HTMLDivElement>(null);
   const reportExporter = useCallback((exporter: OfficeExporter | null) => {
     exporterRef.current = exporter;
@@ -343,8 +346,11 @@ function OfficeRuntime() {
         sendMenus();
         if (!message.canEdit) await flush();
         if (pausedRef.current !== !message.canEdit) return;
-        if (hostRef.current) hostRef.current.inert = !message.canEdit;
+        selectableRef.current = !message.canEdit && !!message.selectable;
+        if (hostRef.current)
+          hostRef.current.inert = !(message.canEdit || selectableRef.current);
         setCanEdit(message.canEdit);
+        setSelectable(selectableRef.current);
         return;
       }
       if (message.type === 'update' && message.epoch === epochRef.current) {
@@ -470,7 +476,7 @@ function OfficeRuntime() {
   return (
     <div
       className="office-editor-host"
-      inert={mode === 'edit' && !canEdit}
+      inert={mode === 'edit' && !canEdit && !selectable}
       onBeforeInputCapture={(event) => {
         if (pausedRef.current && !composingRef.current) {
           event.preventDefault();
@@ -486,7 +492,12 @@ function OfficeRuntime() {
         reportPending();
       }}
       onKeyDownCapture={(event) => {
-        if (pausedRef.current && !composingRef.current) {
+        // A selectable editor's engine is read-only and takes its own keys.
+        if (
+          pausedRef.current &&
+          !selectableRef.current &&
+          !composingRef.current
+        ) {
           event.preventDefault();
           event.stopPropagation();
           return;
@@ -505,7 +516,7 @@ function OfficeRuntime() {
         finishInteraction();
       }}
       onPointerDownCapture={(event) => {
-        if (pausedRef.current) {
+        if (pausedRef.current && !selectableRef.current) {
           event.preventDefault();
           event.stopPropagation();
           return;
@@ -542,6 +553,7 @@ function OfficeRuntime() {
               onPendingChange={reportHostPending}
               onRenderer={reportRenderer}
               onSave={save}
+              readOnly={selectable}
             />
           ) : file.format === 'xlsx' ? (
             <XlsxEditorHost
@@ -556,6 +568,7 @@ function OfficeRuntime() {
               onPendingChange={reportHostPending}
               onRenderer={reportRenderer}
               onSave={save}
+              readOnly={selectable}
             />
           ) : (
             <PptxEditorHost
@@ -571,6 +584,7 @@ function OfficeRuntime() {
               onPendingChange={reportHostPending}
               onRenderer={reportRenderer}
               onSave={save}
+              readOnly={selectable}
             />
           )
         ) : file.format === 'docx' ? (

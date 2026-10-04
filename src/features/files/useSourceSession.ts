@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 import { api, isApiError, qk } from '@/api/client';
 import { useMe } from '@/api/hooks';
 import type { SourceCollaborationToken, SourceSession } from '@/api/types';
+import type { SaveBannerState } from '@/components/banners/SaveBanner';
 import { COLLABORATION_READ_ONLY_REASON } from '@/features/notes/collaborationEvents';
 import type { NoteEditorSaveState } from '@/features/notes/editorMode';
 import {
@@ -11,7 +12,11 @@ import {
   roomRefusal,
   socketOpen,
 } from '@/features/notes/roomConnection';
-import { useSaveFailureToast } from '@/features/notes/saveFailure';
+import {
+  SaveDelayClock,
+  SOURCE_SAVE_DELAY_MS,
+} from '@/features/notes/saveDelay';
+import { toastSaveUndone } from '@/features/notes/saveFailure';
 import { m } from '@/i18n';
 import { CopyError, errorCopy } from '@/lib/errors';
 import {
@@ -62,9 +67,12 @@ export function acknowledgeSourceCheckpoint(
     if (sequence !== undefined) {
       matched = true;
       state.acknowledged = Math.max(state.acknowledged, sequence);
-      state.pending.delete(id);
     }
   }
+  // An earlier request this receipt covers (one lost on a reconnect, say) is
+  // answered too.
+  for (const [id, sequence] of state.pending)
+    if (sequence <= state.acknowledged) state.pending.delete(id);
   return matched && state.acknowledged >= state.sequence;
 }
 
@@ -139,15 +147,11 @@ export function maintenancePaused(value: unknown): boolean {
 export function useSourceSession(
   fileId: string,
   enabled: boolean,
-  onReadOnly?: () => void,
-  workspaceId?: string
+  onReadOnly?: () => void
 ) {
   const { data: me } = useMe({ errorBoundary: false });
   const readOnlyHandler = useRef(onReadOnly);
   readOnlyHandler.current = onReadOnly;
-  const saveFailureToast = useSaveFailureToast(workspaceId);
-  const saveFailed = useRef(saveFailureToast);
-  saveFailed.current = saveFailureToast;
   const actorId = me?.id;
   const [loaded, setLoaded] = useState<{
     session: SourceSession;
@@ -156,6 +160,9 @@ export function useSourceSession(
   } | null>(null);
   const [status, setStatus] = useState<SourceSaveState>('connecting');
   const [error, setError] = useState<string | null>(null);
+  // Saves failing or unconfirmed (`delayed`), or refused for good
+  // (`refused`: the session shows its unsaved content read-only).
+  const [banner, setBanner] = useState<SaveBannerState | null>(null);
   // The file was trashed or deleted, or access to it lost, while editing.
   const [unavailable, setUnavailable] = useState<
     'notFound' | 'forbidden' | null
@@ -242,6 +249,11 @@ export function useSourceSession(
     let flushDraft = () => {};
     let disposeReconnect = () => {};
     let draftWrites = Promise.resolve();
+    const delay = new SaveDelayClock(SOURCE_SAVE_DELAY_MS, () => {
+      if (!cancelled && !runtime.current?.recovery) setBanner('delayed');
+    });
+    const offline = () => delay.disconnected();
+    window.addEventListener('offline', offline);
     // Drafts only outlive a reload; editing goes on without them (private
     // mode, a full disk). Offline and recovery handling come next.
     const queueDraftWrite = (write: () => Promise<void>) => {
@@ -296,6 +308,7 @@ export function useSourceSession(
     setUnavailable(null);
     setSynced(false);
     setError(null);
+    setBanner(null);
     setLoaded(null);
     void (async () => {
       const [session, credentials, storedDrafts] = await Promise.all([
@@ -349,11 +362,8 @@ export function useSourceSession(
         });
         setStatus('recovery');
         setDirty(true);
-        setError(
-          draft.refused
-            ? m.source_edit_refused_recovery()
-            : m.source_edit_recovery()
-        );
+        if (draft.refused) setBanner('refused');
+        else setError(m.source_edit_recovery());
         return;
       }
       recoveryDrafts = null;
@@ -382,18 +392,13 @@ export function useSourceSession(
       // The token request that failed, if one did (the provider only reports
       // its own text for it).
       let tokenError: unknown = null;
-      // Toast a failure once per episode: the server rebroadcasts each failed
-      // store and a lost connection is re-reported while it stays lost.
-      let lost = false;
       // Set by reset(): later typing and the unmount flush write no draft of
       // the refused state.
       let discarded = false;
       const reconnect = roomReconnector({
+        // The header's status says the connection is lost.
         onStuck: () => {
-          if (cancelled || active.recovery || lost) return;
-          lost = true;
-          setStatus('error');
-          if (!sourceChangesCovered(active)) saveFailed.current('retrying');
+          if (!(cancelled || active.recovery)) setStatus('error');
         },
         // A closed session never reconnects (replaced, paused, reset).
         provider: () => (cancelled || active.recovery ? null : provider),
@@ -404,7 +409,7 @@ export function useSourceSession(
       const reset = () => {
         if (cancelled) return;
         if (!sourceChangesCovered(active) || bufferDirtyRef.current)
-          saveFailed.current('undone');
+          toastSaveUndone();
         cancelled = true;
         discarded = true;
         draftDue = false;
@@ -426,8 +431,8 @@ export function useSourceSession(
       // A save the server refused for good: the room went back to the last
       // good save. Unsaved edits stay in this session's drafts, marked
       // refused so no later open merges them back (they would replay the
-      // refused state), and the editor enters recovery: download them, or
-      // Discard to edit the last good save.
+      // refused state), and the editor shows them read-only for copying until
+      // Reload (discardDraft) reopens the last good save.
       const refuse = () => {
         if (cancelled || active.recovery) return;
         if (sourceChangesCovered(active) && !bufferDirtyRef.current) {
@@ -455,7 +460,7 @@ export function useSourceSession(
         active.recovery = true;
         setLoaded({ bytes, doc: shared, session });
         setStatus('recovery');
-        setError(m.source_edit_refused_recovery());
+        setBanner('refused');
         setSynced(false);
         provider?.disconnect();
       };
@@ -471,8 +476,8 @@ export function useSourceSession(
         queueDraftWrite(() => clearSourceDrafts(settledDrafts));
       };
       const markSaved = () => {
-        lost = false;
         setStatus('saved');
+        setBanner(null);
         settle();
       };
       // A newer version was published, or the maintenance pause closed the
@@ -489,6 +494,7 @@ export function useSourceSession(
           active.acknowledged = active.sequence;
           pendingInput(false);
           settle();
+          setBanner(null);
           setLoaded(null);
           setHandoff(false);
           setReadOnly(true);
@@ -507,6 +513,7 @@ export function useSourceSession(
           active.recovery = true;
           setLoaded({ bytes, doc: shared, session });
           setStatus('recovery');
+          setBanner(null);
           setError(m.source_edit_recovery());
           setSynced(false);
         }
@@ -526,6 +533,7 @@ export function useSourceSession(
             ...(flush && { flush }),
           })
         );
+        delay.requested(id);
       };
       active.checkpoint = checkpoint;
       provider = createSourceProvider({
@@ -555,6 +563,7 @@ export function useSourceSession(
         },
         onClose: () => reconnect.closed(socketOpen(provider)),
         onDisconnect: () => {
+          delay.disconnected();
           active.disconnects++;
           active.handedOff = -1;
           reconnect.disconnected();
@@ -664,10 +673,7 @@ export function useSourceSession(
             // pending and the drafts stay.
             setStatus('unsaved');
             rejectWaiters(new SourceSessionError(m.editor_save_delayed()));
-            if (!(lost || sourceChangesCovered(active))) {
-              lost = true;
-              saveFailed.current('delayed');
-            }
+            if (!sourceChangesCovered(active)) setBanner('delayed');
             return;
           }
           if (
@@ -678,6 +684,7 @@ export function useSourceSession(
             return;
           if (acknowledgeSourceCheckpoint(active, event.checkpointIds))
             markSaved();
+          delay.retain(pending.keys());
           flushWaiters.current = flushWaiters.current.filter((waiter) => {
             if (waiter.sequence <= active.acknowledged) {
               waiter.resolve();
@@ -689,7 +696,7 @@ export function useSourceSession(
         onSynced: ({ state }) => {
           if (state && !cancelled && !active.recovery) {
             reconnect.connected();
-            lost = false;
+            delay.connected();
             if (everSynced) setStatus('saving');
             everSynced = true;
             setLoaded({ bytes, doc: shared, session });
@@ -777,6 +784,8 @@ export function useSourceSession(
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      delay.dispose();
+      window.removeEventListener('offline', offline);
       flushDraft();
       runtime.current = null;
       discardHandler.current = null;
@@ -800,6 +809,7 @@ export function useSourceSession(
 
   return {
     ...loaded,
+    banner,
     dirty: dirty || bufferDirty,
     discardDraft,
     discarding,

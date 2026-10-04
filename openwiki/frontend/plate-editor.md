@@ -391,16 +391,15 @@ under the read-only strip, `collaboration-not-found` (trashed or deleted) and
 `collaboration-forbidden` (lost access) replace the editor with the
 file-missing or no-access panel, and anything else (an expired token, a room
 being reset or compacted) is retried. A loss still unresolved after 30 s while
-online turns the status red and, with unsaved work, raises the failed-save
-toast. A failed first token request shows the panel for its status (not found,
+online turns the status red. A failed first token request shows the panel for its status (not found,
 no access, or unavailable with Retry).
 
 A transient store failure broadcasts `checkpoint-failed`; the editor keeps its
-pending receipts (the failed-store retry answers them), shows Not saved and
-raises the failed-save toast: "Failed to save. You can keep working while we
-retry." when the viewer is the only possible editor (standalone owner, or a
-workspace owner with no edit link and no other editing member), "Failed to
-save. Please reload the page." with Reload otherwise.
+pending receipts (the failed-store retry answers them), shows Not saved and,
+with unsaved work, the `delayed` save banner until a receipt covers every
+change. The banner also shows when a checkpoint request stays unanswered for
+`NOTE_SAVE_DELAY_MS` (25 s) of connected time (see
+[error handling](error-handling.md#collaborative-source-failures)).
 
 On a value change, edit mode debounces a `checkpoint-request` stateless message
 carrying a random receipt ID. The sidecar keeps the room's outstanding IDs in
@@ -469,7 +468,7 @@ discarded the same way (`document-rejected` with code `invalid_document`), and
 an `authorization-revoked` eviction makes every editor drop its copy too.
 `NoteEditor` responds by remounting `NoteEditorCore` under a new generation
 key, which reconnects onto the last durable state; a limit shows the
-too-large toast, the others the failed-save toast when unsaved work was lost. Invalidating the collaboration token alone is not enough, because
+too-large toast, the others the changes-undone toast when unsaved work was lost. Invalidating the collaboration token alone is not enough, because
 an unchanged room string leaves the editor mounted on its forked document.
 Failed-store retries use the same terminal path. If a queued snapshot later
 fails a document or quota limit, the sidecar drops it, broadcasts the rejection

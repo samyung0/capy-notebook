@@ -83,10 +83,15 @@ export default function DocxView({
               ]
             : []),
         ]}
+        banner={runtime.banner}
         error={runtime.error}
+        onReload={() => {
+          void runtime.discardDraft();
+        }}
         paused={runtime.paused}
         pausedAtOpen={runtime.pausedAtOpen}
         readOnly={runtime.readOnly}
+        reloading={runtime.discarding}
         replaced={runtime.replaced}
       />
       <OfficeHeader
