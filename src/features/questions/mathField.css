@@ -1,7 +1,6 @@
 :host {
-  --caret-color: #000;
   --selection-color: var(--text-primary);
-  --selection-background-color: var(--tint-accent-1-bg);
+  --selection-background-color: var(--selection-bg);
   --highlight-text: transparent;
   --text-highlight-background-color: transparent;
   --text-font-family: KaTeX_Main, "Times New Roman", serif;
@@ -9,7 +8,7 @@
      theme; its fallbacks paint a dark grey group highlight and white fences. */
   --contains-highlight-background-color: color-mix(
     in srgb,
-    var(--tint-accent-1-bg) 50%,
+    var(--selection-bg) 60%,
     transparent
   );
   --contains-highlight-color: var(--text-primary);
@@ -34,12 +33,12 @@
 /* Match ToolbarPopover inside MathLive's shadow root, retaining its native
    matrix grid, templates and keyboard navigation. */
 :host .ui-menu-container {
-  --ui-menu-bg: var(--surface-card-bg);
+  --ui-menu-bg: var(--surface-overlay-bg);
   --ui-menu-text: var(--text-primary);
   --ui-menu-text-active: var(--text-primary);
   --ui-menu-bg-active: color-mix(
     in srgb,
-    var(--surface-card-hover-bg) 80%,
+    var(--surface-overlay-hover-bg) 80%,
     transparent
   );
   --ui-menu-bg-active-muted: var(--ui-menu-bg-active);
@@ -51,7 +50,7 @@
   font-size: 14px;
   font-weight: 500;
   text-align: left;
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border-overlay);
   border-radius: 8px;
   box-shadow: var(--shadow-pop);
 }

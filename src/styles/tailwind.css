@@ -423,6 +423,11 @@
   --border-default: var(--border-overlay);
 }
 
+/* MathLive caret; set on the host so it inherits into the shadow root. */
+math-field {
+  --caret-color: var(--text-primary);
+}
+
 /* Code font for every style (the @theme entry only forwards it). */
 [data-style] {
   --font-mono:

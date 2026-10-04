@@ -55,8 +55,7 @@ export const MENTION_CLASS = 'font-bold text-tint-accent-1-fg';
 /** Larger @, nudged up so its bottom meets the text baseline. */
 export const MENTION_AT_CLASS = 'relative -top-px mr-0.5 text-[1.12em]';
 
-export const EQUATION_BLOCK_CLASS =
-  'my-1 overflow-auto rounded-sm p-2 text-center';
+export const EQUATION_BLOCK_CLASS = 'overflow-auto rounded-sm p-1 text-center';
 
 /* leaf marks */
 export const CODE_MARK_CLASS =

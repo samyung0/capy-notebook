@@ -35,7 +35,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "curriculum-instruction",
-      "version": 7
+      "version": 8
     },
     {
       "id": "a-brief-introduction-to-engineering-computation-with-matlab",
@@ -87,7 +87,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "psychology",
-      "version": 5
+      "version": 6
     },
     {
       "id": "a-cool-brisk-walk-through-discrete-mathematics-version-2-2",
@@ -274,7 +274,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "grammars-languages-of-oceania",
-      "version": 3
+      "version": 4
     },
     {
       "id": "a-grammar-of-pite-saami",
@@ -390,7 +390,7 @@
         "The source landing page states CC BY-SA 4.0. Physical PDF page 2 states Creative Commons-ShareAlike 4.0 International and credits Gary E. Martin and Angus MacNeil; the original Connexions source notice is retained."
       ],
       "subject_id": "curriculum-instruction",
-      "version": 5
+      "version": 6
     },
     {
       "id": "a-people-s-history-of-structural-racism-in-academia-from-a-d",
@@ -482,7 +482,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "accounting",
-      "version": 3
+      "version": 4
     },
     {
       "id": "aerodynamics-and-aircraft-performance",
@@ -622,7 +622,31 @@
         "The source repository page states CC BY-SA. Physical PDF pages 1-2 state CC BY 4.0."
       ],
       "subject_id": "philosophy",
-      "version": 1
+      "version": 2
+    },
+    {
+      "id": "an-introduction-to-ontology-engineering",
+      "title": "An Introduction to Ontology Engineering",
+      "authors": [
+        "C. Maria Keet"
+      ],
+      "edition": "Version 1.5",
+      "source_url": "http://www.meteck.org/teaching/OEbook/",
+      "download_url": "https://people.cs.uct.ac.za/~mkeet/files/OEbook.pdf",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://people.cs.uct.ac.za/~mkeet/files/OEbook.pdf#page=4",
+      "license_evidence_quote": "This work is licensed under a Creative Commons Attribution 4.0 International License (CC BY 4.0). To view a copy of this license, visit https://creativecommons.org/licenses/by/4.0/.",
+      "attribution_reviewed": false,
+      "attribution": "An Introduction to Ontology Engineering, C. Maria Keet, Version 1.5. CC BY 4.0. http://www.meteck.org/teaching/OEbook/",
+      "pdf_path": "data/knowledge-base/sources/151c02fc1f93c04edc73079170f2e1b0ad7dd345da05c19bc827f5185d25e64e.pdf",
+      "sha256": "151c02fc1f93c04edc73079170f2e1b0ad7dd345da05c19bc827f5185d25e64e",
+      "bytes": 7748439,
+      "pages": 306,
+      "first_content_page": 17,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "computer-science-foundations"
     },
     {
       "id": "an-introduction-to-the-theory-of-numbers",
@@ -672,7 +696,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "philosophy",
-      "version": 2
+      "version": 3
     },
     {
       "id": "applied-ecology",
@@ -736,7 +760,7 @@
       ],
       "rights_notes": [],
       "subject_id": "anatomy-physiology",
-      "version": 1
+      "version": 2
     },
     {
       "id": "bad-ideas-about-writing",
@@ -765,6 +789,31 @@
       "version": 4
     },
     {
+      "id": "basic-analysis-introduction-to-real-analysis-volume-i",
+      "title": "Basic Analysis: Introduction to Real Analysis (Volume I)",
+      "authors": [
+        "Jiří Lebl"
+      ],
+      "edition": "Version 6.3",
+      "source_url": "https://www.jirka.org/ra/",
+      "download_url": "https://www.jirka.org/ra/realanal.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.jirka.org/ra/realanal.pdf#page=2",
+      "license_evidence_quote": "This work is dual licensed under the Creative Commons Attribution-Noncommercial-Share-Alike 4.0 International License and the Creative Commons Attribution-ShareAlike 4.0 International License.",
+      "attribution_reviewed": false,
+      "attribution": "Basic Analysis: Introduction to Real Analysis (Volume I), Jiří Lebl, Version 6.3. CC BY-SA 4.0. https://www.jirka.org/ra/",
+      "pdf_path": "data/knowledge-base/sources/9c204ae1f1ee1641fa604a6456c0d13db4390db44633ee2df9c9d97b5486b7a6.pdf",
+      "sha256": "9c204ae1f1ee1641fa604a6456c0d13db4390db44633ee2df9c9d97b5486b7a6",
+      "bytes": 1901622,
+      "pages": 312,
+      "first_content_page": 5,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "real-analysis",
+      "version": 1
+    },
+    {
       "id": "basic-analysis-introduction-to-real-analysis-volume-ii",
       "title": "Basic Analysis: Introduction to Real Analysis (Volume II)",
       "authors": [
@@ -787,7 +836,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "real-analysis",
-      "version": 1
+      "version": 2
     },
     {
       "id": "basic-political-concepts",
@@ -814,7 +863,7 @@
         "PDF page 2 states © 2008 by Paul deLespinasse, CC BY-SA 4.0, and Original source: Global Text."
       ],
       "subject_id": "political-science",
-      "version": 6
+      "version": 7
     },
     {
       "id": "basic-statistics-using-r-for-crime-analysis",
@@ -881,6 +930,44 @@
       "version": 5
     },
     {
+      "id": "blueprints-creating-describing-and-implementing-designs-for-",
+      "title": "Blueprints: Creating, Describing, and Implementing Designs for Larger-scale Software Projects",
+      "authors": [
+        "Stephen Davies"
+      ],
+      "edition": "version 2.5.1",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/blueprints-creating-describing-and-implementing-designs-for-larger-scale-software-projects-davis",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/1471",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/formats/1471#page=4",
+      "license_evidence_quote": "Permission is granted to copy, distribute, transmit and adapt this work under a Creative Commons Attribution-ShareAlike 4.0 International License:",
+      "attribution_reviewed": false,
+      "attribution": "Blueprints: Creating, Describing, and Implementing Designs for Larger-scale Software Projects, Stephen Davies, version 2.5.1. CC BY-SA 4.0. https://open.umn.edu/opentextbooks/textbooks/blueprints-creating-describing-and-implementing-designs-for-larger-scale-software-projects-davis",
+      "pdf_path": "data/knowledge-base/sources/36047d137d02938986584b49b54b07b1cffa9918f03c52b5d9bc3508f6745504.pdf",
+      "sha256": "36047d137d02938986584b49b54b07b1cffa9918f03c52b5d9bc3508f6745504",
+      "bytes": 11371450,
+      "pages": 322,
+      "first_content_page": 9,
+      "figure_exclusions": [
+        {
+          "page": 1,
+          "bbox": [
+            0.0,
+            0.0,
+            999.728,
+            1000.0
+          ],
+          "figure": "Cover illustration",
+          "figure_id": "fig_ae4c7b77d60a33_0",
+          "credit": "Cover art copyright © 2020 Stephen Davies. Images courtesy of photoeverywhere.co.uk and PNGio.com."
+        }
+      ],
+      "rights_notes": [],
+      "subject_id": "computer-science-foundations",
+      "version": 1
+    },
+    {
       "id": "brief-calculus",
       "title": "Brief Calculus",
       "authors": [
@@ -903,7 +990,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "calculus",
-      "version": 4
+      "version": 5
     },
     {
       "id": "british-literature-i-anthology-from-the-middle-ages-to-neocl",
@@ -955,7 +1042,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "business-law-ethics",
-      "version": 3
+      "version": 5
     },
     {
       "id": "business-fundamentals",
@@ -1132,7 +1219,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "entrepreneurship",
-      "version": 2
+      "version": 3
     },
     {
       "id": "business-processes-and-information-technology",
@@ -1546,7 +1633,7 @@
         "Physical PDF page 2 prints a Creative Commons-ShareAlike 4.0 International licence statement beside a CC BY-SA badge; chapter notices link to http://creativecommons.org/licenses/by-sa/4.0/. The saved landing-page metadata states CC BY 4.0. Preserve the printed ShareAlike notice with the published source and attribution; the identity-bound CC BY 4.0 field records the landing-page claim, not a replacement of the PDF notice. Figure-specific permission restrictions are recorded separately."
       ],
       "subject_id": "information-systems",
-      "version": 3
+      "version": 4
     },
     {
       "id": "chinese-contract-law",
@@ -1575,7 +1662,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "contract-law",
-      "version": 5
+      "version": 6
     },
     {
       "id": "communication-theory",
@@ -1807,7 +1894,7 @@
         "The source PDF title page (PDF page 30) spells the first author Samantha Fowler. The Open Textbooks HK landing metadata supplied Samantha Fowle; the canonical attribution follows the source PDF while retaining this note."
       ],
       "subject_id": "general-biology",
-      "version": 2
+      "version": 3
     },
     {
       "id": "conservation-techniques",
@@ -1833,6 +1920,203 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "ecology-evolution",
+      "version": 1
+    },
+    {
+      "id": "contextualised-open-educational-practices-towards-student-ag",
+      "title": "Contextualised open educational practices: Towards student agency and self-directed learning",
+      "authors": [
+        "Jako Olivier",
+        "Charlene du Toit-Brits",
+        "Byron J. Bunt",
+        "Amit Dhakulkar"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/contextualised-open-educational-practices-towards-student-agency-and-self-directed-learning",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/3425",
+      "license": "CC BY 4.0",
+      "license_url": "http://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/textbooks/contextualised-open-educational-practices-towards-student-agency-and-self-directed-learning",
+      "license_evidence_quote": "Conditions of Use Attribution CC BY",
+      "attribution_reviewed": false,
+      "attribution": "Contextualised open educational practices: Towards student agency and self-directed learning, Jako Olivier, Charlene du Toit-Brits, Byron J. Bunt, Amit Dhakulkar. CC BY 4.0. https://open.umn.edu/opentextbooks/textbooks/contextualised-open-educational-practices-towards-student-agency-and-self-directed-learning",
+      "pdf_path": "data/knowledge-base/sources/fbaff9004514b344b2cd72cc6f60bc91fe0f96550b4be26935f1244cd5b2dd43.pdf",
+      "sha256": "fbaff9004514b344b2cd72cc6f60bc91fe0f96550b4be26935f1244cd5b2dd43",
+      "bytes": 5361619,
+      "pages": 292,
+      "first_content_page": 34,
+      "figure_exclusions": [
+        {
+          "page": 1,
+          "bbox": [
+            -2.23,
+            500.504,
+            1002.26,
+            1001.57
+          ],
+          "figure": "Cover image",
+          "figure_id": "fig_87cb83767c7ecb_4",
+          "credit": "Cover image: Original design. All rights reserved. No unauthorised duplication allowed."
+        },
+        {
+          "page": 108,
+          "bbox": [
+            150.193,
+            291.906,
+            893.372,
+            889.445
+          ],
+          "figure": "FIGURE 4.1: Screenshot from the website showing the terms on the right, and the translations on the left.",
+          "figure_id": "fig_87cb83767c7ecb_940",
+          "credit": "Source: This is an original screenshot from openly licensed content published by the chapter authors on http://saphilglossary.com/. The website was released under a Creative Commons Attribution-Non Commercial-Share Alike 4.0 International License."
+        },
+        {
+          "page": 108,
+          "bbox": [
+            137.144,
+            916.382,
+            871.387,
+            929.626
+          ],
+          "figure": "FIGURE 4.1: Screenshot from the website showing the terms on the right, and the translations on the left.",
+          "figure_id": "fig_87cb83767c7ecb_942",
+          "credit": "Source: This is an original screenshot from openly licensed content published by the chapter authors on http://saphilglossary.com/. The website was released under a Creative Commons Attribution-Non Commercial-Share Alike 4.0 International License."
+        },
+        {
+          "page": 172,
+          "bbox": [
+            137.144,
+            839.642,
+            543.092,
+            852.886
+          ],
+          "figure": "FIGURE 7.1: Open educational resource adoption pyramid.",
+          "figure_id": "fig_87cb83767c7ecb_1502",
+          "credit": "Source: Cox and Trotter 2017b:301. Footnote5: Written permission has been obtained from the authors to include the figure in this chapter."
+        },
+        {
+          "page": 176,
+          "bbox": [
+            487.65,
+            101.619,
+            826.365,
+            291.894
+          ],
+          "figure": "FIGURE 7.2: Screenshot of sheet music and sound clip of an open educational music resource, an original song ‘Joy, Joy, Happiness!’",
+          "figure_id": "fig_87cb83767c7ecb_1534",
+          "credit": "Source: This is an original screenshot from openly licensed content published by the chapter author on https://www. singingfeelings.com/; PDF178 states songs and music activities are CC-BY-NC-SA."
+        },
+        {
+          "page": 176,
+          "bbox": [
+            149.467,
+            101.619,
+            488.666,
+            291.894
+          ],
+          "figure": "FIGURE 7.2: Screenshot of sheet music and sound clip of an open educational music resource, an original song ‘Joy, Joy, Happiness!’",
+          "figure_id": "fig_87cb83767c7ecb_1535",
+          "credit": "Source: This is an original screenshot from openly licensed content published by the chapter author on https://www. singingfeelings.com/; PDF178 states songs and music activities are CC-BY-NC-SA."
+        },
+        {
+          "page": 176,
+          "bbox": [
+            149.467,
+            291.168,
+            826.365,
+            339.238
+          ],
+          "figure": "FIGURE 7.2: Screenshot of sheet music and sound clip of an open educational music resource, an original song ‘Joy, Joy, Happiness!’",
+          "figure_id": "fig_87cb83767c7ecb_1536",
+          "credit": "Source: This is an original screenshot from openly licensed content published by the chapter author on https://www. singingfeelings.com/; PDF178 states songs and music activities are CC-BY-NC-SA."
+        },
+        {
+          "page": 176,
+          "bbox": [
+            137.144,
+            375.623,
+            872.178,
+            402.737
+          ],
+          "figure": "FIGURE 7.2: Screenshot of sheet music and sound clip of an open educational music resource, an original song ‘Joy, Joy, Happiness!’",
+          "figure_id": "fig_87cb83767c7ecb_1538",
+          "credit": "Source: This is an original screenshot from openly licensed content published by the chapter author on https://www. singingfeelings.com/; PDF178 states songs and music activities are CC-BY-NC-SA."
+        },
+        {
+          "page": 177,
+          "bbox": [
+            106.037,
+            101.643,
+            444.994,
+            282.242
+          ],
+          "figure": "FIGURE 7.3: Screenshot of sheet music and sound clip of an open educational music resource, a translated song ‘O sa tshwenyega’.",
+          "figure_id": "fig_87cb83767c7ecb_1545",
+          "credit": "Source: This is an original screenshot from openly licensed content published by the chapter author on https://www. singingfeelings.com/; PDF178 states songs and music activities are CC-BY-NC-SA."
+        },
+        {
+          "page": 177,
+          "bbox": [
+            443.978,
+            101.643,
+            782.935,
+            282.242
+          ],
+          "figure": "FIGURE 7.3: Screenshot of sheet music and sound clip of an open educational music resource, a translated song ‘O sa tshwenyega’.",
+          "figure_id": "fig_87cb83767c7ecb_1546",
+          "credit": "Source: This is an original screenshot from openly licensed content published by the chapter author on https://www. singingfeelings.com/; PDF178 states songs and music activities are CC-BY-NC-SA."
+        },
+        {
+          "page": 177,
+          "bbox": [
+            106.037,
+            281.69,
+            782.935,
+            327.34
+          ],
+          "figure": "FIGURE 7.3: Screenshot of sheet music and sound clip of an open educational music resource, a translated song ‘O sa tshwenyega’.",
+          "figure_id": "fig_87cb83767c7ecb_1548",
+          "credit": "Source: This is an original screenshot from openly licensed content published by the chapter author on https://www. singingfeelings.com/; PDF178 states songs and music activities are CC-BY-NC-SA."
+        },
+        {
+          "page": 177,
+          "bbox": [
+            106.037,
+            430.33,
+            444.994,
+            614.731
+          ],
+          "figure": "FIGURE 7.4: Screenshot of sheet music and sound clip of an open educational music resource, a translated song ‘Don’t you worry’.",
+          "figure_id": "fig_87cb83767c7ecb_1549",
+          "credit": "Source: This is an original screenshot from openly licensed content published by the chapter author on https://www. singingfeelings.com/; PDF178 states songs and music activities are CC-BY-NC-SA."
+        },
+        {
+          "page": 177,
+          "bbox": [
+            443.978,
+            430.33,
+            782.935,
+            614.731
+          ],
+          "figure": "FIGURE 7.4: Screenshot of sheet music and sound clip of an open educational music resource, a translated song ‘Don’t you worry’.",
+          "figure_id": "fig_87cb83767c7ecb_1550",
+          "credit": "Source: This is an original screenshot from openly licensed content published by the chapter author on https://www. singingfeelings.com/; PDF178 states songs and music activities are CC-BY-NC-SA."
+        },
+        {
+          "page": 177,
+          "bbox": [
+            106.037,
+            614.005,
+            782.935,
+            660.52
+          ],
+          "figure": "FIGURE 7.4: Screenshot of sheet music and sound clip of an open educational music resource, a translated song ‘Don’t you worry’.",
+          "figure_id": "fig_87cb83767c7ecb_1552",
+          "credit": "Source: This is an original screenshot from openly licensed content published by the chapter author on https://www. singingfeelings.com/; PDF178 states songs and music activities are CC-BY-NC-SA."
+        }
+      ],
+      "rights_notes": [],
+      "subject_id": "educational-technology",
       "version": 1
     },
     {
@@ -2186,7 +2470,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "human-development",
-      "version": 2
+      "version": 3
     },
     {
       "id": "electromagnetics-volume-1",
@@ -2319,7 +2603,7 @@
       ],
       "rights_notes": [],
       "subject_id": "writing-composition",
-      "version": 2
+      "version": 3
     },
     {
       "id": "entrepreneurship-and-innovation-toolkit",
@@ -2344,7 +2628,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "entrepreneurship",
-      "version": 2
+      "version": 3
     },
     {
       "id": "entrepreneurship-education-and-training",
@@ -2419,7 +2703,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "geometry",
-      "version": 1
+      "version": 2
     },
     {
       "id": "evidence-based-software-engineering",
@@ -2830,7 +3114,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "mechanical-engineering",
-      "version": 3
+      "version": 4
     },
     {
       "id": "fundamentals-of-electrical-engineering-i",
@@ -2868,7 +3152,7 @@
       ],
       "rights_notes": [],
       "subject_id": "electrical-engineering",
-      "version": 9
+      "version": 12
     },
     {
       "id": "gateway-to-business-analytics-with-microsoft-excel",
@@ -3764,7 +4048,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "college-success",
-      "version": 2
+      "version": 3
     },
     {
       "id": "human-anatomy-and-physiology-laboratory-booklet",
@@ -3789,7 +4073,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "anatomy-physiology",
-      "version": 2
+      "version": 3
     },
     {
       "id": "human-anatomy-self-assessment-review-questions",
@@ -8027,7 +8311,7 @@
       ],
       "rights_notes": [],
       "subject_id": "accounting",
-      "version": 3
+      "version": 4
     },
     {
       "id": "interpretation-of-metal-fab-drawings",
@@ -8081,7 +8365,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "philosophy",
-      "version": 6
+      "version": 9
     },
     {
       "id": "introduction-to-animal-science",
@@ -8102,10 +8386,36 @@
       "sha256": "d4cf174e8676a1a8f4eb1b4fcb21eaae0c6108a3d5780fb4942d4bb452a44fc4",
       "bytes": 28652185,
       "pages": 288,
-      "first_content_page": 10,
-      "figure_exclusions": [],
+      "first_content_page": 12,
+      "figure_exclusions": [
+        {
+          "page": 58,
+          "bbox": [
+            251.225,
+            234.337,
+            747.549,
+            451.268
+          ],
+          "figure": "BBC Earth, Top 5 Animal Adaptations video preview",
+          "figure_id": "fig_57404bc8a59daa_564",
+          "credit": "BBC Earth, May 13, 2020, Top 5 Animal Adaptations, [Video], YouTube, https://www.youtube.com/watch?v=ZT8YswmQuAg"
+        },
+        {
+          "page": 78,
+          "bbox": [
+            251.225,
+            435.095,
+            747.549,
+            652.025
+          ],
+          "figure": "The End of the Line: The Destruction of our Seas",
+          "figure_id": "fig_57404bc8a59daa_816",
+          "credit": "Resource for video: The Documentary Channel. Oct 19, 2022, The End of the Line: The Destruction of our Seas, [Video], YouTube, https://www.youtube.com/watch?v=Jmi4MGmKpn4&t=1s"
+        }
+      ],
       "rights_notes": [],
-      "subject_id": "general-biology"
+      "subject_id": "general-biology",
+      "version": 1
     },
     {
       "id": "introduction-to-basic-legal-citation",
@@ -8278,7 +8588,7 @@
       ],
       "rights_notes": [],
       "subject_id": "library-information-science",
-      "version": 1
+      "version": 2
     },
     {
       "id": "introduction-to-g-programming",
@@ -8303,7 +8613,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "programming",
-      "version": 6
+      "version": 7
     },
     {
       "id": "introduction-to-game-theory-a-discovery-approach",
@@ -8328,7 +8638,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "quantitative-reasoning",
-      "version": 2
+      "version": 3
     },
     {
       "id": "introduction-to-gnu-octave-a-brief-tutorial-for-linear-algeb",
@@ -8555,7 +8865,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "curriculum-instruction",
-      "version": 5
+      "version": 6
     },
     {
       "id": "introductory-business-statistics",
@@ -8580,7 +8890,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "statistics",
-      "version": 10
+      "version": 11
     },
     {
       "id": "java-java-java-object-oriented-problem-solving-3-e",
@@ -8606,7 +8916,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "programming",
-      "version": 3
+      "version": 4
     },
     {
       "id": "keys-to-understanding-the-middle-east",
@@ -8753,7 +9063,35 @@
       ],
       "rights_notes": [],
       "subject_id": "history",
-      "version": 2
+      "version": 3
+    },
+    {
+      "id": "knowledge-graphs-and-big-data-processing",
+      "title": "Knowledge Graphs and Big Data Processing",
+      "authors": [
+        "Valentina Janev",
+        "Damien Graux",
+        "Hajira Jabeen",
+        "Emanuel Sallinger"
+      ],
+      "edition": "",
+      "source_url": "https://link.springer.com/book/10.1007/978-3-030-53199-7",
+      "download_url": "https://link.springer.com/content/pdf/10.1007/978-3-030-53199-7.pdf",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://link.springer.com/content/pdf/10.1007/978-3-030-53199-7.pdf#page=5",
+      "license_evidence_quote": "This book is licensed under the terms of the Creative Commons Attribution 4.0 International License",
+      "attribution_reviewed": false,
+      "attribution": "Knowledge Graphs and Big Data Processing, Valentina Janev, Damien Graux, Hajira Jabeen, Emanuel Sallinger. CC BY 4.0. https://link.springer.com/book/10.1007/978-3-030-53199-7",
+      "pdf_path": "data/knowledge-base/sources/d9aa97241a51b0b3d724bc51fe6722ef2bd0f77662ffaa021edb67ad3e831afa.pdf",
+      "sha256": "d9aa97241a51b0b3d724bc51fe6722ef2bd0f77662ffaa021edb67ad3e831afa",
+      "bytes": 12005944,
+      "pages": 212,
+      "first_content_page": 12,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "data-science",
+      "version": 1
     },
     {
       "id": "learning-in-the-digital-age",
@@ -8814,7 +9152,7 @@
       ],
       "rights_notes": [],
       "subject_id": "educational-technology",
-      "version": 1
+      "version": 2
     },
     {
       "id": "learning-statistics-with-r",
@@ -8840,7 +9178,7 @@
       "rights_notes": [],
       "subject_id": "statistics",
       "license_evidence_pdf_page": 17,
-      "version": 3
+      "version": 4
     },
     {
       "id": "lessons-in-industrial-instrumentation",
@@ -8992,7 +9330,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "literature",
-      "version": 4
+      "version": 5
     },
     {
       "id": "lsj",
@@ -9127,7 +9465,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "marketing",
-      "version": 6
+      "version": 7
     },
     {
       "id": "mathematics-for-elementary-teachers",
@@ -9578,7 +9916,7 @@
       ],
       "rights_notes": [],
       "subject_id": "communication-media",
-      "version": 1
+      "version": 2
     },
     {
       "id": "message-processing-the-science-of-creating-understanding",
@@ -9604,7 +9942,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "communication-media",
-      "version": 2
+      "version": 3
     },
     {
       "id": "methodologies-tools-and-new-developments-for-e-learning",
@@ -9654,7 +9992,57 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "curriculum-instruction",
-      "version": 6
+      "version": 7
+    },
+    {
+      "id": "multivariable-calculus",
+      "title": "Multivariable Calculus",
+      "authors": [
+        "Don Shimamoto"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/multivariable-calculus",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/1343",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/textbooks/multivariable-calculus",
+      "license_evidence_quote": "Conditions of Use Attribution CC BY",
+      "attribution_reviewed": false,
+      "attribution": "Multivariable Calculus, Don Shimamoto. CC BY 4.0. https://open.umn.edu/opentextbooks/textbooks/multivariable-calculus",
+      "pdf_path": "data/knowledge-base/sources/3d170f98ad753e2b398d88a18e0a64337849e39532c3c46ee303c6dab7a53756.pdf",
+      "sha256": "3d170f98ad753e2b398d88a18e0a64337849e39532c3c46ee303c6dab7a53756",
+      "bytes": 12329809,
+      "pages": 326,
+      "first_content_page": 15,
+      "figure_exclusions": [
+        {
+          "page": 249,
+          "bbox": [
+            382.353,
+            304.915,
+            617.647,
+            422.388
+          ],
+          "figure": "Figure 10.4: A mammal with orientation",
+          "figure_id": "fig_00377a29eb47ab_5109",
+          "credit": "Photo credit: https://pixabay.com/photos/nature-animal-porcupine-mammal-3588682/ by analogicus under Pixabay license."
+        },
+        {
+          "page": 249,
+          "bbox": [
+            336.77,
+            439.528,
+            662.417,
+            455.516
+          ],
+          "figure": "Figure 10.4: A mammal with orientation",
+          "figure_id": "fig_00377a29eb47ab_5110",
+          "credit": "Photo credit: https://pixabay.com/photos/nature-animal-porcupine-mammal-3588682/ by analogicus under Pixabay license."
+        }
+      ],
+      "rights_notes": [],
+      "subject_id": "calculus",
+      "version": 1
     },
     {
       "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
@@ -9808,7 +10196,7 @@
         "The source repository page states CC BY 4.0. Physical PDF page 5 states CC BY-SA 4.0."
       ],
       "subject_id": "music",
-      "version": 2
+      "version": 3
     },
     {
       "id": "nursing-mental-health-and-community-concepts-2e",
@@ -9967,6 +10355,128 @@
       ],
       "rights_notes": [],
       "subject_id": "nursing",
+      "version": 1
+    },
+    {
+      "id": "oer-textbook-for-data-analytics",
+      "title": "OER Textbook for Data Analytics",
+      "authors": [
+        "Elbert L. Hearon"
+      ],
+      "edition": "LibreTexts export, compiled June 10 2026",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/data-analytics-with-applications-in-business",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/5385",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "file:///C:/WEB/capy-notebook/data/knowledge-base/sources/496679572dfe2721d7dfc7332f08ab84fd8a09bb6c327852b9ae5a54c209433c.pdf#page=323",
+      "license_evidence_quote": "1 https://biz.libretexts.org/@go/page/125620 Detailed Licensing Overview Title: OER Textbook for Data Analytics Webpages: 206 All licenses found: CC BY 4.0: 100% (206 pages) By Page OER Textbook for Data Analytics - CC BY 4.0 Front Matter - CC BY 4.0 Overview of Data Analytics - CC BY 4.0 InfoPage - CC BY 4.0 Table of Contents - CC BY 4.0 Licensing - CC BY 4.0 1: Introduction to Data Analytics - CC BY 4.0 1.1: Study Guide - CC BY 4.0 1.2: Introduction to Data Analytics and Its Categories - CC BY 4.0 1.2.1: What is Data Analytics - CC BY 4.0 1.2.2: Types of Analytics - CC BY 4.0 1.2.3: Review Questions - CC BY 4.0 1.3: Understanding Big Data and Big Data Analytics - CC BY 4.0 1.3.1: Types of Data - CC BY 4.0 1.3.2: Big Data Analytics and the \"5 V's\" - CC BY 4.0 1.3.3: Technology Used in Big Data Analytics - CC BY 4.0 1.3.4: Machine Learning and Artificial Intelligence in Analytics - CC BY 4.0 1.3.5: Review questions - CC BY 4.0 1.4: Tools and Technologies - CC BY 4.0 1.4.1: Programming Languages - CC BY 4.0 1.4.2: Visualization Tools - CC BY 4.0 1.4.3: Spreadsheet Software - CC BY 4.0 1.5: Data Governance - CC BY 4.0 1.6: Careers in Analytics - CC BY 4.0 1.7: Chapter 1 Summary - CC BY 4.0 1.8: Chapter 1 Exercises - CC BY 4.0 2: Data Preparation - CC BY 4.0 2.1: Study Guide - CC BY 4.0 2.2: Data Preparation - CC BY 4.0 2.3: Data Collection - CC BY 4.0 2.4: Data Quality - CC BY 4.0 2.5: Data Cleaning - CC BY 4.0 2.5.1: Removing Duplicates - CC BY 4.0 2.5.2: Handling Missing Data - CC BY 4.0 2.5.3: Text Cleaning and Standardization - CC BY 4.0 2.5.4: Formatting Inconsistencies - CC BY 4.0 2.5.5: Outlier Detection - CC BY 4.0 2.5.6: Data Validation and Restriction - CC BY 4.0 2.5.7: Combining and Separating Data - CC BY 4.0 2.5.8: Filtering and Sorting for Quality Checks - CC BY 4.0 2.5.9: Error Checking - CC BY 4.0 2.6: Comparing Tools for Enterprise Data Preparation and Visualization - CC BY 4.0 2.7: Ethical and Legal Considerations - CC BY 4.0 2.8: Chapter 2 Summary - CC BY 4.0 2.9: Chapter 2 Exercises - CC BY 4.0 2.10: Chapter 2 References - CC BY 4.0 3: Exploratory Data Analysis - CC BY 4.0 3.1: Introduction to Exploratory Data Analysis - CC BY 4.0 3.1.1: Descriptive Statistics using Excel - CC BY 4.0 3.1.2: Descriptive Statistics and Visual Exploration Using Tableau Public - CC BY 4.0 3.1.2.1: Introduction to Tableau Public - Connecting an Excel File - CC BY 4.0 3.1.2.2: Show Me Function- Tableau Basics - CC BY 4.0 3.1.2.3: Building Charts and Graphs in Tableau - CC BY 4.0 3.2: Visualizing Data - CC BY 4.0 3.2.1: Distribution and Spread - CC BY 4.0 3.2.2: Comparison and Trends - CC BY 4.0 3.2.3: Quick Reference - Chart Types for EDA - CC BY 4.0 3.3: Challenges in Exploratory Data Analysis - CC BY 4.0 3.4: Chapter 3 Summary - CC BY 4.0 3.5: Chapter 3 Exercises - CC BY 4.0",
+      "attribution_reviewed": false,
+      "attribution": "OER Textbook for Data Analytics, Elbert L. Hearon, LibreTexts export, compiled June 10 2026. CC BY 4.0. https://open.umn.edu/opentextbooks/textbooks/data-analytics-with-applications-in-business",
+      "pdf_path": "data/knowledge-base/sources/496679572dfe2721d7dfc7332f08ab84fd8a09bb6c327852b9ae5a54c209433c.pdf",
+      "sha256": "496679572dfe2721d7dfc7332f08ab84fd8a09bb6c327852b9ae5a54c209433c",
+      "bytes": 14761798,
+      "pages": 326,
+      "first_content_page": 13,
+      "figure_exclusions": [
+        {
+          "page": 10,
+          "bbox": [
+            85.784,
+            522.727,
+            536.765,
+            700.758
+          ],
+          "figure": "A blue financial-market illustration shows candlestick bars and curving chart lines.",
+          "figure_id": "fig_fdc7b8d4a0a269_66",
+          "credit": "(image link address: https://www.istockphoto.com/en/vecto...4573-569363909)"
+        },
+        {
+          "page": 12,
+          "bbox": [
+            85.784,
+            156.25,
+            556.373,
+            345.644
+          ],
+          "figure": "The word ANALYTICS appears over a pale blue abstract geometric background.",
+          "figure_id": "fig_fdc7b8d4a0a269_80",
+          "credit": "(image link address: https://pixabay.com/illustrations/an...-data-1907993/)"
+        },
+        {
+          "page": 13,
+          "bbox": [
+            85.784,
+            108.902,
+            556.373,
+            351.326
+          ],
+          "figure": "A person holds and points at a tablet displaying charts.",
+          "figure_id": "fig_fdc7b8d4a0a269_87",
+          "credit": "(image link address: https://cdn.pixabay.com/photo/2023/1...03845_1280.png)"
+        },
+        {
+          "page": 14,
+          "bbox": [
+            85.784,
+            108.902,
+            389.706,
+            285.038
+          ],
+          "figure": "Purple cuboid columns descend from left to right.",
+          "figure_id": "fig_fdc7b8d4a0a269_100",
+          "credit": "(image link address: https://pixabay.com/illustrations/bi...-data-1515041/)"
+        },
+        {
+          "page": 17,
+          "bbox": [
+            85.784,
+            108.902,
+            397.059,
+            278.409
+          ],
+          "figure": "Blue and purple binary digits form a receding tunnel.",
+          "figure_id": "fig_fdc7b8d4a0a269_123",
+          "credit": "(image link address: https://cdn.pixabay.com/photo/2015/0...97274_1280.jpg)"
+        },
+        {
+          "page": 18,
+          "bbox": [
+            85.784,
+            108.902,
+            395.833,
+            279.356
+          ],
+          "figure": "A word cloud centers BIG DATA in red among analytics, storage, marketing and technology terms.",
+          "figure_id": "fig_fdc7b8d4a0a269_133",
+          "credit": "(image link address: https://cdn.pixabay.com/photo/2016/0...67212_1280.png)"
+        },
+        {
+          "page": 19,
+          "bbox": [
+            85.784,
+            108.902,
+            556.373,
+            351.326
+          ],
+          "figure": "Lines of computer code recede toward a vanishing point on a dark blue background.",
+          "figure_id": "fig_fdc7b8d4a0a269_143",
+          "credit": "(image link address: https://cdn.pixabay.com/photo/2018/0...88958_1280.jpg)"
+        },
+        {
+          "page": 22,
+          "bbox": [
+            85.784,
+            108.902,
+            395.833,
+            348.485
+          ],
+          "figure": "Blue and orange filaments curve across a dark abstract image.",
+          "figure_id": "fig_fdc7b8d4a0a269_178",
+          "credit": "(image link address: https://cdn.pixabay.com/photo/2024/0...87677_1280.jpg)"
+        }
+      ],
+      "rights_notes": [],
+      "subject_id": "data-science",
       "version": 1
     },
     {
@@ -10281,7 +10791,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "library-information-science",
-      "version": 7
+      "version": 8
     },
     {
       "id": "operations-management",
@@ -10642,7 +11152,7 @@
       ],
       "rights_notes": [],
       "subject_id": "health-sciences",
-      "version": 2
+      "version": 3
     },
     {
       "id": "philosophical-ethics",
@@ -10667,7 +11177,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "philosophy",
-      "version": 1
+      "version": 2
     },
     {
       "id": "phylogenetic-comparative-methods-learning-from-trees",
@@ -10733,7 +11243,7 @@
       ],
       "rights_notes": [],
       "subject_id": "physics",
-      "version": 4
+      "version": 5
     },
     {
       "id": "politics-power-and-purpose-an-orientation-to-political-scien",
@@ -10939,7 +11449,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "aerospace-engineering",
-      "version": 2
+      "version": 3
     },
     {
       "id": "producing-open-source-software-how-to-run-a-successful-free-",
@@ -11091,7 +11601,7 @@
       ],
       "rights_notes": [],
       "subject_id": "political-science",
-      "version": 2
+      "version": 3
     },
     {
       "id": "quantitative-research-methods-for-political-science-public-p",
@@ -11187,7 +11697,32 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "curriculum-instruction",
-      "version": 6
+      "version": 7
+    },
+    {
+      "id": "symbiotic-posthumanist-ecologies-in-western-literature-philo",
+      "title": "Symbiotic Posthumanist Ecologies in Western Literature, Philosophy and Art: Towards Theory and Practice",
+      "authors": [
+        "Peggy Karpouzou (editor)",
+        "Nikoleta Zampaki (editor)"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/symbiotic-posthumanist-ecologies-in-western-literature-philosophy-and-art-towards-theory-and-practice-volume-11",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/3502",
+      "license": "CC BY 4.0",
+      "license_url": "http://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/textbooks/symbiotic-posthumanist-ecologies-in-western-literature-philosophy-and-art-towards-theory-and-practice-volume-11",
+      "license_evidence_quote": "Conditions of Use Attribution CC BY",
+      "attribution_reviewed": false,
+      "attribution": "Symbiotic Posthumanist Ecologies in Western Literature, Philosophy and Art: Towards Theory and Practice, Peggy Karpouzou (editor), Nikoleta Zampaki (editor). CC BY 4.0. https://open.umn.edu/opentextbooks/textbooks/symbiotic-posthumanist-ecologies-in-western-literature-philosophy-and-art-towards-theory-and-practice-volume-11",
+      "pdf_path": "data/knowledge-base/sources/87cf7aaf76b2075b4077f8f1e75163e849ab578f650aa116285a2e19e8949e50.pdf",
+      "sha256": "87cf7aaf76b2075b4077f8f1e75163e849ab578f650aa116285a2e19e8949e50",
+      "bytes": 3490273,
+      "pages": 328,
+      "first_content_page": 9,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "literature"
     },
     {
       "id": "technology-tools-for-leaders",
@@ -11238,7 +11773,7 @@
       ],
       "rights_notes": [],
       "subject_id": "management",
-      "version": 2
+      "version": 3
     },
     {
       "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
@@ -11313,7 +11848,7 @@
       ],
       "rights_notes": [],
       "subject_id": "educational-technology",
-      "version": 2
+      "version": 3
     },
     {
       "id": "the-learn-it-all-educator-a-guidebook-for-training-brains-no",
@@ -11338,7 +11873,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "curriculum-instruction",
-      "version": 3
+      "version": 4
     },
     {
       "id": "the-legal-and-ethical-environment-of-business",
@@ -11807,7 +12342,7 @@
       ],
       "rights_notes": [],
       "subject_id": "neuroscience",
-      "version": 2
+      "version": 3
     },
     {
       "id": "the-unicode-cookbook-for-linguists-managing-writing-systems-",
@@ -12225,7 +12760,7 @@
         "Physical PDF page 53 states that Strategies of Professional Nursing Autonomy by Roshanzadeh, Aghaei, Kashani, Pasaeimehr and Tajabadi is licensed CC BY-SA 4.0; the book's Autonomy section may adapt that work."
       ],
       "subject_id": "nursing",
-      "version": 2
+      "version": 3
     },
     {
       "id": "understanding-basic-music-theory",
@@ -12304,7 +12839,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "writing-composition",
-      "version": 2
+      "version": 3
     },
     {
       "id": "writing-the-nation-a-concise-introduction-to-american-litera",
