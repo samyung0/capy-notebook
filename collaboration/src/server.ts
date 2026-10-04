@@ -14,6 +14,8 @@ import {
 } from './auth.js';
 import {
   broadcastCheckpointPersisted,
+  nothingToStore,
+  nothingToStoreReceipt,
   registerCheckpointRequest,
 } from './checkpointReceipt.js';
 import { loadConfig } from './config.js';
@@ -280,23 +282,33 @@ function recordEvictionAck(requestID: string, instanceID: string, ok: boolean) {
   waiter.resolve(true);
 }
 
+// Rooms whose discard threw unsaved state away and still owe their lineage
+// move: a failed attempt leaves the room clean and unloaded, so its retry
+// must not decide again from what is left.
+const lineageDue = new Set<string>();
+
 function evictLocalRoom(
   room: string,
   notification: boolean | string = false,
   operationId?: string,
-  mode: RoomEvictionMode = 'discard'
+  mode: RoomEvictionMode = 'discard',
+  /** A store-time rejection started this discard: its snapshot is lost. */
+  storeRejected = false
 ) {
   return localEvictions.run(room, operationId, async () => {
     let unloaded = false;
     const initialFailureGeneration = storeFailureGenerations.get(room) ?? 0;
     // Read before the discard clears the failed snapshot.
-    const movesLineage =
+    if (
       mode === 'discard' &&
       discardMovesLineage({
         document: server.hocuspocus.documents.get(room),
         failedSnapshot: failedStores.has(room),
-        rejected: roomEvictions.isRejected(room),
-      });
+        storeRejected,
+      })
+    )
+      lineageDue.add(room);
+    const movesLineage = mode === 'discard' && lineageDue.has(room);
     if (mode === 'discard') roomEvictions.reject(room);
     roomEvictions.begin(room, mode);
     try {
@@ -361,10 +373,12 @@ function evictLocalRoom(
         );
       // Before the room is accepted again: a failure keeps it refused and
       // retries the discard, which then moves it (the room stays rejected).
-      if (movesLineage)
+      if (movesLineage) {
         await (SOURCE_ROOM_PATTERN.test(room)
           ? sources.resetEpoch(room)
           : store.resetLineage(room));
+        lineageDue.delete(room);
+      }
       failedStores.delete(room);
       pendingSources.delete(room);
       slowSaves.clear(room);
@@ -496,7 +510,7 @@ function rejectRoom(
         'rejection_eviction_publish'
       );
       try {
-        await evictLocalRoom(room, false, evictionId);
+        await evictLocalRoom(room, false, evictionId, 'discard', true);
       } finally {
         await publication;
       }
@@ -549,7 +563,7 @@ function rejectAuthorizationRoom(room: string) {
         'authorization_eviction_publish'
       );
       try {
-        await evictLocalRoom(room, payload, evictionId);
+        await evictLocalRoom(room, payload, evictionId, 'discard', true);
       } finally {
         await publication;
       }
@@ -584,7 +598,7 @@ function rejectInvalidDocumentRoom(room: string) {
         'invalid_document_eviction_publish'
       );
       try {
-        await evictLocalRoom(room, payload, evictionId);
+        await evictLocalRoom(room, payload, evictionId, 'discard', true);
       } finally {
         await publication;
       }
@@ -917,6 +931,22 @@ const server = new Server<CollaborationContext>({
       return;
     }
     const source = SOURCE_ROOM_PATTERN.test(document.name);
+    // A note room with nothing waiting to be saved answers at once; a store
+    // runs only after a change, so the request would wait forever.
+    if (
+      !source &&
+      !activeStores.has(document.name) &&
+      nothingToStore(
+        server.hocuspocus,
+        document,
+        failedStores.has(document.name)
+      )
+    ) {
+      connection.sendStateless(
+        nothingToStoreReceipt(materialIdFromRoom(document.name), id)
+      );
+      return;
+    }
     // A source room's idle receipts wait for its debounced store; a full set
     // is drained by saving now rather than dropping this request.
     if (

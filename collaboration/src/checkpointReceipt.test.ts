@@ -1,8 +1,12 @@
+import { Document, Hocuspocus } from '@hocuspocus/server';
 import { describe, expect, it, vi } from 'vitest';
+import * as Y from 'yjs';
 import {
   broadcastCheckpointPersisted,
+  nothingToStore,
   registerCheckpointRequest,
 } from './checkpointReceipt.js';
+import { attachDocumentContributorTracker } from './contributors.js';
 
 describe('checkpoint persistence receipts', () => {
   it('broadcasts a retry receipt for only still-pending claimed IDs', () => {
@@ -61,5 +65,38 @@ describe('checkpoint request registration', () => {
       true
     );
     expect(receipts.get('other')).toEqual(new Set(['c']));
+  });
+});
+
+describe('a checkpoint request with nothing to save', () => {
+  it('is answered at once only while no change waits for a store', async () => {
+    const host = new Hocuspocus({ debounce: 60_000, quiet: true });
+    const room = new Document('material:mat_1:schema:1');
+    attachDocumentContributorTracker(room, 'instance-a');
+    // Just loaded, or everything stored: a reopened note's request (its
+    // restored edits the room already holds) is answered now.
+    expect(nothingToStore(host, room, false)).toBe(true);
+    expect(nothingToStore(host, room, true)).toBe(false);
+    // A writer's update the room has not stored yet waits for that store.
+    const client = new Y.Doc();
+    client.getText('content').insert(0, 'new');
+    Y.applyUpdate(room, Y.encodeStateAsUpdate(client), {
+      connection: { context: { access: 'write', userId: 'u_a' } },
+      source: 'connection',
+    });
+    expect(nothingToStore(host, room, false)).toBe(false);
+    const fresh = new Document('material:mat_2:schema:1');
+    host.debouncer.debounce(
+      `onStoreDocument-${fresh.name}`,
+      async () => undefined,
+      60_000,
+      60_000
+    );
+    expect(nothingToStore(host, fresh, false)).toBe(false);
+    await host.debouncer.executeNow(`onStoreDocument-${fresh.name}`);
+    expect(nothingToStore(host, fresh, false)).toBe(true);
+    room.destroy();
+    fresh.destroy();
+    client.destroy();
   });
 });

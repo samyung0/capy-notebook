@@ -180,10 +180,10 @@ export class RoomEvictionState {
 export function discardMovesLineage(room: {
   document: Y.Doc | undefined;
   failedSnapshot: boolean;
-  rejected: boolean;
+  storeRejected: boolean;
 }) {
   return (
-    room.rejected ||
+    room.storeRejected ||
     room.failedSnapshot ||
     (!!room.document && hasPendingContributors(room.document))
   );

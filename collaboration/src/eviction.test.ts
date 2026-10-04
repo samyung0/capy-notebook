@@ -234,7 +234,7 @@ describe('discard lineage', () => {
   it('moves a room only when the discard throws unsaved state away', () => {
     const room = new Y.Doc();
     attachDocumentContributorTracker(room, 'instance-a');
-    const clean = { failedSnapshot: false, rejected: false };
+    const clean = { failedSnapshot: false, storeRejected: false };
     expect(discardMovesLineage({ ...clean, document: room })).toBe(false);
     expect(discardMovesLineage({ ...clean, document: undefined })).toBe(false);
     // A writer's update the room has not stored yet.
@@ -251,7 +251,11 @@ describe('discard lineage', () => {
     // A failed snapshot or a store-time rejection always throws state away,
     // loaded or not.
     expect(
-      discardMovesLineage({ ...clean, document: undefined, rejected: true })
+      discardMovesLineage({
+        ...clean,
+        document: undefined,
+        storeRejected: true,
+      })
     ).toBe(true);
     expect(
       discardMovesLineage({

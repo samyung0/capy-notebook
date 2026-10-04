@@ -121,12 +121,23 @@ export function pendingSourceSave(
 
 /**
  * A save refused because the writers lost access or the file is gone
- * (401/403/404): the browser drops its drafts and shows the no-access or
- * missing panel. Any other refusal for good keeps them for recovery.
+ * (401/403/404, not an account lock): the browser drops its drafts and shows
+ * the no-access or missing panel. Any other refusal for good keeps them for
+ * recovery.
  */
 export function lostSourceAccess(error: unknown) {
   return (
     error instanceof SourceRequestError &&
-    [401, 403, 404].includes(error.status)
+    [401, 403, 404].includes(error.status) &&
+    !ACCOUNT_LOCK_CODES.has(error.code ?? '')
   );
 }
+
+/** A 403 about the account itself, not the file: the browser keeps its
+ * drafts (the refusal still goes to recovery). */
+const ACCOUNT_LOCK_CODES = new Set([
+  'account_deleted',
+  'account_deletion_pending',
+  'account_locked',
+  'account_suspended',
+]);
