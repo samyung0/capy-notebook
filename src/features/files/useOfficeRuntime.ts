@@ -583,7 +583,9 @@ export function useOfficeRuntime({
                 : m.files_office_png_failed(),
             variant: 'error',
           });
-        else setError(errorCopy(value, m.error_generic_body()));
+        // A failed save the session already shows (its banner or strip).
+        else if (!sessionReported(value))
+          setError(errorCopy(value, m.error_generic_body()));
       });
     },
     [checkpoint, downloadDraft, editable, file.name, post, render]

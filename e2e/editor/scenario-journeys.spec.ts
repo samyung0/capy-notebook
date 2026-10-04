@@ -171,6 +171,69 @@ test('source-save-refused shows the edits for copying until Reload', async ({
     .toBe(0);
 });
 
+// Office recovery hands the engine its read-only mode instead of an inert
+// editor: the refused DOCX edit can be selected and copied.
+test('a refused DOCX save keeps the edit copyable until Reload', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await launch(page, 'office-docx-save');
+  await page.evaluate(async () => {
+    const modulePath = '/src/mocks/collaboration.ts';
+    const { refuseNextSourceSave } = await import(modulePath);
+    refuseNextSourceSave('mock-scenario-docx');
+  });
+  await saveOffice(page);
+  const banner = page.getByTestId('save-banner');
+  await expect(banner).toContainText("These changes couldn't be saved.");
+  await expect(
+    page.getByRole('button', { exact: true, name: 'Download draft' })
+  ).toHaveCount(0);
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect
+    .poll(() =>
+      frame
+        .locator('.office-editor-host')
+        .first()
+        .evaluate((node: HTMLElement) => node.inert)
+    )
+    .toBe(false);
+  await expect(frame.locator('[aria-label="Document input"]')).toHaveAttribute(
+    'readonly',
+    ''
+  );
+  // Read after the engine's own copy handler, while the data is readable.
+  const copied = frame
+    .locator('body')
+    .evaluate(
+      () =>
+        new Promise<string>((resolve) =>
+          window.addEventListener(
+            'copy',
+            (event) =>
+              resolve(event.clipboardData?.getData('text/plain') ?? ''),
+            { once: true }
+          )
+        )
+    );
+  await frame
+    .locator('canvas')
+    .first()
+    .click({ position: { x: 120, y: 120 } });
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.press('ControlOrMeta+C');
+  expect(await copied).toContain(marker);
+  await page.reload();
+  await expect(banner).toContainText("These changes couldn't be saved.", {
+    timeout: 60_000,
+  });
+  await banner.getByRole('button', { exact: true, name: 'Reload' }).click();
+  await expect(banner).toHaveCount(0);
+  await expect(page.getByTestId('editor-save-state')).toHaveText('Saved', {
+    timeout: 60_000,
+  });
+});
+
 for (const format of ['docx', 'xlsx', 'pptx']) {
   test(`${format} opens valid bytes, edits, fails save, and retries without replacing the iframe`, async ({
     page,
