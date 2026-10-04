@@ -132,6 +132,25 @@ the stack down and remove the throwaway key. Under heavy load
 timeout and a source access 500, with p95 over 40 s: worth a look on the CI
 runner before the budget is trusted.
 
+`STRESS_TARGET=uat` runs the same peers against the UAT deployment
+(`node --env-file=deploy/.env.uat --import tsx bench/collaboration/scripts/stress.ts`,
+never `pnpm run` in a worktree). `STRESS_ROOMS` rooms (2), alternately Office
+and Plate, each get `STRESS_PEERS` peers. Each Office and Plate pair gets a
+disposable Clerk test-mode user, as the UAT journeys use: created with the
+backend API with the run id in its private metadata, then signed in one at a
+time with a sign-in ticket under Clerk's testing token, as a native Frontend API
+client. Each user also gets its own workspace. The workspace has auto process
+off before its note exists, and the DOCX is a store-only upload
+(`parseMode=none`), so nothing is parsed or indexed. The only jobs are
+export-only `source_refresh` publications, which the collaboration service runs
+itself, so nothing reaches the shared ingest host. Collaboration errors come
+from the host's logs and its `/metrics` failure counters over SSH
+(`STRESS_UAT_SSH`, `STRESS_UAT_SSH_KEY`). Cleanup deletes the workspaces, then
+the users. `uat-resources.json` in `STRESS_OUT` lists them if cleanup fails.
+On UAT the budget is 1 s, including the client's round trip (about 300 ms from
+Asia). Peers join 16 at a time. One client machine has lost its network at
+about 200 peers, so split bigger steps across machines rather than processes.
+
 ## GitHub Actions
 
 Workflow [`Performance`](../.github/workflows/perf.yml) (named `Editor perf`

@@ -65,7 +65,9 @@ It fails when the peers and a late joiner do not converge, a typed marker is
 missing or duplicated, or the collaboration service logs an error (exit 1),
 and reports a missed p95 latency budget (from three CI runs) with exit 2. The
 `Performance` workflow's `stress` job runs it on dispatch only. Results land in
-the gitignored `collaboration/.results/`.
+the gitignored `collaboration/.results/`. `STRESS_TARGET=uat` runs it against UAT with disposable
+journey-style users and store-only, unindexed rooms (see
+[editor-perf.md](../openwiki/editor-perf.md#collaboration-stress-pnpm-benchstress)).
 
 ### parsers
 
