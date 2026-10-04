@@ -694,6 +694,34 @@ func (s *Store) RebuildSource(ctx context.Context, fileID string, in SourceRebui
 	return tx.Commit(ctx)
 }
 
+// SourceEpochReset names the editing epoch whose room the collaboration
+// service discarded with unsaved state in it.
+type SourceEpochReset struct {
+	Epoch int64 `json:"epoch" minimum:"1"`
+}
+
+// ResetSourceEpoch moves editing to the next epoch on the same base and saved
+// state, after the collaboration service threw away unsaved room state (a save
+// refused for good, an access discard). The room name carries the epoch, so a
+// client still holding the thrown-away state cannot resync it: it sees a new
+// epoch and opens its edits read-only instead. An epoch that already moved on
+// is left alone. A refresh captured under the old epoch is superseded, as
+// after any epoch change.
+func (s *Store) ResetSourceEpoch(ctx context.Context, fileID string, in SourceEpochReset) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, fileID); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE source_documents SET epoch=epoch+1,updated_at=now() WHERE file_id=$1 AND epoch=$2`, fileID, in.Epoch); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // SourceRebuildRefusal reports that the engine refused the rebase of a
 // deferred publication's rebuild (RebaseError, "Office rebase:"), sent by the
 // collaboration service.

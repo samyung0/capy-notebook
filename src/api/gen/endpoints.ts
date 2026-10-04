@@ -123,6 +123,7 @@ import type {
   SourceCheckpoint,
   SourceCheckpointSaved,
   SourceCollaborationToken,
+  SourceEpochReset,
   SourceFailureInputBody,
   SourceImportStatus,
   SourceProcessResult,
@@ -8497,6 +8498,57 @@ export const checkpointSourceDocument = async (id: string,
 
   const data: checkpointSourceDocumentResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as checkpointSourceDocumentResponse
+}
+
+
+
+export type resetSourceEpochResponse204 = {
+  data: void
+  status: 204
+}
+
+export type resetSourceEpochResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type resetSourceEpochResponseSuccess = (resetSourceEpochResponse204) & {
+  headers: Headers;
+};
+export type resetSourceEpochResponseError = (resetSourceEpochResponseDefault) & {
+  headers: Headers;
+};
+
+export type resetSourceEpochResponse = (resetSourceEpochResponseSuccess | resetSourceEpochResponseError)
+
+export const getResetSourceEpochUrl = (id: string,) => {
+
+
+
+
+  return `/internal/collaboration/files/${id}/epoch-reset`
+}
+
+/**
+ * @summary Move editing to a new epoch after a discarded room
+ */
+export const resetSourceEpoch = async (id: string,
+    sourceEpochReset: NonReadonly<SourceEpochReset>, options?: RequestInit): Promise<resetSourceEpochResponse> => {
+
+  const res = await fetch(getResetSourceEpochUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(sourceEpochReset)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: resetSourceEpochResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as resetSourceEpochResponse
 }
 
 

@@ -5163,6 +5163,27 @@ export const CheckpointSourceDocumentResponse = zod.object({
 
 
 /**
+ * @summary Move editing to a new epoch after a discarded room
+ */
+export const ResetSourceEpochParams = zod.object({
+  "id": zod.string()
+})
+
+export const ResetSourceEpochHeader = zod.object({
+  "X-Collaboration-Secret": zod.string().optional()
+})
+
+
+
+
+export const ResetSourceEpochBody = zod.object({
+  "epoch": zod.int().min(1)
+})
+
+export const ResetSourceEpochResponse = zod.void()
+
+
+/**
  * @summary Publish a processed source checkpoint
  */
 export const PublishSourceRefreshParams = zod.object({

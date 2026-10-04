@@ -82,6 +82,7 @@ func (a *api) registerSourceDocuments(api huma.API) {
 	reg(api, http.MethodPost, "/internal/collaboration/files/{id}/refresh-failure", "failSourceRefresh", tag, "Discard an unsuccessful candidate", http.StatusNoContent, a.failSourceRefresh)
 	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/files/{id}/rebuild", "rebuildSource", tag, "Move editing onto the published file", http.StatusNoContent, 150<<20, a.rebuildSource)
 	reg(api, http.MethodPost, "/internal/collaboration/files/{id}/rebuild-refusal", "refuseSourceRebuild", tag, "Record a refused rebuild and leave the file due", http.StatusNoContent, a.refuseSourceRebuild)
+	reg(api, http.MethodPost, "/internal/collaboration/files/{id}/epoch-reset", "resetSourceEpoch", tag, "Move editing to a new epoch after a discarded room", http.StatusNoContent, a.resetSourceEpoch)
 	reg(api, http.MethodGet, "/api/files/{id}/source-session", "getSourceSession", tag, "Read source editing session", http.StatusOK, a.getSourceSession)
 	reg(api, http.MethodPost, "/api/files/{id}/collaboration-token", "createSourceCollaborationToken", tag, "Create source room token", http.StatusCreated, a.createSourceCollaborationToken)
 	reg(api, http.MethodPost, "/api/files/{id}/process-changes", "processSourceChanges", tag, "Process the latest saved source changes", http.StatusAccepted, a.processSourceChanges)
@@ -232,6 +233,19 @@ func (a *api) refuseSourceRebuild(ctx context.Context, in *sourceRebuildRefusalI
 		return nil, err
 	}
 	return nil, hErr(a.s.RefuseSourceRebuild(ctx, in.ID, in.Body))
+}
+
+type sourceEpochResetInput struct {
+	ID     string `path:"id"`
+	Secret string `header:"X-Collaboration-Secret"`
+	Body   store.SourceEpochReset
+}
+
+func (a *api) resetSourceEpoch(ctx context.Context, in *sourceEpochResetInput) (*struct{}, error) {
+	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {
+		return nil, err
+	}
+	return nil, hErr(a.s.ResetSourceEpoch(ctx, in.ID, in.Body))
 }
 func (a *api) cancelSourceChanges(ctx context.Context, in *collaborationTokenInput) (*struct{}, error) {
 	return nil, hErr(a.s.CancelSourceRefresh(ctx, userID(ctx), in.ID))

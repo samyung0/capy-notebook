@@ -169,9 +169,10 @@ export class RoomEvictionState {
  * A discard throws room state away, and a client disconnected at that moment
  * still holds it: back in a room reloaded under the same name, its sync would
  * resend that state, attributed to itself. So a discard that threw anything
- * away moves a material room to a new schema before the room reopens (the
- * room name is the editors' lineage, and a client holding the old one goes to
- * recovery instead of merging): one that a store-time rejection started (its
+ * away moves the room's name on before it reopens (a material's schema, a
+ * source's editing epoch: the room name is the editors' lineage, and a client
+ * holding the old one goes to recovery instead of merging): one that a
+ * store-time rejection or a refused source save started (its
  * snapshot can never be saved), or one whose room held a writer's unsaved
  * update or a failed snapshot. A clean room's discard throws nothing away and
  * keeps its name, so offline editors of it still sync.

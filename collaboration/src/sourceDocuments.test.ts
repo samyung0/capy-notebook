@@ -45,6 +45,17 @@ test('per-update authorization needs only a current access verdict', async () =>
   );
 });
 
+test('a discard that threw unsaved state away moves the file past its epoch', async () => {
+  const fetch = vi.fn(async () => new Response(null, { status: 204 }));
+  vi.stubGlobal('fetch', fetch);
+  const sources = new SourceDocumentStore({} as Pool, 'http://api', 'secret');
+  await sources.resetEpoch('source:file_1:epoch:3');
+  expect(fetch).toHaveBeenCalledWith(
+    'http://api/internal/collaboration/files/file_1/epoch-reset',
+    expect.objectContaining({ body: '{"epoch":3}', method: 'POST' })
+  );
+});
+
 test('source tokens bind their epoch and cannot join a material room', () => {
   const now = Math.floor(Date.now() / 1000);
   const claims = {

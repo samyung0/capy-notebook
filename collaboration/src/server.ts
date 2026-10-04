@@ -289,11 +289,9 @@ function evictLocalRoom(
   return localEvictions.run(room, operationId, async () => {
     let unloaded = false;
     const initialFailureGeneration = storeFailureGenerations.get(room) ?? 0;
-    // Read before the discard clears the failed snapshot. Source rooms keep
-    // their epoch here (a refused-save reset is a separate decision).
+    // Read before the discard clears the failed snapshot.
     const movesLineage =
       mode === 'discard' &&
-      !SOURCE_ROOM_PATTERN.test(room) &&
       discardMovesLineage({
         document: server.hocuspocus.documents.get(room),
         failedSnapshot: failedStores.has(room),
@@ -363,7 +361,10 @@ function evictLocalRoom(
         );
       // Before the room is accepted again: a failure keeps it refused and
       // retries the discard, which then moves it (the room stays rejected).
-      if (movesLineage) await store.resetLineage(room);
+      if (movesLineage)
+        await (SOURCE_ROOM_PATTERN.test(room)
+          ? sources.resetEpoch(room)
+          : store.resetLineage(room));
       failedStores.delete(room);
       pendingSources.delete(room);
       slowSaves.clear(room);

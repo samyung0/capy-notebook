@@ -3822,6 +3822,22 @@ components:
         - expiresAt
         - epoch
       type: object
+    SourceEpochReset:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SourceEpochReset.json
+          format: uri
+          readOnly: true
+          type: string
+        epoch:
+          format: int64
+          minimum: 1
+          type: integer
+      required:
+        - epoch
+      type: object
     SourceFailureInputBody:
       additionalProperties: false
       properties:
@@ -9865,6 +9881,37 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Persist an authorized source checkpoint
+      tags:
+        - Source collaboration
+  /internal/collaboration/files/{id}/epoch-reset:
+    post:
+      operationId: resetSourceEpoch
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Collaboration-Secret
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceEpochReset"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Move editing to a new epoch after a discarded room
       tags:
         - Source collaboration
   /internal/collaboration/files/{id}/publish:

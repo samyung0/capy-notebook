@@ -791,6 +791,29 @@ func TestRefusedRebuildMakesTheFileDue(t *testing.T) {
 	}
 }
 
+func TestSourceEpochResetKeepsTheSaveAndRetiresTheOldEpoch(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "epoch_reset_owner")
+	_, file := sourceTestFile(t, s, owner, "notes.txt", "txt")
+	doc := sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "saved")
+	if err := s.ResetSourceEpoch(ctx, file.ID, SourceEpochReset{Epoch: doc.Epoch}); err != nil {
+		t.Fatal(err)
+	}
+	// A second report of the same discard leaves the new epoch alone.
+	if err := s.ResetSourceEpoch(ctx, file.ID, SourceEpochReset{Epoch: doc.Epoch}); err != nil {
+		t.Fatal(err)
+	}
+	after := sourceTestSeed(t, s, owner, file.ID)
+	if after.Epoch != doc.Epoch+1 || after.Checkpoint != doc.Checkpoint || string(after.State) != "saved" {
+		t.Fatalf("after the reset: epoch %d checkpoint %d state %q", after.Epoch, after.Checkpoint, after.State)
+	}
+	// A save measured in the old epoch never lands.
+	if _, err := s.SaveSourceCheckpoint(ctx, file.ID, sourceTestSave(doc, owner, "stale")); err == nil {
+		t.Fatal("a save of the old epoch landed")
+	}
+}
+
 func TestPDFAnnotationsArePrivateAndBoundToSource(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
