@@ -96,7 +96,22 @@ it('reports each causal failure once across catch, HTTP relay and projection cle
 
   const upstreamId = 'a'.repeat(32);
   const upstream = withEventId(new Error('upstream failed'), upstreamId);
-  expect(captureError(upstream)).toBe(upstreamId);
+  // An error the gateway already reported is not sent again, but its cause
+  // is still logged here with the event id.
+  const lines: unknown[] = [];
+  const record = (...args: unknown[]) => {
+    lines.push(...args);
+  };
+  const errors = vi.spyOn(console, 'error').mockImplementation(record);
+  const infos = vi.spyOn(console, 'info').mockImplementation(record);
+  expect(captureError(upstream, { room: 'source:f:epoch:1' })).toBe(upstreamId);
+  errors.mockRestore();
+  infos.mockRestore();
+  const line = lines
+    .map(String)
+    .find((entry) => entry.includes('upstream failed'));
+  expect(line).toContain(upstreamId);
+  expect(line).toContain('source:f:epoch:1');
   const badId = withEventId(new Error('bad header'), 'not-an-event');
   captureError(badId);
   await Sentry.flush(1000);

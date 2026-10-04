@@ -104,12 +104,16 @@ export function captureError(
   error: unknown,
   tags: Record<string, string> = {}
 ): string | undefined {
+  // An error that already carries an event (one the gateway reported, or a
+  // capture further down) is not sent again, but every capture still logs
+  // its cause here: a failure must never be counted without a line.
   const existing = errorEventId(error);
-  if (existing) return existing;
   log('error', 'captured error', {
     ...tags,
     error: error instanceof Error ? error.message : String(error),
+    ...(existing && { event_id: existing }),
   });
+  if (existing) return existing;
   if (!Sentry.getClient()?.getDsn()) return;
   let eventId: string | undefined;
   Sentry.withScope((scope) => {

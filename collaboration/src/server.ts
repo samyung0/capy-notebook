@@ -1099,12 +1099,16 @@ async function storeSource(document: Document) {
     // room and discard every edit since the last checkpoint); a text room
     // saves it whole, as it always did. Either way it is reported once.
     const pending = pendingSourceSave(document, sourceFormats.get(document));
-    if (pending !== 'none' && !pendingReported.has(document)) {
-      pendingReported.add(document);
-      captureError(new SourcePendingError(), {
-        room,
-        stage: 'source_store_pending',
-      });
+    if (pending !== 'none') {
+      if (pendingReported.has(document))
+        log('warn', 'source store found pending content', { room });
+      else {
+        pendingReported.add(document);
+        captureError(new SourcePendingError(), {
+          room,
+          stage: 'source_store_pending',
+        });
+      }
     }
     if (pending === 'wait') {
       pendingSources.add(room);
@@ -1141,6 +1145,11 @@ async function storeSource(document: Document) {
     const refused =
       !readOnly && (sourceSaveRefused(error) || slowSaves.failed(room));
     const recoverable = !(readOnly || refused);
+    if (readOnly)
+      log('warn', 'source store refused read-only', {
+        error: error instanceof Error ? error.message : String(error),
+        room,
+      });
     document.broadcastStateless(
       JSON.stringify(
         readOnly
@@ -1170,6 +1179,11 @@ async function storeSource(document: Document) {
         state: rawState,
       });
     } else {
+      if (!readOnly)
+        log('warn', 'source store failed while the room is discarded', {
+          error: error instanceof Error ? error.message : String(error),
+          room,
+        });
       failedStores.delete(room);
       rejectAuthorizationRoom(room);
     }

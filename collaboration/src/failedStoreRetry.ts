@@ -1,5 +1,5 @@
 import { SOURCE_ROOM_PATTERN } from './auth.js';
-import { captureError, withEventId } from './observability.js';
+import { captureError, log, withEventId } from './observability.js';
 export interface FailedStoreSnapshot {
   checkpointIds: readonly string[];
   eventId?: string;
@@ -87,6 +87,12 @@ export function reportFailedStore(
   room: string
 ): string | undefined {
   if (previous) {
+    // Reported once per run of failures; each one still logs its cause.
+    log('warn', 'store failed again', {
+      error: error instanceof Error ? error.message : String(error),
+      ...(previous.eventId && { event_id: previous.eventId }),
+      room,
+    });
     withEventId(error, previous.eventId);
     return previous.eventId;
   }
