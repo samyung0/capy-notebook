@@ -41,6 +41,7 @@ import {
   type FailedStoreSnapshot,
   reportFailedStore,
 } from './failedStoreRetry.js';
+import { startHealthLog } from './health.js';
 import { readInternalCommandJson } from './internalCommandRequest.js';
 import {
   MATERIAL_DOCUMENT_LIMITS,
@@ -131,6 +132,11 @@ const subscriber = new IORedis(config.redisUrl, {
   maxRetriesPerRequest: null,
 });
 const store = new YjsDocumentStore(pool);
+// The per-minute collab_health line (observability-metering.md).
+const health = startHealthLog(() => ({
+  connections: server.hocuspocus.getConnectionsCount(),
+  rooms: server.hocuspocus.documents.size,
+}));
 const sources = new SourceDocumentStore(pool, config.apiUrl, config.secret);
 // Source room size estimates from applied update bytes (updateFitsRoom).
 const sourceSizes = new WeakMap<Y.Doc, number>();
@@ -658,6 +664,7 @@ const server = new Server<CollaborationContext>({
   // eviction always reaches this instance over Redis pub/sub and populates
   // `evictingRooms`, so the local set is authoritative here.
   async beforeHandleMessage({ connection, document, update }) {
+    health.message(update);
     assertRoomAvailable(document.name);
     const context = connection.context as CollaborationContext | undefined;
     if (!context || context.expiresAt <= Math.floor(Date.now() / 1000)) {
@@ -942,10 +949,13 @@ const server = new Server<CollaborationContext>({
         const finish = beginStore(documentName);
         try {
           let stored: Awaited<ReturnType<YjsDocumentStore['store']>>;
+          const started = performance.now();
           try {
             assertRoomAvailable(documentName, true);
             stored = await store.store(documentName, snapshot);
+            health.material.record(performance.now() - started, true);
           } catch (error) {
+            health.material.record(performance.now() - started, false);
             storeFailures += 1;
             storeFailureGenerations.set(
               documentName,
@@ -1092,6 +1102,7 @@ async function storeSource(document: Document) {
   const snapshot = roomSnapshot(document);
   const rawState = snapshot.state;
   const claimed = [...(pendingCheckpoints.get(room) ?? [])];
+  const started = performance.now();
   try {
     // Pending content (an update that arrived ahead of one it depends on) is
     // not the engine refusing the state: an Office room waits as a transient
@@ -1127,7 +1138,9 @@ async function storeSource(document: Document) {
     slowSaves.clear(room);
     clearDocumentContributors(document, saved.contributors);
     sourceReceipt(document, claimed, saved.checkpoint);
+    health.source.record(performance.now() - started, true);
   } catch (error) {
+    health.source.record(performance.now() - started, false);
     storeFailures++;
     storeFailureGenerations.set(
       room,

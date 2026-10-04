@@ -50,3 +50,4 @@
 - Developer Epo requested (2026-10-02) invoices use the same static table skeleton loading treatment as Detailed usage. src/features/billing/SubscriptionTab.tsx src/features/billing/BillingTable.tsx
 - Developer Epo requested (2026-10-02) the Subscription Upgrade to Pro button uses the default dark style. src/features/billing/SubscriptionTab.tsx
 - Developer decided (2026-10-02) Jev grading usage is recorded and never charged, for signed-in and anonymous users; anonymous grading is capped per salted IP hash per day and globally, with a random IndexedDB id recorded for reporting and no browser fingerprinting. anonymous-study-plan.md
+- Developer Epo decided (2026-10-04) the collaboration server logs a per-minute collab_health line (event-loop delay, message rate, store duration, connections) so capacity is visible in UAT and production. collaboration/src/health.ts collaboration/src/server.ts

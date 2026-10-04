@@ -72,6 +72,23 @@ The gateway emits one access line per request from `obs.AccessLog`, including
 **closes**, so `duration_ms` is the life of the stream — the useful number for
 finding streams that hang.
 
+The collaboration server logs one `collab_health` line per minute
+(`collaboration/src/health.ts`, an unref'd timer; counting a message is an
+increment, nothing allocates):
+
+| Field | Meaning |
+| --- | --- |
+| `lag_p99_ms`, `lag_max_ms` | Main-thread event-loop delay over the minute (`perf_hooks.monitorEventLoopDelay`, reset each line) |
+| `updates_per_s`, `awareness_per_s` | Inbound sync frames (document updates and sync steps) and awareness frames per second |
+| `material_stores`, `source_stores` | Per kind of room: `count`, `failures`, `p95_ms`, `max_ms` of the saves in the minute |
+| `connections`, `rooms` | Open connections and loaded rooms at the line |
+
+Read it from the delay first. A single Node process handles every room, so
+an event-loop p99 near or above about 100 ms means the server is near
+capacity: every message, save and access check waits that long. Store
+duration that grows while the delay stays low points at Postgres or the
+gateway instead; `failures` say which kind of room is failing to save.
+
 `obs.ClientIP` prefers `CF-Connecting-IP`. That header is only trustworthy while
 the origin refuses non-Cloudflare traffic; see step 3 of the runbook. If the
 origin is directly reachable, an attacker forges it and every IP-keyed rate
