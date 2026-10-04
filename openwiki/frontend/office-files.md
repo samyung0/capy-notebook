@@ -1034,7 +1034,9 @@ applies and is final too (a 413 `SourceRequestError`, never retried).
 
 The browser retains unacknowledged edits in IndexedDB, in the draft store notes
 share (`src/lib/editDrafts.ts`, database `capy-edit-drafts`; the old
-`capy-source-drafts` rows are copied over once and that database deleted).
+`capy-source-drafts` rows are copied over once, with a `migrated` marker in
+the same transaction so a database an old tab recreates is never copied
+again, and that database is deleted best effort).
 A session (one editor mount) writes its whole state, latest only, at most
 every 250 ms, and not at all once a receipt covers it, so a saved draft never
 returns as a recovery prompt. Each row names its lineage, the room and base it
@@ -1050,7 +1052,9 @@ gone) is skipped, never an editing error; a reopened draft whose base is gone
 is dropped with "Some unsaved edits from your last session couldn't be
 restored." A save refused for good keeps the session's state as one refused
 row (never merged back) and enters recovery; one refused for lost access or a
-missing file deletes every row of the file (see
+missing file deletes every row of the file, other tabs' included (not for a
+403 about the account itself, which keeps them); a refusal with nothing
+unsaved deletes only this session's rows (see
 [error handling](error-handling.md#collaborative-source-failures)).
 Network and recoverable save failures leave drafts available. Before sending
 buffered updates after reconnect, the token request verifies the current

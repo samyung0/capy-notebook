@@ -1,4 +1,4 @@
-import { isApiError } from '@/api/client';
+import { isAccountForbiddenError, isApiError } from '@/api/client';
 import {
   COLLABORATION_FORBIDDEN_REASON,
   COLLABORATION_NOT_FOUND_REASON,
@@ -24,6 +24,50 @@ export function roomRefusal(reason: string, tokenError?: unknown): RoomRefusal {
   if (reason === COLLABORATION_FORBIDDEN_REASON || status === 403)
     return 'forbidden';
   return 'retry';
+}
+
+/**
+ * Whether a refusal means this user no longer has the document, so its stored
+ * edits go: a missing or trashed document, or the gateway's 403 for the
+ * document itself. An account-level 403 (suspended, deletion pending) keeps
+ * them, and so does the collaboration service's forbidden reason alone, which
+ * an account lock gives too; the load-time sweep settles that case.
+ */
+export function refusalDropsDrafts(
+  refusal: RoomRefusal,
+  tokenError?: unknown
+): boolean {
+  if (refusal === 'notFound') return true;
+  return (
+    refusal === 'forbidden' &&
+    isApiError(tokenError) &&
+    tokenError.status === 403 &&
+    !isAccountForbiddenError(tokenError)
+  );
+}
+
+/**
+ * Sends a checkpoint request only once the room synced. The server handles a
+ * connection's messages in order and answers the client's step 1 with its own
+ * step 1 first, so a request sent at `synced` follows the step 2 carrying this
+ * client's offline or restored edits. Sent earlier (once authenticated, say),
+ * a store could answer it without them, and the receipt would claim edits the
+ * server never saved. Returns whether it was sent; an unsent request goes out
+ * when the room syncs.
+ */
+export function sendCheckpointRequest(
+  room: { synced: boolean; send: (payload: string) => void },
+  request: { id: string; flush?: boolean }
+): boolean {
+  if (!room.synced) return false;
+  room.send(
+    JSON.stringify({
+      id: request.id,
+      type: 'checkpoint-request',
+      ...(request.flush && { flush: true }),
+    })
+  );
+  return true;
 }
 
 const RETRY_BASE_MS = 500;

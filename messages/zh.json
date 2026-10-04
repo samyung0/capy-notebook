@@ -1285,7 +1285,6 @@
   "source_edit_publishing": "正在发布此文件的新版本，请稍后重新加载页面。",
   "source_edit_paused": "编辑因维护暂停。您的更改已保存。维护结束后重新加载页面即可继续编辑。",
   "source_edit_paused_error": "编辑因维护暂停。请在维护结束后重试。",
-  "source_edit_draft_base_missing": "无法打开此草稿，因为此设备上已不再保存其原始文件。",
   "error_source_changed_title": "来源已更改",
   "error_source_changed_body": "来源在此请求运行期间发生了更改。请重试。",
   "error_revision_conflict_title": "其他人已修改此内容",

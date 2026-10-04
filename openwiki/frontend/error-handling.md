@@ -290,7 +290,7 @@ progress always ends by reading the outcome from the mock server.
 Reload remembers the selected button but does not replay actions.
 Explicit source fixtures retain their checkpoint identities and epochs in
 session storage; their drafts use the real IndexedDB code in the separate
-`capy-source-drafts-msw-scenarios` database. Ordinary MSW source files continue
+`capy-edit-drafts-msw-scenarios` database. Ordinary MSW source files continue
 to skip durable drafts.
 
 Actual onboarding, source import, workspace settings, task, and transfer dialogs
@@ -376,8 +376,9 @@ without waiting for the server's 60 to 120 s timeouts: `SOURCE_SAVE_DELAY_MS`
 (45 s; a source room stores at most 30 s after a change) and
 `NOTE_SAVE_DELAY_MS` (25 s; a note room at most 10 s), counted in connected
 time only (`SaveDelayClock` in `src/features/notes/saveDelay.ts`). An edit is
-counted from the request that carries it, sent 1 s after typing stops. The
-banner stays until a receipt covers every change. Closing it hides it for that
+counted from the request that carries it, sent 1 s after typing stops. Any
+receipt clears the banner, since saving works again; it comes back only if
+the oldest request still unanswered crosses the threshold. Closing it hides it for that
 episode only; the next failure shows it again. A connection still lost after
 30 s puts an editor that synced once into offline mode; before the first sync
 it shows only the header's red status.

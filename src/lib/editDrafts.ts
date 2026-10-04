@@ -1,5 +1,6 @@
 import * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
+import { isAccountForbiddenError, isApiError } from '@/api/client';
 
 /**
  * Unsaved collaborative edits kept on this device (notes, Office and text
@@ -87,11 +88,17 @@ function open(): Promise<IDBDatabase> {
     drafts.createIndex('key', 'key');
     drafts.createIndex('base', ['key', 'base']);
     opening.result.createObjectStore('bases');
+    // `migrated`: the old source drafts were copied; never again.
+    opening.result.createObjectStore('meta');
   };
   return request(opening);
 }
 
-type Stores = { drafts: IDBObjectStore; bases: IDBObjectStore };
+type Stores = {
+  bases: IDBObjectStore;
+  drafts: IDBObjectStore;
+  meta: IDBObjectStore;
+};
 
 async function transact<T>(
   mode: IDBTransactionMode,
@@ -100,10 +107,14 @@ async function transact<T>(
   const database = await open();
   try {
     return await new Promise((resolve, reject) => {
-      const transaction = database.transaction(['drafts', 'bases'], mode);
+      const transaction = database.transaction(
+        ['drafts', 'bases', 'meta'],
+        mode
+      );
       const result = work({
         bases: transaction.objectStore('bases'),
         drafts: transaction.objectStore('drafts'),
+        meta: transaction.objectStore('meta'),
       });
       transaction.oncomplete = () => resolve(result?.result);
       transaction.onerror = () => reject(transaction.error);
@@ -134,56 +145,76 @@ interface OldSourceDraft {
   state: Uint8Array;
 }
 
-/** Copy the old source-draft database's rows over once, then delete it. */
+/**
+ * Copy the old source-draft database's rows over once. A `migrated` marker,
+ * written in the same transaction as the copied rows, makes it once for good:
+ * a tab still running older code may recreate that database, and its rows
+ * are then never copied again. The old database is deleted best effort (an
+ * old tab holding it open blocks that, which must not hold up drafts).
+ */
 async function migrateSourceDrafts() {
   if (typeof indexedDB === 'undefined') return;
-  const listed = await indexedDB.databases?.().catch(() => undefined);
-  if (listed && !listed.some((entry) => entry.name === SOURCE_DATABASE)) return;
-  const old = await request(indexedDB.open(SOURCE_DATABASE));
+  const dropOld = () => {
+    indexedDB.deleteDatabase(SOURCE_DATABASE);
+  };
+  if (await transact('readonly', ({ meta }) => meta.get('migrated'))) {
+    dropOld();
+    return;
+  }
   let rows: OldSourceDraft[] = [];
   let baseKeys: IDBValidKey[] = [];
   let baseBytes: Uint8Array[] = [];
-  try {
-    if (old.objectStoreNames.contains('sessionDrafts')) {
-      const transaction = old.transaction(['sessionDrafts', 'bases']);
-      const bases = transaction.objectStore('bases');
-      [rows, baseKeys, baseBytes] = await Promise.all([
-        request<OldSourceDraft[]>(
-          transaction.objectStore('sessionDrafts').getAll()
-        ),
-        request(bases.getAllKeys()),
-        request<Uint8Array[]>(bases.getAll()),
-      ]);
+  const listed = await indexedDB.databases?.().catch(() => undefined);
+  if (!listed || listed.some((entry) => entry.name === SOURCE_DATABASE)) {
+    const old = await request(indexedDB.open(SOURCE_DATABASE));
+    try {
+      if (old.objectStoreNames.contains('sessionDrafts')) {
+        const transaction = old.transaction(['sessionDrafts', 'bases']);
+        const bases = transaction.objectStore('bases');
+        [rows, baseKeys, baseBytes] = await Promise.all([
+          request<OldSourceDraft[]>(
+            transaction.objectStore('sessionDrafts').getAll()
+          ),
+          request(bases.getAllKeys()),
+          request<Uint8Array[]>(bases.getAll()),
+        ]);
+      }
+    } finally {
+      old.close();
     }
-  } finally {
-    old.close();
   }
   const bases = new Map(
     baseKeys.map((key, index) => [String(key), baseBytes[index]])
   );
   await transact('readwrite', (stores) => {
-    for (const row of rows) {
-      // `fileId` was `${actorId}:${fileId}`; bases were keyed by it and SHA.
-      const [actorId, fileId] = row.fileId.split(':');
-      const base = bases.get(String([row.fileId, row.baseSourceSHA256]));
-      if (!(base && actorId && fileId)) continue;
-      const key = draftKey(actorId, 'file', fileId);
-      stores.drafts.put({
-        base: row.baseSourceSHA256,
-        data: row.state,
-        id: `${row.id}:state`,
-        key,
-        kind: 'state',
-        lineage: `source:${fileId}:epoch:${row.epoch}@${row.baseSourceSHA256}`,
-        savedAt: Date.now(),
-        seq: 1,
-        session: row.id,
-        ...(row.refused && { refused: row.refused }),
-      } satisfies EditDraft);
-      stores.bases.put(base, [key, row.baseSourceSHA256]);
-    }
+    // Another tab may have copied them meanwhile.
+    const marker = stores.meta.get('migrated');
+    marker.onsuccess = () => {
+      if (marker.result) return;
+      stores.meta.put(true, 'migrated');
+      for (const row of rows) {
+        // `fileId` was `${actorId}:${fileId}`; bases were keyed by it and SHA.
+        const [actorId, fileId] = row.fileId.split(':');
+        const base = bases.get(String([row.fileId, row.baseSourceSHA256]));
+        if (!(base && actorId && fileId)) continue;
+        const key = draftKey(actorId, 'file', fileId);
+        stores.drafts.put({
+          base: row.baseSourceSHA256,
+          data: row.state,
+          id: `${row.id}:state`,
+          key,
+          kind: 'state',
+          lineage: `source:${fileId}:epoch:${row.epoch}@${row.baseSourceSHA256}`,
+          savedAt: Date.now(),
+          seq: 1,
+          session: row.id,
+          ...(row.refused && { refused: row.refused }),
+        } satisfies EditDraft);
+        stores.bases.put(base, [key, row.baseSourceSHA256]);
+      }
+    };
   });
-  await request(indexedDB.deleteDatabase(SOURCE_DATABASE));
+  dropOld();
 }
 
 // One queue for every read and write, so a read sees each write queued before
@@ -421,6 +452,9 @@ export function recordDrafts({
   let state: { seq: number; bytes: number } | null = null;
   let offline = false;
   let snapshotDue = false;
+  // A write failed: storage may lack anything since, so the next write holds
+  // the whole state, and storage reads as working only once that lands.
+  let gap = false;
   let over = false;
   let stopped = false;
   let storageOk = true;
@@ -453,15 +487,18 @@ export function recordDrafts({
       onLimit?.(true);
     }
   };
-  const write = (work: Promise<void>) =>
+  const write = (work: Promise<void>, whole = false) =>
     work.then(
       () => {
+        if (gap && !whole) return;
+        gap = false;
         if (storageOk) return;
         storageOk = true;
         onStorage?.(true);
       },
       (error) => {
         console.warn('Draft storage failed:', error);
+        gap = true;
         if (!storageOk) return;
         storageOk = false;
         onStorage?.(false);
@@ -476,8 +513,11 @@ export function recordDrafts({
       return Promise.resolve();
     const writes: EditDraft[] = [];
     const removed: { id: string; seq: number }[] = [];
+    let whole = false;
     if (fullState) {
-      if (state?.seq !== sequence) {
+      // Past the offline bound nothing more is stored (the editor stopped).
+      if ((gap || state?.seq !== sequence) && !over) {
+        whole = true;
         const data = Y.encodeStateAsUpdate(doc);
         state = { bytes: data.length, seq: sequence };
         writes.push(row('state', sequence, data));
@@ -505,9 +545,14 @@ export function recordDrafts({
           ...rows.slice(-1).map((last) => row('update', last.seq, last.data))
         );
       }
-      // The whole document once per offline episode (and at unmount): the
-      // base later updates need when they open in recovery.
-      if ((snapshot || snapshotDue) && state?.seq !== sequence) {
+      // The whole document once per offline episode (and at unmount), and
+      // after a failed write: the base later updates need when they open in
+      // recovery. Not past the offline bound.
+      if (
+        !over &&
+        (gap || ((snapshot || snapshotDue) && state?.seq !== sequence))
+      ) {
+        whole = true;
         snapshotDue = false;
         const data = Y.encodeStateAsUpdate(doc);
         state = { bytes: data.length, seq: sequence };
@@ -523,14 +568,17 @@ export function recordDrafts({
         deleteDrafts(
           removed.map((item) => ({ id: item.id, key, seq: item.seq }))
         ),
-      ]).then(() => undefined)
+      ]).then(() => undefined),
+      whole
     );
   };
 
   const onUpdate = (update: Uint8Array, origin: unknown) => {
     if (stopped || ignore(origin)) return;
     sequence++;
-    if (!fullState) buffer.push({ data: update, seq: sequence });
+    // Past the offline bound the editor stopped taking edits; anything that
+    // still arrives stays in memory and syncs on reconnect.
+    if (!(fullState || over)) buffer.push({ data: update, seq: sequence });
     checkLimit();
     timer ??= setTimeout(() => void flush(), FLUSH_MS);
   };
@@ -634,14 +682,19 @@ export function recordDrafts({
 
 export type DraftRecorder = ReturnType<typeof recordDrafts>;
 
-/** Whether the server says this account no longer has the document. */
+/** Whether the server says this account no longer has the document: a 404,
+ * or a 403 that is not about the account itself (suspended, deletion
+ * pending), which keeps the drafts. */
 async function documentGone(probe: () => Promise<unknown>) {
   try {
     await probe();
     return false;
   } catch (error) {
-    const status = (error as { status?: unknown } | null)?.status;
-    return status === 403 || status === 404;
+    if (!isApiError(error)) return false;
+    return (
+      error.status === 404 ||
+      (error.status === 403 && !isAccountForbiddenError(error))
+    );
   }
 }
 

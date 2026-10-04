@@ -108,42 +108,56 @@ test('offline edits outlive a reload and save once the room is back', async ({
 test('edits from a room that moved on open read-only for copying until Reload', async ({
   page,
 }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(150_000);
   await openNote(page);
-  await setOnline(page, false);
-  await type(page, ' Kept for copying.');
-  await expect.poll(() => storedDrafts(page)).toBeGreaterThan(0);
-  // The service discarded unsaved room state while this tab was away.
-  await page.evaluate(async () => {
-    const path = '/src/mocks/collaboration.ts';
-    const { moveMockMaterialRoom } = await import(path);
-    moveMockMaterialRoom('mock-scenario-note', true);
-  });
-  await setOnline(page, true);
-
   const banner = page.getByTestId('save-banner');
   const recovery = page.getByTestId('note-recovery');
-  const shown = async () => {
+  const editor = page.locator('[contenteditable="true"]').first();
+  // Offline edits, then the service discards unsaved room state while this
+  // tab is away.
+  const moveWhileOffline = async (text: string) => {
+    await setOnline(page, false);
+    await type(page, text);
+    await expect.poll(() => storedDrafts(page)).toBeGreaterThan(0);
+    await page.evaluate(async () => {
+      const path = '/src/mocks/collaboration.ts';
+      const { moveMockMaterialRoom } = await import(path);
+      moveMockMaterialRoom('mock-scenario-note', true);
+    });
+    await setOnline(page, true);
+  };
+  const shown = async (text: string) => {
     await expect(banner).toContainText(
       'This file changed while your edits were waiting to sync. Copy anything you need, then reload.',
       { timeout: 30_000 }
     );
-    await expect(recovery).toContainText('Kept for copying.');
+    await expect(recovery).toContainText(text);
     await expect(recovery.locator('[contenteditable="true"]')).toHaveCount(0);
     // Reload is the only way out.
     await expect(banner.getByRole('button')).toHaveText(['Reload']);
   };
-  await shown();
+
+  // Reload straight from recovery opens the live note with no stale offline
+  // banner from the editor that went before.
+  await moveWhileOffline(' Copied first.');
+  await shown(' Copied first.');
+  await banner.getByRole('button', { name: 'Reload' }).click();
+  await expect(editor).toContainText(seed, { timeout: 30_000 });
+  await expect(editor).not.toContainText('Copied first.');
+  await expect(banner).toHaveCount(0);
+  await expect.poll(() => storedDrafts(page)).toBe(0);
+
+  await moveWhileOffline(' Kept for copying.');
+  await shown('Kept for copying.');
   await shot(page, 'recovery');
   // Never merged: a reload shows the same recovery.
   await page.evaluate(() => localStorage.setItem('capy.theme', 'mocha'));
   await page.reload();
-  await shown();
+  await shown('Kept for copying.');
   await shot(page, 'recovery-dark');
   await page.evaluate(() => localStorage.setItem('capy.theme', 'latte'));
 
   await banner.getByRole('button', { name: 'Reload' }).click();
-  const editor = page.locator('[contenteditable="true"]').first();
   await expect(editor).toContainText(seed, { timeout: 30_000 });
   await expect(editor).not.toContainText('Kept for copying.');
   await expect(banner).toHaveCount(0);

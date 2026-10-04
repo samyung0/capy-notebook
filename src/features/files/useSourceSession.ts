@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
-import { api, isApiError, qk } from '@/api/client';
+import { api, isAccountForbiddenError, isApiError, qk } from '@/api/client';
 import { useMe } from '@/api/hooks';
 import type { SourceCollaborationToken, SourceSession } from '@/api/types';
 import {
@@ -11,8 +11,10 @@ import {
 import { COLLABORATION_READ_ONLY_REASON } from '@/features/notes/collaborationEvents';
 import type { NoteEditorSaveState } from '@/features/notes/editorMode';
 import {
+  refusalDropsDrafts,
   roomReconnector,
   roomRefusal,
+  sendCheckpointRequest,
   socketOpen,
 } from '@/features/notes/roomConnection';
 import {
@@ -228,6 +230,8 @@ export function useSourceSession(
     acknowledged: number;
     pending: Map<string, number>;
     recovery: boolean;
+    /** The room synced since it last connected: receipts may be asked. */
+    synced: boolean;
   } | null>(null);
   const flushWaiters = useRef<
     { sequence: number; resolve: () => void; reject: (error: Error) => void }[]
@@ -239,7 +243,7 @@ export function useSourceSession(
       return Promise.reject(new SourceSessionError(m.source_edit_recovery()));
     if (active.acknowledged >= active.sequence && !bufferDirtyRef.current)
       return Promise.resolve();
-    if (!active.provider.isAuthenticated)
+    if (!active.synced)
       return Promise.reject(new SourceSessionError(m.source_edit_offline()));
     return new Promise((resolve, reject) => {
       flushWaiters.current.push({ reject, resolve, sequence: active.sequence });
@@ -281,8 +285,10 @@ export function useSourceSession(
         return;
       }
       if (isApiError(value) && (value.status === 404 || value.status === 403)) {
-        // The user no longer has this file: its stored edits go too.
-        void bestEffort(() => deleteDocumentDrafts(draftKey));
+        // The user no longer has this file: its stored edits go too (not
+        // for a 403 about the account itself: suspended, deletion pending).
+        if (!isAccountForbiddenError(value))
+          void bestEffort(() => deleteDocumentDrafts(draftKey));
         setUnavailable(value.status === 404 ? 'notFound' : 'forbidden');
         return;
       }
@@ -360,7 +366,9 @@ export function useSourceSession(
         for (const snapshot of found)
           Y.applyUpdate(recovered, snapshot.data, RESTORE_ORIGIN);
         // The lineage names the epoch and base the edits grew from.
-        const [, epoch] = LINEAGE_EPOCH.exec(draft.lineage) ?? [];
+        const epoch = LINEAGE_EPOCH.exec(draft.lineage)?.[1];
+        if (epoch === undefined)
+          throw new Error(`Draft lineage names no epoch: ${draft.lineage}`);
         setLoaded({
           bytes: base,
           doc: recovered,
@@ -401,6 +409,7 @@ export function useSourceSession(
         get sequence() {
           return recorder?.sequence ?? 0;
         },
+        synced: false,
       };
       const unsyncedWaiters: (() => void)[] = [];
       // Only a client that synced once has an editor to keep on screen.
@@ -444,10 +453,11 @@ export function useSourceSession(
         // A closed session never reconnects (replaced, paused, reset).
         provider: () => (cancelled || active.recovery ? null : provider),
       });
-      // Lost access or a file gone: go back to the last saved version,
-      // dropping this session's drafts (the reopened session shows the
-      // missing or no-access panel).
-      const reset = () => {
+      // Back to the last saved version with nothing unsaved worth keeping:
+      // this session's drafts go. Lost access or a file gone (`lostAccess`)
+      // drops every session's drafts of the file, other tabs' included; the
+      // reopened session shows the missing or no-access panel.
+      const reset = (lostAccess = false) => {
         if (cancelled) return;
         if (!sourceChangesCovered(active) || bufferDirtyRef.current)
           toastSaveUndone();
@@ -458,7 +468,8 @@ export function useSourceSession(
         rejectWaiters(new SourceSessionError(m.editor_save_failed_undone()));
         void (async () => {
           await recorder?.discard();
-          await bestEffort(() => deleteDocumentDrafts(draftKey));
+          if (lostAccess)
+            await bestEffort(() => deleteDocumentDrafts(draftKey));
           pendingInput(false);
           setGeneration((value) => value + 1);
         })();
@@ -544,18 +555,24 @@ export function useSourceSession(
       };
       // An explicit save (flush) persists at once; the idle request is
       // acknowledged by the room's next debounced store.
+      // Only once synced (sendCheckpointRequest says why); an edit made
+      // before then is covered by the request the sync sends.
       const checkpoint = (flush = false) => {
-        if (!provider?.isAuthenticated || active.recovery) return;
-        clearTimeout(timer);
+        if (!provider || active.recovery) return;
+        const room = provider;
         const id = crypto.randomUUID();
+        if (
+          !sendCheckpointRequest(
+            {
+              send: (payload) => room.sendStateless(payload),
+              synced: active.synced,
+            },
+            { flush, id }
+          )
+        )
+          return;
+        clearTimeout(timer);
         pending.set(id, active.sequence);
-        provider.sendStateless(
-          JSON.stringify({
-            id,
-            type: 'checkpoint-request',
-            ...(flush && { flush }),
-          })
-        );
         delay.requested(id);
       };
       active.checkpoint = checkpoint;
@@ -574,20 +591,28 @@ export function useSourceSession(
             fail(new SourceSessionError(m.source_edit_publishing()));
             return;
           }
-          const refusal = roomRefusal(reason, tokenError);
+          const failedToken = tokenError;
+          const refusal = roomRefusal(reason, failedToken);
           tokenError = null;
           if (refusal === 'readOnly') replace('readOnly');
           else if (refusal === 'retry') reconnect.refused();
           else if (!cancelled) {
             cancelled = true;
             provider?.disconnect();
-            void recorder?.discard();
-            void bestEffort(() => deleteDocumentDrafts(draftKey));
+            // An account lock keeps them (refusalDropsDrafts).
+            if (refusalDropsDrafts(refusal, failedToken)) {
+              void recorder?.discard();
+              void bestEffort(() => deleteDocumentDrafts(draftKey));
+            }
             setUnavailable(refusal);
           }
         },
-        onClose: () => reconnect.closed(socketOpen(provider)),
+        onClose: () => {
+          active.synced = false;
+          reconnect.closed(socketOpen(provider));
+        },
         onDisconnect: () => {
+          active.synced = false;
           delay.disconnected();
           active.disconnects++;
           active.handedOff = -1;
@@ -687,7 +712,7 @@ export function useSourceSession(
             event.epoch === session.epoch
           ) {
             if (event.recoverable === false) {
-              if (event.lostAccess) reset();
+              if (event.lostAccess) reset(true);
               else refuse();
               return;
             }
@@ -706,8 +731,13 @@ export function useSourceSession(
             !Array.isArray(event.checkpointIds)
           )
             return;
+          const before = active.acknowledged;
           if (acknowledgeSourceCheckpoint(active, event.checkpointIds))
             markSaved();
+          // Saving works again: the banner goes, and comes back only if the
+          // oldest request still unanswered crosses the threshold.
+          else if (active.acknowledged > before)
+            setBanner((current) => (current === 'delayed' ? null : current));
           delay.retain(pending.keys());
           flushWaiters.current = flushWaiters.current.filter((waiter) => {
             if (waiter.sequence <= active.acknowledged) {
@@ -719,6 +749,7 @@ export function useSourceSession(
         },
         onSynced: ({ state }) => {
           if (state && !cancelled && !active.recovery) {
+            active.synced = true;
             reconnect.connected();
             delay.connected();
             if (offlineMode) {

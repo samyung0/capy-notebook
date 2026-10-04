@@ -1,6 +1,11 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { isApiError, isMaterialContentUnreadable, qk } from '@/api/client';
+import {
+  isAccountForbiddenError,
+  isApiError,
+  isMaterialContentUnreadable,
+  qk,
+} from '@/api/client';
 import {
   useMaterial,
   useMaterialCollaborationToken,
@@ -166,9 +171,9 @@ function CollaborativeNoteEditor({
     ? draftKey(meData.id, 'material', material.id)
     : null;
   const onUnavailable = useCallback(
-    (kind: 'notFound' | 'forbidden') => {
+    (kind: 'notFound' | 'forbidden', dropDrafts: boolean) => {
       // The user no longer has this note: its stored edits go too.
-      if (storedKey)
+      if (storedKey && dropDrafts)
         void deleteDocumentDrafts(storedKey).catch(() => undefined);
       setUnavailable(kind);
       void qc.invalidateQueries({ queryKey: qk.material(material.id) });
@@ -201,7 +206,10 @@ function CollaborativeNoteEditor({
   } = useMaterialCollaborationToken(material.id, true, {
     errorBoundary: false,
   });
-  const canEdit = material.capabilities.canEditContent;
+  // Offline past the bound this device may hold: every editing control
+  // (toolbar, palette, block actions) stands down with the content.
+  const canEdit =
+    material.capabilities.canEditContent && offline !== 'offline-limit';
   const drafts = useNoteDrafts(
     storedKey,
     collaborationTokenData?.room,
@@ -210,10 +218,14 @@ function CollaborativeNoteEditor({
   const tokenStatus = isApiError(collaborationTokenError)
     ? collaborationTokenError.status
     : 0;
+  // A 403 about the account itself (suspended, deletion pending) keeps them.
+  const tokenDropsDrafts =
+    tokenStatus === 404 ||
+    (tokenStatus === 403 && !isAccountForbiddenError(collaborationTokenError));
   useEffect(() => {
-    if (storedKey && (tokenStatus === 403 || tokenStatus === 404))
+    if (storedKey && tokenDropsDrafts)
       void deleteDocumentDrafts(storedKey).catch(() => undefined);
-  }, [storedKey, tokenStatus]);
+  }, [storedKey, tokenDropsDrafts]);
   // Identity matters more than the allocation: this context is read from inside
   // the document tree, so a fresh object on every render makes React walk every
   // node's fiber looking for consumers instead of bailing out at the top.

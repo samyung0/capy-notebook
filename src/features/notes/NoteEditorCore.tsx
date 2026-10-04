@@ -77,8 +77,10 @@ import {
 } from './RemoteCursors';
 import {
   type RoomReconnector,
+  refusalDropsDrafts,
   roomReconnector,
   roomRefusal,
+  sendCheckpointRequest,
   socketOpen,
 } from './roomConnection';
 import { NOTE_SAVE_DELAY_MS, SaveDelayClock } from './saveDelay';
@@ -109,15 +111,17 @@ function roomProvider(editor: PlateEditor) {
 }
 
 /**
- * Asks the collaboration service for a durability receipt. Kept off the Y.Doc
- * on purpose: a marker written into the document would be an edit in its own
- * right, so acknowledging it would dirty the room and trigger a second store.
+ * Asks the collaboration service for a durability receipt, once the room
+ * synced (sendCheckpointRequest says why). Kept off the Y.Doc on purpose: a
+ * marker written into the document would be an edit in its own right, so
+ * acknowledging it would dirty the room and trigger a second store.
  */
-function sendCheckpointRequest(editor: PlateEditor, id: string) {
+function requestReceipt(editor: PlateEditor, synced: boolean, id: string) {
   const provider = roomProvider(editor);
-  if (!provider?.isConnected) return;
-  provider.provider.sendStateless(
-    JSON.stringify({ id, type: 'checkpoint-request' })
+  if (!provider) return;
+  sendCheckpointRequest(
+    { send: (payload) => provider.provider.sendStateless(payload), synced },
+    { id }
   );
 }
 
@@ -303,7 +307,7 @@ const NoteEditorContent = memo(function NoteEditorContent({
         spellCheck={false}
       />
       {/* Share the editor's containing block so scrolling moves both natively. */}
-      <FloatingToolbar />
+      {!readOnly && <FloatingToolbar />}
     </PlateContainer>
   );
 });
@@ -372,8 +376,9 @@ export function NoteEditorCore({
    * NOTE_SAVE_DELAY_MS while the editor keeps its edits; false once the
    * receipts catch up. */
   onSaveDelayed?: (delayed: boolean) => void;
-  /** The note was trashed or deleted, or this user lost access to it. */
-  onUnavailable?: (kind: 'notFound' | 'forbidden') => void;
+  /** The note was trashed or deleted, or this user lost access to it;
+   * `dropDrafts`: its stored edits go too (not for an account lock). */
+  onUnavailable?: (kind: 'notFound' | 'forbidden', dropDrafts: boolean) => void;
 }) {
   const qc = useQueryClient();
   const ydoc = useMemo(
@@ -395,6 +400,8 @@ export function NoteEditorCore({
   const rejected = useRef(false);
   // After the first sync a dropped connection keeps the editor on screen.
   const hasSynced = useRef(false);
+  // Synced now: checkpoint requests wait for it.
+  const roomSynced = useRef(false);
   const reconnector = useRef<RoomReconnector | null>(null);
   // The token request that failed, if one did: the provider only reports its
   // own "Failed to get token" text.
@@ -515,14 +522,17 @@ export function NoteEditorCore({
         event.type === 'checkpoint-persisted' &&
         event.materialId === material.id
       ) {
-        setDocumentStats((previous) =>
-          sameStats(previous, event.metrics) ? previous : event.metrics
-        );
-        setDocumentLimitError(
-          event.limitCode
-            ? `${materialLimitMessage(event.limitCode)} ${m.editor_limit_remove_only()}`
-            : null
-        );
+        const metrics = event.metrics;
+        if (metrics) {
+          setDocumentStats((previous) =>
+            sameStats(previous, metrics) ? previous : metrics
+          );
+          setDocumentLimitError(
+            event.limitCode
+              ? `${materialLimitMessage(event.limitCode)} ${m.editor_limit_remove_only()}`
+              : null
+          );
+        }
         // A receipt also answers earlier requests it covers (one sent while
         // offline, say), and deletes the stored drafts it covers.
         let covered = -1;
@@ -535,7 +545,9 @@ export function NoteEditorCore({
           void recorder.current?.covered(covered);
         }
         saveDelay.retain(pendingCheckpoints.current.keys());
-        if (!hasUnsavedWork()) reportSaveDelayed.current?.(false);
+        // Saving works again: the banner goes, and comes back only if the
+        // oldest request still unanswered crosses the threshold.
+        if (acknowledged) reportSaveDelayed.current?.(false);
         if (
           acknowledged &&
           pendingCheckpoints.current.size === 0 &&
@@ -644,6 +656,7 @@ export function NoteEditorCore({
           },
           onConnect: connecting,
           onDisconnect: () => {
+            roomSynced.current = false;
             saveDelay.disconnected();
             reconnector.current?.disconnected();
             if (!navigator.onLine) {
@@ -656,6 +669,7 @@ export function NoteEditorCore({
             setStatus('error');
           },
           onSyncChange: ({ isSynced }) => {
+            roomSynced.current = isSynced;
             if (!isSynced || rejected.current) return;
             hasSynced.current = true;
             reconnector.current?.connected();
@@ -696,17 +710,20 @@ export function NoteEditorCore({
                     }: {
                       reason: string;
                     }) => {
-                      const refusal = roomRefusal(reason, tokenError.current);
+                      const failedToken = tokenError.current;
+                      const refusal = roomRefusal(reason, failedToken);
                       tokenError.current = null;
                       if (refusal === 'readOnly') readOnlyNow.current();
                       else if (refusal === 'retry')
                         reconnector.current?.refused();
                       else {
-                        void recorder.current?.discard();
-                        reportUnavailable.current?.(refusal);
+                        const drop = refusalDropsDrafts(refusal, failedToken);
+                        if (drop) void recorder.current?.discard();
+                        reportUnavailable.current?.(refusal, drop);
                       }
                     },
                     onClose: () => {
+                      roomSynced.current = false;
                       reconnector.current?.closed(
                         socketOpen(roomProvider(editorRef.current)?.provider)
                       );
@@ -867,6 +884,9 @@ export function NoteEditorCore({
       if (checkpointTimer.current) clearTimeout(checkpointTimer.current);
       if (initialized) editor.getApi(YjsPlugin).yjs.destroy();
       onEditorStatusChange?.(null);
+      // The next mount (a moved room, recovery, Reload) starts clean.
+      reportOffline.current?.(null);
+      reportSaveDelayed.current?.(false);
     };
   }, [collaborationToken.room, editor, onEditorStatusChange, setStatus]);
 
@@ -912,7 +932,7 @@ export function NoteEditorCore({
     // synchronously — the mock one does — would otherwise have its `saved`
     // acknowledgement overwritten by this line.
     markSyncing();
-    sendCheckpointRequest(editor, id);
+    requestReceipt(editor, roomSynced.current, id);
   }, [editor, markSyncing, saveDelay]);
 
   const scheduleCheckpoint = useCallback(() => {
@@ -935,7 +955,7 @@ export function NoteEditorCore({
 
   const resendPendingCheckpoints = useCallback(() => {
     for (const id of pendingCheckpoints.current.keys()) {
-      sendCheckpointRequest(editor, id);
+      requestReceipt(editor, roomSynced.current, id);
     }
   }, [editor]);
 
@@ -972,7 +992,10 @@ export function NoteEditorCore({
             currentUserId={currentUserId}
             discussions={discussions}
           >
-            <NoteToolbar />
+            {/* Offline past the bound: nothing may edit until reconnect. */}
+            <div className="contents" inert={offlineLimit}>
+              <NoteToolbar />
+            </div>
             <div className="min-h-0 flex-1 overflow-auto" ref={setScrollArea}>
               <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col">
                 {/* The room replaces the projection copy the moment it syncs,
@@ -1000,8 +1023,10 @@ export function NoteEditorCore({
                 )}
               </div>
             </div>
-            <EditorCommandPalette />
-            {editorAiEnabled(allowExternalAssets) && <AiMenu />}
+            {!offlineLimit && <EditorCommandPalette />}
+            {!offlineLimit && editorAiEnabled(allowExternalAssets) && (
+              <AiMenu />
+            )}
           </CollaborationProvider>
         </Plate>
       </div>

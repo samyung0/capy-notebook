@@ -87,41 +87,51 @@ describe('the draft store', () => {
     expect(await readDrafts('u_other:file:gone')).toHaveLength(1);
   });
 
-  it('copies the old source drafts over once and deletes their database', async () => {
+  it('copies the old source drafts over once for good and deletes their database', async () => {
     const state = new Uint8Array([7]);
     const base = new Uint8Array([9]);
-    await new Promise<void>((resolve, reject) => {
-      const opening = indexedDB.open('capy-source-drafts', 3);
-      opening.onupgradeneeded = () => {
-        const database = opening.result;
-        database.createObjectStore('sessionDrafts', { keyPath: 'id' });
-        database.createObjectStore('bases');
-      };
-      opening.onsuccess = () => {
-        const database = opening.result;
-        const transaction = database.transaction(
-          ['sessionDrafts', 'bases'],
-          'readwrite'
-        );
-        transaction.objectStore('sessionDrafts').put({
-          baseSourceSHA256: 'sha',
-          epoch: 4,
-          fileId: 'u_old:f_old',
-          id: 'old-session',
-          refused: true,
-          state,
-          version: 'v',
-        });
-        transaction.objectStore('bases').put(base, ['u_old:f_old', 'sha']);
-        transaction.oncomplete = () => {
-          database.close();
-          resolve();
+    // As an old tab writes it (and may recreate it after the copy).
+    const writeOld = (id: string) =>
+      new Promise<void>((resolve, reject) => {
+        const opening = indexedDB.open('capy-source-drafts', 3);
+        opening.onupgradeneeded = () => {
+          const database = opening.result;
+          database.createObjectStore('sessionDrafts', { keyPath: 'id' });
+          database.createObjectStore('bases');
         };
-        transaction.onerror = () => reject(transaction.error);
-      };
+        opening.onsuccess = () => {
+          const database = opening.result;
+          const transaction = database.transaction(
+            ['sessionDrafts', 'bases'],
+            'readwrite'
+          );
+          transaction.objectStore('sessionDrafts').put({
+            baseSourceSHA256: 'sha',
+            epoch: 4,
+            fileId: 'u_old:f_old',
+            id,
+            refused: true,
+            state,
+            version: 'v',
+          });
+          transaction.objectStore('bases').put(base, ['u_old:f_old', 'sha']);
+          transaction.oncomplete = () => {
+            database.close();
+            resolve();
+          };
+          transaction.onerror = () => reject(transaction.error);
+        };
+      });
+    const reload = async () => {
+      vi.resetModules();
+      return import('./editDrafts');
+    };
+    // A browser that never ran the new store (no marker yet).
+    await new Promise((resolve) => {
+      indexedDB.deleteDatabase('capy-edit-drafts').onsuccess = resolve;
     });
-    vi.resetModules();
-    const fresh = await import('./editDrafts');
+    await writeOld('old-session');
+    let fresh = await reload();
     const [row] = await fresh.readDrafts('u_old:file:f_old');
     expect(row).toMatchObject({
       base: 'sha',
@@ -131,8 +141,17 @@ describe('the draft store', () => {
       refused: true,
     });
     expect(await fresh.readDraftBase('u_old:file:f_old', 'sha')).toEqual(base);
-    const names = (await indexedDB.databases()).map((entry) => entry.name);
-    expect(names).not.toContain('capy-source-drafts');
+    await expect
+      .poll(async () =>
+        (await indexedDB.databases()).map((entry) => entry.name)
+      )
+      .not.toContain('capy-source-drafts');
+    // An old tab recreates it later: never copied again.
+    await writeOld('later-session');
+    fresh = await reload();
+    expect(
+      (await fresh.readDrafts('u_old:file:f_old')).map((entry) => entry.session)
+    ).toEqual(['old-session']);
   });
 });
 
@@ -290,7 +309,7 @@ describe('recording a note session', () => {
     expect(await readDrafts(key)).toEqual([]);
   });
 
-  it('reports the offline byte bound and lifts it on reconnect, dropping nothing', async () => {
+  it('reports the offline byte bound, stores nothing past it, and lifts it on reconnect', async () => {
     const key = 'u_1:material:limit';
     const onLimit = vi.fn();
     const { client } = syncedClient('');
@@ -307,11 +326,13 @@ describe('recording a note session', () => {
     expect(onLimit).not.toHaveBeenCalled();
     recorder.disconnected();
     expect(onLimit).toHaveBeenLastCalledWith(true);
+    await recorder.flush();
+    // Past the bound nothing more is stored: what was held stays.
     client.getText('content').insert(0, 'y');
     await recorder.flush();
     const text = new Y.Doc();
     applyDrafts(text, await readDrafts(key), 'restore');
-    expect(text.getText('content').toString()).toBe(`y${'x'.repeat(100)}`);
+    expect(text.getText('content').toString()).toBe('x'.repeat(100));
     recorder.connected();
     expect(onLimit).toHaveBeenLastCalledWith(false);
   });
@@ -340,6 +361,13 @@ describe('recording a note session', () => {
     client.getText('content').insert(1, 'b');
     await recorder.flush();
     expect(onStorage).toHaveBeenLastCalledWith(true);
+    // The write after the failure held the whole document, so nothing the
+    // failed one lost is missing.
+    const rows = await readDrafts(key);
+    expect(rows.map((row) => row.kind).sort()).toEqual(['state', 'update']);
+    const restored = new Y.Doc();
+    applyDrafts(restored, rows, 'restore');
+    expect(restored.getText('content').toString()).toBe('ab');
   });
 
   it('keeps a refused session as one whole refused document', async () => {

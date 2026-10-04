@@ -1285,7 +1285,6 @@
   "source_edit_publishing": "A newer version of this file is being published. Reload the page in a moment.",
   "source_edit_paused": "Editing is paused for maintenance. Your changes were saved. Reload the page once maintenance is over to keep editing.",
   "source_edit_paused_error": "Editing is paused for maintenance. Try again once maintenance is over.",
-  "source_edit_draft_base_missing": "This draft cannot be opened because its original file is no longer stored on this device.",
   "error_source_changed_title": "Sources changed",
   "error_source_changed_body": "Sources changed while this request was running. Please try again.",
   "error_revision_conflict_title": "Someone else changed this",

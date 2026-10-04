@@ -24,13 +24,14 @@ export type MaterialLimitCode =
   | 'document_size_exceeded';
 
 export type CollaborationEvent =
+  /** Durable receipts. A request with nothing to save is answered at once,
+   * without `metrics` (the editor keeps what it shows). */
   | {
       checkpointIds: string[];
       limitCode: MaterialLimitCode | null;
       materialId: string;
-      metrics: MaterialDocumentStats;
+      metrics: MaterialDocumentStats | null;
       type: 'checkpoint-persisted';
-      yjsVersion: number;
     }
   /** The room refused this editor's state for good (a limit, or an invalid
    * document): the editor reloads the last saved version. */
@@ -93,9 +94,7 @@ export function parseCollaborationEvent(
   switch (raw.type) {
     case 'checkpoint-persisted': {
       const metrics = readStats(raw.metrics);
-      if (!(metrics && materialId) || typeof raw.yjsVersion !== 'number') {
-        return null;
-      }
+      if (!materialId || (raw.metrics !== undefined && !metrics)) return null;
       return {
         checkpointIds: Array.isArray(raw.checkpointIds)
           ? raw.checkpointIds.filter(
@@ -109,7 +108,6 @@ export function parseCollaborationEvent(
         materialId,
         metrics,
         type: 'checkpoint-persisted',
-        yjsVersion: raw.yjsVersion,
       };
     }
     case 'document-rejected': {

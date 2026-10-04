@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
 import {
   RECONNECT_GRACE_MS,
+  refusalDropsDrafts,
   roomReconnector,
   roomRefusal,
+  sendCheckpointRequest,
 } from './roomConnection';
 
 describe('roomRefusal', () => {
@@ -18,6 +20,41 @@ describe('roomRefusal', () => {
       roomRefusal('Failed to get token', new ApiError(403, 'Forbidden'))
     ).toBe('forbidden');
     expect(roomRefusal('permission-denied')).toBe('retry');
+  });
+});
+
+describe('refusalDropsDrafts', () => {
+  it('drops stored edits for a gone document, never for an account lock', () => {
+    const forbidden = new ApiError(403, 'Forbidden');
+    const suspended = new ApiError(403, 'Forbidden', undefined, {
+      code: 'account_suspended',
+    });
+    expect(refusalDropsDrafts('notFound')).toBe(true);
+    expect(refusalDropsDrafts('forbidden', forbidden)).toBe(true);
+    expect(refusalDropsDrafts('forbidden', suspended)).toBe(false);
+    // The collaboration service's reason alone reads the same for a lock.
+    expect(refusalDropsDrafts('forbidden')).toBe(false);
+    expect(refusalDropsDrafts('retry', forbidden)).toBe(false);
+  });
+});
+
+describe('sendCheckpointRequest', () => {
+  it('waits for the sync, not only the authentication', () => {
+    const send = vi.fn();
+    // Authenticated, not yet synced: the old gate sent here, ahead of the
+    // step 2 carrying the client's edits.
+    expect(sendCheckpointRequest({ send, synced: false }, { id: 'a' })).toBe(
+      false
+    );
+    expect(send).not.toHaveBeenCalled();
+    expect(
+      sendCheckpointRequest({ send, synced: true }, { flush: true, id: 'a' })
+    ).toBe(true);
+    expect(JSON.parse(send.mock.calls[0][0])).toEqual({
+      flush: true,
+      id: 'a',
+      type: 'checkpoint-request',
+    });
   });
 });
 

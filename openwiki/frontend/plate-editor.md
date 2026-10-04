@@ -411,7 +411,11 @@ commits broadcasts `checkpoint-persisted` with those IDs, the stored version, an
 the current document metrics. Only that receipt changes the browser status to
 Saved. Receipts stay out of the Y.Doc deliberately: a marker written into the
 document would be an edit, so acknowledging it would dirty the room and force a
-second store and projection for every save. Failed stores are retried per
+second store and projection for every save. A request that finds nothing
+waiting to be saved (no store debounced or running, no failed snapshot, no
+writer's update newer than the last store: `nothingToStore`) is answered at
+once without metrics, since a store runs only after a change; a reopened
+note's restored edits the room already holds would otherwise wait forever. Failed stores are retried per
 room with backoff (5 s, then doubling to 60 s,
 `collaboration/src/failedStoreRetry.ts`). A source room's live saves wait out
 the same backoff, so a state that keeps timing out in the shared Office worker
@@ -462,8 +466,13 @@ them. Deletes match the exact row, so another tab's newer write survives.
 
 On reconnect the provider's normal sync sends the unsent updates. The server
 answers a client's step 1 with its own step 1 and handles a connection's
-messages in order, so the step 2 carrying them lands before the checkpoint
-request the editor resends at `synced` (`provider-compat.test.ts`). On the
+messages in order, so the step 2 carrying them lands before any request sent
+at `synced` (`provider-compat.test.ts`). That holds only from `synced`: a
+request sent once the socket authenticated can be stored ahead of the step 2,
+and its receipt would claim edits the server never saved. Notes and sources
+therefore send checkpoint requests only while the room is synced
+(`sendCheckpointRequest` in `roomConnection.ts`); one made before waits, and
+the sync sends it. On the
 next open of the note `NoteEditor` reads its rows beside the token: rows of
 the token's room are applied before the room connects (updates whose base is
 missing stay pending until the sync brings it) and saved like any edit; rows
@@ -475,14 +484,23 @@ with "Some unsaved edits from your last session couldn't be restored."
 
 While offline a session may hold up to `maxContentBytes` (2 MiB) of unsaved
 local updates; past that the editor turns read-only under the `offline-limit`
-banner until it reconnects, and nothing is dropped. When storage fails
+banner until it reconnects: the content is `readOnly` (block actions follow
+Plate's read-only state), the toolbar is inert, the command palette, AI menu
+and floating toolbar are not mounted, `canEdit` is off for the rest, and the
+recorder stores nothing more. What was stored stays; nothing reaches the
+editor through REST-backed dialogs offline anyway. When storage fails
 (private mode, a full disk) editing continues in memory under the
-`offline-unstored` banner. `navigator.storage.persist()` is asked once, at the
+`offline-unstored` banner; after a failed write the next one holds the whole
+document, and the banner goes back to `offline` only once that lands. `navigator.storage.persist()` is asked once, at the
 first row written while offline, except on Firefox, which prompts. Safari
 deletes script storage of a site not visited for 7 days, and private windows
-delete it on close. Rows of a note the account no longer has go on a 403/404
-(token, refusal) and in a once-per-load idle sweep that asks each stored
-document's token endpoint.
+delete it on close. Rows of a note the account no longer has go on a 404, or a 403
+for the note itself (token, refusal), and in a once-per-load idle sweep that
+asks each stored document's token endpoint. A 403 about the account itself
+(`account_suspended`, `account_deletion_pending`: `isAccountForbiddenError`)
+keeps them, and so does the collaboration service's forbidden reason alone,
+which an account lock gives too; the sweep settles that case
+(`refusalDropsDrafts`).
 
 The lineage moves whenever the server throws away room state a client may
 hold (see below), so stored or in-memory edits from another lineage are never
@@ -540,7 +558,9 @@ again (`evictLocalRoom`, `discardMovesLineage` in `eviction.ts`,
 `resetLineage` in `persistence.ts`): one a store-time rejection started, or
 one whose room held a writer's unsaved update (a contributor marker) or a
 failed snapshot. A clean room keeps its name, so offline editors of it still
-sync. If the move fails, the room stays refused and the discard is retried.
+sync. If the move fails, the room stays refused and the discard is retried;
+the retry remembers that the move is owed (the failed attempt left the room
+clean), and a clean room's retry never moves it.
 Tokens, outbox events and commands already resolve the current schema, and
 `load`/`store` refuse a stale one, so a stale client sees another room before
 it syncs anything and opens copy-only recovery; item identities do not change,
