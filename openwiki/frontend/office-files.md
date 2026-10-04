@@ -1006,7 +1006,7 @@ Previously accepted input finishes at its old caret. A fresh click after that
 input drains and with available geometry must set a valid selection before typing
 resumes; the input exposes placement state and selection for browser checks.
 Run language metadata survives the native seed, Yjs projection and OOXML export.
-PPTX uses a native textarea for typing, clipboard copy and paste, and IME composition. Copy puts the selected text on the clipboard as plain text and HTML (bold, italic and underline set on the run); a selected shape copies its whole text, one story per line. Read-only allows selecting and copying text, with typing, paste and cut refused; there is no cut.
+PPTX uses a native textarea for typing, clipboard copy and paste, and IME composition. Copy puts the selected text on the clipboard as plain text and HTML (bold, italic and underline set on the run); a selected shape copies its whole text, one story per line. Read-only allows selecting and copying text, with typing, paste and cut refused; there is no cut. Edits over a selection that crosses paragraphs (typing, paste, IME, Enter, Backspace, Delete) replace it in one transaction and one undo step, joining the paragraphs under the first one's id and properties; a refused edit changes nothing and no longer blocks later saves. Read-only speaker notes are `readOnly`, so they can be selected and copied.
 Save waits for composition to commit, and refuses an unmounted presentation or
 an interrupted composition instead of claiming it was saved.
 DOCX's accepted input queue and PPTX image decoding report pending work to the
