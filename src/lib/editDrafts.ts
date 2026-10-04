@@ -80,16 +80,21 @@ function request<T>(work: IDBRequest<T>): Promise<T> {
 function open(): Promise<IDBDatabase> {
   if (typeof indexedDB === 'undefined')
     return Promise.reject(new Error('IndexedDB is unavailable'));
-  const opening = indexedDB.open(DATABASE, 1);
+  // Version 2 added `meta`; a version 1 database (an earlier build) keeps
+  // its drafts and bases and gains it.
+  const opening = indexedDB.open(DATABASE, 2);
   opening.onupgradeneeded = () => {
-    const drafts = opening.result.createObjectStore('drafts', {
-      keyPath: 'id',
-    });
-    drafts.createIndex('key', 'key');
-    drafts.createIndex('base', ['key', 'base']);
-    opening.result.createObjectStore('bases');
+    const database = opening.result;
+    if (!database.objectStoreNames.contains('drafts')) {
+      const drafts = database.createObjectStore('drafts', { keyPath: 'id' });
+      drafts.createIndex('key', 'key');
+      drafts.createIndex('base', ['key', 'base']);
+    }
+    if (!database.objectStoreNames.contains('bases'))
+      database.createObjectStore('bases');
     // `migrated`: the old source drafts were copied; never again.
-    opening.result.createObjectStore('meta');
+    if (!database.objectStoreNames.contains('meta'))
+      database.createObjectStore('meta');
   };
   return request(opening);
 }

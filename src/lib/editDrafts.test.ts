@@ -87,6 +87,35 @@ describe('the draft store', () => {
     expect(await readDrafts('u_other:file:gone')).toHaveLength(1);
   });
 
+  it('upgrades a version 1 database, keeping its drafts', async () => {
+    await new Promise((resolve) => {
+      indexedDB.deleteDatabase('capy-edit-drafts').onsuccess = resolve;
+    });
+    // As an earlier build created it: no `meta` store.
+    await new Promise<void>((resolve, reject) => {
+      const opening = indexedDB.open('capy-edit-drafts', 1);
+      opening.onupgradeneeded = () => {
+        const drafts = opening.result.createObjectStore('drafts', {
+          keyPath: 'id',
+        });
+        drafts.createIndex('key', 'key');
+        drafts.createIndex('base', ['key', 'base']);
+        opening.result.createObjectStore('bases');
+        drafts.put(draft('kept', { key: 'u_v1:material:m' }));
+      };
+      opening.onsuccess = () => {
+        opening.result.close();
+        resolve();
+      };
+      opening.onerror = () => reject(opening.error);
+    });
+    vi.resetModules();
+    const fresh = await import('./editDrafts');
+    expect(
+      (await fresh.readDrafts('u_v1:material:m')).map((row) => row.id)
+    ).toEqual(['kept']);
+  });
+
   it('copies the old source drafts over once for good and deletes their database', async () => {
     const state = new Uint8Array([7]);
     const base = new Uint8Array([9]);

@@ -73,8 +73,8 @@ describe('a checkpoint request with nothing to save', () => {
     const host = new Hocuspocus({ debounce: 60_000, quiet: true });
     const room = new Document('material:mat_1:schema:1');
     attachDocumentContributorTracker(room, 'instance-a');
-    // Just loaded, or everything stored: a reopened note's request (its
-    // restored edits the room already holds) is answered now.
+    // Everything stored: a request arriving after the store that held its
+    // edits is answered now.
     expect(nothingToStore(host, room, false)).toBe(true);
     expect(nothingToStore(host, room, true)).toBe(false);
     // A writer's update the room has not stored yet waits for that store.

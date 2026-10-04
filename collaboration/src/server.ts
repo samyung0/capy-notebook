@@ -932,7 +932,7 @@ const server = new Server<CollaborationContext>({
     }
     const source = SOURCE_ROOM_PATTERN.test(document.name);
     // A note room with nothing waiting to be saved answers at once; a store
-    // runs only after a change, so the request would wait forever.
+    // runs only after a change (nothingToStore says when that matters).
     if (
       !source &&
       !activeStores.has(document.name) &&

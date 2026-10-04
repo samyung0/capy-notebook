@@ -65,8 +65,11 @@ export async function registerCheckpointRequest(
  * request can be answered at once: no store debounced or running, no failed
  * snapshot to retry, and no writer's update newer than the last durable
  * state (a store clears the contributor markers it saved). A store only runs
- * after a change, so without this a request that adds nothing (a reopened
- * note's restored edits the room already holds) would never be answered.
+ * after a change, so without this a request that arrives after the store
+ * that already held its edits (one the 10 s max debounce forced while the
+ * request was on its way) would wait for an unrelated later change. A
+ * writer's sync always writes a marker, which schedules a store, so a
+ * reopened note's request never needs this.
  */
 export function nothingToStore(
   host: Pick<Hocuspocus, 'debouncer'>,

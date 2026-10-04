@@ -414,8 +414,12 @@ document would be an edit, so acknowledging it would dirty the room and force a
 second store and projection for every save. A request that finds nothing
 waiting to be saved (no store debounced or running, no failed snapshot, no
 writer's update newer than the last store: `nothingToStore`) is answered at
-once without metrics, since a store runs only after a change; a reopened
-note's restored edits the room already holds would otherwise wait forever. Failed stores are retried per
+once without metrics, since a store runs only after a change: a request
+arriving after the store that already held its edits (one the 10 s max
+debounce forced while the request was on its way) would otherwise wait for an
+unrelated later change. A writer's sync always writes a contributor marker,
+which schedules a store, so a reopened note's request is answered by that
+store. Failed stores are retried per
 room with backoff (5 s, then doubling to 60 s,
 `collaboration/src/failedStoreRetry.ts`). A source room's live saves wait out
 the same backoff, so a state that keeps timing out in the shared Office worker

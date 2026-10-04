@@ -243,7 +243,8 @@ export function useSourceSession(
       return Promise.reject(new SourceSessionError(m.source_edit_recovery()));
     if (active.acknowledged >= active.sequence && !bufferDirtyRef.current)
       return Promise.resolve();
-    if (!active.synced)
+    // Authenticated, not yet synced: the sync's own request answers it.
+    if (!(active.synced || active.provider.isAuthenticated))
       return Promise.reject(new SourceSessionError(m.source_edit_offline()));
     return new Promise((resolve, reject) => {
       flushWaiters.current.push({ reject, resolve, sequence: active.sequence });
