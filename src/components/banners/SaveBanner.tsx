@@ -3,10 +3,11 @@ import { FileBanner } from './FileBanner';
 
 /**
  * An open editor's save strip. `delayed`: saves are failing or unconfirmed
- * and the editor keeps its edits. `refused`: a save was refused for good and
- * the editor shows its unsaved content read-only until Reload.
+ * and the editor keeps its edits. `recovery`: the edits cannot be saved (a
+ * save refused for good, a newer version, a draft from another version) and
+ * the editor shows them read-only for copying until Reload.
  */
-export type SaveBannerState = 'delayed' | 'refused';
+export type SaveBannerState = 'delayed' | 'recovery';
 
 /**
  * Render it only while its state lasts: closing hides it for that episode,
@@ -42,7 +43,7 @@ export function SaveBanner({
             ]
           : []
       }
-      message={m.source_edit_refused_recovery()}
+      message={m.source_edit_recovery()}
       testId="save-banner"
       tone="error"
     />

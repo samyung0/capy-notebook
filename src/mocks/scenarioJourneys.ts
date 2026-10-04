@@ -225,7 +225,7 @@ export async function runJourney(
     await textEdit();
     await ui.click(m.action_save());
     // Refused for good: the unsaved edits stay on screen read-only under the
-    // refused strip.
+    // recovery strip.
     await ui.element('[role="alert"]');
     return;
   }
@@ -242,7 +242,7 @@ export async function runJourney(
     await textEdit();
     if (id === 'source-replaced') {
       announceSourceEpoch(scenarioText, advanceScenarioSource(scenarioText));
-      // Unsaved edits send a replaced session to recovery: the error strip.
+      // Unsaved edits send a replaced session to recovery: the recovery strip.
       await ui.element('[role="alert"]');
       return;
     }

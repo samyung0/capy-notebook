@@ -577,7 +577,7 @@ actions stay usable, and the runtime drops any other `menu-command` or
 id too. A case-by-case standard per pause state is a later task. Recovery also
 sends `selectable`: instead of an inert host, the runtime passes `readOnly` to
 the editor and lets pointer and keys through, so the unsaved content can be
-selected and copied (DOCX text, XLSX cells; the PPTX engine has no copy).
+selected and copied (DOCX text, XLSX cells; the PPTX engine has no copy yet).
 
 In edit mode the DOCX editor shows one toolbar row under the header, in Google
 Docs' order (`singleRowToolbar` with the menus in the host, `DocxEditor`'s
@@ -1043,17 +1043,17 @@ inputs and wait for active composition or gestures. Pending input counts as
 unsaved even before it reaches the shared document. Draft storage that fails
 (private mode, a full disk, a draft whose base is gone) is skipped, never an
 editing error. A save refused for good keeps the session's drafts, marked
-refused (shown read-only for copying until Reload, never merged back), and
-enters recovery; one refused
+refused (never merged back), and enters recovery; one refused
 for lost access or a missing file clears them (see
 [error handling](error-handling.md#collaborative-source-failures)).
 Network and recoverable save failures leave drafts available. Before sending
 buffered updates after reconnect, the parent verifies the current epoch. An old
-epoch with unsaved changes enters recovery and permits draft download instead
-of merging incompatible updates. Recovery merges drafts from the same old
-epoch/base. An explicit Discard this draft action removes only those exact
-versions and advances to the next retained group, then the current file.
-Downloading alone leaves the drafts intact. A client whose changes were all
+epoch with unsaved changes enters recovery instead of merging incompatible
+updates. Recovery merges drafts from the same old epoch/base and shows them
+read-only for copying (see
+[error handling](error-handling.md#collaborative-source-failures)); its Reload
+removes only those exact versions and advances to the next retained group,
+then the current file. A client whose changes were all
 saved when it learns about a completed handoff (from the room or on reconnect)
 shows the newer-version banner instead; a client with unsaved changes enters
 recovery.

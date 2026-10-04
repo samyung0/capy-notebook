@@ -168,17 +168,6 @@ export function SourceTextView({
                 },
               ]
             : []),
-          ...(source.status === 'recovery'
-            ? [
-                {
-                  disabled: source.discarding,
-                  label: m.source_edit_discard_draft(),
-                  onClick: () => {
-                    void source.discardDraft();
-                  },
-                },
-              ]
-            : []),
         ]}
         banner={source.banner}
         error={source.error}

@@ -161,7 +161,7 @@ export function SourceBanners({
   actions: FileBannerAction[];
   banner: SaveBannerState | null;
   error: string | null;
-  /** Leaves a refused save's read-only view for the last saved version. */
+  /** Leaves the recovery view for the last saved version. */
   onReload: () => void;
   paused: boolean;
   pausedAtOpen: boolean;
@@ -176,10 +176,10 @@ export function SourceBanners({
       {banner && (
         <SaveBanner onReload={onReload} reloading={reloading} state={banner} />
       )}
-      {/* A refused save's content is only copied: no download or discard. */}
+      {/* Recovery content is only copied: no download. */}
       {error && (
         <FileBanner
-          actions={banner === 'refused' ? [] : actions}
+          actions={banner === 'recovery' ? [] : actions}
           message={error}
           tone="error"
         />

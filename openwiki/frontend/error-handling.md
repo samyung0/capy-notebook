@@ -353,7 +353,7 @@ saved and the save banner; the retry's receipt brings Saved back.
 The save banner (`SaveBanner`, `src/components/banners/SaveBanner.tsx`) is one
 error strip under the file or note header with one state at a time:
 `delayed` ("Saving is delayed. Your recent changes aren't saved yet.") and
-`refused` (below). `delayed` shows on a server-reported failure with unsaved
+`recovery` (below). `delayed` shows on a server-reported failure with unsaved
 work (`source-checkpoint-failed` recoverable, `checkpoint-failed`), and also
 when the client's oldest checkpoint request stays unanswered past a threshold,
 without waiting for the server's 60 to 120 s timeouts: `SOURCE_SAVE_DELAY_MS`
@@ -380,16 +380,8 @@ input (422 `invalid_checkpoint`), an editing epoch that ended
 retry reloads names a newer epoch; it is never retried and never counts as lost
 access)) discards the room at once, and it reopens at the last good save. Each
 editor with unsaved edits keeps its drafts, marked refused, and enters
-recovery under the `refused` banner ("These changes couldn't be saved. Copy
-anything you need, then reload to continue from the last saved version."): the
-unsaved content stays on screen read-only and selectable, with no download or
-discard, and the banner's Reload clears the refused drafts and reopens the last
-saved version. A text source shows it in a read-only textarea. Office recovery
-sends `set-capabilities` with `selectable`, so the runtime hands the engine
-`readOnly` instead of making the editor inert: DOCX text and XLSX cells can be
-selected and copied, while PPTX slides can only be viewed (the PPTX engine has
-no copy). Refused drafts are never merged back on open (they would replay the
-refused state); a page refresh reopens them in the same view until Reload. An editor with nothing unsaved just reloads. A save
+recovery. Refused drafts are never merged back on open (they would replay the
+refused state). An editor with nothing unsaved just reloads. A save
 refused because access was lost or the file is gone (401/403/404,
 `lostAccess` on the failure message) clears the drafts and reloads to the
 file-missing or no-access panel, with no download: the user may no longer see
@@ -399,9 +391,21 @@ the editor with the file-missing or no-access panel. Draft storage failures
 (private mode, a full disk, a missing draft base) never block editing. Error
 strips carry localized copy only. An epoch
 change reloads a fully acknowledged editor; unacknowledged edits instead enter
-recovery with draft download and explicit discard of the displayed draft group.
-Discard checks versions, preserves newer writes from another tab and advances
-through remaining groups before reconnecting to the current file.
+recovery, as do drafts of another version found on open.
+
+Every recovery path (a save refused for good, a newer version over unsaved
+edits, a draft from another version) shows the `recovery` banner ("These
+changes couldn't be saved. Copy anything you need, then reload to continue
+from the last saved version."). The unsaved content stays on screen read-only
+and selectable, with no download or discard; a page refresh reopens the same
+view. The banner's Reload clears the drafts on display (checking versions, so
+another tab's newer write stays) and reopens the last saved version, after any
+other retained draft group. A text source shows the content in a read-only
+textarea. Office recovery sends `set-capabilities` with `selectable`, so the
+runtime hands the engine `readOnly` instead of making the editor inert: DOCX
+text and XLSX cells can be selected and copied, while PPTX slides can only be
+viewed (the PPTX engine has no copy yet). File › Download in the Office menus
+still exports what the editor shows.
 Failed processing does not invalidate saved edits,
 and credits are required for processing rather than persistence.
 

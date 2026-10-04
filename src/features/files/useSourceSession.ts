@@ -160,8 +160,8 @@ export function useSourceSession(
   } | null>(null);
   const [status, setStatus] = useState<SourceSaveState>('connecting');
   const [error, setError] = useState<string | null>(null);
-  // Saves failing or unconfirmed (`delayed`), or refused for good
-  // (`refused`: the session shows its unsaved content read-only).
+  // Saves failing or unconfirmed (`delayed`), or recovery (the session shows
+  // unsaved content it cannot save read-only, for copying, until Reload).
   const [banner, setBanner] = useState<SaveBannerState | null>(null);
   // The file was trashed or deleted, or access to it lost, while editing.
   const [unavailable, setUnavailable] = useState<
@@ -362,8 +362,7 @@ export function useSourceSession(
         });
         setStatus('recovery');
         setDirty(true);
-        if (draft.refused) setBanner('refused');
-        else setError(m.source_edit_recovery());
+        setBanner('recovery');
         return;
       }
       recoveryDrafts = null;
@@ -456,11 +455,11 @@ export function useSourceSession(
         recoveryDrafts = refused;
         for (const draft of refused)
           queueDraftWrite(() => writeSourceDraft(draft, bytes));
-        rejectWaiters(new SourceSessionError(m.source_edit_refused_recovery()));
+        rejectWaiters(new SourceSessionError(m.source_edit_recovery()));
         active.recovery = true;
         setLoaded({ bytes, doc: shared, session });
         setStatus('recovery');
-        setBanner('refused');
+        setBanner('recovery');
         setSynced(false);
         provider?.disconnect();
       };
@@ -513,8 +512,7 @@ export function useSourceSession(
           active.recovery = true;
           setLoaded({ bytes, doc: shared, session });
           setStatus('recovery');
-          setBanner(null);
-          setError(m.source_edit_recovery());
+          setBanner('recovery');
           setSynced(false);
         }
         provider?.disconnect();

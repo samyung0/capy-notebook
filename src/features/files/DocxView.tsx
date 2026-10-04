@@ -71,17 +71,6 @@ export default function DocxView({
                   },
                 },
               ]),
-          ...(runtime.status === 'recovery'
-            ? [
-                {
-                  disabled: runtime.discarding,
-                  label: m.source_edit_discard_draft(),
-                  onClick: () => {
-                    void runtime.discardDraft();
-                  },
-                },
-              ]
-            : []),
         ]}
         banner={runtime.banner}
         error={runtime.error}

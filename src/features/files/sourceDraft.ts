@@ -10,8 +10,8 @@ export interface SourceDraft {
   epoch: number;
   fileId: string;
   id: string;
-  /** Unsaved edits of a save the server refused for good: offered for
-   * download only, never merged back (they would replay the refused state). */
+  /** Unsaved edits of a save the server refused for good: shown read-only,
+   * never merged back (they would replay the refused state). */
   refused?: true;
   state: Uint8Array;
   version: string;

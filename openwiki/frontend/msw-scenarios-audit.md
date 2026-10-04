@@ -121,8 +121,8 @@ part of adding development tools.
   in session storage. Ordinary mock rooms remain in memory.
 - **Draft recovery:** explicit `mock-scenario-*` files use the existing draft
   transaction code in `capy-source-drafts-msw-scenarios`. The seeded older
-  lineage opens through the real recovery logic, including Download draft and
-  Discard draft. Reset clears only dedicated scenario drafts. Browser tests
+  lineage opens through the real recovery logic: the read-only draft and the
+  banner's Reload. Reset clears only dedicated scenario drafts. Browser tests
   reload and read this database without replacing the storage functions.
 - **Note permissions:** removing edit capability after opening follows the
   parent material guard and shows a static preview. The inner note-editor
@@ -183,7 +183,7 @@ Offline previews drive Query's online status, not `navigator.onLine`. Use
 Neither is equivalent to an MSW response override.
 
 `e2e/editor/scenario-journeys.spec.ts` checks one-click editor failures, retained
-edits, explicit page/form retry, draft download/discard/reload, Office export
+edits, explicit page/form retry, copy-only recovery across a reload until Reload, Office export
 recovery, pending auth cancellation and note guard behavior.
 `e2e/editor/file-errors.spec.ts` covers preview retries and actual workspace
 launchers. `e2e/editor/biology-office.spec.ts` opens each rich sample in View and
