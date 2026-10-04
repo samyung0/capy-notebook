@@ -307,9 +307,11 @@ export default function PdfView({
       />
       <Toolbar className="grid grid-cols-[max-content_minmax(0,1fr)] lg:grid-cols-[minmax(max-content,1fr)_minmax(0,max-content)_minmax(max-content,1fr)]">
         <span className="t-meta whitespace-nowrap text-fg-muted">
-          {numPages
-            ? m.pdf_page_count({ count: numPages, page: currentPage })
-            : m.common_loading()}
+          {numPages ? (
+            m.pdf_page_count({ count: numPages, page: currentPage })
+          ) : (
+            <Skeleton className="inline-block h-3.5 w-20 rounded-full align-middle" />
+          )}
         </span>
         <div
           aria-label={m.pdf_private_annotations()}

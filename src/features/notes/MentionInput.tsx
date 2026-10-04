@@ -19,6 +19,7 @@ import {
 } from 'platejs/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWorkspaceCollaborators } from '@/api/hooks';
+import { SkeletonList } from '@/components/ui/feedback';
 import { PopupMotion } from '@/components/ui/PopupMotion';
 import { m } from '@/i18n';
 import { useEditorRuntime } from './EditorRuntime';
@@ -203,9 +204,7 @@ export function MentionInputElement(
             style={floatingStyles}
           >
             {isPending && (
-              <span className="block px-2 py-3 text-fg-muted text-sm">
-                {m.editor_mention_loading()}
-              </span>
+              <SkeletonList className="gap-1 p-1" count={3} rowHeight={24} />
             )}
             {!isPending && isError && (
               <span className="block px-2 py-3 text-fg-muted text-sm">

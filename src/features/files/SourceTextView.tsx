@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useState } from 'react';
 import * as Y from 'yjs';
 import { api } from '@/api/client';
 import type { SourceSession, ViewableFile } from '@/api/types';
+import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
 import { FileModeControl, useFileMode } from './FileModeControl';
 import {
@@ -206,7 +207,19 @@ export function SourceTextView({
               registerFlush={source.flushHandler}
             />
           ) : (
-            <p className="p-4">{m.common_loading()}</p>
+            <div
+              aria-label={m.a11y_loading()}
+              className="flex flex-col gap-2.5 p-4"
+              role="status"
+            >
+              {[75, 100, 85, 65, 80].map((width) => (
+                <Skeleton
+                  className="h-4"
+                  key={width}
+                  style={{ width: `${width}%` }}
+                />
+              ))}
+            </div>
           )
         ) : source.doc ? (
           renderPreview(previewURL)

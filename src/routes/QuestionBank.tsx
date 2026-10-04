@@ -26,7 +26,7 @@ import { FloatingToolbar } from '@/components/ui/BlockToolbar';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/Drawer';
-import { Skeleton } from '@/components/ui/feedback';
+import { Skeleton, SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Input, InputError } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/TextArea';
@@ -204,12 +204,18 @@ export default function QuestionBank() {
         unreviewed={unreviewed}
       />
     )
+  ) : syllabusPending ? (
+    <SkeletonList count={8} rowHeight={28} />
   ) : null;
 
   let body: ReactNode;
   if (fetchStatus === 'paused') body = <QueryPausedState />;
   else if (syllabusPending)
-    body = <p role="status">{m.question_ui_loading_question_bank()}</p>;
+    body = (
+      <div aria-label={m.a11y_loading()} role="status">
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
   else if (syllabusError)
     body = (
       <BankError
