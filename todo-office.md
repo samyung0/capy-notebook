@@ -9,36 +9,49 @@ a developer decision recorded in `human/` before it is built (`human` skill).
 
 Where things stand: everything from the 2026-10-01 DOCX follow-up (items 1–6),
 the toolbar, perf and header tracks, DOCX copy/cut and the runtime-reload fix
-is on main and UAT (fork `capy-ci` dd87c75e, Capy 600a3ab9, UAT green).
+is on main and UAT. On 2026-10-04 the DOCX editor-vs-save round and perf round 2
+landed too (fork `capy-ci` 7d6a3bf2): nested-field shown text, `w:ptab` kept and
+drawn, line breaks and comment references in continued tails, text left in a
+field after its last link stays until publication, the Office benchmark and a
+bounded collaboration stress test in the manual Performance workflow, and the
+screen-reader mirror settling 300 ms after scrolling.
 
-## In progress
+## Open from the 2026-10-04 rounds
 
-- **DOCX editor and save disagree (3 cases).** An agent is fixing these on fork
-  branch `capy/docx-mismatch`, notes in
-  `/Users/sam/web/capy-docx-review-harnesses/2026-10-03-docx-mismatch/`.
-  - After an Enter split, a nested complex field before a projected link
-    (`[REF|[PAGE|7]L(AA)yy]`) shows "7" instead of the seed's text.
-  - A `w:ptab` in a moved run doesn't rejoin, and the save writes one link as
-    two.
-  - When a continued field's first-paragraph tail holds a break or a comment
-    reference, text typed at that paragraph's end shows after the field in the
-    editor but the save puts it inside the result. Item 4 fixed this for plain
-    tails (text after the field marker); these tails still use the old rule.
-- **DOCX perf leftovers.** An agent is on fork branch `capy/docx-perf-2`, notes
-  in `/Users/sam/web/capy-docx-review-harnesses/2026-10-03-perf2/` (earlier
-  numbers and probes in `…/2026-10-02-perf/NOTES.md`).
-  - Office spec for `bench/editor`: open to first paint, View to Edit ready and
-    keystroke to frame on a production build. The runtime has to report its own
-    timings (e.g. in `ready`), because the host can't read the cross-origin
-    frame's timeline, so it is a protocol change.
-  - Each close and reopen of a DOCX leaves about 35 MB of native memory (the
-    frame and its workers are gone). Unknown whether it plateaus (WASM code
-    cache) or leaks.
-  - On a 62-page document the worker engine's WASM grows 571 → 802 MB over 40
-    keys. Only measuring whether it plateaus: per-key engine cost on long
-    documents is not pursued (decision).
-  - Pages crossing the screen-reader mirror window rebuild while scrolling; this
-    is the remaining scroll CPU after mirror option B.
+- **Provisional budgets.** `bench:office` and `bench:stress` budgets come from
+  local runs; recalibrate after three CI runs of the Performance workflow, then
+  drop the jobs' `continue-on-error`.
+- **Server errors under collaboration stress.** At high local load (20 peers per
+  room) the stress test saw a projection deadlock (Postgres 40P01), a store
+  statement timeout and a source-access 500, with p95 41–64 s. Reviewer's read:
+  the collaboration pool's 15 s `statement_timeout` (`collaboration/src/server.ts`)
+  counts lock waits; every Office access check and checkpoint, the read-only
+  `CheckSourceAccess` included, takes `workspaces … FOR UPDATE` then
+  `users … FOR NO KEY UPDATE` (`store/storage.go`, `sourceLockTx` in
+  `source_documents.go`, `account_state.go`), while the Plate store takes
+  `FOR SHARE` on the same rows (`persistence.ts`), so many reconnecting Office
+  peers serialize writes in one workspace. The 40P01 cycle isn't pinned; the
+  candidate is the `materials` `FOR SHARE` → `FOR UPDATE` upgrade in
+  `persistence.ts`, and `ProjectMaterialContent` doesn't retry 40P01.
+- **View-mode memory** still creeps about 2 MB per open and close (232 → 271 MB
+  over 20 rounds); cause unknown, not the font loading.
+- **Stale shown text after a two-peer half-link delete.** Two peers each
+  deleting half of the last link of a field with a nested field
+  (`[REF|[PAGE|7]L(AA)]`) leave the editor showing `REF=` until publication; the
+  save is right. Known matrix rows. Fix: after applying a remote update, run
+  `refresh_shown` on fields whose links fall in the changed ranges.
+- **Field result running into a later paragraph.** After two Enters and a
+  Backspace in `L(AA)y,z` the editor shows `REF=y`, the seed `REF=`: the rejoin
+  folds tail text back into the field. Needs trimming and renumbering in the
+  rejoin.
+- **Enter before a nested field after a link** (`[REF|L(AA)[PAGE|7]yy]`): the
+  half-link before the split leaves the field.
+- **Positional-tab alignment.** `w:ptab` now survives and draws as an ordinary
+  tab (next tab stop), not aligned to the margin as Word does; layout work.
+- **Two peers on the nested shape** (one Backspaces while the other types in
+  P2): editor `yy`, reopened `7yy`; the accepted concurrent-join class.
+- **Clean stress build in CI.** The stress job's build without prebuilt images
+  wasn't verified locally (Docker Hub timed out); check the first CI run.
 
 ## Queued tracks (each needs its own decisions and a visual checkpoint)
 

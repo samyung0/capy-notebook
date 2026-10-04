@@ -429,6 +429,9 @@ Nested fields keep distinct anchors when both cross a paragraph boundary.
 Typing at a link's end keeps its history, frame and document-location
 attributes; unbolding a field's first child does not restore its old bold.
 Plain result runs after a projected simple field seed as that field's text.
+A positional tab (`w:ptab`) round-trips with its alignment, `relativeTo`,
+leader and run formatting; the editor draws it as an ordinary tab (to the
+next tab stop, not aligned to the margin or indent).
 
 Enter inside a projected link or TOC entry, or after a projected simple
 field's own result text, splits the field across the two paragraphs: its begin
@@ -443,14 +446,35 @@ code continues into the next lands ahead of the field. Two peers joining a
 just-split field at once can duplicate or revive text, and the join drops
 formatting applied to the moved text (both accepted).
 
-The plain runs (text, and tabs without their own formatting) that end the
-first paragraph's part of a continued field's result seed as editable text
-after the field marker, as the result in later paragraphs does: text typed at
-that paragraph's end stays where it was typed in the editor and the save, and
-Backspace there deletes one character. A run holding a break, a comment
-reference or a formatted tab stays in the field with the runs before it, so
-untouched files save as before. After Enter in such a field's link, the join
-stops at that text while the field continues past the joined paragraph.
+A split or joined field shows what the seed of its save shows: its own result
+runs while a link or simple field stays projected (a nested field before the
+link shows nothing), and its whole result, nested fields included, once
+Backspace, a range delete, Accept All of a suggested deletion or a type-over
+removes its last projected link. Only the shown text changes, so peers doing
+so at once agree. A moved run that shows nothing (an empty or formatting-only
+run) or holds a single line break or positional tab goes back with the join in
+its place. Text left ending a continued result after its last link is deleted
+stays in the field, which shows it, until the next publication reads it as
+text after the field (no tail move, so concurrent deletes converge without
+duplicates); until then Backspace at that paragraph's end deletes the whole
+field. Two peers each deleting half of the last link leave the shown text
+stale in the editor until publication; the save is right.
+
+The plain runs (text, plain line breaks, comment references, and tabs or
+positional tabs without their own formatting) that end the first paragraph's
+part of a continued field's result seed as editable text after the field
+marker, as the result in later paragraphs does: text typed at that
+paragraph's end stays where it was typed in the editor and the save, and
+Backspace there deletes one character. An untouched save may regroup those
+runs and write a line break's `w:type="textWrapping"`, and a comment
+reference's run loses its `CommentReference` style, as references elsewhere
+do. A run holding a page or column break, a line break with its own
+formatting or `w:clear`, or a formatted tab stays in the field with the runs
+before it, so those save as before. After Enter in such a field's link, the
+join stops at that text (or at a comment reference) while the field continues
+past the joined paragraph. Text typed right after a comment reference ending
+the tail is counted inside the comment once reopened, because the parser
+hoists the comment's end out of the field (unstable, as before).
 
 Bookmarks use zero-width positions in the shared `bookmarks` root, covered by
 Undo and publication rebasing. Typing moves their boundaries, Enter leaves one
@@ -467,10 +491,13 @@ document, headers, footers and notes.
 Seeds changed with the break and field-container rules, bookmark anchors,
 formatting revisions, multi-paragraph fields, Word comment references
 before leading breaks, result runs after projected simple fields, source
-order for bookmarks in paragraphs holding continued field characters and the
-plain tails of continued field results, so these pins ship in a
+order for bookmarks in paragraphs holding continued field characters, the
+plain tails of continued field results (line breaks and comment references
+included) and positional tabs, so these pins ship in a
 [maintenance window](#maintenance-window). UAT rooms of files holding a
-continued result with a plain tail are refused until republished.
+continued result with a plain tail, or a `w:ptab`, are refused until
+republished. No golden fixture holds either, so the golden seed hashes are
+unchanged.
 
 The DOCX toolbar has no Editing/Suggesting/Viewing dropdown: the editor always
 edits directly, and Capy's View/Edit control is the only mode (the engine's
