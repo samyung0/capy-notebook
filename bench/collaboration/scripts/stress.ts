@@ -310,8 +310,16 @@ async function stressRoom(room: Room) {
   }, 120_000);
   const texts = () => everyone.map(({ doc }) => roomText(room, doc));
   const converged = await until(() => new Set(texts()).size === 1, 60_000);
-  const fresh = await connect(room, `${room.kind} late joiner`);
-  const final = roomText(room, fresh.doc);
+  // A late joiner that cannot sync fails the room but keeps the report: the
+  // markers are then counted in the watcher's copy.
+  let fresh: Peer | undefined;
+  let lateJoinError: string | null = null;
+  try {
+    fresh = await connect(room, `${room.kind} late joiner`);
+  } catch (error) {
+    lateJoinError = error instanceof Error ? error.message : String(error);
+  }
+  const final = roomText(room, (fresh ?? watcher).doc);
   const counts = new Map<string, number>();
   for (const [marker] of final.matchAll(MARKER)) counts.set(marker, (counts.get(marker) ?? 0) + 1);
   const missing = [...room.typed.keys()].filter((marker) => !counts.has(marker));
@@ -327,7 +335,7 @@ async function stressRoom(room: Room) {
     const seen = room.seen.get(marker);
     return seen === undefined || !online ? [] : [seen - at];
   });
-  for (const { doc, provider } of [...everyone, fresh]) {
+  for (const { doc, provider } of [...everyone, ...(fresh ? [fresh] : [])]) {
     provider.destroy();
     doc.destroy();
   }
@@ -338,6 +346,7 @@ async function stressRoom(room: Room) {
     latencyP50Ms: percentile(latencies, 50),
     latencyP95Ms: percentile(latencies, 95),
     latencyMaxMs: percentile(latencies, 100),
+    lateJoinError,
     missing: missing.length,
     missingSample: heldBy,
     room: room.kind,
@@ -403,6 +412,7 @@ try {
   const errors = collaborationErrors();
   const failures = [
     ...results.flatMap((room) => [
+      ...(room.lateJoinError ? [`${room.room}: ${room.lateJoinError}`] : []),
       ...(room.converged ? [] : [`${room.room}: peers did not converge`]),
       ...(room.missing ? [`${room.room}: ${room.missing} typed markers missing`] : []),
       ...(room.doubled ? [`${room.room}: ${room.doubled} markers duplicated`] : []),
