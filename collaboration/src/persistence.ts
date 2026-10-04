@@ -9,7 +9,9 @@ import {
 import {
   type DocumentContributor,
   documentContributors,
+  type RoomSnapshot,
   removeDocumentContributors,
+  roomSnapshot,
 } from './contributors.js';
 import {
   applyMaterialCommands,
@@ -709,11 +711,15 @@ export class YjsDocumentStore {
     }
   }
 
-  async store(room: string, current: Y.Doc): Promise<StoredDocument> {
-    assertMaterialDocumentRoots(current);
+  async store(
+    room: string,
+    current: Y.Doc | RoomSnapshot
+  ): Promise<StoredDocument> {
+    // The merge below checks the roots too (plateValue).
+    const { contributors, state: currentState } =
+      current instanceof Y.Doc ? roomSnapshot(current) : current;
     const materialId = materialIdFromRoom(room);
     const roomSchema = roomSchemaFromRoom(room);
-    const contributors = documentContributors(current);
     const actors = [...new Set(contributors.map(({ userId }) => userId))];
     const client = await this.pool.connect();
     const merged = scratchDoc();
@@ -755,7 +761,7 @@ export class YjsDocumentStore {
         }
         applyStoredState(merged, existing.rows[0].state);
       }
-      Y.applyUpdate(merged, Y.encodeStateAsUpdate(current));
+      Y.applyUpdate(merged, currentState);
       const value = plateValue(merged);
       assertCanonicalMaterialValue(value, boundary.materialKind);
       const metrics = measureMaterialValue(value);

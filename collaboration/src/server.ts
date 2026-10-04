@@ -22,6 +22,7 @@ import {
   assertUpdatePreservesContributors,
   attachDocumentContributorTracker,
   clearDocumentContributors,
+  roomSnapshot,
 } from './contributors.js';
 import { EditError } from './editCommands.js';
 import {
@@ -929,12 +930,13 @@ const server = new Server<CollaborationContext>({
       serviceCommandCompletions,
       lastContext?.serviceCommandId,
       async () => {
-        const finish = beginStore(documentName);
-        const snapshot = scratchDoc();
-        Y.applyUpdate(snapshot, Y.encodeStateAsUpdate(document));
+        const snapshot = roomSnapshot(document);
         // Claimed before the store reads the document, so the committed state is
         // guaranteed to contain everything these receipts were asked about.
         const claimed = [...(pendingCheckpoints.get(documentName) ?? [])];
+        // Registered right before the try that ends it (nothing above awaits),
+        // so a throw reading the room cannot leave the store registered.
+        const finish = beginStore(documentName);
         try {
           let stored: Awaited<ReturnType<YjsDocumentStore['store']>>;
           try {
@@ -965,7 +967,7 @@ const server = new Server<CollaborationContext>({
               failedStores.set(documentName, {
                 checkpointIds: claimed,
                 eventId,
-                state: Y.encodeStateAsUpdate(snapshot),
+                state: snapshot.state,
               });
             }
             throw error;
@@ -1013,7 +1015,6 @@ const server = new Server<CollaborationContext>({
             void projection.catch(() => undefined);
           }
         } finally {
-          snapshot.destroy();
           finish();
         }
       }
@@ -1085,9 +1086,8 @@ async function storeSource(document: Document) {
   const room = document.name;
   // Awaited handoff callers must fail if their queued save was discarded.
   assertRoomAvailable(room, true);
-  const snapshot = scratchDoc();
-  const rawState = Y.encodeStateAsUpdate(document);
-  Y.applyUpdate(snapshot, rawState);
+  const snapshot = roomSnapshot(document);
+  const rawState = snapshot.state;
   const claimed = [...(pendingCheckpoints.get(room) ?? [])];
   try {
     // Pending content (an update that arrived ahead of one it depends on) is
@@ -1168,8 +1168,6 @@ async function storeSource(document: Document) {
       rejectAuthorizationRoom(room);
     }
     throw error;
-  } finally {
-    snapshot.destroy();
   }
 }
 

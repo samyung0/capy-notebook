@@ -76,6 +76,21 @@ function markerSnapshot(document: Y.Doc) {
     .sort((left, right) => left.key.localeCompare(right.key));
 }
 
+/** What a store saves of a room, read at one instant: its encoded state and
+ * its contributor markers. Taking it from the live room avoids integrating a
+ * copy of the room only to read it back. */
+export interface RoomSnapshot {
+  contributors: DocumentContributor[];
+  state: Uint8Array;
+}
+
+export function roomSnapshot(document: Y.Doc): RoomSnapshot {
+  return {
+    contributors: documentContributors(document),
+    state: Y.encodeStateAsUpdate(document),
+  };
+}
+
 export function documentContributors(document: Y.Doc): DocumentContributor[] {
   return markerSnapshot(document);
 }

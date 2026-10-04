@@ -4,8 +4,9 @@ import * as Y from 'yjs';
 import { type CollaborationAccess, SOURCE_ROOM_PATTERN } from './auth.js';
 import {
   applyContentUpdate,
-  documentContributors,
+  type RoomSnapshot,
   removeDocumentContributors,
+  roomSnapshot,
 } from './contributors.js';
 import {
   applyTextCommands,
@@ -1011,13 +1012,18 @@ export class SourceDocumentStore {
     };
   }
 
-  store(room: string, snapshot: Y.Doc, eventId?: string) {
-    return withRetryEvent(eventId, () => this.storeSnapshot(room, snapshot));
+  store(room: string, snapshot: Y.Doc | RoomSnapshot, eventId?: string) {
+    return withRetryEvent(eventId, () =>
+      this.storeSnapshot(
+        room,
+        snapshot instanceof Y.Doc ? roomSnapshot(snapshot) : snapshot
+      )
+    );
   }
 
-  private async storeSnapshot(room: string, snapshot: Y.Doc) {
+  private async storeSnapshot(room: string, snapshot: RoomSnapshot) {
     const { fileId, epoch } = sourceRoom(room);
-    const contributors = documentContributors(snapshot);
+    const { contributors } = snapshot;
     // A receipt for an unchanged document is still a durability receipt.
     if (!contributors.length) {
       const result = await this.pool.query<{ checkpoint: string }>(
@@ -1029,7 +1035,6 @@ export class SourceDocumentStore {
       return { checkpoint: Number(result.rows[0].checkpoint), contributors };
     }
     const actors = [...new Set(contributors.map((c) => c.userId))];
-    removeDocumentContributors(snapshot, contributors);
     // Merge each persisted replica before CAS. Redis delivery and database
     // flush order can differ; replacement of the durable state would lose edits.
     for (let attempt = 0; attempt < 4; attempt++) {
@@ -1046,8 +1051,10 @@ export class SourceDocumentStore {
         // Only markers beyond the durable state (a writer that opened and
         // saved without editing): nothing to store, so a NULL state stays
         // seed(base). The current checkpoint is the durability receipt.
-        if (!applyContentUpdate(merged, Y.encodeStateAsUpdate(snapshot)))
+        if (!applyContentUpdate(merged, snapshot.state))
           return { checkpoint: session.checkpoint, contributors };
+        // The markers are authorization metadata, never stored.
+        removeDocumentContributors(merged, contributors);
         const state = Y.encodeStateAsUpdate(merged);
         if (state.byteLength > MAX_SOURCE_STATE_BYTES)
           throw new SourceRequestError(
