@@ -759,7 +759,9 @@ const server = new Server<CollaborationContext>({
   ],
   maxDebounce: config.maxDebounceMs,
   maxPendingDocuments: 8,
-  maxUnauthenticatedQueueMessages: 64,
+  // A writer typing through a slow login queues one message per keystroke;
+  // 64 dropped the whole socket. The byte cap is the memory guard.
+  maxUnauthenticatedQueueMessages: 1000,
   maxUnauthenticatedQueueSize: 512 * 1024,
   async onAuthenticate({
     connectionConfig,
