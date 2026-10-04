@@ -57,7 +57,22 @@ export function yjsUpdateContainsChanges(
   document: Y.Doc,
   update: Uint8Array
 ): boolean {
-  return !Y.snapshotContainsUpdate(Y.snapshot(document), update);
+  // Read from the update against the room, O(update), instead of a snapshot
+  // of the whole room (O(structs)): a struct past what the room holds, or a
+  // deletion of anything the room holds alive or does not hold, is a change.
+  const held = (client: number) => Y.getState(document.store, client);
+  const { ds, structs } = Y.decodeUpdate(update);
+  for (const struct of structs)
+    if (struct.id.clock + struct.length > held(struct.id.client)) return true;
+  for (const [client, ranges] of ds.clients)
+    for (const { clock, len } of ranges)
+      for (let at = clock; at < clock + len; ) {
+        if (at >= held(client)) return true;
+        const struct = Y.getItem(document.store, Y.createID(client, at));
+        if (struct instanceof Y.Item && !struct.deleted) return true;
+        at = struct.id.clock + struct.length;
+      }
+  return false;
 }
 
 import * as Y from 'yjs';

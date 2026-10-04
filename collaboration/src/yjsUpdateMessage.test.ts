@@ -124,4 +124,22 @@ describe('inboundYjsUpdate', () => {
     const change = Y.encodeStateAsUpdate(client, Y.encodeStateVector(document));
     expect(yjsUpdateContainsChanges(document, change)).toBe(true);
   });
+
+  // An acknowledgement carries the whole delete set: ranges the room already
+  // deleted are no change, deleting live text is.
+  it('tells deletions the room holds from new ones', () => {
+    const document = new Y.Doc();
+    document.getText('content').insert(0, 'durable text');
+    document.getText('content').delete(0, 3);
+    const client = new Y.Doc();
+    Y.applyUpdate(client, Y.encodeStateAsUpdate(document));
+    const vector = Y.encodeStateVector(document);
+    expect(
+      yjsUpdateContainsChanges(document, Y.encodeStateAsUpdate(client, vector))
+    ).toBe(false);
+    client.getText('content').delete(0, 2);
+    expect(
+      yjsUpdateContainsChanges(document, Y.encodeStateAsUpdate(client, vector))
+    ).toBe(true);
+  });
 });
