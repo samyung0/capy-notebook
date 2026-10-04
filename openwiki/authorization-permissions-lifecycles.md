@@ -223,6 +223,19 @@ Important boundaries:
   role. Upload and editor-asset finalization apply the same final check to the
   actor who created the reservation.
 
+- Transactions that lock several of these rows take them in one order:
+  workspace (`storageOwnerTx`, `FOR UPDATE`), then accounts in ID order
+  (`lockAccountSessionsTx`), then the material or file. A foreign key counts:
+  inserting a row that references the workspace share-locks it, so a provider
+  session or note index job locks the workspace before the account
+  (`BeginProviderSession`, `RequestMaterialIndex`); the other order deadlocked
+  against source checkpoints and projections. Work under these locks stays on
+  its transaction's connection (an ingest job payload reads its rates there),
+  since a second pool connection can wait behind requests that themselves wait
+  on those locks. Read-only admission rechecks take no locks: a source edit
+  recheck (`CheckSourceAccess`) and a note writer recheck read committed state,
+  and the save that persists the edits rechecks under the locks.
+
 Sources: [role resolution and access rules](../server/internal/store/share.go#L13),
 [transactional editor checks](../server/internal/store/storage.go#L183), and
 [sharing end-to-end coverage](../e2e/sharing/workspace-sharing.spec.ts#L34).

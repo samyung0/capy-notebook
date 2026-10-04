@@ -947,7 +947,10 @@ base, as the decoded text or the engine baseline of seed(base), and the service
 caches seeds (with their hashes) and derived baselines by base SHA next to the
 bases. A publication without later edits returns the state to NULL. The Go API
 rechecks current source access, epoch and account state through a small
-access-only endpoint for incoming edits, at most every 5 s per connection. Checkpoint writes check storage
+access-only endpoint for incoming edits, at most every 5 s per connection. That
+check is a lock-free read (no file advisory lock, workspace or account row
+lock); the checkpoint that saves the edits rechecks every contributor under
+`sourceLockTx`. Checkpoint writes check storage
 growth (see [storage quota](../backend-storage-quota.md)). The checkpoint answers with the new
 checkpoint and an agent edit's receipt only. The browser's editing session read
 carries neither the baseline nor pending effects, and a text state only: an
