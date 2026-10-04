@@ -52,7 +52,12 @@ export function ImageViewer({
       doubleClick={{ mode: 'toggle', step: 1 }}
       maxScale={IMAGE_MAX_ZOOM}
       minScale={IMAGE_MIN_ZOOM}
-      onTransform={(_, state) => onZoomChange?.(clampImageZoom(state.scale))}
+      onTransform={(ref, state) => {
+        // Skip a zoom animation's in-between frames: reporting them made a
+        // quick second click step from a half-way zoom, not the target.
+        if (!ref.instance.isAnimating)
+          onZoomChange?.(clampImageZoom(state.scale));
+      }}
       ref={transform}
       // Multiplied by deltaY (~100 per mouse notch): ~30% a notch.
       wheel={{ step: 0.003 }}
