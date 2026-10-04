@@ -788,9 +788,15 @@ reloaded without a client's last unsaved typing, and the client typed before
 its sync step 2), and one that starts past the clocks the room holds of its
 client, skips a range, or deletes a range neither side holds (a reconnecting
 client typing anywhere before its sync step 2). Yjs would keep such an update
-pending, and a pending room cannot be saved. A save that still finds pending
-content fails as transient, without telling clients or resetting the room;
-the next change (the client's sync) saves it.
+pending, and a pending Office room cannot be saved. Text rooms resync such
+updates the same way (they have no root rule). A sync step 2 the room cannot
+place means the client itself holds content out of order; after two in a row
+the connection closes (it reconnects with backoff, its edits unsent) instead
+of resyncing forever. A save that still finds pending content is reported once
+per room load: an Office room fails it as transient (the clients hear a
+recoverable `source-checkpoint-failed` for its ids, the room counts as unsaved
+for handoff, pause and eviction, and the next change saves it), and a text
+room saves its whole state with it, as before.
 
 DOCX and PPTX measure and paint with the fork's bundled metric-compatible
 fonts (`@betteroffice/fonts`: Carlito for Calibri, Caladea for Cambria,

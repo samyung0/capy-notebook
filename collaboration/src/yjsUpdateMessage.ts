@@ -17,6 +17,14 @@ function readVarUint(
 // messages. Return their update body so every writable frame passes the same
 // contributor and document-limit validation before MessageReceiver applies it.
 export function inboundYjsUpdate(message: Uint8Array): Uint8Array | null {
+  return inboundYjsSync(message)?.update ?? null;
+}
+
+/** A writable Yjs frame's update and whether it is a sync step 2 (a
+ * client's reply to the room's step 1) rather than an incremental update. */
+export function inboundYjsSync(
+  message: Uint8Array
+): { step2: boolean; update: Uint8Array } | null {
   const offset = { value: 0 };
   const documentNameLength = readVarUint(message, offset);
   if (
@@ -36,7 +44,10 @@ export function inboundYjsUpdate(message: Uint8Array): Uint8Array | null {
   if (updateLength === null || updateLength > message.length - offset.value) {
     return null;
   }
-  return message.slice(offset.value, offset.value + updateLength);
+  return {
+    step2: syncMessageType === 1,
+    update: message.slice(offset.value, offset.value + updateLength),
+  };
 }
 
 // Read-only Hocuspocus connections may send sync-step-2 as an acknowledgement

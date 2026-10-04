@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import * as Y from 'yjs';
 import { MaterialDocumentLimitError } from './limits.js';
 import { MaterialDocumentValidationError } from './materialDocument.js';
 import { OfficeEngineError } from './officeRuntime.js';
@@ -8,6 +9,7 @@ import {
   engineFailures,
   engineRefused,
   handlePermanentStoreFailure,
+  pendingSourceSave,
 } from './storeFailure.js';
 
 function actions() {
@@ -84,5 +86,30 @@ describe('Office engine store failures', () => {
     expect(engineRefused(refusal, engineFailures(refusal, undefined))).toBe(
       true
     );
+  });
+});
+
+describe('a source save over pending content', () => {
+  // A room holding an update that arrived ahead of one it depends on.
+  function pendingRoom() {
+    const author = new Y.Doc();
+    author.getText('source').insert(0, 'a');
+    const first = Y.encodeStateAsUpdate(author);
+    const vector = Y.encodeStateVector(author);
+    author.getText('source').insert(1, 'b');
+    const room = new Y.Doc();
+    Y.applyUpdate(room, Y.encodeStateAsUpdate(author, vector));
+    return { first, room };
+  }
+
+  it('waits in an Office room and saves a text room whole', () => {
+    const { first, room } = pendingRoom();
+    expect(room.store.pendingStructs).not.toBeNull();
+    expect(pendingSourceSave(room, 'docx')).toBe('wait');
+    expect(pendingSourceSave(room, undefined)).toBe('wait');
+    expect(pendingSourceSave(room, 'text')).toBe('save');
+    // The update it waited for integrates it; the room saves normally.
+    Y.applyUpdate(room, first);
+    expect(pendingSourceSave(room, 'docx')).toBe('none');
   });
 });

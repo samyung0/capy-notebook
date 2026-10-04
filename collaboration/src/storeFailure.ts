@@ -1,6 +1,7 @@
+import type * as Y from 'yjs';
 import { MaterialDocumentLimitError } from './limits.js';
 import { MaterialDocumentValidationError } from './materialDocument.js';
-import { OfficeEngineError } from './officeRuntime.js';
+import { OfficeEngineError, type SourceFormat } from './officeRuntime.js';
 import { CollaborationAuthorizationError } from './persistence.js';
 
 interface PermanentStoreFailureActions {
@@ -50,4 +51,27 @@ export function engineRefused(error: unknown, failures: number) {
     error instanceof OfficeEngineError &&
     (!error.transient || failures >= ENGINE_ATTEMPTS)
   );
+}
+
+/** A source room held back by pending content: transient, never a refusal. */
+export class SourcePendingError extends Error {
+  constructor() {
+    super('source room holds pending updates; saved once they integrate');
+  }
+}
+
+/**
+ * What a source save does with a room that holds pending content (an update
+ * that arrived ahead of one it depends on). An Office state cannot carry it
+ * (the seed rebuild check refuses it, which would reset the room), so the save
+ * waits as a transient failure until the client's sync integrates it. A text
+ * state is stored whole and always saved such content, so it still does.
+ */
+export function pendingSourceSave(
+  document: Y.Doc,
+  format: SourceFormat | undefined
+): 'none' | 'wait' | 'save' {
+  if (!(document.store.pendingStructs || document.store.pendingDs))
+    return 'none';
+  return format === 'text' ? 'save' : 'wait';
 }

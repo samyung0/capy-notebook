@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import { assertUpdatePreservesContributors } from './contributors.js';
 import {
+  inboundYjsSync,
   inboundYjsUpdate,
   yjsUpdateContainsChanges,
 } from './yjsUpdateMessage.js';
@@ -62,6 +63,9 @@ describe('inboundYjsUpdate', () => {
         writableFrame(update, syncMessageType)
       );
       expect(extracted).toEqual(update);
+      expect(
+        inboundYjsSync(writableFrame(update, syncMessageType))?.step2
+      ).toBe(syncMessageType === 1);
       expect(() =>
         assertUpdatePreservesContributors(document, extracted!)
       ).toThrow('client update changed collaboration metadata');

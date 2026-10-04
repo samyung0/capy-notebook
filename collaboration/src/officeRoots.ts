@@ -27,21 +27,10 @@ const UNKNOWN = 'unknown';
 type Found = Container | typeof GONE | typeof UNKNOWN;
 
 /**
- * Why a client update may not enter an Office room, or null when it may. Each
- * struct the room does not hold yet must sit under one of the engine's
- * document roots (`roots`, the bundle's OFFICE_DOCUMENT_ROOTS), and in PPTX
- * writes and deletions under pptx:meta must stay inside commentFlavor, as the
- * engines require of remote updates. A decoded struct names its root, else
- * its parent item, else a sibling (origin) whose container it shares. An
- * update with no such write that refers to content the room does not hold
- * answers OFFICE_UPDATE_UNHELD.
+ * What a client update holds that the room does not: the container of each
+ * new struct, and whether the room cannot integrate it yet (`unheld`).
  */
-export function officeUpdateViolation(
-  document: Y.Doc,
-  update: Uint8Array,
-  format: OfficeFormat,
-  roots: readonly string[]
-): string | null {
+function inspectUpdate(document: Y.Doc, update: Uint8Array) {
   const held = (client: number) => Y.getState(document.store, client);
   const rootNames = new Map<unknown, string>();
   for (const [name, type] of document.share) rootNames.set(type, name);
@@ -135,24 +124,51 @@ export function officeUpdateViolation(
     const until = reach.get(client) ?? held(client);
     if (ranges.some(({ clock, len }) => clock + len > until)) unheld = true;
   }
+  const containers: Container[] = [];
   for (const items of incoming.values()) {
     for (const item of items) {
       if (item.id.clock + item.length <= held(item.id.client)) continue;
       const found = containerOf(item);
       if (found === GONE) continue;
-      if (found === UNKNOWN) {
-        unheld = true;
-        continue;
-      }
-      if (!roots.includes(found.root))
-        return `Office update writes outside the ${format} document roots (${found.root})`;
-      if (
-        format === 'pptx' &&
-        found.root === PPTX_META &&
-        found.key !== PPTX_WRITABLE_META_KEY
-      )
-        return 'Office update writes pptx:meta beyond commentFlavor';
+      if (found === UNKNOWN) unheld = true;
+      else containers.push(found);
     }
+  }
+  return { containers, ds, unheld };
+}
+
+/** Whether a source room cannot integrate `update` yet (see
+ * officeUpdateViolation); text rooms resync such updates too. */
+export function sourceUpdateUnheld(document: Y.Doc, update: Uint8Array) {
+  return inspectUpdate(document, update).unheld;
+}
+
+/**
+ * Why a client update may not enter an Office room, or null when it may. Each
+ * struct the room does not hold yet must sit under one of the engine's
+ * document roots (`roots`, the bundle's OFFICE_DOCUMENT_ROOTS), and in PPTX
+ * writes and deletions under pptx:meta must stay inside commentFlavor, as the
+ * engines require of remote updates. A decoded struct names its root, else
+ * its parent item, else a sibling (origin) whose container it shares. An
+ * update with no such write that refers to content the room does not hold
+ * answers OFFICE_UPDATE_UNHELD.
+ */
+export function officeUpdateViolation(
+  document: Y.Doc,
+  update: Uint8Array,
+  format: OfficeFormat,
+  roots: readonly string[]
+): string | null {
+  const { containers, ds, unheld } = inspectUpdate(document, update);
+  for (const found of containers) {
+    if (!roots.includes(found.root))
+      return `Office update writes outside the ${format} document roots (${found.root})`;
+    if (
+      format === 'pptx' &&
+      found.root === PPTX_META &&
+      found.key !== PPTX_WRITABLE_META_KEY
+    )
+      return 'Office update writes pptx:meta beyond commentFlavor';
   }
   const meta = format === 'pptx' ? document.share.get(PPTX_META) : undefined;
   const settled = unheld ? OFFICE_UPDATE_UNHELD : null;
@@ -180,6 +196,30 @@ export function officeUpdateViolation(
 }
 
 const resyncing = new WeakSet<Connection>();
+// Consecutive sync step 2 replies of a connection the room could not place.
+const unplacedSteps = new WeakMap<Connection, number>();
+export const MAX_UNPLACED_STEPS = 2;
+
+/**
+ * Resyncs the connection of an unheld update (resyncOfficeConnection). A sync
+ * step 2 answers the room's step 1 with everything the client holds beyond
+ * it, so one that cannot be placed means the client itself holds content out
+ * of order and another resync would loop: after MAX_UNPLACED_STEPS in a row
+ * this throws, which closes the connection (it reconnects with backoff, its
+ * edits unsent and kept).
+ */
+export function resyncUnheld(connection: Connection, step2: boolean) {
+  const unplaced = step2 ? (unplacedSteps.get(connection) ?? 0) + 1 : 0;
+  unplacedSteps.set(connection, unplaced);
+  if (unplaced >= MAX_UNPLACED_STEPS)
+    throw new Error('source sync step 2 cannot be placed in the room');
+  resyncOfficeConnection(connection);
+}
+
+/** The connection's update went in: its unplaced count starts over. */
+export function placedUpdate(connection: Connection) {
+  unplacedSteps.delete(connection);
+}
 
 /**
  * Drops the message being handled and sends the connection the room's sync

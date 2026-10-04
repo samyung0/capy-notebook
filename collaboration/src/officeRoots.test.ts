@@ -4,9 +4,13 @@ import { expect, test, vi } from 'vitest';
 import * as Y from 'yjs';
 import {
   endOfficeResync,
+  MAX_UNPLACED_STEPS,
   OFFICE_UPDATE_UNHELD,
   officeUpdateViolation,
+  placedUpdate,
   resyncOfficeConnection,
+  resyncUnheld,
+  sourceUpdateUnheld,
 } from './officeRoots.js';
 import { inboundYjsUpdate } from './yjsUpdateMessage.js';
 
@@ -199,4 +203,51 @@ test('a read-only connection is not resynced or made writable', () => {
   endOfficeResync(connection as unknown as Connection);
   expect(connection.readOnly).toBe(true);
   expect(connection.send).not.toHaveBeenCalled();
+});
+
+// Text rooms have no root rule but the same ordering one.
+test("a text update that skips its client's clocks is unheld", () => {
+  const room = new Y.Doc();
+  room.getText('source').insert(0, 'hello');
+  const client = new Y.Doc();
+  Y.applyUpdate(client, Y.encodeStateAsUpdate(room));
+  client.getText('source').insert(5, '!'); // never reached the room
+  const vector = Y.encodeStateVector(client);
+  client.getText('source').insert(0, '>');
+  expect(sourceUpdateUnheld(room, Y.encodeStateAsUpdate(client, vector))).toBe(
+    true
+  );
+  expect(
+    sourceUpdateUnheld(
+      room,
+      Y.encodeStateAsUpdate(client, Y.encodeStateVector(room))
+    )
+  ).toBe(false);
+});
+
+// A step 2 that cannot be placed means the client holds content out of
+// order; resyncing it again would loop, so the connection closes instead.
+test('step 2 replies the room cannot place close the connection', () => {
+  const connection = {
+    messageAddress: 'source:f:epoch:1',
+    readOnly: false,
+    send: vi.fn(),
+  } as unknown as Connection;
+  const document = new Y.Doc();
+  Object.assign(connection, { document });
+  // Keystrokes ahead of a sync resync without limit.
+  for (let index = 0; index < 5; index += 1) {
+    resyncUnheld(connection, false);
+    endOfficeResync(connection);
+  }
+  for (let index = 1; index < MAX_UNPLACED_STEPS; index += 1) {
+    resyncUnheld(connection, true);
+    endOfficeResync(connection);
+  }
+  expect(() => resyncUnheld(connection, true)).toThrow(
+    'source sync step 2 cannot be placed in the room'
+  );
+  // A placed update starts the count over.
+  placedUpdate(connection);
+  expect(() => resyncUnheld(connection, true)).not.toThrow();
 });

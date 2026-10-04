@@ -56,7 +56,9 @@ import {
   endOfficeResync,
   OFFICE_UPDATE_UNHELD,
   officeUpdateViolation,
-  resyncOfficeConnection,
+  placedUpdate,
+  resyncUnheld,
+  sourceUpdateUnheld,
 } from './officeRoots.js';
 import {
   closeOfficeRuntime,
@@ -97,10 +99,12 @@ import {
   engineFailures,
   engineRefused,
   handlePermanentStoreFailure,
+  pendingSourceSave,
+  SourcePendingError,
 } from './storeFailure.js';
 import { armTokenExpiry, clearTokenExpiry } from './tokenExpiry.js';
 import {
-  inboundYjsUpdate,
+  inboundYjsSync,
   yjsUpdateContainsChanges,
 } from './yjsUpdateMessage.js';
 
@@ -136,6 +140,10 @@ let pausedRooms = new WeakSet<Document>();
 const projections = new ProjectionService(store, config.apiUrl, config.secret);
 const serviceCommandCompletions = new ServiceCommandCompletions();
 const failedStores = new Map<string, FailedStoreSnapshot>();
+// Office rooms whose last save waited on pending content: unsaved until a
+// save succeeds. Rooms that reported pending content, once per load.
+const pendingSources = new Set<string>();
+const pendingReported = new WeakSet<Y.Doc>();
 const activeStores = new Map<string, Set<Promise<void>>>();
 const storeFailureGenerations = new Map<string, number>();
 const roomEvictions = new RoomEvictionState();
@@ -294,7 +302,7 @@ function evictLocalRoom(
         !drainIsDurable(
           initialFailureGeneration,
           storeFailureGenerations.get(room) ?? 0,
-          failedStores.has(room)
+          failedStores.has(room) || pendingSources.has(room)
         )
       ) {
         throw new Error(
@@ -315,6 +323,7 @@ function evictLocalRoom(
         }
       }
       failedStores.delete(room);
+      pendingSources.delete(room);
       unloaded = true;
     } finally {
       roomEvictions.end(room, mode);
@@ -342,7 +351,7 @@ function persistLocalRoom(room: string, operationId?: string) {
       !drainIsDurable(
         initialFailureGeneration,
         storeFailureGenerations.get(room) ?? 0,
-        failedStores.has(room)
+        failedStores.has(room) || pendingSources.has(room)
       )
     ) {
       throw new Error(
@@ -613,8 +622,9 @@ const server = new Server<CollaborationContext>({
     if (!context || context.expiresAt <= Math.floor(Date.now() / 1000)) {
       throw new Error('collaboration token expired');
     }
-    const yjsUpdate = inboundYjsUpdate(update);
-    if (!yjsUpdate) return;
+    const sync = inboundYjsSync(update);
+    if (!sync) return;
+    const yjsUpdate = sync.update;
     if (context.access === 'read') {
       if (yjsUpdateContainsChanges(document, yjsUpdate)) {
         throw new Error('read-only connection sent a document update');
@@ -660,10 +670,13 @@ const server = new Server<CollaborationContext>({
             format,
             officeRoots[format]
           );
+        else if (sourceUpdateUnheld(document, yjsUpdate))
+          refusal = OFFICE_UPDATE_UNHELD;
         if (refusal === OFFICE_UPDATE_UNHELD) {
-          resyncOfficeConnection(connection);
+          resyncUnheld(connection, sync.step2);
           return;
         }
+        placedUpdate(connection);
         if (refusal) {
           // Stateless and unrecoverable, so the client stops resending it.
           connection.sendStateless(
@@ -1028,26 +1041,35 @@ async function storeSource(document: Document) {
   const room = document.name;
   // Awaited handoff callers must fail if their queued save was discarded.
   assertRoomAvailable(room, true);
-  // Content the room holds pending (a client update that arrived ahead of
-  // one it depends on) cannot be saved and is not the engine refusing it:
-  // the update it waits for (the client's sync) integrates it and its own
-  // change saves the room. Refusing here would reset the room and discard
-  // every edit since the last checkpoint.
-  if (document.store.pendingStructs || document.store.pendingDs)
-    throw new Error(
-      'source room holds pending updates; saved once they integrate'
-    );
   const snapshot = new Y.Doc();
   const rawState = Y.encodeStateAsUpdate(document);
   Y.applyUpdate(snapshot, rawState);
   const claimed = [...(pendingCheckpoints.get(room) ?? [])];
   try {
+    // Pending content (an update that arrived ahead of one it depends on) is
+    // not the engine refusing the state: an Office room waits as a transient
+    // failure until the client's sync integrates it (refusing would reset the
+    // room and discard every edit since the last checkpoint); a text room
+    // saves it whole, as it always did. Either way it is reported once.
+    const pending = pendingSourceSave(document, sourceFormats.get(document));
+    if (pending !== 'none' && !pendingReported.has(document)) {
+      pendingReported.add(document);
+      captureError(new SourcePendingError(), {
+        room,
+        stage: 'source_store_pending',
+      });
+    }
+    if (pending === 'wait') {
+      pendingSources.add(room);
+      throw new SourcePendingError();
+    }
     const saved = await sources.store(
       room,
       snapshot,
       failedStores.get(room)?.eventId
     );
     failedStores.delete(room);
+    pendingSources.delete(room);
     clearDocumentContributors(document, saved.contributors);
     sourceReceipt(document, claimed, saved.checkpoint);
   } catch (error) {
@@ -1085,6 +1107,9 @@ async function storeSource(document: Document) {
       reportFailedStore(undefined, error, room);
       failedStores.delete(room);
       rejectAuthorizationRoom(room);
+    } else if (error instanceof SourcePendingError) {
+      // Reported above; the live room, not this snapshot, is what saves
+      // once its pending content integrates (pendingSources keeps it unsaved).
     } else if (recoverable && !roomEvictions.isDiscarding(room)) {
       const eventId = reportFailedStore(previous, error, room);
       failedStores.set(room, {
@@ -1113,7 +1138,10 @@ const sourceHandoff = new SourceHandoff(
   persistSource,
   config.uatPublicationHold,
   (error) => captureError(error, { stage: 'source_rebuild' }),
-  (room) => failedStores.has(room) || (activeStores.get(room)?.size ?? 0) > 0
+  (room) =>
+    failedStores.has(room) ||
+    pendingSources.has(room) ||
+    (activeStores.get(room)?.size ?? 0) > 0
 );
 
 async function handleHttpRequest(
