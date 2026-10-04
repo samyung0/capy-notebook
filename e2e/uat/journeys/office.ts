@@ -154,8 +154,10 @@ export async function storageCharge(run: UatRun) {
 
 /**
  * The owner's charge since `before` (read before the upload) is the source
- * plus its pending effects and its stored editing state (for text, its growth
- * beyond the recorded seed) (human/backend-storage-quota.md, 2026-09-28 rule).
+ * plus its pending effects and its stored editing state beyond what the file
+ * holds: for text, its growth beyond the recorded seed; while a deferred
+ * Office publication waits for its rebuild, its growth beyond the published
+ * capture (human/backend-storage-quota.md, 2026-10-05 rule).
  */
 export async function officeCharge(
   run: UatRun,
@@ -166,7 +168,8 @@ export async function officeCharge(
     storageCharge(run),
     run.query(
       `SELECT f.size_bytes,d.format,d.checkpoint,d.seed_bytes,d.state_seed_sha256,d.pending_effects,d.net_tokens,
-      octet_length(d.state) AS state_bytes,
+      octet_length(d.state) AS state_bytes,d.rebuild_pending,
+      COALESCE(octet_length(d.published_state),0) AS published_bytes,
       COALESCE(octet_length(NULLIF(d.pending_effects,'[]'::jsonb)::text),0) AS effects_bytes
       FROM files f JOIN source_documents d ON d.file_id=f.id WHERE f.id=%s`,
       [fileId]
@@ -179,7 +182,9 @@ export async function officeCharge(
       ? 0
       : row.format === 'text'
         ? Math.max(0, Number(row.state_bytes) - Number(row.seed_bytes))
-        : Number(row.state_bytes);
+        : row.rebuild_pending
+          ? Math.max(0, Number(row.state_bytes) - Number(row.published_bytes))
+          : Number(row.state_bytes);
   assert.equal(
     charge - before,
     Number(row.size_bytes) + Number(row.effects_bytes) + growth

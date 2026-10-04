@@ -48,7 +48,8 @@ await mkdir(output, { recursive: true });
 const db = new Client({ connectionString: database });
 await db.connect();
 await db.query(`CREATE TEMP TABLE measurements (
-  id serial, state bytea, effects jsonb NOT NULL, seed_bytes bigint NOT NULL
+  id serial, state bytea, effects jsonb NOT NULL, seed_bytes bigint NOT NULL,
+  published bytea, pending boolean NOT NULL
 )`);
 const databaseInfo = (
   await db.query(
@@ -179,14 +180,26 @@ try {
             )
       ).map(trimEffect);
     }
+    /**
+     * Charged as source_documents.storage_bytes is (migration 0054): with
+     * `published`, a deferred publication's state waiting for its rebuild,
+     * charged beyond the published capture.
+     */
     async function measure(
       state: Uint8Array | null,
       fx: unknown[],
-      seedSize: number
+      seedSize: number,
+      published?: Uint8Array
     ) {
       const inserted = await db.query(
-        'INSERT INTO measurements(state,effects,seed_bytes) VALUES($1,$2,$3) RETURNING id',
-        [state && Buffer.from(state), JSON.stringify(fx), seedSize]
+        'INSERT INTO measurements(state,effects,seed_bytes,published,pending) VALUES($1,$2,$3,$4,$5) RETURNING id',
+        [
+          state && Buffer.from(state),
+          JSON.stringify(fx),
+          seedSize,
+          published && Buffer.from(published),
+          published !== undefined,
+        ]
       );
       const row = (
         await db.query(
@@ -196,7 +209,8 @@ try {
         COALESCE(pg_column_size(state),0) AS state_stored,
         pg_column_size(effects) AS effects_stored,
         COALESCE(octet_length(NULLIF(effects,'[]'::jsonb)::text),0)
-          + GREATEST(0,COALESCE(octet_length(state),0)-seed_bytes) AS quota_extra
+          + CASE WHEN pending THEN GREATEST(0,COALESCE(octet_length(state),0)-COALESCE(octet_length(published),0))
+                 ELSE GREATEST(0,COALESCE(octet_length(state),0)-seed_bytes) END AS quota_extra
         FROM measurements WHERE id=$1`,
           [inserted.rows[0].id]
         )
@@ -236,6 +250,20 @@ try {
       stored,
       laterEffects,
       seed.state.length
+    );
+    // The owner's publication defers: the file is the export, and until the
+    // rebuild the state (the capture plus the later edit, over seed(base)) is
+    // charged beyond the capture, with effects measured against the capture.
+    const deferredWindow = await measure(
+      changeOver(seed.state, stored),
+      (
+        await office.compareBaselines(
+          await office.officeBaseline(bytes, captured),
+          await office.officeBaseline(bytes, checkpoint())
+        )
+      ).map(trimEffect),
+      0,
+      changeOver(seed.state, captured.state)
     );
     const rebase = await office.rebaseOffice(
       bytes,
@@ -285,6 +313,7 @@ try {
       exported_seed_bytes: exportedSeed.state.length,
       during_refresh: duringRefresh,
       during_refresh_full_state: duringRefreshFull,
+      deferred_window: deferredWindow,
       captured_state_bytes: captured.state.length,
       captured_state_stored: one.state_stored,
       rebased_with_later_edit: rebased,
