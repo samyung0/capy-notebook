@@ -1,0 +1,124 @@
+diff --git a/dist/hocuspocus-server.cjs b/dist/hocuspocus-server.cjs
+index 5f7baa0..a0d5817 100644
+--- a/dist/hocuspocus-server.cjs
++++ b/dist/hocuspocus-server.cjs
+@@ -203,6 +203,10 @@ var OutgoingMessage = class {
+ };
+ 
+ //#endregion
++/** Capy patch: the default beforeHandleAwareness, so the server can tell no hook is set. */
++function noAwarenessHook() {
++	return Promise.resolve();
++}
+ //#region packages/server/src/MessageReceiver.ts
+ var MessageReceiver = class {
+ 	constructor(message, defaultTransactionOrigin) {
+@@ -229,15 +233,20 @@ var MessageReceiver = class {
+ 					source: "connection",
+ 					connection
+ 				} : this.defaultTransactionOrigin ?? { source: "local" };
+-				const scratchDoc = new yjs.Doc();
+-				const scratch = new y_protocols_awareness.Awareness(scratchDoc);
+-				try {
+-					(0, y_protocols_awareness.applyAwarenessUpdate)(scratch, update, null);
+-					await document.callbacks.beforeHandleAwareness(document, scratch.getStates(), origin);
+-					update = (0, y_protocols_awareness.encodeAwarenessUpdate)(scratch, [...scratch.getStates().keys()]);
+-				} finally {
+-					scratch.destroy();
+-					scratchDoc.destroy();
++				// Capy patch: the scratch copy exists for beforeHandleAwareness hooks;
++				// without one the update applies as sent. Its Y.Doc takes a fixed guid
++				// (the default is a webcrypto UUID per message).
++				if (document.awarenessHooked !== false) {
++					const scratchDoc = new yjs.Doc({ guid: "awareness-scratch" });
++					const scratch = new y_protocols_awareness.Awareness(scratchDoc);
++					try {
++						(0, y_protocols_awareness.applyAwarenessUpdate)(scratch, update, null);
++						await document.callbacks.beforeHandleAwareness(document, scratch.getStates(), origin);
++						update = (0, y_protocols_awareness.encodeAwarenessUpdate)(scratch, [...scratch.getStates().keys()]);
++					} finally {
++						scratch.destroy();
++						scratchDoc.destroy();
++					}
+ 				}
+ 				(0, y_protocols_awareness.applyAwarenessUpdate)(document.awareness, update, origin);
+ 				break;
+@@ -1274,7 +1283,7 @@ var Hocuspocus = class {
+ 			connected: () => new Promise((r) => r(null)),
+ 			beforeHandleMessage: () => new Promise((r) => r(null)),
+ 			afterHandleMessage: () => new Promise((r) => r(null)),
+-			beforeHandleAwareness: () => new Promise((r) => r()),
++			beforeHandleAwareness: noAwarenessHook,
+ 			beforeSync: () => new Promise((r) => r(null)),
+ 			beforeBroadcastStateless: () => new Promise((r) => r(null)),
+ 			onStateless: () => new Promise((r) => r(null)),
+@@ -1518,6 +1527,7 @@ var Hocuspocus = class {
+ 			};
+ 			this.hooks("beforeBroadcastStateless", hookPayload);
+ 		});
++		document.awarenessHooked = this.configuration.extensions.some((extension) => typeof extension.beforeHandleAwareness === "function" && extension.beforeHandleAwareness !== noAwarenessHook);
+ 		document.beforeHandleAwareness((document, states, transactionOrigin) => {
+ 			const connection = isTransactionOrigin(transactionOrigin) && transactionOrigin.source === "connection" ? transactionOrigin.connection : void 0;
+ 			const request = connection?.request;
+diff --git a/dist/hocuspocus-server.esm.js b/dist/hocuspocus-server.esm.js
+index e21095f..b456895 100644
+--- a/dist/hocuspocus-server.esm.js
++++ b/dist/hocuspocus-server.esm.js
+@@ -173,6 +173,10 @@ var OutgoingMessage = class {
+ };
+ 
+ //#endregion
++/** Capy patch: the default beforeHandleAwareness, so the server can tell no hook is set. */
++function noAwarenessHook() {
++	return Promise.resolve();
++}
+ //#region packages/server/src/MessageReceiver.ts
+ var MessageReceiver = class {
+ 	constructor(message, defaultTransactionOrigin) {
+@@ -199,15 +203,20 @@ var MessageReceiver = class {
+ 					source: "connection",
+ 					connection
+ 				} : this.defaultTransactionOrigin ?? { source: "local" };
+-				const scratchDoc = new Y.Doc();
+-				const scratch = new Awareness(scratchDoc);
+-				try {
+-					applyAwarenessUpdate(scratch, update, null);
+-					await document.callbacks.beforeHandleAwareness(document, scratch.getStates(), origin);
+-					update = encodeAwarenessUpdate(scratch, [...scratch.getStates().keys()]);
+-				} finally {
+-					scratch.destroy();
+-					scratchDoc.destroy();
++				// Capy patch: the scratch copy exists for beforeHandleAwareness hooks;
++				// without one the update applies as sent. Its Y.Doc takes a fixed guid
++				// (the default is a webcrypto UUID per message).
++				if (document.awarenessHooked !== false) {
++					const scratchDoc = new Y.Doc({ guid: "awareness-scratch" });
++					const scratch = new Awareness(scratchDoc);
++					try {
++						applyAwarenessUpdate(scratch, update, null);
++						await document.callbacks.beforeHandleAwareness(document, scratch.getStates(), origin);
++						update = encodeAwarenessUpdate(scratch, [...scratch.getStates().keys()]);
++					} finally {
++						scratch.destroy();
++						scratchDoc.destroy();
++					}
+ 				}
+ 				applyAwarenessUpdate(document.awareness, update, origin);
+ 				break;
+@@ -1244,7 +1253,7 @@ var Hocuspocus = class {
+ 			connected: () => new Promise((r) => r(null)),
+ 			beforeHandleMessage: () => new Promise((r) => r(null)),
+ 			afterHandleMessage: () => new Promise((r) => r(null)),
+-			beforeHandleAwareness: () => new Promise((r) => r()),
++			beforeHandleAwareness: noAwarenessHook,
+ 			beforeSync: () => new Promise((r) => r(null)),
+ 			beforeBroadcastStateless: () => new Promise((r) => r(null)),
+ 			onStateless: () => new Promise((r) => r(null)),
+@@ -1488,6 +1497,7 @@ var Hocuspocus = class {
+ 			};
+ 			this.hooks("beforeBroadcastStateless", hookPayload);
+ 		});
++		document.awarenessHooked = this.configuration.extensions.some((extension) => typeof extension.beforeHandleAwareness === "function" && extension.beforeHandleAwareness !== noAwarenessHook);
+ 		document.beforeHandleAwareness((document, states, transactionOrigin) => {
+ 			const connection = isTransactionOrigin(transactionOrigin) && transactionOrigin.source === "connection" ? transactionOrigin.connection : void 0;
+ 			const request = connection?.request;

@@ -2,6 +2,7 @@ FROM node:22-alpine AS web
 WORKDIR /src
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches ./patches
 COPY ops/package.json ops/package.json
 RUN pnpm install --frozen-lockfile --filter @capy-notebook/ops...
 COPY ops ops

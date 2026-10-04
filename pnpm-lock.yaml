@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
   injectWorkspacePackages: true
 
+patchedDependencies:
+  '@hocuspocus/server@4.5.0': 538d0ffda9cd2c02358a9a33c46cf3ed40fcdc9e41355f296121c0281366bd7a
+
 importers:
 
   .:
@@ -381,7 +384,7 @@ importers:
         version: 4.5.0(supports-color@10.2.2)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
       '@hocuspocus/server':
         specifier: 4.5.0
-        version: 4.5.0(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
+        version: 4.5.0(patch_hash=538d0ffda9cd2c02358a9a33c46cf3ed40fcdc9e41355f296121c0281366bd7a)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
       '@sentry/node':
         specifier: ^10.70.0
         version: 10.70.0(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2)
@@ -9948,7 +9951,7 @@ snapshots:
   '@hocuspocus/extension-redis@4.5.0(supports-color@10.2.2)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)':
     dependencies:
       '@hocuspocus/common': 4.5.0
-      '@hocuspocus/server': 4.5.0(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
+      '@hocuspocus/server': 4.5.0(patch_hash=538d0ffda9cd2c02358a9a33c46cf3ed40fcdc9e41355f296121c0281366bd7a)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
       '@sesamecare-oss/redlock': 1.4.0(ioredis@5.6.1(supports-color@10.2.2))
       ioredis: 5.6.1(supports-color@10.2.2)
       kleur: 4.1.5
@@ -9970,7 +9973,7 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  '@hocuspocus/server@4.5.0(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)':
+  '@hocuspocus/server@4.5.0(patch_hash=538d0ffda9cd2c02358a9a33c46cf3ed40fcdc9e41355f296121c0281366bd7a)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)':
     dependencies:
       '@hocuspocus/common': 4.5.0
       async-mutex: 0.5.0

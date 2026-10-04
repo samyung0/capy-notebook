@@ -21,3 +21,9 @@ allowBuilds:
   sharp: true
   vue-demi: true
   workerd: true
+
+# Capy patch: Hocuspocus builds a scratch Y.Doc (a webcrypto UUID) for every
+# awareness message, for beforeHandleAwareness hooks we do not set. Offer
+# upstream; drop once a release skips it.
+patchedDependencies:
+  "@hocuspocus/server@4.5.0": patches/@hocuspocus__server@4.5.0.patch

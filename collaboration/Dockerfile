@@ -37,6 +37,7 @@ FROM node:22-alpine AS build
 RUN corepack enable
 WORKDIR /workspace
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches ./patches
 COPY collaboration/package.json collaboration/tsconfig.json ./collaboration/
 RUN pnpm install --frozen-lockfile --filter @capy-notebook/collaboration...
 RUN pnpm --filter @capy-notebook/collaboration deploy --prod /output
