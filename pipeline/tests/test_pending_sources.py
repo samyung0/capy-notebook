@@ -216,23 +216,28 @@ async def test_generation_fits_full_provider_request_without_trimming_pending(
     )
 
 
-async def test_a_resolved_source_image_rides_in_the_next_request(monkeypatch):
-    """An image added before publication is attached like a capture_page render."""
-    import base64
-    import hashlib
+def _png() -> bytes:
     import io
 
     from PIL import Image
 
-    from pipeline.retrieval import capture, tools
+    buffer = io.BytesIO()
+    Image.new("RGB", (40, 20), "red").save(buffer, "PNG")
+    return buffer.getvalue()
+
+
+async def _resolve_image(monkeypatch, raw: bytes, sha256: str | None = None):
+    """Run resolve_source_change on a pending image change whose gateway
+    answers with ``raw`` (and ``sha256``, its own hash by default)."""
+    import base64
+    import hashlib
+
+    from pipeline.retrieval import tools
 
     changes = _sources()
     changes.files[0]["changes"][0].update(
         kind="image", assetRef={"format": "docx", "kind": "image", "id": "image"}
     )
-    buffer = io.BytesIO()
-    Image.new("RGB", (40, 20), "red").save(buffer, "PNG")
-    raw = buffer.getvalue()
     calls = []
 
     class Response:
@@ -245,7 +250,7 @@ async def test_a_resolved_source_image_rides_in_the_next_request(monkeypatch):
         def json(self):
             return {
                 "bytes": base64.b64encode(raw).decode(),
-                "sha256": hashlib.sha256(raw).hexdigest(),
+                "sha256": sha256 or hashlib.sha256(raw).hexdigest(),
                 "mimeType": "image/png",
             }
 
@@ -261,6 +266,19 @@ async def test_a_resolved_source_image_rides_in_the_next_request(monkeypatch):
     )
     args = {"file_id": "f_1", "change_id": "c_1", "checkpoint": 3}
     result = await tools._resolve_source_change({**args, "_tool_call_id": "call"}, ctx)
+    return result, ctx, calls
+
+
+async def test_a_resolved_source_image_rides_in_the_next_request(monkeypatch):
+    """An image added before publication is attached like a capture_page render."""
+    import base64
+    import io
+
+    from PIL import Image
+
+    from pipeline.retrieval import capture
+
+    result, ctx, calls = await _resolve_image(monkeypatch, _png())
 
     assert not result.refused, result.text()
     assert calls == [
@@ -287,3 +305,17 @@ async def test_a_resolved_source_image_rides_in_the_next_request(monkeypatch):
         red, green, blue = image.getpixel((20, 10))
     assert red > 240 and green < 20 and blue < 20
     assert capture.image_tokens(ctx.captures, step) > 0
+
+
+async def test_a_source_image_with_another_hash_or_no_render_is_refused(monkeypatch):
+    """Nothing is attached for bytes that do not match their hash, or for a
+    format Pillow cannot render (an SVG or EMF from a DOCX/PPTX)."""
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'
+    for raw, sha256, code, reason in (
+        (_png(), "0" * 64, "invalid_input", "identity changed"),
+        (svg, None, "unsupported_format", "cannot be rendered"),
+    ):
+        result, ctx, _ = await _resolve_image(monkeypatch, raw, sha256)
+        assert result.refused and result.error_code == code
+        assert reason in result.text()
+        assert not ctx.pending_images and not ctx.captures
