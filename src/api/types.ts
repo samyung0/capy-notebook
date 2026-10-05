@@ -238,6 +238,7 @@ export type StudySummary = Omit<GenStudySummary, 'quickReview'> & {
 export type {
   BankAnswerInputBody as BankAnswerReq,
   BankMarksOutputBody as BankTopicMarks,
+  BankRevealInputBody as BankRevealReq,
   BankReviewOutputBody as BankReviewBatch,
   RateReviewItemReq,
   ReviewWorkspace,

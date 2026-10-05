@@ -1,6 +1,12 @@
 import { type QueryClient, queryOptions } from '@tanstack/react-query';
 import { api } from '@/api/client';
-import type { Provenance } from '@/api/types';
+import type {
+  BankAnswerReq,
+  BankRevealReq,
+  BankTopicMarks,
+  Provenance,
+} from '@/api/types';
+import { type Answers, scoreQuestion } from '@/features/quizzes/grade';
 import type { LearnerQuestion, Question } from './types';
 
 export type BankTopic = {
@@ -101,6 +107,92 @@ export const bankBatchQuery = (client: QueryClient, ids: string[]) =>
     retry: false,
     staleTime: Number.POSITIVE_INFINITY,
   });
+/** The topic list's results: answered current questions, true when right. */
+export const bankMarksQuery = (topicId: string) =>
+  queryOptions({
+    enabled: Boolean(topicId),
+    queryFn: () =>
+      api.get<BankTopicMarks>(
+        '/bank/topics/' + encodeURIComponent(topicId) + '/marks'
+      ),
+    queryKey: ['bank', 'marks', topicId],
+    retry: false,
+  });
+/** Checking answers is what reveals a question's key, one question at a time. */
+export const revealBankQuestion = (id: string, body: BankRevealReq) =>
+  api.post<{ question: Question }>(
+    '/bank/questions/' + encodeURIComponent(id) + '/reveal',
+    body
+  );
+export const recordBankAnswer = (id: string, body: BankAnswerReq) =>
+  api.post<void>(
+    '/bank/questions/' + encodeURIComponent(id) + '/answers',
+    body
+  );
+
+/** Pairs equal texts, each target used once: for every `from` index, its
+ * index in `to` (-1 when missing). */
+function textIndices(from: string[], to: string[]): number[] {
+  const used = new Set<number>();
+  return from.map((text) => {
+    const index = to.findIndex((item, j) => item === text && !used.has(j));
+    used.add(index);
+    return index;
+  });
+}
+
+/**
+ * The revealed question and answers in terms the shared scorer reads.
+ * Learners answered a view with matching options and ordering items shuffled
+ * by the server: matching keeps the shown letters (its key follows them) and
+ * ordering answers turn into stored positions, which are the key.
+ */
+export function alignReveal(
+  shown: Question | LearnerQuestion,
+  full: Question,
+  answers: Answers
+): { question: Question; answers: Answers } {
+  const aligned: Answers = { ...answers };
+  const parts = full.parts.map((part) => {
+    const seen = shown.parts.find((item) => item.id === part.id)?.answer;
+    const value = answers[part.id];
+    if (part.answer.type === 'matching' && seen?.type === 'matching') {
+      const toShown = textIndices(part.answer.options, seen.options);
+      return {
+        ...part,
+        answer: {
+          ...part.answer,
+          options: seen.options,
+          pairs: part.answer.pairs.map((pair) => ({
+            ...pair,
+            right: toShown[pair.right] ?? -1,
+          })),
+        },
+      };
+    }
+    if (
+      part.answer.type === 'ordering' &&
+      seen?.type === 'ordering' &&
+      Array.isArray(value)
+    ) {
+      const toStored = textIndices(seen.items, part.answer.items);
+      aligned[part.id] = value.map((i) =>
+        typeof i === 'number' ? (toStored[i] ?? -1) : -1
+      );
+    }
+    return part;
+  });
+  return { answers: aligned, question: { ...full, parts } };
+}
+
+/** Awarded over available marks, the score the answers route records; null
+ * when the question has open parts, which only Jev can grade. */
+export function bankScore(question: Question, answers: Answers): number | null {
+  if (question.parts.some((part) => part.answer.type === 'open')) return null;
+  const { awarded, max } = scoreQuestion(question, answers);
+  return max > 0 ? awarded / max : 0;
+}
+
 export function uploadBankAsset(file: File): Promise<{ url: string }> {
   const body = new FormData();
   body.append('file', file);

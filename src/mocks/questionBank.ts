@@ -1,6 +1,7 @@
 import { delay, HttpResponse, http } from 'msw';
 import type {
   BankAnswerReq,
+  BankRevealReq,
   BankReviewBatch,
   BankTopicMarks,
 } from '@/api/types';
@@ -250,6 +251,14 @@ export const questionBankHandlers = [
     detail.reviewedAt = reviewed ? new Date().toISOString() : null;
     detail.reviewerName = reviewed ? 'You' : '';
     return HttpResponse.json(detail);
+  }),
+  http.post('/api/bank/questions/:id/reveal', async ({ params, request }) => {
+    const detail = details.get(String(params.id));
+    if (!detail) return new HttpResponse(null, { status: 404 });
+    const { answers } = (await request.json()) as BankRevealReq;
+    if (typeof answers !== 'object' || answers === null)
+      return new HttpResponse(null, { status: 422 });
+    return HttpResponse.json({ question: detail.question });
   }),
   http.post('/api/bank/questions/:id/answers', async ({ params, request }) => {
     const id = String(params.id);

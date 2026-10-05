@@ -21,6 +21,8 @@ import type {
   BankListBody,
   BankMarksOutputBody,
   BankQuestionBatchParams,
+  BankRevealInputBody,
+  BankRevealOutputBody,
   BankReviewInputBody,
   BankReviewOutputBody,
   BankSaveInputBody,
@@ -723,6 +725,57 @@ export const commentBankQuestion = async (id: string,
 
   const data: commentBankQuestionResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as commentBankQuestionResponse
+}
+
+
+
+export type revealBankQuestionResponse200 = {
+  data: BankRevealOutputBody
+  status: 200
+}
+
+export type revealBankQuestionResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type revealBankQuestionResponseSuccess = (revealBankQuestionResponse200) & {
+  headers: Headers;
+};
+export type revealBankQuestionResponseError = (revealBankQuestionResponseDefault) & {
+  headers: Headers;
+};
+
+export type revealBankQuestionResponse = (revealBankQuestionResponseSuccess | revealBankQuestionResponseError)
+
+export const getRevealBankQuestionUrl = (id: string,) => {
+
+
+
+
+  return `/api/bank/questions/${id}/reveal`
+}
+
+/**
+ * @summary Show one question's answer key once its answers are checked
+ */
+export const revealBankQuestion = async (id: string,
+    bankRevealInputBody: NonReadonly<BankRevealInputBody>, options?: RequestInit): Promise<revealBankQuestionResponse> => {
+
+  const res = await fetch(getRevealBankQuestionUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(bankRevealInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: revealBankQuestionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as revealBankQuestionResponse
 }
 
 

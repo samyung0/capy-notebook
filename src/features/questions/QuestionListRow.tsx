@@ -1,0 +1,88 @@
+import type { ReactNode } from 'react';
+import { Icon } from '@/components/ui/Icon';
+import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
+import type { BankRow } from './bank';
+import { TextView } from './QuestionView';
+
+/**
+ * One question in a question list: bold number, the stem clamped to two
+ * lines, then a muted line with the marks, figure and table icons and `meta`.
+ * `result` leads the row with the learner's last result (true right, false
+ * wrong, null not answered); lists without results leave it out.
+ */
+export function QuestionListRow({
+  row,
+  current,
+  result,
+  meta,
+  onClick,
+}: {
+  row: Pick<
+    BankRow,
+    'position' | 'preview' | 'marks' | 'hasFigure' | 'hasTable'
+  >;
+  current: boolean;
+  result?: boolean | null;
+  meta?: ReactNode;
+  onClick: () => void;
+}) {
+  const marked = result !== undefined;
+  const resultLabel =
+    result === null
+      ? m.question_ui_not_attempted()
+      : result
+        ? m.question_ui_result_correct()
+        : m.question_ui_result_incorrect();
+  return (
+    <button
+      aria-current={current ? 'true' : undefined}
+      className={cn(
+        'grid w-full grid-cols-[1.5rem_minmax(0,1fr)] rounded-button px-2 py-2 text-left text-sm hover:bg-surface-hover-bg',
+        marked && 'grid-cols-[1.5rem_1.5rem_minmax(0,1fr)]',
+        current && 'bg-surface-hover-bg'
+      )}
+      onClick={onClick}
+      type="button"
+    >
+      {marked && (
+        // Screen readers hear the result after the row, so its name still
+        // starts with the question number.
+        <span
+          aria-hidden
+          className={cn(
+            'mt-0.5 grid size-4 place-items-center rounded-full text-surface',
+            result === null && 'border-[1.5px] border-line-strong',
+            result === true && 'bg-tint-success-fg',
+            result === false && 'bg-tint-error-fg'
+          )}
+          title={resultLabel}
+        >
+          {result !== null && <Icon name={result ? 'check' : 'x'} size={11} />}
+        </span>
+      )}
+      <span className="font-bold">{row.position}.</span>
+      <span className="line-clamp-2">
+        {row.preview ? (
+          <TextView text={row.preview} />
+        ) : (
+          m.question_ui_question_number({ number: row.position })
+        )}
+      </span>
+      <span
+        className={cn(
+          'col-start-2 mt-0.5 flex items-center gap-2 text-fg-muted text-xs',
+          marked && 'col-start-3'
+        )}
+      >
+        {row.marks === 1
+          ? m.question_ui_one_mark()
+          : m.question_ui_marks({ count: row.marks })}
+        {row.hasFigure && <Icon name="image" size={13} />}
+        {row.hasTable && <Icon name="table" size={13} />}
+        {meta}
+        {marked && <span className="sr-only">{resultLabel}</span>}
+      </span>
+    </button>
+  );
+}

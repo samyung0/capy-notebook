@@ -7,9 +7,9 @@ the main panel shows the chosen topic's questions, and a dashboard-style right c
 to the topic's question list; on phones that column becomes a floating bar and
 bottom sheet. Editors switch between View mode and Edit mode; edit mode adds
 the answer key and a review bar (review status, Mark reviewed/Undo review,
-Comment, Edit) under each question. Learner progress has its storage and API
-(Learner progress and retraction, below); the answering screens and production
-Jev grading remain in `todo-question-bank.md`.
+Comment, Edit) under each question. In View mode signed-in learners answer and
+check each question (Learner answering, below); mistake review screens and
+production Jev grading remain in `todo-question-bank.md`.
 
 The topic list (`GET /api/bank/topics/{id}/questions`) returns light rows for
 the navigation panel. Full questions come from `GET /api/bank/questions?ids=`,
@@ -224,8 +224,8 @@ Signed-in learners' checked answers on `/bank` are rated with workspace
 review's FSRS code and score mapping
 ([study-progress.md](study-progress.md#fsrs)): the browser sends the answer's
 awarded marks over the question's marks, below 0.5 is Again, below 0.7 Hard,
-otherwise Good. Only the storage and API exist; the page's answering and review
-screens wait for their mock.
+otherwise Good. The page records answers (Learner answering, below); the
+mistake review screen waits for its mock.
 
 App migration `0055_bank_review_states.sql` keeps one row per user and bank
 question: `question_id` and a copied `topic_id` are plain ids into the bank
@@ -235,6 +235,7 @@ There is no review log. Rows are never copied or charged to storage.
 
 | Endpoint | Effect |
 | --- | --- |
+| `POST /api/bank/questions/{id}/reveal` | `{answers}`, the learner's answers by part id. Returns `{question}`, that one question in full (answer key, marking schemes, worked solutions); 404 when unknown or retracted. The answers are not stored or graded on the server. |
 | `POST /api/bank/questions/{id}/answers` | `{score}`, 0 to 1. Reads the question from the bank (404 when unknown or retracted), then rates it under a per-user, per-question advisory lock and stores its topic, hash and score; 204. A stored hash that no longer matches is rated as a new question. |
 | `GET /api/bank/topics/{topicId}/marks` | `{marks: {questionId: boolean}}` for the topic list: each answered current question, true when the last answer earned full marks (the quiz page's green). |
 | `GET /api/bank/topics/{topicId}/review` | `{questionIds}`: the topic's mistake review batch, up to 20 current questions missed at least once (`lapses > 0`), lowest retrievability first. The page reads them through `GET /api/bank/questions?ids=`; asking again after the answers land gives the next batch. |
@@ -246,7 +247,7 @@ out of review until it is answered again; edits to answers, schemes, solutions
 and figures keep both. The routes need the page's read access (signed in, bank
 configured), so signed-out visitors get 401 and record nothing; frozen accounts
 record (`requireAccountMutate`). Account purge deletes the rows. The MSW bank
-mock (`src/mocks/questionBank.ts`) serves all three, ordering review by the
+mock (`src/mocks/questionBank.ts`) serves all of them, ordering review by the
 oldest answer.
 
 Published questions are retracted, never deleted, so progress ids stay valid.
@@ -254,11 +255,41 @@ Bank migration `0003_retracted.sql` adds `questions.retracted_at`, which only
 the owner sets (see [deployment-runbook.md](deployment-runbook.md)); the editor
 role has no grant on it. Syllabus counts, the topic list, single and batch
 reads (a retracted id fails a batch with 404 like an unknown one), comments,
-answers, marks, review and the chat's list, read and `copy_questions` routes
+answers, reveal, marks, review and the chat's list, read and `copy_questions` routes
 all skip retracted questions. Editors' save and review routes do not check the
 flag; the page never lists those questions. UAT and production share the bank:
 run `go run ./cmd/bank migrate` before deploying code that reads the column,
 and code older than this change still shows retracted questions.
+
+### Learner answering
+
+View mode renders every question as `QuestionRunner` with the learner's answers
+and a Check answer button under it, right-aligned on a divider like the editors'
+review bar (`CheckableQuestion` in `src/routes/QuestionBank.tsx`). Reads stay
+answer-free (`questions.LearnerView`); Check answer posts the answers to the
+reveal route and gets that question's key only. The learner view shuffles
+matching options and ordering items, so `alignReveal` (`src/features/questions/bank.ts`)
+reorders the revealed matching options to the letters the learner saw (its
+pairs follow) and maps ordering answers to stored positions. The question then
+shows the quiz review (`QuestionReview`: part score in the marks column with no
+question total, the answer rows tagged Your answer and Correct answer, accepted
+answers, the worked solution collapsed). `bankScore` sums `scorePart` over the
+parts and divides by their marks; the browser posts that 0–1 score to the
+answers route and refreshes the topic's marks. A question with open parts
+(none in the bank today) shows its key but records no score, because only Jev
+grades open answers. Try again clears the answers and the key; the next check
+records a new attempt, and the list shows the latest. Edit mode keeps the
+answer key, review bar and disabled runner. Both requests fail through the
+global mutation toast: a failed reveal keeps the answers for another check, and
+a failed record still shows the review but leaves the list unchanged.
+
+The topic list uses the shared `QuestionListRow`
+(`src/features/questions/QuestionListRow.tsx`): bold number, two-line stem,
+then a muted line with the marks, figure and table icons. In View mode a result
+mark leads each row (a filled check when the last answer earned full marks, a
+filled cross otherwise, an empty circle when unanswered), and one line under
+the topic heading reads "N correct · M to retry", both from the marks route.
+Edit mode shows no marks; its rows keep the reviewed label on the muted line.
 
 ## Delivery and checks
 

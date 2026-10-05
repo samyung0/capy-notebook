@@ -27,9 +27,10 @@ func insertBankQuestions(t *testing.T, pool *pgxpool.Pool, ids ...string) {
 	}
 }
 
-// Learners record checked answers and read back marks and mistake review;
-// a prompt edit or a retraction takes a question out, and retracted questions
-// leave every bank list, read and copy.
+// Learners reveal one checked question's key, record checked answers and read
+// back marks and mistake review; a prompt edit or a retraction takes a
+// question out, and retracted questions leave every bank list, read, reveal
+// and copy.
 func TestBankProgressAndRetraction(t *testing.T) {
 	var pool *pgxpool.Pool
 	h, st, _, _ := openInternalHTTPWith(t, nil, func(st *store.Store, c *httpapi.Config) {
@@ -67,6 +68,30 @@ func TestBankProgressAndRetraction(t *testing.T) {
 		return out.QuestionIDs
 	}
 
+	// The key of one question, as the reveal route or a read returns it.
+	key := func(user, method, path string, body any) (int, map[string]any) {
+		t.Helper()
+		rec := doReq(t, h, method, path, user, body)
+		var out struct{ Question map[string]any }
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		if out.Question == nil {
+			return rec.Code, nil
+		}
+		part := out.Question["parts"].([]any)[0].(map[string]any)
+		return rec.Code, map[string]any{"correct": part["answer"].(map[string]any)["correct"], "solution": part["solution"]}
+	}
+	checked := map[string]any{"answers": map[string]any{"bp1p": []int{1}}}
+	if code, got := key(learner, http.MethodPost, "/api/bank/questions/bp1/reveal", checked); code != 200 || got["correct"] == nil || got["solution"] == nil {
+		t.Fatalf("reveal = %d %v", code, got)
+	}
+	if code, _ := key("", http.MethodPost, "/api/bank/questions/bp1/reveal", checked); code != 401 {
+		t.Fatalf("signed-out reveal = %d", code)
+	}
+	for _, id := range []string{"bp1", "bp2"} {
+		if code, got := key(learner, http.MethodGet, "/api/bank/questions/"+id, nil); code != 200 || got["correct"] != nil || got["solution"] != nil {
+			t.Fatalf("read %s after a reveal = %d %v", id, code, got)
+		}
+	}
 	if code := doReq(t, h, http.MethodPost, "/api/bank/questions/bp1/answers", "", map[string]any{"score": 1}).Code; code != 401 {
 		t.Fatalf("signed-out answer = %d", code)
 	}
@@ -104,6 +129,9 @@ func TestBankProgressAndRetraction(t *testing.T) {
 	}
 	if code := answer("bp1", 1); code != 404 {
 		t.Fatalf("answer a retracted question = %d", code)
+	}
+	if code, _ := key(learner, http.MethodPost, "/api/bank/questions/bp1/reveal", checked); code != 404 {
+		t.Fatalf("reveal a retracted question = %d", code)
 	}
 
 	list := doReq(t, h, http.MethodGet, "/api/bank/topics/t/questions", learner, nil)

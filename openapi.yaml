@@ -469,6 +469,38 @@ components:
       required:
         - marks
       type: object
+    BankRevealInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/BankRevealInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        answers:
+          additionalProperties: {}
+          description: The learner's answers by part id, given before the key is shown
+          type: object
+      required:
+        - answers
+      type: object
+    BankRevealOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/BankRevealOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        question:
+          additionalProperties: {}
+          description: "The whole question: answer key, marking scheme and worked solution"
+          type: object
+      required:
+        - question
+      type: object
     BankReviewInputBody:
       additionalProperties: false
       properties:
@@ -5778,6 +5810,37 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Email a question comment
+      tags:
+        - Question bank
+  /api/bank/questions/{id}/reveal:
+    post:
+      operationId: revealBankQuestion
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BankRevealInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BankRevealOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Show one question's answer key once its answers are checked
       tags:
         - Question bank
   /api/bank/questions/{id}/review:

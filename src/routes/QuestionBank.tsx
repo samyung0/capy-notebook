@@ -35,17 +35,23 @@ import { userToast } from '@/components/ui/userToast';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import {
+  alignReveal,
   type BankDetail,
   type BankRow,
   type BankSyllabus,
   bankBatchQuery,
+  bankMarksQuery,
   bankQuestionQuery,
   bankQuestionsQuery,
+  bankScore,
   bankSyllabusQuery,
+  recordBankAnswer,
+  revealBankQuestion,
   uploadBankAsset,
 } from '@/features/questions/bank';
-import { TextView } from '@/features/questions/QuestionView';
-import type { Question } from '@/features/questions/types';
+import { QuestionListRow } from '@/features/questions/QuestionListRow';
+import type { LearnerQuestion, Question } from '@/features/questions/types';
+import type { Answers } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { QuizPageHeader } from '@/features/quizzes/QuizPage';
 import { getLocale, m } from '@/i18n';
@@ -96,6 +102,12 @@ export default function QuestionBank() {
     isPending: listPending,
   } = useQuery({
     ...bankQuestionsQuery(topicId),
+    meta: { errorBoundary: false },
+  });
+  // Learners' results lead the list rows in view mode only.
+  const { data: results, error: resultsError } = useQuery({
+    ...bankMarksQuery(topicId),
+    enabled: Boolean(topicId) && mode === 'view',
     meta: { errorBoundary: false },
   });
   const rows = (list?.questions ?? []).filter(
@@ -200,6 +212,9 @@ export default function QuestionBank() {
         onQuestion={select}
         onUnreviewed={setUnreviewed}
         questionId={questionId}
+        results={
+          mode === 'view' && !resultsError ? (results?.marks ?? {}) : undefined
+        }
         rows={rows}
         unreviewed={unreviewed}
       />
@@ -611,13 +626,21 @@ function BankQuestions({
             <li className="grid gap-4" data-question-id={row.id} key={row.id}>
               {detail ? (
                 <>
-                  <QuestionRunner
-                    answers={{}}
-                    disabled
-                    question={detail.question}
-                    questionNumber={row.position}
-                    showAnswerKey={mode === 'edit' && detail.editor}
-                  />
+                  {mode === 'view' ? (
+                    <CheckableQuestion
+                      question={detail.question}
+                      questionNumber={row.position}
+                      topicId={topicId}
+                    />
+                  ) : (
+                    <QuestionRunner
+                      answers={{}}
+                      disabled
+                      question={detail.question}
+                      questionNumber={row.position}
+                      showAnswerKey={detail.editor}
+                    />
+                  )}
                   {mode === 'edit' && detail.editor && (
                     <ReviewBar
                       detail={detail}
@@ -650,6 +673,85 @@ function BankQuestions({
       )}
       <div aria-hidden className="-mt-12" ref={endRef} />
     </div>
+  );
+}
+
+/**
+ * View mode: the learner answers, and Check answer reveals this question's
+ * key, shows the quiz review and records the score; Try again starts over.
+ */
+function CheckableQuestion({
+  question,
+  questionNumber,
+  topicId,
+}: {
+  question: Question | LearnerQuestion;
+  questionNumber: number;
+  topicId: string;
+}) {
+  const client = useQueryClient();
+  const [answers, setAnswers] = useState<Answers>({});
+  const [checked, setChecked] = useState<ReturnType<typeof alignReveal> | null>(
+    null
+  );
+  const { mutate: record } = useMutation({
+    mutationFn: (score: number) => recordBankAnswer(question.id, { score }),
+    onSuccess: () =>
+      client.invalidateQueries({ queryKey: bankMarksQuery(topicId).queryKey }),
+  });
+  const { mutate: check, isPending } = useMutation({
+    mutationFn: (sent: Answers) =>
+      revealBankQuestion(question.id, { answers: sent }),
+    onSuccess: (revealed, sent) => {
+      const next = alignReveal(question, revealed.question, sent);
+      setChecked(next);
+      // Open parts need Jev, so their questions show the key unscored.
+      const score = bankScore(next.question, next.answers);
+      if (score !== null) record(score);
+    },
+  });
+  return (
+    <>
+      <QuestionRunner
+        answers={checked?.answers ?? answers}
+        disabled={Boolean(checked) || isPending}
+        onChange={(partId, value) =>
+          setAnswers((current) => ({ ...current, [partId]: value }))
+        }
+        question={checked?.question ?? question}
+        questionNumber={questionNumber}
+        review={Boolean(checked)}
+      />
+      <div className="flex justify-end border-divider border-t pt-3">
+        {checked ? (
+          <Button
+            className="h-7 gap-1 rounded-input px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
+            iconLeft="refresh"
+            iconLeftClassName="size-3.5 sm:size-3.75"
+            onClick={() => {
+              setChecked(null);
+              setAnswers({});
+            }}
+            size="sm"
+            variant="ghost-hover"
+          >
+            {m.question_ui_answer_again()}
+          </Button>
+        ) : (
+          <Button
+            className="h-7 gap-1 rounded-input px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
+            disabled={isPending}
+            iconLeft="check"
+            iconLeftClassName="size-3.5 sm:size-3.75"
+            onClick={() => check(answers)}
+            size="sm"
+            variant="accent"
+          >
+            {m.question_ui_check_answer()}
+          </Button>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -816,6 +918,7 @@ function TopicQuestions({
   edit,
   filter,
   unreviewed,
+  results,
   onBack,
   onFilter,
   onUnreviewed,
@@ -828,11 +931,14 @@ function TopicQuestions({
   edit: boolean;
   filter: string;
   unreviewed: boolean;
+  /** View mode: answered questions by id, true when right. */
+  results?: Record<string, boolean>;
   onBack: () => void;
   onFilter: (value: string) => void;
   onUnreviewed: (value: boolean) => void;
   onQuestion: (id: string) => void;
 }) {
+  const marks = Object.values(results ?? {});
   return (
     <nav aria-label={m.question_ui_questions()} className="flex flex-col gap-3">
       <PanelHeading
@@ -872,39 +978,31 @@ function TopicQuestions({
           </Button>
         </div>
       )}
+      {results && (
+        <p className="t-meta px-2 text-fg-muted">
+          {m.question_ui_correct_and_retry({
+            correct: marks.filter(Boolean).length,
+            retry: marks.filter((right) => !right).length,
+          })}
+        </p>
+      )}
       <ol className="grid gap-0.5">
         {rows.map((row) => (
           <li key={row.id}>
-            <button
-              aria-current={row.id === questionId ? 'true' : undefined}
-              className={cn(
-                'grid w-full grid-cols-[1.5rem_minmax(0,1fr)] rounded-button px-2 py-2 text-left text-sm hover:bg-surface-hover-bg',
-                row.id === questionId && 'bg-surface-hover-bg'
-              )}
-              onClick={() => onQuestion(row.id)}
-              type="button"
-            >
-              <span className="font-bold">{row.position}.</span>
-              <span className="line-clamp-2">
-                {row.preview ? (
-                  <TextView text={row.preview} />
-                ) : (
-                  m.question_ui_question_number({ number: row.position })
-                )}
-              </span>
-              <span className="col-start-2 mt-0.5 flex items-center gap-2 text-fg-muted text-xs">
-                {row.marks === 1
-                  ? m.question_ui_one_mark()
-                  : m.question_ui_marks({ count: row.marks })}
-                {row.hasFigure && <Icon name="image" size={13} />}
-                {row.hasTable && <Icon name="table" size={13} />}
-                {edit && row.reviewedAt && (
+            <QuestionListRow
+              current={row.id === questionId}
+              meta={
+                edit &&
+                row.reviewedAt && (
                   <span className="font-semibold text-tint-success-fg">
                     {m.question_ui_reviewed()} · {relativeTime(row.reviewedAt)}
                   </span>
-                )}
-              </span>
-            </button>
+                )
+              }
+              onClick={() => onQuestion(row.id)}
+              result={results && (results[row.id] ?? null)}
+              row={row}
+            />
           </li>
         ))}
       </ol>

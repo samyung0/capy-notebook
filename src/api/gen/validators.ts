@@ -471,6 +471,23 @@ export const CommentBankQuestionResponse = zod.void()
 
 
 /**
+ * @summary Show one question's answer key once its answers are checked
+ */
+export const RevealBankQuestionParams = zod.object({
+  "id": zod.string()
+})
+
+export const RevealBankQuestionBody = zod.object({
+  "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers by part id, given before the key is shown')
+})
+
+export const RevealBankQuestionResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "question": zod.record(zod.string(), zod.unknown()).describe('The whole question: answer key, marking scheme and worked solution')
+})
+
+
+/**
  * @summary Set the review marker
  */
 export const ReviewBankQuestionParams = zod.object({
