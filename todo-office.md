@@ -136,8 +136,10 @@ check); it applies at the first promotion.
   live document per room, a new storage-bytes run, then UAT hardening.
 - **Office size limit** (decided 2026-10-05): refuse oversized Office files at
   upload, per format on the unzipped package size; numbers come from the
-  optimization round. Open: whether a save or publication that would grow a
-  file past it is refused too.
+  optimization round. Edits that would make a file oversized are refused too,
+  as notes do: a cheap per-update estimate in the incoming-update check
+  (`updateFitsRoom` beside the 100 MB state cap), the exact unzipped size at
+  save as the backstop.
 - **Legacy DOC/XLS/PPT (deferred):** today store-only. Convert to
   DOCX/XLSX/PPTX with the ingest host's LibreOffice so they become ordinary
   Office files. Decide first: replace the original or keep it, when the
