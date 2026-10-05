@@ -1236,7 +1236,7 @@ async def test_the_summary_prompt_excludes_the_uploaders_file_name(monkeypatch):
 
     async def _capture(messages, **_k):
         seen.append(messages[-1]["content"])
-        return '{"descriptor": "Chlorophyll absorbs light."}'
+        return "Chlorophyll absorbs light."
 
     monkeypatch.setattr(indexing, "ingest_spec", _ingest_spec)
     monkeypatch.setattr(indexing.models, "complete_text", _capture)
@@ -1259,7 +1259,7 @@ async def test_the_descriptor_token_bound_is_its_only_cut(monkeypatch):
 
     async def _reply(_messages, *, max_tokens=None, **_k):
         bounds.append(max_tokens)
-        return f'{{"descriptor": "{long}"}}'
+        return long
 
     monkeypatch.setattr(indexing, "ingest_spec", _ingest_spec)
     monkeypatch.setattr(indexing.models, "complete_text", _reply)
@@ -1268,7 +1268,7 @@ async def test_the_descriptor_token_bound_is_its_only_cut(monkeypatch):
     assert bounds == [400]
 
 
-async def test_a_reply_without_a_descriptor_fails_explicitly(monkeypatch):
+async def test_an_empty_descriptor_reply_fails_explicitly(monkeypatch):
     import pytest
 
     from pipeline.jobs import RetryableError
@@ -1276,7 +1276,7 @@ async def test_a_reply_without_a_descriptor_fails_explicitly(monkeypatch):
     from pipeline.retrieval.chunking import Chunk
 
     monkeypatch.setattr(indexing, "ingest_spec", _ingest_spec)
-    for reply in ("", '{"descriptor": ""}', '{"descriptor": null}', "Plain prose."):
+    for reply in ("", "  \n"):
 
         async def _reply(*_a, reply=reply, **_k):
             return reply
@@ -1284,32 +1284,6 @@ async def test_a_reply_without_a_descriptor_fails_explicitly(monkeypatch):
         monkeypatch.setattr(indexing.models, "complete_text", _reply)
         with pytest.raises(RetryableError, match="empty"):
             await indexing.summarize_file("a.pdf", [Chunk(text="x")])
-
-
-def test_a_reply_cut_at_the_token_bound_keeps_only_its_descriptor_text():
-    from pipeline.retrieval.indexing import _parse_descriptor
-
-    assert (
-        _parse_descriptor('{"descriptor": "This chapter introduces')
-        == "This chapter introduces"
-    )
-    assert (
-        _parse_descriptor('```json\n{"descriptor": "Covers photosynthesis, the Calvin')
-        == "Covers photosynthesis, the Calvin"
-    )
-    # Escapes decode; a cut escape (here the high half of a pair) is dropped.
-    assert (
-        _parse_descriptor(
-            '{"descriptor": "A \\"quoted\\" term,\\n\\u6f22\\u5b57 \\ud83d\\ude00 and \\ud83d'
-        )
-        == 'A "quoted" term,\n漢字 😀 and'
-    )
-    assert _parse_descriptor('{"descriptor": "Cut at \\u12') == "Cut at"
-    # A finished reply that is not JSON keeps its text without the closing.
-    assert (
-        _parse_descriptor('{"descriptor": "A "quoted" word."}\n```')
-        == 'A "quoted" word.'
-    )
 
 
 async def test_the_descriptor_regenerates_at_two_percent_a_version_change_or_first(

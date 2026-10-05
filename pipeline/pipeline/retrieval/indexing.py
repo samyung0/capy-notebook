@@ -27,7 +27,6 @@ from ..registry import embedding_spec, ingest_spec
 from . import accounting, compact, models, store
 from .chunking import Chunk, estimate_tokens, tokenize_for_search
 from .lang import detect_lang
-from .workflows import extract_json
 
 log = logging.getLogger("capy.retrieval.indexing")
 
@@ -308,9 +307,10 @@ _PROMPT_RESERVE_TOKENS = 2000
 # split across its chunk groups, before the descriptor is written from them.
 _PARTIAL_WORDS = 500
 
-# The prompt asks for about ``DESCRIPTOR_WORDS``; like compaction's summary, the
-# call's token bound is the only cut. It fits a normal reply several times over
-# with thinking off, which the operator-set ingest pin is assumed to have.
+# The prompt asks for about ``DESCRIPTOR_WORDS`` as plain text; like
+# compaction's summary, the reply is stored as written and the call's token
+# bound is the only cut. It fits a normal reply several times over with
+# thinking off, which the operator-set ingest pin is assumed to have.
 _DESCRIPTOR_MAX_TOKENS = 400
 
 # A refresh reuses the published descriptor until the net text change since its
@@ -421,41 +421,6 @@ def text_change_tokens(old: list[Chunk], new: list[Chunk]) -> int:
     return total
 
 
-# A JSON escape (a surrogate pair as one), or an escape cut off at the end.
-_JSON_ESCAPE = re.compile(
-    r'\\(?:u[0-9a-fA-F]{4}(?:\\u[0-9a-fA-F]{4})?|["\\/bfnrt])|\\(?:u[0-9a-fA-F]{0,3})?$'
-)
-
-
-def _unescape(match: re.Match[str]) -> str:
-    try:
-        text = json.loads(f'"{match.group()}"')
-    except json.JSONDecodeError:
-        return ""  # cut off at the end
-    # A pair cut after its high half leaves a lone surrogate.
-    return "".join(c for c in text if not 0xD800 <= ord(c) <= 0xDFFF)
-
-
-def _parse_descriptor(raw: str) -> str:
-    """The reply's descriptor, or "" when it holds none.
-
-    A reply cut off at the token bound is not JSON: the text of its
-    ``descriptor`` string up to the cut is kept, escapes decoded.
-    """
-    parsed = extract_json(raw)
-    if parsed is not None:
-        if not isinstance(parsed, dict):
-            return ""
-        return str(parsed.get("descriptor") or "").strip()
-    cut = re.search(r'"descriptor"\s*:\s*"(.*)', raw or "", re.DOTALL)
-    if not cut:
-        return ""
-    # A reply that did end (say, with unescaped quotes inside) closes its
-    # string, its object and maybe a fence.
-    text = re.sub(r'"\s*\}?\s*(?:```)?\s*$', "", cut.group(1))
-    return _JSON_ESCAPE.sub(_unescape, text).strip()
-
-
 def _input_budget() -> int:
     spec = ingest_spec()
     overhead = max(
@@ -496,7 +461,7 @@ async def _summarize_once(body: str) -> str:
         reasoning=False,
         call_purpose="file_summary",
     )
-    descriptor = _parse_descriptor(raw)
+    descriptor = (raw or "").strip()
     if not descriptor:
         raise RetryableError("The file summary was empty.")
     return descriptor

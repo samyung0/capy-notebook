@@ -12,8 +12,6 @@ behaviour belongs to ``test_chunking.py``, ``test_store_sql.py`` and
 
 from __future__ import annotations
 
-import json
-
 import psycopg
 import pytest
 
@@ -65,7 +63,7 @@ def fake_models(monkeypatch):
 
     async def complete_text(messages, **_kwargs):
         seen["summarized"].append(messages)
-        return json.dumps({"descriptor": "Photosynthesis in two stages."})
+        return "Photosynthesis in two stages."
 
     monkeypatch.setattr(indexing.models, "embed", embed)
     monkeypatch.setattr(indexing.models, "complete_text", complete_text)

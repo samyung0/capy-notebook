@@ -12,13 +12,13 @@ whose version differs.
 
 from __future__ import annotations
 
-SUMMARY_VERSION = 2
+SUMMARY_VERSION = 3
 DESCRIPTOR_WORDS = 50
 
 SUMMARY_SYSTEM = (
-    "You describe study material for another assistant. Return ONLY JSON: "
-    '{"descriptor": "..."}. descriptor is one dense sentence of about 50 words '
-    "naming the specific topics, terms and results covered. No preamble, no "
+    "You describe study material for another assistant. Reply with one dense "
+    f"sentence of about {DESCRIPTOR_WORDS} words naming the specific topics, "
+    "terms and results covered, as plain text: no JSON, no preamble, no "
     "meta-commentary about the document being a document."
 )
 
@@ -30,7 +30,7 @@ PARTIAL_SYSTEM = (
 
 
 def summary_messages(body: str) -> list[dict[str, str]]:
-    """The descriptor of a whole document, as one JSON reply."""
+    """The descriptor of a whole document, as one plain-text reply."""
     return [
         {"role": "system", "content": SUMMARY_SYSTEM},
         {

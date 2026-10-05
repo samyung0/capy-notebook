@@ -1279,15 +1279,13 @@ exists; the local bundle is gone once the first ingest finished.
 3. Replace that content's `rag_chunks` (delete-then-insert so a shorter
   re-ingest does not leave a stale tail).
 4. The file descriptor (~50 words, one cheap-model call); upsert
-  `rag_content_summaries`. Like compaction's summary, the call is bounded and
-  nothing else cuts: the prompt asks for about 50 words, and `max_tokens` 400
+  `rag_content_summaries`. Like compaction's summary, the call asks for plain
+  text (one dense sentence of about 50 words, no JSON, no preamble) and the
+  stripped reply is stored as written, with no parser. `max_tokens` 400
   (assuming thinking off, which the operator-set ingest pin is expected to
-  have) is the only limit, with no word truncation. A reply cut off at that
-  bound is not JSON; the text of its `descriptor` string up to the cut is
-  kept, escapes decoded (a finished reply that is still not JSON, say with
-  unescaped quotes, keeps its text without the closing quote, brace and
-  fence). A reply with no descriptor text (empty, `""`, `null`, prose without
-  the key) fails explicitly, and the job's ordinary failure path retries it. A reindex of a file whose ready descriptor has the
+  have) is the only cut, so a reply cut off there keeps its text up to the
+  cut. An empty reply fails explicitly, and the job's ordinary failure path
+  retries it. A reindex of a file whose ready descriptor has the
   current `summary_version` first measures the net text change between the
   published chunks and the candidate (`text_change_tokens`: chunk overlap and
   retained headings dropped, lines aligned, then words inside each changed
