@@ -639,7 +639,8 @@ the pages `render` {kind: 'print'} returns from a hidden frame on the app's own
 document, and `capy.png` saves the image `render` {kind: 'png'} returns; the
 runtime's sandbox stays without downloads, popups or modals. View mode offers
 only what works, never disabled items: DOCX has File › Download and Print and
-View › Zoom, XLSX File › Download, PNG and Print and View › Zoom. A print the runtime cannot draw answers `render-failed`, not
+View › Zoom, XLSX File › Download, PNG and Print and View › Zoom. A print the
+runtime cannot draw answers `render-failed`, not
 `error`: the host shows a short toast instead of the "couldn't open" banner and
 pending flushes are untouched. Edit-mode rendering flushes pending input first,
 as export does. Pages are drawn, encoded and released one at a time (DOCX
