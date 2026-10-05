@@ -106,7 +106,9 @@ Change `PPT_MASTER_COMMIT`, delete `local/ppt-master`, run
 `playground.py --check` (it clones and exports a sample), and compare a live
 deck with the previous commit's.
 
-## Measured (2026-10-04)
+## Measured
+
+### 2026-10-04
 
 Probe, one slide per request: GLM-5.3-Flash at high reasoning wrote a slide
 from about 8.5k input tokens (rules, style and three reference slides) and
@@ -130,3 +132,55 @@ Since 2026-10-05 every request extends the previous one (the turn context is
 appended and left in place), which is what GLM's cache needs; a build turn of
 a note and a quiz read 63% of its input from cache. The style and rules come
 once, as the `deck` skill.
+
+### 2026-10-05: written slides left out of the history
+
+The same tangents request on the lab target, default config (GLM-5.3-Flash at
+high reasoning, Library on, main format deck, brief explainers, no practice).
+First on the current code, then with each written slide's `write_slide`
+arguments sent back with the SVG replaced by
+`[slide 4 written: Theorem 1: tangent ⊥ radius, 4,059 chars]`, swapped in
+before that response went back to the model; a refused slide kept its SVG.
+The write receipt's outline already lists which slides are written.
+
+| | Current | SVG left out |
+|---|---|---|
+| Run | `20261005-175727-469a7c` | `20261005-182127-442266` |
+| Slides | 7 plus Sources | 10 plus Sources |
+| Model calls | 13 | 15 |
+| Input tokens | 607k | 668k |
+| Read from cache | 533k (88%) | 587k (88%) |
+| Largest request | 81.6k | 68.8k |
+| Output (reasoning) | 40.3k (16.2k) | 38.2k (14.9k) |
+| Wall time | 17.9 min | 15.9 min |
+| `write_slide` refused | 6 of 13: 5 missing ledger fields, 1 todo already done | 4 of 14: 1 missing ledger field, 2 placeholder sent as the SVG, 1 checker |
+| Credits | 47.2 | 48.8 |
+
+Credits are uncached input × 150, cached × 30 and output × 500 micros, the
+catalog row. Caching alone took this turn from 160 credits to 47.
+
+- Relace saves the cache at the end of each call's output, so a request hits
+  only when it sends the previous response back unchanged, reasoning and
+  arguments included. In the current run every write call hit the previous
+  call's prompt and output. With the SVG left out, every request after a
+  response that wrote a slide missed back to the last unchanged response:
+  four calls paid 3.4k to 12.5k uncached tokens instead of about 0.8k. On
+  that run's own path the misses cost about 2.9 credits and the shorter
+  history saved about 1.4 (45k fewer tokens, cached ones), a net loss.
+- The model copied the placeholder: after eight written slides showed
+  `[slide N written: …]` as their SVG, it sent that text for slides 9 and 10,
+  was refused, and wrote them in the next response (one wasted call, about
+  4 credits and 30 s).
+- Quality held. Both PPTX files, rendered to PDF with LibreOffice, keep the
+  style's chrome on every slide (kicker, title, rule and footer at the same
+  coordinates, palette colours only, Arial and Cambria); the second deck's
+  theorem slides even share one layout. The consistency comes from the skill's
+  style and reference slides, which stay in the history.
+- The context saving is real, about 1k tokens per written slide, but far
+  from the 250k compaction limit, and a cached token costs a fifth of an
+  uncached one. Reasoning weighs more: a response writing four slides sent
+  back 13k reasoning tokens with its 4.2k of SVG.
+
+Recommendation for 2.6: send every response back unchanged and let compaction
+drop written slides when a turn gets long; cut cost through fewer refusals.
+The placeholder was removed from the playground after this measurement.

@@ -40,14 +40,24 @@ config field are in `README.md`; the scenarios to run are its Acceptance table.
 ## Caching findings
 
 GLM-5.3-Flash on Relace caches per server and reuses the cache only where an
-earlier request ended (hybrid attention), so every request must extend the
-previous one exactly.
+earlier call ended (hybrid attention), so every request must extend the
+previous one exactly. The point it saves is the end of the model's output, not
+of the request: the next request hits only when it sends that response back
+unchanged, reasoning and tool-call arguments included (measured 2026-10-05).
 
 - The turn context used to sit after the question and change each call, which
   left build steps uncached (a deck turn: 35k of 944k input cached). Appended
   and kept in place, a note and quiz build read 63% from cache: 7 calls and
   107k input, where the same request before took 12 calls and about 290k
-  input with nothing written.
+  input with nothing written. The tangents deck now reads 88% from cache:
+  607k input, 47 credits, where it took 944k and 160 credits on 2026-10-04
+  (`DECKS.md`, Measured).
+- Leaving a written slide's SVG out of the history does not pay: the response
+  that wrote it is then sent back changed, so every later request misses the
+  cache back to the last unchanged response, and the model copied the
+  placeholder into two new slides. Tried and removed on 2026-10-05; the
+  numbers are in `DECKS.md`. Shrink the history only where it is rewritten
+  anyway (compaction).
 - Tools-off calls (the 8th response, the stall guard, the tool cap) now keep
   the tools and send `tool_choice: "none"`; dropping them had left that call
   uncached. Relace accepts it. Not yet seen in a live run: check the final
@@ -65,6 +75,8 @@ previous one exactly.
 | Citing passages in the answer, per block | about 7 |
 | A 4-question quiz as `create_material` arguments | about 1.4k |
 | A three-section explainer note | about 2.6k |
+| One slide as `write_slide` arguments (2k to 4.5k characters of SVG) | about 1k |
+| A response writing four slides | 6.5k to 19k output, 0.4k to 13k of it reasoning, all sent back on every later call |
 
 Each call's line in the playground shows its output split (reasoning, the
 answer and each tool call's arguments), and `done` sums the turn.
@@ -114,8 +126,8 @@ they go before the answer format only while that text matches production.
 
 ## What is running
 
-- The playground on http://localhost:8766 (the desktop app's
-  `rag-playground-lab` launch config, lab target), left open. Restart it
+- The playground from the desktop app's `rag-playground-lab` launch config
+  (lab target, on the port the app assigns through `PORT`), left open. Restart it
   after changing pipeline or playground code; the page keeps its config.
 - The lab database `capy-odl-agentic-db` on the ingest host, reached through
   the playground's tunnel. Hand-applied there: `rag_material_contents` and two
