@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alignReveal, bankScore } from './bank';
+import { alignReveal, bankScore, filterBankRows, nextUnanswered } from './bank';
 import { exampleQuestion } from './questionFixtures';
 import type { LearnerQuestion, Question } from './types';
 
@@ -65,5 +65,30 @@ describe('bank checking', () => {
       type: 'open',
     });
     expect(bankScore(open, { 'x-part': 'Evidence' })).toBeNull();
+  });
+});
+
+describe('bank progress', () => {
+  const rows = ['a', 'b', 'c', 'd'].map((id) => ({
+    answerTypes: id === 'b' ? ['mcq', 'short'] : ['short'],
+    id,
+  }));
+
+  it('continues after the last answered question in list order, wrapping', () => {
+    expect(nextUnanswered(rows, {})).toBe('a');
+    expect(nextUnanswered(rows, { a: 1, c: 0 })).toBe('d');
+    expect(nextUnanswered(rows, { b: 0.5, d: 1 })).toBe('a');
+    expect(nextUnanswered(rows, { a: 1, b: 1, c: 0, d: 0 })).toBeNull();
+  });
+
+  it('filters by status and answer type together', () => {
+    const marks = { a: 1, b: 0.5, c: 0 };
+    const ids = (types: string[], statuses: string[]) =>
+      filterBankRows(rows, types, statuses, marks).map((row) => row.id);
+    expect(ids([], ['correct'])).toEqual(['a']);
+    expect(ids([], ['wrong', 'partial'])).toEqual(['b', 'c']);
+    expect(ids([], ['notDone'])).toEqual(['d']);
+    expect(ids(['mcq'], [])).toEqual(['b']);
+    expect(ids(['short'], ['correct', 'notDone'])).toEqual(['a', 'd']);
   });
 });

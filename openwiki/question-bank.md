@@ -8,12 +8,14 @@ to the topic's question list; on phones that column becomes a floating bar and
 bottom sheet. Editors switch between View mode and Edit mode; edit mode adds
 the answer key and a review bar (review status, Mark reviewed/Undo review,
 Comment, Edit) under each question. In View mode signed-in learners answer and
-check each question (Learner answering, below); mistake review screens and
-production Jev grading remain in `todo-question-bank.md`.
+check each question (Learner answering, below) and copy questions into their
+quizzes; production Jev grading remains in `todo-question-bank.md`.
 
 The topic list (`GET /api/bank/topics/{id}/questions`) returns light rows for
-the navigation panel. Full questions come from `GET /api/bank/questions?ids=`,
-up to 50 per request in the requested order; an unknown id fails the whole
+the navigation panel; each row's `answerTypes` lists its parts' distinct answer
+types in part order (`bank.AnswerTypes`), for the page's Question type filter.
+Full questions come from `GET /api/bank/questions?ids=`, up to 50 per request
+in the requested order; an unknown id fails the whole
 batch with 404, so the page refetches the list. The page renders a window of
 the list that grows 10 questions at a time when its end comes within 800px of
 the view. A list click on a question outside the window restarts the window at
@@ -211,55 +213,65 @@ every formula, and re-renders only named question ids after a fix. See its
 [README](../lab/questions/README.md).
 `server/cmd/bank` migrates, publishes and reports status. Publication uploads
 immutable assets and inserts new IDs; it does not overwrite later reviewer edits.
-It also stores each question's task types in `questions.question_types`, ids
-from the subject's `question_types` vocabulary in its syllabus file (IELTS
-Academic Reading's eleven official types; empty for subjects without one). The
-chat agent's `list_question_bank` can keep a topic's questions of one type
-(`question_type`, see [agentic-retrieval.md](agentic-retrieval.md), Question
-bank).
+No task-type labels are stored (Epo, 2026-10-06): the page and the chat
+agent's `list_question_bank` (`answer_type`, see
+[agentic-retrieval.md](agentic-retrieval.md), Question bank) filter by the
+parts' answer types read from each question's content. Bank migration
+`0004_drop_question_types.sql` drops the old `questions.question_types`; run it
+only after the code that stopped reading the column is deployed.
 
 ## Learner progress and retraction
 
-Signed-in learners' checked answers on `/bank` are rated with workspace
-review's FSRS code and score mapping
-([study-progress.md](study-progress.md#fsrs)): the browser sends the answer's
-awarded marks over the question's marks, below 0.5 is Again, below 0.7 Hard,
-otherwise Good. The page records answers (Learner answering, below); the
-mistake review screen waits for its mock.
-
-App migration `0055_bank_review_states.sql` keeps one row per user and bank
+Bank progress keeps each signed-in learner's latest result per question and
+nothing else: no FSRS state, review queue or end-of-session screen (Epo,
+2026-10-06). App migration `0056_bank_progress.sql` replaces
+`bank_review_states` (0055) with `bank_progress`, one row per user and bank
 question: `question_id` and a copied `topic_id` are plain ids into the bank
 database (no foreign key), `item_hash` is `review.QuestionHash` of the question
-when it was answered, then `review_states`' FSRS columns and `last_score`.
-There is no review log. Rows are never copied or charged to storage.
+when it was answered, then `last_score` (0 to 1) and `answered_at`. The
+migration carries existing rows over. Rows are never copied or charged to
+storage.
 
 | Endpoint | Effect |
 | --- | --- |
 | `POST /api/bank/questions/{id}/reveal` | `{answers}`, the learner's answers by part id. Returns `{question}`, that one question in full (answer key, marking schemes, worked solutions); 404 when unknown or retracted. The answers are not stored or graded on the server. |
-| `POST /api/bank/questions/{id}/answers` | `{score}`, 0 to 1. Reads the question from the bank (404 when unknown or retracted), then rates it under a per-user, per-question advisory lock and stores its topic, hash and score; 204. A stored hash that no longer matches is rated as a new question. |
-| `GET /api/bank/topics/{topicId}/marks` | `{marks: {questionId: boolean}}` for the topic list: each answered current question, true when the last answer earned full marks (the quiz page's green). |
-| `GET /api/bank/topics/{topicId}/review` | `{questionIds}`: the topic's mistake review batch, up to 20 current questions missed at least once (`lapses > 0`), lowest retrievability first. The page reads them through `GET /api/bank/questions?ids=`; asking again after the answers land gives the next batch. |
+| `POST /api/bank/questions/{id}/answers` | `{score}`, the answer's awarded marks over the question's marks, 0 to 1. Reads the question from the bank (404 when unknown or retracted) and upserts its topic, hash, score and time; 204. |
+| `GET /api/bank/topics/{topicId}/marks` | `{marks: {questionId: score}}` for the topic list: the latest score of each answered current question. |
+| `GET /api/bank/progress` | `{topics}`: every topic with at least one answered current question, most recent answer first. Each carries exam, subject and topic ids and labels, `total` (current questions), `answered`, `correct` (score 1), `lastAnsweredAt` and `nextQuestionId`: the first unanswered question after the most recently answered one in topic order, wrapping to the start, or null when every question is answered. |
+| `POST /api/bank/copy` | `{questionIds (1–20), workspaceId, quizId \| quizName, chapterId?}` returns `{workspaceId, quizId}`. Below. |
 
 A current question is one that is not retracted and whose stored hash equals
-its hash now; `bank.TopicHashes` reads the topic's questions once per request.
-Editing a stem or part prompt therefore hides the question's mark and takes it
-out of review until it is answered again; edits to answers, schemes, solutions
-and figures keep both. The routes need the page's read access (signed in, bank
-configured), so signed-out visitors get 401 and record nothing; frozen accounts
-record (`requireAccountMutate`). Account purge deletes the rows. The MSW bank
-mock (`src/mocks/questionBank.ts`) serves all of them, ordering review by the
-oldest answer.
+its hash now; `bank.TopicHashes` and `Store.Progress` (`server/internal/bank/progress.go`)
+read the topics' questions once per request. Editing a stem or part prompt
+therefore makes the question unanswered until it is answered again; edits to
+answers, schemes, solutions and figures keep the result. The routes need the
+page's read access (signed in, bank configured), so signed-out visitors get 401
+and record nothing; frozen accounts record (`requireAccountMutate`). Account
+purge deletes the rows.
+
+`POST /api/bank/copy` (`server/internal/httpapi/huma_bank_progress.go`) copies
+questions unchanged with the chat's `copy_questions` logic (`bankCopies` and
+`bankAppendCommands` in `internal_bank.go`): each question's credit is resolved
+from its bank sources into the quiz's provenance under the question's id, and
+an unknown or retracted id fails the call with 404. Exactly one destination:
+`quizName` makes a new quiz in the workspace, filed in `chapterId` when given;
+`quizId` appends after an existing workspace quiz's last question through the
+document authority, which writes the merged credits with the content. The
+caller needs the bank's read access and edit access to the workspace (viewers
+get 404); frozen accounts and storage owners at their limit are refused like
+other content writes.
 
 Published questions are retracted, never deleted, so progress ids stay valid.
 Bank migration `0003_retracted.sql` adds `questions.retracted_at`, which only
 the owner sets (see [deployment-runbook.md](deployment-runbook.md)); the editor
 role has no grant on it. Syllabus counts, the topic list, single and batch
 reads (a retracted id fails a batch with 404 like an unknown one), comments,
-answers, reveal, marks, review and the chat's list, read and `copy_questions` routes
-all skip retracted questions. Editors' save and review routes do not check the
-flag; the page never lists those questions. UAT and production share the bank:
-run `go run ./cmd/bank migrate` before deploying code that reads the column,
-and code older than this change still shows retracted questions.
+answers, reveal, marks, progress, copy and the chat's list, read and
+`copy_questions` routes all skip retracted questions. Editors' save and review
+routes do not check the flag; the page never lists those questions. UAT and
+production share the bank: run `go run ./cmd/bank migrate` before deploying
+code that reads the column, and code older than this change still shows
+retracted questions.
 
 ### Learner answering
 
@@ -275,7 +287,7 @@ shows the quiz review (`QuestionReview`: part score in the marks column with no
 question total, the answer rows tagged Your answer and Correct answer, accepted
 answers, the worked solution collapsed). `bankScore` sums `scorePart` over the
 parts and divides by their marks; the browser posts that 0–1 score to the
-answers route and refreshes the topic's marks. A question with open parts
+answers route and refreshes the topic's marks and the landing. A question with open parts
 (none in the bank today) shows its key but records no score, because only Jev
 grades open answers. Try again clears the answers and the key; the next check
 records a new attempt, and the list shows the latest. Edit mode keeps the
@@ -286,10 +298,44 @@ a failed record still shows the review but leaves the list unchanged.
 The topic list uses the shared `QuestionListRow`
 (`src/features/questions/QuestionListRow.tsx`): bold number, two-line stem,
 then a muted line with the marks, figure and table icons. In View mode a result
-mark leads each row (a filled check when the last answer earned full marks, a
-filled cross otherwise, an empty circle when unanswered), and one line under
-the topic heading reads "N correct · M to retry", both from the marks route.
-Edit mode shows no marks; its rows keep the reviewed label on the muted line.
+mark leads each row from the latest score (`bankStatus`: a green check at full
+marks, an amber minus between, a red cross at zero, an empty circle when
+unanswered), and one line under the topic heading reads "N correct · M to
+retry" (M counts scores below 1), both from the marks route. Edit mode shows
+no marks; its rows keep the reviewed label on the muted line.
+
+With no topic open, View mode's main panel lists the progress route's topics
+in the Learning Review tab's table (`BankLanding`): topic with exam and
+subject, "answered of total", correct count, and Continue (opens
+`nextQuestionId`) or, once every question is answered, Summary (the topic at
+its top). With none, or in Edit mode, it keeps Choose a topic; phones list the
+topics in the page under the table. Inside a topic, Continue beside the title
+scrolls to `nextUnanswered`: the first unanswered question after the last
+answered one in the listed order, wrapping, computed in the browser from the
+marks; it hides once every listed question is answered. There is no review
+session.
+
+Every topic has the list pages' filter (`FilterPopover` from
+`src/components/app/ListToolbar.tsx`) beside Edit mode's All/Unreviewed
+buttons: Question type offers the answer types present in the topic's rows
+(the editor's labels), and View mode adds Status (Correct, Wrong, Partially
+wrong, Not done). `filterBankRows` keeps rows with any chosen type and any
+chosen status; the search text applies on top, and the main panel shows the
+same rows. Status is matched against the marks as they were when it was last
+toggled, so a question answered while filtered stays in view.
+
+A checkbox in each question's left margin selects it for Copy to quiz (mocks
+3.1 B and 3.2 B in `artifacts/2026-10-05-bank-learner-mocks.html`): selections
+survive filtering, cap at the route's 20, and a floating bar (count, Copy to
+quiz, clear) replaces the phone navigation bar. `CopyToQuizDialog`
+(`src/features/questions/CopyToQuizDialog.tsx`) has Workspace (workspaces with
+`capabilities.canEdit`) and Chapter dropdowns (No chapter included), then the
+chapter's quizzes as rows under New quiz, the default, which is a name field
+prefilled with the topic name. Copy posts the copy route in topic order;
+success shows a toast whose Open quiz opens the quiz in its workspace, and a
+failure keeps the dialog open behind the global mutation toast. The MSW mock
+seeds answers in Area practice and Mensuration and makes copies in the mock
+workspaces.
 
 ## Delivery and checks
 

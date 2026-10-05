@@ -503,15 +503,17 @@ Details live in [study-progress.md](study-progress.md).
   `notOwnership`). Trashed items keep their rows, hidden until restored. Rows
   cascade with their file, material or workspace, and `PurgeUser` deletes all
   four tables at account purge.
-- Question-bank progress (`bank_review_states`, see
+- Question-bank progress (`bank_progress`, see
   [question-bank.md](question-bank.md#learner-progress-and-retraction)) is
   private the same way: any signed-in user with the bank page's read access
-  records their own checked answers, frozen accounts included. Rows name bank
+  records their own latest scores, frozen accounts included. Rows name bank
   question and topic ids without a foreign key, belong to no workspace (so
   transfer and clone never touch them), are not charged to storage, stay
   unread when their question is retracted or its prompt edited, and are
   deleted by `PurgeUser`. Published bank questions are retracted by the bank
-  owner, never deleted.
+  owner, never deleted. Copying bank questions into a quiz (`POST
+  /api/bank/copy`) is a content write: it needs edit access to the workspace,
+  and frozen accounts and full storage owners are refused.
 - Signed-out visitors keep their study in the browser only (see Anonymous
   quizzes and flashcards); they record nothing on the bank.
 

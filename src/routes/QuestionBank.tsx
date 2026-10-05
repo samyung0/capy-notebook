@@ -19,11 +19,19 @@ import {
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { api, isApiError } from '@/api/client';
+import { copyBankQuestionsBodyQuestionIdsMax as COPY_MAX } from '@/api/gen/validators';
+import type { BankTopicProgress } from '@/api/types';
+import {
+  FilterPopover,
+  type FilterSection,
+  toggleValue,
+} from '@/components/app/ListToolbar';
 import { Panel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { FloatingToolbar } from '@/components/ui/BlockToolbar';
 import { Button } from '@/components/ui/Button';
+import { Checkbox } from '@/components/ui/Checkbox';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/Drawer';
 import { Skeleton, SkeletonList } from '@/components/ui/feedback';
@@ -36,21 +44,34 @@ import { MaterialAttributionFooter } from '@/features/materials/MaterialAttribut
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import {
   alignReveal,
+  BANK_STATUSES,
   type BankDetail,
   type BankRow,
   type BankSyllabus,
   bankBatchQuery,
   bankMarksQuery,
+  bankProgressQuery,
   bankQuestionQuery,
   bankQuestionsQuery,
   bankScore,
   bankSyllabusQuery,
+  filterBankRows,
+  nextUnanswered,
   recordBankAnswer,
   revealBankQuestion,
   uploadBankAsset,
 } from '@/features/questions/bank';
-import { QuestionListRow } from '@/features/questions/QuestionListRow';
-import type { LearnerQuestion, Question } from '@/features/questions/types';
+import { CopyToQuizDialog } from '@/features/questions/CopyToQuizDialog';
+import { answerLabels } from '@/features/questions/editorFields';
+import {
+  QuestionListRow,
+  statusLabels,
+} from '@/features/questions/QuestionListRow';
+import {
+  type LearnerQuestion,
+  QUESTION_TYPES,
+  type Question,
+} from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { QuizPageHeader } from '@/features/quizzes/QuizPage';
@@ -85,6 +106,21 @@ export default function QuestionBank() {
   const [topicFilter, setTopicFilter] = useState('');
   const [filter, setFilter] = useState('');
   const [unreviewed, setUnreviewed] = useState(false);
+  const [types, setTypes] = useState<string[]>([]);
+  const [statuses, setStatuses] = useState<string[]>([]);
+  // The marks the status filter was set against, so a question answered
+  // while filtered stays in view.
+  const [statusMarks, setStatusMarks] = useState<Record<string, number>>({});
+  const [selected, setSelected] = useState<string[]>([]);
+  const [copying, setCopying] = useState(false);
+  const [shownTopic, setShownTopic] = useState(topicId);
+  if (shownTopic !== topicId) {
+    setShownTopic(topicId);
+    setFilter('');
+    setTypes([]);
+    setStatuses([]);
+    setSelected([]);
+  }
   const [editing, setEditing] = useState<BankDetail | null>(null);
   const [conflict, setConflict] = useState(false);
   const [commentFor, setCommentFor] = useState('');
@@ -110,11 +146,53 @@ export default function QuestionBank() {
     enabled: Boolean(topicId) && mode === 'view',
     meta: { errorBoundary: false },
   });
-  const rows = (list?.questions ?? []).filter(
+  const marks = mode === 'view' && !resultsError ? results?.marks : undefined;
+  const questions = list?.questions ?? [];
+  const rows = filterBankRows(
+    questions,
+    types,
+    marks ? statuses : [],
+    statusMarks
+  ).filter(
     (row) =>
       (mode !== 'edit' || !unreviewed || !row.reviewedAt) &&
       row.preview.toLowerCase().includes(filter.toLowerCase())
   );
+  const next = marks && nextUnanswered(rows, marks);
+  const filters: FilterSection[] = [
+    {
+      key: 'type',
+      label: m.question_ui_question_type(),
+      onToggle: (value) => setTypes(toggleValue(types, value)),
+      options: QUESTION_TYPES.filter((type) =>
+        questions.some((row) => row.answerTypes.includes(type))
+      ).map((type) => ({ label: answerLabels[type](), value: type })),
+      selected: types,
+    },
+  ];
+  if (marks)
+    filters.push({
+      key: 'status',
+      label: m.common_status(),
+      onToggle: (value) => {
+        setStatusMarks(marks);
+        setStatuses(toggleValue(statuses, value));
+      },
+      options: BANK_STATUSES.map((status) => ({
+        label: statusLabels[status](),
+        value: status,
+      })),
+      selected: statuses,
+    });
+  function selectQuestion(id: string, checked: boolean) {
+    if (!checked) setSelected(selected.filter((item) => item !== id));
+    else if (selected.length < COPY_MAX) setSelected([...selected, id]);
+    else
+      userToast({
+        title: m.question_ui_copy_limit({ count: COPY_MAX }),
+        variant: 'warning',
+      });
+  }
   const { mutateAsync: saveQuestion } = useMutation({
     mutationFn: ({
       snapshot,
@@ -164,12 +242,29 @@ export default function QuestionBank() {
   function topic(id: string) {
     setShowTopics(false);
     setNavOpen(false);
-    setFilter('');
     void navigate({
       params: { topicId: id },
       search: modeSearch,
       to: '/bank/$topicId',
     });
+  }
+  /** From the landing: Continue opens the next question, Summary the top. */
+  function openProgress(id: string, next: string | null) {
+    setShowTopics(false);
+    if (next)
+      void navigate({
+        params: { questionId: next, topicId: id },
+        search: modeSearch,
+        to: '/bank/$topicId/$questionId',
+      });
+    else {
+      scrollRef.current?.scrollTo({ top: 0 });
+      void navigate({
+        params: { topicId: id },
+        search: modeSearch,
+        to: '/bank/$topicId',
+      });
+    }
   }
   function select(id: string) {
     setNavOpen(false);
@@ -205,16 +300,19 @@ export default function QuestionBank() {
       <TopicQuestions
         edit={mode === 'edit'}
         filter={filter}
+        filters={filters}
         label={place?.item.label ?? ''}
         list={list}
         onBack={() => setShowTopics(true)}
         onFilter={setFilter}
         onQuestion={select}
+        onResetFilters={() => {
+          setTypes([]);
+          setStatuses([]);
+        }}
         onUnreviewed={setUnreviewed}
         questionId={questionId}
-        results={
-          mode === 'view' && !resultsError ? (results?.marks ?? {}) : undefined
-        }
+        results={mode === 'view' && !resultsError ? (marks ?? {}) : undefined}
         rows={rows}
         unreviewed={unreviewed}
       />
@@ -244,13 +342,7 @@ export default function QuestionBank() {
     );
   else if (!topicId)
     body = (
-      <>
-        {/* Phones pick a topic in the page; wide screens use the side panel. */}
-        <div className="lg:hidden">{nav}</div>
-        <p className="hidden text-fg-muted lg:block">
-          {m.question_ui_choose_a_topic()}
-        </p>
-      </>
+      <BankLanding nav={nav} onOpen={openProgress} view={mode === 'view'} />
     );
   else if (listError)
     body = (
@@ -268,7 +360,13 @@ export default function QuestionBank() {
     body = (
       <BankQuestions
         // A new topic or filter starts a new window.
-        key={[topicId, filter, mode === 'edit' && unreviewed].join('|')}
+        key={[
+          topicId,
+          filter,
+          mode === 'edit' && unreviewed,
+          types,
+          marks && statuses,
+        ].join('|')}
         mode={mode}
         onComment={setCommentFor}
         onEdit={(detail) => setEditing(structuredClone(detail))}
@@ -278,10 +376,12 @@ export default function QuestionBank() {
             reviewed: !detail.reviewedAt,
           })
         }
+        onSelect={selectQuestion}
         questionId={questionId}
         reviewing={reviewing}
         rows={rows}
         scrollRef={scrollRef}
+        selected={selected}
         topicId={topicId}
       />
     );
@@ -309,17 +409,34 @@ export default function QuestionBank() {
         >
           <QuizPageHeader
             actions={
-              syllabus?.editor && (
-                <Button
-                  className="rounded-input"
-                  iconLeft={mode === 'edit' ? 'view' : 'pencil'}
-                  onClick={() => setMode(mode === 'edit' ? 'view' : 'edit')}
-                  size="sm"
-                >
-                  {mode === 'edit'
-                    ? m.question_ui_view_mode()
-                    : m.question_ui_edit_mode()}
-                </Button>
+              (next || syllabus?.editor) && (
+                <>
+                  {next && (
+                    <Button
+                      className="rounded-input"
+                      iconLeft="navigationForward"
+                      onClick={() => select(next)}
+                      size="sm"
+                    >
+                      {/* Icon only on phones, so the topic title keeps room. */}
+                      <span className="max-sm:sr-only">
+                        {m.question_ui_continue()}
+                      </span>
+                    </Button>
+                  )}
+                  {syllabus?.editor && (
+                    <Button
+                      className="rounded-input"
+                      iconLeft={mode === 'edit' ? 'view' : 'pencil'}
+                      onClick={() => setMode(mode === 'edit' ? 'view' : 'edit')}
+                      size="sm"
+                    >
+                      {mode === 'edit'
+                        ? m.question_ui_view_mode()
+                        : m.question_ui_edit_mode()}
+                    </Button>
+                  )}
+                </>
               )
             }
             meta={
@@ -355,7 +472,12 @@ export default function QuestionBank() {
                 : []
             }
           />
-          <div className="px-4 pt-8 pb-28 sm:px-6 lg:px-10 lg:pb-10 xl:px-16">
+          <div
+            className={cn(
+              'px-4 pt-8 pb-28 sm:px-6 lg:px-10 lg:pb-10 xl:px-16',
+              selected.length > 0 && 'lg:pb-28'
+            )}
+          >
             <div className="max-w-3xl">{body}</div>
           </div>
         </Panel>
@@ -365,7 +487,7 @@ export default function QuestionBank() {
           <FloatingToolbar
             aria-label={m.question_ui_bank_navigation()}
             className="gap-1 rounded-full! px-2 py-1 lg:hidden"
-            open={!navOpen}
+            open={!navOpen && !selected.length}
             positionClassName="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 lg:hidden"
           >
             <ToolbarButton
@@ -394,6 +516,36 @@ export default function QuestionBank() {
             </ToolbarButton>
           </FloatingToolbar>
         )}
+        {/* Copy to quiz (mock 3.1 B): the count, Copy to quiz and clear. */}
+        <FloatingToolbar
+          aria-label={m.question_ui_copy_to_quiz()}
+          className="gap-1 rounded-full! px-2 py-1"
+          open={selected.length > 0 && !navOpen}
+          positionClassName="absolute bottom-4 left-1/2 z-10 -translate-x-1/2"
+        >
+          <span className="whitespace-nowrap pr-1 pl-2 text-fg-muted text-sm">
+            {m.question_ui_selected_count({ count: selected.length })}
+          </span>
+          <ToolbarButton
+            className="h-10 w-auto gap-2 rounded-card-xl px-3 [&_svg]:size-5"
+            label={m.question_ui_copy_to_quiz()}
+            onClick={() => setCopying(true)}
+            tooltipSide="top"
+          >
+            <Icon name="copy" />
+            <span className="whitespace-nowrap">
+              {m.question_ui_copy_to_quiz()}
+            </span>
+          </ToolbarButton>
+          <ToolbarButton
+            className="h-10 rounded-card-xl [&_svg]:size-5"
+            label={m.question_ui_clear_selection()}
+            onClick={() => setSelected([])}
+            tooltipSide="top"
+          >
+            <Icon name="x" />
+          </ToolbarButton>
+        </FloatingToolbar>
       </div>
       <Drawer
         onOpenChange={setNavOpen}
@@ -461,6 +613,19 @@ export default function QuestionBank() {
       {commentFor && (
         <BankComment id={commentFor} onClose={() => setCommentFor('')} />
       )}
+      {copying && (
+        <CopyToQuizDialog
+          onClose={() => setCopying(false)}
+          onCopied={() => {
+            setCopying(false);
+            setSelected([]);
+          }}
+          questionIds={questions
+            .filter((row) => selected.includes(row.id))
+            .map((row) => row.id)}
+          topicLabel={place?.item.label ?? ''}
+        />
+      )}
     </div>
   );
 }
@@ -496,20 +661,25 @@ function BankQuestions({
   topicId,
   mode,
   reviewing,
+  selected,
   scrollRef,
   onReview,
   onComment,
   onEdit,
+  onSelect,
 }: {
   rows: BankRow[];
   questionId: string;
   topicId: string;
   mode: 'view' | 'edit';
   reviewing: boolean;
+  /** Question ids ticked for Copy to quiz. */
+  selected: string[];
   scrollRef: RefObject<HTMLDivElement | null>;
   onReview: (detail: BankDetail) => void;
   onComment: (id: string) => void;
   onEdit: (detail: BankDetail) => void;
+  onSelect: (id: string, checked: boolean) => void;
 }) {
   const client = useQueryClient();
   const target = rows.findIndex((row) => row.id === questionId);
@@ -623,9 +793,23 @@ function BankQuestions({
         {shown.map((row, i) => {
           const detail = details[i]?.data;
           return (
-            <li className="grid gap-4" data-question-id={row.id} key={row.id}>
+            <li
+              className="relative grid gap-4 pl-6 sm:pl-0"
+              data-question-id={row.id}
+              key={row.id}
+            >
               {detail ? (
                 <>
+                  {/* In the left margin, beside the question number. */}
+                  <Checkbox
+                    aria-label={m.question_ui_select_question({
+                      number: row.position,
+                    })}
+                    checked={selected.includes(row.id)}
+                    className="absolute top-1 left-0 sm:-left-6 lg:-left-7"
+                    onChange={(checked) => onSelect(row.id, checked)}
+                    size={16}
+                  />
                   {mode === 'view' ? (
                     <CheckableQuestion
                       question={detail.question}
@@ -696,8 +880,12 @@ function CheckableQuestion({
   );
   const { mutate: record } = useMutation({
     mutationFn: (score: number) => recordBankAnswer(question.id, { score }),
-    onSuccess: () =>
-      client.invalidateQueries({ queryKey: bankMarksQuery(topicId).queryKey }),
+    onSuccess: () => {
+      void client.invalidateQueries({
+        queryKey: bankMarksQuery(topicId).queryKey,
+      });
+      void client.invalidateQueries({ queryKey: bankProgressQuery().queryKey });
+    },
   });
   const { mutate: check, isPending } = useMutation({
     mutationFn: (sent: Answers) =>
@@ -917,10 +1105,12 @@ function TopicQuestions({
   questionId,
   edit,
   filter,
+  filters,
   unreviewed,
   results,
   onBack,
   onFilter,
+  onResetFilters,
   onUnreviewed,
   onQuestion,
 }: {
@@ -930,15 +1120,17 @@ function TopicQuestions({
   questionId: string;
   edit: boolean;
   filter: string;
+  filters: FilterSection[];
   unreviewed: boolean;
-  /** View mode: answered questions by id, true when right. */
-  results?: Record<string, boolean>;
+  /** View mode: answered questions' latest scores by id. */
+  results?: Record<string, number>;
   onBack: () => void;
   onFilter: (value: string) => void;
+  onResetFilters: () => void;
   onUnreviewed: (value: boolean) => void;
   onQuestion: (id: string) => void;
 }) {
-  const marks = Object.values(results ?? {});
+  const scores = Object.values(results ?? {});
   return (
     <nav aria-label={m.question_ui_questions()} className="flex flex-col gap-3">
       <PanelHeading
@@ -955,34 +1147,37 @@ function TopicQuestions({
         searchLabel={m.question_ui_find_a_question()}
         title={label}
       />
-      {edit && (
-        <div className="flex gap-1 px-1">
-          <Button
-            aria-pressed={!unreviewed}
-            className="rounded-input"
-            onClick={() => onUnreviewed(false)}
-            size="sm"
-            variant={unreviewed ? 'ghost-hover' : 'gray'}
-          >
-            {m.action_all()} {list?.questions.length ?? 0}
-          </Button>
-          <Button
-            aria-pressed={unreviewed}
-            className="rounded-input"
-            onClick={() => onUnreviewed(true)}
-            size="sm"
-            variant={unreviewed ? 'gray' : 'ghost-hover'}
-          >
-            {m.question_ui_unreviewed()}{' '}
-            {list?.questions.filter((row) => !row.reviewedAt).length ?? 0}
-          </Button>
-        </div>
-      )}
+      <div className="flex flex-wrap items-center gap-1 px-1">
+        {edit && (
+          <>
+            <Button
+              aria-pressed={!unreviewed}
+              className="rounded-input"
+              onClick={() => onUnreviewed(false)}
+              size="sm"
+              variant={unreviewed ? 'ghost-hover' : 'gray'}
+            >
+              {m.action_all()} {list?.questions.length ?? 0}
+            </Button>
+            <Button
+              aria-pressed={unreviewed}
+              className="rounded-input"
+              onClick={() => onUnreviewed(true)}
+              size="sm"
+              variant={unreviewed ? 'gray' : 'ghost-hover'}
+            >
+              {m.question_ui_unreviewed()}{' '}
+              {list?.questions.filter((row) => !row.reviewedAt).length ?? 0}
+            </Button>
+          </>
+        )}
+        <FilterPopover filters={filters} onResetFilters={onResetFilters} />
+      </div>
       {results && (
         <p className="t-meta px-2 text-fg-muted">
           {m.question_ui_correct_and_retry({
-            correct: marks.filter(Boolean).length,
-            retry: marks.filter((right) => !right).length,
+            correct: scores.filter((score) => score >= 1).length,
+            retry: scores.filter((score) => score < 1).length,
           })}
         </p>
       )}
@@ -1084,6 +1279,96 @@ function ReviewBar({
           {m.question_ui_edit()}
         </Button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * /bank with no topic open: in View mode, the topics the learner has answered
+ * in, in the Learning Review tab's table, each with Continue (the next
+ * unanswered question) or, once all are answered, Summary (the topic's top).
+ * Without any, Choose a topic as before; phones pick topics in the page.
+ */
+function BankLanding({
+  view,
+  nav,
+  onOpen,
+}: {
+  view: boolean;
+  nav: ReactNode;
+  onOpen: (topicId: string, next: string | null) => void;
+}) {
+  const { data, error, isPending, refetch } = useQuery({
+    ...bankProgressQuery(),
+    enabled: view,
+    meta: { errorBoundary: false },
+  });
+  let progress: ReactNode = null;
+  if (view && isPending) progress = <SkeletonList count={3} rowHeight={52} />;
+  else if (view && error)
+    progress = <BankError error={error} onRetry={() => void refetch()} />;
+  else if (view && data?.topics.length)
+    progress = <ProgressTable onOpen={onOpen} topics={data.topics} />;
+  return (
+    <div className="grid gap-8">
+      {progress}
+      <div className="lg:hidden">{nav}</div>
+      {!progress && (
+        <p className="hidden text-fg-muted lg:block">
+          {m.question_ui_choose_a_topic()}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ProgressTable({
+  topics,
+  onOpen,
+}: {
+  topics: BankTopicProgress[];
+  onOpen: (topicId: string, next: string | null) => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-card border border-line">
+      <div className="grid grid-cols-[minmax(0,1fr)_5rem_6rem] items-center gap-3 bg-surface-hover-bg px-4 py-3 font-bold text-fg-muted text-xs uppercase tracking-wide md:grid-cols-[minmax(0,1fr)_7rem_6rem_6rem]">
+        <div>{m.question_ui_col_topic()}</div>
+        <div className="text-center">{m.question_ui_col_answered()}</div>
+        <div className="hidden text-center md:block">
+          {m.question_ui_status_correct()}
+        </div>
+        <div />
+      </div>
+      {topics.map((topic) => (
+        <div
+          className="grid grid-cols-[minmax(0,1fr)_5rem_6rem] items-center gap-3 border-divider border-t py-2 pr-2 pl-4 first:border-t-0 md:grid-cols-[minmax(0,1fr)_7rem_6rem_6rem]"
+          key={topic.topicId}
+        >
+          <div className="min-w-0">
+            <div className="truncate font-semibold text-fg">
+              {topic.topicLabel}
+            </div>
+            <div className="truncate text-fg-muted text-xs">
+              {topic.examLabel} · {topic.subjectLabel}
+            </div>
+          </div>
+          <div className="text-center tabular-nums">
+            {m.study_of({ done: topic.answered, total: topic.total })}
+          </div>
+          <div className="hidden text-center text-fg-muted text-sm tabular-nums md:block">
+            {topic.correct}
+          </div>
+          <Button
+            onClick={() => onOpen(topic.topicId, topic.nextQuestionId)}
+            size="sm"
+            variant="outline"
+          >
+            {topic.nextQuestionId
+              ? m.question_ui_continue()
+              : m.question_ui_summary()}
+          </Button>
+        </div>
+      ))}
     </div>
   );
 }

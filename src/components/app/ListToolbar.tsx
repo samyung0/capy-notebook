@@ -79,23 +79,7 @@ export function ListToolbar<V extends string>({
   /** Replaces the entire sort/filter group, including its styled container. */
   selectionActions?: ReactNode;
 }) {
-  const [filterOpen, setFilterOpen] = useState(false);
   const current = sorts.find((option) => option.value === sort) ?? sorts[0];
-  const selectedLabels = useMemo(
-    () =>
-      filters.flatMap((section) =>
-        section.options
-          .filter((option) => section.selected.includes(option.value))
-          .map((option) => option.label)
-      ),
-    [filters]
-  );
-  const hasFilters = selectedLabels.length > 0;
-  const filterLabel = hasFilters
-    ? selectedLabels.length <= 2
-      ? selectedLabels.join(' · ')
-      : `${selectedLabels.slice(0, 2).join(' · ')} +${selectedLabels.length - 2}`
-    : m.workspaces_filter();
 
   return (
     <div className="-mb-3 flex flex-wrap items-center justify-between gap-x-3 px-6">
@@ -134,75 +118,7 @@ export function ListToolbar<V extends string>({
                 </Button>
               }
             />
-            <Popover onOpenChange={setFilterOpen} open={filterOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  className="h-fit px-1 py-1.5"
-                  iconLeft="filter"
-                  iconRight="chevronDown"
-                  size="md"
-                  variant="ghost"
-                >
-                  {filterLabel}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent
-                align="start"
-                className="max-h-96 gap-0 border-0 bg-transparent p-0 shadow-none!"
-              >
-                <Card
-                  border="solid"
-                  className="max-h-96 gap-3 overflow-y-auto p-3.5"
-                  radius="card"
-                >
-                  {filters.map((section) => (
-                    <section className="flex flex-col gap-2" key={section.key}>
-                      <p>{section.label}</p>
-                      {section.options.length === 0 ? (
-                        <p className="text-fg-muted">{section.emptyLabel}</p>
-                      ) : (
-                        <div className="-ml-0.5 flex flex-wrap gap-1.5">
-                          {section.options.map((option) => {
-                            const active = section.selected.includes(
-                              option.value
-                            );
-                            return (
-                              <button
-                                className={BASE_BUTTON_STYLE}
-                                key={option.value}
-                                onClick={() => section.onToggle(option.value)}
-                                type="button"
-                              >
-                                <Badge
-                                  className={cn(
-                                    'transition-colors',
-                                    !active && 'hover:bg-surface-dark'
-                                  )}
-                                  size="sm"
-                                  tone={active ? 'dark' : 'page'}
-                                >
-                                  {option.label}
-                                </Badge>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </section>
-                  ))}
-                  <Button
-                    className="mx-auto w-fit"
-                    disabled={!hasFilters}
-                    fullWidth
-                    onClick={onResetFilters}
-                    size="sm"
-                    variant="ghost-hover"
-                  >
-                    {m.workspaces_filter_reset()}
-                  </Button>
-                </Card>
-              </PopoverContent>
-            </Popover>
+            <FilterPopover filters={filters} onResetFilters={onResetFilters} />
           </div>
         )}
       </div>
@@ -213,6 +129,102 @@ export function ListToolbar<V extends string>({
         )}
       </div>
     </div>
+  );
+}
+
+/** The list pages' filter: a trigger naming the active filters and a popover
+ * of toggle badges per section. */
+export function FilterPopover({
+  filters,
+  onResetFilters,
+}: {
+  filters: FilterSection[];
+  onResetFilters: () => void;
+}) {
+  const [filterOpen, setFilterOpen] = useState(false);
+  const selectedLabels = useMemo(
+    () =>
+      filters.flatMap((section) =>
+        section.options
+          .filter((option) => section.selected.includes(option.value))
+          .map((option) => option.label)
+      ),
+    [filters]
+  );
+  const hasFilters = selectedLabels.length > 0;
+  const filterLabel = hasFilters
+    ? selectedLabels.length <= 2
+      ? selectedLabels.join(' · ')
+      : `${selectedLabels.slice(0, 2).join(' · ')} +${selectedLabels.length - 2}`
+    : m.workspaces_filter();
+  return (
+    <Popover onOpenChange={setFilterOpen} open={filterOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          className="h-fit px-1 py-1.5"
+          iconLeft="filter"
+          iconRight="chevronDown"
+          size="md"
+          variant="ghost"
+        >
+          {filterLabel}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="max-h-96 gap-0 border-0 bg-transparent p-0 shadow-none!"
+      >
+        <Card
+          border="solid"
+          className="max-h-96 gap-3 overflow-y-auto p-3.5"
+          radius="card"
+        >
+          {filters.map((section) => (
+            <section className="flex flex-col gap-2" key={section.key}>
+              <p>{section.label}</p>
+              {section.options.length === 0 ? (
+                <p className="text-fg-muted">{section.emptyLabel}</p>
+              ) : (
+                <div className="-ml-0.5 flex flex-wrap gap-1.5">
+                  {section.options.map((option) => {
+                    const active = section.selected.includes(option.value);
+                    return (
+                      <button
+                        className={BASE_BUTTON_STYLE}
+                        key={option.value}
+                        onClick={() => section.onToggle(option.value)}
+                        type="button"
+                      >
+                        <Badge
+                          className={cn(
+                            'transition-colors',
+                            !active && 'hover:bg-surface-dark'
+                          )}
+                          size="sm"
+                          tone={active ? 'dark' : 'page'}
+                        >
+                          {option.label}
+                        </Badge>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          ))}
+          <Button
+            className="mx-auto w-fit"
+            disabled={!hasFilters}
+            fullWidth
+            onClick={onResetFilters}
+            size="sm"
+            variant="ghost-hover"
+          >
+            {m.workspaces_filter_reset()}
+          </Button>
+        </Card>
+      </PopoverContent>
+    </Popover>
   );
 }
 

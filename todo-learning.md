@@ -91,8 +91,7 @@ the review fix round, CI green), with the question bank configured.
   database (2026-10-05).
 - **Was unblocked:** the `/generate` defaults from study preferences (2.4; AI
   generate moved into the Add file dialog), and learners answering on `/bank`
-  with bank mistake review (Later, "Question-bank progress"; part 1's FSRS
-  package exists).
+  with per-topic progress (built 2026-10-06; see todo-question-bank.md).
 - **Phase 3 mocks:** https://5i16xblach8o.postplan.dev. Epo picked A (media
   frame, like diagrams). People may edit the snippet, since the risk is the
   same whoever writes it. Signed-out pages never show these blocks (notes are
@@ -1020,18 +1019,9 @@ mock ("20 reviewed", Done, Review 20 more).
 
 ### Question-bank progress
 
-The bank page session builds learners answering on `/bank` and bank mistake
-review on part 1's FSRS code. Separate from workspaces: grouped by topic and
-exam, per-topic mistake review.
-
-- **Storage:** `bank_review_states` in the app database keyed by user and bank
-  question id (no foreign key across databases), with the topic id copied in for
-  grouping and a content hash that resets state on edit.
-- **Retraction:** published bank questions are retracted with a flag and never
-  hard-deleted, so progress ids stay valid; review skips retracted questions.
-  This supersedes "operators delete as owner" (2026-09-27) when it lands.
-- **Where:** `/bank`. Check answer records the attempt; the topic list shows
-  right and wrong marks.
+Built 2026-10-06; the state is in todo-question-bank.md and
+`openwiki/question-bank.md`. Epo dropped FSRS and mistake review for the bank:
+progress keeps each learner's latest score per question.
 
 ### Offline review
 

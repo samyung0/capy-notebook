@@ -1,10 +1,15 @@
 import { delay, HttpResponse, http } from 'msw';
 import type {
   BankAnswerReq,
+  BankCopyReq,
   BankRevealReq,
-  BankReviewBatch,
   BankTopicMarks,
+  BankTopicProgress,
 } from '@/api/types';
+import {
+  createMaterialDocument,
+  quizNode,
+} from '@/features/materials/document';
 import type {
   BankDetail,
   BankRow,
@@ -14,6 +19,8 @@ import { exampleQuestion } from '@/features/questions/questionFixtures';
 import type { Question } from '@/features/questions/types';
 import { questionMarks } from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
+import * as db from './db';
+import { uid } from './db';
 
 const assetsUrl = 'https://bank-fixtures.invalid/assets';
 const assets = new Map<string, File>();
@@ -55,19 +62,28 @@ samples[1].parts[0].solution = [
   { text: 'A summarizes paragraph 1. B summarizes paragraph 2.', type: 'text' },
 ];
 // A long topic, so the page loads in steps and jumps to unloaded questions.
+// Every fourth question from the third is true or false, for the type filter.
 const practice = Array.from({ length: 34 }, (_, index) => {
   const a = index + 2;
-  const question = exampleQuestion(`bank-practice-${index + 1}`, {
-    accepted: [String(a * 3)],
-    type: 'short',
-  });
+  const truth = index % 4 === 2;
+  const question = exampleQuestion(
+    `bank-practice-${index + 1}`,
+    truth
+      ? { correct: a * 3 > 20, type: 'boolean' }
+      : { accepted: [String(a * 3)], type: 'short' }
+  );
   question.stem = [
     {
       text: `A rectangle has width $${a}$ cm and length $3$ cm.`,
       type: 'text',
     },
   ];
-  question.parts[0].blocks = [{ text: 'Find its area in cm².', type: 'text' }];
+  question.parts[0].blocks = [
+    {
+      text: truth ? 'Its area is more than 20 cm².' : 'Find its area in cm².',
+      type: 'text',
+    },
+  ];
   question.parts[0].solution = [
     { text: `$${a}\\times 3=${a * 3}$`, type: 'text' },
   ];
@@ -113,6 +129,9 @@ const topicRows = (id: string): BankRow[] =>
   [...details.values()]
     .filter((detail) => detail.topicId === id)
     .map((detail) => ({
+      answerTypes: [
+        ...new Set(detail.question.parts.map((part) => part.answer.type)),
+      ],
       hasFigure: false,
       hasTable: false,
       id: detail.question.id,
@@ -124,18 +143,50 @@ const topicRows = (id: string): BankRow[] =>
       reviewedAt: detail.reviewedAt,
       reviewerName: detail.reviewerName,
     }));
-// The learner's checked answers: the last score, misses (scores below 0.5,
-// FSRS's Again) and when. Review orders misses by the oldest answer first,
-// standing in for the server's retrievability.
-const answers = new Map<
-  string,
-  { at: number; lapses: number; score: number }
->();
-const answered = (topicId: string) =>
-  topicRows(topicId).flatMap((row) => {
+// The learner's latest score per question and when it was checked, seeded
+// so the landing lists a topic to continue and one to summarize.
+const answers = new Map<string, { at: number; score: number }>([
+  ['bank-quadratic', { at: Date.now() - 86_400_000, score: 1 }],
+  ['bank-practice-2', { at: Date.now() - 3_600_000, score: 1 }],
+  ['bank-practice-3', { at: Date.now() - 3_000_000, score: 0 }],
+  ['bank-practice-4', { at: Date.now() - 2_400_000, score: 0.5 }],
+]);
+/** Mirrors the server's progress row for one topic. */
+function topicProgress(topicId: string): BankTopicProgress | null {
+  const rows = topicRows(topicId);
+  const done = rows.flatMap((row, index) => {
     const answer = answers.get(row.id);
-    return answer ? [{ id: row.id, ...answer }] : [];
+    return answer ? [{ index, ...answer }] : [];
   });
+  if (!done.length) return null;
+  const last = done.reduce((a, b) => (b.at > a.at ? b : a));
+  const next = [...rows.slice(last.index + 1), ...rows].find(
+    (row) => !answers.has(row.id)
+  );
+  const detail = details.get(rows[0].id) as BankDetail;
+  return {
+    answered: done.length,
+    correct: done.filter((answer) => answer.score >= 1).length,
+    examId: detail.examLabel.toLowerCase(),
+    examLabel: detail.examLabel,
+    lastAnsweredAt: new Date(last.at).toISOString(),
+    nextQuestionId: next?.id ?? null,
+    subjectId: detail.subjectLabel.toLowerCase(),
+    subjectLabel: detail.subjectLabel,
+    topicId,
+    topicLabel: detail.topicLabel,
+    total: rows.length,
+  };
+}
+const ownerAccess = {
+  capabilities: {
+    canEdit: true,
+    canEditContent: true,
+    canManageMembers: true,
+    canView: true,
+  },
+  role: 'owner' as const,
+};
 export const questionBankHandlers = [
   http.get('/api/bank/syllabus', () => {
     const syllabus: BankSyllabus = {
@@ -266,27 +317,81 @@ export const questionBankHandlers = [
     const { score } = (await request.json()) as BankAnswerReq;
     if (!(score >= 0 && score <= 1))
       return new HttpResponse(null, { status: 422 });
-    const lapses = (answers.get(id)?.lapses ?? 0) + (score < 0.5 ? 1 : 0);
-    answers.set(id, { at: Date.now(), lapses, score });
+    answers.set(id, { at: Date.now(), score });
     return new HttpResponse(null, { status: 204 });
   }),
   http.get('/api/bank/topics/:topicId/marks', ({ params }) => {
     const body: BankTopicMarks = {
       marks: Object.fromEntries(
-        answered(String(params.topicId)).map((row) => [row.id, row.score >= 1])
+        topicRows(String(params.topicId)).flatMap((row) => {
+          const answer = answers.get(row.id);
+          return answer ? [[row.id, answer.score]] : [];
+        })
       ),
     };
     return HttpResponse.json(body);
   }),
-  http.get('/api/bank/topics/:topicId/review', ({ params }) => {
-    const body: BankReviewBatch = {
-      questionIds: answered(String(params.topicId))
-        .filter((row) => row.lapses > 0)
-        .sort((a, b) => a.at - b.at)
-        .slice(0, 20)
-        .map((row) => row.id),
-    };
-    return HttpResponse.json(body);
+  http.get('/api/bank/progress', () => {
+    const topics = ['mensuration', 'practice', 'reading-headings']
+      .flatMap((id) => topicProgress(id) ?? [])
+      .sort((a, b) => b.lastAnsweredAt.localeCompare(a.lastAnsweredAt));
+    return HttpResponse.json({ topics });
+  }),
+  // Copies into a new quiz or the end of one in a workspace the user edits.
+  http.post('/api/bank/copy', async ({ request }) => {
+    const body = (await request.json()) as BankCopyReq;
+    const name = body.quizName?.trim() ?? '';
+    const found = body.questionIds.flatMap((id) => details.get(id) ?? []);
+    if (
+      !body.questionIds.length ||
+      body.questionIds.length > 20 ||
+      !name === !body.quizId
+    )
+      return new HttpResponse(null, { status: 422 });
+    if (found.length !== body.questionIds.length)
+      return new HttpResponse(null, { status: 404 });
+    const ws = db.workspaces.find((item) => item.id === body.workspaceId);
+    if (!ws?.capabilities.canEdit)
+      return new HttpResponse(null, { status: 403 });
+    const copies = found.map((detail) => ({
+      ...structuredClone(detail.question as Question),
+      id: uid('q'),
+    }));
+    let quizId = body.quizId ?? '';
+    if (quizId) {
+      const quiz = db.materials.find(
+        (item) =>
+          item.id === quizId &&
+          item.kind === 'quiz' &&
+          item.workspaceId === ws.id
+      );
+      if (!quiz) return new HttpResponse(null, { status: 404 });
+      const questions = [...db.quizFromMaterial(quiz).questions, ...copies];
+      quiz.content = createMaterialDocument([quizNode({ questions }, quiz.id)]);
+      quiz.revision += 1;
+      db.refreshMaterialContentBytes(quiz);
+    } else {
+      quizId = uid('qz');
+      db.materials.unshift(
+        db.makeMaterial({
+          ...ownerAccess,
+          chapterId: body.chapterId ?? null,
+          content: createMaterialDocument([
+            quizNode({ questions: copies }, uid('quiz')),
+          ]),
+          createdAt: new Date().toISOString(),
+          id: quizId,
+          kind: 'quiz',
+          privacy: 'private',
+          scopeChapters: [],
+          scopeFileNames: [],
+          title: name,
+          workspaceId: ws.id,
+          workspaceName: ws.name,
+        })
+      );
+    }
+    return HttpResponse.json({ quizId, workspaceId: ws.id });
   }),
   http.post(
     '/api/bank/questions/:id/comments',

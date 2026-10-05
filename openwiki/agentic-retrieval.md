@@ -2212,7 +2212,7 @@ build, and the knowledge library is one more source while the switch is on.
   retained. `tools.render_progress` turns it into the text the model reads.
 - **Question bank** (`retrieval/bank.py` renders; Go reads). The retrieval
   service holds no bank credentials: `list_question_bank(subject?, topic?,
-  question_type?, offset?)` and `read_question(question_id)` go through
+  answer_type?, offset?)` and `read_question(question_id)` go through
   `POST /api/internal/bank/list` and `/read` (`internal_bank.go`, pipeline
   secret and an actor who can sign in), and `copy_questions` through
   `/api/internal/bank/copy`. All three require `library.read` (the copy also
@@ -2223,11 +2223,15 @@ build, and the knowledge library is one more source while the switch is on.
   subjects with question counts (in the tool description), with `subject` its
   topics with counts, with `topic` 50 question cards per page (the stem's
   opening, such as a reading passage, then what the parts ask). A card lists
-  the question's task types after its marks (`questions.question_types`, so far
-  only IELTS Academic Reading's); `question_type` with `topic` keeps that
-  topic's questions of one type and their count (`questionType` on the route,
-  refused without `topicId`), and an empty filtered page tells the agent to
-  list the topic unfiltered to see its types.
+  the question's answer types after its marks (`bank.AnswerTypes`: mcq, multi,
+  boolean, short, matching, ordering, open, gaps, read from its parts; IELTS
+  True/False/Not given items are mcq); `answer_type` with `topic` keeps that
+  topic's questions with a part of one answer type and their count
+  (`answerType` on the route, refused without `topicId`), and an empty filtered
+  page tells the agent to list the topic unfiltered to see its types. The
+  bank page's Copy to quiz (`POST /api/bank/copy`, see
+  [question-bank.md](question-bank.md#learner-progress-and-retraction)) shares
+  the copy's credit and append logic.
   `read_question` returns the question's JSON and its sources, to judge it.
   `copy_questions(question_ids ≤ 20, title + chapter_id? | quiz_id)` writes
   none of the content through the model: Go reads the questions from the bank,
@@ -2329,7 +2333,7 @@ build, and the knowledge library is one more source while the switch is on.
 | `browse_knowledge` | none | Library on only. Exactly one of `subject` or `topic` (enforced in Python). A subject id: its topics with search-eligible excerpt counts, one line each. A topic id: eligible excerpt counts by role and by book, then a page of excerpts with section paths and compact reviewed scope. Full notes come from `read_knowledge`. The library's subject list is appended to this description at runtime. Retains nothing |
 | `read_knowledge` | none | Library on only. One excerpt's chunks from chunk index `start`, with the excerpt's chunk range in the header and a next-start marker. Retains exact bounded reads used in successful material writes |
 | `read_skill` | none | Requires `material.create`. A skill's instructions by name; the description lists the skills and when to read each. Retains nothing |
-| `list_question_bank` | none | Library on only, with a configured library and a bank behind the gateway. The bank's exams and subjects, a subject's topics, or a topic's questions 50 per page, optionally of one `question_type`; compact cards. Retains nothing |
+| `list_question_bank` | none | Library on only, with a configured library and a bank behind the gateway. The bank's exams and subjects, a subject's topics, or a topic's questions 50 per page, optionally only those with a part of one `answer_type`; compact cards. Retains nothing |
 | `read_question` | none | Same gating as `list_question_bank`. One bank question's JSON with its sources, to judge it |
 | `copy_questions` | yes | Same gating, plus `material.create`. Go copies up to 20 bank questions unchanged into a new quiz or after an existing quiz's last question, crediting each under its id; `todo` while todos are open, no `excerpt_ids` |
 | `read_study_progress` | none | Offered only when study progress is on for the requester in this workspace (Go `/api/internal/study-progress`): items done, started or removed, recent quiz results and the least retained chapters |

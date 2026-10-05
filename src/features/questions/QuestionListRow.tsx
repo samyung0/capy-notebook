@@ -2,14 +2,14 @@ import type { ReactNode } from 'react';
 import { Icon } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import type { BankRow } from './bank';
+import { type BankRow, type BankStatus, bankStatus } from './bank';
 import { TextView } from './QuestionView';
 
 /**
  * One question in a question list: bold number, the stem clamped to two
  * lines, then a muted line with the marks, figure and table icons and `meta`.
- * `result` leads the row with the learner's last result (true right, false
- * wrong, null not answered); lists without results leave it out.
+ * `result` leads the row with the learner's latest score (1 right, 0 wrong,
+ * between partly right, null not answered); lists without results leave it out.
  */
 export function QuestionListRow({
   row,
@@ -23,17 +23,12 @@ export function QuestionListRow({
     'position' | 'preview' | 'marks' | 'hasFigure' | 'hasTable'
   >;
   current: boolean;
-  result?: boolean | null;
+  result?: number | null;
   meta?: ReactNode;
   onClick: () => void;
 }) {
   const marked = result !== undefined;
-  const resultLabel =
-    result === null
-      ? m.question_ui_not_attempted()
-      : result
-        ? m.question_ui_result_correct()
-        : m.question_ui_result_incorrect();
+  const status = bankStatus(result ?? undefined);
   return (
     <button
       aria-current={current ? 'true' : undefined}
@@ -52,13 +47,16 @@ export function QuestionListRow({
           aria-hidden
           className={cn(
             'mt-0.5 grid size-4 place-items-center rounded-full text-surface',
-            result === null && 'border-[1.5px] border-line-strong',
-            result === true && 'bg-tint-success-fg',
-            result === false && 'bg-tint-error-fg'
+            status === 'notDone' && 'border-[1.5px] border-line-strong',
+            status === 'correct' && 'bg-tint-success-fg',
+            status === 'partial' && 'bg-tint-warning-fg',
+            status === 'wrong' && 'bg-tint-error-fg'
           )}
-          title={resultLabel}
+          title={statusLabels[status]()}
         >
-          {result !== null && <Icon name={result ? 'check' : 'x'} size={11} />}
+          {status !== 'notDone' && (
+            <Icon name={statusIcons[status]} size={11} />
+          )}
         </span>
       )}
       <span className="font-bold">{row.position}.</span>
@@ -81,8 +79,16 @@ export function QuestionListRow({
         {row.hasFigure && <Icon name="image" size={13} />}
         {row.hasTable && <Icon name="table" size={13} />}
         {meta}
-        {marked && <span className="sr-only">{resultLabel}</span>}
+        {marked && <span className="sr-only">{statusLabels[status]()}</span>}
       </span>
     </button>
   );
 }
+
+export const statusLabels: Record<BankStatus, () => string> = {
+  correct: m.question_ui_status_correct,
+  notDone: m.question_ui_status_not_done,
+  partial: m.question_ui_status_partial,
+  wrong: m.question_ui_status_wrong,
+};
+const statusIcons = { correct: 'check', partial: 'minus', wrong: 'x' } as const;

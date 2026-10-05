@@ -18,8 +18,8 @@ learner is to have forgotten them (retrievability).
 
 Who may record, frozen accounts and the lifecycle rules are summarised in
 [authorization-permissions-lifecycles.md](authorization-permissions-lifecycles.md);
-this page is the detail. Question-bank progress is separate, per bank question
-and topic, and reuses `server/internal/review` with the same score mapping
+this page is the detail. Question-bank progress is separate: only the latest
+score per bank question, with no FSRS state or review queue
 ([question-bank.md](question-bank.md#learner-progress-and-retraction)).
 
 ## Data model

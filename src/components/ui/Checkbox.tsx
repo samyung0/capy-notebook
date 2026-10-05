@@ -47,6 +47,7 @@ const checkboxVariants = cva(
 );
 
 export interface CheckboxProps extends VariantProps<typeof checkboxVariants> {
+  'aria-label'?: string;
   checked?: boolean;
   className?: string;
   onChange?: (checked: boolean) => void;
@@ -54,6 +55,7 @@ export interface CheckboxProps extends VariantProps<typeof checkboxVariants> {
 }
 
 export function Checkbox({
+  'aria-label': ariaLabel,
   checked = false,
   onChange,
   size = 20,
@@ -63,6 +65,7 @@ export function Checkbox({
   return (
     <button
       aria-checked={checked}
+      aria-label={ariaLabel}
       className={cn(checkboxVariants({ checked, tone }), className)}
       data-slot="checkbox"
       data-tone={tone}

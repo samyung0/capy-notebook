@@ -2,6 +2,9 @@ import { type QueryClient, queryOptions } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import type {
   BankAnswerReq,
+  BankCopyReq,
+  BankCopyResult,
+  BankProgress,
   BankRevealReq,
   BankTopicMarks,
   Provenance,
@@ -28,6 +31,8 @@ export type BankRow = {
   marks: number;
   hasFigure: boolean;
   hasTable: boolean;
+  /** The distinct answer types of its parts, in part order. */
+  answerTypes: string[];
   reviewedAt: string | null;
   reviewerName: string;
 };
@@ -107,7 +112,7 @@ export const bankBatchQuery = (client: QueryClient, ids: string[]) =>
     retry: false,
     staleTime: Number.POSITIVE_INFINITY,
   });
-/** The topic list's results: answered current questions, true when right. */
+/** The topic list's results: answered current questions' latest scores, 0 to 1. */
 export const bankMarksQuery = (topicId: string) =>
   queryOptions({
     enabled: Boolean(topicId),
@@ -118,6 +123,15 @@ export const bankMarksQuery = (topicId: string) =>
     queryKey: ['bank', 'marks', topicId],
     retry: false,
   });
+/** The /bank landing: topics with an answered question, latest first. */
+export const bankProgressQuery = () =>
+  queryOptions({
+    queryFn: () => api.get<BankProgress>('/bank/progress'),
+    queryKey: ['bank', 'progress'],
+    retry: false,
+  });
+export const copyBankQuestions = (body: BankCopyReq) =>
+  api.post<BankCopyResult>('/bank/copy', body);
 /** Checking answers is what reveals a question's key, one question at a time. */
 export const revealBankQuestion = (id: string, body: BankRevealReq) =>
   api.post<{ question: Question }>(
@@ -129,6 +143,52 @@ export const recordBankAnswer = (id: string, body: BankAnswerReq) =>
     '/bank/questions/' + encodeURIComponent(id) + '/answers',
     body
   );
+
+export const BANK_STATUSES = [
+  'correct',
+  'wrong',
+  'partial',
+  'notDone',
+] as const;
+export type BankStatus = (typeof BANK_STATUSES)[number];
+
+/** Full marks is correct, none is wrong, anything between is partially wrong. */
+export function bankStatus(score: number | undefined): BankStatus {
+  if (score === undefined) return 'notDone';
+  return score >= 1 ? 'correct' : score <= 0 ? 'wrong' : 'partial';
+}
+
+/** Rows with a part of one of `types` and a status among `statuses`; an
+ * empty list keeps every row. */
+export function filterBankRows<R extends Pick<BankRow, 'id' | 'answerTypes'>>(
+  rows: R[],
+  types: string[],
+  statuses: string[],
+  marks: Record<string, number>
+): R[] {
+  return rows.filter(
+    (row) =>
+      (!types.length || row.answerTypes.some((type) => types.includes(type))) &&
+      (!statuses.length || statuses.includes(bankStatus(marks[row.id])))
+  );
+}
+
+/** The first unanswered row after the last answered one in list order,
+ * wrapping to the start; null once every row is answered. */
+export function nextUnanswered(
+  rows: { id: string }[],
+  marks: Record<string, number>
+): string | null {
+  let last = -1;
+  rows.forEach((row, i) => {
+    if (row.id in marks) last = i;
+  });
+  for (let step = 1; step <= rows.length; step++) {
+    const row = rows[(last + step) % rows.length];
+    if (!(row.id in marks)) return row.id;
+  }
+  return null;
+}
 
 /** Pairs equal texts, each target used once: for every `from` index, its
  * index in `to` (-1 when missing). */

@@ -96,28 +96,19 @@ one topic.
 
 ## Later
 
-- [ ] **Bank page question-type filter**: in the bank learner mocks
-      (2026-10-05) with answering, mistake review and Copy to quiz. The
-      general quiz and question editing UI is Epo's, redone in its own
-      session.
-- [x] **Learners answering on `/bank`** (2026-10-06, ebd5bafe): View mode
-      stays answer-free; Check answer reveals that question's key
-      (`POST /api/bank/questions/{id}/reveal`), the browser scores it and
-      records it (`/answers`); the topic list keeps its row
-      (`QuestionListRow`) with a check, cross or empty circle and
-      "N correct · M to retry". Storage, retraction (bank migration 0003,
-      applied 2026-10-05) and the marks and review routes are on `main`.
-- [ ] **Per-topic mistake review**, **Copy to quiz** and the **type filter**
-      UI wait for Epo's picks (sections 2 to 4 of
-      https://797ludmnkrb3.postplan.dev; section 1 is the approved
-      2026-09-25 mock, already built). The review route
-      `GET /api/bank/topics/{id}/review` is ready. Copy to quiz reuses the
-      chat's copy (`/api/internal/bank/copy` with per-question credits;
-      quiz figures under `BANK_ASSETS_URL` already validate). The lists reuse
-      `QuestionListRow` (Epo, 2026-10-05).
-- [x] **Agent filter by question type** (2026-10-05): `list_question_bank`
-      takes `question_type` with a topic. Proposed: list each subject's
-      question types with counts when the agent lists its topics.
+- [x] **Learners on `/bank`** (2026-10-06): answering with reveal on check
+      (ebd5bafe); progress keeps each learner's latest score per question
+      (`bank_progress`, app migration 0056, no FSRS or review); the landing
+      lists attempted topics with Continue or Summary; Continue beside the
+      topic title; Copy to quiz (`POST /api/bank/copy`, mock 3.1 B and 3.2 B);
+      the list filter (answer type and status) on every topic. IELTS
+      task-type labels are gone from the code, the pipeline and the agent's
+      tool (`answer_type` filter); bank migration 0004 drops
+      `questions.question_types` and runs on the shared bank database right
+      after the next UAT deploy (dump first). The general quiz and question
+      editing UI is Epo's, redone in its own session.
+- [x] **Agent filter by answer type** (2026-10-06): `list_question_bank`
+      takes `answer_type` with a topic.
 - [ ] **Jev grading for bank open parts.** Round 2 writes closed parts only,
       so this waits until a subject needs open answers.
 - [ ] **Answer options** stay plain strings; graph or image options are out of
