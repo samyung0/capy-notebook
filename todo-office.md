@@ -128,9 +128,8 @@ check); it applies at the first promotion.
 ## Queued tracks (each needs its own decisions and a visual checkpoint)
 
 - **Pause standard** (decided 2026-10-05): handoff, replaced, recovery and
-  discarding keep today's disabled menus; Select all stays enabled in every
-  pause state. `connecting` (before the first sync) is open: Epo asked whether
-  it can edit offline as a reconnecting editor does.
+  discarding and connecting keep today's disabled menus; Select all stays
+  enabled in every pause state (with the office-polish agent).
 - **Order after the 2026-10-05 batch:** one optimization round (Yjs save
   latency, typing latency, memory; Office and Plate), then heap/latency
   ceilings from the largest allowed files, then a prod-box stress run for the
@@ -138,8 +137,7 @@ check); it applies at the first promotion.
 - **Shortcut map:** map and consolidate keyboard shortcuts across the app
   (Office print shortcut waits for it).
 - **Header:** DOCX ruler as a View toggle (Google Docs); Chinese text mixes
-  weights in the header (CJK falls back from Fustat to the system font);
-  outline item placement pending Epo's screenshot check.
+  weights in the header (CJK falls back from Fustat to the system font).
 - **DOCX view-mode copy.** View mode draws pages on a canvas
   (`DocxDisplayListViewer`) with no selection. Add a selectable text layer over
   the pages, as PDF viewers have, so text can be selected and copied. Approved
