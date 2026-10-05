@@ -538,10 +538,9 @@ lacks, the dropped update included, with no disconnect, and the room never
 holds pending content. Copying the room to check such updates was the cliff of
 the 2026-10-05 capacity run (`bench/collaboration/reports/`). Two unplaceable
 step 2 replies in a row close the connection (logged as `note_step2_unplaced`).
-A room loaded with pending structs, stored before this rule, takes updates as
-it did then, through the copy, until they integrate: its clients' step 2
-replies carry those same structs, so refusing them would close every
-connection.
+There is no exception for a room stored with pending structs before this rule:
+its clients' step 2 replies carry those structs, so their connections hit that
+close, which is accepted because no such room holds data worth keeping.
 
 The writable Y.Doc contract permits only the Plate `content` root and the
 server-owned `__capy_pending_contributors` map. Every client update checks this

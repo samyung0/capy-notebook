@@ -569,16 +569,8 @@ export class YjsDocumentStore {
     update: Uint8Array
   ): typeof UPDATE_UNHELD | undefined {
     assertMaterialDocumentRoots(current);
-    // A room still holding pending structs (stored before such updates were
-    // refused) takes every update through the copy below, as it did then:
-    // its clients' sync step 2 replies carry those same pending structs, so
-    // refusing them would close every connection. Its next update to place
-    // them leaves it like any other room.
-    const inspected =
-      current.store.pendingStructs || current.store.pendingDs
-        ? null
-        : inspectUpdate(current, update);
-    if (inspected?.unheld) return UPDATE_UNHELD;
+    const { containers, unheld } = inspectUpdate(current, update);
+    if (unheld) return UPDATE_UNHELD;
     let validator = this.validators.get(room);
     if (!validator) {
       validator = new RoomValidator();
@@ -589,8 +581,7 @@ export class YjsDocumentStore {
     // The common case: no measurement due and the roots provably kept, so
     // the room is not copied for every keystroke. A violation takes the copy
     // for its exact refusal.
-    if (!measure && inspected && keepsMaterialRoots(inspected.containers))
-      return;
+    if (!measure && keepsMaterialRoots(containers)) return;
     const candidate = scratchDoc();
     try {
       Y.applyUpdate(candidate, Y.encodeStateAsUpdate(current));
