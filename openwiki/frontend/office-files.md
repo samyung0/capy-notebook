@@ -776,8 +776,10 @@ itself. It imports Tailwind's preflight (in a lower layer) and Capy's theme
 token files, and maps the tokens onto docx-react's `--doc-*` variables, its
 toolbar variables and its shadcn variables. The shadcn ones are HSL triplets
 and take relative colour syntax (`from var(--token) h s l`); on Chrome and Edge
-111–118, which lack it, an `@supports` fallback gives menus and dropdowns
-Capy's tokens directly. The host sends `set-appearance` (`style`, `theme`,
+111–118, which lack it, an `@supports` fallback gives every docx-react rule
+that reads them (menus, dropdowns, buttons, tooltips, focus rings) Capy's
+tokens directly, repeating the compiled selectors so the `dark:` ones keep
+their weight. The host sends `set-appearance` (`style`, `theme`,
 `narrow` below lg, `locale`) before `load`, on every change and again after
 every runtime boot; the runtime sets `data-style`/`data-theme` and `lang` on
 its root, sets its own locale, passes `colorMode` and the editor's zh-CN
@@ -824,12 +826,14 @@ value, not a theme colour.
 The editor draws Capy's icons through one hook: `DocxEditor`'s `icons` prop
 takes an `IconSet` that names every Material icon the editor uses and the icons
 it otherwise draws inline (`DRAWN_ICON_NAMES`: the right-click menu, the link
-popup and the table insert overlay; without a set the fork's own drawings
-stay). `src/office-runtime/docxIcons.tsx` maps every name to Capy's Hugeicons
-through `HugeIcon`, and its `Record<keyof IconSet, …>` type fails the build if
-a name is missing. The fork's print preview, find/replace and keyboard
-shortcut dialogs, its error toasts and its empty-document placeholder still
-draw their own SVGs.
+popup, the table insert overlay, the find and link dialogs, the error toasts
+and the empty-document and error placeholders; without a set the fork's own
+drawings stay). `src/office-runtime/docxIcons.tsx` maps every name to Capy's
+Hugeicons through `HugeIcon`, and its `Record<keyof IconSet, …>` type fails
+the build if a name is missing; icons draw at 16px at most, except the
+placeholders, which keep the size the editor asks for. The fork's print
+button and keyboard shortcut dialog keep their own SVGs: the editor never
+mounts them (Capy prints itself).
 
 PPTX view and edit share one layout: the slide strip at the left (thumbnails
 at their slide's aspect ratio), the slide fitted with 20px around it, and the
@@ -848,8 +852,11 @@ undo and redo, a zoom dropdown, then select, text box, image and shape. A
 selected text box or text adds font, size box (no steps), bold, italic,
 underline, text colour and an alignment dropdown; a selected shape adds fill,
 border colour, border weight and its adjustment. Below lg zoom, font and size
-are hidden. The row scrolls sideways under a vertical wheel, with edge fades. `src/office-runtime/pptxIcons.tsx` maps every toolbar icon name to
-Capy's Hugeicons (`PptxEditor`'s `icons`). Capy hides the editor's agent
+are hidden. The row scrolls sideways under a vertical wheel, with edge fades. `src/office-runtime/pptxIcons.tsx` maps every toolbar icon name and
+the presenter's exit, previous and next controls to Capy's Hugeicons
+(`PptxEditor`'s `icons`; the viewer provides the same set to
+`PresentationOverlay` through pptx-react's `IconSetContext`), the presenter's
+arrows matching the viewer pager's. Capy hides the editor's agent
 proposals (`showProposals`) and its Present button (`showPresentButton`);
 save, PNG export, arrange and the slide operations without other UI (delete
 slide, move slide, delete object) are host menu commands that

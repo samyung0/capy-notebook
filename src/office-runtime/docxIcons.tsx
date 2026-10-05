@@ -1,5 +1,6 @@
 import type { IconSet } from '@betteroffice/docx-react';
 import {
+  Alert02Icon,
   AlignBottomIcon,
   AlignTopIcon,
   AlignVerticalCenterIcon,
@@ -37,6 +38,7 @@ import {
   Download01Icon,
   DropletOffIcon,
   ExpandIcon,
+  FileEmpty02Icon,
   FlipHorizontalIcon,
   FlipVerticalIcon,
   GeometricShapes01Icon,
@@ -45,6 +47,7 @@ import {
   GripVerticalIcon,
   HighlighterIcon,
   Image01Icon,
+  InformationCircleIcon,
   InsertColumnLeftIcon,
   InsertColumnRightIcon,
   InsertRowDownIcon,
@@ -141,12 +144,15 @@ const ICONS: Record<keyof IconSet, IconSvgElement | readonly string[]> = {
   comment: Comment01Icon,
   delete: Delete02Icon,
   delete_sweep: RowDeleteIcon,
+  'dialog-close': Cancel01Icon,
   done_all: TickDouble01Icon,
   drag_indicator: GripVerticalIcon,
   expand_less: ChevronUpIcon,
   expand_more: ChevronDownIcon,
   file_download: Download01Icon,
   file_upload: Upload01Icon,
+  'find-next': ChevronDownIcon,
+  'find-previous': ChevronUpIcon,
   fit_width: ArrowHorizontalIcon,
   flip_to_back: LayerSendToBackIcon,
   flip_to_front: BringToFrontIcon,
@@ -225,9 +231,15 @@ const ICONS: Record<keyof IconSet, IconSvgElement | readonly string[]> = {
   'menu-select-table': Grid3X3Icon,
   'menu-split-cell': UngroupIcon,
   more_vert: MoreVerticalIcon,
+  'notice-dismiss': Cancel01Icon,
+  'notice-error': Alert02Icon,
+  'notice-info': InformationCircleIcon,
+  'notice-warning': Alert02Icon,
   open_with: MoveIcon,
   padding: ExpandIcon,
   page_break: ScissorsLineDashedIcon,
+  'placeholder-document': FileEmpty02Icon,
+  'placeholder-error': Alert02Icon,
   print: PrinterIcon,
   redo: Redo03Icon,
   remove: MinusSignIcon,
@@ -256,7 +268,8 @@ const ICONS: Record<keyof IconSet, IconSvgElement | readonly string[]> = {
   wrap_text: TextWrapIcon,
 };
 
-/** Capy's toolbars and menus draw 16px icons; smaller requests stay smaller. */
+/** Capy's toolbars and menus draw 16px icons; smaller requests stay smaller.
+ * The empty and error placeholders keep the size the editor asks for. */
 export const docxIcons = Object.fromEntries(
   Object.entries(ICONS).map(([name, icon]) => [
     name,
@@ -268,7 +281,7 @@ export const docxIcons = Object.fromEntries(
       <HugeIcon
         className={className}
         icon={icon}
-        size={Math.min(size, 16)}
+        size={name.startsWith('placeholder-') ? size : Math.min(size, 16)}
         style={style}
       />
     ),

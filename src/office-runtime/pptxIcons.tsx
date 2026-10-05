@@ -1,6 +1,9 @@
 import type { IconSet } from '@betteroffice/pptx-react';
 import {
+  ArrowLeft04Icon,
+  ArrowRight04Icon,
   BringToFrontIcon,
+  Cancel01Icon,
   CheckIcon,
   ChevronDownIcon,
   Cursor01Icon,
@@ -34,8 +37,9 @@ import type { ComponentProps } from 'react';
 import { HugeIcon } from '@/components/ui/HugeIcon';
 
 /**
- * Every icon pptx-react's toolbar draws, from Capy's set (the same icon as
- * docxIcons.tsx for the same command). Imported one by one so the rest of
+ * Every icon pptx-react's toolbar and presenter draw, from Capy's set (the
+ * same icon as docxIcons.tsx for the same command, and the viewer pager's
+ * arrows for the presenter's). Imported one by one so the rest of
  * Hugeicons stays out of the runtime bundle.
  */
 const ICONS: Record<keyof IconSet, IconSvgElement> = {
@@ -58,6 +62,9 @@ const ICONS: Record<keyof IconSet, IconSvgElement> = {
   more: MoreHorizontalIcon,
   newSlide: PlusSignIcon,
   notes: Note01Icon,
+  presentationExit: Cancel01Icon,
+  presentationNext: ArrowRight04Icon,
+  presentationPrevious: ArrowLeft04Icon,
   redo: Redo03Icon,
   remove: MinusSignIcon,
   save: Download01Icon,

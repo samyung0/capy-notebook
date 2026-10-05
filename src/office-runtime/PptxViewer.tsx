@@ -9,7 +9,10 @@ import {
   type SlideDisplayList,
   sizeCanvasForSlide,
 } from '@betteroffice/pptx/viewer';
-import { PresentationOverlay } from '@betteroffice/pptx-react/presentation';
+import {
+  IconSetContext,
+  PresentationOverlay,
+} from '@betteroffice/pptx-react/presentation';
 import {
   ArrowLeft04Icon,
   ArrowRight04Icon,
@@ -24,6 +27,7 @@ import type {
 import { m } from '@/i18n';
 import { CITATION_FILL, slideCitationItems, uniqueCitation } from './citations';
 import { loadPptxFonts } from './pptxFonts';
+import { pptxIcons } from './pptxIcons';
 import { PptxImageCache } from './pptxImageCache';
 import { pptxT, presentAction, viewerMenus } from './pptxMenus';
 import { renderSlides } from './pptxRender';
@@ -390,21 +394,23 @@ export function PptxViewer({
         </div>
       )}
       {presenting && handleRef.current && slideCount > 0 && (
-        <PresentationOverlay
-          counterLabel={(current, total) =>
-            pptxT(locale)('presentation.slideCounter', { current, total })
-          }
-          exitLabel={pptxT(locale)('presentation.exit')}
-          handle={handleRef.current}
-          label={pptxT(locale)('presentation.label')}
-          nextLabel={pptxT(locale)('presentation.nextSlide')}
-          onError={(value) => onError(toError(value))}
-          onExit={() => setPresenting(false)}
-          previousLabel={pptxT(locale)('presentation.previousSlide')}
-          resolveImage={resolveImage}
-          slideCount={slideCount}
-          startIndex={slideIndex}
-        />
+        <IconSetContext.Provider value={pptxIcons}>
+          <PresentationOverlay
+            counterLabel={(current, total) =>
+              pptxT(locale)('presentation.slideCounter', { current, total })
+            }
+            exitLabel={pptxT(locale)('presentation.exit')}
+            handle={handleRef.current}
+            label={pptxT(locale)('presentation.label')}
+            nextLabel={pptxT(locale)('presentation.nextSlide')}
+            onError={(value) => onError(toError(value))}
+            onExit={() => setPresenting(false)}
+            previousLabel={pptxT(locale)('presentation.previousSlide')}
+            resolveImage={resolveImage}
+            slideCount={slideCount}
+            startIndex={slideIndex}
+          />
+        </IconSetContext.Provider>
       )}
     </div>
   );

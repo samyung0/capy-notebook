@@ -177,32 +177,90 @@
 }
 
 /* Chrome and Edge 111–118 have no relative colour syntax, so the shadcn
-   variables above are invalid there: menus and dropdowns take Capy's tokens
-   directly instead of turning see-through. */
+   variables above are invalid there: every docx-react rule that reads them
+   (menus, dropdowns, buttons, tooltips, focus rings) takes Capy's tokens
+   directly instead of turning see-through. The selectors repeat the compiled
+   ones so the dark: rules keep their weight. */
 @supports not (color: hsl(from red h s l)) {
   .oox-root .bg-popover,
   .oox-root .bg-background {
     background-color: var(--surface-card-bg);
   }
   .oox-root .bg-muted,
+  .oox-root .bg-secondary,
   .oox-root .hover\:bg-muted:hover,
   .oox-root .focus\:bg-muted:focus,
-  .oox-root .hover\:bg-accent:hover {
+  .oox-root .hover\:bg-accent:hover,
+  .oox-root .dark\:bg-muted:is(.dark *) {
     background-color: var(--surface-card-hover-bg);
+  }
+  .oox-root .hover\:bg-muted\/80:hover,
+  .oox-root .focus\:bg-muted\/80:focus,
+  .oox-root .hover\:bg-secondary\/80:hover {
+    background-color: color-mix(
+      in srgb,
+      var(--surface-card-hover-bg) 80%,
+      transparent
+    );
+  }
+  .oox-root .bg-primary {
+    background-color: var(--action-primary-bg);
+  }
+  .oox-root .hover\:bg-primary\/90:hover {
+    background-color: color-mix(
+      in srgb,
+      var(--action-primary-bg) 90%,
+      transparent
+    );
+  }
+  .oox-root .bg-destructive {
+    background-color: var(--solid-error);
+  }
+  .oox-root .hover\:bg-destructive\/90:hover {
+    background-color: color-mix(in srgb, var(--solid-error) 90%, transparent);
+  }
+  /* Tooltips: dark on light, muted in dark themes. */
+  .oox-root .bg-foreground {
+    background-color: var(--text-primary);
   }
   .oox-root .bg-border {
     background-color: var(--divider);
   }
   .oox-root .text-foreground,
-  .oox-root .text-popover-foreground {
+  .oox-root .text-popover-foreground,
+  .oox-root .text-secondary-foreground,
+  .oox-root .hover\:text-foreground:hover,
+  .oox-root .hover\:text-accent-foreground:hover,
+  .oox-root .dark\:text-foreground:is(.dark *) {
     color: var(--text-primary);
   }
   .oox-root .text-muted-foreground {
     color: var(--text-muted);
   }
+  .oox-root .text-primary {
+    color: var(--action-primary-bg);
+  }
+  .oox-root .text-primary-foreground,
+  .oox-root .text-destructive-foreground {
+    color: var(--action-primary-fg);
+  }
+  .oox-root .text-destructive {
+    color: var(--solid-error);
+  }
   .oox-root .border-border,
-  .oox-root .border-input {
+  .oox-root .border-input,
+  .oox-root .hover\:border-input:hover {
     border-color: var(--border-default);
+  }
+  .oox-root .border-border\/50 {
+    border-color: color-mix(in srgb, var(--border-default) 50%, transparent);
+  }
+  .oox-root .focus\:ring-ring:focus,
+  .oox-root .focus-visible\:ring-ring:focus-visible {
+    --tw-ring-color: var(--action-primary-bg);
+  }
+  .oox-root .ring-offset-background {
+    --tw-ring-offset-color: var(--surface-card-bg);
   }
 }
 

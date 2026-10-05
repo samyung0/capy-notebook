@@ -590,6 +590,33 @@ test("Office runtime keeps Capy's theme after reloading and asks for a page relo
   await expect(page.getByRole('button', { name: 'Reload' })).toBeVisible();
 });
 
+test('an Office citation highlights its passage again after the runtime reloads', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto('/workspaces/ws_bio');
+  await page.getByRole('button', { exact: true, name: 'Chat' }).click();
+  await page.getByRole('button', { name: 'Chat history' }).click();
+  await page.getByRole('button', { name: 'OpenUI: Office citation' }).click();
+  await page.getByTitle('Source 1').click();
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  const highlight = frame.locator('[data-citation-highlight]').first();
+  await expect(highlight).toBeVisible({ timeout: 60_000 });
+  const runtime = page
+    .frames()
+    .find((candidate) => candidate.url().includes('office-runtime'));
+  if (!runtime) throw new Error('Missing Office runtime');
+
+  // The runtime document reloads by itself; the host's new load carries the citation.
+  const reloaded = page.waitForEvent(
+    'framenavigated',
+    (navigated) => navigated === runtime
+  );
+  await runtime.evaluate(() => setTimeout(() => location.reload()));
+  await reloaded;
+  await expect(highlight).toBeVisible({ timeout: 60_000 });
+});
+
 test('Office runtime that reloads while editing is paused stays inert', async ({
   page,
 }) => {

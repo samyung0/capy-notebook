@@ -7,7 +7,8 @@ export interface ChatFixture {
   hint: string;
   id: string;
   label: string;
-  passages?: readonly number[];
+  /** Cited sources: a place among the indexed files, or a file and quote. */
+  passages?: readonly (number | { fileId: string; snippet: string })[];
   prompt: string;
   slow?: boolean;
 }
@@ -206,6 +207,20 @@ export const chatFixtures = [
     prompt: 'Preview a disconnected answer stream.',
   },
   {
+    content:
+      'root = Answer([Md("The engineering society had not run an exchange trip for three years.", [1])])',
+    hint: 'Cites a passage of exchange-plan.docx; opening the source highlights it in the Office viewer.',
+    id: 'chat-openui-office',
+    label: 'OpenUI: Office citation',
+    passages: [
+      {
+        fileId: 'bio-office-docx',
+        snippet: '工程學會亦因此已經三年沒有舉辦交流學習團',
+      },
+    ],
+    prompt: 'Why is the exchange trip new this year?',
+  },
+  {
     content: overview,
     hint: 'Slow chunks make progressive rendering and Stop easy to inspect. Reopen the conversation to see the saved partial answer.',
     id: 'chat-openui-slow',
@@ -227,15 +242,20 @@ export function fixtureCitations(
   sources: Pick<SourceFile, 'id' | 'name' | 'indexed'>[]
 ): Citation[] {
   const indexed = sources.filter((source) => source.indexed);
-  return (fixture.passages ?? []).flatMap((n) => {
-    const source = indexed[n - 1];
+  return (fixture.passages ?? []).flatMap((passage, index) => {
+    const quoted = typeof passage === 'object';
+    const source = quoted
+      ? sources.find(({ id }) => id === passage.fileId)
+      : indexed[passage - 1];
     return source
       ? [
           {
             fileId: source.id,
             fileName: source.name,
-            n,
-            snippet: 'Example source passage for the OpenUI preview.',
+            n: quoted ? index + 1 : passage,
+            snippet: quoted
+              ? passage.snippet
+              : 'Example source passage for the OpenUI preview.',
           },
         ]
       : [];

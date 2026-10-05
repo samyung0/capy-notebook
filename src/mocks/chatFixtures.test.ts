@@ -94,6 +94,16 @@ it('seeds every preview in Biology chat history, including cleared flagged respo
         'f_2',
       ]);
     }
+    if (fixture.id === 'chat-openui-office') {
+      expect(saved?.citations).toMatchObject([
+        {
+          fileId: 'bio-office-docx',
+          fileName: 'exchange-plan.docx',
+          n: 1,
+          snippet: '工程學會亦因此已經三年沒有舉辦交流學習團',
+        },
+      ]);
+    }
     if (fixture.id === 'chat-openui-flagged') {
       expect(saved).toMatchObject({
         citations: [],
