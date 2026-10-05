@@ -3,6 +3,7 @@ import { useState } from 'react';
 import {
   useCloneWorkspace,
   useDeleteWorkspace,
+  useResetWorkspaceStudy,
   useUpdateWorkspace,
   useUpdateWorkspaceSharing,
   useWorkspaceStats,
@@ -19,6 +20,7 @@ import { m } from '@/i18n';
 import { toastCloneError } from '@/lib/authToasts';
 import { describeError } from '@/lib/errors';
 import { trackItemCloned } from '@/lib/observability';
+import { canManageWorkspaceSettings } from './access';
 import { IndexingTab } from './IndexingTab';
 import { ShareDialog } from './ShareDialog';
 import { WorkspaceFormEditDialog } from './WorkspaceFormEditDialog';
@@ -61,8 +63,15 @@ export function WorkspaceSettingsDialog({
   open: boolean;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<string>(initialTab);
+  // A viewer may only reset their own study progress: the dialog shows just
+  // that row.
+  const manage = canManageWorkspaceSettings(workspace);
+  const [tab, setTab] = useState<string>(manage ? initialTab : 'danger');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const { mutate: resetStudy, isPending: resetting } = useResetWorkspaceStudy(
+    workspace.id
+  );
   const navigate = useNavigate();
   const { mutateAsync: update } = useUpdateWorkspace();
   const { mutate: cloneWorkspace, isPending: cloning } = useCloneWorkspace({
@@ -101,22 +110,22 @@ export function WorkspaceSettingsDialog({
         className="mt-2.5 whitespace-nowrap"
         onChange={setTab}
         tabs={[
-          { label: m.workspace_general(), value: 'general' },
-          { label: m.workspace_sharing(), value: 'sharing' },
-          { label: m.workspace_indexing(), value: 'indexing' },
-          { label: m.workspace_stats_title(), value: 'statistics' },
-          ...(workspace.canClone
-            ? [{ label: m.workspace_tab_others(), value: 'others' }]
-            : []),
-          ...(workspace.capabilities.canManageMembers
+          ...(manage
             ? [
-                {
-                  label: m.workspace_tab_danger(),
-                  tone: 'danger' as const,
-                  value: 'danger',
-                },
+                { label: m.workspace_general(), value: 'general' },
+                { label: m.workspace_sharing(), value: 'sharing' },
+                { label: m.workspace_indexing(), value: 'indexing' },
+                { label: m.workspace_stats_title(), value: 'statistics' },
+                ...(workspace.canClone
+                  ? [{ label: m.workspace_tab_others(), value: 'others' }]
+                  : []),
               ]
             : []),
+          {
+            label: m.workspace_tab_danger(),
+            tone: 'danger' as const,
+            value: 'danger',
+          },
         ]}
         value={tab}
       />
@@ -219,26 +228,49 @@ export function WorkspaceSettingsDialog({
             </SettingRow>
           </div>
         )}
-        {tab === 'danger' && workspace.capabilities.canManageMembers && (
+        {tab === 'danger' && (
           /* Keeps its own padding: the error border is the grouping. */
-          <div className="rounded-card border border-solid-error/40 p-4">
+          <div className="flex flex-col gap-4 rounded-card border border-solid-error/40 p-4">
             <SettingRow
-              hint={m.workspace_delete_hint()}
-              title={m.workspace_delete_action()}
+              hint={m.study_reset_hint()}
+              title={m.study_reset_title()}
             >
               <Button
                 className="h-fit rounded-input py-2.5"
-                disabled={deleting}
-                iconLeft="trash"
-                onClick={() => setConfirmDelete(true)}
-                variant="danger"
+                disabled={resetting}
+                onClick={() => setConfirmReset(true)}
+                variant="danger-light"
               >
-                {m.action_delete()}
+                {m.study_reset()}
               </Button>
             </SettingRow>
+            {workspace.capabilities.canManageMembers && (
+              <SettingRow
+                hint={m.workspace_delete_hint()}
+                title={m.workspace_delete_action()}
+              >
+                <Button
+                  className="h-fit rounded-input py-2.5"
+                  disabled={deleting}
+                  iconLeft="trash"
+                  onClick={() => setConfirmDelete(true)}
+                  variant="danger"
+                >
+                  {m.action_delete()}
+                </Button>
+              </SettingRow>
+            )}
           </div>
         )}
       </div>
+      <ConfirmDialog
+        body={m.study_reset_confirm_body()}
+        confirmLabel={m.study_reset()}
+        onClose={() => setConfirmReset(false)}
+        onConfirm={() => resetStudy()}
+        open={confirmReset}
+        title={m.study_reset_confirm_title()}
+      />
       <ConfirmDialog
         body={m.workspace_delete_confirm_body()}
         confirmLabel={m.trash_delete_forever()}

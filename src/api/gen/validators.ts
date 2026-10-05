@@ -4076,6 +4076,21 @@ export const RateReviewItemResponse = zod.void()
 
 
 /**
+ * @summary Workspaces with study progress, for Learning's Review tab
+ */
+export const ListReviewWorkspacesResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "workspaces": zod.array(zod.object({
+  "done": zod.int(),
+  "name": zod.string(),
+  "reviewable": zod.int(),
+  "total": zod.int(),
+  "workspaceId": zod.string()
+}))
+})
+
+
+/**
  * @summary Global search
  */
 export const SearchQueryParams = zod.object({
@@ -5245,12 +5260,6 @@ export const GetWorkspaceReviewResponse = zod.object({
   "materialId": zod.string(),
   "materialTitle": zod.string(),
   "question": zod.record(zod.string(), zod.unknown()).optional()
-})),
-  "sets": zod.array(zod.object({
-  "items": zod.int(),
-  "kind": zod.enum(['quiz', 'flashcards']),
-  "materialId": zod.string(),
-  "title": zod.string()
 }))
 })
 
@@ -5628,18 +5637,19 @@ export const GetWorkspaceStudyParams = zod.object({
 export const GetWorkspaceStudyResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "enabled": zod.boolean(),
-  "hardest": zod.array(zod.object({
-  "itemId": zod.string(),
-  "lapses": zod.int(),
-  "materialId": zod.string(),
-  "materialKind": zod.enum(['quiz', 'flashcards']),
-  "materialTitle": zod.string(),
-  "text": zod.string()
-})),
   "items": zod.array(zod.object({
   "fileId": zod.string().optional(),
   "materialId": zod.string().optional(),
   "state": zod.enum(['started', 'done', 'removed'])
+})),
+  "quickReview": zod.array(zod.object({
+  "back": zod.string().optional(),
+  "front": zod.string().optional(),
+  "itemId": zod.string(),
+  "kind": zod.enum(['card', 'question']),
+  "materialId": zod.string(),
+  "materialTitle": zod.string(),
+  "question": zod.record(zod.string(), zod.unknown()).optional()
 })),
   "recentAttempts": zod.array(zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
@@ -5652,7 +5662,8 @@ export const GetWorkspaceStudyResponse = zod.object({
   "takenAt": zod.iso.datetime({"offset":true}),
   "total": zod.number(),
   "workspaceName": zod.string()
-}))
+})),
+  "reviewable": zod.int()
 })
 
 

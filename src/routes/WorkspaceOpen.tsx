@@ -7,7 +7,6 @@ import {
   useChapters,
   useCloneWorkspace,
   useFiles,
-  useMaterials,
   useUpdateChapter,
   useWorkspace,
 } from '@/api/hooks';
@@ -41,18 +40,15 @@ import {
   searchFromOpenItem,
   type WorkspaceOpenSearch,
 } from '@/features/materials/openItem';
+import { StudyPanel } from '@/features/study/StudyPanel';
 import {
   AddSourceDialog,
   type AddSourceMode,
 } from '@/features/workspace/AddSourceDialog';
-import {
-  canManageWorkspaceSettings,
-  isWorkspaceReadOnly,
-} from '@/features/workspace/access';
+import { isWorkspaceReadOnly } from '@/features/workspace/access';
 import { ChatPanel } from '@/features/workspace/ChatPanel';
 import { FilesPanel } from '@/features/workspace/FilesPanel';
-import type { GenerateMode } from '@/features/workspace/GenerateFormDialog';
-import { GeneratePanel } from '@/features/workspace/GeneratePanel';
+import type { GenerateMode } from '@/features/workspace/GenerateForm';
 import { PanelTabRow, type TabAction } from '@/features/workspace/PanelTabRow';
 import { WorkspaceHealth } from '@/features/workspace/WorkspaceHealth';
 import { WorkspacePicker } from '@/features/workspace/WorkspacePicker';
@@ -62,11 +58,11 @@ import { toastCloneError } from '@/lib/authToasts';
 import { trackItemCloned } from '@/lib/observability';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
-type PanelTab = 'files' | 'chat' | 'generate';
+type PanelTab = 'study' | 'files' | 'chat';
 const TAB_ICON: Record<PanelTab, IconName> = {
   chat: 'message',
   files: 'files',
-  generate: 'sparkles',
+  study: 'bookOpenCheck',
 };
 /** Three columns is a per-browser preference, not per workspace. */
 const PIN_KEY = 'capy.workspace.filesPinned';
@@ -84,9 +80,7 @@ export default function WorkspaceOpen() {
   } = useWorkspace(workspaceId, { errorBoundary: false });
   const { data: chapters } = useChapters(workspaceId);
   const { data: files } = useFiles(workspaceId);
-  const { data: materials } = useMaterials(workspaceId);
   const readOnly = isWorkspaceReadOnly(ws?.capabilities);
-  const canShare = canManageWorkspaceSettings(ws);
   const canClone = !!ws?.canClone;
   const { mutateAsync: addChapter } = useAddChapter(workspaceId);
   const { mutateAsync: updateChapter } = useUpdateChapter(workspaceId);
@@ -107,8 +101,8 @@ export default function WorkspaceOpen() {
   }
 
   const searchedOpenItem = openItemFromSearch(search);
-  // Files when nothing is open, Chat when the URL already points at an item.
-  const [tab, setTab] = useState<PanelTab>(searchedOpenItem ? 'chat' : 'files');
+  // Study when nothing is open, Chat when the URL already points at an item.
+  const [tab, setTab] = useState<PanelTab>(searchedOpenItem ? 'chat' : 'study');
   const [toolsOpen, setToolsOpen] = useState(false);
   const [citationTarget, setCitationTarget] = useState<{
     fileId: string;
@@ -205,22 +199,19 @@ export default function WorkspaceOpen() {
     );
   }
 
-  // Chat is open to every signed-in role; generation stays edit-only.
-  const panelTabs: PanelTab[] = readOnly
-    ? ['files', 'chat']
-    : ['files', 'chat', 'generate'];
+  // Every role that can read the workspace studies, browses and chats; AI
+  // generate lives in the Add file dialog.
+  const panelTabs: PanelTab[] = ['study', 'files', 'chat'];
   const railTabs =
     layout === 'three' ? panelTabs.filter((t) => t !== 'files') : panelTabs;
-  // Files lives on the left when pinned, and Generate is gone for a read-only
-  // visitor: either way the rail falls back to Chat.
-  const railTab: PanelTab = railTabs.includes(tab) ? tab : 'chat';
-  // Generate is the Create page's twin, so it borrows that label and glyph.
+  // Files lives on the left when pinned: the rail falls back to Study.
+  const railTab: PanelTab = railTabs.includes(tab) ? tab : 'study';
   const tabLabel = (t: PanelTab) =>
     t === 'files'
       ? m.workspace_tab_files()
       : t === 'chat'
         ? m.workspace_tab_chat()
-        : m.nav_create();
+        : m.workspace_tab_study();
   function showTab(next: PanelTab) {
     setTab(next);
     if (layout === 'one') setToolsOpen(true);
@@ -228,7 +219,9 @@ export default function WorkspaceOpen() {
 
   const rowProps = {
     compact: layout === 'one',
-    onOpenSettings: canShare ? () => setSettingsOpen(true) : undefined,
+    // Viewers open settings too, for the one row they can use: reset their
+    // own study progress.
+    onOpenSettings: () => setSettingsOpen(true),
   };
   // Below lg an open Office file keeps its bottom chrome (sheet tabs, slide
   // pager) clear: the tools bar folds into one morphing button, as the Files
@@ -297,11 +290,18 @@ export default function WorkspaceOpen() {
       workspaceId={workspaceId}
     />
   );
-  // Every tab stays mounted so chat and generate keep their state while hidden;
-  // only the visible one draws the tab row.
+  // Every tab stays mounted so chat keeps its state while hidden; only the
+  // visible one draws the tab row.
   const noRow = () => null;
   const rail = (
     <>
+      <div className="min-h-0 flex-1" hidden={railTab !== 'study'}>
+        <StudyPanel
+          onOpenItem={setOpenItem}
+          renderTabRow={railTab === 'study' ? railRow : noRow}
+          workspaceId={workspaceId}
+        />
+      </div>
       {layout !== 'three' && (
         <div className="min-h-0 flex-1" hidden={railTab !== 'files'}>
           {filesPanel(railTab === 'files' ? railRow : noRow)}
@@ -326,21 +326,6 @@ export default function WorkspaceOpen() {
           />
         </AppErrorBoundary>
       </div>
-      {!readOnly && (
-        <div className="min-h-0 flex-1" hidden={railTab !== 'generate'}>
-          <GeneratePanel
-            canReprocess={ws.isOwner}
-            chapters={chapters ?? []}
-            existingTitles={(materials ?? []).map((mt) => mt.title)}
-            files={files ?? []}
-            onGeneratingChange={setGenerating}
-            onOpenItem={setOpenItem}
-            renderTabRow={railTab === 'generate' ? railRow : noRow}
-            workspaceId={workspaceId}
-            workspaceName={ws.name}
-          />
-        </div>
-      )}
     </>
   );
 
@@ -601,6 +586,7 @@ export default function WorkspaceOpen() {
         <AddSourceDialog
           initialMode={addSource}
           onClose={() => setAddSource(null)}
+          onGeneratingChange={setGenerating}
           onOpenItem={setOpenItem}
           open
           workspaceId={workspaceId}

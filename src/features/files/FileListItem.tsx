@@ -3,6 +3,7 @@ import type { MouseEventHandler } from 'react';
 import type { Chapter, SourceFile, UserColor } from '@/api/types';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
+import { StudyMark, type StudyRow } from '@/features/study/studyItems';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import { toFileActionTarget } from '@/features/workspace/contentActionTarget';
 import { m } from '@/i18n';
@@ -23,6 +24,7 @@ export function FileListItem({
   chapters = [],
   onDeleted,
   readOnly = false,
+  study,
 }: {
   beforeDelete?: () => boolean;
   file: SourceFile;
@@ -35,6 +37,8 @@ export function FileListItem({
   onDeleted?: (id: string) => void;
   /** Shared workspace viewers can open files but cannot mutate them. */
   readOnly?: boolean;
+  /** The reader's own progress on this file, while progress is on. */
+  study?: StudyRow;
 }) {
   const ingesting = fileIsIngesting(file.status);
   const waitingForBytes = ingesting && !file.hasBytes;
@@ -66,11 +70,13 @@ export function FileListItem({
           <span
             className={cn(
               'line-clamp-2 flex-1 translate-y-px',
+              study?.state === 'removed' && 'text-fg-muted',
               failed && 'text-solid-error'
             )}
           >
             {file.name}
           </span>
+          <StudyMark className="mr-6" state={study?.state} />
         </Link>
         {!readOnly && (
           <ContentActions
@@ -83,6 +89,7 @@ export function FileListItem({
               'absolute top-1/2 right-1 -translate-y-1/2',
               active && 'bg-surface-hover-bg'
             )}
+            leadingItems={study?.menuItems}
             onDeleted={() => onDeleted?.(file.id)}
             propertiesClassName="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2"
             propertyLabelClassName="text-fg-secondary"

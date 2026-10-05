@@ -1,15 +1,16 @@
-import { useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
-import { useAttempts } from '@/api/hooks';
+import { useNavigate, useSearch } from '@tanstack/react-router';
+import { useAttempts, useReviewWorkspaces } from '@/api/hooks';
 import type { Attempt } from '@/api/types';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
 import { Tabs } from '@/components/ui/Tabs';
 import { formatPoints } from '@/features/quizzes/grade';
 import { m } from '@/i18n';
+import type { LearningTab } from '@/lib/tabSearch';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 function scoreTone(pct: number): 'success' | 'warning' | 'error' {
@@ -91,20 +92,87 @@ function PastAttempts() {
   );
 }
 
+/** One row per workspace with progress: what a review would draw on, how
+ * much is done, and its Review. */
+function ReviewWorkspaces() {
+  const { data, fetchStatus, isLoading } = useReviewWorkspaces();
+  const revealRef = useLoadingReveal(isLoading);
+  const navigate = useNavigate();
+  if (fetchStatus === 'paused') return <QueryPausedState />;
+  if (isLoading) return <SkeletonList count={4} rowHeight={52} />;
+  if (!data?.workspaces.length)
+    return (
+      <p className="py-8 text-center text-fg-muted">
+        {m.review_no_workspaces()}
+      </p>
+    );
+  return (
+    <div
+      className="overflow-hidden rounded-card border border-line"
+      ref={revealRef}
+    >
+      <div className="grid grid-cols-[minmax(0,1fr)_5rem_6rem] items-center gap-3 bg-surface-hover-bg px-4 py-3 font-bold text-fg-muted text-xs uppercase tracking-wide md:grid-cols-[minmax(0,1fr)_7rem_7rem_6rem]">
+        <div>{m.quiz_col_workspace()}</div>
+        <div className="text-center">{m.review_col_to_review()}</div>
+        <div className="hidden text-center md:block">{m.review_col_done()}</div>
+        <div />
+      </div>
+      {data.workspaces.map((ws) => (
+        <div
+          className="grid grid-cols-[minmax(0,1fr)_5rem_6rem] items-center gap-3 border-divider border-t py-2 pr-2 pl-4 first:border-t-0 md:grid-cols-[minmax(0,1fr)_7rem_7rem_6rem]"
+          key={ws.workspaceId}
+        >
+          <div className="truncate font-semibold text-fg">{ws.name}</div>
+          <div className="text-center">{ws.reviewable}</div>
+          <div className="hidden text-center text-fg-muted text-sm md:block">
+            {m.study_of({ done: ws.done, total: ws.total })}
+          </div>
+          <Button
+            disabled={!ws.reviewable}
+            onClick={() =>
+              navigate({
+                params: { workspaceId: ws.workspaceId },
+                search: { from: 'learning' },
+                to: '/learning/review/$workspaceId',
+              })
+            }
+            size="sm"
+            variant="outline"
+          >
+            {m.study_review_button()}
+          </Button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Learning() {
-  const [tab, setTab] = useState('results');
+  const { tab = 'review' } = useSearch({ strict: false }) as {
+    tab?: LearningTab;
+  };
+  const navigate = useNavigate();
   return (
     <PanelWithInvertedRadius>
       <PageHeader title={m.nav_learning()} />
       <div className="px-6 pt-4">
         <Tabs
-          onChange={setTab}
-          tabs={[{ label: m.learning_tab_results(), value: 'results' }]}
+          onChange={(next) =>
+            navigate({
+              replace: true,
+              search: { tab: next as LearningTab },
+              to: '/learning',
+            })
+          }
+          tabs={[
+            { label: m.learning_tab_review(), value: 'review' },
+            { label: m.learning_tab_results(), value: 'results' },
+          ]}
           value={tab}
         />
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-6 py-5">
-        <PastAttempts />
+        {tab === 'review' ? <ReviewWorkspaces /> : <PastAttempts />}
       </div>
     </PanelWithInvertedRadius>
   );

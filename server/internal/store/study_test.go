@@ -188,8 +188,25 @@ func TestWorkspaceReviewSelection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(mixed.Sets) != 1 || mixed.Sets[0].MaterialID != kept[0].MaterialID || len(mixed.Items) != 1 || mixed.Items[0].ItemID != kept[0].ID {
+	if len(mixed.Items) != 1 || mixed.Items[0].ItemID != kept[0].ID {
 		t.Fatalf("mixed review = %+v", mixed)
+	}
+	// A missed card enters Quick review with both faces; the Study tab and
+	// Learning count the same pool.
+	f.rate(t, kept[0], 1)
+	summary, err := f.s.StudySummary(ctx, f.user, f.ws.ID, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Reviewable != 1 || len(summary.QuickReview) != 1 || summary.QuickReview[0].Front != "Golgi" || summary.QuickReview[0].Back != "Ships proteins" {
+		t.Fatalf("quick review = %+v", summary)
+	}
+	listed, err := f.s.ReviewWorkspaces(ctx, f.user, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 1 || listed[0].WorkspaceID != f.ws.ID || listed[0].Reviewable != 1 || listed[0].Total != 2 {
+		t.Fatalf("review workspaces = %+v", listed)
 	}
 
 	if err := f.s.ResetStudy(ctx, f.user, f.ws.ID); err != nil {
@@ -201,7 +218,7 @@ func TestWorkspaceReviewSelection(t *testing.T) {
 	if n := f.count(t, `SELECT count(*) FROM review_states WHERE user_id=$1`, f.user); n != 0 {
 		t.Fatalf("review states after reset = %d", n)
 	}
-	if n := f.count(t, `SELECT count(*) FROM review_log WHERE user_id=$1`, f.user); n != 4 {
+	if n := f.count(t, `SELECT count(*) FROM review_log WHERE user_id=$1`, f.user); n != 5 {
 		t.Fatalf("review log after reset = %d", n)
 	}
 

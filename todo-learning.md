@@ -22,6 +22,18 @@ flashcards).
   cards in order and posts ratings, so `main` builds. Per-set review
   (`GET /api/materials/{id}/review`, `SetReview`) was removed on 2026-10-04:
   review only mixes quizzes and sets (Epo).
+- Part 1 frontend is built (2026-10-05) from the round 4 picks: Study tab
+  (`features/study/StudyPanel.tsx`: Up next with Continue, Review, Quick
+  review, Done per chapter, recent quizzes, Track progress), marks and Mark as
+  read / Stop tracking in the file panel and the header (`studyItems.tsx`),
+  the Review tab in Learning and the session page (`routes/ReviewSession.tsx`,
+  `/learning/review/$workspaceId`), AI generate as a mode of the Add file
+  dialog (`GenerateFilePanel.tsx`; the Generate tab is gone), Reset in
+  Workspace settings → Danger (viewers see only that row), the global switch
+  in Settings → Customizations, and MSW mocks (`src/mocks/study.ts`). Server:
+  `StudySummary` carries `quickReview` and `reviewable` instead of `hardest`,
+  the session drops `sets`, and `GET /api/review/workspaces` feeds Learning.
+  Files | Blocks | Trash replaces the Create page (`/create` redirects).
 - Part 1 mocks: `artifacts/2026-10-04-study-progress-mocks.html` at
   https://9rn5fsnigkz1.postplan.dev. Round 1 picks (2026-10-04): B for the
   Study tab, the marks and AI generate, with changes. Round 2 nudges (Quick

@@ -34,6 +34,7 @@ import {
   quizQuery,
   recentFilesQuery,
   recentMaterialsQuery,
+  reviewWorkspacesQuery,
   tasksQuery,
   usageQuery,
   workspaceQuery,
@@ -56,8 +57,13 @@ import {
   parseWorkspaceOpenSearch,
 } from '@/features/materials/openItem';
 import { parseQuizEditSearch } from '@/features/quizzes/quizNavigation';
+import { parseReviewSearch } from '@/features/study/reviewSearch';
 import { features } from '@/lib/features';
-import { parseBillingSearch, parseSettingsSearch } from '@/lib/tabSearch';
+import {
+  parseBillingSearch,
+  parseLearningSearch,
+  parseSettingsSearch,
+} from '@/lib/tabSearch';
 
 interface RouterContext {
   queryClient: QueryClient;
@@ -212,11 +218,22 @@ const appRoutes = [
         ownedMaterialsQuery({ dir: 'desc', sort: 'updated' })
       )
   ),
-  page(
-    '/learning',
-    () => import('@/routes/Learning'),
-    ({ context: { queryClient: qc } }) => qc.prefetchQuery(attemptsQuery())
-  ),
+  createRoute({
+    component: lazyRouteComponent(() => import('@/routes/Learning')),
+    getParentRoute: () => authShellRoute,
+    loader: ({ context: { queryClient: qc } }) => {
+      void qc.prefetchQuery(attemptsQuery());
+      void qc.prefetchQuery(reviewWorkspacesQuery());
+    },
+    path: '/learning',
+    validateSearch: parseLearningSearch,
+  }),
+  createRoute({
+    component: lazyRouteComponent(() => import('@/routes/ReviewSession')),
+    getParentRoute: () => authShellRoute,
+    path: '/learning/review/$workspaceId',
+    validateSearch: parseReviewSearch,
+  }),
   createRoute({
     component: lazyRouteComponent(() => import('@/routes/MaterialOpen')),
     getParentRoute: () => authShellRoute,

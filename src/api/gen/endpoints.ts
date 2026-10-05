@@ -112,6 +112,7 @@ import type {
   ReorderContentReq,
   RequestAccountDeletionReq,
   ReviewSession,
+  ReviewWorkspacesOutputBody,
   SaveCanvasReq,
   SearchParams,
   SearchResult,
@@ -5671,6 +5672,56 @@ export const rateReviewItem = async (rateReviewItemReq: NonReadonly<RateReviewIt
 
   const data: rateReviewItemResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as rateReviewItemResponse
+}
+
+
+
+export type listReviewWorkspacesResponse200 = {
+  data: ReviewWorkspacesOutputBody
+  status: 200
+}
+
+export type listReviewWorkspacesResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listReviewWorkspacesResponseSuccess = (listReviewWorkspacesResponse200) & {
+  headers: Headers;
+};
+export type listReviewWorkspacesResponseError = (listReviewWorkspacesResponseDefault) & {
+  headers: Headers;
+};
+
+export type listReviewWorkspacesResponse = (listReviewWorkspacesResponseSuccess | listReviewWorkspacesResponseError)
+
+export const getListReviewWorkspacesUrl = () => {
+
+
+
+
+  return `/api/review/workspaces`
+}
+
+/**
+ * @summary Workspaces with study progress, for Learning's Review tab
+ */
+export const listReviewWorkspaces = async ( options?: RequestInit): Promise<listReviewWorkspacesResponse> => {
+
+  const res = await fetch(getListReviewWorkspacesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listReviewWorkspacesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listReviewWorkspacesResponse
 }
 
 

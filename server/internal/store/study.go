@@ -24,21 +24,26 @@ type StudyItem struct {
 	State      string  `json:"state" enum:"started,done,removed"`
 }
 
-// HardItem is a question or card the user missed most often.
-type HardItem struct {
-	MaterialID    string `json:"materialId"`
-	MaterialTitle string `json:"materialTitle"`
-	MaterialKind  string `json:"materialKind" enum:"quiz,flashcards"`
-	ItemID        string `json:"itemId"`
-	Text          string `json:"text"`
-	Lapses        int    `json:"lapses"`
-}
-
 type StudySummary struct {
 	Enabled        bool        `json:"enabled"`
 	Items          []StudyItem `json:"items" nullable:"false"`
 	RecentAttempts []Attempt   `json:"recentAttempts" nullable:"false"`
-	Hardest        []HardItem  `json:"hardest" nullable:"false"`
+	// Reviewable counts the rated questions and cards a review session draws on.
+	Reviewable int `json:"reviewable"`
+	// QuickReview is the Study tab's cards to revisit: flashcards of the sets in
+	// progress missed at least once, the one most likely forgotten first, so a
+	// card rated Good drops down.
+	QuickReview []ReviewItem `json:"quickReview" nullable:"false"`
+}
+
+// ReviewWorkspace is one workspace in the Learning page's Review tab.
+type ReviewWorkspace struct {
+	WorkspaceID string `json:"workspaceId"`
+	Name        string `json:"name"`
+	Reviewable  int    `json:"reviewable"`
+	// Done of Total are the workspace's files and materials marked done.
+	Done  int `json:"done"`
+	Total int `json:"total"`
 }
 
 // ReviewItem is one card or question in a review session, with the content
@@ -53,20 +58,14 @@ type ReviewItem struct {
 	Question      map[string]any `json:"question,omitempty"`
 }
 
-// ReviewSet is a quiz or flashcard set in progress with its reviewable items.
-type ReviewSet struct {
-	MaterialID string `json:"materialId"`
-	Title      string `json:"title"`
-	Kind       string `json:"kind" enum:"quiz,flashcards"`
-	Items      int    `json:"items"`
-}
-
 type ReviewSession struct {
-	Sets  []ReviewSet  `json:"sets" nullable:"false"`
 	Items []ReviewItem `json:"items" nullable:"false"`
 }
 
-const reviewSessionSize = 20
+const (
+	reviewSessionSize = 20
+	quickReviewSize   = 20
+)
 
 // studyItem is a reviewable item read from a material's document.
 type studyItem struct {
@@ -187,8 +186,8 @@ func (s *Store) StudyEnabled(ctx context.Context, userID, wsID string) (bool, er
 	return on, err
 }
 
-func (s *Store) StudySummary(ctx context.Context, userID, wsID string) (StudySummary, error) {
-	out := StudySummary{Items: []StudyItem{}, RecentAttempts: []Attempt{}, Hardest: []HardItem{}}
+func (s *Store) StudySummary(ctx context.Context, userID, wsID string, now time.Time) (StudySummary, error) {
+	out := StudySummary{Items: []StudyItem{}, RecentAttempts: []Attempt{}, QuickReview: []ReviewItem{}}
 	var err error
 	if out.Enabled, err = s.StudyEnabled(ctx, userID, wsID); err != nil {
 		return out, err
@@ -233,69 +232,15 @@ func (s *Store) StudySummary(ctx context.Context, userID, wsID string) (StudySum
 	if err := rows.Err(); err != nil {
 		return out, err
 	}
-	out.Hardest, err = s.hardest(ctx, userID, wsID)
-	return out, err
-}
-
-// hardest lists the five items with the most lapses whose content still
-// matches what was rated.
-func (s *Store) hardest(ctx context.Context, userID, wsID string) ([]HardItem, error) {
-	rows, err := s.pool.Query(ctx, `SELECT rs.material_id, rs.item_id, rs.item_hash, rs.lapses FROM review_states rs
-		JOIN materials m ON m.id=rs.material_id
-		WHERE rs.user_id=$1 AND m.workspace_id=$2 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND rs.lapses > 0
-		ORDER BY rs.lapses DESC, rs.last_review DESC LIMIT 50`, userID, wsID)
+	pool, err := s.reviewPool(ctx, userID, wsID, now)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
-	type cand struct {
-		material, item, hash string
-		lapses               int
-	}
-	var cands []cand
-	for rows.Next() {
-		var c cand
-		if err := rows.Scan(&c.material, &c.item, &c.hash, &c.lapses); err != nil {
-			rows.Close()
-			return nil, err
+	out.Reviewable = len(pool)
+	for _, it := range pool {
+		if it.Kind == "card" && it.lapses > 0 && len(out.QuickReview) < quickReviewSize {
+			out.QuickReview = append(out.QuickReview, it.ReviewItem)
 		}
-		cands = append(cands, c)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	out := []HardItem{}
-	items := map[string]map[string]studyItem{}
-	for _, c := range cands {
-		if len(out) == 5 {
-			break
-		}
-		byID, ok := items[c.material]
-		if !ok {
-			mt, err := s.GetMaterial(ctx, c.material)
-			if err != nil {
-				return nil, err
-			}
-			list, err := materialItems(mt)
-			if err != nil {
-				return nil, err
-			}
-			byID = map[string]studyItem{}
-			for _, it := range list {
-				byID[it.ItemID] = it
-			}
-			items[c.material] = byID
-		}
-		it, ok := byID[c.item]
-		if !ok || it.hash != c.hash {
-			continue
-		}
-		kind := "flashcards"
-		text := it.Front
-		if it.Kind == "question" {
-			kind, text = "quiz", questionText(it.Question)
-		}
-		out = append(out, HardItem{MaterialID: c.material, MaterialTitle: it.MaterialTitle, MaterialKind: kind, ItemID: c.item, Text: text, Lapses: c.lapses})
 	}
 	return out, nil
 }
@@ -503,68 +448,129 @@ func rateAttemptTx(ctx context.Context, tx pgx.Tx, userID string, mt Material, s
 
 type ranked struct {
 	studyItem
-	r float64
+	r      float64
+	lapses int
 }
 
-// WorkspaceReview is the next mixed session: the least retained items already
-// rated, across the quizzes and sets in progress (not removed, trashed or
-// embedded). Sets lists those materials with their rated item counts.
-func (s *Store) WorkspaceReview(ctx context.Context, userID, wsID string, now time.Time) (ReviewSession, error) {
-	out := ReviewSession{Sets: []ReviewSet{}, Items: []ReviewItem{}}
+// reviewPool is every rated item of the quizzes and sets in progress (not
+// removed, trashed or embedded) whose content still matches what was rated,
+// least retained first.
+func (s *Store) reviewPool(ctx context.Context, userID, wsID string, now time.Time) ([]ranked, error) {
 	rows, err := s.pool.Query(ctx, `SELECT m.id FROM materials m
 		JOIN study_progress sp ON sp.material_id=m.id AND sp.user_id=$1
 		WHERE m.workspace_id=$2 AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL
 			AND m.parent_material_id IS NULL AND sp.state <> 'removed'
 		ORDER BY m.position, m.created_at`, userID, wsID)
 	if err != nil {
-		return out, err
+		return nil, err
 	}
 	var ids []string
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
 			rows.Close()
-			return out, err
+			return nil, err
 		}
 		ids = append(ids, id)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return out, err
+		return nil, err
 	}
 	var all []ranked
 	for _, id := range ids {
 		mt, err := s.GetMaterial(ctx, id)
 		if err != nil {
-			return out, err
+			return nil, err
 		}
 		items, err := materialItems(mt)
 		if err != nil {
-			return out, err
+			return nil, err
 		}
 		states, err := reviewStates(ctx, s.pool, userID, mt.ID)
 		if err != nil {
-			return out, err
+			return nil, err
 		}
-		set := ReviewSet{MaterialID: mt.ID, Title: mt.Title, Kind: string(mt.Kind)}
 		for _, it := range items {
 			if st, ok := states[it.ItemID]; ok && st.hash == it.hash {
-				all = append(all, ranked{it, review.Retrievability(st.State, now)})
-				set.Items++
+				all = append(all, ranked{it, review.Retrievability(st.State, now), st.Lapses})
 			}
-		}
-		if set.Items > 0 {
-			out.Sets = append(out.Sets, set)
 		}
 	}
 	sort.SliceStable(all, func(i, j int) bool { return all[i].r < all[j].r })
-	for i, it := range all {
+	return all, nil
+}
+
+// WorkspaceReview is the next mixed session: the least retained items of the
+// review pool.
+func (s *Store) WorkspaceReview(ctx context.Context, userID, wsID string, now time.Time) (ReviewSession, error) {
+	out := ReviewSession{Items: []ReviewItem{}}
+	pool, err := s.reviewPool(ctx, userID, wsID, now)
+	if err != nil {
+		return out, err
+	}
+	for i, it := range pool {
 		if i == reviewSessionSize {
 			break
 		}
 		out.Items = append(out.Items, it.ReviewItem)
 	}
 	return out, nil
+}
+
+// ReviewWorkspaces lists the workspaces the user tracks progress in and can
+// still read, with what a review would draw on and how much is done.
+func (s *Store) ReviewWorkspaces(ctx context.Context, userID string, now time.Time) ([]ReviewWorkspace, error) {
+	rows, err := s.pool.Query(ctx, `SELECT w.id, w.name,
+			(SELECT count(*) FROM study_progress sp
+				LEFT JOIN files f ON f.id=sp.file_id LEFT JOIN materials m ON m.id=sp.material_id
+				WHERE sp.user_id=$1 AND sp.workspace_id=w.id AND sp.state='done'
+					AND f.trashed_at IS NULL AND m.trashed_at IS NULL),
+			(SELECT count(*) FROM files f WHERE f.workspace_id=w.id AND f.trashed_at IS NULL)
+				+ (SELECT count(*) FROM materials m WHERE m.workspace_id=w.id AND m.trashed_at IS NULL
+					AND m.parent_material_id IS NULL)
+		FROM workspaces w
+		WHERE EXISTS (SELECT 1 FROM study_progress sp WHERE sp.user_id=$1 AND sp.workspace_id=w.id AND sp.state <> 'removed')
+		ORDER BY w.name, w.id`, userID)
+	if err != nil {
+		return nil, err
+	}
+	var out []ReviewWorkspace
+	for rows.Next() {
+		var ws ReviewWorkspace
+		if err := rows.Scan(&ws.WorkspaceID, &ws.Name, &ws.Done, &ws.Total); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		out = append(out, ws)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	list := []ReviewWorkspace{}
+	for _, ws := range out {
+		// Access can end after progress was recorded; progress can be off.
+		if _, err := s.WorkspaceEffectiveRole(ctx, userID, ws.WorkspaceID); err != nil {
+			if errors.Is(err, ErrNotFound) || errors.Is(err, ErrForbidden) {
+				continue
+			}
+			return nil, err
+		}
+		if on, err := s.StudyEnabled(ctx, userID, ws.WorkspaceID); err != nil || !on {
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
+		pool, err := s.reviewPool(ctx, userID, ws.WorkspaceID, now)
+		if err != nil {
+			return nil, err
+		}
+		ws.Reviewable = len(pool)
+		list = append(list, ws)
+	}
+	return list, nil
 }
 
 /* ------------------------------------------------------------ agent read */
@@ -593,7 +599,7 @@ type WeakChapter struct {
 }
 
 func (s *Store) AgentStudyProgress(ctx context.Context, userID, wsID string, now time.Time) (AgentProgress, error) {
-	summary, err := s.StudySummary(ctx, userID, wsID)
+	summary, err := s.StudySummary(ctx, userID, wsID, now)
 	if err != nil {
 		return AgentProgress{}, err
 	}

@@ -1,4 +1,8 @@
-import { useMe, useSetStudyPreferences } from '@/api/hooks';
+import {
+  useMe,
+  useSetStudyPreferences,
+  useSetStudyProgressDefault,
+} from '@/api/hooks';
 import type { StudyPreferences } from '@/api/types';
 import { SettingRow } from '@/components/app/tabPanel';
 import {
@@ -88,6 +92,7 @@ const ROWS: {
 export function StudyPreferencesSection() {
   const { data: me } = useMe();
   const { mutate: save } = useSetStudyPreferences();
+  const { mutate: setProgressDefault } = useSetStudyProgressDefault();
   const saved = me?.studyPreferences;
   const current = { ...DEFAULTS, ...saved };
   const set = (patch: StudyPreferences) => {
@@ -99,6 +104,17 @@ export function StudyPreferencesSection() {
         <h3 className="font-semibold text-fg">{m.study_prefs_title()}</h3>
         <p className="text-fg-secondary">{m.study_prefs_hint()}</p>
       </div>
+      <SettingRow
+        hint={m.study_progress_default_hint()}
+        title={m.study_progress_default()}
+      >
+        <Switch
+          aria-label={m.study_progress_default()}
+          checked={!!me?.studyProgress}
+          disabled={!me}
+          onCheckedChange={(checked) => setProgressDefault(checked)}
+        />
+      </SettingRow>
       {ROWS.slice(0, 2).map((row) => (
         <ChoiceRow
           current={String(current[row.field])}

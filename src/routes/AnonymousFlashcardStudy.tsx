@@ -12,6 +12,7 @@ import { Icon } from '@/components/ui/Icon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { userToast } from '@/components/ui/userToast';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
+import { RATING_LABEL, RATING_STYLE } from '@/features/study/ratings';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { localCardStates, recordLocalCardReview } from '@/lib/localDb';
@@ -24,7 +25,6 @@ import {
   type SrsRating,
   type SrsState,
 } from '@/lib/srs';
-import { RATING_LABEL, RATING_STYLE } from './FlashcardStudy';
 
 /** Signed-out study of a shared flashcard set: ts-fsrs runs in the browser
  * and every rating is logged to IndexedDB, never to the server. */

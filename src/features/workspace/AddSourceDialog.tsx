@@ -84,6 +84,8 @@ import {
   useProviderConnect,
 } from '@/lib/useProviderConnect';
 import { CreateFilePanel } from './CreateFilePanel';
+import { GenerateFilePanel } from './GenerateFilePanel';
+import type { GenerateMode } from './GenerateForm';
 import { ProviderIcon } from './SourceTransferPanel';
 import {
   calculateParseCreditMicros,
@@ -420,7 +422,7 @@ function localRows(
   });
 }
 
-export type AddSourceMode = 'upload' | 'import' | 'create';
+export type AddSourceMode = 'upload' | 'import' | 'create' | 'generate';
 
 /** Expected cost of one source at the policy rates: audio by duration,
  * fast-parsed documents by digital/OCR page count, everything else free. */
@@ -900,6 +902,7 @@ export function AddSourceDialog({
   initialMode = 'upload',
   initialSources = [],
   onOpenItem,
+  onGeneratingChange,
 }: {
   open: boolean;
   onClose: () => void;
@@ -910,6 +913,8 @@ export function AddSourceDialog({
   initialMode?: AddSourceMode;
   /** Rows to start with, for the dev dialog previews. */
   initialSources?: PendingSource[];
+  /** AI generate runs after the dialog closes; the tree shows it meanwhile. */
+  onGeneratingChange?: (mode: GenerateMode | null) => void;
 }) {
   const { data: workspace } = useWorkspace(workspaceId, {
     errorBoundary: false,
@@ -1406,6 +1411,7 @@ export function AddSourceDialog({
               value: 'import',
             },
             { label: m.action_create(), value: 'create' },
+            { label: m.generate_ai(), value: 'generate' },
           ]}
           value={mode}
         />
@@ -1518,7 +1524,14 @@ export function AddSourceDialog({
             )}
           </div>
         )}
-        {mode === 'create' ? (
+        {mode === 'generate' ? (
+          <GenerateFilePanel
+            onClose={onClose}
+            onGeneratingChange={onGeneratingChange}
+            onOpenItem={onOpenItem}
+            workspaceId={workspaceId}
+          />
+        ) : mode === 'create' ? (
           <CreateFilePanel
             onCreated={(item) => {
               onOpenItem?.(item);

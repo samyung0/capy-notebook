@@ -46,6 +46,7 @@ import type {
   ReviewItem as GenReviewItem,
   ReviewSession as GenReviewSession,
   SearchResult as GenSearchResult,
+  StudySummary as GenStudySummary,
   UpdateCommentReq as GenUpdateCommentReq,
   UpdateQuizContentReq as GenUpdateQuizContentReq,
   UpdateWorkspaceMemberReq as GenUpdateWorkspaceMemberReq,
@@ -230,14 +231,16 @@ export type ReviewItem = Omit<GenReviewItem, 'question'> & {
 export type ReviewSession = Omit<GenReviewSession, 'items'> & {
   items: ReviewItem[];
 };
+/** The Study tab's summary; Quick review items are cards, never questions. */
+export type StudySummary = Omit<GenStudySummary, 'quickReview'> & {
+  quickReview: ReviewItem[];
+};
 export type {
-  HardItem,
   RateReviewItemReq,
-  ReviewSet,
+  ReviewWorkspace,
   SetStudyEnabledReq,
   SetStudyItemReq,
   StudyItem,
-  StudySummary,
 } from './gen/model';
 
 /* ---------------- overridden request bodies ----------------

@@ -1,14 +1,7 @@
 import { useNavigate } from '@tanstack/react-router';
 import { type ReactNode, useEffect, useState } from 'react';
 import { createStore, type StoreApi } from 'zustand';
-import {
-  useFile,
-  useFlashcardSet,
-  useMaterial,
-  useMaterials,
-  useQuiz,
-  useWorkspace,
-} from '@/api/hooks';
+import { useFile, useMaterial, useMaterials, useWorkspace } from '@/api/hooks';
 import type {
   AccessCapabilities,
   Chapter,
@@ -21,6 +14,7 @@ import type {
 import { Button } from '@/components/ui/Button';
 import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
 import { Icon, type IconName } from '@/components/ui/Icon';
+import type { MenuItem } from '@/components/ui/Menu';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import {
   Tooltip,
@@ -40,6 +34,7 @@ import {
   type NoteEditorStatus,
   noteEditorStatusLabel,
 } from '@/features/notes/editorMode';
+import { useStudyActions, useStudyStates } from '@/features/study/studyItems';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import {
   toFileActionTarget,
@@ -216,24 +211,13 @@ function FlashcardSetPreviewActions({
 }: {
   flashcardSetId: string;
 }) {
-  const { data: flashcardSetData, isLoading: flashcardSetIsLoading } =
-    useFlashcardSet(flashcardSetId, {
-      errorBoundary: false,
-    });
   const navigate = useNavigate();
-  const summary = flashcardSetData
-    ? m.material_ref_cards({ count: flashcardSetData.cardCount })
-    : flashcardSetIsLoading
-      ? 'Loading flashcards…'
-      : 'Flashcards';
-
   return (
     <div
       aria-label={m.material_flashcard_actions()}
       className="flex min-w-0 items-center gap-3"
       role="toolbar"
     >
-      <span className="t-meta min-w-0 truncate text-fg-muted">{summary}</span>
       <Button
         iconRight="arrowRight"
         onClick={() =>
@@ -245,30 +229,20 @@ function FlashcardSetPreviewActions({
         size="sm"
         variant="ghost-hover"
       >
-        Study
+        {m.flashcards_study()}
       </Button>
     </div>
   );
 }
 
 function QuizPreviewActions({ quizId }: { quizId: string }) {
-  const { data: quizData, isLoading: quizIsLoading } = useQuiz(quizId, {
-    errorBoundary: false,
-  });
   const navigate = useNavigate();
-  const summary = quizData
-    ? `${quizData.questions.length} question${quizData.questions.length === 1 ? '' : 's'}`
-    : quizIsLoading
-      ? 'Loading quiz details…'
-      : 'Quiz';
-
   return (
     <div
       aria-label={m.material_quiz_actions()}
       className="flex min-w-0 items-center gap-3"
       role="toolbar"
     >
-      <span className="t-meta min-w-0 truncate text-fg-muted">{summary}</span>
       <Button
         className="font-medium text-sm"
         iconRight="arrowRight"
@@ -281,6 +255,34 @@ function QuizPreviewActions({ quizId }: { quizId: string }) {
         {m.quiz_start()}
       </Button>
     </div>
+  );
+}
+
+/** Mark as read, right of the view/edit toggle: an open book with a check, a
+ * closed one in the marks' green once read; clicking again marks it unread. */
+function ReadToggle({
+  item,
+  workspaceId,
+}: {
+  item: OpenItem;
+  workspaceId: string;
+}) {
+  const { enabled, states } = useStudyStates(workspaceId);
+  const { set } = useStudyActions(workspaceId);
+  if (!enabled) return null;
+  const done = states.get(item.id) === 'done';
+  return (
+    <ToolbarButton
+      label={done ? m.study_mark_unread() : m.study_mark_read()}
+      onClick={() =>
+        set({ id: item.id, kind: item.kind }, done ? null : 'done')
+      }
+    >
+      <Icon
+        className={cn(done && 'text-tint-success-fg')}
+        name={done ? 'bookCheck' : 'bookOpenCheck'}
+      />
+    </ToolbarButton>
   );
 }
 
@@ -359,6 +361,10 @@ export function Header({
       : defaultMode;
   // Phones have no room to go fuller than the panel already is.
   const sm = useMediaQuery('(min-width: 640px)');
+  const { enabled: studying, states: studyStates } = useStudyStates(
+    standalone ? '' : workspaceId
+  );
+  const { menuItems: studyMenu } = useStudyActions(workspaceId);
   const office = !!file && !!officeFormatOf(file);
   const name = (
     <>
@@ -386,6 +392,7 @@ export function Header({
       {!readOnly && modes && modes.length > 1 && activeMode && (
         <MaterialModeToggle mode={activeMode} onChange={onMaterialModeChange} />
       )}
+      {!standalone && <ReadToggle item={item} workspaceId={workspaceId} />}
       {showImageZoom && (
         <>
           <ToolbarButton
@@ -421,8 +428,14 @@ export function Header({
         }
         display="menu"
         key={`${item.kind}:${item.id}`}
-        leadingItems={
-          sm
+        leadingItems={[
+          ...(studying && !standalone
+            ? studyMenu(
+                { id: item.id, kind: item.kind },
+                studyStates.get(item.id)
+              )
+            : []),
+          ...(sm
             ? [
                 {
                   icon: isFullscreen ? 'minimize' : 'maximize',
@@ -430,10 +443,10 @@ export function Header({
                     ? m.material_fullscreen_exit()
                     : m.material_fullscreen(),
                   onClick: onToggleFullscreen,
-                },
+                } satisfies MenuItem,
               ]
-            : []
-        }
+            : []),
+        ]}
         menuTrigger={
           <ToolbarButton label={m.a11y_open_menu()}>
             <Icon name="moreVertical" />

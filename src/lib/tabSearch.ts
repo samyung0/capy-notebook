@@ -18,3 +18,7 @@ export const parseSettingsSearch = tabSearch(SETTINGS_TABS);
 export const BILLING_TABS = ['usage', 'details', 'subscription'] as const;
 export type BillingTab = (typeof BILLING_TABS)[number];
 export const parseBillingSearch = tabSearch(BILLING_TABS);
+
+export const LEARNING_TABS = ['review', 'results'] as const;
+export type LearningTab = (typeof LEARNING_TABS)[number];
+export const parseLearningSearch = tabSearch(LEARNING_TABS);

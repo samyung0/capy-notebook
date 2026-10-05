@@ -84,12 +84,16 @@ import type {
   Quiz,
   RateReviewItemReq,
   RequestAccountDeletionReq,
+  ReviewSession,
+  ReviewWorkspace,
   SaveCanvasReq,
   SearchResult,
   SetModelPrefsReq,
+  SetStudyItemReq,
   SourceFile,
   SourceUploadPolicy,
   StudyPreferences,
+  StudySummary,
   Tag,
   Task,
   ThinkingCanvas,
@@ -2110,13 +2114,101 @@ export function useUpdateCard(flashcardSetId: string) {
     },
   });
 }
-/* ---------------- review ---------------- */
+/* ---------------- study progress and review ---------------- */
+export const workspaceStudyQuery = (workspaceId: string) =>
+  queryOptions({
+    queryFn: () => api.get<StudySummary>(`/workspaces/${workspaceId}/study`),
+    queryKey: qk.study(workspaceId),
+  });
+/** The requester's own progress in a workspace: marks, Study tab, Continue. */
+export const useWorkspaceStudy = (
+  workspaceId: string,
+  options?: QueryUiOptions
+) =>
+  useQuery({ ...workspaceStudyQuery(workspaceId), meta: queryMeta(options) });
+
+function invalidateStudy(
+  qc: ReturnType<typeof useQueryClient>,
+  workspaceId: string
+) {
+  qc.invalidateQueries({ queryKey: qk.study(workspaceId) });
+  qc.invalidateQueries({ queryKey: qk.workspaceReview(workspaceId) });
+  qc.invalidateQueries({ queryKey: qk.reviewWorkspaces });
+}
+
+/** Mark as read (done), Stop tracking (removed), or untouched again (null). */
+export function useSetStudyItem(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: SetStudyItemReq) =>
+      api.put<void>(`/workspaces/${workspaceId}/study/items`, body),
+    onSuccess: () => invalidateStudy(qc, workspaceId),
+  });
+}
+
+export function useSetWorkspaceStudyEnabled(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (enabled: boolean) =>
+      api.put<void>(`/workspaces/${workspaceId}/study/enabled`, { enabled }),
+    onSuccess: () => invalidateStudy(qc, workspaceId),
+  });
+}
+
+export function useResetWorkspaceStudy(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<void>(`/workspaces/${workspaceId}/study/reset`),
+    onSuccess: () => invalidateStudy(qc, workspaceId),
+  });
+}
+
+/** The global default for workspaces without their own setting. */
+export function useSetStudyProgressDefault() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (enabled: boolean) =>
+      api.patch<void>('/me/study-progress', { enabled }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.me });
+      qc.invalidateQueries({ queryKey: ['workspace'] });
+      qc.invalidateQueries({ queryKey: qk.reviewWorkspaces });
+    },
+  });
+}
+
+/** The next mixed session; fetched fresh for each session. */
+export const workspaceReviewQuery = (workspaceId: string) =>
+  queryOptions({
+    queryFn: () => api.get<ReviewSession>(`/workspaces/${workspaceId}/review`),
+    queryKey: qk.workspaceReview(workspaceId),
+    staleTime: 0,
+  });
+export const useWorkspaceReview = (
+  workspaceId: string,
+  options?: QueryUiOptions
+) =>
+  useQuery({ ...workspaceReviewQuery(workspaceId), meta: queryMeta(options) });
+
+export const reviewWorkspacesQuery = () =>
+  queryOptions({
+    queryFn: () =>
+      api.get<{ workspaces: ReviewWorkspace[] }>('/review/workspaces'),
+    queryKey: qk.reviewWorkspaces,
+  });
+export const useReviewWorkspaces = (options?: QueryUiOptions) =>
+  useQuery({ ...reviewWorkspacesQuery(), meta: queryMeta(options) });
+
 /** Records one rating; the study page toasts a failure once. */
-export function useRateReviewItem() {
+export function useRateReviewItem(workspaceId?: string) {
+  const qc = useQueryClient();
   return useMutation({
     meta: { errorToast: false },
     mutationFn: (body: RateReviewItemReq) =>
       api.post<void>('/review/ratings', body),
+    onSuccess: () => {
+      if (workspaceId) invalidateStudy(qc, workspaceId);
+    },
   });
 }
 

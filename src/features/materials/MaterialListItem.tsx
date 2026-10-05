@@ -3,6 +3,7 @@ import type { MouseEventHandler } from 'react';
 import type { Chapter, MaterialRef, UserColor } from '@/api/types';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Spinner } from '@/components/ui/feedback';
+import { StudyMark, type StudyRow } from '@/features/study/studyItems';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import { toMaterialActionTarget } from '@/features/workspace/contentActionTarget';
 import { m } from '@/i18n';
@@ -20,6 +21,7 @@ export function MaterialListItem({
   workspaceId,
   generating = false,
   readOnly = false,
+  study,
 }: {
   data: MaterialRef;
   active: boolean;
@@ -33,6 +35,8 @@ export function MaterialListItem({
   workspaceId: string;
   generating?: boolean;
   readOnly?: boolean;
+  /** The reader's own progress on this material, while progress is on. */
+  study?: StudyRow;
 }) {
   return (
     <div
@@ -55,9 +59,15 @@ export function MaterialListItem({
         to="/workspaces/$workspaceId"
       >
         <FileIcon className="size-3.75" name={materialIconName(matRef.type)} />
-        <span className="line-clamp-2 flex-1 translate-y-px">
+        <span
+          className={cn(
+            'line-clamp-2 flex-1 translate-y-px',
+            study?.state === 'removed' && 'text-fg-muted'
+          )}
+        >
           {matRef.title}
         </span>
+        <StudyMark className="mr-6" state={study?.state} />
         {generating && <Spinner className="size-4 shrink-0" />}
       </Link>
       {!readOnly && !generating && (
@@ -70,6 +80,7 @@ export function MaterialListItem({
             'absolute top-1/2 right-1 -translate-y-1/2',
             active && 'bg-surface-hover-bg'
           )}
+          leadingItems={study?.menuItems}
           onDeleted={onDeleted}
           onMove={(chapterId) => onMove?.(chapterId)}
           renameTitle={m.material_rename()}

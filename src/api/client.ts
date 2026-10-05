@@ -378,9 +378,11 @@ export const qk = {
     ['materials', 'owned', params ?? null] as const,
   ownedMaterialsRoot: ['materials', 'owned'] as const,
   quiz: (id: string) => ['quiz', id] as const,
+  reviewWorkspaces: ['review', 'workspaces'] as const,
   search: (q: string) => ['search', q] as const,
   sourceUploadPolicy: (wsId?: string) =>
     ['source-upload-policy', wsId ?? null] as const,
+  study: (wsId: string) => ['workspace', wsId, 'study'] as const,
   tags: (kind: string) => ['tags', kind] as const,
   tasks: ['tasks'] as const,
   thinking: ['thinking'] as const,
@@ -391,6 +393,7 @@ export const qk = {
   workspaceCollaborators: (id: string) =>
     ['workspace', id, 'collaborators'] as const,
   workspaceMembers: (id: string) => ['workspace', id, 'members'] as const,
+  workspaceReview: (wsId: string) => ['workspace', wsId, 'review'] as const,
   workspaceStats: (id: string) => ['workspace', id, 'stats'] as const,
   workspaces: (params?: unknown) => ['workspaces', params ?? null] as const,
 };

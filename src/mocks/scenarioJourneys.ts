@@ -967,7 +967,8 @@ export async function runJourney(
     case 'generation-failed':
     case 'ai-context':
       await go(scenarioPath);
-      await ui.click(m.nav_create());
+      await ui.click(m.action_add_file());
+      await ui.click(m.generate_ai());
       await ui.click(m.generate_kind_diagram());
       fail();
       await ui.click(m.action_generate());

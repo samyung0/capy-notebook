@@ -8,12 +8,7 @@ import {
   type SourceFile,
 } from '@/api/types';
 import { Button } from '@/components/ui/Button';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogTitle,
-} from '@/components/ui/Dialog';
+import { DialogFooter } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { m } from '@/i18n';
@@ -75,7 +70,7 @@ function diagramTypeLabel(type: DiagramType): string {
   }
 }
 
-function generateModeLabel(mode: GenerateMode): string {
+export function generateModeLabel(mode: GenerateMode): string {
   switch (mode) {
     case 'diagram':
       return m.generate_kind_diagram();
@@ -167,9 +162,10 @@ function CountRow({
  * Scope is dual: chapters (by id) and/or individual files (by id). Empty
  * scope means the whole workspace.
  */
-export function GenerateFormDialog({
-  open,
-  setOpen,
+/** The generate options for one kind, with Cancel and Generate; the Add
+ * file dialog shows it under its kind tiles. */
+export function GenerateForm({
+  onCancel,
   mode,
   chapters,
   files,
@@ -178,8 +174,7 @@ export function GenerateFormDialog({
   pending,
   onGenerate,
 }: {
-  open: boolean;
-  setOpen: (open: boolean) => void;
+  onCancel: () => void;
   mode: GenerateMode;
   chapters: Chapter[];
   files: SourceFile[];
@@ -225,169 +220,152 @@ export function GenerateFormDialog({
   }
 
   return (
-    <Dialog onOpenChange={setOpen} open={open}>
-      <DialogContent>
-        <DialogTitle>
-          {m.generate_title()} · {generateModeLabel(mode)}
-        </DialogTitle>
+    <>
+      <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-auto">
+        <label className="flex flex-col gap-1.5">
+          <InputTitle required>{m.generate_file_name()}</InputTitle>
+          <Input
+            aria-invalid={!!titleError}
+            autoComplete="off"
+            autoFocus
+            maxLength={GENERATE_TITLE_MAX}
+            onChange={(e) => setTitle(e.target.value)}
+            value={title}
+          />
+          {titleError && <InputError>{titleError}</InputError>}
+        </label>
 
-        <div className="flex max-h-[70vh] flex-col gap-5 overflow-auto">
-          <label className="flex flex-col gap-1.5">
-            <InputTitle required>{m.generate_file_name()}</InputTitle>
-            <Input
-              aria-invalid={!!titleError}
-              autoComplete="off"
-              autoFocus
-              maxLength={GENERATE_TITLE_MAX}
-              onChange={(e) => setTitle(e.target.value)}
-              value={title}
-            />
-            {titleError && <InputError>{titleError}</InputError>}
-          </label>
-
-          <div className="flex flex-col gap-1.5">
-            <p className="t-label text-fg-muted">
-              {m.generate_chapter_scope()}
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {chapters.map((c) => (
-                <Chip
-                  active={chapterScope.includes(c.id)}
-                  key={c.id}
-                  onClick={() =>
-                    setChapterScope((s) =>
-                      s.includes(c.id)
-                        ? s.filter((x) => x !== c.id)
-                        : [...s, c.id]
-                    )
-                  }
-                >
-                  {c.name}
-                </Chip>
-              ))}
-              {!chapters.length && (
-                <p className="t-meta text-fg-muted">
-                  {m.generate_no_chapters()}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <p className="t-label text-fg-muted">{m.generate_file_scope()}</p>
-            <div className="flex flex-wrap gap-1.5">
-              {readyFiles.map((f) => (
-                <Chip
-                  active={fileScope.includes(f.id)}
-                  key={f.id}
-                  onClick={() =>
-                    setFileScope((s) =>
-                      s.includes(f.id)
-                        ? s.filter((x) => x !== f.id)
-                        : [...s, f.id]
-                    )
-                  }
-                >
-                  {f.name}
-                </Chip>
-              ))}
-              {!readyFiles.length && (
-                <p className="t-meta text-fg-muted">{m.generate_no_files()}</p>
-              )}
-            </div>
-            {!chapterScope.length && !fileScope.length && (
-              <p className="t-meta text-fg-muted">
-                {m.generate_nothing_selected()}
-              </p>
+        <div className="flex flex-col gap-1.5">
+          <p className="t-label text-fg-muted">{m.generate_chapter_scope()}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {chapters.map((c) => (
+              <Chip
+                active={chapterScope.includes(c.id)}
+                key={c.id}
+                onClick={() =>
+                  setChapterScope((s) =>
+                    s.includes(c.id)
+                      ? s.filter((x) => x !== c.id)
+                      : [...s, c.id]
+                  )
+                }
+              >
+                {c.name}
+              </Chip>
+            ))}
+            {!chapters.length && (
+              <p className="t-meta text-fg-muted">{m.generate_no_chapters()}</p>
             )}
           </div>
+        </div>
 
-          {mode === 'flashcards' && (
-            <>
-              <CountRow onChange={setCount} value={count} />
-              <OptionRow
-                label={m.common_style()}
-                onChange={(v) => setStyle(v as typeof style)}
-                options={['term-def', 'qa', 'cloze']}
-                value={style}
-              />
-            </>
+        <div className="flex flex-col gap-1.5">
+          <p className="t-label text-fg-muted">{m.generate_file_scope()}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {readyFiles.map((f) => (
+              <Chip
+                active={fileScope.includes(f.id)}
+                key={f.id}
+                onClick={() =>
+                  setFileScope((s) =>
+                    s.includes(f.id)
+                      ? s.filter((x) => x !== f.id)
+                      : [...s, f.id]
+                  )
+                }
+              >
+                {f.name}
+              </Chip>
+            ))}
+            {!readyFiles.length && (
+              <p className="t-meta text-fg-muted">{m.generate_no_files()}</p>
+            )}
+          </div>
+          {!chapterScope.length && !fileScope.length && (
+            <p className="t-meta text-fg-muted">
+              {m.generate_nothing_selected()}
+            </p>
           )}
-          {mode === 'quiz' && (
-            <>
-              <CountRow onChange={setCount} value={count} />
-              <div className="flex flex-col gap-1.5">
-                <p className="t-label text-fg-muted">
-                  {m.generate_question_types()}
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {GENERATE_TYPES.map((t) => (
-                    <Chip
-                      active={types.includes(t)}
-                      key={t}
-                      onClick={() =>
-                        setTypes((s) =>
-                          s.includes(t) ? s.filter((x) => x !== t) : [...s, t]
-                        )
-                      }
-                    >
-                      {questionTypeLabel(t)}
-                    </Chip>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-          {mode === 'mindmap' && (
+        </div>
+
+        {mode === 'flashcards' && (
+          <>
+            <CountRow onChange={setCount} value={count} />
             <OptionRow
-              label={m.common_detail()}
-              onChange={(v) => setDetail(v as typeof detail)}
-              options={['brief', 'standard', 'detailed']}
-              value={detail}
+              label={m.common_style()}
+              onChange={(v) => setStyle(v as typeof style)}
+              options={['term-def', 'qa', 'cloze']}
+              value={style}
             />
-          )}
-          {mode === 'diagram' && (
+          </>
+        )}
+        {mode === 'quiz' && (
+          <>
+            <CountRow onChange={setCount} value={count} />
             <div className="flex flex-col gap-1.5">
               <p className="t-label text-fg-muted">
-                {m.generate_diagram_type()}
+                {m.generate_question_types()}
               </p>
               <div className="flex flex-wrap gap-1.5">
-                {DIAGRAM_TYPES.map((t) => (
+                {GENERATE_TYPES.map((t) => (
                   <Chip
-                    active={diagramType === t}
+                    active={types.includes(t)}
                     key={t}
-                    onClick={() => setDiagramType(t)}
+                    onClick={() =>
+                      setTypes((s) =>
+                        s.includes(t) ? s.filter((x) => x !== t) : [...s, t]
+                      )
+                    }
                   >
-                    {diagramTypeLabel(t)}
+                    {questionTypeLabel(t)}
                   </Chip>
                 ))}
               </div>
             </div>
-          )}
-        </div>
+          </>
+        )}
+        {mode === 'mindmap' && (
+          <OptionRow
+            label={m.common_detail()}
+            onChange={(v) => setDetail(v as typeof detail)}
+            options={['brief', 'standard', 'detailed']}
+            value={detail}
+          />
+        )}
+        {mode === 'diagram' && (
+          <div className="flex flex-col gap-1.5">
+            <p className="t-label text-fg-muted">{m.generate_diagram_type()}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {DIAGRAM_TYPES.map((t) => (
+                <Chip
+                  active={diagramType === t}
+                  key={t}
+                  onClick={() => setDiagramType(t)}
+                >
+                  {diagramTypeLabel(t)}
+                </Chip>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
-        <DialogFooter className="mt-6">
-          <Button
-            disabled={pending}
-            onClick={() => setOpen(false)}
-            size="lg"
-            variant="ghost"
-          >
-            {m.action_cancel()}
-          </Button>
-          <Button
-            disabled={
-              pending || !!titleError || (mode === 'quiz' && !types.length)
-            }
-            iconLeft={pending ? undefined : 'sparkles'}
-            onClick={run}
-            size="lg"
-            variant="accent"
-          >
-            {pending ? <Spinner /> : m.action_generate()}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      <DialogFooter className="mt-6">
+        <Button disabled={pending} onClick={onCancel} size="lg" variant="ghost">
+          {m.action_cancel()}
+        </Button>
+        <Button
+          disabled={
+            pending || !!titleError || (mode === 'quiz' && !types.length)
+          }
+          iconLeft={pending ? undefined : 'sparkles'}
+          onClick={run}
+          size="lg"
+          variant="accent"
+        >
+          {pending ? <Spinner /> : m.action_generate()}
+        </Button>
+      </DialogFooter>
+    </>
   );
 }

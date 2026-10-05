@@ -13,7 +13,6 @@ import type {
   ContentOrderItem,
   MaterialRef,
   MaterialRefType,
-  SourceFile,
 } from '@/api/types';
 import { SkeletonList } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
@@ -24,12 +23,22 @@ import { FileListItem } from '@/features/files/FileListItem';
 import { fileIsIngesting } from '@/features/files/fileUtils';
 import { MaterialListItem } from '@/features/materials/MaterialListItem';
 import type { OpenItem } from '@/features/materials/openItem';
-import type { GenerateMode } from '@/features/workspace/GenerateFormDialog';
+import {
+  type StudyRow,
+  type StudyTarget,
+  useStudyActions,
+  useStudyStates,
+} from '@/features/study/studyItems';
+import type { GenerateMode } from '@/features/workspace/GenerateForm';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import type { AddSourceMode } from './AddSourceDialog';
 import { addSourceMenuItems } from './addSourceMenuItems';
 import type { TabAction } from './PanelTabRow';
+import {
+  contentFor as sharedContentFor,
+  type WorkspaceContentItem,
+} from './workspaceContent';
 
 const GENERATING_MATERIAL: Record<
   GenerateMode,
@@ -40,22 +49,6 @@ const GENERATING_MATERIAL: Record<
   mindmap: { title: m.generating_mindmap, type: 'mindmap' },
   quiz: { title: m.generating_quiz, type: 'quiz' },
 };
-
-type WorkspaceContentItem =
-  | {
-      type: 'file';
-      id: string;
-      position: number;
-      createdAt: string;
-      data: SourceFile;
-    }
-  | {
-      type: 'material';
-      id: string;
-      position: number;
-      createdAt: string;
-      data: MaterialRef;
-    };
 
 // Native drag-and-drop: rows expose their content type and id. Drops on a
 // content row insert before/after that row; chapter and tree backgrounds append.
@@ -116,35 +109,7 @@ export function FilesPanel({
     materials?.filter((mt) => mt.chapterId == null) ?? [];
 
   function contentFor(chapterId: string | null): WorkspaceContentItem[] {
-    const chapterFiles =
-      files?.filter((file) => file.chapterId === chapterId) ?? [];
-    const chapterMaterials =
-      materials?.filter((material) => material.chapterId === chapterId) ?? [];
-    return [
-      ...chapterFiles.map(
-        (file): WorkspaceContentItem => ({
-          createdAt: file.addedAt,
-          data: file,
-          id: file.id,
-          position: file.position,
-          type: 'file',
-        })
-      ),
-      ...chapterMaterials.map(
-        (material): WorkspaceContentItem => ({
-          createdAt: material.createdAt,
-          data: material,
-          id: material.id,
-          position: material.position,
-          type: 'material',
-        })
-      ),
-    ].sort((a, b) => {
-      const positionDiff = a.position - b.position;
-      if (positionDiff) return positionDiff;
-      if (a.type !== b.type) return a.type === 'file' ? -1 : 1;
-      return +new Date(b.createdAt) - +new Date(a.createdAt);
-    });
+    return sharedContentFor(files, materials, chapterId);
   }
 
   function hasDraggedContent(e: React.DragEvent) {
@@ -330,6 +295,14 @@ export function FilesPanel({
   function onFileDeleted(id: string) {
     if (isFileActive(id)) onOpenItem(null);
   }
+  // The reader's own progress marks and menu items, while progress is on.
+  const { enabled: studying, states } = useStudyStates(workspaceId);
+  const { menuItems: studyMenu } = useStudyActions(workspaceId);
+  function studyRow(target: StudyTarget): StudyRow | undefined {
+    if (!studying) return;
+    const state = states.get(target.id);
+    return { menuItems: studyMenu(target, state), state };
+  }
   function renderMaterial(mt: MaterialRef) {
     return (
       <MaterialListItem
@@ -346,6 +319,7 @@ export function FilesPanel({
         onMove={(chapterId) => moveMaterial({ chapterId, id: mt.id })}
         onOpen={openLink}
         readOnly={readOnly}
+        study={studyRow({ id: mt.id, kind: 'material' })}
         workspaceId={workspaceId}
       />
     );
@@ -395,6 +369,7 @@ export function FilesPanel({
             onDeleted={onFileDeleted}
             onOpen={openLink}
             readOnly={readOnly}
+            study={studyRow({ id: item.id, kind: 'file' })}
             workspaceId={workspaceId}
           />
         ) : (

@@ -20,6 +20,11 @@ type studyOutput struct {
 type reviewOutput struct {
 	Body store.ReviewSession
 }
+type reviewWorkspacesOutput struct {
+	Body struct {
+		Workspaces []store.ReviewWorkspace `json:"workspaces" nullable:"false"`
+	}
+}
 type studyEnabledInput struct {
 	ID   string `path:"id"`
 	Body apimodel.SetStudyEnabledReq
@@ -47,6 +52,7 @@ func (a *api) registerStudy(api huma.API) {
 	reg(api, http.MethodPost, "/api/workspaces/{id}/study/reset", "resetWorkspaceStudy", tag, "Clear study progress in a workspace", http.StatusNoContent, a.resetWorkspaceStudy)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/review", "getWorkspaceReview", tag, "Next mixed review session", http.StatusOK, a.getWorkspaceReview)
 	reg(api, http.MethodPost, "/api/review/ratings", "rateReviewItem", tag, "Record a review rating", http.StatusNoContent, a.rateReviewItem)
+	reg(api, http.MethodGet, "/api/review/workspaces", "listReviewWorkspaces", tag, "Workspaces with study progress, for Learning's Review tab", http.StatusOK, a.listReviewWorkspaces)
 	reg(api, http.MethodPatch, "/api/me/study-progress", "setStudyProgressDefault", tag, "Default study progress setting", http.StatusNoContent, a.setStudyProgressDefault)
 	reg(api, http.MethodPatch, "/api/me/study-preferences", "setStudyPreferences", tag, "Save study preferences", http.StatusNoContent, a.setStudyPreferences)
 }
@@ -55,7 +61,7 @@ func (a *api) getWorkspaceStudy(ctx context.Context, in *workspaceIDInput) (*stu
 	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	res, err := a.s.StudySummary(ctx, userID(ctx), in.ID)
+	res, err := a.s.StudySummary(ctx, userID(ctx), in.ID, time.Now())
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -99,6 +105,16 @@ func (a *api) getWorkspaceReview(ctx context.Context, in *workspaceIDInput) (*re
 		return nil, hErr(err)
 	}
 	return &reviewOutput{Body: res}, nil
+}
+
+func (a *api) listReviewWorkspaces(ctx context.Context, _ *struct{}) (*reviewWorkspacesOutput, error) {
+	list, err := a.s.ReviewWorkspaces(ctx, userID(ctx), time.Now())
+	if err != nil {
+		return nil, hErr(err)
+	}
+	out := &reviewWorkspacesOutput{}
+	out.Body.Workspaces = list
+	return out, nil
 }
 
 func (a *api) rateReviewItem(ctx context.Context, in *reviewRatingInput) (*Empty, error) {

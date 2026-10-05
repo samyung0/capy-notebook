@@ -26,6 +26,7 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { userToast } from '@/components/ui/userToast';
 import { CardEditModal } from '@/features/flashcards/CardEditModal';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
+import { RATING_LABEL, RATING_STYLE } from '@/features/study/ratings';
 import { ShareDialog } from '@/features/workspace/ShareDialog';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
@@ -34,19 +35,6 @@ import { toastCloneError } from '@/lib/authToasts';
 import { cn } from '@/lib/cn';
 import { track } from '@/lib/observability';
 import { SRS_RATINGS, type SrsRating } from '@/lib/srs';
-
-export const RATING_LABEL: Record<SrsRating, () => string> = {
-  again: m.srs_again,
-  easy: m.srs_easy,
-  good: m.srs_good,
-  hard: m.srs_hard,
-};
-export const RATING_STYLE: Record<SrsRating, string> = {
-  again: 'border-tint-error text-tint-error-fg hover:bg-tint-error',
-  easy: 'border-tint-success text-tint-success-fg hover:bg-tint-success',
-  good: 'border-tint-accent-1 text-tint-accent-1-fg hover:bg-tint-accent-1',
-  hard: 'border-tint-warning text-tint-warning-fg hover:bg-tint-warning',
-};
 
 export default function FlashcardStudy() {
   const params = useParams({ strict: false });

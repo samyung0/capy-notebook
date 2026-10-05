@@ -5,14 +5,15 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Attempt } from './attempt.ts';
-import type { HardItem } from './hardItem.ts';
+import type { ReviewItem } from './reviewItem.ts';
 import type { StudyItem } from './studyItem.ts';
 
 export interface StudySummary {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   enabled: boolean;
-  hardest: HardItem[];
   items: StudyItem[];
+  quickReview: ReviewItem[];
   recentAttempts: Attempt[];
+  reviewable: number;
 }
