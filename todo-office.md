@@ -102,12 +102,6 @@ check); it applies at the first promotion.
   the overloaded event loop before the 2026-10-04 lock and CPU fixes; none
   showed in the 2026-10-05 prod runs. Recheck only if `collab_health` or Sentry
   show them again (`ProjectMaterialContent` still doesn't retry 40P01).
-- **View-mode memory** creeps: the 2026-10-04 open/close probe measured about 0.5 MB of JS heap per
-  open and close (WASM back to 0 and no closed frame alive after each close;
-  an earlier manual run saw 2 MB per round); cause unknown, not the font loading. `bench:office` now
-  records the heap over two full view-mode passes per file (`*-view-heap`) and
-  after each of five closes (`*-open-close-heap`, with the live document
-  count), both report-only.
 - **Text typed between the halves of a split field, then the join**
   (pre-existing for every split shape, 2026-10-05 probe `E,typeQ,BS`): the join
   keeps the split as decided, but the editor shows the field ending before the
@@ -119,8 +113,6 @@ check); it applies at the first promotion.
   DOCX fidelity task): after any edit in their paragraph, a deleted footnote or
   endnote reference saves live and a deleted simple field saves its result
   empty; reproduces on capy-ci in a plain paragraph.
-- **Positional-tab alignment.** `w:ptab` now survives and draws as an ordinary
-  tab (next tab stop), not aligned to the margin as Word does; layout work.
 - **Two peers on the nested shape** (one Backspaces while the other types in
   P2): editor `yy`, reopened `7yy`; the accepted concurrent-join class.
 - **Page numbers after a right or centre tab.** A PAGE or NUMPAGES field after
@@ -247,8 +239,6 @@ check); it applies at the first promotion.
   machine's logs (`human/observability-metering.md`).
 - **Citation after a runtime reload.** `load` carries the citation, but no e2e
   checks the highlight comes back (no mock chat cites an Office file).
-- **DOCX highlight picker** never ticks the current highlight; the editor
-  doesn't report it.
 - **XLSX keyboard selection off screen.** Arrow keys to a cell outside the
   viewport don't scroll the grid there, and typing into that cell is silently
   dropped (no in-cell editor, no edit). Repro at 1280x800 with the side panel
@@ -266,8 +256,6 @@ check); it applies at the first promotion.
   dialogs, toasts and placeholders.
 - **Chrome/Edge 111–118:** dialog buttons and tooltips have no colour fallback
   for missing relative colour syntax (menus and dropdowns have one).
-- **Fork typecheck noise:** `usePagesPointer.note.test.ts:539` (docx-react) and
-  `.at()` errors in `pptx-react/src/PptxEditor.test.tsx`.
 - **Office budgets in the gate:** `bench:office` heap figures stay report-only
   until the ceilings exist (after the optimization round; per format, view vs
   edit; measure open/close growth from about the 10th open, not the first);
