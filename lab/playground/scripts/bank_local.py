@@ -2,8 +2,8 @@
 
 Production reads the bank only through Go (`/api/internal/bank/list`, `read`,
 `copy`); the playground has no gateway, so these return the same JSON from
-`CAPY_PLAYGROUND_BANK_URL` (default the restore on port 15499; see
-bench/rag/scripts/bank_search.py). Never point it at the live bank.
+`CAPY_PLAYGROUND_BANK_URL` (default the restore on port 15499; see the
+playground README). Never point it at the live bank.
 """
 
 from __future__ import annotations

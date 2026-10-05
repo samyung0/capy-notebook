@@ -57,7 +57,7 @@ async def run(output: Path, repeats: int, models: list[str]) -> None:
                 "cases_per_model": len(cases) * repeats,
                 "models": models,
                 "routes": {
-                    "glm": client.TENCENT_CHAT_URL,
+                    "glm": client.RELACE_CHAT_URL,
                     "deepseek": client.DEEPSEEK_CHAT_URL,
                 },
                 "thinking": {"glm": "low", "deepseek": "high"},
@@ -120,8 +120,8 @@ async def run(output: Path, repeats: int, models: list[str]) -> None:
                     stream=True,
                     tool_choice=None,
                 )
-                key = secrets["TENCENT_API_KEY" if glm else "DEEPSEEK_API_KEY"]
-                url = client.TENCENT_CHAT_URL if glm else client.DEEPSEEK_CHAT_URL
+                key = secrets["RELACE_API_KEY" if glm else "DEEPSEEK_API_KEY"]
+                url = client.RELACE_CHAT_URL if glm else client.DEEPSEEK_CHAT_URL
                 record = {
                     "model": name,
                     "wire_model": model,

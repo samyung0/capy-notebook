@@ -97,7 +97,7 @@ changing any of them.
 | `bench/editor`  | Editor open cost, typing latency, save cycle, scroll FPS (`pnpm bench:editor`)    | Yes        |
 | `bench/parsers` | Ingest-host parser accuracy, OCR modes, concurrency, worker memory and OOM        | No, VM     |
 | `bench/grading` | Small local models against the production quiz-grading rubric, native and browser | No         |
-| `bench/rag`     | Live retrieval diagnostic plus four frozen retrieval/agent experiments            | No, lab    |
+| `bench/rag`     | Live retrieval diagnostic plus six frozen retrieval/agent experiments             | No, lab    |
 
 Every family separates `scripts/` (runnable) from `fixtures/` (input data) and
 `reports/` (findings and raw run records, never executed). Reports are named

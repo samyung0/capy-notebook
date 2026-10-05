@@ -45,7 +45,7 @@ including `/api/*`. Quick Tunnels do not support the playground's SSE streaming.
 
 | Target | Index | How it is reached |
 | --- | --- | --- |
-| `lab` | Frozen September 9 evaluation database (`odl_eval`): 29 sources, workspaces `odl_eval_odl` (refined ODL with generated captions), `odl_eval_mineru`, `odl_eval_odl_nocaption` (same refined ODL chunks, no caption step; added 2026-09-12 by `odl_agentic_prepare.py nocaption` then `index --arms odl_nocaption`) and `odl_eval_odl_ocr` (the caption-free chunks plus RapidOCR lines on the eleven pages with no text layer, staged by `bench/parsers/scripts/experiment_odl_selective_ocr.py`, then `index --arms odl_ocr`) | ssh tunnel to the ingest host, loopback port 15435 |
+| `lab` | Frozen September 9 evaluation database (`odl_eval`): 29 sources, workspaces `odl_eval_odl` (refined ODL with generated captions), `odl_eval_mineru`, `odl_eval_odl_nocaption` (same refined ODL chunks, no caption step; added 2026-09-12 by the since-deleted `bench/rag/scripts/odl_agentic_prepare.py`) and `odl_eval_odl_ocr` (the caption-free chunks plus RapidOCR lines on the eleven pages with no text layer, staged by `bench/parsers/scripts/experiment_odl_selective_ocr.py`, then `index --arms odl_ocr`) | ssh tunnel to the ingest host, loopback port 15435 |
 | `uat` | The UAT Postgres (currently five workspaces, one file, no chunks) | ssh tunnel through the ingest host to the WireGuard address 10.77.0.3 |
 | `local` | The dev compose stack on this PC (`deploy/docker-compose.yml`), `DATABASE_URL` from `deploy/.env` | no tunnel |
 
@@ -182,10 +182,15 @@ turn counts as progress. At most ten todos may be open.
 The bank tools (`list_question_bank`, `read_question`, `copy_questions`) run
 their production code; the gateway routes they call are answered by
 `bank_local.py` from `CAPY_PLAYGROUND_BANK_URL`, by default a local restore on
-port 15499 of a dump
-(see `bench/rag/scripts/bank_search.py` for the commands; the container
-survives a restart, `docker start capy-bank-search-lab`); the playground never
-reads the live bank. With the bank down the tools are not offered, as in a turn. A restore older than the newest bank migration needs it
+port 15499 of a dump (the container survives a restart,
+`docker start capy-bank-search-lab`); the playground never reads the live bank.
+To make the restore:
+
+```bash
+docker run -d --name capy-bank-search-lab -e POSTGRES_PASSWORD=lab -e POSTGRES_DB=bank -p 127.0.0.1:15499:5432 postgres:16
+pg_restore -h 127.0.0.1 -p 15499 -U postgres -d bank --no-owner --no-privileges data/question-bank/backups/bank-2026-10-03-before-round2.dump
+```
+ With the bank down the tools are not offered, as in a turn. A restore older than the newest bank migration needs it
 applied first, pinned to the local container:
 `cd server && BANK_OWNER_DATABASE_URL=postgresql://postgres:lab@127.0.0.1:15499/bank go run ./cmd/bank migrate`
 (the 2026-10-03 dump lacks `questions.question_types`, and the bank tools fail

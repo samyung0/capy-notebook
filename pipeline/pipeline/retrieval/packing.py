@@ -1,7 +1,7 @@
 """The lab's ODL packer, folded into production chunking.
 
-``bench/rag/scripts/odl_agentic_prepare.py::pack_odl`` built the index the
-twelve-question acceptance was measured on:
+The lab's ``pack_odl`` (``bench/rag/reports/2026-09-09-odl-agentic-evaluation.md``)
+built the index the twelve-question acceptance was measured on:
 ``experiment_odl_table_integration.stable_chunks`` (the parser's frozen
 furniture, then ``chunk_native_bounded``) followed by heading retention. This
 module is that packer; :func:`pack_blocks` must produce the lab's
