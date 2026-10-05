@@ -96,8 +96,10 @@ one topic.
 
 ## Later
 
-- [ ] **Bank page UI** (handed to a separate session, 2026-10-03): the
-      question-type filter and fixes to the editing screens.
+- [ ] **Bank page question-type filter**: in the bank learner mocks
+      (2026-10-05) with answering, mistake review and Copy to quiz. The
+      general quiz and question editing UI is Epo's, redone in its own
+      session.
 - [ ] **Learners answering on `/bank`** (today its runner is read-only) and
       reviewing their mistakes. Unblocked: part 1's FSRS package
       (`server/internal/review`) exists. Needs the bank review screen mock
