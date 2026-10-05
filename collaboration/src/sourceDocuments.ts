@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { setImmediate } from 'node:timers/promises';
 import type { Pool } from 'pg';
 import * as Y from 'yjs';
 import { type CollaborationAccess, SOURCE_ROOM_PATTERN } from './auth.js';
@@ -273,13 +274,21 @@ export function rebuildState(seed: Uint8Array, change: Uint8Array) {
  * the change rebuilds `state` exactly. Both sides are compared as a fresh
  * document encodes them: a document built by several transactions can keep
  * adjacent deleted structs apart that a fresh one merges, with the same
- * content.
+ * content. `built`, the document `state` was encoded from, spares that fresh
+ * document when its own encoding already matches the rebuild (the usual
+ * case): the rebuild encodes as a fresh document does, so `state` does too,
+ * and the change taken from `built` is byte for byte the fresh one's.
  */
 export function seedChange(
   seed: Uint8Array,
   state: Uint8Array,
-  seedVector = Y.encodeStateVectorFromUpdate(seed)
+  seedVector = Y.encodeStateVectorFromUpdate(seed),
+  built?: Y.Doc
 ) {
+  if (built) {
+    const change = Y.encodeStateAsUpdate(built, seedVector);
+    if (Buffer.from(rebuildState(seed, change)).equals(state)) return change;
+  }
   const document = scratchDoc();
   try {
     Y.applyUpdate(document, state);
@@ -552,17 +561,22 @@ export class SourceDocumentStore {
   }
 
   /**
-   * How the complete `state` of `document` is stored: an Office state as its
-   * change over seed(base), text whole.
+   * How the complete `state` of `document` (the document it was encoded
+   * from) is stored: an Office state as its change over seed(base), text
+   * whole.
    */
-  private async storedState(session: SourceBase, state: Uint8Array) {
+  private async storedState(
+    session: SourceBase,
+    state: Uint8Array,
+    document: Y.Doc
+  ) {
     if (session.format === 'text')
       return { state: Buffer.from(state).toString('base64') };
     const { seed, seedSHA256, seedVector } = await this.seed(session);
     return {
-      state: Buffer.from(seedChange(seed, state, seedVector)).toString(
-        'base64'
-      ),
+      state: Buffer.from(
+        seedChange(seed, state, seedVector, document)
+      ).toString('base64'),
       stateSeedSHA256: seedSHA256,
     };
   }
@@ -1063,6 +1077,9 @@ export class SourceDocumentStore {
       const merged = scratchDoc();
       try {
         Y.applyUpdate(merged, known?.state ?? (await this.stateOf(session)));
+        // A turn between whole-document passes lets the rooms' messages in,
+        // instead of one main-thread stall for all of them.
+        await setImmediate();
         // Only markers beyond the durable state (a writer that opened and
         // saved without editing): nothing to store, so a NULL state stays
         // seed(base). The current checkpoint is the durability receipt.
@@ -1077,7 +1094,7 @@ export class SourceDocumentStore {
             'Source checkpoint exceeds byte limit'
           );
         const effects = await this.effects(session, state);
-        const stored = await this.storedState(session, state);
+        const stored = await this.storedState(session, state, merged);
         try {
           const saved = await this.request<SourceCheckpointReceipt>(
             fileId,
@@ -1250,7 +1267,7 @@ export class SourceDocumentStore {
             'Source checkpoint exceeds byte limit'
           );
         const effects = await this.effects(current, state);
-        const stored = await this.storedState(current, state);
+        const stored = await this.storedState(current, state, document);
         try {
           const saved = await this.request<SourceCheckpointReceipt>(
             input.fileId,

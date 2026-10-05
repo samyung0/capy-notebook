@@ -925,7 +925,8 @@ test('a save starts from the durable copy while the row names it, and reads the 
 
 // A document merged over several saves (durable state, then the room) can keep
 // adjacent deleted structs apart where a fresh document merges them; the
-// content is the same, so the stored change must be accepted every time.
+// content is the same, so the stored change must be accepted every time. Given
+// the merged document, the change is the fresh document's either way.
 test('a state merged over several saves is stored as its change over the seed', () => {
   const seedDoc = new Y.Doc();
   seedDoc.clientID = 0;
@@ -951,8 +952,14 @@ test('a state merged over several saves is stored as its change over the seed', 
     Y.applyUpdate(fresh, state);
     const canonical = Y.encodeStateAsUpdate(fresh);
     if (!Buffer.from(state).equals(canonical)) layouts++;
+    const change = seedChange(seed, state);
+    expect(Buffer.from(rebuildState(seed, change)).equals(canonical)).toBe(
+      true
+    );
     expect(
-      Buffer.from(rebuildState(seed, seedChange(seed, state))).equals(canonical)
+      Buffer.from(
+        seedChange(seed, state, Y.encodeStateVectorFromUpdate(seed), merged)
+      ).equals(change)
     ).toBe(true);
     durable = state;
     merged.destroy();
@@ -1172,6 +1179,15 @@ test('a change that does not rebuild from its seed is an engine error', () => {
   expect(refused).toBeInstanceOf(SourceStateRebuildError);
   expect(refused).toBeInstanceOf(officeRuntime.OfficeEngineError);
   expect(() => seedChange(seed, Y.encodeStateAsUpdate(seedDoc))).not.toThrow();
+  // Given its document, a state off the seed's lineage is refused the same way.
+  expect(() =>
+    seedChange(
+      seed,
+      Y.encodeStateAsUpdate(edited),
+      Y.encodeStateVectorFromUpdate(seed),
+      edited
+    )
+  ).toThrow(SourceStateRebuildError);
   seedDoc.destroy();
   other.destroy();
   edited.destroy();

@@ -5,6 +5,7 @@ import { afterAll, afterEach, expect, test, vi } from 'vitest';
 import * as Y from 'yjs';
 import {
   attachDocumentContributorTracker,
+  clearDocumentContributors,
   documentContributors,
   removeDocumentContributors,
   roomSnapshot,
@@ -30,6 +31,7 @@ import {
   SourceRequestError,
   SourceSeedChangedError,
   type SourceSession,
+  seedChange,
   trimEffect,
 } from './sourceDocuments.js';
 
@@ -469,6 +471,100 @@ test.each([
       })
     ).rejects.toBeInstanceOf(SourceSeedChangedError);
     saved.destroy();
+    room.destroy();
+  },
+  60_000
+);
+
+// Saves pass the merged document along, so the stored change is taken from
+// it instead of a fresh copy whenever its encoding already matches the
+// rebuild. Over saves from the durable copy, with several writers replacing
+// and deleting text, every stored change is byte for byte what the fresh copy
+// gives (seedChange without the document) and rebuilds the saved state.
+test.each([
+  ['docx', 'e2e/fixtures/files/rich-content/exchange-plan.docx'],
+  ['xlsx', 'vendor/betteroffice/apps/demo/public/sample.xlsx'],
+  ['pptx', 'e2e/fixtures/files/rich-content/lecture.pptx'],
+] as const)(
+  '%s saves store the same change as from a fresh copy',
+  async (format, path) => {
+    const bytes = await readFile(new URL(`../../${path}`, import.meta.url));
+    const seed = await runOffice('seedOffice', format, bytes);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(bytes))
+    );
+    let checkpoint = 0;
+    const pool = {
+      query: vi.fn(async () => ({
+        rows: [
+          {
+            base_revision: '1',
+            checkpoint: String(checkpoint),
+            pending_effects: [],
+          },
+        ],
+      })),
+    } as unknown as Pool;
+    const store = new SourceDocumentStore(pool, 'http://api', 'secret');
+    const session = {
+      access: 'write',
+      baseRevision: 1,
+      baseSourceSHA256: seed.baseSha256,
+      checkpoint: 0,
+      epoch: 1,
+      format,
+      pendingEffects: [],
+      room: 'source:f_1:epoch:1',
+      sourceURL: 'http://base',
+      state: null,
+    } as unknown as SourceSession;
+    vi.spyOn(store, 'session').mockResolvedValue(session);
+    const stored: string[] = [];
+    vi.spyOn(store, 'request').mockImplementation(
+      async (_file, _endpoint, body) => {
+        stored.push((body as { state: string }).state);
+        checkpoint += 1;
+        return { checkpoint };
+      }
+    );
+    const room = new Y.Doc();
+    attachDocumentContributorTracker(room, 'instance');
+    await store.load(session.room, room, 'u1');
+    const targets = (await runOffice('inspectOffice', bytes, seed))
+      .filter((entry) => entry.value.length > 3)
+      .slice(0, 3);
+    for (let save = 0; save < 4; save += 1) {
+      for (const writer of ['u1', 'u2']) {
+        const target = targets[(save + writer.length) % targets.length];
+        // Two characters deleted, a few typed.
+        const text = `${target.value.slice(2)} ${writer}${save}`;
+        const edited = await runOffice(
+          'applyOfficeCommands',
+          bytes,
+          { ...seed, state: Y.encodeStateAsUpdate(room) },
+          [setText(format, target, text)]
+        );
+        target.value = text;
+        Y.applyUpdate(room, edited.state, {
+          connection: { context: { access: 'write', userId: writer } },
+          source: 'connection',
+        });
+      }
+      const saved = await store.store(session.room, roomSnapshot(room));
+      clearDocumentContributors(room, saved.contributors);
+    }
+    expect(stored).toHaveLength(4);
+    for (const change of stored) {
+      const state = await store.stateOf({
+        ...session,
+        state: change,
+        stateSeedSHA256: createHash('sha256').update(seed.state).digest('hex'),
+      });
+      expect(
+        Buffer.from(seedChange(seed.state, state)).toString('base64')
+      ).toBe(change);
+    }
     room.destroy();
   },
   60_000

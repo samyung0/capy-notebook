@@ -963,7 +963,10 @@ from seed(base) is stored as its Yjs change over that seed (the update past the
 seed's state vector, plus the whole delete set), with the seed's SHA-256 in
 `state_seed_sha256`: a one-edit DOCX or PPTX row is under 1 KB instead of the
 whole document model. Every write checks that seed plus the change rebuilds the
-exact state; every read re-seeds the base, refuses a change whose seed hash
+exact state. A save takes the change from the merged document it already holds
+and compares the rebuild with that document's encoding; only when the two
+differ (a layout a fresh document merges) does it re-encode a fresh copy, so
+the stored bytes are the same either way. Every read re-seeds the base, refuses a change whose seed hash
 differs (the engine now seeds that base differently: publish it on the
 previous engine) and requires that nothing stays pending. Text states are
 stored whole; every Office state names its seed (a CHECK since migration
