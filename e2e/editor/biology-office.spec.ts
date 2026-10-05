@@ -920,24 +920,79 @@ test('a DOCX editor resuming from a pause leaves the focus where it was', async 
   expect(await updates.evaluate((seen) => seen.count)).toBe(settled);
 });
 
-// A newly opened DOCX editor takes the focus, unless Capy's focus is in a
-// field taking typing when it finishes loading.
-test('a newly opened DOCX editor leaves the focus in the chat box', async ({
+// A newly opened DOCX editor takes the focus, and edits from its first sync:
+// the room's first save receipt, held back here as a busy room sends it late,
+// is not waited for.
+test('a newly opened DOCX editor is focused and editable before its first save receipt', async ({
   page,
 }) => {
   test.setTimeout(240_000);
-  await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
+  await page.goto('/workspaces/ws_bio?file=bio-office-docx');
   const frame = page.frameLocator('iframe[src*="office-runtime"]');
   await expect(frame.locator('canvas').first()).toBeVisible({
     timeout: 120_000,
   });
-  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+  const receipts = (hold: boolean) =>
+    page.evaluate(async (hold) => {
+      const modulePath = '/src/mocks/collaboration.ts';
+      const { holdSourceSaveReceipts } = (await import(
+        modulePath
+      )) as typeof import('../../src/mocks/collaboration');
+      holdSourceSaveReceipts(hold);
+    }, hold);
+  await receipts(true);
+  const updates = await page.evaluateHandle(() => {
+    const seen = { count: 0 };
+    window.addEventListener('message', (event) => {
+      if (event.data?.type === 'update') seen.count += 1;
+    });
+    return seen;
+  });
+  await page.getByRole('button', { name: 'Material mode' }).click();
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 60_000 });
   await expect(frame.getByLabel('Document input')).toBeFocused();
+  await page.keyboard.type('Hello');
+  await expect
+    .poll(() => updates.evaluate((seen) => seen.count))
+    .toBeGreaterThan(0);
+  await receipts(false);
+});
 
+// A newly opened DOCX editor leaves the focus in Capy's chat box when the
+// user is typing there as it finishes loading (the runtime takes its load
+// 5 s late, so the typing comes first).
+test('a newly opened DOCX editor leaves the focus in the chat box', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await page.addInitScript(() => {
+    if (!location.pathname.includes('office-runtime')) return;
+    const add = window.addEventListener.bind(window);
+    window.addEventListener = ((
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: boolean | AddEventListenerOptions
+    ) => {
+      if (type !== 'message' || typeof listener !== 'function')
+        return add(type, listener, options);
+      return add(
+        type,
+        (event: Event) => {
+          if ((event as MessageEvent).data?.type === 'load')
+            setTimeout(() => listener.call(window, event), 5000);
+          else listener.call(window, event);
+        },
+        options
+      );
+    }) as typeof window.addEventListener;
+  });
   await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
   const chat = page.getByRole('textbox', { name: 'Ask about your sources…' });
   await chat.click();
   await page.keyboard.type('hi');
+  // Typed before the editor was ready.
+  await expect(officeEditMenu(page)).toHaveCount(0);
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
   await expect(frame.locator('canvas').first()).toBeVisible({
     timeout: 120_000,
   });
@@ -946,6 +1001,41 @@ test('a newly opened DOCX editor leaves the focus in the chat box', async ({
   await expect(chat).toBeFocused();
   await page.keyboard.type(' there');
   await expect(chat).toHaveValue('hi there');
+});
+
+// Closing a header from its Options menu gives the document the focus back
+// (lesson.docx, the DOCX scenario's file, has a header).
+test('closing DOCX header editing gives the document the focus back', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await page.goto('/workspaces/ws_bio');
+  const panel = page.getByTestId('mock-scenario-panel');
+  await panel.evaluate((node: HTMLDetailsElement) => {
+    node.open = true;
+  });
+  await panel.locator('[data-scenario="office-docx-save"]').click();
+  await expect(panel).toHaveAttribute('data-scenario-status', 'ready', {
+    timeout: 60_000,
+  });
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  const pageCanvas = frame.locator('canvas[data-page-index="0"]');
+  await expect(pageCanvas).toBeVisible({ timeout: 120_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+  const box = await pageCanvas.boundingBox();
+  if (!box) throw new Error('Missing page canvas');
+  // The header band near the page's top edge; try a few heights.
+  const options = frame.getByRole('button', { name: /^Options/ });
+  for (const ratio of [0.06, 0.05, 0.08, 0.04, 0.1]) {
+    await pageCanvas.dblclick({
+      position: { x: box.width / 2, y: box.height * ratio },
+    });
+    if (await options.isVisible()) break;
+    await page.waitForTimeout(500);
+  }
+  await options.click();
+  await frame.getByRole('button', { name: 'Close header editing' }).click();
+  await expect(frame.getByLabel('Document input')).toBeFocused();
 });
 
 // A view-only user's host sends canEdit:false; a viewer has nothing to pause,

@@ -648,8 +648,9 @@ as export does. Pages are drawn, encoded and released one at a time (DOCX
 rather than the whole bar; DOCX Format › Paragraph styles lists the first 40
 styles (the toolbar's style picker keeps all).
 
-While editing is paused (handoff, replaced, recovery, connecting, discarding:
-the host's narrowed `canEdit` in `set-capabilities`), the editor turns
+While editing is paused (handoff, replaced, recovery, connecting before the
+first sync, discarding: the host's narrowed `canEdit` in `set-capabilities`;
+the room's first save receipt is not waited for), the editor turns
 read-only in every state alike: once the runtime has flushed what was being
 typed, it passes `readOnly` to the editor and lets pointer and keys through
 (Tab and Escape included), so the content can be selected and copied (Select
@@ -662,7 +663,8 @@ the document input (read-only never blurs it) or wherever it was. A newly
 opened DOCX editor focuses the document only through its frame: when the
 replica is ready (`collaboration-ready`) Capy focuses the frame unless its own
 focus is in a field taking typing (the chat box, say), and the editor takes
-the focus once the frame has it. Each menu item says whether it edits
+the focus once the frame has it. Closing or removing a header or footer from
+its Options menu gives the document input the focus back. Each menu item says whether it edits
 (`edits`), declared where it is defined: DOCX's in docx-react's
 `hostMenus.tsx`, XLSX's and PPTX's from xlsx-react's `xlsxCommandEdits` and
 pptx-react's `PPTX_COMMAND_EDITS` (XLSX freezing panes edits; Capy's own Save

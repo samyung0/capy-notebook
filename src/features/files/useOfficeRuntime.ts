@@ -393,8 +393,10 @@ export function useOfficeRuntime({
     !source.replaced &&
     !source.offlineLimit &&
     source.status !== 'recovery' &&
-    (mode !== 'edit' ||
-      (!!source.doc && !source.discarding && source.status !== 'connecting'));
+    // `connecting` pauses only before the first sync: the document exists
+    // only from then (each session start clears it), and the first save
+    // receipt is not waited for.
+    (mode !== 'edit' || (!!source.doc && !source.discarding));
   // After the load above, and again whenever the runtime document boots. A
   // paused editor shows its content read-only, for selecting and copying.
   useEffect(() => {
@@ -491,7 +493,7 @@ export function useOfficeRuntime({
         // to get it) unless Capy's focus is in a field taking typing, such as
         // the chat box.
         if (format === 'docx' && !takesTyping(document.activeElement))
-          iframeRef.current?.focus();
+          iframeRef.current?.focus({ preventScroll: true });
       }
       if (
         message.type === 'update' ||

@@ -618,7 +618,9 @@ class MockSourceProvider implements SourceProvider {
       type: 'checkpoint-persisted',
     });
     // A round trip, so the receipt lands after the request returns.
-    queueMicrotask(() => this.config.onStateless?.({ payload: receipt }));
+    const send = () => this.config.onStateless?.({ payload: receipt });
+    if (heldSaveReceipts) heldSaveReceipts.push(send);
+    else queueMicrotask(send);
   }
 
   // The in-page room never closes a connection by itself.
@@ -674,6 +676,18 @@ export function failNextSourceSave(fileId: string) {
 const refusedSourceSaves = new Set<string>();
 export function refuseNextSourceSave(fileId: string) {
   refusedSourceSaves.add(fileId);
+}
+// Save receipts held back, as a room whose store is busy (a peer's save
+// running) sends them late; null when receipts go at once.
+let heldSaveReceipts: (() => void)[] | null = null;
+export function holdSourceSaveReceipts(hold: boolean) {
+  if (hold) {
+    heldSaveReceipts ??= [];
+    return;
+  }
+  const held = heldSaveReceipts ?? [];
+  heldSaveReceipts = null;
+  for (const send of held) send();
 }
 export function announceSourceEpoch(fileId: string, epoch: number) {
   for (const provider of [...sourceProviders])
