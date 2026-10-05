@@ -1661,8 +1661,11 @@ The run font hint mark (`fontHint`) changes the seed of every DOCX holding a
 run-level `w:rFonts w:hint` (most CJK text Word wrote). Capy's DOCX test
 fixtures hold none, so their hashes stay; the golden fixture
 `wordprocessingml-comprehensive.docx` holds some and pins the new seed. An
-environment with DOCX editing state needs the same reset for `'docx'` before
-that pin deploys.
+explicit zero first-line or hanging indent on a numbered paragraph also seeds
+differently now. PPTX decks with a run highlight or any strike attribute
+reseed too (`lecture.pptx` pins it). Migration
+`0058_docx_pptx_seed_reset.sql` applies the guarded reset to `'docx','pptx'`,
+so that pin deploys inside the maintenance window.
 
 ## Private PDF annotations
 
