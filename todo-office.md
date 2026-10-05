@@ -134,6 +134,14 @@ check); it applies at the first promotion.
   latency, typing latency, memory; Office and Plate), then heap/latency
   ceilings from the largest allowed files, then a prod-box stress run for the
   live document per room, a new storage-bytes run, then UAT hardening.
+- **Office size limit** (decided 2026-10-05): refuse oversized Office files at
+  upload, per format on the unzipped package size; numbers come from the
+  optimization round. Open: whether a save or publication that would grow a
+  file past it is refused too.
+- **Legacy DOC/XLS/PPT (deferred):** today store-only. Convert to
+  DOCX/XLSX/PPTX with the ingest host's LibreOffice so they become ordinary
+  Office files. Decide first: replace the original or keep it, when the
+  conversion runs (upload or first open), who pays.
 - **Shortcut map:** map and consolidate keyboard shortcuts across the app
   (Office print shortcut waits for it).
 - **Header:** DOCX ruler as a View toggle (Google Docs); Chinese text mixes
