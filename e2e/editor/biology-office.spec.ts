@@ -1435,3 +1435,76 @@ test('DOCX View › Show ruler is remembered, edit mode only, and stays usable w
   await toggleRuler(true);
   await expect(rulers).toHaveCount(0);
 });
+
+// Format › Table runs the table items in the engine: Auto-fit shrinks a new
+// table to its text and Center then moves it right; the ticks follow the
+// caret's table and a paused editor disables them all.
+test('DOCX Format › Table fits, centres and pins a table, and pauses with the editor', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 120_000,
+  });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+  await officeMenu(page, 'Insert').click();
+  await page.getByRole('menuitem', { name: 'Table' }).click();
+  await page.getByRole('button', { name: 'Insert 2 by 2 table' }).click();
+  const table = async (item: string, choice?: string) => {
+    await officeMenu(page, 'Format').click();
+    await page.getByRole('menuitem', { exact: true, name: 'Table' }).click();
+    const row = page.getByRole('menuitem', { exact: true, name: item });
+    if (choice) {
+      await row.click();
+      return page.getByRole('menuitemcheckbox', { exact: true, name: choice });
+    }
+    return page.getByRole('menuitemcheckbox', { exact: true, name: item });
+  };
+  const pin = await table('Pin header row');
+  await expect(pin).toHaveAttribute('aria-checked', 'false');
+  await pin.click();
+  // The table items hand the caret back to its cell.
+  await page.keyboard.type('Cell');
+  const cell = frame.locator('.layout-run-text', { hasText: 'Cell' }).first();
+  await expect(cell).toBeAttached();
+  const left = (await cell.boundingBox())?.x ?? Number.NaN;
+
+  await (await table('Auto-fit to contents')).click();
+  const center = await table('Table alignment', 'Center');
+  await expect(center).toHaveAttribute('aria-checked', 'false');
+  await center.click();
+  // A table about one word wide, centred on the page.
+  await expect
+    .poll(async () => ((await cell.boundingBox())?.x ?? left) - left)
+    .toBeGreaterThan(200);
+  await expect(await table('Table alignment', 'Center')).toHaveAttribute(
+    'aria-checked',
+    'true'
+  );
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(await table('Pin header row')).toHaveAttribute(
+    'aria-checked',
+    'true'
+  );
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+
+  await page.evaluate(() => {
+    const iframe = document.querySelector<HTMLIFrameElement>(
+      'iframe[src*="office-runtime"]'
+    );
+    if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
+    iframe.contentWindow.postMessage(
+      { canEdit: false, type: 'set-capabilities', version: 7 },
+      new URL(iframe.src).origin
+    );
+  });
+  await officeMenu(page, 'Format').click();
+  await expect(
+    page.getByRole('menuitem', { exact: true, name: 'Table' })
+  ).toHaveAttribute('aria-disabled', 'true');
+});

@@ -75,6 +75,7 @@ const ICONS: Record<string, IconName> = {
   'find-replace': 'search',
   'format-align': 'alignLeft',
   'format-lists': 'list',
+  'format-table': 'table',
   'format-text': 'bold',
   'image-options': 'image',
   'insert-comment': 'commentAdd',
