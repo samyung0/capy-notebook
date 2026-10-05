@@ -71,8 +71,9 @@ check); it applies at the first promotion.
   (a 127-byte delta or the full state alike, ~0.5 s on the gradebook) rebuilds
   and recalculates the whole workbook. A read-only effects path would remove
   the remaining ~1.4 s per save and shrink the replicas. Start from
-  `xlsxPendingEffects` in `vendor/betteroffice/shared/office-checkpoint.ts` and
-  the replica code in `shared/office-replicas.ts`.
+  `xlsxPendingEffects` and the room replica code in
+  `vendor/betteroffice/shared/office-checkpoint.ts` (tests in
+  `shared/office-replicas.test.ts`).
 - **XLSX agent inspect/edit memory:** an AI agent inspecting or editing the
   large gradebook grows the XLSX engine to ~1.9 GiB, which stays resident on
   Linux afterwards. Find what holds it (a second opened copy per call, WASM
