@@ -87,8 +87,8 @@ the review fix round, CI green), with the question bank configured.
   and card count from the preferences. Before the next UAT deploy: Epo
   creates the Pages project and token permission (runbook §2.3), and
   `EMBED_PAGES_PROJECT` and `VITE_EMBED_ORIGIN` are pushed (the SPA build
-  requires the origin); the shared bank database needs `cmd/bank migrate`
-  (bank migration 0003) for the bank progress work.
+  requires the origin). Bank migration 0003 is applied to the shared bank
+  database (2026-10-05).
 - **Was unblocked:** the `/generate` defaults from study preferences (2.4; AI
   generate moved into the Add file dialog), and learners answering on `/bank`
   with bank mistake review (Later, "Question-bank progress"; part 1's FSRS

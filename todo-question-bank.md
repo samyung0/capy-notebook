@@ -40,7 +40,7 @@ work is in [openwiki/question-bank.md](openwiki/question-bank.md) and
 | `web-candidates/` | Openly licensed web passages found for IELTS, with licence evidence |
 | `tools/` | Run helpers, called from the repository root (below) |
 | `ops/` | Bank provisioning and backup records: `operations.md`, `backup-verification.md`, backup scripts. Do not rerun `setup-backup.py` |
-| `backups/` | Bank dumps taken before destructive changes |
+| `backups/` | Bank dumps taken before destructive or schema changes |
 
 ## Running a round
 
@@ -102,9 +102,9 @@ one topic.
       session.
 - [ ] **Learners answering on `/bank`** and per-topic mistake review. The
       backend is on `main` (2026-10-05): app migration 0055
-      `bank_review_states`, bank migration 0003 `retracted_at` (run
-      `go run ./cmd/bank migrate` on the shared bank database before the
-      next deploy, with Epo's go-ahead and a dump first), routes
+      `bank_review_states`, bank migration 0003 `retracted_at` (applied
+      to the shared bank database on 2026-10-05 after the dump
+      `backups/bank-2026-10-05-before-retracted.dump`), routes
       `POST /api/bank/questions/{id}/answers`, `GET /api/bank/topics/{id}/marks`
       and `/review`, MSW handlers. The UI waits for Epo's picks on
       https://797ludmnkrb3.postplan.dev (with Copy to quiz and the type
