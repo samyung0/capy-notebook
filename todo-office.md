@@ -108,10 +108,6 @@ check); it applies at the first promotion.
   records the heap over two full view-mode passes per file (`*-view-heap`) and
   after each of five closes (`*-open-close-heap`, with the live document
   count), both report-only.
-- **Undo after two peers each deleted half a link** (found 2026-10-05): the
-  text the Undo restores comes back without its link and field-child marks,
-  before the field (yrs drops the formatting around text both peers deleted);
-  editor and save agree, content kept. Matrix rows `… one Undoes` (`exact+text`).
 - **Text typed between the halves of a split field, then the join**
   (pre-existing for every split shape, 2026-10-05 probe `E,typeQ,BS`): the join
   keeps the split as decided, but the editor shows the field ending before the

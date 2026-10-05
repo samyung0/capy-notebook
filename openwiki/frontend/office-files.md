@@ -452,7 +452,13 @@ field. Backspace, Delete or a range delete back rejoins it when only the moved
 runs sit there, in order; otherwise the split stays, keeping every run and
 typed character. A nested field after the split point that projects nothing
 of its own moves into the second paragraph as its own field, inside the split
-field's result, and goes back with the join. A field whose result holds a kept
+field's result, and goes back with the join; a tracked deletion there moves
+with it, keeping its text position (struck text in the second paragraph), so
+Reject All while split restores it in place. Accept or Reject All while a
+field is split resolves the field without the content Enter moved out, which
+resolves where it now is (the moved runs were duplicated before 2026-10-05). Enter racing a peer's delete of
+the whole field may bring the field back (accepted with the concurrent-join
+class). A field whose result holds a kept
 insertion, a content control, foreign markup or a nested field holding a link
 after the split point keeps the old Enter (the text after it leaves the
 field). Text typed at the end of a paragraph whose field
@@ -471,12 +477,17 @@ its place. Text left ending a continued result after its last link is deleted
 stays in the field, which shows it, until the next publication reads it as
 text after the field (no tail move, so concurrent deletes converge without
 duplicates); until then Backspace at that paragraph's end deletes the whole
-field. A peer applying another's update re-reads the shown text of the
-fields whose projected children the update deleted or put back, as a system
-edit (outside Undo) its peers receive, so two peers each deleting half of the
-last link both show what one peer deleting all of it shows. Undo by one of
-them then restores its half without the link and child marks, before the
-field, in the editor and the save alike.
+field. After a peer's delete that ends at a field projecting links or simple
+fields, each receiving editor re-reads that field's shown text and writes it
+into the room as a system edit (outside Undo; all peers compute the same
+value), so two peers each deleting half of the last link both show what one
+peer deleting all of it shows. The lookup steps right from the delete's last
+item (a read-only `Store::next_live_item` added to the vendored yrs), so other
+deletes cost no story walk. Undo by one of them then restores its half
+without the link and child marks, before the field (accepted 2026-10-05, also
+for a plain hyperlink); after deletes made one after the other, that Undo can
+leave the editor's shown text stale (`REF=` where the save shows `REF=7`)
+until publication.
 
 The plain runs (text, plain line breaks, comment references, and tabs or
 positional tabs without their own formatting) that end the first paragraph's
@@ -493,7 +504,7 @@ join stops at that text (or at a comment reference) while the field continues
 past the joined paragraph. The same holds for moved runs a join leaves ending
 the paragraph while the field continues past it (Enter, Enter again in the
 moved text, then Backspace): they stay text after the field, unless the field
-keeps a run after them (a tracked deletion), when they go back in order. Text typed right after a comment reference ending
+keeps content after them, when they go back in order. Text typed right after a comment reference ending
 the tail is counted inside the comment once reopened, because the parser
 hoists the comment's end out of the field (unstable, as before).
 
