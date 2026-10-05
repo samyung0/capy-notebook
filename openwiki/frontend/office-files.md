@@ -1236,26 +1236,39 @@ lost worker is a slow failure, retried with backoff while the room stays
 editable, until five minutes pass without a successful save (see
 [error handling](error-handling.md#collaborative-source-failures)).
 
-The worker keeps a replica per XLSX room: the opened workbook with the
-room's last saved state applied (`configureOfficeReplicas` in
-`vendor/betteroffice/shared/office-checkpoint.ts`). A save's pending effects
-pass the room, and the engine applies the new state to the replica as an
-update instead of reopening the workbook, which parses and recalculates all
-of it. It reuses the replica only for a state that holds every struct and
-deletion it already applied, so a discarded save or a reload from an older
-checkpoint reopens, and another base replaces it. Only `xlsxPendingEffects`
-takes a room: agent edits, inspection, exports and rebases open their own
-session, and a failed call drops the room's replica. The room's unload drops
-it too, and a replaced worker loses them all. Replicas stay within
-`OFFICE_REPLICA_BUDGET_BYTES` (`collaboration/src/officeRuntime.ts`) of
-estimated WASM heap, least recently used first; the estimate is 20 times the
-unzipped package (the heap measured per unzipped byte), and a workbook whose
-estimate exceeds the whole budget is never kept. DOCX and PPTX keep none: a
-DOCX open is a small part of its baseline, and a PPTX replica saves little
-(about 0.3 s per save of a 24 MB deck on the production box) for its memory
-(about 90 MB). `collab_health`'s `office` object reports them
-([observability](../observability-metering.md)). Measurements:
-[2026-10-05 replica report](../bench/collaboration/reports/2026-10-05-office-engine-replicas.md).
+The worker keeps a replica per XLSX room: the room's source opened only to
+read pending effects (`XlsxEffectsReader`, `configureOfficeReplicas` in
+`vendor/betteroffice/shared/office-checkpoint.ts`), without the dependency
+graph or the recalculation an editor needs. A save's pending effects pass
+the room; the engine checks the saved state exactly as an apply would and
+reads the effects off it beside the source, without applying it or
+recalculating the workbook (only a source with array formulas recalculates
+that state's projection, since spilled values reach the effects). The
+replica therefore never holds a state and serves any state of its base, an
+older one included; another base replaces it. A state that is not a whole
+workbook document is applied to a fresh session as before. Only
+`xlsxPendingEffects` takes a room: agent edits, inspection, exports and
+rebases open their own session, and a failed call drops the room's replica.
+The room's unload drops it too, and a replaced worker loses them all.
+Replicas stay within `OFFICE_REPLICA_BUDGET_BYTES`
+(`collaboration/src/officeRuntime.ts`) of estimated WASM heap, least
+recently used first, and a new replica pushes out only replicas idle for 2
+minutes; the estimate is 16 times the unzipped package (the heap measured
+per unzipped byte), and a workbook whose estimate exceeds the whole budget
+is never kept. DOCX and PPTX keep none: a DOCX open is a small part of its
+baseline, and a PPTX replica saves little (about 0.3 s per save of a 24 MB
+deck on the production box) for its memory (about 90 MB).
+`collab_health`'s `office` object reports them
+([observability](../observability-metering.md)).
+
+Agent inspection and edits read XLSX cells through `checkpointCellsJson`
+(ids, addresses, values and formulas, streamed without formats); the full
+`checkpointProjectionJson` (formats, layout, images) serves baselines and is
+streamed too. Building it as one JSON value per cell grew the XLSX engine's
+linear memory to about 1.9 GiB on the 16,000-row gradebook, which WASM never
+returns; it now stays near the opened workbook (338 MiB). Measurements:
+[2026-10-05 replica report](../bench/collaboration/reports/2026-10-05-office-engine-replicas.md),
+[2026-10-05 effects reader report](../bench/collaboration/reports/2026-10-05-office-engine-effects.md).
 
 ## Maintenance window
 

@@ -134,15 +134,16 @@ export class OfficeEngineError extends Error {
 export const CALL_TIMEOUT_MS = 120_000;
 /**
  * Estimated WASM heap the engine worker may keep in XLSX room replicas (the
- * opened workbook with the room's last saved state), so a save's pending
- * effects do not reopen and recalculate the workbook: about 7 s of worker
- * time per save of the 16,000-row gradebook on the production box, 1.4 s with
- * its replica. A replica's estimate is 20 times its unzipped package: about
- * 170 MB for that gradebook (130-160 MB measured), 25 MB for
- * course-guide.xlsx (18 MB). 1 GiB holds six such gradebooks. In the
- * 2026-10-05 replica run, 20 large-file rooms (six workbooks) kept the worker
- * at about 40% instead of 100% for 520 MB more collaboration RSS (1.9 GiB at
- * most), on a 7.6 GiB production box.
+ * room's source opened to read pending effects beside it), so a save does not
+ * reopen the workbook. On an M-series Mac under load, a save of the
+ * 16,000-row gradebook costs about 6 s of worker CPU without its replica and
+ * 0.3 s with it (1.3-2 s when replicas applied each state and recalculated).
+ * A replica's estimate is 16 times its unzipped package: about 130 MB for
+ * that gradebook (123 MiB measured), 20 MB for course-guide.xlsx (13-14 MiB).
+ * 1 GiB holds eight such gradebooks. In the 2026-10-05 replica run, 20
+ * large-file rooms (six workbooks) kept the worker at about 40% instead of
+ * 100% for 520 MB more collaboration RSS (1.9 GiB at most), on a 7.6 GiB
+ * production box.
  */
 export const OFFICE_REPLICA_BUDGET_BYTES = 1024 * 1024 * 1024;
 // A trap leaves wasm-bindgen objects poisoned, and the engine's dispose() or
