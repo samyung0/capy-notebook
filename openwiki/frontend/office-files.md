@@ -432,8 +432,15 @@ Typing at a link's end keeps its history, frame and document-location
 attributes; unbolding a field's first child does not restore its old bold.
 Plain result runs after a projected simple field seed as that field's text.
 A positional tab (`w:ptab`) round-trips with its alignment, `relativeTo`,
-leader and run formatting; the editor draws it as an ordinary tab (to the
-next tab stop, not aligned to the margin or indent).
+leader and run formatting. View and edit mode lay it out as ECMA-376
+§17.3.3.23 and Word's alignment tab do: ignoring tab stops, the text up to the
+next tab or line break is aligned left, centred or right at the margin
+(`relativeTo="margin"`: the text area's edges or its middle) or between the
+paragraph's indents (`indent`), the gap filled with the tab's own leader; a
+position the line has already passed is taken on the next line. The text
+never runs past the line's right edge (a margin tab in a paragraph with a
+right indent stops at the indent), and a tab missing either attribute stays
+an ordinary tab. Text boxes lay it out the same way within the box.
 
 Enter inside a projected link or TOC entry, or after a projected simple
 field's own result text, splits the field across the two paragraphs: its begin
@@ -583,7 +590,9 @@ notes).
 In edit mode the DOCX editor shows one toolbar row under the header, in Google
 Docs' order (`singleRowToolbar` with the menus in the host, `DocxEditor`'s
 `onMenus`): undo/redo, zoom, style, font, size box (no −/+ steps), bold,
-italic, underline, text colour and highlight, then link, comment and image,
+italic, underline, text colour and highlight (each picker ticks the
+selection's colour when the whole selection shares one; the highlight is read
+from the editor as the text colour is), then link, comment and image,
 alignment with line spacing, lists and indent, and clear formatting, with the
 comments toggle pinned right; image or table controls follow the lists when an
 image or a cell is selected. Strikethrough, superscript and subscript live in
