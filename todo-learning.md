@@ -733,12 +733,27 @@ Deck items for the test (Epo, 2026-10-04; the output looks good):
   `write_slide` descriptions and `deck.ADDON`. Watch for
   slides refused over ledger fields, todos a grouped write closes early, and
   thin or invented content.
-- Cost: the first live deck took 944k input tokens with 35k read from cache
-  (about 160 credits). Check whether the GLM route caches the stable prefix
-  (system prompt, tools, the style returned by `create_deck`), and whether
-  replacing a written slide's SVG in the history with a short stub keeps
-  quality while cutting the context. Since 2026-10-05 requests are
-  append-only, so rerun a deck and compare.
+- Cost, settled 2026-10-05: a deck takes about 47 credits (607k input over
+  13 requests, 88% cached; largest request 81.6k). Written slides stay in the
+  history: leaving them out cost more and the model copied the stub into
+  slides (`lab/playground/DECKS.md`). Where the 607k went: tool results 40%
+  (library excerpts about 15k and the deck skill about 6k, resent every
+  request), system prompt and tools 22%, slide SVGs and the outline 16%,
+  reasoning sent back 13%, turn contexts 9%.
+- Potential issues to tune (Epo asked to be reminded at the test):
+  - `write_slide` refusals: 6 of 13 in the baseline, 5 for missing ledger
+    fields and 1 for a todo a grouped write had already closed. Each costs a
+    call.
+  - `create_deck` refused three times, so the outline was written four times.
+  - One four-slide response reasoned for 13k tokens, which every later
+    request then carries.
+  - Library excerpts sit early in the history and repeat on every request
+    (cached, but a fifth of the price each time).
+  - "Response flagged due to safety concern" (our `response_guard`) ended
+    four of eight earlier runs when GLM wrote a tool call as text; rename the
+    error or repair the call (1.8).
+  - The second request of a turn often reads nothing from cache.
+  - Content quality: thin or invented slides, sparse slides in large panels.
 
 Skills and prompts for the test (Epo, 2026-10-05):
 
