@@ -911,15 +911,12 @@ async def stream_text(
             )
 
 
-async def caption_image(data_url: str, prompt: str, *, best_effort: bool = True) -> str:
-    """Describe one figure so it becomes searchable text.
+async def caption_image(data_url: str, prompt: str) -> str:
+    """Describe a standalone image upload so it becomes searchable text.
 
-    Any failure is retried under the ingest policy, since a figure-heavy
-    document issues hundreds of these and one dropped caption is one figure
-    permanently missing from the index. Past that budget a figure caption is
-    dropped, while a standalone image upload, whose caption is the whole
-    content, raises ProviderBusy so its job re-pends instead of spending an
-    attempt.
+    Any failure is retried under the ingest policy. Past that budget a busy
+    provider raises ProviderBusy so the job re-pends instead of spending an
+    attempt, since the caption is the file's whole content.
     """
     spec = registry.captioning_spec()
     caption_thinking = elitellm.resolve_thinking(spec, reasoning=False)
@@ -961,20 +958,16 @@ async def caption_image(data_url: str, prompt: str, *, best_effort: bool = True)
             return (getattr(message, "content", "") or "").strip()
 
     try:
-        # A transient failure here loses one figure for good, so every failure
-        # gets the policy's attempts, not only busy answers.
+        # A transient failure here loses the file's only text, so every
+        # failure gets the policy's attempts, not only busy answers.
         return await _call_with_retry(_one, retry_any=True)
     except asyncio.CancelledError:
         raise
-    except accounting.SettlementError:
-        # The provider already returned. Settlement has already retried the
-        # exact receipt through its deadline, so a new call can only add cost.
+    except (accounting.SettlementError, elitellm.ProviderBusy):
+        # After a settlement error the provider already returned and the
+        # receipt was retried through its deadline, so a new call only adds
+        # cost; a busy provider re-pends the job.
         raise
-    except elitellm.ProviderBusy:
-        if not best_effort:
-            raise
-        log.warning("image caption dropped: provider busy", exc_info=True)
-        return ""
     except Exception:
         log.warning("image caption failed", exc_info=True)
         return ""

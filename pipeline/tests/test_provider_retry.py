@@ -211,20 +211,15 @@ async def test_ingest_exhaustion_raises_provider_busy(monkeypatch, sleeps, inges
     assert caught.value.provider_retry_after is None
 
 
-async def test_caption_is_best_effort_unless_the_caption_is_the_content(
-    monkeypatch, sleeps, ingest_mode
-):
+async def test_caption_raises_provider_busy(monkeypatch, sleeps, ingest_mode):
     monkeypatch.setattr(models.registry, "captioning_spec", lambda: _spec())
 
     async def complete(*_args, **_kwargs):
         raise _busy()
 
     monkeypatch.setattr(models.elitellm, "complete", complete)
-    assert await models.caption_image("data:image/png;base64,AA==", "describe") == ""
     with pytest.raises(elitellm.ProviderBusy):
-        await models.caption_image(
-            "data:image/png;base64,AA==", "describe", best_effort=False
-        )
+        await models.caption_image("data:image/png;base64,AA==", "describe")
 
 
 async def test_agent_stream_retries_only_before_the_first_byte(monkeypatch, sleeps):

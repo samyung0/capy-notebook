@@ -19,7 +19,7 @@ def cache(monkeypatch):
     blobs = {}
     calls = []
 
-    async def describe(_url, _prompt, **_kwargs):
+    async def describe(_url, _prompt):
         calls.append(1)
         return f"Image description {len(calls)}"
 

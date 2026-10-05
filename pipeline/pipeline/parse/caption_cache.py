@@ -181,10 +181,10 @@ async def caption(
     image_sha256: str,
     data_url: str | Callable[[], Awaitable[str | None]],
     prompt: str,
-    best_effort: bool = True,
 ) -> tuple[str, str, int, bool]:
     """Caption the image a standalone image file's ingest job holds, reusing an
-    eligible caption first. Runs inside that job (``db.bind_source_refresh``)."""
+    eligible caption first. Runs in the file's ordinary ingest job (bound by
+    ``db.bind_source_refresh``)."""
     async with _lock(file_id, image_sha256):
         try:
             cached = await lookup(file_id, image_sha256)
@@ -199,9 +199,7 @@ async def caption(
         url = await data_url() if callable(data_url) else data_url
         if not url:
             return "", "", 0, False
-        text = (
-            await models.caption_image(url, prompt, best_effort=best_effort)
-        ).strip()
+        text = (await models.caption_image(url, prompt)).strip()
         if not text:
             return "", "", 0, False
         raw = json.dumps(
