@@ -6,6 +6,7 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -41,7 +42,8 @@ type ReviewWorkspace struct {
 	WorkspaceID string `json:"workspaceId"`
 	Name        string `json:"name"`
 	Reviewable  int    `json:"reviewable"`
-	// Done of Total are the workspace's files and materials marked done.
+	// Done of Total count the workspace's files and materials, leaving out
+	// the ones the user stopped tracking, as the Study tab does.
 	Done  int `json:"done"`
 	Total int `json:"total"`
 }
@@ -73,9 +75,47 @@ type studyItem struct {
 	hash string
 }
 
+// parsedItems keeps each material's items for one revision, so the Study tab
+// and review parse a document again only after it changes; every content
+// write bumps the revision. Items are shared: callers never modify them.
+// ponytail: one process-wide map dropped when full; an LRU if it churns.
+var parsedItems = struct {
+	sync.Mutex
+	m map[string]parsedMaterial
+}{m: map[string]parsedMaterial{}}
+
+type parsedMaterial struct {
+	revision int64
+	items    []studyItem
+}
+
+const parsedItemsMax = 5000
+
+// itemsOf is materialItems through the cache. Titles are not cached: a rename
+// does not bump the revision.
+func itemsOf(mt Material) ([]studyItem, error) {
+	parsedItems.Lock()
+	hit, ok := parsedItems.m[mt.ID]
+	parsedItems.Unlock()
+	if ok && hit.revision == mt.Revision {
+		return hit.items, nil
+	}
+	items, err := materialItems(mt)
+	if err != nil {
+		return nil, err
+	}
+	parsedItems.Lock()
+	if len(parsedItems.m) >= parsedItemsMax {
+		parsedItems.m = map[string]parsedMaterial{}
+	}
+	parsedItems.m[mt.ID] = parsedMaterial{mt.Revision, items}
+	parsedItems.Unlock()
+	return items, nil
+}
+
 func materialItems(mt Material) ([]studyItem, error) {
 	var out []studyItem
-	base := ReviewItem{MaterialID: mt.ID, MaterialTitle: mt.Title}
+	base := ReviewItem{MaterialID: mt.ID}
 	switch mt.Kind {
 	case "flashcards":
 		cards, err := materialdoc.ExtractFlashcards(mt.Content)
@@ -361,7 +401,7 @@ func (s *Store) RateItem(ctx context.Context, userID string, in Rating, now time
 	if err != nil {
 		return err
 	}
-	items, err := materialItems(mt)
+	items, err := itemsOf(mt)
 	if err != nil {
 		return err
 	}
@@ -384,6 +424,11 @@ func (s *Store) RateItem(ctx context.Context, userID string, in Rating, now time
 		return ErrStudyRating
 	}
 	return s.inTx(ctx, func(tx pgx.Tx) error {
+		// One rating per user and material at a time, so ratings of a set's
+		// last cards made at once still see each other and mark it done.
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, "study-rating:"+userID+":"+mt.ID); err != nil {
+			return err
+		}
 		prev, err := reviewStates(ctx, tx, userID, mt.ID)
 		if err != nil {
 			return err
@@ -416,7 +461,7 @@ func rateAttemptTx(ctx context.Context, tx pgx.Tx, userID string, mt Material, s
 	if mt.Kind != "quiz" || mt.WorkspaceID == "" || mt.ParentMaterialID != "" {
 		return nil
 	}
-	items, err := materialItems(mt)
+	items, err := itemsOf(mt)
 	if err != nil {
 		return err
 	}
@@ -454,45 +499,85 @@ type ranked struct {
 
 // reviewPool is every rated item of the quizzes and sets in progress (not
 // removed, trashed or embedded) whose content still matches what was rated,
-// least retained first.
+// least retained first. Only rated materials are read, in one query, and a
+// document is loaded and parsed only when the cache misses its revision.
 func (s *Store) reviewPool(ctx context.Context, userID, wsID string, now time.Time) ([]ranked, error) {
-	rows, err := s.pool.Query(ctx, `SELECT m.id FROM materials m
+	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, m.revision, rs.item_id, rs.item_hash,
+			rs.stability, rs.difficulty, rs.reps, rs.lapses, rs.fsrs_state, rs.last_review
+		FROM materials m
 		JOIN study_progress sp ON sp.material_id=m.id AND sp.user_id=$1
+		JOIN review_states rs ON rs.material_id=m.id AND rs.user_id=$1
 		WHERE m.workspace_id=$2 AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL
 			AND m.parent_material_id IS NULL AND sp.state <> 'removed'
-		ORDER BY m.position, m.created_at`, userID, wsID)
+		ORDER BY m.position, m.created_at, m.id`, userID, wsID)
 	if err != nil {
 		return nil, err
 	}
-	var ids []string
+	type ratedMaterial struct {
+		title    string
+		revision int64
+		states   map[string]storedState
+		items    []studyItem
+	}
+	var order []*ratedMaterial
+	byID := map[string]*ratedMaterial{}
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var id, title, itemID string
+		var revision int64
+		var st storedState
+		if err := rows.Scan(&id, &title, &revision, &itemID, &st.hash, &st.Stability, &st.Difficulty, &st.Reps, &st.Lapses, &st.FSRSState, &st.LastReview); err != nil {
 			rows.Close()
 			return nil, err
 		}
-		ids = append(ids, id)
+		rm := byID[id]
+		if rm == nil {
+			rm = &ratedMaterial{title: title, revision: revision, states: map[string]storedState{}}
+			byID[id] = rm
+			order = append(order, rm)
+		}
+		rm.states[itemID] = st
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	var missing []string
+	for id, rm := range byID {
+		parsedItems.Lock()
+		hit, ok := parsedItems.m[id]
+		parsedItems.Unlock()
+		if ok && hit.revision == rm.revision {
+			rm.items = hit.items
+		} else {
+			missing = append(missing, id)
+		}
+	}
+	if len(missing) > 0 {
+		rows, err := s.pool.Query(ctx, `SELECT `+materialCols+` FROM materials WHERE id = ANY($1)`, missing)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			mt, err := scanMaterial(rows)
+			if err != nil {
+				rows.Close()
+				return nil, err
+			}
+			if byID[mt.ID].items, err = itemsOf(mt); err != nil {
+				rows.Close()
+				return nil, err
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
 	var all []ranked
-	for _, id := range ids {
-		mt, err := s.GetMaterial(ctx, id)
-		if err != nil {
-			return nil, err
-		}
-		items, err := materialItems(mt)
-		if err != nil {
-			return nil, err
-		}
-		states, err := reviewStates(ctx, s.pool, userID, mt.ID)
-		if err != nil {
-			return nil, err
-		}
-		for _, it := range items {
-			if st, ok := states[it.ItemID]; ok && st.hash == it.hash {
+	for _, rm := range order {
+		for _, it := range rm.items {
+			if st, ok := rm.states[it.ItemID]; ok && st.hash == it.hash {
+				it.MaterialTitle = rm.title
 				all = append(all, ranked{it, review.Retrievability(st.State, now), st.Lapses})
 			}
 		}
@@ -526,9 +611,13 @@ func (s *Store) ReviewWorkspaces(ctx context.Context, userID string, now time.Ti
 				LEFT JOIN files f ON f.id=sp.file_id LEFT JOIN materials m ON m.id=sp.material_id
 				WHERE sp.user_id=$1 AND sp.workspace_id=w.id AND sp.state='done'
 					AND f.trashed_at IS NULL AND m.trashed_at IS NULL),
-			(SELECT count(*) FROM files f WHERE f.workspace_id=w.id AND f.trashed_at IS NULL)
+			(SELECT count(*) FROM files f WHERE f.workspace_id=w.id AND f.trashed_at IS NULL
+				AND NOT EXISTS (SELECT 1 FROM study_progress sp
+					WHERE sp.user_id=$1 AND sp.file_id=f.id AND sp.state='removed'))
 				+ (SELECT count(*) FROM materials m WHERE m.workspace_id=w.id AND m.trashed_at IS NULL
-					AND m.parent_material_id IS NULL)
+					AND m.parent_material_id IS NULL
+					AND NOT EXISTS (SELECT 1 FROM study_progress sp
+						WHERE sp.user_id=$1 AND sp.material_id=m.id AND sp.state='removed'))
 		FROM workspaces w
 		WHERE EXISTS (SELECT 1 FROM study_progress sp WHERE sp.user_id=$1 AND sp.workspace_id=w.id AND sp.state <> 'removed')
 		ORDER BY w.name, w.id`, userID)

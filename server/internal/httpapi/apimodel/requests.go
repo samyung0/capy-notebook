@@ -406,7 +406,7 @@ func EncodeQuestions(qs []map[string]any) json.RawMessage {
 	return b
 }
 
-// EncodeRaw marshals any value to json.RawMessage (used for scene/srs/wrong).
+// EncodeRaw marshals any value to json.RawMessage.
 func EncodeRaw(v any) json.RawMessage {
 	b, err := json.Marshal(v)
 	if err != nil {

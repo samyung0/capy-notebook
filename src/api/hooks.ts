@@ -2012,6 +2012,7 @@ export function useSubmitAttempt(options?: MutationUiOptions) {
       api.post<Attempt>(`/quizzes/${quizId}/attempts`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.attempts });
+      void invalidateStudy(qc);
     },
   });
 }
@@ -2127,13 +2128,22 @@ export const useWorkspaceStudy = (
 ) =>
   useQuery({ ...workspaceStudyQuery(workspaceId), meta: queryMeta(options) });
 
-function invalidateStudy(
+/** Refreshes the Study tab, marks, review and Learning after practice in
+ * `workspaceId`, or in every workspace when the caller does not know which. */
+export function invalidateStudy(
   qc: ReturnType<typeof useQueryClient>,
-  workspaceId: string
+  workspaceId?: string
 ) {
-  qc.invalidateQueries({ queryKey: qk.study(workspaceId) });
-  qc.invalidateQueries({ queryKey: qk.workspaceReview(workspaceId) });
-  qc.invalidateQueries({ queryKey: qk.reviewWorkspaces });
+  // qk.study and qk.workspaceReview: ['workspace', id, 'study' | 'review'].
+  return Promise.all([
+    qc.invalidateQueries({
+      predicate: ({ queryKey: [scope, id, kind] }) =>
+        scope === 'workspace' &&
+        (!workspaceId || id === workspaceId) &&
+        (kind === 'study' || kind === 'review'),
+    }),
+    qc.invalidateQueries({ queryKey: qk.reviewWorkspaces }),
+  ]);
 }
 
 /** Mark as read (done), Stop tracking (removed), or untouched again (null). */
@@ -2199,15 +2209,17 @@ export const reviewWorkspacesQuery = () =>
 export const useReviewWorkspaces = (options?: QueryUiOptions) =>
   useQuery({ ...reviewWorkspacesQuery(), meta: queryMeta(options) });
 
-/** Records one rating; the study page toasts a failure once. */
-export function useRateReviewItem(workspaceId?: string) {
+/** Records one rating; the study page toasts a failure once. Each rating
+ * refreshes `workspaceId`'s progress, or every workspace's when omitted; a
+ * review session passes `null` and refreshes once it ends. */
+export function useRateReviewItem(workspaceId?: string | null) {
   const qc = useQueryClient();
   return useMutation({
     meta: { errorToast: false },
     mutationFn: (body: RateReviewItemReq) =>
       api.post<void>('/review/ratings', body),
     onSuccess: () => {
-      if (workspaceId) invalidateStudy(qc, workspaceId);
+      if (workspaceId !== null) void invalidateStudy(qc, workspaceId);
     },
   });
 }

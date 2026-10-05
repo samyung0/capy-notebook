@@ -270,6 +270,55 @@ func TestFrozenOwnersWorkspaceIsReadOnly(t *testing.T) {
 	}
 }
 
+// Study progress is the reader's own data: a frozen account records ratings,
+// marks and resets, and so does a healthy member in a frozen owner's workspace.
+func TestFrozenAccountsRecordStudyProgress(t *testing.T) {
+	f := overQuotaFixture(t, 20)
+	ctx := context.Background()
+	frozen := f.material.CreatedBy
+	// A healthy editor's set the frozen account can read.
+	ws, err := f.store.CreateWorkspace(ctx, "u_editor", store.WorkspaceCreate{Name: "Shared cards"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := pgxpool.New(ctx, testdb.URL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	if _, err := pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id,user_id,role) VALUES ($1,$2,'viewer')`, ws.ID, frozen); err != nil {
+		t.Fatal(err)
+	}
+	set, err := f.store.CreateFlashcardSetWithCards(ctx, "u_editor", "Cards", "blue", ws.ID,
+		[][2]string{{"Golgi", "Ships proteins"}}, "", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cards, err := f.store.ListCards(ctx, set.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := doReq(t, f.owner, http.MethodPost, "/api/review/ratings", "",
+		map[string]any{"materialId": set.ID, "itemId": cards[0].ID, "rating": 3})
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("frozen rating = %d body=%s", rec.Code, rec.Body.String())
+	}
+	for _, side := range []struct {
+		h     http.Handler
+		actor string
+	}{{f.owner, ""}, {f.member, "u_editor"}} {
+		rec := doReq(t, side.h, http.MethodPut, "/api/workspaces/"+f.workspaceID+"/study/items", side.actor,
+			map[string]any{"materialId": f.material.ID, "state": "done"})
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("%q mark as read = %d body=%s", side.actor, rec.Code, rec.Body.String())
+		}
+		rec = doReq(t, side.h, http.MethodPost, "/api/workspaces/"+f.workspaceID+"/study/reset", side.actor, nil)
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("%q reset = %d body=%s", side.actor, rec.Code, rec.Body.String())
+		}
+	}
+}
+
 // A member's client has to be able to explain why writes into somebody else's
 // workspace are refused. The bytes land on the owner, so the workspace reports
 // the owner's lifecycle state and usage level rather than the reader's, and

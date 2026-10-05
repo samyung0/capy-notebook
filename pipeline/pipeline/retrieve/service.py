@@ -310,23 +310,6 @@ def _cognitive_levels(req: GenerateReq) -> list[str]:
     return list(req.levels)
 
 
-def _new_srs() -> dict:
-    """Fresh FSRS 'new' state matching SrsState in src/api/types.ts."""
-    from datetime import datetime, timezone
-
-    return {
-        "due": datetime.now(timezone.utc).isoformat(),
-        "stability": 0,
-        "difficulty": 0,
-        "elapsed_days": 0,
-        "scheduled_days": 0,
-        "reps": 0,
-        "lapses": 0,
-        "state": 0,
-        "learning_steps": 0,
-    }
-
-
 def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
 
@@ -535,8 +518,6 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
                 "id": _uid("c"),
                 "front": str(item.get("front", "")),
                 "back": str(item.get("back", "")),
-                "known": False,
-                "srs": _new_srs(),
             }
             for item in data
             if isinstance(item, dict)

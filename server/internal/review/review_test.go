@@ -27,32 +27,37 @@ func TestForgottenItemsRankFirst(t *testing.T) {
 	}
 }
 
-func question(answer any, marks float64, scheme ...any) map[string]any {
-	part := map[string]any{"blocks": []any{map[string]any{"type": "text", "text": "Q?"}}, "answer": answer, "marks": marks, "solution": []any{"why"}}
+func question(prompt string, answer any, marks float64, scheme ...any) map[string]any {
+	part := map[string]any{"blocks": []any{map[string]any{"type": "text", "text": prompt}}, "answer": answer, "marks": marks, "solution": []any{"why"}}
 	if scheme != nil {
 		part["markscheme"] = scheme
 	}
 	return map[string]any{"id": "q1", "stem": []any{}, "layout": "paper", "parts": []any{part}}
 }
 
-func TestQuestionHashCoversTheAnswerKeyOnly(t *testing.T) {
-	base := question(map[string]any{"type": "boolean", "correct": true}, 1)
-	remarked := question(map[string]any{"type": "boolean", "correct": true}, 3)
-	remarked["layout"] = "stack"
-	if QuestionHash(base) != QuestionHash(remarked) {
-		t.Fatal("marks or layout changed the hash")
+func TestQuestionHashCoversThePromptTextOnly(t *testing.T) {
+	base := question("Cells have membranes?", map[string]any{"type": "boolean", "correct": true}, 1)
+	edited := question("Cells have membranes?", map[string]any{"type": "boolean", "correct": false}, 3,
+		map[string]any{"text": "Names the membrane", "marks": 3})
+	edited["layout"] = "split"
+	edited["stem"] = []any{map[string]any{"type": "image", "image": map[string]any{"assetId": "a"}, "width": 640, "height": 480}}
+	if QuestionHash(base) != QuestionHash(edited) {
+		t.Fatal("an answer, marking scheme, mark, layout or image changed the hash")
 	}
-	if QuestionHash(base) == QuestionHash(question(map[string]any{"type": "boolean", "correct": false}, 1)) {
-		t.Fatal("a new answer key kept the hash")
+	if QuestionHash(base) == QuestionHash(question("Ribosomes have membranes?", map[string]any{"type": "boolean", "correct": true}, 1)) {
+		t.Fatal("a new prompt kept the hash")
 	}
-	open := func(text string, marks float64) map[string]any {
-		return question(map[string]any{"type": "open"}, marks, map[string]any{"text": text, "marks": marks})
+	edited["stem"] = []any{map[string]any{"type": "text", "text": "Cell biology"}}
+	if QuestionHash(base) == QuestionHash(edited) {
+		t.Fatal("new stem text kept the hash")
 	}
-	if QuestionHash(open("Names the organelle", 1)) != QuestionHash(open("Names the organelle", 2)) {
-		t.Fatal("a marking item's marks changed the hash")
-	}
-	if QuestionHash(open("Names the organelle", 1)) == QuestionHash(open("Names the membrane", 1)) {
-		t.Fatal("a marking item's text kept the hash")
+}
+
+func TestFirstMissIsALapse(t *testing.T) {
+	now := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	missed := Rate(nil, Again, now)
+	if got := Rate(&missed, Good, now.Add(time.Minute)); got.Lapses != 1 {
+		t.Fatalf("new card Again then Good: lapses = %d", got.Lapses)
 	}
 }
 

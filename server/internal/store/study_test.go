@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 )
@@ -205,7 +206,8 @@ func TestWorkspaceReviewSelection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(listed) != 1 || listed[0].WorkspaceID != f.ws.ID || listed[0].Reviewable != 1 || listed[0].Total != 2 {
+	// The removed set counts toward neither done nor total.
+	if len(listed) != 1 || listed[0].WorkspaceID != f.ws.ID || listed[0].Reviewable != 1 || listed[0].Total != 1 {
 		t.Fatalf("review workspaces = %+v", listed)
 	}
 
@@ -222,13 +224,155 @@ func TestWorkspaceReviewSelection(t *testing.T) {
 		t.Fatalf("review log after reset = %d", n)
 	}
 
+	// Account purge deletes every per-user study row.
+	f.rate(t, kept[0], 3)
+	if err := f.s.SetWorkspaceStudy(ctx, f.user, f.ws.ID, false); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := f.s.RequestAccountDeletion(ctx, f.user, true); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.s.PurgeUser(ctx, f.user); err != nil {
 		t.Fatal(err)
 	}
-	if n := f.count(t, `SELECT count(*) FROM review_log WHERE user_id=$1`, f.user); n != 0 {
-		t.Fatalf("review log after account purge = %d", n)
+	for _, table := range []string{"study_progress", "workspace_study", "review_states", "review_log"} {
+		if n := f.count(t, `SELECT count(*) FROM `+table+` WHERE user_id=$1`, f.user); n != 0 {
+			t.Fatalf("%s after account purge = %d", table, n)
+		}
+	}
+}
+
+// A question's rating follows its share of the marks, half marks included.
+func TestQuizAttemptRatesHalfMarks(t *testing.T) {
+	f := newStudyFixture(t, "u_study_half")
+	ctx := context.Background()
+	question := func(id string, awarded any) map[string]any {
+		part := map[string]any{"id": id + ":part:1", "blocks": []any{map[string]any{"type": "text", "text": "Explain " + id}},
+			"answer": map[string]any{"type": "open", "accepted": []any{"A model answer"}, "hints": []any{}}, "marks": 2,
+			"markscheme": []any{map[string]any{"text": "Point", "marks": 2}}, "solution": []any{}}
+		if awarded != nil {
+			part["awarded"] = awarded
+		}
+		return map[string]any{"id": id, "stem": []any{}, "parts": []any{part}, "layout": "paper", "labels": "letters"}
+	}
+	authored, _ := json.Marshal([]any{question("a", nil), question("b", nil), question("c", nil)})
+	quiz, err := f.s.CreateQuiz(ctx, Quiz{UserID: f.user, Name: "Half", WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name, Questions: authored, Privacy: PrivacyPrivate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Remove the quiz first: an attempt brings it back.
+	removed := "removed"
+	if err := f.s.SetStudyItem(ctx, f.user, f.ws.ID, nil, &quiz.ID, &removed); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, _ := json.Marshal([]any{question("a", 0.5), question("b", 1), question("c", 1.5)})
+	if _, err := f.s.CreateAttempt(ctx, f.user, quiz.ID, 3, 6, json.RawMessage(`{}`), snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.progress(t, quiz.ID); got != "done" {
+		t.Fatalf("removed quiz after an attempt = %q", got)
+	}
+	for item, want := range map[string]int{"a": 1, "b": 2, "c": 3} {
+		if n := f.count(t, `SELECT rating FROM review_log WHERE user_id=$1 AND material_id=$2 AND item_id=$3`, f.user, quiz.ID, item); n != want {
+			t.Errorf("question %s rated %d, want %d", item, n, want)
+		}
+	}
+}
+
+// Embedded sets, cards deleted from their set and edited cards stay out of
+// review; an edited card starts again when it is rated.
+func TestReviewSkipsEmbeddedOrphanedAndEditedItems(t *testing.T) {
+	f := newStudyFixture(t, "u_study_orphans")
+	ctx := context.Background()
+	cards := f.set(t, [2]string{"Golgi", "Ships proteins"}, [2]string{"Lysosome", "Digests waste"}, [2]string{"Nucleus", "Holds DNA"})
+	for _, c := range cards {
+		f.rate(t, c, 3)
+	}
+	f.rate(t, cards[2], 3)
+	note, err := f.s.CreateMaterial(ctx, Material{CreatedBy: f.user, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name, Kind: "note", Title: "Note", Content: "# Note"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	embedded, err := f.s.CreateEmbeddedMaterial(ctx, f.user, note.ID, EmbeddedDraft{Kind: "flashcards", Cards: [][2]string{{"Ribosome", "Makes proteins"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inner, err := f.s.ListCards(ctx, embedded.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.rate(t, inner[0], 1)
+
+	latest, err := f.s.ListCards(ctx, cards[0].MaterialID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.DeleteCard(ctx, f.user, cards[1].ID, latest[1].Revision); err != nil {
+		t.Fatal(err)
+	}
+	latest, err = f.s.ListCards(ctx, cards[0].MaterialID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	front := "Nucleus envelope"
+	if _, err := f.s.UpdateCardContent(ctx, cards[2].ID, CardContentPatch{ExpectedRevision: latest[1].Revision, Front: &front, UpdatedBy: f.user}); err != nil {
+		t.Fatal(err)
+	}
+	mixed, err := f.s.WorkspaceReview(ctx, f.user, f.ws.ID, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mixed.Items) != 1 || mixed.Items[0].ItemID != cards[0].ID {
+		t.Fatalf("mixed review = %+v", mixed)
+	}
+	f.rate(t, cards[2], 3)
+	if n := f.count(t, `SELECT reps FROM review_states WHERE user_id=$1 AND item_id=$2`, f.user, cards[2].ID); n != 1 {
+		t.Fatalf("edited card reps after a new rating = %d, want 1", n)
+	}
+}
+
+// Ratings of a set's last cards made at once still mark it done.
+func TestConcurrentRatingsFinishASet(t *testing.T) {
+	f := newStudyFixture(t, "u_study_race")
+	for round := 0; round < 5; round++ {
+		cards := f.set(t, [2]string{"A", "1"}, [2]string{"B", "2"}, [2]string{"C", "3"}, [2]string{"D", "4"})
+		var wg sync.WaitGroup
+		errs := make(chan error, len(cards))
+		for _, c := range cards {
+			wg.Add(1)
+			go func(c Flashcard) {
+				defer wg.Done()
+				good := 3
+				errs <- f.s.RateItem(context.Background(), f.user, Rating{MaterialID: c.MaterialID, ItemID: c.ID, Rating: &good}, time.Now())
+			}(c)
+		}
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := f.progress(t, cards[0].MaterialID); got != "done" {
+			t.Fatalf("round %d: set rated at once = %q", round, got)
+		}
+	}
+}
+
+// Progress is the user's own: a cloned workspace starts with none.
+func TestCloneCopiesNoStudyProgress(t *testing.T) {
+	f := newStudyFixture(t, "u_study_clone")
+	ctx := context.Background()
+	cards := f.set(t, [2]string{"Golgi", "Ships proteins"})
+	f.rate(t, cards[0], 1)
+	clone, err := f.s.CloneWorkspace(ctx, f.user, f.ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count(t, `SELECT count(*) FROM study_progress WHERE workspace_id=$1`, clone.ID); n != 0 {
+		t.Fatalf("cloned progress rows = %d", n)
+	}
+	if n := f.count(t, `SELECT count(*) FROM review_states rs JOIN materials m ON m.id=rs.material_id WHERE m.workspace_id=$1`, clone.ID); n != 0 {
+		t.Fatalf("cloned review states = %d", n)
 	}
 }

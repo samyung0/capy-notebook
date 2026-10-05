@@ -841,8 +841,8 @@ commands through a headless Slate editor (`editCommands.ts`), stores the
 inverse and item-run guards of the edited nodes, then fans the committed delta
 into the live room as a `service-edit` update; the projection runs on the same
 commit.
-Flashcard removals keep their study rows in `agent_card_state_restores` so an
-Undo restores progress. The chat result card shows the effect with an Undo
+A removed flashcard's review state stays in `review_states`, ignored until an
+Undo brings the card back. The chat result card shows the effect with an Undo
 button (`available`, `undone`, `unavailable`) fed by the receipt's `undo` ref.
 
 ## AI previews

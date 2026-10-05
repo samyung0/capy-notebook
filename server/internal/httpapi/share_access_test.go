@@ -401,7 +401,7 @@ func TestQuizAndFlashcardCapabilitiesSeparateEditorsFromOwners(t *testing.T) {
 	}
 }
 
-func TestStudyToolMutationPathsSeparateContentMetadataSharingAndStudyState(t *testing.T) {
+func TestStudyToolMutationPathsSeparateContentMetadataAndSharing(t *testing.T) {
 	h := openShareHTTP(t)
 	revision := func(id string) float64 {
 		rec := doReq(t, h, http.MethodGet, "/api/materials/"+id, "u_editor", nil)

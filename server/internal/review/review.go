@@ -53,8 +53,13 @@ func card(s *State) fsrs.Card {
 }
 
 // Rate returns the state after rating; prev is nil for an item never rated.
+// A miss on a new item is a lapse too: go-fsrs counts lapses only on items it
+// has seen, and Quick review ranks the hardest items by lapses.
 func Rate(prev *State, r Rating, now time.Time) State {
 	c := scheduler.Next(card(prev), now, r).Card
+	if prev == nil && r == Again {
+		c.Lapses = 1
+	}
 	return State{
 		Stability: c.Stability, Difficulty: c.Difficulty,
 		Reps: int(c.Reps), Lapses: int(c.Lapses),
@@ -85,23 +90,30 @@ func CardHash(front, back string) string {
 	return hash([]string{front, back})
 }
 
-// QuestionHash identifies a quiz question's prompt and answer key: the stem,
-// each part's blocks and answer, and an open part's marking item texts.
-// Layout, worked solutions and marks are left out.
+// QuestionHash identifies what a quiz question asks: the text of its stem and
+// of each part's prompt. Answers, options, marking schemes, hints, images and
+// styling are left out, so editing them keeps the learner's progress.
 func QuestionHash(q map[string]any) string {
 	parts, _ := q["parts"].([]any)
-	key := make([]any, 0, len(parts))
+	prompts := make([][]string, 0, len(parts))
 	for _, raw := range parts {
 		p, _ := raw.(map[string]any)
-		var scheme []any
-		items, _ := p["markscheme"].([]any)
-		for _, item := range items {
-			m, _ := item.(map[string]any)
-			scheme = append(scheme, m["text"])
-		}
-		key = append(key, map[string]any{"blocks": p["blocks"], "answer": p["answer"], "markscheme": scheme})
+		prompts = append(prompts, blockText(p["blocks"]))
 	}
-	return hash(map[string]any{"stem": q["stem"], "parts": key})
+	return hash(map[string]any{"stem": blockText(q["stem"]), "parts": prompts})
+}
+
+// blockText is the text of a block list's text blocks.
+func blockText(v any) []string {
+	blocks, _ := v.([]any)
+	out := []string{}
+	for _, raw := range blocks {
+		if b, _ := raw.(map[string]any); b["type"] == "text" {
+			text, _ := b["text"].(string)
+			out = append(out, text)
+		}
+	}
+	return out
 }
 
 // QuestionScore is the question's awarded marks over its marks, from an

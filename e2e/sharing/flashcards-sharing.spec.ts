@@ -94,23 +94,6 @@ test.describe('flashcards sharing', () => {
       await expect(otherPage.getByLabel(/Add card/i)).toHaveCount(0);
       await expect(otherPage.getByText(flashcardSet.front)).toBeVisible();
     }
-
-    // Rating should not fire a review mutation for non-owners on shared flashcards.
-    await otherPage.goto(`/share/flashcards/${seed.linkFlashcardSet.id}`);
-    await expect(
-      otherPage.getByText(seed.linkFlashcardSet.front)
-    ).toBeVisible();
-    await otherPage
-      .getByRole('button', { name: /Show answer|Show Answer/i })
-      .click();
-    const reviewWatch = otherPage.waitForRequest(
-      (req) =>
-        req.method() === 'PATCH' &&
-        req.url().includes('/api/flashcards/cards/'),
-      { timeout: 1500 }
-    );
-    await otherPage.getByRole('button', { name: 'Good' }).click();
-    await expect(reviewWatch).rejects.toThrow();
   });
 
   test('only public flashcards appear on Explore; private/link do not', async ({

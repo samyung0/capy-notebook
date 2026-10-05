@@ -1,33 +1,37 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { gradeQuiz } from '@/api/anonymous';
 import {
+  invalidateStudy,
   useRateReviewItem,
   useWorkspace,
   useWorkspaceReview,
 } from '@/api/hooks';
-import type { Question, ReviewItem } from '@/api/types';
+import type { Question, RateReviewItemReq, ReviewItem } from '@/api/types';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
-import { questionMarks } from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
-import { gradeAttemptQuestions } from '@/features/quizzes/scoreAttempt';
-import { RATING_LABEL, RATING_STYLE } from '@/features/study/ratings';
+import {
+  gradeReviewQuestion,
+  RATING_LABEL,
+  RATING_STYLE,
+  ratingQueue,
+} from '@/features/study/ratings';
 import type { ReviewFrom } from '@/features/study/reviewSearch';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { SRS_RATINGS, type SrsRating } from '@/lib/srs';
 
-function useRatingFailed() {
-  return () =>
-    userToast({
-      id: 'review-rating-failed',
-      title: m.flashcards_review_failed(),
-      variant: 'error',
-    });
+function ratingFailed() {
+  userToast({
+    id: 'review-rating-failed',
+    title: m.flashcards_review_failed(),
+    variant: 'error',
+  });
 }
 
 /** A mixed review of one workspace: its least retained cards and questions,
@@ -39,12 +43,24 @@ export default function ReviewSession() {
   const { from } = useSearch({ strict: false }) as { from?: ReviewFrom };
   const navigate = useNavigate();
   const { data: ws } = useWorkspace(workspaceId);
-  const { data, isFetching, refetch } = useWorkspaceReview(workspaceId);
+  const { data, isFetching } = useWorkspaceReview(workspaceId);
   // The session is the batch fetched when it began: ratings change the order
   // the server would give, and the learner should not see it reshuffle.
   const [session, setSession] = useState<ReviewItem[] | null>(null);
   const [index, setIndex] = useState(0);
   if (session === null && data && !isFetching) setSession(data.items);
+
+  // Ratings save in the background and refresh progress once, when the
+  // session is left or Review more asks for the next batch.
+  const qc = useQueryClient();
+  const { mutateAsync: rateItem } = useRateReviewItem(null);
+  const [ratings] = useState(() => ratingQueue(rateItem, ratingFailed));
+  useEffect(
+    () => () => {
+      void ratings.saved().then(() => invalidateStudy(qc, workspaceId));
+    },
+    [qc, ratings, workspaceId]
+  );
 
   function back() {
     if (from === 'learning')
@@ -52,9 +68,11 @@ export default function ReviewSession() {
     else navigate({ params: { workspaceId }, to: '/workspaces/$workspaceId' });
   }
   async function more() {
+    // The next batch is chosen from every rating saved so far.
+    await ratings.saved();
+    await invalidateStudy(qc, workspaceId);
     setSession(null);
     setIndex(0);
-    await refetch();
   }
 
   const item = session?.[index];
@@ -87,14 +105,14 @@ export default function ReviewSession() {
               item={item}
               key={`${item.materialId}/${item.itemId}`}
               onNext={() => setIndex(index + 1)}
-              workspaceId={workspaceId}
+              onRate={ratings.rate}
             />
           ) : (
             <QuestionItem
               item={item}
               key={`${item.materialId}/${item.itemId}`}
               onNext={() => setIndex(index + 1)}
-              workspaceId={workspaceId}
+              onRate={ratings.rate}
             />
           )
         ) : (
@@ -122,21 +140,19 @@ export default function ReviewSession() {
 function CardItem({
   item,
   onNext,
-  workspaceId,
+  onRate,
 }: {
   item: ReviewItem;
   onNext: () => void;
-  workspaceId: string;
+  onRate: (body: RateReviewItemReq) => void;
 }) {
   const [flipped, setFlipped] = useState(false);
-  const { mutateAsync: rateItem } = useRateReviewItem(workspaceId);
-  const failed = useRatingFailed();
   function rate(rating: SrsRating) {
-    rateItem({
+    onRate({
       itemId: item.itemId,
       materialId: item.materialId,
       rating: SRS_RATINGS.indexOf(rating) + 1,
-    }).catch(failed);
+    });
     onNext();
   }
   return (
@@ -178,33 +194,27 @@ function CardItem({
 function QuestionItem({
   item,
   onNext,
-  workspaceId,
+  onRate,
 }: {
   item: ReviewItem;
   onNext: () => void;
-  workspaceId: string;
+  onRate: (body: RateReviewItemReq) => void;
 }) {
   const question = item.question as Question;
   const [answers, setAnswers] = useState<Answers>({});
   const [graded, setGraded] = useState<Question | null>(null);
   const [grading, setGrading] = useState(false);
-  const { mutateAsync: rateItem } = useRateReviewItem(workspaceId);
-  const failed = useRatingFailed();
 
   async function check() {
     setGrading(true);
     try {
-      const result = await gradeAttemptQuestions([question], answers, (open) =>
-        gradeQuiz(item.materialId, open)
+      const { graded: scored, score } = await gradeReviewQuestion(
+        question,
+        answers,
+        (open) => gradeQuiz(item.materialId, open)
       );
-      const [scored] = result.questions;
-      setGraded(scored ?? question);
-      const max = questionMarks(question);
-      rateItem({
-        itemId: item.itemId,
-        materialId: item.materialId,
-        score: max > 0 ? result.awarded / max : 0,
-      }).catch(failed);
+      setGraded(scored);
+      onRate({ itemId: item.itemId, materialId: item.materialId, score });
     } catch {
       userToast({
         id: 'review-grade-failed',

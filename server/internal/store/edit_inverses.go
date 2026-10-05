@@ -18,8 +18,7 @@ type execer interface {
 // EditInverse is the Undo record of one committed direct AI edit: the inverse
 // commands and the post-edit guards, bound to the resource incarnation and
 // version they were captured against. The collaboration service captures it in
-// the same transaction as the edit; Go serves the Undo request and the
-// projection-side study-state restoration.
+// the same transaction as the edit; Go serves the Undo request.
 type EditInverse struct {
 	OperationID  string                  `json:"operationId"`
 	ResourceKind agenttools.ResourceKind `json:"resourceKind"`
