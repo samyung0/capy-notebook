@@ -140,7 +140,7 @@ img.capture {
 }
 #materialDialog {
   box-sizing: border-box;
-  width: min(900px, calc(100vw - 32px));
+  width: min(1100px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
   overflow: auto;
   padding: 20px;
@@ -156,6 +156,13 @@ img.capture {
 #materialTitle {
   margin: 0;
   font-size: 18px;
+}
+#materialPreview {
+  box-sizing: border-box;
+  width: 100%;
+  height: calc(100vh - 220px);
+  border: 1px solid #ddd;
+  border-radius: 6px;
 }
 #materialContent {
   max-height: none;
@@ -330,11 +337,18 @@ img.capture {
 <dialog id="materialDialog" aria-labelledby="materialTitle">
   <div class="row">
     <h2 id="materialTitle"></h2>
-    <button id="closeMaterial" type="button" autofocus>Close</button>
+    <span class="row">
+      <a id="materialTab" target="_blank">Open in a tab</a>
+      <button id="closeMaterial" type="button" autofocus>Close</button>
+    </span>
   </div>
   <p id="materialMeta" class="muted"></p>
   <p><a id="materialDownload" hidden download>Download .pptx</a></p>
-  <pre id="materialContent"></pre>
+  <iframe id="materialPreview" title="Preview as the app shows it"></iframe>
+  <details id="materialRaw">
+    <summary>Raw text</summary>
+    <pre id="materialContent"></pre>
+  </details>
   <details>
     <summary>Saved JSON</summary>
     <pre id="materialJson"></pre>
@@ -851,9 +865,19 @@ $('materials').onclick = (event) => {
   $('materialJson').textContent = JSON.stringify(m, null, 2);
   $('materialDownload').hidden = !m.pptx;
   if (m.pptx) $('materialDownload').href = `/api/${m.pptx}`;
+  // The preview reads the saved file, so it needs the run that wrote it.
+  const preview = m.run
+    ? `/preview/?run=${encodeURIComponent(m.run)}&id=${encodeURIComponent(m.id)}`
+    : '';
+  $('materialPreview').hidden = $('materialTab').hidden = !preview;
+  $('materialPreview').src = preview || 'about:blank';
+  $('materialTab').href = preview;
+  $('materialRaw').open = !preview;
   $('materialDialog').showModal();
 };
 $('closeMaterial').onclick = () => $('materialDialog').close();
+// Stop the preview's frames (mermaid, interactive blocks) with the dialog.
+$('materialDialog').onclose = () => ($('materialPreview').src = 'about:blank');
 function configCard(label, c, prompt) {
   const cap = (c.tools || []).includes('capture_page')
     ? (c.capture && c.capture.mode) || 'pixels'
@@ -1140,7 +1164,7 @@ $('runs').onclick = async (e) => {
   configCard('run ' + id, run.config, run.system_prompt);
   card('', `<b>You</b><br>${esc(run.question)}`);
   for (const ev of run.events) render(ev, id);
-  for (const material of run.materials || []) materials[material.id] = material;
+  for (const material of run.materials || []) materials[material.id] = { ...material, run: id };
   renderMaterials();
   if (run.answer) card('answer', esc(run.answer));
   $('status').textContent =

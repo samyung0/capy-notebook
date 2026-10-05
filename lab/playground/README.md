@@ -91,11 +91,47 @@ the materials themselves are written as
 `local/runs/<id>/materials/<id>.json`.
 `local/` is git-ignored; `configs/` is committed so config changes are reviewable.
 
-Each entry in the right-hand Materials panel opens a dialog with the saved note,
-quiz questions/options/answer fields, or flashcards. The dialog also exposes the
-original saved JSON and provenance. This works during a run and after restoring
-one from history. Answer fields are shown as saved, without guessing whether a
-legacy numeric answer is zero-based or one-based. Use Close or Escape to return.
+## Output preview
+
+Each entry in the right-hand Materials panel opens a dialog showing the saved
+material the way the app will (`/preview/?run=<run>&id=<material>`; **Open in
+a tab** gives it a whole window). It works during a run and after restoring
+one, since it reads `materials/<id>.json`, which every write updates.
+
+- **Notes** go through the collaboration service's agent import
+  (`convertAgentMarkdown`) and the app's read-only renderer
+  (`MaterialPreview`) with the app's styles and theme, so headings, math,
+  mermaid, tables, callouts and interactive blocks look as they do in the app.
+  A note the app would refuse says why at the top, and so does a mermaid
+  diagram that does not parse.
+- **Quiz and flashcards fences**: the app files each as its own material behind
+  a link card; the preview draws the questions and cards in place instead, in
+  the note renderer's question view (answer key, marking scheme and worked
+  solution open). Standalone quizzes and flashcard sets use the same view.
+- **Interactive blocks** run in the app's frame (`embed/index.html` with its
+  `_headers` CSP, served at `/embed/`) from the other loopback name: a page on
+  `localhost` loads frames from `127.0.0.1`, and the reverse. Through the
+  tunnel hostname they share the page's origin, still sandboxed to
+  `allow-scripts`. The Claude desktop app's browser pane blocks frames from a
+  second local origin, so there they stay blank; check them in a normal
+  browser.
+- **Decks** show each written slide from its SVG (figures inlined) with its
+  brief, and the `.pptx` download once exported.
+- **Raw text** (the note, or quiz and card fields as saved, without guessing
+  whether a legacy numeric answer is zero-based or one-based) and the saved
+  JSON with provenance stay below the preview.
+
+The preview is a bundle of the app's code, built from the repository root
+into the ignored `local/preview`:
+
+```sh
+pnpm exec vite build --config lab/playground/preview/vite.config.ts
+```
+
+Rebuild after the app's renderer, markdown import or styles change (one to
+three minutes, so `--check` does not run it). Without a bundle the dialog
+names the command. The sources are `preview/` (`main.tsx`, `index.html`,
+`vite.config.ts`).
 
 ## Config
 

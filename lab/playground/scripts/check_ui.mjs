@@ -221,12 +221,16 @@ assert.equal(element('materialDialog').open, true);
 assert.equal(element('materialTitle').textContent, 'Cells');
 assert.equal(element('materialContent').textContent, '# Cells\n<script>source text</script>');
 assert.equal(JSON.parse(element('materialJson').textContent).id, 'mat_1');
+// A restored material previews from its run's file; one without a run shows its raw text.
+assert.equal(element('materialPreview').src, '/preview/?run=saved&id=mat_1');
+assert.equal(element('materialRaw').open, false);
 element('closeMaterial').onclick();
 assert.equal(element('materialDialog').open, false);
 render({ type: 'material', id: 'quiz_1', kind: 'quiz', title: 'Cells quiz', questions: [
   { question: 'Which option?', options: ['First', { value: 'Second', explanation: 'Option explanation' }], answer: 'B', explanation: 'Answer explanation' },
 ] });
 openMaterial('quiz_1');
+assert.equal(element('materialRaw').open, true);
 assert.match(element('materialContent').textContent, /B\. Second\n   Option explanation/);
 assert.match(element('materialContent').textContent, /Answer \(saved\): "B"\nExplanation: Answer explanation/);
 render({ type: 'material', id: 'cards_1', kind: 'flashcards', title: 'Cells cards', cards: [{ front: 'Cell?', back: 'Unit of life' }] });

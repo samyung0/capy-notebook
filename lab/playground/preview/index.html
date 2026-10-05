@@ -1,0 +1,24 @@
+<!doctype html>
+<html data-style="classroom" data-theme="latte" lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <meta content="light dark" name="color-scheme">
+    <title>Material preview</title>
+    <script>
+    // Interactive blocks load the playground's /embed/ under the other
+    // loopback name, so the snippet runs on another site, as the app's
+    // frame does; any other host (the tunnel) keeps its own origin.
+    var other = { localhost: '127.0.0.1', '127.0.0.1': 'localhost' }[
+      location.hostname
+    ];
+    var EMBED_ORIGIN =
+      (other ? location.protocol + '//' + other + ':' + location.port : location.origin) +
+      '/embed';
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script src="./main.tsx" type="module"></script>
+  </body>
+</html>

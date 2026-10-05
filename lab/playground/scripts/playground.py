@@ -52,6 +52,12 @@ from fastapi.responses import (
 )
 
 RUNS = LOCAL / "runs"
+# The output preview's bundle (preview/vite.config.ts) and the app's frame
+# for interactive blocks.
+PREVIEW = LOCAL / "preview"
+PREVIEW_BUILD = "pnpm exec vite build --config lab/playground/preview/vite.config.ts"
+EMBED = REPO / "embed"
+SLIDE_FIGURE = re.compile(r"""href=(["'])\.\./images/(p\d+\.jpg)\1""")
 # Production derives the write operations from the actor's role; the playground
 # grants an editor's, plus library.read when the Library switch is on.
 BUILD_OPERATIONS = frozenset(
@@ -1024,7 +1030,10 @@ class Turn:
                 rid = (result.effects[0].get("resource") or {}).get("id")
                 written = next((m for m in state["materials"] if m["id"] == rid), None)
                 if written is not None:
-                    state["extra"].append({"type": "material", **written})
+                    # The page's preview reads the material file by its run.
+                    state["extra"].append(
+                        {"type": "material", **written, "run": self.id}
+                    )
             if name == "capture_knowledge_page" and not result.refused:
                 state["extra"].append(
                     save_knowledge_capture(state, ctx_, record["call_id"], self.id)
@@ -1812,6 +1821,63 @@ def build_app(target: str):
             raise HTTPException(404)
         return FileResponse(path)
 
+    @app.get("/api/runs/{run_id}/slides/{deck_id}/{n}.svg")
+    def get_slide(run_id: str, deck_id: str, n: int):
+        """A written slide as one image: an <img> loads nothing an SVG links,
+        so its figures are inlined."""
+        import base64
+
+        materials = RUNS / run_id / "materials"
+        path = materials / f"{deck_id}.json"
+        if materials.parent.parent != RUNS or not path.exists():
+            raise HTTPException(404)
+        slides = json.loads(path.read_text(encoding="utf-8"))["deck"]["slides"]
+        if not 1 <= n <= len(slides) or not slides[n - 1]["svg"]:
+            raise HTTPException(404)
+        images = materials / deck_id / "images"
+
+        def inline(match: re.Match) -> str:
+            data = base64.b64encode((images / match.group(2)).read_bytes()).decode()
+            return f'href="data:image/jpeg;base64,{data}"'
+
+        svg = SLIDE_FIGURE.sub(inline, slides[n - 1]["svg"])
+        return Response(svg, media_type="image/svg+xml")
+
+    @app.get("/preview/{name:path}")
+    def preview(name: str):
+        if not (PREVIEW / "index.html").exists():
+            return HTMLResponse(
+                f"<p>Build the preview first, from the repository root:</p><pre>{PREVIEW_BUILD}</pre>",
+                status_code=503,
+            )
+        path = (PREVIEW / (name or "index.html")).resolve()
+        if not path.is_relative_to(PREVIEW.resolve()) or not path.is_file():
+            raise HTTPException(404)
+        return FileResponse(path)
+
+    @app.get("/embed/")
+    def embed():
+        """The app's frame for interactive blocks (embed/, as vite-embed.ts
+        serves it in development) with the headers of its _headers rule."""
+        lines = (EMBED / "_headers").read_text(encoding="utf-8").splitlines()
+        headers = dict(
+            (key.strip(), value.strip())
+            for key, _, value in (
+                line.partition(":") for line in lines if line.startswith(" ")
+            )
+        )
+        return HTMLResponse(
+            (EMBED / "index.html").read_text(encoding="utf-8"), headers=headers
+        )
+
+    @app.get("/mathlive/fonts/{name}")
+    def mathlive_font(name: str):
+        # MathPreview loads its fonts from this absolute path.
+        path = REPO / "node_modules/mathlive/fonts" / name
+        if path.parent != REPO / "node_modules/mathlive/fonts" or not path.exists():
+            raise HTTPException(404)
+        return FileResponse(path, media_type="font/woff2")
+
     @app.get("/api/page")
     async def page(file_id: str, page: int, bbox: str | None = None):
         import capture
@@ -2056,6 +2122,26 @@ def check() -> None:
                 )
             assert response.status_code == 400
             assert response.json() == {"detail": "model config not found: missing v1"}
+            # The preview's deck thumbnails carry their figures, and the
+            # interactive frame carries embed/_headers.
+            with (
+                TemporaryDirectory() as directory,
+                patch.dict(globals(), RUNS=Path(directory)),
+            ):
+                deck_dir = Path(directory) / "r1" / "materials"
+                (deck_dir / "d1" / "images").mkdir(parents=True)
+                (deck_dir / "d1" / "images" / "p3.jpg").write_bytes(b"jpeg")
+                slide = '<svg><image href="../images/p3.jpg"/></svg>'
+                (deck_dir / "d1.json").write_text(
+                    json.dumps({"deck": {"slides": [{"svg": slide}]}})
+                )
+                response = await client.get("/api/runs/r1/slides/d1/1.svg")
+                assert response.headers["content-type"] == "image/svg+xml"
+                assert 'href="data:image/jpeg;base64,anBlZw=="' in response.text
+                response = await client.get("/api/runs/r1/slides/d1/2.svg")
+                assert response.status_code == 404
+            response = await client.get("/embed/")
+            assert "default-src 'none'" in response.headers["content-security-policy"]
             for mode in (False, True):
                 c = merged({"library": mode})
                 expected = effective_prompt(c, with_library=False)

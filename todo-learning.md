@@ -132,7 +132,8 @@ None.
    phase 2 steps 2.1 to 2.5 and 2.7; the review fix round; UAT at e158285f.
 2. Done on `main`: the `/generate` defaults, 2.6 decks, phase 3. UAT after
    the Cloudflare setup and the bank migration.
-3. The playground output preview (in progress).
+3. Done: the playground output preview (`lab/playground/preview/`, built
+   with `pnpm exec vite build --config lab/playground/preview/vite.config.ts`).
 4. The playground output preview.
 5. Epo's acceptance test (1.9), last: mostly prompt tuning.
 
@@ -773,6 +774,13 @@ Deck items for the test (Epo, 2026-10-04; the output looks good):
     (the table has no file kind); deck edits are plain file edits (no todo,
     no credit merge, "only when asked"); pin ppt-master's Python
     dependencies once the image builds green.
+
+Note output found by the preview (2026-10-05):
+
+- A mermaid mindmap with node text like `softmax(QK^T…)` fails mermaid's
+  parser in the app; the playground's `check_note` only rejects empty
+  diagrams.
+- Display math written as `$$…$$` on one line renders inline.
 
 Skills and prompts for the test (Epo, 2026-10-05):
 
