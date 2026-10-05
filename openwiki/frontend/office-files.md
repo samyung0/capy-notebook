@@ -652,9 +652,10 @@ While editing is paused (handoff, replaced, recovery, connecting, discarding:
 the host's narrowed `canEdit` in `set-capabilities`), the runtime re-sends its
 menus with every editing item disabled, File › Save included, and a submenu
 with nothing left to run disabled too (`pausedMenus`); Download, Print, PNG,
-the View menu (except XLSX's freeze, which edits the workbook) and the header
-actions stay usable, and the runtime drops any other `menu-command` or
-`menu-file` (`runsWhilePaused`). The DOCX menu model refuses a disabled item's
+the View menu (except XLSX's freeze, which edits the workbook), DOCX's and
+XLSX's Edit › Select all and the header actions stay usable, and the runtime
+drops any other `menu-command` or `menu-file` (`runsWhilePaused`). Its key
+gate lets ⌘A/Ctrl+A through as well (PPTX's menus have no Select all). The DOCX menu model refuses a disabled item's
 id too. A case-by-case standard per pause state is a later task. Recovery also
 sends `selectable`: instead of an inert host, the runtime passes `readOnly` to
 the editor and lets pointer and keys through, so the unsaved content can be

@@ -32,10 +32,17 @@ export type OfficeRenderer = (
 
 /** View-menu commands that still change the document (XLSX freezes panes). */
 const VIEW_EDITS = /^freeze/;
-const OUTPUTS = new Set<string>([
+/**
+ * Outside the View menu, what runs while paused: Capy's outputs, and DOCX's
+ * and XLSX's Select all so the content can be copied before Reload (Epo,
+ * 2026-10-05; PPTX's menus have no Select all).
+ */
+const KEPT = new Set<string>([
   OFFICE_HOST_COMMANDS.download,
   OFFICE_HOST_COMMANDS.print,
   OFFICE_HOST_COMMANDS.png,
+  'select-all',
+  'selectAll',
 ]);
 
 function viewIds(menus: readonly OfficeMenu[]) {
@@ -53,12 +60,12 @@ function viewIds(menus: readonly OfficeMenu[]) {
 
 /**
  * Whether a command may run while editing is paused (handoff, replaced,
- * recovery, connecting, discarding): the View menu's, the header actions'
- * and Capy's Download and Print. Everything else edits.
+ * recovery, connecting, discarding): the View menu's, the header actions',
+ * Capy's Download and Print, and Select all. Everything else edits.
  */
 export function runsWhilePaused(source: OfficeMenuSource | null, id: string) {
   return (
-    OUTPUTS.has(id) ||
+    KEPT.has(id) ||
     !!source?.actions?.some((action) => action.id === id) ||
     (!!source && viewIds(source.menus).has(id))
   );
@@ -66,8 +73,8 @@ export function runsWhilePaused(source: OfficeMenuSource | null, id: string) {
 
 /**
  * The menus while editing is paused: everything that edits stays listed but
- * disabled, File › Save included; a submenu with nothing left to run is
- * disabled too.
+ * disabled, File › Save included, Select all staying enabled; a submenu with
+ * nothing left to run is disabled too.
  */
 export function pausedMenus(menus: readonly OfficeMenu[]): OfficeMenu[] {
   const allowed = viewIds(menus);
@@ -82,7 +89,7 @@ export function pausedMenus(menus: readonly OfficeMenu[]): OfficeMenu[] {
         );
         return { ...entry, disabled: !live, items };
       }
-      return allowed.has(entry.id) || OUTPUTS.has(entry.id)
+      return allowed.has(entry.id) || KEPT.has(entry.id)
         ? entry
         : { ...entry, disabled: true };
     });
