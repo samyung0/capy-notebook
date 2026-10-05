@@ -15,8 +15,8 @@ flashcards).
 
 ## State (2026-10-05)
 
-Everything below is on `main` (CI green at 2e530e72). UAT runs 2400641b, which
-predates 2.5 and the part 1 frontend.
+Everything below is on `main`. UAT runs e158285f (deployed 2026-10-05 after
+the review fix round, CI green), with the question bank configured.
 
 - **Part 1 is built.** Server: migration 0051, `server/internal/review`,
   `store/study.go`, `httpapi/huma_study.go`, the attempt hook, `card_stats`
@@ -117,7 +117,7 @@ None.
 ## Order
 
 1. Done: part 1 mocks, server, frontend, tests and docs; part 2 phase 1;
-   phase 2 steps 2.1 to 2.5 and 2.7; the review fix round.
+   phase 2 steps 2.1 to 2.5 and 2.7; the review fix round; UAT at e158285f.
 2. The `/generate` defaults.
 3. 2.6 decks, then phase 3.
 4. The playground output preview.

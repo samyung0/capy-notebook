@@ -14,9 +14,13 @@ work is in [openwiki/question-bank.md](openwiki/question-bank.md) and
   other 15 HKDSE units and 5 IELTS subject areas are empty. Topics use the EDB
   unit names and the seven IELTS subject areas; IELTS task types are stored per
   question in `questions.question_types` (bank migration 0002).
-- **Code.** On `main`. UAT runs 2400641b, which has the bank page but not
-  the chat's bank tools (c8315c43). Production is not promoted and must not be
-  until Epo says UAT is ready.
+- **Code.** On `main`; UAT runs e158285f with the chat's bank tools.
+  Production is not promoted and must not be until Epo says UAT is ready.
+- **UAT config (2026-10-05).** Until now UAT had no `BANK_DATABASE_URL` or
+  `BANK_ASSETS_URL` (the bank had only run locally), so its bank was off.
+  Both are now in the ignored `deploy/.env.uat` (the reader URL over WireGuard,
+  `10.77.0.2:5433/bank`) and pushed to the GitHub `uat` environment; the
+  example file lists them.
 - **Chat.** The agent walks the bank by listing (`list_question_bank`,
   `read_question`) and copies with `copy_questions`, all through Go's
   `/api/internal/bank/{list,read,copy}`; each copied question carries its
