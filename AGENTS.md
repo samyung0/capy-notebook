@@ -66,6 +66,7 @@ Mandatory to read when the task touches that domain. Prefer the listed file over
 | What to verify after a UAT deploy: stack health, Clerk/Stripe webhooks, the per-developer dev hostname, quota and bucket sanity, error reporting                       | `[uat-activation-checklist.md](openwiki/uat-activation-checklist.md)`                          |
 | Editor Playwright budgets, the manual `Performance` workflow, snapshot compare vs last successful run                                                                 | `[editor-perf.md](openwiki/editor-perf.md)`                                                   |
 | Shared question format, bank editing/assets/roles, quiz grading, local question generation and publication                                                            | `[question-bank.md](openwiki/question-bank.md)`                                              |
+| Per-user study progress, FSRS review state and item hashes, Study tab/Continue/Quick review, review sessions, Learning's Review tab, study lifecycle and access        | `[study-progress.md](openwiki/study-progress.md)`                                            |
 | Inventory of Vitest / Go / Python / Playwright / Cloudflare tests with one-line descriptions                                                                          | `[test-catalog.md](openwiki/test-catalog.md)`                                                 |
 | Repository-wide adversarial review, source/UAT workflows, gates, artifacts, Strix, and the `$review-repository` skill                                                  | `[review-automation.md](openwiki/review-automation.md)`                                       |
 
@@ -134,7 +135,7 @@ paraglide is used for internationalization. use paraglide functions to support i
 
 ## Frontend
 
-- When expecting user inputs, use the existing input components, use react hook form with the generated zod validators.
+- When expecting typed values from user input (e.g. names, descriptions), use the existing input components, use react hook form with the generated zod validators.
 - IMPORTANT: react-hook-forms and react-query use proxying for tracking whether state/status changes have subscribers or not, you MUST use destructuring to read the values rather than useXXX().isPending or useXXX().isError
 - DO NOT directly import types from `api/gen/model`, instead re-export type in `api/types.ts`. The file allows for subtle changes such as new frontend only fields on top of the auto generated types.
 - Normally we should use useFieldArray for array values, e.g. in TagSelect. However sometimes we don't want to display individual error fields for each rendered element if they are too clustered, like in tagSelect, so we use standard control and dedup and format the error correctly before passing to InputError

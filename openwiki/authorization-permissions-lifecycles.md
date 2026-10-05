@@ -47,6 +47,7 @@ validation instead of being remapped.
 | Clone the workspace                                                                         | Yes   | Yes           | Yes                | Yes           | No                 | No           |
 | Clone a standalone link/public quiz, flashcards, or material                                | Yes   | —             | —                  | —             | Yes                | No           |
 | Take a standalone link/public quiz or study its flashcards through the signed link           | Yes   | —             | —                  | —             | Yes                | Yes, kept in the browser |
+| Record own study progress and review ratings ([study-progress.md](study-progress.md))        | Yes   | Yes           | Yes                | Yes           | Yes                | No           |
 
 Owner and editor satisfy `canEdit`; only owner satisfies `canManageMembers`.
 The API returns these request-scoped capabilities on workspace and material
@@ -331,8 +332,9 @@ Sources: [chapter and file handlers](../server/internal/httpapi/huma_content.go#
   is last write wins, like a file rename, and carries no precondition.
 - Quiz and flashcard authored-content requests require the revision loaded with
   the draft. Stale saves return 409 for standalone, workspace and embedded
-  materials, including two tabs belonging to the same owner. Flashcard study
-  state remains separate and carries no authored-content revision.
+  materials, including two tabs belonging to the same owner. Study progress
+  and review ratings are separate per-user rows and carry no authored-content
+  revision.
 
 Sources: [material handlers](../server/internal/httpapi/huma_materials.go#L41)
 and [material editor checks](../server/internal/store/share.go#L209).
@@ -430,9 +432,10 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
 ### Quizzes and flashcards
 
 - Readable shared quizzes can be attempted by any signed-in user. Attempts,
-  mistakes, and review history belong to the user taking the quiz. Signed-out
-  visitors can take standalone link/public quizzes and study flashcards; their
-  progress stays in the browser (see Anonymous quizzes and flashcards).
+  study progress and review state belong to the user taking the quiz (see
+  Study progress below). Signed-out visitors can take standalone link/public
+  quizzes and study flashcards; their progress stays in the browser (see
+  Anonymous quizzes and flashcards).
 - Quiz/flashcard responses distinguish `isOwner` from `canEdit`. Effective
   workspace editors receive content controls without receiving owner-only
   sharing/privacy controls; viewers do not receive mutation controls.
@@ -444,8 +447,8 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   `/metadata`. Quiz questions/time limit use `/content`, quiz name/scope use
   `/metadata`, and standalone visibility uses `/sharing`. Flashcard-set
   metadata uses `/metadata`, card authored text uses
-  `/flashcards/cards/{id}/content`, card study state uses `/study-state`, and
-  standalone sharing uses `/sharing`. Content/metadata paths do not accept
+  `/flashcards/cards/{id}/content`, and standalone sharing uses `/sharing`;
+  ratings go to `POST /api/review/ratings` with read access only. Content/metadata paths do not accept
   privacy, and sharing rejects workspace-contained materials before writing
   anything.
 - Signed-in viewers can read a shared quiz or flashcards, but cannot change
@@ -477,6 +480,34 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
 Sources: [quiz read/attempt rules](../server/internal/httpapi/huma_quizzes.go#L74),
 [flashcard guards](../server/internal/httpapi/huma_flashcards.go#L60), and
 [clone handlers](../server/internal/httpapi/huma_share.go#L81).
+
+### Study progress
+
+Details live in [study-progress.md](study-progress.md).
+
+- Study progress (read, started, stopped tracking), FSRS review state and the
+  review log are private to their user. Any signed-in user who can read the
+  workspace records their own with read access only: owners, members of every
+  role, and link or public visitors, viewers included. Ratings need read
+  access to the rated material. Reads and writes never show another user's
+  rows; the chat agent reads only the requester's, and only while their
+  progress is on.
+- Frozen accounts record progress, ratings, Reset and the progress switches
+  like anyone else (`requireAccountMutate`), since the rows are their own and
+  charge no storage. Suspended, deletion-pending and deleted accounts have no
+  API access.
+- Rows hold ids, timestamps and FSRS numbers, are never copied by a workspace
+  or material clone, and are not charged to storage. They stay when access is
+  lost (unreadable until it returns) and when a workspace is transferred
+  (`study_progress` and `workspace_study` are in the transfer test's
+  `notOwnership`). Trashed items keep their rows, hidden until restored. Rows
+  cascade with their file, material or workspace, and `PurgeUser` deletes all
+  four tables at account purge.
+- Signed-out visitors keep their study in the browser only (see Anonymous
+  quizzes and flashcards).
+
+Sources: [study routes](../server/internal/httpapi/huma_study.go) and
+[study store](../server/internal/store/study.go).
 
 ### Workspace chat, AI completion, and generation
 
@@ -528,14 +559,14 @@ Sources: [chat effective-role guard](../server/internal/store/chat.go#L191),
 ### Personal account features
 
 Events, tasks, labels, notifications, integrations, billing, search, quiz
-attempt history, and mistakes are scoped to the authenticated user's own rows,
-not to a workspace role. Frozen users delete events, tasks and labels but
+attempt history, and study progress and review state are scoped to the
+authenticated user's own rows, not to a workspace role. Frozen users delete events, tasks and labels but
 neither create nor edit them (the Schedule page hides event and label Edit),
 and cannot create or save thinking canvases (the Canvas page is read-only);
 account settings (profile, locale, model preferences, LLM keys, notification
-preferences, account deletion), notification read markers and quiz attempts
-stay open. A frozen account edits nothing: recording flashcard study
-progress, deleting a single flashcard and saving or deleting a PDF private
+preferences, account deletion), notification read markers, quiz attempts,
+study progress and review ratings stay open. A frozen account edits nothing
+else: deleting a single flashcard and saving or deleting a PDF private
 annotation are edits and refused, while trashing whole files, materials and
 sets stays allowed.
 Planner, preference, credential, attempt, and canvas writes recheck account
@@ -578,7 +609,8 @@ reordering, moving between chapters and trashing still work (`canEdit`). It is
 enforced at admission only, like frozen; see
 [backend-storage-quota.md](backend-storage-quota.md). `over_quota_frozen` is read-only apart from reading, downloading,
 trashing or deleting whole items, workspace chat, narrowing exposure, transfer,
-billing and account settings, in both directions: the frozen user edits nowhere, healthy
+quiz attempts, the user's own study progress and review ratings, billing and
+account settings, in both directions: the frozen user edits nowhere, healthy
 owners' workspaces included, and every role is read-only in workspaces the
 frozen account pays for. Refusals use `account_over_quota`. Grace lasts 14 days
 after a paid period lapses; frozen is the state after that window. Neither
