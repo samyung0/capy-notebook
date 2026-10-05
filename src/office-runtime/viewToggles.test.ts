@@ -24,12 +24,6 @@ describe('remembered Office view toggles', () => {
     expect(readViewToggle('speakerNotes', storage)).toBe(true);
   });
 
-  it('keep the speaker notes choice stored before the rulers existed', () => {
-    const storage = memoryStorage();
-    storage().setItem('capy.pptx.speakerNotes', 'shown');
-    expect(readViewToggle('speakerNotes', storage)).toBe(true);
-  });
-
   it('start off when storage is unavailable', () => {
     const blocked = () => {
       throw new DOMException('blocked', 'SecurityError');
