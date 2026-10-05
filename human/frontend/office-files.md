@@ -159,3 +159,4 @@
 - Developer Epo decided (2026-10-06) the XLSX engine replica estimate stays at 16× the unzipped package (switch to a cell and formula count only if `wasm_mib` outgrows the budget).
 - Developer Epo decided (2026-10-06) while Office editing is paused a DOCX comment reply being typed keeps its draft (restored when editing resumes) and the XLSX formula bar is read-only (selectable and copyable), not disabled.
 - Developer Epo decided (2026-10-06) DOCX view-mode selection follows Word for notes: ⌘A inside a footnote selects all footnotes, footnotes and endnotes are separate stories, and Symbol/Wingdings list markers copy as their Unicode character where a standard mapping exists (otherwise •).
+- Developer Epo decided (2026-10-06) while Office editing is paused the DOCX add-comment card hides and keeps its draft like the reply box, and a newly opened DOCX takes focus only if focus is not already elsewhere in Capy.
