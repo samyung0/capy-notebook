@@ -128,9 +128,6 @@ check); it applies at the first promotion.
 
 ## Queued tracks (each needs its own decisions and a visual checkpoint)
 
-- **Pause standard** (decided 2026-10-05): handoff, replaced, recovery and
-  discarding and connecting keep today's disabled menus; Select all stays
-  enabled in every pause state (with the office-polish agent).
 - **Order after the 2026-10-05 batch:** one optimization round (Yjs save
   latency, typing latency, memory; Office and Plate), then heap/latency
   ceilings from the largest allowed files, then a prod-box stress run for the
@@ -150,8 +147,10 @@ check); it applies at the first promotion.
   conversion runs (upload or first open), who pays.
 - **Shortcut map:** map and consolidate keyboard shortcuts across the app
   (Office print shortcut waits for it).
-- **Header:** DOCX ruler as a View toggle (Google Docs); Chinese text mixes
-  weights in the header (CJK falls back from Fustat to the system font).
+- **Header follow-ups:** check the Chinese header (page `lang`) on Windows
+  (Microsoft YaHei), Safari and Firefox; the DOCX rulers follow the section at
+  the cursor (fork; today the horizontal ruler draws the last section, the
+  vertical one the first).
 - **DOCX view-mode copy** (landed 2026-10-06; Epo's visual checkpoint on UAT
   pending): the positioned a11y mirror is the view-mode text layer
   (`textLayer.ts`). Unchecked: Safari and Firefox
@@ -244,12 +243,6 @@ check); it applies at the first promotion.
   `edit_incidents` table written by collaboration and by the browser through a
   small endpoint; slow-save, slow-engine-call and room load/unload lines in the
   machine's logs (`human/observability-metering.md`).
-- **Citation after a runtime reload.** `load` carries the citation, but no e2e
-  checks the highlight comes back (no mock chat cites an Office file).
-- **Fork icons left over** in the print preview, find/replace and shortcut
-  dialogs, toasts and placeholders.
-- **Chrome/Edge 111–118:** dialog buttons and tooltips have no colour fallback
-  for missing relative colour syntax (menus and dropdowns have one).
 - **Office budgets in the gate:** `bench:office` heap figures stay report-only
   until the ceilings exist (after the optimization round; per format, view vs
   edit; measure open/close growth from about the 10th open, not the first);
