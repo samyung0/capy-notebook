@@ -38,6 +38,7 @@ SKILLS: dict[str, Skill] = {
 # the commands that carry its formats.
 REQUIRES: dict[str, tuple[str, ...]] = {
     "create_ledger": (EDITING,),
+    "copy_questions": (EDITING,),
     "create_material": (EDITING, BUILDING),
     "edit_document": (EDITING, BUILDING),
 }

@@ -1,8 +1,9 @@
 import type { CSSProperties, ReactNode } from 'react';
-import type { Question } from '@/api/types';
+import type { Question, QuestionCredit } from '@/api/types';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
+import { QuestionCreditNote } from '@/features/materials/MaterialAttributionFooter';
 import { questionMarks } from '@/features/questions/types';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -106,6 +107,7 @@ export function QuizQuestionList({
   disabled,
   showAnswerKey,
   renderAfter,
+  credits,
 }: {
   questions: Question[];
   answers?: Answers;
@@ -115,6 +117,8 @@ export function QuizQuestionList({
   showAnswerKey?: boolean;
   /** Per-question actions under each question, e.g. Remove and Edit. */
   renderAfter?: (question: Question, index: number) => ReactNode;
+  /** Bank credits of copied questions, by question id (the quiz's provenance). */
+  credits?: Record<string, QuestionCredit> | null;
 }) {
   return (
     <ol className="grid gap-12">
@@ -133,6 +137,7 @@ export function QuizQuestionList({
             review={review}
             showAnswerKey={showAnswerKey}
           />
+          <QuestionCreditNote credit={credits?.[question.id]} />
           {renderAfter?.(question, i)}
         </li>
       ))}

@@ -300,6 +300,17 @@ func (a *api) internalEditDocument(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
+	if code, err := validateProvenance(req.Provenance); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"code": code, "message": err.Error()})
+		return
+	}
+	a.editAgentDocument(w, r, req)
+}
+
+// editAgentDocument applies one chat edit: the internal edit route with a
+// model's commands, or the bank copy route appending the bank's questions with
+// their credits. Callers have checked the provenance origin.
+func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req internalDocumentsEditReq) {
 	if !a.internalDocumentsActor(w, r, req.UserID, req.WorkspaceID, true) {
 		return
 	}

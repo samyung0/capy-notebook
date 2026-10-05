@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -77,8 +78,9 @@ func validateProvenance(p *store.Provenance) (string, error) {
 	if p == nil {
 		return "", nil
 	}
-	// Web pages are credited only by the question bank, never by a model call.
-	if len(p.Web) > 0 {
+	// Web pages and question credits come only from the question bank, never
+	// from a model call.
+	if len(p.Web) > 0 || len(p.Questions) > 0 {
 		return "invalid_input", errors.New("provenance may name library books only")
 	}
 	for i := range p.Books {
@@ -95,21 +97,30 @@ func validateStoredProvenance(p *store.Provenance) (string, error) {
 }
 
 // mergeProvenance folds an appended record into the stored one: books union by
-// id, excerpt ids union per book in the order they were read, and the licence
-// recomputed over the merged set. A family conflict refuses, leaving the
-// stored record untouched. The merged record is bounded by the 32-book ceiling
-// only, so a material stays editable however many excerpts it has grown from.
+// id, excerpt ids union per book in the order they were read, question credits
+// by question id, and the licence recomputed over the merged set. A family
+// conflict refuses, leaving the stored record untouched. The merged record is
+// bounded by the 32-book ceiling only, so a material stays editable however
+// many excerpts it has grown from. Callers validate a model-supplied record
+// first; the bank copy route's credits are the server's own.
 func mergeProvenance(stored, added *store.Provenance) (*store.Provenance, string, error) {
-	if code, err := validateProvenance(added); err != nil {
-		return nil, code, err
-	}
 	if stored == nil {
 		return added, "", nil
 	}
-	merged := &store.Provenance{Books: make([]store.ProvenanceBook, len(stored.Books))}
+	merged := &store.Provenance{
+		Books: make([]store.ProvenanceBook, len(stored.Books)),
+		Web:   slices.Clone(stored.Web),
+	}
 	for i, book := range stored.Books {
 		book.ExcerptIDs = slices.Clone(book.ExcerptIDs)
 		merged.Books[i] = book
+	}
+	if len(stored.Questions)+len(added.Questions) > 0 {
+		merged.Questions = maps.Clone(stored.Questions)
+		if merged.Questions == nil {
+			merged.Questions = map[string]store.QuestionCredit{}
+		}
+		maps.Copy(merged.Questions, added.Questions)
 	}
 	for _, book := range added.Books {
 		at := slices.IndexFunc(merged.Books, func(b store.ProvenanceBook) bool { return b.ID == book.ID })
@@ -140,6 +151,17 @@ func (a *api) internalCreateMaterial(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
+	if code, err := validateProvenance(req.Provenance); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"code": code, "message": err.Error()})
+		return
+	}
+	a.createAgentMaterial(w, r, req)
+}
+
+// createAgentMaterial writes one chat material: the internal create route with
+// a model's content, or the bank copy route with the bank's questions and their
+// credits. Callers have checked the pipeline secret and the provenance origin.
+func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req internalMaterialReq) {
 	if req.WorkspaceID == "" || req.UserID == "" || req.AssistantMessageID == "" || req.ToolCallID == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"code": "invalid_input", "message": "workspaceId, userId, assistantMessageId and toolCallId are required",
@@ -150,10 +172,6 @@ func (a *api) internalCreateMaterial(w http.ResponseWriter, r *http.Request) {
 	case "quiz", "flashcards", "mindmap", "diagram", "note":
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "unsupported material kind " + req.Kind})
-		return
-	}
-	if code, err := validateProvenance(req.Provenance); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"code": code, "message": err.Error()})
 		return
 	}
 	ctx := r.Context()

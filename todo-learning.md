@@ -845,16 +845,18 @@ wiring it in.
 - `/generate`: `GenerateReq` reads the same preferences as defaults; wire the
   `style`/`length`/`format` options that map to preferences and delete the rest.
 
-**2.5 Question-bank search**
+**2.5 Question-bank search** (done 2026-10-05, Epo's picks)
 
-- The retrieval service gets the bank reader role; listing needs no index or
-  stored vectors.
-- `copy_questions` moves from the playground (`lab/playground/scripts/bank_copy.py`)
-  into the contract with a Go internal route: Go already holds the bank's DSN,
-  copies the questions into a new quiz, an existing quiz or the end of a note
-  (as an embedded quiz), and records each question's bank sources. Copying a
-  bank question into a workspace quiz carries the provenance decided in 1.7. The quiz validator must accept bank image URLs first, which waits for
-  the question-image upload work (`todo-question-bank.md`, Copy to quiz).
+- The retrieval service holds no bank credentials (1b): it lists and reads
+  through Go's `/api/internal/bank/list` and `/read`.
+- `copy_questions` is in the contract (v13) with Go's `/api/internal/bank/copy`:
+  Go reads the questions from the bank and creates a quiz or appends to one
+  through the create and edit writes. A note is not a destination.
+- Credits are scoped to the question (Epo): each copy's sources are kept in the
+  quiz's provenance under its question id and shown under it, with no bank id,
+  revision or footer.
+- Figures link to the bank's public URLs (3a); the Go validator accepts quiz
+  figure URLs only under `BANK_ASSETS_URL`.
 
 **2.6 Decks**
 

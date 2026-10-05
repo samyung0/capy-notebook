@@ -93,8 +93,10 @@ one topic.
       reviewing their mistakes. Waits for the learning-plan refactor; progress
       storage and the retraction flag are "Question-bank progress" in
       `todo-learning.md`.
-- [ ] **Copy to quiz.** The quiz validator must accept bank image URLs; waits
-      for the question-image upload work.
+- [ ] **Copy to quiz** from the bank page. The validator now accepts a quiz
+      figure that links under `BANK_ASSETS_URL`, and the chat's
+      `copy_questions` copies with per-question credits
+      (`/api/internal/bank/copy`); the page's own button is still to build.
 - [ ] **Agent search** over the bank, filterable by question type.
 - [ ] **Jev grading for bank open parts.** Round 2 writes closed parts only,
       so this waits until a subject needs open answers.

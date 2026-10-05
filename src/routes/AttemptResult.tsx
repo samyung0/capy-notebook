@@ -107,6 +107,7 @@ export default function AttemptResult() {
             <div className="mt-12">
               <QuizQuestionList
                 answers={answers}
+                credits={quiz?.provenance?.questions}
                 questions={attempt.questions}
                 review
               />

@@ -408,6 +408,7 @@ function AttemptBody({
           <div className="mt-12">
             <QuizQuestionList
               answers={answers}
+              credits={provenance?.questions}
               questions={graded.questions}
               review
             />
@@ -440,6 +441,7 @@ function AttemptBody({
       <TabContent>
         <QuizQuestionList
           answers={answers}
+          credits={provenance?.questions}
           onChange={setAnswer}
           questions={questions}
         />

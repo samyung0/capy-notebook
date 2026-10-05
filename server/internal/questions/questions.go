@@ -22,6 +22,12 @@ type Policy struct {
 	Snapshot      bool
 }
 
+// QuizBankAssetsURL is the bank's public asset base, set once at startup. A
+// question copied from the bank into a quiz keeps linking its figures there
+// (immutable, content-hashed URLs) instead of copying them into the
+// workspace. Empty refuses such links.
+var QuizBankAssetsURL string
+
 const MaxSVGBytes = fieldlimits.QuestionSVGBytes
 
 var termTokens = regexp.MustCompile(`(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?|[A-Za-z]+|[+\-*/^(),]`)
@@ -439,12 +445,13 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 		if err != nil {
 			return err
 		}
-		// Bank figures are public URLs; quiz figures are private workspace editor assets.
-		if policy.Bank {
+		// Bank figures are public URLs; quiz figures are private workspace editor
+		// assets, or a copied bank question's public URL.
+		if policy.Bank || im["url"] != nil {
 			if err := keys(im, "url", ""); err != nil {
 				return err
 			}
-			if !assetURL(im["url"], policy.BankAssetsURL) {
+			if !assetURL(im["url"], bankBase(policy)) {
 				return fail("invalid bank asset URL")
 			}
 		} else {
@@ -469,11 +476,11 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 		if err != nil {
 			return err
 		}
-		if policy.Bank {
+		if policy.Bank || im["url"] != nil {
 			if err := keys(im, "url", ""); err != nil {
 				return err
 			}
-			if !assetURL(im["url"], policy.BankAssetsURL) {
+			if !assetURL(im["url"], bankBase(policy)) {
 				return fail("invalid bank graph URL")
 			}
 		} else {
@@ -489,6 +496,15 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 		return fail("unsupported block type")
 	}
 	return nil
+}
+
+// bankBase is where a figure URL may point: the bank's own base for a bank
+// question, QuizBankAssetsURL for one copied into a quiz.
+func bankBase(policy Policy) string {
+	if policy.Bank {
+		return policy.BankAssetsURL
+	}
+	return QuizBankAssetsURL
 }
 
 func imageFields(b map[string]any) error {

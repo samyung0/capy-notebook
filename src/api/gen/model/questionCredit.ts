@@ -5,13 +5,11 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ProvenanceBook } from './provenanceBook.ts';
-import type { ProvenanceQuestions } from './provenanceQuestions.ts';
 import type { ProvenanceWeb } from './provenanceWeb.ts';
 
-export interface Provenance {
+export interface QuestionCredit {
   books: ProvenanceBook[];
   license?: string;
-  questions?: ProvenanceQuestions;
   /** @nullable */
   web?: ProvenanceWeb[] | null;
 }

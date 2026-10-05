@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 )
 
 const MaxProvenanceBooks = 32
@@ -67,26 +69,57 @@ func licenseVersion(normalized string) float64 {
 // it (CC BY-SA 3.0 plus 4.0 is the 4.0 book's string). Sources from two
 // different copyleft families have no single answer, so the work is refused.
 // Excerpt ids accumulate over a material's edits and are deduplicated on merge,
-// so only the book count and the field lengths are bounded here. The returned
-// code is the tool error code the model sees.
+// so only the book count and the field lengths are bounded here. Each copied
+// bank question's credit is bounded and licensed the same way, on its own. The
+// returned code is the tool error code the model sees.
 func ValidateStoredProvenance(p *Provenance) (string, error) {
-	if count := len(p.Books) + len(p.Web); count == 0 || count > MaxProvenanceBooks {
+	// A quiz of copied bank questions may credit only its questions.
+	count := len(p.Books) + len(p.Web)
+	if (count == 0 && len(p.Questions) == 0) || count > MaxProvenanceBooks {
 		return "invalid_input", errors.New("provenance must name one to 32 sources")
 	}
+	if len(p.Questions) > fieldlimits.QuizParts {
+		return "invalid_input", errors.New("provenance credits too many questions")
+	}
+	license, code, err := validateSources(p.Books, p.Web)
+	if err != nil {
+		return code, err
+	}
+	// A model-supplied licence never survives; the server computes it.
+	p.License = license
+	for id, credit := range p.Questions {
+		if id == "" || len(id) > fieldlimits.QuestionID {
+			return "invalid_input", errors.New("a question credit needs the question's id")
+		}
+		if n := len(credit.Books) + len(credit.Web); n == 0 || n > MaxProvenanceBooks {
+			return "invalid_input", errors.New("a question credit must name one to 32 sources")
+		}
+		if credit.License, code, err = validateSources(credit.Books, credit.Web); err != nil {
+			return code, err
+		}
+		p.Questions[id] = credit
+	}
+	return "", nil
+}
+
+// validateSources bounds books and web pages and computes their licence:
+// empty unless a source is copyleft, in which case the newest version of that
+// family, written exactly as its source wrote it.
+func validateSources(books []ProvenanceBook, web []ProvenanceWeb) (string, string, error) {
 	licenses := []string{}
-	for i := range p.Books {
-		book := &p.Books[i]
+	for i := range books {
+		book := &books[i]
 		if book.ID == "" || book.Title == "" || len(book.ExcerptIDs) == 0 {
-			return "invalid_input", errors.New("each provenance book needs an id, a title and excerpt ids")
+			return "", "invalid_input", errors.New("each provenance book needs an id, a title and excerpt ids")
 		}
 		if book.Version < 1 {
-			return "invalid_input", errors.New("each provenance book needs the book version it was read from")
+			return "", "invalid_input", errors.New("each provenance book needs the book version it was read from")
 		}
 		for _, value := range append([]string{
 			book.ID, book.Title, book.Edition, book.License, book.LicenseURL, book.SourceURL,
 		}, append(book.Authors, book.ExcerptIDs...)...) {
 			if len(value) > maxProvenanceTextLen {
-				return "invalid_input", errors.New("provenance field is too long")
+				return "", "invalid_input", errors.New("provenance field is too long")
 			}
 		}
 		if book.Authors == nil {
@@ -94,16 +127,16 @@ func ValidateStoredProvenance(p *Provenance) (string, error) {
 		}
 		licenses = append(licenses, book.License)
 	}
-	for i := range p.Web {
-		page := &p.Web[i]
+	for i := range web {
+		page := &web[i]
 		if !strings.HasPrefix(page.URL, "https://") || page.Title == "" || page.License == "" || page.RetrievedAt == "" {
-			return "invalid_input", errors.New("each web source needs an https url, a title, a licence and a retrieval date")
+			return "", "invalid_input", errors.New("each web source needs an https url, a title, a licence and a retrieval date")
 		}
 		for _, value := range append([]string{
 			page.URL, page.Title, page.Publisher, page.License, page.LicenseURL, page.RetrievedAt,
 		}, page.Authors...) {
 			if len(value) > maxProvenanceTextLen {
-				return "invalid_input", errors.New("provenance field is too long")
+				return "", "invalid_input", errors.New("provenance field is too long")
 			}
 		}
 		if page.Authors == nil {
@@ -124,7 +157,7 @@ func ValidateStoredProvenance(p *Provenance) (string, error) {
 		case family == "":
 			family, chosen, newest = current, license, licenseVersion(normalized)
 		case current != family:
-			return "lifecycle_rejected", fmt.Errorf(
+			return "", "lifecycle_rejected", fmt.Errorf(
 				"sources carry two copyleft licence families (%s and %s); one material cannot be licensed under both",
 				family, current)
 		default:
@@ -134,7 +167,5 @@ func ValidateStoredProvenance(p *Provenance) (string, error) {
 			}
 		}
 	}
-	// A model-supplied licence never survives; the server computes it.
-	p.License = chosen
-	return "", nil
+	return chosen, "", nil
 }

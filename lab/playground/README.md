@@ -179,8 +179,10 @@ the gateway hands one back: done todos gone, open todos under their existing ids
 reused, unmentioned todos stay unchanged, and only the first changed plan in a
 turn counts as progress. At most ten todos may be open.
 
-`list_question_bank` and `read_question` read the question bank at
-`CAPY_PLAYGROUND_BANK_URL`, by default a local restore on port 15499 of a dump
+The bank tools (`list_question_bank`, `read_question`, `copy_questions`) run
+their production code; the gateway routes they call are answered by
+`bank_local.py` from `CAPY_PLAYGROUND_BANK_URL`, by default a local restore on
+port 15499 of a dump
 (see `bench/rag/scripts/bank_search.py` for the commands; the container
 survives a restart, `docker start capy-bank-search-lab`); the playground never
 reads the live bank. With the bank down the tools are not offered, as in a turn. A restore older than the newest bank migration needs it
@@ -188,10 +190,9 @@ applied first, pinned to the local container:
 `cd server && BANK_OWNER_DATABASE_URL=postgresql://postgres:lab@127.0.0.1:15499/bank go run ./cmd/bank migrate`
 (the 2026-10-03 dump lacks `questions.question_types`, and the bank tools fail
 without it). They are offered with Library on and a configured library.
-`copy_questions` (playground-only, `bank_copy.py`) goes with them: the model
-names bank question ids and one destination (a new quiz, a quiz or note this
-run made), and the questions are copied exactly with their bank sources
-instead of being written out.
+`copy_questions` copies the named questions unchanged into a new quiz or a
+quiz this run made, recording each one's bank sources under its id, as Go
+does with its resolved credits.
 
 The library reads, `capture_knowledge_page` and compaction use the real
 code path. `capture_knowledge_page` renders from the knowledge-base bucket into

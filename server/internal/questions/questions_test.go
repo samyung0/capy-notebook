@@ -164,3 +164,26 @@ func TestGradingTextIncludesStemEarlierPartsAndFigures(t *testing.T) {
 		t.Fatalf("GradingText =\n%q\nwant\n%q", got, want)
 	}
 }
+
+// A question copied from the bank keeps linking its figures, and only there.
+func TestQuizQuestionsLinkFiguresOnlyUnderTheBank(t *testing.T) {
+	question := func(url string) map[string]any {
+		var q map[string]any
+		raw := `{"id":"q","stem":[{"type":"image","image":{"url":"` + url + `"},"width":4,"height":3,"description":"Fig"}],"parts":[{"id":"p","blocks":[{"type":"text","text":"?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}`
+		if err := json.Unmarshal([]byte(raw), &q); err != nil {
+			t.Fatal(err)
+		}
+		return q
+	}
+	if err := Validate(question("https://bank.example/assets/f.png"), Policy{}); err == nil {
+		t.Fatal("a figure link was accepted with no bank configured")
+	}
+	QuizBankAssetsURL = "https://bank.example/assets"
+	defer func() { QuizBankAssetsURL = "" }()
+	if err := Validate(question("https://bank.example/assets/f.png"), Policy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Validate(question("https://elsewhere.example/f.png"), Policy{}); err == nil {
+		t.Fatal("a figure link outside the bank was accepted")
+	}
+}

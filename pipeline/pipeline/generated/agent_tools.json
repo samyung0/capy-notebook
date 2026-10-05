@@ -1,5 +1,5 @@
 {
-  "version": 12,
+  "version": 13,
   "operations": [
     "source.read",
     "material.read",
@@ -379,6 +379,61 @@
         "chat"
       ],
       "requiredOperations": [
+        "library.read"
+      ],
+      "retention": "full"
+    },
+    {
+      "name": "copy_questions",
+      "version": 1,
+      "description": "Copy question-bank questions by id, unchanged, into a new quiz (title, optional chapter_id) or a quiz in this workspace (quiz_id), instead of writing them out.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "chapter_id": {
+            "description": "The chapter to file a new quiz in.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "question_ids": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "quiz_id": {
+            "description": "A quiz in this workspace to append to.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "todo": {
+            "description": "The open ledger todo this write completes.",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "question_ids"
+        ],
+        "type": "object"
+      },
+      "mutates": true,
+      "usesEmbedding": false,
+      "concurrency": "mutate",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "material.create",
         "library.read"
       ],
       "retention": "full"

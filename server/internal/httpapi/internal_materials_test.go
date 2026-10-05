@@ -48,6 +48,17 @@ func openInternalHTTPWithPipeline(
 	pipe *pipeline.Client,
 ) (http.Handler, *store.Store, *blob.Memory, *models.Registry) {
 	t.Helper()
+	return openInternalHTTPWith(t, pipe, nil)
+}
+
+// openInternalHTTPWith is openInternalHTTPWithPipeline with a hook for the
+// config, for a test that needs a dependency the others do not (the bank).
+func openInternalHTTPWith(
+	t *testing.T,
+	pipe *pipeline.Client,
+	configure func(*store.Store, *httpapi.Config),
+) (http.Handler, *store.Store, *blob.Memory, *models.Registry) {
+	t.Helper()
 	dsn := testdb.URL(t)
 	ctx := context.Background()
 	st, err := store.New(ctx, dsn)
@@ -64,14 +75,18 @@ func openInternalHTTPWithPipeline(
 	t.Cleanup(converter.Close)
 	st.ConfigureMarkdownConverter(converter.URL, "collab-test-secret")
 	mem := blob.NewMemory()
-	h := httpapi.New(st, mem, pipe, nil, "docling", httpapi.Config{
+	config := httpapi.Config{
 		AuthDisabled:   true,
 		E2EAuth:        true,
 		E2ESecret:      "e2e-test-secret",
 		E2EUserIDs:     []string{"u_owner", "u_editor", "u_viewer", "u_other"},
 		ModelRegistry:  reg,
 		PipelineSecret: pipeSecret,
-	})
+	}
+	if configure != nil {
+		configure(st, &config)
+	}
+	h := httpapi.New(st, mem, pipe, nil, "docling", config)
 	return h, st, mem, reg
 }
 

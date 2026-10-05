@@ -710,10 +710,17 @@ async def load_library_catalog(ctx: ToolContext) -> None:
 
 async def load_bank_catalog(ctx: ToolContext) -> None:
     """Read the question bank's exams and subjects once, for list_question_bank's
-    description."""
-    if not ctx.library or ctx.bank_catalog is not None or not bank.enabled():
+    description. A bank the gateway does not have leaves it empty, and the bank
+    tools unoffered."""
+    if not ctx.library or ctx.bank_catalog is not None:
         return
-    ctx.bank_catalog = await bank.subjects()
+    if not _gateway_ready() or not ctx.user_id:
+        ctx.bank_catalog = []
+        return
+    body = await _gateway_read(
+        "/api/internal/bank/list", {"userId": ctx.user_id}, "list the question bank"
+    )
+    ctx.bank_catalog = [] if isinstance(body, ToolResult) else body["subjects"]
 
 
 def _catalog_lines(catalog: list[dict[str, Any]]) -> str:
@@ -1732,27 +1739,33 @@ async def _list_question_bank(args: dict[str, Any], ctx: ToolContext) -> ToolRes
         )
     if topic:
         offset = int(args.get("offset") or 0)
-        total, rows = await bank.questions(str(topic), offset)
+        body = await _gateway_read(
+            "/api/internal/bank/list",
+            {"userId": ctx.user_id, "topicId": str(topic), "offset": offset},
+            f"list bank topic {topic}",
+        )
+        if isinstance(body, ToolResult):
+            return body
+        total, rows = body["total"], body["questions"]
         if not rows:
             return _refused(
                 f"No bank questions under topic {topic} from offset {offset}; list "
                 "the subject's topics for their ids and counts.",
                 code="unavailable_target",
             )
-        head = (
-            f"{rows[0]['exam']} · {rows[0]['subject']} · {rows[0]['topic']}: "
-            f"questions {offset + 1}-{offset + len(rows)} of {total}."
-        )
+        head = f"Topic {topic}: questions {offset + 1}-{offset + len(rows)} of {total}."
         more = offset + len(rows)
         tail = f"\nNext page: offset {more}." if more < total else ""
         return _result(head + "\n\n" + "\n\n".join(bank.card(r) for r in rows) + tail)
-    rows = await bank.topics(str(subject))
-    if not rows:
-        return _refused(
-            f"No bank subject has id {subject}; the bank's subjects are in the "
-            "list_question_bank description.",
-            code="unavailable_target",
-        )
+    body = await _gateway_read(
+        "/api/internal/bank/list",
+        {"userId": ctx.user_id, "subjectId": str(subject)},
+        f"list bank subject {subject}; the bank's subjects are in the "
+        "list_question_bank description",
+    )
+    if isinstance(body, ToolResult):
+        return body
+    rows = body["topics"]
     return _result(
         f"Topics of {subject}:\n"
         + "\n".join(
@@ -1762,10 +1775,57 @@ async def _list_question_bank(args: dict[str, Any], ctx: ToolContext) -> ToolRes
 
 
 async def _read_question(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    row = await bank.read(str(args["question_id"]))
-    if row is None:
-        return _refused("No bank question has that id.", code="unavailable_target")
-    return _result(bank.full(row))
+    body = await _gateway_read(
+        "/api/internal/bank/read",
+        {"userId": ctx.user_id, "questionId": str(args["question_id"])},
+        f"read bank question {args['question_id']}",
+    )
+    if isinstance(body, ToolResult):
+        return body
+    return _result(bank.full(body))
+
+
+async def _copy_questions(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    """Copy bank questions into a quiz through the gateway, which reads them
+    from the bank itself and credits each one: the model writes none of it."""
+    if not ctx.assistant_message_id:
+        return _refused("copy_questions needs the assistant message id.")
+    call_id = str(args.get("_tool_call_id") or "")
+    if not call_id:
+        return _refused("copy_questions is missing its tool-call id.")
+    title, quiz_id = str(args.get("title") or "").strip(), args.get("quiz_id")
+    if bool(title) == bool(quiz_id):
+        return _refused(
+            "copy_questions takes exactly one destination: title for a new quiz, "
+            "or quiz_id for a quiz in this workspace."
+        )
+    if args.get("chapter_id") and quiz_id:
+        return _refused("chapter_id files a new quiz; it goes with title.")
+    # Copied questions carry the bank's credits, so no excerpts are asked.
+    prepared = await ledger_write(ctx, "copy_questions", args, excerpts=False)
+    if isinstance(prepared, ToolResult):
+        return prepared
+    _, todo = prepared
+    payload = {
+        "workspaceId": ctx.workspace_id,
+        "userId": ctx.user_id,
+        "assistantMessageId": ctx.assistant_message_id,
+        "toolCallId": call_id,
+        "questionIds": [str(q) for q in args["question_ids"]],
+        "title": title[:MATERIAL_TITLE_MAX].strip(),
+        "chapterId": str(args.get("chapter_id") or ""),
+        "quizId": str(quiz_id or ""),
+    }
+    result = await _post_operation(
+        "/api/internal/bank/copy",
+        payload,
+        operation_id(ctx.assistant_message_id, call_id),
+        ctx,
+        failure="copy the questions",
+    )
+    if result.effects:
+        ctx.ledger.complete(todo)
+    return result
 
 
 def render_progress(progress: dict[str, Any]) -> str:
@@ -1837,6 +1897,7 @@ _register("read_skill", _read_skill)
 _register("read_study_progress", _read_study_progress)
 _register("list_question_bank", _list_question_bank)
 _register("read_question", _read_question)
+_register("copy_questions", _copy_questions)
 _register("capture_knowledge_page", _capture_knowledge_page)
 _register("list_sources", _list_sources)
 _register("read_document", _read_document)
@@ -1857,7 +1918,7 @@ KNOWLEDGE_TOOLS = (
     "read_knowledge",
 )
 KNOWLEDGE_CAPTURE = "capture_knowledge_page"
-BANK_TOOLS = ("list_question_bank", "read_question")
+BANK_TOOLS = ("list_question_bank", "read_question", "copy_questions")
 
 
 def _offered(spec: ToolSpec, ctx: ToolContext) -> bool:
@@ -1913,7 +1974,7 @@ def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
             "\n\nExams and subjects this bank holds (list one for its topics):\n"
             + "\n".join(
                 f"- list_question_bank({json.dumps({'subject': s['id']})}): "
-                f"{s['exam_label']} {s['label']} ({s['questions']} questions)"
+                f"{s['examLabel']} {s['label']} ({s['questions']} questions)"
                 for s in ctx.bank_catalog
             )
         )

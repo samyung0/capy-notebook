@@ -1,7 +1,10 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { Provenance } from '@/api/types';
-import { MaterialAttributionFooter } from './MaterialAttributionFooter';
+import {
+  MaterialAttributionFooter,
+  QuestionCreditNote,
+} from './MaterialAttributionFooter';
 
 const provenance: Provenance = {
   books: [
@@ -97,6 +100,42 @@ describe('MaterialAttributionFooter', () => {
       renderToStaticMarkup(
         <MaterialAttributionFooter provenance={{ books: [] }} />
       )
+    ).toBe('');
+  });
+});
+
+describe('QuestionCreditNote', () => {
+  it('credits a copied bank question under it, and only that one', () => {
+    const credits: Provenance = {
+      books: [],
+      questions: {
+        q1: {
+          books: [],
+          web: [
+            {
+              authors: ['Writer'],
+              license: 'CC BY 4.0',
+              retrievedAt: '2026-10-02',
+              title: 'An essay',
+              url: 'https://open.example/essay',
+            },
+          ],
+        },
+      },
+    };
+    const html = renderToStaticMarkup(
+      <QuestionCreditNote credit={credits.questions?.q1} />
+    );
+    expect(html).toContain('An essay (retrieved 2026-10-02) by Writer');
+    expect(html).toContain('https://open.example/essay');
+    expect(
+      renderToStaticMarkup(
+        <QuestionCreditNote credit={credits.questions?.q2} />
+      )
+    ).toBe('');
+    // A quiz of copied questions has no footer of its own.
+    expect(
+      renderToStaticMarkup(<MaterialAttributionFooter provenance={credits} />)
     ).toBe('');
   });
 });

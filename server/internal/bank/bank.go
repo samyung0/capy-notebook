@@ -298,6 +298,46 @@ func (s *Store) List(ctx context.Context, topic string) ([]Row, error) {
 	}
 	return out, dbError(rows.Err())
 }
+
+// PageQuestion is one question of a topic as the chat agent lists it.
+type PageQuestion struct {
+	ID            string         `json:"id"`
+	Question      map[string]any `json:"question"`
+	QuestionTypes []string       `json:"questionTypes"`
+}
+
+// Page is a topic's question count and one page of its questions in bank
+// order; an unknown topic is ErrNotFound.
+func (s *Store) Page(ctx context.Context, topic string, offset, limit int) (int, []PageQuestion, error) {
+	p, err := s.pool(ctx, false)
+	if err != nil {
+		return 0, nil, err
+	}
+	var total int
+	var exists bool
+	if err = p.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM topics WHERE id=$1), (SELECT count(*) FROM questions WHERE topic_id=$1)`, topic).
+		Scan(&exists, &total); err != nil {
+		return 0, nil, dbError(err)
+	}
+	if !exists {
+		return 0, nil, ErrNotFound
+	}
+	rows, err := p.Query(ctx, `SELECT id,content,question_types FROM questions WHERE topic_id=$1 ORDER BY position,id OFFSET $2 LIMIT $3`, topic, offset, limit)
+	if err != nil {
+		return 0, nil, dbError(err)
+	}
+	defer rows.Close()
+	out := []PageQuestion{}
+	for rows.Next() {
+		var q PageQuestion
+		if err := rows.Scan(&q.ID, &q.Question, &q.QuestionTypes); err != nil {
+			return 0, nil, dbError(err)
+		}
+		out = append(out, q)
+	}
+	return total, out, dbError(rows.Err())
+}
+
 func scanBlocks(v any, row *Row) {
 	switch v := v.(type) {
 	case map[string]any:

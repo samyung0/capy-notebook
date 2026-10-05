@@ -204,9 +204,6 @@ class Config:
     # unavailable. Every environment reads the same live library; books carry
     # their own versions, so there is nothing to pin.
     library_dsn: str = _env("LIBRARY_DATABASE_URL", "")
-    # The question bank's reader (server/bankmigrations); the agent searches it
-    # with the Library switch on.
-    bank_dsn: str = _env("BANK_DATABASE_URL", "")
     # Tags below this confidence, or whose evidence quote was not found in the
     # excerpt body, never act as filters.
     library_tag_min_confidence: float = float(

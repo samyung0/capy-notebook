@@ -63,7 +63,7 @@ _BUILDING_LIBRARY = """
 
 Practice from the library:
 - Use one primary excerpt per section, and keep one book's notation unless another fills a gap you can name.
-- Reuse question-bank questions and library exercises and worked examples before writing new questions. Walk the bank with list_question_bank (its exams and subjects, a subject's topics, then a topic's questions) and copy a question read with read_question into a quiz unchanged. Keep a worked example's question, givens, model and solution together, and never splice numbers from different examples. Label adapted or new practice as such; call it a source exercise only when the source asks it."""
+- Reuse question-bank questions and library exercises and worked examples before writing new questions. Walk the bank with list_question_bank (its exams and subjects, a subject's topics, then a topic's questions), read a question with read_question when its card is not enough to judge it, and copy the chosen ones with copy_questions by id: they arrive unchanged with their solutions and credits, and you write none of them. Keep a worked example's question, givens, model and solution together, and never splice numbers from different examples. Label adapted or new practice as such; call it a source exercise only when the source asks it."""
 
 
 def editing(*, library: bool) -> str:

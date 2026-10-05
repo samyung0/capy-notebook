@@ -283,6 +283,19 @@ type Provenance struct {
 	Web []ProvenanceWeb `json:"web,omitempty"`
 	// License is computed by the server from the books, never supplied.
 	License string `json:"license,omitempty"`
+	// Questions credits each question copied from the question bank, keyed by
+	// its id in the quiz: where its passage and figures came from. It shows
+	// under that question rather than in the material's footer, and only the
+	// bank copy route writes it.
+	Questions map[string]QuestionCredit `json:"questions,omitempty"`
+}
+
+// QuestionCredit is the sources of one copied bank question, resolved by the
+// server from the bank, with the licence computed over them.
+type QuestionCredit struct {
+	Books   []ProvenanceBook `json:"books" nullable:"false"`
+	Web     []ProvenanceWeb  `json:"web,omitempty"`
+	License string           `json:"license,omitempty"`
 }
 
 // ProvenanceWeb is one openly licensed web page, as it read on RetrievedAt.

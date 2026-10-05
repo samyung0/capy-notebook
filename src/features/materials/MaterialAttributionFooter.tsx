@@ -1,4 +1,4 @@
-import type { Provenance } from '@/api/types';
+import type { Provenance, QuestionCredit } from '@/api/types';
 import { m } from '@/i18n';
 
 /** A licence or source reference is only a link when it is a web address; a
@@ -64,6 +64,48 @@ function Credit({
   );
 }
 
+/** One line per book or web page a material or a question came from. */
+function Credits({ books, web }: Pick<QuestionCredit, 'books' | 'web'>) {
+  return (
+    <ul className="mt-1 flex flex-col gap-1">
+      {books.map((book) => (
+        <Credit
+          key={book.id}
+          label={m.material_attribution_book({
+            authors: book.authors.join(', ') || book.title,
+            title: `${book.title} (${[
+              book.edition,
+              m.material_attribution_version({ version: book.version }),
+            ]
+              .filter(Boolean)
+              .join(', ')})`,
+          })}
+          license={book.license}
+          licenseUrl={book.licenseUrl}
+          sourceUrl={book.sourceUrl}
+        />
+      ))}
+      {web?.map((page) => (
+        <Credit
+          key={page.url}
+          label={m.material_attribution_book({
+            authors: page.authors.join(', ') || page.publisher || page.title,
+            title: `${page.title} (${[
+              page.publisher,
+              m.material_attribution_retrieved({ date: page.retrievedAt }),
+            ]
+              .filter(Boolean)
+              .join(', ')})`,
+          })}
+          license={page.license}
+          licenseUrl={page.licenseUrl}
+          sourceUrl={page.url}
+        />
+      ))}
+    </ul>
+  );
+}
+
 /**
  * Credit for a material written from the shared knowledge library, or for a
  * bank question adapted from an openly licensed web page: one line per source,
@@ -81,47 +123,36 @@ export function MaterialAttributionFooter({
   return (
     <footer className="border-divider border-t px-5 py-3 text-fg-muted text-xs">
       <p className="font-medium">{m.material_attribution_title()}</p>
-      <ul className="mt-1 flex flex-col gap-1">
-        {provenance.books.map((book) => (
-          <Credit
-            key={book.id}
-            label={m.material_attribution_book({
-              authors: book.authors.join(', ') || book.title,
-              title: `${book.title} (${[
-                book.edition,
-                m.material_attribution_version({ version: book.version }),
-              ]
-                .filter(Boolean)
-                .join(', ')})`,
-            })}
-            license={book.license}
-            licenseUrl={book.licenseUrl}
-            sourceUrl={book.sourceUrl}
-          />
-        ))}
-        {provenance.web?.map((page) => (
-          <Credit
-            key={page.url}
-            label={m.material_attribution_book({
-              authors: page.authors.join(', ') || page.publisher || page.title,
-              title: `${page.title} (${[
-                page.publisher,
-                m.material_attribution_retrieved({ date: page.retrievedAt }),
-              ]
-                .filter(Boolean)
-                .join(', ')})`,
-            })}
-            license={page.license}
-            licenseUrl={page.licenseUrl}
-            sourceUrl={page.url}
-          />
-        ))}
-      </ul>
+      <Credits books={provenance.books} web={provenance.web} />
       {provenance.license && (
         <p className="mt-1">
           {m.material_attribution_license({ license: provenance.license })}
         </p>
       )}
     </footer>
+  );
+}
+
+/**
+ * Credit for one question copied from the question bank, shown under it: its
+ * passage and figures came from these sources. Kept in the quiz's provenance,
+ * outside the editable document, so editing the quiz cannot remove it.
+ */
+export function QuestionCreditNote({
+  credit,
+}: {
+  credit: QuestionCredit | undefined;
+}) {
+  if (!(credit?.books.length || credit?.web?.length)) return null;
+  return (
+    <div className="text-fg-muted text-xs">
+      <p className="font-medium">{m.material_attribution_title()}</p>
+      <Credits books={credit.books} web={credit.web} />
+      {credit.license && (
+        <p className="mt-1">
+          {m.question_attribution_license({ license: credit.license })}
+        </p>
+      )}
+    </div>
   );
 }

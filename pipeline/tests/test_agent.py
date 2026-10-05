@@ -2412,6 +2412,12 @@ def _build_ctx(**kwargs) -> ToolContext:
 def library_on(monkeypatch):
     monkeypatch.setattr(agent.tools.library, "enabled", lambda: True)
 
+    # No question bank in these turns (test_bank.py covers it).
+    async def _no_bank(ctx):
+        ctx.bank_catalog = []
+
+    monkeypatch.setattr(agent.tools, "load_bank_catalog", _no_bank)
+
 
 async def test_a_library_that_is_down_or_empty_leaves_the_turn_on_the_workspace(
     monkeypatch, library_on, caplog

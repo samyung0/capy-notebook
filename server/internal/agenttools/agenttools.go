@@ -52,7 +52,9 @@ const questionExample = `{"id": "q1", "stem": [{"type": "text", "text": "A red b
 // v12: read_skill loads a skill's instructions on demand; the note and
 // question formats move out of the write tools into Formats, which the
 // materials skill quotes.
-const ContractVersion = 12
+// v13: copy_questions copies bank questions by id into a new or existing
+// quiz, each credited from the bank's own sources.
+const ContractVersion = 13
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -573,6 +575,25 @@ func Definitions() []Definition {
 			}, "question_id"),
 			Concurrency:        "read",
 			RequiredOperations: []Operation{OpLibraryRead},
+		}),
+		chatTool(Definition{
+			Name:      "copy_questions",
+			Retention: RetainFull,
+			Description: "Copy question-bank questions by id, unchanged, into a new quiz (title, " +
+				"optional chapter_id) or a quiz in this workspace (quiz_id), instead of writing them out.",
+			InputSchema: obj(map[string]any{
+				"question_ids": map[string]any{
+					"type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true,
+					"items": map[string]any{"type": "string", "minLength": 1},
+				},
+				"title":      map[string]any{"type": "string", "minLength": 1, "maxLength": fieldlimits.MaterialTitle},
+				"chapter_id": str("The chapter to file a new quiz in."),
+				"quiz_id":    str("A quiz in this workspace to append to."),
+				"todo":       todoSchema(),
+			}, "question_ids"),
+			Mutates:            true,
+			Concurrency:        "mutate",
+			RequiredOperations: []Operation{OpMaterialCreate, OpLibraryRead},
 		}),
 		chatTool(Definition{
 			Name:      "capture_knowledge_page",

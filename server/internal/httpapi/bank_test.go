@@ -33,6 +33,35 @@ func (s *bankAssetSink) PutObject(_ context.Context, _ string, r io.Reader, _, _
 	return err
 }
 
+// openTestBank creates a migrated bank database beside the test database with
+// exam e, subject s and topic t, dropped when the test ends.
+func openTestBank(t *testing.T, st *store.Store, dsn string) (string, *pgxpool.Pool) {
+	t.Helper()
+	ctx := context.Background()
+	db := fmt.Sprintf("bank_http_%d", time.Now().UnixNano())
+	if _, err := st.Pool().Exec(ctx, "CREATE DATABASE "+pgx.Identifier{db}.Sanitize()); err != nil {
+		t.Fatal(err)
+	}
+	parsed, _ := url.Parse(dsn)
+	parsed.Path = "/" + db
+	bankDSN := parsed.String()
+	pool, err := pgxpool.New(ctx, bankDSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		pool.Close()
+		_, _ = st.Pool().Exec(context.Background(), "DROP DATABASE "+pgx.Identifier{db}.Sanitize()+" WITH (FORCE)")
+	})
+	if err := store.MigrateFS(ctx, pool, bankmigrations.FS); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO exams VALUES('e','Exam',1);INSERT INTO subjects VALUES('s','e','Subject',1);INSERT INTO topics VALUES('t','s','Topic',1)`); err != nil {
+		t.Fatal(err)
+	}
+	return bankDSN, pool
+}
+
 func TestBankHTTPPermissionsAssetsAndComments(t *testing.T) {
 	ctx := context.Background()
 	dsn := testdb.URL(t)
@@ -50,25 +79,7 @@ func TestBankHTTPPermissionsAssetsAndComments(t *testing.T) {
 	if _, err := st.Pool().Exec(ctx, `INSERT INTO bank_editors(user_id)VALUES($1)`, user); err != nil {
 		t.Fatal(err)
 	}
-	db := fmt.Sprintf("bank_http_%d", time.Now().UnixNano())
-	if _, err := st.Pool().Exec(ctx, "CREATE DATABASE "+pgx.Identifier{db}.Sanitize()); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _, _ = st.Pool().Exec(ctx, "DROP DATABASE "+pgx.Identifier{db}.Sanitize()+" WITH (FORCE)") }()
-	parsed, _ := url.Parse(dsn)
-	parsed.Path = "/" + db
-	bankDSN := parsed.String()
-	pool, err := pgxpool.New(ctx, bankDSN)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
-	if err := store.MigrateFS(ctx, pool, bankmigrations.FS); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pool.Exec(ctx, `INSERT INTO exams VALUES('e','Exam',1);INSERT INTO subjects VALUES('s','e','Subject',1);INSERT INTO topics VALUES('t','s','Topic',1)`); err != nil {
-		t.Fatal(err)
-	}
+	bankDSN, pool := openTestBank(t, st, dsn)
 	q := `{"id":"q","stem":[{"type":"text","text":"Stem"}],"parts":[{"id":"p","blocks":[{"type":"text","text":"Answer this"}],"answer":{"type":"open","accepted":["secret-answer"],"hints":[]},"marks":1,"markscheme":[{"text":"secret-scheme","marks":1}],"solution":[{"type":"text","text":"secret-solution"}]}],"layout":"paper","labels":"letters"}`
 	if _, err := pool.Exec(ctx, `INSERT INTO questions(id,topic_id,position,content,run)VALUES('q','t',1,$1,'test')`, q); err != nil {
 		t.Fatal(err)

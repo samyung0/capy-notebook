@@ -2875,6 +2875,10 @@ components:
           type: array
         license:
           type: string
+        questions:
+          additionalProperties:
+            $ref: "#/components/schemas/QuestionCredit"
+          type: object
         web:
           items:
             $ref: "#/components/schemas/ProvenanceWeb"
@@ -3127,6 +3131,23 @@ components:
         - isOwner
         - capabilities
         - canClone
+      type: object
+    QuestionCredit:
+      additionalProperties: false
+      properties:
+        books:
+          items:
+            $ref: "#/components/schemas/ProvenanceBook"
+          type: array
+        license:
+          type: string
+        web:
+          items:
+            $ref: "#/components/schemas/ProvenanceWeb"
+          nullable: true
+          type: array
+      required:
+        - books
       type: object
     Quiz:
       additionalProperties: false

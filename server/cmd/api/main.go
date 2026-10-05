@@ -23,6 +23,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/pipeline"
+	"github.com/samyung0/capy-notebook/server/internal/questions"
 	"github.com/samyung0/capy-notebook/server/internal/ratelimit"
 	"github.com/samyung0/capy-notebook/server/internal/reconcile"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -409,6 +410,8 @@ func main() {
 	go runCollaborationEvictionWorker(ctx, st, rdb)
 
 	bankStore := bank.New(env("BANK_DATABASE_URL", ""), env("BANK_EDITOR_DATABASE_URL", ""), env("BANK_ASSETS_URL", ""), env("LIBRARY_DATABASE_URL", ""))
+	// Questions copied from the bank into quizzes keep linking its figures.
+	questions.QuizBankAssetsURL = env("BANK_ASSETS_URL", "")
 	defer bankStore.Close()
 	var bankAssets bank.AssetWriter
 	if bankStore.Editable() && env("BANK_PUBLIC_B2_BUCKET", "") != "" {

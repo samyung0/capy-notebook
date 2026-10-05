@@ -84,7 +84,13 @@ cloning: a clone copies the asset rows, rewrites the ids, drops images whose
 asset was not copied, and drops a question whose part loses all content. Uploads
 go through the quiz's material route: a workspace quiz's images belong to its
 workspace (workspace owner pays), a standalone quiz's to the quiz (its owner
-pays). Answer
+pays). A question the chat copied from the bank (`copy_questions`) keeps its
+bank `{ url }` figures in the quiz: they are immutable, so the quiz links to
+them rather than copying them, and the Go validator accepts a quiz image or
+graph URL only under `BANK_ASSETS_URL` (`questions.QuizBankAssetsURL`). Each
+copied question's sources become a credit in the quiz's provenance under the
+question id, shown under that question rather than in a footer (see
+[agentic-retrieval.md](agentic-retrieval.md), Question bank). Answer
 options stay plain strings; no images or rich content go inside them.
 
 `POST /api/bank/assets` checks the editor grant, validates the bytes and uses
