@@ -1250,6 +1250,31 @@ async def test_the_summary_prompt_excludes_the_uploaders_file_name(monkeypatch):
     assert descriptor == "Chlorophyll absorbs light."
 
 
+async def test_the_descriptor_cap_cuts_only_a_runaway_reply(monkeypatch):
+    from pipeline.retrieval import indexing
+    from pipeline.retrieval.chunking import Chunk
+
+    normal = " ".join(["word"] * 54) + " end."
+    # A runaway reply the token bound cut inside its JSON string.
+    runaway = '{"descriptor": "' + " ".join(f"w{i}." for i in range(300))
+    replies = [f'{{"descriptor": "{normal}"}}', runaway]
+    bounds: list[int | None] = []
+
+    async def _reply(_messages, *, max_tokens=None, **_k):
+        bounds.append(max_tokens)
+        return replies.pop(0)
+
+    monkeypatch.setattr(indexing, "ingest_spec", _ingest_spec)
+    monkeypatch.setattr(indexing.models, "complete_text", _reply)
+
+    kept = await indexing.summarize_file("a.pdf", [Chunk(text="Chlorophyll")])
+    cut = await indexing.summarize_file("a.pdf", [Chunk(text="Chlorophyll")])
+
+    assert kept == normal
+    assert cut.startswith("w0.") and len(cut.split()) <= 80
+    assert all(bound is not None for bound in bounds)
+
+
 async def test_the_descriptor_regenerates_at_two_percent_a_version_change_or_first(
     monkeypatch,
 ):

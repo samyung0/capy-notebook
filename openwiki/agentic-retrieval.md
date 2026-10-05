@@ -1279,7 +1279,11 @@ exists; the local bundle is gone once the first ingest finished.
 3. Replace that content's `rag_chunks` (delete-then-insert so a shorter
   re-ingest does not leave a stale tail).
 4. The file descriptor (~50 words, one cheap-model call); upsert
-  `rag_content_summaries`. A reindex of a file whose ready descriptor has the
+  `rag_content_summaries`. The prompt asks for about 50 words; a reply is cut
+  only past 80 words (at the last sentence end inside them) and the call is
+  bounded at 400 output tokens, so only a runaway reply is cut. A reply cut
+  at that bound keeps the text of its unclosed JSON string, and an empty reply
+  retries the job. A reindex of a file whose ready descriptor has the
   current `summary_version` first measures the net text change between the
   published chunks and the candidate (`text_change_tokens`: chunk overlap and
   retained headings dropped, lines aligned, then words inside each changed

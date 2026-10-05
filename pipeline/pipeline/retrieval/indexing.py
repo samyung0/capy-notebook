@@ -19,7 +19,6 @@ from typing import Any
 from .. import elitellm, registry
 from ..jobs import RetryableError
 from ..prompts.ingest import (
-    DESCRIPTOR_WORDS,
     SUMMARY_VERSION,
     partial_messages,
     summary_messages,
@@ -309,6 +308,12 @@ _PROMPT_RESERVE_TOKENS = 2000
 # split across its chunk groups, before the descriptor is written from them.
 _PARTIAL_WORDS = 500
 
+# The prompt asks for about ``DESCRIPTOR_WORDS``. The word cap and the token
+# bound only stop a runaway reply, so a normal one is never cut mid-phrase. The
+# bound fits an 80-word JSON reply (a CJK character counts as a word) twice over.
+_DESCRIPTOR_CAP_WORDS = 80
+_DESCRIPTOR_MAX_TOKENS = 400
+
 # A refresh reuses the published descriptor until the net text change since its
 # last regeneration reaches this share of the document.
 SUMMARY_REUSE_SHARE = 0.02
@@ -472,7 +477,9 @@ def _parse_descriptor(raw: str) -> str:
         descriptor = str(parsed.get("descriptor") or "").strip()
         if descriptor:
             return descriptor
-    return (raw or "").strip()
+    # A reply cut at the token bound is an unclosed JSON string: keep its text.
+    cut = re.match(r'\s*\{\s*"descriptor"\s*:\s*"(.*)', raw or "", re.DOTALL)
+    return (cut.group(1) if cut else raw or "").strip()
 
 
 def _input_budget() -> int:
@@ -511,10 +518,14 @@ async def _summarize_once(body: str) -> str:
     raw = await models.complete_text(
         summary_messages(body),
         model=ingest_spec(),
+        max_tokens=_DESCRIPTOR_MAX_TOKENS,
         reasoning=False,
         call_purpose="file_summary",
     )
-    return _parse_descriptor(raw)
+    descriptor = _parse_descriptor(raw)
+    if not descriptor:
+        raise RetryableError("The file summary was empty.")
+    return descriptor
 
 
 async def _summarize_mapped(chunks: list[Chunk]) -> str:
@@ -586,4 +597,4 @@ async def summarize_file(file_name: str, chunks: list[Chunk]) -> str:
     except Exception as exc:
         log.warning("file summary failed for %s", file_name, exc_info=True)
         raise RetryableError(f"file summary failed: {exc}") from exc
-    return _truncate_words(descriptor, DESCRIPTOR_WORDS)
+    return _truncate_words(descriptor, _DESCRIPTOR_CAP_WORDS)
