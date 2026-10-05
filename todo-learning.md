@@ -77,7 +77,19 @@ the review fix round, CI green), with the question bank configured.
   made; the study-progress route requires progress on; `copy_questions`
   counts as a write; no `fallback` in `html-embed` (contract v14). Playwright
   `e2e/study/study-progress.spec.ts` and `openwiki/study-progress.md` exist.
-- **Unblocked:** the `/generate` defaults from study preferences (2.4; AI
+- **Build round (2026-10-05, after the UAT deploy; on `main`, not on UAT
+  yet):** 2.6 decks (production `create_deck`/`write_slide`, contract v15,
+  ppt-master in the retrieval image, decks stored through
+  `POST /api/internal/files`, `mainFormat` preference, Caladea; docs in
+  `openwiki/decks.md`); phase 3 interactive blocks (`HtmlEmbed.tsx`, the
+  `embed/` frame page on Cloudflare Pages, caps, export link with `?block=`;
+  docs in `openwiki/frontend/plate-editor.md`); `/generate` reads quiz length
+  and card count from the preferences. Before the next UAT deploy: Epo
+  creates the Pages project and token permission (runbook §2.3), and
+  `EMBED_PAGES_PROJECT` and `VITE_EMBED_ORIGIN` are pushed (the SPA build
+  requires the origin); the shared bank database needs `cmd/bank migrate`
+  (bank migration 0003) for the bank progress work.
+- **Was unblocked:** the `/generate` defaults from study preferences (2.4; AI
   generate moved into the Add file dialog), and learners answering on `/bank`
   with bank mistake review (Later, "Question-bank progress"; part 1's FSRS
   package exists).
@@ -118,8 +130,9 @@ None.
 
 1. Done: part 1 mocks, server, frontend, tests and docs; part 2 phase 1;
    phase 2 steps 2.1 to 2.5 and 2.7; the review fix round; UAT at e158285f.
-2. The `/generate` defaults.
-3. 2.6 decks, then phase 3.
+2. Done on `main`: the `/generate` defaults, 2.6 decks, phase 3. UAT after
+   the Cloudflare setup and the bank migration.
+3. The playground output preview (in progress).
 4. The playground output preview.
 5. Epo's acceptance test (1.9), last: mostly prompt tuning.
 
@@ -754,6 +767,12 @@ Deck items for the test (Epo, 2026-10-04; the output looks good):
     error or repair the call (1.8).
   - The second request of a turn often reads nothing from cache.
   - Content quality: thin or invented slides, sparse slides in large panels.
+  - From the app build (2026-10-05): storing a deck reserves ingest credits
+    like an upload, so a deck finished after the user's credits run out is
+    refused; the deck's agent operation is recorded as `create_material`
+    (the table has no file kind); deck edits are plain file edits (no todo,
+    no credit merge, "only when asked"); pin ppt-master's Python
+    dependencies once the image builds green.
 
 Skills and prompts for the test (Epo, 2026-10-05):
 
@@ -968,7 +987,7 @@ Not scheduled. Each item lists what to decide before it starts.
 ### Deck templates and styling preferences
 
 Epo, 2026-10-04. More deck styles (each a folder in
-`lab/playground/deck-styles/`, `DECKS.md` "Adding a style") and templates:
+`pipeline/pipeline/prompts/deck_styles/`, `DECKS.md` "Adding a style") and templates:
 ppt-master's structured layouts with Masters and slots, including a school's
 own template imported from a `.pptx` (`workflows/create-template.md`). Users
 choose: a style per deck or a default in study preferences, and their own

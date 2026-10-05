@@ -100,20 +100,24 @@ one topic.
       (2026-10-05) with answering, mistake review and Copy to quiz. The
       general quiz and question editing UI is Epo's, redone in its own
       session.
-- [ ] **Learners answering on `/bank`** (today its runner is read-only) and
-      reviewing their mistakes. Unblocked: part 1's FSRS package
-      (`server/internal/review`) exists. Needs the bank review screen mock
-      first; storage and the retraction flag are "Question-bank progress" in
-      `todo-learning.md`.
+- [ ] **Learners answering on `/bank`** and per-topic mistake review. The
+      backend is on `main` (2026-10-05): app migration 0055
+      `bank_review_states`, bank migration 0003 `retracted_at` (run
+      `go run ./cmd/bank migrate` on the shared bank database before the
+      next deploy, with Epo's go-ahead and a dump first), routes
+      `POST /api/bank/questions/{id}/answers`, `GET /api/bank/topics/{id}/marks`
+      and `/review`, MSW handlers. The UI waits for Epo's picks on
+      https://797ludmnkrb3.postplan.dev (with Copy to quiz and the type
+      filter) and the grading choice: a Go Check endpoint scoring closed
+      parts (answer keys stay hidden, recommended) or answer keys sent to
+      learners.
 - [ ] **Copy to quiz** from the bank page. The chat copies already
       (`copy_questions`, `/api/internal/bank/copy`), and the validator accepts
       quiz figures under `BANK_ASSETS_URL`; the page's own button reuses that
       route.
-- [ ] **Agent filter by question type.** `list_question_bank` lists by exam,
-      subject and topic; IELTS task types (`questions.question_types`) show on
-      each question card but are not a filter. Search was tried and dropped
-      (`bench/rag/reports/2026-10-04-bank-search.md`); revisit when topics
-      outgrow a few pages.
+- [x] **Agent filter by question type** (2026-10-05): `list_question_bank`
+      takes `question_type` with a topic. Proposed: list each subject's
+      question types with counts when the agent lists its topics.
 - [ ] **Jev grading for bank open parts.** Round 2 writes closed parts only,
       so this waits until a subject needs open answers.
 - [ ] **Answer options** stay plain strings; graph or image options are out of
