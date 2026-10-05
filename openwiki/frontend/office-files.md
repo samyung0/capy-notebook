@@ -828,7 +828,9 @@ zoom (`zoomedViewport` in `@betteroffice/xlsx`), paint it at
 keeps the sheet point at the grid's top-left corner where it was, as Sheets
 does (`XlsxEditor`'s `changeZoom`, `XlsxViewer`). The level lasts while the
 editor or viewer is open, as DOCX's: switching between View and Edit or
-reopening the file starts at 100%. Ctrl/Cmd with the wheel and a trackpad pinch
+reopening the file starts at 100%. Both modes open a sheet at its saved scroll
+(its frozen pane's top-left cell) once the scroll area has that sheet's size.
+Ctrl/Cmd with the wheel and a trackpad pinch
 are left to the browser, as in Sheets. Zoom edits nothing, so View › Zoom runs
 while editing is paused; PNG saves the part on screen drawn at the same scale at
 every zoom.
