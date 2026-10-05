@@ -200,9 +200,14 @@ check); it applies at the first promotion.
   loses its result (docx-fields review round 2, R2-8). Keep what the model doesn't
   hold; Word is the oracle. Probes in
   `capy-docx-review-harnesses/2026-10-05-office-batch/docx-paragraph-save/review-probes/`.
-- **DOCX column break layout** (found 2026-10-05 by docx-view-text): in
-  `wordprocessingml-comprehensive.docx` the line before a column break is drawn
-  in both columns and the text after the break is missing (view and copy).
+- **DOCX mid-paragraph page/column break loses text** (found 2026-10-05/06 by
+  docx-view-text and its review; also on the base build): a page or column
+  break in the middle of a paragraph draws the line before it twice and drops
+  the text after it, in view mode and probably edit mode (same layout), e.g.
+  `wordprocessingml-comprehensive.docx`. Also: a footnote longer than a page is
+  never continued; viewer list numbers may ignore start values (8, 9), legal
+  numbering and Chinese numbering (seen with minimal numbering XML — confirm on
+  a real Word file first).
 - **Chat can't describe an image added to an Office file** (decided
   2026-10-05): attach the image to the next model request as `capture_page`
   does and remove the source-change caption path (`captioning_spec()` needs
