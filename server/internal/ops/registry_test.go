@@ -542,6 +542,7 @@ func TestRegistryCompileRefusesInstantRowMovedIntoChat(t *testing.T) {
 			Version: 1, Enabled: true, Slots: []string{models.SlotEditor},
 			IsDefaultFor:   []string{models.SlotEditor},
 			ThinkingLevels: []string{"instant"}, DefaultThinking: "instant",
+			Capabilities:        []string{models.CapabilityVision},
 			ContextWindowTokens: 32_768,
 		}},
 	}
@@ -553,6 +554,31 @@ func TestRegistryCompileRefusesInstantRowMovedIntoChat(t *testing.T) {
 	_, _, _, err := compileGrid(request, snapshot)
 	if !IsValidation(err) || !strings.Contains(err.Error(), "instant") {
 		t.Fatalf("expected instant chat validation, got %v", err)
+	}
+}
+
+func TestRegistryCompileRefusesTextOnlyChatRow(t *testing.T) {
+	snapshot := RegistrySnapshot{
+		Version: 1,
+		Slots:   models.AllSlots(),
+		Configs: []CatalogConfig{{
+			ProviderSlug: "deepseek", ModelSlug: "deepseek-flash",
+			Version: 1, Enabled: true, Slots: []string{models.SlotChat},
+			IsDefaultFor:   []string{models.SlotChat},
+			ThinkingLevels: []string{"high"}, DefaultThinking: "high",
+			ContextWindowTokens: 32_768,
+		}},
+	}
+	// The row is certified, so the unchanged save fails only on vision.
+	_, _, _, err := compileGrid(gridRequest(snapshot), snapshot)
+	var coded *ValidationError
+	if !errors.As(err, &coded) || coded.Code != "capability_missing" ||
+		coded.Slot != models.SlotChat || !strings.Contains(coded.Message, "vision") {
+		t.Fatalf("text-only chat row = %#v", err)
+	}
+	snapshot.Configs[0].Capabilities = []string{models.CapabilityVision}
+	if _, _, _, err := compileGrid(gridRequest(snapshot), snapshot); err != nil {
+		t.Fatalf("vision chat row refused: %v", err)
 	}
 }
 
@@ -787,6 +813,7 @@ func TestBindEliteLLMDraftAllowsFirstPartyAndSeededEmbed(t *testing.T) {
 		ByokEnabled:     true,
 		ThinkingLevels:  []string{"instant", "low", "mid", "high", "max"},
 		DefaultThinking: "instant",
+		Capabilities:    []string{models.CapabilityVision},
 	}
 	if err := bindEliteLLMDraft(&flash, []string{models.SlotChat}); err != nil {
 		t.Fatalf("flash bind: %v", err)

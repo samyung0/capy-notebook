@@ -35,7 +35,8 @@ func TestSlotRequirements(t *testing.T) {
 		certified    bool
 		missing      Capability
 	}{
-		{SlotChat, nil, true, ""},
+		{SlotChat, []string{CapabilityVision}, true, ""},
+		{SlotChat, []string{CapabilityPDF}, true, CapabilityVision},
 		{SlotChat, []string{CapabilityVision}, false, CapabilityAgenticLoop},
 		{SlotRetrieval, []string{CapabilityEmbedding}, false, ""},
 		{SlotRetrieval, nil, true, CapabilityEmbedding},

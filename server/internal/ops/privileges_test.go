@@ -449,13 +449,13 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 			version, provider_name, model_name, provider_slug, model_slug,
 			platform_enabled, byok_enabled, context_window_tokens,
 			thinking_levels, default_thinking, params,
-			slots, micros_per_input_token, micros_per_cached_input_token,
+			slots, capabilities, micros_per_input_token, micros_per_cached_input_token,
 			micros_per_output_token, enabled, is_default_for
 		) VALUES (
 			99, 'Ops', 'Role Model', $1, $2,
 			true, false, 100000,
 			ARRAY['low','high']::text[], 'high', '{}'::jsonb,
-			ARRAY['chat'], 1, 1, 1, true, '{}'
+			ARRAY['chat'], ARRAY['vision'], 1, 1, 1, true, '{}'
 		)`, modelRef.ProviderSlug, modelRef.ModelSlug,
 	); err != nil {
 		t.Fatal(err)

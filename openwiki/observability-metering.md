@@ -336,9 +336,12 @@ set `capabilities` (`vision`, `pdf`, `embedding`, `rerank`) on the catalog row;
 `agentic_loop` is derived from the checked-in certification file
 (`agentic_loop_certs.json`) and can never be set by hand. The only place the
 slot-to-capability policy lives is the map in
-`server/internal/models/slot.go`: chat needs `agentic_loop`, retrieval needs
-`embedding`, captioning needs `vision`, rerank needs `rerank`, the other
-slots need nothing. Every
+`server/internal/models/slot.go`: chat needs `agentic_loop` and `vision`,
+retrieval needs `embedding`, captioning needs `vision`, rerank needs `rerank`,
+the other slots need nothing. Chat needs `vision` because its tools attach
+images (`capture_page`, pending Office images); the assignment check is the
+only gate, with no runtime vision check, and both seeded chat rows
+(`deepseek/deepseek-flash`, `zai/glm-5.3-flash`) carry it. Every
 registry save runs that subset check for drafts and for existing rows alike,
 so a stale row cannot keep a slot it no longer qualifies for; the ops error
 codes are `capability_missing` and `agentic_loop_not_certified`. The
