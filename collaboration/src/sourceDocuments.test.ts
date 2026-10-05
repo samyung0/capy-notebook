@@ -129,7 +129,6 @@ test('Office text effects keep the changed span with 40 characters of context', 
   expect(effectTokens([moved, { ...moved, kind: 'image' }])).toBe(0);
 });
 
-// The same vectors as TestSourceEffectTokensCountContextAtLatinRate in Go.
 test('effect context counts 4 units a token in every script, changed CJK per character', () => {
   const edit = (head: string, tail: string, from: string, to: string) =>
     ({

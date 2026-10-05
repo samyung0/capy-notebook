@@ -854,7 +854,7 @@
       "requiredOperations": [
         "source.read"
       ],
-      "retention": "full"
+      "retention": "none"
     },
     {
       "name": "inspect_document",
