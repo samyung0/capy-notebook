@@ -1250,29 +1250,66 @@ async def test_the_summary_prompt_excludes_the_uploaders_file_name(monkeypatch):
     assert descriptor == "Chlorophyll absorbs light."
 
 
-async def test_the_descriptor_cap_cuts_only_a_runaway_reply(monkeypatch):
+async def test_the_descriptor_token_bound_is_its_only_cut(monkeypatch):
     from pipeline.retrieval import indexing
     from pipeline.retrieval.chunking import Chunk
 
-    normal = " ".join(["word"] * 54) + " end."
-    # A runaway reply the token bound cut inside its JSON string.
-    runaway = '{"descriptor": "' + " ".join(f"w{i}." for i in range(300))
-    replies = [f'{{"descriptor": "{normal}"}}', runaway]
+    long = " ".join(f"w{i}." for i in range(300))
     bounds: list[int | None] = []
 
     async def _reply(_messages, *, max_tokens=None, **_k):
         bounds.append(max_tokens)
-        return replies.pop(0)
+        return f'{{"descriptor": "{long}"}}'
 
     monkeypatch.setattr(indexing, "ingest_spec", _ingest_spec)
     monkeypatch.setattr(indexing.models, "complete_text", _reply)
 
-    kept = await indexing.summarize_file("a.pdf", [Chunk(text="Chlorophyll")])
-    cut = await indexing.summarize_file("a.pdf", [Chunk(text="Chlorophyll")])
+    assert await indexing.summarize_file("a.pdf", [Chunk(text="x")]) == long
+    assert bounds == [400]
 
-    assert kept == normal
-    assert cut.startswith("w0.") and len(cut.split()) <= 80
-    assert all(bound is not None for bound in bounds)
+
+async def test_a_reply_without_a_descriptor_fails_explicitly(monkeypatch):
+    import pytest
+
+    from pipeline.jobs import RetryableError
+    from pipeline.retrieval import indexing
+    from pipeline.retrieval.chunking import Chunk
+
+    monkeypatch.setattr(indexing, "ingest_spec", _ingest_spec)
+    for reply in ("", '{"descriptor": ""}', '{"descriptor": null}', "Plain prose."):
+
+        async def _reply(*_a, reply=reply, **_k):
+            return reply
+
+        monkeypatch.setattr(indexing.models, "complete_text", _reply)
+        with pytest.raises(RetryableError, match="empty"):
+            await indexing.summarize_file("a.pdf", [Chunk(text="x")])
+
+
+def test_a_reply_cut_at_the_token_bound_keeps_only_its_descriptor_text():
+    from pipeline.retrieval.indexing import _parse_descriptor
+
+    assert (
+        _parse_descriptor('{"descriptor": "This chapter introduces')
+        == "This chapter introduces"
+    )
+    assert (
+        _parse_descriptor('```json\n{"descriptor": "Covers photosynthesis, the Calvin')
+        == "Covers photosynthesis, the Calvin"
+    )
+    # Escapes decode; a cut escape (here the high half of a pair) is dropped.
+    assert (
+        _parse_descriptor(
+            '{"descriptor": "A \\"quoted\\" term,\\n\\u6f22\\u5b57 \\ud83d\\ude00 and \\ud83d'
+        )
+        == 'A "quoted" term,\n漢字 😀 and'
+    )
+    assert _parse_descriptor('{"descriptor": "Cut at \\u12') == "Cut at"
+    # A finished reply that is not JSON keeps its text without the closing.
+    assert (
+        _parse_descriptor('{"descriptor": "A "quoted" word."}\n```')
+        == 'A "quoted" word.'
+    )
 
 
 async def test_the_descriptor_regenerates_at_two_percent_a_version_change_or_first(

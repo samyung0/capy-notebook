@@ -25,7 +25,7 @@ from ..prompts.ingest import (
 )
 from ..registry import embedding_spec, ingest_spec
 from . import accounting, compact, models, store
-from .chunking import Chunk, _is_cjk, estimate_tokens, tokenize_for_search
+from .chunking import Chunk, estimate_tokens, tokenize_for_search
 from .lang import detect_lang
 from .workflows import extract_json
 
@@ -308,10 +308,9 @@ _PROMPT_RESERVE_TOKENS = 2000
 # split across its chunk groups, before the descriptor is written from them.
 _PARTIAL_WORDS = 500
 
-# The prompt asks for about ``DESCRIPTOR_WORDS``. The word cap and the token
-# bound only stop a runaway reply, so a normal one is never cut mid-phrase. The
-# bound fits an 80-word JSON reply (a CJK character counts as a word) twice over.
-_DESCRIPTOR_CAP_WORDS = 80
+# The prompt asks for about ``DESCRIPTOR_WORDS``; like compaction's summary, the
+# call's token bound is the only cut. It fits a normal reply several times over
+# with thinking off, which the operator-set ingest pin is assumed to have.
 _DESCRIPTOR_MAX_TOKENS = 400
 
 # A refresh reuses the published descriptor until the net text change since its
@@ -422,64 +421,39 @@ def text_change_tokens(old: list[Chunk], new: list[Chunk]) -> int:
     return total
 
 
-def _words(text: str) -> list[str]:
-    """Split so CJK characters count as one word each and Latin runs split on space."""
-    words: list[str] = []
-    buf: list[str] = []
-
-    def flush() -> None:
-        if buf:
-            words.append("".join(buf))
-            buf.clear()
-
-    for ch in text.strip():
-        if _is_cjk(ch):
-            flush()
-            words.append(ch)
-        elif ch.isspace():
-            flush()
-        else:
-            buf.append(ch)
-    flush()
-    return words
+# A JSON escape (a surrogate pair as one), or an escape cut off at the end.
+_JSON_ESCAPE = re.compile(
+    r'\\(?:u[0-9a-fA-F]{4}(?:\\u[0-9a-fA-F]{4})?|["\\/bfnrt])|\\(?:u[0-9a-fA-F]{0,3})?$'
+)
 
 
-_SENTENCE_END = re.compile(r"[.!?。！？][\"')\]]*$")
-
-
-def _truncate_words(text: str, limit: int) -> str:
-    words = _words(text)
-    if len(words) <= limit:
-        return text.strip()
-    for end in range(min(limit, len(words)), 0, -1):
-        piece = _join_words(words[:end])
-        if _SENTENCE_END.search(piece):
-            return piece
-    return _join_words(words[:limit])
-
-
-def _join_words(words: list[str]) -> str:
-    out: list[str] = []
-    for word in words:
-        if not out:
-            out.append(word)
-            continue
-        if _is_cjk(word[0]) and _is_cjk(out[-1][-1]):
-            out.append(word)
-        else:
-            out.append(" " + word)
-    return "".join(out).strip()
+def _unescape(match: re.Match[str]) -> str:
+    try:
+        text = json.loads(f'"{match.group()}"')
+    except json.JSONDecodeError:
+        return ""  # cut off at the end
+    # A pair cut after its high half leaves a lone surrogate.
+    return "".join(c for c in text if not 0xD800 <= ord(c) <= 0xDFFF)
 
 
 def _parse_descriptor(raw: str) -> str:
+    """The reply's descriptor, or "" when it holds none.
+
+    A reply cut off at the token bound is not JSON: the text of its
+    ``descriptor`` string up to the cut is kept, escapes decoded.
+    """
     parsed = extract_json(raw)
-    if isinstance(parsed, dict):
-        descriptor = str(parsed.get("descriptor") or "").strip()
-        if descriptor:
-            return descriptor
-    # A reply cut at the token bound is an unclosed JSON string: keep its text.
-    cut = re.match(r'\s*\{\s*"descriptor"\s*:\s*"(.*)', raw or "", re.DOTALL)
-    return (cut.group(1) if cut else raw or "").strip()
+    if parsed is not None:
+        if not isinstance(parsed, dict):
+            return ""
+        return str(parsed.get("descriptor") or "").strip()
+    cut = re.search(r'"descriptor"\s*:\s*"(.*)', raw or "", re.DOTALL)
+    if not cut:
+        return ""
+    # A reply that did end (say, with unescaped quotes inside) closes its
+    # string, its object and maybe a fence.
+    text = re.sub(r'"\s*\}?\s*(?:```)?\s*$', "", cut.group(1))
+    return _JSON_ESCAPE.sub(_unescape, text).strip()
 
 
 def _input_budget() -> int:
@@ -597,4 +571,4 @@ async def summarize_file(file_name: str, chunks: list[Chunk]) -> str:
     except Exception as exc:
         log.warning("file summary failed for %s", file_name, exc_info=True)
         raise RetryableError(f"file summary failed: {exc}") from exc
-    return _truncate_words(descriptor, _DESCRIPTOR_CAP_WORDS)
+    return descriptor
