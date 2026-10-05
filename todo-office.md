@@ -18,9 +18,7 @@ screen-reader mirror settling 300 ms after scrolling.
 
 ## Collaboration capacity, saving and offline (2026-10-04/05)
 
-All of this is on main and UAT (UAT green at 5c92f81b; ecbd333b, which drops
-the old pending-room exception, is on main and goes to UAT with the next
-deploy). Decisions are in `human/` (search 2026-10-04 and 2026-10-05); the
+All of this is on main and UAT (UAT green at dbfcf809). Decisions are in `human/` (search 2026-10-04 and 2026-10-05); the
 reports below hold the numbers.
 
 **Landed:** edit-loss fixes; refused saves to copy-only recovery (no download
@@ -129,12 +127,19 @@ check); it applies at the first promotion.
 
 ## Queued tracks (each needs its own decisions and a visual checkpoint)
 
-- **Pause standard.** While editing is paused (handoff, newer version
-  replaced, recovery, connecting, discarding) the header menus grey out every
-  editing item and File › Save, and the runtime ignores editing commands. Decide
-  case by case what each state should allow, menus and toolbar alike (e.g.
-  Select all is greyed although it only selects; XLSX View › Freeze counts as
-  editing).
+- **Pause standard** (decided 2026-10-05): handoff, replaced, recovery and
+  discarding keep today's disabled menus; Select all stays enabled in every
+  pause state. `connecting` (before the first sync) is open: Epo asked whether
+  it can edit offline as a reconnecting editor does.
+- **Order after the 2026-10-05 batch:** one optimization round (Yjs save
+  latency, typing latency, memory; Office and Plate), then heap/latency
+  ceilings from the largest allowed files, then a prod-box stress run for the
+  live document per room, a new storage-bytes run, then UAT hardening.
+- **Shortcut map:** map and consolidate keyboard shortcuts across the app
+  (Office print shortcut waits for it).
+- **Header:** DOCX ruler as a View toggle (Google Docs); Chinese text mixes
+  weights in the header (CJK falls back from Fustat to the system font);
+  outline item placement pending Epo's screenshot check.
 - **DOCX view-mode copy.** View mode draws pages on a canvas
   (`DocxDisplayListViewer`) with no selection. Add a selectable text layer over
   the pages, as PDF viewers have, so text can be selected and copied. Approved
@@ -184,11 +189,6 @@ check); it applies at the first promotion.
   dialogs, toasts and placeholders.
 - **Chrome/Edge 111–118:** dialog buttons and tooltips have no colour fallback
   for missing relative colour syntax (menus and dropdowns have one).
-- **Header open questions:** is "Show document outline" the right label; the
-  print shortcut isn't bound; Show ruler is left out; Chinese text in the header
-  mixes font weights.
-- **Create workspace dialog, zh title.** Now 创建一个 to follow the English
-  "Create one", which reads oddly; 新建工作区 would be more natural.
 - **Fork typecheck noise:** `usePagesPointer.note.test.ts:539` (docx-react) and
   `.at()` errors in `pptx-react/src/PptxEditor.test.tsx`.
 - **Office memory ceiling:** heap figures in `bench:office` are report-only;
