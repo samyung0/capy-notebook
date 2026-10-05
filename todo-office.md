@@ -72,13 +72,19 @@ check); it applies at the first promotion.
   `xlsxPendingEffects` and the room replica code in
   `vendor/betteroffice/shared/office-checkpoint.ts` (tests in
   `shared/office-replicas.test.ts`).
-- **XLSX agent inspect/edit memory:** an AI agent inspecting or editing the
-  large gradebook grows the XLSX engine to ~1.9 GiB, which stays resident on
-  Linux afterwards. Find what holds it (a second opened copy per call, WASM
-  memory never returned) and bound or release it.
+- **XLSX agent inspect/edit cost and memory** (xlsx-engine track): each agent
+  call opens the workbook afresh and builds the whole projection (twice in
+  `apply`, once in `locate` and `inspect`; `xlsxProjection` in
+  `vendor/betteroffice/shared/office-checkpoint.ts`), minutes at 100k cells,
+  and grows the XLSX engine to ~1.9 GiB on the large gradebook, resident on
+  Linux afterwards. Read the target with `cellJson` and the sheets with
+  `sheetInfoJson`, then remeasure memory.
 - **Second collaboration instance** with document-sticky routing (the gateway's
   collaboration-token response already returns the WebSocket URL) only when
-  one main thread runs out; first fix the contributor-marker check below.
+  one main thread runs out. First the contributor-marker check
+  (`collaboration/src/contributors.ts`): it knows only this instance's marker
+  client, so a crafted delete of another instance's markers isn't rejected;
+  design the trade-off (rejecting honest resends after a room reload) first.
 - **Store CPU off the main thread** (a save worker holding a replica) or a Rust
   server: shelved unless prod shows saves still stall rooms.
 - **Load generator limits:** at 2×100+ peers the generator saturated its own
@@ -149,8 +155,14 @@ check); it applies at the first promotion.
   2026-10-03.
 - **PPTX presenter view.** Show speaker notes while presenting. Notes are
   already hidden by default and toggled in edit and view mode.
-- **PPTX lists and indent.** The PPTX engine has no list or indent operations,
-  so the text toolbar can't offer them.
+- **PPTX parity with Google Slides** (decided 2026-10-05): lists, indent and
+  the other common text operations Capy's PPTX lacks, Edit › Select all, the
+  toolbar arranged after the DOCX/XLSX toolbars and Google Slides. List keys
+  follow Google Slides: Enter on an empty bullet ends the list, Backspace at
+  the start of a bulleted line first removes the bullet (today both differ).
+- **PPTX comments UI (parked):** comments are kept on save
+  (`crates/pptx-edit/src/comments.rs`) but Capy shows none; after the parity
+  track, start from a mock.
 - **DOCX Insert/Update table of contents.** An engine track; the menu item is
   hidden until it works.
 - **DOCX table-menu items.** Vertical alignment, table alignment, header row,
@@ -166,11 +178,26 @@ check); it applies at the first promotion.
 
 ## Unverified or small
 
-- **Safari copy/cut.** DOCX ⌘C/⌘X use `beforecopy`/`beforecut` listeners for
-  WebKit; untested because Playwright's WebKit isn't installed here.
-- **Firefox.** The menu bar's edge fades were checked in Chromium only.
-- **XLSX Print notice.** "Printed the first 50 pages" hasn't been seen live; the
-  test sheet prints 2 pages.
+- **DOCX paragraph edits lost on save** (docx-paragraph-save track, with
+  `w:rFonts w:hint`): indent, line spacing, tabs, borders and shading set in
+  the editor are dropped for every paragraph whose source had paragraph
+  properties; `paragraphAttrsToFormatting`
+  (`packages/docx/src/yrs/saveFormatting.ts`) overrides only a few. `w:hint`
+  is parsed but no run mark carries it (a seed change, taken 2026-10-05).
+- **Chat can't describe an image added to an Office file** (decided
+  2026-10-05): attach the image to the next model request as `capture_page`
+  does and remove the source-change caption path (`captioning_spec()` needs
+  ingest job pins the retrieval service never sets; the test mocks it).
+- **File descriptors cut mid-phrase** (retrieval): the prompt asks for one
+  ~50-word sentence and `_truncate_words` cuts at word 50, the only bound on
+  that call (no `max_tokens`). Open with Epo.
+- **CJK refresh trigger:** `effectTokens` counts a CJK character as a token and
+  each effect carries 40 characters of context on each side in `before` and
+  `after`, so a small CJK edit counts ~160 tokens against ~41 in English (the
+  3,000 trigger after ~19 edited paragraphs instead of ~73). Open with Epo.
+- **Recovery logging** (decided 2026-10-05): log each draft from another epoch
+  entering copy-only recovery (no late merge); where it goes is open with the
+  logging summary.
 - **Citation after a runtime reload.** `load` carries the citation, but no e2e
   checks the highlight comes back (no mock chat cites an Office file).
 - **DOCX highlight picker** never ticks the current highlight; the editor
@@ -194,61 +221,40 @@ check); it applies at the first promotion.
   for missing relative colour syntax (menus and dropdowns have one).
 - **Fork typecheck noise:** `usePagesPointer.note.test.ts:539` (docx-react) and
   `.at()` errors in `pptx-react/src/PptxEditor.test.tsx`.
-- **Office memory ceiling:** heap figures in `bench:office` are report-only;
-  decide what a ceiling means (per format, view vs edit; the long DOCX holds
-  ~450 MB of WASM in edit mode, the large XLSX ~242 MB) before gating them.
-- **Office in the production promotion gate** and a scroll benchmark: later,
-  once the Office budgets have held for a few runs. The small DOCX key p90
-  (188 against 195 ms) is the closest budget.
-- **Editor read-only open** budget was rebaselined to 4,050 ms; the trim of the
-  workspace page's startup imports is in `openwiki/editor-perf.md` "Open items".
-- **PPTX differences kept on purpose:** Enter on an empty bullet keeps the
-  list (as PowerPoint; Google Slides ends it); Backspace at the start of a
-  bulleted line joins at once (PowerPoint first removes the bullet).
-- **Prune local Docker** if space runs low: four stopped `capy-e2e-local-*`
-  containers from 2026-09 and their images (~3 GB).
+- **Office budgets in the gate:** `bench:office` heap figures stay report-only
+  until the ceilings exist (after the optimization round; per format, view vs
+  edit; measure open/close growth from about the 10th open, not the first);
+  then Office joins the production promotion gate with a scroll benchmark once
+  its budgets hold for a few runs. The small DOCX key p90 (188 against 195 ms)
+  is the closest.
 
-## Benchmarks and UAT hardening (deferred 2026-09-26)
+## After the optimization round (decided 2026-10-05)
 
-Storage-round reports, prototype patches and probe scripts are in
-`artifacts/2026-09-25-office-storage/` (reference only, not runnable as is).
+The 2026-09-25 storage probes stay in `artifacts/2026-09-25-office-storage/`
+(reference only).
 
-- **`bench/office` family** with the standard layout, registered in
-  `bench/README.md` and the benchmark table in `AGENTS.md`:
-  - storage: seed, baseline and pending-change bytes per fixture and format,
-    and the charge after first Edit open and at the refresh peak under the quota
-    rule (start from `probes/storage/` and `probes/cross-shrink/`);
-  - large spreadsheets in WASM: seed, open, one-cell commit, checkpoint save
-    and export at 10k, 50k and 100k cells (start from `probes/xlsx-lazy/`);
-  - collaboration service cost per incoming update, and browser draft write
-    cost per keystroke;
-  - WASM sizes of viewer and editor builds against the previous pin (the
-    2026-09-26 upstream merge grew DOCX/XLSX 10–13% and PPTX 34–50%; find which
-    upstream additions the viewer needs);
-  - XLSX save serialization on the 100k-cell sheet (no `onSaveRequest`, so the
-    bytes are discarded); add one in the fork if it matters.
-- **UAT hardening:** many editors in one Office room and one Plate room,
-  sustained typing and reconnect storms; large Office files near the plan
-  limits (open, edit, save, publish); publication under concurrent editing with
-  a slow or disconnecting editor; a rehearsal of the seed-changing upgrade
-  window on UAT; recheck the 3,000-token refresh trigger on CJK documents.
-- **Before a second collaboration instance:** the contributor-marker check
-  (`collaboration/src/contributors.ts`) only knows this instance's marker
-  client, so a crafted delete aimed at another instance's markers isn't
-  rejected. Design the trade-off (rejecting honest resends after a room reload)
-  first. Deferred while production runs one instance.
-- **Late merge of old-epoch edits:** a client disconnected during a publication
-  gets its unsaved edits in copy-only recovery (offline editing, 2026-10-05,
-  never merges another lineage). Merging them needs the previous source and
-  final old-epoch state kept for a grace period.
+- **Storage-bytes run:** rerun `bench/parsers/scripts/office_storage.ts` and
+  `office_storage_charging.spec.ts`; compare with the 2026-09-28 and
+  2026-10-05 reports in `bench/parsers/reports/`.
+- **WASM sizes:** the 2026-09-26 upstream merge grew the viewers 10–50%
+  (`artifacts/2026-09-25-office-progress/c5.md`); DOCX viewer 7.6 MB, DOCX
+  editor 10.3 MB, PPTX viewer 2.1 MB. Find what the viewers carry that view
+  mode never calls, and print each module's bytes in the `bench:office` report.
+- **Mass reconnect:** every client of a busy collaboration service
+  reconnecting at once after a restart or deploy; `bench:stress` only drops
+  peers one at a time.
+- **Maintenance window rehearsal on UAT** with Office rows present (pause,
+  publish-all, status, seed-manifest, reset, resume), including an editor that
+  goes silent during the maintenance handoff. Needed before production holds
+  Office data.
+- **Safari and Firefox pass:** DOCX ⌘C/⌘X rely on `beforecopy`/`beforecut`
+  for WebKit, and the menu bar's edge fades were checked in Chromium only.
 
-## Deferred from the 2026-09-25 Office round (status not rechecked)
-
-Listed as "not in this round" in `artifacts/2026-09-25-office-implementation-plan.md`:
-parser-tolerant XLSX binding, compact XLSX keys and values, compression at rest,
-style-table DOCX formatting, the XLSX agent-edit projection cost, the descriptor
-truncation side fix, a PPTX comments UI, DOCX export dropping paragraph and
-language properties, and chat captioning of edited Office images.
+Dropped 2026-10-05: parser-tolerant XLSX binding, compact XLSX keys and
+values, compression at rest and the DOCX style table (states are small changes
+over the seed); `bench/office` as a directory, the per-update cost (measured in
+the prod report), the 100k XLSX save serialization and publication under a
+slow editor (no handoff outside maintenance since the deferred rebuild).
 
 ## How to work on Office changes
 
