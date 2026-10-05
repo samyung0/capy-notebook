@@ -525,10 +525,17 @@ export function validateQuestion(
     ...question.parts.flatMap((p) => [...p.blocks, ...p.solution]),
   ]) {
     if (block.type !== 'image' && block.type !== 'graph') continue;
-    // Bank figures must be hosted bank assets; quiz figures must be editor assets.
+    // Bank figures must be hosted bank assets; quiz figures are editor assets,
+    // or a copied bank question's link under the deployment's BANK_ASSETS_URL
+    // (VITE_BANK_ASSETS_URL, scripts/env/config.py).
     if (
       'url' in block.image
-        ? !policy.bank || !hostedAsset(block.image.url, policy.bankAssetsUrl)
+        ? !hostedAsset(
+            block.image.url,
+            policy.bank
+              ? policy.bankAssetsUrl
+              : import.meta.env.VITE_BANK_ASSETS_URL
+          )
         : 'assetId' in block.image && policy.bank
     )
       throw new CopyError(m.question_validation_asset_host());

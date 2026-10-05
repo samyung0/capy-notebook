@@ -10,14 +10,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ..config import cfg
+
 # Every turn: at most this many tool calls in one response.
 TOOLS_PER_RESPONSE = 4
 MAX_CONCURRENT = 4
 
 # A turn without ledger todos (an answer or a single-item build) gets this many
 # responses, the last with tools off. A turn that needs more room creates a
-# ledger.
-PLANNING_RESPONSES = 8
+# ledger. CAPY_AGENT_MAX_STEPS can only lower it; the prompt states this value.
+PLANNING_RESPONSES = min(cfg.agent_max_steps, 8)
 
 # Once the turn's ledger has todos there is no response ceiling: the tool cap
 # bounds productive turns, and the stall guard ends one whose responses stop
@@ -25,8 +27,8 @@ PLANNING_RESPONSES = 8
 LEDGER_TOOLS_PER_TURN = 160
 STALL_RESPONSES = 5
 # A write that errors is an attempt at progress: each of the first two errored
-# create_material or edit_document calls in a turn grants the stall guard two
-# more responses, so the threshold is at most 5 + 4.
+# create_material, edit_document or copy_questions calls in a turn grants the
+# stall guard two more responses, so the threshold is at most 5 + 4.
 WRITE_ERROR_GRACE = 2
 WRITE_ERROR_GRACE_MAX = 2
 

@@ -1,5 +1,6 @@
 import type React from 'react';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { chatTurn, LIBRARY_DEFAULT } from '@/api/chatStream';
 import { isApiError } from '@/api/client';
 import { useConversations, useMessages, useUndoEdit } from '@/api/hooks';
 import { CHAT_CHARACTER_LIMIT } from '@/api/limits.generated';
@@ -421,7 +422,7 @@ export function ChatPanel({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [selectId, setSelectId] = useState<string | null>(null);
   // The Library switch applies per turn; it stays where the learner left it.
-  const [library, setLibrary] = useState(true);
+  const [library, setLibrary] = useState(LIBRARY_DEFAULT);
   const { data: history } = useMessages(selectId, { errorBoundary: false });
   const hydratedRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -452,21 +453,11 @@ export function ChatPanel({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages]);
 
-  // Only the id and kind leave the browser; the server looks up the title.
-  function turn() {
-    return {
-      library,
-      openResource: openResource
-        ? { id: openResource.id, kind: openResource.kind }
-        : undefined,
-    };
-  }
-
   function submit() {
     const trimmed = text.trim();
     if (!trimmed || streaming || inputLimit.exceeded) return;
     setText('');
-    void send(trimmed, turn());
+    void send(trimmed, chatTurn(library, openResource));
   }
 
   function openNew() {
@@ -599,7 +590,9 @@ export function ChatPanel({
         <QuestionBlock
           disabled={streaming}
           key={last.id}
-          onSend={(answer) => void send(answer, turn())}
+          onSend={(answer) =>
+            void send(answer, chatTurn(library, openResource))
+          }
           questions={questions}
         />
       ) : null}

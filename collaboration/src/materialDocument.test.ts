@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   assertCanonicalMaterialValue,
   MaterialDocumentValidationError,
@@ -131,5 +131,44 @@ describe('embedded material references', () => {
         'note'
       )
     ).toThrow('one empty text leaf');
+  });
+});
+
+describe('copied bank figures in a quiz', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+  const withFigure = (url: string) => {
+    const value = quiz(0);
+    value.children[0].question.stem = [
+      {
+        description: 'A figure',
+        height: 300,
+        image: { url },
+        type: 'image',
+        width: 400,
+      },
+    ] as never[];
+    return [value];
+  };
+
+  it('accepts a link under BANK_ASSETS_URL only, like Go', () => {
+    const figure = 'https://bank.example/assets/f.png';
+    vi.stubEnv('BANK_ASSETS_URL', '');
+    expect(() =>
+      assertCanonicalMaterialValue(withFigure(figure), 'quiz')
+    ).toThrow('bank asset host');
+    vi.stubEnv('BANK_ASSETS_URL', 'https://bank.example/assets');
+    expect(() =>
+      assertCanonicalMaterialValue(withFigure(figure), 'quiz')
+    ).not.toThrow();
+    for (const outside of [
+      'https://bank.example.evil/assets/f.png',
+      'https://bank.example/assets/../private/f.png',
+      'https://bank.example/assetsx/f.png',
+    ])
+      expect(() =>
+        assertCanonicalMaterialValue(withFigure(outside), 'quiz')
+      ).toThrow('bank asset host');
   });
 });

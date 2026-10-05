@@ -45,6 +45,21 @@ func TestDefinitionsAreClosedObjects(t *testing.T) {
 	}
 }
 
+// The ledger is a todo list only: create_ledger takes todos and no body.
+func TestCreateLedgerTakesOnlyTodos(t *testing.T) {
+	for _, def := range Definitions() {
+		if def.Name != "create_ledger" {
+			continue
+		}
+		props, _ := def.InputSchema["properties"].(map[string]any)
+		if _, ok := props["todos"]; !ok || len(props) != 1 {
+			t.Fatalf("create_ledger properties = %v, want only todos", props)
+		}
+		return
+	}
+	t.Fatal("missing tool create_ledger")
+}
+
 func assertClosed(t *testing.T, name string, schema map[string]any) {
 	t.Helper()
 	if schema["type"] == "object" {

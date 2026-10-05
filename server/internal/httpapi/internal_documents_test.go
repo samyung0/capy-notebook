@@ -184,8 +184,9 @@ func TestInternalDocumentsReachEmbeddedMaterials(t *testing.T) {
 }
 
 // insert_markdown converts through the collaboration service; a quiz fence
-// becomes a row under the note before the reference block is inserted, and a
-// retried edit finds that row instead of creating another.
+// becomes a row under the note before the reference block is inserted, a
+// retried edit finds that row instead of creating another, and an edit the
+// authority refuses leaves the row discarded rather than hidden in the note.
 func TestInsertMarkdownCreatesItsMiniCheckFirst(t *testing.T) {
 	h, st := openInternalHTTP(t)
 	var sent []struct {
@@ -230,13 +231,17 @@ func TestInsertMarkdownCreatesItsMiniCheckFirst(t *testing.T) {
 		doInternal(t, h, http.MethodPost, "/api/internal/documents/edit", pipeSecret, edit)
 	}
 	var embedded []string
-	rows, err := st.Pool().Query(t.Context(), `SELECT id FROM materials WHERE parent_material_id=$1`, noteID)
+	rows, err := st.Pool().Query(t.Context(), `SELECT id, trashed_at IS NOT NULL FROM materials WHERE parent_material_id=$1`, noteID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for rows.Next() {
 		var id string
-		_ = rows.Scan(&id)
+		var trashed bool
+		_ = rows.Scan(&id, &trashed)
+		if !trashed {
+			t.Fatalf("embedded row %s outlived the refused edit", id)
+		}
 		embedded = append(embedded, id)
 	}
 	rows.Close()

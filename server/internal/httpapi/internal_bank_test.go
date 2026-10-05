@@ -32,7 +32,7 @@ func TestInternalBankListsReadsAndCopiesWithCredits(t *testing.T) {
 			}
 			return `{"id":"` + id + `","stem":[` + stem + `],"parts":[{"id":"` + id + `p","blocks":[{"type":"text","text":"Which?"}],"answer":{"type":"mcq","options":["A","B"],"correct":[0]},"marks":1,"solution":[{"type":"text","text":"A."}]}],"layout":"paper","labels":"letters"}`
 		}
-		web := `[{"kind":"web","url":"https://open.example/essay","title":"An essay","authors":["Writer"],"license":"CC BY 4.0","retrievedAt":"2026-10-02"}]`
+		web := `[{"kind":"web","url":"https://open.example/essay","title":"An essay","authors":["Writer"],"license":"CC BY-SA 4.0","retrievedAt":"2026-10-02"}]`
 		ctx := context.Background()
 		for i, row := range [][3]string{
 			{"bq1", question("bq1", assets+"/figure.png"), web},
@@ -131,7 +131,8 @@ func TestInternalBankListsReadsAndCopiesWithCredits(t *testing.T) {
 		t.Fatalf("copied questions: %s", raw)
 	}
 	credits := quiz.Provenance.Questions
-	if len(quiz.Provenance.Books) != 0 || len(credits) != 1 || credits["bq1"].Web[0].URL != "https://open.example/essay" {
+	if len(quiz.Provenance.Books) != 0 || len(credits) != 1 || credits["bq1"].Web[0].URL != "https://open.example/essay" ||
+		credits["bq1"].License != "CC BY-SA 4.0" {
 		t.Fatalf("question credits: %#v", quiz.Provenance)
 	}
 
@@ -142,8 +143,18 @@ func TestInternalBankListsReadsAndCopiesWithCredits(t *testing.T) {
 	if len(sent.Commands) != 1 || sent.Commands[0]["afterNodeId"] != "bq2" {
 		t.Fatalf("append after the last question: %v", sent.Commands)
 	}
-	if merged := sent.Provenance.Questions; len(merged) != 2 || merged["bq3"].Web == nil {
+	if merged := sent.Provenance.Questions; len(merged) != 2 || merged["bq3"].Web == nil || merged["bq3"].License != "CC BY-SA 4.0" {
 		t.Fatalf("merged credits: %#v", sent.Provenance)
+	}
+	// A question without sources needs no indexed workspace content either.
+	if _, err := st.Pool().Exec(context.Background(), `UPDATE files SET indexed=false WHERE id='f_e2e_private'`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(context.Background(), `UPDATE files SET indexed=true WHERE id='f_e2e_private'`)
+	})
+	if code, receipt := post("/api/internal/bank/copy", copyBody("c3", []string{"bq2"}, map[string]any{"title": "Unsourced"})); code != 200 {
+		t.Fatalf("copy without sources into an unindexed workspace: %d %v", code, receipt)
 	}
 	// The model's own writes still may not claim a question credit.
 	forged := noteBody(msg, "f1", "Forged", "text")

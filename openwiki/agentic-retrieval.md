@@ -2162,7 +2162,8 @@ build, and the knowledge library is one more source while the switch is on.
   raised there still becomes a typed error event.
 - **Limits** (`retrieval/limits.py`). Every turn: four tool calls per response,
   one `search_workspace` per response and no capture cap. A turn without ledger
-  todos gets 8 responses (`PLANNING_RESPONSES`), the last with tools off, and an
+  todos gets 8 responses (`PLANNING_RESPONSES`, lowered by `CAPY_AGENT_MAX_STEPS`
+  and stated in the prompt from that value), the last with tools off, and an
   empty response ends it with `invalid_answer`. A turn is a ledger turn once
   the ledger holds todos, including open ones carried from an earlier turn; it
   has no response ceiling. It gets 160 tool calls (`LEDGER_TOOLS_PER_TURN`);
@@ -2202,7 +2203,8 @@ build, and the knowledge library is one more source while the switch is on.
 - **Study progress.** `read_study_progress` (contract: `source.read`) is offered
   only when the turn's `studyProgress` is true. It posts `{workspaceId,
   userId}` to Go `/api/internal/study-progress` (`internal_study.go`; pipeline
-  secret, account access and any workspace role), which answers with
+  secret, account access, any workspace role, and progress on for that user in
+  that workspace, else 403), which answers with
   `store.AgentStudyProgress`: items marked done, started or removed, recent
   quiz results, and the chapters whose rated questions and cards are least
   retained. `tools.render_progress` turns it into the text the model reads.
@@ -2228,9 +2230,17 @@ build, and the knowledge library is one more source while the switch is on.
   `create_material` and `edit_document`. Each copy's credit is kept in the
   quiz's provenance under its question id (`provenance.questions`), shown under
   that question (`QuestionCreditNote`), never in the material footer, and the
-  model cannot supply one: only the copy route writes it. Copied figures keep
-  linking to the bank's public, content-hashed URLs (`questions.QuizBankAssetsURL`
-  from `BANK_ASSETS_URL`). An embedding search came first
+  model cannot supply one: only the copy route writes it. The route validates
+  the credits before either write (`ValidateStoredProvenance`), which computes
+  each credit's licence line (a ShareAlike source's licence). A copy needs no
+  indexed workspace content, sourced or not (`internalMaterialReq.FromBank`).
+  `copy_questions` counts as a write for the stall guard (`WRITE_TOOLS`).
+  Copied figures keep linking to the bank's public, content-hashed URLs, under
+  the same base in every validator: Go `questions.QuizBankAssetsURL` and the
+  collaboration service's `questions.ts` read `BANK_ASSETS_URL`, and the
+  browser's `validation.ts` reads `VITE_BANK_ASSETS_URL`, which
+  `scripts/env/config.py` builds from `BANK_ASSETS_URL`. Each checks the exact
+  origin and the cleaned path. An embedding search came first
   (`bench/rag/reports/2026-10-04-bank-search.md`); Epo chose listing on
   2026-10-04, and the copy and its per-question credits on 2026-10-05.
 - **Provenance.** Provenance is the excerpts a work was written from. Both
@@ -2401,7 +2411,9 @@ tool description to what the schema cannot say, and moves the note and
 question formats out of the write tools into the contract's `formats`, which
 the materials skill quotes (`ContractVersion` in `agenttools.go`,
 `SUPPORTED_VERSION` in `retrieval/contract.py`). Version 13 adds
-`copy_questions`. `cmd/openapi -agent-tools`
+`copy_questions`. Version 14 (2026-10-05) drops `fallback` from the
+`html-embed` fence: an interactive carries only `title` and `html`, and the
+chat's text answer carries the explanation. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
 tools, while the same Go types reach TypeScript through the OpenAPI schema. Go
@@ -2437,7 +2449,13 @@ sources; `set_cell` for XLSX) and applied by the collaboration service on an
 isolated Y.Doc. `insert_markdown` converts its markdown like a created note and
 inserts the resulting blocks; its fences' rows are created under the note
 first (`EnsureEmbeddedMaterial`, ids derived from call and command, so a
-retried edit finds them), the order the editor uses. The edit is applied on an
+retried edit finds them), the order the editor uses. When the authority
+refuses the edit, or a later command fails before it is sent, Go trashes the
+rows that edit created and no projection has referenced
+(`DiscardEmbeddedDrafts`), so no hidden rows stay charged to the owner; a lost
+answer keeps them, since the edit may have committed. A discarded row that a
+retry of the same call references after all is restored by the note's
+projection (`reconcileEmbeddedTx`). The edit is applied on an
 isolated Y.Doc loaded from durable state under the material or source lock,
 merged with this replica's open live room so unsaved typing on a target also
 counts as drift; the durable copy drops the room's server-owned contributor
@@ -2759,7 +2777,7 @@ current chunk, with full coverage in the large-document reduction path.
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
 | Search | `CAPY_SEARCH_CANDIDATES`, `CAPY_SEARCH_TOP_K`, `CAPY_SEARCH_PER_FILE_CAP` | |
 | Knowledge library | `LIBRARY_DATABASE_URL`, `CAPY_LIBRARY_TAG_MIN_CONFIDENCE` | Unset URL leaves library tools unavailable. Every environment reads the same live library; books carry their own versions, so there is nothing to pin. Tags below 0.8 confidence, or with an unverified evidence quote, never act as filters. |
-| Question bank | `BANK_DATABASE_URL`, `BANK_ASSETS_URL` (Go) | The bank's read-only DSN, which only the Go server holds: the chat's bank tools read and copy through its internal routes. Unset leaves them unoffered. `BANK_ASSETS_URL` is also the one base a quiz's copied figures may link to. |
+| Question bank | `BANK_DATABASE_URL`, `BANK_ASSETS_URL` (Go, collaboration; `VITE_BANK_ASSETS_URL` in the SPA build) | The bank's read-only DSN, which only the Go server holds: the chat's bank tools read and copy through its internal routes. Unset leaves them unoffered. `BANK_ASSETS_URL` is also the one base a quiz's copied figures may link to; the collaboration service gets it in both compose files, and the SPA build gets it as `VITE_BANK_ASSETS_URL` (set it by hand in `deploy/.env` for local development). |
 | Library source PDFs | `KNOWLEDGE_BASE_B2_ENDPOINT`, `KNOWLEDGE_BASE_B2_REGION`, `KNOWLEDGE_BASE_B2_BUCKET`, `KNOWLEDGE_BASE_B2_KEY_ID`, `KNOWLEDGE_BASE_B2_APP_KEY` | A dedicated private bucket with its own restricted key, not a prefix of the app bucket. All five or none; unset leaves `capture_knowledge_page` unoffered. |
 | Agent | `CAPY_AGENT_MAX_STEPS` | Default and maximum 8 (`PLANNING_RESPONSES`): the responses a turn without ledger todos gets, the last with tools off. 4 tool calls per response on every turn (`retrieval/limits.py`). Cap is the design, not a safety valve. A turn whose ledger holds todos has no response ceiling: `LEDGER_TOOLS_PER_TURN` (160) and the `STALL_RESPONSES` guard (5, plus `WRITE_ERROR_GRACE` 2 per errored write for at most 2 errors) bound it. No context-window minimum |
 | Extraction confidence | `CAPY_CONFIDENCE_NOTE_BELOW` | Default 0.9. A passage whose chunk confidence is below this carries `[extraction confidence 0.72: reasons]` in its header. Visual facts require capture even above this threshold |

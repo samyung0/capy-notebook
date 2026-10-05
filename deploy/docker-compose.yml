@@ -79,6 +79,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       PORT: "1234"
       SENTRY_DSN: ${SENTRY_DSN_COLLABORATION:-}
+      # Copied bank questions link their figures here (questions.ts).
+      BANK_ASSETS_URL: ${BANK_ASSETS_URL:-}
     ports:
       - "1234:1234"
     healthcheck:

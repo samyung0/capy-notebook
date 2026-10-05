@@ -147,7 +147,9 @@ def render(values, environment, output, revision):
     coolify = target_values(values, "coolify")
     for key, value in coolify.items():
         # Keys scoped to other environments (the UAT publication hold) stay blank.
-        if value and environment not in MANIFEST[key].get("environments", [environment]):
+        if value and environment not in MANIFEST[key].get(
+            "environments", [environment]
+        ):
             fail(f"{key} is not allowed in {environment}")
     password = values.get("POSTGRES_PASSWORD", "")
     if not password:
@@ -166,6 +168,8 @@ def render(values, environment, output, revision):
         VITE_APP_ENV=environment,
         VITE_APP_URL=values.get("DEPLOYMENT_APP_URL", ""),
         VITE_CLERK_PUBLISHABLE_KEY=values.get("CLERK_PUBLISHABLE_KEY", ""),
+        # Copied bank questions keep linking their figures here.
+        VITE_BANK_ASSETS_URL=values.get("BANK_ASSETS_URL", ""),
         VITE_RELEASE_SHA=revision,
         VITE_E2E_EDITOR_SEED="false",
         VITE_LOAD_TEST_SEED="false",

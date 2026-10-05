@@ -19,6 +19,16 @@ func (a *api) internalStudyProgress(w http.ResponseWriter, r *http.Request) {
 	if !a.internalDocumentsActor(w, r, req.UserID, req.WorkspaceID, false) {
 		return
 	}
+	// The tool is offered only with progress on; the route holds the same line.
+	on, err := a.s.StudyEnabled(r.Context(), req.UserID, req.WorkspaceID)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	if !on {
+		writeJSON(w, http.StatusForbidden, map[string]string{"code": "lifecycle_rejected", "message": "Study progress is off for this user in this workspace."})
+		return
+	}
 	progress, err := a.s.AgentStudyProgress(r.Context(), req.UserID, req.WorkspaceID, time.Now())
 	if err != nil {
 		a.fail(w, err)

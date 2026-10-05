@@ -168,7 +168,7 @@ quiz goes through `server/cmd/quizcheck`, the app's own quiz validation, so a
 saved quiz is one the app accepts. A note's fences are checked the way the
 editor's import and the interactive block will take them (`check_note`):
 quiz fences through `quizcheck`, flashcards with a front and back, and
-`html-embed` with a fallback, under 64 KB and without network access. There is no gateway to store the ledger in
+`html-embed` with html (no fallback), under 64 KB and without network access. There is no gateway to store the ledger in
 either, so `tools.store_ledger` is stubbed and `run.json` holds it. The page
 carries the stored ledger into the next turn automatically. `--ledger` can also
 seed a conversation from a saved run, starting from its `stored` ledger the way

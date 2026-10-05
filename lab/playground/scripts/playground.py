@@ -716,7 +716,6 @@ async def check_quiz(questions: list[Any]) -> str:
 
 FENCE = re.compile(r"^```([\w-]*)[^\n]*\n(.*?)^```[ \t]*$", re.M | re.S)
 EMBED_HTML_MAX = 64 * 1024
-EMBED_FALLBACK_MAX = 2000
 NETWORK = re.compile(r"https?://|\bfetch\(|XMLHttpRequest|WebSocket|EventSource|import\(")
 
 
@@ -754,15 +753,11 @@ async def check_note(markdown: str) -> str:
                 ):
                     return f"{where}: every card needs a front and a back"
         else:
-            html, fallback = data.get("html"), data.get("fallback")
+            html = data.get("html")
             if not isinstance(html, str) or not html.strip():
                 return f"{where} needs html"
-            if not isinstance(fallback, str) or not fallback.strip():
-                return f"{where} needs a fallback"
             if len(html.encode()) > EMBED_HTML_MAX:
                 return f"{where}: html is {len(html.encode())} bytes, over {EMBED_HTML_MAX}"
-            if len(fallback) > EMBED_FALLBACK_MAX:
-                return f"{where}: fallback is over {EMBED_FALLBACK_MAX} characters"
             if NETWORK.search(html):
                 return f"{where}: html must not reach the network ({NETWORK.search(html).group(0)})"
     return ""
@@ -1998,13 +1993,13 @@ def check() -> None:
             raise AssertionError(f"accepted invalid skills: {invalid}")
     # Note fences: flashcards and html-embed are checked here, quizzes by Go.
     note = "```flashcards\ncards:\n- front: a\n  back: b\n```\n"
-    embed = "```html-embed\ntitle: t\nfallback: f\nhtml: |\n  <p>x</p>\n```\n"
+    embed = "```html-embed\ntitle: t\nhtml: |\n  <p>x</p>\n```\n"
     assert asyncio.run(check_note("text\n" + note + embed + "```mermaid\nflowchart\n```\n")) == ""
     for bad, says in (
         ("```flashcards\ncards: []\n```\n", "non-empty cards"),
         ("```flashcards\ncards:\n- front: a\n```\n", "front and a back"),
-        ("```html-embed\nhtml: <p>x</p>\n```\n", "fallback"),
-        ("```html-embed\nfallback: f\nhtml: <img src='https://x'>\n```\n", "network"),
+        ("```html-embed\ntitle: t\n```\n", "needs html"),
+        ("```html-embed\nhtml: <img src='https://x'>\n```\n", "network"),
         ("```html-embed\n: [\n```\n", "not YAML"),
     ):
         assert says in asyncio.run(check_note(bad)), bad
@@ -2184,7 +2179,7 @@ def check() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", choices=sorted(TARGETS), default="lab")
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", 8765)))
     parser.add_argument("--check", action="store_true")
     parser.add_argument(
         "--ledger",

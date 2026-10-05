@@ -1,5 +1,11 @@
 # Knowledge base plan
 
+History note, 2026-10-05: curate mode, as designed and tested in this file
+(the curate thread flag, prompt, loop and its sections below), is history. The
+per-turn Library switch and one build flow replaced it (migration 0052,
+`openwiki/agentic-retrieval.md`, `todo-learning.md` Part 2). The library
+storage, loader and retrieval parts still describe the shipped library.
+
 Status on 2026-09-16: Epo authorized implementation and testing of the complete local parsing and ingestion pilot, with an Astra xhigh subagent. This supersedes the earlier planning-only pause. Shared chat compaction and capture-lifetime changes already exist; application library tools and curate mode remain separate integration work. This file consolidates the research reports, outside review, attached discussion and subsequent decisions. The decisions themselves are recorded in `human/agentic-retrieval.md`.
 
 ## Completed local pilot, 2026-09-16

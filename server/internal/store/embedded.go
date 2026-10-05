@@ -135,6 +135,33 @@ func (s *Store) createEmbeddedTx(ctx context.Context, tx pgx.Tx, note Material, 
 	return nil
 }
 
+// DiscardEmbeddedDrafts trashes the rows a refused agent edit created under
+// noteID: no projection has referenced them, so without this they would stay
+// as hidden rows charged to the owner. Trash is the lifecycle an unreferenced
+// row already has, so the sweep purges them later.
+func (s *Store) DiscardEmbeddedDrafts(ctx context.Context, noteID string, ids []string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	rows, err := tx.Query(ctx, `SELECT id FROM materials WHERE id = ANY($1) AND parent_material_id=$2
+		AND reference_seen_at IS NULL AND trashed_at IS NULL FOR UPDATE`, ids, noteID)
+	if err != nil {
+		return err
+	}
+	unseen, err := scanIDs(rows)
+	if err != nil {
+		return err
+	}
+	for _, id := range unseen {
+		if err := trashEmbeddedRowTx(ctx, tx, id, "", uid("trash")); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
 // reconcileEmbeddedTx aligns the note's embedded rows with the references in
 // its projected content. A row is first noted as referenced (reference_seen_at)
 // and from then on follows its block: a referenced row that was trashed comes
@@ -163,11 +190,16 @@ func reconcileEmbeddedTx(ctx context.Context, tx pgx.Tx, noteID, content, actorI
 			return err
 		}
 		switch {
-		case referenced[id] && !wasSeen:
-			seen = append(seen, id)
-		case referenced[id] && trashed:
-			restore = append(restore, id)
-		case !referenced[id] && !trashed && wasSeen:
+		case referenced[id]:
+			if !wasSeen {
+				seen = append(seen, id)
+			}
+			// Also a row a refused agent edit discarded before a retry of the
+			// same call referenced it (DiscardEmbeddedDrafts).
+			if trashed {
+				restore = append(restore, id)
+			}
+		case !trashed && wasSeen:
 			trash = append(trash, id)
 		}
 	}

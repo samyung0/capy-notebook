@@ -549,10 +549,15 @@ export function validateQuestion(value: unknown, policy: QuestionPolicy = {}) {
     ...question.parts.flatMap((p) => [...p.blocks, ...p.solution]),
   ]) {
     if (block.type !== 'image' && block.type !== 'graph') continue;
-    // Bank figures must be hosted bank assets; quiz figures must be editor assets.
+    // Bank figures must be hosted bank assets; quiz figures are editor assets,
+    // or a copied bank question's link under BANK_ASSETS_URL (Go's
+    // QuizBankAssetsURL).
     if (
       'url' in block.image
-        ? !policy.bank || !hostedAsset(block.image.url, policy.bankAssetsUrl)
+        ? !hostedAsset(
+            block.image.url,
+            policy.bank ? policy.bankAssetsUrl : process.env.BANK_ASSETS_URL
+          )
         : 'assetId' in block.image && policy.bank
     )
       throw new Error('Figures must use the configured bank asset host.');

@@ -56,7 +56,7 @@ from .limits import (
 )
 
 # The material write tools: an errored call is an attempt at progress.
-WRITE_TOOLS = frozenset({"create_material", "edit_document"})
+WRITE_TOOLS = frozenset({"create_material", "edit_document", "copy_questions"})
 from .openui import LangRenderer
 from .response_guard import (
     FLAGGED_CODE,

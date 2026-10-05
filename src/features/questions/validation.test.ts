@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { exampleQuestion } from './questionFixtures';
 import {
   type QuestionPolicy,
@@ -34,5 +34,36 @@ describe('shared Go, collaboration and browser question fixtures', () => {
     const two = exampleQuestion('two');
     two.parts[0].id = one.parts[0].id;
     expect(() => validateQuestions([one, two])).toThrow('Part IDs');
+  });
+});
+
+describe('copied bank figures in a quiz', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+  const withFigure = (url: string) => ({
+    ...exampleQuestion('q'),
+    stem: [
+      {
+        description: 'A figure',
+        height: 300,
+        image: { url },
+        type: 'image' as const,
+        width: 400,
+      },
+    ],
+  });
+
+  it('accepts a link under VITE_BANK_ASSETS_URL only, like Go', () => {
+    const figure = 'https://bank.example/assets/f.png';
+    vi.stubEnv('VITE_BANK_ASSETS_URL', '');
+    expect(() => validateQuestion(withFigure(figure))).toThrow();
+    vi.stubEnv('VITE_BANK_ASSETS_URL', 'https://bank.example/assets');
+    expect(() => validateQuestion(withFigure(figure))).not.toThrow();
+    for (const outside of [
+      'https://bank.example.evil/assets/f.png',
+      'https://bank.example/assets/../private/f.png',
+    ])
+      expect(() => validateQuestion(withFigure(outside))).toThrow();
   });
 });

@@ -54,6 +54,9 @@ type internalMaterialReq struct {
 	// Library attribution resolved by the retrieval service from the excerpt
 	// ids the model named. Absent for a workspace material.
 	Provenance *store.Provenance `json:"provenance"`
+	// FromBank is set by the bank copy route, never by a request body: the
+	// questions come from the bank, so the workspace needs no indexed content.
+	FromBank bool `json:"-"`
 }
 
 // hashPayload is the normalized request identity: everything the model chose.
@@ -213,10 +216,10 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 		return
 	}
 
-	// A material written from the knowledge library is grounded in the library,
-	// not in the workspace, so it does not require indexed workspace content.
+	// A material written from the knowledge library or copied from the bank is
+	// grounded there, not in the workspace, so it needs no indexed content.
 	_, fileNames, chapterNames, err := a.resolveScope(ctx, req.WorkspaceID, &generateOpts{
-		FileIds: req.FileIDs, Chapters: req.ChapterIDs, AllowUnindexed: req.Provenance != nil,
+		FileIds: req.FileIDs, Chapters: req.ChapterIDs, AllowUnindexed: req.Provenance != nil || req.FromBank,
 	})
 	if err != nil {
 		if errors.Is(err, errScopeNoIndexedContent) {

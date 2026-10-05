@@ -972,6 +972,10 @@
       "kind": "variable",
       "targets": ["build"]
     },
+    "VITE_BANK_ASSETS_URL": {
+      "kind": "variable",
+      "targets": ["local"]
+    },
     "VITE_CLERK_PUBLISHABLE_KEY": {
       "kind": "variable",
       "targets": ["local"]

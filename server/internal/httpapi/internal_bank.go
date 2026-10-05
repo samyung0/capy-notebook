@@ -227,6 +227,11 @@ func (a *api) internalBankCopy(w http.ResponseWriter, r *http.Request) {
 	var provenance *store.Provenance
 	if len(credits) > 0 {
 		provenance = &store.Provenance{Books: []store.ProvenanceBook{}, Questions: credits}
+		// Bounds the record and computes each credit's licence line.
+		if code, err := validateStoredProvenance(provenance); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"code": code, "message": err.Error()})
+			return
+		}
 	}
 
 	if req.QuizID == "" {
@@ -238,7 +243,7 @@ func (a *api) internalBankCopy(w http.ResponseWriter, r *http.Request) {
 		a.createAgentMaterial(w, r, internalMaterialReq{
 			WorkspaceID: req.WorkspaceID, UserID: req.UserID, AssistantMessageID: req.AssistantMessageID,
 			ToolCallID: req.ToolCallID, Kind: "quiz", Title: req.Title, ChapterID: req.ChapterID,
-			Questions: raw, Provenance: provenance,
+			Questions: raw, Provenance: provenance, FromBank: true,
 		})
 		return
 	}

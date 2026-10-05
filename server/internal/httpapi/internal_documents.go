@@ -349,6 +349,18 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 	// record is merged with this edit's books before the authority writes it in
 	// the same transaction as the content.
 	var provenance *store.Provenance
+	// The rows insert_markdown created for the note's mini checks. They are
+	// discarded unless the edit commits or its outcome is unknown, so a refused
+	// edit leaves no hidden rows behind.
+	var embedded []string
+	discard := true
+	defer func() {
+		if discard && len(embedded) > 0 {
+			if err := a.s.DiscardEmbeddedDrafts(context.WithoutCancel(ctx), req.Target.ID, embedded); err != nil {
+				obs.Log(ctx).Warn("refused edit left its embedded rows", "note_id", req.Target.ID, "error", err)
+			}
+		}
+	}()
 	switch req.Target.Kind {
 	case agenttools.KindMaterial:
 		mt, err := a.s.GetMaterial(ctx, req.Target.ID)
@@ -357,7 +369,7 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 			return
 		}
 		normalized, err = normalizeMaterialCommands(string(mt.Kind), req.Commands, func(i int, markdown string) ([]any, error) {
-			return a.noteBlocksFromMarkdown(ctx, req, i, markdown)
+			return a.noteBlocksFromMarkdown(ctx, req, i, markdown, &embedded)
 		})
 		if err != nil {
 			a.failDocument(w, err)
@@ -404,6 +416,9 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 	receipt, err := a.s.EditDocument(ctx, req.UserID, store.DocumentTarget{Kind: req.Target.Kind, ID: req.Target.ID}, normalized, provenance, store.DocumentOperation{
 		ID: opID, RequestHash: hash, ToolVersion: 1, ConversationID: convID, MessageID: req.AssistantMessageID, CallID: req.ToolCallID,
 	})
+	// Only the authority's refusal is final; a lost answer may have committed.
+	var editRefusal *store.EditRefusal
+	discard = errors.As(err, &editRefusal)
 	if err != nil {
 		a.failDocument(w, err)
 		return
@@ -415,7 +430,8 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 // collaboration service. Its quiz and flashcards fences become rows under the
 // note first, the order the editor uses, with ids derived from the tool call
 // and command so a retried edit finds them instead of creating them again.
-func (a *api) noteBlocksFromMarkdown(ctx context.Context, req internalDocumentsEditReq, command int, markdown string) ([]any, error) {
+// Each row is added to created as soon as it exists.
+func (a *api) noteBlocksFromMarkdown(ctx context.Context, req internalDocumentsEditReq, command int, markdown string, created *[]string) ([]any, error) {
 	converted, err := a.s.ConvertAgentMarkdown(ctx, markdown)
 	if err != nil {
 		return nil, err
@@ -435,6 +451,7 @@ func (a *api) noteBlocksFromMarkdown(ctx context.Context, req internalDocumentsE
 			}
 			return nil, err
 		}
+		*created = append(*created, draft.ID)
 	}
 	doc, err := materialdoc.Parse(content)
 	if err != nil {

@@ -71,6 +71,21 @@ export interface ChatStreamBody {
   text: string;
 }
 
+/** The Library switch starts on in every chat panel. */
+export const LIBRARY_DEFAULT = true;
+
+/** One turn's switches. Only the open item's id and kind leave the browser;
+ * the server looks up its title. */
+export function chatTurn(
+  library: boolean,
+  open: { id: string; kind: 'file' | 'material' } | null | undefined
+): Pick<ChatStreamBody, 'library' | 'openResource'> {
+  return {
+    library,
+    openResource: open ? { id: open.id, kind: open.kind } : undefined,
+  };
+}
+
 /** Chat failure copy chosen by error code; server and pipeline text never
  * renders. */
 export function chatErrorMessage(payload: unknown, fallback: string): string {

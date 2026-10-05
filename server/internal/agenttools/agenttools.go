@@ -54,7 +54,8 @@ const questionExample = `{"id": "q1", "stem": [{"type": "text", "text": "A red b
 // materials skill quotes.
 // v13: copy_questions copies bank questions by id into a new or existing
 // quiz, each credited from the bank's own sources.
-const ContractVersion = 13
+// v14: html-embed fences carry no fallback, only title and html.
+const ContractVersion = 14
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -410,12 +411,11 @@ const noteMarkdownDescription = "Markdown. A mindmap or diagram is one " +
 	"```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; " +
 	"```quiz fences (YAML `questions:` list, each in the quiz question format) and " +
 	"```flashcards fences (YAML `cards:` list of `front`/`back`), each a mini check of 2 to 4 " +
-	"items; and ```html-embed fences for an interactive (YAML: `title`, `fallback`, `html: |`). " +
+	"items; and ```html-embed fences for an interactive (YAML: `title`, `html: |`). " +
 	"The html is one self-contained snippet under 64 KB: inline CSS and script, no network, " +
 	"no external URLs, colours from the variables --bg, --fg, --muted, --accent and --border so " +
-	"it follows the light and dark theme, height fitting its content. The fallback is the plain " +
-	"text a reader sees in export or where scripts cannot run, so it states what the interactive " +
-	"shows. Use an interactive only where moving something teaches more than a diagram."
+	"it follows the light and dark theme, height fitting its content. Use an interactive only " +
+	"where moving something teaches more than a diagram."
 
 // todoSchema is the ledger todo a write completes.
 func todoSchema() map[string]any {
