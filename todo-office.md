@@ -200,6 +200,12 @@ check); it applies at the first promotion.
   loses its result (docx-fields review round 2, R2-8). Keep what the model doesn't
   hold; Word is the oracle. Probes in
   `capy-docx-review-harnesses/2026-10-05-office-batch/docx-paragraph-save/review-probes/`.
+- **DOCX fields under suggestions (pre-existing, docx-fields final review 2026-10-06):**
+  if A joins while B suggests deleting the moved text, B's deletion lands on the
+  whole field and Accept All removes the REF field code (needs a decision);
+  Enter inside a field suggested for deletion as a whole turns its result into
+  live text that Accept All leaves behind. Probes `r3-join-vs-suggest.ts`,
+  `r3-struck-field.ts` in the docx-fields harness folder.
 - **DOCX mid-paragraph page/column break loses text** (found 2026-10-05/06 by
   docx-view-text and its review; also on the base build): a page or column
   break in the middle of a paragraph draws the line before it twice and drops
