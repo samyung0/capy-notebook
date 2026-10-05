@@ -463,6 +463,64 @@ test('XLSX keyboard selection scrolls into view and takes typing', async ({
   await expect(nameBox).toHaveValue('B1');
 });
 
+test('XLSX view mode zooms from View › Zoom, hit-testing at the zoom and still copying', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await page.goto('/workspaces/ws_bio');
+  await page.getByRole('button', { exact: true, name: 'Files' }).click();
+  await page
+    .locator('[data-workspace-file-tree] a[href*="file=bio-office-xlsx"]')
+    .click();
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  const grid = frame.getByRole('tabpanel');
+  const nameBox = frame.getByRole('textbox', { name: 'Name box' });
+  const contents = frame.getByRole('textbox', { name: 'Cell contents' });
+  const box = await grid.boundingBox();
+  if (!box) throw new Error('Grid is not laid out');
+  const zoomTo = async (percent: string) => {
+    await officeMenu(page, 'View').click();
+    await page.getByRole('menuitem', { name: 'Zoom' }).click();
+    await page.getByRole('menuitemcheckbox', { name: percent }).click();
+  };
+
+  // CC info at 100%: B2 is the header "Course Name" under (150, 75), and the
+  // point twice as far from the grid's corner is another cell.
+  await page.mouse.click(box.x + 300, box.y + 150);
+  await expect(nameBox).not.toHaveValue('B2');
+  await zoomTo('200%');
+  await page.mouse.click(box.x + 300, box.y + 150);
+  await expect(nameBox).toHaveValue('B2');
+  await expect(contents).toHaveValue('Course Name');
+
+  // The top-left cell holds across a zoom change: the scroll halves at 100%.
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, 600);
+  await expect
+    .poll(() => grid.evaluate((node) => node.scrollTop))
+    .toBeGreaterThan(0);
+  const scrolled = await grid.evaluate((node) => node.scrollTop);
+  await zoomTo('100%');
+  await expect
+    .poll(async () =>
+      Math.abs((await grid.evaluate((node) => node.scrollTop)) - scrolled / 2)
+    )
+    .toBeLessThanOrEqual(1);
+
+  // The selected cell's text still copies from the read-only formula bar.
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await contents.focus();
+  await contents.press('ControlOrMeta+A');
+  await contents.press('ControlOrMeta+C');
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe('Course Name');
+});
+
 test('XLSX cell edit ends when focus moves into Capy, not on a window switch', async ({
   page,
 }) => {
