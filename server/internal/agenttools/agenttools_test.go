@@ -45,6 +45,17 @@ func TestDefinitionsAreClosedObjects(t *testing.T) {
 	}
 }
 
+// A deck is stored as an upload is, so its tools need the role set uploads
+// need (owner and editors), which is material.create's.
+func TestDeckToolsNeedTheUploadRoles(t *testing.T) {
+	for _, name := range []string{"create_deck", "write_slide"} {
+		def := Lookup(name)
+		if def == nil || !def.Mutates || len(def.RequiredOperations) != 1 || def.RequiredOperations[0] != OpMaterialCreate {
+			t.Fatalf("%s = %+v", name, def)
+		}
+	}
+}
+
 // The ledger is a todo list only: create_ledger takes todos and no body.
 func TestCreateLedgerTakesOnlyTodos(t *testing.T) {
 	for _, def := range Definitions() {

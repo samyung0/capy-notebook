@@ -32,6 +32,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bank_local
 import deck
+from deck import production as production_deck
 from common import (
     CONFIGS,
     LOCAL,
@@ -78,9 +79,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # study_progress: null leaves read_study_progress unoffered; a dict is the
     # fixture it returns, shaped like /api/internal/study-progress.
     "study_progress": None,
-    # decks: offer the playground-only deck tools (deck.py), and the main
-    # explainer format the learner prefers: note, deck or auto.
-    "decks": {"offer": True, "main_format": "auto"},
+    # decks: offer the deck tools (production's, run locally here: deck.py);
+    # the main explainer format is study_preferences.mainFormat.
+    "decks": {"offer": True},
     # ledger: path to a stored ledger (a previous run.json, or its `ledger`) the
     # turn continues, the way the gateway hands one back on a follow-up turn.
     # --ledger sets it for every config that does not carry its own.
@@ -154,7 +155,7 @@ def merged(raw: dict[str, Any]) -> dict[str, Any]:
             out[key] = value
     from pipeline.retrieval import contract
 
-    known = set(contract.DEFINITIONS) | deck.NAMES
+    known = set(contract.DEFINITIONS)
     descriptions = out["tool_descriptions"]
     if not isinstance(descriptions, dict) or any(
         name not in known or not isinstance(text, str)
@@ -167,7 +168,7 @@ def merged(raw: dict[str, Any]) -> dict[str, Any]:
 
     texts = out["skills"]
     if not isinstance(texts, dict) or any(
-        name not in {*skills.SKILLS, "deck"} or not isinstance(text, str)
+        name not in skills.SKILLS or not isinstance(text, str)
         for name, text in texts.items()
     ):
         raise HTTPException(400, "skills must map known skill names to text")
@@ -176,8 +177,6 @@ def merged(raw: dict[str, Any]) -> dict[str, Any]:
         or any(name not in known for name in out["tools"])
     ):
         raise HTTPException(400, "tools must be null or a list of known tool names")
-    if out["decks"]["main_format"] not in deck.MAIN_FORMAT:
-        raise HTTPException(400, f"decks.main_format must be one of {sorted(deck.MAIN_FORMAT)}")
     return out
 
 
@@ -245,15 +244,11 @@ def effective_prompt(
         )
     offers_capture = c["tools"] is None or capture.NAME in c["tools"]
     use_capture = offers_capture and c["capture"]["addon"]
-    offers_decks = c["decks"]["offer"] and (
-        c["tools"] is None or bool(deck.NAMES & set(c["tools"]))
-    )
     structured = c["answer"]["citations"] == "structured"
     prompt = (
         text
         + (c["prompt_addon"] or "")
         + (capture.ADDON if use_capture else "")
-        + (deck.addon(c["decks"]["main_format"]) if offers_decks else "")
         + (citations.STRUCTURED_ADDON if structured else "")
     )
     return prompt
@@ -300,26 +295,24 @@ def tools_off(kw: dict[str, Any]) -> bool:
 
 
 def turn_tools(c: dict[str, Any], production: list[dict]) -> list[dict]:
-    """What a turn offers: production's tools, the playground's deck and copy
-    tools, the configured descriptions, and the deck skill on read_skill."""
-    from pipeline.retrieval import skills, tools
+    """What a turn offers: production's tools, without the deck tools and the
+    deck skill when decks are off, with the configured descriptions."""
+    from pipeline.retrieval import skills
 
-    decks = deck.SCHEMAS if c["library"] else [tools.without_excerpts(s) for s in deck.SCHEMAS]
     out = [
         s
-        for s in [
-            *production,
-            *(decks if c["decks"]["offer"] else []),
-        ]
-        if c["tools"] is None or s["function"]["name"] in c["tools"]
+        for s in production
+        if (c["decks"]["offer"] or s["function"]["name"] not in deck.NAMES)
+        and (c["tools"] is None or s["function"]["name"] in c["tools"])
     ]
     schemas = configured_tools(c, out)
-    if c["decks"]["offer"]:
+    if not c["decks"]["offer"]:
+        line = "\n" + skills.catalog_line(skills.DECK, skills.SKILLS[skills.DECK].when)
         for schema in schemas:
             if schema["function"]["name"] == "read_skill":
-                schema["function"]["description"] += "\n" + skills.catalog_line(
-                    "deck", deck.WHEN
-                )
+                schema["function"]["description"] = schema["function"][
+                    "description"
+                ].replace(line, "")
     return schemas
 
 
@@ -327,10 +320,11 @@ def skill_texts(c: dict[str, Any], *, library: bool) -> dict[str, str]:
     """Production's text of each skill this config offers."""
     from pipeline.retrieval import skills
 
-    texts = {name: skill.text(library) for name, skill in skills.SKILLS.items()}
-    if c["decks"]["offer"]:
-        texts["deck"] = deck.skill_text()
-    return texts
+    return {
+        name: skill.text(library)
+        for name, skill in skills.SKILLS.items()
+        if c["decks"]["offer"] or name != skills.DECK
+    }
 
 
 def skill_text(c: dict[str, Any], name: str, *, library: bool) -> str | None:
@@ -510,27 +504,29 @@ async def edit_material_locally(args: dict[str, Any], ctx, state: dict[str, Any]
 async def deck_locally(
     name: str, args: dict[str, Any], ctx, state: dict[str, Any], message_id: str
 ):
-    """create_deck and write_slide: the deck lands as JSON and, once every slide
-    is written, as the .pptx ppt-master exports. A deck is a material, so the
-    ledger rules are the production ones (create_material for the outline,
-    edit_document for each slide)."""
-    from pipeline.retrieval import tools
+    """create_deck and write_slide as production runs them (pipeline.retrieval
+    .deck and tools._create_deck/_write_slide), except that the deck lands as
+    JSON under the run and, once every slide is written, the exported .pptx
+    stays there instead of being stored through the gateway."""
+    from pipeline.retrieval import library, tools
 
     clean = {k: v for k, v in args.items() if not k.startswith("_")}
-    problem = deck.validate(name, clean)
+    problem = tools.contract.validate_args(name, clean)
     if problem:
         return tools._refused(problem)
     if name == "create_deck":
-        prepared = await tools.ledger_write(ctx, "create_material", clean)
+        chapter = str(clean.get("chapter_id") or "")
+        if chapter and chapter not in {c["id"] for c in ctx.chapters}:
+            return tools._refused(
+                "chapter_id is not a chapter of this workspace; the turn context lists them."
+            )
+        prepared = await tools.ledger_write(ctx, "create_deck", clean)
         if isinstance(prepared, tools.ToolResult):
             return prepared
-        rid = material_id(message_id, str(args.get("_tool_call_id") or ""))
+        books, todo = prepared
+        rid = production_deck.deck_id(message_id, str(args.get("_tool_call_id") or ""))
         record = deck.create(clean, rid)
-        record.update(
-            excerpt_ids=[str(e) for e in clean.get("excerpt_ids") or []],
-            provenance=None,
-            edits=[],
-        )
+        record["excerpt_ids"] = [str(e) for e in clean.get("excerpt_ids") or []]
         state["materials"].append(record)
         operation = "created"
         outline = deck.created_text(record)
@@ -542,39 +538,51 @@ async def deck_locally(
         )
         if record is None:
             return tools._refused(
-                f"write_slide: {rid} is not a deck this run created.",
+                f"write_slide: {rid} is not a deck this turn outlined; a deck is written "
+                "within the turn that creates it.",
                 code="unavailable_target",
             )
-        prepared = await tools.ledger_write(ctx, "edit_document", clean)
+        if record.get("pptx"):
+            return tools._refused(
+                f"Deck {rid} is exported to {record['pptx']}, which is now the document: "
+                "change its text with edit_document replace_text, or make a new deck.",
+                code="unavailable_target",
+            )
+        prepared = await tools.ledger_write(ctx, "write_slide", clean)
         if isinstance(prepared, tools.ToolResult):
             return prepared
+        books, todo = prepared
         # The model knows a capture by its page; a later capture of the same
         # page wins. A whole page is refused: a slide shrinks it unreadable.
-        captures = {
-            cap["page"]: ""
-            if cap.get("bbox") and list(cap["bbox"]) != [0, 0, 1000, 1000]
-            else f"page {cap['page']} was captured whole; capture it again with a bbox around the figure"
-            for cap in state["captures"]
-        }
-        figures = {
-            cap["page"]: (state["run_dir"].parent.parent / cap["image"]).read_bytes()
-            for cap in state["captures"]
-            if cap.get("image")
-        }
+        captures, figures, excerpts = {}, {}, {}
+        for cap in state["captures"]:
+            page = cap["page"]
+            if not cap.get("bbox") or list(cap["bbox"]) == production_deck.WHOLE_PAGE:
+                captures[page] = (
+                    f"page {page} was captured whole; capture it again with a bbox "
+                    "around the figure"
+                )
+                continue
+            captures[page] = ""
+            figures[page] = (state["run_dir"].parent.parent / cap["image"]).read_bytes()
+            excerpts.pop(page, None)
+            if cap.get("excerpt_id"):
+                excerpts[page] = cap["excerpt_id"]
+        cropped = sorted(
+            {excerpts[p] for p in deck.figure_pages(clean["svg"]) if p in excerpts}
+        )
+        if cropped:
+            books = [*books, *await library.provenance(cropped)]
         project = state["run_dir"] / "materials" / rid
         problem = await asyncio.to_thread(deck.write, record, clean, captures, figures, project)
         if problem:
             return tools._refused(f"write_slide: {problem}")
-        record["edits"].append({"slide": clean["slide"]})
         record["excerpt_ids"] = sorted(
             {*record["excerpt_ids"], *(str(e) for e in clean.get("excerpt_ids") or [])}
         )
         operation = "edited"
         outline = deck.outline_text(record)
-    books, todo = prepared
-    if books:
-        existing = (record["provenance"] or {}).get("books") or []
-        record["provenance"] = {"books": merge_books(existing, books)}
+    production_deck.add_books(record, books)
     if name == "write_slide" and deck.complete(record):
         pptx = state["run_dir"] / "materials" / f"{rid}.pptx"
         problem = await asyncio.to_thread(deck.save, record, project, pptx)
@@ -602,7 +610,7 @@ async def deck_locally(
         }
     )
     ctx.ledger.complete(todo)
-    result.text_parts.append(outline)
+    result.text_parts = [outline]
     return result
 
 
@@ -716,12 +724,16 @@ async def check_quiz(questions: list[Any]) -> str:
 
 FENCE = re.compile(r"^```([\w-]*)[^\n]*\n(.*?)^```[ \t]*$", re.M | re.S)
 EMBED_HTML_MAX = 64 * 1024
+EMBEDS_PER_NOTE = 10
 NETWORK = re.compile(r"https?://|\bfetch\(|XMLHttpRequest|WebSocket|EventSource|import\(")
 
 
 async def check_note(markdown: str) -> str:
     """The note fences as the editor's import and phase 3's element will take
     them, or empty when every fence passes."""
+    embeds = sum(1 for m in FENCE.finditer(markdown) if m.group(1) == "html-embed")
+    if embeds > EMBEDS_PER_NOTE:
+        return f"{embeds} html-embed fences; a note holds at most {EMBEDS_PER_NOTE}"
     for n, match in enumerate(FENCE.finditer(markdown), 1):
         lang, body = match.group(1), match.group(2)
         where = f"fence {n} ({lang})"
@@ -812,6 +824,7 @@ def save_knowledge_capture(
         "n": n,
         "call_id": call_id,
         "file_id": entry["fileId"],
+        "excerpt_id": entry.get("excerptId"),
         "page": entry["page"],
         "bbox": entry["bbox"],
         "mode": "pixels",
@@ -987,9 +1000,7 @@ class Turn:
                     )
             elif problem:
                 result = tools._refused(problem)
-            elif needs := skills.missing(
-                name, record["args"], ctx_.skills_read, {**skills.REQUIRES, **deck.REQUIRES}
-            ):
+            elif needs := skills.missing(name, record["args"], ctx_.skills_read):
                 result = tools._refused(skills.refusal(needs))
             elif name == "read_skill" and (
                 text := skill_text(c, record["args"]["name"], library=ctx_.library)
@@ -1561,6 +1572,8 @@ def build_app(target: str):
     # in production, so the offered tools match what a real turn would see.
     cfg.gateway_url = cfg.gateway_url or "http://playground.invalid"
     cfg.pipeline_secret = cfg.pipeline_secret or "playground"
+    # Production offers the deck tools only with ppt-master installed.
+    deck.ensure_ppt_master()
     # The bank routes answer from the local restore, so the production bank
     # tools run unchanged.
     gateway_read = tools._gateway_read
@@ -1818,7 +1831,9 @@ def check_decks() -> None:
     local handler. Runs ppt-master's checker and exporter (cloned on first use)."""
     from tempfile import TemporaryDirectory
 
-    from pipeline.retrieval import tools
+    from pipeline.retrieval import skills, tools
+
+    deck.ensure_ppt_master()
 
     def slide(body: str = '<text x="64" y="300">A tangent meets the radius at 90°.</text>', bounds: str = "64 260 1152 60", lang: str = "en-GB") -> str:
         return (
@@ -1844,7 +1859,7 @@ def check_decks() -> None:
         record = state["materials"][0]
         rid = record["id"]
         assert "1. Tangent meets radius (to write)" in made.text()
-        assert "Reference slide toc" in deck.skill_text()
+        assert "Reference slide toc" in skills.SKILLS[skills.DECK].text(False)
         long = '<text x="64" y="300">' + "far too long for this box " * 8 + "</text>"
         for args, says in (
             ({"slide": 1, "svg": "<svg"}, "does not parse"),
@@ -1876,9 +1891,12 @@ def check_decks() -> None:
         assert not done.refused and "the deck is exported" in done.text(), done.text()
         assert (run_dir.parent.parent / record["pptx"]).stat().st_size > 10_000
         assert (run_dir / "materials" / rid / "images" / "p14.jpg").exists()
+        # The exported PPTX is the document from now on.
+        again = await deck_locally("write_slide", {"deck_id": rid, "slide": 1, "svg": slide()}, ctx, state, "m1")
+        assert again.refused and "now the document" in again.text(), again.text()
         # With todos open, a deck write names one, like any material write.
         await tools._create_ledger({"todos": ["deck", "quiz"]}, ctx)
-        needs = await deck_locally("write_slide", {"deck_id": rid, "slide": 1, "svg": slide()}, ctx, state, "m1")
+        needs = await deck_locally("create_deck", {**outline, "_tool_call_id": "c2"}, ctx, state, "m1")
         assert needs.refused and "needs todo" in needs.text()
         bad_args = await deck_locally("create_deck", {"title": "x", "slides": []}, ctx, state, "m1")
         assert bad_args.refused and "arguments invalid" in bad_args.text()
@@ -1976,10 +1994,12 @@ def check() -> None:
         else:
             raise AssertionError(f"accepted invalid tool_descriptions: {invalid}")
     # A skill's text replaces only that skill; deck is a skill only with decks on.
+    from pipeline.retrieval import skills
+
     edited = merged({"skills": {"workspace_building": "my building"}})
     assert skill_text(edited, "workspace_building", library=True) == "my building"
     assert skill_text(edited, "editing", library=True) != "my building"
-    assert skill_text(edited, "deck", library=True) == deck.skill_text()
+    assert skill_text(edited, "deck", library=True) == skills.SKILLS["deck"].text(True)
     assert skill_text(merged({"decks": {"offer": False}}), "deck", library=True) is None
     assert "Practice from the library" not in skill_text(
         merged({}), "workspace_building", library=False
@@ -2143,7 +2163,9 @@ def check() -> None:
         decks = merged(
             {"library": False, "system_prompt": "", "capture": {"addon": False}}
         )
-        assert effective_prompt(decks, "production") == deck.addon("auto")
+        # The main explainer format reaches the model with the study
+        # preferences in the turn context, not the system prompt.
+        assert effective_prompt(decks, "production") == ""
         # The library rules sit before the answer format, as production puts
         # them, whether they or the rest of the prompt were edited.
         assert effective_prompt(merged({}), chat.system_prompt("en")).replace(

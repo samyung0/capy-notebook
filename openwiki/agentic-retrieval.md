@@ -93,7 +93,7 @@ network and no pin.
 | `ingest.py` | `ingest` | File descriptor, and `SUMMARY_VERSION` |
 | `captioning.py` | `captioning` | Whole-image captions for standalone image uploads |
 | `retrieval.py` | `retrieval` | The Qwen3 instruct prefix for embedding queries |
-| `preferences.py` | `chat` | The learner's study preferences as build instructions, rendered into the turn context |
+| `preferences.py` | `chat`, `generate` | The learner's study preferences as build instructions, rendered into the turn context; `/generate`'s count when the request omits it |
 | `skills.py` | `chat` | The skills `read_skill` returns: `editing` (ledger, budget, write precautions) and `workspace_building` (plan, output rules, note and question formats) |
 | `locale.py` | shared | The account-locale rule appended by chat, generate, and editor |
 
@@ -2071,7 +2071,7 @@ build, and the knowledge library is one more source while the switch is on.
   instructions are read on demand, so a turn that only answers a question does
   not pay for them on every call. `read_skill(name)` lists each skill with when
   to read it (appended to its description by `tools.schemas_for`) and returns
-  the skill's text under a `# Skill: <name>` header. Production has two.
+  the skill's text under a `# Skill: <name>` header. Production has three.
   `editing`, for any write: the ledger (one todo per item, pass its id) and its
   budget (the tool cap, the stall guard and the errored-write grace, moved out
   of the base prompt), and the precautions (ground every write, write as soon
@@ -2093,8 +2093,10 @@ build, and the knowledge library is one more source while the switch is on.
   `add_question` or `replace_question`. The agent recomputes
   `ctx.skills_read` from the message list before every call
   (`skills.retained`), so a turn note that folded the result away asks for a
-  re-read. `read_skill` retains nothing, so each turn reads afresh. The
-  playground adds a `deck` skill the same way (`lab/playground/DECKS.md`).
+  re-read. `read_skill` retains nothing, so each turn reads afresh. The third,
+  `deck`, is the method, slide rules and style for decks; `create_deck` and
+  `write_slide` need `editing` and `deck`, and it is listed only where
+  ppt-master is installed ([decks.md](decks.md)).
 - **Turn context** (`retrieval/turn_context.py`). One user message, rebuilt
   before every model call and appended last (`_append_turn_context` in
   `agent.py`). Earlier copies stay where they were sent, so every request
@@ -2110,7 +2112,7 @@ build, and the knowledge library is one more source while the switch is on.
   (`Open: <title> (<kind> <id>), in chapter <n>.` or `Open: nothing.`), lists
   every workspace chapter in order with its id (`store.workspace_chapters`,
   loaded once per turn; at most 20, `MaxChaptersPerWorkspace` in Go) so "chapter
-  2" resolves without a tool call, lists the study preferences (`prompts/preferences.py`: explainer style,
+  2" resolves without a tool call, lists the study preferences (`prompts/preferences.py`: main format, explainer style,
   practice per chapter, quiz length, flashcards per chapter, mini checks and
   visual aids, saved values over `DEFAULTS`), the ledger's todos with their
   done state and ids, and one line per library excerpt read for this message.
@@ -2210,7 +2212,7 @@ build, and the knowledge library is one more source while the switch is on.
   retained. `tools.render_progress` turns it into the text the model reads.
 - **Question bank** (`retrieval/bank.py` renders; Go reads). The retrieval
   service holds no bank credentials: `list_question_bank(subject?, topic?,
-  offset?)` and `read_question(question_id)` go through
+  question_type?, offset?)` and `read_question(question_id)` go through
   `POST /api/internal/bank/list` and `/read` (`internal_bank.go`, pipeline
   secret and an actor who can sign in), and `copy_questions` through
   `/api/internal/bank/copy`. All three require `library.read` (the copy also
@@ -2220,7 +2222,12 @@ build, and the knowledge library is one more source while the switch is on.
   so the agent walks it rather than searching: with no arguments the exams and
   subjects with question counts (in the tool description), with `subject` its
   topics with counts, with `topic` 50 question cards per page (the stem's
-  opening, such as a reading passage, then what the parts ask).
+  opening, such as a reading passage, then what the parts ask). A card lists
+  the question's task types after its marks (`questions.question_types`, so far
+  only IELTS Academic Reading's); `question_type` with `topic` keeps that
+  topic's questions of one type and their count (`questionType` on the route,
+  refused without `topicId`), and an empty filtered page tells the agent to
+  list the topic unfiltered to see its types.
   `read_question` returns the question's JSON and its sources, to judge it.
   `copy_questions(question_ids ≤ 20, title + chapter_id? | quiz_id)` writes
   none of the content through the model: Go reads the questions from the bank,
@@ -2322,19 +2329,21 @@ build, and the knowledge library is one more source while the switch is on.
 | `browse_knowledge` | none | Library on only. Exactly one of `subject` or `topic` (enforced in Python). A subject id: its topics with search-eligible excerpt counts, one line each. A topic id: eligible excerpt counts by role and by book, then a page of excerpts with section paths and compact reviewed scope. Full notes come from `read_knowledge`. The library's subject list is appended to this description at runtime. Retains nothing |
 | `read_knowledge` | none | Library on only. One excerpt's chunks from chunk index `start`, with the excerpt's chunk range in the header and a next-start marker. Retains exact bounded reads used in successful material writes |
 | `read_skill` | none | Requires `material.create`. A skill's instructions by name; the description lists the skills and when to read each. Retains nothing |
-| `list_question_bank` | none | Library on only, with a configured library and a bank behind the gateway. The bank's exams and subjects, a subject's topics, or a topic's questions 50 per page; compact cards. Retains nothing |
+| `list_question_bank` | none | Library on only, with a configured library and a bank behind the gateway. The bank's exams and subjects, a subject's topics, or a topic's questions 50 per page, optionally of one `question_type`; compact cards. Retains nothing |
 | `read_question` | none | Same gating as `list_question_bank`. One bank question's JSON with its sources, to judge it |
 | `copy_questions` | yes | Same gating, plus `material.create`. Go copies up to 20 bank questions unchanged into a new quiz or after an existing quiz's last question, crediting each under its id; `todo` while todos are open, no `excerpt_ids` |
 | `read_study_progress` | none | Offered only when study progress is on for the requester in this workspace (Go `/api/internal/study-progress`): items done, started or removed, recent quiz results and the least retained chapters |
 | `create_ledger` | conversation ledger | Offered to any turn with `material.create`. String todos add IDs, `{id, todo}` adds or overwrites that ID. Unmentioned todos remain, max ten unfinished. Repeated edits are allowed but only the first changed plan in a turn counts as progress. Retains no source evidence |
 | `capture_knowledge_page` | none | Library on only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. No per-turn capture cap. Adds no citation. Retains nothing |
 | `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source, or an uploaded image as its single page 1, as a JPEG for the model; refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); no per-turn cap; adds no citation |
-| `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, quizzes and flashcard sets. Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record; a material with provenance is grounded in the library and does not require indexed workspace content. `todo` is required while the ledger has open todos and marks the todo this write completes; see Write guard. The note fence format (mermaid, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration/scripts/build-markdown.mjs` from `src/features/notes/markdownConvert.ts`), so it gets the nodes a paste would. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences stay code blocks until the phase 3 element |
+| `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, quizzes and flashcard sets. Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record; a material with provenance is grounded in the library and does not require indexed workspace content. `todo` is required while the ledger has open todos and marks the todo this write completes; see Write guard. The note fence format (mermaid, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration/scripts/build-markdown.mjs` from `src/features/notes/markdownConvert.ts`), so it gets the nodes a paste would. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)) |
 | `inspect_document` | none | Plate blocks with stable ids, text-source lines, or Office paragraphs/cells with target ids, paged by `start`/`count`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it) |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt with an Undo ref. A material target follows the same `todo` and `excerpt_ids` rules as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes neither and may not carry provenance |
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
 | `list_trashed_files` | none | Trash of the workspace, owner only |
 | `restore_file` | yes | Restores one trashed resource, owner only |
+| `create_deck` | turn only | Needs `material.create` and ppt-master in the image. Outlines a deck (1 to 30 slides, optional `chapter_id`) on the turn; nothing is stored yet. Material ledger rules ([decks.md](decks.md)) |
+| `write_slide` | yes | Checks one SVG slide alone with ppt-master's checker (figures only this turn's bbox captures) and keeps it; once every slide is written, adds the Sources slide, exports the PPTX and stores it as a workspace file through `/api/internal/files` ([decks.md](decks.md)) |
 
 Read tools hit Postgres directly. Every mutation goes through the gateway with
 `X-Pipeline-Secret`, so authz, quota, and the materials model stay in one place.
@@ -2413,7 +2422,8 @@ the materials skill quotes (`ContractVersion` in `agenttools.go`,
 `SUPPORTED_VERSION` in `retrieval/contract.py`). Version 13 adds
 `copy_questions`. Version 14 (2026-10-05) drops `fallback` from the
 `html-embed` fence: an interactive carries only `title` and `html`, and the
-chat's text answer carries the explanation. `cmd/openapi -agent-tools`
+chat's text answer carries the explanation. Version 15 adds `create_deck` and
+`write_slide` ([decks.md](decks.md)). `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
 tools, while the same Go types reach TypeScript through the OpenAPI schema. Go
@@ -2507,6 +2517,14 @@ is fixed, and the gateway must persist a parseable artifact.
    `chat` slot; migration `0044` merged the generate slot into chat) and
    forwards that exact pin; the browser `model` field is ignored. An unresolvable preference
    fails as `model_unavailable`.
+   Go also forwards the requester's `studyPreferences`, as chat turns get
+   them. An omitted `count` takes the preference for the kind
+   (`prompts/preferences.py` `generate_count`: quiz length for a quiz,
+   flashcards per chapter for a set, unset fields at their defaults of 8 and
+   15); a count picked in the Add file dialog's generate panel wins. `/generate`
+   makes no notes, so explainer style, mini checks and visual aids do not
+   apply, and its other options (types, levels, mindmap detail, diagram type)
+   map to no preference.
 2. One `produce` call receives the bounded, evenly sampled context. There is no
    unused map-reduce branch. `produce` appends a language rule from the gateway's `locale` so quiz copy,
    flashcard text, and diagram labels match the user's Settings language.

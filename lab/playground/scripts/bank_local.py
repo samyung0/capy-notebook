@@ -30,19 +30,25 @@ async def _rows(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
 
 
 async def list_(payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    qtype = payload.get("questionType") or ""
+    if qtype and not payload.get("topicId"):
+        return 400, {"code": "invalid_input", "message": "questionType needs topicId"}
     if payload.get("topicId"):
         topic, offset = payload["topicId"], int(payload.get("offset") or 0)
+        # An empty question type matches every question, as in Go's Page.
+        typed = "(%s = '' OR %s = ANY(question_types))"
         exists = await _rows(
             "SELECT (SELECT count(*) FROM topics WHERE id = %s) AS t, "
-            "(SELECT count(*) FROM questions WHERE topic_id = %s) AS n",
-            (topic, topic),
+            f"(SELECT count(*) FROM questions WHERE topic_id = %s AND {typed}) AS n",
+            (topic, topic, qtype, qtype),
         )
         if not exists[0]["t"]:
             return 404, {"code": "unavailable_target", "message": f"No bank topic {topic}."}
         rows = await _rows(
             "SELECT id, content AS question, question_types AS \"questionTypes\" "
-            "FROM questions WHERE topic_id = %s ORDER BY position, id OFFSET %s LIMIT %s",
-            (topic, offset, PAGE),
+            f"FROM questions WHERE topic_id = %s AND {typed} "
+            "ORDER BY position, id OFFSET %s LIMIT %s",
+            (topic, qtype, qtype, offset, PAGE),
         )
         return 200, {"total": exists[0]["n"], "questions": rows}
     if payload.get("subjectId"):

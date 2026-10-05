@@ -146,8 +146,8 @@ write `library`, `open_resource` and `study_preferences` into the config, and
 the turn context message shows them to the model, with the workspace's
 chapters in order. Library tools require the header to show a configured
 library; a library that is down leaves the turn on the workspace. Build
-instructions are skills the model reads with `read_skill` (`editing` and `workspace_building` from
-production, `deck` from the playground); the write tools are refused until the
+instructions are skills the model reads with `read_skill` (`editing`,
+`workspace_building` and `deck`, all production's); the write tools are refused until the
 skill's text is in the request. Without the library the writes offer no
 `excerpt_ids`.
 
@@ -291,25 +291,27 @@ Chat turns require thinking to be enabled. The turn endpoint rejects `instant` b
 
 ### Decks
 
-`create_deck` and `write_slide` exist only here until decks land in the app
-(`todo-learning.md`, 2.6). They follow ppt-master's Quick route. The `deck`
-skill (`deck.skill_text`, read with `read_skill` before either tool) carries
-the method, the slide rules and the style (`deck-styles/`, default
-`editorial`) with its reference slides; `create_deck` takes an outline of
-titles and briefs; `write_slide` takes one slide
-as SVG, which ppt-master's checker must pass (text inside its module's
-bounds, no overlapping modules), and once every slide is written the deck is
-exported with ppt-master's exporter to `materials/<id>.pptx`, closed by a
-Sources slide from its provenance. Figures are this turn's bbox captures,
-referenced as `../images/p<page>.jpg`. ppt-master is cloned on first use into
-`local/ppt-master` at the commit pinned in `deck.py`, and its scripts run
-under `uv` with their own dependencies. `DECKS.md` is the adoption guide:
-how ppt-master works, what we use, and how to add a style.
+`create_deck` and `write_slide` are production's (`openwiki/decks.md`), run
+here in process (`deck_locally` over `pipeline/retrieval/deck.py`). They follow
+ppt-master's Quick route. The `deck` skill (production's, read with
+`read_skill` before either tool) carries the method, the slide rules and the
+style (`pipeline/pipeline/prompts/deck_styles/`, default `editorial`) with its
+reference slides; `create_deck` takes an outline of titles and briefs;
+`write_slide` takes one slide as SVG, which ppt-master's checker must pass
+(text inside its module's bounds, no overlapping modules), and once every
+slide is written the deck is exported with ppt-master's exporter to
+`materials/<id>.pptx`, closed by a Sources slide from its provenance, where
+the app would store it as a workspace file. Figures are this turn's bbox
+captures, referenced as `../images/p<page>.jpg`. ppt-master is cloned when the
+server starts (or `--check` runs) into `local/ppt-master` at
+`deck.PPT_MASTER_COMMIT`, and its scripts run under `uv` with their own
+dependencies. `DECKS.md` is the adoption guide: how ppt-master works, what we
+use, and how to add a style.
 
-The Decks checkbox writes `decks.offer`, and Main writes `decks.main_format`
-(`note`, `deck` or `auto`), which reaches the model through `deck.ADDON` in the
-system prompt rather than the study preferences, since production has no decks
-yet. Mocks: `artifacts/2026-10-04-deck-layouts.html`.
+The Decks checkbox writes `decks.offer`, and Main writes
+`study_preferences.mainFormat` (`note`, `deck` or `auto`), which reaches the
+model in the turn context's study preferences, as in production. Mocks:
+`artifacts/2026-10-04-deck-layouts.html`.
 
 When the agent withholds a response for carrying tool-call markup (reported as
 "Response flagged due to safety concern"), `run.json` keeps the text under that

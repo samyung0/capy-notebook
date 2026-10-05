@@ -18,8 +18,9 @@ async def test_read_skill_lists_the_skills_and_returns_the_formats():
         for s in tools.schemas_for(ctx)
         if s["function"]["name"] == "read_skill"
     )
+    # The deck skill is listed only with ppt-master installed (test_deck.py).
     for name, skill in skills.SKILLS.items():
-        assert f"- {name}: {skill.when}." in described
+        assert (f"- {name}: {skill.when}." in described) == (name != skills.DECK)
 
     text = (await tools._read_skill({"name": "workspace_building"}, ctx)).text()
     assert text.startswith("# Skill: workspace_building\n")

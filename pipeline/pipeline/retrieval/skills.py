@@ -8,12 +8,12 @@ that folded the result away.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
 from ..prompts import skills as prompts
-from . import contract
+from . import contract, deck
 
 
 @dataclass(frozen=True)
@@ -24,6 +24,7 @@ class Skill:
 
 EDITING = "editing"
 BUILDING = "workspace_building"
+DECK = "deck"
 SKILLS: dict[str, Skill] = {
     EDITING: Skill(
         prompts.EDITING_WHEN, lambda library: prompts.editing(library=library)
@@ -31,6 +32,14 @@ SKILLS: dict[str, Skill] = {
     BUILDING: Skill(
         prompts.BUILDING_WHEN,
         lambda library: prompts.workspace_building(contract.FORMATS, library=library),
+    ),
+    DECK: Skill(
+        prompts.DECK_WHEN,
+        lambda _library: prompts.deck(
+            prompts.deck_rules(deck.VIEWBOX),
+            deck.DEFAULT_STYLE,
+            deck.style_text(deck.DEFAULT_STYLE),
+        ),
     ),
 }
 
@@ -41,16 +50,18 @@ REQUIRES: dict[str, tuple[str, ...]] = {
     "copy_questions": (EDITING,),
     "create_material": (EDITING, BUILDING),
     "edit_document": (EDITING, BUILDING),
+    "create_deck": (EDITING, DECK),
+    "write_slide": (EDITING, DECK),
 }
 FORMAT_COMMANDS = frozenset({"insert_markdown", "add_question", "replace_question"})
 
 _HEADER = "# Skill: "
 
 
-def catalog() -> str:
-    """Appended to the read_skill description."""
+def catalog(names: Iterable[str] = SKILLS) -> str:
+    """Appended to the read_skill description: the skills this turn offers."""
     return "\n\nSkills:\n" + "\n".join(
-        catalog_line(name, skill.when) for name, skill in SKILLS.items()
+        catalog_line(name, SKILLS[name].when) for name in names
     )
 
 

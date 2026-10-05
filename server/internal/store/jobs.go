@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
@@ -19,6 +22,25 @@ import (
 // parser route: 'fast' (OpenDataLoader with RapidOCR on text-less pages).
 // Unknown names fail validation. Text kinds ignore it and are inserted directly.
 func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, kind string, chapterID *string, chapterName string, sizeBytes int64, blobPath, parser, parseMode string) (File, string, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return File{}, "", err
+	}
+	defer tx.Rollback(ctx)
+	f, jobID, err := s.createSourceWithJobTx(ctx, tx, wsID, createdBy, name, kind, chapterID, chapterName, sizeBytes, blobPath, parser, parseMode, nil)
+	if err != nil {
+		return File{}, "", err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return File{}, "", err
+	}
+	return f, jobID, nil
+}
+
+// createSourceWithJobTx is CreateSourceWithJob inside the caller's transaction.
+// A file the chat agent made carries the library provenance it was written
+// from; the quota gate counts that record with the bytes, as for a material.
+func (s *Store) createSourceWithJobTx(ctx context.Context, tx pgx.Tx, wsID, createdBy, name, kind string, chapterID *string, chapterName string, sizeBytes int64, blobPath, parser, parseMode string, provenance *Provenance) (File, string, error) {
 	processingPlan, err := sourceupload.BuildProcessingPlan(name, kind, parseMode)
 	if err != nil || processingPlan.Route == sourceupload.RouteStoreOnly {
 		if err == nil {
@@ -26,11 +48,12 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, 
 		}
 		return File{}, "", err
 	}
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return File{}, "", err
+	var provenanceJSON []byte
+	if provenance != nil {
+		if provenanceJSON, err = json.Marshal(provenance); err != nil {
+			return File{}, "", err
+		}
 	}
-	defer tx.Rollback(ctx)
 
 	ownerID, err := s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, createdBy)
 	if err != nil {
@@ -40,7 +63,7 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, 
 	if err != nil {
 		return File{}, "", err
 	}
-	if err := s.gateStorageTx(ctx, tx, ownerID, sizeBytes); err != nil {
+	if err := s.gateStorageTx(ctx, tx, ownerID, sizeBytes+int64(len(provenanceJSON))); err != nil {
 		return File{}, "", err
 	}
 	if err := s.gateWorkspaceFilesTx(ctx, tx, wsID, 1); err != nil {
@@ -53,9 +76,9 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, 
 	fileID := uid("f")
 	now := time.Now().UTC()
 	if _, err := tx.Exec(ctx, `INSERT INTO files
-		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, blob_path, parse_mode)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',$10,$11,$12)`,
-		fileID, wsID, ownerID, nullStr(createdBy), chapterID, name, kind, sizeBytes, now, parser, blobPath, parseMode); err != nil {
+		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, blob_path, parse_mode, provenance)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',$10,$11,$12,$13)`,
+		fileID, wsID, ownerID, nullStr(createdBy), chapterID, name, kind, sizeBytes, now, parser, blobPath, parseMode, provenanceJSON); err != nil {
 		return File{}, "", err
 	}
 
@@ -75,12 +98,61 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, 
 		return File{}, "", err
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return File{}, "", err
-	}
-
-	f := File{ID: fileID, WorkspaceID: wsID, ChapterID: chapterID, Name: name, Kind: FileKind(kind), SizeBytes: sizeBytes, AddedAt: now, Status: "pending", Indexed: false, HasBytes: blobPath != "", Revision: 1}
+	f := File{ID: fileID, WorkspaceID: wsID, ChapterID: chapterID, Name: name, Kind: FileKind(kind), SizeBytes: sizeBytes, AddedAt: now, Status: "pending", Indexed: false, HasBytes: blobPath != "", Revision: 1, Provenance: provenance}
 	return f, jobID, nil
+}
+
+// AgentFileDraft is a file the chat agent made, a deck's PPTX, already in the
+// blob store at BlobPath.
+type AgentFileDraft struct {
+	WorkspaceID, ActorUserID, Name, Kind string
+	ChapterID                            *string
+	SizeBytes                            int64
+	BlobPath, Parser, ParseMode          string
+	Provenance                           *Provenance
+}
+
+// CreateAgentFileOperation lands an agent's file the way an upload does (the
+// editor check, the owner's quota, the files row and its ingest job) together
+// with its durable receipt. created is false when the receipt already existed,
+// so the caller removes the blob it put for nothing.
+func (s *Store) CreateAgentFileOperation(ctx context.Context, draft AgentFileDraft, op AgentOperation) (AgentOperation, bool, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return AgentOperation{}, false, err
+	}
+	defer tx.Rollback(ctx)
+	existing, err := lockAgentOperationTx(ctx, tx, op.ID, op.RequestHash)
+	if err != nil {
+		return AgentOperation{}, false, err
+	}
+	if existing != nil {
+		return *existing, false, nil
+	}
+	f, _, err := s.createSourceWithJobTx(ctx, tx, draft.WorkspaceID, draft.ActorUserID, draft.Name, draft.Kind,
+		draft.ChapterID, "", draft.SizeBytes, draft.BlobPath, draft.Parser, draft.ParseMode, draft.Provenance)
+	if err != nil {
+		return AgentOperation{}, false, err
+	}
+	// agent_operations.kind has no file kind; a deck is the agent's study
+	// material, stored as a file.
+	op.Kind = "create_material"
+	op.Outcome = agenttools.OutcomeSucceeded
+	op.Error = nil
+	op.Effect = &agenttools.ResourceEffect{
+		Operation:   agenttools.EffectCreated,
+		OperationID: op.ID,
+		Resource: agenttools.ResourceRef{
+			Kind: agenttools.KindSourceFile, ID: f.ID, Title: f.Name, WorkspaceID: f.WorkspaceID,
+		},
+	}
+	if err := insertAgentOperationTx(ctx, tx, op); err != nil {
+		return AgentOperation{}, false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return AgentOperation{}, false, err
+	}
+	return op, true, nil
 }
 
 func initialPipelineJobType(plan sourceupload.ProcessingPlan) string {

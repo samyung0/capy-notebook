@@ -27,8 +27,8 @@ PLANNING_RESPONSES = min(cfg.agent_max_steps, 8)
 LEDGER_TOOLS_PER_TURN = 160
 STALL_RESPONSES = 5
 # A write that errors is an attempt at progress: each of the first two errored
-# create_material, edit_document or copy_questions calls in a turn grants the
-# stall guard two more responses, so the threshold is at most 5 + 4.
+# writes in a turn (agent.WRITE_TOOLS) grants the stall guard two more
+# responses, so the threshold is at most 5 + 4.
 WRITE_ERROR_GRACE = 2
 WRITE_ERROR_GRACE_MAX = 2
 

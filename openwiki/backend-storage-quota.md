@@ -78,6 +78,9 @@ A curated material's `provenance` record is **never charged** — `size_bytes` i
 the content JSON alone — and its marshalled bytes are counted by `gateStorageTx`
 at material creation only, never on an `edit_document` merge and never on a
 clone.
+A chat deck's PPTX follows the same rule: `files.size_bytes` is the PPTX
+alone, and its provenance bytes are counted with it at creation only
+([decks.md](decks.md)).
 
 Storage limits are **100 MB** free and **1 GB** Pro. These use decimal bytes:
 100,000,000 and 1,000,000,000 respectively.

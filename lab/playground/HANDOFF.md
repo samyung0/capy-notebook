@@ -19,7 +19,7 @@ config field are in `README.md`; the scenarios to run are its Acceptance table.
   - `workspace_building` (about 1k tokens): plan, what to build, the note and
     quiz formats with a validated example question; practice reuse with
     Library on.
-  - `deck` (playground only): method, slide rules and the `editorial` style.
+  - `deck` (in production since 2.6, `openwiki/decks.md`): method, slide rules and the `editorial` style.
   - Writes are refused, naming every skill they lack, until the skills' text
     is in the request: `create_ledger` needs editing; `create_material` both;
     `edit_document` editing, plus workspace_building for `insert_markdown` and

@@ -19,6 +19,7 @@ BUILDING_WHEN = (
     "read before creating notes, quizzes, flashcards, mindmaps or diagrams, or "
     "adding note sections or questions"
 )
+DECK_WHEN = "read before making a slide deck (create_deck, write_slide)"
 
 _EDITING = f"""How to write to the workspace: create materials, add to them and edit files.
 
@@ -77,3 +78,33 @@ def workspace_building(formats: dict[str, str], *, library: bool) -> str:
         question_example=formats["question_example"],
     )
     return text + (_BUILDING_LIBRARY if library else "")
+
+
+def deck_rules(viewbox: str) -> str:
+    """How one slide is written; ppt-master's checker and exporter enforce it."""
+    return f"""Write one slide as a single SVG; ppt-master's exporter turns it into native PowerPoint shapes.
+- Root: <svg xmlns="http://www.w3.org/2000/svg" viewBox="{viewbox}" lang="<the deck's BCP-47 language>" data-pptx-page-role="cover|toc|section|content|ending" font-family=... font-size=...>, then a background <rect id="background" data-pptx-role="background" .../>.
+- Every visible part sits in a module: a root-level <g id="..." data-pptx-bounds="x y width height"> whose bounds enclose its children. Modules do not overlap. A checker measures every text line against its module's bounds and the canvas and refuses the slide when text spills out, so write each sentence first, estimate its width from the style's characters-per-100px table, then size the module.
+- Allowed: rect, circle, ellipse, line, polyline, polygon, path, text and tspan, g, defs with linearGradient, and image. Each text has x and y; set font-size, font-weight and fill on it or inherit them from its module. Write raw Unicode; escape & < > as &amp; &lt; &gt;. No style element, class, foreignObject, textPath, filters, animation, script, symbol or use, and no HTML entities.
+- A figure is <image href="../images/p<page>.jpg" x y width height preserveAspectRatio="xMidYMid meet"/> for a page captured this turn with a bbox around the figure.
+- Write the slide for one audience move (what the student knows before it and after it) and lay its points out by how they relate: order as a numbered sequence, contrast side by side, membership as parallel cards. Use only facts from what you read; the footer names the source."""
+
+
+def deck(rules: str, style: str, style_text: str) -> str:
+    """The deck skill: the method, the slide rules and the style with its
+    reference slides (ppt-master's Quick route, openwiki/decks.md)."""
+    return (
+        "How to make a slide deck, the brief or lecture-like main explainer.\n\n"
+        "Plan:\n"
+        "- Outline with create_deck: one title and brief per slide, in order, one slide per idea, "
+        "8 to 20 per chapter, opening with a cover. A brief says the slide's audience move (what "
+        "the student knows before and after), how its points relate, and the content with its source.\n"
+        "- Then write the slides one per write_slide call, each from what you just read for it. "
+        "Each write_slide completes the ledger todo it names, so keep one open todo per slide still "
+        "to write. Pass excerpt_ids for library content and todo while todos are open.\n"
+        "- A slide the checker refuses comes back with its errors: fix those and send the whole "
+        "slide again. Once every slide is written the deck is exported and stored in the workspace "
+        "as a PPTX file.\n\n"
+        f"Slides:\n{rules}\n\n"
+        f"Write every slide in the {style} style:\n\n{style_text}"
+    )

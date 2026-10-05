@@ -43,6 +43,9 @@ type StudyPreferences struct {
 	FlashcardsPerChapter int    `json:"flashcardsPerChapter,omitempty" minimum:"1" maximum:"100"`
 	MiniChecks           *bool  `json:"miniChecks,omitempty"`
 	VisualAids           string `json:"visualAids,omitempty" enum:"fewer,more"`
+	// MainFormat is each chapter's main explainer; auto lets the agent choose
+	// from the explainer style.
+	MainFormat string `json:"mainFormat,omitempty" enum:"note,deck,auto"`
 }
 
 type Workspace struct {

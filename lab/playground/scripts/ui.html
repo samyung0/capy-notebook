@@ -202,7 +202,7 @@ img.capture {
       <label><input id="prefChecks" type="checkbox"> Mini checks</label>
       <label>Visuals <select id="prefVisuals"><option>fewer</option><option>more</option></select></label>
       <label><input id="decks" type="checkbox"> Decks</label>
-      <label>Main <select id="mainFormat"><option>auto</option><option>note</option><option>deck</option></select></label>
+      <label>Main <select id="prefMain"><option>auto</option><option>note</option><option>deck</option></select></label>
     </div>
     <textarea id="json" spellcheck="false"></textarea>
     <div class="muted">
@@ -454,8 +454,8 @@ function setConfig(c, resetDrafts = false) {
   $('prefCards').value = prefs.flashcardsPerChapter;
   $('prefChecks').checked = !!prefs.miniChecks;
   $('prefVisuals').value = prefs.visualAids;
+  $('prefMain').value = prefs.mainFormat;
   $('decks').checked = c.decks?.offer !== false;
-  $('mainFormat').value = c.decks?.main_format || 'auto';
   $('quality').textContent = state.quality_files.includes(
     `${state.target}-${c.workspace_id}.json`
   )
@@ -552,6 +552,7 @@ $('workspaces').onchange = () => {
 const PREF_DEFAULTS = {
   explainerStyle: 'standard',
   flashcardsPerChapter: 15,
+  mainFormat: 'auto',
   miniChecks: true,
   practice: 'quiz',
   quizLength: 8,
@@ -570,12 +571,13 @@ $('openFile').onchange = () => {
     : null;
   setConfig(c);
 };
-for (const id of ['prefExplainer', 'prefPractice', 'prefQuiz', 'prefCards', 'prefChecks', 'prefVisuals'])
+for (const id of ['prefExplainer', 'prefPractice', 'prefQuiz', 'prefCards', 'prefChecks', 'prefVisuals', 'prefMain'])
   $(id).onchange = () => {
     const c = currentConfig();
     c.study_preferences = {
       explainerStyle: $('prefExplainer').value,
       flashcardsPerChapter: Number($('prefCards').value),
+      mainFormat: $('prefMain').value,
       miniChecks: $('prefChecks').checked,
       practice: $('prefPractice').value,
       quizLength: Number($('prefQuiz').value),
@@ -583,12 +585,11 @@ for (const id of ['prefExplainer', 'prefPractice', 'prefQuiz', 'prefCards', 'pre
     };
     setConfig(c);
   };
-for (const id of ['decks', 'mainFormat'])
-  $(id).onchange = () => {
-    const c = currentConfig();
-    c.decks = { main_format: $('mainFormat').value, offer: $('decks').checked };
-    setConfig(c);
-  };
+$('decks').onchange = () => {
+  const c = currentConfig();
+  c.decks = { offer: $('decks').checked };
+  setConfig(c);
+};
 $('clear').onclick = () => {
   if (active) active.abort();
   active = null;

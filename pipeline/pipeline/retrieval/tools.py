@@ -14,12 +14,15 @@ finishes, in original call order.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 import logging
+import tempfile
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -27,7 +30,7 @@ import requests
 from .. import obs
 from ..config import cfg
 from ..generated import MATERIAL_TITLE_MAX
-from . import bank, capture, contract, library, pending, skills, store
+from . import bank, capture, contract, deck, library, pending, skills, store
 from .chunking import clip_to_tokens, estimate_tokens
 from .library_evidence import LibraryEvidence
 from .limits import TurnBudget
@@ -268,6 +271,10 @@ class ToolContext:
     # call id) the next model request carries. Both live for this turn only.
     captures: list[dict[str, Any]] = field(default_factory=list)
     pending_images: dict[str, tuple[str, str]] = field(default_factory=dict)
+    # Decks this turn outlined (deck.py records, by deck id) and the working
+    # directory their figures and exports go to; the agent removes it at turn end.
+    decks: dict[str, dict[str, Any]] = field(default_factory=dict)
+    deck_dir: str = ""
     _scope_outline: dict[str, Any] | None = field(default=None, repr=False)
 
 
@@ -1050,6 +1057,8 @@ async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> Too
             size=size,
             started=started,
         )
+        # A deck slide embedding this crop credits the excerpt's book.
+        | {"excerptId": target.excerpt_id}
     )
     ctx.pending_images[call_id] = (
         f"capture_knowledge_page result {n}: {label}",
@@ -1318,6 +1327,7 @@ async def _post_operation(
     ctx: ToolContext,
     *,
     failure: str,
+    timeout: float = 10,
 ) -> ToolResult:
     """POST a receipt-backed mutation to the gateway.
 
@@ -1336,7 +1346,7 @@ async def _post_operation(
                     _material_url(path),
                     headers=_material_headers(),
                     data=json.dumps(payload),
-                    timeout=10,
+                    timeout=timeout,
                 )
 
             resp = await asyncio.to_thread(_post)
@@ -1729,31 +1739,43 @@ async def _read_skill(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
 async def _list_question_bank(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     """The bank's table of contents: a subject's topics, or a page of a topic's
-    questions. The exams and subjects ride in the tool description."""
+    questions, optionally of one question type. The exams and subjects ride in
+    the tool description."""
     # A topic id is unique on its own, so a subject passed with it is ignored.
     topic, subject = args.get("topic"), args.get("subject")
+    qtype = str(args.get("question_type") or "")
     if not (topic or subject):
         return _refused(
             "list_question_bank takes subject (a bank subject from its description, "
             "not a library subject) or topic (from a subject's list)."
         )
+    if qtype and not topic:
+        return _refused(
+            "question_type filters a topic's questions; pass a topic from the "
+            "subject's list with it."
+        )
     if topic:
         offset = int(args.get("offset") or 0)
+        payload = {"userId": ctx.user_id, "topicId": str(topic), "offset": offset}
+        if qtype:
+            payload["questionType"] = qtype
         body = await _gateway_read(
-            "/api/internal/bank/list",
-            {"userId": ctx.user_id, "topicId": str(topic), "offset": offset},
-            f"list bank topic {topic}",
+            "/api/internal/bank/list", payload, f"list bank topic {topic}"
         )
         if isinstance(body, ToolResult):
             return body
         total, rows = body["total"], body["questions"]
         if not rows:
-            return _refused(
-                f"No bank questions under topic {topic} from offset {offset}; list "
-                "the subject's topics for their ids and counts.",
-                code="unavailable_target",
+            hint = (
+                f"No {qtype} questions under topic {topic} from offset {offset}; "
+                "list the topic without question_type to see the types its cards carry."
+                if qtype
+                else f"No bank questions under topic {topic} from offset {offset}; "
+                "list the subject's topics for their ids and counts."
             )
-        head = f"Topic {topic}: questions {offset + 1}-{offset + len(rows)} of {total}."
+            return _refused(hint, code="unavailable_target")
+        of = f" {qtype}" if qtype else ""
+        head = f"Topic {topic}:{of} questions {offset + 1}-{offset + len(rows)} of {total}."
         more = offset + len(rows)
         tail = f"\nNext page: offset {more}." if more < total else ""
         return _result(head + "\n\n" + "\n\n".join(bank.card(r) for r in rows) + tail)
@@ -1825,6 +1847,113 @@ async def _copy_questions(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     )
     if result.effects:
         ctx.ledger.complete(todo)
+    return result
+
+
+# ------------------------------------------------------------------ decks
+
+
+async def _create_deck(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    """Outline a deck for this turn. Nothing is stored until every slide is
+    written (retrieval/deck.py)."""
+    call_id = str(args.get("_tool_call_id") or "")
+    if not call_id or not ctx.assistant_message_id:
+        return _refused("create_deck needs its tool-call and assistant message ids.")
+    chapter = str(args.get("chapter_id") or "")
+    if chapter and chapter not in {c["id"] for c in ctx.chapters}:
+        return _refused(
+            "chapter_id is not a chapter of this workspace; the turn context lists them."
+        )
+    prepared = await ledger_write(ctx, "create_deck", args)
+    if isinstance(prepared, ToolResult):
+        return prepared
+    books, todo = prepared
+    record = deck.create(args, deck.deck_id(ctx.assistant_message_id, call_id))
+    deck.add_books(record, books)
+    ctx.decks[record["id"]] = record
+    ctx.ledger.complete(todo)
+    return _result(deck.created_text(record))
+
+
+async def _write_slide(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    """Check one slide alone with ppt-master's checker and keep it. Once every
+    slide is written, close the deck with its Sources slide, export it and
+    store the PPTX as a workspace file (Go /api/internal/files)."""
+    rid = str(args["deck_id"])
+    record = ctx.decks.get(rid)
+    if record is None:
+        return _refused(
+            f"write_slide: {rid} is not a deck this turn outlined; a deck is written "
+            "within the turn that creates it.",
+            code="unavailable_target",
+        )
+    if record.get("file"):
+        return _refused(
+            f"Deck {rid} is stored as file {record['file']}, which is now the document: "
+            "change its text with edit_document replace_text, or make a new deck.",
+            code="unavailable_target",
+        )
+    prepared = await ledger_write(ctx, "write_slide", args)
+    if isinstance(prepared, ToolResult):
+        return prepared
+    books, todo = prepared
+    problems, figures, excerpts = deck.turn_figures(ctx.captures, ctx.pending_images)
+    # A library crop on the slide credits its book, named in excerpt_ids or not.
+    cropped = sorted(
+        {excerpts[p] for p in deck.figure_pages(args["svg"]) if p in excerpts}
+    )
+    if cropped:
+        books = [*books, *await library.provenance(cropped)]
+    if not ctx.deck_dir:
+        ctx.deck_dir = tempfile.mkdtemp(prefix="capy-deck-")
+    project = Path(ctx.deck_dir) / rid
+    problem = await asyncio.to_thread(
+        deck.write, record, args, problems, figures, project
+    )
+    if problem:
+        return _refused(f"write_slide: {problem}")
+    deck.add_books(record, books)
+    ctx.ledger.complete(todo)
+    outline = deck.outline_text(record)
+    if not deck.complete(record):
+        return _result(outline)
+    pptx = project / "deck.pptx"
+    problem = await asyncio.to_thread(deck.save, record, project, pptx)
+    if problem:
+        return _result(
+            f"{outline}\n\nThe export failed; rewrite the slide it names: {problem}"
+        )
+    call_id = str(args.get("_tool_call_id") or "")
+    payload = {
+        **_chat_context(ctx, call_id),
+        "name": deck.file_name(record),
+        "chapterId": record["chapter_id"],
+        "content": base64.b64encode(pptx.read_bytes()).decode(),
+    }
+    if record["provenance"]:
+        payload["provenance"] = record["provenance"]
+    result = await _post_operation(
+        "/api/internal/files",
+        payload,
+        operation_id(ctx.assistant_message_id, call_id),
+        ctx,
+        failure="store the deck",
+        timeout=60,
+    )
+    if not result.effects:
+        return replace(
+            result,
+            error=f"{result.error} Every slide is written; writing one again retries "
+            "the export and the store.",
+        )
+    record["file"] = result.effects[0]["resource"]["id"]
+    result.text_parts = [
+        (
+            f"{outline}\n\nEvery slide is written. The deck is stored as "
+            f"'{payload['name']}' (file id {record['file']}) and is parsed in the "
+            "background; from now on that PPTX is the document."
+        )
+    ]
     return result
 
 
@@ -1909,6 +2038,8 @@ _register("edit_document", _edit_document)
 _register("trash_file", _trash_file)
 _register("list_trashed_files", _list_trashed_files)
 _register("restore_file", _restore_file)
+_register("create_deck", _create_deck)
+_register("write_slide", _write_slide)
 
 
 # Offered only with the Library switch on and a configured library.
@@ -1919,6 +2050,8 @@ KNOWLEDGE_TOOLS = (
 )
 KNOWLEDGE_CAPTURE = "capture_knowledge_page"
 BANK_TOOLS = ("list_question_bank", "read_question", "copy_questions")
+# Offered with ppt-master installed (the retrieval image has it).
+DECK_TOOLS = ("create_deck", "write_slide")
 
 
 def _offered(spec: ToolSpec, ctx: ToolContext) -> bool:
@@ -1940,6 +2073,8 @@ def _offered(spec: ToolSpec, ctx: ToolContext) -> bool:
     if spec.name == KNOWLEDGE_CAPTURE:
         # Without the knowledge-base bucket there is nothing to render.
         return ctx.library and library.enabled() and bool(cfg.knowledge_base_b2_bucket)
+    if spec.name in DECK_TOOLS:
+        return deck.available()
     if spec.name in KNOWLEDGE_TOOLS:
         return ctx.library and library.enabled()
     if spec.name != "resolve_source_change":
@@ -1963,7 +2098,12 @@ def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
     ]
     # The model maps the learner's words onto a subject from these lists, then
     # browses or lists it for topic ids.
-    extra = {"read_skill": skills.catalog()}
+    # The deck skill is listed only where its tools can run.
+    extra = {
+        "read_skill": skills.catalog(
+            n for n in skills.SKILLS if n != skills.DECK or deck.available()
+        )
+    }
     if ctx.library_catalog:
         extra["browse_knowledge"] = (
             "\n\nSubjects this library holds (browse one for its topic ids):\n"

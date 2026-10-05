@@ -1,5 +1,5 @@
 {
-  "version": 14,
+  "version": 15,
   "operations": [
     "source.read",
     "material.read",
@@ -322,7 +322,7 @@
     {
       "name": "list_question_bank",
       "version": 1,
-      "description": "List the question bank of reviewed exam questions: a bank subject listed below for its topics, or a topic for its questions as cards, 50 per page.",
+      "description": "List the question bank of reviewed exam questions: a bank subject listed below for its topics, or a topic for its questions as cards, 50 per page, optionally only those of one question type.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -330,6 +330,11 @@
             "default": 0,
             "minimum": 0,
             "type": "integer"
+          },
+          "question_type": {
+            "description": "With topic: only questions of this task type, as cards list them after their marks (IELTS Reading's identifying-information is True/False/Not given).",
+            "minLength": 1,
+            "type": "string"
           },
           "subject": {
             "description": "A bank subject id from this description.",
@@ -663,6 +668,133 @@
         },
         "required": [
           "kind"
+        ],
+        "type": "object"
+      },
+      "mutates": true,
+      "usesEmbedding": false,
+      "concurrency": "mutate",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "material.create"
+      ],
+      "retention": "full"
+    },
+    {
+      "name": "create_deck",
+      "version": 1,
+      "description": "Create a slide deck from an outline, one title and brief per slide, as the deck skill describes.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "chapter_id": {
+            "description": "The chapter to file the deck in; omit to leave it unfiled.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "excerpt_ids": {
+            "description": "Library excerpts this was written from; they become the deck's Sources slide.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": "array"
+          },
+          "slides": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "brief": {
+                  "maxLength": 1200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "title": {
+                  "maxLength": 160,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "title",
+                "brief"
+              ],
+              "type": "object"
+            },
+            "maxItems": 30,
+            "minItems": 1,
+            "type": "array"
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "todo": {
+            "description": "The open ledger todo this write completes.",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "title",
+          "slides"
+        ],
+        "type": "object"
+      },
+      "mutates": true,
+      "usesEmbedding": false,
+      "concurrency": "mutate",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "material.create"
+      ],
+      "retention": "full"
+    },
+    {
+      "name": "write_slide",
+      "version": 1,
+      "description": "Write one slide of a deck as SVG in the deck skill's rules; writing a slide again replaces it.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "deck_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "excerpt_ids": {
+            "description": "Library excerpts this was written from; they become the deck's Sources slide.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": "array"
+          },
+          "slide": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "svg": {
+            "maxLength": 40000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "todo": {
+            "description": "The open ledger todo this write completes.",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "deck_id",
+          "slide",
+          "svg"
         ],
         "type": "object"
       },
@@ -1223,7 +1355,7 @@
     }
   ],
   "formats": {
-    "note": "Markdown. A mindmap or diagram is one ```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; ```quiz fences (YAML `questions:` list, each in the quiz question format) and ```flashcards fences (YAML `cards:` list of `front`/`back`), each a mini check of 2 to 4 items; and ```html-embed fences for an interactive (YAML: `title`, `html: |`). The html is one self-contained snippet under 64 KB: inline CSS and script, no network, no external URLs, colours from the variables --bg, --fg, --muted, --accent and --border so it follows the light and dark theme, height fitting its content. Use an interactive only where moving something teaches more than a diagram.",
+    "note": "Markdown. A mindmap or diagram is one ```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; ```quiz fences (YAML `questions:` list, each in the quiz question format) and ```flashcards fences (YAML `cards:` list of `front`/`back`), each a mini check of 2 to 4 items; and ```html-embed fences for an interactive (YAML: `title`, `html: |`), at most 10 per note. The html is one small self-contained snippet under 64 KB: inline CSS and script, no network, no external URLs, no navigating the page, colours only from the provided variables --bg, --fg, --muted, --accent and --border so it follows the light and dark theme, height fitting its content with no vh or vw units. Use an interactive only where moving something teaches more than a diagram.",
     "question": "Question JSON: id, stem typed blocks, parts [{id, blocks, answer, marks 1-20, markscheme [{text, marks}] on open parts only, solution blocks}], layout paper|split, labels letters|numbers, optional level. An open part's markscheme item marks add up to its marks; closed parts have no markscheme and explain in solution. Part ids must be globally unique. Answers: mcq/multi options string[] and correct indices; boolean correct; short accepted string[] and optional fixed unit; matching options string[] and pairs [{left,right option index}]; ordering items string[]; open accepted and hints string[]. Blocks: text, chart, graph, table. At most 7 parts per question and 5 marking items per part; a quiz has at most 100 parts, 20 of them open; open accepted answers under 5000 characters. No legacy prompt/points/rubrics or awarded scores.",
     "question_example": "{\"id\": \"q1\", \"stem\": [{\"type\": \"text\", \"text\": \"A red blood cell is placed in pure water.\"}], \"parts\": [{\"id\": \"q1a\", \"blocks\": [{\"type\": \"text\", \"text\": \"Which way does water move?\"}], \"answer\": {\"type\": \"mcq\", \"options\": [\"Into the cell\", \"Out of the cell\"], \"correct\": [0]}, \"marks\": 1, \"solution\": [{\"type\": \"text\", \"text\": \"Into the cell, from the higher water potential outside.\"}]}, {\"id\": \"q1b\", \"blocks\": [{\"type\": \"text\", \"text\": \"Explain why the cell may burst.\"}], \"answer\": {\"type\": \"open\", \"accepted\": [\"Water enters by osmosis and, with no cell wall, the membrane ruptures.\"], \"hints\": [\"What resists the swelling in a plant cell?\"]}, \"marks\": 2, \"markscheme\": [{\"text\": \"Water enters by osmosis\", \"marks\": 1}, {\"text\": \"No cell wall, so the membrane ruptures\", \"marks\": 1}], \"solution\": [{\"type\": \"text\", \"text\": \"Water keeps entering by osmosis; an animal cell has no wall to resist the pressure, so it lyses.\"}]}], \"layout\": \"paper\", \"labels\": \"letters\"}"
   }

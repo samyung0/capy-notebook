@@ -19,6 +19,7 @@ import { m } from '@/i18n';
 const DEFAULTS: Required<Omit<StudyPreferences, '$schema'>> = {
   explainerStyle: 'standard',
   flashcardsPerChapter: 15,
+  mainFormat: 'auto',
   miniChecks: true,
   practice: 'quiz',
   quizLength: 8,
@@ -29,6 +30,7 @@ type Choice = { label: () => string; value: string };
 
 const ROWS: {
   field:
+    | 'mainFormat'
     | 'explainerStyle'
     | 'practice'
     | 'quizLength'
@@ -38,6 +40,16 @@ const ROWS: {
   hint: () => string;
   choices: Choice[];
 }[] = [
+  {
+    choices: [
+      { label: m.study_pref_main_auto, value: 'auto' },
+      { label: m.study_pref_main_note, value: 'note' },
+      { label: m.study_pref_main_deck, value: 'deck' },
+    ],
+    field: 'mainFormat',
+    hint: m.study_pref_main_hint,
+    title: m.study_pref_main,
+  },
   {
     choices: [
       { label: m.study_pref_explainer_brief, value: 'brief' },

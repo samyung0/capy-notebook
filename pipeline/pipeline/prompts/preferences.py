@@ -16,6 +16,18 @@ DEFAULTS: dict[str, Any] = {
     "flashcardsPerChapter": 15,
     "miniChecks": True,
     "visualAids": "more",
+    "mainFormat": "auto",
+}
+
+# Each chapter's main explainer (decks: openwiki/decks.md).
+MAIN_FORMAT = {
+    "note": "Main explainer: a note for every chapter.",
+    "deck": "Main explainer: a deck for every chapter.",
+    "auto": (
+        "Main explainer: a deck for brief or lecture-like learning, a note for "
+        "detailed, text-dense learning; choose from the explainer style (brief "
+        "leans deck, detailed leans note)."
+    ),
 }
 
 EXPLAINER = {
@@ -30,9 +42,25 @@ VISUALS = {
 }
 
 
+# The field that sets /generate's count for a kind when the request leaves it
+# out. /generate makes no notes, so explainer style, mini checks and visual aids
+# never apply to it.
+GENERATE_COUNT = {"quiz": "quizLength", "flashcards": "flashcardsPerChapter"}
+
+
+def merged(saved: dict[str, Any] | None) -> dict[str, Any]:
+    """Saved values over defaults."""
+    return {**DEFAULTS, **{k: v for k, v in (saved or {}).items() if v is not None}}
+
+
+def generate_count(kind: str, saved: dict[str, Any] | None) -> int:
+    """How many questions or cards /generate makes of a quiz or flashcard set."""
+    return int(merged(saved)[GENERATE_COUNT[kind]])
+
+
 def lines(saved: dict[str, Any] | None) -> list[str]:
     """One instruction per preference, saved values over defaults."""
-    p = {**DEFAULTS, **{k: v for k, v in (saved or {}).items() if v is not None}}
+    p = merged(saved)
     practice = {
         "none": "Build no practice unless asked.",
         "quiz": f"Practise each chapter with a quiz of {p['quizLength']} questions.",
@@ -48,6 +76,7 @@ def lines(saved: dict[str, Any] | None) -> list[str]:
         else "Put no knowledge checks inside notes."
     )
     return [
+        MAIN_FORMAT.get(p["mainFormat"], MAIN_FORMAT["auto"]),
         EXPLAINER.get(p["explainerStyle"], EXPLAINER["standard"]),
         practice.get(p["practice"], practice["quiz"]),
         checks,

@@ -24,7 +24,9 @@
       "!!**/litellm_catalog.json",
       "!!bench",
       "!!lab",
-      "!!artifacts"
+      "!!artifacts",
+      // Prompt text: the deck style's reference slides and its str.format template.
+      "!!pipeline/pipeline/prompts/deck_styles"
     ]
   },
   "linter": {

@@ -664,6 +664,7 @@ def test_turn_context_renders_open_file_preferences_todos_and_reads():
         "explainerStyle": "brief",
         "practice": "both",
         "quizLength": 5,
+        "mainFormat": "deck",
     }
     ctx.ledger.todos = [
         tools.LedgerTodo(id=0, text="note", done=True),
@@ -678,6 +679,7 @@ def test_turn_context_renders_open_file_preferences_todos_and_reads():
     assert rendered["_kind"] == "ledger"
     assert "Open: Cells.pdf (file f_1)." in body
     assert "key points first" in body, "brief explainer"
+    assert "a deck for every chapter" in body
     assert "a quiz of 5 questions and 15 flashcards" in body
     assert "[x] 0. note" in body and "[ ] 1. quiz" in body
     assert body.count("- e_1 ") == 1, "one line per excerpt, not per read"
@@ -686,6 +688,7 @@ def test_turn_context_renders_open_file_preferences_todos_and_reads():
     empty = turn_context.message(_library_ctx())["content"]
     assert "Open: nothing." in empty and "Ledger todos" not in empty
     assert "a quiz of 8 questions" in empty, "default preferences"
+    assert "brief leans deck, detailed leans note" in empty, "auto main format"
 
 
 # --------------------------------------------------------------- citations
@@ -991,6 +994,60 @@ async def test_generate_refuses_empty_indexed_scope_before_model(monkeypatch):
 
     with pytest.raises(workflows.GenerateNoContent):
         await service._generate(req)
+
+
+async def test_generate_counts_default_to_the_study_preferences(monkeypatch):
+    from pipeline.retrieve import service
+
+    spec = ModelConfig(
+        version=1,
+        provider_name="DeepSeek",
+        model_name="Flash",
+        provider_slug="deepseek",
+        model_slug="deepseek-v4-flash",
+        thinking_levels=("instant",),
+        default_thinking="instant",
+        context_window_tokens=100_000,
+    )
+
+    def req(kind: str, **extra) -> service.GenerateReq:
+        return service.GenerateReq(
+            providerSlug=spec.provider_slug,
+            modelSlug=spec.model_slug,
+            configVersion=spec.version,
+            userId="u_1",
+            paidBy="platform",
+            thinking="instant",
+            workspaceId="ws_1",
+            kind=kind,
+            types=["mcq"],
+            detail="standard",
+            diagramType="auto",
+            **extra,
+        )
+
+    saved = {"quizLength": 20, "flashcardsPerChapter": 12}
+    # The panel's count wins; without one the saved preference, else its default.
+    assert service._count(req("quiz", studyPreferences=saved)) == 20
+    assert service._count(req("flashcards", studyPreferences=saved)) == 12
+    assert service._count(req("flashcards")) == 15
+    assert service._count(req("quiz", count=5, studyPreferences=saved)) == 5
+
+    asked: list[str] = []
+
+    async def _context(**_kwargs):
+        return "context", [], None
+
+    async def _produce(*, instruction, **_kwargs):
+        asked.append(instruction)
+        return '[{"front": "f", "back": "b"}]'
+
+    monkeypatch.setattr(service, "_bind_llm", lambda _req: None)
+    monkeypatch.setattr(service.models, "resolve_query_model", lambda *_a, **_k: spec)
+    monkeypatch.setattr(service.workflows, "generation_context", _context)
+    monkeypatch.setattr(service.workflows, "produce", _produce)
+    await service._generate(req("flashcards", studyPreferences=saved))
+    assert asked[0].startswith("Create 12 study flashcards")
 
 
 @pytest.mark.parametrize("character", ["a", "光", "😀"])

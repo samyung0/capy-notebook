@@ -65,6 +65,9 @@ pipeline = [
     "generated/agent_tools.json",
     "generated/openui_library.json",
     "prompts/openui_lang.txt",
+    "prompts/deck_styles/*/*.md",
+    "prompts/deck_styles/*/*.svg",
+    "prompts/deck_styles/*/examples/*.svg",
 ]
 
 [tool.ruff]

@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import shutil
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
@@ -56,7 +57,9 @@ from .limits import (
 )
 
 # The material write tools: an errored call is an attempt at progress.
-WRITE_TOOLS = frozenset({"create_material", "edit_document", "copy_questions"})
+WRITE_TOOLS = frozenset(
+    {"create_material", "edit_document", "copy_questions", "create_deck", "write_slide"}
+)
 from .openui import LangRenderer
 from .response_guard import (
     FLAGGED_CODE,
@@ -106,6 +109,10 @@ def _describe(name: str, args: dict[str, Any]) -> str:
         return detail
     if name == "create_material":
         return str(args.get("kind") or "")
+    if name == "create_deck":
+        return str(args.get("title") or "")
+    if name == "write_slide":
+        return f"slide {args.get('slide')}"
     if name in ("trash_file", "restore_file", "inspect_document", "edit_document"):
         target = args.get("target") or {}
         return str(target.get("id") or "") if isinstance(target, dict) else ""
@@ -213,7 +220,8 @@ async def run_agent(
     """The turn, plus the one piece of it that outlives the turn.
 
     However the loop ends — the answer, the stall guard, a failure, a lost
-    client — the turn's ledger changes go back to the conversation.
+    client — the turn's ledger changes go back to the conversation, and its
+    deck working directory goes away.
     """
     try:
         async for event in _run_turn(
@@ -228,6 +236,8 @@ async def run_agent(
             yield event
     finally:
         await tools.store_ledger(ctx)
+        if ctx.deck_dir:
+            shutil.rmtree(ctx.deck_dir, ignore_errors=True)
 
 
 async def _run_turn(

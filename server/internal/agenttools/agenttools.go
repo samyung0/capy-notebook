@@ -55,7 +55,9 @@ const questionExample = `{"id": "q1", "stem": [{"type": "text", "text": "A red b
 // v13: copy_questions copies bank questions by id into a new or existing
 // quiz, each credited from the bank's own sources.
 // v14: html-embed fences carry no fallback, only title and html.
-const ContractVersion = 14
+// v15: create_deck and write_slide write a slide deck the ppt-master way; the
+// exported PPTX is stored as a workspace file.
+const ContractVersion = 15
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -411,11 +413,12 @@ const noteMarkdownDescription = "Markdown. A mindmap or diagram is one " +
 	"```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; " +
 	"```quiz fences (YAML `questions:` list, each in the quiz question format) and " +
 	"```flashcards fences (YAML `cards:` list of `front`/`back`), each a mini check of 2 to 4 " +
-	"items; and ```html-embed fences for an interactive (YAML: `title`, `html: |`). " +
-	"The html is one self-contained snippet under 64 KB: inline CSS and script, no network, " +
-	"no external URLs, colours from the variables --bg, --fg, --muted, --accent and --border so " +
-	"it follows the light and dark theme, height fitting its content. Use an interactive only " +
-	"where moving something teaches more than a diagram."
+	"items; and ```html-embed fences for an interactive (YAML: `title`, `html: |`), at most 10 " +
+	"per note. The html is one small self-contained snippet under 64 KB: inline CSS and script, " +
+	"no network, no external URLs, no navigating the page, colours only from the provided " +
+	"variables --bg, --fg, --muted, --accent and --border so it follows the light and dark " +
+	"theme, height fitting its content with no vh or vw units. Use an interactive only where " +
+	"moving something teaches more than a diagram."
 
 // todoSchema is the ledger todo a write completes.
 func todoSchema() map[string]any {
@@ -424,6 +427,19 @@ func todoSchema() map[string]any {
 		"minimum":     0,
 		"description": "The open ledger todo this write completes.",
 	}
+}
+
+// A deck holds at most 30 slides of at most 40,000 SVG characters each (the
+// example decks' slides are 3 to 9 KB).
+const (
+	deckMaxSlides   = 30
+	deckMaxSlideSVG = 40_000
+)
+
+// deckExcerpts is excerpt_ids on the deck tools: their books are credited on
+// the deck's Sources slide.
+func deckExcerpts() map[string]any {
+	return idList("Library excerpts this was written from; they become the deck's Sources slide.", 0, 32)
 }
 
 // bboxSchema is the optional zoom region of the page-capture tools.
@@ -556,11 +572,14 @@ func Definitions() []Definition {
 			Name:      "list_question_bank",
 			Retention: RetainNone,
 			Description: "List the question bank of reviewed exam questions: a bank subject " +
-				"listed below for its topics, or a topic for its questions as cards, 50 per page.",
+				"listed below for its topics, or a topic for its questions as cards, 50 per page, " +
+				"optionally only those of one question type.",
 			InputSchema: obj(map[string]any{
 				"subject": str("A bank subject id from this description."),
 				"topic":   str("A topic id from a subject's list."),
-				"offset":  map[string]any{"type": "integer", "minimum": 0, "default": 0},
+				"question_type": str("With topic: only questions of this task type, as cards list " +
+					"them after their marks (IELTS Reading's identifying-information is True/False/Not given)."),
+				"offset": map[string]any{"type": "integer", "minimum": 0, "default": 0},
 			}),
 			Concurrency:        "read",
 			RequiredOperations: []Operation{OpLibraryRead},
@@ -674,6 +693,46 @@ func Definitions() []Definition {
 				"excerpt_ids": idList("Library excerpts it was written from; they become its attribution.", 0, 32),
 				"todo":        todoSchema(),
 			}, "kind"),
+			Mutates:            true,
+			Concurrency:        "mutate",
+			RequiredOperations: []Operation{OpMaterialCreate},
+		}),
+		chatTool(Definition{
+			Name:      "create_deck",
+			Retention: RetainFull,
+			Description: "Create a slide deck from an outline, one title and brief per slide, as " +
+				"the deck skill describes.",
+			InputSchema: obj(map[string]any{
+				"title": map[string]any{"type": "string", "minLength": 1, "maxLength": fieldlimits.MaterialTitle},
+				"slides": map[string]any{
+					"type":     "array",
+					"minItems": 1,
+					"maxItems": deckMaxSlides,
+					"items": obj(map[string]any{
+						"title": map[string]any{"type": "string", "minLength": 1, "maxLength": 160},
+						"brief": map[string]any{"type": "string", "minLength": 1, "maxLength": 1200},
+					}, "title", "brief"),
+				},
+				"chapter_id":  str("The chapter to file the deck in; omit to leave it unfiled."),
+				"excerpt_ids": deckExcerpts(),
+				"todo":        todoSchema(),
+			}, "title", "slides"),
+			Mutates:            true,
+			Concurrency:        "mutate",
+			RequiredOperations: []Operation{OpMaterialCreate},
+		}),
+		chatTool(Definition{
+			Name:      "write_slide",
+			Retention: RetainFull,
+			Description: "Write one slide of a deck as SVG in the deck skill's rules; writing a " +
+				"slide again replaces it.",
+			InputSchema: obj(map[string]any{
+				"deck_id":     str(""),
+				"slide":       map[string]any{"type": "integer", "minimum": 1},
+				"svg":         map[string]any{"type": "string", "minLength": 1, "maxLength": deckMaxSlideSVG},
+				"excerpt_ids": deckExcerpts(),
+				"todo":        todoSchema(),
+			}, "deck_id", "slide", "svg"),
 			Mutates:            true,
 			Concurrency:        "mutate",
 			RequiredOperations: []Operation{OpMaterialCreate},

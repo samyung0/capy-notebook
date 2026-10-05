@@ -1,9 +1,9 @@
 # Decks: adopting ppt-master
 
-How the playground makes slide decks with [ppt-master](https://github.com/hugohe3/ppt-master),
-what we took from it and what we left, and how to add a style. Decks are
-playground-only until `todo-learning.md` step 2.6; this file moves to
-`openwiki/` when they reach the app.
+How decks use [ppt-master](https://github.com/hugohe3/ppt-master), what we
+took from it and what we left, how the playground runs them, how to add a
+style, and what decks cost. The app's decks (the image, the tools, storing
+the PPTX, editing) are in `openwiki/decks.md`.
 
 ## ppt-master in one page
 
@@ -28,21 +28,25 @@ SVG into native PowerPoint shapes.
 | | `templates/brands/`, `templates/decks/` | Identity kits of real organisations; never used for Capy decks |
 | Examples | <https://github.com/hugohe3/ppt-master-examples> | Finished projects with their SVGs, viewable at `hugohe3.github.io/ppt-master-examples` |
 
-## What the playground uses
+## What decks use
 
-The Quick route, with the chat agent as the Executor.
+The Quick route, with the chat agent as the Executor. The code is production's
+(`pipeline/pipeline/retrieval/deck.py`, the tools in `retrieval/tools.py`); the
+playground's `scripts/deck.py` points it at a local checkout and runs the
+tools in process (`deck_locally`), keeping the deck under the run instead of
+storing it through the gateway.
 
-| ppt-master | Playground |
+| ppt-master | Here |
 |---|---|
-| Official distribution | Pinned in `deck.py` (`PPT_MASTER_COMMIT`), cloned on first use into the ignored `local/ppt-master` without icons, sounds and image-model comparison sheets. Its attribution guard refuses a partial copy, so the skill is never vendored piecemeal |
-| Scripts' dependencies | Run under `uv run --no-project --with ...` (`deck.PPT_MASTER_DEPS`), separate from the pipeline's environment |
+| Official distribution | Pinned in `deck.PPT_MASTER_COMMIT`. The app's image carries the checkout (`openwiki/decks.md`); the playground clones it on first use into the ignored `local/ppt-master` without icons, sounds and image-model comparison sheets. Its attribution guard refuses a partial copy, so the skill is never vendored piecemeal |
+| Scripts' dependencies | `deck.PPT_MASTER_DEPS`: in the image, their own virtualenv; here, `uv run --no-project --with ...`, separate from the pipeline's environment |
 | Strategist, `design_spec.md` | `create_deck`: one title and brief per slide (audience move, how the points relate, content and source) |
 | `spec_lock.md` | The style's `style.md`: palette, type sizes with their calibration, page chrome, components |
-| Executor rules | The `deck` skill (`deck.skill_text`, read with `read_skill`): the method, `deck.RULES` (a short distillation) and the style with its reference slides. The deck tools are refused until it is in the request |
+| Executor rules | The `deck` skill (`prompts/skills.py` `deck` and `deck_rules`, read with `read_skill`): the method, the slide rules (a short distillation) and the style with its reference slides. The deck tools are refused until it is in the request |
 | Per-page authoring | `write_slide`: one SVG per call |
 | Checker | Run on each slide alone (`deck.write`); its errors go back to the model as the refusal. Our own checks first: XML parses, the 1280x720 canvas, `lang` on the root, figures only from this turn's bbox captures |
 | Final check and export | Once every slide is written (`deck.save`): the Sources slide is added from the style's `sources.svg`, then `svg_quality_checker.py --quick-generate --canonical-authoring --stage final --json` and `svg_to_pptx.py --quick-generate --no-notes` |
-| Project folder | `runs/<run>/materials/<deck id>/` (`svg_output/`, `images/`, `validation/`); the PPTX at `runs/<run>/materials/<deck id>.pptx` |
+| Project folder | In the app, the turn's working directory. Here `runs/<run>/materials/<deck id>/` (`svg_output/`, `images/`, `validation/`); the PPTX at `runs/<run>/materials/<deck id>.pptx` |
 | Images | `<image href="../images/p<page>.jpg">`, copied from the run's captures |
 
 Not used yet: native charts and tables (`data-pptx-replace-with` with
@@ -51,7 +55,7 @@ speaker notes, animations, structured templates (Masters and Layouts).
 
 ## A style
 
-A folder in `deck-styles/`:
+A folder in `pipeline/pipeline/prompts/deck_styles/`:
 
 | File | Contents |
 |---|---|
@@ -79,15 +83,15 @@ teal kickers and callouts.
 5. Try it before a live run: send the same briefs to the model with the new
    style and render the export (`svg_to_pptx.py`, then LibreOffice to PDF).
 6. Offer it: `create_deck` takes no style today; add a `style` enum from
-   `deck.styles()` when there is more than one.
+   `deck.styles()` when there is more than one (a contract change).
 
 ### Fonts
 
-The app's PPTX viewer serves Liberation Sans as Arial and nothing else
+The app's PPTX viewer serves Liberation Sans as Arial and Caladea as Cambria
 (`src/office-runtime/pptxFonts.ts`). `vendor/betteroffice/packages/fonts`
-also has Caladea (Cambria's metrics) and Carlito (Calibri's), not loaded yet.
-A downloaded deck opened in PowerPoint uses the real faces. Choose body faces
-the viewer serves; a heading face it lacks falls back.
+also has Carlito (Calibri's metrics), not loaded. A downloaded deck opened in
+PowerPoint uses the real faces. Choose faces the viewer serves; one it lacks
+falls back.
 
 ## Templates later
 
@@ -102,7 +106,8 @@ are in `todo-learning.md`, Later.
 
 ## Updating ppt-master
 
-Change `PPT_MASTER_COMMIT`, delete `local/ppt-master`, run
+Change `PPT_MASTER_COMMIT` in `deck.py` and the Dockerfile's
+`ARG PPT_MASTER_COMMIT`, delete `local/ppt-master`, run
 `playground.py --check` (it clones and exports a sample), and compare a live
 deck with the previous commit's.
 
