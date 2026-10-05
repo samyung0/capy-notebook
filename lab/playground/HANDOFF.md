@@ -1,7 +1,7 @@
 # Prompt and tool tuning: handoff (2026-10-05)
 
 Where the chat agent's prompt and tool tuning stands, for continuing the
-acceptance test (`todo-learning.md` 1.9) on another machine. Setup and every
+acceptance test (`todo-learning.md` 1.9) in another session on the same Mac. Setup and every
 config field are in `README.md`; the scenarios to run are its Acceptance table.
 
 ## What a turn sends now
@@ -67,9 +67,9 @@ answer and each tool call's arguments), and `done` sums the turn.
 
 ## Your prompt edits in progress
 
-You applied an edited system prompt in the page but did not save it, so it
-exists only in `local/runs/20261005-120120-32a586/run.json` on the first
-machine. The diff against production, to reapply here:
+An edited system prompt was applied in the page but not saved to a config.
+It is in the open page's JSON and in
+`local/runs/20261005-120120-32a586/run.json`. The diff against production:
 
 ```diff
 --- production
@@ -108,22 +108,20 @@ machine. The diff against production, to reapply here:
 Renaming "## Syntax Rules" moves the library rules to the end of the prompt:
 they go before the answer format only while that text matches production.
 
-## On the second machine
+## What is running
 
-- Keys in the repository-root `.env.local` (`RELACE_API_KEY` and the others
-  the README lists) and the ingest-host SSH key
-  (`~/.ssh/id_ed25519_capy_ingest` or `CAPY_INGEST_SSH_KEY`).
-- The lab database is shared on the ingest host, so the hand-applied changes
-  are already there: `rag_material_contents` and two `materials` columns (so
-  `list_sources` works) and the four test chapters in
-  `odl_eval_odl_nocaption` (`ch_lab_*`, 13 files filed). Start
-  `capy-odl-agentic-db` there if it is stopped, and stop it when done.
-- The question bank is a local restore of a dump under the ignored `data/`
-  (`data/question-bank/backups/bank-2026-10-03-before-round2.dump`); copy it
-  over and restore it as `bench/rag/scripts/bank_search.py` shows, then run
-  the bank migrations (README). Without it the bank tools are simply not
-  offered. On the first machine the container was killed once (exit 137) and
-  turns hung until it was restarted; if a run never saves, check it.
+- The playground on http://localhost:8766 (the desktop app's
+  `rag-playground-lab` launch config, lab target), left open. Restart it
+  after changing pipeline or playground code; the page keeps its config.
+- The lab database `capy-odl-agentic-db` on the ingest host, reached through
+  the playground's tunnel. Hand-applied there: `rag_material_contents` and two
+  `materials` columns (so `list_sources` works) and four test chapters in
+  `odl_eval_odl_nocaption` (`ch_lab_*`, 13 files filed). Stop it when tuning
+  is done.
+- The local question-bank restore, Docker container `capy-bank-search-lab` on
+  port 15499. It was killed once (exit 137) and turns hung until it was
+  restarted and the playground with it; if a run never saves, check
+  `docker ps`.
 
 ## Open questions
 
