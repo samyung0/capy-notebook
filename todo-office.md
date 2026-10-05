@@ -108,17 +108,17 @@ check); it applies at the first promotion.
   records the heap over two full view-mode passes per file (`*-view-heap`) and
   after each of five closes (`*-open-close-heap`, with the live document
   count), both report-only.
-- **Stale shown text after a two-peer half-link delete.** Two peers each
-  deleting half of the last link of a field with a nested field
-  (`[REF|[PAGE|7]L(AA)]`) leave the editor showing `REF=` until publication; the
-  save is right. Known matrix rows. Fix: after applying a remote update, run
-  `refresh_shown` on fields whose links fall in the changed ranges.
-- **Field result running into a later paragraph.** After two Enters and a
-  Backspace in `L(AA)y,z` the editor shows `REF=y`, the seed `REF=`: the rejoin
-  folds tail text back into the field. Needs trimming and renumbering in the
-  rejoin.
-- **Enter before a nested field after a link** (`[REF|L(AA)[PAGE|7]yy]`): the
-  half-link before the split leaves the field.
+- **Undo after two peers each deleted half a link** (found 2026-10-05): the
+  text the Undo restores comes back without its link and field-child marks,
+  before the field (yrs drops the formatting around text both peers deleted);
+  editor and save agree, content kept. Matrix rows `… one Undoes` (`exact+text`).
+- **Text typed between the halves of a split field, then the join**
+  (pre-existing for every split shape, 2026-10-05 probe `E,typeQ,BS`): the join
+  keeps the split as decided, but the editor shows the field ending before the
+  second half while the save keeps it all in the result (`REF=` vs reopened
+  `REF=Qyy`). Not in the matrix.
+- **Enter before a nested field holding a link** after the split point keeps
+  the old Enter (the half-link before the split leaves the field).
 - **Positional-tab alignment.** `w:ptab` now survives and draws as an ordinary
   tab (next tab stop), not aligned to the margin as Word does; layout work.
 - **Two peers on the nested shape** (one Backspaces while the other types in

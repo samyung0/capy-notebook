@@ -450,9 +450,12 @@ stays in the first, the result after the split point moves into the second as
 plain result runs, and the field ends after them. Undo restores the original
 field. Backspace, Delete or a range delete back rejoins it when only the moved
 runs sit there, in order; otherwise the split stays, keeping every run and
-typed character. A field whose result holds a kept insertion, a content
-control or foreign markup after the split point keeps the old Enter (the text
-after it leaves the field). Text typed at the end of a paragraph whose field
+typed character. A nested field after the split point that projects nothing
+of its own moves into the second paragraph as its own field, inside the split
+field's result, and goes back with the join. A field whose result holds a kept
+insertion, a content control, foreign markup or a nested field holding a link
+after the split point keeps the old Enter (the text after it leaves the
+field). Text typed at the end of a paragraph whose field
 code continues into the next lands ahead of the field. Two peers joining a
 just-split field at once can duplicate or revive text, and the join drops
 formatting applied to the moved text (both accepted).
@@ -468,8 +471,12 @@ its place. Text left ending a continued result after its last link is deleted
 stays in the field, which shows it, until the next publication reads it as
 text after the field (no tail move, so concurrent deletes converge without
 duplicates); until then Backspace at that paragraph's end deletes the whole
-field. Two peers each deleting half of the last link leave the shown text
-stale in the editor until publication; the save is right.
+field. A peer applying another's update re-reads the shown text of the
+fields whose projected children the update deleted or put back, as a system
+edit (outside Undo) its peers receive, so two peers each deleting half of the
+last link both show what one peer deleting all of it shows. Undo by one of
+them then restores its half without the link and child marks, before the
+field, in the editor and the save alike.
 
 The plain runs (text, plain line breaks, comment references, and tabs or
 positional tabs without their own formatting) that end the first paragraph's
@@ -483,7 +490,10 @@ do. A run holding a page or column break, a line break with its own
 formatting or `w:clear`, or a formatted tab stays in the field with the runs
 before it, so those save as before. After Enter in such a field's link, the
 join stops at that text (or at a comment reference) while the field continues
-past the joined paragraph. Text typed right after a comment reference ending
+past the joined paragraph. The same holds for moved runs a join leaves ending
+the paragraph while the field continues past it (Enter, Enter again in the
+moved text, then Backspace): they stay text after the field, unless the field
+keeps a run after them (a tracked deletion), when they go back in order. Text typed right after a comment reference ending
 the tail is counted inside the comment once reopened, because the parser
 hoists the comment's end out of the field (unstable, as before).
 
