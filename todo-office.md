@@ -1,6 +1,6 @@
 # Office (DOCX, XLSX, PPTX) backlog
 
-The single list of open Office work, as of 2026-10-03. It replaces
+The single list of open Office work, as of 2026-10-05. It replaces
 `todo-office-bench-and-uat-hardening.md` and the open lists in the older
 handoffs under `artifacts/`, which are now history. Decisions live in
 `human/frontend/office-files.md`; current behaviour in
@@ -16,6 +16,63 @@ field after its last link stays until publication, the Office benchmark and a
 bounded collaboration stress test in the manual Performance workflow, and the
 screen-reader mirror settling 300 ms after scrolling.
 
+## Collaboration capacity, saving and offline (2026-10-04/05)
+
+All of this is on main and UAT (UAT green at 5c92f81b; ecbd333b, which drops
+the old pending-room exception, is on main and goes to UAT with the next
+deploy). Decisions are in `human/` (search 2026-10-04 and 2026-10-05); the
+reports below hold the numbers.
+
+**Landed:** edit-loss fixes; refused saves to copy-only recovery (no download
+or discard, Reload only, every recovery path); slow save failures stay
+editable with backoff, a persistent closeable "Saving is delayed" banner, a
+client warning when an edit stays unconfirmed (45 s Office, 25 s notes) and
+recovery after 5 min (`SLOW_SAVE_LIMIT_MS`); a 401 on a source save (service
+secret) is a slow failure, logged as `service_secret_rejected`; offline
+editing into one IndexedDB store (`capy-edit-drafts` v2, `src/lib/editDrafts.ts`)
+with the "Can't connect to Capy" banner and lineage checks; stuck-room fix;
+CPU fixes (validate note updates from their structs, fixed-guid scratch docs,
+Hocuspocus awareness and provider echo pnpm patches, stores from encoded
+bytes); 30 ms `flushDelay` and 50 ms Plate cursor throttle; Redis extension
+removed; per-minute `collab_health` log line (lag, messages/s, store p95,
+engine worker queue); note updates the room cannot place are refused and
+resynced like source rooms (no room copy); Office saves take their change from
+the merged document (28% less main-thread time); storage charging fixes
+(migration 0054: captured edits not charged twice during a pending rebuild,
+text publications move `seed_bytes`).
+
+**Reports:** `bench/collaboration/reports/2026-10-05-prod-capacity.md` (prod
+box, 4 vCPU: two big rooms pass at 2×130 people; rooms of 5 pass at 80 rooms on
+1 core, 160 on 2; one Office engine worker saturates at ~20 large-file rooms;
+10k idle connections ≈ 294 MiB and a quarter core; before/after of the note
+resync and Office save fixes at the end); `bench/parsers/reports/2026-10-05-office-storage-charging.md`;
+harness notes in `/Users/sam/web/capy-docx-review-harnesses/2026-10-0{4,5}-*`
+(load errors, Yjs research, save-failure research across apps, offline design).
+
+**In progress when this was written:** caching each room's parsed original
+file in the Office engine worker (saves reopened it every time: 226 of 347
+worker seconds; one 16k-row XLSX save ≈ 10 s) and pinning production's
+collaboration service to 2 cores in the prod deploy config (not deployed;
+production promotion has never run and prod has no Capy app). Check `git log`
+for "engine" / "cpuset" commits; if missing, restart from the report's
+bottleneck 2.
+
+**Open:**
+- **Live document per Office room** (one more full pass off each save) — wait
+  for the engine cache's memory numbers, then decide (Epo: wait and see).
+- **Second collaboration instance** with document-sticky routing (the gateway's
+  collaboration-token response already returns the WebSocket URL) only when
+  one main thread runs out; first fix the contributor-marker check below.
+- **Store CPU off the main thread** (a save worker holding a replica) or a Rust
+  server: shelved unless prod shows saves still stall rooms.
+- **Load generator limits:** at 2×100+ peers the generator saturated its own
+  two cores; split peers across machines for bigger shapes.
+- **Text source history** is not compacted (see `openwiki/backend-storage-quota.md`,
+  "Yjs storage growth"); compact past a size threshold while the room is empty
+  only if it ever matters.
+- **Lock options B/C/D** were measured and not landed (no difference at 5–20
+  editors); patches in `2026-10-04-stress-locks/lock-options/`.
+
 ## Open from the 2026-10-04 rounds
 
 - **Stress job `continue-on-error`.** `bench:office` and `bench:stress`
@@ -23,20 +80,14 @@ screen-reader mirror settling 300 ms after scrolling.
   after the 30 ms broadcast batching, at 33 to 35 ms within 3% of each other).
   The `stress` job still has `continue-on-error`; drop it once that spread
   holds.
-- **Server errors under collaboration stress.** At high local load (20 peers per
-  room) the stress test saw a projection deadlock (Postgres 40P01), a store
-  statement timeout and a source-access 500, with p95 41–64 s. Reviewer's read:
-  the collaboration pool's 15 s `statement_timeout` (`collaboration/src/server.ts`)
-  counts lock waits; every Office access check and checkpoint, the read-only
-  `CheckSourceAccess` included, takes `workspaces … FOR UPDATE` then
-  `users … FOR NO KEY UPDATE` (`store/storage.go`, `sourceLockTx` in
-  `source_documents.go`, `account_state.go`), while the Plate store takes
-  `FOR SHARE` on the same rows (`persistence.ts`), so many reconnecting Office
-  peers serialize writes in one workspace. The 40P01 cycle isn't pinned; the
-  candidate is the `materials` `FOR SHARE` → `FOR UPDATE` upgrade in
-  `persistence.ts`, and `ProjectMaterialContent` doesn't retry 40P01.
-- **View-mode memory** still creeps about 2 MB per open and close (232 → 271 MB
-  over 20 rounds); cause unknown, not the font loading. `bench:office` now
+- **Server errors under collaboration stress** (projection deadlock 40P01, store
+  statement timeouts, source-access 500 at 20 local peers) came from runs on
+  the overloaded event loop before the 2026-10-04 lock and CPU fixes; none
+  showed in the 2026-10-05 prod runs. Recheck only if `collab_health` or Sentry
+  show them again (`ProjectMaterialContent` still doesn't retry 40P01).
+- **View-mode memory** creeps: the 2026-10-04 open/close probe measured about 0.5 MB of JS heap per
+  open and close (WASM back to 0 and no closed frame alive after each close;
+  an earlier manual run saw 2 MB per round); cause unknown, not the font loading. `bench:office` now
   records the heap over two full view-mode passes per file (`*-view-heap`) and
   after each of five closes (`*-open-close-heap`, with the live document
   count), both report-only.
@@ -122,9 +173,19 @@ screen-reader mirror settling 300 ms after scrolling.
   "Create one", which reads oddly; 新建工作区 would be more natural.
 - **Fork typecheck noise:** `usePagesPointer.note.test.ts:539` (docx-react) and
   `.at()` errors in `pptx-react/src/PptxEditor.test.tsx`.
-- **UAT text journey** "browser edit automatically publishes durable UTF-8
-  source" fails now and then (editor never ready); read its `*-not-ready`
-  evidence when it does.
+- **Office memory ceiling:** heap figures in `bench:office` are report-only;
+  decide what a ceiling means (per format, view vs edit; the long DOCX holds
+  ~450 MB of WASM in edit mode, the large XLSX ~242 MB) before gating them.
+- **Office in the production promotion gate** and a scroll benchmark: later,
+  once the Office budgets have held for a few runs. The small DOCX key p90
+  (188 against 195 ms) is the closest budget.
+- **Editor read-only open** budget was rebaselined to 4,050 ms; the trim of the
+  workspace page's startup imports is in `openwiki/editor-perf.md` "Open items".
+- **PPTX differences kept on purpose:** Enter on an empty bullet keeps the
+  list (as PowerPoint; Google Slides ends it); Backspace at the start of a
+  bulleted line joins at once (PowerPoint first removes the bullet).
+- **Prune local Docker** if space runs low: four stopped `capy-e2e-local-*`
+  containers from 2026-09 and their images (~3 GB).
 
 ## Benchmarks and UAT hardening (deferred 2026-09-26)
 
@@ -156,9 +217,9 @@ Storage-round reports, prototype patches and probe scripts are in
   rejected. Design the trade-off (rejecting honest resends after a room reload)
   first. Deferred while production runs one instance.
 - **Late merge of old-epoch edits:** a client disconnected during a publication
-  can only download its unsaved edits. Merging them needs the previous source
-  and final old-epoch state kept for a grace period; needed once offline
-  editing is built.
+  gets its unsaved edits in copy-only recovery (offline editing, 2026-10-05,
+  never merges another lineage). Merging them needs the previous source and
+  final old-epoch state kept for a grace period.
 
 ## Deferred from the 2026-09-25 Office round (status not rechecked)
 
