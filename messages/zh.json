@@ -1797,6 +1797,7 @@
   "review_from": "来自 {title}",
   "review_grade_failed": "无法检查此答案，请重试。",
   "review_left": "剩余 {count} 项",
+  "review_load_failed": "无法加载复习内容。",
   "review_more": "再复习 20 项",
   "review_next": "下一项",
   "review_no_workspaces": "在工作区中完成测验或学习抽认卡后，即可在此复习。",

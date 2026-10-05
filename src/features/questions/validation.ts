@@ -527,14 +527,15 @@ export function validateQuestion(
     if (block.type !== 'image' && block.type !== 'graph') continue;
     // Bank figures must be hosted bank assets; quiz figures are editor assets,
     // or a copied bank question's link under the deployment's BANK_ASSETS_URL
-    // (VITE_BANK_ASSETS_URL, scripts/env/config.py).
+    // (VITE_BANK_ASSETS_URL, scripts/env/config.py). Outside Vite (the site
+    // worker bundles this module) import.meta.env is undefined.
     if (
       'url' in block.image
         ? !hostedAsset(
             block.image.url,
             policy.bank
               ? policy.bankAssetsUrl
-              : import.meta.env.VITE_BANK_ASSETS_URL
+              : import.meta.env?.VITE_BANK_ASSETS_URL
           )
         : 'assetId' in block.image && policy.bank
     )

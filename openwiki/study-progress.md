@@ -91,7 +91,7 @@ write time it is rated as new (`prev` nil) and the row takes the new hash.
 Other items of the material keep their state.
 
 Parsed items are cached per material and revision in one process-wide map
-(`itemsOf`, 5,000 entries, cleared when full); every content write bumps
+(`itemsOf`, up to 32 MiB of document JSON, cleared when full); every content write bumps
 `materials.revision`, and titles are read fresh because a rename does not.
 
 ## Endpoints

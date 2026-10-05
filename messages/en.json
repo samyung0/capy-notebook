@@ -1797,6 +1797,7 @@
   "review_from": "From {title}",
   "review_grade_failed": "Couldn't check this answer. Try again.",
   "review_left": "{count} left",
+  "review_load_failed": "Couldn't load the next review items.",
   "review_more": "Review 20 more",
   "review_next": "Next",
   "review_no_workspaces": "Attempt a quiz or study flashcards in a workspace to review them here.",

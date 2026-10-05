@@ -86,7 +86,6 @@ export function StudyMark({
   if (state !== 'done' && state !== 'started') return null;
   return (
     <Icon
-      aria-hidden={false}
       aria-label={
         state === 'done' ? m.study_state_done() : m.study_state_started()
       }
@@ -96,7 +95,6 @@ export function StudyMark({
         className
       )}
       name={state === 'done' ? 'circleCheck' : 'circleDashed'}
-      role="img"
       size={14}
     />
   );

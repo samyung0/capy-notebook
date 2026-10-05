@@ -9,8 +9,9 @@ import {
   useWorkspaceReview,
 } from '@/api/hooks';
 import type { Question, RateReviewItemReq, ReviewItem } from '@/api/types';
+import { ErrorState } from '@/components/app/ErrorState';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
-import { Button } from '@/components/ui/Button';
+import { Button, ErrorAction } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
 import type { Answers } from '@/features/quizzes/grade';
@@ -43,12 +44,15 @@ export default function ReviewSession() {
   const { from } = useSearch({ strict: false }) as { from?: ReviewFrom };
   const navigate = useNavigate();
   const { data: ws } = useWorkspace(workspaceId);
-  const { data, isFetching } = useWorkspaceReview(workspaceId);
+  const { data, isFetching, isError, refetch } =
+    useWorkspaceReview(workspaceId);
   // The session is the batch fetched when it began: ratings change the order
   // the server would give, and the learner should not see it reshuffle.
   const [session, setSession] = useState<ReviewItem[] | null>(null);
   const [index, setIndex] = useState(0);
-  if (session === null && data && !isFetching) setSession(data.items);
+  if (session === null && data && !isFetching && !isError)
+    setSession(data.items);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   // Ratings save in the background and refresh progress once, when the
   // session is left or Review more asks for the next batch.
@@ -69,10 +73,15 @@ export default function ReviewSession() {
   }
   async function more() {
     // The next batch is chosen from every rating saved so far.
-    await ratings.saved();
-    await invalidateStudy(qc, workspaceId);
-    setSession(null);
-    setIndex(0);
+    setLoadingMore(true);
+    try {
+      await ratings.saved();
+      await invalidateStudy(qc, workspaceId);
+      setSession(null);
+      setIndex(0);
+    } finally {
+      setLoadingMore(false);
+    }
   }
 
   const item = session?.[index];
@@ -98,7 +107,19 @@ export default function ReviewSession() {
           )}
         </div>
         {session === null ? (
-          <SkeletonList count={3} rowHeight={64} />
+          isError ? (
+            <ErrorState
+              action={
+                <ErrorAction onClick={() => void refetch()}>
+                  {m.action_retry()}
+                </ErrorAction>
+              }
+              title={m.review_load_failed()}
+              variant="panel"
+            />
+          ) : (
+            <SkeletonList count={3} rowHeight={64} />
+          )
         ) : item ? (
           item.kind === 'card' ? (
             <CardItem
@@ -127,7 +148,9 @@ export default function ReviewSession() {
                 {m.review_finish()}
               </Button>
               {session.length > 0 && (
-                <Button onClick={() => void more()}>{m.review_more()}</Button>
+                <Button disabled={loadingMore} onClick={() => void more()}>
+                  {m.review_more()}
+                </Button>
               )}
             </div>
           </div>

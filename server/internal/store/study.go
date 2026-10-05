@@ -81,15 +81,19 @@ type studyItem struct {
 // ponytail: one process-wide map dropped when full; an LRU if it churns.
 var parsedItems = struct {
 	sync.Mutex
-	m map[string]parsedMaterial
+	m     map[string]parsedMaterial
+	bytes int
 }{m: map[string]parsedMaterial{}}
 
 type parsedMaterial struct {
 	revision int64
 	items    []studyItem
+	bytes    int
 }
 
-const parsedItemsMax = 5000
+// parsedItemsBytes bounds the cache by the documents' JSON size; parsed items
+// take several times that in memory (about 7.6x for a 2 MiB quiz).
+const parsedItemsBytes = 32 << 20
 
 // itemsOf is materialItems through the cache. Titles are not cached: a rename
 // does not bump the revision.
@@ -104,11 +108,17 @@ func itemsOf(mt Material) ([]studyItem, error) {
 	if err != nil {
 		return nil, err
 	}
+	size := len(mt.Content)
 	parsedItems.Lock()
-	if len(parsedItems.m) >= parsedItemsMax {
-		parsedItems.m = map[string]parsedMaterial{}
+	if old, ok := parsedItems.m[mt.ID]; ok {
+		parsedItems.bytes -= old.bytes
 	}
-	parsedItems.m[mt.ID] = parsedMaterial{mt.Revision, items}
+	if parsedItems.bytes+size > parsedItemsBytes {
+		parsedItems.m = map[string]parsedMaterial{}
+		parsedItems.bytes = 0
+	}
+	parsedItems.m[mt.ID] = parsedMaterial{mt.Revision, items, size}
+	parsedItems.bytes += size
 	parsedItems.Unlock()
 	return items, nil
 }
@@ -424,9 +434,7 @@ func (s *Store) RateItem(ctx context.Context, userID string, in Rating, now time
 		return ErrStudyRating
 	}
 	return s.inTx(ctx, func(tx pgx.Tx) error {
-		// One rating per user and material at a time, so ratings of a set's
-		// last cards made at once still see each other and mark it done.
-		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, "study-rating:"+userID+":"+mt.ID); err != nil {
+		if err := lockRating(ctx, tx, userID, mt.ID); err != nil {
 			return err
 		}
 		prev, err := reviewStates(ctx, tx, userID, mt.ID)
@@ -457,9 +465,20 @@ var ErrStudyRating = errors.New("cards take a rating and questions take a score"
 // rateAttemptTx rates every question of a workspace quiz from an attempt's
 // snapshot and marks the quiz done. Embedded and standalone quizzes record
 // nothing.
+// lockRating serializes one user's ratings of one material, so ratings of a
+// set's last cards made at once still see each other and mark it done, and a
+// quiz attempt and a review rating of the same question do not lose a review.
+func lockRating(ctx context.Context, tx pgx.Tx, userID, materialID string) error {
+	_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, "study-rating:"+userID+":"+materialID)
+	return err
+}
+
 func rateAttemptTx(ctx context.Context, tx pgx.Tx, userID string, mt Material, snapshot json.RawMessage, now time.Time) error {
 	if mt.Kind != "quiz" || mt.WorkspaceID == "" || mt.ParentMaterialID != "" {
 		return nil
+	}
+	if err := lockRating(ctx, tx, userID, mt.ID); err != nil {
+		return err
 	}
 	items, err := itemsOf(mt)
 	if err != nil {
