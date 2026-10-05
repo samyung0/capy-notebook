@@ -187,6 +187,17 @@ check); it applies at the first promotion.
   properties; `paragraphAttrsToFormatting`
   (`packages/docx/src/yrs/saveFormatting.ts`) overrides only a few. `w:hint`
   is parsed but no run mark carries it (a seed change, taken 2026-10-05).
+- **DOCX paragraph properties the model doesn't hold are dropped on save**
+  (found by the paragraph-save review, 2026-10-05; pre-existing): `kinsoku`,
+  `wordWrap`, `overflowPunct`, `topLinePunct`, `textDirection`,
+  `textAlignment`, `divId`, `cnfStyle` and others vanish on every save,
+  hurting CJK documents most. Also: pPr in a vertically merged continuation
+  cell is dropped; Enter copies a tracked pPr change to both halves (duplicate
+  revision ids); the font picker drops the East Asian font and the save adds a
+  complex-script font the source lacked; any suggesting-mode paragraph change
+  makes the save throw (not exposed in Capy). Keep what the model doesn't
+  hold; Word is the oracle. Probes in
+  `capy-docx-review-harnesses/2026-10-05-office-batch/docx-paragraph-save/review-probes/`.
 - **Chat can't describe an image added to an Office file** (decided
   2026-10-05): attach the image to the next model request as `capture_page`
   does and remove the source-change caption path (`captioning_spec()` needs
