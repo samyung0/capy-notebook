@@ -430,10 +430,10 @@ export function trimEffect(effect: NetEffect): NetEffect {
 }
 
 /**
- * Estimated tokens of a change list (Go: sourceEffectTokens): 4 UTF-16 units a
- * token, except changed CJK characters, one each. The context trimEffect keeps
- * (what before and after share at either end) counts at the 4-unit rate in
- * every script. A move counts 0; any other non-text effect 1 more.
+ * Estimated tokens of a change list: 4 UTF-16 units a token, except changed
+ * CJK characters, one each. The context trimEffect keeps (what before and
+ * after share at either end) counts at the 4-unit rate in every script. A
+ * move counts 0; any other non-text effect 1 more.
  */
 export function effectTokens(effects: NetEffect[]) {
   return effects.reduce((sum, effect) => {
@@ -444,12 +444,9 @@ export function effectTokens(effects: NetEffect[]) {
     const changed = [
       ...before.slice(prefix, before.length - suffix),
       ...after.slice(prefix, after.length - suffix),
-      ...(effect.caption ?? ''),
     ];
     const cjk = changed.filter((char) => CJK_CHARACTER.test(char)).length;
-    const units =
-      `${effect.before ?? ''}${effect.after ?? ''}${effect.caption ?? ''}`
-        .length;
+    const units = (effect.before ?? '').length + (effect.after ?? '').length;
     return (
       sum +
       Math.ceil((units - cjk) / 4) +
@@ -817,9 +814,8 @@ export class SourceDocumentStore {
    * The room's last durable checkpoint without reading its state: this
    * instance's copy while the row still names that checkpoint and base (a
    * save elsewhere, an agent edit or a publication moves one; a text
-   * publication moves only the base), with the row's current pending effects
-   * (captions land on them without a checkpoint). Undefined when unknown
-   * here, or its base has left the cache. A base evicted later in the save
+   * publication moves only the base). Undefined when unknown here, or its
+   * base has left the cache. A base evicted later in the save
    * fails that attempt, and the retry reads the session again.
    */
   private async durableFor(room: string): Promise<DurableRoom | undefined> {
@@ -829,9 +825,8 @@ export class SourceDocumentStore {
     const row = await this.pool.query<{
       base_revision: string;
       checkpoint: string;
-      pending_effects: NetEffect[];
     }>(
-      'SELECT d.checkpoint,d.base_revision,d.pending_effects FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1 AND d.epoch=$2 AND f.trashed_at IS NULL',
+      'SELECT d.checkpoint,d.base_revision FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1 AND d.epoch=$2 AND f.trashed_at IS NULL',
       [fileId, epoch]
     );
     if (
@@ -839,13 +834,7 @@ export class SourceDocumentStore {
       Number(row.rows[0].base_revision) !== known.session.baseRevision
     )
       return;
-    return {
-      session: {
-        ...known.session,
-        pendingEffects: row.rows[0].pending_effects,
-      },
-      state: known.state,
-    };
+    return known;
   }
 
   async baseline(
@@ -911,18 +900,6 @@ export class SourceDocumentStore {
         indexed.entries,
         current.entries
       );
-    }
-    for (const effect of effects) {
-      const cached = session.pendingEffects.find(
-        (old) =>
-          old.id === effect.id &&
-          !!effect.imageSHA256 &&
-          old.imageSHA256 === effect.imageSHA256 &&
-          JSON.stringify(old.assetRef) === JSON.stringify(effect.assetRef)
-      );
-      if (cached?.caption) {
-        effect.caption = cached.caption;
-      }
     }
     return effects.map(trimEffect);
   }
@@ -1039,13 +1016,6 @@ export class SourceDocumentStore {
         ? new SourceRequestError(422, error.message)
         : error;
     });
-    for (const effect of rebased.effects) {
-      if (!effect.imageSHA256) continue;
-      const prior = session.pendingEffects.find(
-        (item) => item.imageSHA256 === effect.imageSHA256 && item.caption
-      );
-      if (prior?.caption) effect.caption = prior.caption;
-    }
     const pendingEffects = rebased.effects.map(trimEffect);
     // The rebase lands on seed(export): stored as its change over that seed,
     // and the baseline derives from the export.

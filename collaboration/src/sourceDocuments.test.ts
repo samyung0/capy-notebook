@@ -394,51 +394,6 @@ test.each([
   }
 );
 
-test('an image replacement keeps a caption only for the same actual bytes', async () => {
-  const bytes = Buffer.from('base');
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () => new Response(bytes))
-  );
-  const old: officeRuntime.NetEffect = {
-    assetRef: { format: 'docx', id: 'image', kind: 'image' },
-    caption: 'Old image caption',
-    id: 'image',
-    imageSHA256: 'old-bytes',
-    kind: 'image',
-    label: 'Image',
-    operation: 'replace',
-  };
-  const unchanged = { ...old, caption: undefined };
-  const replacement = { ...old, caption: undefined, imageSHA256: 'new-bytes' };
-  // The indexed baseline derives from seed(base) once, then is cached.
-  vi.spyOn(officeRuntime, 'runOffice')
-    .mockResolvedValueOnce({
-      baseSha256: '',
-      format: 'docx',
-      schemaVersion: 1,
-      state: new Uint8Array([0]),
-    })
-    .mockResolvedValueOnce([])
-    .mockResolvedValueOnce([])
-    .mockResolvedValueOnce([unchanged])
-    .mockResolvedValueOnce([])
-    .mockResolvedValueOnce([replacement]);
-  const session = {
-    baseSourceSHA256: createHash('sha256').update(bytes).digest('hex'),
-    format: 'docx',
-    pendingEffects: [old],
-    sourceURL: 'http://base',
-  } as SourceSession;
-  const store = new SourceDocumentStore({} as Pool, 'http://gateway', 'secret');
-  expect((await store.effects(session, new Uint8Array([1])))[0].caption).toBe(
-    'Old image caption'
-  );
-  expect(
-    (await store.effects(session, new Uint8Array([2])))[0].caption
-  ).toBeUndefined();
-});
-
 test('a source edit retries from freshly loaded state after a checkpoint CAS conflict', async () => {
   const store = new SourceDocumentStore({} as Pool, 'http://gateway', 'secret');
   const stateOf = (text: string) => {
@@ -564,7 +519,7 @@ test('a NULL state loads seed(base), a save without edits stores nothing, and th
   other.destroy();
 });
 
-test('Office rebase uses the captured state and latest saved state, stores the result as its change over seed(export) and retains captions by media hash', async () => {
+test('Office rebase uses the captured state and latest saved state and stores the result as its change over seed(export)', async () => {
   const oldSource = Buffer.from('old package'),
     newSource = Buffer.from('parsed package');
   const digest = (bytes: Uint8Array) =>
@@ -597,16 +552,7 @@ test('Office rebase uses the captured state and latest saved state, stores the r
     format: 'pptx',
     indexedCheckpoint: 0,
     netTokens: 0,
-    pendingEffects: [
-      {
-        caption: 'A saved caption',
-        id: 'old-id',
-        imageSHA256,
-        kind: 'image',
-        label: 'Picture',
-        operation: 'add',
-      },
-    ],
+    pendingEffects: [],
     room: 'source:f:epoch:1',
     sourceURL: 'http://old-source',
     state: Buffer.from(saved).toString('base64'),
@@ -705,7 +651,7 @@ test('Office rebase uses the captured state and latest saved state, stores the r
   });
   // Rebased text effects are trimmed, and netTokens counts the trimmed text.
   expect(result.pendingEffects).toMatchObject([
-    { caption: 'A saved caption', id: 'new-id' },
+    { id: 'new-id' },
     {
       after: `…${head.slice(10)}NEW${tail.slice(10)}…`,
       before: `…${head.slice(10)}old${tail.slice(10)}…`,
@@ -877,9 +823,7 @@ test('a save starts from the durable copy while the row names it, and reads the 
   let row = 3;
   const pool = {
     query: vi.fn(async () => ({
-      rows: [
-        { base_revision: '1', checkpoint: String(row), pending_effects: [] },
-      ],
+      rows: [{ base_revision: '1', checkpoint: String(row) }],
     })),
   } as unknown as Pool;
   // The baseline derives from the base, which the first save downloads.
@@ -1019,7 +963,7 @@ test('after a text publication a save reads the session again and counts only th
     createHash('sha256').update(bytes).digest('hex');
   const oldBase = Buffer.from('hello');
   const newBase = Buffer.from('A hello');
-  let row = { base_revision: '1', checkpoint: '3', pending_effects: [] };
+  let row = { base_revision: '1', checkpoint: '3' };
   const pool = {
     query: vi.fn(async () => ({ rows: [row] })),
   } as unknown as Pool;
@@ -1119,7 +1063,6 @@ test.each([4, 5])(
           {
             base_revision: '1',
             checkpoint: String(answered),
-            pending_effects: [],
           },
         ],
       })),
@@ -1232,7 +1175,7 @@ test('a forgotten room saves from a fresh session read', async () => {
   );
   const pool = {
     query: vi.fn(async () => ({
-      rows: [{ base_revision: '1', checkpoint: '3', pending_effects: [] }],
+      rows: [{ base_revision: '1', checkpoint: '3' }],
     })),
   } as unknown as Pool;
   const store = new SourceDocumentStore(pool, 'http://gateway', 'secret');

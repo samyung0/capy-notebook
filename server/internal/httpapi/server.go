@@ -232,7 +232,6 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		r.Post("/api/internal/conversations/ledger", a.internalWriteConversationLedger)
 		r.Post("/api/internal/study-progress", a.internalStudyProgress)
 		r.Post("/api/internal/source-changes/resolve", a.internalSourceAuthority)
-		r.Post("/api/internal/source-changes/caption", a.internalSourceCaption)
 		r.Post("/api/internal/source-refresh/publish", a.internalSourceAuthority)
 		r.Get("/api/internal/agent-operations/{operationId}", a.internalGetAgentOperation)
 		r.Post("/api/internal/trash", a.internalTrash)

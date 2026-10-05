@@ -2709,7 +2709,7 @@ each, so a one-character CJK edit weighs what an English word edit does and CJK
 and English files reach the trigger after about the same number of edited
 paragraphs. A move (unchanged text at a new position, as every
 later paragraph becomes when one is inserted) carries no text and counts 0
-tokens, in `effectTokens` and Go's `sourceEffectTokens` alike. Office requires a successful prior parse and 60
+tokens in `effectTokens`. Office requires a successful prior parse and 60
 seconds idle, and is due at 3,000 net tokens or once saved changes have had no
 edit for 7 days; the scheduler query (`OFFICE_REFRESH_*`) and Go admission
 (`officeRefresh*`) hold the same constants, and the Go store tests run the
@@ -2769,9 +2769,14 @@ protected provider message outside tool-output clipping, live-history
 compaction and persisted conversation summaries. Replacements and removals
 supersede old indexed facts; the message tells the model that each before and
 after is an excerpt (the changed text with up to 40 characters of context) to
-match against passages, and that a move carries no text. Typed image placeholders can be resolved through
-`resolve_source_change`; the gateway verifies source access/checkpoint and the
-headless runtime extracts the exact image before image-only caption reuse.
+match against passages, and that a move carries no text. An image added or
+changed before publication is a typed placeholder the model opens with
+`resolve_source_change`: the gateway verifies source access and checkpoint, the
+headless runtime extracts the exact image, the pipeline checks its hash and the
+captured published identities, and the image (oriented, flattened and shrunk
+like an uploaded image's `capture_page`) rides in the next model request the
+way a capture does, counted in the same image budget. Nothing is captioned or
+stored: chat runs without ingest job pins, so it has no captioning model.
 The same read captures published identities for every scoped file, including
 files without an index. Before each source-dependent model request, the pipeline
 checks that those published identities still match. Publication, replacement or

@@ -1041,8 +1041,8 @@ material rooms keep 2 s and 10 s), unless no store is waiting to carry it. An
 explicit save (Ctrl/Cmd+S, the editors' save buttons, leaving Edit, and the
 first sync) sends `flush` and persists at once, as do the publication handoff
 and the maintenance pause. A save starts from the instance's last durable copy
-of the room while the row still names its checkpoint and base, reading only the row's
-pending effects (captions land there without a checkpoint); a conflict reads
+of the room while the row still names its checkpoint and base, reading only those
+two columns; a conflict reads
 the session and state again. Shutdown flushes every room's pending store, and
 the collaboration container has a 60 s stop grace period for it. File › Save in the Office header is Capy's own command
 (`capy.save`) and takes the checkpoint directly, as Ctrl/Cmd+S in the runtime does through its `checkpoint` message, with

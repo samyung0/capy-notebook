@@ -745,9 +745,9 @@ func Definitions() []Definition {
 		chatTool(Definition{
 			Name:      "resolve_source_change",
 			Retention: RetainFull,
-			Description: "Describe an added or changed source image from an exact " +
-				"pending-change placeholder. Only use identifiers supplied in the " +
-				"pending-source evidence.",
+			Description: "See an added or changed source image from an exact " +
+				"pending-change placeholder; the image is attached to the next " +
+				"message. Only use identifiers supplied in the pending-source evidence.",
 			InputSchema: obj(map[string]any{
 				"file_id":    str(""),
 				"change_id":  str(""),

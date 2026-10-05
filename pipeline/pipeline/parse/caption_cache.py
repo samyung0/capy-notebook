@@ -9,7 +9,6 @@ import logging
 import secrets
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager, contextmanager
-from dataclasses import dataclass
 
 from ..jobs import TerminalError
 from ..retrieval import models, store
@@ -19,87 +18,11 @@ from ..store import db as sync_db
 log = logging.getLogger("capy.parse.caption_cache")
 
 
-@dataclass(frozen=True)
-class SourceChange:
-    workspace_id: str
-    user_id: str
-    epoch: int
-    checkpoint: int
-    change_id: str
-
-
-class SourceChangeUnavailable(ValueError):
-    """The captured image is no longer an authorized attachment target."""
-
-
 async def _lock_source_refresh(conn, file_id: str, job_id: str):
     refresh = sync_db.source_refresh_for(file_id)
     if refresh is None or refresh.get("_jobId") != job_id:
         raise sync_db.SourceSupersededError("source candidate context is unavailable")
     await store._lock_source_candidate(conn, refresh)
-
-
-async def _lock_source_change(conn, file_id: str, digest: str, source: SourceChange):
-    def unavailable():
-        return SourceChangeUnavailable(
-            "The source image changed or is no longer accessible."
-        )
-
-    await conn.execute(
-        "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (file_id,)
-    )
-    workspace = await (
-        await conn.execute(
-            "SELECT user_id,privacy FROM workspaces WHERE id=%s FOR SHARE",
-            (source.workspace_id,),
-        )
-    ).fetchone()
-    if workspace is None or not source.user_id:
-        raise unavailable()
-    owner = workspace["user_id"]
-    actors = sorted({owner, source.user_id})
-    accounts = await (
-        await conn.execute(
-            "SELECT id,deleted_at,deletion_requested_at,suspended_at FROM users WHERE id=ANY(%s) ORDER BY id FOR SHARE",
-            (actors,),
-        )
-    ).fetchall()
-    if len(accounts) != len(actors) or any(
-        row["deleted_at"] or row["deletion_requested_at"] or row["suspended_at"]
-        for row in accounts
-    ):
-        raise unavailable()
-    if source.user_id != owner and workspace["privacy"] not in {"link", "public"}:
-        member = await (
-            await conn.execute(
-                "SELECT 1 FROM workspace_members WHERE workspace_id=%s AND user_id=%s FOR SHARE",
-                (source.workspace_id, source.user_id),
-            )
-        ).fetchone()
-        if member is None:
-            raise unavailable()
-    row = await (
-        await conn.execute(
-            """SELECT d.pending_effects FROM source_documents d JOIN files f ON f.id=d.file_id
-        WHERE f.id=%s AND f.workspace_id=%s AND f.user_id=%s AND f.trashed_at IS NULL
-          AND d.epoch=%s AND d.checkpoint=%s AND d.base_revision=f.revision
-        FOR SHARE OF f,d""",
-            (file_id, source.workspace_id, owner, source.epoch, source.checkpoint),
-        )
-    ).fetchone()
-    if row is None:
-        raise unavailable()
-    effects = [
-        effect
-        for effect in row["pending_effects"]
-        if isinstance(effect, dict) and effect.get("id") == source.change_id
-    ]
-    if (
-        len(effects) != 1
-        or effects[0].get("imageSHA256") != digest
-        or not effects[0].get("assetRef")
-    ):
-        raise unavailable()
 
 
 _RESOURCES = """
@@ -211,7 +134,6 @@ async def lookup(
     digest: str,
     published: bool,
     *,
-    source_change: SourceChange | None = None,
     source_refresh_job_id: str | None = None,
     require_source_job: bool = False,
 ) -> tuple[str, str, int] | None:
@@ -220,7 +142,6 @@ async def lookup(
             not file_id
             or asset_id is not None
             or not published
-            or source_change
             or source_refresh_job_id
         ):
             raise ValueError(
@@ -230,10 +151,6 @@ async def lookup(
         return await _read_caption(row)
     db = await store.pool()
     async with db.connection() as conn, conn.transaction():
-        if source_change is not None:
-            if not file_id or asset_id is not None:
-                raise ValueError("A source change must belong to a file.")
-            await _lock_source_change(conn, file_id, digest, source_change)
         if source_refresh_job_id is not None:
             await _lock_source_refresh(conn, file_id, source_refresh_job_id)
         # Grant a reference only while a readable containing resource permits
@@ -329,7 +246,6 @@ async def _persist(
     raw: bytes,
     published: bool,
     *,
-    source_change: SourceChange | None = None,
     source_refresh_job_id: str | None = None,
     require_source_job: bool = False,
 ):
@@ -348,8 +264,6 @@ async def _persist(
         await asyncio.to_thread(_persist_ingest, file_id, digest, path, raw)
         return
     async with db.connection() as conn, conn.transaction():
-        if source_change is not None:
-            await _lock_source_change(conn, file_id, digest, source_change)
         if source_refresh_job_id is not None:
             await _lock_source_refresh(conn, file_id, source_refresh_job_id)
         await conn.execute(
@@ -396,7 +310,6 @@ async def caption(
     best_effort: bool = True,
     published: bool = True,
     source_refresh_job_id: str | None = None,
-    source_change: SourceChange | None = None,
     require_source_job: bool = False,
 ) -> tuple[str, str, int, bool]:
     if bool(file_id) == bool(editor_asset_id):
@@ -405,14 +318,8 @@ async def caption(
         raise ValueError(
             "A refresh caption must belong to an unpublished file candidate."
         )
-    if source_change is not None and (
-        not file_id or published or source_refresh_job_id
-    ):
-        raise ValueError(
-            "A pending source caption needs its own unpublished file identity."
-        )
-    if not published and not source_refresh_job_id and source_change is None:
-        raise ValueError("An unpublished caption needs a source change or refresh job.")
+    if not published and not source_refresh_job_id:
+        raise ValueError("An unpublished caption needs a refresh job.")
     async with _lock(file_id, editor_asset_id, image_sha256):
         result = await _caption(
             file_id=file_id,
@@ -422,7 +329,6 @@ async def caption(
             prompt=prompt,
             best_effort=best_effort,
             published=published,
-            source_change=source_change,
             source_refresh_job_id=source_refresh_job_id,
             require_source_job=require_source_job,
         )
@@ -442,7 +348,6 @@ async def _caption(
     prompt: str,
     best_effort: bool,
     published: bool,
-    source_change: SourceChange | None,
     source_refresh_job_id: str | None,
     require_source_job: bool,
 ) -> tuple[str, str, int, bool]:
@@ -452,11 +357,10 @@ async def _caption(
             editor_asset_id,
             image_sha256,
             published,
-            source_change=source_change,
             source_refresh_job_id=source_refresh_job_id,
             require_source_job=require_source_job,
         )
-    except (SourceChangeUnavailable, TerminalError):
+    except TerminalError:
         raise
     except Exception:
         # Permission lookup failure is a miss, never a global object fallback.
@@ -482,11 +386,10 @@ async def _caption(
             path,
             raw,
             published,
-            source_change=source_change,
             source_refresh_job_id=source_refresh_job_id,
             require_source_job=require_source_job,
         )
-    except (SourceChangeUnavailable, TerminalError):
+    except TerminalError:
         raise
     except Exception:
         log.warning("could not retain image caption", exc_info=True)

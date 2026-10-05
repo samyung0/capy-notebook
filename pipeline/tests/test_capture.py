@@ -175,7 +175,7 @@ def test_images_ride_in_one_user_message_after_the_step_tool_results():
     parts = out[5]["content"]
     assert parts[0] == {
         "type": "text",
-        "text": "Images from the capture_page calls above:",
+        "text": "Images from the tool calls above:",
     }
     assert [p["type"] for p in parts[1:]] == ["text", "image_url", "text", "image_url"]
     assert parts[2]["image_url"]["url"] == "data:image/jpeg;base64,AA=="

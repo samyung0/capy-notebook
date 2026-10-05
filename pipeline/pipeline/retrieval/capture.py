@@ -28,7 +28,7 @@ import tempfile
 import time
 import warnings
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 from urllib.parse import urlsplit, urlunsplit
 
 import requests
@@ -228,18 +228,9 @@ def _office_capture(
 def _image_capture(
     row: dict, page: int, bbox: list[float] | None, max_edge: int
 ) -> tuple[bytes, list[float], tuple[int, int]]:
-    """An uploaded image is one page: its own bytes, oriented and flattened
-    like captioning does, cropped to the box and shrunk to ``max_edge``."""
+    """An uploaded image is one page: its own bytes, rendered by ``image_jpeg``."""
     if page != 1:
         raise ValueError("an image has one page")
-    if bbox:
-        x0, y0, x1, y1 = bbox
-        if not (x0 < x1 and y0 < y1):
-            raise ValueError("bbox must be [x0, y0, x1, y1] with x0 < x1 and y0 < y1")
-    else:
-        bbox = [0, 0, 1000, 1000]
-    from PIL import Image, ImageOps, UnidentifiedImageError
-
     with tempfile.TemporaryDirectory(prefix="capy-image-capture-") as directory:
         source = Path(directory) / "source"
         downloaded = blobstore.download_file(
@@ -253,17 +244,33 @@ def _image_capture(
             raise CaptureUnavailable(
                 "the source bytes are unavailable", "unavailable_target"
             )
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("error", Image.DecompressionBombWarning)
-                with Image.open(source) as opened:
-                    # ponytail: first frame only; later GIF frames are not captured
-                    frame = ImageOps.exif_transpose(opened).convert("RGBA")
-        except (Image.DecompressionBombWarning, Image.DecompressionBombError) as exc:
-            raise CaptureUnavailable("this image is too large to render") from exc
-        except (OSError, ValueError, UnidentifiedImageError) as exc:
-            # SVG and formats this Pillow build lacks: the caption still covers them.
-            raise CaptureUnavailable("this image format cannot be rendered") from exc
+        return image_jpeg(source, bbox, max_edge)
+
+
+def image_jpeg(
+    source: Path | IO[bytes], bbox: list[float] | None, max_edge: int
+) -> tuple[bytes, list[float], tuple[int, int]]:
+    """An image oriented and flattened like captioning does, cropped to the
+    box and shrunk to ``max_edge``."""
+    if bbox:
+        x0, y0, x1, y1 = bbox
+        if not (x0 < x1 and y0 < y1):
+            raise ValueError("bbox must be [x0, y0, x1, y1] with x0 < x1 and y0 < y1")
+    else:
+        bbox = [0, 0, 1000, 1000]
+    from PIL import Image, ImageOps, UnidentifiedImageError
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(source) as opened:
+                # ponytail: first frame only; later GIF frames are not captured
+                frame = ImageOps.exif_transpose(opened).convert("RGBA")
+    except (Image.DecompressionBombWarning, Image.DecompressionBombError) as exc:
+        raise CaptureUnavailable("this image is too large to render") from exc
+    except (OSError, ValueError, UnidentifiedImageError) as exc:
+        # SVG and formats this Pillow build lacks (an upload's caption covers them).
+        raise CaptureUnavailable("this image format cannot be rendered") from exc
     width, height = frame.size
     clip = frame.crop(
         (
@@ -399,7 +406,7 @@ def inject_images(
         following = messages[i + 1] if i + 1 < len(messages) else None
         if pending and (following is None or following.get("role") != "tool"):
             content: list[dict[str, Any]] = [
-                {"type": "text", "text": "Images from the capture_page calls above:"}
+                {"type": "text", "text": "Images from the tool calls above:"}
             ]
             for label, url in pending:
                 content.append({"type": "text", "text": label})

@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import io
 import json
 import logging
 import tempfile
@@ -1444,6 +1445,7 @@ def _gateway_error_code(resp: requests.Response) -> str:
 
 
 async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    """Attach a pending source image to the next request, as capture_page does."""
     file_id, change_id, checkpoint = (
         args.get("file_id"),
         args.get("change_id"),
@@ -1455,16 +1457,41 @@ async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> Tool
         or not isinstance(checkpoint, int)
     ):
         return _refused("A file id, change id and integer checkpoint are required.")
-    await pending.resolve(
-        sources=ctx.pending_sources,
-        workspace_id=ctx.workspace_id,
-        user_id=ctx.user_id,
-        file_id=file_id,
-        change_id=change_id,
-        checkpoint=checkpoint,
+    started = time.perf_counter()
+    try:
+        raw = await pending.resolve(
+            sources=ctx.pending_sources,
+            workspace_id=ctx.workspace_id,
+            user_id=ctx.user_id,
+            file_id=file_id,
+            change_id=change_id,
+            checkpoint=checkpoint,
+        )
+        jpeg, box, size = await asyncio.to_thread(
+            capture.image_jpeg, io.BytesIO(raw), None, cfg.capture_max_edge
+        )
+    except capture.CaptureUnavailable as exc:
+        return _refused(f"resolve_source_change: {exc}", code=exc.code)
+    except ValueError as exc:
+        return _refused(f"resolve_source_change: {exc}")
+    call_id = str(args.get("_tool_call_id") or "")
+    ctx.captures.append(
+        capture.record(
+            call_id=call_id,
+            file_id=file_id,
+            page=1,
+            box=box,
+            jpeg=jpeg,
+            size=size,
+            started=started,
+        )
+    )
+    ctx.pending_images[call_id] = (
+        f"resolve_source_change result: change {change_id} of file {file_id}",
+        capture.data_url(jpeg),
     )
     return _result(
-        "Resolved source image. Its full caption is in the protected pending-source context."
+        "The pending source image is attached to the next message; read it directly."
     )
 
 

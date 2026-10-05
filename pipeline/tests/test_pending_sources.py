@@ -216,73 +216,74 @@ async def test_generation_fits_full_provider_request_without_trimming_pending(
     )
 
 
-async def test_resolved_caption_is_visible_only_after_gateway_admission(monkeypatch):
+async def test_a_resolved_source_image_rides_in_the_next_request(monkeypatch):
+    """An image added before publication is attached like a capture_page render."""
     import base64
     import hashlib
+    import io
 
-    import requests
+    from PIL import Image
 
-    from pipeline.parse import caption_cache
+    from pipeline.retrieval import capture, tools
 
     changes = _sources()
-    effect = changes.files[0]["changes"][0]
-    effect.update(
+    changes.files[0]["changes"][0].update(
         kind="image", assetRef={"format": "docx", "kind": "image", "id": "image"}
     )
-    raw = b"exact image bytes"
-    digest = hashlib.sha256(raw).hexdigest()
+    buffer = io.BytesIO()
+    Image.new("RGB", (40, 20), "red").save(buffer, "PNG")
+    raw = buffer.getvalue()
     calls = []
-    refused = True
 
     class Response:
-        def __init__(self, save):
+        def __init__(self):
             self.headers = {}
-            self.save = save
 
         def raise_for_status(self):
-            if self.save and refused:
-                raise requests.HTTPError("quota exceeded")
+            pass
 
         def json(self):
             return {
                 "bytes": base64.b64encode(raw).decode(),
-                "sha256": digest,
+                "sha256": hashlib.sha256(raw).hexdigest(),
                 "mimeType": "image/png",
             }
 
     def post(url, **kwargs):
         calls.append((url, kwargs["json"]))
-        return Response(url.endswith("/caption"))
-
-    async def caption(**kwargs):
-        assert kwargs["published"] is False
-        return "Visible image description", "cache", 10, False
+        return Response()
 
     monkeypatch.setattr(pending.cfg, "gateway_url", "http://gateway")
     monkeypatch.setattr(pending.cfg, "pipeline_secret", "test")
     monkeypatch.setattr(pending.requests, "post", post)
-    monkeypatch.setattr(caption_cache, "caption", caption)
-    args = {
-        "sources": changes,
-        "workspace_id": "ws",
-        "user_id": "reader",
-        "file_id": "f_1",
-        "change_id": "c_1",
-        "checkpoint": 3,
-    }
-    with pytest.raises(requests.HTTPError):
-        await pending.resolve(**args)
-    assert "caption" not in effect
-    refused = False
-    assert await pending.resolve(**args) == "Visible image description"
-    assert effect["caption"] == "Visible image description"
-    assert calls[-1][1] == {
-        "workspaceId": "ws",
-        "userId": "reader",
-        "fileId": "f_1",
-        "epoch": 1,
-        "checkpoint": 3,
-        "changeId": "c_1",
-        "caption": "Visible image description",
-        "imageSHA256": digest,
-    }
+    ctx = tools.ToolContext(
+        workspace_id="ws", user_id="reader", pending_sources=changes
+    )
+    args = {"file_id": "f_1", "change_id": "c_1", "checkpoint": 3}
+    result = await tools._resolve_source_change({**args, "_tool_call_id": "call"}, ctx)
+
+    assert not result.refused, result.text()
+    assert calls == [
+        (
+            "http://gateway/api/internal/source-changes/resolve",
+            {
+                "workspaceId": "ws",
+                "userId": "reader",
+                "fileId": "f_1",
+                "epoch": 1,
+                "checkpoint": 3,
+                "changeId": "c_1",
+            },
+        )
+    ]
+    step = [
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "call"}]},
+        {"role": "tool", "tool_call_id": "call", "content": result.text()},
+    ]
+    attached = capture.inject_images(step, ctx.pending_images, "zai")[-1]["content"]
+    url = attached[2]["image_url"]["url"]
+    with Image.open(io.BytesIO(base64.b64decode(url.split(",", 1)[1]))) as image:
+        assert image.size == (40, 20)
+        red, green, blue = image.getpixel((20, 10))
+    assert red > 240 and green < 20 and blue < 20
+    assert capture.image_tokens(ctx.captures, step) > 0

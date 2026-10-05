@@ -295,7 +295,7 @@ The state keeps no package parts of A: a later edit that needs content B
 dropped fails the publication instead. Text retains its existing editing
 lineage. Shared caption payloads are platform
 artifacts referenced by containing resources; published clones attach their
-own references and exclude pending captions. A failed candidate cannot remove
+own references and exclude unpublished captions. A failed candidate cannot remove
 the currently published source/index.
 
 Editor assets upload through the material that uses them

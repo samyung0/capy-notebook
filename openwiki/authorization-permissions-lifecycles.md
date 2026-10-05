@@ -1199,7 +1199,7 @@ within its owner. Link/public workspaces and standalone materials permit global
 reuse. Authorized reuse attaches a new resource reference; visibility changes
 affect subsequent lookups without moving payloads. A resource's existing
 association remains its own grant after the donor becomes private or is deleted.
-Pending source captions have unpublished associations. Clones and whole-source
+A refresh candidate's captions have unpublished associations. Clones and whole-source
 donors copy published associations only, and Office publication promotes the
 exact image hashes consumed by that candidate before dropping retired captions.
 

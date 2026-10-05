@@ -20,7 +20,6 @@ export interface NetEffect {
   after?: string;
   assetRef?: OfficeObjectRef;
   before?: string;
-  caption?: string;
   id: string;
   imageSHA256?: string;
   kind: 'text' | 'image' | 'visual';

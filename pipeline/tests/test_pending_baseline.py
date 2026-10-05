@@ -247,13 +247,11 @@ async def test_first_authored_edit_preserves_existing_published_baseline(workspa
     await captured.validate()
 
 
-async def test_source_image_tool_rejects_published_baseline_before_caption(
+async def test_source_image_tool_rejects_published_baseline_before_attaching(
     workspace, monkeypatch
 ):
     import base64
     import hashlib
-
-    from pipeline.parse import caption_cache
 
     file_id = _seed(workspace)
     effect = {"id": "image", "assetRef": {"id": "picture"}}
@@ -280,13 +278,9 @@ async def test_source_image_tool_rejects_published_baseline_before_caption(
         _publish(workspace, file_id, B, 1)
         return Response()
 
-    async def forbidden(**_kwargs):
-        pytest.fail("The image model ran after its baseline changed")
-
     monkeypatch.setattr(pending.cfg, "gateway_url", "http://synthetic-gateway")
     monkeypatch.setattr(pending.cfg, "pipeline_secret", "synthetic")
     monkeypatch.setattr(pending.requests, "post", resolve)
-    monkeypatch.setattr(caption_cache, "caption", forbidden)
     with pytest.raises(pending.SourceChanged):
         await tools.run(
             "resolve_source_change",

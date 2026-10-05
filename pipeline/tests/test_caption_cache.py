@@ -46,24 +46,6 @@ async def _caption(file_id, **kwargs):
     )
 
 
-def _pending_source(workspace):
-    file_id = workspace.add_file("source.docx")
-    effect = {
-        "id": "image-change",
-        "kind": "image",
-        "imageSHA256": SHA,
-        "assetRef": {"id": "image"},
-    }
-    with workspace._connect() as conn:
-        conn.execute(
-            "INSERT INTO source_documents(file_id,format,base_revision,base_blob_path,state,state_seed_sha256,pending_effects) VALUES(%s,'docx',1,'source/base-a','old',%s,%s::jsonb)",
-            (file_id, "0" * 64, json.dumps([effect])),
-        )
-    return file_id, caption_cache.SourceChange(
-        workspace.id, workspace.user_id, 1, 0, effect["id"]
-    )
-
-
 def _ordinary_job(workspace):
     file_id = workspace.add_file("source.png")
     job_id = "job_" + secrets.token_hex(8)
@@ -82,26 +64,16 @@ def _ordinary_job(workspace):
     return {"id": job_id, "attempts": 1, "payload": payload}
 
 
-@pytest.mark.parametrize("source_kind", ["pending", "candidate", "ordinary"])
+@pytest.mark.parametrize("source_kind", ["candidate", "ordinary"])
 @pytest.mark.parametrize("boundary", ["model", "upload"])
 async def test_replaced_source_cannot_attach_a_late_private_caption(
     workspace, cache, monkeypatch, source_kind, boundary
 ):
-    token = None
-    if source_kind == "pending":
-        file_id, source = _pending_source(workspace)
-        kwargs = {"source_change": source}
-        error = caption_cache.SourceChangeUnavailable
-    else:
-        job = (
-            candidate(workspace)
-            if source_kind == "candidate"
-            else _ordinary_job(workspace)
-        )
-        file_id = job["payload"]["fileId"]
-        token = db.bind_source_refresh(job)
-        kwargs = {"source_refresh_job_id": job["id"]}
-        error = db.SourceSupersededError
+    job = (
+        candidate(workspace) if source_kind == "candidate" else _ordinary_job(workspace)
+    )
+    file_id = job["payload"]["fileId"]
+    token = db.bind_source_refresh(job)
 
     def replace_source():
         with workspace._connect() as conn:
@@ -143,7 +115,7 @@ async def test_replaced_source_cannot_attach_a_late_private_caption(
         source_text, "_encode_image", lambda *_args: "data:image/png;base64,AA=="
     )
     try:
-        with pytest.raises(error):
+        with pytest.raises(db.SourceSupersededError):
             if source_kind == "ordinary":
                 await source_text.caption_image_source(
                     local_path="synthetic",
@@ -152,10 +124,11 @@ async def test_replaced_source_cannot_attach_a_late_private_caption(
                     file_id=file_id,
                 )
             else:
-                await _caption(file_id, published=False, **kwargs)
+                await _caption(
+                    file_id, published=False, source_refresh_job_id=job["id"]
+                )
     finally:
-        if token is not None:
-            db.reset_source_refresh(token)
+        db.reset_source_refresh(token)
         monkeypatch.setattr(caption_cache.models, "caption_image", original_model)
         monkeypatch.setattr(caption_cache.blobstore, "write_bytes", original_write)
     assert (
@@ -190,38 +163,6 @@ async def test_replaced_source_cannot_attach_a_late_private_caption(
     finally:
         with workspace._connect() as conn:
             conn.execute("DELETE FROM workspaces WHERE id=%s", (target_ws,))
-
-
-@pytest.mark.parametrize("change", ["checkpoint", "digest", "access"])
-async def test_pending_lookup_rejects_stale_identity_before_attachment(
-    workspace, cache, change
-):
-    donor = await _caption(workspace.add_file("donor.png"))
-    file_id, source = _pending_source(workspace)
-    with workspace._connect() as conn:
-        if change == "checkpoint":
-            conn.execute(
-                "UPDATE source_documents SET checkpoint=1 WHERE file_id=%s", (file_id,)
-            )
-        elif change == "digest":
-            conn.execute(
-                "UPDATE source_documents SET pending_effects=jsonb_set(pending_effects,'{0,imageSHA256}',to_jsonb(%s::text)) WHERE file_id=%s",
-                ("b" * 64, file_id),
-            )
-        else:
-            source = caption_cache.SourceChange(
-                workspace.id, "nonmember", 1, 0, source.change_id
-            )
-    with pytest.raises(caption_cache.SourceChangeUnavailable):
-        await _caption(file_id, published=False, source_change=source)
-    assert (
-        workspace.scalar(
-            "SELECT count(*) FROM image_caption_associations WHERE file_id=%s",
-            (file_id,),
-        )
-        == 0
-    )
-    assert len(cache[1]) == 1 and donor[0]
 
 
 async def test_candidate_cache_hit_rechecks_consumption_after_blob_read(

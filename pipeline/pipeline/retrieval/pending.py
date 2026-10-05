@@ -182,7 +182,8 @@ async def resolve(
     file_id: str,
     change_id: str,
     checkpoint: int,
-) -> str:
+) -> bytes:
+    """The exact bytes of a pending image change, checked against its hash."""
     file = next(
         (
             f
@@ -217,47 +218,7 @@ async def resolve(
     obs.raise_internal_response(response)
     asset = response.json()
     raw = base64.b64decode(asset["bytes"], validate=True)
-    digest = hashlib.sha256(raw).hexdigest()
-    if digest != asset["sha256"]:
+    if hashlib.sha256(raw).hexdigest() != asset["sha256"]:
         raise ValueError("Source image identity changed during resolution.")
     await sources.validate()
-    from ..parse import caption_cache
-    from ..prompts.captioning import IMAGE_PROMPT
-
-    caption, _, _, _ = await caption_cache.caption(
-        file_id=file_id,
-        image_sha256=digest,
-        data_url=f"data:{asset['mimeType']};base64,{base64.b64encode(raw).decode()}",
-        prompt=IMAGE_PROMPT,
-        best_effort=False,
-        published=False,
-        source_change=caption_cache.SourceChange(
-            workspace_id=workspace_id,
-            user_id=user_id,
-            epoch=file["epoch"],
-            checkpoint=checkpoint,
-            change_id=change_id,
-        ),
-    )
-    # The gateway rechecks the captured source identity, current read access
-    # and actual storage growth after the model call. It leaves authored timing
-    # and checkpoint unchanged while updating the derived pending-token count.
-    saved = await asyncio.to_thread(
-        requests.post,
-        cfg.gateway_url.rstrip("/") + "/api/internal/source-changes/caption",
-        headers={"X-Pipeline-Secret": cfg.pipeline_secret},
-        json={
-            "workspaceId": workspace_id,
-            "userId": user_id,
-            "fileId": file_id,
-            "epoch": file["epoch"],
-            "checkpoint": checkpoint,
-            "changeId": change_id,
-            "caption": caption,
-            "imageSHA256": digest,
-        },
-        timeout=60,
-    )
-    obs.raise_internal_response(saved)
-    change.update(caption=caption, imageSHA256=digest)
-    return caption
+    return raw
