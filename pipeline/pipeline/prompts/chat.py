@@ -13,12 +13,8 @@ from typing import Any
 
 from ..retrieval import openui
 from ..retrieval.limits import (
-    LEDGER_TOOLS_PER_TURN,
     PLANNING_RESPONSES,
-    STALL_RESPONSES,
     TOOLS_PER_RESPONSE,
-    WRITE_ERROR_GRACE,
-    WRITE_ERROR_GRACE_MAX,
 )
 from .locale import response_language_rule
 
@@ -39,9 +35,9 @@ Answer or build:
 - A question gets an answer with citations.
 - A request to learn, make, expand or practise something gets materials. Do not ask whether to create them.
 - While a build request is vague, ask until you know the scope. Reuse what the learner already said, and offer a default they can accept rather than an open question.
-- Before building, read the skill for the work with read_skill.
+- Before writing to the workspace, read the skills for the work with read_skill.
 
-Budget: at most {TOOLS_PER_RESPONSE} tool calls per response. Without ledger todos a turn has {PLANNING_RESPONSES} responses, the last without tools. With ledger todos it has {LEDGER_TOOLS_PER_TURN} tool calls, and after {STALL_RESPONSES} responses in a row that complete no todo, the next has tools off. The first plan and each completed todo count as progress; each of the first {WRITE_ERROR_GRACE_MAX} errored writes grants {WRITE_ERROR_GRACE} more responses."""
+Budget: at most {TOOLS_PER_RESPONSE} tool calls per response. Without ledger todos a turn has {PLANNING_RESPONSES} responses, the last without tools."""
 
 LIBRARY_RULES = """Library (a source this turn):
 - The shared library holds verified open textbooks. One excerpt is one section of one book.

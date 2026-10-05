@@ -63,7 +63,6 @@ def operations_for(c: dict[str, Any]) -> frozenset[str]:
 
 
 DEFAULT_CONFIG: dict[str, Any] = {
-    "target": "lab",
     "workspace_id": "odl_eval_odl",
     "scope_file_ids": None,
     "locale": "en",
@@ -97,10 +96,16 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "thinking": "high",
         "transport": None,
     },
-    # null keeps the production system prompt; a string replaces it wholesale.
+    # null keeps the production system prompt; a string replaces it wholesale,
+    # except the library rules, which library_rules owns.
     "system_prompt": None,
+    # null keeps production's library rules; sent only with Library on.
+    "library_rules": None,
     "prompt_addon": "",
     "tool_descriptions": {},
+    # A skill's text replaces what read_skill returns for it; the system prompt
+    # and the other skills keep production's.
+    "skills": {},
     # null offers what production offers; a list narrows it for an experiment.
     "tools": None,
     "search": {"top_k": 5, "per_file_cap": 4},
@@ -138,6 +143,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
 
 def merged(raw: dict[str, Any]) -> dict[str, Any]:
     out = copy.deepcopy(DEFAULT_CONFIG)
+    # The server's --target decides where a turn runs; configs and saved runs
+    # from before 2026-10-05 still carry target (and the old acceptance
+    # question), which mean nothing here.
+    raw = {k: v for k, v in raw.items() if k not in ("target", "question", "expect")}
     for key, value in raw.items():
         if isinstance(value, dict) and isinstance(out.get(key), dict):
             out[key].update(value)
@@ -152,6 +161,16 @@ def merged(raw: dict[str, Any]) -> dict[str, Any]:
         for name, text in descriptions.items()
     ):
         raise HTTPException(400, "tool_descriptions must map known tool names to text")
+    if out["library_rules"] is not None and not isinstance(out["library_rules"], str):
+        raise HTTPException(400, "library_rules must be null or text")
+    from pipeline.retrieval import skills
+
+    texts = out["skills"]
+    if not isinstance(texts, dict) or any(
+        name not in {*skills.SKILLS, "deck"} or not isinstance(text, str)
+        for name, text in texts.items()
+    ):
+        raise HTTPException(400, "skills must map known skill names to text")
     if out["tools"] is not None and (
         not isinstance(out["tools"], list)
         or any(name not in known for name in out["tools"])
@@ -193,17 +212,37 @@ def model_spec(model: dict[str, Any]):
     )
 
 
-def effective_prompt(c: dict[str, Any], base: str | None = None) -> str:
-    """The exact system prompt a turn sends: production text, or the config's
-    replacement, then the addon, then the capture_page rule."""
+def effective_prompt(
+    c: dict[str, Any],
+    base: str | None = None,
+    *,
+    library: bool | None = None,
+    with_library: bool = True,
+) -> str:
+    """The exact system prompt a turn sends: production text without the
+    library rules, or the config's replacement; with Library on, the library
+    rules (production's or library_rules) where production puts them, before
+    the answer format, or last when a replacement dropped that; then the
+    addons. ``with_library=False`` is the editable part the page shows."""
     import capture
     import citations
 
     from pipeline.prompts import chat as chat_prompts
 
+    library = c["library"] if library is None else library
     if base is None:
-        base = chat_prompts.system_prompt(c["locale"], library=c["library"])
+        base = chat_prompts.system_prompt(c["locale"])
     text = base if c["system_prompt"] is None else c["system_prompt"]
+    if library and with_library:
+        rules = (
+            chat_prompts.LIBRARY_RULES
+            if c["library_rules"] is None
+            else c["library_rules"]
+        )
+        head, lang, tail = text.rpartition("\n\n" + chat_prompts.LANG_RULE)
+        text = (
+            f"{head}\n\n{rules}{lang}{tail}" if lang else f"{text}\n\n{rules}"
+        )
     offers_capture = c["tools"] is None or capture.NAME in c["tools"]
     use_capture = offers_capture and c["capture"]["addon"]
     offers_decks = c["decks"]["offer"] and (
@@ -262,6 +301,12 @@ def configured_tools(c: dict[str, Any], schemas: list[dict]) -> list[dict]:
     return result
 
 
+def tools_off(kw: dict[str, Any]) -> bool:
+    """A model call that may not call tools: none sent, or sent with
+    tool_choice "none" so the request keeps its cached prefix."""
+    return not kw.get("tools") or kw.get("tool_choice") == "none"
+
+
 def turn_tools(c: dict[str, Any], production: list[dict]) -> list[dict]:
     """What a turn offers: production's tools, the playground's deck and copy
     tools, the configured descriptions, and the deck skill on read_skill."""
@@ -287,6 +332,24 @@ def turn_tools(c: dict[str, Any], production: list[dict]) -> list[dict]:
                     "deck", deck.WHEN
                 )
     return schemas
+
+
+def skill_texts(c: dict[str, Any], *, library: bool) -> dict[str, str]:
+    """Production's text of each skill this config offers."""
+    from pipeline.retrieval import skills
+
+    texts = {name: skill.text(library) for name, skill in skills.SKILLS.items()}
+    if c["decks"]["offer"]:
+        texts["deck"] = deck.skill_text()
+    return texts
+
+
+def skill_text(c: dict[str, Any], name: str, *, library: bool) -> str | None:
+    """What read_skill returns here: the config's text, else production's."""
+    offered = skill_texts(c, library=library)
+    if name not in offered:
+        return None
+    return c["skills"].get(name, offered[name])
 
 
 def material_id(assistant_message_id: str, call_id: str) -> str:
@@ -901,7 +964,7 @@ class Turn:
         }
 
         def system_prompt(locale, *, library=False):
-            return effective_prompt(c, saved["system_prompt"](locale, library=library))
+            return effective_prompt(c, saved["system_prompt"](locale), library=library)
 
         def schemas_for(ctx_):
             schemas = turn_tools(c, saved["schemas_for"](ctx_))
@@ -943,16 +1006,17 @@ class Turn:
                     )
             elif problem:
                 result = tools._refused(problem)
-            elif need := skills.missing(
-                name, record["args"], ctx_.skills_read, {**skills.REQUIRES, **deck.REQUIRES}
+            elif needs := skills.missing(
+                name,
+                record["args"],
+                ctx_.skills_read,
+                {**skills.REQUIRES, **deck.REQUIRES, bank_copy.NAME: (skills.EDITING,)},
             ):
-                result = tools._refused(skills.refusal(need))
-            elif (
-                name == "read_skill"
-                and record["args"].get("name") == "deck"
-                and c["decks"]["offer"]
-            ):
-                result = tools._result(skills.render("deck", deck.skill_text()))
+                result = tools._refused(skills.refusal(needs))
+            elif name == "read_skill" and (
+                text := skill_text(c, record["args"]["name"], library=ctx_.library)
+            ) is not None:
+                result = tools._result(skills.render(record["args"]["name"], text))
             elif name == "list_sources":
                 result = await list_sources_locally(ctx_, state)
             elif name == "read_study_progress":
@@ -1019,11 +1083,11 @@ class Turn:
 
         async def llm_stream(model, messages, **kw):
             """Route this turn's pin to the configured endpoint; enforce JSON only on
-            tool-less calls, because a tool-capable call under json_object skips tools."""
+            tools-off calls, because a tool-capable call under json_object skips tools."""
             if (
                 model.pin == spec.pin
                 and structured
-                and not kw.get("tools")
+                and tools_off(kw)
                 and kw.get("response_format") is None
             ):
                 kw["response_format"] = {"type": "json_object"}
@@ -1184,7 +1248,7 @@ class Turn:
                 state["extra"].append(
                     {"type": "ledger", "call": call, **state["ledger"]}
                 )
-                if kw.get("tools") is None:
+                if tools_off(kw):
                     # With ledger todos tools go off only on the stall guard, the
                     # tool cap or the terminal call after credits run out.
                     stall = {
@@ -1212,7 +1276,7 @@ class Turn:
                     "reasoning_tokens": usage.reasoning_tokens,
                     "tool_calls": [call.name for call in assembled.tool_calls],
                     "images_attached": len(state["images"]),
-                    "response_format": bool(structured and not kw.get("tools")),
+                    "response_format": bool(structured and tools_off(kw)),
                     "transport": transport["url"] if transport else "production",
                     "context": context,
                 }
@@ -1221,12 +1285,32 @@ class Turn:
                 # The agent withholds a response carrying tool-call markup and
                 # reports it as flagged; keep what the model wrote.
                 state["provider_calls"][-1]["flagged_text"] = assembled.text[:8000]
+            # Output by where it went: the provider reports the total and the
+            # reasoning; the visible part is split by estimate.
+            written = {"answer": estimate_tokens(assembled.text or "")}
+            for tool_call in assembled.tool_calls:
+                written[tool_call.name] = written.get(tool_call.name, 0) + estimate_tokens(
+                    tool_call.arguments or ""
+                )
+            state["provider_calls"][-1]["output_split"] = written
+            # The turn context this call carried: open file, chapters,
+            # preferences, todos. It is last in the request.
+            turn_context = next(
+                (str(m.get("content")) for m in reversed(request) if m.get("_kind") == "ledger"),
+                "",
+            )
+            state["provider_calls"][-1]["turn_context"] = turn_context
             state["extra"].append(
                 {
                     "type": "context",
                     "call": len(state["provider_calls"]),
                     "reported_input": usage.input_tokens,
                     "cached_read": usage.cached_read_tokens,
+                    "output": usage.output_tokens,
+                    "reasoning": usage.reasoning_tokens,
+                    "written": {name: n for name, n in written.items() if n},
+                    "seconds": state["provider_calls"][-1]["elapsed_seconds"],
+                    "turn_context": turn_context,
                     **context,
                 }
             )
@@ -1600,6 +1684,42 @@ def build_app(target: str):
         )
         return {"saved": name}
 
+    @app.post("/api/openui")
+    async def openui_tree(request: Request):
+        """An answer as a tree the page can draw: each component call with its
+        props named, refs left for the page to resolve."""
+        from pipeline.retrieval import openui
+
+        text = str((await request.json()).get("text") or "")
+        if not openui.is_lang_shaped(text):
+            return {"markdown": text}
+        body = re.sub(r"^\s*```[\w-]*\s*\n|\n?```\s*$", "", text)
+        try:
+            program = openui.parse(body, strict=True)
+        except openui.ParseError as exc:
+            return {"error": str(exc)}
+
+        def plain(value):
+            if isinstance(value, openui.Call):
+                names = openui.COMPONENTS.get(value.name, [])
+                return {
+                    "$": value.name,
+                    "props": {
+                        (names[i] if i < len(names) else f"arg{i}"): plain(arg)
+                        for i, arg in enumerate(value.args)
+                    },
+                }
+            if isinstance(value, openui.Ref):
+                return {"ref": value.name}
+            if isinstance(value, list):
+                return [plain(item) for item in value]
+            return value
+
+        return {
+            "root": openui.ROOT,
+            "statements": {k: plain(v) for k, v in program.statements.items()},
+        }
+
     @app.post("/api/prompt")
     async def prompt(request: Request):
         """The two layers a turn sends: the system prompt and the tools array."""
@@ -1623,9 +1743,12 @@ def build_app(target: str):
                 print(f"question bank unavailable for the preview: {exc}", flush=True)
         return {
             "prompt": effective_prompt(
-                c, production_prompt(c["locale"], library=c["library"])
+                c, production_prompt(c["locale"]), with_library=False
             ),
+            "library_rules": chat_prompts.LIBRARY_RULES,
+            "full_prompt": effective_prompt(c, production_prompt(c["locale"])),
             "tools": turn_tools(c, production_schemas(ctx)),
+            "skills": skill_texts(c, library=ctx.library),
             "tool_prompts": {
                 s["function"]["name"]: tool_prompt(s["function"])
                 for s in turn_tools({**c, "tool_descriptions": {}}, production_schemas(ctx))
@@ -1636,12 +1759,7 @@ def build_app(target: str):
     async def turn(request: Request):
         await reconnect()
         body = await request.json()
-        config = merged(body["config"])
-        if config["target"] != target:
-            raise HTTPException(
-                400,
-                f"this server runs against {target}; the config targets {config['target']}",
-            )
+        config = {**merged(body["config"]), "target": target}
         try:
             spec = model_spec(config["model"])
             if spec.resolve_thinking(config["model"]["thinking"]) in ("", "instant"):
@@ -1865,6 +1983,22 @@ def check() -> None:
             assert exc.status_code == 400
         else:
             raise AssertionError(f"accepted invalid tool_descriptions: {invalid}")
+    # A skill's text replaces only that skill; deck is a skill only with decks on.
+    edited = merged({"skills": {"workspace_building": "my building"}})
+    assert skill_text(edited, "workspace_building", library=True) == "my building"
+    assert skill_text(edited, "editing", library=True) != "my building"
+    assert skill_text(edited, "deck", library=True) == deck.skill_text()
+    assert skill_text(merged({"decks": {"offer": False}}), "deck", library=True) is None
+    assert "Practice from the library" not in skill_text(
+        merged({}), "workspace_building", library=False
+    )
+    for invalid in (None, {"unknown": "x"}, {"workspace_building": 1}):
+        try:
+            merged({"skills": invalid})
+        except HTTPException as exc:
+            assert exc.status_code == 400
+        else:
+            raise AssertionError(f"accepted invalid skills: {invalid}")
     # Note fences: flashcards and html-embed are checked here, quizzes by Go.
     note = "```flashcards\ncards:\n- front: a\n  back: b\n```\n"
     embed = "```html-embed\ntitle: t\nfallback: f\nhtml: |\n  <p>x</p>\n```\n"
@@ -1912,7 +2046,7 @@ def check() -> None:
             assert response.json() == {"detail": "model config not found: missing v1"}
             for mode in (False, True):
                 c = merged({"library": mode})
-                expected = effective_prompt(c)
+                expected = effective_prompt(c, with_library=False)
                 with (
                     patch.object(chat, "system_prompt", return_value="active turn"),
                     patch.object(tools, "load_library_catalog", new=AsyncMock()),
@@ -1954,6 +2088,8 @@ def check() -> None:
                 replayed = await evidence.history_turns(kw["history"], kw["ctx"])
                 assert "Created note mat_1" in replayed[-1]["content"]
                 assert tools.mutates("create_ledger")
+                # As if the turn had read the editing skill, which the ledger needs.
+                kw["ctx"].skills_read = {"editing"}
                 updated = await tools.run(
                     "create_ledger",
                     {
@@ -2004,11 +2140,29 @@ def check() -> None:
                     "todos": [{"id": 1, "text": "Advanced quiz"}],
                 }
         bare = merged(
-            {"system_prompt": "", "capture": {"addon": False}, "decks": {"offer": False}}
+            {
+                "library": False,
+                "system_prompt": "",
+                "capture": {"addon": False},
+                "decks": {"offer": False},
+            }
         )
         assert effective_prompt(bare, "production") == ""
-        decks = merged({"system_prompt": "", "capture": {"addon": False}})
+        decks = merged(
+            {"library": False, "system_prompt": "", "capture": {"addon": False}}
+        )
         assert effective_prompt(decks, "production") == deck.addon("auto")
+        # The library rules sit before the answer format, as production puts
+        # them, whether they or the rest of the prompt were edited.
+        assert effective_prompt(merged({}), chat.system_prompt("en")).replace(
+            "\n\n" + chat.LANG_RULE, ""
+        ).startswith(chat.system_prompt("en", library=True).split("\n\n" + chat.LANG_RULE)[0])
+        lib = merged({"library_rules": "MY RULES", "tools": []})
+        assert effective_prompt(lib, "base\n\n" + chat.LANG_RULE) == (
+            "base\n\nMY RULES\n\n" + chat.LANG_RULE
+        )
+        assert effective_prompt({**lib, "system_prompt": "mine"}, "x") == "mine\n\nMY RULES"
+        assert effective_prompt(lib, "base", with_library=False) == "base"
 
     asyncio.run(check_preview())
     assert (
@@ -2018,7 +2172,7 @@ def check() -> None:
     )
     for path in CONFIGS.glob("*.json"):
         c = merged(json.loads(path.read_text(encoding="utf-8")))
-        assert c["target"] in TARGETS and c["capture"]["mode"] in (
+        assert c["capture"]["mode"] in (
             "pixels",
             "ocr",
             "caption",

@@ -1315,9 +1315,9 @@ def test_one_prompt_adds_the_library_rules_only_with_library_on():
 
     assert "Library (a source this turn)" in on and "Library (a source" not in off
     for prompt in (off, on):
-        assert "read the skill for the work with read_skill" in prompt
-        assert "propose the plan" not in prompt, "the materials skill holds it"
-        assert f"{limits.LEDGER_TOOLS_PER_TURN} tool calls" in prompt
+        assert "read the skills for the work with read_skill" in prompt
+        assert "propose the plan" not in prompt, "workspace_building holds it"
+        assert "ledger todos a turn has 160" not in prompt, "editing holds it"
         assert (
             f"Without ledger todos a turn has {limits.PLANNING_RESPONSES} responses"
             in prompt

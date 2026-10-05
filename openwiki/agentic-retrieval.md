@@ -94,7 +94,7 @@ network and no pin.
 | `captioning.py` | `captioning` | Whole-image captions for standalone image uploads |
 | `retrieval.py` | `retrieval` | The Qwen3 instruct prefix for embedding queries |
 | `preferences.py` | `chat` | The learner's study preferences as build instructions, rendered into the turn context |
-| `skills.py` | `chat` | The skills `read_skill` returns: `materials` (build flow, output rules, note and question formats) |
+| `skills.py` | `chat` | The skills `read_skill` returns: `editing` (ledger, budget, write precautions) and `workspace_building` (plan, output rules, note and question formats) |
 | `locale.py` | shared | The account-locale rule appended by chat, generate, and editor |
 
 Agent tool descriptions come from the shared contract
@@ -2058,8 +2058,9 @@ build, and the knowledge library is one more source while the switch is on.
   prompt for every turn and stays lean: grounding rules; answer or build (a
   question gets an answer with citations, a request to learn, make, expand or
   practise gets materials without asking first, a vague build request is asked
-  about with a default offered, and a build starts by reading its skill); and
-  the budget, with its numbers read from `retrieval/limits.py`. The
+  about with a default offered, and a write starts by reading its skills); and
+  the budget every turn shares (tool calls per response, responses without a
+  ledger), with its numbers read from `retrieval/limits.py`. The
   account-language, follow-references and capture rules follow. With Library
   on, `LIBRARY_RULES` is appended: subject ids only for browsing, a search hit
   is not a read, state applicability and gaps, relax a missed topic filter,
@@ -2070,21 +2071,26 @@ build, and the knowledge library is one more source while the switch is on.
   instructions are read on demand, so a turn that only answers a question does
   not pay for them on every call. `read_skill(name)` lists each skill with when
   to read it (appended to its description by `tools.schemas_for`) and returns
-  the skill's text under a `# Skill: <name>` header. Production has one,
-  `materials`: the build flow (survey, propose the plan before building more
-  than one item, one ledger todo per item, write as soon as the evidence is in
-  hand), output rules (one main explainer note per chapter, mindmaps, diagrams
+  the skill's text under a `# Skill: <name>` header. Production has two.
+  `editing`, for any write: the ledger (one todo per item, pass its id) and its
+  budget (the tool cap, the stall guard and the errored-write grace, moved out
+  of the base prompt), and the precautions (ground every write, write as soon
+  as the evidence is in hand, no write beside retrieval in one response,
+  inspect before editing, edits save with an Undo, source files only when
+  asked), with Library on the `excerpt_ids` rules. `workspace_building`, for
+  new materials: the plan (survey, propose the plan before building more than
+  one item, build a single item directly), output rules (one main explainer note per chapter, mindmaps, diagrams
   and interactive blocks inside it, quizzes and flashcards standalone in the
   chapter they practise, study preferences, grow a long note by appending
   sections), the note and question formats with a worked example question
   (`Formats` in the contract: `noteMarkdownDescription`, `questionJSONDescription`
   and `questionExample`, which `TestQuestionExampleIsValid` runs through the
-  quiz validator), and with Library on the library writing rules (excerpt_ids,
-  one primary excerpt, question-bank and exercise reuse). The writes that use
-  the formats are refused until the skill's result is in the request:
-  `create_material` always, `edit_document` when a command is
-  `insert_markdown`, `add_question` or `replace_question`
-  (`skills.missing`, checked in `tools.run`). The agent recomputes
+  quiz validator), and with Library on one primary excerpt and question-bank
+  and exercise reuse. A write is refused, naming every skill it lacks, until
+  their results are in the request (`skills.REQUIRES`, checked in `tools.run`):
+  `create_ledger` needs `editing`; `create_material` both; `edit_document`
+  `editing`, plus `workspace_building` when a command is `insert_markdown`,
+  `add_question` or `replace_question`. The agent recomputes
   `ctx.skills_read` from the message list before every call
   (`skills.retained`), so a turn note that folded the result away asks for a
   re-read. `read_skill` retains nothing, so each turn reads afresh. The
@@ -2095,7 +2101,10 @@ build, and the knowledge library is one more source while the switch is on.
   extends the previous one exactly: GLM-5.3-Flash on Relace reuses its prompt
   cache only at the end of an earlier request (a hybrid-attention model can
   only resume from saved states), and a context that moved or changed in place
-  left every later step uncached. A copy not yet followed by a step is
+  left every later step uncached. For the same reason a tools-off call (the
+  last response without a ledger, the stall guard, the tool cap) still sends
+  the tools, with `tool_choice: "none"` (`{"type": "none"}` for Anthropic);
+  only the credit guard's terminal call drops them, to make room. A copy not yet followed by a step is
   replaced; a turn note drops the stale copies (`compact._fold_turn`), and none
   reaches the stored conversation. It names the open item
   (`Open: <title> (<kind> <id>), in chapter <n>.` or `Open: nothing.`), lists

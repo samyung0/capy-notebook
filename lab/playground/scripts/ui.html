@@ -72,6 +72,28 @@ button {
 details > summary {
   cursor: pointer;
 }
+.rendered {
+  border-left: 3px solid #48c;
+  background: #fbfcff;
+}
+.ou {
+  border: 1px solid #dde;
+  padding: 4px 8px;
+  margin: 4px 0;
+}
+.ou-name {
+  font-size: 10px;
+  color: #88a;
+  text-transform: uppercase;
+}
+.ou-table {
+  border-collapse: collapse;
+}
+.ou-table td,
+.ou-table th {
+  border: 1px solid #ccd;
+  padding: 2px 6px;
+}
 pre {
   max-height: 320px;
   padding: 6px;
@@ -189,7 +211,7 @@ img.capture {
       offers; a list narrows it. capture.mode: pixels | ocr | caption.
     </div>
     <details open>
-      <summary>Effective system prompt (what the turn sends)</summary>
+      <summary>System prompt (without the library rules)</summary>
       <textarea
         id="prompt"
         spellcheck="false"
@@ -207,6 +229,29 @@ img.capture {
           sets <code>system_prompt</code> to null.</span
         >
       </div>
+    </details>
+    <details>
+      <summary>Library rules (sent with Library on)</summary>
+      <textarea
+        id="libraryRules"
+        aria-label="Library rules"
+        spellcheck="false"
+        style="min-height:160px"
+      ></textarea>
+      <div class="row">
+        <button id="applyLibraryRules" type="button">Apply library rules</button>
+        <button id="resetLibraryRules" type="button">Back to production rules</button>
+        <span class="muted" id="libraryRulesStatus" role="status"></span>
+      </div>
+      <p class="muted">
+        Apply writes the text into <code>library_rules</code>; reset sets it to
+        null. The turn puts them before the answer format, or last if an
+        applied system prompt dropped it.
+      </p>
+    </details>
+    <details>
+      <summary>Full system prompt the turn sends</summary>
+      <pre id="fullPrompt"></pre>
     </details>
     <details id="toolPrompts">
       <summary>Tool prompts</summary>
@@ -233,6 +278,29 @@ img.capture {
         <summary>Tools array sent with the request</summary>
         <pre id="toolsJson"></pre>
       </details>
+    </details>
+    <details id="skillPrompts">
+      <summary>Skills</summary>
+      <label>Skill <select id="skillName"></select></label>
+      <textarea
+        id="skillPrompt"
+        disabled
+        aria-label="Skill text"
+        spellcheck="false"
+        style="min-height:220px"
+      ></textarea>
+      <div class="row">
+        <button id="applySkillPrompt" type="button" disabled>Apply skill</button>
+        <button id="resetSkillPrompt" type="button" disabled>Reset skill</button>
+        <span class="muted" id="skillPromptStatus" role="status"></span>
+      </div>
+      <p class="muted">
+        What <code>read_skill</code> returns, for the skills this config offers.
+        Apply writes this text into <code>skills</code>; the system prompt and
+        the other skills keep their production text. Reset restores this
+        skill's production text. Production's editing and workspace_building
+        texts follow the Library switch; an applied text does not.
+      </p>
     </details>
     <details>
       <summary>Files in workspace</summary>
@@ -285,8 +353,26 @@ let state = null,
 const k = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n));
 let previewVersion = 0,
   promptDirty = false,
-  toolPrompts = {},
-  toolDrafts = {};
+  libraryDirty = false;
+// Per-name overrides of production text: tool descriptions and skills.
+const editors = {
+  tool: {
+    key: 'tool_descriptions',
+    ids: ['toolName', 'toolPrompt', 'applyToolPrompt', 'resetToolPrompt', 'toolPromptStatus'],
+    applied: 'Custom description applied',
+    production: 'Production description',
+    texts: {},
+    drafts: {},
+  },
+  skill: {
+    key: 'skills',
+    ids: ['skillName', 'skillPrompt', 'applySkillPrompt', 'resetSkillPrompt', 'skillPromptStatus'],
+    applied: 'Custom skill applied',
+    production: 'Production skill',
+    texts: {},
+    drafts: {},
+  },
+};
 
 async function loadState() {
   state = await (await fetch('/api/state')).json();
@@ -347,7 +433,8 @@ $('fill').onclick = () => setConfig(mergedConfig(currentConfig()));
 function setConfig(c, resetDrafts = false) {
   if (resetDrafts) {
     promptDirty = false;
-    toolDrafts = {};
+    libraryDirty = false;
+    for (const ed of Object.values(editors)) ed.drafts = {};
     $('promptStatus').textContent = '';
   }
   const version = ++previewVersion;
@@ -369,8 +456,6 @@ function setConfig(c, resetDrafts = false) {
   $('prefVisuals').value = prefs.visualAids;
   $('decks').checked = c.decks?.offer !== false;
   $('mainFormat').value = c.decks?.main_format || 'auto';
-  // A config may carry the frozen request it was written for.
-  if (c.question && !$('question').value) $('question').value = c.question;
   $('quality').textContent = state.quality_files.includes(
     `${state.target}-${c.workspace_id}.json`
   )
@@ -388,14 +473,16 @@ function setConfig(c, resetDrafts = false) {
     .then((p) => {
       if (version !== previewVersion) return;
       if (!promptDirty) $('prompt').value = p.prompt;
+      if (!libraryDirty) {
+        const applied = c.library_rules;
+        $('libraryRules').value = applied ?? p.library_rules ?? '';
+        $('libraryRulesStatus').textContent =
+          applied == null ? 'Production rules' : 'Custom rules applied';
+      }
+      $('fullPrompt').textContent = p.full_prompt ?? '';
       $('toolsJson').textContent = JSON.stringify(p.tools, null, 2);
-      toolPrompts = p.tool_prompts;
-      const selected = $('toolName').value;
-      $('toolName').innerHTML = Object.keys(toolPrompts)
-        .map((name) => `<option>${name}</option>`)
-        .join('');
-      if (Object.hasOwn(toolPrompts, selected)) $('toolName').value = selected;
-      showToolPrompt();
+      fillEditor(editors.tool, p.tool_prompts);
+      fillEditor(editors.skill, p.skills || {});
     })
     .catch((e) => {
       if (version === previewVersion)
@@ -538,6 +625,22 @@ $('applyPrompt').onclick = () => {
   $('promptStatus').textContent = 'Applied to config';
   setConfig(c);
 };
+$('libraryRules').oninput = () => {
+  libraryDirty = true;
+  $('libraryRulesStatus').textContent = 'Draft: apply before running';
+};
+$('applyLibraryRules').onclick = () => {
+  const c = currentConfig();
+  c.library_rules = $('libraryRules').value;
+  libraryDirty = false;
+  setConfig(c);
+};
+$('resetLibraryRules').onclick = () => {
+  const c = currentConfig();
+  c.library_rules = null;
+  libraryDirty = false;
+  setConfig(c);
+};
 $('resetPrompt').onclick = () => {
   const c = currentConfig();
   c.system_prompt = null;
@@ -546,44 +649,135 @@ $('resetPrompt').onclick = () => {
   setConfig(c);
 };
 
-function showToolPrompt() {
-  const name = $('toolName').value;
-  const draft = Object.hasOwn(toolDrafts, name);
-  const applied = currentConfig().tool_descriptions || {};
-  $('toolPrompt').value =
-    toolDrafts[name] ?? applied[name] ?? toolPrompts[name] ?? '';
-  $('toolPromptStatus').textContent = draft
+function fillEditor(ed, texts) {
+  const [select] = ed.ids;
+  ed.texts = texts;
+  const selected = $(select).value;
+  $(select).innerHTML = Object.keys(texts)
+    .map((name) => `<option>${name}</option>`)
+    .join('');
+  if (Object.hasOwn(texts, selected)) $(select).value = selected;
+  showEditor(ed);
+}
+function showEditor(ed) {
+  const [select, text, apply, reset, status] = ed.ids;
+  const name = $(select).value;
+  const applied = currentConfig()[ed.key] || {};
+  $(text).value = ed.drafts[name] ?? applied[name] ?? ed.texts[name] ?? '';
+  $(status).textContent = Object.hasOwn(ed.drafts, name)
     ? 'Draft: apply before running'
     : Object.hasOwn(applied, name)
-      ? 'Custom description applied'
-      : 'Production description';
-  for (const id of ['toolPrompt', 'applyToolPrompt', 'resetToolPrompt'])
-    $(id).disabled = !Object.hasOwn(toolPrompts, name);
+      ? ed.applied
+      : ed.production;
+  for (const id of [text, apply, reset])
+    $(id).disabled = !Object.hasOwn(ed.texts, name);
 }
-$('toolName').onchange = showToolPrompt;
-$('toolPrompt').oninput = () => {
-  toolDrafts[$('toolName').value] = $('toolPrompt').value;
-  $('toolPromptStatus').textContent = 'Draft: apply before running';
-};
-$('applyToolPrompt').onclick = () => {
-  const name = $('toolName').value;
-  const c = currentConfig();
-  c.tool_descriptions = {
-    ...c.tool_descriptions,
-    [name]: $('toolPrompt').value,
+for (const ed of Object.values(editors)) {
+  const [select, text, apply, reset, status] = ed.ids;
+  $(select).onchange = () => showEditor(ed);
+  $(text).oninput = () => {
+    ed.drafts[$(select).value] = $(text).value;
+    $(status).textContent = 'Draft: apply before running';
   };
-  delete toolDrafts[name];
-  setConfig(c);
-  showToolPrompt();
-};
-$('resetToolPrompt').onclick = () => {
-  const name = $('toolName').value;
-  const c = currentConfig();
-  delete c.tool_descriptions?.[name];
-  delete toolDrafts[name];
-  setConfig(c);
-  showToolPrompt();
-};
+  $(apply).onclick = () => {
+    const name = $(select).value;
+    const c = currentConfig();
+    c[ed.key] = { ...c[ed.key], [name]: $(text).value };
+    delete ed.drafts[name];
+    setConfig(c);
+    showEditor(ed);
+  };
+  $(reset).onclick = () => {
+    const name = $(select).value;
+    const c = currentConfig();
+    delete c[ed.key]?.[name];
+    delete ed.drafts[name];
+    setConfig(c);
+    showEditor(ed);
+  };
+}
+
+let turnOutput = { output: 0, reasoning: 0, written: {} };
+// The visible output by where it went, estimated from its text.
+const writtenText = (written) =>
+  Object.entries(written || {})
+    .map(([name, n]) => ` + ${esc(name)} ≈${k(n)}`)
+    .join('');
+
+// A crude drawing of an OpenUI Lang answer; the app's components are not here.
+function md(text) {
+  // Markdown tables first: a run of lines starting with |.
+  return String(text)
+    .split(/((?:^\|.*(?:\n|$))+)/m)
+    .map((part, i) => (i % 2 ? mdTable(part) : mdInline(part)))
+    .join('');
+}
+function mdTable(block) {
+  const rows = block
+    .trim()
+    .split('\n')
+    .filter((line) => !/^\|[\s:|-]+\|$/.test(line.trim()))
+    .map((line) => line.trim().replace(/^\||\|$/g, '').split('|'));
+  return `<table class="ou-table">${rows
+    .map((cells, r) => `<tr>${cells.map((c) => `<${r ? 'td' : 'th'}>${mdInline(c.trim())}</${r ? 'td' : 'th'}>`).join('')}</tr>`)
+    .join('')}</table>`;
+}
+function mdInline(text) {
+  return esc(text)
+    .replace(/^### (.*)$/gm, '<h4>$1</h4>')
+    .replace(/^## (.*)$/gm, '<h3>$1</h3>')
+    .replace(/^# (.*)$/gm, '<h3>$1</h3>')
+    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<i>$2</i>')
+    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+    .replace(/^\s*[-*] (.*)$/gm, '• $1')
+    .replace(/\n/g, '<br>');
+}
+function drawOpenUI(tree) {
+  const draw = (value, depth = 0) => {
+    if (depth > 40) return '…';
+    if (value && value.ref) value = tree.statements[value.ref];
+    if (value == null) return '';
+    if (Array.isArray(value))
+      return value.every((v) => typeof v !== 'object' || v === null)
+        ? esc(value.join(' · '))
+        : value.map((v) => draw(v, depth + 1)).join('');
+    if (typeof value !== 'object') return md(String(value));
+    const { $: name, props } = value;
+    const cite = Array.isArray(props.passages) && props.passages.length
+      ? `<sup class="muted">[${props.passages.join(',')}]</sup>`
+      : '';
+    if (name === 'Table')
+      return `<div class="ou"><span class="ou-name">Table</span>${props.caption ? `<i>${esc(props.caption)}</i>` : ''}<table class="ou-table"><tr>${(props.columns || []).map((c) => `<th>${esc(c)}</th>`).join('')}</tr>${(props.rows || []).map((r) => { const row = r && r.ref ? tree.statements[r.ref] : r; return `<tr>${((row && row.props && row.props.cells) || []).map((c) => `<td>${md(String(c))}</td>`).join('')}</tr>`; }).join('')}</table>${cite}</div>`;
+    const parts = Object.entries(props)
+      .filter(([key]) => key !== 'passages')
+      .map(([key, v]) =>
+        ['title', 'label', 'value', 'kind', 'question'].includes(key) && typeof v === 'string'
+          ? `<div><b>${esc(v)}</b></div>`
+          : `<div>${draw(v, depth + 1)}</div>`
+      )
+      .join('');
+    return name === 'Answer'
+      ? parts
+      : `<div class="ou"><span class="ou-name">${esc(name)}</span>${parts}${cite}</div>`;
+  };
+  return draw(tree.statements[tree.root]);
+}
+async function renderAnswer(text) {
+  try {
+    const tree = await (
+      await fetch('/api/openui', {
+        body: JSON.stringify({ text }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      })
+    ).json();
+    if (tree.error) return card('stat', `<b>rendered answer</b> did not parse: ${esc(tree.error)}`);
+    card('rendered', `<div class="muted">rendered answer</div>${tree.markdown != null ? md(tree.markdown) : drawOpenUI(tree)}`);
+  } catch (e) {
+    card('stat', `<b>rendered answer</b> failed: ${esc(e.message)}`);
+  }
+}
 
 function card(cls, html) {
   const d = document.createElement('div');
@@ -799,9 +993,13 @@ function render(ev, runId) {
   }
   if (ev.type === 'context') {
     const p = ev.parts;
+    turnOutput.output += ev.output || 0;
+    turnOutput.reasoning += ev.reasoning || 0;
+    for (const [name, n] of Object.entries(ev.written || {}))
+      turnOutput.written[name] = (turnOutput.written[name] || 0) + n;
     card(
       'stat',
-      `<b>call ${ev.call} context</b> reported ${k(ev.reported_input)} in${ev.cached_read ? ` (${k(ev.cached_read)} cached)` : ''} · estimated ${k(ev.estimated_total)} of limit ${k(ev.limit)} · system ${k(p.system)} · schemas ${k(p.schemas)} · memory ${k(p.memory)} · history ${k(p.history)} · query ${k(p.query)} · assistant ${k(p.assistant)} · tool results ${k(p.tool_results)} in ${ev.counts.tool_results} · images ${ev.counts.images} ≈ ${k(p.images_est)}`
+      `<b>call ${ev.call}</b> ${ev.seconds ?? '?'} s · ${ev.output == null ? 'out ? (run saved before 2026-10-05)' : `<b>out ${k(ev.output)}</b> = reasoning ${k(ev.reasoning || 0)}${writtenText(ev.written)}`} · <b>in ${k(ev.reported_input)}</b>${ev.cached_read ? ` (${k(ev.cached_read)} cached)` : ''} · estimated ${k(ev.estimated_total)} of limit ${k(ev.limit)} · system ${k(p.system)} · schemas ${k(p.schemas)} · memory ${k(p.memory)} · history ${k(p.history)} · query ${k(p.query)} · assistant ${k(p.assistant)} · tool results ${k(p.tool_results)} in ${ev.counts.tool_results} · images ${ev.counts.images} ≈ ${k(p.images_est)}${ev.turn_context ? `<details><summary>turn context</summary><pre>${esc(ev.turn_context)}</pre></details>` : ''}`
     );
     return;
   }
@@ -832,8 +1030,10 @@ function render(ev, runId) {
   if (ev.type === 'done') {
     card(
       'stat',
-      `<b>done</b> stop=${esc(ev.telemetry && ev.telemetry.stopReason)} planning=${ev.telemetry && ev.telemetry.planningRounds} tools=${ev.telemetry && ev.telemetry.toolCallsTurn} tokens=${ev.tokenCount ?? '?'}`
+      `<b>done</b> stop=${esc(ev.telemetry && ev.telemetry.stopReason)} planning=${ev.telemetry && ev.telemetry.planningRounds} tools=${ev.telemetry && ev.telemetry.toolCallsTurn} tokens=${ev.tokenCount ?? '?'} · <b>output ${k(turnOutput.output)}</b> = reasoning ${k(turnOutput.reasoning)}${writtenText(turnOutput.written)}`
     );
+    turnOutput = { output: 0, reasoning: 0, written: {} };
+    if (ev.answer) renderAnswer(ev.answer);
     if (ev.answer || ev.toolEvidence)
       history.push({
         content: ev.answer || '',

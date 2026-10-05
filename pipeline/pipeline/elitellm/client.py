@@ -263,6 +263,7 @@ def anthropic_request(
     tools: list[dict[str, Any]] | None,
     max_tokens: int | None,
     thinking: str,
+    tool_choice: Any | None = None,
 ) -> dict[str, Any]:
     system, rest = _split_system(messages)
     thinking_body = anthropic_thinking_body(thinking)
@@ -287,6 +288,8 @@ def anthropic_request(
             }
             for schema in tools
         ]
+        if tool_choice == "none":
+            body["tool_choice"] = {"type": "none"}
     return body
 
 
@@ -806,6 +809,7 @@ async def stream(
             tools=tools,
             max_tokens=max_tokens,
             thinking=thinking,
+            tool_choice=tool_choice,
         )
         body["stream"] = True
         converter = _AnthropicStreamConverter()

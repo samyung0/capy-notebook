@@ -22,18 +22,24 @@ class Skill:
     text: Callable[[bool], str]  # library on -> instructions
 
 
+EDITING = "editing"
+BUILDING = "workspace_building"
 SKILLS: dict[str, Skill] = {
-    "materials": Skill(
-        prompts.MATERIALS_WHEN,
-        lambda library: prompts.materials(contract.FORMATS, library=library),
+    EDITING: Skill(
+        prompts.EDITING_WHEN, lambda library: prompts.editing(library=library)
+    ),
+    BUILDING: Skill(
+        prompts.BUILDING_WHEN,
+        lambda library: prompts.workspace_building(contract.FORMATS, library=library),
     ),
 }
 
-# The skill each write needs. edit_document needs it only for the commands
-# that carry the formats.
-REQUIRES: dict[str, str] = {
-    "create_material": "materials",
-    "edit_document": "materials",
+# The skills each write needs. edit_document needs workspace_building only for
+# the commands that carry its formats.
+REQUIRES: dict[str, tuple[str, ...]] = {
+    "create_ledger": (EDITING,),
+    "create_material": (EDITING, BUILDING),
+    "edit_document": (EDITING, BUILDING),
 }
 FORMAT_COMMANDS = frozenset({"insert_markdown", "add_question", "replace_question"})
 
@@ -73,19 +79,18 @@ def missing(
     name: str,
     args: dict[str, Any],
     read: set[str],
-    requires: dict[str, str] = REQUIRES,
-) -> str | None:
-    """The skill a write needs and has not read, or None."""
-    need = requires.get(name)
-    if need is None or need in read:
-        return None
+    requires: dict[str, tuple[str, ...]] = REQUIRES,
+) -> list[str]:
+    """The skills a write needs and has not read."""
+    needs = requires.get(name, ())
     if name == "edit_document" and not any(
         isinstance(command, dict) and command.get("type") in FORMAT_COMMANDS
         for command in args.get("commands") or []
     ):
-        return None
-    return need
+        needs = tuple(n for n in needs if n != BUILDING)
+    return [n for n in needs if n not in read]
 
 
-def refusal(need: str) -> str:
-    return f'Read the {need} skill first: read_skill({{"name": "{need}"}}), then write.'
+def refusal(needs: list[str]) -> str:
+    calls = " and ".join(f'read_skill({{"name": "{n}"}})' for n in needs)
+    return f"Read the skills this write needs first: {calls}, then write."

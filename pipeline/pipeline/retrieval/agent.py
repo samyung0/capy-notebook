@@ -89,6 +89,8 @@ def _describe(name: str, args: dict[str, Any]) -> str:
         return str(args.get("excerpt_id") or "")
     if name == "create_ledger":
         return f"{len(args.get('todos') or [])} todos"
+    if name == "read_skill":
+        return str(args.get("name") or "")
     if name == "capture_knowledge_page":
         return f"{args.get('excerpt_id') or ''} page {args.get('page')}"
     if name == "list_sources":
@@ -373,7 +375,11 @@ async def _run_turn(
                 )
         else:
             tools_off = terminal_call or step == planning_cap - 1
-        active_schemas = None if tools_off else schemas
+        # A tools-off call still sends the tools, with tool_choice "none":
+        # dropping them would change the start of the request and miss the
+        # provider's cache for the whole turn. The credit guard's terminal call
+        # drops them to make room.
+        active_schemas = None if terminal_call else schemas
 
         yield events.phase("planning")
         guard = ResponseGuard()
@@ -474,7 +480,8 @@ async def _run_turn(
                 models.stream_agent_response(
                     request_messages,
                     model=spec,
-                    tools=None if tools_off else schemas,
+                    tools=active_schemas,
+                    tool_choice="none" if tools_off and active_schemas else None,
                     on_event=_on_event,
                     call_purpose=(
                         accounting.PURPOSE_TERMINAL

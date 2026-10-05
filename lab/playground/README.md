@@ -1,5 +1,7 @@
 # Agentic-loop playground
 
+Prompt and tool tuning status: [`HANDOFF.md`](HANDOFF.md).
+
 A local web page that runs the production chat agent (`pipeline.retrieval.agent`)
 in-process against a real index, with the knobs that matter for retrieval quality
 taken from a JSON config you edit and save in the browser. Every turn is recorded.
@@ -51,7 +53,8 @@ The server opens the tunnel itself (`CAPY_INGEST_SSH_KEY`, else the first of
 `~/.ssh/id_ed25519_capy_ingest` and `~/.ssh/capy_ingest_159_195_61_195` that
 exists), reads the UAT worker's provider and bucket credentials over ssh into
 process memory, and points `DATABASE_URL` at the chosen target. Provider spend
-lands on the UAT keys. One server process serves one target; run two on
+lands on the UAT keys. One server process serves one target, and configs do
+not name one (an old config's `target` is ignored); run two on
 different ports for both.
 
 The tunnel also forwards 15433 to the shared knowledge library
@@ -104,8 +107,10 @@ Fields absent from a config take the defaults in `DEFAULT_CONFIG`
 | `model` | A `model_configs` pin (`provider_slug`, `model_slug`, `version`, `thinking`). Add `adhoc: {…}` to pin a model the catalog lacks; the provider's platform key must exist |
 | `model.transport` | Send this pin to another OpenAI-compatible endpoint: `{"url", "key_env", "wire_model", "body"}`. `body` picks the request builder (`zai`, `openai`, `deepseek`). `null` uses the production route |
 | `answer.citations` | `as_is` (production numbering), `renumber` (markers rewritten to 1, 2, … in first-appearance order while streaming; the final list holds only the passages used) or `structured` (the answer is JSON: claims with the passages that ground each; the playground writes the prose and numbers) |
-| `system_prompt` / `prompt_addon` | `null` keeps the production prompt; a string replaces it. The addon is appended either way |
+| `system_prompt` / `prompt_addon` | `null` keeps the production prompt; a string replaces it, except the library rules. The addon is appended either way |
+| `library_rules` | `null` keeps production's library rules; a string replaces them. Sent only with Library on, before the answer format (or last when a replaced `system_prompt` dropped it) |
 | `tool_descriptions` | Map of tool names to replacement descriptions, for example `{"search_knowledge": "Find relevant excerpts."}`. Unspecified tools keep their production descriptions; `browse_knowledge` still receives the live subject catalog |
+| `skills` | Map of skill names (`editing`, `workspace_building`, `deck`) to replacement text for what `read_skill` returns, edited in the Skills panel. The system prompt and the other skills keep production's text; an applied text ignores the Library switch, which adds library rules to production's `editing` and `workspace_building` |
 | `library` | The per-turn Library switch (default on): the shared library is a source and its tools are offered |
 | `open_resource` | What the learner has open, `{"id", "kind", "title"}` or `null`; the turn context names it |
 | `study_preferences` | The learner's saved preferences; missing fields take the defaults in `pipeline/prompts/preferences.py` |
@@ -141,7 +146,7 @@ write `library`, `open_resource` and `study_preferences` into the config, and
 the turn context message shows them to the model, with the workspace's
 chapters in order. Library tools require the header to show a configured
 library; a library that is down leaves the turn on the workspace. Build
-instructions are skills the model reads with `read_skill` (`materials` from
+instructions are skills the model reads with `read_skill` (`editing` and `workspace_building` from
 production, `deck` from the playground); the write tools are refused until the
 skill's text is in the request. Without the library the writes offer no
 `excerpt_ids`.
@@ -208,7 +213,7 @@ model text as `answer_raw` and any repair output as `repair_raw`.
 
 ## Context, compaction and checkpoints
 
-Every model call emits a `context` line: the provider-reported input tokens
+Every model call's line also shows its output: the provider's total and reasoning tokens, and the visible part by where it went (the answer text and each tool call's arguments, estimated from their text); `done` sums them for the turn, and `run.json` keeps it per call as `output_split`. Each call's line also opens its turn context (open file and its chapter, the workspace chapters, preferences, todos), kept per call in `run.json` as `turn_context`. A finished answer is drawn below it crudely (`/api/openui` parses the OpenUI Lang; Markdown answers get headings, emphasis, lists and tables). Every model call emits a `context` line: the provider-reported input tokens
 (and cached reads), the production estimator's total against the limit the
 compactor enforces, and a breakdown by part: system prompt, tool schemas,
 memory (folded checkpoint), prior history, the query, this turn's assistant
@@ -306,10 +311,18 @@ provider call's `flagged_text`.
 
 ### Acceptance (todo-learning.md, 1.9)
 
-`configs/acceptance-*.json` are the scenarios for the end-to-end prompt tuning,
-each on `chat.json`'s target and workspace with its own `question` and an
-`expect` line saying what a good run does: a vague request (asks), a broad one
-(proposes, then builds on the ledger), the open file (pick it with Open first),
-a question (answers, builds nothing), Library off, brief and detailed
-explainers, question-bank reuse, a deck, and a note with every fence. Load one,
-run it, and save the run; a prompt change is judged against the saved runs.
+The scenarios for the end-to-end prompt tuning. Type the request, set the
+switch or preference shown, run it and save the run; a prompt change is
+judged against the saved runs.
+
+| Request | Set | A good run |
+|---|---|---|
+| Help me study. | | Asks what to study and proposes a default before building |
+| Build me a study set for the whole document: an explainer and practice for each chapter. | | Proposes chapters, then builds them on the ledger |
+| Explain the file I have open, briefly. | Open a file | Builds one explainer directly |
+| What is the main argument of the document, and where is it stated? | | Answers with citations and builds nothing |
+| Make me a quiz on the first chapter. | Library off | Uses the workspace only |
+| Make notes for the first chapter. | Explainer brief, then detailed | Short note, key points first; then a full note with worked examples |
+| Give me HKDSE practice on circle tangents, past-paper style. | | Reuses question-bank questions before writing new ones |
+| Make a short lecture deck on the first chapter. | Decks on | Outlines, then fills a deck |
+| Write a note on the first chapter with a diagram, a mini check and an interactive where it helps. | Visuals more, mini checks on | Mermaid, quiz or flashcards and html-embed fences pass the note checker |

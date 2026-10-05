@@ -219,8 +219,8 @@ ADDON = (
     "learning, a note for detailed, text-dense learning."
 )
 WHEN = "read before making a slide deck (create_deck, write_slide)"
-# The skill each deck tool needs; the playground adds these to skills.REQUIRES.
-REQUIRES = {"create_deck": "deck", "write_slide": "deck"}
+# The skills each deck tool needs; the playground adds these to skills.REQUIRES.
+REQUIRES = {"create_deck": ("editing", "deck"), "write_slide": ("editing", "deck")}
 MAIN_FORMAT = {
     "note": "Main explainer: a note for every chapter.",
     "deck": "Main explainer: a deck for every chapter.",

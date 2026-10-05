@@ -52,6 +52,9 @@ const resolvePreview = async (index, prompt) => {
     json: async () => ({
       prompt,
       tool_prompts: toolPrompts,
+      skills: { workspace_building: 'Production building' },
+      library_rules: 'Production library rules',
+      full_prompt: `${prompt}\n\n${config.library_rules ?? 'Production library rules'}`,
       tools: Object.entries(toolPrompts).map(([name, description]) => ({
         function: {
           name,
@@ -120,6 +123,37 @@ assert.equal(
   undefined
 );
 assert.equal(element('toolPrompt').value, 'Production search');
+
+// A skill edit lands in skills by name and leaves the system prompt alone.
+element('skillName').value = 'workspace_building';
+element('skillName').onchange();
+assert.equal(element('skillPrompt').value, 'Production building');
+type('skillPrompt', 'My building skill');
+element('applySkillPrompt').onclick();
+assert.deepEqual(JSON.parse(element('json').value).skills, {
+  workspace_building: 'My building skill',
+});
+assert.equal(JSON.parse(element('json').value).system_prompt, null);
+await resolvePreview(8, 'Production prompt');
+assert.equal(element('skillPrompt').value, 'My building skill');
+element('resetSkillPrompt').onclick();
+assert.deepEqual(JSON.parse(element('json').value).skills, {});
+await resolvePreview(9, 'Production prompt');
+assert.equal(element('skillPrompt').value, 'Production building');
+
+// Library rules are edited apart from the system prompt.
+assert.equal(element('libraryRules').value, 'Production library rules');
+type('libraryRules', 'My library rules');
+element('applyLibraryRules').onclick();
+assert.equal(JSON.parse(element('json').value).library_rules, 'My library rules');
+assert.equal(JSON.parse(element('json').value).system_prompt, null);
+await resolvePreview(10, 'Production prompt');
+assert.equal(element('libraryRules').value, 'My library rules');
+assert.equal(element('fullPrompt').textContent, 'Production prompt\n\nMy library rules');
+element('resetLibraryRules').onclick();
+await resolvePreview(11, 'Production prompt');
+assert.equal(JSON.parse(element('json').value).library_rules, null);
+assert.equal(element('libraryRules').value, 'Production library rules');
 
 // Save persists the applied config without reloading editors over newer drafts.
 element('saveas').value = 'prompt-check';

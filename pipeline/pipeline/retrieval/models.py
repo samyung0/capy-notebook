@@ -696,6 +696,7 @@ async def stream_agent_response(
     on_event: Any | None = None,
     call_purpose: str = accounting.PURPOSE_AGENT,
     response_format: dict[str, Any] | None = None,
+    tool_choice: str | None = None,
 ) -> AssembledResponse:
     """Stream one tool-capable model response into a normalized assembly.
 
@@ -735,6 +736,7 @@ async def stream_agent_response(
                     on_event,
                     on_provider_byte=received.mark,
                     response_format=response_format,
+                    tool_choice=tool_choice,
                 )
                 obs.record_normalized(
                     spec.provider_slug,
@@ -786,6 +788,7 @@ async def _stream_via_adapter(
     max_tokens: int | None = None,
     reasoning: bool | None = None,
     response_format: dict[str, Any] | None = None,
+    tool_choice: str | None = None,
 ) -> AssembledResponse:
     if elitellm.uses_responses(spec, tools=bool(tools), reasoning=reasoning):
         assembler: ChatCompletionsAssembler | OpenAIResponsesAssembler = (
@@ -804,6 +807,7 @@ async def _stream_via_adapter(
         reasoning=reasoning,
         input_items=input_items,
         response_format=response_format,
+        tool_choice=tool_choice,
     )
     async for chunk in stream:
         if on_provider_byte is not None:

@@ -1,10 +1,8 @@
 {
-  "target": "uat",
-  "workspace_id": "ws_b5ac136d14",
+  "workspace_id": "odl_eval_odl_nocaption",
   "library": true,
   "open_resource": null,
   "study_preferences": {},
-  "question": "Teach me the main topic of the uploaded document.",
   "model": {
     "provider_slug": "zai",
     "model_slug": "glm-5.3-flash",

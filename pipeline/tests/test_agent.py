@@ -122,11 +122,15 @@ def _script_stream(responses: list[AssembledResponse]):
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        tool_choice=None,
     ):
         del model, call_purpose
         seen.append(
             {
                 "tools": tools,
+                "tool_choice": tool_choice,
+                # Tools off: sent with tool_choice "none", or none to send.
+                "tools_off": tool_choice == "none" or not tools,
                 "messages": list(messages),
                 "response_format": response_format,
             }
@@ -761,6 +765,7 @@ async def test_block_deltas_emit_while_provider_stream_is_open(monkeypatch):
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        tool_choice=None,
     ):
         del messages, model, tools, call_purpose
         if on_event is not None:
@@ -845,13 +850,13 @@ async def test_second_search_in_the_same_response_is_refused(monkeypatch):
     assert ends["s2"] == "refused"
 
 
-async def test_the_last_planning_round_drops_tools(monkeypatch):
+async def test_the_last_planning_round_turns_tools_off(monkeypatch):
     stream, seen = _script_stream([_assembled(_answer(("ok", [])))])
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     monkeypatch.setattr(agent.cfg, "agent_max_steps", 1)
 
     await _collect("What does chlorophyll absorb?", ToolContext(workspace_id="ws_1"))
-    assert seen[0]["tools"] is None
+    assert seen[0]["tools_off"]
 
 
 async def test_planning_text_with_tools_is_narration_then_answer(monkeypatch):
@@ -1058,6 +1063,7 @@ async def test_exhausting_tool_response_runs_tools_then_one_terminal_call(
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        tool_choice=None,
     ):
         del messages, model, on_event
         purposes.append(call_purpose)
@@ -1456,6 +1462,7 @@ async def test_client_drop_after_stream_skips_tools_and_next_call(monkeypatch):
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        tool_choice=None,
     ):
         del messages, model, call_purpose
         calls["n"] += 1
@@ -1495,6 +1502,7 @@ async def test_client_drop_before_stream_skips_provider_call(monkeypatch):
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        tool_choice=None,
     ):
         del messages, model, tools, on_event, call_purpose
         calls["n"] += 1
@@ -1531,6 +1539,7 @@ async def test_client_drop_does_not_cancel_in_flight_provider_call(monkeypatch):
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        tool_choice=None,
     ):
         del messages, model, tools, call_purpose
         if on_event is not None:
@@ -2057,6 +2066,7 @@ async def test_edit_document_posts_commands_and_refreshes_the_turn_view(monkeypa
 
     _gateway(monkeypatch, post=_post)
     monkeypatch.setattr(tools.pending, "load", _load)
+    ctx.skills_read = {"editing"}
     commands = [
         {
             "type": "replace_text",
@@ -2133,11 +2143,15 @@ def _stream_chunks(
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        tool_choice=None,
     ):
         del model, call_purpose
         seen.append(
             {
                 "tools": tools,
+                "tool_choice": tool_choice,
+                # Tools off: sent with tool_choice "none", or none to send.
+                "tools_off": tool_choice == "none" or not tools,
                 "messages": list(messages),
                 "response_format": response_format,
             }
@@ -2237,7 +2251,7 @@ async def test_answer_call_never_requests_json_mode(monkeypatch):
     monkeypatch.setattr(agent.cfg, "agent_max_steps", 1)
 
     await _collect("q", ToolContext(workspace_id="ws_1"))
-    assert seen[0]["tools"] is None
+    assert seen[0]["tools_off"]
     assert seen[0]["response_format"] is None
 
 
@@ -2526,7 +2540,7 @@ async def test_a_ledger_turn_has_no_response_ceiling_while_todos_complete(
     events = await _collect("teach me regression", ctx, model=_build_model())
 
     assert (len(seen), total) == (20, 20), "no planning ceiling with ledger todos"
-    assert not any(call["tools"] is None for call in seen), "the guard never fired"
+    assert not any(call["tools_off"] for call in seen), "the guard never fired"
     assert events[-1]["answer"] == "Done."
 
 
@@ -2549,7 +2563,9 @@ async def test_stall_guard_turns_tools_off_after_five_barren_responses(
     _plan(ctx, ["one"])
     events = await _collect("teach me regression", ctx, model=_build_model())
 
-    assert [call["tools"] is None for call in seen] == [False] * 5 + [True]
+    assert [call["tools_off"] for call in seen] == [False] * 5 + [True]
+    # The tools stay in the request so its prefix still hits the cache.
+    assert seen[-1]["tools"] == seen[0]["tools"] and seen[-1]["tool_choice"] == "none"
     assert events[-1]["answer"] == "The library has nothing usable."
     # The guard, not a planning ceiling, is what ended this turn.
     assert events[-1]["telemetry"]["stopReason"] == "stall"
@@ -2583,7 +2599,7 @@ async def test_errored_writes_extend_the_stall_guard_twice_at_most(
     _plan(ctx, ["one"])
     events = await _collect("teach me regression", ctx, model=_build_model())
 
-    assert [call["tools"] is None for call in seen] == [False] * 9 + [True]
+    assert [call["tools_off"] for call in seen] == [False] * 9 + [True]
     assert events[-1]["telemetry"]["stopReason"] == "stall"
     assert "limit 9 after 3 errored writes" in caplog.text
 
@@ -2601,7 +2617,7 @@ async def test_an_empty_ledger_response_stalls_but_does_not_end_the_turn(
     events = await _collect("teach me regression", ctx, model=_build_model())
 
     assert len(seen) == 2, "the empty response did not end the turn"
-    assert [call["tools"] is None for call in seen] == [False, False]
+    assert [call["tools_off"] for call in seen] == [False, False]
     assert events[-1]["answer"] == "I built one note."
     assert events[-1]["telemetry"]["stopReason"] == "answer"
 
@@ -2618,7 +2634,7 @@ async def test_six_empty_ledger_responses_end_the_turn_on_the_stall_guard(
 
     events = await _collect("teach me regression", ctx, model=_build_model())
 
-    assert [call["tools"] is None for call in seen] == [False] * 5 + [True]
+    assert [call["tools_off"] for call in seen] == [False] * 5 + [True]
     assert not events[-1]["answer"]
     assert events[-1]["telemetry"]["stopReason"] == "stall"
 
@@ -2653,7 +2669,7 @@ async def test_a_silent_terminal_call_in_a_ledger_turn_reports_the_credit_cutoff
     finally:
         accounting._accounting.reset(token)
 
-    assert [call["tools"] is None for call in seen] == [False, True]
+    assert [call["tools_off"] for call in seen] == [False, True]
     assert "stall guard" not in caplog.text, "the guard never fired"
     assert events[-1]["telemetry"]["stopReason"] == "planning_cap"
 
@@ -2681,7 +2697,7 @@ async def test_repeated_ledger_edits_do_not_reset_the_stall_guard(
     # The first changed plan counts; repeated upserts do not.
     assert outcomes == ["succeeded"] * 6
     assert len(ctx.ledger.todos) == 1 and ctx.ledger.progress == 1
-    assert [call["tools"] is None for call in seen] == [False] * 6 + [True]
+    assert [call["tools_off"] for call in seen] == [False] * 6 + [True]
     assert events[-1]["answer"] == "Nothing written."
     assert events[-1]["telemetry"]["stopReason"] == "stall"
 
@@ -2860,6 +2876,8 @@ async def test_material_excerpt_evidence_survives_only_as_current_full_text(
     async def run(name, args, ctx):
         if name == "read_knowledge":
             return await read(args, ctx)
+        if name == "create_ledger":
+            return await tools._create_ledger(args, ctx)
         if name in ("create_material", "edit_document"):
             checked = await tools.ledger_write(ctx, name, args)
             if isinstance(checked, ToolResult):
@@ -3001,7 +3019,7 @@ async def test_the_ledger_tool_cap_runs_one_terminal_response(
     assert [e["outcome"] for e in events if e["type"] == "tool_end"].count(
         "refused"
     ) == 1
-    assert seen[-1]["tools"] is None
+    assert seen[-1]["tools_off"]
     assert (
         agent.turn_context.FINAL_NOTICE
         in [m["content"] for m in seen[-1]["messages"] if m.get("_kind") == "ledger"][

@@ -89,6 +89,34 @@ def test_anthropic_uses_first_party_url_and_slug():
     assert "temperature" not in body
 
 
+def test_a_tools_off_call_keeps_the_tools_and_forbids_calling_them():
+    """Dropping the tools would change the request's start and miss the cache."""
+    tool = {"type": "function", "function": {"name": "t", "parameters": {}}}
+    message = [{"role": "user", "content": "hi"}]
+    anthropic = anthropic_request(
+        _spec(provider_slug="anthropic", model_slug="claude-opus-5"),
+        message,
+        temperature=None,
+        tools=[tool],
+        max_tokens=16,
+        thinking="high",
+        tool_choice="none",
+    )
+    assert anthropic["tools"] and anthropic["tool_choice"] == {"type": "none"}
+    zai = zai_request(
+        _spec(provider_slug="zai", model_slug="glm-5.3-flash"),
+        message,
+        temperature=None,
+        tools=[tool],
+        response_format=None,
+        max_tokens=None,
+        thinking="high",
+        stream=True,
+        tool_choice="none",
+    )
+    assert zai["tools"] == [tool] and zai["tool_choice"] == "none"
+
+
 def test_anthropic_byok_uses_user_key():
     bind_request_llm(paid_by="user", user_api_key="sk-ant")
     spec = _spec(

@@ -88,8 +88,9 @@ flashcards).
   pipeline defaults), with its MSW handler; checked in the MSW preview.
   Waiting: the `/generate` defaults, which follow the AI generate redesign in
   the Add file dialog.
-- 1.9 setup (2026-10-04): `lab/playground/configs/acceptance-*.json`, one per
-  scenario with an `expect` line; listed in the playground README. Every
+- 1.9 setup (2026-10-04): the scenarios with what a good run does are a table
+  in the playground README (the per-scenario configs were removed on
+  2026-10-05; Epo sets preferences by hand, and `chat.json` is the one config). Every
   config and the playground default use GLM-5.3-Flash at high reasoning, the
   production chat default (Epo, 2026-10-04).
 - Phase 3 mocks (2026-10-04): `artifacts/2026-10-04-interactive-blocks.html`,
@@ -103,11 +104,15 @@ flashcards).
   removed; the three OpenAI rows that served only those now serve chat). On
   2026-10-05 an empty `rag_material_contents` and the nullable
   `materials.trashed_at` and `parent_material_id` were added by hand, so
-  `list_sources` works there.
+  `list_sources` works there. Four test chapters (Biology, Machine learning papers,
+  Language and linguistics, Statistics and reports, ids `ch_lab_*`) were
+  added to `odl_eval_odl_nocaption` with 13 of its files filed under them.
 - Skills and caching (2026-10-05, Epo's prompt review): the base prompt keeps
   grounding, answer-or-build and the budget; build instructions are skills read
-  with `read_skill` (`materials` in production with the note and question
-  formats and a validated example question; `deck` in the playground), and the
+  with `read_skill` (in production `editing`, the ledger, budget and write
+  precautions, and `workspace_building`, the plan, output rules, the note and
+  question formats and a validated example question; `deck` in the
+  playground), and the
   writes are refused until the skill's text is in the request. Tool
   descriptions were cut to what the schema cannot say (contract v12). Per call,
   Library on: about 6.8k tokens of prompt and tools, from 8.7k. The turn
@@ -765,7 +770,8 @@ Deck items for the test (Epo, 2026-10-04; the output looks good):
 
 Skills and prompts for the test (Epo, 2026-10-05):
 
-- The lean base prompt, the `materials` skill (`prompts/skills.py`) and the
+- The lean base prompt, the `editing` and `workspace_building` skills
+  (`prompts/skills.py`) and the
   one-line tool descriptions (contract v12). Watch whether the model reads
   the skill before writing (the writes refuse otherwise, which costs a call)
   and whether answers to plain questions still skip it.

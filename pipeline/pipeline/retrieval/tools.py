@@ -1966,9 +1966,9 @@ async def run(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     )
     if problem:
         return _refused(problem)
-    need = skills.missing(name, args, ctx.skills_read)
-    if need:
-        return _refused(skills.refusal(need))
+    needs = skills.missing(name, args, ctx.skills_read)
+    if needs:
+        return _refused(skills.refusal(needs))
     try:
         return await spec.handler(args, ctx)
     except (TurnFailed, pending.SourceChanged):
