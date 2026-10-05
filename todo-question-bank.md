@@ -100,21 +100,21 @@ one topic.
       (2026-10-05) with answering, mistake review and Copy to quiz. The
       general quiz and question editing UI is Epo's, redone in its own
       session.
-- [ ] **Learners answering on `/bank`** and per-topic mistake review. The
-      backend is on `main` (2026-10-05): app migration 0055
-      `bank_review_states`, bank migration 0003 `retracted_at` (applied
-      to the shared bank database on 2026-10-05 after the dump
-      `backups/bank-2026-10-05-before-retracted.dump`), routes
-      `POST /api/bank/questions/{id}/answers`, `GET /api/bank/topics/{id}/marks`
-      and `/review`, MSW handlers. The UI waits for Epo's picks on
-      https://797ludmnkrb3.postplan.dev (with Copy to quiz and the type
-      filter) and the grading choice: a Go Check endpoint scoring closed
-      parts (answer keys stay hidden, recommended) or answer keys sent to
-      learners.
-- [ ] **Copy to quiz** from the bank page. The chat copies already
-      (`copy_questions`, `/api/internal/bank/copy`), and the validator accepts
-      quiz figures under `BANK_ASSETS_URL`; the page's own button reuses that
-      route.
+- [x] **Learners answering on `/bank`** (2026-10-06, ebd5bafe): View mode
+      stays answer-free; Check answer reveals that question's key
+      (`POST /api/bank/questions/{id}/reveal`), the browser scores it and
+      records it (`/answers`); the topic list keeps its row
+      (`QuestionListRow`) with a check, cross or empty circle and
+      "N correct · M to retry". Storage, retraction (bank migration 0003,
+      applied 2026-10-05) and the marks and review routes are on `main`.
+- [ ] **Per-topic mistake review**, **Copy to quiz** and the **type filter**
+      UI wait for Epo's picks (sections 2 to 4 of
+      https://797ludmnkrb3.postplan.dev; section 1 is the approved
+      2026-09-25 mock, already built). The review route
+      `GET /api/bank/topics/{id}/review` is ready. Copy to quiz reuses the
+      chat's copy (`/api/internal/bank/copy` with per-question credits;
+      quiz figures under `BANK_ASSETS_URL` already validate). The lists reuse
+      `QuestionListRow` (Epo, 2026-10-05).
 - [x] **Agent filter by question type** (2026-10-05): `list_question_bank`
       takes `question_type` with a topic. Proposed: list each subject's
       question types with counts when the agent lists its topics.
