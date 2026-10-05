@@ -380,9 +380,10 @@ function OfficeRuntime() {
         return;
       }
       // Pending input lands, as a press elsewhere in the editor lands it; an
-      // editor still loading has none.
+      // editor still loading has none. Nobody asked to save here: input the
+      // editor refuses stays its own error (a real Save still reports it).
       if (message.type === 'focus-left') {
-        if (replicaRef.current) await flush();
+        if (replicaRef.current) await flush().catch(() => {});
         return;
       }
       if (

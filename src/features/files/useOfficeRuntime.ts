@@ -162,9 +162,16 @@ export function useOfficeRuntime({
   // `focus` when focus comes back to its document from the frame; an app or
   // browser-tab switch and the return from one leave focus in the frame and
   // send nothing, so the edit stays open for the next key (Excel and Sheets).
+  const frameLoadedRef = useRef(frameLoaded);
+  frameLoadedRef.current = frameLoaded;
   useEffect(() => {
     const returned = (event: FocusEvent) => {
-      if (event.target !== window || modeRef.current !== 'edit') return;
+      if (
+        event.target !== window ||
+        modeRef.current !== 'edit' ||
+        !frameLoadedRef.current
+      )
+        return;
       post({ type: 'focus-left', version: OFFICE_PROTOCOL_VERSION });
     };
     window.addEventListener('focus', returned);

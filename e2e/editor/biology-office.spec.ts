@@ -515,6 +515,7 @@ test('XLSX cell edit ends when focus moves into Capy, not on a window switch', a
   await expect(chat).toBeFocused();
   await expect(editor).toHaveCount(0);
   await expect(formula).toHaveValue('8');
+
   await frameFocus(true);
 
   // An app or browser-tab switch takes focus from the whole page: the edit
@@ -541,6 +542,16 @@ test('XLSX cell edit ends when focus moves into Capy, not on a window switch', a
   await expect(editor).toHaveCount(0);
   await page.keyboard.press('ArrowUp');
   await expect(formula).toHaveValue('67');
+
+  // Input the engine refuses: the editor reports it in the frame, and Capy
+  // shows no file error for a save nobody asked for.
+  await page.mouse.click(box.x + 150, box.y + 75);
+  await page.keyboard.press('9');
+  await editor.fill('x'.repeat(40_000));
+  await frameFocus(false);
+  await chat.click();
+  await expect(frame.getByTestId('xlsx-error')).toBeVisible();
+  await expect(page.getByText("We couldn't load this file.")).toHaveCount(0);
 });
 
 test("Office runtime keeps Capy's theme after reloading and asks for a page reload on a protocol mismatch", async ({
