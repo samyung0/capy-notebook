@@ -653,9 +653,12 @@ the host's narrowed `canEdit` in `set-capabilities`), the editor turns
 read-only in every state alike: once the runtime has flushed what was being
 typed, it passes `readOnly` to the editor and lets pointer and keys through
 (Tab and Escape included), so the content can be selected and copied (Select
-all, ⌘A, ⌘C, the right-click menu's Copy) while nothing edits. Until then its
-gates hold keys and pointer, a composition begun after the pause never
-counts, and Ctrl/Cmd+S saves nothing. Each menu item says whether it edits
+all, ⌘A, ⌘C, the right-click menu's Copy) while nothing edits; text typed into
+a field of the frame, such as Find's, still reaches it, as the editor refuses
+text itself. Until then its gates hold keys, pointer and text input, a
+composition begun after the pause never counts, and Ctrl/Cmd+S saves nothing.
+When the pause ends the editor takes the focus back only if the frame still
+has it, so a field the user moved to in Capy keeps it. Each menu item says whether it edits
 (`edits`), declared where it is defined: DOCX's in docx-react's
 `hostMenus.tsx`, XLSX's and PPTX's from xlsx-react's `xlsxCommandEdits` and
 pptx-react's `PPTX_COMMAND_EDITS` (XLSX freezing panes edits; Capy's own Save
@@ -666,10 +669,12 @@ items (Select all, Find and replace, View, Download, Print) and the header
 actions usable, and drops any other `menu-command` or `menu-file`
 (`runsWhilePaused`). The read-only editors refuse edits themselves too: DOCX
 keeps its toolbar row, disabled, because its menus come from it, opens Find
-and replace with Replace and Replace all disabled, offers only Copy and Select
-all on right-click, ignores Ctrl/Cmd+K, Delete on a selected table and every
-structural command, and its comment and tracked-change cards show the thread
-without reply, resolve, accept or reject; XLSX's `run` refuses editing
+and replace with Find working and Replace and Replace all disabled, offers
+only Copy and Select all on right-click, ignores Ctrl/Cmd+K, Delete on a
+selected table, a header or footer double-click, Tab out of a table's last
+cell and every structural command, and its comment and tracked-change cards
+show the thread without reply, resolve, accept or reject (an add-comment card
+left open can still be cancelled); XLSX's `run` refuses editing
 commands and its Select all hands the grid the keys, so Ctrl/Cmd+C copies the
 sheet (in the grid Tab moves between cells, as when editing). All three keep
 their toolbar row, and XLSX its formula bar, visible and disabled, so nothing
@@ -800,11 +805,14 @@ their weight. The host sends `set-appearance` (`style`, `theme`,
 `narrow` below lg, `locale`) before `load`, on every change and again after
 every runtime boot; the runtime sets `data-style`/`data-theme` and `lang` on
 its root, sets its own locale, passes `colorMode` and the editor's zh-CN
-strings for `zh` to `DocxEditor`, and hides the narrow controls. `set-capabilities`
-also follows every boot, after the boot's `load` (which carries the raw
-`canEdit`), so a runtime that reloads during a handoff, a replacement,
-recovery, a discard or while connecting stays paused (read-only and
-selectable). Pages stay white in
+strings for `zh` to `DocxEditor`, and hides the narrow controls. The host
+sends `set-capabilities` after every boot and whenever editing pauses or
+resumes, but a boot's `load` (which carries the raw `canEdit`) waits for the
+source, so a runtime that boots before the source loads gets
+`set-capabilities` first: the runtime keeps the last `canEdit` it was sent and
+applies it on `load`. A runtime that reloads during a handoff, a replacement,
+recovery, a discard or while connecting therefore opens paused (read-only and
+selectable) whichever message comes first. Pages stay white in
 dark themes, as PDF pages do. The chrome uses Capy's Fustat (latin 400, 500
 and 600 from `@fontsource/fustat` 5.3.0, self-hosted in
 `src/office-runtime/fonts/` because the runtime's CSP allows no font host; the

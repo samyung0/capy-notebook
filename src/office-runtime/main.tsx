@@ -148,6 +148,11 @@ function OfficeRuntime() {
     readOnlyRef.current = readOnly;
   }, [readOnly]);
   const holding = () => pausedRef.current && !readOnlyRef.current;
+  // The host's narrowed canEdit, kept for a `load` that comes after it (a
+  // runtime that boots before the source loads gets set-capabilities first).
+  const canEditRef = useRef<boolean | null>(null);
+  // Only an editor pauses; a viewer has nothing to edit.
+  const pausedFor = (canEdit: boolean) => epochRef.current !== null && !canEdit;
   const reportExporter = useCallback((exporter: OfficeExporter | null) => {
     exporterRef.current = exporter;
   }, []);
@@ -276,6 +281,8 @@ function OfficeRuntime() {
         loadedAtRef.current = performance.now();
         revisionRef.current = message.revision;
         epochRef.current = message.collaboration?.epoch ?? null;
+        pausedRef.current = pausedFor(canEditRef.current ?? message.canEdit);
+        setReadOnly(pausedRef.current);
         setMode(nextMode);
         setCitation(nextMode === 'view' ? (message.citation ?? null) : null);
         const bytes =
@@ -346,14 +353,12 @@ function OfficeRuntime() {
         return;
       }
       if (message.type === 'set-capabilities') {
-        // Only an editor pauses; a viewer has nothing to edit.
-        pausedRef.current = epochRef.current !== null && !message.canEdit;
+        canEditRef.current = message.canEdit;
+        pausedRef.current = pausedFor(message.canEdit);
         sendMenus();
         if (pausedRef.current) await flush();
-        if (
-          pausedRef.current !== (epochRef.current !== null && !message.canEdit)
-        )
-          return;
+        // A newer message decided meanwhile.
+        if (pausedRef.current !== pausedFor(canEditRef.current)) return;
         setReadOnly(pausedRef.current);
         return;
       }
@@ -493,9 +498,10 @@ function OfficeRuntime() {
     <div
       className="office-editor-host"
       onBeforeInputCapture={(event) => {
-        // Only a composition begun before the pause may finish (the pause
-        // flush waits for it).
-        if (pausedRef.current && !composingRef.current) {
+        // Held until the editor is read-only (a composition begun before the
+        // pause may finish: the pause flush waits for it). Then the editor
+        // refuses text itself, and Find's field and the like take it.
+        if (holding() && !composingRef.current) {
           event.preventDefault();
           event.stopPropagation();
         }

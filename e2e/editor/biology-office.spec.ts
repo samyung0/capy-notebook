@@ -631,12 +631,35 @@ for (const [format, text] of [
   test(`a paused ${format} editor copies but takes no edit, a composition included, also after the runtime reloads`, async ({
     page,
   }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(300_000);
+    // The runtime takes each `load` 1.5 s late, so the host's set-capabilities
+    // comes first, as when a runtime boots before the source loads.
+    await page.addInitScript(() => {
+      if (!location.pathname.includes('office-runtime')) return;
+      const add = window.addEventListener.bind(window);
+      window.addEventListener = ((
+        type: string,
+        listener: EventListenerOrEventListenerObject,
+        options?: boolean | AddEventListenerOptions
+      ) => {
+        if (type !== 'message' || typeof listener !== 'function')
+          return add(type, listener, options);
+        return add(
+          type,
+          (event: Event) => {
+            if ((event as MessageEvent).data?.type === 'load')
+              setTimeout(() => listener.call(window, event), 1500);
+            else listener.call(window, event);
+          },
+          options
+        );
+      }) as typeof window.addEventListener;
+    });
     const fileId = `bio-office-${format}`;
     await page.goto(`/workspaces/ws_bio?file=${fileId}&mode=edit`);
     const frame = page.frameLocator('iframe[src*="office-runtime"]');
     await expect(frame.locator('canvas').first()).toBeVisible({
-      timeout: 60_000,
+      timeout: 120_000,
     });
     await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
     await saveOffice(page);
@@ -687,10 +710,33 @@ for (const [format, text] of [
       page.getByRole('menuitem', { name: 'Download' })
     ).not.toHaveAttribute('aria-disabled', 'true');
     await page.keyboard.press('Escape');
+    if (format === 'docx') {
+      // Find opens and takes typing; Replace stays disabled.
+      await officeMenu(page, 'Edit').click();
+      await page.getByRole('menuitem', { name: /^Find and replace/ }).click();
+      const find = frame.getByLabel('Find text');
+      await find.click();
+      await page.keyboard.type('Course');
+      await expect(find).toHaveValue('Course');
+      await expect(
+        frame.getByRole('button', { exact: true, name: 'Replace' })
+      ).toBeDisabled();
+      await find.press('Escape');
+      await expect(find).toHaveCount(0);
+    }
     const before = await copySelectAll();
     expect(before).toContain(text);
 
-    // Typing through an IME, and editing commands posted to the runtime.
+    // Typing through an IME where editing would take it (the document input,
+    // the grid that opens a cell editor), and editing commands posted to the
+    // runtime.
+    if (format === 'docx')
+      await expect(frame.getByLabel('Document input')).toBeFocused();
+    else {
+      await expect(frame.getByTestId('xlsx-scroll')).toBeFocused();
+      await page.keyboard.type('x');
+      await expect(frame.getByTestId('xlsx-cell-editor')).toHaveCount(0);
+    }
     const cdp = await page.context().newCDPSession(page);
     await cdp.send('Input.imeSetComposition', {
       selectionEnd: 3,
@@ -738,8 +784,55 @@ for (const [format, text] of [
     );
     await page.keyboard.press('Escape');
     expect(await copySelectAll()).toBe(before);
+    await page.keyboard.type('Q');
+    await page.waitForTimeout(1500);
+    expect(await updates.evaluate((seen) => seen.count)).toBe(0);
+    expect(await copySelectAll()).toBe(before);
   });
 }
+
+// A pause that ends hands nothing to the editor: a host field keeps the
+// focus and the typing.
+test('a DOCX editor resuming from a pause leaves the focus where it was', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 120_000,
+  });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+  const chat = page.getByRole('textbox', { name: 'Ask about your sources…' });
+  await chat.click();
+  const capabilities = (canEdit: boolean) =>
+    page.evaluate((canEdit) => {
+      const iframe = document.querySelector<HTMLIFrameElement>(
+        'iframe[src*="office-runtime"]'
+      );
+      if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
+      iframe.contentWindow.postMessage(
+        { canEdit, type: 'set-capabilities', version: 7 },
+        new URL(iframe.src).origin
+      );
+    }, canEdit);
+  await capabilities(false);
+  await page.waitForTimeout(1000);
+  const updates = await page.evaluateHandle(() => {
+    const seen = { count: 0 };
+    window.addEventListener('message', (event) => {
+      if (event.data?.type === 'update') seen.count += 1;
+    });
+    return seen;
+  });
+  await capabilities(true);
+  await page.waitForTimeout(1000);
+  await expect(chat).toBeFocused();
+  await page.keyboard.type('qq');
+  await expect(chat).toHaveValue('qq');
+  await page.waitForTimeout(1000);
+  expect(await updates.evaluate((seen) => seen.count)).toBe(0);
+});
 
 // A view-only user's host sends canEdit:false; a viewer has nothing to pause,
 // so its cells still select and copy.
