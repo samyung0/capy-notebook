@@ -123,6 +123,14 @@ check); it applies at the first promotion.
   tab (next tab stop), not aligned to the margin as Word does; layout work.
 - **Two peers on the nested shape** (one Backspaces while the other types in
   P2): editor `yy`, reopened `7yy`; the accepted concurrent-join class.
+- **Page numbers after a right or centre tab.** A PAGE or NUMPAGES field after
+  a right or centre `w:ptab` or tab stop (the usual footer "…⟨tab⟩Page {PAGE}")
+  is measured with its cached text, and each page paints its own number at
+  its own width while the tab keeps the gap measured. With a cached "1"
+  (Arial 12pt), pages 10–99 end ~9 px past the right margin and a centred
+  number sits ~4.5 px off centre. Fix: shrink that tab by the resolved minus
+  the cached width (half for centre) on each page
+  (`docx-layout/src/display_list.rs`, tab width vs per-page field width).
 - **Clean stress build in CI.** The stress job's build without prebuilt images
   wasn't verified locally (Docker Hub timed out); check the first CI run.
 

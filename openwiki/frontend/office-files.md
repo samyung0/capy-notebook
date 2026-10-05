@@ -440,7 +440,9 @@ paragraph's indents (`indent`), the gap filled with the tab's own leader; a
 position the line has already passed is taken on the next line. The text
 never runs past the line's right edge (a margin tab in a paragraph with a
 right indent stops at the indent), and a tab missing either attribute stays
-an ordinary tab. Text boxes lay it out the same way within the box.
+an ordinary tab, painted with the leader of the stop it reaches. Text boxes
+lay it out within the box; they have no indents, so `indent` acts as
+`margin` there.
 
 Enter inside a projected link or TOC entry, or after a projected simple
 field's own result text, splits the field across the two paragraphs: its begin
@@ -591,8 +593,11 @@ In edit mode the DOCX editor shows one toolbar row under the header, in Google
 Docs' order (`singleRowToolbar` with the menus in the host, `DocxEditor`'s
 `onMenus`): undo/redo, zoom, style, font, size box (no −/+ steps), bold,
 italic, underline, text colour and highlight (each picker ticks the
-selection's colour when the whole selection shares one; the highlight is read
-from the editor as the text colour is), then link, comment and image,
+selection's colour when the whole selection shares one and it is one of the
+palette's colours; the highlight is read from the editor as the text colour
+is, however the document stores it, so a highlight picked in Capy ticks while
+a file's Word highlight such as yellow, which the palette lacks, does not),
+then link, comment and image,
 alignment with line spacing, lists and indent, and clear formatting, with the
 comments toggle pinned right; image or table controls follow the lists when an
 image or a cell is selected. Strikethrough, superscript and subscript live in
