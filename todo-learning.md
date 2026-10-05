@@ -103,25 +103,23 @@ predates 2.5 and the part 1 frontend.
   measured with written slide SVGs left out of the history.
 - Study preferences keep saving on each change (forms are for typed values).
 - Phase 3: no fallback; a free `pages.dev` hostname; one Pages project with
-  the production branch and a `uat` branch alias.
+  the production branch and a `uat` branch alias. Markdown and DOCX export
+  write `[Interactive snippet](<note URL>?block=<id>)` and the note opens
+  scrolled to that block; at most 10 interactive blocks per note; frames load
+  only near the viewport.
 - The review hash covers only what a question asks; Learning's counts exclude
   removed items; Review more selects again after ratings save.
 
 ### Open decisions (Epo)
 
-1. Phase 3 export and limits. Markdown export writes `[Interactive
-   snippet](<note URL>)` (Epo, 2026-10-05). Open: DOCX writes the same link
-   (Word embeds only approved video sites, not an arbitrary page); the URL
-   carries the block id (`?block=<id>`) so the note opens scrolled to it,
-   which the editor does not support yet; a per-note cap on interactive
-   blocks (proposal 10) with frames mounted only near the viewport.
+None.
 
 ## Order
 
 1. Done: part 1 mocks, server, frontend, tests and docs; part 2 phase 1;
    phase 2 steps 2.1 to 2.5 and 2.7; the review fix round.
 2. The `/generate` defaults.
-3. 2.6 decks, then phase 3 (after the open decision above).
+3. 2.6 decks, then phase 3.
 4. The playground output preview.
 5. Epo's acceptance test (1.9), last: mostly prompt tuning.
 
@@ -930,11 +928,14 @@ is the app element, after a mock round.
   project and give the deploy token Pages edit permission. Local development
   serves the wrapper from `127.0.0.1` while the app runs on `localhost`: a
   different port alone is the same site.
-- **Limits:** 64 KB for `html`, checked in Go
+- **Limits:** 64 KB for `html` and at most 10 interactive blocks per note,
+  checked in Go
   `materialdoc` and the collaboration validator.
 - **Export:** `export/render.ts` handles the type (it throws on unknown types).
-  No fallback (Epo, 2026-10-05: the chat's text answer explains); what export
-  shows in its place is open. Export never runs the snippet; the rasteriser in
+  No fallback (Epo, 2026-10-05: the chat's text answer explains). Markdown
+  and DOCX write `[Interactive snippet](<note URL>?block=<id>)`; opening the
+  note with `?block=` scrolls to that block (new). Export never runs the
+  snippet; the rasteriser in
   `figures.tsx` uses an unsandboxed same-origin iframe and must not receive it.
 - **Indexing:** skipped by retrieval like mermaid (`document.go`).
 - **Agent guidance** in the tool description: self-contained, no network, use the
