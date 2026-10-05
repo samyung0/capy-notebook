@@ -183,11 +183,20 @@ check); it applies at the first promotion.
   the page number then sits one digit left of the others. Fix: measure an
   empty result as nothing unless the field is PAGE/NUMPAGES (whose text each
   page resolves), in the JSON and typed measure paths alike.
-- **DOCX table of contents leftovers** (docx-toc, 2026-10-06): headings in
-  table cells, content controls, headers and notes are not listed (Word lists
-  table-cell headings); entries leave out a numbered heading's list number
-  (Word copies it with a tab); a `\t` (custom styles) or `\p` switch is not
-  read by Update, which keeps the code but lists outline levels only.
+- **DOCX table of contents in content controls and cells** (docx-toc review N2,
+  2026-10-06; a follow-up track): Word's References › Table of Contents gallery
+  wraps the field in a `docPartObj` block content control (`body:sdt0`), which
+  `toc_fields`/`toc_count` don't read, so Update isn't offered for most
+  Word-made tables and Insert adds a second one; headings inside table cells
+  and content controls (and headers and notes) are not listed (Word lists
+  table-cell headings). Read TOC fields and headings in block-control and cell
+  stories.
+- **DOCX table of contents leftovers** (docx-toc, 2026-10-06): entries leave
+  out a numbered heading's list number (Word copies it with a tab); a code
+  with `\t`, `\f`, `\l`, `\b` or a Table of Figures (`\c`, `\a`) is left
+  alone by Update; `\n "2-3"` drops every page number, not only those levels;
+  add "Word opens and updates a Capy-inserted TOC" to the UAT checks (Word was
+  not available on the dev machine).
 - **DOCX paragraph properties the model doesn't hold are dropped on save**
   (found by the paragraph-save review, 2026-10-05; pre-existing): `kinsoku`,
   `wordWrap`, `overflowPunct`, `topLinePunct`, `textDirection`,

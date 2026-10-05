@@ -749,14 +749,27 @@ the saved file seeds to. Page
 numbers come from the editor's layout: after inserting, the editor lays the
 document out again and, when a heading moved page, rebuilds the table once
 more, all in one Undo step (manual undo capture), so the numbers count the
-table's own pages. Update table of contents rebuilds the table holding the
-caret, else the body's first, from the current headings and layout, keeping
-its field code (`\o` levels, `\h` links, `\n` without page numbers): Word's
-"Update entire table", so text typed inside the table is replaced. Two peers
-updating at once each write a full entry list (the concurrent-join class); a
+table's own pages. Insert with the caret inside a table of contents updates
+that table instead (Word asks to replace it; Yes is its default). Update table
+of contents rebuilds the table holding the caret, else the body's first, from
+the current headings and layout, keeping its field code (`\o` levels, `\h`
+links, `\n` without page numbers): Word's "Update entire table", so text typed
+inside the table is replaced. It writes the new entries in front of the old
+table, then removes the old one; a paragraph the old field's end opens (Word's
+shape, often the one breaking a roman-numbered section) stays, with its
+section. Only a table built from headings is updated or counted for the menu:
+a field code with switches beyond `\o \h \z \u \n \w \x \p` (a Table of
+Figures' `\c`, or `\t`, `\f`, `\l`, `\b`) is left as it is, Update does
+nothing with the caret in one, and Insert there puts the new table in front of
+it. Two peers updating at once each leave a whole table, so the document then
+holds two (the concurrent-join class); a further Update rebuilds the one at the
+caret, or the first, and leaves the other for the user to delete or undo. A
 peer's heading change made during an update shows at the next update. Neither
 command runs in suggesting mode, and heading list numbers are not copied into
-the entries.
+the entries. Not yet seen: a table inside a block content control (Word's
+References › Table of Contents gallery wraps the field in one), so Update is
+not offered for it and Insert adds a second table; and headings inside table
+cells and content controls are not listed (a follow-up in `todo-office.md`).
 
 View › Show ruler (`show-ruler`, a checkbox item that does not edit, so it
 stays usable while paused) shows docx-react's rulers as Google Docs does: the
