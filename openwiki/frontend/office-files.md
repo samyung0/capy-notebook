@@ -925,13 +925,20 @@ editor's flat 40px toolbar row (`singleRowToolbar`) above the same layout. In
 a frame under 640px (phones) the strip is a row of 96px thumbnails under the
 slide in both modes, the viewer's pager under it.
 
-The PPTX toolbar row follows Google Slides: new slide with a layout dropdown,
-undo and redo, a zoom dropdown, then select, text box, image and shape. A
-selected text box or text adds font, size box (no steps), bold, italic,
-underline, text colour and an alignment dropdown; a selected shape adds fill,
-border colour, border weight and its adjustment. Below lg zoom, font and size
-are hidden. The row scrolls sideways under a vertical wheel, with edge fades. `src/office-runtime/pptxIcons.tsx` maps every toolbar icon name and
-the presenter's exit, previous and next controls to Capy's Hugeicons
+The PPTX toolbar row follows Google Slides and Capy's DOCX row: new slide
+with a layout dropdown, undo and redo, a zoom dropdown, then select, text box,
+image and shape. A selected text box or text adds font, size box (no steps),
+bold, italic, underline, text colour and highlight colour; an alignment
+dropdown (left, centre, right, justify, then the box's top, middle and bottom)
+and a line and paragraph spacing dropdown (single, 1.15, 1.5, double, add or
+remove 10 pt before or after the paragraph); bulleted and numbered list
+buttons, each with a style menu, then decrease and increase indent; and clear
+formatting. A selected shape then adds fill, border colour, border weight and
+its adjustment. Strikethrough, superscript, subscript and the font size steps
+are in Format › Text, as in DOCX. Below lg zoom, font and size are hidden. The
+row scrolls sideways under a vertical wheel, with edge fades.
+`src/office-runtime/pptxIcons.tsx` maps every toolbar icon name and the
+presenter's exit, previous and next controls to Capy's Hugeicons
 (`PptxEditor`'s `icons`; the viewer provides the same set to
 `PresentationOverlay` through pptx-react's `IconSetContext`), the presenter's
 arrows matching the viewer pager's. Capy hides the editor's agent
@@ -939,8 +946,39 @@ proposals (`showProposals`) and its Present button (`showPresentButton`);
 save, PNG export, arrange and the slide operations without other UI (delete
 slide, move slide, delete object) are host menu commands that
 `PptxEditorApi.runCommand` runs by id (`PPTX_COMMAND_IDS`), with
-`onCommandState` reporting what each can do. Delete or Backspace deletes a
-selected object unless its text is being edited.
+`onCommandState` reporting what each can do and `PPTX_COMMAND_EDITS` saying
+which edit. Delete or Backspace deletes a selected object unless its text is
+being edited.
+
+PPTX lists, levels and paragraph spacing are written as PowerPoint writes
+them (`crates/pptx-edit/src/story.rs`): a bulleted item gets `a:buChar` with
+`a:buFont` Arial, a numbered one `a:buAutoNum` with `a:buFontTx`, both a
+hanging `marL`/`indent` of 0.375 in plus 0.5 in per level; removing a list
+writes `a:buNone` and no hanging indent. A list style (`BULLET_PRESETS`,
+`NUMBER_PRESETS` in `pptx-react/src/paragraphFormatting.ts`: five bullet and
+four number styles, three markers each, repeating by level) gives each level
+its marker, and indenting moves `lvl` one step, shifting an explicit `marL`
+(the paragraph's own or its file paragraph's) by 0.5 in and switching a
+style's marker to the new level's. Line spacing and space before/after are
+`a:lnSpc`/`a:spcBef`/`a:spcAft`, a text box's vertical alignment
+`a:bodyPr@anchor`, strikethrough `a:rPr@strike` and highlight `a:highlight`;
+clear formatting removes every run attribute an edit sets. These edits are
+pilcrow and shape keys that seeding never writes, so seeds stay as they were;
+a peer's out-of-range value is refused. An empty list item shows its marker
+only while the caret is in it (`layoutSlide(index, caret)`), as PowerPoint and
+Google Slides draw it while typing.
+
+Keys follow Google Slides: Enter in an empty list item leaves the list (a
+nested one steps out a level first), Backspace at the start of a list item
+removes its marker before it joins anything, Tab at a list item's start or over
+several paragraphs indents (Shift+Tab outdents) and types a tab elsewhere, and
+Esc while typing selects the text box, so Tab leaves the editor again.
+Shortcuts: ⌘⇧8/⌘⇧7 lists, ⌘]/⌘[ indent, ⌘⇧X or Alt+Shift+5 strikethrough, ⌘./⌘,
+superscript and subscript, ⌘⇧./⌘⇧, font size, ⌘\ clear formatting, ⌘A Select
+all. Select all takes the text box's whole text while typing, else every object
+on the slide: outlined together, dragged, deleted (one undo step) and copied
+(their text, one shape per line) together, and aligned, distributed and
+centred by Arrange.
 
 Both modes hide the speaker notes until View › Show speaker notes (the
 `view.speakerNotes` id, a checkbox item) or the Notes button at the bottom
@@ -964,9 +1002,16 @@ sets `data-office-notes-open` when the runtime's menus tick
 `view.speakerNotes`, and `WorkspaceOpen` moves the button up for it.
 
 PPTX's header menus follow Google Slides: File (Save, which Capy performs as
-`capy.save`, Download ▸ PowerPoint or PNG of the current slide, Print), Edit, View (Present, Zoom, Show speaker notes), Insert, Format,
-Slide (new, delete, move) and Arrange (`pptxEditorMenus.ts`, labels from
-`pptx-i18n` for the locale and Capy messages for the rest). A menu id carries
+`capy.save`, Download ▸ PowerPoint or PNG of the current slide, Print), Edit
+(Undo, Redo, Select all, Delete), View (Present, Zoom, Show speaker notes),
+Insert, Format (Text ▸ bold to subscript and Size ▸; Align & indent ▸ with the
+vertical alignment and indent; Line & paragraph spacing ▸; Bullets & numbering
+▸ Numbered list ▸ and Bulleted list ▸ styles, ticked for the selection's;
+Borders & lines ▸; Clear formatting), Slide (new, delete, move) and Arrange
+(Order ▸, Align ▸ left to bottom, Distribute ▸ and Center on page ▸, one
+object to the slide and several to the box around them, distributing three or
+more) (`pptxEditorMenus.ts`, labels from `pptx-i18n` for the locale and Capy
+messages for the rest). A menu id carries
 its command's value after a colon (`view.zoom:1.5`, `insert.shape:ellipse`,
 `slide.newWithLayout:<layout part>`). Insert › Image is a `pick` item: Capy's
 picker hands the file to `PptxEditorApi.insertImage`. View mode offers File ›
@@ -1219,7 +1264,7 @@ Previously accepted input finishes at its old caret. A fresh click after that
 input drains and with available geometry must set a valid selection before typing
 resumes; the input exposes placement state and selection for browser checks.
 Run language metadata survives the native seed, Yjs projection and OOXML export.
-PPTX uses a native textarea for typing, clipboard copy and paste, and IME composition. Copy puts the selected text on the clipboard as plain text and HTML (bold, italic and underline set on the run); a selected shape copies its whole text, one story per line. Read-only allows selecting and copying text, with typing, paste and cut refused; there is no cut. Edits over a selection that crosses paragraphs (typing, paste, IME, Enter, Backspace, Delete) replace it in one transaction and one undo step, joining the paragraphs under the first one's id and properties; a split (Enter or a newline) keeps the original paragraph's id on the first half and its properties on both halves, as PowerPoint continues a list, so Enter then Backspace restores the paragraph exactly; a refused edit changes nothing and no longer blocks later saves. Read-only speaker notes are `readOnly`, so they can be selected and copied.
+PPTX uses a native textarea for typing, clipboard copy and paste, and IME composition. Copy puts the selected text on the clipboard as plain text and HTML (bold, italic and underline set on the run); a selected shape copies its whole text, one story per line. Read-only allows selecting and copying text, with typing, paste and cut refused; there is no cut. Edits over a selection that crosses paragraphs (typing, paste, IME, Enter, Backspace, Delete) replace it in one transaction and one undo step, joining the paragraphs under the first one's id and properties; a split (Enter or a newline) keeps the original paragraph's id on the first half and its properties on both halves, as PowerPoint continues a list, so Enter then Backspace restores the paragraph exactly (in a list item Backspace first removes the new item's marker, then joins); a refused edit changes nothing and no longer blocks later saves. Read-only speaker notes are `readOnly`, so they can be selected and copied.
 Save waits for composition to commit, and refuses an unmounted presentation or
 an interrupted composition instead of claiming it was saved.
 DOCX's accepted input queue and PPTX image decoding report pending work to the

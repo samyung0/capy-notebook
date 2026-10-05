@@ -20,6 +20,8 @@ const state = (
   enabled: Object.fromEntries(
     PPTX_COMMAND_IDS.map((id) => [id, enabled])
   ) as PptxCommandState['enabled'],
+  lineSpacing: null,
+  listStyle: null,
   slideIndex: 0,
   slideLayouts: [
     { label: 'Layout 1', value: '/ppt/slideLayouts/slideLayout1.xml' },
@@ -91,6 +93,7 @@ describe('PPTX header menus', () => {
       'capy.download',
       'capy.png',
       'capy.print',
+      'edit.selectAll',
       'view.present',
       'view.zoom:fit',
       'view.zoom:0.5',
@@ -100,6 +103,81 @@ describe('PPTX header menus', () => {
       'view.zoom:1.5',
       'view.zoom:2',
       'view.speakerNotes',
+    ]);
+  });
+
+  it('offers the text and object operations Google Slides has', () => {
+    const menus = editorMenus(
+      state(true, {
+        checked: [
+          'format.bulletedList',
+          'format.spaceBefore',
+          'format.alignMiddle',
+        ],
+        lineSpacing: '1.5',
+        listStyle: 'disc',
+      }),
+      'en'
+    );
+    const all = items(menus.flatMap((menu) => menu.items));
+    const byId = (id: string) => all.find((entry) => entry.id === id);
+    expect(
+      menus[1].items.flatMap((entry) =>
+        entry.kind === 'item' ? [entry.id] : []
+      )
+    ).toEqual(['edit.undo', 'edit.redo', 'edit.selectAll', 'edit.delete']);
+    expect(byId('edit.selectAll')?.label).toBe('Select all');
+    for (const id of [
+      'format.strikethrough',
+      'format.superscript',
+      'format.subscript',
+      'format.increaseFontSize',
+      'format.decreaseFontSize',
+      'format.increaseIndent',
+      'format.decreaseIndent',
+      'format.clearFormatting',
+    ])
+      expect(byId(id)).toBeDefined();
+    expect(byId('format.alignMiddle')?.checked).toBe(true);
+    expect(byId('format.alignTop')?.checked).toBe(false);
+    // The styles tick only in the list kind the selection is in.
+    expect(byId('format.bulletedList:disc')).toMatchObject({
+      checked: true,
+      label: '● ○ ■',
+    });
+    expect(byId('format.bulletedList:bullet')?.checked).toBe(false);
+    expect(byId('format.numberedList:decimal')).toMatchObject({
+      checked: false,
+      label: '1. a. i.',
+    });
+    expect(byId('format.lineSpacing:1.5')?.checked).toBe(true);
+    expect(byId('format.lineSpacing:1')).toMatchObject({
+      checked: false,
+      label: 'Single',
+    });
+    expect(byId('format.spaceBefore')?.label).toBe(
+      'Remove space before paragraph'
+    );
+    expect(byId('format.spaceAfter')?.label).toBe('Add space after paragraph');
+    expect(
+      all
+        .filter((entry) => entry.id.startsWith('arrange.'))
+        .map((entry) => entry.id)
+    ).toEqual([
+      'arrange.bringToFront',
+      'arrange.bringForward',
+      'arrange.sendBackward',
+      'arrange.sendToBack',
+      'arrange.align:left',
+      'arrange.align:center',
+      'arrange.align:right',
+      'arrange.align:top',
+      'arrange.align:middle',
+      'arrange.align:bottom',
+      'arrange.distribute:horizontal',
+      'arrange.distribute:vertical',
+      'arrange.centerOnPage:horizontal',
+      'arrange.centerOnPage:vertical',
     ]);
   });
 
