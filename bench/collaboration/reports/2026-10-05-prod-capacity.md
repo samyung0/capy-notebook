@@ -423,3 +423,71 @@ Upload the harness's `box/` directory to the box, build the two images there
 - After the run, everything was removed from the box: the project's
   containers, networks, volumes, images (including the pulled
   `pgvector/pgvector:pg16`), build cache and work dir.
+
+## Follow-up: bottlenecks 1 and 3 fixed (same day)
+
+Epo approved both fixes on 2026-10-05:
+
+- **Bottleneck 1** (`8b868c40`): a note update the room cannot place yet is
+  refused and its connection resynced, as source rooms already did. The room
+  is no longer copied for it.
+- **Bottleneck 3** (`ff2499bd`): an Office save takes the change over the
+  seed from the merged document it already holds. It no longer re-applies
+  the state into a fresh document. One event-loop turn now separates two of
+  its whole-document passes.
+
+Before is main `a379d7ea`, after is `ff2499bd`. Both ran on the same box with
+the same harness, generator bundle and BetterOffice build, sequentially, on
+1 core. Raw runs and the profile script (`prof.cjs`) are in
+`capy-docx-review-harnesses/2026-10-05-collab-hotpaths/`. Every step below
+has a CPU profile (`PROFILE=1`), and none touched swap.
+
+**Note rooms** (one room per generator, typing every 2 s, drops 0.02/s):
+
+| step | busy s (validateUpdate s) | lag p99 mean/max ms | note store p95 max ms | marker p95 ms | verdict |
+|---|---|---|---|---|---|
+| 2×100 (DOCX + note), before | 36.4 (0.8) | 31/38 | 100 | 88 DOCX, 67 note | pass |
+| 2×100 (DOCX + note), after | 32.5 (0.9) | 31/38 | 122 | 98 DOCX, 65 note | pass |
+| 1×160 note, before | 113.7 (66.7) | 1010/4664 | 4881 | 11226 | FAIL |
+| 1×160 note, after | 20.7 (1.3) | 30/31 | 276 | 579 | pass |
+| 1×200 note, before | 257.3 (163.0) | 4701/11560 | 51533 | 53743 (337 missing, 1 unconverged) | FAIL |
+| 1×200 note, after | 24.2 (1.5) | 35/39 | 155 | 1041 | FAIL (generator) |
+
+- The cliff is gone. At 160 and 200 peers the service stays at 22% of its
+  core, and `validateUpdate` is 1.5 s instead of 163 s.
+- After the fix, 1×200 misses the 1 s budget because of the load generator:
+  its own lag p99 was 2.6 s, while the service's lag p99 stayed at 39 ms.
+- The 2×160 shape from the ladder (DOCX + note) could not be measured today.
+  Every attempt tripped the swap guard at 60–80 s, during the join ramp, at
+  2.6–2.8 GiB available: before and after, with and without a profile, and
+  with two note rooms as well. The 160-peer DOCX generator alone holds
+  1.4 GiB. That is why the shape above is one note room per generator.
+
+**Office saves** (main-thread time in the save path, from the profile, divided
+by the source saves in the step):
+
+| step | saves | main thread per save ms | lag p99 mean, windows with saves ms | lag max per window mean/max ms | edit p95 ms |
+|---|---|---|---|---|---|
+| Office 10 rooms (large files), before | 72 | 213 | 37 | 532/975 | 196 DOCX, 236 XLSX, 220 PPTX |
+| Office 10 rooms (large files), after | 75 | 153 | 40 | 385/509 | 76 DOCX, 110 XLSX, 142 PPTX |
+| 20 DOCX + 20 note rooms × 5, before | 102 | 207 | 101 (23 without) | 404/642 | 219 DOCX, 264 note |
+| 20 DOCX + 20 note rooms × 5, after | 105 | 150 | 84 (22 without) | 247/442 | 148 DOCX, 174 note |
+
+- Main-thread time per save fell about 28%, and the longest stalls by 30–48%.
+- In the small-room mix, note store p95 max went from 710 to 177 ms.
+- On a Mac, per save of `long-handbook.docx`, `seedChange` went from 84 to
+  38 ms, and the whole save path from about 154 to 108 ms.
+- The engine worker is unchanged at 70% busy, which is bottleneck 2.
+
+What a save still does on the main thread:
+
+- one encode of the room;
+- one integration of the durable state;
+- one decode of the room's state into it;
+- one encode of the merged state;
+- the rebuild check: an integration of the seed and the change, plus an
+  encode.
+
+The next cut would keep a live document per room in place of the durable
+bytes. That saves the durable-state integration, at the memory cost of one
+more document per open Office room. It is not done.
