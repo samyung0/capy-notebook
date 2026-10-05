@@ -639,7 +639,7 @@ the pages `render` {kind: 'print'} returns from a hidden frame on the app's own
 document, and `capy.png` saves the image `render` {kind: 'png'} returns; the
 runtime's sandbox stays without downloads, popups or modals. View mode offers
 only what works, never disabled items: DOCX has File › Download and Print and
-View › Zoom. A print the runtime cannot draw answers `render-failed`, not
+View › Zoom, XLSX File › Download, PNG and Print and View › Zoom. A print the runtime cannot draw answers `render-failed`, not
 `error`: the host shows a short toast instead of the "couldn't open" banner and
 pending flushes are untouched. Edit-mode rendering flushes pending input first,
 as export does. Pages are drawn, encoded and released one at a time (DOCX
@@ -815,7 +815,22 @@ ending at a row edge, frozen rows repeat as titles, trailing pages without text
 are left out). Print stops at 50 pages: the width scan covers the rows those
 pages print, and when text goes on past them `rendered` says `truncated` and
 the host shows "Printed the first 50 pages". View mode offers File with
-Download, PNG and Print.
+Download, PNG and Print, and View › Zoom.
+
+XLSX zoom follows Google Sheets: 50, 75, 90, 100, 125, 150 and 200% from the
+toolbar's zoom box (which also takes a typed 25–400%) and View › Zoom in edit
+mode, and from View › Zoom in view mode, which has no toolbar. The grid, its
+frozen panes, the selection and the in-cell editor scale; the chrome does not.
+Both modes build the display list for the sheet area the scroll box shows at the
+zoom (`zoomedViewport` in `@betteroffice/xlsx`), paint it at
+`devicePixelRatio × zoom` and divide pointer positions by the zoom, and a change
+keeps the sheet point at the grid's top-left corner where it was, as Sheets
+does (`XlsxEditor`'s `changeZoom`, `XlsxViewer`). The level lasts while the
+editor or viewer is open, as DOCX's: switching between View and Edit or
+reopening the file starts at 100%. Ctrl/Cmd with the wheel and a trackpad pinch
+are left to the browser, as in Sheets. Zoom edits nothing, so View › Zoom runs
+while editing is paused; PNG saves the part on screen drawn at the same scale at
+every zoom.
 
 Below lg, while a DOCX, XLSX or PPTX file is open, the workspace's floating
 Files/Chat/Create/Settings bar folds into one button at the bottom right, above
