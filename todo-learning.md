@@ -63,6 +63,20 @@ predates 2.5 and the part 1 frontend.
   the Settings section. 2.5: the bank only through Go
   (`/api/internal/bank/{list,read,copy}`), `copy_questions` (contract v13),
   per-question credits, quiz figure URLs only under `BANK_ASSETS_URL`.
+- **Review fix round (2026-10-05):** two reviewers checked part 1 and part 2
+  and fixed what they found. Part 1: a first miss counts as a lapse; quiz
+  attempts and ratings refresh the Study tab and Learning; an advisory lock
+  per user and material finishes a set rated concurrently; `reviewPool` reads
+  only rated materials in one query with a per-process document cache keyed
+  by revision (StudySummary 420 → 40 ms on 20 sets and 10 quizzes); the hash
+  covers only stem and part prompt text; Learning excludes removed items;
+  Review more waits for ratings to save. Part 2: bank figures pass the
+  collaboration and browser validators (`BANK_ASSETS_URL`,
+  `VITE_BANK_ASSETS_URL`); copied credits keep their licence; unsourced copies
+  work without indexed files; a refused `insert_markdown` trashes the rows it
+  made; the study-progress route requires progress on; `copy_questions`
+  counts as a write; no `fallback` in `html-embed` (contract v14). Playwright
+  `e2e/study/study-progress.spec.ts` and `openwiki/study-progress.md` exist.
 - **Unblocked:** the `/generate` defaults from study preferences (2.4; AI
   generate moved into the Add file dialog), and learners answering on `/bank`
   with bank mistake review (Later, "Question-bank progress"; part 1's FSRS
@@ -82,19 +96,32 @@ predates 2.5 and the part 1 frontend.
   review log in IndexedDB; Jev grades every open part, signed in or not.
 - No production or UAT data needs keeping.
 
+### Decided 2026-10-05 (Epo)
+
+- UAT gets part 1 and 2.1 to 2.5 after the review fix round, in one deploy.
+- 2.6: the deck proposal is approved; a deck turn's context and cache are
+  measured with written slide SVGs left out of the history.
+- Study preferences keep saving on each change (forms are for typed values).
+- Phase 3: no fallback; a free `pages.dev` hostname; one Pages project with
+  the production branch and a `uat` branch alias.
+- The review hash covers only what a question asks; Learning's counts exclude
+  removed items; Review more selects again after ratings save.
+
 ### Open decisions (Epo)
 
-1. UAT deploy: now (part 1 and 2.1 to 2.5) or after 2.6 and phase 3.
-2. 2.6 decks: the proposal under 2.6.
-3. Phase 3 hosting: one Pages project per environment or a `uat` branch
-   alias; the `fallback` cap; a free `pages.dev` hostname or a second domain.
+1. Phase 3 export and limits. Markdown export writes `[Interactive
+   snippet](<note URL>)` (Epo, 2026-10-05). Open: DOCX writes the same link
+   (Word embeds only approved video sites, not an arbitrary page); the URL
+   carries the block id (`?block=<id>`) so the note opens scrolled to it,
+   which the editor does not support yet; a per-note cap on interactive
+   blocks (proposal 10) with frames mounted only near the viewport.
 
 ## Order
 
-1. Done: part 1 mocks, server and frontend; part 2 phase 1; phase 2 steps 2.1
-   to 2.5.
-2. Part 1 tests and docs; 2.7 tests and docs; the `/generate` defaults.
-3. 2.6 decks and phase 3, after Epo's decisions above.
+1. Done: part 1 mocks, server, frontend, tests and docs; part 2 phase 1;
+   phase 2 steps 2.1 to 2.5 and 2.7; the review fix round.
+2. The `/generate` defaults.
+3. 2.6 decks, then phase 3 (after the open decision above).
 4. The playground output preview.
 5. Epo's acceptance test (1.9), last: mostly prompt tuning.
 
@@ -192,7 +219,7 @@ CREATE TABLE review_states (
   user_id     text NOT NULL REFERENCES users(id),
   material_id text NOT NULL REFERENCES materials(id) ON DELETE CASCADE,
   item_id     text NOT NULL,           -- quiz question id or flashcard id
-  item_hash   text NOT NULL,           -- prompt + answer key; mismatch = new item
+  item_hash   text NOT NULL,           -- what the item asks; mismatch = new item
   stability   double precision NOT NULL,
   difficulty  double precision NOT NULL,
   reps        int NOT NULL,
@@ -248,12 +275,11 @@ attempt's `wrong` field, and their indexes, seeds and fixtures.
     0 to 1 in half-mark steps. Below 0.5 → Again, below 0.7 → Hard, otherwise
     Good. Never Easy. Scores come from the client's snapshot, which the server
     already trusts for attempts; a user can only distort their own progress.
-- `item_hash`: SHA-256 of the prompt and answer key, not formatting or marks.
-  Cards: front and back text. Questions: stem text and, per part, its answer key
-  (choices and which are right, accepted answers and units, each gap's accepted
-  list, matching pairs and pool, ordering items, an open part's marking item
-  texts). The server computes it from the stored document when it writes a
-  rating; a mismatch at read or write time treats the item as new.
+- `item_hash`: SHA-256 of what the item asks. Cards: front and back text.
+  Questions: the stem text and each part's prompt text; answer options,
+  marking schemes, hints, image sizes and styling stay out (Epo, 2026-10-05).
+  The server computes it from the stored document when it writes a rating; a
+  mismatch at read or write time treats that one item as new.
 - Signed-in rating buttons stop previewing intervals. `src/lib/srs.ts` and
   `ts-fsrs` stay for signed-out study; `SrsState` becomes a hand-written type in
   `src/lib/srs.ts` once the generated one goes.
@@ -626,7 +652,7 @@ are assistive blocks inside notes; nothing else is planned.
 - **Notes:** markdown with mermaid fences, quiz and flashcards fences as mini
   checks, and interactive fences, following the output rules (1.2) and the
   preferences (1.4).
-- **Interactive blocks:** ` ```html-embed ` fences with a fallback, under the
+- **Interactive blocks:** ` ```html-embed ` fences (title and html), under the
   64 KB cap, rendered with phase 3's sandbox, CSP, theme tokens and resize
   script.
 - **Decks** (PPTX main explainer, for learners who want something brief or
@@ -814,7 +840,7 @@ refuses a slide whose text leaves its module or the canvas, and its exporter
 (`svg_to_pptx.py`) compiles the SVGs into a PPTX of native shapes. The app
 stores the PPTX as a file instead of building it with Office commands.
 
-Proposed (2026-10-05, awaiting Epo):
+Approved by Epo on 2026-10-05:
 
 - **Where they run:** in the retrieval service image. Pin the whole
   ppt-master checkout (MIT; its attribution guard refuses partial copies) with
@@ -841,8 +867,12 @@ Proposed (2026-10-05, awaiting Epo):
 - **Fonts:** load Caladea (in `vendor/betteroffice/packages/fonts`) in the
   PPTX viewer (`src/office-runtime/pptxFonts.ts`) for the `editorial` style's
   Cambria titles. The viewer serves only Liberation Sans as Arial today.
-- **Cost:** the first live deck took 944k input tokens and about 160 credits
-  before requests were append-only. Rerun one and compare before shipping.
+- **Cost:** a deck now takes about 47 credits (607k input, 88% cached;
+  160 before requests were append-only). Leaving written slide SVGs out of
+  the history cost more (Relace caches at the end of each response, so a
+  changed response misses) and the model copied the stub into two slides:
+  send history unchanged (2026-10-05, `lab/playground/DECKS.md`). The next
+  saving is fewer `write_slide` refusals (5 of 13 for missing ledger fields).
 - **WASM:** the PPTX editor and viewer grew 34% and 50% at the last upstream
   merge (`todo-office.md`), and decks make a first PPTX view common.
 
@@ -868,7 +898,7 @@ A note block holding an agent-written, self-contained HTML snippet. The agent
 side and the sandboxed rendering are tried in the playground (1.8); this phase
 is the app element, after a mock round.
 
-- **Element:** void `html_embed {id, html, fallback, title?}` with one empty text
+- **Element:** void `html_embed {id, html, title?}` with one empty text
   leaf, the chart/graph shape (`blocks/plugins.ts`). Register it in
   `document.ts` (type and validation), `blocks/plugins.ts`, `elements.tsx`, and
   the static node components and plugins in `src/features/materials/`.
@@ -894,20 +924,21 @@ is the app element, after a mock round.
   reusable `deploy-environment.yml` uploads them with `wrangler pages deploy`
   in the job that already deploys the Office and SPA Workers, at the same
   pinned revision and before the SPA, so promotion to production carries it
-  too. One project per environment, or the production branch plus a `uat`
-  branch alias; the SPA reads the frame's origin from the deployment
+  too. One project on a free `pages.dev` hostname, with the production branch
+  and a `uat` branch alias (Epo, 2026-10-05); the SPA reads the frame's origin from the deployment
   configuration. First setup by hand in `deployment-runbook.md`: create the
   project and give the deploy token Pages edit permission. Local development
   serves the wrapper from `127.0.0.1` while the app runs on `localhost`: a
   different port alone is the same site.
-- **Limits:** 64 KB for `html` and a cap for `fallback`, checked in Go
+- **Limits:** 64 KB for `html`, checked in Go
   `materialdoc` and the collaboration validator.
 - **Export:** `export/render.ts` handles the type (it throws on unknown types).
-  Export writes the fallback text and never runs the snippet; the rasteriser in
+  No fallback (Epo, 2026-10-05: the chat's text answer explains); what export
+  shows in its place is open. Export never runs the snippet; the rasteriser in
   `figures.tsx` uses an unsandboxed same-origin iframe and must not receive it.
 - **Indexing:** skipped by retrieval like mermaid (`document.go`).
 - **Agent guidance** in the tool description: self-contained, no network, use the
-  provided theme variables, keep it small, always write a fallback. Interactive
+  provided theme variables, keep it small. Interactive
   results do not feed progress.
 - **Tests:** Go and collaboration caps; export of a note with the block; a vitest
   that the iframe carries exactly `allow-scripts`.
@@ -935,7 +966,7 @@ Epo, 2026-10-04: use Jev (typesafe.ai's model, already used for grading and
 question screening) to check whether an interactive snippet carries deceiving
 content, such as fake sign-in or login buttons and phishing, before other
 readers see it. Decide when it runs (on save or on first view by someone
-else), what a flagged block shows instead (its fallback and a notice), and who
+else), what a flagged block shows instead (a notice), and who
 pays for the call.
 
 ### Review session polish
