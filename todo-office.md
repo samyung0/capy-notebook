@@ -202,11 +202,13 @@ check); it applies at the first promotion.
   Enter inside a field suggested for deletion as a whole turns its result into
   live text that Accept All leaves behind. Probes `r3-join-vs-suggest.ts`,
   `r3-struck-field.ts` in the docx-fields harness folder.
-- **DOCX mid-paragraph page/column break loses text** (found 2026-10-05/06 by
-  docx-view-text and its review; also on the base build): a page or column
-  break in the middle of a paragraph draws the line before it twice and drops
-  the text after it, in view mode and probably edit mode (same layout), e.g.
-  `wordprocessingml-comprehensive.docx`. Also: a footnote longer than a page is
+- **DOCX layout leftovers from the mid-paragraph break fix** (docx-breaks,
+  2026-10-06; the break itself is fixed on `capy/docx-breaks`): a page or
+  column break inside a complex field's result is drawn after the field, so
+  the field's text stays on one line and the next paragraph moves to the next
+  page; a page or column break in a table cell shows as a line break (Word's
+  behaviour not checked); the editor copies a mid-paragraph break as nothing
+  while view mode copies a newline. Also: a footnote longer than a page is
   never continued; viewer list numbers may ignore start values (8, 9), legal
   numbering and Chinese numbering (seen with minimal numbering XML — confirm on
   a real Word file first).

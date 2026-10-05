@@ -351,8 +351,14 @@ its own paragraph instead of closing the one before it. Mid-paragraph breaks sta
 typing, Enter, Accept/Reject all and publication, including breaks inside
 links, inline content controls and tracked changes. The render bridge splits
 an inline break into paragraph fragments while keeping one editable paragraph
-and one list number. Enter at the start of a heading after a trailing column
-break puts the empty line after that break, even if the preceding text changed.
+and one list number. Each fragment after the first gets its own layout block id
+(the paragraph's id plus `#1`, `#2`, …), since layout, painting and the resident
+display look measured blocks up by id; the text after the break starts at the
+top of the next page or column at the paragraph's left indent, without
+first-line or hanging indent, space-before or number, as Word continues the
+paragraph there. View-mode copy puts a newline at the break. Enter at the
+start of a heading after a trailing column break puts the empty line after
+that break, even if the preceding text changed.
 A bookmark opening before a paragraph's leading breaks stays before them, and an empty
 list item before a leading break keeps its number. Tracked breaks keep
 `w:ins`/`w:del`. The toolbar offers a page break only outside table cells,
