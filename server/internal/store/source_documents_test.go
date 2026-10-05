@@ -475,7 +475,9 @@ func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 	if err = s.pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM image_caption_associations WHERE file_id=$1 AND published),(SELECT count(*) FROM image_caption_associations WHERE file_id=$1),(SELECT count(*) FROM source_refresh_candidates WHERE file_id=$1),(SELECT (payload->>'sourcePublishedCheckpoint')::int FROM jobs WHERE id=$2)`, file.ID, job.JobID).Scan(&publishedCaptions, &totalCaptions, &candidates, &receipt); err != nil {
 		t.Fatal(err)
 	}
-	if publishedCaptions != 1 || totalCaptions != 2 || candidates != 0 || receipt != 1 {
+	// Only the candidate's image is published; every unpublished caption goes,
+	// including one for an image a residual effect still adds.
+	if publishedCaptions != 1 || totalCaptions != 1 || candidates != 0 || receipt != 1 {
 		t.Fatalf("candidate/caption publication: %d %d %d %d", publishedCaptions, totalCaptions, candidates, receipt)
 	}
 	if repeat, err := s.PublishSourceRefresh(ctx, file.ID, publish); err != nil || repeat.BaseRevision != 2 {

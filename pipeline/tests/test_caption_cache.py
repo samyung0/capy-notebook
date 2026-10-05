@@ -4,7 +4,6 @@ import json
 import secrets
 
 import pytest
-from test_source_refresh import candidate
 
 from pipeline.ingest import source_text
 from pipeline.parse import caption_cache
@@ -64,14 +63,11 @@ def _ordinary_job(workspace):
     return {"id": job_id, "attempts": 1, "payload": payload}
 
 
-@pytest.mark.parametrize("source_kind", ["candidate", "ordinary"])
 @pytest.mark.parametrize("boundary", ["model", "upload"])
 async def test_replaced_source_cannot_attach_a_late_private_caption(
-    workspace, cache, monkeypatch, source_kind, boundary
+    workspace, cache, monkeypatch, boundary
 ):
-    job = (
-        candidate(workspace) if source_kind == "candidate" else _ordinary_job(workspace)
-    )
+    job = _ordinary_job(workspace)
     file_id = job["payload"]["fileId"]
     token = db.bind_source_refresh(job)
 
@@ -80,13 +76,6 @@ async def test_replaced_source_cannot_attach_a_late_private_caption(
             conn.execute(
                 "UPDATE files SET revision=2,blob_path='source/base-b' WHERE id=%s",
                 (file_id,),
-            )
-            conn.execute(
-                "UPDATE source_documents SET epoch=2,base_revision=2,base_blob_path='source/base-b',state='without-image',pending_effects='[]',running_job_id=NULL WHERE file_id=%s",
-                (file_id,),
-            )
-            conn.execute(
-                "DELETE FROM source_refresh_candidates WHERE file_id=%s", (file_id,)
             )
             conn.execute(
                 "DELETE FROM image_caption_associations WHERE file_id=%s", (file_id,)
@@ -116,17 +105,12 @@ async def test_replaced_source_cannot_attach_a_late_private_caption(
     )
     try:
         with pytest.raises(db.SourceSupersededError):
-            if source_kind == "ordinary":
-                await source_text.caption_image_source(
-                    local_path="synthetic",
-                    name="source.png",
-                    source_sha256=SHA,
-                    file_id=file_id,
-                )
-            else:
-                await _caption(
-                    file_id, published=False, source_refresh_job_id=job["id"]
-                )
+            await source_text.caption_image_source(
+                local_path="synthetic",
+                name="source.png",
+                source_sha256=SHA,
+                file_id=file_id,
+            )
     finally:
         db.reset_source_refresh(token)
         monkeypatch.setattr(caption_cache.models, "caption_image", original_model)
@@ -165,35 +149,6 @@ async def test_replaced_source_cannot_attach_a_late_private_caption(
             conn.execute("DELETE FROM workspaces WHERE id=%s", (target_ws,))
 
 
-async def test_candidate_cache_hit_rechecks_consumption_after_blob_read(
-    workspace, cache, monkeypatch
-):
-    donor = await _caption(workspace.add_file("donor.png"))
-    job = candidate(workspace)
-    file_id = job["payload"]["fileId"]
-
-    def read(path):
-        with workspace._connect() as conn:
-            conn.execute("UPDATE jobs SET attempts=2 WHERE id=%s", (job["id"],))
-        return cache[0][path]
-
-    monkeypatch.setattr(caption_cache.blobstore, "read_bytes", read)
-    token = db.bind_source_refresh(job)
-    try:
-        with pytest.raises(db.SourceSupersededError):
-            await _caption(file_id, published=False, source_refresh_job_id=job["id"])
-    finally:
-        db.reset_source_refresh(token)
-    assert (
-        workspace.scalar(
-            "SELECT image_sha256s FROM source_refresh_candidates WHERE file_id=%s",
-            (file_id,),
-        )
-        == []
-    )
-    assert len(cache[1]) == 1 and donor[0]
-
-
 @pytest.mark.parametrize("change", ["revision", "attempt"])
 async def test_ordinary_lookup_rejects_replaced_source_or_attempt(
     workspace, cache, change
@@ -209,9 +164,7 @@ async def test_ordinary_lookup_rejects_replaced_source_or_attempt(
     token = db.bind_source_refresh(job)
     try:
         with pytest.raises(db.SourceSupersededError):
-            await caption_cache.lookup(
-                file_id, None, SHA, True, require_source_job=True
-            )
+            await caption_cache.lookup(file_id, None, SHA, require_source_job=True)
     finally:
         db.reset_source_refresh(token)
     assert (
@@ -231,6 +184,8 @@ async def test_workspace_reuse_survives_one_holder_and_private_workspaces_do_not
     first = await _caption(original)
     second = await _caption(clone)
     assert second[:3] == first[:3] and second[3]
+    # Caption payloads contain only the image description, never containing text.
+    assert json.loads(cache[0][first[1]]) == {"text": "Image description 1"}
     assert (
         workspace.scalar(
             "SELECT count(*) FROM artifact_cache WHERE object_path=%s", (first[1],)
@@ -300,52 +255,6 @@ async def test_standalone_visibility_is_live_and_retained_associations_keep_thei
     finally:
         with workspace._connect() as conn:
             conn.execute("DELETE FROM users WHERE id=%s", (user,))
-
-
-async def test_pending_membership_promotes_only_when_requested_and_records_cache_hits(
-    workspace, cache
-):
-    job = candidate(workspace)
-    file_id = job["payload"]["fileId"]
-    token = db.bind_source_refresh(job)
-    try:
-        first = await _caption(
-            file_id, published=False, source_refresh_job_id=job["id"]
-        )
-        reused = await _caption(
-            file_id, published=False, source_refresh_job_id=job["id"]
-        )
-    finally:
-        db.reset_source_refresh(token)
-    assert (
-        workspace.scalar(
-            "SELECT published FROM image_caption_associations WHERE file_id=%s",
-            (file_id,),
-        )
-        is False
-    )
-    assert reused[3] and reused[:3] == first[:3]
-    assert workspace.scalar(
-        "SELECT image_sha256s FROM source_refresh_candidates WHERE file_id=%s",
-        (file_id,),
-    ) == [SHA]
-    assert (
-        workspace.scalar(
-            "SELECT published FROM image_caption_associations WHERE file_id=%s",
-            (file_id,),
-        )
-        is False
-    )
-    await _caption(file_id)
-    assert (
-        workspace.scalar(
-            "SELECT published FROM image_caption_associations WHERE file_id=%s",
-            (file_id,),
-        )
-        is True
-    )
-    # Caption payloads contain only the image description, never containing text.
-    assert json.loads(cache[0][first[1]]) == {"text": "Image description 1"}
 
 
 @pytest.mark.parametrize("resource", ["workspace", "standalone"])

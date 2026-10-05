@@ -1891,7 +1891,7 @@ async def _reuse_donor(
     if direct == "image":
         try:
             cached = await caption_cache.lookup(
-                file_id, None, source_sha256, True, require_source_job=True
+                file_id, None, source_sha256, require_source_job=True
             )
         except TerminalError:
             raise

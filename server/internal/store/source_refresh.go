@@ -409,7 +409,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 		if _, err = tx.Exec(ctx, `UPDATE image_caption_associations a SET published=(a.image_sha256=ANY(c.image_sha256s)) FROM source_refresh_candidates c WHERE c.file_id=$1 AND a.file_id=c.file_id`, fileID); err != nil {
 			return doc, err
 		}
-		if _, err = tx.Exec(ctx, `DELETE FROM image_caption_associations a WHERE file_id=$1 AND NOT published AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements($2::jsonb) e WHERE e->>'imageSHA256'=a.image_sha256 AND e->>'operation'<>'remove')`, fileID, effects); err != nil {
+		if _, err = tx.Exec(ctx, `DELETE FROM image_caption_associations WHERE file_id=$1 AND NOT published`, fileID); err != nil {
 			return doc, err
 		}
 	}

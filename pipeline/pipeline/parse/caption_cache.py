@@ -18,13 +18,6 @@ from ..store import db as sync_db
 log = logging.getLogger("capy.parse.caption_cache")
 
 
-async def _lock_source_refresh(conn, file_id: str, job_id: str):
-    refresh = sync_db.source_refresh_for(file_id)
-    if refresh is None or refresh.get("_jobId") != job_id:
-        raise sync_db.SourceSupersededError("source candidate context is unavailable")
-    await store._lock_source_candidate(conn, refresh)
-
-
 _RESOURCES = """
 WITH resources AS (
     SELECT f.id AS file_id, NULL::text AS asset_id, w.id AS workspace_id,
@@ -132,27 +125,16 @@ async def lookup(
     file_id: str | None,
     asset_id: str | None,
     digest: str,
-    published: bool,
     *,
-    source_refresh_job_id: str | None = None,
     require_source_job: bool = False,
 ) -> tuple[str, str, int] | None:
     if require_source_job:
-        if (
-            not file_id
-            or asset_id is not None
-            or not published
-            or source_refresh_job_id
-        ):
-            raise ValueError(
-                "An ordinary ingest caption needs a published file source."
-            )
+        if not file_id or asset_id is not None:
+            raise ValueError("An ordinary ingest caption needs a file source.")
         row = await asyncio.to_thread(_lookup_ingest, file_id, digest)
         return await _read_caption(row)
     db = await store.pool()
     async with db.connection() as conn, conn.transaction():
-        if source_refresh_job_id is not None:
-            await _lock_source_refresh(conn, file_id, source_refresh_job_id)
         # Grant a reference only while a readable containing resource permits
         # reuse. A hash or an object-store cache hit alone grants nothing.
         cur = await conn.execute(
@@ -165,7 +147,7 @@ async def lookup(
                 file_id,
                 asset_id,
                 digest,
-                published,
+                True,
             ),
         )
         row = await cur.fetchone()
@@ -177,11 +159,10 @@ async def lookup(
             row = await cur.fetchone()
         if row is None:
             return None
-        if published:
-            await conn.execute(
-                _PROMOTE,
-                (file_id, asset_id, digest),
-            )
+        await conn.execute(
+            _PROMOTE,
+            (file_id, asset_id, digest),
+        )
 
     return await _read_caption(row)
 
@@ -244,9 +225,7 @@ async def _persist(
     digest: str,
     path: str,
     raw: bytes,
-    published: bool,
     *,
-    source_refresh_job_id: str | None = None,
     require_source_job: bool = False,
 ):
     db = await store.pool()
@@ -264,8 +243,6 @@ async def _persist(
         await asyncio.to_thread(_persist_ingest, file_id, digest, path, raw)
         return
     async with db.connection() as conn, conn.transaction():
-        if source_refresh_job_id is not None:
-            await _lock_source_refresh(conn, file_id, source_refresh_job_id)
         await conn.execute(
             _INSERT,
             (
@@ -275,29 +252,13 @@ async def _persist(
                 digest,
                 path,
                 len(raw),
-                published,
+                True,
             ),
         )
         # Resource associations own completed captions; this temporary upload
         # reference is needed only until the containing resource is attached.
         await conn.execute("DELETE FROM artifact_cache WHERE object_path=%s", (path,))
-        if published:
-            await conn.execute(
-                "UPDATE image_caption_associations SET published=true WHERE (file_id=%s OR editor_asset_id=%s) AND image_sha256=%s",
-                (file_id, asset_id, digest),
-            )
-
-
-async def _consume(file_id: str, job_id: str, digest: str):
-    db = await store.pool()
-    async with db.connection() as conn, conn.transaction():
-        await _lock_source_refresh(conn, file_id, job_id)
-        await conn.execute(
-            """UPDATE source_refresh_candidates
-               SET image_sha256s=array_append(image_sha256s,%s)
-               WHERE file_id=%s AND job_id=%s AND NOT (%s=ANY(image_sha256s))""",
-            (digest, file_id, job_id, digest),
-        )
+        await conn.execute(_PROMOTE, (file_id, asset_id, digest))
 
 
 async def caption(
@@ -308,35 +269,20 @@ async def caption(
     data_url: str | Callable[[], Awaitable[str | None]],
     prompt: str,
     best_effort: bool = True,
-    published: bool = True,
-    source_refresh_job_id: str | None = None,
     require_source_job: bool = False,
 ) -> tuple[str, str, int, bool]:
     if bool(file_id) == bool(editor_asset_id):
         raise ValueError("A caption needs exactly one containing resource.")
-    if source_refresh_job_id and (not file_id or published):
-        raise ValueError(
-            "A refresh caption must belong to an unpublished file candidate."
-        )
-    if not published and not source_refresh_job_id:
-        raise ValueError("An unpublished caption needs a refresh job.")
     async with _lock(file_id, editor_asset_id, image_sha256):
-        result = await _caption(
+        return await _caption(
             file_id=file_id,
             editor_asset_id=editor_asset_id,
             image_sha256=image_sha256,
             data_url=data_url,
             prompt=prompt,
             best_effort=best_effort,
-            published=published,
-            source_refresh_job_id=source_refresh_job_id,
             require_source_job=require_source_job,
         )
-        if result[0] and source_refresh_job_id and file_id:
-            # Cache hits also belong to the candidate. Publication promotes
-            # exactly this set and releases captions for the retired source.
-            await _consume(file_id, source_refresh_job_id, image_sha256)
-        return result
 
 
 async def _caption(
@@ -347,8 +293,6 @@ async def _caption(
     data_url: str | Callable[[], Awaitable[str | None]],
     prompt: str,
     best_effort: bool,
-    published: bool,
-    source_refresh_job_id: str | None,
     require_source_job: bool,
 ) -> tuple[str, str, int, bool]:
     try:
@@ -356,8 +300,6 @@ async def _caption(
             file_id,
             editor_asset_id,
             image_sha256,
-            published,
-            source_refresh_job_id=source_refresh_job_id,
             require_source_job=require_source_job,
         )
     except TerminalError:
@@ -385,8 +327,6 @@ async def _caption(
             image_sha256,
             path,
             raw,
-            published,
-            source_refresh_job_id=source_refresh_job_id,
             require_source_job=require_source_job,
         )
     except TerminalError:

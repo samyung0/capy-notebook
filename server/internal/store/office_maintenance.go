@@ -333,10 +333,9 @@ func (s *Store) publishExportTx(ctx context.Context, tx pgx.Tx, fileID, sourcePa
 }
 
 // applyExportTx makes the export the file's bytes with no parser or provider
-// call: the index is dropped (captions stay only for images the remaining
-// effects add) and, unless it never parsed successfully (its owner's Process,
-// charged as the first parse, stays the way in), it is marked for reprocessing
-// at platform cost. The job is done; nothing else finishes it.
+// call: the index and its captions are dropped and, unless it never parsed
+// successfully (its owner's Process, charged as the first parse, stays the way
+// in), it is marked for reprocessing at platform cost. The job is done; nothing else finishes it.
 func applyExportTx(ctx context.Context, tx pgx.Tx, fileID string, p exportPublication) error {
 	// The bytes this replaces: the file's own, and (unless deferred, when the
 	// base stays) the old base.
@@ -347,10 +346,7 @@ func applyExportTx(ctx context.Context, tx pgx.Tx, fileID string, p exportPublic
 	if _, err := tx.Exec(ctx, `DELETE FROM rag_file_contents WHERE file_id=$1`, fileID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE image_caption_associations SET published=false WHERE file_id=$1`, fileID); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(ctx, `DELETE FROM image_caption_associations a WHERE file_id=$1 AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements($2::jsonb) e WHERE e->>'imageSHA256'=a.image_sha256 AND e->>'operation'<>'remove')`, fileID, p.effects); err != nil {
+	if _, err := tx.Exec(ctx, `DELETE FROM image_caption_associations WHERE file_id=$1`, fileID); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE files SET blob_path=$2,source_sha256=$3,size_bytes=$4,source_etag=$5,content_hash=NULL,indexed=false,status='ready',revision=revision+1,caption_blob_path=NULL WHERE id=$1`, fileID, p.sourcePath, p.sha, p.size, p.etag); err != nil {
