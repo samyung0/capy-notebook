@@ -36,7 +36,7 @@ export function resolveOfficeRuntimeConfig({
   const url = new URL('/office-runtime.html', origin);
   url.searchParams.set('parentOrigin', appOrigin);
   return {
-    allow: 'clipboard-read; clipboard-write',
+    allow: 'clipboard-read; clipboard-write; fullscreen',
     error,
     origin,
     sandbox: 'allow-same-origin allow-scripts',

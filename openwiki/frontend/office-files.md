@@ -841,9 +841,11 @@ same-origin escape-prone combination on the application origin. The engines
 are single-threaded; an iframe alone does not enable `SharedArrayBuffer`. If
 threaded WASM is introduced later, configure isolation headers on this runtime
 origin without isolating the SPA. The iframes also get
-`allow="clipboard-read; clipboard-write"` (`officeRuntimeConfig.ts`, next to
-`sandbox`) so the editors' right-click Cut, Copy and Paste reach the
-clipboard; Paste shows the browser's permission prompt once, and the sandbox
+`allow="clipboard-read; clipboard-write; fullscreen"` (`officeRuntimeConfig.ts`,
+next to `sandbox`) so the editors' right-click Cut, Copy and Paste reach the
+clipboard (Paste shows the browser's permission prompt once) and PPTX Present
+can go full screen from the separate runtime origin (without `fullscreen` the
+request is refused and Present stays inside the file frame); the sandbox
 flags are unchanged.
 
 PDF is not loaded into the Office iframe. `react-pdf` is the only PDF viewer

@@ -13,8 +13,9 @@ describe('Office runtime origin', () => {
 
     expect(config.error).toBeNull();
     expect(config.origin).toBe('https://office.example.com');
-    // Clipboard access for the editors' menus; the sandbox stays as it was.
-    expect(config.allow).toBe('clipboard-read; clipboard-write');
+    // Clipboard for the editors' menus, full screen for PPTX Present; the
+    // sandbox stays as it was.
+    expect(config.allow).toBe('clipboard-read; clipboard-write; fullscreen');
     expect(config.sandbox).toBe('allow-same-origin allow-scripts');
     expect(config.url).toBe(
       'https://office.example.com/office-runtime.html?parentOrigin=https%3A%2F%2Fapp.example.com'
