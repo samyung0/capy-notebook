@@ -200,6 +200,9 @@ check); it applies at the first promotion.
   loses its result (docx-fields review round 2, R2-8). Keep what the model doesn't
   hold; Word is the oracle. Probes in
   `capy-docx-review-harnesses/2026-10-05-office-batch/docx-paragraph-save/review-probes/`.
+- **DOCX column break layout** (found 2026-10-05 by docx-view-text): in
+  `wordprocessingml-comprehensive.docx` the line before a column break is drawn
+  in both columns and the text after the break is missing (view and copy).
 - **Chat can't describe an image added to an Office file** (decided
   2026-10-05): attach the image to the next model request as `capture_page`
   does and remove the source-change caption path (`captioning_spec()` needs
