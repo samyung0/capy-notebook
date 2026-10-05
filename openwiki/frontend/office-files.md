@@ -1342,9 +1342,15 @@ and so does a run's font hint (`w:rFonts w:hint`), held in its own `fontHint`
 mark so typing in the run and picking a font keep it. Picking a font sets each
 run's Latin and complex-script fonts (`w:ascii`, `w:hAnsi`, `w:cs`, dropping
 those slots' theme fonts, which would win over it) and keeps its East Asian
-font, as Word's font box does (`picked_font`); the save writes the fonts the
-editor holds and adds none (no `w:cs` copied from `w:ascii`, no name the seed
-resolved for a slot that has a theme font).
+font, as Word's font box does (`picked_font`, one pass over the range with one
+retain per stretch of equal fonts); an East Asian face (SimSun, Microsoft
+YaHei, MS Mincho, Noto Sans CJK and the faces Word's metrics table lists, or a
+name in CJK, kana or Hangul script; `is_east_asian_family` in ooxml-text) also
+sets the East Asian font. A select-all pick in a file whose runs alternate East
+Asian fonts takes about 24 ms against 7 ms before and stores about 1.4 MB of
+room update against 0.5 MB, since each stretch keeps its own font. The save
+writes the fonts the editor holds and adds none (no `w:cs` copied from
+`w:ascii`, no name the seed resolved for a slot that has a theme font).
 A DOCX save writes each paragraph's source properties back as they were and
 writes over them every paragraph property the editor holds differently from
 what the seed gave it (direct formatting, else the list level, else the style,
@@ -1360,13 +1366,19 @@ changed and on both halves of a split, and `w:framePr` keeps its drop-cap,
 lines, spacing, height-rule and anchor-lock attributes; the writer puts pPr
 children in schema order. A vertically merged continuation cell, which the
 seed folds into its restart cell, saves with its source paragraphs' properties
-and no text (`continuationContent`, found from the restart cell's story and its
-row offset, so it follows rows inserted above, while a row inserted inside the
-merge shifts which continuation gets which); one the session made saves an
-empty paragraph. A row's skipped grid columns (`w:gridBefore`, `w:gridAfter`,
-`w:wBefore`, `w:wAfter`) save, and a cell paragraph made by inserting a row,
-column or table holds no alignment, so it takes its table style's (a header
-row's centring). A property the editor holds nothing for is removed. Line
+and no text (`continuationContent`: the source row is the one a seeded cell of
+the same row names, within the restart cell's own merge, and a cell counts as
+seeded only while its story holds one of its source paragraphs, so a new table
+in a deleted table's slot takes nothing); a continuation in a row with no
+seeded cell, as in a row the session added, saves an empty paragraph. A row's
+skipped grid columns (`w:gridBefore`, `w:gridAfter`, `w:wBefore`, `w:wAfter`)
+save while the row's cells and skipped columns fill the grid; the editor lays
+every row out from the first column, so a row it adds next to such a row, or
+one a column deletion leaves too wide, drops them. A cell paragraph made by
+inserting a row, column or table or splitting a cell holds no alignment of its
+own, and the editor gives it its style's values in its cell (`styleNewCells`),
+so a new header-row cell shows centred as the file and Word do. A property the
+editor holds nothing for is removed. Line
 spacing and its rule, and the first-line indent and its hanging flag, save
 together; a changed indent drops its character-unit twin (`w:leftChars` and the
 like), which Word would otherwise prefer.
@@ -1416,14 +1428,18 @@ the look it seeded with in the editor, and the save writes what differs from its
 new position. Ops store tab stops in the seed's shape (`position`, `alignment`,
 reading the older `pos`/`val` too) and the hanging first-line flag as a boolean.
 Enter at the end of a paragraph starts a clean one that keeps only its style,
-spacing and the font, size and colour carry (`INHERITED_PARA_ATTRS`), plus the
-numbering and level indents of a list its style gives (List Bullet), so the
-editor shows the bullet the file and Word show; a list set on the paragraph
-itself does not continue. A split in the middle of a paragraph or before a block
+spacing and the font, size and colour carry (`INHERITED_PARA_ATTRS`), plus its
+list's numbering and level indents, so a list goes on as in Word whether the
+paragraph or its style gives it. Enter in an empty list item ends the list
+instead (`endEmptyListItem`): numbering set on the paragraph goes, a style's is
+turned off with `numId` 0, and the indents become the style's without its list.
+A split in the middle of a paragraph or before a block
 leaves the source mark's tracked insertion or deletion (`pPrIns`, `pPrDel`) on
 the source mark, and the new mark's copy of a tracked property change
-(`w:pPrChange`) takes new revision ids, so the file never repeats an id and two
-peers' splits of one paragraph get one each. The engine's suggesting-mode
+(`w:pPrChange`) takes a new revision id, so the file never repeats an id and two
+peers' splits of one paragraph get one each. Revision ids the editor makes save
+as the numbers after the largest revision id the document holds, in id order,
+so every peer writes the same small ids. The engine's suggesting-mode
 paragraph property changes (unused in Capy) save, but with the editor's
 resolved values as the previous pPr rather than the paragraph's own.
 PPTX uses a native textarea for typing, clipboard copy and paste, and IME composition. Copy puts the selected text on the clipboard as plain text and HTML (bold, italic and underline set on the run); a selected shape copies its whole text, one story per line. Read-only allows selecting and copying text, with typing, paste and cut refused; there is no cut. Edits over a selection that crosses paragraphs (typing, paste, IME, Enter, Backspace, Delete) replace it in one transaction and one undo step, joining the paragraphs under the first one's id and properties; a split (Enter or a newline) keeps the original paragraph's id on the first half and its properties on both halves, as PowerPoint continues a list, so Enter then Backspace restores the paragraph exactly (in a list item Backspace first removes the new item's marker, then joins); a refused edit changes nothing and no longer blocks later saves. Read-only speaker notes are `readOnly`, so they can be selected and copied.
