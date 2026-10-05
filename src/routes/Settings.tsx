@@ -6,6 +6,7 @@ import {
   useSetNotificationPrefs,
 } from '@/api/hooks';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { StyleIcon } from '@/components/app/ThemeDrawer';
 import { SettingRow, TabContent, TabHeader } from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
 import {
@@ -48,17 +49,18 @@ function CustomizationsTab() {
             </SelectTrigger>
             <SelectContent>
               {STYLES.map((t) => (
-                <SelectItem
-                  iconAndValue={{
-                    icon: 'palette',
-                    label:
-                      t.value === 'classroom'
-                        ? m.theme_style_classroom()
-                        : m.theme_style_notion(),
-                  }}
-                  key={t.value}
-                  value={t.value}
-                />
+                <SelectItem key={t.value} value={t.value}>
+                  <span className="flex items-center gap-2">
+                    <StyleIcon
+                      className="gap-px rounded-sm p-0.5"
+                      dotClassName="size-1.5"
+                      style={t.value}
+                    />
+                    {t.value === 'classroom'
+                      ? m.theme_style_classroom()
+                      : m.theme_style_notion()}
+                  </span>
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>

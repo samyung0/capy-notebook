@@ -4,7 +4,7 @@ import {
   useSetStudyProgressDefault,
 } from '@/api/hooks';
 import type { StudyPreferences } from '@/api/types';
-import { SettingRow } from '@/components/app/tabPanel';
+import { SettingRow, TabHeader } from '@/components/app/tabPanel';
 import {
   Select,
   SelectContent,
@@ -99,60 +99,53 @@ export function StudyPreferencesSection() {
     if (saved) save({ ...saved, ...patch });
   };
   return (
-    <>
-      <div className="flex flex-col gap-1">
-        <h3 className="font-semibold text-fg">{m.study_prefs_title()}</h3>
-        <p className="text-fg-secondary">{m.study_prefs_hint()}</p>
-      </div>
-      <SettingRow
-        hint={m.study_progress_default_hint()}
-        title={m.study_progress_default()}
-      >
-        <Switch
-          aria-label={m.study_progress_default()}
-          checked={!!me?.studyProgress}
-          disabled={!me}
-          onCheckedChange={(checked) => setProgressDefault(checked)}
-        />
-      </SettingRow>
-      {ROWS.slice(0, 2).map((row) => (
-        <ChoiceRow
-          current={String(current[row.field])}
-          disabled={!saved}
-          key={row.field}
-          onChange={(value) => set({ [row.field]: value })}
-          row={row}
-        />
-      ))}
-      {ROWS.slice(2, 4).map((row) => (
-        <ChoiceRow
-          current={String(current[row.field])}
-          disabled={!saved}
-          key={row.field}
-          onChange={(value) => set({ [row.field]: Number(value) })}
-          row={row}
-        />
-      ))}
-      <SettingRow
-        hint={m.study_pref_checks_hint()}
-        title={m.study_pref_checks()}
-      >
-        <Switch
-          aria-label={m.study_pref_checks()}
-          checked={current.miniChecks}
-          disabled={!saved}
-          onCheckedChange={(checked) => set({ miniChecks: checked })}
-        />
-      </SettingRow>
-      <ChoiceRow
-        current={current.visualAids}
-        disabled={!saved}
-        onChange={(value) =>
-          set({ visualAids: value as StudyPreferences['visualAids'] })
-        }
-        row={ROWS[4]}
+    <div>
+      <TabHeader
+        description={m.study_prefs_hint()}
+        title={m.study_prefs_title()}
       />
-    </>
+      <div className="flex flex-col gap-6">
+        <SettingRow
+          hint={m.study_progress_default_hint()}
+          title={m.study_progress_default()}
+        >
+          <Switch
+            aria-label={m.study_progress_default()}
+            checked={!!me?.studyProgress}
+            disabled={!me}
+            onCheckedChange={(checked) => setProgressDefault(checked)}
+          />
+        </SettingRow>
+        <SettingRow
+          hint={m.study_pref_checks_hint()}
+          title={m.study_pref_checks()}
+        >
+          <Switch
+            aria-label={m.study_pref_checks()}
+            checked={current.miniChecks}
+            disabled={!saved}
+            onCheckedChange={(checked) => set({ miniChecks: checked })}
+          />
+        </SettingRow>
+        {ROWS.map((row) => (
+          <ChoiceRow
+            current={String(current[row.field])}
+            disabled={!saved}
+            key={row.field}
+            onChange={(value) =>
+              set({
+                [row.field]:
+                  row.field === 'quizLength' ||
+                  row.field === 'flashcardsPerChapter'
+                    ? Number(value)
+                    : value,
+              })
+            }
+            row={row}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 

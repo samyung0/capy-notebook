@@ -106,6 +106,38 @@ const FourColorIcon = ({
   </div>
 );
 
+/** The four-dot swatch that stands for a style, in the drawer and in Settings. */
+export const StyleIcon = ({
+  style,
+  className,
+  dotClassName,
+}: {
+  style: Style;
+  className?: string;
+  dotClassName?: string;
+}) =>
+  style === 'classroom' ? (
+    <FourColorIcon
+      background="var(--surface-page)"
+      colorFour="#8ec9f9"
+      colorOne="#8c7bd9"
+      colorThree="#fd7287"
+      colorTwo="#7bd9ab"
+      innerClassname={dotClassName}
+      outerClassname={className}
+    />
+  ) : (
+    <FourColorIcon
+      background="var(--surface-page)"
+      colorFour="#2383e2"
+      colorOne="#37352f"
+      colorThree="#9b9a97"
+      colorTwo="#d4d4d2"
+      innerClassname={cn('rounded-[2px]', dotClassName)}
+      outerClassname={className}
+    />
+  );
+
 const StyleComponents = ({
   label,
   value,
@@ -117,15 +149,7 @@ const StyleComponents = ({
       return (
         <ButtonCard
           className={cn('min-w-20', className)}
-          componentBeforeText={
-            <FourColorIcon
-              background="var(--surface-page)"
-              colorFour="#8ec9f9"
-              colorOne="#8c7bd9"
-              colorThree="#fd7287"
-              colorTwo="#7bd9ab"
-            />
-          }
+          componentBeforeText={<StyleIcon style="classroom" />}
           size="md"
           {...rest}
           buttonText={label}
@@ -135,16 +159,7 @@ const StyleComponents = ({
       return (
         <ButtonCard
           className={cn('min-w-20', className)}
-          componentBeforeText={
-            <FourColorIcon
-              background="var(--surface-page)"
-              colorFour="#2383e2"
-              colorOne="#37352f"
-              colorThree="#9b9a97"
-              colorTwo="#d4d4d2"
-              innerClassname="rounded-[2px]"
-            />
-          }
+          componentBeforeText={<StyleIcon style="notion" />}
           size="md"
           {...rest}
           buttonText={label}
