@@ -49,17 +49,34 @@ resync and Office save fixes at the end); `bench/parsers/reports/2026-10-05-offi
 harness notes in `/Users/sam/web/capy-docx-review-harnesses/2026-10-0{4,5}-*`
 (load errors, Yjs research, save-failure research across apps, offline design).
 
-**In progress when this was written:** caching each room's parsed original
-file in the Office engine worker (saves reopened it every time: 226 of 347
-worker seconds; one 16k-row XLSX save ≈ 10 s) and pinning production's
-collaboration service to 2 cores in the prod deploy config (not deployed;
-production promotion has never run and prod has no Capy app). Check `git log`
-for "engine" / "cpuset" commits; if missing, restart from the report's
-bottleneck 2.
+**Engine cache and prod pin (landed 2026-10-05, 2400641b, fork `capy-ci`
+71e61f59):** each XLSX room keeps its opened workbook between saves
+(`OFFICE_REPLICA_BUDGET_BYTES` 1 GiB estimated at 20× the unzipped size; a new
+replica only evicts ones idle for `REPLICA_IDLE_MS`, 2 min). XLSX only: PPTX
+replicas held ~90 MB for 0.3 s a save, DOCX opens are a small part of a save.
+A large-gradebook save went 7 s → 1.4 s and 20 large rooms stay under engine
+saturation (save p95 45 s → 2.4 s, collab RSS 1.3 → 1.9 GiB); report
+`bench/collaboration/reports/2026-10-05-office-engine-replicas.md`. Production
+pins collaboration to cores 2–3 (`docker-compose.prod.yml`
+`COLLABORATION_CPUSET`, set by `scripts/env/config.py`; runbook §1.1 has the
+check); it applies at the first promotion.
 
 **Open:**
-- **Live document per Office room** (one more full pass off each save) — wait
-  for the engine cache's memory numbers, then decide (Epo: wait and see).
+- **Live document per Office room** (one more full pass off each save): the
+  engine cache added ~0.6 GiB at 20 large rooms and Epo is fine with memory;
+  decide whether the extra document per room is worth it after the XLSX
+  effects fix.
+- **XLSX effects without a full recalculation** (BetterOffice): computing a
+  save's pending effects only reads the Yjs document, but applying any update
+  (a 127-byte delta or the full state alike, ~0.5 s on the gradebook) rebuilds
+  and recalculates the whole workbook. A read-only effects path would remove
+  the remaining ~1.4 s per save and shrink the replicas. Start from
+  `xlsxPendingEffects` in `vendor/betteroffice/shared/office-checkpoint.ts` and
+  the replica code in `shared/office-replicas.ts`.
+- **XLSX agent inspect/edit memory:** an AI agent inspecting or editing the
+  large gradebook grows the XLSX engine to ~1.9 GiB, which stays resident on
+  Linux afterwards. Find what holds it (a second opened copy per call, WASM
+  memory never returned) and bound or release it.
 - **Second collaboration instance** with document-sticky routing (the gateway's
   collaboration-token response already returns the WebSocket URL) only when
   one main thread runs out; first fix the contributor-marker check below.
