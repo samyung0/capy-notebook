@@ -107,13 +107,27 @@ it('speaks Chinese for zh', () => {
 });
 
 it('offers view mode only what works there, nothing disabled', () => {
-  const menus = xlsxViewMenus('en');
+  const menus = xlsxViewMenus('en', 1.5);
+  expect(menus.map((menu) => menu.label)).toEqual(['File', 'View']);
   expect(all(menus).map((entry) => entry.id)).toEqual([
     OFFICE_HOST_COMMANDS.download,
     OFFICE_HOST_COMMANDS.png,
     OFFICE_HOST_COMMANDS.print,
+    // View › Zoom, Google Sheets' presets.
+    'zoom:50',
+    'zoom:75',
+    'zoom:90',
+    'zoom:100',
+    'zoom:125',
+    'zoom:150',
+    'zoom:200',
   ]);
   expect(all(menus).some((entry) => entry.disabled)).toBe(false);
+  expect(
+    all(menus)
+      .filter((entry) => entry.checked)
+      .map((entry) => entry.id)
+  ).toEqual(['zoom:150']);
 });
 
 it('runs editor commands and leaves Capy its own items', () => {

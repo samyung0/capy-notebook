@@ -11,6 +11,7 @@ import {
   rangeRect,
   type WorkbookAnalysis,
   type WorkbookViewerHandle,
+  zoomedViewport,
 } from '@betteroffice/xlsx/viewer';
 import {
   type KeyboardEvent,
@@ -18,6 +19,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
@@ -86,6 +88,12 @@ export function XlsxViewer({
   const [extent, setExtent] = useState({ height: 0, width: 0 });
   // The read-only formula bar: the selected cell's address and full text.
   const [formula, setFormula] = useState({ address: '', text: '' });
+  // View › Zoom (1 = 100%), for as long as the viewer is open, as DOCX's.
+  const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(zoom);
+  // The sheet point at the grid's top-left when the zoom changed: it stays
+  // there, as in Google Sheets.
+  const zoomAnchorRef = useRef<{ x: number; y: number } | null>(null);
 
   const select = useCallback((handle: WorkbookViewerHandle, cell: Cell) => {
     const sheet = activeSheetRef.current;
@@ -106,13 +114,9 @@ export function XlsxViewer({
     const width = scroll.clientWidth;
     const height = scroll.clientHeight;
     if (width === 0 || height === 0) return;
+    const zoom = zoomRef.current;
     try {
-      const frame = handle.displayList({
-        height,
-        width,
-        x: scroll.scrollLeft,
-        y: scroll.scrollTop,
-      });
+      const frame = handle.displayList(zoomedViewport(scroll, zoom));
       frameRef.current = frame;
       const selection = selectionRef.current;
       const sheetName = sheetNamesRef.current[activeSheetRef.current] ?? '';
@@ -139,14 +143,15 @@ export function XlsxViewer({
       canvas.style.height = `${height}px`;
       const context = canvas.getContext('2d');
       if (context) {
-        paintDisplayList(context, frame, dpr);
+        paintDisplayList(context, frame, dpr * zoom);
         const target = highlightRef.current;
         const rect =
           target?.sheet === activeSheetRef.current
             ? cellRect(frame.grid, target.row, target.col)
             : null;
+        // Sheet pixels, as the frame; the outline stays 2 CSS px wide.
         context.save();
-        context.setTransform(dpr, 0, 0, dpr, 0, 0);
+        context.setTransform(dpr * zoom, 0, 0, dpr * zoom, 0, 0);
         if (rect) {
           context.fillStyle = CITATION_FILL;
           context.fillRect(rect.x, rect.y, rect.w, rect.h);
@@ -158,12 +163,12 @@ export function XlsxViewer({
           context.fillStyle = SELECTION_FILL;
           context.fillRect(selected.x, selected.y, selected.w, selected.h);
           context.strokeStyle = SELECTION_STROKE;
-          context.lineWidth = 2;
+          context.lineWidth = 2 / zoom;
           context.strokeRect(
-            selected.x + 1,
-            selected.y + 1,
-            selected.w - 2,
-            selected.h - 2
+            selected.x + 1 / zoom,
+            selected.y + 1 / zoom,
+            selected.w - 2 / zoom,
+            selected.h - 2 / zoom
           );
         }
         context.restore();
@@ -269,8 +274,9 @@ export function XlsxViewer({
     const raf = requestAnimationFrame(() => {
       if (match && scrollRef.current) {
         const position = handle.cellPosition(match.sheet, match.row, match.col);
-        scrollRef.current.scrollLeft = Math.max(0, position.x - 100);
-        scrollRef.current.scrollTop = Math.max(0, position.y - 100);
+        const zoom = zoomRef.current;
+        scrollRef.current.scrollLeft = Math.max(0, (position.x - 100) * zoom);
+        scrollRef.current.scrollTop = Math.max(0, (position.y - 100) * zoom);
       }
       paint();
     });
@@ -289,8 +295,8 @@ export function XlsxViewer({
       select(handle, ORIGIN.cell);
       const scroll = scrollRef.current;
       if (scroll) {
-        scroll.scrollLeft = info.initialScrollX;
-        scroll.scrollTop = info.initialScrollY;
+        scroll.scrollLeft = info.initialScrollX * zoomRef.current;
+        scroll.scrollTop = info.initialScrollY * zoomRef.current;
       }
       paint();
     } catch (value) {
@@ -298,14 +304,39 @@ export function XlsxViewer({
     }
   };
 
+  // After the scroll area takes the new size: the anchor goes back under the
+  // top-left corner, and the grid is drawn at the new zoom.
+  useLayoutEffect(() => {
+    zoomRef.current = zoom;
+    const scroll = scrollRef.current;
+    const anchor = zoomAnchorRef.current;
+    zoomAnchorRef.current = null;
+    if (scroll && anchor) {
+      scroll.scrollLeft = anchor.x * zoom;
+      scroll.scrollTop = anchor.y * zoom;
+    }
+    paint();
+  }, [paint, zoom]);
+
   // View mode offers what works here: Download, PNG and Print, which Capy
-  // performs from the images drawn below.
+  // performs from the images drawn below, and View › Zoom.
   const loaded = sheetNames.length > 0;
   useEffect(() => {
     if (!loaded) return;
-    onMenus({ menus: xlsxViewMenus(locale), run: () => {} });
+    onMenus({
+      menus: xlsxViewMenus(locale, zoom),
+      run: (id) => {
+        const [command, value] = id.split(':');
+        const next = Number(value) / 100;
+        if (command !== 'zoom' || next === zoomRef.current) return;
+        const scroll = scrollRef.current;
+        if (scroll)
+          zoomAnchorRef.current = zoomedViewport(scroll, zoomRef.current);
+        setZoom(next);
+      },
+    });
     return () => onMenus(null);
-  }, [loaded, locale, onMenus]);
+  }, [loaded, locale, onMenus, zoom]);
   useEffect(() => {
     onRenderer(async (kind) => {
       const handle = handleRef.current;
@@ -313,13 +344,9 @@ export function XlsxViewer({
       if (!(handle && scroll)) throw new Error('Nothing to render');
       const draw = handle.displayList.bind(handle);
       if (kind === 'print') return sheetPages(draw, handle.sheetInfo());
+      // The part on screen, at 100% as the editor's PNG.
       return [
-        await viewportPage(draw, {
-          height: scroll.clientHeight,
-          width: scroll.clientWidth,
-          x: scroll.scrollLeft,
-          y: scroll.scrollTop,
-        }),
+        await viewportPage(draw, zoomedViewport(scroll, zoomRef.current)),
       ];
     });
     return () => onRenderer(null);
@@ -330,8 +357,8 @@ export function XlsxViewer({
     const box = event.currentTarget.getBoundingClientRect();
     const cell = cellAtPoint(
       frameRef.current?.grid,
-      event.clientX - box.left,
-      event.clientY - box.top
+      (event.clientX - box.left) / zoomRef.current,
+      (event.clientY - box.top) / zoomRef.current
     );
     if (!(handle && cell)) return;
     try {
@@ -415,11 +442,11 @@ export function XlsxViewer({
         <div
           aria-hidden="true"
           style={{
-            height: extent.height,
+            height: extent.height * zoom,
             left: 0,
             position: 'absolute',
             top: 0,
-            width: extent.width,
+            width: extent.width * zoom,
           }}
         />
         <div aria-hidden="true" className="xlsx-canvas-layer">

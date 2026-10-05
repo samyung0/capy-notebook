@@ -108,6 +108,20 @@ function fileItems(t: ReturnType<typeof xlsxT>): OfficeMenuEntry[] {
   ];
 }
 
+/** View › Zoom ▸ Google Sheets' presets, the current one ticked; it edits nothing. */
+function zoomMenu(t: ReturnType<typeof xlsxT>, zoom: number): OfficeMenuEntry {
+  return submenu(
+    'zoom',
+    t('hostMenus.zoom'),
+    ZOOM_PERCENTS.map((percent) =>
+      command(`zoom:${percent}`, `${percent}%`, {
+        checked: Math.round(zoom * 100) === percent,
+      })
+    ),
+    'zoomIn'
+  );
+}
+
 /** "B" for column 1 (zero-based), as the column header shows it. */
 function columnLetter(column: number) {
   let letters = '';
@@ -225,16 +239,7 @@ export function xlsxEditMenus(
             }),
           ]),
         ]),
-        submenu(
-          'zoom',
-          t('hostMenus.zoom'),
-          ZOOM_PERCENTS.map((percent) =>
-            command(`zoom:${percent}`, `${percent}%`, {
-              checked: Math.round(state.zoom * 100) === percent,
-            })
-          ),
-          'zoomIn'
-        ),
+        zoomMenu(t, state.zoom),
       ],
       label: t('hostMenus.view'),
     },
@@ -372,12 +377,18 @@ export function xlsxEditMenus(
 }
 
 /**
- * View mode runs Capy's viewer: Download, PNG and Print work there, nothing
- * that edits or zooms does.
+ * View mode runs Capy's viewer: Download, PNG and Print, and the zoom (as
+ * DOCX view mode has it); nothing that edits.
  */
-export function xlsxViewMenus(locale: OfficeLocale): OfficeMenu[] {
+export function xlsxViewMenus(
+  locale: OfficeLocale,
+  zoom: number
+): OfficeMenu[] {
   const t = xlsxT(locale);
-  return [{ id: 'file', items: fileItems(t), label: t('hostMenus.file') }];
+  return [
+    { id: 'file', items: fileItems(t), label: t('hostMenus.file') },
+    { id: 'view', items: [zoomMenu(t, zoom)], label: t('hostMenus.view') },
+  ];
 }
 
 /** Runs an edit-mode menu item: every runtime item's id is an editor command. */
