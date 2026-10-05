@@ -667,11 +667,15 @@ actions usable, and drops any other `menu-command` or `menu-file`
 (`runsWhilePaused`). The read-only editors refuse edits themselves too: DOCX
 keeps its toolbar row, disabled, because its menus come from it, opens Find
 and replace with Replace and Replace all disabled, offers only Copy and Select
-all on right-click, ignores Ctrl/Cmd+K, Delete on a selected table, comment
-changes and every structural command; XLSX's `run` refuses editing commands
-and its Select all hands the grid the keys, so Ctrl/Cmd+C copies the sheet
-(in the grid Tab moves between cells, as when editing); XLSX and PPTX hide
-their toolbar rows, as recovery did. The DOCX menu model refuses a
+all on right-click, ignores Ctrl/Cmd+K, Delete on a selected table and every
+structural command, and its comment and tracked-change cards show the thread
+without reply, resolve, accept or reject; XLSX's `run` refuses editing
+commands and its Select all hands the grid the keys, so Ctrl/Cmd+C copies the
+sheet (in the grid Tab moves between cells, as when editing). All three keep
+their toolbar row, and XLSX its formula bar, visible and disabled, so nothing
+moves when a pause starts or ends. Only an editor pauses: in view mode a
+`canEdit` of false (a view-only user's) changes nothing, and the viewer still
+selects and copies. The DOCX menu model refuses a
 disabled item's id too.
 
 In edit mode the DOCX editor shows one toolbar row under the header, in Google

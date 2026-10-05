@@ -741,6 +741,40 @@ for (const [format, text] of [
   });
 }
 
+// A view-only user's host sends canEdit:false; a viewer has nothing to pause,
+// so its cells still select and copy.
+test('a view-only XLSX viewer still selects and copies a cell after canEdit:false', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto('/workspaces/ws_bio?file=bio-office-xlsx');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  const grid = frame.locator('canvas').first();
+  await expect(grid).toBeVisible({ timeout: 60_000 });
+  await page.evaluate(() => {
+    const iframe = document.querySelector<HTMLIFrameElement>(
+      'iframe[src*="office-runtime"]'
+    );
+    if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
+    iframe.contentWindow.postMessage(
+      { canEdit: false, type: 'set-capabilities', version: 7 },
+      new URL(iframe.src).origin
+    );
+  });
+  // CCHU8003, the first course code under the headers.
+  await grid.click({ position: { x: 60, y: 60 } });
+  const contents = frame.getByLabel('Cell contents');
+  await expect(contents).not.toHaveValue('');
+  const value = await contents.inputValue();
+  await contents.click();
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.press('ControlOrMeta+C');
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(value);
+});
+
 test('PPTX speaker notes start hidden, and one remembered toggle serves view and edit', async ({
   page,
 }) => {
