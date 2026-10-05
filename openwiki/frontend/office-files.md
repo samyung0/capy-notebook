@@ -721,10 +721,16 @@ from the cell, Enter from the formula bar) and opening the in-cell editor
 little as possible and clear of frozen panes; Ctrl/Cmd+A keeps the view, as
 the menu's Select all does. A cell the keyboard reaches past the used range
 grows the scroll area to it. An open cell edit keeps its input mounted and
-focused while its cell scrolls away, so the next key, composition included, is
-typed into the edit and scrolls the cell back, as in Excel and Sheets. The
-editor only asks the engine where the cell is (`cellPosition`, from the
-geometry `sheet_info` memoized) when the painted frame does not show it whole.
+focused while its cell scrolls away, so the next key that types, composition
+included, is typed into the edit and scrolls the cell back whole, as in Excel
+and Sheets; modifier keys and Ctrl/Cmd shortcuts leave the view alone. An edit
+ends on blur without taking focus back, so a click on the formula bar commits
+it and leaves the formula bar focused. The editor only asks the engine where
+the cell is (`cellPosition`, from the geometry `sheet_info` memoized) when the
+painted frame, if it is the live view, does not show it whole, and a key that
+scrolls paints once. Firefox caps an element's height near 17.9M px, so its
+scroll area stops short of the last ~150k rows; keys there still land in the
+edit.
 
 The XLSX menus come from `src/office-runtime/xlsxMenus.ts`, labelled from
 xlsx-i18n (zh-CN for zh): File (Save, Download ▸ Microsoft Excel and PNG image,

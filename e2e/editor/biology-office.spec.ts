@@ -400,6 +400,54 @@ test('XLSX keyboard selection scrolls into view and takes typing', async ({
   await expect(nameBox).toHaveValue('H6');
   await page.keyboard.press('ArrowUp');
   await expect(formula).toHaveValue('7');
+
+  // An open edit wheeled out of view keeps its input focused; the next key is
+  // typed into it and scrolls the cell back.
+  await page.keyboard.press('8');
+  await expect(editor).toBeFocused();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, 4000);
+  await expect(editor).toHaveCSS('opacity', '0');
+  await expect(editor).toBeFocused();
+  await page.keyboard.press('9');
+  await expect(editor).toHaveCSS('opacity', '1');
+  await expect(editor).toHaveValue('89');
+  const back = await editor.boundingBox();
+  if (!back) throw new Error('The cell editor is not laid out');
+  expect(back.y).toBeGreaterThanOrEqual(box.y);
+  expect(back.y + back.height).toBeLessThanOrEqual(box.y + box.height);
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('ArrowUp');
+  await expect(nameBox).toHaveValue('H5');
+  await expect(formula).toHaveValue('89');
+
+  // Clicking the formula bar commits a cell edit and keeps the formula bar
+  // focused, twice in a row; a formula-bar edit then stands.
+  for (const typed of ['1', '2']) {
+    await page.keyboard.press(typed);
+    await expect(editor).toHaveValue(typed);
+    await formula.click();
+    await expect(formula).toBeFocused();
+    await expect(editor).toHaveCount(0);
+    await expect(formula).toHaveValue(typed);
+    await page.keyboard.press('Escape');
+  }
+  await formula.fill('3');
+  await page.keyboard.press('Enter');
+  await expect(nameBox).toHaveValue('H6');
+  // A grid click would land an edit left open over the formula bar's.
+  await page.mouse.click(box.x + 150, box.y + 75);
+  await expect(nameBox).not.toHaveValue('H6');
+  const landed = await nameBox.inputValue();
+  await walk(
+    landed.charCodeAt(0),
+    'H'.charCodeAt(0),
+    'ArrowLeft',
+    'ArrowRight'
+  );
+  await walk(Number(landed.slice(1)), 5, 'ArrowUp', 'ArrowDown');
+  await expect(nameBox).toHaveValue('H5');
+  await expect(formula).toHaveValue('3');
 });
 
 test("Office runtime keeps Capy's theme after reloading and asks for a page reload on a protocol mismatch", async ({
