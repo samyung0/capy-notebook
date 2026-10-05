@@ -485,7 +485,14 @@ export function useOfficeRuntime({
         }
         return;
       }
-      if (message.type === 'collaboration-ready') setReplicaReady(true);
+      if (message.type === 'collaboration-ready') {
+        setReplicaReady(true);
+        // A newly opened DOCX editor takes the focus (it waits for its frame
+        // to get it) unless Capy's focus is in a field taking typing, such as
+        // the chat box.
+        if (format === 'docx' && !takesTyping(document.activeElement))
+          iframeRef.current?.focus();
+      }
       if (
         message.type === 'update' ||
         message.type === 'collaboration-ready' ||
@@ -715,4 +722,14 @@ function saveBlob(blob: Blob, name: string) {
   anchor.download = name;
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** A focused field the user types into: Capy keeps the focus there. */
+function takesTyping(element: Element | null) {
+  return (
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement ||
+    element instanceof HTMLSelectElement ||
+    (element instanceof HTMLElement && element.isContentEditable)
+  );
 }

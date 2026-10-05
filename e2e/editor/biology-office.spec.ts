@@ -854,6 +854,98 @@ test('a DOCX editor resuming from a pause leaves the focus where it was', async 
   await expect(chat).toHaveValue('qq');
   await page.waitForTimeout(1000);
   expect(await updates.evaluate((seen) => seen.count)).toBe(0);
+
+  // Find, typed into while paused, keeps the focus: the next keys search.
+  await capabilities(false);
+  await page.waitForTimeout(1000);
+  await officeMenu(page, 'Edit').click();
+  await page.getByRole('menuitem', { name: /^Find and replace/ }).click();
+  const find = frame.getByLabel('Find text');
+  await find.click();
+  await page.keyboard.type('Cours');
+  await capabilities(true);
+  await page.waitForTimeout(1000);
+  await expect(find).toBeFocused();
+  await page.keyboard.type('e');
+  await page.keyboard.press('Enter');
+  await expect(find).toHaveValue('Course');
+  await page.waitForTimeout(1000);
+  expect(await updates.evaluate((seen) => seen.count)).toBe(0);
+  await find.press('Escape');
+  await expect(find).toHaveCount(0);
+
+  // A new comment being typed hides while paused and comes back with its
+  // draft; keys typed after the pause reach neither it nor the document.
+  await officeMenu(page, 'Edit').click();
+  await page.getByRole('menuitem', { name: /^Select all/ }).click();
+  await officeMenu(page, 'Insert').click();
+  await page.getByRole('menuitem', { name: /^Comment/ }).click();
+  const note = frame.getByPlaceholder('Add a comment...');
+  await expect(note).toBeFocused();
+  await page.keyboard.type('Note');
+  await capabilities(false);
+  await page.waitForTimeout(1000);
+  await expect(note).toBeHidden();
+  await capabilities(true);
+  await page.waitForTimeout(1000);
+  await expect(note).toHaveValue('Note');
+  await page.keyboard.type('x');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(1000);
+  await expect(note).toHaveValue('Note');
+  expect(await updates.evaluate((seen) => seen.count)).toBe(0);
+  await note.click();
+  await page.keyboard.type(' more');
+  await expect(note).toHaveValue('Note more');
+
+  // A reply restored after a pause keeps its draft, and the keys typed after
+  // the pause reach neither it nor the document.
+  await page.keyboard.press('Enter');
+  await frame.locator('.docx-comment-card', { hasText: 'Note more' }).click();
+  const reply = frame.getByPlaceholder('Reply or add others with @');
+  await reply.click();
+  await expect(reply).toBeFocused();
+  await page.keyboard.type('Re');
+  await capabilities(false);
+  await page.waitForTimeout(1000);
+  await expect(reply).toBeHidden();
+  const settled = await updates.evaluate((seen) => seen.count);
+  await capabilities(true);
+  await page.waitForTimeout(1000);
+  await expect(reply).toHaveValue('Re');
+  await page.keyboard.type('x');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(1000);
+  await expect(reply).toHaveValue('Re');
+  expect(await updates.evaluate((seen) => seen.count)).toBe(settled);
+});
+
+// A newly opened DOCX editor takes the focus, unless Capy's focus is in a
+// field taking typing when it finishes loading.
+test('a newly opened DOCX editor leaves the focus in the chat box', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 120_000,
+  });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+  await expect(frame.getByLabel('Document input')).toBeFocused();
+
+  await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
+  const chat = page.getByRole('textbox', { name: 'Ask about your sources…' });
+  await chat.click();
+  await page.keyboard.type('hi');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 120_000,
+  });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+  await page.waitForTimeout(1500);
+  await expect(chat).toBeFocused();
+  await page.keyboard.type(' there');
+  await expect(chat).toHaveValue('hi there');
 });
 
 // A view-only user's host sends canEdit:false; a viewer has nothing to pause,

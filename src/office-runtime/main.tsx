@@ -357,8 +357,7 @@ function OfficeRuntime() {
         pausedRef.current = pausedFor(message.canEdit);
         sendMenus();
         if (pausedRef.current) await flush();
-        // A newer message decided meanwhile.
-        if (pausedRef.current !== pausedFor(canEditRef.current)) return;
+        // The latest pause state: a message that came during the flush set it.
         setReadOnly(pausedRef.current);
         return;
       }

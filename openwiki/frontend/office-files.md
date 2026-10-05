@@ -657,8 +657,12 @@ all, ⌘A, ⌘C, the right-click menu's Copy) while nothing edits; text typed in
 a field of the frame, such as Find's, still reaches it, as the editor refuses
 text itself. Until then its gates hold keys, pointer and text input, a
 composition begun after the pause never counts, and Ctrl/Cmd+S saves nothing.
-When the pause ends the editor takes the focus back only if the frame still
-has it, so a field the user moved to in Capy keeps it. Each menu item says whether it edits
+When the pause ends nothing moves the focus: it stays in Capy's field, Find,
+the document input (read-only never blurs it) or wherever it was. A newly
+opened DOCX editor focuses the document only through its frame: when the
+replica is ready (`collaboration-ready`) Capy focuses the frame unless its own
+focus is in a field taking typing (the chat box, say), and the editor takes
+the focus once the frame has it. Each menu item says whether it edits
 (`edits`), declared where it is defined: DOCX's in docx-react's
 `hostMenus.tsx`, XLSX's and PPTX's from xlsx-react's `xlsxCommandEdits` and
 pptx-react's `PPTX_COMMAND_EDITS` (XLSX freezing panes edits; Capy's own Save
@@ -674,8 +678,8 @@ only Copy and Select all on right-click, ignores Ctrl/Cmd+K, Delete on a
 selected table, a header or footer double-click, Tab out of a table's last
 cell and every structural command, and its comment and tracked-change cards
 show the thread without reply, resolve, accept or reject (a reply being typed
-is hidden, not dropped, and comes back with its draft when editing resumes; an
-add-comment card left open can still be cancelled); XLSX's `run` refuses editing
+is hidden, not dropped, and comes back with its draft when editing resumes,
+and so is a new comment being written; neither takes the focus back); XLSX's `run` refuses editing
 commands and its Select all hands the grid the keys, so Ctrl/Cmd+C copies the
 sheet (in the grid Tab moves between cells, as when editing). All three keep
 their toolbar row visible and disabled, and XLSX its formula bar visible and
