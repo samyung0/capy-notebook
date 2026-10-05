@@ -7,8 +7,9 @@ the main panel shows the chosen topic's questions, and a dashboard-style right c
 to the topic's question list; on phones that column becomes a floating bar and
 bottom sheet. Editors switch between View mode and Edit mode; edit mode adds
 the answer key and a review bar (review status, Mark reviewed/Undo review,
-Comment, Edit) under each question. Studying directly from the bank and
-production Jev grading remain in `todo-question-bank.md`.
+Comment, Edit) under each question. Learner progress has its storage and API
+(Learner progress and retraction, below); the answering screens and production
+Jev grading remain in `todo-question-bank.md`.
 
 The topic list (`GET /api/bank/topics/{id}/questions`) returns light rows for
 the navigation panel. Full questions come from `GET /api/bank/questions?ids=`,
@@ -184,8 +185,8 @@ answered correctly in that batch. Unattempted mistakes remain.
 
 `server/internal/bank` owns lazy reader, editor and library pools, each with two
 connections and bounded statement time. Missing bank configuration does not
-stop unrelated app features. The app database only stores `bank_editors` grants;
-the bank has its own migrations and roles. See
+stop unrelated app features. The app database only stores `bank_editors` grants
+and learners' progress (below); the bank has its own migrations and roles. See
 [deployment-runbook.md](deployment-runbook.md) for provisioning, environment
 values, public/private buckets, local tunnel, comment recipient and backups.
 
@@ -210,6 +211,54 @@ every formula, and re-renders only named question ids after a fix. See its
 [README](../lab/questions/README.md).
 `server/cmd/bank` migrates, publishes and reports status. Publication uploads
 immutable assets and inserts new IDs; it does not overwrite later reviewer edits.
+It also stores each question's task types in `questions.question_types`, ids
+from the subject's `question_types` vocabulary in its syllabus file (IELTS
+Academic Reading's eleven official types; empty for subjects without one). The
+chat agent's `list_question_bank` can keep a topic's questions of one type
+(`question_type`, see [agentic-retrieval.md](agentic-retrieval.md), Question
+bank).
+
+## Learner progress and retraction
+
+Signed-in learners' checked answers on `/bank` are rated with workspace
+review's FSRS code and score mapping
+([study-progress.md](study-progress.md#fsrs)): the browser sends the answer's
+awarded marks over the question's marks, below 0.5 is Again, below 0.7 Hard,
+otherwise Good. Only the storage and API exist; the page's answering and review
+screens wait for their mock.
+
+App migration `0055_bank_review_states.sql` keeps one row per user and bank
+question: `question_id` and a copied `topic_id` are plain ids into the bank
+database (no foreign key), `item_hash` is `review.QuestionHash` of the question
+when it was answered, then `review_states`' FSRS columns and `last_score`.
+There is no review log. Rows are never copied or charged to storage.
+
+| Endpoint | Effect |
+| --- | --- |
+| `POST /api/bank/questions/{id}/answers` | `{score}`, 0 to 1. Reads the question from the bank (404 when unknown or retracted), then rates it under a per-user, per-question advisory lock and stores its topic, hash and score; 204. A stored hash that no longer matches is rated as a new question. |
+| `GET /api/bank/topics/{topicId}/marks` | `{marks: {questionId: boolean}}` for the topic list: each answered current question, true when the last answer earned full marks (the quiz page's green). |
+| `GET /api/bank/topics/{topicId}/review` | `{questionIds}`: the topic's mistake review batch, up to 20 current questions missed at least once (`lapses > 0`), lowest retrievability first. The page reads them through `GET /api/bank/questions?ids=`; asking again after the answers land gives the next batch. |
+
+A current question is one that is not retracted and whose stored hash equals
+its hash now; `bank.TopicHashes` reads the topic's questions once per request.
+Editing a stem or part prompt therefore hides the question's mark and takes it
+out of review until it is answered again; edits to answers, schemes, solutions
+and figures keep both. The routes need the page's read access (signed in, bank
+configured), so signed-out visitors get 401 and record nothing; frozen accounts
+record (`requireAccountMutate`). Account purge deletes the rows. The MSW bank
+mock (`src/mocks/questionBank.ts`) serves all three, ordering review by the
+oldest answer.
+
+Published questions are retracted, never deleted, so progress ids stay valid.
+Bank migration `0003_retracted.sql` adds `questions.retracted_at`, which only
+the owner sets (see [deployment-runbook.md](deployment-runbook.md)); the editor
+role has no grant on it. Syllabus counts, the topic list, single and batch
+reads (a retracted id fails a batch with 404 like an unknown one), comments,
+answers, marks, review and the chat's list, read and `copy_questions` routes
+all skip retracted questions. Editors' save and review routes do not check the
+flag; the page never lists those questions. UAT and production share the bank:
+run `go run ./cmd/bank migrate` before deploying code that reads the column,
+and code older than this change still shows retracted questions.
 
 ## Delivery and checks
 

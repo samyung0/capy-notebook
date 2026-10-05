@@ -44,6 +44,9 @@ func TestInternalBankListsReadsAndCopiesWithCredits(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+		if _, err := pool.Exec(ctx, `UPDATE questions SET question_types='{identifying-information}' WHERE id='bq2'`); err != nil {
+			t.Fatal(err)
+		}
 		bankStore = bank.New(bankDSN, "", assets, bankDSN)
 		t.Cleanup(bankStore.Close)
 		c.Bank = bankStore
@@ -69,6 +72,14 @@ func TestInternalBankListsReadsAndCopiesWithCredits(t *testing.T) {
 	}
 	if code, page := post("/api/internal/bank/list", map[string]any{"userId": "u_editor", "topicId": "t", "offset": 1}); code != 200 || page["total"].(float64) != 3 || len(page["questions"].([]any)) != 2 {
 		t.Fatalf("page: %d %v", code, page)
+	}
+	// A question type keeps a topic's questions of that task type, and needs the topic.
+	code, typed := post("/api/internal/bank/list", map[string]any{"userId": "u_editor", "topicId": "t", "questionType": "identifying-information"})
+	if rows, _ := typed["questions"].([]any); code != 200 || typed["total"].(float64) != 1 || len(rows) != 1 || rows[0].(map[string]any)["id"] != "bq2" {
+		t.Fatalf("typed page: %d %v", code, typed)
+	}
+	if code, _ := post("/api/internal/bank/list", map[string]any{"userId": "u_editor", "subjectId": "s", "questionType": "identifying-information"}); code != 400 {
+		t.Fatalf("question type without a topic: %d", code)
 	}
 	if code, read := post("/api/internal/bank/read", map[string]any{"userId": "u_editor", "questionId": "bq1"}); code != 200 || len(read["sources"].([]any)) != 1 {
 		t.Fatalf("read: %d %v", code, read)

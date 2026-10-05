@@ -2299,12 +2299,19 @@ export const handlers = [
     const wsId = String(params.id);
     const ws = db.workspaces.find((w) => w.id === wsId);
     if (!ws) return new HttpResponse(null, { status: 404 });
-    if (!opts.kind || !opts.count || opts.count < 1) {
+    if (!opts.kind || (opts.count !== undefined && opts.count < 1)) {
       return HttpResponse.json(
-        { message: 'kind, count, and levels are required' },
+        { message: 'kind is required and count at least 1' },
         { status: 400 }
       );
     }
+    // Like the server: an omitted count takes the saved study preference.
+    const prefs = db.user.studyPreferences;
+    const count =
+      opts.count ??
+      (opts.kind === 'quiz'
+        ? (prefs.quizLength ?? 8)
+        : (prefs.flashcardsPerChapter ?? 15));
     if (!GENERATE_KINDS.includes(opts.kind)) {
       return HttpResponse.json(
         { message: `unsupported generate kind "${opts.kind}"` },
@@ -2382,7 +2389,7 @@ export const handlers = [
       // Persist a flashcards markdown material; its card -> set lookup lives in flashcardCards.
       const id = uid('dk');
       const name = title;
-      const cardContents = Array.from({ length: opts.count }, (_, i) => ({
+      const cardContents = Array.from({ length: count }, (_, i) => ({
         back: `Definition for term ${i + 1}.`,
         front: `Term ${i + 1}`,
         id: uid('c'),
@@ -2438,7 +2445,7 @@ export const handlers = [
     }
 
     // quiz
-    const qs: Question[] = Array.from({ length: opts.count }, (_, i) => {
+    const qs: Question[] = Array.from({ length: count }, (_, i) => {
       const type = opts.types[i % opts.types.length];
       const answer = structuredClone(
         exampleAnswers.find((answer) => answer.type === type)!

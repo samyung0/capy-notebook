@@ -18,9 +18,9 @@ learner is to have forgotten them (retrievability).
 
 Who may record, frozen accounts and the lifecycle rules are summarised in
 [authorization-permissions-lifecycles.md](authorization-permissions-lifecycles.md);
-this page is the detail. Bank question progress is a later, separate feature
-(`todo-learning.md`, "Question-bank progress") that will reuse
-`server/internal/review`.
+this page is the detail. Question-bank progress is separate, per bank question
+and topic, and reuses `server/internal/review` with the same score mapping
+([question-bank.md](question-bank.md#learner-progress-and-retraction)).
 
 ## Data model
 

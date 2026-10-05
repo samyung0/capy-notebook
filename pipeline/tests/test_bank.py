@@ -47,6 +47,8 @@ def _gateway(monkeypatch):
                 return tools._refused(
                     "Could not list: No bank topic.", code="unavailable_target"
                 )
+            if payload.get("questionType") not in (None, "matching_headings"):
+                return {"total": 0, "questions": []}
             offset = payload["offset"]
             rows = [
                 _question(f"q{n}", "", "Choose a heading.")
@@ -131,6 +133,28 @@ async def test_listing_walks_exams_subjects_topics_and_pages(monkeypatch):
         "IELTS · Academic Reading"
         in (await tools._read_question({"question_id": "q1"}, ctx)).text()
     )
+
+
+async def test_a_question_type_narrows_a_topic_page(monkeypatch):
+    seen = _gateway(monkeypatch)
+    ctx = tools.ToolContext(
+        workspace_id="ws", user_id="u", operations=frozenset({"library.read"})
+    )
+    args = {"topic": "ielts-headings", "question_type": "matching_headings"}
+    typed = (await tools._list_question_bank(args, ctx)).text()
+    assert seen[-1][1]["questionType"] == "matching_headings"
+    assert typed.startswith("Topic ielts-headings: matching_headings questions 1-50")
+
+    missing = await tools._list_question_bank(
+        {"topic": "ielts-headings", "question_type": "summary_completion"}, ctx
+    )
+    assert missing.refused and "without question_type" in missing.text()
+    # The filter narrows a topic's page; a subject alone is refused before Go.
+    calls = len(seen)
+    no_topic = await tools._list_question_bank(
+        {"subject": "ielts-reading", "question_type": "matching_headings"}, ctx
+    )
+    assert no_topic.refused and len(seen) == calls
 
 
 async def test_without_a_bank_the_tools_are_not_offered(monkeypatch):

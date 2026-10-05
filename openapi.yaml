@@ -370,6 +370,24 @@ components:
         - pct
         - takenAt
       type: object
+    BankAnswerInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/BankAnswerInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        score:
+          description: The answer's awarded marks over the question's marks
+          format: double
+          maximum: 1
+          minimum: 0
+          type: number
+      required:
+        - score
+      type: object
     BankAssetOutputBody:
       additionalProperties: false
       properties:
@@ -434,6 +452,23 @@ components:
       required:
         - questions
       type: object
+    BankMarksOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/BankMarksOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        marks:
+          additionalProperties:
+            type: boolean
+          description: "Answered current questions by id: true when the last answer earned full marks"
+          type: object
+      required:
+        - marks
+      type: object
     BankReviewInputBody:
       additionalProperties: false
       properties:
@@ -447,6 +482,23 @@ components:
           type: boolean
       required:
         - reviewed
+      type: object
+    BankReviewOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/BankReviewOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        questionIds:
+          description: Up to 20 questions missed at least once, least retained first; read them through bankQuestionBatch
+          items:
+            type: string
+          type: array
+      required:
+        - questionIds
       type: object
     BankSaveInputBody:
       additionalProperties: false
@@ -1752,18 +1804,12 @@ components:
           items:
             type: string
           type: array
-        format:
-          type: string
         kind:
           $ref: "#/components/schemas/GenerateKind"
-        length:
-          type: string
         levels:
           items:
             $ref: "#/components/schemas/CognitiveLevel"
           type: array
-        style:
-          type: string
         title:
           maxLength: 120
           minLength: 1
@@ -1777,7 +1823,6 @@ components:
           type: array
       required:
         - kind
-        - count
         - title
       type: object
     GradeQuizReq:
@@ -4358,6 +4403,12 @@ components:
           maximum: 100
           minimum: 1
           type: integer
+        mainFormat:
+          enum:
+            - note
+            - deck
+            - auto
+          type: string
         miniChecks:
           type: boolean
         practice:
@@ -5675,6 +5726,33 @@ paths:
       summary: Edit a bank question
       tags:
         - Question bank
+  /api/bank/questions/{id}/answers:
+    post:
+      operationId: answerBankQuestion
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BankAnswerInputBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Record a checked answer
+      tags:
+        - Question bank
   /api/bank/questions/{id}/comments:
     post:
       operationId: commentBankQuestion
@@ -5752,6 +5830,31 @@ paths:
       summary: Read the exam syllabus
       tags:
         - Question bank
+  /api/bank/topics/{topicId}/marks:
+    get:
+      operationId: bankTopicMarks
+      parameters:
+        - in: path
+          name: topicId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BankMarksOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Right and wrong marks for a topic's questions
+      tags:
+        - Question bank
   /api/bank/topics/{topicId}/questions:
     get:
       operationId: bankQuestions
@@ -5775,6 +5878,31 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: List topic questions
+      tags:
+        - Question bank
+  /api/bank/topics/{topicId}/review:
+    get:
+      operationId: bankTopicReview
+      parameters:
+        - in: path
+          name: topicId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BankReviewOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Next mistake review batch for a topic
       tags:
         - Question bank
   /api/billing:

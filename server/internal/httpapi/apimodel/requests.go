@@ -190,19 +190,17 @@ type CreateFlashcardSetReq struct {
 }
 
 // GenerateReq is the body for POST /api/workspaces/{id}/generate.
-// kind and count are required; levels is optional. detail, diagramType, and types have
-// explicit defaults so OpenAPI/orval capture them; the handler does not invent
-// values after the gate.
+// kind is required; levels is optional. An omitted count takes the requester's
+// study preference for the kind (quiz length, flashcards per chapter) in the
+// pipeline. detail, diagramType, and types have explicit defaults so
+// OpenAPI/orval capture them; the handler does not invent values after the gate.
 type GenerateReq struct {
 	Kind        store.GenerateKind           `json:"kind"`
-	Count       int                          `json:"count" minimum:"1" maximum:"50"`
+	Count       int                          `json:"count,omitempty" minimum:"1" maximum:"50"`
 	Levels      []store.CognitiveLevel       `json:"levels,omitempty" nullable:"false"`
 	Types       []store.GenerateQuestionType `json:"types,omitempty" minItems:"1" default:"[\"mcq\"]" nullable:"false"`
 	Detail      store.GenerateDetail         `json:"detail,omitempty" default:"standard"`
 	DiagramType store.GenerateDiagramType    `json:"diagramType,omitempty" default:"auto"`
-	Length      string                       `json:"length,omitempty"`
-	Format      string                       `json:"format,omitempty"`
-	Style       string                       `json:"style,omitempty"`
 	Chapters    []string                     `json:"chapters,omitempty" nullable:"false"`
 	FileIds     []string                     `json:"fileIds,omitempty" nullable:"false"`
 	Title       MaterialTitle                `json:"title" minLength:"1"`

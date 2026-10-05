@@ -236,6 +236,9 @@ export type StudySummary = Omit<GenStudySummary, 'quickReview'> & {
   quickReview: ReviewItem[];
 };
 export type {
+  BankAnswerInputBody as BankAnswerReq,
+  BankMarksOutputBody as BankTopicMarks,
+  BankReviewOutputBody as BankReviewBatch,
   RateReviewItemReq,
   ReviewWorkspace,
   SetStudyEnabledReq,
@@ -393,14 +396,14 @@ export type GenerateKind = Exclude<MaterialKind, 'note'>;
 
 export interface GenerateScope {
   chapters: string[]; // chapter ids
-  count: number;
+  /** Omitted, the server takes the user's study preference for the kind. */
+  count?: number;
   fileIds: string[]; // file ids
   levels?: CognitiveLevel[];
   title: string;
 }
 export interface GenerateFlashcardsOptions extends GenerateScope {
   kind: 'flashcards';
-  style: 'term-def' | 'qa' | 'cloze';
 }
 export interface GenerateQuizOptions extends GenerateScope {
   kind: 'quiz';

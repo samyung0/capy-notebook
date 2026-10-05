@@ -18,15 +18,12 @@ export interface GenerateReq {
      * @minimum 1
      * @maximum 50
      */
-  count: number;
+  count?: number;
   detail?: GenerateDetail;
   diagramType?: GenerateDiagramType;
   fileIds?: string[];
-  format?: string;
   kind: GenerateKind;
-  length?: string;
   levels?: CognitiveLevel[];
-  style?: string;
   /**
      * @minLength 1
      * @maxLength 120

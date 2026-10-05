@@ -14,7 +14,8 @@ import (
 // The generate defaults are declared as Huma tags so OpenAPI and orval show
 // them. That only helps if Huma actually fills them in before the handler runs:
 // otherwise the request reaches the pipeline with an empty types list and the
-// gateway is back to inventing a value somewhere downstream.
+// gateway is back to inventing a value somewhere downstream. An omitted count
+// is left to the pipeline, which takes it from the forwarded study preferences.
 func TestGenerateSendsDeclaredDefaultsToThePipeline(t *testing.T) {
 	seen := make(chan map[string]any, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -30,8 +31,16 @@ func TestGenerateSendsDeclaredDefaultsToThePipeline(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	h := openShareAPI(t, pipeline.New(srv.URL, ""))
-	rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
-		"u_editor", generateBody("quiz", "Default carrying quiz"))
+	if rec := doReq(t, h, http.MethodPatch, "/api/me/study-preferences", "u_editor",
+		map[string]any{"quizLength": 12}); rec.Code != http.StatusNoContent {
+		t.Fatalf("save preferences: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	t.Cleanup(func() {
+		_ = doReq(t, h, http.MethodPatch, "/api/me/study-preferences", "u_editor", map[string]any{})
+	})
+	req := generateBody("quiz", "Default carrying quiz")
+	delete(req, "count")
+	rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate", "u_editor", req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
@@ -52,6 +61,12 @@ func TestGenerateSendsDeclaredDefaultsToThePipeline(t *testing.T) {
 	}
 	if got, ok := body["fileIds"].([]any); !ok || len(got) == 0 {
 		t.Errorf("omitted scope did not expand to workspace files: %#v", body["fileIds"])
+	}
+	if _, sent := body["count"]; sent {
+		t.Errorf("omitted count was sent as %#v", body["count"])
+	}
+	if got := body["studyPreferences"]; !reflect.DeepEqual(got, map[string]any{"quizLength": float64(12)}) {
+		t.Errorf("studyPreferences = %#v, want the saved quizLength", got)
 	}
 }
 

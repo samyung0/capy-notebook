@@ -106,10 +106,7 @@ func (a *api) generate(ctx context.Context, in *generateInput) (*generateOutput,
 
 type generateOpts struct {
 	Kind        store.MaterialKind
-	Length      string
-	Format      string
-	Count       int
-	Style       string
+	Count       int // 0 leaves it to the requester's study preference
 	Types       []string
 	Levels      []string
 	Chapters    []string
@@ -133,10 +130,7 @@ func generateOptsFrom(req apimodel.GenerateReq, title string) generateOpts {
 	}
 	return generateOpts{
 		Kind:        req.Kind.MaterialKind(),
-		Length:      req.Length,
-		Format:      req.Format,
 		Count:       req.Count,
-		Style:       req.Style,
 		Types:       types,
 		Levels:      levels,
 		Chapters:    req.Chapters,
@@ -243,13 +237,22 @@ func (a *api) generateViaPipe(
 	if err != nil {
 		return nil, pipeUsage{}, err
 	}
+	// The requester's saved study preferences, as chat turns get them: the
+	// pipeline takes an omitted count from them.
+	prefs, err := a.s.StudyPreferencesOf(ctx, userID)
+	if err != nil {
+		return nil, pipeUsage{}, err
+	}
 	body := map[string]any{
-		"workspaceId": wsID, "kind": opts.Kind, "length": opts.Length, "format": opts.Format,
-		"count": opts.Count, "style": opts.Style, "types": opts.Types, "levels": opts.Levels,
+		"workspaceId": wsID, "kind": opts.Kind, "types": opts.Types, "levels": opts.Levels,
 		"chapters": chapterNames, "fileIds": fileIDs,
 		"detail": opts.Detail, "diagramType": opts.DiagramType,
-		"locale":         a.userLocale(ctx, userID),
-		"spendSessionId": spendSessionID,
+		"studyPreferences": prefs,
+		"locale":           a.userLocale(ctx, userID),
+		"spendSessionId":   spendSessionID,
+	}
+	if opts.Count > 0 {
+		body["count"] = opts.Count
 	}
 	llm.attach(body)
 	var usage pipeUsage

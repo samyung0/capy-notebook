@@ -116,6 +116,7 @@ func (a *api) registerBank(api huma.API) {
 	regWithMaxBody(api, "PUT", "/api/bank/questions/{id}", "saveBankQuestion", tag, "Edit a bank question", 200, materialRequestMaxBytes, a.bankSave)
 	reg(api, "PUT", "/api/bank/questions/{id}/review", "reviewBankQuestion", tag, "Set the review marker", 200, a.bankReview)
 	reg(api, "POST", "/api/bank/questions/{id}/comments", "commentBankQuestion", tag, "Email a question comment", 204, a.bankComment)
+	a.registerBankProgress(api)
 	huma.Register(api, huma.Operation{OperationID: "uploadBankAsset", Method: "POST", Path: "/api/bank/assets", Summary: "Upload a public question figure", Tags: []string{tag}, DefaultStatus: 201,
 		Middlewares: huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
 			if _, err := a.bankAccess(ctx.Context(), true); err != nil {

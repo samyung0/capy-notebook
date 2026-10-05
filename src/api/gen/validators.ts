@@ -434,6 +434,25 @@ export const SaveBankQuestionResponse = zod.object({
 
 
 /**
+ * @summary Record a checked answer
+ */
+export const AnswerBankQuestionParams = zod.object({
+  "id": zod.string()
+})
+
+export const answerBankQuestionBodyScoreMin = 0;
+export const answerBankQuestionBodyScoreMax = 1;
+
+
+
+export const AnswerBankQuestionBody = zod.object({
+  "score": zod.number().min(answerBankQuestionBodyScoreMin).max(answerBankQuestionBodyScoreMax).describe('The answer\'s awarded marks over the question\'s marks')
+})
+
+export const AnswerBankQuestionResponse = zod.void()
+
+
+/**
  * @summary Email a question comment
  */
 export const CommentBankQuestionParams = zod.object({
@@ -562,6 +581,19 @@ export const BankSyllabusResponse = zod.object({
 
 
 /**
+ * @summary Right and wrong marks for a topic's questions
+ */
+export const BankTopicMarksParams = zod.object({
+  "topicId": zod.string()
+})
+
+export const BankTopicMarksResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "marks": zod.record(zod.string(), zod.boolean()).describe('Answered current questions by id: true when the last answer earned full marks')
+})
+
+
+/**
  * @summary List topic questions
  */
 export const BankQuestionsParams = zod.object({
@@ -581,6 +613,19 @@ export const BankQuestionsResponse = zod.object({
   "reviewedBy": zod.string(),
   "reviewerName": zod.string()
 })).nullable()
+})
+
+
+/**
+ * @summary Next mistake review batch for a topic
+ */
+export const BankTopicReviewParams = zod.object({
+  "topicId": zod.string()
+})
+
+export const BankTopicReviewResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "questionIds": zod.array(zod.string()).describe('Up to 20 questions missed at least once, least retained first; read them through bankQuestionBatch')
 })
 
 
@@ -3016,6 +3061,7 @@ export const GetMeResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "explainerStyle": zod.enum(['brief', 'standard', 'detailed']).optional(),
   "flashcardsPerChapter": zod.int().min(1).max(getMeResponseStudyPreferencesFlashcardsPerChapterMax).optional(),
+  "mainFormat": zod.enum(['note', 'deck', 'auto']).optional(),
   "miniChecks": zod.boolean().optional(),
   "practice": zod.enum(['none', 'quiz', 'flashcards', 'both']).optional(),
   "quizLength": zod.int().min(1).max(getMeResponseStudyPreferencesQuizLengthMax).optional(),
@@ -3081,6 +3127,7 @@ export const UpdateMeResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "explainerStyle": zod.enum(['brief', 'standard', 'detailed']).optional(),
   "flashcardsPerChapter": zod.int().min(1).max(updateMeResponseStudyPreferencesFlashcardsPerChapterMax).optional(),
+  "mainFormat": zod.enum(['note', 'deck', 'auto']).optional(),
   "miniChecks": zod.boolean().optional(),
   "practice": zod.enum(['none', 'quiz', 'flashcards', 'both']).optional(),
   "quizLength": zod.int().min(1).max(updateMeResponseStudyPreferencesQuizLengthMax).optional(),
@@ -3182,6 +3229,7 @@ export const setStudyPreferencesBodyQuizLengthMax = 50;
 export const SetStudyPreferencesBody = zod.object({
   "explainerStyle": zod.enum(['brief', 'standard', 'detailed']).optional(),
   "flashcardsPerChapter": zod.int().min(1).max(setStudyPreferencesBodyFlashcardsPerChapterMax).optional(),
+  "mainFormat": zod.enum(['note', 'deck', 'auto']).optional(),
   "miniChecks": zod.boolean().optional(),
   "practice": zod.enum(['none', 'quiz', 'flashcards', 'both']).optional(),
   "quizLength": zod.int().min(1).max(setStudyPreferencesBodyQuizLengthMax).optional(),
@@ -4993,15 +5041,12 @@ export const generateBodyTitleMax = 120;
 
 export const GenerateBody = zod.object({
   "chapters": zod.array(zod.string()).optional(),
-  "count": zod.int().min(1).max(generateBodyCountMax),
+  "count": zod.int().min(1).max(generateBodyCountMax).optional(),
   "detail": zod.enum(['brief', 'standard', 'detailed']).default(generateBodyDetailDefault),
   "diagramType": zod.enum(['auto', 'flowchart', 'sequence', 'class', 'state', 'er']).default(generateBodyDiagramTypeDefault),
   "fileIds": zod.array(zod.string()).optional(),
-  "format": zod.string().optional(),
   "kind": zod.enum(['flashcards', 'quiz', 'mindmap', 'diagram']),
-  "length": zod.string().optional(),
   "levels": zod.array(zod.enum(['recall', 'application', 'analysis'])).optional(),
-  "style": zod.string().optional(),
   "title": zod.string().min(1).max(generateBodyTitleMax),
   "types": zod.array(zod.enum(['mcq', 'multi', 'boolean', 'short', 'open', 'ordering', 'matching'])).min(1).default([`mcq`])
 })

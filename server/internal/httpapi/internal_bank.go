@@ -29,6 +29,9 @@ type internalBankListReq struct {
 	SubjectID string `json:"subjectId"`
 	TopicID   string `json:"topicId"`
 	Offset    int    `json:"offset"`
+	// QuestionType keeps a topic's questions of one task type (IELTS Reading's
+	// identifying-information, say); it needs topicId.
+	QuestionType string `json:"questionType"`
 }
 
 type internalBankReadReq struct {
@@ -86,7 +89,7 @@ func (a *api) failBank(w http.ResponseWriter, err error, missing string) {
 
 // internalBankList walks the syllabus: with nothing, every exam's subjects
 // with question counts; with subjectId, its topics; with topicId, one page of
-// its questions from offset.
+// its questions from offset, of one questionType when it is set.
 func (a *api) internalBankList(w http.ResponseWriter, r *http.Request) {
 	var req internalBankListReq
 	if err := decode(r, &req); err != nil {
@@ -97,12 +100,16 @@ func (a *api) internalBankList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	if req.QuestionType != "" && req.TopicID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "questionType filters a topic's questions; it needs topicId"})
+		return
+	}
 	if req.TopicID != "" {
 		if req.Offset < 0 {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "offset must not be negative"})
 			return
 		}
-		total, page, err := a.cfg.Bank.Page(ctx, req.TopicID, req.Offset, internalBankPage)
+		total, page, err := a.cfg.Bank.Page(ctx, req.TopicID, req.QuestionType, req.Offset, internalBankPage)
 		if err != nil {
 			a.failBank(w, err, "No bank topic "+req.TopicID+".")
 			return

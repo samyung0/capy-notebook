@@ -137,7 +137,7 @@ function CountRow({
   value,
   onChange,
 }: {
-  value: number;
+  value?: number;
   onChange: (n: number) => void;
 }) {
   return (
@@ -188,8 +188,8 @@ export function GenerateForm({
   const [title, setTitle] = useState(() =>
     nextGenerateTitle(mode, workspaceName, existingTitles)
   );
-  const [count, setCount] = useState(10);
-  const [style, setStyle] = useState<'term-def' | 'qa' | 'cloze'>('term-def');
+  // Unpicked, the server uses the user's study preference for the kind.
+  const [count, setCount] = useState<number>();
   const [types, setTypes] = useState<QuestionType[]>(['mcq', 'boolean']);
   const [detail, setDetail] = useState<'brief' | 'standard' | 'detailed'>(
     'standard'
@@ -212,7 +212,7 @@ export function GenerateForm({
       title: title.trim(),
     };
     let opts: GenerateOptions;
-    if (mode === 'flashcards') opts = { kind: 'flashcards', style, ...scope };
+    if (mode === 'flashcards') opts = { kind: 'flashcards', ...scope };
     else if (mode === 'quiz') opts = { kind: 'quiz', types, ...scope };
     else if (mode === 'mindmap') opts = { detail, kind: 'mindmap', ...scope };
     else opts = { diagramType, kind: 'diagram', ...scope };
@@ -289,15 +289,7 @@ export function GenerateForm({
         </div>
 
         {mode === 'flashcards' && (
-          <>
-            <CountRow onChange={setCount} value={count} />
-            <OptionRow
-              label={m.common_style()}
-              onChange={(v) => setStyle(v as typeof style)}
-              options={['term-def', 'qa', 'cloze']}
-              value={style}
-            />
-          </>
+          <CountRow onChange={setCount} value={count} />
         )}
         {mode === 'quiz' && (
           <>

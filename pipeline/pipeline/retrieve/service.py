@@ -25,6 +25,7 @@ from .. import elitellm, obs, registry, use_compatible_event_loop
 from ..config import cfg
 from ..generated.limits import CHAT_CHARACTER_LIMIT
 from ..prompts import generate as generate_prompts
+from ..prompts import preferences
 from ..retrieval import (
     accounting,
     compact,
@@ -284,21 +285,26 @@ def _reset_accounting(token) -> None:
 class GenerateReq(LLMPin):
     workspaceId: str
     kind: str  # flashcards | quiz | mindmap | diagram
-    count: int = Field(ge=1, le=50)
+    # Omitted, the requester's study preference for the kind sets it.
+    count: int | None = Field(default=None, ge=1, le=50)
     levels: list[str] | None = None
     types: list[str] = Field(min_length=1)
     detail: str
     diagramType: str
-    length: str | None = None
-    format: str | None = None
-    style: str | None = None
     chapters: list[str] | None = None
     fileIds: list[str] | None = None
     locale: str | None = None
+    # The requester's saved study preferences; missing fields take defaults.
+    studyPreferences: dict | None = None
     spendSessionId: str = ""
 
 
 _VALID_LEVELS = {"recall", "application", "analysis"}
+
+
+def _count(req: GenerateReq) -> int:
+    """The panel's count, else the requester's study preference for the kind."""
+    return req.count or preferences.generate_count(req.kind, req.studyPreferences)
 
 
 def _cognitive_levels(req: GenerateReq) -> list[str]:
@@ -482,14 +488,14 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
     chapters = req.chapters or []
     file_ids = req.fileIds or []
     if req.kind == "flashcards":
-        instruction = generate_prompts.flashcards_instruction(req.count)
+        instruction = generate_prompts.flashcards_instruction(_count(req))
     elif req.kind == "mindmap":
         instruction = generate_prompts.mindmap_instruction(req.detail)
     elif req.kind == "diagram":
         instruction = generate_prompts.diagram_instruction(req.diagramType)
     elif req.kind == "quiz":
         instruction = generate_prompts.quiz_instruction(
-            count=req.count, types=req.types, levels=_cognitive_levels(req)
+            count=_count(req), types=req.types, levels=_cognitive_levels(req)
         )
     else:
         raise ValueError(f"unsupported generate kind {req.kind!r}")

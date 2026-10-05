@@ -147,12 +147,6 @@ func TestRequestBodyValidation(t *testing.T) {
 			body:   `{"count":1,"levels":["recall"],"title":"t"}`,
 		},
 		{
-			name:   "generate missing count",
-			method: http.MethodPost,
-			path:   "/api/workspaces/ws_1/generate",
-			body:   `{"kind":"quiz","levels":["recall"],"title":"t"}`,
-		},
-		{
 			name:   "generate count zero",
 			method: http.MethodPost,
 			path:   "/api/workspaces/ws_1/generate",

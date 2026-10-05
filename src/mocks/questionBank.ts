@@ -1,5 +1,10 @@
 import { delay, HttpResponse, http } from 'msw';
 import type {
+  BankAnswerReq,
+  BankReviewBatch,
+  BankTopicMarks,
+} from '@/api/types';
+import type {
   BankDetail,
   BankRow,
   BankSyllabus,
@@ -118,6 +123,18 @@ const topicRows = (id: string): BankRow[] =>
       reviewedAt: detail.reviewedAt,
       reviewerName: detail.reviewerName,
     }));
+// The learner's checked answers: the last score, misses (scores below 0.5,
+// FSRS's Again) and when. Review orders misses by the oldest answer first,
+// standing in for the server's retrievability.
+const answers = new Map<
+  string,
+  { at: number; lapses: number; score: number }
+>();
+const answered = (topicId: string) =>
+  topicRows(topicId).flatMap((row) => {
+    const answer = answers.get(row.id);
+    return answer ? [{ id: row.id, ...answer }] : [];
+  });
 export const questionBankHandlers = [
   http.get('/api/bank/syllabus', () => {
     const syllabus: BankSyllabus = {
@@ -233,6 +250,34 @@ export const questionBankHandlers = [
     detail.reviewedAt = reviewed ? new Date().toISOString() : null;
     detail.reviewerName = reviewed ? 'You' : '';
     return HttpResponse.json(detail);
+  }),
+  http.post('/api/bank/questions/:id/answers', async ({ params, request }) => {
+    const id = String(params.id);
+    if (!details.has(id)) return new HttpResponse(null, { status: 404 });
+    const { score } = (await request.json()) as BankAnswerReq;
+    if (!(score >= 0 && score <= 1))
+      return new HttpResponse(null, { status: 422 });
+    const lapses = (answers.get(id)?.lapses ?? 0) + (score < 0.5 ? 1 : 0);
+    answers.set(id, { at: Date.now(), lapses, score });
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.get('/api/bank/topics/:topicId/marks', ({ params }) => {
+    const body: BankTopicMarks = {
+      marks: Object.fromEntries(
+        answered(String(params.topicId)).map((row) => [row.id, row.score >= 1])
+      ),
+    };
+    return HttpResponse.json(body);
+  }),
+  http.get('/api/bank/topics/:topicId/review', ({ params }) => {
+    const body: BankReviewBatch = {
+      questionIds: answered(String(params.topicId))
+        .filter((row) => row.lapses > 0)
+        .sort((a, b) => a.at - b.at)
+        .slice(0, 20)
+        .map((row) => row.id),
+    };
+    return HttpResponse.json(body);
   }),
   http.post(
     '/api/bank/questions/:id/comments',

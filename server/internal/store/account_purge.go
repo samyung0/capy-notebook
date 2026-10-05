@@ -226,7 +226,7 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM attempts WHERE user_id=$1`, userID); err != nil {
 		return err
 	}
-	for _, table := range []string{"study_progress", "workspace_study", "review_states", "review_log"} {
+	for _, table := range []string{"study_progress", "workspace_study", "review_states", "review_log", "bank_review_states"} {
 		if _, err := tx.Exec(ctx, `DELETE FROM `+table+` WHERE user_id=$1`, userID); err != nil {
 			return err
 		}

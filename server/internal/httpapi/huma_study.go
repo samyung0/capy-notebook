@@ -134,7 +134,7 @@ func (a *api) rateReviewItem(ctx context.Context, in *reviewRatingInput) (*Empty
 }
 
 // setStudyPreferences replaces the saved preferences; the chat agent reads
-// them on every turn.
+// them on every turn and AI generate for its defaults.
 func (a *api) setStudyPreferences(ctx context.Context, in *studyPreferencesInput) (*Empty, error) {
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err

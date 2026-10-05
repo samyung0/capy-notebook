@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { StudyPreferencesExplainerStyle } from './studyPreferencesExplainerStyle.ts';
+import type { StudyPreferencesMainFormat } from './studyPreferencesMainFormat.ts';
 import type { StudyPreferencesPractice } from './studyPreferencesPractice.ts';
 import type { StudyPreferencesVisualAids } from './studyPreferencesVisualAids.ts';
 
@@ -17,6 +18,7 @@ export interface StudyPreferences {
      * @maximum 100
      */
   flashcardsPerChapter?: number;
+  mainFormat?: StudyPreferencesMainFormat;
   miniChecks?: boolean;
   practice?: StudyPreferencesPractice;
   /**

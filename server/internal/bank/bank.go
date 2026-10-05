@@ -128,7 +128,7 @@ func (s *Store) Syllabus(ctx context.Context) (Syllabus, error) {
 	}
 	rows, err := p.Query(ctx, `SELECT e.id,e.label,s.id,s.label,t.id,t.label,count(q.id),count(q.reviewed_at)
  FROM exams e LEFT JOIN subjects s ON s.exam_id=e.id LEFT JOIN topics t ON t.subject_id=s.id
- LEFT JOIN questions q ON q.topic_id=t.id GROUP BY e.id,s.id,t.id ORDER BY e.position,e.id,s.position,s.id,t.position,t.id`)
+ LEFT JOIN questions q ON q.topic_id=t.id AND q.retracted_at IS NULL GROUP BY e.id,s.id,t.id ORDER BY e.position,e.id,s.position,s.id,t.position,t.id`)
 	if err != nil {
 		return out, dbError(err)
 	}
@@ -242,7 +242,7 @@ func (s *Store) List(ctx context.Context, topic string) ([]Row, error) {
 	if !exists {
 		return nil, ErrNotFound
 	}
-	rows, err := p.Query(ctx, `SELECT id,position,content,reviewed_at,COALESCE(reviewed_by,'') FROM questions WHERE topic_id=$1 ORDER BY position,id`, topic)
+	rows, err := p.Query(ctx, `SELECT id,position,content,reviewed_at,COALESCE(reviewed_by,'') FROM questions WHERE topic_id=$1 AND retracted_at IS NULL ORDER BY position,id`, topic)
 	if err != nil {
 		return nil, dbError(err)
 	}
@@ -307,22 +307,23 @@ type PageQuestion struct {
 }
 
 // Page is a topic's question count and one page of its questions in bank
-// order; an unknown topic is ErrNotFound.
-func (s *Store) Page(ctx context.Context, topic string, offset, limit int) (int, []PageQuestion, error) {
+// order, only those of questionType when it is set; an unknown topic is
+// ErrNotFound.
+func (s *Store) Page(ctx context.Context, topic, questionType string, offset, limit int) (int, []PageQuestion, error) {
 	p, err := s.pool(ctx, false)
 	if err != nil {
 		return 0, nil, err
 	}
 	var total int
 	var exists bool
-	if err = p.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM topics WHERE id=$1), (SELECT count(*) FROM questions WHERE topic_id=$1)`, topic).
+	if err = p.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM topics WHERE id=$1), (SELECT count(*) FROM questions WHERE topic_id=$1 AND retracted_at IS NULL AND ($2='' OR $2=ANY(question_types)))`, topic, questionType).
 		Scan(&exists, &total); err != nil {
 		return 0, nil, dbError(err)
 	}
 	if !exists {
 		return 0, nil, ErrNotFound
 	}
-	rows, err := p.Query(ctx, `SELECT id,content,question_types FROM questions WHERE topic_id=$1 ORDER BY position,id OFFSET $2 LIMIT $3`, topic, offset, limit)
+	rows, err := p.Query(ctx, `SELECT id,content,question_types FROM questions WHERE topic_id=$1 AND retracted_at IS NULL AND ($2='' OR $2=ANY(question_types)) ORDER BY position,id OFFSET $3 LIMIT $4`, topic, questionType, offset, limit)
 	if err != nil {
 		return 0, nil, dbError(err)
 	}
@@ -365,7 +366,7 @@ func (s *Store) Get(ctx context.Context, id string) (Detail, error) {
 		return out, err
 	}
 	err = p.QueryRow(ctx, `SELECT q.content,q.sources,q.updated_at,q.reviewed_at,COALESCE(q.reviewed_by,''),q.topic_id,q.position,e.label,s.label,t.label
- FROM questions q JOIN topics t ON t.id=q.topic_id JOIN subjects s ON s.id=t.subject_id JOIN exams e ON e.id=s.exam_id WHERE q.id=$1`, id).
+ FROM questions q JOIN topics t ON t.id=q.topic_id JOIN subjects s ON s.id=t.subject_id JOIN exams e ON e.id=s.exam_id WHERE q.id=$1 AND q.retracted_at IS NULL`, id).
 		Scan(&out.Question, &out.Sources, &out.UpdatedAt, &out.ReviewedAt, &out.ReviewedBy, &out.TopicID, &out.Position, &out.ExamLabel, &out.SubjectLabel, &out.TopicLabel)
 	if err == nil {
 		if invalid := s.Validate(out.Question); invalid != nil {
@@ -382,7 +383,7 @@ func (s *Store) GetMany(ctx context.Context, ids []string) ([]Detail, error) {
 		return nil, err
 	}
 	rows, err := p.Query(ctx, `SELECT q.content,q.sources,q.updated_at,q.reviewed_at,COALESCE(q.reviewed_by,''),q.topic_id,q.position,e.label,s.label,t.label
- FROM unnest($1::text[]) WITH ORDINALITY AS w(id,n) JOIN questions q ON q.id=w.id JOIN topics t ON t.id=q.topic_id JOIN subjects s ON s.id=t.subject_id JOIN exams e ON e.id=s.exam_id ORDER BY w.n`, ids)
+ FROM unnest($1::text[]) WITH ORDINALITY AS w(id,n) JOIN questions q ON q.id=w.id AND q.retracted_at IS NULL JOIN topics t ON t.id=q.topic_id JOIN subjects s ON s.id=t.subject_id JOIN exams e ON e.id=s.exam_id ORDER BY w.n`, ids)
 	if err != nil {
 		return nil, dbError(err)
 	}

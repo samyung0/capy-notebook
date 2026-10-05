@@ -14,12 +14,15 @@ import type {
   AnonymousQuiz,
   Attempt,
   AttemptDetail,
+  BankAnswerInputBody,
   BankAssetOutputBody,
   BankBatchBody,
   BankCommentInputBody,
   BankListBody,
+  BankMarksOutputBody,
   BankQuestionBatchParams,
   BankReviewInputBody,
+  BankReviewOutputBody,
   BankSaveInputBody,
   BillingCheckoutReq,
   BillingInfo,
@@ -622,6 +625,57 @@ export const saveBankQuestion = async (id: string,
 
 
 
+export type answerBankQuestionResponse204 = {
+  data: void
+  status: 204
+}
+
+export type answerBankQuestionResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type answerBankQuestionResponseSuccess = (answerBankQuestionResponse204) & {
+  headers: Headers;
+};
+export type answerBankQuestionResponseError = (answerBankQuestionResponseDefault) & {
+  headers: Headers;
+};
+
+export type answerBankQuestionResponse = (answerBankQuestionResponseSuccess | answerBankQuestionResponseError)
+
+export const getAnswerBankQuestionUrl = (id: string,) => {
+
+
+
+
+  return `/api/bank/questions/${id}/answers`
+}
+
+/**
+ * @summary Record a checked answer
+ */
+export const answerBankQuestion = async (id: string,
+    bankAnswerInputBody: NonReadonly<BankAnswerInputBody>, options?: RequestInit): Promise<answerBankQuestionResponse> => {
+
+  const res = await fetch(getAnswerBankQuestionUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(bankAnswerInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: answerBankQuestionResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as answerBankQuestionResponse
+}
+
+
+
 export type commentBankQuestionResponse204 = {
   data: void
   status: 204
@@ -774,6 +828,56 @@ export const bankSyllabus = async ( options?: RequestInit): Promise<bankSyllabus
 
 
 
+export type bankTopicMarksResponse200 = {
+  data: BankMarksOutputBody
+  status: 200
+}
+
+export type bankTopicMarksResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type bankTopicMarksResponseSuccess = (bankTopicMarksResponse200) & {
+  headers: Headers;
+};
+export type bankTopicMarksResponseError = (bankTopicMarksResponseDefault) & {
+  headers: Headers;
+};
+
+export type bankTopicMarksResponse = (bankTopicMarksResponseSuccess | bankTopicMarksResponseError)
+
+export const getBankTopicMarksUrl = (topicId: string,) => {
+
+
+
+
+  return `/api/bank/topics/${topicId}/marks`
+}
+
+/**
+ * @summary Right and wrong marks for a topic's questions
+ */
+export const bankTopicMarks = async (topicId: string, options?: RequestInit): Promise<bankTopicMarksResponse> => {
+
+  const res = await fetch(getBankTopicMarksUrl(topicId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: bankTopicMarksResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as bankTopicMarksResponse
+}
+
+
+
 export type bankQuestionsResponse200 = {
   data: BankListBody
   status: 200
@@ -820,6 +924,56 @@ export const bankQuestions = async (topicId: string, options?: RequestInit): Pro
 
   const data: bankQuestionsResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as bankQuestionsResponse
+}
+
+
+
+export type bankTopicReviewResponse200 = {
+  data: BankReviewOutputBody
+  status: 200
+}
+
+export type bankTopicReviewResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type bankTopicReviewResponseSuccess = (bankTopicReviewResponse200) & {
+  headers: Headers;
+};
+export type bankTopicReviewResponseError = (bankTopicReviewResponseDefault) & {
+  headers: Headers;
+};
+
+export type bankTopicReviewResponse = (bankTopicReviewResponseSuccess | bankTopicReviewResponseError)
+
+export const getBankTopicReviewUrl = (topicId: string,) => {
+
+
+
+
+  return `/api/bank/topics/${topicId}/review`
+}
+
+/**
+ * @summary Next mistake review batch for a topic
+ */
+export const bankTopicReview = async (topicId: string, options?: RequestInit): Promise<bankTopicReviewResponse> => {
+
+  const res = await fetch(getBankTopicReviewUrl(topicId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: bankTopicReviewResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as bankTopicReviewResponse
 }
 
 
