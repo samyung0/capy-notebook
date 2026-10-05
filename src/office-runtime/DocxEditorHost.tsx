@@ -7,7 +7,7 @@ import {
   type DocxMenuModel,
   type DocxPagesPresentedDetail,
 } from '@betteroffice/docx-react';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { DOCUMENT_COLORS } from '@/components/ui/ColorPicker';
 import type {
   OfficeAnalysis,
@@ -26,6 +26,7 @@ import {
   type OfficeMenuReporter,
   type OfficeRenderer,
 } from './runtimeMenus';
+import { readViewToggle, writeViewToggle } from './viewToggles';
 
 // Before any editor mounts: the engine measures with the bundled faces.
 configureDefaultFonts({ fonts: officeFonts });
@@ -68,6 +69,12 @@ export function DocxEditorHost({
 }) {
   const editorRef = useRef<DocxEditorRef>(null);
   const hostRef = useRef<HTMLDivElement>(null);
+  // View › Show ruler, one choice per person for every DOCX file.
+  const [ruler, setRuler] = useState(() => readViewToggle('docxRuler'));
+  const showRuler = useCallback((shown: boolean) => {
+    setRuler(shown);
+    writeViewToggle('docxRuler', shown);
+  }, []);
   useEffect(() => onOfficeFontFailure(onError), [onError]);
   useEffect(() => {
     const host = hostRef.current;
@@ -133,12 +140,14 @@ export function DocxEditorHost({
         onSaveRequest={() => {
           onSave();
         }}
+        onShowRulerChange={showRuler}
         readOnly={readOnly}
         ref={editorRef}
         showFileOpen={false}
         showFontPicker={!narrow}
         showFontSizePicker={!narrow}
         showHelpMenu={false}
+        showRuler={ruler}
         showZoomControl={!narrow}
         singleRowToolbar
       />

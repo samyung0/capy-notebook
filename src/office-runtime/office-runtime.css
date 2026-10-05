@@ -109,6 +109,8 @@
   --doc-warning-text: var(--tint-warning-fg);
   --doc-link: var(--text-link);
   --doc-shadow: rgba(0, 0, 0, 0.15);
+  /* View › Show ruler: the margins as a divider tint, light and dark. */
+  --doc-ruler-margin: var(--divider);
   /* Pages stay white in both themes, as PDF pages do, so the caret and the
      page frame keep their light values. */
   --doc-caret: #000;

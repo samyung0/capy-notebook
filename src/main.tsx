@@ -7,6 +7,7 @@ import { queryClient } from './api/queryClient';
 import { AppErrorBoundary } from './components/app/AppErrorBoundary';
 import { AppToaster } from './components/app/AppToaster';
 import { AppAuthProvider } from './components/app/AuthProvider';
+import { getLocale } from './i18n';
 import { initErrorReporting, reportReactError } from './lib/observability';
 import { router } from './router';
 import { ThemeProvider } from './theme/ThemeProvider';
@@ -17,6 +18,11 @@ import { SourceTransferPanel } from './features/workspace/SourceTransferPanel';
 
 // Before the first render, so a crash during mount is still reported.
 initErrorReporting();
+
+// The browser picks CJK fallback fonts by the page's language: without it a
+// Chinese UI could mix Japanese and Chinese faces (and their weights) in one
+// row. Changing the locale reloads the page.
+document.documentElement.lang = getLocale();
 
 // Mocks are on by default; set VITE_USE_MSW=false to hit the real Go gateway
 // (Vite proxies /api → http://localhost:8080).

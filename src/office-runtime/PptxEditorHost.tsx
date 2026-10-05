@@ -20,8 +20,8 @@ import { loadPptxFonts } from './pptxFonts';
 import { pptxIcons } from './pptxIcons';
 import { pptxStrings, presentAction } from './pptxMenus';
 import { renderSlides } from './pptxRender';
-import { readSpeakerNotes, writeSpeakerNotes } from './pptxSpeakerNotes';
 import type { OfficeMenuReporter, OfficeRenderer } from './runtimeMenus';
+import { readViewToggle, writeViewToggle } from './viewToggles';
 import './pptx-runtime.css';
 
 export function PptxEditorHost({
@@ -63,7 +63,7 @@ export function PptxEditorHost({
     null
   );
   // Read once: the editor only takes it as its starting state.
-  const [speakerNotes] = useState(() => readSpeakerNotes());
+  const [speakerNotes] = useState(() => readViewToggle('speakerNotes'));
   // The header's menus and Present run the editor's commands; Insert › Image
   // arrives with the file Capy's picker chose.
   useEffect(() => {
@@ -193,7 +193,9 @@ export function PptxEditorHost({
         onSaveRequest={() => {
           onSave();
         }}
-        onSpeakerNotesChange={(visible) => writeSpeakerNotes(visible)}
+        onSpeakerNotesChange={(visible) =>
+          writeViewToggle('speakerNotes', visible)
+        }
         readOnly={readOnly}
         // Present is a header action and Capy has no PPTX agent proposals.
         showFontPicker={!narrow}

@@ -1147,3 +1147,69 @@ test('PPTX speaker notes start hidden, and one remembered toggle serves view and
   await expect(notesButton).toHaveAttribute('aria-pressed', 'false');
   await expect(viewNotes).toHaveCount(0);
 });
+
+test('DOCX View › Show ruler is remembered, edit mode only, and stays usable while paused', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 120_000,
+  });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+  const rulers = frame.locator('.docx-horizontal-ruler, .docx-vertical-ruler');
+  const showRuler = page.getByRole('menuitemcheckbox', { name: 'Show ruler' });
+  const toggleRuler = async (checked: boolean) => {
+    await officeMenu(page, 'View').click();
+    await expect(showRuler).toHaveAttribute('aria-checked', String(checked));
+    await showRuler.click();
+  };
+
+  // Hidden until View › Show ruler; the horizontal ruler lines up with the page.
+  await expect(rulers).toHaveCount(0);
+  await toggleRuler(false);
+  await expect(rulers).toHaveCount(2);
+  const ruler = await frame.locator('.docx-horizontal-ruler').boundingBox();
+  const firstPage = await frame.locator('.canvas-page').first().boundingBox();
+  expect(ruler?.x).toBeCloseTo(firstPage?.x ?? -1, 0);
+  expect(ruler?.width).toBeCloseTo(firstPage?.width ?? -1, 0);
+
+  // View mode draws no ruler and offers no toggle; edit opens with the choice.
+  const mode = page.getByRole('button', { name: 'Material mode' });
+  await mode.click();
+  await expect(mode).toHaveAttribute('aria-pressed', 'false');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(rulers).toHaveCount(0);
+  await officeMenu(page, 'View').click();
+  await expect(page.getByRole('menuitem', { name: 'Zoom' })).toBeVisible();
+  await expect(showRuler).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await mode.click();
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 60_000 });
+  await expect(rulers).toHaveCount(2);
+
+  // Paused, the rulers stay and the toggle still works.
+  await page.evaluate(() => {
+    const iframe = document.querySelector<HTMLIFrameElement>(
+      'iframe[src*="office-runtime"]'
+    );
+    if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
+    iframe.contentWindow.postMessage(
+      { canEdit: false, type: 'set-capabilities', version: 7 },
+      new URL(iframe.src).origin
+    );
+  });
+  await officeMenu(page, 'File').click();
+  await expect(page.getByRole('menuitem', { name: /^Save/ })).toHaveAttribute(
+    'aria-disabled',
+    'true'
+  );
+  await page.keyboard.press('Escape');
+  await expect(rulers).toHaveCount(2);
+  await toggleRuler(true);
+  await expect(rulers).toHaveCount(0);
+});

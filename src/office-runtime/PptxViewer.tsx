@@ -31,8 +31,8 @@ import { pptxIcons } from './pptxIcons';
 import { PptxImageCache } from './pptxImageCache';
 import { pptxT, presentAction, viewerMenus } from './pptxMenus';
 import { renderSlides } from './pptxRender';
-import { readSpeakerNotes, writeSpeakerNotes } from './pptxSpeakerNotes';
 import type { OfficeMenuReporter, OfficeRenderer } from './runtimeMenus';
+import { readViewToggle, writeViewToggle } from './viewToggles';
 import './pptx-runtime.css';
 
 export function PptxViewer({
@@ -68,10 +68,12 @@ export function PptxViewer({
   const [stageSize, setStageSize] = useState({ height: 0, width: 0 });
   const [presenting, setPresenting] = useState(false);
   // The same remembered choice as edit mode; hidden by default.
-  const [speakerNotes, setSpeakerNotes] = useState(() => readSpeakerNotes());
+  const [speakerNotes, setSpeakerNotes] = useState(() =>
+    readViewToggle('speakerNotes')
+  );
   const toggleSpeakerNotes = useCallback(() => {
     setSpeakerNotes(!speakerNotes);
-    writeSpeakerNotes(!speakerNotes);
+    writeViewToggle('speakerNotes', !speakerNotes);
   }, [speakerNotes]);
   const slideCount = slides?.length ?? 0;
   const slideIndexRef = useRef(slideIndex);
