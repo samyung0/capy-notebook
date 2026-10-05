@@ -195,7 +195,9 @@ check); it applies at the first promotion.
   cell is dropped; Enter copies a tracked pPr change to both halves (duplicate
   revision ids); the font picker drops the East Asian font and the save adds a
   complex-script font the source lacked; any suggesting-mode paragraph change
-  makes the save throw (not exposed in Capy). Keep what the model doesn't
+  makes the save throw (not exposed in Capy). After any edit to its paragraph a
+  tracked-deleted footnote reference saves as live and a deleted `w:fldSimple`
+  loses its result (docx-fields review round 2, R2-8). Keep what the model doesn't
   hold; Word is the oracle. Probes in
   `capy-docx-review-harnesses/2026-10-05-office-batch/docx-paragraph-save/review-probes/`.
 - **Chat can't describe an image added to an Office file** (decided
