@@ -309,11 +309,8 @@ in the Learning Review tab's table (`BankLanding`): topic with exam and
 subject, "answered of total", correct count, and Continue (opens
 `nextQuestionId`) or, once every question is answered, Summary (the topic at
 its top). With none, or in Edit mode, it keeps Choose a topic; phones list the
-topics in the page under the table. Inside a topic, Continue beside the title
-scrolls to `nextUnanswered`: the first unanswered question after the last
-answered one in the listed order, wrapping, computed in the browser from the
-marks; it hides once every listed question is answered. There is no review
-session.
+topics in the page under the table. Continue exists only on the landing (Epo,
+2026-10-06); there is no review session.
 
 Every topic has the list pages' filter (`FilterPopover` from
 `src/components/app/ListToolbar.tsx`) beside Edit mode's All/Unreviewed

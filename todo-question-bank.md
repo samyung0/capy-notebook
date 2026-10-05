@@ -99,13 +99,14 @@ one topic.
 - [x] **Learners on `/bank`** (2026-10-06): answering with reveal on check
       (ebd5bafe); progress keeps each learner's latest score per question
       (`bank_progress`, app migration 0056, no FSRS or review); the landing
-      lists attempted topics with Continue or Summary; Continue beside the
-      topic title; Copy to quiz (`POST /api/bank/copy`, mock 3.1 B and 3.2 B);
+      lists attempted topics with Continue or Summary (only there);
+      Copy to quiz (`POST /api/bank/copy`, mock 3.1 B and 3.2 B);
       the list filter (answer type and status) on every topic. IELTS
       task-type labels are gone from the code, the pipeline and the agent's
-      tool (`answer_type` filter); bank migration 0004 drops
-      `questions.question_types` and runs on the shared bank database right
-      after the next UAT deploy (dump first). The general quiz and question
+      tool (`answer_type` filter); bank migration 0004 dropped
+      `questions.question_types` on the shared bank database on 2026-10-06
+      after the UAT deploy of 158e5aaa (dump
+      `backups/bank-2026-10-06-before-drop-question-types.dump`). The general quiz and question
       editing UI is Epo's, redone in its own session.
 - [x] **Agent filter by answer type** (2026-10-06): `list_question_bank`
       takes `answer_type` with a topic.

@@ -173,23 +173,6 @@ export function filterBankRows<R extends Pick<BankRow, 'id' | 'answerTypes'>>(
   );
 }
 
-/** The first unanswered row after the last answered one in list order,
- * wrapping to the start; null once every row is answered. */
-export function nextUnanswered(
-  rows: { id: string }[],
-  marks: Record<string, number>
-): string | null {
-  let last = -1;
-  rows.forEach((row, i) => {
-    if (row.id in marks) last = i;
-  });
-  for (let step = 1; step <= rows.length; step++) {
-    const row = rows[(last + step) % rows.length];
-    if (!(row.id in marks)) return row.id;
-  }
-  return null;
-}
-
 /** Pairs equal texts, each target used once: for every `from` index, its
  * index in `to` (-1 when missing). */
 function textIndices(from: string[], to: string[]): number[] {

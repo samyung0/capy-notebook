@@ -56,7 +56,6 @@ import {
   bankScore,
   bankSyllabusQuery,
   filterBankRows,
-  nextUnanswered,
   recordBankAnswer,
   revealBankQuestion,
   uploadBankAsset,
@@ -158,7 +157,6 @@ export default function QuestionBank() {
       (mode !== 'edit' || !unreviewed || !row.reviewedAt) &&
       row.preview.toLowerCase().includes(filter.toLowerCase())
   );
-  const next = marks && nextUnanswered(rows, marks);
   const filters: FilterSection[] = [
     {
       key: 'type',
@@ -409,34 +407,17 @@ export default function QuestionBank() {
         >
           <QuizPageHeader
             actions={
-              (next || syllabus?.editor) && (
-                <>
-                  {next && (
-                    <Button
-                      className="rounded-input"
-                      iconLeft="navigationForward"
-                      onClick={() => select(next)}
-                      size="sm"
-                    >
-                      {/* Icon only on phones, so the topic title keeps room. */}
-                      <span className="max-sm:sr-only">
-                        {m.question_ui_continue()}
-                      </span>
-                    </Button>
-                  )}
-                  {syllabus?.editor && (
-                    <Button
-                      className="rounded-input"
-                      iconLeft={mode === 'edit' ? 'view' : 'pencil'}
-                      onClick={() => setMode(mode === 'edit' ? 'view' : 'edit')}
-                      size="sm"
-                    >
-                      {mode === 'edit'
-                        ? m.question_ui_view_mode()
-                        : m.question_ui_edit_mode()}
-                    </Button>
-                  )}
-                </>
+              syllabus?.editor && (
+                <Button
+                  className="rounded-input"
+                  iconLeft={mode === 'edit' ? 'view' : 'pencil'}
+                  onClick={() => setMode(mode === 'edit' ? 'view' : 'edit')}
+                  size="sm"
+                >
+                  {mode === 'edit'
+                    ? m.question_ui_view_mode()
+                    : m.question_ui_edit_mode()}
+                </Button>
               )
             }
             meta={

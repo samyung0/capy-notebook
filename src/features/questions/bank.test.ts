@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alignReveal, bankScore, filterBankRows, nextUnanswered } from './bank';
+import { alignReveal, bankScore, filterBankRows } from './bank';
 import { exampleQuestion } from './questionFixtures';
 import type { LearnerQuestion, Question } from './types';
 
@@ -73,13 +73,6 @@ describe('bank progress', () => {
     answerTypes: id === 'b' ? ['mcq', 'short'] : ['short'],
     id,
   }));
-
-  it('continues after the last answered question in list order, wrapping', () => {
-    expect(nextUnanswered(rows, {})).toBe('a');
-    expect(nextUnanswered(rows, { a: 1, c: 0 })).toBe('d');
-    expect(nextUnanswered(rows, { b: 0.5, d: 1 })).toBe('a');
-    expect(nextUnanswered(rows, { a: 1, b: 1, c: 0, d: 0 })).toBeNull();
-  });
 
   it('filters by status and answer type together', () => {
     const marks = { a: 1, b: 0.5, c: 0 };
