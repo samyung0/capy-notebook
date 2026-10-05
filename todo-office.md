@@ -158,20 +158,16 @@ check); it applies at the first promotion.
   Firefox drags links instead of selecting from them).
 - **PPTX presenter view.** Show speaker notes while presenting. Notes are
   already hidden by default and toggled in edit and view mode.
-- **PPTX parity with Google Slides** (decided 2026-10-05): lists, indent and
-  the other common text operations Capy's PPTX lacks, Edit › Select all, the
-  toolbar arranged after the DOCX/XLSX toolbars and Google Slides. List keys
-  follow Google Slides: Enter on an empty bullet ends the list, Backspace at
-  the start of a bulleted line first removes the bullet (today both differ).
 - **PPTX comments UI (parked):** comments are kept on save
-  (`crates/pptx-edit/src/comments.rs`) but Capy shows none; after the parity
-  track, start from a mock.
+  (`crates/pptx-edit/src/comments.rs`) but Capy shows none; start from a mock
+  (the parity track landed 2026-10-06). Next parity gaps from its GAP.md: find
+  and replace, links, duplicate and object copy-paste, rotate/flip, group and
+  border dash.
 - **DOCX Insert/Update table of contents.** An engine track; the menu item is
   hidden until it works.
 - **DOCX table-menu items.** Vertical alignment, table alignment, header row,
   distribute columns, auto-fit and no-wrap. Hidden until the engine supports
   them.
-- **XLSX view-mode zoom.**
 - **Unplaceable sync step 2 (lowest priority).** A client whose own sync step 2
   the room cannot place (it holds content out of order) is closed after 2 tries
   (`resyncUnheld`, `collaboration/src/officeRoots.ts`) and then reconnects
@@ -181,12 +177,6 @@ check); it applies at the first promotion.
 
 ## Unverified or small
 
-- **DOCX paragraph edits lost on save** (docx-paragraph-save track, with
-  `w:rFonts w:hint`): indent, line spacing, tabs, borders and shading set in
-  the editor are dropped for every paragraph whose source had paragraph
-  properties; `paragraphAttrsToFormatting`
-  (`packages/docx/src/yrs/saveFormatting.ts`) overrides only a few. `w:hint`
-  is parsed but no run mark carries it (a seed change, taken 2026-10-05).
 - **DOCX paragraph properties the model doesn't hold are dropped on save**
   (found by the paragraph-save review, 2026-10-05; pre-existing): `kinsoku`,
   `wordWrap`, `overflowPunct`, `topLinePunct`, `textDirection`,
