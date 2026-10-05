@@ -198,9 +198,15 @@ check); it applies at the first promotion.
   complex-script font the source lacked; any suggesting-mode paragraph change
   makes the save throw (not exposed in Capy). After any edit to its paragraph a
   tracked-deleted footnote reference saves as live and a deleted `w:fldSimple`
-  loses its result (docx-fields review round 2, R2-8). Keep what the model doesn't
+  loses its result (docx-fields review round 2, R2-8). Also on the baseline
+  (paragraph-save final review, 2026-10-06): new table cells get an explicit
+  `left` alignment, every save drops a row's `gridBefore`, and Enter after a
+  List Bullet paragraph loses its numbering. Keep what the model doesn't
   hold; Word is the oracle. Probes in
   `capy-docx-review-harnesses/2026-10-05-office-batch/docx-paragraph-save/review-probes/`.
+- **PPTX typed text size** (pre-existing, found by pptx-parity): text typed
+  where the run inherits its size from the placeholder gets an explicit 24 pt
+  (`pptx-parity/shots/slide-bulleted.png`, "Nested item").
 - **DOCX fields under suggestions (pre-existing, docx-fields final review 2026-10-06):**
   if A joins while B suggests deleting the moved text, B's deletion lands on the
   whole field and Accept All removes the REF field code (needs a decision);
