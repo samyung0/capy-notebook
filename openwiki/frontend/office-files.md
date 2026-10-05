@@ -449,7 +449,9 @@ field's own result text, splits the field across the two paragraphs: its begin
 stays in the first, the result after the split point moves into the second as
 plain result runs, and the field ends after them. Undo restores the original
 field. Backspace, Delete or a range delete back rejoins it when only the moved
-runs sit there, in order; otherwise the split stays, keeping every run and
+runs sit there, in order (struck text only where Enter moved a tracked
+deletion, so a deletion suggested on moved text survives the join); otherwise
+the split stays, keeping every run and
 typed character. A nested field after the split point that projects nothing
 of its own moves into the second paragraph as its own field, inside the split
 field's result, and goes back with the join; a tracked deletion of plain
