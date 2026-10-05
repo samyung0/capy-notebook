@@ -132,6 +132,10 @@ export function useOfficeRuntime({
   const revisionRef = useRef(revision);
   const publishedRevision = useRef(revision);
   const initializedFrame = useRef(-1);
+  // The source document the frame was loaded with: a frame still showing an
+  // earlier one (an in-place restart swaps it on the next render) is never
+  // made editable.
+  const frameDoc = useRef<Y.Doc | null>(null);
   const sourceDocument = useRef<Y.Doc | undefined>(undefined);
   const frameRequests = useRef(
     new Map<
@@ -349,6 +353,7 @@ export function useOfficeRuntime({
           }
         : undefined;
     initializedFrame.current = frameGeneration;
+    frameDoc.current = mode === 'edit' ? source.doc! : null;
     post(
       {
         bytes,
@@ -402,11 +407,12 @@ export function useOfficeRuntime({
   useEffect(() => {
     if (frameLoaded)
       post({
-        canEdit: editable,
+        canEdit:
+          editable && (mode !== 'edit' || frameDoc.current === source.doc),
         type: 'set-capabilities',
         version: OFFICE_PROTOCOL_VERSION,
       });
-  }, [editable, frameBoot, frameLoaded, post]);
+  }, [editable, frameBoot, frameLoaded, mode, post, source.doc]);
 
   useEffect(() => {
     const doc = source.doc;

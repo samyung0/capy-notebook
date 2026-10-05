@@ -760,7 +760,9 @@ export function useSourceSession(
                 isRecoveryBanner(current) ? current : null
               );
             }
-            if (everSynced) setStatus('saving');
+            // Connecting ends at the first sync: Saved, or Saving while local
+            // edits (restored drafts are edit 1) wait for the room's receipt.
+            setStatus(everSynced || active.sequence > 0 ? 'saving' : 'saved');
             everSynced = true;
             setLoaded({ bytes, doc: shared, session });
             setSynced(true);

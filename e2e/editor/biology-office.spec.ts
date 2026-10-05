@@ -951,6 +951,8 @@ test('a newly opened DOCX editor is focused and editable before its first save r
   await page.getByRole('button', { name: 'Material mode' }).click();
   await expect(officeEditMenu(page)).toBeVisible({ timeout: 60_000 });
   await expect(frame.getByLabel('Document input')).toBeFocused();
+  // Connecting ends at the first sync, before the receipt.
+  await expect(page.getByTestId('editor-save-state')).toHaveText('Saved');
   await page.keyboard.type('Hello');
   await expect
     .poll(() => updates.evaluate((seen) => seen.count))
@@ -1026,15 +1028,25 @@ test('closing DOCX header editing gives the document the focus back', async ({
   if (!box) throw new Error('Missing page canvas');
   // The header band near the page's top edge; try a few heights.
   const options = frame.getByRole('button', { name: /^Options/ });
-  for (const ratio of [0.06, 0.05, 0.08, 0.04, 0.1]) {
-    await pageCanvas.dblclick({
-      position: { x: box.width / 2, y: box.height * ratio },
-    });
-    if (await options.isVisible()) break;
-    await page.waitForTimeout(500);
-  }
+  const openHeader = async () => {
+    for (const ratio of [0.06, 0.05, 0.08, 0.04, 0.1]) {
+      await pageCanvas.dblclick({
+        position: { x: box.width / 2, y: box.height * ratio },
+      });
+      if (await options.isVisible()) return;
+      await page.waitForTimeout(500);
+    }
+  };
+  await openHeader();
   await options.click();
   await frame.getByRole('button', { name: 'Close header editing' }).click();
+  await expect(frame.getByLabel('Document input')).toBeFocused();
+
+  // Escape from the Options button closes the header too.
+  await openHeader();
+  await options.click();
+  await page.keyboard.press('Escape');
+  await expect(options).toHaveCount(0);
   await expect(frame.getByLabel('Document input')).toBeFocused();
 });
 

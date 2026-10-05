@@ -696,6 +696,7 @@ export function announceSourceEpoch(fileId: string, epoch: number) {
 export function resetScenarioRooms() {
   failedSourceSaves.clear();
   refusedSourceSaves.clear();
+  holdSourceSaveReceipts(false);
   for (const [name, room] of rooms) {
     if (!room.target.id.startsWith('mock-scenario-')) continue;
     if (room.participants.size)

@@ -650,46 +650,46 @@ styles (the toolbar's style picker keeps all).
 
 While editing is paused (handoff, replaced, recovery, connecting before the
 first sync, discarding: the host's narrowed `canEdit` in `set-capabilities`;
-the room's first save receipt is not waited for), the editor turns
-read-only in every state alike: once the runtime has flushed what was being
-typed, it passes `readOnly` to the editor and lets pointer and keys through
-(Tab and Escape included), so the content can be selected and copied (Select
-all, ⌘A, ⌘C, the right-click menu's Copy) while nothing edits; text typed into
-a field of the frame, such as Find's, still reaches it, as the editor refuses
-text itself. Until then its gates hold keys, pointer and text input, a
-composition begun after the pause never counts, and Ctrl/Cmd+S saves nothing.
-When the pause ends nothing moves the focus: it stays in Capy's field, Find,
-the document input (read-only never blurs it) or wherever it was. A newly
-opened DOCX editor focuses the document only through its frame: when the
-replica is ready (`collaboration-ready`) Capy focuses the frame unless its own
-focus is in a field taking typing (the chat box, say), and the editor takes
-the focus once the frame has it. Closing or removing a header or footer from
-its Options menu gives the document input the focus back. Each menu item says whether it edits
-(`edits`), declared where it is defined: DOCX's in docx-react's
-`hostMenus.tsx`, XLSX's and PPTX's from xlsx-react's `xlsxCommandEdits` and
-pptx-react's `PPTX_COMMAND_EDITS` (XLSX freezing panes edits; Capy's own Save
-edits, Download, PNG and Print do not). The runtime re-sends its menus with
-every editing item disabled and a submenu with nothing left to run disabled
-too, the table grid counting as an edit (`pausedMenus`), keeps the read-only
-items (Select all, Find and replace, View, Download, Print) and the header
-actions usable, and drops any other `menu-command` or `menu-file`
-(`runsWhilePaused`). The read-only editors refuse edits themselves too: DOCX
-keeps its toolbar row, disabled, because its menus come from it, opens Find
-and replace with Find working and Replace and Replace all disabled, offers
-only Copy and Select all on right-click, ignores Ctrl/Cmd+K, Delete on a
-selected table, a header or footer double-click, Tab out of a table's last
+the room's first save receipt is not waited for), the editor turns read-only
+in every state alike: once the runtime has flushed what was being typed, it
+passes `readOnly` to the editor and lets pointer and keys through (Tab and
+Escape included), so the content can be selected and copied (Select all, ⌘A,
+⌘C, the right-click menu's Copy) while nothing edits; text typed into a field
+of the frame, such as Find's, still reaches it, as the editor refuses text
+itself. Until then its gates hold keys, pointer and text input, a composition
+begun after the pause never counts, and Ctrl/Cmd+S saves nothing. When the
+pause ends nothing moves the focus: it stays in Capy's field, Find, the
+document input (read-only never blurs it) or wherever it was. A newly opened
+DOCX editor focuses the document only through its frame: when the replica is
+ready (`collaboration-ready`) Capy focuses the frame unless its own focus is
+in a field taking typing (the chat box, say), and the editor takes the focus
+once the frame has it. Closing or removing a header or footer from its Options
+menu, or Escape out of it, gives the document input the focus back. Each menu
+item says whether it edits (`edits`), declared where it is defined: DOCX's in
+docx-react's `hostMenus.tsx`, XLSX's and PPTX's from xlsx-react's
+`xlsxCommandEdits` and pptx-react's `PPTX_COMMAND_EDITS` (XLSX freezing panes
+edits; Capy's own Save edits, Download, PNG and Print do not). The runtime
+re-sends its menus with every editing item disabled and a submenu with nothing
+left to run disabled too, the table grid counting as an edit (`pausedMenus`),
+keeps the read-only items (Select all, Find and replace, View, Download,
+Print) and the header actions usable, and drops any other `menu-command` or
+`menu-file` (`runsWhilePaused`). The read-only editors refuse edits themselves
+too: DOCX keeps its toolbar row, disabled, because its menus come from it,
+opens Find and replace with Find working and Replace and Replace all disabled,
+offers only Copy and Select all on right-click, ignores Ctrl/Cmd+K, Delete on
+a selected table, a header or footer double-click, Tab out of a table's last
 cell and every structural command, and its comment and tracked-change cards
 show the thread without reply, resolve, accept or reject (a reply being typed
 is hidden, not dropped, and comes back with its draft when editing resumes,
-and so is a new comment being written; neither takes the focus back); XLSX's `run` refuses editing
-commands and its Select all hands the grid the keys, so Ctrl/Cmd+C copies the
-sheet (in the grid Tab moves between cells, as when editing). All three keep
-their toolbar row visible and disabled, and XLSX its formula bar visible and
-read-only (its text still selects and copies), so nothing moves when a pause
-starts or ends. Only an editor pauses: in view mode a
-`canEdit` of false (a view-only user's) changes nothing, and the viewer still
-selects and copies. The DOCX menu model refuses a
-disabled item's id too.
+and so is a new comment being written; neither takes the focus back); XLSX's
+`run` refuses editing commands and its Select all hands the grid the keys, so
+Ctrl/Cmd+C copies the sheet (in the grid Tab moves between cells, as when
+editing). All three keep their toolbar row visible and disabled, and XLSX its
+formula bar visible and read-only (its text still selects and copies), so
+nothing moves when a pause starts or ends. Only an editor pauses: in view mode
+a `canEdit` of false (a view-only user's) changes nothing, and the viewer
+still selects and copies. The DOCX menu model refuses a disabled item's id
+too.
 
 In edit mode the DOCX editor shows one toolbar row under the header, in Google
 Docs' order (`singleRowToolbar` with the menus in the host, `DocxEditor`'s
