@@ -1,3 +1,4 @@
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import {
   useDeleteOwnedFile,
@@ -36,14 +37,16 @@ import {
   useFileSelection,
 } from '@/features/files/useFileSelection';
 import { relativeTime } from '@/features/materials/MaterialListCard';
+import { MaterialsTab } from '@/features/materials/MaterialsTab';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import { toFileActionTarget } from '@/features/workspace/contentActionTarget';
+import { AccountStatusButton } from '@/features/workspace/WorkspaceHealth';
 import { getLocale, m } from '@/i18n';
 import { describeError } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
+import type { FilesTab } from '@/lib/tabSearch';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
-type FilesTab = 'files' | 'trash';
 const VIEW_KEY = 'capy.files.view';
 
 function readView(): ListView {
@@ -55,7 +58,8 @@ function readView(): ListView {
 }
 
 export default function Files() {
-  const [tab, setTab] = useState<FilesTab>('files');
+  const navigate = useNavigate();
+  const { tab = 'files' } = useSearch({ from: '/auth-shell/files' });
   const [view, setView] = useState<ListView>(readView);
   const [busy, setBusy] = useState(false);
 
@@ -70,13 +74,20 @@ export default function Files() {
 
   return (
     <PanelWithInvertedRadius>
-      <PageHeader title={m.nav_files()} />
+      <PageHeader actions={<AccountStatusButton />} title={m.nav_files()} />
       <fieldset className="min-w-0" disabled={busy}>
         <Tabs
           className="px-6"
-          onChange={(value) => setTab(value as FilesTab)}
+          onChange={(value) => {
+            void navigate({
+              replace: true,
+              search: value === 'files' ? {} : { tab: value as FilesTab },
+              to: '/files',
+            });
+          }}
           tabs={[
             { label: m.files_tab_files(), value: 'files' },
+            { label: m.files_tab_blocks(), value: 'blocks' },
             { label: m.files_tab_trash(), value: 'trash' },
           ]}
           value={tab}
@@ -88,6 +99,8 @@ export default function Files() {
           onViewChange={changeView}
           view={view}
         />
+      ) : tab === 'blocks' ? (
+        <MaterialsTab onViewChange={changeView} view={view} />
       ) : (
         <ActiveFiles
           onBusyChange={setBusy}

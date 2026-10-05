@@ -3,10 +3,10 @@ import { apiEndsWith, waitForApi } from '../helpers/api';
 
 test.describe('quiz sharing', () => {
   test('New quiz opens an editable draft', async ({ ownerApi, ownerPage }) => {
-    await ownerPage.goto('/create');
+    await ownerPage.goto('/files?tab=blocks');
     const created = waitForApi(ownerPage, apiEndsWith('/api/quizzes', 'POST'));
     await ownerPage
-      .getByRole('button', { exact: true, name: 'New Materials' })
+      .getByRole('button', { exact: true, name: 'New block' })
       .click();
     await ownerPage
       .getByRole('menuitem', { exact: true, name: 'Quiz' })

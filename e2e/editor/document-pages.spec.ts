@@ -22,10 +22,10 @@ async function editPdf(page: Page) {
   ).toBeEnabled();
 }
 
-test('Create materials and Files open the shared document page in View', async ({
+test('Blocks and Files open the shared document page in View', async ({
   page,
 }) => {
-  await page.goto('/create');
+  await page.goto('/files?tab=blocks');
   await page.getByRole('link', { name: /Study journal 001/ }).click();
   await expect(page).toHaveURL(/\/materials\/mat_pagination_1$/);
   await expect(
@@ -82,8 +82,8 @@ test('Create materials and Files open the shared document page in View', async (
     page.getByRole('menuitem', { exact: true, name: 'Move file' })
   ).toHaveCount(0);
   await page.keyboard.press('Escape');
-  await header.getByRole('button', { exact: true, name: 'Create' }).click();
-  await expect(page).toHaveURL(/\/create$/);
+  await header.getByRole('button', { exact: true, name: 'Blocks' }).click();
+  await expect(page).toHaveURL(/\/files\?tab=blocks$/);
 
   await page.getByRole('link', { exact: true, name: 'Files' }).click();
   await page.getByRole('link', { name: /Organelles cheatsheet.md/ }).click();
@@ -389,7 +389,7 @@ test('workspace links remember each file and material mode independently', async
   });
 });
 
-test('Create, Files and recent links use saved modes without reloading the app', async ({
+test('Blocks, Files and recent links use saved modes without reloading the app', async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -402,7 +402,7 @@ test('Create, Files and recent links use saved modes without reloading the app',
       localStorage.setItem(`capy.document.mode.${key}`, 'edit');
     }
   });
-  await page.goto('/create');
+  await page.goto('/files?tab=blocks');
   const origin = await page.evaluate(() => performance.timeOrigin);
   const mode = page
     .getByTestId('content-header')

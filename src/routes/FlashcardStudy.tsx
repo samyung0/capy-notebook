@@ -226,7 +226,8 @@ export default function FlashcardStudy() {
       <Link
         className="text-fg-muted hover:text-fg"
         preload="intent"
-        to="/create"
+        search={{ tab: 'blocks' }}
+        to="/files"
       >
         <Icon name="chevronLeft" size={20} />
       </Link>

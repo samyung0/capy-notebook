@@ -76,7 +76,7 @@ function QuizEditor({ quizId }: { quizId: string }) {
   }, [quiz, isFetchedAfterMount, isError, reset]);
 
   function back() {
-    void navigate({ href: returnTo ?? '/create' });
+    void navigate({ href: returnTo ?? '/files?tab=blocks' });
   }
 
   const save = handleSubmit(
@@ -112,7 +112,9 @@ function QuizEditor({ quizId }: { quizId: string }) {
         onBack={updateIsPending ? undefined : back}
         title={m.quiz_edit()}
         trail={
-          quiz ? [quiz.workspaceName || m.nav_create(), name || quiz.name] : []
+          quiz
+            ? [quiz.workspaceName || m.files_tab_blocks(), name || quiz.name]
+            : []
         }
       />
       <Tabs

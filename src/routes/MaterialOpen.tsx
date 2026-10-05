@@ -28,7 +28,8 @@ export default function MaterialOpen() {
   });
   const [dirty, setDirty] = useState(false);
   const confirmReplace = useOfficeEditGuard(dirty);
-  const back = () => navigate({ to: fileId ? '/files' : '/create' });
+  const back = () =>
+    navigate({ search: fileId ? {} : { tab: 'blocks' }, to: '/files' });
   const item = fileId
     ? { id: fileId, kind: 'file' as const }
     : materialId
@@ -58,7 +59,7 @@ export default function MaterialOpen() {
               <IconButton
                 icon="navigationBack"
                 iconClassName="-translate-y-px"
-                label={fileId ? m.nav_files() : m.nav_create()}
+                label={fileId ? m.nav_files() : m.files_tab_blocks()}
                 onClick={back}
                 size="sm"
                 tooltip

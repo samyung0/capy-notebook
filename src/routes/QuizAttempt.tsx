@@ -166,7 +166,7 @@ function Attempt({ quizId, shared }: { quizId: string; shared: boolean }) {
           : () =>
               canGoBack
                 ? router.history.back()
-                : void navigate({ to: '/create' })
+                : void navigate({ search: { tab: 'blocks' }, to: '/files' })
       }
       provenance={quiz.provenance}
       questions={quiz.questions}
@@ -193,7 +193,7 @@ function Attempt({ quizId, shared }: { quizId: string; shared: boolean }) {
       trail={
         shared
           ? [m.quiz_shared()]
-          : [quiz.workspaceName || m.nav_create(), m.quiz_quizzes()]
+          : [quiz.workspaceName || m.files_tab_blocks(), m.quiz_quizzes()]
       }
     />
   );
@@ -356,7 +356,12 @@ function AttemptBody({
         {header()}
         <TabContent>
           <p className="text-fg-muted">{m.quiz_no_questions()}</p>
-          <Link className="mt-6 inline-flex" preload="intent" to="/create">
+          <Link
+            className="mt-6 inline-flex"
+            preload="intent"
+            search={{ tab: 'blocks' }}
+            to="/files"
+          >
             <Button className="rounded-input" iconLeft="navigationBack">
               {m.quiz_back()}
             </Button>

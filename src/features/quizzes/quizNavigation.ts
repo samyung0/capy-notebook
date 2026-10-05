@@ -1,4 +1,4 @@
-const QUIZ_RETURN_PATH = /^\/(?:create|(?:materials|workspaces)\/[^/]+)$/;
+const QUIZ_RETURN_PATH = /^\/(?:files|(?:materials|workspaces)\/[^/]+)$/;
 
 /** Quiz editors return to their source page, never another quiz editor. */
 export function parseQuizEditSearch(search: Record<string, unknown>): {

@@ -19,7 +19,9 @@ describe('quiz edit return navigation', () => {
   it('preserves the parent note edit mode and location', () => {
     const href = '/workspaces/ws_1?material=note_1&mode=edit#note';
     expect(quizEditSearch(href)).toEqual({ returnTo: href });
-    expect(quizEditSearch('/create')).toEqual({ returnTo: '/create' });
+    expect(quizEditSearch('/files?tab=blocks')).toEqual({
+      returnTo: '/files?tab=blocks',
+    });
   });
 
   it.each([

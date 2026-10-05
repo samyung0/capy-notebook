@@ -61,6 +61,7 @@ import { parseReviewSearch } from '@/features/study/reviewSearch';
 import { features } from '@/lib/features';
 import {
   parseBillingSearch,
+  parseFilesSearch,
   parseLearningSearch,
   parseSettingsSearch,
 } from '@/lib/tabSearch';
@@ -170,6 +171,22 @@ const bankPage = <const T extends string>(path: T) =>
     }),
   });
 
+// The old Create, Quizzes and Flashcards list pages now live in the Files
+// page's Blocks tab.
+const blocksRedirect = <const T extends string>(path: T) =>
+  createRoute({
+    beforeLoad: () => {
+      throw redirect({
+        replace: true,
+        search: { tab: 'blocks' },
+        to: '/files',
+      });
+    },
+    component: () => null,
+    getParentRoute: () => authShellRoute,
+    path,
+  });
+
 const appRoutes = [
   createRoute({
     component: lazyRouteComponent(() => import('@/routes/Dashboard')),
@@ -210,14 +227,9 @@ const appRoutes = [
     staticData: { hideSidebar: true },
     validateSearch: parseWorkspaceOpenSearch,
   }),
-  page(
-    '/create',
-    () => import('@/routes/Create'),
-    ({ context: { queryClient: qc } }) =>
-      qc.prefetchInfiniteQuery(
-        ownedMaterialsQuery({ dir: 'desc', sort: 'updated' })
-      )
-  ),
+  blocksRedirect('/create'),
+  blocksRedirect('/quizzes'),
+  blocksRedirect('/flashcards'),
   createRoute({
     component: lazyRouteComponent(() => import('@/routes/Learning')),
     getParentRoute: () => authShellRoute,
@@ -248,14 +260,6 @@ const appRoutes = [
     getParentRoute: () => authShellRoute,
     path: '/files/$fileId',
     validateSearch: parseDocumentModeSearch,
-  }),
-  createRoute({
-    beforeLoad: () => {
-      throw redirect({ replace: true, to: '/create' });
-    },
-    component: () => null,
-    getParentRoute: () => authShellRoute,
-    path: '/quizzes',
   }),
   bankPage('/bank'),
   bankPage('/bank/$topicId'),
@@ -296,14 +300,6 @@ const appRoutes = [
       event: typeof search.event === 'string' ? search.event : undefined,
     }),
   }),
-  createRoute({
-    beforeLoad: () => {
-      throw redirect({ replace: true, to: '/create' });
-    },
-    component: () => null,
-    getParentRoute: () => authShellRoute,
-    path: '/flashcards',
-  }),
   page(
     '/flashcards/$flashcardSetId',
     () => import('@/routes/FlashcardStudy'),
@@ -312,12 +308,25 @@ const appRoutes = [
       qc.prefetchQuery(cardsQuery(params.flashcardSetId));
     }
   ),
-  page(
-    '/files',
-    () => import('@/routes/Files'),
-    ({ context: { queryClient: qc } }) =>
-      qc.prefetchInfiniteQuery(ownedFilesQuery({ dir: 'desc', sort: 'added' }))
-  ),
+  // biome-ignore assist/source/useSortedKeys: TanStack types `deps` in the loader from `loaderDeps`, which must come first.
+  createRoute({
+    component: lazyRouteComponent(() => import('@/routes/Files')),
+    getParentRoute: () => authShellRoute,
+    loaderDeps: ({ search }) => ({ tab: search.tab }),
+    loader: ({ context: { queryClient: qc }, deps }) => {
+      if (deps.tab === 'blocks') {
+        qc.prefetchInfiniteQuery(
+          ownedMaterialsQuery({ dir: 'desc', sort: 'updated' })
+        );
+      } else if (deps.tab !== 'trash') {
+        qc.prefetchInfiniteQuery(
+          ownedFilesQuery({ dir: 'desc', sort: 'added' })
+        );
+      }
+    },
+    path: '/files',
+    validateSearch: parseFilesSearch,
+  }),
   createRoute({
     beforeLoad: () => {
       if (!features.tasks) throw redirect({ to: '/' });

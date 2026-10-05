@@ -31,7 +31,6 @@ import {
   type SortOption,
   toggleValue,
 } from '@/components/app/ListToolbar';
-import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TrashConfirmDialog } from '@/components/app/TrashConfirmDialog';
 import { Button } from '@/components/ui/Button';
@@ -44,16 +43,12 @@ import {
   materialKindLabel,
 } from '@/features/materials/MaterialListCard';
 import { ShareDialog } from '@/features/workspace/ShareDialog';
-import {
-  AccountStatusButton,
-  useAccountFrozen,
-} from '@/features/workspace/WorkspaceHealth';
+import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { toastCloneError } from '@/lib/authToasts';
 import { trackItemCloned } from '@/lib/observability';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
-const VIEW_KEY = 'capy.create.view';
 const KINDS: MaterialListKind[] = ['note', 'quiz', 'flashcards'];
 const LOCATIONS: MaterialListLocation[] = [
   'workspace',
@@ -72,14 +67,6 @@ function locationLabel(location: MaterialListLocation): string {
   }
 }
 
-function readView(): ListView {
-  try {
-    return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'grid';
-  } catch {
-    return 'list';
-  }
-}
-
 function materialLink(item: MaterialListItem) {
   return linkOptions({
     params: { materialId: item.id },
@@ -87,7 +74,15 @@ function materialLink(item: MaterialListItem) {
   });
 }
 
-export default function Create() {
+/** The Files page's Blocks tab: every note, quiz and flashcard set the user
+ * owns or reaches through a workspace, plus New block for standalone ones. */
+export function MaterialsTab({
+  view,
+  onViewChange,
+}: {
+  view: ListView;
+  onViewChange: (view: ListView) => void;
+}) {
   const sorts: SortOption<MaterialListSort>[] = [
     {
       icon: 'clock',
@@ -119,7 +114,6 @@ export default function Create() {
   const [kinds, setKinds] = useState<string[]>([]);
   const [location, setLocation] = useState<MaterialListLocation | ''>('');
   const [workspaceIds, setWorkspaceIds] = useState<string[]>([]);
-  const [view, setView] = useState<ListView>(readView);
   const navigate = useNavigate();
 
   const params = useMemo<MaterialListParams>(
@@ -181,15 +175,6 @@ export default function Create() {
       selected: workspaceIds,
     },
   ];
-
-  function changeView(next: ListView) {
-    setView(next);
-    try {
-      localStorage.setItem(VIEW_KEY, next);
-    } catch {
-      // per-viewer convenience only
-    }
-  }
 
   // Creation of standalone materials from the New menu.
   const { mutate: createNote } = useCreateStandaloneNote();
@@ -377,8 +362,7 @@ export default function Create() {
   }
 
   return (
-    <PanelWithInvertedRadius>
-      <PageHeader actions={<AccountStatusButton />} title={m.nav_create()} />
+    <>
       <ListToolbar
         action={
           <Menu
@@ -392,7 +376,7 @@ export default function Create() {
                 size="md"
                 variant="ghost-hover"
               >
-                {m.create_new()}
+                {m.files_new_block()}
               </Button>
             }
           />
@@ -408,7 +392,7 @@ export default function Create() {
           setSort(next);
           setAscending(asc);
         }}
-        onViewChange={changeView}
+        onViewChange={onViewChange}
         sort={sort}
         sorts={sorts}
         view={view}
@@ -499,6 +483,6 @@ export default function Create() {
         }}
         open={!!deleting}
       />
-    </PanelWithInvertedRadius>
+    </>
   );
 }

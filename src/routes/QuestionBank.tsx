@@ -325,7 +325,9 @@ export default function QuestionBank() {
                 .filter(Boolean)
                 .join(' · ')
             }
-            onBack={() => void navigate({ to: '/create' })}
+            onBack={() =>
+              void navigate({ search: { tab: 'blocks' }, to: '/files' })
+            }
             title={place?.item.label ?? m.question_ui_question_bank()}
             topBar={false}
             trail={

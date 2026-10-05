@@ -58,7 +58,7 @@ export function cloneSourceFromPath(pathname: string): CloneSource | null {
     return 'explore';
   }
   if (
-    ['/create', '/learning', '/materials', '/quizzes', '/flashcards'].some(
+    ['/files', '/learning', '/materials', '/quizzes', '/flashcards'].some(
       (root) => pathname === root || pathname.startsWith(`${root}/`)
     )
   ) {

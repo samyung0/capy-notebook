@@ -22,3 +22,7 @@ export const parseBillingSearch = tabSearch(BILLING_TABS);
 export const LEARNING_TABS = ['review', 'results'] as const;
 export type LearningTab = (typeof LEARNING_TABS)[number];
 export const parseLearningSearch = tabSearch(LEARNING_TABS);
+
+export const FILES_TABS = ['files', 'blocks', 'trash'] as const;
+export type FilesTab = (typeof FILES_TABS)[number];
+export const parseFilesSearch = tabSearch(FILES_TABS);
