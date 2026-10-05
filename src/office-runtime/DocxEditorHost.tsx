@@ -71,7 +71,7 @@ export function DocxEditorHost({
   const hostRef = useRef<HTMLDivElement>(null);
   // View › Show ruler, one choice per person for every DOCX file.
   const [ruler, setRuler] = useState(() => readViewToggle('docxRuler'));
-  const showRuler = useCallback((shown: boolean) => {
+  const setRulerShown = useCallback((shown: boolean) => {
     setRuler(shown);
     writeViewToggle('docxRuler', shown);
   }, []);
@@ -140,7 +140,7 @@ export function DocxEditorHost({
         onSaveRequest={() => {
           onSave();
         }}
-        onShowRulerChange={showRuler}
+        onShowRulerChange={setRulerShown}
         readOnly={readOnly}
         ref={editorRef}
         showFileOpen={false}

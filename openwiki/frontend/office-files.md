@@ -722,12 +722,17 @@ clipboard). Find and replace works in edit mode only (Ctrl/Cmd+F and H too).
 
 View › Show ruler (`show-ruler`, a checkbox item that does not edit, so it
 stays usable while paused) shows docx-react's rulers as Google Docs does: the
-horizontal one sticky under the toolbar row, centred and sized like the pages
-(it never shrinks, so it lines up with them at every width), and the vertical
-one at the editor's left edge from the first page's top (it covers the first
+horizontal one sticky under the toolbar row, drawing the document's last
+section (page width and margins, `finalSectionProperties`) centred like the
+pages and never shrunk, so it lines up with pages of that size at every width;
+and the vertical one at the editor's left edge from the first page's top,
+drawing the first section (`initialSectionProperties`; it covers the first
 page only and scrolls with it; where the editor leaves less than its 20px
 beside the page, about 1280px wide with the side panel open, it overlaps the
-page's left edge). A read-only editor keeps them, not draggable, as it keeps
+page's left edge). A document whose sections differ in page size or margins
+(portrait pages and a final landscape section) shows the last section's
+horizontal ruler over every page; following the section at the cursor is a
+fork follow-up in `todo-office.md`. A read-only editor keeps them, not draggable, as it keeps
 the toolbar. Margin drags and the indent markers work as before; the margin
 zones take `--doc-ruler-margin` (Capy's divider tint) with the ticks drawn
 over them. Rulers start hidden; the choice is one per person for every DOCX

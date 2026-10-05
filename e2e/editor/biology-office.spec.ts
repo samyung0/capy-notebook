@@ -1167,7 +1167,7 @@ test('DOCX View › Show ruler is remembered, edit mode only, and stays usable w
     await showRuler.click();
   };
 
-  // Hidden until View › Show ruler; the horizontal ruler lines up with the page.
+  // Hidden until View › Show ruler; both rulers line up with the first page.
   await expect(rulers).toHaveCount(0);
   await toggleRuler(false);
   await expect(rulers).toHaveCount(2);
@@ -1175,6 +1175,9 @@ test('DOCX View › Show ruler is remembered, edit mode only, and stays usable w
   const firstPage = await frame.locator('.canvas-page').first().boundingBox();
   expect(ruler?.x).toBeCloseTo(firstPage?.x ?? -1, 0);
   expect(ruler?.width).toBeCloseTo(firstPage?.width ?? -1, 0);
+  // The vertical ruler starts at the first page's top.
+  const vertical = await frame.locator('.docx-vertical-ruler').boundingBox();
+  expect(vertical?.y).toBeCloseTo(firstPage?.y ?? -1, 0);
 
   // View mode draws no ruler and offers no toggle; edit opens with the choice.
   const mode = page.getByRole('button', { name: 'Material mode' });
