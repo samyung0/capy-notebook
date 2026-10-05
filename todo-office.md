@@ -163,8 +163,6 @@ check); it applies at the first promotion.
   (the parity track landed 2026-10-06). Next parity gaps from its GAP.md: find
   and replace, links, duplicate and object copy-paste, rotate/flip, group and
   border dash.
-- **DOCX Insert/Update table of contents.** An engine track; the menu item is
-  hidden until it works.
 - **DOCX table-menu items.** Vertical alignment, table alignment, header row,
   distribute columns, auto-fit and no-wrap. Hidden until the engine supports
   them.
@@ -177,6 +175,19 @@ check); it applies at the first promotion.
 
 ## Unverified or small
 
+- **A field that shows nothing is laid out one digit wide** (pre-existing,
+  found by docx-toc 2026-10-06): ooxml-text measures an empty field result as
+  `"1"` (`prepare_field_run`, `crates/ooxml-text/src/measure/prepare.rs`), so a
+  table of contents' own marker (and a REF over links, a split field's first
+  half) takes ~9 px at 12 pt. In every TOC's first entry, Word's or Insert's,
+  the page number then sits one digit left of the others. Fix: measure an
+  empty result as nothing unless the field is PAGE/NUMPAGES (whose text each
+  page resolves), in the JSON and typed measure paths alike.
+- **DOCX table of contents leftovers** (docx-toc, 2026-10-06): headings in
+  table cells, content controls, headers and notes are not listed (Word lists
+  table-cell headings); entries leave out a numbered heading's list number
+  (Word copies it with a tab); a `\t` (custom styles) or `\p` switch is not
+  read by Update, which keeps the code but lists outline levels only.
 - **DOCX paragraph properties the model doesn't hold are dropped on save**
   (found by the paragraph-save review, 2026-10-05; pre-existing): `kinsoku`,
   `wordWrap`, `overflowPunct`, `topLinePunct`, `textDirection`,

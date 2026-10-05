@@ -81,11 +81,13 @@ const ICONS: Record<string, IconName> = {
   'insert-image': 'image',
   'insert-link': 'link',
   'insert-table': 'table',
+  'insert-toc': 'tableOfContents',
   'page-setup': 'settings',
   redo: 'redo',
   save: 'cloudSync',
   'table-properties': 'table',
   undo: 'undo',
+  'update-toc': 'refresh',
   zoom: 'zoomIn',
 };
 

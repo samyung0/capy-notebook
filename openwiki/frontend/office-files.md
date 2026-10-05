@@ -720,14 +720,43 @@ menus (`hostMenus.tsx` in the fork, Capy's icons and File › Download and Print
 added in `docxMenus.ts`) are File (Save, Download ▸ Word document, Page setup,
 Print), Edit (Undo, Redo, Select all, Delete, Find and replace), View (Show
 ruler ✓, Show document outline ✓, Show comments ✓, Zoom ▸), Insert (Image, Table ▸, Link,
-Comment, Watermark, Break ▸) and Format (Text ▸, Paragraph styles ▸, Align &
+Comment, Watermark, Break ▸, Table of contents, and Update table of contents
+while the document has one) and Format (Text ▸, Paragraph styles ▸, Align &
 indent ▸, Line spacing ▸, Bullets & numbering ▸, Text direction ▸, Table
 properties and Image options in context, Clear formatting). Placeholders that
-do nothing stay hidden: Insert › Table of contents, the table menu's vertical
+do nothing stay hidden: the table menu's vertical
 alignment, table alignment, header row, distribute columns, auto-fit and
 no-wrap, and Line spacing's empty Paragraph spacing heading. Cut, Copy and
 Paste are left out of the menus (a host click cannot reach the frame's
 clipboard). Find and replace works in edit mode only (Ctrl/Cmd+F and H too).
+
+Insert › Table of contents writes Word's field (`TOC \o "1-3" \h \z \u`,
+`ops/toc.rs` in docx-edit) at the caret in the body: one paragraph per body
+heading of outline level 1–3 (its own level, else its style's, as the saved
+file has them; an empty heading is skipped), each a link to a `_Toc` bookmark
+the command puts around the heading's text (one the heading already has is
+reused), then a dot-leader right tab at the text width less 10 twips and a
+`PAGEREF \h` field with the page the heading starts on, as that page shows its
+number. Entries take the document's `toc 1`–`toc 3` styles; a document without
+them gets `TOC1`–`TOC3` with Word's built-in spacing (after 5pt) and indents
+(0, 11pt, 22pt) written directly, since the save cannot add a style. The field
+begins with the first entry and ends after the last; text before the caret is
+split off into its own paragraph above, and the caret's paragraph follows the
+table. With no heading the result is Word's "No table of contents entries
+found." The entries are written as markup, read by docx-parse and seeded with
+the document's styles (`seed::fragment_ops`), so the editor holds exactly what
+the saved file seeds to. Page
+numbers come from the editor's layout: after inserting, the editor lays the
+document out again and, when a heading moved page, rebuilds the table once
+more, all in one Undo step (manual undo capture), so the numbers count the
+table's own pages. Update table of contents rebuilds the table holding the
+caret, else the body's first, from the current headings and layout, keeping
+its field code (`\o` levels, `\h` links, `\n` without page numbers): Word's
+"Update entire table", so text typed inside the table is replaced. Two peers
+updating at once each write a full entry list (the concurrent-join class); a
+peer's heading change made during an update shows at the next update. Neither
+command runs in suggesting mode, and heading list numbers are not copied into
+the entries.
 
 View › Show ruler (`show-ruler`, a checkbox item that does not edit, so it
 stays usable while paused) shows docx-react's rulers as Google Docs does: the

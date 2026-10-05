@@ -227,6 +227,88 @@ for (const [format, name] of [
   });
 }
 
+test('DOCX Insert table of contents lists the headings, and Update follows a rename', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ height: 900, width: 1280 });
+  await page.goto('/workspaces/ws_bio?file=bio-office-docx');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await page.getByRole('button', { name: 'Material mode' }).click();
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+  const input = frame.getByTestId('yrs-input');
+  // The caret goes into a paragraph through one of its positioned glyphs, as
+  // in the edit test above.
+  const placeIn = async (text: RegExp, glyph: string) => {
+    const paragraph = frame.getByRole('paragraph').filter({ hasText: text });
+    const target = frame
+      .locator('.layout-page-mirror:not(.layout-page-mirror-text)')
+      .getByRole('paragraph')
+      .filter({ hasText: text })
+      .getByText(glyph, { exact: true })
+      .last();
+    await expect(async () => {
+      await frame
+        .locator('.layout-page-mirror')
+        .filter({ has: paragraph })
+        .scrollIntoViewIfNeeded({ timeout: 1000 });
+      await target.click({ force: true, timeout: 1000 });
+      await expect(input).toHaveAttribute('data-pointer-placement', 'ready', {
+        timeout: 1000,
+      });
+    }).toPass({ timeout: 30_000 });
+  };
+  const insertMenu = async (name: string) => {
+    await officeMenu(page, 'Insert').click();
+    await page.getByRole('menuitem', { exact: true, name }).click();
+  };
+  const applyStyle = async (name: string) => {
+    await officeMenu(page, 'Format').click();
+    await page.getByRole('menuitem', { name: 'Paragraph styles' }).click();
+    await page.getByRole('menuitemcheckbox', { exact: true, name }).click();
+  };
+  // A table of contents entry: the heading's text, a tab and its page.
+  const entry = (text: string) =>
+    frame
+      .getByRole('paragraph')
+      .filter({ hasText: new RegExp(`^${text}\\s*\\d+$`) });
+
+  // The fixture numbers its headings by hand; two become Heading 1 and 2.
+  await placeIn(/^1\. 引言$/, '引');
+  await applyStyle('Heading 1');
+  await placeIn(/^1\.1\.\s+活動背景$/, '背');
+  await applyStyle('Heading 2');
+  // Update is offered once the document holds a table of contents.
+  await officeMenu(page, 'Insert').click();
+  await expect(
+    page.getByRole('menuitem', { name: 'Update table of contents' })
+  ).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
+  await placeIn(/^籌委會籌備小組$/, '籌');
+  await input.press('Home');
+  await insertMenu('Table of contents');
+  await expect(entry('1\\. 引言')).toHaveCount(1);
+  await expect(entry('1\\.1\\.\\s+活動背景')).toHaveCount(1);
+  await expect(
+    frame.getByRole('paragraph').filter({ hasText: /^籌委會籌備小組$/ })
+  ).toHaveCount(1);
+
+  await placeIn(/^1\. 引言$/, '言');
+  await input.press('End');
+  await input.pressSequentially('X');
+  await insertMenu('Update table of contents');
+  await expect(entry('1\\. 引言X')).toHaveCount(1);
+  await expect(entry('1\\. 引言')).toHaveCount(0);
+  await saveOffice(page);
+  await expect(
+    page.getByRole('status').filter({ hasText: /^Saved$/ })
+  ).toBeVisible();
+});
+
 test('DOCX view mode selects and copies text from its text layer', async ({
   page,
 }) => {
