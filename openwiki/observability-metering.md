@@ -82,7 +82,7 @@ increment, nothing allocates):
 | `updates_per_s`, `awareness_per_s` | Inbound sync frames (document updates and sync steps) and awareness frames per second |
 | `material_stores`, `source_stores` | Per kind of room: `count`, `failures`, `p95_ms`, `max_ms` of the saves in the minute |
 | `connections`, `rooms` | Open connections and loaded rooms at the line |
-| `office` | The Office engine worker (one, serial): `calls` finished, `busy_ms` running, `wait_p95_ms`/`wait_max_ms` queued behind other calls, `run_p95_ms`/`run_max_ms`, `queue_max` calls waiting, `timeouts` |
+| `office` | The Office engine worker (one, serial): `calls` finished, `busy_ms` running, `wait_p95_ms`/`wait_max_ms` queued behind other calls, `run_p95_ms`/`run_max_ms`, `queue_max` calls waiting, `timeouts`; its XLSX room replicas ([office files](frontend/office-files.md)): `replicas` kept and `replica_mib` their estimated heap, `replica_hits`/`replica_misses`/`replica_evictions` in the interval, and `wasm_mib` the XLSX engine's linear memory (it never shrinks) |
 
 Read it from the delay first. A single Node process handles every room, so
 an event-loop p99 near or above about 100 ms means the server is near

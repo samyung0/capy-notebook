@@ -25,6 +25,7 @@ import {
   withRetryEvent,
 } from './observability.js';
 import {
+  dropOfficeReplica,
   type NetEffect,
   type OfficeBaselineEntry,
   type OfficeCheckpoint,
@@ -789,9 +790,10 @@ export class SourceDocumentStore {
     );
   }
 
-  /** Drops the room's durable copy (its room unloaded). */
+  /** Drops the room's durable copy and its XLSX engine replica (its room unloaded). */
   forget(room: string) {
     this.durable.delete(room);
+    dropOfficeReplica(room).catch(() => undefined);
   }
 
   /**
@@ -863,14 +865,19 @@ export class SourceDocumentStore {
         session.sourceURL,
         session.baseSourceSHA256
       );
-      effects = await runOffice('xlsxPendingEffects', bytes, {
-        baseSha256:
-          session.baseSourceSHA256 ||
-          createHash('sha256').update(bytes).digest('hex'),
-        format: 'xlsx',
-        schemaVersion: 1,
-        state,
-      });
+      effects = await runOffice(
+        'xlsxPendingEffects',
+        bytes,
+        {
+          baseSha256:
+            session.baseSourceSHA256 ||
+            createHash('sha256').update(bytes).digest('hex'),
+          format: 'xlsx',
+          schemaVersion: 1,
+          state,
+        },
+        session.room
+      );
     } else {
       const indexed = from ?? (await this.indexedBaseline(session));
       const current = await this.baseline(session, state);

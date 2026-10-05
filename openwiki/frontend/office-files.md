@@ -1220,6 +1220,27 @@ lost worker is a slow failure, retried with backoff while the room stays
 editable, until five minutes pass without a successful save (see
 [error handling](error-handling.md#collaborative-source-failures)).
 
+The worker keeps a replica per XLSX room: the opened workbook with the
+room's last saved state applied (`configureOfficeReplicas` in
+`vendor/betteroffice/shared/office-checkpoint.ts`). A save's pending effects
+pass the room, and the engine applies the new state to the replica as an
+update instead of reopening the workbook, which parses and recalculates all
+of it. It reuses the replica only for a state that holds every struct and
+deletion it already applied, so a discarded save or a reload from an older
+checkpoint reopens, and another base replaces it. Only `xlsxPendingEffects`
+takes a room: agent edits, inspection, exports and rebases open their own
+session, and a failed call drops the room's replica. The room's unload drops
+it too, and a replaced worker loses them all. Replicas stay within
+`OFFICE_REPLICA_BUDGET_BYTES` (`collaboration/src/officeRuntime.ts`) of
+estimated WASM heap, least recently used first; the estimate is 20 times the
+unzipped package (the heap measured per unzipped byte), and a workbook whose
+estimate exceeds the whole budget is never kept. DOCX and PPTX keep none: a
+DOCX open is a small part of its baseline, and a PPTX replica saves little
+(about 0.3 s per save of a 24 MB deck on the production box) for its memory
+(about 90 MB). `collab_health`'s `office` object reports them
+([observability](../observability-metering.md)). Measurements:
+[2026-10-05 replica report](../bench/collaboration/reports/2026-10-05-office-engine-replicas.md).
+
 ## Maintenance window
 
 An engine upgrade that changes seed output runs in a maintenance window; the

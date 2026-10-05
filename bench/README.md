@@ -72,7 +72,9 @@ journey-style users and store-only, unindexed rooms (see
 Capacity reports live in `collaboration/reports/`: the
 [2026-10-05 production-box run](collaboration/reports/2026-10-05-prod-capacity.md)
 ladders Plate and Office rooms, concurrent large Office files and idle
-connections with the collaboration service on 1 and 2 cores.
+connections with the collaboration service on 1 and 2 cores, and the
+[replica run](collaboration/reports/2026-10-05-office-engine-replicas.md)
+measures the Office engine worker keeping each XLSX room's workbook open.
 
 ### parsers
 

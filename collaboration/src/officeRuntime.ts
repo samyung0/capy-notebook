@@ -70,6 +70,7 @@ interface Runtime {
     from: OfficeBaselineEntry[],
     to: OfficeBaselineEntry[]
   ): Promise<NetEffect[]>;
+  dropOfficeReplica(room: string): Promise<void>;
   exportOffice(
     bytes: Uint8Array,
     checkpoint: OfficeCheckpoint,
@@ -109,10 +110,14 @@ interface Runtime {
     format: OfficeFormat,
     bytes: Uint8Array
   ): Promise<OfficeCheckpoint>;
-  /** Pending XLSX effects read off the checkpoint's overrides against the base. */
+  /**
+   * Pending XLSX effects read off the checkpoint's overrides against the
+   * base. With a room, it reuses that room's replica.
+   */
   xlsxPendingEffects(
     bytes: Uint8Array,
-    checkpoint: OfficeCheckpoint
+    checkpoint: OfficeCheckpoint,
+    room?: string
   ): Promise<NetEffect[]>;
 }
 
@@ -127,6 +132,19 @@ export class OfficeEngineError extends Error {
 }
 
 export const CALL_TIMEOUT_MS = 120_000;
+/**
+ * Estimated WASM heap the engine worker may keep in XLSX room replicas (the
+ * opened workbook with the room's last saved state), so a save's pending
+ * effects do not reopen and recalculate the workbook: about 7 s of worker
+ * time per save of the 16,000-row gradebook on the production box, 1.4 s with
+ * its replica. A replica's estimate is 20 times its unzipped package: about
+ * 170 MB for that gradebook (130-160 MB measured), 25 MB for
+ * course-guide.xlsx (18 MB). 1 GiB holds six such gradebooks. In the
+ * 2026-10-05 replica run, 20 large-file rooms (six workbooks) kept the worker
+ * at about 40% instead of 100% for 520 MB more collaboration RSS (1.9 GiB at
+ * most), on a 7.6 GiB production box.
+ */
+export const OFFICE_REPLICA_BUDGET_BYTES = 1024 * 1024 * 1024;
 // A trap leaves wasm-bindgen objects poisoned, and the engine's dispose() or
 // free() in `finally` then throws one of these plain errors in place of the
 // WebAssembly.RuntimeError, so they count as traps too.
@@ -151,6 +169,22 @@ let runs: number[] = [];
 let busyMs = 0;
 let queueMax = 0;
 let timeouts = 0;
+// The worker's replica counters as of its last answer (officeReplicaStats),
+// and as of the last summary. A new worker starts both from zero.
+const noReplicas = () => ({
+  evictions: 0,
+  hits: 0,
+  misses: 0,
+  replicaBytes: 0,
+  replicas: 0,
+  wasmBytes: 0,
+});
+let replicaStats = noReplicas();
+let replicaCounted = noReplicas();
+function forgetReplicaStats() {
+  replicaStats = noReplicas();
+  replicaCounted = noReplicas();
+}
 const quantile = (values: number[], p: number) =>
   values.length
     ? Math.round(
@@ -164,16 +198,24 @@ export function takeOfficeStats() {
   const now = performance.now();
   // A call still running counts its time so far in this interval.
   const running = active?.startedAt === undefined ? 0 : now - active.startedAt;
+  const mib = (bytes: number) => Math.round(bytes / 2 ** 20);
   const summary = {
     busy_ms: Math.round(busyMs + running),
     calls: runs.length,
     queue_max: queueMax,
+    replica_evictions: replicaStats.evictions - replicaCounted.evictions,
+    replica_hits: replicaStats.hits - replicaCounted.hits,
+    replica_mib: mib(replicaStats.replicaBytes),
+    replica_misses: replicaStats.misses - replicaCounted.misses,
+    replicas: replicaStats.replicas,
     run_max_ms: Math.round(runs.length ? Math.max(...runs) : 0),
     run_p95_ms: quantile(runs, 0.95),
     timeouts,
     wait_max_ms: Math.round(waits.length ? Math.max(...waits) : 0),
     wait_p95_ms: quantile(waits, 0.95),
+    wasm_mib: mib(replicaStats.wasmBytes),
   };
+  replicaCounted = { ...replicaStats };
   if (active?.startedAt !== undefined) active.startedAt = now;
   waits = [];
   runs = [];
@@ -187,7 +229,8 @@ export function takeOfficeStats() {
 // rather than loading a WASM runtime for each keystroke or each active room.
 // Calls queue here with one in flight, so each timeout counts only its own
 // work. A WebAssembly trap or a timeout fails that call and replaces the
-// worker; engine refusals are ordinary results and keep it.
+// worker, its room replicas with it; engine refusals are ordinary results and
+// keep it.
 let worker: Worker | undefined;
 let active: Call | undefined;
 const queue: Call[] = [];
@@ -222,18 +265,35 @@ function startWorker() {
   const created = new Worker(
     `
     const { parentPort, workerData } = require('node:worker_threads');
-    const runtime = import(workerData);
+    const runtime = import(workerData.url).then((loaded) => {
+      loaded.configureOfficeReplicas(workerData.replicaBudget);
+      return loaded;
+    });
     parentPort.on('message', async ({method, args}) => {
-      try { parentPort.postMessage({value: await (await runtime)[method](...args)}); }
-      catch (error) { parentPort.postMessage({error: String(error?.message || error), trap: error instanceof WebAssembly.RuntimeError}); }
+      const loaded = await runtime.catch(() => undefined);
+      const replicas = () => loaded?.officeReplicaStats();
+      try { const value = await (await runtime)[method](...args); parentPort.postMessage({value, replicas: replicas()}); }
+      catch (error) { parentPort.postMessage({error: String(error?.message || error), trap: error instanceof WebAssembly.RuntimeError, replicas: replicas()}); }
     });
   `,
-    { eval: true, workerData: runtimeURL }
+    {
+      eval: true,
+      workerData: {
+        replicaBudget: OFFICE_REPLICA_BUDGET_BYTES,
+        url: runtimeURL,
+      },
+    }
   );
   created.on(
     'message',
-    (message: { value?: unknown; error?: string; trap?: boolean }) => {
+    (message: {
+      value?: unknown;
+      error?: string;
+      replicas?: typeof replicaStats;
+      trap?: boolean;
+    }) => {
       if (worker !== created) return;
+      if (message.replicas) replicaStats = message.replicas;
       const call = finish();
       if (message.error === undefined) call?.resolve(message.value);
       else {
@@ -246,6 +306,7 @@ function startWorker() {
   const died = (error: Error) => {
     if (worker !== created) return;
     worker = undefined;
+    forgetReplicaStats();
     finish()?.reject(new OfficeEngineError(error.message, true));
     next();
   };
@@ -271,6 +332,7 @@ function finish() {
 function restart() {
   const old = worker;
   worker = undefined;
+  forgetReplicaStats();
   void old?.terminate();
 }
 
@@ -307,6 +369,15 @@ export function runOffice<K extends keyof Runtime>(
     // Calls waiting behind the one in flight.
     queueMax = Math.max(queueMax, queue.length);
   }) as ReturnType<Runtime[K]>;
+}
+
+/**
+ * Frees a room's replica once the room unloaded. Without a running worker
+ * there is none: replicas live and die with the worker.
+ */
+export function dropOfficeReplica(room: string) {
+  if (!worker) return Promise.resolve();
+  return runOffice('dropOfficeReplica', room);
 }
 
 export async function closeOfficeRuntime() {

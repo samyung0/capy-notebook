@@ -23,6 +23,7 @@ import {
   type OfficeFormat,
   officeDocumentRoots,
   runOffice,
+  takeOfficeStats,
 } from './officeRuntime.js';
 import {
   effectTokens,
@@ -599,6 +600,63 @@ test('XLSX pending effects come from its overrides with no stored baseline', asy
     { kind: 'text', label: target.label, operation: 'replace' },
   ]);
 }, 60_000);
+
+test("XLSX saves reuse the room's engine replica, as uncached saves, until the room unloads", async () => {
+  const format = 'xlsx' as const;
+  const bytes = await readFile(
+    new URL(
+      '../../e2e/fixtures/files/rich-content/course-guide.xlsx',
+      import.meta.url
+    )
+  );
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(bytes))
+  );
+  let state = (await runOffice('seedOffice', format, bytes)).state;
+  const checkpoint = (next: Uint8Array) => ({
+    baseSha256: createHash('sha256').update(bytes).digest('hex'),
+    format,
+    schemaVersion: 1 as const,
+    state: next,
+  });
+  const targets = (
+    await runOffice('inspectOffice', bytes, checkpoint(state))
+  ).filter((entry) => entry.value && !entry.value.includes('\n'));
+  const states: Uint8Array[] = [];
+  for (const [index, target] of targets.slice(0, 3).entries()) {
+    state = (
+      await runOffice('applyOfficeCommands', bytes, checkpoint(state), [
+        setText(format, target, `${target.value} ${index}`),
+      ])
+    ).state;
+    states.push(state);
+  }
+  const store = new SourceDocumentStore({} as Pool, 'http://api', 'secret');
+  const base = {
+    baseSourceSHA256: checkpoint(state).baseSha256,
+    format,
+    pendingEffects: [],
+    sourceURL: 'http://base',
+  } as unknown as SourceSession;
+  const room = { ...base, room: 'source:f_9:epoch:1' };
+  const uncached: Awaited<ReturnType<SourceDocumentStore['effects']>>[] = [];
+  for (const next of states) uncached.push(await store.effects(base, next));
+  takeOfficeStats();
+  for (const [index, next] of states.entries())
+    expect(await store.effects(room, next)).toEqual(uncached[index]);
+  expect(takeOfficeStats()).toMatchObject({
+    replica_hits: 2,
+    replica_misses: 1,
+  });
+  store.forget(room.room);
+  expect(await store.effects(room, states[2])).toEqual(uncached[2]);
+  expect(takeOfficeStats()).toMatchObject({
+    replica_hits: 0,
+    replica_misses: 1,
+  });
+  store.forget(room.room);
+}, 120_000);
 
 test.each([
   ['docx', 'apps/demo/public/betteroffice-demo.docx'],
