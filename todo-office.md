@@ -190,14 +190,19 @@ check); it applies at the first promotion.
   ingest job pins the retrieval service never sets; the test mocks it).
 - **File descriptors cut mid-phrase** (retrieval): the prompt asks for one
   ~50-word sentence and `_truncate_words` cuts at word 50, the only bound on
-  that call (no `max_tokens`). Open with Epo.
+  that call (no `max_tokens`). Decided 2026-10-05: cap at ~80 words plus
+  `max_tokens` on the call.
 - **CJK refresh trigger:** `effectTokens` counts a CJK character as a token and
   each effect carries 40 characters of context on each side in `before` and
   `after`, so a small CJK edit counts ~160 tokens against ~41 in English (the
-  3,000 trigger after ~19 edited paragraphs instead of ~73). Open with Epo.
+  3,000 trigger after ~19 edited paragraphs instead of ~73). Decided
+  2026-10-05: context counts at the Latin rate in every script (TS and Go).
 - **Recovery logging** (decided 2026-10-05): log each draft from another epoch
-  entering copy-only recovery (no late merge); where it goes is open with the
-  logging summary.
+  entering copy-only recovery (no late merge), in the `edit_incidents` table.
+- **Editing incident log** (decided 2026-10-05, with the optimization round):
+  `edit_incidents` table written by collaboration and by the browser through a
+  small endpoint; slow-save, slow-engine-call and room load/unload lines in the
+  machine's logs (`human/observability-metering.md`).
 - **Citation after a runtime reload.** `load` carries the citation, but no e2e
   checks the highlight comes back (no mock chat cites an Office file).
 - **DOCX highlight picker** never ticks the current highlight; the editor
