@@ -18,13 +18,15 @@ import type {
   BankAssetOutputBody,
   BankBatchBody,
   BankCommentInputBody,
+  BankCopyInputBody,
+  BankCopyOutputBody,
   BankListBody,
   BankMarksOutputBody,
+  BankProgressOutputBody,
   BankQuestionBatchParams,
   BankRevealInputBody,
   BankRevealOutputBody,
   BankReviewInputBody,
-  BankReviewOutputBody,
   BankSaveInputBody,
   BillingCheckoutReq,
   BillingInfo,
@@ -469,6 +471,106 @@ if(uploadBankAssetBody?.file !== undefined) {
 
 
 
+export type copyBankQuestionsResponse200 = {
+  data: BankCopyOutputBody
+  status: 200
+}
+
+export type copyBankQuestionsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type copyBankQuestionsResponseSuccess = (copyBankQuestionsResponse200) & {
+  headers: Headers;
+};
+export type copyBankQuestionsResponseError = (copyBankQuestionsResponseDefault) & {
+  headers: Headers;
+};
+
+export type copyBankQuestionsResponse = (copyBankQuestionsResponseSuccess | copyBankQuestionsResponseError)
+
+export const getCopyBankQuestionsUrl = () => {
+
+
+
+
+  return `/api/bank/copy`
+}
+
+/**
+ * @summary Copy bank questions into a workspace quiz
+ */
+export const copyBankQuestions = async (bankCopyInputBody: NonReadonly<BankCopyInputBody>, options?: RequestInit): Promise<copyBankQuestionsResponse> => {
+
+  const res = await fetch(getCopyBankQuestionsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(bankCopyInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: copyBankQuestionsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as copyBankQuestionsResponse
+}
+
+
+
+export type bankProgressResponse200 = {
+  data: BankProgressOutputBody
+  status: 200
+}
+
+export type bankProgressResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type bankProgressResponseSuccess = (bankProgressResponse200) & {
+  headers: Headers;
+};
+export type bankProgressResponseError = (bankProgressResponseDefault) & {
+  headers: Headers;
+};
+
+export type bankProgressResponse = (bankProgressResponseSuccess | bankProgressResponseError)
+
+export const getBankProgressUrl = () => {
+
+
+
+
+  return `/api/bank/progress`
+}
+
+/**
+ * @summary Topics the learner has answered questions in
+ */
+export const bankProgress = async ( options?: RequestInit): Promise<bankProgressResponse> => {
+
+  const res = await fetch(getBankProgressUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: bankProgressResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as bankProgressResponse
+}
+
+
+
 export type bankQuestionBatchResponse200 = {
   data: BankBatchBody
   status: 200
@@ -909,7 +1011,7 @@ export const getBankTopicMarksUrl = (topicId: string,) => {
 }
 
 /**
- * @summary Right and wrong marks for a topic's questions
+ * @summary Latest scores for a topic's questions
  */
 export const bankTopicMarks = async (topicId: string, options?: RequestInit): Promise<bankTopicMarksResponse> => {
 
@@ -977,56 +1079,6 @@ export const bankQuestions = async (topicId: string, options?: RequestInit): Pro
 
   const data: bankQuestionsResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as bankQuestionsResponse
-}
-
-
-
-export type bankTopicReviewResponse200 = {
-  data: BankReviewOutputBody
-  status: 200
-}
-
-export type bankTopicReviewResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type bankTopicReviewResponseSuccess = (bankTopicReviewResponse200) & {
-  headers: Headers;
-};
-export type bankTopicReviewResponseError = (bankTopicReviewResponseDefault) & {
-  headers: Headers;
-};
-
-export type bankTopicReviewResponse = (bankTopicReviewResponseSuccess | bankTopicReviewResponseError)
-
-export const getBankTopicReviewUrl = (topicId: string,) => {
-
-
-
-
-  return `/api/bank/topics/${topicId}/review`
-}
-
-/**
- * @summary Next mistake review batch for a topic
- */
-export const bankTopicReview = async (topicId: string, options?: RequestInit): Promise<bankTopicReviewResponse> => {
-
-  const res = await fetch(getBankTopicReviewUrl(topicId),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: bankTopicReviewResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as bankTopicReviewResponse
 }
 
 

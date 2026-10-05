@@ -322,19 +322,28 @@
     {
       "name": "list_question_bank",
       "version": 1,
-      "description": "List the question bank of reviewed exam questions: a bank subject listed below for its topics, or a topic for its questions as cards, 50 per page, optionally only those of one question type.",
+      "description": "List the question bank of reviewed exam questions: a bank subject listed below for its topics, or a topic for its questions as cards, 50 per page, optionally only those with a part of one answer type.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "answer_type": {
+            "description": "With topic: only questions with a part of this answer type, as cards list them after their marks (True/False/Not given items are mcq).",
+            "enum": [
+              "mcq",
+              "multi",
+              "boolean",
+              "short",
+              "matching",
+              "ordering",
+              "open",
+              "gaps"
+            ],
+            "type": "string"
+          },
           "offset": {
             "default": 0,
             "minimum": 0,
             "type": "integer"
-          },
-          "question_type": {
-            "description": "With topic: only questions of this task type, as cards list them after their marks (IELTS Reading's identifying-information is True/False/Not given).",
-            "minLength": 1,
-            "type": "string"
           },
           "subject": {
             "description": "A bank subject id from this description.",

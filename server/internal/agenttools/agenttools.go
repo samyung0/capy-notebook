@@ -56,7 +56,8 @@ const questionExample = `{"id": "q1", "stem": [{"type": "text", "text": "A red b
 // quiz, each credited from the bank's own sources.
 // v14: html-embed fences carry no fallback, only title and html.
 // v15: create_deck and write_slide write a slide deck the ppt-master way; the
-// exported PPTX is stored as a workspace file.
+// exported PPTX is stored as a workspace file. list_question_bank filters a
+// topic by answer_type instead of question_type.
 const ContractVersion = 15
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
@@ -573,12 +574,16 @@ func Definitions() []Definition {
 			Retention: RetainNone,
 			Description: "List the question bank of reviewed exam questions: a bank subject " +
 				"listed below for its topics, or a topic for its questions as cards, 50 per page, " +
-				"optionally only those of one question type.",
+				"optionally only those with a part of one answer type.",
 			InputSchema: obj(map[string]any{
 				"subject": str("A bank subject id from this description."),
 				"topic":   str("A topic id from a subject's list."),
-				"question_type": str("With topic: only questions of this task type, as cards list " +
-					"them after their marks (IELTS Reading's identifying-information is True/False/Not given)."),
+				"answer_type": map[string]any{
+					"type": "string",
+					"enum": []string{"mcq", "multi", "boolean", "short", "matching", "ordering", "open", "gaps"},
+					"description": "With topic: only questions with a part of this answer type, as cards list " +
+						"them after their marks (True/False/Not given items are mcq).",
+				},
 				"offset": map[string]any{"type": "integer", "minimum": 0, "default": 0},
 			}),
 			Concurrency:        "read",

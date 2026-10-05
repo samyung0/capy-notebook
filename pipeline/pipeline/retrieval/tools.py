@@ -1739,26 +1739,26 @@ async def _read_skill(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
 async def _list_question_bank(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     """The bank's table of contents: a subject's topics, or a page of a topic's
-    questions, optionally of one question type. The exams and subjects ride in
+    questions, optionally only those with a part of one answer type. The exams and subjects ride in
     the tool description."""
     # A topic id is unique on its own, so a subject passed with it is ignored.
     topic, subject = args.get("topic"), args.get("subject")
-    qtype = str(args.get("question_type") or "")
+    atype = str(args.get("answer_type") or "")
     if not (topic or subject):
         return _refused(
             "list_question_bank takes subject (a bank subject from its description, "
             "not a library subject) or topic (from a subject's list)."
         )
-    if qtype and not topic:
+    if atype and not topic:
         return _refused(
-            "question_type filters a topic's questions; pass a topic from the "
+            "answer_type filters a topic's questions; pass a topic from the "
             "subject's list with it."
         )
     if topic:
         offset = int(args.get("offset") or 0)
         payload = {"userId": ctx.user_id, "topicId": str(topic), "offset": offset}
-        if qtype:
-            payload["questionType"] = qtype
+        if atype:
+            payload["answerType"] = atype
         body = await _gateway_read(
             "/api/internal/bank/list", payload, f"list bank topic {topic}"
         )
@@ -1767,14 +1767,15 @@ async def _list_question_bank(args: dict[str, Any], ctx: ToolContext) -> ToolRes
         total, rows = body["total"], body["questions"]
         if not rows:
             hint = (
-                f"No {qtype} questions under topic {topic} from offset {offset}; "
-                "list the topic without question_type to see the types its cards carry."
-                if qtype
+                f"No questions with {atype} parts under topic {topic} from offset "
+                f"{offset}; list the topic without answer_type to see the answer "
+                "types its cards carry."
+                if atype
                 else f"No bank questions under topic {topic} from offset {offset}; "
                 "list the subject's topics for their ids and counts."
             )
             return _refused(hint, code="unavailable_target")
-        of = f" {qtype}" if qtype else ""
+        of = f" {atype}" if atype else ""
         head = f"Topic {topic}:{of} questions {offset + 1}-{offset + len(rows)} of {total}."
         more = offset + len(rows)
         tail = f"\nNext page: offset {more}." if more < total else ""

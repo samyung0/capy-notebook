@@ -176,6 +176,52 @@ export const UploadBankAssetResponse = zod.object({
 
 
 /**
+ * @summary Copy bank questions into a workspace quiz
+ */
+export const copyBankQuestionsBodyQuestionIdsMax = 20;
+
+export const copyBankQuestionsBodyQuizNameMax = 120;
+
+
+
+
+export const CopyBankQuestionsBody = zod.object({
+  "chapterId": zod.string().optional().describe('Where a new quiz is filed; goes with quizName'),
+  "questionIds": zod.array(zod.string()).min(1).max(copyBankQuestionsBodyQuestionIdsMax).describe('Bank questions to copy, in this order'),
+  "quizId": zod.string().optional().describe('An existing quiz in the workspace to append to; exclusive with quizName'),
+  "quizName": zod.string().max(copyBankQuestionsBodyQuizNameMax).optional().describe('Name of a new quiz; exclusive with quizId'),
+  "workspaceId": zod.string().min(1)
+})
+
+export const CopyBankQuestionsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "quizId": zod.string(),
+  "workspaceId": zod.string()
+})
+
+
+/**
+ * @summary Topics the learner has answered questions in
+ */
+export const BankProgressResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "topics": zod.array(zod.object({
+  "answered": zod.int().describe('Current questions with a result for their current content'),
+  "correct": zod.int().describe('Answered questions whose latest score is full marks'),
+  "examId": zod.string(),
+  "examLabel": zod.string(),
+  "lastAnsweredAt": zod.iso.datetime({"offset":true}),
+  "nextQuestionId": zod.string().nullable().describe('The next unanswered question after the most recently answered one, in topic order and wrapping to the start; null once every question is answered'),
+  "subjectId": zod.string(),
+  "subjectLabel": zod.string(),
+  "topicId": zod.string(),
+  "topicLabel": zod.string(),
+  "total": zod.int().describe('Current (not retracted) questions')
+})).describe('Topics with at least one answered current question, the most recently answered first')
+})
+
+
+/**
  * @summary Read bank questions by id
  */
 export const bankQuestionBatchQueryIdsMax = 50;
@@ -598,7 +644,7 @@ export const BankSyllabusResponse = zod.object({
 
 
 /**
- * @summary Right and wrong marks for a topic's questions
+ * @summary Latest scores for a topic's questions
  */
 export const BankTopicMarksParams = zod.object({
   "topicId": zod.string()
@@ -606,7 +652,7 @@ export const BankTopicMarksParams = zod.object({
 
 export const BankTopicMarksResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "marks": zod.record(zod.string(), zod.boolean()).describe('Answered current questions by id: true when the last answer earned full marks')
+  "marks": zod.record(zod.string(), zod.number()).describe('Answered current questions by id: the latest answer\'s score, 0 to 1')
 })
 
 
@@ -620,6 +666,7 @@ export const BankQuestionsParams = zod.object({
 export const BankQuestionsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "questions": zod.array(zod.object({
+  "answerTypes": zod.array(zod.string()).describe('The distinct answer types of the question\'s parts, in part order'),
   "hasFigure": zod.boolean(),
   "hasTable": zod.boolean(),
   "id": zod.string(),
@@ -630,19 +677,6 @@ export const BankQuestionsResponse = zod.object({
   "reviewedBy": zod.string(),
   "reviewerName": zod.string()
 })).nullable()
-})
-
-
-/**
- * @summary Next mistake review batch for a topic
- */
-export const BankTopicReviewParams = zod.object({
-  "topicId": zod.string()
-})
-
-export const BankTopicReviewResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "questionIds": zod.array(zod.string()).describe('Up to 20 questions missed at least once, least retained first; read them through bankQuestionBatch')
 })
 
 

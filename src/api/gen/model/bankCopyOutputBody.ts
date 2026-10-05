@@ -5,9 +5,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface BankReviewOutputBody {
+export interface BankCopyOutputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** Up to 20 questions missed at least once, least retained first; read them through bankQuestionBatch */
-  questionIds: string[];
+  quizId: string;
+  workspaceId: string;
 }

@@ -205,11 +205,8 @@ QUESTION = obj(
     ["stem", "parts", "layout", "labels"],
 )
 WRITE = obj({"questions": array(QUESTION, 1, 50)})
-# One full passage plus the subject's question-type ids it uses; the driver
-# checks the ids against the topic's vocabulary.
-PASSAGE = obj(
-    {"questions": array(QUESTION, 1, 1), "question_types": array(TEXT, 1, 11)}
-)
+# One full passage as one question.
+PASSAGE = obj({"questions": array(QUESTION, 1, 1)})
 REFERENCES = obj(
     {"references": array(obj({"url": TEXT, "title": TEXT, "notes": TEXT}), 1)}
 )

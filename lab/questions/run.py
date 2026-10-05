@@ -52,10 +52,6 @@ def validate_stage_output(stage, payload, value):
     if stage == "passage":
         if len(value["questions"]) != 1:
             raise ValueError("A passage packet returns one question")
-        types = value["question_types"]
-        allowed = {t["id"] for t in payload["question_types"]}
-        if len(set(types)) != len(types) or not set(types) <= allowed:
-            raise ValueError("Passage question types must be distinct vocabulary ids")
     if stage == "solve":
         parts = payload["question"]["parts"]
         answers = value["answers"]
@@ -550,11 +546,6 @@ def main():
             raise ValueError(
                 "Questions already exist; use fix or a fresh topic run directory"
             )
-        vocabulary = metadata["subject"].get("question_types")
-        if not vocabulary:
-            raise ValueError(
-                "topic.json subject needs question_types from the syllabus"
-            )
         written = []
         pending = False
         for passage in read(topic / "passages.json"):
@@ -571,7 +562,6 @@ def main():
                         "style": (topic / "style.md").read_text(encoding="utf-8"),
                         "passage": passage,
                         "section": passage["section"],
-                        "question_types": vocabulary,
                         "contract": QUESTION_CONTRACT,
                     },
                     schema.PASSAGE,
@@ -582,14 +572,12 @@ def main():
             written.append((passage, result))
         if pending:
             raise PendingStage()
-        sources, types = {}, {}
+        sources = {}
         for passage, result in written:
             question = assign_ids(result["questions"][0])
             save(topic / "questions" / (question["id"] + ".json"), question)
             sources[question["id"]] = [passage_source(passage)]
-            types[question["id"]] = result["question_types"]
         save(topic / "sources.json", sources)
-        save(topic / "question-types.json", types)
     elif args.stage == "solve":
         pending = False
         for path, question in questions(topic):
@@ -692,8 +680,6 @@ def main():
     else:
         source_path = topic / "sources.json"
         source_refs = read(source_path) if source_path.exists() else {}
-        types_path = topic / "question-types.json"
-        question_types = read(types_path) if types_path.exists() else {}
         comparisons = {r["id"]: r for r in read(topic / "compare.json")}
         copies = {r["id"]: r for r in read(topic / "copycheck.json")}
         renders = read(topic / "render" / "manifest.json")
@@ -723,7 +709,6 @@ def main():
                 {
                     "content": q,
                     "sources": source_refs.get(q["id"], []),
-                    "questionTypes": question_types.get(q["id"], []),
                     "sha256": digest,
                 }
             )

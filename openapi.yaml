@@ -435,6 +435,57 @@ components:
       required:
         - text
       type: object
+    BankCopyInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/BankCopyInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        chapterId:
+          description: Where a new quiz is filed; goes with quizName
+          type: string
+        questionIds:
+          description: Bank questions to copy, in this order
+          items:
+            type: string
+          maxItems: 20
+          minItems: 1
+          type: array
+          uniqueItems: true
+        quizId:
+          description: An existing quiz in the workspace to append to; exclusive with quizName
+          type: string
+        quizName:
+          description: Name of a new quiz; exclusive with quizId
+          maxLength: 120
+          type: string
+        workspaceId:
+          minLength: 1
+          type: string
+      required:
+        - questionIds
+        - workspaceId
+      type: object
+    BankCopyOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/BankCopyOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        quizId:
+          type: string
+        workspaceId:
+          type: string
+      required:
+        - workspaceId
+        - quizId
+      type: object
     BankListBody:
       additionalProperties: false
       properties:
@@ -463,11 +514,29 @@ components:
           type: string
         marks:
           additionalProperties:
-            type: boolean
-          description: "Answered current questions by id: true when the last answer earned full marks"
+            format: double
+            type: number
+          description: "Answered current questions by id: the latest answer's score, 0 to 1"
           type: object
       required:
         - marks
+      type: object
+    BankProgressOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/BankProgressOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        topics:
+          description: Topics with at least one answered current question, the most recently answered first
+          items:
+            $ref: "#/components/schemas/TopicProgress"
+          type: array
+      required:
+        - topics
       type: object
     BankRevealInputBody:
       additionalProperties: false
@@ -514,23 +583,6 @@ components:
           type: boolean
       required:
         - reviewed
-      type: object
-    BankReviewOutputBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/BankReviewOutputBody.json
-          format: uri
-          readOnly: true
-          type: string
-        questionIds:
-          description: Up to 20 questions missed at least once, least retained first; read them through bankQuestionBatch
-          items:
-            type: string
-          type: array
-      required:
-        - questionIds
       type: object
     BankSaveInputBody:
       additionalProperties: false
@@ -3515,6 +3567,11 @@ components:
     Row:
       additionalProperties: false
       properties:
+        answerTypes:
+          description: The distinct answer types of the question's parts, in part order
+          items:
+            type: string
+          type: array
         hasFigure:
           type: boolean
         hasTable:
@@ -3544,6 +3601,7 @@ components:
         - marks
         - hasFigure
         - hasTable
+        - answerTypes
         - reviewedAt
         - reviewedBy
         - reviewerName
@@ -4636,6 +4694,53 @@ components:
         - total
         - reviewed
       type: object
+    TopicProgress:
+      additionalProperties: false
+      properties:
+        answered:
+          description: Current questions with a result for their current content
+          format: int64
+          type: integer
+        correct:
+          description: Answered questions whose latest score is full marks
+          format: int64
+          type: integer
+        examId:
+          type: string
+        examLabel:
+          type: string
+        lastAnsweredAt:
+          format: date-time
+          type: string
+        nextQuestionId:
+          description: The next unanswered question after the most recently answered one, in topic order and wrapping to the start; null once every question is answered
+          nullable: true
+          type: string
+        subjectId:
+          type: string
+        subjectLabel:
+          type: string
+        topicId:
+          type: string
+        topicLabel:
+          type: string
+        total:
+          description: Current (not retracted) questions
+          format: int64
+          type: integer
+      required:
+        - examId
+        - examLabel
+        - subjectId
+        - subjectLabel
+        - topicId
+        - topicLabel
+        - total
+        - answered
+        - correct
+        - lastAnsweredAt
+        - nextQuestionId
+      type: object
     TransferWorkspaceReq:
       additionalProperties: false
       properties:
@@ -5669,6 +5774,50 @@ paths:
       summary: Upload a public question figure
       tags:
         - Question bank
+  /api/bank/copy:
+    post:
+      operationId: copyBankQuestions
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BankCopyInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BankCopyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Copy bank questions into a workspace quiz
+      tags:
+        - Question bank
+  /api/bank/progress:
+    get:
+      operationId: bankProgress
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BankProgressOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Topics the learner has answered questions in
+      tags:
+        - Question bank
   /api/bank/questions:
     get:
       operationId: bankQuestionBatch
@@ -5915,7 +6064,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Right and wrong marks for a topic's questions
+      summary: Latest scores for a topic's questions
       tags:
         - Question bank
   /api/bank/topics/{topicId}/questions:
@@ -5941,31 +6090,6 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: List topic questions
-      tags:
-        - Question bank
-  /api/bank/topics/{topicId}/review:
-    get:
-      operationId: bankTopicReview
-      parameters:
-        - in: path
-          name: topicId
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BankReviewOutputBody"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Next mistake review batch for a topic
       tags:
         - Question bank
   /api/billing:

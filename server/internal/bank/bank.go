@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -165,6 +166,7 @@ type Row struct {
 	Marks        int        `json:"marks"`
 	HasFigure    bool       `json:"hasFigure"`
 	HasTable     bool       `json:"hasTable"`
+	AnswerTypes  []string   `json:"answerTypes" nullable:"false" doc:"The distinct answer types of the question's parts, in part order"`
 	ReviewedAt   *time.Time `json:"reviewedAt"`
 	ReviewedBy   string     `json:"reviewedBy"`
 	ReviewerName string     `json:"reviewerName"`
@@ -254,6 +256,7 @@ func (s *Store) List(ctx context.Context, topic string) ([]Row, error) {
 			return nil, dbError(err)
 		}
 		row.Marks = questions.Marks(q)
+		row.AnswerTypes = AnswerTypes(q)
 		if stem, ok := q["stem"].([]any); ok {
 			for _, v := range stem {
 				b, _ := v.(map[string]any)
@@ -301,29 +304,48 @@ func (s *Store) List(ctx context.Context, topic string) ([]Row, error) {
 
 // PageQuestion is one question of a topic as the chat agent lists it.
 type PageQuestion struct {
-	ID            string         `json:"id"`
-	Question      map[string]any `json:"question"`
-	QuestionTypes []string       `json:"questionTypes"`
+	ID          string         `json:"id"`
+	Question    map[string]any `json:"question"`
+	AnswerTypes []string       `json:"answerTypes"`
 }
 
+// AnswerTypes is the distinct answer types of a question's parts (mcq, multi,
+// boolean, short, matching, ordering, open, gaps), in part order.
+func AnswerTypes(q map[string]any) []string {
+	out := []string{}
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		part, _ := raw.(map[string]any)
+		answer, _ := part["answer"].(map[string]any)
+		if t, ok := answer["type"].(string); ok && !slices.Contains(out, t) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// answerTypeFilter keeps every question when $2 is empty, otherwise those
+// with a part of answer type $2.
+const answerTypeFilter = `($2='' OR EXISTS(SELECT 1 FROM jsonb_array_elements(content->'parts') p WHERE p->'answer'->>'type'=$2))`
+
 // Page is a topic's question count and one page of its questions in bank
-// order, only those of questionType when it is set; an unknown topic is
-// ErrNotFound.
-func (s *Store) Page(ctx context.Context, topic, questionType string, offset, limit int) (int, []PageQuestion, error) {
+// order, only those with a part of answerType when it is set; an unknown topic
+// is ErrNotFound.
+func (s *Store) Page(ctx context.Context, topic, answerType string, offset, limit int) (int, []PageQuestion, error) {
 	p, err := s.pool(ctx, false)
 	if err != nil {
 		return 0, nil, err
 	}
 	var total int
 	var exists bool
-	if err = p.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM topics WHERE id=$1), (SELECT count(*) FROM questions WHERE topic_id=$1 AND retracted_at IS NULL AND ($2='' OR $2=ANY(question_types)))`, topic, questionType).
+	if err = p.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM topics WHERE id=$1), (SELECT count(*) FROM questions WHERE topic_id=$1 AND retracted_at IS NULL AND `+answerTypeFilter+`)`, topic, answerType).
 		Scan(&exists, &total); err != nil {
 		return 0, nil, dbError(err)
 	}
 	if !exists {
 		return 0, nil, ErrNotFound
 	}
-	rows, err := p.Query(ctx, `SELECT id,content,question_types FROM questions WHERE topic_id=$1 AND retracted_at IS NULL AND ($2='' OR $2=ANY(question_types)) ORDER BY position,id OFFSET $3 LIMIT $4`, topic, questionType, offset, limit)
+	rows, err := p.Query(ctx, `SELECT id,content FROM questions WHERE topic_id=$1 AND retracted_at IS NULL AND `+answerTypeFilter+` ORDER BY position,id OFFSET $3 LIMIT $4`, topic, answerType, offset, limit)
 	if err != nil {
 		return 0, nil, dbError(err)
 	}
@@ -331,9 +353,10 @@ func (s *Store) Page(ctx context.Context, topic, questionType string, offset, li
 	out := []PageQuestion{}
 	for rows.Next() {
 		var q PageQuestion
-		if err := rows.Scan(&q.ID, &q.Question, &q.QuestionTypes); err != nil {
+		if err := rows.Scan(&q.ID, &q.Question); err != nil {
 			return 0, nil, dbError(err)
 		}
+		q.AnswerTypes = AnswerTypes(q.Question)
 		out = append(out, q)
 	}
 	return total, out, dbError(rows.Err())

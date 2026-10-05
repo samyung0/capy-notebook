@@ -6,6 +6,8 @@
  */
 
 export interface Row {
+  /** The distinct answer types of the question's parts, in part order */
+  answerTypes: string[];
   hasFigure: boolean;
   hasTable: boolean;
   id: string;

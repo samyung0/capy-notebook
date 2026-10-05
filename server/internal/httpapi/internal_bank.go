@@ -1,8 +1,10 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -29,9 +31,9 @@ type internalBankListReq struct {
 	SubjectID string `json:"subjectId"`
 	TopicID   string `json:"topicId"`
 	Offset    int    `json:"offset"`
-	// QuestionType keeps a topic's questions of one task type (IELTS Reading's
-	// identifying-information, say); it needs topicId.
-	QuestionType string `json:"questionType"`
+	// AnswerType keeps a topic's questions with a part of one answer type
+	// (mcq, gaps, ...); it needs topicId.
+	AnswerType string `json:"answerType"`
 }
 
 type internalBankReadReq struct {
@@ -89,7 +91,7 @@ func (a *api) failBank(w http.ResponseWriter, err error, missing string) {
 
 // internalBankList walks the syllabus: with nothing, every exam's subjects
 // with question counts; with subjectId, its topics; with topicId, one page of
-// its questions from offset, of one questionType when it is set.
+// its questions from offset, only those with a part of answerType when set.
 func (a *api) internalBankList(w http.ResponseWriter, r *http.Request) {
 	var req internalBankListReq
 	if err := decode(r, &req); err != nil {
@@ -100,8 +102,8 @@ func (a *api) internalBankList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	if req.QuestionType != "" && req.TopicID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "questionType filters a topic's questions; it needs topicId"})
+	if req.AnswerType != "" && req.TopicID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "answerType filters a topic's questions; it needs topicId"})
 		return
 	}
 	if req.TopicID != "" {
@@ -109,7 +111,7 @@ func (a *api) internalBankList(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "offset must not be negative"})
 			return
 		}
-		total, page, err := a.cfg.Bank.Page(ctx, req.TopicID, req.QuestionType, req.Offset, internalBankPage)
+		total, page, err := a.cfg.Bank.Page(ctx, req.TopicID, req.AnswerType, req.Offset, internalBankPage)
 		if err != nil {
 			a.failBank(w, err, "No bank topic "+req.TopicID+".")
 			return
@@ -212,33 +214,10 @@ func (a *api) internalBankCopy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	details, err := a.cfg.Bank.GetMany(ctx, req.QuestionIDs)
+	copied, provenance, err := a.bankCopies(ctx, req.QuestionIDs)
 	if err != nil {
 		a.failBank(w, err, "A question id is not in the bank; list_question_bank shows them.")
 		return
-	}
-	copied := make([]map[string]any, 0, len(details))
-	credits := map[string]store.QuestionCredit{}
-	for _, d := range details {
-		copied = append(copied, d.Question)
-		sources, err := a.cfg.Bank.Provenance(ctx, d.Sources)
-		if err != nil {
-			a.failBank(w, err, "")
-			return
-		}
-		if sources != nil {
-			id, _ := d.Question["id"].(string)
-			credits[id] = store.QuestionCredit{Books: sources.Books, Web: sources.Web}
-		}
-	}
-	var provenance *store.Provenance
-	if len(credits) > 0 {
-		provenance = &store.Provenance{Books: []store.ProvenanceBook{}, Questions: credits}
-		// Bounds the record and computes each credit's licence line.
-		if code, err := validateStoredProvenance(provenance); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"code": code, "message": err.Error()})
-			return
-		}
 	}
 
 	if req.QuizID == "" {
@@ -259,17 +238,61 @@ func (a *api) internalBankCopy(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "unavailable_target", "message": "quiz_id is not a quiz in this workspace"})
 		return
 	}
-	existing, _, err := materialdoc.ExtractQuiz(quiz.Content)
+	commands, err := bankAppendCommands(quiz.Content, copied)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
+	a.editAgentDocument(w, r, internalDocumentsEditReq{
+		WorkspaceID: req.WorkspaceID, UserID: req.UserID, AssistantMessageID: req.AssistantMessageID,
+		ToolCallID: req.ToolCallID, Target: agenttools.ResourceRef{Kind: agenttools.KindMaterial, ID: req.QuizID},
+		Commands: commands, Provenance: provenance,
+	})
+}
+
+// bankCopies reads bank questions for a copy, unchanged and in order, with
+// each one's credit resolved from the bank's sources and kept under the
+// question's id. An unknown or retracted id is bank.ErrNotFound.
+func (a *api) bankCopies(ctx context.Context, ids []string) ([]map[string]any, *store.Provenance, error) {
+	details, err := a.cfg.Bank.GetMany(ctx, ids)
+	if err != nil {
+		return nil, nil, err
+	}
+	copied := make([]map[string]any, 0, len(details))
+	credits := map[string]store.QuestionCredit{}
+	for _, d := range details {
+		copied = append(copied, d.Question)
+		sources, err := a.cfg.Bank.Provenance(ctx, d.Sources)
+		if err != nil {
+			return nil, nil, err
+		}
+		if sources != nil {
+			id, _ := d.Question["id"].(string)
+			credits[id] = store.QuestionCredit{Books: sources.Books, Web: sources.Web}
+		}
+	}
+	if len(credits) == 0 {
+		return copied, nil, nil
+	}
+	provenance := &store.Provenance{Books: []store.ProvenanceBook{}, Questions: credits}
+	// Bounds the record and computes each credit's licence line.
+	if _, err := validateStoredProvenance(provenance); err != nil {
+		return nil, nil, fmt.Errorf("%w: %v", bank.ErrUnavailable, err)
+	}
+	return copied, provenance, nil
+}
+
+// bankAppendCommands appends the copied questions, in order, after the quiz's
+// last question.
+func bankAppendCommands(content string, copied []map[string]any) ([]json.RawMessage, error) {
+	existing, _, err := materialdoc.ExtractQuiz(content)
+	if err != nil {
+		return nil, err
+	}
 	var present []map[string]any
 	if err := json.Unmarshal(existing, &present); err != nil {
-		a.fail(w, err)
-		return
+		return nil, err
 	}
-	// Appended in order after the quiz's last question.
 	var after *string
 	if n := len(present); n > 0 {
 		if id, ok := present[n-1]["id"].(string); ok {
@@ -280,17 +303,12 @@ func (a *api) internalBankCopy(w http.ResponseWriter, r *http.Request) {
 	for _, q := range copied {
 		command, err := json.Marshal(map[string]any{"type": "add_question", "question": q, "after_question_id": after})
 		if err != nil {
-			a.fail(w, err)
-			return
+			return nil, err
 		}
 		commands = append(commands, command)
 		if id, ok := q["id"].(string); ok {
 			after = &id
 		}
 	}
-	a.editAgentDocument(w, r, internalDocumentsEditReq{
-		WorkspaceID: req.WorkspaceID, UserID: req.UserID, AssistantMessageID: req.AssistantMessageID,
-		ToolCallID: req.ToolCallID, Target: agenttools.ResourceRef{Kind: agenttools.KindMaterial, ID: req.QuizID},
-		Commands: commands, Provenance: provenance,
-	})
+	return commands, nil
 }

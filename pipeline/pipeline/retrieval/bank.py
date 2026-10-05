@@ -31,7 +31,7 @@ def card(row: dict[str, Any]) -> str:
     content = row["question"]
     parts = content.get("parts") or []
     marks = sum(int(p.get("marks") or 0) for p in parts)
-    types = f" · {', '.join(row['questionTypes'])}" if row.get("questionTypes") else ""
+    types = f" · {', '.join(row['answerTypes'])}" if row.get("answerTypes") else ""
     stem = _text(content.get("stem") or [])
     asks = _text([b for p in parts for b in p.get("blocks") or []])
     lines = [_clip(stem, 120)] if stem else []

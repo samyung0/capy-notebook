@@ -28,44 +28,44 @@ func insertBankQuestions(t *testing.T, pool *pgxpool.Pool, ids ...string) {
 }
 
 // Learners reveal one checked question's key, record checked answers and read
-// back marks and mistake review; a prompt edit or a retraction takes a
-// question out, and retracted questions leave every bank list, read, reveal
-// and copy.
+// back their latest scores and topic progress; a prompt edit or a retraction
+// takes a question out, and retracted questions leave every bank list, read,
+// reveal and copy.
 func TestBankProgressAndRetraction(t *testing.T) {
 	var pool *pgxpool.Pool
 	h, st, _, _ := openInternalHTTPWith(t, nil, func(st *store.Store, c *httpapi.Config) {
 		var bankDSN string
 		bankDSN, pool = openTestBank(t, st, testdb.URL(t))
-		insertBankQuestions(t, pool, "bp1", "bp2", "bp3")
+		insertBankQuestions(t, pool, "bp1", "bp2", "bp3", "bp4")
 		c.Bank = bank.New(bankDSN, "", "https://bank.example/assets", bankDSN)
 		t.Cleanup(c.Bank.Close)
 	})
 	ctx := context.Background()
 	t.Cleanup(func() {
-		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM bank_review_states WHERE question_id LIKE 'bp%'`)
+		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM bank_progress WHERE question_id LIKE 'bp%'`)
 	})
 	const learner = "u_viewer"
 	answer := func(id string, score float64) int {
 		t.Helper()
 		return doReq(t, h, http.MethodPost, "/api/bank/questions/"+id+"/answers", learner, map[string]any{"score": score}).Code
 	}
-	marks := func(user string) map[string]bool {
+	marks := func(user string) map[string]float64 {
 		t.Helper()
 		rec := doReq(t, h, http.MethodGet, "/api/bank/topics/t/marks", user, nil)
-		var out struct{ Marks map[string]bool }
+		var out struct{ Marks map[string]float64 }
 		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || rec.Code != 200 {
 			t.Fatalf("marks: %d %s", rec.Code, rec.Body.String())
 		}
 		return out.Marks
 	}
-	reviewBatch := func() []string {
+	progress := func(user string) []bank.TopicProgress {
 		t.Helper()
-		rec := doReq(t, h, http.MethodGet, "/api/bank/topics/t/review", learner, nil)
-		var out struct{ QuestionIDs []string }
+		rec := doReq(t, h, http.MethodGet, "/api/bank/progress", user, nil)
+		var out struct{ Topics []bank.TopicProgress }
 		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || rec.Code != 200 {
-			t.Fatalf("review: %d %s", rec.Code, rec.Body.String())
+			t.Fatalf("progress: %d %s", rec.Code, rec.Body.String())
 		}
-		return out.QuestionIDs
+		return out.Topics
 	}
 
 	// The key of one question, as the reveal route or a read returns it.
@@ -98,20 +98,32 @@ func TestBankProgressAndRetraction(t *testing.T) {
 	if code := answer("bp1", 1.5); code != 422 {
 		t.Fatalf("score above 1 = %d", code)
 	}
-	for id, score := range map[string]float64{"bp1": 0, "bp2": 1, "bp3": 0.5} {
-		if code := answer(id, score); code != 204 {
-			t.Fatalf("answer %s = %d", id, code)
+	if got := progress(learner); len(got) != 0 {
+		t.Fatalf("progress before answering = %v", got)
+	}
+	// In order, so bp3 is the latest answer and Continue wraps past bp4's gap.
+	for _, a := range []struct {
+		id    string
+		score float64
+	}{{"bp1", 0}, {"bp2", 1}, {"bp3", 0.5}} {
+		if code := answer(a.id, a.score); code != 204 {
+			t.Fatalf("answer %s = %d", a.id, code)
 		}
 	}
-	if got := marks(learner); !maps.Equal(got, map[string]bool{"bp1": false, "bp2": true, "bp3": false}) {
+	if got := marks(learner); !maps.Equal(got, map[string]float64{"bp1": 0, "bp2": 1, "bp3": 0.5}) {
 		t.Fatalf("marks = %v", got)
 	}
 	if got := marks("u_editor"); len(got) != 0 {
 		t.Fatalf("another learner's marks = %v", got)
 	}
-	if got := reviewBatch(); !slices.Equal(got, []string{"bp1"}) {
-		t.Fatalf("review = %v", got)
+	if got := progress(learner); len(got) != 1 || got[0].TopicID != "t" || got[0].TopicLabel != "Topic" || got[0].ExamID != "e" ||
+		got[0].Total != 4 || got[0].Answered != 3 || got[0].Correct != 1 || got[0].NextQuestionID == nil || *got[0].NextQuestionID != "bp4" {
+		t.Fatalf("progress = %+v", got)
 	}
+	if code := doReq(t, h, http.MethodGet, "/api/bank/progress", "", nil).Code; code != 401 {
+		t.Fatalf("signed-out progress = %d", code)
+	}
+
 	if code := doReq(t, h, http.MethodGet, "/api/bank/topics/missing/marks", learner, nil).Code; code != 404 {
 		t.Fatalf("unknown topic marks = %d", code)
 	}
@@ -121,11 +133,20 @@ func TestBankProgressAndRetraction(t *testing.T) {
 		UPDATE questions SET retracted_at=now() WHERE id='bp1'`); err != nil {
 		t.Fatal(err)
 	}
-	if got := marks(learner); !maps.Equal(got, map[string]bool{"bp3": false}) {
+	if got := marks(learner); !maps.Equal(got, map[string]float64{"bp3": 0.5}) {
 		t.Fatalf("marks after edit and retraction = %v", got)
 	}
-	if got := reviewBatch(); len(got) != 0 {
-		t.Fatalf("review after retraction = %v", got)
+	// bp2 counts as unanswered again; after the latest answer (bp3) comes bp4.
+	if got := progress(learner); len(got) != 1 || got[0].Total != 3 || got[0].Answered != 1 || got[0].Correct != 0 || *got[0].NextQuestionID != "bp4" {
+		t.Fatalf("progress after edit and retraction = %+v", got)
+	}
+	for _, id := range []string{"bp2", "bp4"} {
+		if code := answer(id, 1); code != 204 {
+			t.Fatalf("answer %s = %d", id, code)
+		}
+	}
+	if got := progress(learner); len(got) != 1 || got[0].Answered != 3 || got[0].Correct != 2 || got[0].NextQuestionID != nil {
+		t.Fatalf("progress with every question answered = %+v", got)
 	}
 	if code := answer("bp1", 1); code != 404 {
 		t.Fatalf("answer a retracted question = %d", code)
@@ -136,12 +157,13 @@ func TestBankProgressAndRetraction(t *testing.T) {
 
 	list := doReq(t, h, http.MethodGet, "/api/bank/topics/t/questions", learner, nil)
 	var rows struct{ Questions []bank.Row }
-	if err := json.Unmarshal(list.Body.Bytes(), &rows); err != nil || len(rows.Questions) != 2 || rows.Questions[0].ID != "bp2" {
+	if err := json.Unmarshal(list.Body.Bytes(), &rows); err != nil || len(rows.Questions) != 3 || rows.Questions[0].ID != "bp2" ||
+		!slices.Equal(rows.Questions[0].AnswerTypes, []string{"mcq"}) {
 		t.Fatalf("list: %d %s", list.Code, list.Body.String())
 	}
 	syllabus := doReq(t, h, http.MethodGet, "/api/bank/syllabus", learner, nil)
 	var tree bank.Syllabus
-	if err := json.Unmarshal(syllabus.Body.Bytes(), &tree); err != nil || tree.Exams[0].Subjects[0].Topics[0].Total != 2 {
+	if err := json.Unmarshal(syllabus.Body.Bytes(), &tree); err != nil || tree.Exams[0].Subjects[0].Topics[0].Total != 3 {
 		t.Fatalf("syllabus: %d %s", syllabus.Code, syllabus.Body.String())
 	}
 	for _, path := range []string{"/api/bank/questions/bp1", "/api/bank/questions?ids=bp2,bp1"} {
@@ -156,7 +178,7 @@ func TestBankProgressAndRetraction(t *testing.T) {
 		_ = json.Unmarshal(rec.Body.Bytes(), &out)
 		return rec.Code, out
 	}
-	if code, page := internal("/api/internal/bank/list", map[string]any{"userId": "u_editor", "topicId": "t"}); code != 200 || page["total"].(float64) != 2 {
+	if code, page := internal("/api/internal/bank/list", map[string]any{"userId": "u_editor", "topicId": "t"}); code != 200 || page["total"].(float64) != 3 {
 		t.Fatalf("internal page: %d %v", code, page)
 	}
 	if code, _ := internal("/api/internal/bank/read", map[string]any{"userId": "u_editor", "questionId": "bp1"}); code != 404 {
@@ -166,9 +188,14 @@ func TestBankProgressAndRetraction(t *testing.T) {
 		"assistantMessageId": "m", "toolCallId": "c", "questionIds": []string{"bp1"}, "title": "T"}); code != 404 {
 		t.Fatalf("internal copy of a retracted question = %d", code)
 	}
+	if code := doReq(t, h, http.MethodPost, "/api/bank/copy", "u_editor", map[string]any{
+		"questionIds": []string{"bp1"}, "workspaceId": "ws_e2e_private", "quizName": "T"}).Code; code != 404 {
+		t.Fatalf("copy of a retracted question = %d", code)
+	}
 }
 
-// A frozen account records its own bank progress, as in workspace review.
+// A frozen account records its own bank progress, as in workspace review, but
+// copies nothing into a workspace.
 func TestFrozenAccountRecordsBankAnswers(t *testing.T) {
 	f := overQuotaFixture(t, 20)
 	frozen := f.material.CreatedBy
@@ -179,9 +206,13 @@ func TestFrozenAccountRecordsBankAnswers(t *testing.T) {
 	h := httpapi.New(f.store, blob.NewMemory(), nil, nil, "docling", httpapi.Config{AuthDisabled: true, DevUserID: frozen, Bank: bankStore})
 	// Before the fixture drops the user, whose foreign key does not cascade.
 	t.Cleanup(func() {
-		_, _ = f.store.Pool().Exec(context.Background(), `DELETE FROM bank_review_states WHERE user_id=$1`, frozen)
+		_, _ = f.store.Pool().Exec(context.Background(), `DELETE FROM bank_progress WHERE user_id=$1`, frozen)
 	})
 	if rec := doReq(t, h, http.MethodPost, "/api/bank/questions/fz1/answers", "", map[string]any{"score": 0}); rec.Code != 204 {
 		t.Fatalf("frozen answer = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := doReq(t, h, http.MethodPost, "/api/bank/copy", "", map[string]any{
+		"questionIds": []string{"fz1"}, "workspaceId": f.workspaceID, "quizName": "Frozen"}); rec.Code != 403 {
+		t.Fatalf("frozen copy = %d %s", rec.Code, rec.Body.String())
 	}
 }

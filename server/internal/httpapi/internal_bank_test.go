@@ -44,7 +44,7 @@ func TestInternalBankListsReadsAndCopiesWithCredits(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if _, err := pool.Exec(ctx, `UPDATE questions SET question_types='{identifying-information}' WHERE id='bq2'`); err != nil {
+		if _, err := pool.Exec(ctx, `UPDATE questions SET content=jsonb_set(content,'{parts,0,answer}','{"type":"boolean","correct":true}') WHERE id='bq2'`); err != nil {
 			t.Fatal(err)
 		}
 		bankStore = bank.New(bankDSN, "", assets, bankDSN)
@@ -73,13 +73,14 @@ func TestInternalBankListsReadsAndCopiesWithCredits(t *testing.T) {
 	if code, page := post("/api/internal/bank/list", map[string]any{"userId": "u_editor", "topicId": "t", "offset": 1}); code != 200 || page["total"].(float64) != 3 || len(page["questions"].([]any)) != 2 {
 		t.Fatalf("page: %d %v", code, page)
 	}
-	// A question type keeps a topic's questions of that task type, and needs the topic.
-	code, typed := post("/api/internal/bank/list", map[string]any{"userId": "u_editor", "topicId": "t", "questionType": "identifying-information"})
-	if rows, _ := typed["questions"].([]any); code != 200 || typed["total"].(float64) != 1 || len(rows) != 1 || rows[0].(map[string]any)["id"] != "bq2" {
+	// An answer type keeps a topic's questions with a part of that type, and needs the topic.
+	code, typed := post("/api/internal/bank/list", map[string]any{"userId": "u_editor", "topicId": "t", "answerType": "boolean"})
+	if rows, _ := typed["questions"].([]any); code != 200 || typed["total"].(float64) != 1 || len(rows) != 1 || rows[0].(map[string]any)["id"] != "bq2" ||
+		rows[0].(map[string]any)["answerTypes"].([]any)[0] != "boolean" {
 		t.Fatalf("typed page: %d %v", code, typed)
 	}
-	if code, _ := post("/api/internal/bank/list", map[string]any{"userId": "u_editor", "subjectId": "s", "questionType": "identifying-information"}); code != 400 {
-		t.Fatalf("question type without a topic: %d", code)
+	if code, _ := post("/api/internal/bank/list", map[string]any{"userId": "u_editor", "subjectId": "s", "answerType": "boolean"}); code != 400 {
+		t.Fatalf("answer type without a topic: %d", code)
 	}
 	if code, read := post("/api/internal/bank/read", map[string]any{"userId": "u_editor", "questionId": "bq1"}); code != 200 || len(read["sources"].([]any)) != 1 {
 		t.Fatalf("read: %d %v", code, read)
@@ -167,6 +168,57 @@ func TestInternalBankListsReadsAndCopiesWithCredits(t *testing.T) {
 	if code, receipt := post("/api/internal/bank/copy", copyBody("c3", []string{"bq2"}, map[string]any{"title": "Unsourced"})); code != 200 {
 		t.Fatalf("copy without sources into an unindexed workspace: %d %v", code, receipt)
 	}
+
+	// The bank page copies the same way for a signed-in editor of the workspace.
+	pageCopy := func(user string, body map[string]any) (int, map[string]any) {
+		t.Helper()
+		rec := doReq(t, h, http.MethodPost, "/api/bank/copy", user, body)
+		out := map[string]any{}
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return rec.Code, out
+	}
+	newQuiz := map[string]any{"questionIds": []string{"bq3", "bq2"}, "workspaceId": "ws_e2e_private", "chapterId": "ch_e2e_private", "quizName": "From the bank"}
+	if code, _ := pageCopy("u_viewer", newQuiz); code != 404 {
+		t.Fatalf("viewer copy: %d", code)
+	}
+	for _, refused := range []map[string]any{
+		{"questionIds": []string{"bq3"}, "workspaceId": "ws_e2e_private", "quizName": "T", "quizId": quizID},
+		{"questionIds": []string{"bq3"}, "workspaceId": "ws_e2e_private"},
+		{"questionIds": []string{"bq3"}, "workspaceId": "ws_e2e_private", "quizId": quizID, "chapterId": "ch_e2e_private"},
+	} {
+		if code, _ := pageCopy("u_editor", refused); code != 422 {
+			t.Fatalf("page copy should refuse %v: %d", refused, code)
+		}
+	}
+	code, made := pageCopy("u_editor", newQuiz)
+	if code != 200 || made["workspaceId"] != "ws_e2e_private" {
+		t.Fatalf("page copy to a new quiz: %d %v", code, made)
+	}
+	quiz, err = st.GetMaterial(context.Background(), made["quizId"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw, _, err = materialdoc.ExtractQuiz(quiz.Content); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &copied); err != nil || len(copied) != 2 || copied[0]["id"] != "bq3" ||
+		quiz.Title != "From the bank" || quiz.ChapterID == nil || *quiz.ChapterID != "ch_e2e_private" {
+		t.Fatalf("page copy: %s %+v", raw, quiz)
+	}
+	if credits := quiz.Provenance.Questions; len(credits) != 1 || credits["bq3"].License != "CC BY-SA 4.0" {
+		t.Fatalf("page copy credits: %#v", quiz.Provenance)
+	}
+	code, appended := pageCopy("u_editor", map[string]any{"questionIds": []string{"bq1"}, "workspaceId": "ws_e2e_private", "quizId": quiz.ID})
+	if code != 200 || appended["quizId"] != quiz.ID {
+		t.Fatalf("page copy into the quiz: %d %v", code, appended)
+	}
+	if len(sent.Commands) != 1 || sent.Commands[0]["afterNodeId"] != "bq2" {
+		t.Fatalf("page append after the last question: %v", sent.Commands)
+	}
+	if merged := sent.Provenance.Questions; len(merged) != 2 || merged["bq1"].Web == nil || merged["bq3"].Web == nil {
+		t.Fatalf("page copy merged credits: %#v", sent.Provenance)
+	}
+
 	// The model's own writes still may not claim a question credit.
 	forged := noteBody(msg, "f1", "Forged", "text")
 	forged["provenance"] = map[string]any{"books": []any{}, "questions": map[string]any{"q": map[string]any{"books": []any{}}}}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"testing"
 	"time"
@@ -39,7 +40,11 @@ func TestPublicationNeverOverwritesExistingQuestions(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	for _, name := range []string{"0001_init.sql", "0002_question_types.sql"} {
+	names, err := fs.Glob(bankmigrations.FS, "*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range names {
 		sql, err := bankmigrations.FS.ReadFile(name)
 		if err != nil {
 			t.Fatal(err)
@@ -48,7 +53,7 @@ func TestPublicationNeverOverwritesExistingQuestions(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	p := publication{Run: "first", Questions: []entry{{Content: map[string]any{"id": "question-1", "text": "original"}, Sources: json.RawMessage("[]"), QuestionTypes: []string{"matching-headings"}}}}
+	p := publication{Run: "first", Questions: []entry{{Content: map[string]any{"id": "question-1", "text": "original"}, Sources: json.RawMessage("[]")}}}
 	p.Syllabus.Exam = node{ID: "exam", Label: "Exam"}
 	p.Syllabus.Subject = node{ID: "subject", Label: "Subject"}
 	p.Syllabus.Topic = node{ID: "topic", Label: "Topic"}
@@ -56,9 +61,8 @@ func TestPublicationNeverOverwritesExistingQuestions(t *testing.T) {
 		t.Fatal(err)
 	}
 	var position int
-	var types []string
-	if err = pool.QueryRow(ctx, "SELECT position,question_types FROM questions WHERE id='question-1'").Scan(&position, &types); err != nil || position != 1 || len(types) != 1 || types[0] != "matching-headings" {
-		t.Fatalf("first question position=%d types=%v err=%v", position, types, err)
+	if err = pool.QueryRow(ctx, "SELECT position FROM questions WHERE id='question-1'").Scan(&position); err != nil || position != 1 {
+		t.Fatalf("first question position=%d err=%v", position, err)
 	}
 	if _, err = pool.Exec(ctx, "UPDATE questions SET reviewed_at=now(),reviewed_by='reviewer' WHERE id='question-1'"); err != nil {
 		t.Fatal(err)

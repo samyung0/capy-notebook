@@ -52,52 +52,6 @@
           "position": 7,
           "syllabus_reference": "https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading"
         }
-      ],
-      "question_types": [
-        {
-          "id": "multiple-choice",
-          "label": "Multiple choice"
-        },
-        {
-          "id": "identifying-information",
-          "label": "Identifying information (True/False/Not given)"
-        },
-        {
-          "id": "identifying-writer-views",
-          "label": "Identifying writer’s views/claims (Yes/No/Not given)"
-        },
-        {
-          "id": "matching-information",
-          "label": "Matching information"
-        },
-        {
-          "id": "matching-headings",
-          "label": "Matching headings"
-        },
-        {
-          "id": "matching-features",
-          "label": "Matching features"
-        },
-        {
-          "id": "matching-sentence-endings",
-          "label": "Matching sentence endings"
-        },
-        {
-          "id": "sentence-completion",
-          "label": "Sentence completion"
-        },
-        {
-          "id": "summary-note-table-flow-chart-completion",
-          "label": "Summary/note/table/flow chart completion"
-        },
-        {
-          "id": "diagram-label-completion",
-          "label": "Diagram label completion"
-        },
-        {
-          "id": "short-answer",
-          "label": "Short-answer questions"
-        }
       ]
     }
   ]

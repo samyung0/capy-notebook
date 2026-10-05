@@ -113,11 +113,9 @@ Each entry names its `section` pattern (1, 2 or 3) and is either a library
 excerpt (`kind: "library"`, `excerptId`, `bookId`, `version`, book, licence and
 exact library text) or an openly licensed web page (`kind: "web"`, `url`,
 `title`, `authors`, `publisher`, `license`, `licenseUrl`, `retrievedAt`, the
-licence evidence and the exact text). `topic.json`'s subject must carry the
-syllabus `question_types`. The writer may lightly adapt the passage but adds no
-facts. Admission records each question's `sources.json` entry from its packet's
-passage, never from the writer, and its task types in `question-types.json`,
-which `prepare-publish` carries into `publish.json` as `questionTypes`.
+licence evidence and the exact text). The writer may lightly adapt the passage
+but adds no facts. Admission records each question's `sources.json` entry from
+its packet's passage, never from the writer.
 
 Copy checking flags every shared 12-word run against extracted references.
 `prepare-publish` rejects missing/stale evidence, drops unresolved disagreements

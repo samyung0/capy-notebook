@@ -6,6 +6,6 @@
  */
 
 /**
- * Answered current questions by id: true when the last answer earned full marks
+ * Answered current questions by id: the latest answer's score, 0 to 1
  */
-export type BankMarksOutputBodyMarks = {[key: string]: boolean};
+export type BankMarksOutputBodyMarks = {[key: string]: number};

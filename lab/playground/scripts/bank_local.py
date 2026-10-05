@@ -29,27 +29,43 @@ async def _rows(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
         return await (await conn.execute(sql, params)).fetchall()
 
 
+def answer_types(question: dict[str, Any]) -> list[str]:
+    """The distinct answer types of a question's parts, in part order, as Go's
+    bank.AnswerTypes lists them."""
+    out: list[str] = []
+    for part in question.get("parts") or []:
+        kind = (part.get("answer") or {}).get("type")
+        if kind and kind not in out:
+            out.append(kind)
+    return out
+
+
 async def list_(payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-    qtype = payload.get("questionType") or ""
-    if qtype and not payload.get("topicId"):
-        return 400, {"code": "invalid_input", "message": "questionType needs topicId"}
+    atype = payload.get("answerType") or ""
+    if atype and not payload.get("topicId"):
+        return 400, {"code": "invalid_input", "message": "answerType needs topicId"}
     if payload.get("topicId"):
         topic, offset = payload["topicId"], int(payload.get("offset") or 0)
-        # An empty question type matches every question, as in Go's Page.
-        typed = "(%s = '' OR %s = ANY(question_types))"
+        # An empty answer type matches every question, as in Go's Page.
+        typed = (
+            "(%s = '' OR EXISTS (SELECT 1 FROM jsonb_array_elements(content->'parts') p "
+            "WHERE p->'answer'->>'type' = %s))"
+        )
         exists = await _rows(
             "SELECT (SELECT count(*) FROM topics WHERE id = %s) AS t, "
             f"(SELECT count(*) FROM questions WHERE topic_id = %s AND {typed}) AS n",
-            (topic, topic, qtype, qtype),
+            (topic, topic, atype, atype),
         )
         if not exists[0]["t"]:
             return 404, {"code": "unavailable_target", "message": f"No bank topic {topic}."}
         rows = await _rows(
-            "SELECT id, content AS question, question_types AS \"questionTypes\" "
+            "SELECT id, content AS question "
             f"FROM questions WHERE topic_id = %s AND {typed} "
             "ORDER BY position, id OFFSET %s LIMIT %s",
-            (topic, qtype, qtype, offset, PAGE),
+            (topic, atype, atype, offset, PAGE),
         )
+        for row in rows:
+            row["answerTypes"] = answer_types(row["question"])
         return 200, {"total": exists[0]["n"], "questions": rows}
     if payload.get("subjectId"):
         rows = await _rows(

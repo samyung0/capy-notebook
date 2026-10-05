@@ -237,14 +237,18 @@ export type StudySummary = Omit<GenStudySummary, 'quickReview'> & {
 };
 export type {
   BankAnswerInputBody as BankAnswerReq,
+  BankCopyInputBody as BankCopyReq,
+  BankCopyOutputBody as BankCopyResult,
   BankMarksOutputBody as BankTopicMarks,
+  BankProgressOutputBody as BankProgress,
   BankRevealInputBody as BankRevealReq,
-  BankReviewOutputBody as BankReviewBatch,
   RateReviewItemReq,
   ReviewWorkspace,
+  Row as BankListRow,
   SetStudyEnabledReq,
   SetStudyItemReq,
   StudyItem,
+  TopicProgress as BankTopicProgress,
 } from './gen/model';
 
 /* ---------------- overridden request bodies ----------------

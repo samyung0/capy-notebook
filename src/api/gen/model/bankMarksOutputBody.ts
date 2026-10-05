@@ -9,6 +9,6 @@ import type { BankMarksOutputBodyMarks } from './bankMarksOutputBodyMarks.ts';
 export interface BankMarksOutputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** Answered current questions by id: true when the last answer earned full marks */
+  /** Answered current questions by id: the latest answer's score, 0 to 1 */
   marks: BankMarksOutputBodyMarks;
 }

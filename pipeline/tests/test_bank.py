@@ -13,7 +13,7 @@ def _question(qid: str, stem: str, asks: str) -> dict:
         "stem": [{"type": "text", "text": stem}] if stem else [],
         "parts": [{"blocks": [{"type": "text", "text": asks}], "marks": 2}],
     }
-    return {"id": qid, "question": content, "questionTypes": ["matching_headings"]}
+    return {"id": qid, "question": content, "answerTypes": ["matching"]}
 
 
 def test_a_card_shows_the_passage_opening_then_what_is_asked():
@@ -22,7 +22,7 @@ def test_a_card_shows_the_passage_opening_then_what_is_asked():
         _question("q1", passage, "Choose the correct heading for each paragraph.")
     )
     head, opening, asks = text.split("\n")
-    assert head == "q1 · 1 part, 2 marks · matching_headings"
+    assert head == "q1 · 1 part, 2 marks · matching"
     assert opening.startswith("The nineteenth century") and opening.endswith("…")
     assert asks == "Choose the correct heading for each paragraph."
 
@@ -47,7 +47,7 @@ def _gateway(monkeypatch):
                 return tools._refused(
                     "Could not list: No bank topic.", code="unavailable_target"
                 )
-            if payload.get("questionType") not in (None, "matching_headings"):
+            if payload.get("answerType") not in (None, "matching"):
                 return {"total": 0, "questions": []}
             offset = payload["offset"]
             rows = [
@@ -135,24 +135,24 @@ async def test_listing_walks_exams_subjects_topics_and_pages(monkeypatch):
     )
 
 
-async def test_a_question_type_narrows_a_topic_page(monkeypatch):
+async def test_an_answer_type_narrows_a_topic_page(monkeypatch):
     seen = _gateway(monkeypatch)
     ctx = tools.ToolContext(
         workspace_id="ws", user_id="u", operations=frozenset({"library.read"})
     )
-    args = {"topic": "ielts-headings", "question_type": "matching_headings"}
+    args = {"topic": "ielts-headings", "answer_type": "matching"}
     typed = (await tools._list_question_bank(args, ctx)).text()
-    assert seen[-1][1]["questionType"] == "matching_headings"
-    assert typed.startswith("Topic ielts-headings: matching_headings questions 1-50")
+    assert seen[-1][1]["answerType"] == "matching"
+    assert typed.startswith("Topic ielts-headings: matching questions 1-50")
 
     missing = await tools._list_question_bank(
-        {"topic": "ielts-headings", "question_type": "summary_completion"}, ctx
+        {"topic": "ielts-headings", "answer_type": "gaps"}, ctx
     )
-    assert missing.refused and "without question_type" in missing.text()
+    assert missing.refused and "without answer_type" in missing.text()
     # The filter narrows a topic's page; a subject alone is refused before Go.
     calls = len(seen)
     no_topic = await tools._list_question_bank(
-        {"subject": "ielts-reading", "question_type": "matching_headings"}, ctx
+        {"subject": "ielts-reading", "answer_type": "matching"}, ctx
     )
     assert no_topic.refused and len(seen) == calls
 

@@ -228,9 +228,10 @@ pg_restore -h 127.0.0.1 -p 15499 -U postgres -d bank --no-owner --no-privileges 
 ```
  With the bank down the tools are not offered, as in a turn. A restore older than the newest bank migration needs it
 applied first, pinned to the local container:
-`cd server && BANK_OWNER_DATABASE_URL=postgresql://postgres:lab@127.0.0.1:15499/bank go run ./cmd/bank migrate`
-(the 2026-10-03 dump lacks `questions.question_types`, and the bank tools fail
-without it). They are offered with Library on and a configured library.
+`cd server && BANK_OWNER_DATABASE_URL=postgresql://postgres:lab@127.0.0.1:15499/bank go run ./cmd/bank migrate`.
+`list_question_bank` filters a topic by `answer_type`, read from each
+question's parts as Go does. They are offered with Library on and a configured
+library.
 `copy_questions` copies the named questions unchanged into a new quiz or a
 quiz this run made, recording each one's bank sources under its id, as Go
 does with its resolved credits.
