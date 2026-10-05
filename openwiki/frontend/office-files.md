@@ -984,8 +984,9 @@ removes its marker before it joins anything, Tab at a list item's start or over
 several paragraphs indents (Shift+Tab outdents) and types a tab elsewhere
 (except in a table cell, where Tab still leaves the editor until cells get
 their own navigation), and Esc while typing selects the text box, so Tab
-leaves the editor again. Letter shortcuts match the typed key, so they follow
-the keyboard layout.
+leaves the editor again. Letter shortcuts match the typed key on a Latin
+layout (so AZERTY's A selects all) and the physical key otherwise (so a Russian
+Ctrl+A does too).
 Shortcuts: ⌘⇧8/⌘⇧7 lists, ⌘]/⌘[ indent, ⌘⇧X or Alt+Shift+5 strikethrough, ⌘./⌘,
 superscript and subscript, ⌘⇧./⌘⇧, font size, ⌘\ clear formatting, ⌘A Select
 all. Select all takes the text box's whole text while typing, else every object
