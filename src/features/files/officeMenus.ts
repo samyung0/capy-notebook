@@ -10,6 +10,11 @@ export type OfficeMenuEntry =
       kind: 'item';
       id: string;
       label: string;
+      /**
+       * Running it changes the document (or saves it), as the editor that
+       * defines it declares: paused editing disables it.
+       */
+      edits: boolean;
       /** Shown right-aligned, e.g. "⌘B" or "Ctrl+B". */
       shortcut?: string;
       /** A toggle: drawn with a tick, unticked when false. */
@@ -32,7 +37,8 @@ export type OfficeMenuEntry =
       /** Nothing in it can run now (editing paused). */
       disabled?: boolean;
     }
-  /** Capy's table size picker (8×8); its command carries "<rows>x<cols>". */
+  /** Capy's table size picker (8×8); its command carries "<rows>x<cols>".
+   * It inserts a table, so it always edits. */
   | { kind: 'grid'; id: string };
 
 export interface OfficeMenu {

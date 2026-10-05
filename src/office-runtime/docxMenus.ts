@@ -112,6 +112,7 @@ export function downloadMenu(locale: OfficeLocale): OfficeMenuEntry {
     id: 'download',
     items: [
       {
+        edits: false,
         id: OFFICE_HOST_COMMANDS.download,
         kind: 'item',
         label: t('hostMenus.wordDocument'),
@@ -125,6 +126,7 @@ export function downloadMenu(locale: OfficeLocale): OfficeMenuEntry {
 /** File › Print, which Capy performs from the pages the runtime draws. */
 export function printItem(locale: OfficeLocale): OfficeMenuEntry {
   return {
+    edits: false,
     icon: 'print',
     id: OFFICE_HOST_COMMANDS.print,
     kind: 'item',

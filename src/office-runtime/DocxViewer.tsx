@@ -74,6 +74,7 @@ export function DocxViewer({
               id: 'zoom',
               items: ZOOMS.map((value) => ({
                 checked: value === zoom,
+                edits: false,
                 id: `zoom:${value}`,
                 kind: 'item' as const,
                 label: `${value}%`,

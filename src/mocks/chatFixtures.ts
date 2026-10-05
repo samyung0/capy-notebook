@@ -209,7 +209,7 @@ export const chatFixtures = [
   {
     content:
       'root = Answer([Md("The engineering society had not run an exchange trip for three years.", [1])])',
-    hint: 'Cites a passage of exchange-plan.docx; opening the source highlights it in the Office viewer.',
+    hint: 'In Biology 101, cites a passage of exchange-plan.docx; opening the source highlights it in the Office viewer.',
     id: 'chat-openui-office',
     label: 'OpenUI: Office citation',
     passages: [

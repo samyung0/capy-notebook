@@ -593,7 +593,7 @@ test("Office runtime keeps Capy's theme after reloading and asks for a page relo
 test('an Office citation highlights its passage again after the runtime reloads', async ({
   page,
 }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   await page.goto('/workspaces/ws_bio');
   await page.getByRole('button', { exact: true, name: 'Chat' }).click();
   await page.getByRole('button', { name: 'Chat history' }).click();
@@ -602,6 +602,10 @@ test('an Office citation highlights its passage again after the runtime reloads'
   const frame = page.frameLocator('iframe[src*="office-runtime"]');
   const highlight = frame.locator('[data-citation-highlight]').first();
   await expect(highlight).toBeVisible({ timeout: 60_000 });
+  // The passage's size and place, to find the same highlight after the reload.
+  const place = async () =>
+    Object.values((await highlight.boundingBox()) ?? {}).map(Math.round);
+  const cited = await place();
   const runtime = page
     .frames()
     .find((candidate) => candidate.url().includes('office-runtime'));
@@ -615,93 +619,127 @@ test('an Office citation highlights its passage again after the runtime reloads'
   await runtime.evaluate(() => setTimeout(() => location.reload()));
   await reloaded;
   await expect(highlight).toBeVisible({ timeout: 60_000 });
+  await expect.poll(place).toEqual(cited);
 });
 
-test('Office runtime that reloads while editing is paused stays inert', async ({
-  page,
-}) => {
-  test.setTimeout(120_000);
-  await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
-  const frame = page.frameLocator('iframe[src*="office-runtime"]');
-  // The runtime's own host; the editor's hosts nest inside it.
-  const host = frame.locator('.office-editor-host').first();
-  await expect(frame.locator('canvas').first()).toBeVisible({
-    timeout: 60_000,
-  });
-  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
-  await saveOffice(page);
-  await expect(
-    page.getByRole('status').filter({ hasText: /^Saved$/ })
-  ).toBeVisible();
-  await expect(host).toHaveJSProperty('inert', false);
+// A paused editor is read-only in every pause state; a replaced session is
+// the one the mocks drive.
+for (const [format, text] of [
+  ['docx', '交流學習團活動計劃書'],
+  ['xlsx', 'Course Code'],
+] as const) {
+  test(`a paused ${format} editor copies but takes no edit, a composition included, also after the runtime reloads`, async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    const fileId = `bio-office-${format}`;
+    await page.goto(`/workspaces/ws_bio?file=${fileId}&mode=edit`);
+    const frame = page.frameLocator('iframe[src*="office-runtime"]');
+    await expect(frame.locator('canvas').first()).toBeVisible({
+      timeout: 60_000,
+    });
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+    await saveOffice(page);
+    await expect(
+      page.getByRole('status').filter({ hasText: /^Saved$/ })
+    ).toBeVisible();
 
-  // A newer version is published while the saved editor is open: the session
-  // is replaced and the runtime pauses under the reload banner.
-  await page.evaluate(async () => {
-    const modulePath = '/src/mocks/collaboration.ts';
-    const { announceSourceEpoch } = (await import(
-      modulePath
-    )) as typeof import('../../src/mocks/collaboration');
-    announceSourceEpoch('bio-office-docx', 2);
-  });
-  await expect(page.getByText('A newer version of this file')).toBeVisible();
-  await expect(host).toHaveJSProperty('inert', true);
+    // A newer version is published while the saved editor is open: the
+    // session is replaced and the editor pauses under the reload banner.
+    await page.evaluate(async (id) => {
+      const modulePath = '/src/mocks/collaboration.ts';
+      const { announceSourceEpoch } = (await import(
+        modulePath
+      )) as typeof import('../../src/mocks/collaboration');
+      announceSourceEpoch(id, 2);
+    }, fileId);
+    await expect(page.getByText('A newer version of this file')).toBeVisible();
 
-  // Paused, the menus keep editing items listed but disabled (File › Save
-  // too), Download stays usable, and the runtime ignores editing commands.
-  await officeMenu(page, 'File').click();
-  await expect(page.getByRole('menuitem', { name: /^Save/ })).toHaveAttribute(
-    'aria-disabled',
-    'true'
-  );
-  await expect(
-    page.getByRole('menuitem', { name: 'Download' })
-  ).not.toHaveAttribute('aria-disabled', 'true');
-  await page.keyboard.press('Escape');
-  await officeMenu(page, 'Insert').click();
-  await expect(page.getByRole('menuitem', { name: 'Break' })).toHaveAttribute(
-    'aria-disabled',
-    'true'
-  );
-  await page.keyboard.press('Escape');
-  const updates = await page.evaluate(async () => {
-    const iframe = document.querySelector<HTMLIFrameElement>(
-      'iframe[src*="office-runtime"]'
-    );
-    if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
-    let count = 0;
-    const counter = (event: MessageEvent) => {
-      if (event.data?.type === 'update') count += 1;
+    const updates = await page.evaluateHandle(() => {
+      const seen = { count: 0 };
+      window.addEventListener('message', (event) => {
+        if (event.data?.type === 'update') seen.count += 1;
+      });
+      return seen;
+    });
+    // DOCX writes the copy event's data, XLSX the clipboard from its keydown.
+    await page
+      .context()
+      .grantPermissions(['clipboard-read', 'clipboard-write']);
+    const copySelectAll = async () => {
+      await page.evaluate(() => navigator.clipboard.writeText('EMPTY'));
+      await officeMenu(page, 'Edit').click();
+      await page.getByRole('menuitem', { name: /^Select all/ }).click();
+      await page.keyboard.press('ControlOrMeta+C');
+      await expect
+        .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+        .not.toBe('EMPTY');
+      return page.evaluate(() => navigator.clipboard.readText());
     };
-    window.addEventListener('message', counter);
-    const origin = new URL(iframe.src).origin;
-    for (let click = 0; click < 3; click += 1)
-      iframe.contentWindow.postMessage(
-        { id: 'insert-page-break', type: 'menu-command', version: 7 },
-        origin
-      );
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    window.removeEventListener('message', counter);
-    return count;
-  });
-  expect(updates).toBe(0);
 
-  // The runtime document reloads by itself; its new load still pauses it.
-  const runtime = page
-    .frames()
-    .find((candidate) => candidate.url().includes('office-runtime'));
-  if (!runtime) throw new Error('Missing Office runtime');
-  const reloaded = page.waitForEvent(
-    'framenavigated',
-    (navigated) => navigated === runtime
-  );
-  await runtime.evaluate(() => setTimeout(() => location.reload()));
-  await reloaded;
-  await expect(frame.locator('canvas').first()).toBeVisible({
-    timeout: 60_000,
+    // Paused menus: what edits is disabled, File › Save included.
+    await officeMenu(page, 'File').click();
+    await expect(page.getByRole('menuitem', { name: /^Save/ })).toHaveAttribute(
+      'aria-disabled',
+      'true'
+    );
+    await expect(
+      page.getByRole('menuitem', { name: 'Download' })
+    ).not.toHaveAttribute('aria-disabled', 'true');
+    await page.keyboard.press('Escape');
+    const before = await copySelectAll();
+    expect(before).toContain(text);
+
+    // Typing through an IME, and editing commands posted to the runtime.
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Input.imeSetComposition', {
+      selectionEnd: 3,
+      selectionStart: 3,
+      text: '日本語',
+    });
+    await cdp.send('Input.insertText', { text: '日本語' });
+    await cdp.detach();
+    await page.keyboard.press('Backspace');
+    await page.evaluate(
+      (id) => {
+        const iframe = document.querySelector<HTMLIFrameElement>(
+          'iframe[src*="office-runtime"]'
+        );
+        if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
+        iframe.contentWindow.postMessage(
+          { id, type: 'menu-command', version: 7 },
+          new URL(iframe.src).origin
+        );
+      },
+      format === 'docx' ? 'insert-page-break' : 'insertRowAbove'
+    );
+    await page.waitForTimeout(1500);
+    expect(await updates.evaluate((seen) => seen.count)).toBe(0);
+    expect(await copySelectAll()).toBe(before);
+
+    // The runtime document reloads by itself; its new load is paused too.
+    const runtime = page
+      .frames()
+      .find((candidate) => candidate.url().includes('office-runtime'));
+    if (!runtime) throw new Error('Missing Office runtime');
+    const reloaded = page.waitForEvent(
+      'framenavigated',
+      (navigated) => navigated === runtime
+    );
+    await runtime.evaluate(() => setTimeout(() => location.reload()));
+    await reloaded;
+    await expect(frame.locator('canvas').first()).toBeVisible({
+      timeout: 60_000,
+    });
+    await officeMenu(page, 'File').click();
+    await expect(page.getByRole('menuitem', { name: /^Save/ })).toHaveAttribute(
+      'aria-disabled',
+      'true'
+    );
+    await page.keyboard.press('Escape');
+    expect(await copySelectAll()).toBe(before);
   });
-  await expect(host).toHaveJSProperty('inert', true);
-});
+}
 
 test('PPTX speaker notes start hidden, and one remembered toggle serves view and edit', async ({
   page,

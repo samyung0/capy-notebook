@@ -82,6 +82,27 @@ describe('PPTX header menus', () => {
     ]);
   });
 
+  it('takes whether each item edits from pptx-react', () => {
+    const all = items(
+      editorMenus(state(true), 'en').flatMap((menu) => menu.items)
+    );
+    const reads = all.filter((entry) => !entry.edits).map((entry) => entry.id);
+    expect(reads).toEqual([
+      'capy.download',
+      'capy.png',
+      'capy.print',
+      'view.present',
+      'view.zoom:fit',
+      'view.zoom:0.5',
+      'view.zoom:0.75',
+      'view.zoom:1',
+      'view.zoom:1.25',
+      'view.zoom:1.5',
+      'view.zoom:2',
+      'view.speakerNotes',
+    ]);
+  });
+
   it('offers only working items in view mode', () => {
     const entries = items(
       viewerMenus('en', true, false).flatMap((menu) => menu.items)

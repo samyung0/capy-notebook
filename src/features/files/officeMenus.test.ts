@@ -32,7 +32,12 @@ describe('Office menu items on the host', () => {
   });
 
   it('drops an oversized submenu, not the menu bar', () => {
-    const item = (id: string) => ({ id, kind: 'item' as const, label: id });
+    const item = (id: string) => ({
+      edits: false,
+      id,
+      kind: 'item' as const,
+      label: id,
+    });
     const menus: OfficeMenu[] = [
       {
         id: 'format',

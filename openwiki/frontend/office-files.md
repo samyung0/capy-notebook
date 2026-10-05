@@ -649,18 +649,30 @@ rather than the whole bar; DOCX Format › Paragraph styles lists the first 40
 styles (the toolbar's style picker keeps all).
 
 While editing is paused (handoff, replaced, recovery, connecting, discarding:
-the host's narrowed `canEdit` in `set-capabilities`), the runtime re-sends its
-menus with every editing item disabled, File › Save included, and a submenu
-with nothing left to run disabled too (`pausedMenus`); Download, Print, PNG,
-the View menu (except XLSX's freeze, which edits the workbook), DOCX's and
-XLSX's Edit › Select all and the header actions stay usable, and the runtime
-drops any other `menu-command` or `menu-file` (`runsWhilePaused`). Its key
-gate lets ⌘A/Ctrl+A through as well (PPTX's menus have no Select all). The DOCX menu model refuses a disabled item's
-id too. A case-by-case standard per pause state is a later task. Recovery also
-sends `selectable`: instead of an inert host, the runtime passes `readOnly` to
-the editor and lets pointer and keys through, so the unsaved content can be
-selected and copied (DOCX text, XLSX cells, PPTX slide text and speaker
-notes).
+the host's narrowed `canEdit` in `set-capabilities`), the editor turns
+read-only in every state alike: once the runtime has flushed what was being
+typed, it passes `readOnly` to the editor and lets pointer and keys through
+(Tab and Escape included), so the content can be selected and copied (Select
+all, ⌘A, ⌘C, the right-click menu's Copy) while nothing edits. Until then its
+gates hold keys and pointer, a composition begun after the pause never
+counts, and Ctrl/Cmd+S saves nothing. Each menu item says whether it edits
+(`edits`), declared where it is defined: DOCX's in docx-react's
+`hostMenus.tsx`, XLSX's and PPTX's from xlsx-react's `xlsxCommandEdits` and
+pptx-react's `PPTX_COMMAND_EDITS` (XLSX freezing panes edits; Capy's own Save
+edits, Download, PNG and Print do not). The runtime re-sends its menus with
+every editing item disabled and a submenu with nothing left to run disabled
+too, the table grid counting as an edit (`pausedMenus`), keeps the read-only
+items (Select all, Find and replace, View, Download, Print) and the header
+actions usable, and drops any other `menu-command` or `menu-file`
+(`runsWhilePaused`). The read-only editors refuse edits themselves too: DOCX
+keeps its toolbar row, disabled, because its menus come from it, opens Find
+and replace with Replace and Replace all disabled, offers only Copy and Select
+all on right-click, ignores Ctrl/Cmd+K, Delete on a selected table, comment
+changes and every structural command; XLSX's `run` refuses editing commands
+and its Select all hands the grid the keys, so Ctrl/Cmd+C copies the sheet
+(in the grid Tab moves between cells, as when editing); XLSX and PPTX hide
+their toolbar rows, as recovery did. The DOCX menu model refuses a
+disabled item's id too.
 
 In edit mode the DOCX editor shows one toolbar row under the header, in Google
 Docs' order (`singleRowToolbar` with the menus in the host, `DocxEditor`'s
@@ -787,7 +799,7 @@ its root, sets its own locale, passes `colorMode` and the editor's zh-CN
 strings for `zh` to `DocxEditor`, and hides the narrow controls. `set-capabilities`
 also follows every boot, after the boot's `load` (which carries the raw
 `canEdit`), so a runtime that reloads during a handoff, a replacement,
-recovery, a discard or while connecting stays inert (recovery read-only and
+recovery, a discard or while connecting stays paused (read-only and
 selectable). Pages stay white in
 dark themes, as PDF pages do. The chrome uses Capy's Fustat (latin 400, 500
 and 600 from `@fontsource/fustat` 5.3.0, self-hosted in

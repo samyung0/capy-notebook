@@ -1,4 +1,5 @@
 import {
+  PPTX_COMMAND_EDITS,
   type PptxCommandId,
   type PptxCommandState,
   SHAPE_PRESETS,
@@ -47,6 +48,7 @@ export function editorMenus(
     item(id, label, {
       ...extra,
       disabled: !state.enabled[id] || undefined,
+      edits: PPTX_COMMAND_EDITS[id],
     });
   const toggle = (id: PptxCommandId, label: string, keys?: string) =>
     command(id, label, {
@@ -62,6 +64,7 @@ export function editorMenus(
     item(`${id}:${value}`, label, {
       checked: current === undefined ? undefined : value === current,
       disabled: !state.enabled[id] || undefined,
+      edits: PPTX_COMMAND_EDITS[id],
     });
   const layouts = state.slideLayouts.map((layout) =>
     valued('slide.newWithLayout', layout.value, layout.label)
@@ -78,6 +81,7 @@ export function editorMenus(
       items: [
         // Capy saves (the checkpoint), as Ctrl/Cmd+S does in the frame.
         item(OFFICE_HOST_COMMANDS.save, t('toolbar.save'), {
+          edits: true,
           icon: 'cloudSync',
           shortcut: shortcut('Mod+S'),
         }),

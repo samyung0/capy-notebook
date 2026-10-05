@@ -2,25 +2,35 @@ import { describe, expect, it } from 'vitest';
 import type { OfficeMenu } from '@/features/files/officeMenus';
 import { pausedMenus, runsWhilePaused } from './runtimeMenus';
 
-const item = (id: string) => ({ id, kind: 'item' as const, label: id });
+const edit = (id: string) => ({
+  edits: true,
+  id,
+  kind: 'item' as const,
+  label: id,
+});
+const read = (id: string) => ({ ...edit(id), edits: false });
 const MENUS: OfficeMenu[] = [
   {
     id: 'file',
     items: [
-      item('capy.save'),
+      edit('capy.save'),
       {
         id: 'download',
-        items: [item('capy.download')],
+        items: [read('capy.download')],
         kind: 'submenu',
         label: 'Download',
       },
-      item('capy.print'),
+      read('capy.print'),
     ],
     label: 'File',
   },
   {
     id: 'edit',
-    items: [item('undo'), item('select-all'), item('selectAll')],
+    items: [
+      edit('undo'),
+      read('select-all'),
+      { ...read('find-replace'), disabled: true },
+    ],
     label: 'Edit',
   },
   {
@@ -28,13 +38,13 @@ const MENUS: OfficeMenu[] = [
     items: [
       {
         id: 'insert-break',
-        items: [item('insert-page-break')],
+        items: [edit('insert-page-break')],
         kind: 'submenu',
         label: 'Break',
       },
       {
         id: 'insert-table',
-        items: [{ id: 'table', kind: 'grid' }],
+        items: [{ id: 'insert-table', kind: 'grid' }],
         kind: 'submenu',
         label: 'Table',
       },
@@ -44,10 +54,10 @@ const MENUS: OfficeMenu[] = [
   {
     id: 'view',
     items: [
-      item('zoom:100'),
+      read('zoom:100'),
       {
         id: 'freeze',
-        items: [item('freezeRows:1')],
+        items: [edit('freezeRows:1')],
         kind: 'submenu',
         label: 'Freeze',
       },
@@ -57,35 +67,34 @@ const MENUS: OfficeMenu[] = [
 ];
 
 describe('menus while editing is paused', () => {
-  it('disables editing items and File › Save, keeping Download, Print and View', () => {
-    const [file, edit, insert, view] = pausedMenus(MENUS);
+  it('disables the items that edit and keeps the read-only ones as they are', () => {
+    const [file, editMenu, insert, view] = pausedMenus(MENUS);
     expect(file.items).toMatchObject([
       { disabled: true, id: 'capy.save' },
       { disabled: false, id: 'download', items: [{ id: 'capy.download' }] },
       { id: 'capy.print' },
     ]);
     expect(file.items[2]).not.toHaveProperty('disabled');
-    // DOCX's and XLSX's Select all stay, so paused content can be copied.
-    expect(edit.items).toMatchObject([
+    expect(editMenu.items).toMatchObject([
       { disabled: true, id: 'undo' },
       { id: 'select-all' },
-      { id: 'selectAll' },
+      // The editor's own state still holds.
+      { disabled: true, id: 'find-replace' },
     ]);
-    expect(edit.items[1]).not.toHaveProperty('disabled');
-    expect(edit.items[2]).not.toHaveProperty('disabled');
+    expect(editMenu.items[1]).not.toHaveProperty('disabled');
     // A submenu with nothing left to run (the table grid included) is disabled.
     expect(insert.items).toMatchObject([
       { disabled: true, id: 'insert-break' },
       { disabled: true, id: 'insert-table' },
     ]);
-    // XLSX freezes panes in the workbook: an edit, even under View.
+    // XLSX declares freezing panes an edit, even under View.
     expect(view.items).toMatchObject([
       { id: 'zoom:100' },
       { disabled: true, id: 'freeze' },
     ]);
   });
 
-  it('lets only View, header actions, the outputs and Select all through', () => {
+  it('runs header actions and items that do not edit, nothing else', () => {
     const source = {
       actions: [
         { icon: 'presentation' as const, id: 'view.present', label: 'Present' },
@@ -94,13 +103,13 @@ describe('menus while editing is paused', () => {
       run: () => {},
     };
     expect(runsWhilePaused(source, 'zoom:100')).toBe(true);
-    expect(runsWhilePaused(source, 'view.present')).toBe(true);
-    expect(runsWhilePaused(source, 'capy.print')).toBe(true);
     expect(runsWhilePaused(source, 'select-all')).toBe(true);
-    expect(runsWhilePaused(source, 'selectAll')).toBe(true);
+    expect(runsWhilePaused(source, 'view.present')).toBe(true);
     expect(runsWhilePaused(source, 'undo')).toBe(false);
     expect(runsWhilePaused(source, 'insert-page-break')).toBe(false);
+    expect(runsWhilePaused(source, 'insert-table')).toBe(false);
     expect(runsWhilePaused(source, 'freezeRows:1')).toBe(false);
+    expect(runsWhilePaused(source, 'unknown')).toBe(false);
     expect(runsWhilePaused(null, 'zoom:100')).toBe(false);
   });
 });

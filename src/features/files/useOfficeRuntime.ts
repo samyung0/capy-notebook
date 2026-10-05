@@ -395,18 +395,16 @@ export function useOfficeRuntime({
     source.status !== 'recovery' &&
     (mode !== 'edit' ||
       (!!source.doc && !source.discarding && source.status !== 'connecting'));
-  // Recovery shows its unsaved content read-only, for selecting and copying.
-  const recovery = source.status === 'recovery';
-  // After the load above, and again whenever the runtime document boots.
+  // After the load above, and again whenever the runtime document boots. A
+  // paused editor shows its content read-only, for selecting and copying.
   useEffect(() => {
     if (frameLoaded)
       post({
         canEdit: editable,
-        selectable: recovery,
         type: 'set-capabilities',
         version: OFFICE_PROTOCOL_VERSION,
       });
-  }, [editable, recovery, frameBoot, frameLoaded, post]);
+  }, [editable, frameBoot, frameLoaded, post]);
 
   useEffect(() => {
     const doc = source.doc;

@@ -53,6 +53,25 @@ it("offers every editor command once, and Capy's save, download, PNG and print",
     expect(ids).toContain(id);
 });
 
+it('takes whether each item edits from xlsx-react, freezing panes included', () => {
+  const reads = all(xlsxEditMenus(state, 'en'))
+    .filter((entry) => !entry.edits)
+    .map((entry) => entry.id);
+  expect(reads).toEqual([
+    'capy.download',
+    'capy.png',
+    'capy.print',
+    'selectAll',
+    'zoom:50',
+    'zoom:75',
+    'zoom:90',
+    'zoom:100',
+    'zoom:125',
+    'zoom:150',
+    'zoom:200',
+  ]);
+});
+
 it('labels counts and checks and enables items from the editor state', () => {
   const menus = xlsxEditMenus(state, 'en');
   expect(byId(menus, 'insertRowAbove')?.label).toBe('3 rows above');

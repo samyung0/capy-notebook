@@ -3,6 +3,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -138,11 +139,15 @@ function OfficeRuntime() {
     }
     await flusherRef.current?.();
   }, []);
-  const [canEdit, setCanEdit] = useState(false);
-  // Paused but still selectable: the engines' read-only mode (recovery).
-  const [selectable, setSelectable] = useState(false);
-  const selectableRef = useRef(false);
-  const hostRef = useRef<HTMLDivElement>(null);
+  // Every pause (handoff, replaced, recovery, connecting, discarding) puts
+  // the editor in its read-only mode: selecting and copying work, nothing
+  // edits. Until that mode reaches the editor, the gates below hold input.
+  const [readOnly, setReadOnly] = useState(false);
+  const readOnlyRef = useRef(false);
+  useLayoutEffect(() => {
+    readOnlyRef.current = readOnly;
+  }, [readOnly]);
+  const holding = () => pausedRef.current && !readOnlyRef.current;
   const reportExporter = useCallback((exporter: OfficeExporter | null) => {
     exporterRef.current = exporter;
   }, []);
@@ -271,7 +276,6 @@ function OfficeRuntime() {
         loadedAtRef.current = performance.now();
         revisionRef.current = message.revision;
         epochRef.current = message.collaboration?.epoch ?? null;
-        setCanEdit(message.canEdit);
         setMode(nextMode);
         setCitation(nextMode === 'view' ? (message.citation ?? null) : null);
         const bytes =
@@ -342,15 +346,15 @@ function OfficeRuntime() {
         return;
       }
       if (message.type === 'set-capabilities') {
-        pausedRef.current = !message.canEdit;
+        // Only an editor pauses; a viewer has nothing to edit.
+        pausedRef.current = epochRef.current !== null && !message.canEdit;
         sendMenus();
-        if (!message.canEdit) await flush();
-        if (pausedRef.current !== !message.canEdit) return;
-        selectableRef.current = !message.canEdit && !!message.selectable;
-        if (hostRef.current)
-          hostRef.current.inert = !(message.canEdit || selectableRef.current);
-        setCanEdit(message.canEdit);
-        setSelectable(selectableRef.current);
+        if (pausedRef.current) await flush();
+        if (
+          pausedRef.current !== (epochRef.current !== null && !message.canEdit)
+        )
+          return;
+        setReadOnly(pausedRef.current);
         return;
       }
       if (message.type === 'update' && message.epoch === epochRef.current) {
@@ -478,13 +482,19 @@ function OfficeRuntime() {
       </div>
     );
 
-  const save = () => post({ revision: file.revision, type: 'checkpoint' });
+  // Ctrl/Cmd+S and the editors' own Save; a paused editor saves nothing, as
+  // its File › Save is disabled.
+  const save = () => {
+    if (!pausedRef.current)
+      post({ revision: file.revision, type: 'checkpoint' });
+  };
 
   return (
     <div
       className="office-editor-host"
-      inert={mode === 'edit' && !canEdit && !selectable}
       onBeforeInputCapture={(event) => {
+        // Only a composition begun before the pause may finish (the pause
+        // flush waits for it).
         if (pausedRef.current && !composingRef.current) {
           event.preventDefault();
           event.stopPropagation();
@@ -495,16 +505,13 @@ function OfficeRuntime() {
         finishInteraction();
       }}
       onCompositionStartCapture={() => {
+        if (pausedRef.current) return;
         composingRef.current = true;
         reportPending();
       }}
       onKeyDownCapture={(event) => {
-        // A selectable editor's engine is read-only and takes its own keys.
-        if (
-          pausedRef.current &&
-          !selectableRef.current &&
-          !composingRef.current
-        ) {
+        // A read-only editor takes its own keys (Tab and Escape included).
+        if (holding() && !composingRef.current) {
           event.preventDefault();
           event.stopPropagation();
           return;
@@ -523,7 +530,7 @@ function OfficeRuntime() {
         finishInteraction();
       }}
       onPointerDownCapture={(event) => {
-        if (pausedRef.current && !selectableRef.current) {
+        if (holding()) {
           event.preventDefault();
           event.stopPropagation();
           return;
@@ -535,7 +542,6 @@ function OfficeRuntime() {
         pointersRef.current.delete(event.pointerId);
         finishInteraction();
       }}
-      ref={hostRef}
     >
       <Suspense
         fallback={
@@ -560,7 +566,7 @@ function OfficeRuntime() {
               onPendingChange={reportHostPending}
               onRenderer={reportRenderer}
               onSave={save}
-              readOnly={selectable}
+              readOnly={readOnly}
             />
           ) : file.format === 'xlsx' ? (
             <XlsxEditorHost
@@ -576,7 +582,7 @@ function OfficeRuntime() {
               onPendingChange={reportHostPending}
               onRenderer={reportRenderer}
               onSave={save}
-              readOnly={selectable}
+              readOnly={readOnly}
             />
           ) : (
             <PptxEditorHost
@@ -593,7 +599,7 @@ function OfficeRuntime() {
               onPendingChange={reportHostPending}
               onRenderer={reportRenderer}
               onSave={save}
-              readOnly={selectable}
+              readOnly={readOnly}
             />
           )
         ) : file.format === 'docx' ? (

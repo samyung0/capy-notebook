@@ -1,8 +1,7 @@
-import {
-  OFFICE_HOST_COMMANDS,
-  type OfficeHeaderAction,
-  type OfficeMenu,
-  type OfficeMenuEntry,
+import type {
+  OfficeHeaderAction,
+  OfficeMenu,
+  OfficeMenuEntry,
 } from '@/features/files/officeMenus';
 import type { OfficeRenderedPage } from '@/features/files/officeProtocol';
 
@@ -30,54 +29,42 @@ export type OfficeRenderer = (
   OfficeRenderedPage[] | { pages: OfficeRenderedPage[]; truncated: boolean }
 >;
 
-/** View-menu commands that still change the document (XLSX freezes panes). */
-const VIEW_EDITS = /^freeze/;
-/**
- * Outside the View menu, what runs while paused: Capy's outputs, and DOCX's
- * and XLSX's Select all so the content can be copied before Reload (Epo,
- * 2026-10-05; PPTX's menus have no Select all).
- */
-const KEPT = new Set<string>([
-  OFFICE_HOST_COMMANDS.download,
-  OFFICE_HOST_COMMANDS.print,
-  OFFICE_HOST_COMMANDS.png,
-  'select-all',
-  'selectAll',
-]);
-
-function viewIds(menus: readonly OfficeMenu[]) {
-  const ids = new Set<string>();
-  const walk = (entries: readonly OfficeMenuEntry[]) => {
-    for (const entry of entries) {
-      if (entry.kind === 'separator' || VIEW_EDITS.test(entry.id)) continue;
-      ids.add(entry.id);
-      if (entry.kind === 'submenu') walk(entry.items);
+/** The menu item an id names, if any. */
+function findItem(
+  entries: readonly OfficeMenuEntry[],
+  id: string
+): Extract<OfficeMenuEntry, { kind: 'item' }> | undefined {
+  for (const entry of entries) {
+    if (entry.kind === 'item' && entry.id === id) return entry;
+    if (entry.kind === 'submenu') {
+      const found = findItem(entry.items, id);
+      if (found) return found;
     }
-  };
-  for (const menu of menus) if (menu.id === 'view') walk(menu.items);
-  return ids;
+  }
 }
 
 /**
  * Whether a command may run while editing is paused (handoff, replaced,
- * recovery, connecting, discarding): the View menu's, the header actions',
- * Capy's Download and Print, and Select all. Everything else edits.
+ * recovery, connecting, discarding): a header action, or a menu item that
+ * does not edit (`edits`, declared by the editor that defines it).
  */
 export function runsWhilePaused(source: OfficeMenuSource | null, id: string) {
-  return (
-    KEPT.has(id) ||
-    !!source?.actions?.some((action) => action.id === id) ||
-    (!!source && viewIds(source.menus).has(id))
+  if (!source) return false;
+  if (source.actions?.some((action) => action.id === id)) return true;
+  const item = findItem(
+    source.menus.flatMap((menu) => menu.items),
+    id
   );
+  return !!item && !item.edits;
 }
 
 /**
- * The menus while editing is paused: everything that edits stays listed but
- * disabled, File › Save included, Select all staying enabled; a submenu with
- * nothing left to run is disabled too.
+ * The menus while editing is paused: every item that edits stays listed but
+ * disabled (File › Save, Capy's own, included), read-only ones keep their
+ * state; a submenu with nothing left to run is disabled too, the table grid
+ * counting as an edit.
  */
 export function pausedMenus(menus: readonly OfficeMenu[]): OfficeMenu[] {
-  const allowed = viewIds(menus);
   const pause = (entries: readonly OfficeMenuEntry[]): OfficeMenuEntry[] =>
     entries.map((entry) => {
       if (entry.kind === 'separator' || entry.kind === 'grid') return entry;
@@ -89,9 +76,7 @@ export function pausedMenus(menus: readonly OfficeMenu[]): OfficeMenu[] {
         );
         return { ...entry, disabled: !live, items };
       }
-      return allowed.has(entry.id) || KEPT.has(entry.id)
-        ? entry
-        : { ...entry, disabled: true };
+      return entry.edits ? { ...entry, disabled: true } : entry;
     });
   return menus.map((menu) => ({ ...menu, items: pause(menu.items) }));
 }

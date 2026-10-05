@@ -10,6 +10,7 @@ import {
   type XlsxCommand,
   type XlsxCommandState,
   type XlsxEditorApi,
+  xlsxCommandEdits,
   ZOOM_PERCENTS,
 } from '@betteroffice/xlsx-react';
 import type { IconName } from '@/components/ui/Icon';
@@ -55,11 +56,21 @@ function item(
   extra: {
     checked?: boolean;
     disabled?: boolean;
+    edits: boolean;
     icon?: IconName;
     shortcut?: string;
-  } = {}
+  }
 ): OfficeMenuEntry {
   return { id, kind: 'item', label, ...extra };
+}
+
+/** An editor command, editing as xlsx-react declares it. */
+function command(
+  id: XlsxCommand,
+  label: string,
+  extra: Omit<Parameters<typeof item>[2], 'edits'> = {}
+): OfficeMenuEntry {
+  return item(id, label, { edits: xlsxCommandEdits(id), ...extra });
 }
 
 function submenu(
@@ -80,13 +91,20 @@ function fileItems(t: ReturnType<typeof xlsxT>): OfficeMenuEntry[] {
       'download',
       t('hostMenus.download'),
       [
-        item(OFFICE_HOST_COMMANDS.download, t('hostMenus.excelWorkbook')),
-        item(OFFICE_HOST_COMMANDS.png, t('hostMenus.pngImage')),
+        item(OFFICE_HOST_COMMANDS.download, t('hostMenus.excelWorkbook'), {
+          edits: false,
+        }),
+        item(OFFICE_HOST_COMMANDS.png, t('hostMenus.pngImage'), {
+          edits: false,
+        }),
       ],
       'download'
     ),
     separator,
-    item(OFFICE_HOST_COMMANDS.print, t('toolbar.print'), { icon: 'print' }),
+    item(OFFICE_HOST_COMMANDS.print, t('toolbar.print'), {
+      edits: false,
+      icon: 'print',
+    }),
   ];
 }
 
@@ -113,12 +131,12 @@ export function xlsxEditMenus(
   const columns = selection?.columns ?? 1;
   const noSelection = selection === null;
   const run = (
-    command: XlsxCommand,
+    id: XlsxCommand,
     label: string,
-    extra: Parameters<typeof item>[2] = {}
-  ) => item(command, label, { disabled: noSelection, ...extra });
-  const choice = (command: XlsxCommand, label: string, checked: boolean) =>
-    run(command, label, { checked });
+    extra: Parameters<typeof command>[2] = {}
+  ) => command(id, label, { disabled: noSelection, ...extra });
+  const choice = (id: XlsxCommand, label: string, checked: boolean) =>
+    run(id, label, { checked });
   const freeze = (
     axis: 'freezeRows' | 'freezeColumns',
     frozen: number,
@@ -138,6 +156,7 @@ export function xlsxEditMenus(
       items: [
         // Capy takes the checkpoint, as Ctrl/Cmd+S in the frame does.
         item(OFFICE_HOST_COMMANDS.save, t('toolbar.save'), {
+          edits: true,
           icon: 'cloudSync',
           shortcut: shortcut('Mod+S'),
         }),
@@ -149,12 +168,12 @@ export function xlsxEditMenus(
     {
       id: 'edit',
       items: [
-        item('undo', t('toolbar.undo'), {
+        command('undo', t('toolbar.undo'), {
           disabled: !state.canUndo,
           icon: 'undo',
           shortcut: shortcut('Mod+Z'),
         }),
-        item('redo', t('toolbar.redo'), {
+        command('redo', t('toolbar.redo'), {
           disabled: !state.canRedo,
           icon: 'redo',
           shortcut: shortcut('Shift+Mod+Z'),
@@ -210,7 +229,7 @@ export function xlsxEditMenus(
           'zoom',
           t('hostMenus.zoom'),
           ZOOM_PERCENTS.map((percent) =>
-            item(`zoom:${percent}`, `${percent}%`, {
+            command(`zoom:${percent}`, `${percent}%`, {
               checked: Math.round(state.zoom * 100) === percent,
             })
           ),
@@ -248,7 +267,7 @@ export function xlsxEditMenus(
             : t('hostMenus.columnRight')
         ),
         separator,
-        item('insertSheet', t('hostMenus.sheet'), { icon: 'table' }),
+        command('insertSheet', t('hostMenus.sheet'), { icon: 'table' }),
       ],
       label: t('hostMenus.insert'),
     },

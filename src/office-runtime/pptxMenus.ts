@@ -51,7 +51,9 @@ export function shortcut(keys: string) {
 export function item(
   id: string,
   label: string,
-  extra: Partial<Extract<OfficeMenuEntry, { kind: 'item' }>> = {}
+  extra: Partial<Extract<OfficeMenuEntry, { kind: 'item' }>> & {
+    edits: boolean;
+  }
 ): OfficeMenuEntry {
   return { id, kind: 'item', label, ...extra };
 }
@@ -76,13 +78,17 @@ export function fileOutputs(): OfficeMenuEntry[] {
       [
         item(
           OFFICE_HOST_COMMANDS.download,
-          m.files_office_pptx_download_pptx()
+          m.files_office_pptx_download_pptx(),
+          { edits: false }
         ),
-        item(OFFICE_HOST_COMMANDS.png, m.files_office_pptx_download_png()),
+        item(OFFICE_HOST_COMMANDS.png, m.files_office_pptx_download_png(), {
+          edits: false,
+        }),
       ],
       'download'
     ),
     item(OFFICE_HOST_COMMANDS.print, m.files_office_pptx_print(), {
+      edits: false,
       icon: 'print',
     }),
   ];
@@ -116,11 +122,13 @@ export function viewerMenus(
             id: 'view',
             items: [
               item('view.present', t('toolbar.present'), {
+                edits: false,
                 icon: 'presentation',
               }),
               separator,
               item('view.speakerNotes', t('notes.showSpeakerNotes'), {
                 checked: speakerNotes,
+                edits: false,
               }),
             ],
             label: m.files_office_pptx_menu_view(),
