@@ -715,6 +715,17 @@ grid stays white in dark themes, as pages do. Its icons come through
 toolbar icon and the border and alignment glyphs the fork otherwise draws
 (`TOOLBAR_ICON_NAMES`, `DRAWN_ICON_NAMES`) to Capy's Hugeicons.
 
+XLSX keyboard moves (arrows, Home/End, Page Up/Down, Enter and Tab commits
+from the cell, Enter from the formula bar) and opening the in-cell editor
+(typing, F2, double click) scroll the active cell fully into view, moving as
+little as possible and clear of frozen panes; Ctrl/Cmd+A keeps the view, as
+the menu's Select all does. A cell the keyboard reaches past the used range
+grows the scroll area to it. An open cell edit keeps its input mounted and
+focused while its cell scrolls away, so the next key, composition included, is
+typed into the edit and scrolls the cell back, as in Excel and Sheets. The
+editor only asks the engine where the cell is (`cellPosition`, from the
+geometry `sheet_info` memoized) when the painted frame does not show it whole.
+
 The XLSX menus come from `src/office-runtime/xlsxMenus.ts`, labelled from
 xlsx-i18n (zh-CN for zh): File (Save, Download ▸ Microsoft Excel and PNG image,
 Print), Edit (Undo, Redo, Select all, Delete ▸ values, rows, columns), View

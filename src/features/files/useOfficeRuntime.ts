@@ -452,7 +452,7 @@ export function useOfficeRuntime({
       }
       if (message.type === 'ready') {
         setAnalysis(message.analysis);
-        // DOCX edit frames report ready too (for their timings); their errors stay.
+        // Edit frames report ready too (for their timings); their errors stay.
         if (modeRef.current === 'view') setError(null);
         return;
       }

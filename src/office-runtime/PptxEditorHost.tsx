@@ -181,10 +181,10 @@ export function PptxEditorHost({
         icons={pptxIcons}
         onCommandState={setCommandState}
         onError={onError}
-        onFirstPaint={() => {
-          if (apiRef.current)
-            onAnalysis(analyzeOpenPresentation(apiRef.current.handle));
-        }}
+        // The deck the editor already holds: no second snapshot from the engine.
+        onFirstPaint={(snapshot) =>
+          onAnalysis(analyzeOpenPresentation({ snapshot: () => snapshot }))
+        }
         onPendingChange={onPendingChange}
         onReady={(api) => {
           apiRef.current = api;
