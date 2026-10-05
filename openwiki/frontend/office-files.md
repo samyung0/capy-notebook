@@ -710,7 +710,7 @@ vertical mouse wheel scrolls it, and an edge with more to scroll fades
 menus (`hostMenus.tsx` in the fork, Capy's icons and File › Download and Print
 added in `docxMenus.ts`) are File (Save, Download ▸ Word document, Page setup,
 Print), Edit (Undo, Redo, Select all, Delete, Find and replace), View (Show
-document outline ✓, Show comments ✓, Zoom ▸), Insert (Image, Table ▸, Link,
+ruler ✓, Show document outline ✓, Show comments ✓, Zoom ▸), Insert (Image, Table ▸, Link,
 Comment, Watermark, Break ▸) and Format (Text ▸, Paragraph styles ▸, Align &
 indent ▸, Line spacing ▸, Bullets & numbering ▸, Text direction ▸, Table
 properties and Image options in context, Clear formatting). Placeholders that
@@ -719,6 +719,23 @@ alignment, table alignment, header row, distribute columns, auto-fit and
 no-wrap, and Line spacing's empty Paragraph spacing heading. Cut, Copy and
 Paste are left out of the menus (a host click cannot reach the frame's
 clipboard). Find and replace works in edit mode only (Ctrl/Cmd+F and H too).
+
+View › Show ruler (`show-ruler`, a checkbox item that does not edit, so it
+stays usable while paused) shows docx-react's rulers as Google Docs does: the
+horizontal one sticky under the toolbar row, centred and sized like the pages
+(it never shrinks, so it lines up with them at every width), and the vertical
+one at the editor's left edge from the first page's top (it covers the first
+page only and scrolls with it; where the editor leaves less than its 20px
+beside the page, about 1280px wide with the side panel open, it overlaps the
+page's left edge). A read-only editor keeps them, not draggable, as it keeps
+the toolbar. Margin drags and the indent markers work as before; the margin
+zones take `--doc-ruler-margin` (Capy's divider tint) with the ticks drawn
+over them. Rulers start hidden; the choice is one per person for every DOCX
+file, kept in the runtime origin's `localStorage` under `capy.docx.ruler`
+(`viewToggles.ts`, as the PPTX speaker notes; `DocxEditor`'s `showRuler` with
+`onShowRulerChange`). View mode draws no ruler and offers no toggle, as its
+View menu holds only what the viewer does (Zoom); the next edit opens with the
+remembered choice.
 
 The XLSX editor's toolbar row follows Google Sheets (xlsx-react's
 `singleRowToolbar`, no menu button): undo, redo and paint format, zoom (a
@@ -825,7 +842,12 @@ dark themes, as PDF pages do. The chrome uses Capy's Fustat (latin 400, 500
 and 600 from `@fontsource/fustat` 5.3.0, self-hosted in
 `src/office-runtime/fonts/` because the runtime's CSP allows no font host; the
 files carry their copyright and licence link, and the OFL text stays in the
-repo beside them).
+repo beside them). Fustat has no CJK glyphs, so Chinese labels fall back to
+the system's face, which the browser picks by the page's `lang`: the runtime
+sets it from `set-appearance` and Capy's own page from its locale at startup
+(`src/main.tsx`), so a Chinese UI gets one Chinese face (PingFang SC on macOS,
+Microsoft YaHei on Windows) at the chrome's weights instead of a mix of a
+Japanese face and Hiragino Sans GB's W3/W6 under `lang="en"`.
 
 Every Office menu, dropdown and picker looks like the note toolbar's popovers
 (`ToolbarPopover.tsx`). The header menus (`OfficeMenuBar.tsx`) restyle Capy's
@@ -903,7 +925,7 @@ right of the slide area shows them; the two flip one state. In edit mode that
 is pptx-react's (`pptx-notes-toggle`, icon only in the narrow layout); the
 viewer draws the same button in `pptx-runtime.css`. The choice is one per
 person for every PPTX file and both modes, kept in the runtime origin's
-`localStorage` under `capy.pptx.speakerNotes` (`pptxSpeakerNotes.ts`; the
+`localStorage` under `capy.pptx.speakerNotes` (`viewToggles.ts`; the
 editor takes it as `defaultSpeakerNotes` and reports changes through
 `onSpeakerNotesChange`); when storage is blocked the notes start hidden. In
 production the runtime is a separate origin inside Capy's page, so browsers
