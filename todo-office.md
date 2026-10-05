@@ -91,11 +91,6 @@ check); it applies at the first promotion.
 
 ## Open from the 2026-10-04 rounds
 
-- **Stress job `continue-on-error`.** `bench:office` and `bench:stress`
-  budgets now come from CI runs (the stress p95 budget, 45 ms, from three runs
-  after the 30 ms broadcast batching, at 33 to 35 ms within 3% of each other).
-  The `stress` job still has `continue-on-error`; drop it once that spread
-  holds.
 - **Server errors under collaboration stress** (projection deadlock 40P01, store
   statement timeouts, source-access 500 at 20 local peers) came from runs on
   the overloaded event loop before the 2026-10-04 lock and CPU fixes; none

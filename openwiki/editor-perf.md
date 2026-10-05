@@ -208,12 +208,10 @@ budgets fail the job and the run. Its results go to the job summary and the
 `office-perf-results` artifact.
 `stress` runs `pnpm bench:stress` (below) on dispatch only (input `stress`,
 false on `workflow_call`) against the `e2e_stack` images, built from the same
-GitHub Actions layer cache. It has `continue-on-error` (its p95 was a few
-milliseconds with a 40% run-to-run spread when it was added; with the 30 ms
-broadcast batching it sits at 33 to 35 ms): a failed check (exit 1) or a
-missed latency budget (exit 2) fails the job, and its summary marks a
-correctness failure as such, but the run stays green and its editor snapshot
-still counts as a baseline.
+GitHub Actions layer cache. A failed check (exit 1) or a missed latency
+budget (exit 2, p95 over 45 ms; four runs with the 30 ms broadcast batching
+sat at 33 to 35 ms) fails the job and the run, and its summary marks a
+correctness failure as such.
 `stress.json` goes to the summary and the `collaboration-stress-results`
 artifact.
 
