@@ -135,6 +135,9 @@ check); it applies at the first promotion.
   latency, typing latency, memory; Office and Plate), then heap/latency
   ceilings from the largest allowed files, then a prod-box stress run for the
   live document per room, a new storage-bytes run, then UAT hardening.
+- **Final optimization review (Epo 2026-10-05):** after the optimization round,
+  one read-only review of the performance and load work by a Fable 5.1
+  subagent (Agent tool `model: "fable"`) before setting the ceilings.
 - **Office size limit** (decided 2026-10-05): refuse oversized Office files at
   upload, per format on the unzipped package size; numbers come from the
   optimization round. Edits that would make a file oversized are refused too,
