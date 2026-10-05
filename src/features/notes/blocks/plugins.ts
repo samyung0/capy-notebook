@@ -6,6 +6,7 @@ import {
   FlashcardElement,
   FlashcardFrontElement,
   FlashcardsElement,
+  HtmlEmbedElement,
   MaterialRefElement,
   MermaidCaptionElement,
   MermaidElement,
@@ -106,7 +107,14 @@ export const MaterialRefPlugin = createPlatePlugin({
   .withComponent(MaterialRefElement);
 
 export const customBlockPlugins = [
-  ...(['chart', 'graph'] as const).map((key) =>
+  // Top-level voids: one nested by a paste is lifted out.
+  ...(
+    [
+      ['chart', VisualBlockElement],
+      ['graph', VisualBlockElement],
+      ['html_embed', HtmlEmbedElement],
+    ] as const
+  ).map(([key, component]) =>
     createPlatePlugin({
       key,
       node: { isElement: true, isVoid: true, type: key },
@@ -122,7 +130,7 @@ export const customBlockPlugins = [
           },
         },
       }))
-      .withComponent(VisualBlockElement)
+      .withComponent(component)
   ),
   MaterialRefPlugin,
   QuizElementPlugin,

@@ -857,6 +857,56 @@ token. Providers move download tiers without notice (OneDrive personal answers
 on `microsoftpersonalcontent.com`), so extend the host list in the environment
 rather than in code.
 
+### 2.3 Interactive block frame
+
+A note's interactive HTML block runs its snippet in a sandboxed iframe that
+loads `embed/index.html` from a Cloudflare Pages project. `pages.dev` is a
+public suffix, so the frame is a site of its own: the browser gives it its own
+process, and a runaway snippet cannot freeze the app's tab. `embed/_headers`
+sends the CSP (no requests at all; only inline script and style, `data:` and
+`blob:` images, `data:` fonts), `nosniff`, `no-referrer` and
+`X-DNS-Prefetch-Control: off`. It sets no `frame-ancestors`: the same file
+serves both environments and every per-deployment URL, and the frame holds
+nothing another site could take.
+
+`deploy-environment.yml` uploads `embed/` with `wrangler pages deploy` in the
+`site` job, at the deployed revision and before the SPA Worker, so promotion
+carries it to production too. One project serves both environments: production
+deploys to the project's production branch `production`
+(`https://capy-embed.pages.dev`), UAT to the branch `uat`, whose alias is
+`https://uat.capy-embed.pages.dev`. The SPA build reads the frame origin from
+`VITE_EMBED_ORIGIN`.
+
+First setup, once, by hand:
+
+1. Create the project:
+   ```bash
+   npx wrangler@4.125.0 pages project create capy-embed --production-branch production
+   ```
+   If `capy-embed.pages.dev` is taken, Cloudflare adds a suffix to the
+   subdomain. Use the hostname shown under Workers & Pages → `capy-embed` in
+   step 3. The `uat` alias appears with the first UAT deploy.
+2. Give the deploy token (`CLOUDFLARE_API_TOKEN`, both GitHub environments) the
+   account permission **Cloudflare Pages: Edit** next to its Workers
+   permissions.
+3. Set the GitHub variables in both environments through `deploy/.env.uat`,
+   `deploy/.env.prod` and `pnpm env:push` (§12.7):
+
+   | Variable | `uat` | `production` |
+   | --- | --- | --- |
+   | `EMBED_PAGES_PROJECT` | `capy-embed` | `capy-embed` |
+   | `VITE_EMBED_ORIGIN` | `https://uat.capy-embed.pages.dev` | `https://capy-embed.pages.dev` |
+
+   The SPA build fails without `VITE_EMBED_ORIGIN` and the frame step without
+   `EMBED_PAGES_PROJECT`. `VITE_EMBED_ORIGIN` is a bare origin with no
+   trailing slash; the app loads `${VITE_EMBED_ORIGIN}/`.
+
+Local development: `pnpm dev` serves `embed/` at `VITE_EMBED_ORIGIN` when that
+is a loopback `http` origin (`vite-embed.ts`), with the headers from
+`_headers`. `deploy/.env.example` uses `http://127.0.0.1:5180` while the app
+runs on `localhost`; another port alone would be the same site. The Playwright
+configs serve their own frame on `localhost` next to the app's `127.0.0.1`.
+
 ---
 
 ## 3. Origin lockdown
@@ -1504,7 +1554,10 @@ content. Never point the ordinary app migrator at `bank`.
    and run records. Verify one dump upload and restore it to a disposable
    database with `pg_restore` before relying on the cron.
 
-Question deletion is an owner SQL operation. It removes the question row;
+Questions are retracted, never deleted, because learners' progress in each app
+database names their ids. Retraction is an owner SQL operation:
+`UPDATE questions SET retracted_at=now() WHERE id=...` (setting it back to
+NULL restores the question). Every read skips retracted questions; the row,
 shared public assets and private run records remain. Backups are the recovery
 path for production edits. Restore roles with `bank-db.sql`, then restore a
 selected dump as owner; restoring a dump replaces bank content with that
@@ -2298,7 +2351,8 @@ runner files, and applies/reads back all managed Coolify variables. Empty
 optional values remain literal blanks. After successful replacement readback, the sync removes only the corresponding old `EVO_*` names and retired `EVO_QUERY_MODEL`, `IMPORT_RELAY_ENQUEUE_URL` / `IMPORT_RELAY_SECRET`, verifies their absence, and preserves unrelated normal variables. The sync disables preview entries and
 uses `is_literal=true`, `is_shown_once=false`; it prints neither values nor
 fingerprints. Coolify's token needs sensitive-read access for verification.
-The Cloudflare token needs Worker scripts/assets deployment access. Retire
+The Cloudflare token needs Worker scripts/assets deployment access and
+Cloudflare Pages edit access for the interactive block frame (§2.3). Retire
 `CLOUDFLARE_PAGES_PROJECT` and `CLOUDFLARE_PAGES_BRANCH` in GitHub before the
 first new deployment; they are rejected as unknown inputs.
 

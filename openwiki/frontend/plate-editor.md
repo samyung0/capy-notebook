@@ -304,6 +304,44 @@ Chart and graph nodes store their question block under `block`
 and a single empty text child; graphs export their SVG before saving. Inline
 and display equations use MathLive in both viewing and editing, including question-editing previews. The math toolbar inserts formulas and common symbol templates.
 
+## Interactive HTML blocks
+
+`html_embed {id, html, title?}` is a top-level void with one empty text leaf,
+shaped like chart and graph (a nested one is lifted by the plugin's
+normalizer). The agent writes it as an ` ```html-embed ` fence with YAML
+`title` and `html` and no fallback (`blocks/shared.ts`, `markdown.ts`); the
+collaboration service's converter builds the same node. A fence without html,
+with html over 64 KB, or an eleventh fence is refused by name. Go
+`materialdoc`, the collaboration validator and the browser's
+`isMaterialDocument` cap `html` at 64 KB (UTF-8 bytes) and a document at 10
+such blocks, and refuse any other field. Retrieval skips the block like
+mermaid. There is no insert command; people edit the snippet through the
+source dialog.
+
+`HtmlEmbed.tsx` renders it in `MediaFrame` (mock A of
+`artifacts/2026-10-04-interactive-blocks.html`): a bordered frame, the title as
+caption after an Interactive label, and a hover toolbar with View source, Copy
+and Delete in the editor and View source only in view mode. View source opens
+`HtmlEmbedSourceDialog`: editors change the title and snippet and Save within
+the 64 KB cap; read-only users only read it. The snippet runs only in
+`<iframe sandbox="allow-scripts" loading="lazy">` at `VITE_EMBED_ORIGIN/`, the
+wrapper page in `embed/` on its own site (see
+[deployment-runbook.md](../deployment-runbook.md)); without that origin the
+block shows a notice instead of a frame. On the frame's first load the host
+posts `{type: 'render', html, theme}` with target `*` (the frame's origin is
+opaque), where `theme` holds `--bg`, `--fg`, `--muted`, `--accent` and
+`--border` read from the app's tokens; the agent guidance names the same
+variables. The host accepts only `{type: 'resize', height}` from that
+iframe's own window with a finite height, clamped to 32 to 2000 px. The
+wrapper writes the snippet over itself, which fires a second `load`; a later
+`load` means the snippet navigated its frame (to a page without the
+wrapper's CSP), so the frame is replaced by a notice until the snippet
+changes. A theme change or a new snippet reloads the frame. Frames mount
+within one screen of the visible part of their scroll container and unmount
+beyond it, keeping their last height. Opening a note with `?block=<id>`
+scrolls that block into view once per page load. Exports never run the
+snippet (see Readable note exports).
+
 ## Readable note exports
 
 `documentAdapters.ts` snapshots the live editor, resolves quiz/card projections
@@ -337,6 +375,10 @@ require a manual update. Answer/solution labels use keep-with-next paragraphs,
 not heading styles, so they do not enter the TOC. Markdown retains heading links.
 Unknown blocks and failed required asset reads stop the export instead of silently
 omitting content. Readable exports do not round-trip interactive study blocks.
+
+An interactive HTML block exports in Markdown and DOCX as the link
+`[Interactive snippet](<note URL>&block=<id>)`, the note's view-mode URL with
+the block id, and never reaches the figure rasteriser.
 
 YouTube becomes a labeled watch link in Markdown. DOCX embeds a poster with a play
 button, picture/title hyperlinks and Office's `wp15:webVideoPr` metadata, plus Word

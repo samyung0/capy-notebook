@@ -1,0 +1,5 @@
+/*
+  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  X-DNS-Prefetch-Control: off

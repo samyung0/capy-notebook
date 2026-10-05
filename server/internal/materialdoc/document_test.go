@@ -95,6 +95,33 @@ func TestQuestionEmbedsValidateAndIndexWithoutSVGText(t *testing.T) {
 	}
 }
 
+func TestHTMLEmbedCapsSizeAndCountAndSkipsIndexing(t *testing.T) {
+	embed := func(id, html string) map[string]any {
+		return map[string]any{"type": HTMLEmbedType, "id": id, "title": "Tangent", "html": html, "children": []any{textLeaf("")}}
+	}
+	doc := Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{ParagraphNode("intro")}}
+	for i := range HTMLEmbedMaxCount {
+		doc.Value = append(doc.Value, embed(fmt.Sprintf("e%d", i), strings.Repeat("x", HTMLEmbedMaxBytes)))
+	}
+	encoded, err := Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text, err := ExtractIndexText(encoded); err != nil || text != "intro" {
+		t.Fatalf("index = %q, error = %v", text, err)
+	}
+	for name, value := range map[string][]map[string]any{
+		"eleventh block": append(doc.Value, embed("e10", "<p>x</p>")),
+		"oversized html": {embed("e0", strings.Repeat("x", HTMLEmbedMaxBytes+1))},
+		"nested block":   {{"type": "callout", "id": "c", "children": []any{embed("e0", "")}}},
+		"extra field":    {{"type": HTMLEmbedType, "id": "e0", "html": "", "src": "https://x", "children": []any{textLeaf("")}}},
+	} {
+		if err := Validate(Envelope{SchemaVersion: SchemaVersion, Value: value}); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+}
+
 func TestQuizRoundTripPreservesEveryQuestionTypeAndGrading(t *testing.T) {
 	questions := json.RawMessage(`[{"id": "q0", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p0", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "mcq", "options": ["A", "B"], "correct": [0]}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q1", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p1", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "multi", "options": ["A", "B"], "correct": [0, 1]}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q2", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p2", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "boolean", "correct": false}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q3", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p3", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "short", "accepted": ["alpha"]}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q4", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p4", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "matching", "options": ["unused", "X", "Y"], "pairs": [{"left": "A", "right": 1}, {"left": "B", "right": 1}]}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q5", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p5", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "ordering", "items": ["A", "B"]}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q6", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p6", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "open", "accepted": ["explanation"], "hints": ["reason"]}, "marks": 1, "markscheme": [{"text": "Correct answer", "marks": 1}], "solution": []}], "layout": "paper", "labels": "letters"}]`)
 	raw, err := QuizDocument(questions, nil)

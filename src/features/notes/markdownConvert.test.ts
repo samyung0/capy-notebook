@@ -1,4 +1,7 @@
+import { serializeMd } from '@platejs/markdown';
+import { createSlateEditor } from 'platejs';
 import { describe, expect, it } from 'vitest';
+import { StaticMaterialKit } from '@/features/materials/staticPlugins';
 import { convertAgentMarkdown, markdownToDocument } from './markdownConvert';
 
 const fence = (lang: string, body: string) => `\`\`\`${lang}\n${body}\n\`\`\``;
@@ -35,6 +38,31 @@ describe('markdownToDocument', () => {
       refKind: 'quiz',
     });
     expect(value[6]).toMatchObject({ refKind: 'flashcards' });
+  });
+
+  it('builds interactive blocks from html-embed fences and writes the same fence back', () => {
+    const embed = fence(
+      'html-embed',
+      'title: Tangent\nhtml: |\n  <svg id="fig"></svg>\n  <script>draw(40)</script>'
+    );
+    const { document } = convertAgentMarkdown(embed);
+    const [node] = document.value;
+    expect(node).toMatchObject({ title: 'Tangent', type: 'html_embed' });
+    expect(node.html).toContain('<svg id="fig"></svg>\n<script>draw(40)');
+    const editor = createSlateEditor({ plugins: StaticMaterialKit });
+    const written = serializeMd(editor, { value: document.value });
+    expect(written).toContain('```html-embed');
+    expect(markdownToDocument(written).value[0]).toMatchObject({
+      html: node.html,
+      title: 'Tangent',
+      type: 'html_embed',
+    });
+    expect(() => convertAgentMarkdown(fence('html-embed', 'title: t'))).toThrow(
+      'needs html'
+    );
+    expect(() =>
+      convertAgentMarkdown(new Array(11).fill(embed).join('\n\n'))
+    ).toThrow('at most 10 html-embed fences');
   });
 
   it('returns a draft per quiz or flashcards fence and refuses a broken one', () => {

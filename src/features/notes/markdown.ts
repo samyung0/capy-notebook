@@ -1,7 +1,7 @@
 /* ============================================================
    Shared MarkdownPlugin configuration for the note editor. Enables GFM, math,
    MDX (columns/callouts) and emoji shortcodes, and adds custom rules so the
-   embeddable study blocks (quiz / flashcards / mermaid) round-trip through the
+   embeddable blocks (quiz / flashcards / mermaid / html-embed) round-trip through the
    existing fenced-code format used by the Go backend and the read-only renderer.
    ============================================================ */
 import { MarkdownPlugin, remarkMdx } from '@platejs/markdown';
@@ -12,6 +12,7 @@ import {
   type CustomBlockLang,
   customBlockCode,
   customBlockNode,
+  HTML_EMBED_LANG,
   isCustomBlockLang,
 } from './blocks/shared';
 
@@ -30,7 +31,7 @@ export const noteMarkdownPlugin = MarkdownPlugin.configure({
   options: {
     remarkPlugins: [remarkGfm, remarkMath, remarkMdx, remarkEmoji] as AnyNode,
     rules: {
-      // Intercept fenced code: quiz/flashcards/mermaid become custom void nodes;
+      // Intercept fenced code: custom block fences become custom void nodes;
       // everything else falls back to the default code_block/code_line shape.
       // Rules are keyed by Plate type: mdast `code` maps to `code_block`,
       // while `code` is the inline code mark.
@@ -55,6 +56,7 @@ export const noteMarkdownPlugin = MarkdownPlugin.configure({
         },
       },
       flashcards: { serialize: serializeCustomBlock('flashcards') },
+      html_embed: { serialize: serializeCustomBlock(HTML_EMBED_LANG) },
       // Export resolves references into inline blocks first
       // (documentAdapters); an unresolved one keeps its fence when pending.
       material_ref: {

@@ -91,6 +91,26 @@ export interface MermaidElement extends MaterialElement {
   width?: string;
 }
 
+/** An interactive HTML block: one self-contained snippet, run only in a
+ * sandboxed frame on a separate site (HtmlEmbed.tsx). Top-level void. */
+export interface HtmlEmbedElement extends MaterialElement {
+  children: [MaterialText];
+  html: string;
+  id: string;
+  title?: string;
+  type: 'html_embed';
+}
+
+export const HTML_EMBED_TYPE = 'html_embed';
+// IMPORTANT: KEEP IN SYNC WITH server/internal/materialdoc/document.go and
+// collaboration/src/materialDocument.ts
+export const HTML_EMBED_MAX_BYTES = 64 * 1024;
+export const HTML_EMBED_MAX_COUNT = 10;
+
+export function htmlBytes(html: string): number {
+  return new TextEncoder().encode(html).length;
+}
+
 export type MaterialRefKind = 'quiz' | 'flashcards';
 
 /** A note's void reference to an embedded quiz or flashcard set. The material
@@ -116,7 +136,8 @@ export type CustomMaterialElement =
   | FlashcardFaceElement
   | MermaidElement
   | MermaidCaptionElement
-  | MaterialRefElement;
+  | MaterialRefElement
+  | HtmlEmbedElement;
 
 export const MATERIAL_REF_TYPE = 'material_ref';
 const MATERIAL_REF_KINDS = new Set<string>(['quiz', 'flashcards']);
@@ -136,6 +157,7 @@ const CUSTOM_TYPES = new Set([
   'mermaid',
   'mermaid_caption',
   MATERIAL_REF_TYPE,
+  HTML_EMBED_TYPE,
 ]);
 const MEDIA_TYPES = new Set(['img', 'image', 'audio', 'file']);
 const YOUTUBE_VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
@@ -259,6 +281,16 @@ function validateCustomElement(element: MaterialElement): boolean {
         isElementNode(element.children[0]) &&
         element.children[0].type === 'mermaid_caption'
       );
+    case HTML_EMBED_TYPE:
+      return (
+        hasId(element) &&
+        typeof element.html === 'string' &&
+        htmlBytes(element.html) <= HTML_EMBED_MAX_BYTES &&
+        (element.title === undefined || typeof element.title === 'string') &&
+        element.children.length === 1 &&
+        isTextNode(element.children[0]) &&
+        element.children[0].text === ''
+      );
     case MATERIAL_REF_TYPE: {
       const ref = element as MaterialRefElement;
       const resolved =
@@ -318,6 +350,12 @@ export function isMaterialDocument(value: unknown): value is MaterialDocument {
       value.value.length > 0 &&
       value.value.every((node) => isElementNode(node) && isMaterialNode(node))
     )
+  )
+    return false;
+  if (
+    (value.value as MaterialValue).filter(
+      (node) => node.type === HTML_EMBED_TYPE
+    ).length > HTML_EMBED_MAX_COUNT
   )
     return false;
   const parts = new Set<string>();
@@ -568,6 +606,20 @@ export function mermaidNode(
     id,
     source,
     type: 'mermaid',
+  };
+}
+
+export function htmlEmbedNode(
+  html: string,
+  title?: string,
+  id = uid('block')
+): HtmlEmbedElement {
+  return {
+    children: [{ text: '' }],
+    html,
+    id,
+    ...(title ? { title } : {}),
+    type: HTML_EMBED_TYPE,
   };
 }
 

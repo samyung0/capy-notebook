@@ -3,10 +3,11 @@
    collaboration/scripts/build-markdown.mjs bundles this file. */
 import { createSlateEditor, type SlateEditor } from 'platejs';
 import YAML from 'yaml';
-import type {
-  MaterialDocument,
-  MaterialNode,
-  MaterialRefKind,
+import {
+  HTML_EMBED_MAX_COUNT,
+  type MaterialDocument,
+  type MaterialNode,
+  type MaterialRefKind,
 } from '@/features/materials/document';
 import { StaticMaterialKit } from '@/features/materials/staticPlugins';
 import { importMarkdownValue } from './markdownImport';
@@ -65,6 +66,12 @@ export function convertAgentMarkdown(source: string): {
   document: MaterialDocument;
   embedded: EmbeddedDraft[];
 } {
+  // The document check refuses more without saying why; name the rule here.
+  const embeds = source.match(/^\s*`{3,}html-embed\b/gm)?.length ?? 0;
+  if (embeds > HTML_EMBED_MAX_COUNT)
+    throw new Error(
+      `A note holds at most ${HTML_EMBED_MAX_COUNT} html-embed fences, not ${embeds}.`
+    );
   const document = markdownToDocument(source);
   const embedded: EmbeddedDraft[] = [];
   const walk = (node: MaterialNode) => {

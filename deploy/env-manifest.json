@@ -504,6 +504,11 @@
       "kind": "variable",
       "targets": ["coolify", "ingest-production", "ingest-shared"]
     },
+    "EMBED_PAGES_PROJECT": {
+      "kind": "variable",
+      "targets": ["workflow"],
+      "required_for": ["workflow"]
+    },
     "GATEWAY_URL": {
       "kind": "variable",
       "targets": ["local"]
@@ -987,6 +992,11 @@
     "VITE_E2E_EDITOR_SEED": {
       "kind": "variable",
       "targets": ["local"]
+    },
+    "VITE_EMBED_ORIGIN": {
+      "kind": "variable",
+      "targets": ["workflow", "build"],
+      "required_for": ["build"]
     },
     "VITE_FEATURE_EDITOR_AI": {
       "kind": "variable",

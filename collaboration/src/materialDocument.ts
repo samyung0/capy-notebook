@@ -9,6 +9,11 @@ import {
 
 export const MATERIAL_DOCUMENT_DEPTH_CEILING = 1024;
 const YOUTUBE_VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
+/** The interactive HTML block: a top-level void with one snippet. */
+export const HTML_EMBED_TYPE = 'html_embed';
+export const HTML_EMBED_MAX_BYTES = 64 * 1024;
+export const HTML_EMBED_MAX_COUNT = 10;
+const HTML_EMBED_FIELDS = new Set(['id', 'type', 'html', 'title', 'children']);
 
 type MaterialNode = Record<string, unknown>;
 
@@ -218,6 +223,9 @@ function validateNode(node: MaterialNode, depth: number) {
     case 'quiz_question':
       validateQuizQuestion(node);
       break;
+    case HTML_EMBED_TYPE:
+      validateHtmlEmbed(node, depth);
+      break;
     case 'flashcard_front':
     case 'flashcard_back':
     case 'mermaid_caption':
@@ -257,6 +265,27 @@ function validateNode(node: MaterialNode, depth: number) {
     default:
       break;
   }
+}
+
+function validateHtmlEmbed(node: MaterialNode, depth: number) {
+  if (depth !== 0) fail('interactive blocks must be top-level blocks');
+  requireId(node);
+  const leaf = children(node);
+  if (
+    leaf.length !== 1 ||
+    Object.keys(leaf[0]).length !== 1 ||
+    leaf[0].text !== ''
+  )
+    fail('interactive blocks require one empty text leaf');
+  if (typeof node.html !== 'string') fail('interactive html must be a string');
+  const bytes = Buffer.byteLength(node.html, 'utf8');
+  if (bytes > HTML_EMBED_MAX_BYTES)
+    fail(`interactive html is ${bytes} bytes, over ${HTML_EMBED_MAX_BYTES}`);
+  if (hasOwn(node, 'title') && typeof node.title !== 'string')
+    fail('interactive title must be a string');
+  for (const key of Object.keys(node))
+    if (!HTML_EMBED_FIELDS.has(key))
+      fail(`unexpected interactive field ${key}`);
 }
 
 /** The void block a note stores for an embedded quiz or flashcard set. */
@@ -312,6 +341,9 @@ export function assertCanonicalMaterialValue(value: unknown[], kind: string) {
     validateNode(valueNode, 0);
     nodes.push(valueNode);
   }
+  const embeds = nodes.filter((node) => node.type === HTML_EMBED_TYPE).length;
+  if (embeds > HTML_EMBED_MAX_COUNT)
+    fail(`${embeds} interactive blocks over ${HTML_EMBED_MAX_COUNT}`);
 
   const questions: MaterialNode[] = [];
   const collect = (node: MaterialNode) => {

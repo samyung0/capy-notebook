@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   assertCanonicalMaterialValue,
+  HTML_EMBED_MAX_BYTES,
+  HTML_EMBED_MAX_COUNT,
+  HTML_EMBED_TYPE,
   MaterialDocumentValidationError,
 } from './materialDocument.js';
 
@@ -131,6 +134,41 @@ describe('embedded material references', () => {
         'note'
       )
     ).toThrow('one empty text leaf');
+  });
+});
+
+describe('interactive HTML blocks', () => {
+  const embed = (id: string, html = '<p>x</p>') => ({
+    children: [{ text: '' }],
+    html,
+    id,
+    title: 'Tangent',
+    type: HTML_EMBED_TYPE,
+  });
+
+  it('caps the snippet size and the blocks per note, like Go', () => {
+    const ten = Array.from({ length: HTML_EMBED_MAX_COUNT }, (_, i) =>
+      embed(`e${i}`, 'é'.repeat(HTML_EMBED_MAX_BYTES / 2))
+    );
+    expect(() => assertCanonicalMaterialValue(ten, 'note')).not.toThrow();
+    expect(() =>
+      assertCanonicalMaterialValue([...ten, embed('e10')], 'note')
+    ).toThrow('11 interactive blocks over 10');
+    expect(() =>
+      assertCanonicalMaterialValue(
+        [embed('e0', 'é'.repeat(HTML_EMBED_MAX_BYTES / 2 + 1))],
+        'note'
+      )
+    ).toThrow('over 65536');
+    expect(() =>
+      assertCanonicalMaterialValue(
+        [{ children: [embed('e0')], id: 'c', type: 'callout' }],
+        'note'
+      )
+    ).toThrow('top-level');
+    expect(() =>
+      assertCanonicalMaterialValue([{ ...embed('e0'), src: 'x' }], 'note')
+    ).toThrow('unexpected interactive field src');
   });
 });
 

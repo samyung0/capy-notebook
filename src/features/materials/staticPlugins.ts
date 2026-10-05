@@ -64,7 +64,7 @@ const lowlight = createLowlight(common);
 // Keep preview behavior aligned with the editor: code blocks are not list items.
 const listTargets = [...KEYS.heading, KEYS.p, KEYS.blockquote, KEYS.img];
 
-/** Persisted custom study-block node types (quiz / flashcards / mermaid trees). */
+/** Persisted custom block node types (study blocks, diagrams, interactives). */
 const CUSTOM_BLOCK_TYPES = [
   'chart',
   'graph',
@@ -76,6 +76,7 @@ const CUSTOM_BLOCK_TYPES = [
   'flashcard_back',
   'mermaid',
   'mermaid_caption',
+  'html_embed',
 ] as const;
 
 const staticCustomBlockPlugins = [
@@ -85,7 +86,10 @@ const staticCustomBlockPlugins = [
       node: {
         isElement: true,
         isVoid:
-          type === 'quiz_question' || type === 'chart' || type === 'graph',
+          type === 'quiz_question' ||
+          type === 'chart' ||
+          type === 'graph' ||
+          type === 'html_embed',
         type,
       },
     })

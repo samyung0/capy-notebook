@@ -121,7 +121,7 @@ The important boundaries are:
 - URL fetching resists SSRF, redirect-based allowlist bypass, private address
   access, and DNS rebinding.
 - Rendering and export paths do not execute stored script or unsafe URLs. The
-  planned interactive HTML block (`todo-learning.md`, phase 3) is the one
+  interactive HTML block (`src/features/materials/HtmlEmbed.tsx`, `embed/`) is the one
   exception: its script runs only in a sandboxed frame on a separate site with
   no network, and never during export.
 - Model instructions found in user files or retrieved material never acquire
@@ -149,7 +149,8 @@ Review these paths even when broad discovery does not select them:
    reconciliation execution.
 10. Production configuration that exposes a private service or enables a test
     bypass.
-11. Interactive HTML blocks, once built (`todo-learning.md`, phase 3). Any
+11. Interactive HTML blocks (`src/features/materials/HtmlEmbed.tsx`, the
+    frame page `embed/index.html` with `embed/_headers`). Any
     editor of a note, link editors included, can store arbitrary HTML and
     script, not only the agent. Check the frame's sandbox flags and origin, the
     CSP and what it leaves open (DNS prefetch, WebRTC), the host's

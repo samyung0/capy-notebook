@@ -208,6 +208,12 @@ Clerk development instance. Point a local gateway at the UAT database only with
 - GitHub configuration sync/readback passed before deployment. Managed Coolify
   variables are literal, non-preview and readable for verification; unset ones
   are blank. Neither values nor fingerprints appear in runner logs.
+- The interactive block frame answers at UAT's `VITE_EMBED_ORIGIN`:
+  `curl -sI https://uat.capy-embed.pages.dev/` returns `200` with the
+  `Content-Security-Policy` from `embed/_headers` (`default-src 'none'; …`),
+  `nosniff` and `no-referrer`, and the project's `uat` deployment carries the
+  release SHA. Set up in
+  [deployment-runbook.md §2.3](deployment-runbook.md#23-interactive-block-frame).
 - `COLLABORATION_UAT_PUBLICATION_HOLD` is `true` in UAT's Coolify variables and
   blank in production's (the renderer refuses a production value). Without it
   the Office refusal journey's publication is never held and the journey fails.

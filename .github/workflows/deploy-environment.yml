@@ -158,6 +158,22 @@ jobs:
           --env "$TARGET_ENVIRONMENT"
           --assets "$RUNNER_TEMP/capy-office-assets"
           --var "PARENT_ORIGINS:$PARENT_ORIGINS"
+      # embed/ is the interactive block frame the SPA build points at
+      # (VITE_EMBED_ORIGIN). One Pages project serves both environments: its
+      # production branch is `production`, and UAT is the `uat` branch alias.
+      - name: Deploy the matching interactive block frame
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DEPLOY_REVISION: ${{ inputs.revision }}
+          EMBED_PAGES_PROJECT: ${{ vars.EMBED_PAGES_PROJECT }}
+          TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
+        run: |
+          [ -n "$EMBED_PAGES_PROJECT" ] || { echo "EMBED_PAGES_PROJECT is required" >&2; exit 1; }
+          npx --yes wrangler@4.125.0 pages deploy embed \
+            --project-name "$EMBED_PAGES_PROJECT" \
+            --branch "$TARGET_ENVIRONMENT" \
+            --commit-hash "$DEPLOY_REVISION"
       - name: Deploy the matching SPA Worker
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}

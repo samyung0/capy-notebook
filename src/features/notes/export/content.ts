@@ -19,6 +19,7 @@ export interface ExportLabels {
   false: string;
   front: string;
   hints: string;
+  interactive: string;
   marks: string;
   markscheme: string;
   question: string;

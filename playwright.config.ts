@@ -33,6 +33,9 @@ const collaborationPort = Number(
 );
 const dbPort = Number(process.env.E2E_DB_PORT ?? randomPort());
 const vitePort = Number(process.env.E2E_VITE_PORT ?? randomPort());
+// Vite serves the interactive block frame here (vite-embed.ts): localhost is
+// another site than the app's 127.0.0.1, as pages.dev is in production.
+const embedPort = Number(process.env.E2E_EMBED_PORT ?? randomPort());
 const apiUrl = process.env.E2E_API_URL ?? `http://127.0.0.1:${apiPort}`;
 const baseURL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${vitePort}`;
 const composeProject =
@@ -47,6 +50,7 @@ const urlPort = (value: string) => {
 
 process.env.E2E_API_PORT = urlPort(apiUrl);
 process.env.E2E_COLLABORATION_PORT = String(collaborationPort);
+process.env.E2E_EMBED_PORT = String(embedPort);
 process.env.E2E_DB_PORT = String(dbPort);
 process.env.E2E_VITE_PORT = urlPort(baseURL);
 process.env.E2E_API_URL = apiUrl;
@@ -94,6 +98,7 @@ export default defineConfig({
       VITE_APP_ENV: 'e2e',
       // No Clerk key → AuthGate passthrough; identity comes from E2E headers.
       VITE_CLERK_PUBLISHABLE_KEY: '',
+      VITE_EMBED_ORIGIN: `http://localhost:${embedPort}`,
       VITE_FEATURE_EXPLORE: 'true',
       VITE_PORT: process.env.E2E_VITE_PORT!,
       VITE_POSTHOG_KEY: '',

@@ -420,6 +420,15 @@ export async function renderExport(
       if (md) return `${link(esc(labels.video), url, html)}\n\n`;
       return `<p>${link(esc(labels.video), url, true)}</p><p>${await picture({ type: 'youtube', videoId }, `capy-video:${videoId}`, true)}</p>`;
     }
+    if (type === 'html_embed') {
+      // The snippet never runs here or reaches the rasteriser: the export
+      // links back to the block in the note.
+      const url = new URL(noteUrl);
+      url.searchParams.set('block', field(node, 'id'));
+      return md
+        ? `${link(esc(labels.interactive), url.href, html)}\n\n`
+        : `<p>${link(escapeHtml(labels.interactive), url.href, true)}</p>`;
+    }
     if (type === 'mermaid') {
       const source = field(node, 'source');
       const description = plain(node);

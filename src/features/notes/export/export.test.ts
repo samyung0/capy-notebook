@@ -3,6 +3,7 @@ const CUSTOM_SYNTAX = /```(?:quiz|flashcards)|<video|<column/;
 import { describe, expect, it, vi } from 'vitest';
 import {
   flashcardsNode,
+  htmlEmbedNode,
   type MaterialValue,
   quizNode,
 } from '@/features/materials/document';
@@ -192,6 +193,24 @@ describe('readable note exports', () => {
     expect(content).toContain('border-left:3px solid #3b82f6');
     expect(content).toContain('alt="capy-video:URUJD5NEXC8"');
     expect(content).toContain('youtube.com/watch?v=URUJD5NEXC8');
+  });
+
+  it('links an interactive block back to the note without running or drawing it', async () => {
+    const draw = vi.fn(async () => image);
+    const value = [htmlEmbedNode('<script>alert(1)</script>', 'Tangent', 'e1')];
+    const noteUrl = 'https://capy.test/workspaces/w?material=n&mode=view';
+    const [markdown, word] = await Promise.all(
+      (['markdown', 'docx'] as const).map((format) =>
+        renderExport(value, format, labels, {}, noteUrl, draw)
+      )
+    );
+    expect(markdown.content).toBe(
+      `[Interactive snippet](<${noteUrl}&block=e1>)\n\n`
+    );
+    expect(word.content).toBe(
+      `<p><a href="${noteUrl.replace('&', '&amp;')}&amp;block=e1">Interactive snippet</a></p>`
+    );
+    expect(draw).not.toHaveBeenCalled();
   });
 
   it('fails on unreadable study references and unsupported nodes instead of dropping them', async () => {

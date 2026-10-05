@@ -25,6 +25,7 @@ export function exportLabels(): ExportLabels {
     false: m.question_ui_false(),
     front: m.editor_card_front(),
     hints: m.editor_export_hints(),
+    interactive: m.editor_export_interactive(),
     marks: m.editor_export_marks(),
     markscheme: m.editor_export_markscheme(),
     question: m.editor_export_question(),

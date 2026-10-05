@@ -8,8 +8,11 @@ import { exampleQuestion } from '@/features/questions/questionFixtures';
 import {
   createMaterialDocument,
   createMaterialDocumentWithMetrics,
+  HTML_EMBED_MAX_BYTES,
+  htmlEmbedNode,
   isMaterialDocument,
   isMaterialRefElement,
+  type MaterialValue,
   materialRefNode,
   normalizeMaterialValue,
   normalizeMaterialValueWithMetrics,
@@ -38,6 +41,21 @@ describe('Universal Plate material documents', () => {
         schemaVersion: 1,
         value: [{ ...node, type: 'graph' }],
       })
+    ).toBe(false);
+  });
+  it('caps interactive blocks at 64 KB of html and 10 per document', () => {
+    const embeds = (count: number, html = '<p>x</p>') =>
+      Array.from({ length: count }, (_, i) => htmlEmbedNode(html, '', `e${i}`));
+    const doc = (value: MaterialValue) => ({ schemaVersion: 1, value });
+    expect(isMaterialDocument(doc(embeds(10)))).toBe(true);
+    expect(isMaterialDocument(doc(embeds(11)))).toBe(false);
+    expect(
+      isMaterialDocument(doc(embeds(1, 'é'.repeat(HTML_EMBED_MAX_BYTES / 2))))
+    ).toBe(true);
+    expect(
+      isMaterialDocument(
+        doc(embeds(1, 'é'.repeat(HTML_EMBED_MAX_BYTES / 2 + 1)))
+      )
     ).toBe(false);
   });
   it('rejects shared part IDs across different quiz blocks', () => {

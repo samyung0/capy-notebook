@@ -35,6 +35,7 @@ import {
   type FlashcardsElement as FlashcardsNode,
   flashcardsElementToCards,
   flashcardsNodeFromFence,
+  type HtmlEmbedElement as HtmlEmbedNode,
   type MaterialElement,
   type MaterialNode,
   type MaterialRefElement as MaterialRefNode,
@@ -43,6 +44,7 @@ import {
   type QuizQuestionElement as QuizQuestionNode,
   quizQuestionElementToQuestion,
 } from '@/features/materials/document';
+import { HtmlEmbed } from '@/features/materials/HtmlEmbed';
 import { MaterialRefCard } from '@/features/materials/MaterialRefCard';
 import { StandaloneMaterialTitle } from '@/features/materials/MaterialRenderContext';
 import { MediaFrame } from '@/features/materials/MediaFrame';
@@ -507,6 +509,7 @@ export function MaterialRefElement(props: PlateElementProps) {
 }
 
 const MermaidSourceDialog = lazy(() => import('./MermaidSourceDialog'));
+const HtmlEmbedSourceDialog = lazy(() => import('./HtmlEmbedSourceDialog'));
 
 /** Copies one block as rich HTML and plain text, through the editor's own fragment. */
 async function copyBlock(editor: PlateEditor, element: TElement) {
@@ -822,6 +825,93 @@ export function MermaidElement(props: PlateElementProps) {
             onSave={(source) => update({ source })}
             source={element.source}
             theme={theme}
+          />
+        </Suspense>
+      )}
+    </PlateElement>
+  );
+}
+
+/** Interactive HTML block: View source (editors save from it), Copy, Delete. */
+export function HtmlEmbedElement(props: PlateElementProps) {
+  const editor = useEditorRef();
+  const readOnly = useReadOnly();
+  const element = props.element as unknown as HtmlEmbedNode;
+  const [viewing, setViewing] = useState(false);
+  const locate = () => editor.api.findPath(props.element);
+  return (
+    <PlateElement {...props} className="relative my-3">
+      <div
+        contentEditable={false}
+        onMouseDown={(event) => {
+          if (readOnly || (event.target as Element).closest('button')) return;
+          event.preventDefault();
+          const at = locate();
+          if (at) {
+            editor.tf.select(editor.api.start(at));
+            editor.tf.focus();
+          }
+        }}
+      >
+        <HtmlEmbed
+          html={element.html}
+          id={element.id}
+          title={element.title}
+          toolbar={
+            <>
+              <ToolbarButton
+                label={m.html_embed_view_source()}
+                onClick={() => setViewing(true)}
+                tooltipSide="top"
+              >
+                <EditorIcon name="code" />
+              </ToolbarButton>
+              {!readOnly && (
+                <>
+                  <ToolbarButton
+                    label={m.action_copy()}
+                    onClick={() =>
+                      void copyBlock(editor, props.element).catch(
+                        showErrorToast
+                      )
+                    }
+                    tooltipSide="top"
+                  >
+                    <EditorIcon name="copy" />
+                  </ToolbarButton>
+                  <ToolbarButton
+                    label={m.action_delete()}
+                    onClick={() => {
+                      const at = locate();
+                      if (at) editor.tf.removeNodes({ at });
+                    }}
+                    tooltipSide="top"
+                    variant="danger-light"
+                  >
+                    <EditorIcon name="trash" />
+                  </ToolbarButton>
+                </>
+              )}
+            </>
+          }
+        />
+      </div>
+      {/* Slate's void spacer, kept positioned like the mermaid block's. */}
+      <span className="absolute top-0 left-0">{props.children}</span>
+      {viewing && (
+        <Suspense fallback={null}>
+          <HtmlEmbedSourceDialog
+            html={element.html}
+            onClose={() => setViewing(false)}
+            onSave={
+              readOnly
+                ? undefined
+                : (next) => {
+                    const at = locate();
+                    if (at) editor.tf.setNodes(next, { at });
+                  }
+            }
+            title={element.title}
           />
         </Suspense>
       )}

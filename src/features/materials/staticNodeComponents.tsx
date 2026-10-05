@@ -10,7 +10,13 @@ import {
   SlateLeaf,
   type SlateLeafProps,
 } from 'platejs/static';
-import { type CSSProperties, type MouseEvent, useState } from 'react';
+import {
+  type CSSProperties,
+  lazy,
+  type MouseEvent,
+  Suspense,
+  useState,
+} from 'react';
 import { Button } from '@/components/ui/Button';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { CalloutIcon } from '@/features/notes/CalloutIcon';
@@ -69,12 +75,14 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import type {
   FlashcardElement as FlashcardNode,
+  HtmlEmbedElement as HtmlEmbedNode,
   MaterialRefElement as MaterialRefNode,
   MermaidElement as MermaidNode,
   QuestionFigureElement,
   QuizQuestionElement as QuizQuestionNode,
 } from './document';
 import { quizQuestionElementToQuestion } from './document';
+import { HtmlEmbed } from './HtmlEmbed';
 import { MaterialRefCard } from './MaterialRefCard';
 import { StandaloneMaterialTitle } from './MaterialRenderContext';
 import { MathPreview } from './MathPreview';
@@ -448,6 +456,45 @@ function MermaidElement(props: SlateElementProps) {
   );
 }
 
+const HtmlEmbedSourceDialog = lazy(
+  () => import('@/features/notes/blocks/HtmlEmbedSourceDialog')
+);
+
+function HtmlEmbedElement(props: SlateElementProps) {
+  const element = props.element as unknown as HtmlEmbedNode;
+  const [viewing, setViewing] = useState(false);
+  return (
+    <SlateElement {...props} className="my-3">
+      <div contentEditable={false}>
+        <HtmlEmbed
+          html={element.html}
+          id={element.id}
+          title={element.title}
+          toolbar={
+            <ToolbarButton
+              label={m.html_embed_view_source()}
+              onClick={() => setViewing(true)}
+              tooltipSide="top"
+            >
+              <EditorIcon name="code" />
+            </ToolbarButton>
+          }
+        />
+      </div>
+      {props.children}
+      {viewing && (
+        <Suspense fallback={null}>
+          <HtmlEmbedSourceDialog
+            html={element.html}
+            onClose={() => setViewing(false)}
+            title={element.title}
+          />
+        </Suspense>
+      )}
+    </SlateElement>
+  );
+}
+
 function QuestionFigure(props: SlateElementProps) {
   const element = props.element as unknown as QuestionFigureElement;
   return (
@@ -519,6 +566,7 @@ export const staticNoteComponents = {
   h6: element('h6', HEADING_CLASS.h6),
   highlight: mark('mark', HIGHLIGHT_MARK_CLASS),
   hr: Hr,
+  html_embed: HtmlEmbedElement,
   img: MediaAssetElement,
   inline_equation: InlineEquation,
   italic: mark('em', ITALIC_MARK_CLASS),

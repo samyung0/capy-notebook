@@ -26,6 +26,13 @@ const (
 	// product limit: MaxDepth gates writes only, so a document seeded outside
 	// the write paths or predating a limit change stays readable.
 	depthCeiling = 1024
+	// HTMLEmbedType is the interactive HTML block: a top-level void holding
+	// one snippet of at most HTMLEmbedMaxBytes, at most HTMLEmbedMaxCount per
+	// document. Keep in sync with collaboration/src/materialDocument.ts and
+	// src/features/materials/document.ts.
+	HTMLEmbedType     = "html_embed"
+	HTMLEmbedMaxBytes = 64 << 10
+	HTMLEmbedMaxCount = 10
 )
 
 var (
@@ -234,10 +241,17 @@ func Validate(doc Envelope) error {
 	if len(doc.Value) == 0 {
 		return fmt.Errorf("%w: value must be a non-empty array", ErrInvalid)
 	}
+	embeds := 0
 	for i, node := range doc.Value {
 		if err := validateNode(node, 0); err != nil {
 			return fmt.Errorf("%w: value[%d]: %v", ErrInvalid, i, err)
 		}
+		if node["type"] == HTMLEmbedType {
+			embeds++
+		}
+	}
+	if embeds > HTMLEmbedMaxCount {
+		return fmt.Errorf("%w: %d interactive blocks over %d", ErrInvalid, embeds, HTMLEmbedMaxCount)
 	}
 	var all []map[string]any
 	var collect func(map[string]any)
@@ -514,6 +528,8 @@ func validateNode(node map[string]any, depth int) error {
 			}
 		}
 		return questions.ValidateBlock(block, questions.Policy{})
+	case HTMLEmbedType:
+		return validateHTMLEmbed(node, depth)
 
 	case "flashcard_front", "flashcard_back", "mermaid_caption":
 		return validateTextElement(node)
@@ -529,6 +545,38 @@ func validateNode(node map[string]any, depth int) error {
 		return validateYouTube(node)
 	case RefType:
 		return validateMaterialRef(node)
+	}
+	return nil
+}
+
+func validateHTMLEmbed(node map[string]any, depth int) error {
+	if depth != 0 {
+		return errors.New("interactive blocks must be top-level blocks")
+	}
+	if err := requireID(node); err != nil {
+		return err
+	}
+	values := node["children"].([]any)
+	leaf, _ := values[0].(map[string]any)
+	if len(values) != 1 || len(leaf) != 1 || leaf["text"] != "" {
+		return errors.New("interactive blocks require one empty text leaf")
+	}
+	html, ok := node["html"].(string)
+	if !ok {
+		return errors.New("interactive html must be a string")
+	}
+	if len(html) > HTMLEmbedMaxBytes {
+		return fmt.Errorf("interactive html is %d bytes, over %d", len(html), HTMLEmbedMaxBytes)
+	}
+	if title, ok := node["title"]; ok {
+		if _, ok := title.(string); !ok {
+			return errors.New("interactive title must be a string")
+		}
+	}
+	for key := range node {
+		if key != "type" && key != "id" && key != "html" && key != "title" && key != "children" {
+			return fmt.Errorf("unexpected interactive field %s", key)
+		}
 	}
 	return nil
 }
@@ -873,8 +921,8 @@ func ExtractNoteText(raw string) (string, error) {
 
 // ExtractIndexText renders a note as markdown-like plain text for retrieval
 // chunking: headings keep their level, list items their bullets, table rows
-// their cells and code its fence. References, diagrams and media carry no
-// text and are skipped.
+// their cells and code its fence. References, diagrams, interactive blocks and
+// media carry no text and are skipped.
 func ExtractIndexText(raw string) (string, error) {
 	doc, err := Parse(raw)
 	if err != nil {
@@ -890,7 +938,7 @@ func ExtractIndexText(raw string) (string, error) {
 var (
 	indexContainers = set("callout", "column_group", "column", "toggle", "details")
 	indexSkipped    = set("hr", "toc", "equation", "inline_equation", "img", "image", "audio", "file",
-		"video", "mermaid", "diagram", "mindmap", RefType, "quiz", "flashcards")
+		"video", "mermaid", "diagram", "mindmap", HTMLEmbedType, RefType, "quiz", "flashcards")
 )
 
 func writeIndexBlock(node map[string]any, out *[]string) {

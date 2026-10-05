@@ -23,6 +23,8 @@ const editorDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(editorDir, '..', '..');
 const port = Number(process.env.EDITOR_E2E_PORT ?? 4518);
 const baseURL = `http://127.0.0.1:${port}`;
+// Vite serves the interactive block frame on another site (vite-embed.ts).
+const embedOrigin = `http://localhost:${port + 1}`;
 
 export default defineConfig({
   fullyParallel: true,
@@ -54,6 +56,7 @@ export default defineConfig({
       ...process.env,
       VITE_CLERK_PUBLISHABLE_KEY: '',
       VITE_E2E_EDITOR_SEED: 'true',
+      VITE_EMBED_ORIGIN: embedOrigin,
       VITE_RELEASE_SHA: 'e2e',
       VITE_USE_MSW: 'true',
     },

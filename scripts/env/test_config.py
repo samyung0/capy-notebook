@@ -162,6 +162,28 @@ class ConfigTest(unittest.TestCase):
                 coolify = json.loads(Path(temp, "coolify.json").read_text())
                 self.assertEqual(coolify["COLLABORATION_CPUSET"], cpuset)
 
+    def test_render_requires_the_embed_frame_origin_for_the_build(self):
+        values = {
+            key: "explicit"
+            for key, rule in config.MANIFEST.items()
+            if rule.get("required_for")
+        }
+        values.update(
+            POSTGRES_PASSWORD="secret",
+            CAPY_PRIVATE_BIND_ADDRESS="10.77.0.3",
+            CLERK_PUBLISHABLE_KEY="pk_public",
+            DEPLOYMENT_APP_URL="https://app.example.com",
+            VITE_EMBED_ORIGIN="https://capy-embed.pages.dev",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            with contextlib.redirect_stdout(io.StringIO()):
+                config.render(values, "production", temp, "a" * 40)
+            build = json.loads(Path(temp, "build.json").read_text())
+            self.assertEqual(build["VITE_EMBED_ORIGIN"], "https://capy-embed.pages.dev")
+            values["VITE_EMBED_ORIGIN"] = ""
+            with self.assertRaisesRegex(ValueError, "VITE_EMBED_ORIGIN is required"):
+                config.render(values, "production", temp, "a" * 40)
+
     def test_coolify_payload_and_redacted_readback(self):
         secret = "never-disclose-this-value"
         values = {"POSTGRES_PASSWORD": secret, "OPENAI_API_KEY": ""}
