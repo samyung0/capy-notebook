@@ -13,154 +13,90 @@ Decisions: `human/miscellaneous.md`, `human/authorization-permissions-lifecycles
 `openwiki/authorization-permissions-lifecycles.md` (signed-out quizzes and
 flashcards).
 
-## State (2026-10-04)
+## State (2026-10-05)
 
-- Part 1 server is done (uncommitted, 2026-10-04): migration 0051,
-  `server/internal/review`, `store/study.go`, `httpapi/huma_study.go`, the
-  attempt hook, `card_stats` slimmed to `flashcard_cards`, mistakes and the
-  card-state undo restores removed. `FlashcardStudy.tsx` goes through a set's
-  cards in order and posts ratings, so `main` builds. Per-set review
-  (`GET /api/materials/{id}/review`, `SetReview`) was removed on 2026-10-04:
-  review only mixes quizzes and sets (Epo).
-- Part 1 frontend is built (2026-10-05) from the round 4 picks: Study tab
-  (`features/study/StudyPanel.tsx`: Up next with Continue, Review, Quick
-  review, Done per chapter, recent quizzes, Track progress), marks and Mark as
-  read / Stop tracking in the file panel and the header (`studyItems.tsx`),
-  the Review tab in Learning and the session page (`routes/ReviewSession.tsx`,
-  `/learning/review/$workspaceId`), AI generate as a mode of the Add file
-  dialog (`GenerateFilePanel.tsx`; the Generate tab is gone), Reset in
-  Workspace settings → Danger (viewers see only that row), the global switch
-  in Settings → Customizations, and MSW mocks (`src/mocks/study.ts`). Server:
-  `StudySummary` carries `quickReview` and `reviewable` instead of `hardest`,
-  the session drops `sets`, and `GET /api/review/workspaces` feeds Learning.
-  Files | Blocks | Trash replaces the Create page (`/create` redirects).
-- Part 1 mocks: `artifacts/2026-10-04-study-progress-mocks.html` at
-  https://9rn5fsnigkz1.postplan.dev. Round 1 picks (2026-10-04): B for the
-  Study tab, the marks and AI generate, with changes. Round 2 nudges (Quick
-  review above Done, Files page tabs) are in round 3. The Frontend section
-  below records the picks. Server changes they need: `hardest` becomes the
-  Quick review cards with their faces, `GET .../review` drops `sets`, a
-  per-user list of workspaces with review counts for Learning, and Reset moves
-  to the Danger tab (viewers see a settings dialog with only that row).
-- Part 2 phase 1, steps 1.1 to 1.6 are done (uncommitted, 2026-10-04): one
-  prompt (`prompts/chat.py`, `prompts/curate.py` deleted), study preferences
-  (`prompts/preferences.py`), the turn context message
-  (`retrieval/turn_context.py`), the todo-only ledger and `ledger_write`, the
-  new limits, `read_study_progress` (Go `/api/internal/study-progress`), the
-  curate tool descriptions folded into the Go contract, and the playground on
-  the Library switch with `server/cmd/quizcheck` validating local quizzes. The
-  Go side of curate (conversation flag, ledger route check) waits for phase 2.
-- Step 1.7 is done (2026-10-04): `retrieval/bank.py` with
-  `list_question_bank` and `read_question`, offered with Library on and a bank
-  configured. An embedding search came first
-  (`bench/rag/reports/2026-10-04-bank-search.md`: embeddings beat keyword
-  search on maths concepts but missed IELTS task types and let a passage
-  dominate); Epo chose listing the fixed syllabus instead (contract v11). A
-  live turn reused eight HKDSE questions. The playground reads the local
-  restore on port 15499 (`CAPY_PLAYGROUND_BANK_URL`), never the live bank.
-- Step 1.8 is mostly done (uncommitted, 2026-10-04). Notes: the fence format
-  (mermaid, quiz, flashcards, `html-embed` with YAML `title`/`fallback`/`html`)
-  is in the `create_material` contract, and the playground checks it
-  (`check_note`). Decks follow ppt-master's Quick route since 2026-10-04
-  (Epo): `create_deck` (titles and briefs) and `write_slide` (one SVG per
-  call, refused unless ppt-master's checker passes it), exported with
-  ppt-master's exporter once every slide is written; the default style is
-  `editorial`, from the example deck `ppt169_muelltrennung_de_quick`
-  (`lab/playground/deck-styles/`). The adoption guide is
-  `lab/playground/DECKS.md`. Mocks: https://3eyzh50jkqjx.postplan.dev.
-  Left for 1.8: the interactive block's sandboxed preview, built with the
-  output preview at Epo's acceptance test.
-- Part 2 step 2.1 is done (uncommitted, 2026-10-04): migration 0052 drops
-  `conversations.curate`; the chat sends `library` and the open item, Go grants
-  `library.read` per turn to any chatting role, resolves the open item's title
-  and sends `studyProgress`; contract v10. The chat input's chip is now
-  Library, on by default (`ChatPanel.tsx`); `curateToggle.ts`, the curate
-  refusals, i18n keys and MSW scenarios are gone. `studyPreferences` waits for
-  2.4. Go, Python and the chat vitest suites pass; checked in the MSW preview.
-- Part 2 step 2.2 is done in code (uncommitted, 2026-10-04): the
-  collaboration service converts agent markdown with the editor's own import
-  (`src/features/notes/markdownConvert.ts`, bundled to 1.9 MB by
-  `collaboration/scripts/build-markdown.mjs`; 0.4 s to load on first use, then
-  about 4 ms a note, about 100 MB resident). Go converts `create_material`
-  notes through `/internal/markdown/convert` and creates their quiz and
-  flashcards fences as embedded rows in the same transaction;
-  `edit_document`'s `insert_block` became `insert_markdown`. `mdblock` is
-  deleted. The collaboration Dockerfile copies `src/` for the bundle step; the
-  local image build hung installing packages in the container, so the first
-  push checks it (`ci.yml` builds `collaboration/Dockerfile`). `html-embed` fences stay code blocks until phase 3.
-- Part 2 step 2.3 is done (uncommitted, 2026-10-04): `create_material` takes
-  `chapter_id` (Go refuses another workspace's chapter), and `list_sources`
-  groups materials under their chapters with `chapter_id` in each header.
-- Part 2 step 2.4 is done (uncommitted, 2026-10-04): migration
-  0053 adds `users.study_preferences`, typed by `store.StudyPreferences` (the
-  1.4 enums), returned with `/api/me`, saved with
-  `PATCH /api/me/study-preferences`, and sent with every chat turn. Settings →
-  Customizations has a Study preferences section in the existing row style
-  (`StudyPreferencesSection.tsx`; each change saves, unset fields keep the
-  pipeline defaults), with its MSW handler; checked in the MSW preview.
-  Waiting: the `/generate` defaults, which follow the AI generate redesign in
-  the Add file dialog.
-- 1.9 setup (2026-10-04): the scenarios with what a good run does are a table
-  in the playground README (the per-scenario configs were removed on
-  2026-10-05; Epo sets preferences by hand, and `chat.json` is the one config). Every
-  config and the playground default use GLM-5.3-Flash at high reasoning, the
-  production chat default (Epo, 2026-10-04).
-- Phase 3 mocks (2026-10-04): `artifacts/2026-10-04-interactive-blocks.html`,
-  https://5i16xblach8o.postplan.dev. Epo picked A (media frame like diagrams).
-  The risk is the same whether the agent or a person writes a snippet, so
-  people may edit the code (Epo, 2026-10-04). Signed-out visitors never see
-  these blocks: notes are not part of the anonymous pages. Added to
-  `SECURITY.md` (attack path 11) for the first security audit.
-- The lab database (`capy-odl-agentic-db`) had migrations 0044 and 0050's
-  catalog updates applied by hand on 2026-10-04 (generate and quiz slots
-  removed; the three OpenAI rows that served only those now serve chat). On
-  2026-10-05 an empty `rag_material_contents` and the nullable
-  `materials.trashed_at` and `parent_material_id` were added by hand, so
-  `list_sources` works there. Four test chapters (Biology, Machine learning papers,
-  Language and linguistics, Statistics and reports, ids `ch_lab_*`) were
-  added to `odl_eval_odl_nocaption` with 13 of its files filed under them.
-- Skills and caching (2026-10-05, Epo's prompt review): the base prompt keeps
-  grounding, answer-or-build and the budget; build instructions are skills read
-  with `read_skill` (in production `editing`, the ledger, budget and write
-  precautions, and `workspace_building`, the plan, output rules, the note and
-  question formats and a validated example question; `deck` in the
-  playground), and the
-  writes are refused until the skill's text is in the request. Tool
-  descriptions were cut to what the schema cannot say (contract v12). Per call,
-  Library on: about 6.8k tokens of prompt and tools, from 8.7k. The turn
-  context now goes last and stays where it was sent, so each request extends
-  the previous one: GLM on Relace caches per server and only at an earlier
-  request's end, and the moving context had left every build step uncached.
-  It also lists the workspace's chapters in order (at most 20, now a server
-  cap). Without the library the writes offer no `excerpt_ids`. A live build
-  (note and quiz on the attention paper): 7 calls, 107k input, 63% cached,
-  both written first try; before, 12 calls, about 290k input, 23% cached and
-  nothing written (quiz fences guessed wrong, workspace ids in `excerpt_ids`).
-- Signed-out study shipped on 2026-10-02 (`anonymous-study-plan.md`). Signed-out
-  flashcards keep `ts-fsrs` and a review log in IndexedDB. Jev grades every open
-  quiz part, signed in or not.
-- Learners answering on `/bank` and bank mistake review wait for part 1's FSRS
-  code (`todo-question-bank.md`).
-- No production or UAT data needs keeping. Part 1 drops and replaces tables and
-  endpoints without migration code; the bank database is untouched.
+Everything below is on `main` (CI green at 2e530e72). UAT runs 2400641b, which
+predates 2.5 and the part 1 frontend.
+
+- **Part 1 is built.** Server: migration 0051, `server/internal/review`,
+  `store/study.go`, `httpapi/huma_study.go`, the attempt hook, `card_stats`
+  slimmed to `flashcard_cards`; mistakes, the card-state undo restores and
+  per-set review are gone (review only mixes quizzes and sets, Epo).
+  `StudySummary` carries `quickReview` and `reviewable`, the session drops
+  `sets`, and `GET /api/review/workspaces` feeds Learning. Frontend from the
+  round 4 picks (https://9rn5fsnigkz1.postplan.dev): the Study tab
+  (`features/study/StudyPanel.tsx`), marks and Mark as read / Stop tracking
+  (`studyItems.tsx`), the header icon, Learning → Review and the session page
+  (`routes/ReviewSession.tsx`), AI generate as a mode of the Add file dialog
+  (`GenerateFilePanel.tsx`), Reset in Workspace settings → Danger (viewers see
+  only that row), the global switch in Customizations, MSW
+  (`src/mocks/study.ts`), and Files | Blocks | Trash (`/create` redirects).
+  Left: "Tests and docs" below. Only `review_test.go` exists; there is no
+  Vitest or Playwright for Continue, the session or progress off, and no
+  `openwiki/study-progress.md`.
+- **Part 2 phase 1 is done** except the playground output preview. One prompt
+  (`prompts/chat.py`) with skills read through `read_skill`
+  (`prompts/skills.py`: `editing` and `workspace_building`; `deck` in the
+  playground); writes are refused until their skill is in the request. Tool
+  descriptions are cut to what the schema cannot say (contract v12). Study
+  preferences (`prompts/preferences.py`), the turn context appended last and
+  left in place so GLM on Relace caches (`retrieval/turn_context.py`; it lists
+  the chapters, capped at 20 by the server), the todo-only ledger and
+  `ledger_write`, the limits, `read_study_progress`, and the playground on the
+  Library switch with `server/cmd/quizcheck`. The note fence format is in the
+  `create_material` contract (`check_note` in the playground). Decks follow
+  ppt-master's Quick route (`lab/playground/DECKS.md`, style `editorial`).
+  A note and quiz build now takes 7 calls and 107k input, 63% cached (before:
+  12 calls, about 290k, 23% cached, nothing written). Handoff for the tuning:
+  `lab/playground/HANDOFF.md`.
+- **Part 2 phase 2, 2.1 to 2.5, is done.** 2.1: migration 0052 drops
+  `conversations.curate`; the Library chip is on by default and Go grants
+  `library.read` per turn. 2.2: the collaboration service converts agent
+  markdown with the editor's import (`src/features/notes/markdownConvert.ts`,
+  bundled by `collaboration/scripts/build-markdown.mjs`: 1.9 MB, 0.4 s to load,
+  about 4 ms a note, about 100 MB resident); quiz and flashcards fences become
+  embedded rows in the same transaction; `insert_markdown` replaces
+  `insert_block`; `mdblock` is deleted; `html-embed` fences stay code blocks
+  until phase 3. CI builds the collaboration image (the local build hangs).
+  2.3: `chapter_id` on `create_material`, chapters in `list_sources`. 2.4:
+  migration 0053 `users.study_preferences`, `PATCH /api/me/study-preferences`,
+  the Settings section. 2.5: the bank only through Go
+  (`/api/internal/bank/{list,read,copy}`), `copy_questions` (contract v13),
+  per-question credits, quiz figure URLs only under `BANK_ASSETS_URL`.
+- **Unblocked:** the `/generate` defaults from study preferences (2.4; AI
+  generate moved into the Add file dialog), and learners answering on `/bank`
+  with bank mistake review (Later, "Question-bank progress"; part 1's FSRS
+  package exists).
+- **Phase 3 mocks:** https://5i16xblach8o.postplan.dev. Epo picked A (media
+  frame, like diagrams). People may edit the snippet, since the risk is the
+  same whoever writes it. Signed-out pages never show these blocks (notes are
+  not part of them). `SECURITY.md` attack path 11.
+- **Lab database** (`capy-odl-agentic-db`), changed by hand: the 0044 and 0050
+  catalog updates (2026-10-04); an empty `rag_material_contents` and nullable
+  `materials.trashed_at` and `parent_material_id` (2026-10-05); four test
+  chapters (`ch_lab_*`) in `odl_eval_odl_nocaption` with 13 files filed.
+- **bench/rag cleanup (2026-10-05):** 44 one-off and curate-era scripts and six
+  orphaned fixtures deleted; their reports stay, listed in `bench/README.md`.
+  `rich_chat_validity.py` now samples GLM on Relace.
+- Signed-out study shipped on 2026-10-02: flashcards keep `ts-fsrs` and a
+  review log in IndexedDB; Jev grades every open part, signed in or not.
+- No production or UAT data needs keeping.
+
+### Open decisions (Epo)
+
+1. UAT deploy: now (part 1 and 2.1 to 2.5) or after 2.6 and phase 3.
+2. 2.6 decks: the proposal under 2.6.
+3. Phase 3 hosting: one Pages project per environment or a `uat` branch
+   alias; the `fallback` cap; a free `pages.dev` hostname or a second domain.
 
 ## Order
 
-Built in dependency order and checked as each step lands. Epo tunes the prompts
-in the playground at the end, as an acceptance test of the whole build.
-
-1. Part 1 mocks (Study tab, Review page and session, AI generate in the Add
-   file dialog, file panel marks), published early so Epo's pick does not block.
-2. Part 1 server.
-3. Part 2 phase 1 in the playground: harness, one prompt, ledger and limits,
-   preferences, open file, progress tool (1.1 to 1.6), question-bank search
-   (1.7), then output formats (1.8) with decks after their layout mock round.
-4. Part 1 frontend after Epo's mock pick, then MSW, tests and docs. Part 1 can
-   reach UAT on its own.
-5. Part 2 phase 2, then phase 3, in the app. Phase 1 changes the Go tool
-   contract the running app uses, so UAT gets part 2 in one go. UAT deploys are
-   manual, so phase 1 can sit on `main` until then.
-6. The playground output preview, then Epo's acceptance test (1.9).
+1. Done: part 1 mocks, server and frontend; part 2 phase 1; phase 2 steps 2.1
+   to 2.5.
+2. Part 1 tests and docs; 2.7 tests and docs; the `/generate` defaults.
+3. 2.6 decks and phase 3, after Epo's decisions above.
+4. The playground output preview.
+5. Epo's acceptance test (1.9), last: mostly prompt tuning.
 
 ---
 
@@ -854,7 +790,7 @@ wiring it in.
   existing input components and react-hook-form.
 - Chat: Go forwards the requester's preferences on each turn; Python renders
   them with the ledger message.
-- `/generate`: `GenerateReq` reads the same preferences as defaults; wire the
+- `/generate` (not done): `GenerateReq` reads the same preferences as defaults; wire the
   `style`/`length`/`format` options that map to preferences and delete the rest.
 
 **2.5 Question-bank search** (done 2026-10-05, Epo's picks)
@@ -872,20 +808,42 @@ wiring it in.
 
 **2.6 Decks**
 
-- `create_file` lands first (`artifacts/2026-09-17-curate-files-todo.md`:
-  attribution inside the file bytes).
-- Decks are made the ppt-master way (`lab/playground/DECKS.md`), so the app
-  imports the exported PPTX as a file instead of building it with Office
-  commands. Decide where the checker and exporter run (the retrieval service
-  is Python; a pinned ppt-master in its image, run under its own
-  dependencies) and how an edit reaches a deck: the model rewrites a slide's
-  SVG and the deck is exported again, or edits go through BetterOffice on
-  the PPTX. `OfficeCommand` has only `replace_text` and `set_cell`
-  (`vendor/betteroffice/shared/office-checkpoint.ts`).
-- The PPTX viewer serves only Liberation Sans as Arial
-  (`src/office-runtime/pptxFonts.ts`); the default style's Cambria titles need
-  Caladea, which `vendor/betteroffice/packages/fonts` already has.
-- WASM cost: the PPTX editor and viewer grew 34% and 50% at the last upstream
+Decks are made the ppt-master way (`lab/playground/DECKS.md`): the model
+writes each slide as SVG, ppt-master's checker (`svg_quality_checker.py`)
+refuses a slide whose text leaves its module or the canvas, and its exporter
+(`svg_to_pptx.py`) compiles the SVGs into a PPTX of native shapes. The app
+stores the PPTX as a file instead of building it with Office commands.
+
+Proposed (2026-10-05, awaiting Epo):
+
+- **Where they run:** in the retrieval service image. Pin the whole
+  ppt-master checkout (MIT; its attribution guard refuses partial copies) with
+  its dependencies in their own virtualenv, and call the two scripts as
+  subprocesses. `write_slide` needs the checker inside the agent turn, which
+  runs there; the ingest host is a shared queue for every environment, the
+  wrong place for a check the model waits on. Slides live in a per-turn
+  working directory, so a deck is finished within one turn (the ledger allows
+  160 calls).
+- **Storing:** once every slide passes, the exporter's bytes go to Go through
+  `create_file` (`artifacts/2026-09-17-curate-files-todo.md`), which lands
+  first: the upload path, quota charged to the owner, the ingest job so the
+  deck is searchable, and `files.provenance`. The style's Sources slide is the
+  attribution inside the bytes.
+- **Edits:** after export the PPTX is the document. People edit it in the
+  PPTX editor; the agent edits text with the existing `replace_text`
+  `OfficeCommand`, and anything larger is a new deck. No SVG copy is kept:
+  re-exporting from it would discard the person's edits.
+- **Figures:** nothing is rasterised. Drawn diagrams export as native shapes;
+  book figures are the bbox crops the turn captured, embedded as images. The
+  library admits only CC BY, BY-SA, CC0 and public domain
+  (`lab/knowledge/scrape.py`), so every crop may be redistributed with its
+  credit and licence on the Sources slide; a BY-SA figure stays BY-SA.
+- **Fonts:** load Caladea (in `vendor/betteroffice/packages/fonts`) in the
+  PPTX viewer (`src/office-runtime/pptxFonts.ts`) for the `editorial` style's
+  Cambria titles. The viewer serves only Liberation Sans as Arial today.
+- **Cost:** the first live deck took 944k input tokens and about 160 credits
+  before requests were append-only. Rerun one and compare before shipping.
+- **WASM:** the PPTX editor and viewer grew 34% and 50% at the last upstream
   merge (`todo-office.md`), and decks make a first PPTX view common.
 
 **2.7 Tests and docs**

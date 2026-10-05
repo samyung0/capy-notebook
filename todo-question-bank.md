@@ -6,7 +6,7 @@ work is in [openwiki/question-bank.md](openwiki/question-bank.md) and
 `human/question-bank.md` (and older ones in `human/agentic-retrieval.md`,
 `human/frontend/plate-editor.md`, `human/miscellaneous.md`).
 
-## State (2026-10-03)
+## State (2026-10-05)
 
 - **Live bank.** 32 round-2 questions, all unreviewed: Basic properties of
   circles, More about trigonometry and Measures of dispersion (10 each), and
@@ -14,8 +14,13 @@ work is in [openwiki/question-bank.md](openwiki/question-bank.md) and
   other 15 HKDSE units and 5 IELTS subject areas are empty. Topics use the EDB
   unit names and the seven IELTS subject areas; IELTS task types are stored per
   question in `questions.question_types` (bank migration 0002).
-- **Code.** On `main`; UAT runs it. Production is not promoted and must not be
+- **Code.** On `main`. UAT runs 2400641b, which has the bank page but not
+  the chat's bank tools (c8315c43). Production is not promoted and must not be
   until Epo says UAT is ready.
+- **Chat.** The agent walks the bank by listing (`list_question_bank`,
+  `read_question`) and copies with `copy_questions`, all through Go's
+  `/api/internal/bank/{list,read,copy}`; each copied question carries its
+  credits. Details in `todo-learning.md` 1.7 and 2.5.
 - **Before round 2.** The 1,098 pilot questions are gone from the bank. Their
   dump is `data/question-bank/backups/bank-2026-10-03-before-round2.dump`; the
   pilot run evidence is archived in the private bank bucket.
@@ -90,14 +95,19 @@ one topic.
 - [ ] **Bank page UI** (handed to a separate session, 2026-10-03): the
       question-type filter and fixes to the editing screens.
 - [ ] **Learners answering on `/bank`** (today its runner is read-only) and
-      reviewing their mistakes. Waits for the learning-plan refactor; progress
-      storage and the retraction flag are "Question-bank progress" in
+      reviewing their mistakes. Unblocked: part 1's FSRS package
+      (`server/internal/review`) exists. Needs the bank review screen mock
+      first; storage and the retraction flag are "Question-bank progress" in
       `todo-learning.md`.
-- [ ] **Copy to quiz** from the bank page. The validator now accepts a quiz
-      figure that links under `BANK_ASSETS_URL`, and the chat's
-      `copy_questions` copies with per-question credits
-      (`/api/internal/bank/copy`); the page's own button is still to build.
-- [ ] **Agent search** over the bank, filterable by question type.
+- [ ] **Copy to quiz** from the bank page. The chat copies already
+      (`copy_questions`, `/api/internal/bank/copy`), and the validator accepts
+      quiz figures under `BANK_ASSETS_URL`; the page's own button reuses that
+      route.
+- [ ] **Agent filter by question type.** `list_question_bank` lists by exam,
+      subject and topic; IELTS task types (`questions.question_types`) show on
+      each question card but are not a filter. Search was tried and dropped
+      (`bench/rag/reports/2026-10-04-bank-search.md`); revisit when topics
+      outgrow a few pages.
 - [ ] **Jev grading for bank open parts.** Round 2 writes closed parts only,
       so this waits until a subject needs open answers.
 - [ ] **Answer options** stay plain strings; graph or image options are out of
