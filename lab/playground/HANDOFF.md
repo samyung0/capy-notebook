@@ -32,6 +32,10 @@ config field are in `README.md`; the scenarios to run are its Acceptance table.
   read. The playground shows it per call ("turn context").
 - Without the library, the write tools offer no `excerpt_ids` (the model used
   to fill them with workspace passage ids).
+- The bank tools are production now (2.5, 2026-10-05): the pipeline lists,
+  reads and copies through Go's internal bank routes, and `copy_questions`
+  credits each copied question under it. The playground answers those routes
+  from the local restore (`scripts/bank_local.py`).
 
 ## Caching findings
 
