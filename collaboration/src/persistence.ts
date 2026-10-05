@@ -31,7 +31,7 @@ import {
   recoversMaterialLimits,
 } from './limits.js';
 import { assertCanonicalMaterialValue } from './materialDocument.js';
-import { inspectUpdate } from './officeRoots.js';
+import { type Container, inspectUpdate, UPDATE_UNHELD } from './officeRoots.js';
 import { scratchDoc } from './scratchDoc.js';
 
 const CONTENT_ROOT = 'content';
@@ -516,15 +516,11 @@ export function assertMaterialDocumentRoots(document: Y.Doc) {
 }
 
 /**
- * Whether `update` keeps `current`'s roots as assertMaterialDocumentRoots
- * requires, read from the update's own structs instead of a merged copy of
- * the room: true or false, or null when it cannot tell (either side refers to
- * content not held yet), which leaves the answer to the merged copy.
+ * Whether a placeable update keeps the room's roots as
+ * assertMaterialDocumentRoots requires, read from the containers of the
+ * update's own structs (inspectUpdate) instead of a merged copy of the room.
  */
-function updateKeepsMaterialRoots(current: Y.Doc, update: Uint8Array) {
-  if (current.store.pendingStructs || current.store.pendingDs) return null;
-  const { containers, unheld } = inspectUpdate(current, update);
-  if (unheld) return null;
+function keepsMaterialRoots(containers: Container[]) {
   // Content takes children only; contributors take map entries only.
   return containers.every(({ key, root }) =>
     root === CONTENT_ROOT
@@ -563,19 +559,38 @@ export class YjsDocumentStore {
    * Rejects an inbound update before it reaches the authoritative document.
    * Rejecting after the fact is not an option: Yjs has no notion of undoing a
    * peer's update, so the only remedy left would be discarding the whole room.
+   * An update the room cannot place yet answers UPDATE_UNHELD: the caller
+   * drops it and resyncs the connection (resyncUnheld), as source rooms do,
+   * instead of copying the room to check it and leaving it pending there.
    */
-  validateUpdate(room: string, current: Y.Doc, update: Uint8Array) {
+  validateUpdate(
+    room: string,
+    current: Y.Doc,
+    update: Uint8Array
+  ): typeof UPDATE_UNHELD | undefined {
+    assertMaterialDocumentRoots(current);
+    // A room still holding pending structs (stored before such updates were
+    // refused) takes every update through the copy below, as it did then:
+    // its clients' sync step 2 replies carry those same pending structs, so
+    // refusing them would close every connection. Its next update to place
+    // them leaves it like any other room.
+    const inspected =
+      current.store.pendingStructs || current.store.pendingDs
+        ? null
+        : inspectUpdate(current, update);
+    if (inspected?.unheld) return UPDATE_UNHELD;
     let validator = this.validators.get(room);
     if (!validator) {
       validator = new RoomValidator();
       this.validators.set(room, validator);
     }
     validator.pendingBytes += update.byteLength;
-    assertMaterialDocumentRoots(current);
     const measure = validator.shouldMeasure();
     // The common case: no measurement due and the roots provably kept, so
-    // the room is not copied for every keystroke.
-    if (!measure && updateKeepsMaterialRoots(current, update)) return;
+    // the room is not copied for every keystroke. A violation takes the copy
+    // for its exact refusal.
+    if (!measure && inspected && keepsMaterialRoots(inspected.containers))
+      return;
     const candidate = scratchDoc();
     try {
       Y.applyUpdate(candidate, Y.encodeStateAsUpdate(current));

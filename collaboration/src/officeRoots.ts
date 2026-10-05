@@ -7,10 +7,10 @@ import type { OfficeFormat } from './officeRuntime.js';
  * The answer for an update that refers to content the room does not hold,
  * which an honest client sends when the room reloaded without its latest
  * items (an instance died before persisting them) and it types before its
- * sync step 2 arrives: resync the connection (resyncOfficeConnection), never
- * refuse it.
+ * sync step 2 arrives: resync the connection (resyncUnheld), never refuse it.
+ * Source and note rooms alike.
  */
-export const OFFICE_UPDATE_UNHELD = 'unheld';
+export const UPDATE_UNHELD = 'unheld';
 
 const PPTX_META = 'pptx:meta';
 // The one pptx:meta key a remote update may write (comment flavour).
@@ -145,8 +145,8 @@ export function inspectUpdate(
   return { containers, ds, unheld };
 }
 
-/** Whether a source room cannot integrate `update` yet (see
- * officeUpdateViolation); text rooms resync such updates too. */
+/** Whether a room cannot integrate `update` yet (see officeUpdateViolation);
+ * text rooms resync such updates too (notes read inspectUpdate directly). */
 export function sourceUpdateUnheld(document: Y.Doc, update: Uint8Array) {
   return inspectUpdate(document, update).unheld;
 }
@@ -159,7 +159,7 @@ export function sourceUpdateUnheld(document: Y.Doc, update: Uint8Array) {
  * engines require of remote updates. A decoded struct names its root, else
  * its parent item, else a sibling (origin) whose container it shares. An
  * update with no such write that refers to content the room does not hold
- * answers OFFICE_UPDATE_UNHELD.
+ * answers UPDATE_UNHELD.
  */
 export function officeUpdateViolation(
   document: Y.Doc,
@@ -179,7 +179,7 @@ export function officeUpdateViolation(
       return 'Office update writes pptx:meta beyond commentFlavor';
   }
   const meta = format === 'pptx' ? document.share.get(PPTX_META) : undefined;
-  const settled = unheld ? OFFICE_UPDATE_UNHELD : null;
+  const settled = unheld ? UPDATE_UNHELD : null;
   if (!meta || ds.clients.size === 0) return settled;
   const deletes = (item: Y.Item) =>
     (ds.clients.get(item.id.client) ?? []).some(
@@ -209,23 +209,28 @@ const unplacedSteps = new WeakMap<Connection, number>();
 export const MAX_UNPLACED_STEPS = 2;
 
 /**
- * Resyncs the connection of an unheld update (resyncOfficeConnection). A sync
- * step 2 answers the room's step 1 with everything the client holds beyond
- * it, so one that cannot be placed means the client itself holds content out
- * of order and another resync would loop: after MAX_UNPLACED_STEPS in a row
- * this throws, which closes the connection (it reconnects with backoff, its
- * edits unsent and kept).
+ * Resyncs the connection of an unheld update (resyncOfficeConnection) in a
+ * source or note room. A sync step 2 answers the room's step 1 with
+ * everything the client holds beyond it, so one that cannot be placed means
+ * the client itself holds content out of order and another resync would
+ * loop: after MAX_UNPLACED_STEPS in a row this throws, which closes the
+ * connection (it reconnects with backoff, its edits unsent and kept), logged
+ * as `source_step2_unplaced` or `note_step2_unplaced`.
  */
-export function resyncUnheld(connection: Connection, step2: boolean) {
+export function resyncUnheld(
+  connection: Connection,
+  step2: boolean,
+  kind: 'note' | 'source'
+) {
   const unplaced = step2 ? (unplacedSteps.get(connection) ?? 0) + 1 : 0;
   unplacedSteps.set(connection, unplaced);
   if (unplaced >= MAX_UNPLACED_STEPS) {
-    const error = new Error('source sync step 2 cannot be placed in the room');
+    const error = new Error(`${kind} sync step 2 cannot be placed in the room`);
     // The gateway's field names, so a user_id grep spans both services.
     captureError(error, {
       room: connection.document.name,
       socket_id: connection.socketId,
-      stage: 'source_step2_unplaced',
+      stage: `${kind}_step2_unplaced`,
       user_id:
         (connection.context as { userId?: string } | undefined)?.userId ?? '',
     });

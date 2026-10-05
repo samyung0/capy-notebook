@@ -796,11 +796,12 @@ its sync step 2), and one that starts past the clocks the room holds of its
 client, skips a range, or deletes a range neither side holds (a reconnecting
 client typing anywhere before its sync step 2). Yjs would keep such an update
 pending, and a pending Office room cannot be saved. Text rooms resync such
-updates the same way (they have no root rule). A sync step 2 the room cannot
+updates the same way (they have no root rule), and so do note rooms
+(see [Plate editor](plate-editor.md#document-limits-and-rejection)). A sync step 2 the room cannot
 place means the client itself holds content out of order; after two in a row
 the connection closes (it reconnects with backoff, its edits unsent; logged
-once as `source_step2_unplaced` with room, user_id and socket_id) instead of
-resyncing forever. A save that still finds pending content is reported once
+once as `source_step2_unplaced`, `note_step2_unplaced` in a note room, with
+room, user_id and socket_id) instead of resyncing forever. A save that still finds pending content is reported once
 per room load: an Office room fails it as transient (the clients hear a
 recoverable `source-checkpoint-failed` for its ids, the room counts as unsaved
 for handoff, pause and eviction, and the next change saves it), and a text

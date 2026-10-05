@@ -527,6 +527,22 @@ every update near a limit. An over-limit document still accepts edits that do
 not worsen any dimension, otherwise the deletions needed to recover would be
 rejected too and the material would be permanently unsavable.
 
+Between measurements an update is checked from its own decoded structs, never
+a copy of the room. An update the room cannot place yet (it refers to content
+the room does not hold, skips its client's clocks, or deletes a range neither
+side holds, as when a reconnecting writer types before its sync step 2) is
+dropped and that connection gets the room's sync step 1, as in source rooms
+(`collaboration/src/officeRoots.ts`, see
+[Office files](office-files.md)): its step 2 reply carries everything the room
+lacks, the dropped update included, with no disconnect, and the room never
+holds pending content. Copying the room to check such updates was the cliff of
+the 2026-10-05 capacity run (`bench/collaboration/reports/`). Two unplaceable
+step 2 replies in a row close the connection (logged as `note_step2_unplaced`).
+A room loaded with pending structs, stored before this rule, takes updates as
+it did then, through the copy, until they integrate: its clients' step 2
+replies carry those same structs, so refusing them would close every
+connection.
+
 The writable Y.Doc contract permits only the Plate `content` root and the
 server-owned `__capy_pending_contributors` map. Every client update checks this
 allowlist before application, and load/store paths check it again. Unknown or

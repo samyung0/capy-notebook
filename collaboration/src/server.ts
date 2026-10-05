@@ -59,11 +59,11 @@ import {
 } from './observability.js';
 import {
   endOfficeResync,
-  OFFICE_UPDATE_UNHELD,
   officeUpdateViolation,
   placedUpdate,
   resyncUnheld,
   sourceUpdateUnheld,
+  UPDATE_UNHELD,
 } from './officeRoots.js';
 import {
   closeOfficeRuntime,
@@ -759,9 +759,9 @@ const server = new Server<CollaborationContext>({
             officeRoots[format]
           );
         else if (sourceUpdateUnheld(document, yjsUpdate))
-          refusal = OFFICE_UPDATE_UNHELD;
-        if (refusal === OFFICE_UPDATE_UNHELD) {
-          resyncUnheld(connection, sync.step2);
+          refusal = UPDATE_UNHELD;
+        if (refusal === UPDATE_UNHELD) {
+          resyncUnheld(connection, sync.step2, 'source');
           return;
         }
         placedUpdate(connection);
@@ -783,7 +783,14 @@ const server = new Server<CollaborationContext>({
         store.assertConnectionAccess(document.name, context.userId, 'write')
       );
       assertRoomAvailable(document.name);
-      store.validateUpdate(document.name, document, yjsUpdate);
+      if (
+        store.validateUpdate(document.name, document, yjsUpdate) ===
+        UPDATE_UNHELD
+      ) {
+        resyncUnheld(connection, sync.step2, 'note');
+        return;
+      }
+      placedUpdate(connection);
     } catch (error) {
       // Throwing closes only this connection. Tell it why first so it can drop
       // its diverged Y.Doc instead of reconnecting and resending forever.
