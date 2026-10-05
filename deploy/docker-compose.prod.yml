@@ -182,6 +182,10 @@ services:
         condition: service_healthy
       server:
         condition: service_healthy
+    # Production pins the service to cores 2-3 (COLLABORATION_CPUSET, set by
+    # scripts/env/config.py render); UAT leaves it empty, which is unpinned.
+    # The other services stay unpinned and may use all cores.
+    cpuset: ${COLLABORATION_CPUSET:-}
     # Shutdown flushes every room's debounced save (up to 30 s behind for a
     # source room) before exiting.
     stop_grace_period: 60s

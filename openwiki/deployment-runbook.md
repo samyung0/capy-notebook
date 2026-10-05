@@ -379,6 +379,27 @@ The prod file runs `/migrate` once per deploy, starts the API with
    retry). Scaling out later means document-sticky routing, every connection
    to a room reaching the instance that holds it, not Redis fan-out.
 
+   Production pins `collaboration` to cores 2-3 of its 4 vCPU with `cpuset`.
+   `scripts/env/config.py render` sets `COLLABORATION_CPUSET=2,3` for
+   production and leaves it blank for UAT, and the compose file passes it as
+   `cpuset: ${COLLABORATION_CPUSET:-}`. Blank means no `cpuset`, so UAT's 2
+   vCPU stay unpinned. Every other service stays unpinned and can use all four
+   cores, so a busy collaboration service never takes the gateway, Postgres or
+   retrieval off a core. Coolify's own resource-limit fields do not apply to a
+   Docker Compose resource; the limit has to be in the compose file. The
+   second core gives the Office engine worker and GC their own core: in the
+   2026-10-05 capacity run (`bench/collaboration/reports/2026-10-05-prod-capacity.md`)
+   it roughly halved small-room p95 and moved the small-room limit from about
+   80 to 160 rooms of 5. Docker refuses to start a container whose `cpuset`
+   names a core the host does not have, so change the value with the host
+   size. Check after a promotion:
+
+   ```bash
+   docker inspect -f '{{.HostConfig.CpusetCpus}}' $(docker ps -qf name=collaboration)
+   ```
+
+   It prints `2,3` in production and nothing on UAT.
+
    A warm deploy rebuilds only what changed: `go build`, the Vite/collab
    bundles and the pipeline source copy. Dependency installs, the BetterOffice
    WASM toolchain and `uv sync` come from the layer cache until their lockfile

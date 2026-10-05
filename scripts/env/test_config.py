@@ -143,6 +143,25 @@ class ConfigTest(unittest.TestCase):
             ):
                 config.render(values, "production", temp, "a" * 40)
 
+    def test_render_pins_collaboration_cores_only_in_production(self):
+        values = {
+            key: "explicit"
+            for key, rule in config.MANIFEST.items()
+            if rule.get("required_for")
+        }
+        values.update(
+            POSTGRES_PASSWORD="secret",
+            CAPY_PRIVATE_BIND_ADDRESS="10.77.0.3",
+            CLERK_PUBLISHABLE_KEY="pk_public",
+            DEPLOYMENT_APP_URL="https://app.example.com",
+        )
+        for environment, cpuset in (("production", "2,3"), ("uat", "")):
+            with tempfile.TemporaryDirectory() as temp:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    config.render(values, environment, temp, "a" * 40)
+                coolify = json.loads(Path(temp, "coolify.json").read_text())
+                self.assertEqual(coolify["COLLABORATION_CPUSET"], cpuset)
+
     def test_coolify_payload_and_redacted_readback(self):
         secret = "never-disclose-this-value"
         values = {"POSTGRES_PASSWORD": secret, "OPENAI_API_KEY": ""}

@@ -156,6 +156,10 @@ def render(values, environment, output, revision):
         f"postgres://capy:{quote(password, safe='')}@db:5432/capy?sslmode=disable"
     )
     coolify["RELEASE_SHA"] = revision
+    # Production pins the collaboration service to cores 2-3 of its 4 vCPU
+    # (cpuset in docker-compose.prod.yml), mainly so the Office engine worker
+    # has its own core; UAT's 2 vCPU stay unpinned. Runbook §1.1.
+    coolify["COLLABORATION_CPUSET"] = "2,3" if environment == "production" else ""
     private_write(output / "coolify.json", json.dumps(coolify))
     build = target_values(values, "build")
     build.update(
