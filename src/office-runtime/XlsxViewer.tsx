@@ -94,6 +94,10 @@ export function XlsxViewer({
   // The sheet point at the grid's top-left when the zoom changed: it stays
   // there, as in Google Sheets.
   const zoomAnchorRef = useRef<{ x: number; y: number } | null>(null);
+  // The opened sheet's saved scroll (its frozen pane's top-left cell), in
+  // sheet pixels: applied once the scroll area has that sheet's size, as the
+  // editor does, or the old sheet's size would cut it short.
+  const sheetScrollRef = useRef<{ x: number; y: number } | null>(null);
 
   const select = useCallback((handle: WorkbookViewerHandle, cell: Cell) => {
     const sheet = activeSheetRef.current;
@@ -217,6 +221,10 @@ export function XlsxViewer({
           setSheetNames(info.sheetNames);
           setActiveSheet(info.activeSheet);
           setExtent({ height: info.contentHeight, width: info.contentWidth });
+          sheetScrollRef.current = {
+            x: info.initialScrollX,
+            y: info.initialScrollY,
+          };
           select(handle, ORIGIN.cell);
           pendingAnalysisRef.current = analysis;
           requestAnimationFrame(paint);
@@ -292,13 +300,11 @@ export function XlsxViewer({
       activeSheetRef.current = index;
       setActiveSheet(index);
       setExtent({ height: info.contentHeight, width: info.contentWidth });
+      sheetScrollRef.current = {
+        x: info.initialScrollX,
+        y: info.initialScrollY,
+      };
       select(handle, ORIGIN.cell);
-      const scroll = scrollRef.current;
-      if (scroll) {
-        scroll.scrollLeft = info.initialScrollX * zoomRef.current;
-        scroll.scrollTop = info.initialScrollY * zoomRef.current;
-      }
-      paint();
     } catch (value) {
       onError(toError(value));
     }
@@ -317,6 +323,16 @@ export function XlsxViewer({
     }
     paint();
   }, [paint, zoom]);
+
+  useLayoutEffect(() => {
+    const scroll = scrollRef.current;
+    const saved = sheetScrollRef.current;
+    if (!(scroll && saved && extent.height)) return;
+    sheetScrollRef.current = null;
+    scroll.scrollLeft = saved.x * zoomRef.current;
+    scroll.scrollTop = saved.y * zoomRef.current;
+    paint();
+  }, [activeSheet, extent, paint]);
 
   // View mode offers what works here: Download, PNG and Print, which Capy
   // performs from the images drawn below, and View › Zoom.

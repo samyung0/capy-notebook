@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { officeEditMenu, officeMenu, saveOffice } from '../helpers/office';
 
 declare global {
@@ -463,7 +465,7 @@ test('XLSX keyboard selection scrolls into view and takes typing', async ({
   await expect(nameBox).toHaveValue('B1');
 });
 
-test('XLSX view mode zooms from View › Zoom, hit-testing at the zoom and still copying', async ({
+test('XLSX zooms from View › Zoom in both modes, keeping the top-left cell, hit-testing at the zoom and still copying', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -485,7 +487,9 @@ test('XLSX view mode zooms from View › Zoom, hit-testing at the zoom and still
   const zoomTo = async (percent: string) => {
     await officeMenu(page, 'View').click();
     await page.getByRole('menuitem', { name: 'Zoom' }).click();
-    await page.getByRole('menuitemcheckbox', { name: percent }).click();
+    await page
+      .getByRole('menuitemcheckbox', { exact: true, name: percent })
+      .click();
   };
 
   // CC info at 100%: B2 is the header "Course Name" under (150, 75), and the
@@ -519,6 +523,81 @@ test('XLSX view mode zooms from View › Zoom, hit-testing at the zoom and still
   await expect
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
     .toBe('Course Name');
+
+  // Edit mode keeps the top-left cell too, in a real browser's layout.
+  await page.getByRole('button', { name: 'Material mode' }).click();
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+  const editGrid = frame.getByTestId('xlsx-scroll');
+  const editBox = await editGrid.boundingBox();
+  if (!editBox) throw new Error('Grid is not laid out');
+  await zoomTo('200%');
+  await page.mouse.move(
+    editBox.x + editBox.width / 2,
+    editBox.y + editBox.height / 2
+  );
+  await page.mouse.wheel(0, 600);
+  await expect
+    .poll(() => editGrid.evaluate((node) => node.scrollTop))
+    .toBeGreaterThan(0);
+  const editScrolled = await editGrid.evaluate((node) => node.scrollTop);
+  await zoomTo('100%');
+  await expect
+    .poll(async () =>
+      Math.abs(
+        (await editGrid.evaluate((node) => node.scrollTop)) - editScrolled / 2
+      )
+    )
+    .toBeLessThanOrEqual(1);
+});
+
+test('XLSX view mode opens a sheet at its saved scroll after a short sheet, zoomed out', async ({
+  context,
+  page,
+}) => {
+  test.setTimeout(120_000);
+  // Faculty Database saved with row 1 frozen and row 400 at the pane's top.
+  const files = unzipSync(
+    readFileSync('e2e/fixtures/files/rich-content/course-guide.xlsx')
+  );
+  const sheet = 'xl/worksheets/sheet2.xml';
+  files[sheet] = strToU8(
+    strFromU8(files[sheet]).replace(
+      '<sheetView workbookViewId="0"/>',
+      '<sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A400" activePane="bottomLeft" state="frozen"/></sheetView>'
+    )
+  );
+  const body = Buffer.from(zipSync(files));
+  // The workbook's bytes, not the `?url` module that names them.
+  const workbook = (url: URL) =>
+    url.pathname.endsWith('/rich-content/course-guide.xlsx') && !url.search;
+  await context.route(workbook, (route) =>
+    route.fulfill({
+      body,
+      contentType:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+  );
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await page.goto('/workspaces/ws_bio?file=bio-office-xlsx');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  const grid = frame.getByRole('tabpanel');
+  await officeMenu(page, 'View').click();
+  await page.getByRole('menuitem', { name: 'Zoom' }).click();
+  await page
+    .getByRole('menuitemcheckbox', { exact: true, name: '50%' })
+    .click();
+
+  // Summary's few rows make a scroll area shorter than the window; the next
+  // sheet's saved scroll must wait for that sheet's size.
+  await frame.getByRole('tab', { name: 'Summary' }).click();
+  await expect.poll(() => grid.evaluate((node) => node.scrollTop)).toBe(0);
+  await frame.getByRole('tab', { name: 'Faculty Database' }).click();
+  await expect
+    .poll(() => grid.evaluate((node) => node.scrollTop))
+    .toBeGreaterThan(2000);
 });
 
 test('XLSX cell edit ends when focus moves into Capy, not on a window switch', async ({
