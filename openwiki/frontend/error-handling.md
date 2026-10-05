@@ -236,7 +236,11 @@ new line, aligned right. The save banner uses its one-row form (`inline`): the
 message scrolls sideways without a visible scrollbar (`scroll-fade-x`, the
 note toolbar's scroller and `useHorizontalWheelScroll`), and its action takes
 the close button's place, so every save banner state has the same 40px
-height. An Office or text source opened in edit mode while the
+height. The newer-version (and maintenance pause) strip uses the same one-row
+form, with Reload in the close button's place. The center pane shows one strip
+at a time: `CenterContent` wraps each open item in a `BannerStack`, and only
+the newest strip mounted inside it shows (a strip whose message changes counts
+as new); closing or unmounting it reveals the one before. An Office or text source opened in edit mode while the
 maintenance pause refuses the session falls back to view mode in the same frame
 and shows the pause as a grey strip. Office recovery and pause strips render
 directly under the file header, above the page-count row. The PDF annotation

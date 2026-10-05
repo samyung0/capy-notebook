@@ -200,6 +200,10 @@ check); it applies at the first promotion.
   `after`, so a small CJK edit counts ~160 tokens against ~41 in English (the
   3,000 trigger after ~19 edited paragraphs instead of ~73). Decided
   2026-10-05: context counts at the Latin rate in every script (TS and Go).
+- **Chat slot requires vision** (decided 2026-10-05): add `vision` to the chat
+  slot's required capabilities in `server/internal/models/slot.go` so the ops
+  dashboard refuses a text-only chat model; check every assigned chat row
+  carries `vision` first (migration if not).
 - **Recovery logging** (decided 2026-10-05): log each draft from another epoch
   entering copy-only recovery (no late merge), in the `edit_incidents` table.
 - **Editing incident log** (decided 2026-10-05, with the optimization round):

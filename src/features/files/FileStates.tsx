@@ -113,7 +113,8 @@ export function FileEmpty({
 /**
  * A newer version was published while this saved editor stayed open, or the
  * maintenance pause closed it (`paused`). The view stays as it is, read-only;
- * reloading the page opens the new version.
+ * reloading the page opens the new version. One row, with Reload in the close
+ * button's place, as the recovery banner.
  */
 export function SourceReplacedBanner({ paused }: { paused?: boolean }) {
   return (
@@ -124,6 +125,7 @@ export function SourceReplacedBanner({ paused }: { paused?: boolean }) {
           onClick: () => window.location.reload(),
         },
       ]}
+      inline
       message={paused ? m.source_edit_paused() : m.source_edit_replaced()}
     />
   );

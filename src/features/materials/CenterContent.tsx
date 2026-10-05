@@ -5,7 +5,7 @@ import { useFile, useMaterial, useMaterials } from '@/api/hooks';
 import type { Chapter, Region, UserColor } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { TabContent } from '@/components/app/tabPanel';
-import { FileBanner } from '@/components/banners/FileBanner';
+import { BannerStack, FileBanner } from '@/components/banners/FileBanner';
 import { Icon } from '@/components/ui/Icon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import {
@@ -172,40 +172,43 @@ export function CenterContent({
                   standalone={standalone}
                   workspaceId={workspaceId}
                 />
-                <div
-                  className={cn(
-                    'relative min-h-0 flex-1',
-                    item.kind === 'file'
-                      ? 'flex flex-col overflow-hidden'
-                      : 'overflow-auto'
-                  )}
-                >
-                  {item.kind === 'material' && (
-                    <MaterialBody
-                      allowExternalAssets={!readOnly}
-                      centerQuiz={!standalone}
-                      key={item.id}
-                      materialId={item.id}
-                      mode={materialMode}
-                      onEditorStatusChange={setEditorStatus}
-                      readOnly={readOnly}
-                      workspaceId={workspaceId}
-                    />
-                  )}
-                  {item.kind === 'file' && (
-                    <FileBody
-                      citation={item.citation}
-                      color={color}
-                      fileId={item.id}
-                      imageZoom={imageZoom}
-                      key={item.id}
-                      onImageZoomChange={setImageZoom}
-                      onViewerDirtyChange={onFileViewerDirtyChange}
-                      page={item.page}
-                      regions={item.regions}
-                    />
-                  )}
-                </div>
+                {/* One strip at a time under the header: the newest shows. */}
+                <BannerStack key={item.id}>
+                  <div
+                    className={cn(
+                      'relative min-h-0 flex-1',
+                      item.kind === 'file'
+                        ? 'flex flex-col overflow-hidden'
+                        : 'overflow-auto'
+                    )}
+                  >
+                    {item.kind === 'material' && (
+                      <MaterialBody
+                        allowExternalAssets={!readOnly}
+                        centerQuiz={!standalone}
+                        key={item.id}
+                        materialId={item.id}
+                        mode={materialMode}
+                        onEditorStatusChange={setEditorStatus}
+                        readOnly={readOnly}
+                        workspaceId={workspaceId}
+                      />
+                    )}
+                    {item.kind === 'file' && (
+                      <FileBody
+                        citation={item.citation}
+                        color={color}
+                        fileId={item.id}
+                        imageZoom={imageZoom}
+                        key={item.id}
+                        onImageZoomChange={setImageZoom}
+                        onViewerDirtyChange={onFileViewerDirtyChange}
+                        page={item.page}
+                        regions={item.regions}
+                      />
+                    )}
+                  </div>
+                </BannerStack>
               </div>
             </EditorStatusContext.Provider>
           </FileActionsTarget.Provider>
