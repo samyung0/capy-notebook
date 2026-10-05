@@ -152,9 +152,9 @@ check); it applies at the first promotion.
   (Office print shortcut waits for it).
 - **Header:** DOCX ruler as a View toggle (Google Docs); Chinese text mixes
   weights in the header (CJK falls back from Fustat to the system font).
-- **DOCX view-mode copy** (built 2026-10-05 on `capy/docx-view-text`, waiting
-  for its landing and Epo's visual checkpoint): the positioned a11y mirror is
-  the view-mode text layer (`textLayer.ts`). Unchecked: Safari and Firefox
+- **DOCX view-mode copy** (landed 2026-10-06; Epo's visual checkpoint on UAT
+  pending): the positioned a11y mirror is the view-mode text layer
+  (`textLayer.ts`). Unchecked: Safari and Firefox
   (word/paragraph clicks use `caretPositionFromPoint`/`caretRangeFromPoint`,
   Firefox drags links instead of selecting from them).
 - **PPTX presenter view.** Show speaker notes while presenting. Notes are
@@ -240,19 +240,6 @@ check); it applies at the first promotion.
   machine's logs (`human/observability-metering.md`).
 - **Citation after a runtime reload.** `load` carries the citation, but no e2e
   checks the highlight comes back (no mock chat cites an Office file).
-- **XLSX keyboard selection off screen.** Arrow keys to a cell outside the
-  viewport don't scroll the grid there, and typing into that cell is silently
-  dropped (no in-cell editor, no edit). Repro at 1280x800 with the side panel
-  open: open `course-guide.xlsx` in Edit, click B4 on `CC info`, press
-  ArrowRight six times and ArrowDown once; the name box shows H5 but the
-  column is off screen, and typing `7` then Enter leaves H5 at 2.
-  `bench:office` types into F5 for this reason.
-- **XLSX/PPTX edit-mode first paint.** Their editors send no `ready`, so
-  `bench:office` times View to Edit to `collaboration-ready` from outside.
-  Timing the first painted frame needs a first-paint callback from
-  BetterOffice's `XlsxEditor` and `PptxEditor` (as the DOCX editor's
-  `docx-pages-presented`), which `XlsxEditorHost`/`PptxEditorHost` would turn
-  into `ready` with timings.
 - **Fork icons left over** in the print preview, find/replace and shortcut
   dialogs, toasts and placeholders.
 - **Chrome/Edge 111–118:** dialog buttons and tooltips have no colour fallback
