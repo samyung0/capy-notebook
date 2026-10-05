@@ -673,12 +673,14 @@ and replace with Find working and Replace and Replace all disabled, offers
 only Copy and Select all on right-click, ignores Ctrl/Cmd+K, Delete on a
 selected table, a header or footer double-click, Tab out of a table's last
 cell and every structural command, and its comment and tracked-change cards
-show the thread without reply, resolve, accept or reject (an add-comment card
-left open can still be cancelled); XLSX's `run` refuses editing
+show the thread without reply, resolve, accept or reject (a reply being typed
+is hidden, not dropped, and comes back with its draft when editing resumes; an
+add-comment card left open can still be cancelled); XLSX's `run` refuses editing
 commands and its Select all hands the grid the keys, so Ctrl/Cmd+C copies the
 sheet (in the grid Tab moves between cells, as when editing). All three keep
-their toolbar row, and XLSX its formula bar, visible and disabled, so nothing
-moves when a pause starts or ends. Only an editor pauses: in view mode a
+their toolbar row visible and disabled, and XLSX its formula bar visible and
+read-only (its text still selects and copies), so nothing moves when a pause
+starts or ends. Only an editor pauses: in view mode a
 `canEdit` of false (a view-only user's) changes nothing, and the viewer still
 selects and copies. The DOCX menu model refuses a
 disabled item's id too.

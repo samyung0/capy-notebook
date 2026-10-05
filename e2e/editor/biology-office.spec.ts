@@ -763,6 +763,28 @@ for (const [format, text] of [
     expect(await updates.evaluate((seen) => seen.count)).toBe(0);
     expect(await copySelectAll()).toBe(before);
 
+    if (format === 'xlsx') {
+      // The formula bar stays read-only, not disabled: its text copies, and
+      // typing changes nothing.
+      await frame
+        .getByTestId('xlsx-scroll')
+        .click({ position: { x: 60, y: 95 } });
+      const formula = frame.getByTestId('xlsx-formula-input');
+      await expect(formula).not.toHaveValue('');
+      const value = await formula.inputValue();
+      await formula.click();
+      await page.keyboard.press('ControlOrMeta+A');
+      await page.keyboard.press('ControlOrMeta+C');
+      await expect
+        .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+        .toBe(value);
+      await page.keyboard.type('Z');
+      await page.keyboard.press('Enter');
+      await expect(formula).toHaveValue(value);
+      await page.waitForTimeout(1500);
+      expect(await updates.evaluate((seen) => seen.count)).toBe(0);
+    }
+
     // The runtime document reloads by itself; its new load is paused too.
     const runtime = page
       .frames()
