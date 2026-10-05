@@ -18,10 +18,10 @@ import { cdpSession, percentile, reportMetrics } from './metrics';
  * - open, every format: `ready`, sent once the first pages, grid or slide are
  *   painted, carrying the runtime's own `timings` (officeProtocol.ts,
  *   OfficeReadyTimings);
- * - DOCX edit: the edit frame's `ready`, with timings too;
- * - XLSX/PPTX edit: `collaboration-ready`, the editor's replica, reported in
- *   the same React commit as the editor's first real paint. Their editors
- *   send no `ready`: that needs a first-paint callback from BetterOffice.
+ * - edit, every format: the edit frame's `ready`, sent once the editor's first
+ *   pages, grid or slide are painted, with timings too. XLSX/PPTX budgets are
+ *   still on `collaboration-ready`, the editor's replica, which they were
+ *   calibrated against; their first paint is report-only until recalibrated.
  * Typing reads the frame directly, since Playwright can evaluate inside the
  * cross-origin runtime: DOCX to the next `docx-pages-presented`; XLSX/PPTX,
  * which apply input on the frame's main thread, to the first task after the
@@ -124,9 +124,8 @@ function budgetOf(median: Timings): Timings {
 type Fixture = (typeof FIXTURES)[number];
 
 /**
- * `cell`: the XLSX cell typing starts in. It must be on screen at 1280x800:
- * the editor neither scrolls a cell selected by keyboard into view nor takes
- * typing in one that is off screen. The large file's E3 feeds its formulas.
+ * `cell`: the XLSX cell typing starts in, reached with the arrow keys. The
+ * large file's E3 feeds its formulas.
  * `text`: a point in a text box on the first PPTX slide, as fractions of the
  * slide (the small deck's title, the large deck's body text).
  */
@@ -260,38 +259,52 @@ const countMessages = (page: Page, type: string) =>
     type
   );
 
-/** Click, then wait for the next runtime message of `type`: ms on the host clock. */
+type RuntimeSignal = 'collaboration-ready' | 'ready';
+
+/**
+ * Click, then wait for the next runtime message of each type: ms on the host
+ * clock, one result per type.
+ */
 async function clickUntil(
   page: Page,
-  type: 'collaboration-ready' | 'ready',
+  types: readonly RuntimeSignal[],
   click: () => Promise<void>
 ) {
-  const before = await countMessages(page, type);
+  const before = await Promise.all(
+    types.map((type) => countMessages(page, type))
+  );
   await click();
   await page.waitForFunction(
-    ({ count, kind }) =>
-      window.__officeBench.messages.filter((m) => m.type === kind).length >
-      count,
-    { count: before, kind: type },
+    ({ counts, kinds }) =>
+      kinds.every(
+        (kind, index) =>
+          window.__officeBench.messages.filter((m) => m.type === kind)
+            .length > counts[index]
+      ),
+    { counts: before, kinds: types },
     { polling: 50, timeout: 240_000 }
   );
-  return page.evaluate((kind) => {
-    const { clicks, messages } = window.__officeBench;
-    const last = messages.filter((m) => m.type === kind).at(-1)!;
-    const analysis = last.analysis;
-    return {
-      ms: Math.round(last.at - clicks.at(-1)!),
-      runtime: last.timings ?? null,
-      // Pages, sheets or slides.
-      units: analysis
-        ? analysis.format === 'docx'
-          ? analysis.pageCount
-          : analysis.format === 'xlsx'
-            ? analysis.sheetCount
-            : analysis.slideCount
-        : null,
-    };
-  }, type);
+  return page.evaluate(
+    (kinds) =>
+      kinds.map((kind) => {
+        const { clicks, messages } = window.__officeBench;
+        const last = messages.filter((m) => m.type === kind).at(-1)!;
+        const analysis = last.analysis;
+        return {
+          ms: Math.round(last.at - clicks.at(-1)!),
+          runtime: last.timings ?? null,
+          // Pages, sheets or slides.
+          units: analysis
+            ? analysis.format === 'docx'
+              ? analysis.pageCount
+              : analysis.format === 'xlsx'
+                ? analysis.sheetCount
+                : analysis.slideCount
+            : null,
+        };
+      }),
+    types
+  );
 }
 
 function runtimeFrame(page: Page): Frame {
@@ -353,7 +366,8 @@ async function openWorkspace(page: Page) {
 async function openFile(page: Page, id: string) {
   const link = page.locator(`[data-workspace-file-tree] a[href$="file=${id}"]`);
   await expect(link).toBeVisible({ timeout: 60_000 });
-  return clickUntil(page, 'ready', () => link.click());
+  const [ready] = await clickUntil(page, ['ready'], () => link.click());
+  return ready;
 }
 
 async function openInView(page: Page, fixture: Fixture) {
@@ -573,11 +587,14 @@ for (const fixture of FIXTURES) {
 
     const mode = page.getByRole('button', { name: 'Material mode' });
     await expect(mode).toBeEnabled({ timeout: 60_000 });
-    const edit = await clickUntil(
+    // `ready` is the edit frame's first paint; XLSX/PPTX budgets stay on
+    // `collaboration-ready` until recalibrated.
+    const [painted, replica = painted] = await clickUntil(
       page,
-      fixture.format === 'docx' ? 'ready' : 'collaboration-ready',
+      fixture.format === 'docx' ? ['ready'] : ['ready', 'collaboration-ready'],
       () => mode.click()
     );
+    const edit = { ...replica, firstPaintMs: painted.ms };
     // Let the edit frame's idle work (mirror, glyph cache) settle first.
     await page.waitForTimeout(5000);
     const editHeap = await heap(page);
@@ -590,8 +607,17 @@ for (const fixture of FIXTURES) {
       testInfo,
       `office-${fixture.format}-${fixture.id}`,
       {
-        budget: { ...budget, heap: 'report-only' },
-        edit: { readyMs: edit.ms, runtime: edit.runtime },
+        budget: {
+          ...budget,
+          editFirstPaintMs:
+            fixture.format === 'docx' ? budget.editReadyMs : 'report-only',
+          heap: 'report-only',
+        },
+        edit: {
+          firstPaintMs: edit.firstPaintMs,
+          readyMs: edit.ms,
+          runtime: painted.runtime,
+        },
         fixture: fixture.name,
         // Report-only: a ceiling still needs defining.
         heap: {
@@ -606,8 +632,9 @@ for (const fixture of FIXTURES) {
       },
       'unthrottled'
     );
-    // Every viewer reports its first paint with the runtime's own timings.
+    // Every viewer and editor reports its first paint with the runtime's own timings.
     expect(open.runtime).not.toBeNull();
+    expect(painted.runtime).not.toBeNull();
     expect(typing.unpaintedKeys).toBe(0);
     expect(typing.edits).toBeGreaterThan(0);
     expect(fallbacks).toEqual([]);

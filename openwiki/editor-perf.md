@@ -58,16 +58,17 @@ only under `VITE_LOAD_TEST_SEED`; their checkpoints come from
   clock. Every viewer sends it once its first pages, grid or slide (pictures
   included) are painted, with the runtime's own `timings` (`loadMs` frame
   start to `load`, `paintMs` `load` to first paint; `OfficeReadyTimings`);
-- View to Edit ready: the mode toggle click to the edit frame's `ready`
-  (DOCX, with timings), or to its `collaboration-ready` (XLSX, PPTX: the
-  editor's replica, reported in the same React commit as the editor's first
-  real paint). Their editors send no `ready`; that needs a first-paint
-  callback from BetterOffice's XLSX and PPTX editors (`todo-office.md`);
+- View to Edit: the mode toggle click to the edit frame's `ready`, its first
+  painted pages, grid or slide, with timings (`edit.firstPaintMs`). DOCX gates
+  that as `editReadyMs`; XLSX and PPTX still gate `editReadyMs` on
+  `collaboration-ready` (the editor's replica, reported in the same React
+  commit as the editor's first real paint), which their budgets were
+  calibrated against, and report their first paint only until recalibrated;
 - keystroke to frame: 40 keys at 120 ms (p50, p90, max, unpainted keys).
   DOCX types `a` and a space into body text and waits for the next
   `docx-pages-presented` in the frame. XLSX types `7` with Enter every sixth
-  key from a visible cell (`F5`; `E3` in the large file, which its formulas
-  read), and PPTX double-clicks a text box on the first slide and types at the
+  key from `F5` (`E3` in the large file, which its formulas read), reached
+  with the arrow keys, and PPTX double-clicks a text box on the first slide and types at the
   end of its text; both apply input on the frame's main thread, so a
   key's frame is the first task after the next animation frame following its
   last event (keydown, keypress, input);

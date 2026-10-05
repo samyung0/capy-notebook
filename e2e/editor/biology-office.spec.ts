@@ -341,6 +341,67 @@ test('Office viewer keeps its iframe when the workspace layout changes', async (
   expect(sessions).toBe(opened);
 });
 
+test('XLSX keyboard selection scrolls into view and takes typing', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await page.goto('/workspaces/ws_bio');
+  await page.getByRole('button', { exact: true, name: 'Files' }).click();
+  await page
+    .locator('[data-workspace-file-tree] a[href*="file=bio-office-xlsx"]')
+    .click();
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await page.getByRole('button', { name: 'Material mode' }).click();
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+
+  // CC info freezes columns A:B and rows 1:2; H is past the window's right edge.
+  const grid = frame.getByTestId('xlsx-scroll');
+  const nameBox = frame.getByTestId('xlsx-name-box');
+  const formula = frame.getByTestId('xlsx-formula-input');
+  const box = await grid.boundingBox();
+  if (!box) throw new Error('Grid is not laid out');
+  // Near B4; the arrows correct a click that lands a cell off.
+  await page.mouse.click(box.x + 150, box.y + 75);
+  await expect(nameBox).toHaveValue(/^[A-Z]\d+$/);
+  const clicked = await nameBox.inputValue();
+  const [column, row] = [clicked.slice(0, 1), clicked.slice(1)];
+  const walk = async (from: number, to: number, back: string, on: string) => {
+    for (let at = from; at !== to; at += at < to ? 1 : -1)
+      await page.keyboard.press(at < to ? on : back);
+  };
+  await walk(
+    column.charCodeAt(0),
+    'B'.charCodeAt(0),
+    'ArrowLeft',
+    'ArrowRight'
+  );
+  await walk(Number(row), 4, 'ArrowUp', 'ArrowDown');
+  await expect(nameBox).toHaveValue('B4');
+
+  for (let step = 0; step < 6; step += 1)
+    await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowDown');
+  await expect(nameBox).toHaveValue('H5');
+  await expect(formula).toHaveValue('2');
+
+  await page.keyboard.press('7');
+  const editor = frame.getByTestId('xlsx-cell-editor');
+  await expect(editor).toBeFocused();
+  await expect(editor).toHaveValue('7');
+  const cell = await editor.boundingBox();
+  if (!cell) throw new Error('The cell editor is not laid out');
+  expect(cell.x).toBeGreaterThanOrEqual(box.x);
+  expect(cell.x + cell.width).toBeLessThanOrEqual(box.x + box.width);
+  await page.keyboard.press('Enter');
+  await expect(nameBox).toHaveValue('H6');
+  await page.keyboard.press('ArrowUp');
+  await expect(formula).toHaveValue('7');
+});
+
 test("Office runtime keeps Capy's theme after reloading and asks for a page reload on a protocol mismatch", async ({
   page,
 }) => {

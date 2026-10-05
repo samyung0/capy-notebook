@@ -171,8 +171,8 @@ export type OfficeRuntimeMessage =
       analysis: OfficeAnalysis;
       revision: number;
       /**
-       * Sent once the first pages, grid or slide are painted: by every viewer
-       * and by the DOCX editor (the XLSX and PPTX editors send no `ready`).
+       * Sent once the first pages, grid or slide are painted, by every viewer
+       * and editor.
        */
       timings?: OfficeReadyTimings;
     }

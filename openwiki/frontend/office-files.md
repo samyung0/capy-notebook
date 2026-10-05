@@ -102,12 +102,13 @@ the user presses Edit. DOCX lowering runs in a disposable worker that terminates
 as soon as it transfers the immutable display list, so its parser, transient
 Yrs projection, and viewer linear memory are absent during ordinary reading.
 Viewer analysis reuses the already-open handle, so sheet/slide metadata does not
-trigger a second parse. Every viewer sends `ready` once its first pages, grid
-or slide (pictures included) are painted, and so does the DOCX editor, with the
-runtime's own `timings` (frame start to `load`, `load` to first paint) for
-`pnpm bench:office`; the host's loading skeleton stays until then. The XLSX and
-PPTX editors send no `ready`. An edit frame's `ready` leaves the host's error
-state alone.
+trigger a second parse. Every viewer and editor sends `ready` once its first
+pages, grid or slide (pictures included) are painted, with the runtime's own
+`timings` (frame start to `load`, `load` to first paint) for
+`pnpm bench:office`; the host's loading skeleton stays until then. The DOCX
+editor's signal is `docx-pages-presented`, the XLSX and PPTX editors'
+`onFirstPaint`, once per opened file. An edit frame's `ready` leaves the host's
+error state alone.
 
 The DOCX editor lays pages out in a resident engine worker. A request's timeout
 starts when the worker begins it; a request the worker never starts gives up

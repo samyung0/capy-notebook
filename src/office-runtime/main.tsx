@@ -562,6 +562,7 @@ function OfficeRuntime() {
               fileName={file.fileName}
               locale={locale}
               narrow={narrow}
+              onAnalysis={reportAnalysis}
               onExporter={reportExporter}
               onFlusher={reportFlusher}
               onMenus={reportMenus}
@@ -577,6 +578,7 @@ function OfficeRuntime() {
               fileName={file.fileName}
               locale={locale}
               narrow={narrow}
+              onAnalysis={reportAnalysis}
               onError={reportError}
               onExporter={reportExporter}
               onFlusher={reportFlusher}

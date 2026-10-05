@@ -1,10 +1,14 @@
+import { analyzeOpenWorkbook } from '@betteroffice/xlsx/viewer';
 import {
   type XlsxCommandState,
   XlsxEditor,
   type XlsxEditorApi,
 } from '@betteroffice/xlsx-react';
 import { useEffect, useRef, useState } from 'react';
-import type { OfficeLocale } from '@/features/files/officeProtocol';
+import type {
+  OfficeAnalysis,
+  OfficeLocale,
+} from '@/features/files/officeProtocol';
 import type {
   OfficeCollaboration,
   OfficeExporter,
@@ -20,6 +24,7 @@ export function XlsxEditorHost({
   bytes,
   collaboration,
   locale,
+  onAnalysis,
   onExporter,
   onFlusher,
   onMenus,
@@ -35,6 +40,8 @@ export function XlsxEditorHost({
   locale: OfficeLocale;
   /** Below lg: no zoom (as the PDF toolbar), font picker or size box. */
   narrow: boolean;
+  /** Once the first grid is painted. */
+  onAnalysis: (analysis: OfficeAnalysis) => void;
   onExporter: (exporter: OfficeExporter | null) => void;
   onFlusher: (flusher: OfficeFlusher | null) => void;
   onMenus: OfficeMenuReporter;
@@ -98,6 +105,10 @@ export function XlsxEditorHost({
         i18n={xlsxStrings(locale)}
         icons={xlsxIcons}
         onCommandStateChange={setCommandState}
+        onFirstPaint={() => {
+          if (apiRef.current)
+            onAnalysis(analyzeOpenWorkbook(apiRef.current.handle));
+        }}
         onPendingChange={onPendingChange}
         onReady={(api) => {
           apiRef.current = api;

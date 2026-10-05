@@ -1,10 +1,14 @@
+import { analyzeOpenPresentation } from '@betteroffice/pptx/viewer';
 import {
   type PptxCommandState,
   PptxEditor,
   type PptxEditorApi,
 } from '@betteroffice/pptx-react';
 import { useEffect, useRef, useState } from 'react';
-import type { OfficeLocale } from '@/features/files/officeProtocol';
+import type {
+  OfficeAnalysis,
+  OfficeLocale,
+} from '@/features/files/officeProtocol';
 import { m } from '@/i18n';
 import type {
   OfficeCollaboration,
@@ -28,6 +32,7 @@ export function PptxEditorHost({
   fileName,
   locale,
   narrow,
+  onAnalysis,
   onError,
   onMenus,
   onPendingChange,
@@ -43,6 +48,8 @@ export function PptxEditorHost({
   locale: OfficeLocale;
   /** Below lg: no zoom (as the PDF toolbar), font picker or size box. */
   narrow: boolean;
+  /** Once the first slide is painted, pictures included. */
+  onAnalysis: (analysis: OfficeAnalysis) => void;
   onError: (error: Error) => void;
   onMenus: OfficeMenuReporter;
   onPendingChange: (pending: boolean) => void;
@@ -174,6 +181,10 @@ export function PptxEditorHost({
         icons={pptxIcons}
         onCommandState={setCommandState}
         onError={onError}
+        onFirstPaint={() => {
+          if (apiRef.current)
+            onAnalysis(analyzeOpenPresentation(apiRef.current.handle));
+        }}
         onPendingChange={onPendingChange}
         onReady={(api) => {
           apiRef.current = api;
