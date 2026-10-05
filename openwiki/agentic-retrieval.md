@@ -1059,11 +1059,12 @@ still described once with the pinned vision model so the file is searchable,
 and `capture_page` shows the image itself (decision 2026-09-21): an upload is
 one page, page 1, its bytes normalised with Pillow and attached directly, with
 no PDF conversion. The caption chunk carries no page, so it counts as citing page 1.
-That path keeps `parse/caption_cache.py`: the lookup identity is the exact
-image SHA, the payload lives under `image-captions/<imageSHA>/<payloadSHA>.json`,
-and reuse follows containing-resource privacy (private workspaces reuse within
-that workspace, private standalone materials within their owner, link or public
-resources globally). The provider receives only image bytes and the caption
+That path is the only user of `parse/caption_cache.py`, and every lookup and
+write runs inside the image file's own ingest job (its source and attempt
+fenced): the lookup identity is the exact image SHA, the payload lives under
+`image-captions/<imageSHA>/<payloadSHA>.json`, and reuse follows the donor
+file's workspace privacy (a private workspace reuses within itself, a link or
+public one globally). The provider receives only image bytes and the caption
 prompt, never a source name or nearby text. Those calls bill their tokens only.
 
 Caption calls never inherit a user's chat reasoning level. The pinned catalog

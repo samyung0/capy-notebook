@@ -234,7 +234,6 @@ async def caption_image_source(
         data_url=encode,
         prompt=IMAGE_PROMPT,
         best_effort=False,
-        require_source_job=True,
     )
     if not result[0]:
         raise RetryableError("image captioning produced no searchable text")

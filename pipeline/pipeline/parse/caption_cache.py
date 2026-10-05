@@ -20,34 +20,21 @@ log = logging.getLogger("capy.parse.caption_cache")
 
 _RESOURCES = """
 WITH resources AS (
-    SELECT f.id AS file_id, NULL::text AS asset_id, w.id AS workspace_id,
-           w.user_id AS owner_id, w.privacy
+    SELECT f.id AS file_id, w.id AS workspace_id, w.privacy
     FROM files f JOIN workspaces w ON w.id = f.workspace_id
     JOIN users owner ON owner.id = w.user_id
     WHERE owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
       AND f.trashed_at IS NULL
-    UNION ALL
-    SELECT NULL, a.id, w.id, COALESCE(w.user_id, m.owner_user_id),
-           COALESCE(w.privacy, m.privacy)
-    FROM editor_assets a
-    LEFT JOIN materials m ON m.id = a.material_id AND m.trashed_at IS NULL
-    LEFT JOIN workspaces w ON w.id = COALESCE(a.workspace_id, m.workspace_id)
-    JOIN users owner ON owner.id = COALESCE(w.user_id, m.owner_user_id)
-    WHERE a.status = 'ready'
-      AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
 ), target AS (
-    SELECT * FROM resources WHERE file_id = %s OR asset_id = %s
+    SELECT * FROM resources WHERE file_id = %s
 ), eligible AS (
     SELECT c.caption_blob_path, c.size_bytes
     FROM image_caption_associations c
-    JOIN resources donor ON donor.file_id = c.file_id OR donor.asset_id = c.editor_asset_id
+    JOIN resources donor ON donor.file_id = c.file_id
     CROSS JOIN target t
-    WHERE c.image_sha256 = %s AND (
-        donor.privacy IN ('link','public')
-        OR (t.workspace_id IS NOT NULL AND donor.workspace_id = t.workspace_id)
-        OR (t.workspace_id IS NULL AND donor.workspace_id IS NULL AND donor.owner_id = t.owner_id)
-    )
-    ORDER BY (c.file_id = t.file_id OR c.editor_asset_id = t.asset_id) DESC NULLS LAST, c.id
+    WHERE c.image_sha256 = %s
+      AND (donor.privacy IN ('link','public') OR donor.workspace_id = t.workspace_id)
+    ORDER BY c.file_id = t.file_id DESC, c.id
     LIMIT 1
 )
 """
@@ -56,16 +43,16 @@ _LOOKUP_INSERT = (
     _RESOURCES
     + """
 INSERT INTO image_caption_associations
-    (id,file_id,editor_asset_id,image_sha256,caption_blob_path,size_bytes,published)
-SELECT %s,%s,%s,%s,caption_blob_path,size_bytes,%s FROM eligible
+    (id,file_id,image_sha256,caption_blob_path,size_bytes,published)
+SELECT %s,%s,%s,caption_blob_path,size_bytes,true FROM eligible
 ON CONFLICT DO NOTHING RETURNING caption_blob_path,size_bytes
 """
 )
-_LOOKUP_OWN = "SELECT caption_blob_path,size_bytes FROM image_caption_associations WHERE (file_id=%s OR editor_asset_id=%s) AND image_sha256=%s"
-_PROMOTE = "UPDATE image_caption_associations SET published=true WHERE (file_id=%s OR editor_asset_id=%s) AND image_sha256=%s"
+_LOOKUP_OWN = "SELECT caption_blob_path,size_bytes FROM image_caption_associations WHERE file_id=%s AND image_sha256=%s"
+_PROMOTE = "UPDATE image_caption_associations SET published=true WHERE file_id=%s AND image_sha256=%s"
 _INSERT = """INSERT INTO image_caption_associations
-    (id,file_id,editor_asset_id,image_sha256,caption_blob_path,size_bytes,published)
-VALUES (%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING"""
+    (id,file_id,image_sha256,caption_blob_path,size_bytes,published)
+VALUES (%s,%s,%s,%s,%s,true) ON CONFLICT DO NOTHING"""
 
 
 @contextmanager
@@ -97,73 +84,34 @@ def _ingest_cursor(file_id: str):
 
 def _lookup_ingest(file_id: str, digest: str):
     with _ingest_cursor(file_id) as cur:
+        # Grant a reference only while a readable containing file permits
+        # reuse. A hash or an object-store cache hit alone grants nothing.
         cur.execute(
             _LOOKUP_INSERT,
-            (file_id, None, digest, secrets.token_hex(16), file_id, None, digest, True),
+            (file_id, digest, secrets.token_hex(16), file_id, digest),
         )
         row = cur.fetchone()
         if row is None:
-            cur.execute(_LOOKUP_OWN, (file_id, None, digest))
+            cur.execute(_LOOKUP_OWN, (file_id, digest))
             row = cur.fetchone()
         if row is not None:
-            cur.execute(_PROMOTE, (file_id, None, digest))
+            cur.execute(_PROMOTE, (file_id, digest))
             return {"caption_blob_path": row[0], "size_bytes": row[1]}
         return None
 
 
 def _persist_ingest(file_id: str, digest: str, path: str, raw: bytes):
     with _ingest_cursor(file_id) as cur:
-        cur.execute(
-            _INSERT,
-            (secrets.token_hex(16), file_id, None, digest, path, len(raw), True),
-        )
+        cur.execute(_INSERT, (secrets.token_hex(16), file_id, digest, path, len(raw)))
+        # The association owns the completed caption; this temporary upload
+        # reference is needed only until the file is attached.
         cur.execute("DELETE FROM artifact_cache WHERE object_path=%s", (path,))
-        cur.execute(_PROMOTE, (file_id, None, digest))
+        cur.execute(_PROMOTE, (file_id, digest))
 
 
-async def lookup(
-    file_id: str | None,
-    asset_id: str | None,
-    digest: str,
-    *,
-    require_source_job: bool = False,
-) -> tuple[str, str, int] | None:
-    if require_source_job:
-        if not file_id or asset_id is not None:
-            raise ValueError("An ordinary ingest caption needs a file source.")
-        row = await asyncio.to_thread(_lookup_ingest, file_id, digest)
-        return await _read_caption(row)
-    db = await store.pool()
-    async with db.connection() as conn, conn.transaction():
-        # Grant a reference only while a readable containing resource permits
-        # reuse. A hash or an object-store cache hit alone grants nothing.
-        cur = await conn.execute(
-            _LOOKUP_INSERT,
-            (
-                file_id,
-                asset_id,
-                digest,
-                secrets.token_hex(16),
-                file_id,
-                asset_id,
-                digest,
-                True,
-            ),
-        )
-        row = await cur.fetchone()
-        if row is None:
-            cur = await conn.execute(
-                _LOOKUP_OWN,
-                (file_id, asset_id, digest),
-            )
-            row = await cur.fetchone()
-        if row is None:
-            return None
-        await conn.execute(
-            _PROMOTE,
-            (file_id, asset_id, digest),
-        )
-
+async def lookup(file_id: str, digest: str) -> tuple[str, str, int] | None:
+    """A caption this ingest job's file may reuse, attached to it."""
+    row = await asyncio.to_thread(_lookup_ingest, file_id, digest)
     return await _read_caption(row)
 
 
@@ -180,23 +128,16 @@ async def _read_caption(row):
 
 
 @asynccontextmanager
-async def _lock(file_id: str | None, asset_id: str | None, digest: str):
+async def _lock(file_id: str, digest: str):
     connection = None
-    identity = f"image-caption:{file_id or asset_id}:{digest}"
+    identity = f"image-caption:{file_id}:{digest}"
     try:
         db = await store.pool()
         async with db.connection() as conn:
             row = await (
                 await conn.execute(
-                    """
-                SELECT 'workspace:' || workspace_id AS scope FROM files WHERE id=%s
-                UNION ALL
-                SELECT CASE WHEN COALESCE(a.workspace_id,m.workspace_id) IS NOT NULL
-                    THEN 'workspace:' || COALESCE(a.workspace_id,m.workspace_id)
-                    ELSE 'owner:' || m.owner_user_id END
-                FROM editor_assets a LEFT JOIN materials m ON m.id=a.material_id WHERE a.id=%s
-                """,
-                    (file_id, asset_id),
+                    "SELECT 'workspace:' || workspace_id AS scope FROM files WHERE id=%s",
+                    (file_id,),
                 )
             ).fetchone()
             if row:
@@ -219,15 +160,7 @@ async def _lock(file_id: str | None, asset_id: str | None, digest: str):
                 log.warning("could not release caption cache lock", exc_info=True)
 
 
-async def _persist(
-    file_id: str | None,
-    asset_id: str | None,
-    digest: str,
-    path: str,
-    raw: bytes,
-    *,
-    require_source_job: bool = False,
-):
+async def _persist(file_id: str, digest: str, path: str, raw: bytes):
     db = await store.pool()
     # Record cleanup ownership before upload. A crash after the PUT must still
     # leave a reclaimable object even if its containing source was deleted.
@@ -239,99 +172,49 @@ async def _persist(
             (path, digest, len(raw)),
         )
     await asyncio.to_thread(blobstore.write_bytes, path, raw, "application/json")
-    if require_source_job:
-        await asyncio.to_thread(_persist_ingest, file_id, digest, path, raw)
-        return
-    async with db.connection() as conn, conn.transaction():
-        await conn.execute(
-            _INSERT,
-            (
-                secrets.token_hex(16),
-                file_id,
-                asset_id,
-                digest,
-                path,
-                len(raw),
-                True,
-            ),
-        )
-        # Resource associations own completed captions; this temporary upload
-        # reference is needed only until the containing resource is attached.
-        await conn.execute("DELETE FROM artifact_cache WHERE object_path=%s", (path,))
-        await conn.execute(_PROMOTE, (file_id, asset_id, digest))
+    await asyncio.to_thread(_persist_ingest, file_id, digest, path, raw)
 
 
 async def caption(
     *,
-    file_id: str | None = None,
-    editor_asset_id: str | None = None,
+    file_id: str,
     image_sha256: str,
     data_url: str | Callable[[], Awaitable[str | None]],
     prompt: str,
     best_effort: bool = True,
-    require_source_job: bool = False,
 ) -> tuple[str, str, int, bool]:
-    if bool(file_id) == bool(editor_asset_id):
-        raise ValueError("A caption needs exactly one containing resource.")
-    async with _lock(file_id, editor_asset_id, image_sha256):
-        return await _caption(
-            file_id=file_id,
-            editor_asset_id=editor_asset_id,
-            image_sha256=image_sha256,
-            data_url=data_url,
-            prompt=prompt,
-            best_effort=best_effort,
-            require_source_job=require_source_job,
-        )
-
-
-async def _caption(
-    *,
-    file_id: str | None,
-    editor_asset_id: str | None,
-    image_sha256: str,
-    data_url: str | Callable[[], Awaitable[str | None]],
-    prompt: str,
-    best_effort: bool,
-    require_source_job: bool,
-) -> tuple[str, str, int, bool]:
-    try:
-        cached = await lookup(
-            file_id,
-            editor_asset_id,
-            image_sha256,
-            require_source_job=require_source_job,
-        )
-    except TerminalError:
-        raise
-    except Exception:
-        # Permission lookup failure is a miss, never a global object fallback.
-        log.warning("caption reuse unavailable", exc_info=True)
-        cached = None
-    if cached:
-        return *cached, True
-    url = await data_url() if callable(data_url) else data_url
-    if not url:
-        return "", "", 0, False
-    text = (await models.caption_image(url, prompt, best_effort=best_effort)).strip()
-    if not text:
-        return "", "", 0, False
-    raw = json.dumps({"text": text}, ensure_ascii=False, separators=(",", ":")).encode()
-    # Distinct private generations never overwrite one another. Equal payload
-    # bytes still share physical storage, independently of their access grants.
-    path = f"image-captions/{image_sha256}/{hashlib.sha256(raw).hexdigest()}.json"
-    try:
-        await _persist(
-            file_id,
-            editor_asset_id,
-            image_sha256,
-            path,
-            raw,
-            require_source_job=require_source_job,
-        )
-    except TerminalError:
-        raise
-    except Exception:
-        log.warning("could not retain image caption", exc_info=True)
-        return text, "", 0, False
-    return text, path, len(raw), False
+    """Caption the image a standalone image file's ingest job holds, reusing an
+    eligible caption first. Runs inside that job (``db.bind_source_refresh``)."""
+    async with _lock(file_id, image_sha256):
+        try:
+            cached = await lookup(file_id, image_sha256)
+        except TerminalError:
+            raise
+        except Exception:
+            # Permission lookup failure is a miss, never a global object fallback.
+            log.warning("caption reuse unavailable", exc_info=True)
+            cached = None
+        if cached:
+            return *cached, True
+        url = await data_url() if callable(data_url) else data_url
+        if not url:
+            return "", "", 0, False
+        text = (
+            await models.caption_image(url, prompt, best_effort=best_effort)
+        ).strip()
+        if not text:
+            return "", "", 0, False
+        raw = json.dumps(
+            {"text": text}, ensure_ascii=False, separators=(",", ":")
+        ).encode()
+        # Distinct private generations never overwrite one another. Equal payload
+        # bytes still share physical storage, independently of their access grants.
+        path = f"image-captions/{image_sha256}/{hashlib.sha256(raw).hexdigest()}.json"
+        try:
+            await _persist(file_id, image_sha256, path, raw)
+        except TerminalError:
+            raise
+        except Exception:
+            log.warning("could not retain image caption", exc_info=True)
+            return text, "", 0, False
+        return text, path, len(raw), False

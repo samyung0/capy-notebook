@@ -1518,9 +1518,8 @@ async def test_image_donor_reuses_authorized_caption_without_an_empty_artifact_k
             "embedding_dim": 1024,
         }
 
-    async def caption(file_id, asset_id, digest, *, require_source_job):
-        assert require_source_job
-        assert (file_id, asset_id, digest) == ("f_1", None, "ab" * 32)
+    async def caption(file_id, digest):
+        assert (file_id, digest) == ("f_1", "ab" * 32)
         return "caption", "image-captions/eligible.json", 20
 
     async def attached(**_kwargs):

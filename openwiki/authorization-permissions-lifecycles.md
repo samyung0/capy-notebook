@@ -1193,10 +1193,10 @@ Private PDF annotations belong to one actor and exact source identity. Reading
 and mutation require current file access, and one actor cannot read or modify
 another actor's marks. Clones and downloads do not include them.
 
-Image-caption reuse checks current containing resources. Private workspace
-reuse stays within that workspace. Private standalone material reuse stays
-within its owner. Link/public workspaces and standalone materials permit global
-reuse. Authorized reuse attaches a new resource reference; visibility changes
+Image-caption reuse checks current containing files. Private workspace reuse
+stays within that workspace; link/public workspaces permit global reuse.
+Only image-file ingest attaches captions, so editor assets hold none.
+Authorized reuse attaches a new resource reference; visibility changes
 affect subsequent lookups without moving payloads. A resource's existing
 association remains its own grant after the donor becomes private or is deleted.
 Captions a refresh candidate copies from a donor stay unpublished until publication. Clones and whole-source

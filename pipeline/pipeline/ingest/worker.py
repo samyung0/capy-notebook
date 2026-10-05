@@ -1890,9 +1890,7 @@ async def _reuse_donor(
     }.get(route)
     if direct == "image":
         try:
-            cached = await caption_cache.lookup(
-                file_id, None, source_sha256, require_source_job=True
-            )
+            cached = await caption_cache.lookup(file_id, source_sha256)
         except TerminalError:
             raise
         except Exception:
