@@ -80,6 +80,7 @@ async function sourceResponses(
 
 async function chooseSources(page: Page, workspaceId: string, names: string[]) {
   await page.goto('/workspaces/' + workspaceId);
+  await page.getByRole('button', { exact: true, name: 'Files' }).click();
   await page
     .locator('[data-workspace-add-menu]')
     .getByRole('button', { exact: true, name: 'Add file' })

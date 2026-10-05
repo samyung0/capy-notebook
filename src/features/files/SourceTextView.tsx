@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, Suspense, useEffect, useState } from 'react';
 import * as Y from 'yjs';
 import { api } from '@/api/client';
 import type { SourceSession, ViewableFile } from '@/api/types';
@@ -137,6 +137,12 @@ export function SourceTextView({
       setLeaving(false);
     }
   };
+  // The preview is lazy: its own boundary keeps a first load from suspending
+  // this view, which would disconnect the mode toggle it portals into the
+  // header and drop a click on it.
+  const preview = (url: string | undefined) => (
+    <Suspense fallback={<FileLoading />}>{renderPreview(url)}</Suspense>
+  );
   if (source.unavailable) return <FileUnavailable kind={source.unavailable} />;
   return (
     <div
@@ -212,11 +218,11 @@ export function SourceTextView({
             </div>
           )
         ) : source.doc ? (
-          renderPreview(previewURL)
+          preview(previewURL)
         ) : saved === 'failed' ? (
           <FileError onRetry={() => setSavedAttempt((value) => value + 1)} />
         ) : saved ? (
-          renderPreview(saved.url)
+          preview(saved.url)
         ) : (
           <FileLoading />
         )}

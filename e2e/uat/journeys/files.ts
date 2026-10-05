@@ -219,6 +219,7 @@ export async function upload(
 ) {
   const page = run.owner.page;
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
+  await page.getByRole('button', { exact: true, name: 'Files' }).click();
   await page
     .locator('[data-workspace-add-menu]')
     .getByRole('button', { exact: true, name: 'Add file' })
