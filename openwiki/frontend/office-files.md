@@ -462,13 +462,15 @@ the content Enter moved out, which resolves where it now is (the moved runs
 were duplicated before 2026-10-05), and once that content is resolved the
 field reports no change left for Accept or Reject All. Enter racing a peer's
 delete of the whole field may bring the field back (accepted with the
-concurrent-join class); both peers pressing Enter in one link duplicate the
-field and the moved content (pending a decision, recorded in the matrix). A
+concurrent-join class); both peers pressing Enter in one link may duplicate
+the field and the moved content (accepted 2026-10-06 with the concurrent-join
+class, recorded in the matrix). A
 field whose result holds a kept insertion, a tracked deletion holding more
 than text (a simple field, a note reference, a bookmark, a break, a control
 or a symbol), a content control, foreign markup or a nested field holding a
-link after the split point keeps the old Enter (the text after it leaves the
-field). Text typed at the end of a paragraph whose field
+link after the split point keeps the old Enter: the link text before the
+split leaves the field in the save, while the editor shows it in the field
+until the join or a publication. Text typed at the end of a paragraph whose field
 code continues into the next lands ahead of the field. Two peers joining a
 just-split field at once can duplicate or revive text, and the join drops
 formatting applied to the moved text (both accepted).
