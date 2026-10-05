@@ -1277,7 +1277,66 @@ DOCX blocks text input after a canvas click whose caret cannot yet be placed.
 Previously accepted input finishes at its old caret. A fresh click after that
 input drains and with available geometry must set a valid selection before typing
 resumes; the input exposes placement state and selection for browser checks.
-Run language metadata survives the native seed, Yjs projection and OOXML export.
+Run language metadata survives the native seed, Yjs projection and OOXML export,
+and so does a run's font hint (`w:rFonts w:hint`), held in its own `fontHint`
+mark so typing in the run and picking a font keep it.
+A DOCX save writes each paragraph's source properties back as they were and
+writes over them every paragraph property the editor holds differently from
+what the seed gave it (direct formatting, else the list level, else the style,
+with a table style's paragraph formatting in cells; `seededParagraphProperties`,
+shared by the projector and the save). Style, list and table values are never
+copied into a paragraph, so an untouched paragraph saves with the paragraph
+properties its source had, as far as the model holds them: pPr children it has
+no field for (`w:kinsoku`, `w:wordWrap`, `w:textDirection` and the like) are
+dropped by every save. A property the editor holds nothing for is removed. Line
+spacing and its rule, and the first-line indent and its hanging flag, save
+together; a changed indent drops its character-unit twin (`w:leftChars` and the
+like), which Word would otherwise prefer.
+
+Editor operations store explicit values so Word shows what the editor does: an
+indent the ruler or Decrease indent clears that the paragraph's style or list
+level sets is stored as 0 (`explicitParagraphAttrs`), so the drag sticks, and a
+style tab stop the ruler removes as a `clear` stop. A first-line or hanging
+indent set on a numbered paragraph, zero included, wins over its list level's
+in both seeders, as in Word. Applying a style (the
+picker, Enter's next style, the toolbar, the ref API; `applyStyleValues`) keeps
+direct paragraph formatting as Word does: each key a style controls
+(`STYLE_CONTROLLED_PARA_ATTRS`: alignment, spacing before and after with their
+line units and auto spacing, line spacing and its rule, contextual spacing, the
+indents and hanging flag, keep with next, keep lines, widow control, page break
+before, outline level, borders, shading, tabs, right-to-left, snap to grid, East
+Asian auto spacing) that the paragraph holds nothing for, or holds as its old
+style gives it, takes the new style's value (`styleParagraphValues`, what a
+fresh paragraph with that style seeds as), and every other value stays. A value
+equal to the old style's counts as the style's, unless the paragraph's own
+source pPr set it and it still holds that value. The paragraph mark's run
+defaults become the new style's with the mark's own run properties over them,
+so its size stays; a character style on the mark (`w:rStyle` in the mark's
+run properties) is not resolved into those defaults. Where the paragraph's
+numbering came from its old style (or
+it has none), the style's numbering and list rendering replace it
+(`STYLE_NUMBERING_ATTRS`; the editor reads the package's numbering from the
+materialized source, as the held host document carries none); numbering set on
+the paragraph itself stays, with its level's indents. The save reads where a
+paragraph's numbering came from off the paragraph (`numPrFromStyle`, recorded
+by the op) and renders a list no source paragraph had with that style from the
+style's numbering or else the paragraph's own level, so a style's list applied
+in the session saves no indents, taking the style away leaves none, and a
+directly numbered paragraph given another style writes no `w:ind` for its
+level. A key the new style
+leaves out is written as an explicit null, so two peers applying different
+styles converge on one style's values (about twice the Yjs growth of removing
+it, accepted). Run formatting stays the host's to apply. In a table cell the
+values, and the save's comparison, take the table-style paragraph formatting of
+the cell's current table and position (`cellParagraphFormatting`, read from the
+session's table, so a row or table made in the session, by a peer too, gets its
+own and a reused cell id never a deleted cell's). It reads only the parent
+story's table payloads (`storyTables`), once per style per toolbar or ruler
+command, and Enter's next style passes the current paragraph's style values
+without listing the story. A cell whose row moved keeps
+the look it seeded with in the editor, and the save writes what differs from its
+new position. Ops store tab stops in the seed's shape (`position`, `alignment`,
+reading the older `pos`/`val` too) and the hanging first-line flag as a boolean.
 PPTX uses a native textarea for typing, clipboard copy and paste, and IME composition. Copy puts the selected text on the clipboard as plain text and HTML (bold, italic and underline set on the run); a selected shape copies its whole text, one story per line. Read-only allows selecting and copying text, with typing, paste and cut refused; there is no cut. Edits over a selection that crosses paragraphs (typing, paste, IME, Enter, Backspace, Delete) replace it in one transaction and one undo step, joining the paragraphs under the first one's id and properties; a split (Enter or a newline) keeps the original paragraph's id on the first half and its properties on both halves, as PowerPoint continues a list, so Enter then Backspace restores the paragraph exactly (in a list item Backspace first removes the new item's marker, then joins); a refused edit changes nothing and no longer blocks later saves. Read-only speaker notes are `readOnly`, so they can be selected and copied.
 Save waits for composition to commit, and refuses an unmounted presentation or
 an interrupted composition instead of claiming it was saved.
@@ -1597,6 +1656,13 @@ for language-preserving seeds. The four DOCX golden hashes change; XLSX and PPTX
 seeds remain unchanged. Run the maintenance window before deploying to an
 environment with existing DOCX editing state. An empty environment needs no
 backfill.
+
+The run font hint mark (`fontHint`) changes the seed of every DOCX holding a
+run-level `w:rFonts w:hint` (most CJK text Word wrote). Capy's DOCX test
+fixtures hold none, so their hashes stay; the golden fixture
+`wordprocessingml-comprehensive.docx` holds some and pins the new seed. An
+environment with DOCX editing state needs the same reset for `'docx'` before
+that pin deploys.
 
 ## Private PDF annotations
 
