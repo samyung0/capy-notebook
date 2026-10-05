@@ -448,6 +448,19 @@ test('XLSX keyboard selection scrolls into view and takes typing', async ({
   await walk(Number(landed.slice(1)), 5, 'ArrowUp', 'ArrowDown');
   await expect(nameBox).toHaveValue('H5');
   await expect(formula).toHaveValue('3');
+
+  // A press on nothing focusable (the fx label) commits the edit and gives the
+  // grid the keys back; so does clicking a sheet tab.
+  await page.keyboard.press('4');
+  await expect(editor).toHaveValue('4');
+  await frame.getByText('fx', { exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(formula).toHaveValue('4');
+  await page.keyboard.press('ArrowDown');
+  await expect(nameBox).toHaveValue('H6');
+  await frame.getByRole('tab', { name: 'Summary' }).click();
+  await page.keyboard.press('ArrowRight');
+  await expect(nameBox).toHaveValue('B1');
 });
 
 test("Office runtime keeps Capy's theme after reloading and asks for a page reload on a protocol mismatch", async ({

@@ -725,7 +725,10 @@ focused while its cell scrolls away, so the next key that types, composition
 included, is typed into the edit and scrolls the cell back whole, as in Excel
 and Sheets; modifier keys and Ctrl/Cmd shortcuts leave the view alone. An edit
 ends on blur without taking focus back, so a click on the formula bar commits
-it and leaves the formula bar focused. The editor only asks the engine where
+it and leaves the formula bar focused; a press on nothing focusable commits it
+and gives the grid the keys, and a window or tab switch keeps it open for the
+next key on return. Clicking a sheet tab gives the grid the keys. A cell wider
+or taller than the view stays put while it spans it. The editor only asks the engine where
 the cell is (`cellPosition`, from the geometry `sheet_info` memoized) when the
 painted frame, if it is the live view, does not show it whole, and a key that
 scrolls paints once. Firefox caps an element's height near 17.9M px, so its
