@@ -703,7 +703,9 @@ for (const fixture of CYCLED)
         budget: 'report-only',
         cycles: CYCLES,
         fixture: fixture.name,
-        // The first close keeps the Office host code; later ones should not grow.
+        // The first close keeps the Office host code; later ones grow ~0.25 MB
+        // each for about ten cycles while V8 optimizes host code, then level
+        // off (openwiki/editor-perf.md).
         growthAfterFirstClose: growth(afterClose.at(-1)!, afterClose[0]),
       },
       'unthrottled'

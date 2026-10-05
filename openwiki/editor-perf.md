@@ -91,6 +91,20 @@ only under `VITE_LOAD_TEST_SEED`; their checkpoints come from
   times, with the heap after each close. Every sample also counts the
   renderer's live `documents`: a closed runtime frame that stays counted is a
   leak, and its WASM memory would no longer be visible to the probe.
+  The first close keeps the host's Office code (about 2 to 3 MB). The later
+  closes still add about 0.25 MB each over the first ten cycles, which is no
+  leak (2026-10-05, 30 cycles per format with heap snapshots): V8's optimized
+  code for host functions that run on every switch (`InstructionStream`, deopt
+  data, feedback vectors) accounts for over 90% of it and levels off after
+  about 20 cycles. The rest comes from TanStack Router. A superseded match's
+  aborted `AbortController` has a `DOMException` reason, and that exception's
+  captured stack keeps the matches of the navigation that aborted it. The
+  chain runs from `router._cache` and adds about 5 KB per navigation. It is
+  freed at the first navigation after the router's `defaultGcTime` (5 min).
+  No runtime frame context survives a close. Under MSW each mocked response
+  also leaves a transferred stream's `MessagePort` among Blink's pending
+  activities. That is native memory outside `jsMB`, and the app has no MSW
+  in production. So the five-close growth shows JIT warm-up, not a creep.
 
 It runs unthrottled: CDP's CPU throttle reaches neither the runtime frame nor
 the engine workers. Every file fails on unpainted keys, typing that sends no
