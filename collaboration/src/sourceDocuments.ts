@@ -389,6 +389,21 @@ export function textEffects(before: string, after: string): NetEffect[] {
   ];
 }
 
+/** Lengths of the common prefix and the non-overlapping common suffix. */
+function commonEnds(a: string | string[], b: string | string[]) {
+  let prefix = 0;
+  while (prefix < a.length && prefix < b.length && a[prefix] === b[prefix])
+    prefix++;
+  let suffix = 0;
+  while (
+    suffix < a.length - prefix &&
+    suffix < b.length - prefix &&
+    a.at(-1 - suffix) === b.at(-1 - suffix)
+  )
+    suffix++;
+  return { prefix, suffix };
+}
+
 /** Context kept on each side of an Office text change; '…' marks a cut. */
 const EFFECT_CONTEXT_CHARS = 40;
 
@@ -403,20 +418,7 @@ export function trimEffect(effect: NetEffect): NetEffect {
   }
   const { before, after } = effect;
   if (before === undefined || after === undefined) return effect;
-  let prefix = 0;
-  while (
-    prefix < before.length &&
-    prefix < after.length &&
-    before[prefix] === after[prefix]
-  )
-    prefix++;
-  let suffix = 0;
-  while (
-    suffix < before.length - prefix &&
-    suffix < after.length - prefix &&
-    before.at(-1 - suffix) === after.at(-1 - suffix)
-  )
-    suffix++;
+  const { prefix, suffix } = commonEnds(before, after);
   const cut = (text: string) => {
     let from = Math.max(0, prefix - EFFECT_CONTEXT_CHARS);
     let to = text.length - Math.max(0, suffix - EFFECT_CONTEXT_CHARS);
@@ -427,15 +429,30 @@ export function trimEffect(effect: NetEffect): NetEffect {
   return { ...effect, after: cut(after), before: cut(before) };
 }
 
-/** Estimated tokens of a change list; a move counts 0 (Go: sourceEffectTokens). */
+/**
+ * Estimated tokens of a change list (Go: sourceEffectTokens): 4 UTF-16 units a
+ * token, except changed CJK characters, one each. The context trimEffect keeps
+ * (what before and after share at either end) counts at the 4-unit rate in
+ * every script. A move counts 0; any other non-text effect 1 more.
+ */
 export function effectTokens(effects: NetEffect[]) {
   return effects.reduce((sum, effect) => {
     if (effect.operation === 'move') return sum;
-    const text = `${effect.before ?? ''}${effect.after ?? ''}${effect.caption ?? ''}`;
-    const cjk = [...text].filter((char) => CJK_CHARACTER.test(char)).length;
+    const before = [...(effect.before ?? '')],
+      after = [...(effect.after ?? '')];
+    const { prefix, suffix } = commonEnds(before, after);
+    const changed = [
+      ...before.slice(prefix, before.length - suffix),
+      ...after.slice(prefix, after.length - suffix),
+      ...(effect.caption ?? ''),
+    ];
+    const cjk = changed.filter((char) => CJK_CHARACTER.test(char)).length;
+    const units =
+      `${effect.before ?? ''}${effect.after ?? ''}${effect.caption ?? ''}`
+        .length;
     return (
       sum +
-      Math.ceil((text.length - cjk) / 4) +
+      Math.ceil((units - cjk) / 4) +
       cjk +
       (effect.kind === 'text' ? 0 : 1)
     );

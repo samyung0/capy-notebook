@@ -2702,7 +2702,12 @@ gates every automatic Office reparse, text reindex and note index; off, edits
 wait for the owner's Process.
 Office effects keep only the changed span plus 40 characters on each side
 (`trimEffect`; `…` marks a cut, and a cut never splits a surrogate pair), so net
-tokens count those excerpts. A move (unchanged text at a new position, as every
+tokens count those excerpts. Net tokens measure editing, not context size: the
+context (what an effect's before and after share at either end) counts 4 UTF-16
+units a token in every script, and only changed CJK characters count one token
+each, so a one-character CJK edit weighs what an English word edit does and CJK
+and English files reach the trigger after about the same number of edited
+paragraphs. A move (unchanged text at a new position, as every
 later paragraph becomes when one is inserted) carries no text and counts 0
 tokens, in `effectTokens` and Go's `sourceEffectTokens` alike. Office requires a successful prior parse and 60
 seconds idle, and is due at 3,000 net tokens or once saved changes have had no

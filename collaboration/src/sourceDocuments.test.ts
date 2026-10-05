@@ -129,6 +129,36 @@ test('Office text effects keep the changed span with 40 characters of context', 
   expect(effectTokens([moved, { ...moved, kind: 'image' }])).toBe(0);
 });
 
+// The same vectors as TestSourceEffectTokensCountContextAtLatinRate in Go.
+test('effect context counts 4 units a token in every script, changed CJK per character', () => {
+  const edit = (head: string, tail: string, from: string, to: string) =>
+    ({
+      after: `…${head}${to}${tail}…`,
+      before: `…${head}${from}${tail}…`,
+      id: 'p',
+      kind: 'text',
+      label: 'Paragraph',
+      operation: 'replace',
+    }) as const;
+  expect(
+    effectTokens([edit('a'.repeat(40), 'z'.repeat(40), 'cat', 'dog')])
+  ).toBe(43);
+  expect(
+    effectTokens([edit('漢'.repeat(40), '字'.repeat(40), '猫', '犬')])
+  ).toBe(43);
+  expect(
+    effectTokens([
+      {
+        after: '漢'.repeat(500),
+        id: 'p',
+        kind: 'text',
+        label: 'Paragraph',
+        operation: 'add',
+      },
+    ])
+  ).toBe(500);
+});
+
 test('an owner at the ingest-job limit rotates the file back, other refusals park it', async () => {
   const query = vi.fn(async (sql: string, _params?: unknown[]) => ({
     rows: sql.includes('UNION ALL')

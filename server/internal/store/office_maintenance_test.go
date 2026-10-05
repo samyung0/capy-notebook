@@ -820,6 +820,30 @@ func TestSourceEffectTokensSkipMoves(t *testing.T) {
 	}
 }
 
+// The same vectors as effectTokens in sourceDocuments.test.ts: an effect's
+// shared context counts 4 units a token in every script, so a one-character
+// CJK edit weighs what an English word edit does; changed CJK counts per character.
+func TestSourceEffectTokensCountContextAtLatinRate(t *testing.T) {
+	edit := func(head, tail, from, to string) map[string]json.RawMessage {
+		before, _ := json.Marshal("…" + head + from + tail + "…")
+		after, _ := json.Marshal("…" + head + to + tail + "…")
+		return map[string]json.RawMessage{"kind": json.RawMessage(`"text"`), "operation": json.RawMessage(`"replace"`), "before": before, "after": after}
+	}
+	inserted, _ := json.Marshal(strings.Repeat("漢", 500))
+	for _, c := range []struct {
+		effect map[string]json.RawMessage
+		want   int64
+	}{
+		{edit(strings.Repeat("a", 40), strings.Repeat("z", 40), "cat", "dog"), 43},
+		{edit(strings.Repeat("漢", 40), strings.Repeat("字", 40), "猫", "犬"), 43},
+		{map[string]json.RawMessage{"kind": json.RawMessage(`"text"`), "operation": json.RawMessage(`"add"`), "after": inserted}, 500},
+	} {
+		if got, err := sourceEffectTokens([]map[string]json.RawMessage{c.effect}); err != nil || got != c.want {
+			t.Fatalf("tokens %d %v, want %d", got, err, c.want)
+		}
+	}
+}
+
 // OfficeSeeds names each (format, base, seed hash) a stored Office change was
 // taken over once, counting its files, including a refresh candidate's copy;
 // text and complete states name none. The claim hands the copy's kind over.

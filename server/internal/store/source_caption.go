@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"unicode"
+	"unicode/utf16"
 )
 
 type SourceCaption struct {
@@ -19,32 +20,45 @@ type SourceCaption struct {
 }
 
 // sourceEffectTokens matches collaboration/src/sourceDocuments.ts effectTokens:
-// UTF-16 text length, one token per CJK character, and one per visual placeholder.
+// 4 UTF-16 units a token, except changed CJK characters, one each. The context
+// an Office effect keeps (what before and after share at either end) counts at
+// the 4-unit rate in every script. A move counts 0; any other non-text effect 1 more.
 func sourceEffectTokens(effects []map[string]json.RawMessage) (int64, error) {
 	var total int64
 	for _, effect := range effects {
-		// A move keeps its text and counts 0 (effectTokens in sourceDocuments.ts).
 		if raw, ok := effect["operation"]; ok && string(raw) == `"move"` {
 			continue
 		}
-		var text string
+		parts := map[string][]rune{}
 		for _, key := range []string{"before", "after", "caption"} {
 			if raw, ok := effect[key]; ok {
 				var part string
 				if err := json.Unmarshal(raw, &part); err != nil {
 					return 0, ErrConflict
 				}
-				text += part
+				parts[key] = []rune(part)
 			}
 		}
+		before, after := parts["before"], parts["after"]
+		prefix := 0
+		for prefix < len(before) && prefix < len(after) && before[prefix] == after[prefix] {
+			prefix++
+		}
+		suffix := 0
+		for suffix < len(before)-prefix && suffix < len(after)-prefix && before[len(before)-1-suffix] == after[len(after)-1-suffix] {
+			suffix++
+		}
 		var units, cjk int64
-		for _, r := range text {
-			units++
-			if r > 0xffff {
-				units++
+		for _, text := range [][]rune{before, after, parts["caption"]} {
+			for _, r := range text {
+				units += int64(utf16.RuneLen(r))
 			}
-			if unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul) {
-				cjk++
+		}
+		for _, changed := range [][]rune{before[prefix : len(before)-suffix], after[prefix : len(after)-suffix], parts["caption"]} {
+			for _, r := range changed {
+				if unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul) {
+					cjk++
+				}
 			}
 		}
 		total += (units-cjk+3)/4 + cjk
