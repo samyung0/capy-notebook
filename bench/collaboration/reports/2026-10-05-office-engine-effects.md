@@ -40,12 +40,20 @@ The new path (`XlsxEffectsReader`, `Workbook::pending_effects_of_state_json`)
 runs the same adoption checks as that apply (schema, base fingerprint,
 container identities, chart and preserved-part gates, state size), projects
 the state once, and reads the effects off that projection. It skips the
-recalculation unless the source has array formulas, whose spilled values
-can reach an edited cell's effect; then it recalculates that projection
-exactly as the apply did. A state that is not a whole document (never the
-case for a checkpoint) is applied to a fresh session as before. The adoption
-now also reuses the one strict projection for the editor's own whole-state
-restores, which projected the same document four times.
+recalculation unless that projection holds array formulas, whose spilled
+values can reach an edited cell's effect; then it recalculates it exactly
+as the apply did. A state that is not a whole document (never the case for
+a checkpoint) is applied to a fresh session as before. An editor adopting a
+whole state now projects it once too, where it projected the same document
+five times (see "Editor adoption" below).
+
+Review round 1 found one state where the reader and the apply disagreed: a
+state without the source's active sheet (the second of two tabs, removed by
+a peer). The apply threw `sheet 1 out of range` after adopting it, because
+remote adoption never moved the active sheet. Both remote paths now keep the
+active sheet by name or move it to the last remaining one, as local edits
+and Undo already did; the same fix stops a peer on a sheet another peer's
+Undo removes from throwing.
 
 ## Per-save engine CPU, gradebook
 
@@ -67,6 +75,23 @@ The engine's own timing (native, `cargo test --release`, load about 30): the
 reader's call took 2.3-5.6 s where applying the same full state to a fresh
 replica took 34 s and to a kept one 74 s; one projection was 3.2 s and the
 full recalculation 6.3 s.
+
+## Editor adoption
+
+An editor (or any fresh session) that adopts a whole checkpoint used to
+project it five times: the whole-document check, the strict check, the
+structure, the model and once more when installing it. The adoption now
+carries its strict projection through, so it projects once (review round 1
+removed the last repeat, at install). `bench-adopt.mjs`, gradebook, CPU ms
+of `applyUpdateJson` on a fresh `openCollaborative`, saves 2-4 of four,
+interleaved runs at load 34-45:
+
+| run | before | after |
+| --- | --- | --- |
+| 1 | 3,520-4,203 | 1,653-1,872 |
+| 2 | 2,269-2,887 | 1,053-1,151 |
+
+The open itself (5.3-8.4 s CPU here) is unchanged.
 
 ## Memory per replica
 
@@ -117,7 +142,13 @@ way; a test checks both against the old `Value` projection.
   left to an apply; a foreign state fails as its apply does.
 - `shared/office-replicas.test.ts`: saves with and without a room equal what
   `XlsxDocument.applyUpdateJson` then `pendingEffectsJson` read, including an
-  incremental update through the fallback.
+  incremental update through the fallback; a whole state the reader itself
+  refuses (a hostile peer repinning the source chart to a negative offset)
+  fails with the apply's message and drops the replica, while a fallback
+  that fails keeps it; a state without the source's active sheet reads,
+  reloads, exports and takes an agent edit.
+- Rust: that state adopts on the remaining sheet, and a peer on a sheet
+  another peer's Undo removes moves to a remaining one.
 - Both benchmark files: the six saves' effect hashes are equal before and
   after, cached and uncached.
 

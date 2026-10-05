@@ -1242,14 +1242,15 @@ read pending effects (`XlsxEffectsReader`, `configureOfficeReplicas` in
 graph or the recalculation an editor needs. A save's pending effects pass
 the room; the engine checks the saved state exactly as an apply would and
 reads the effects off it beside the source, without applying it or
-recalculating the workbook (only a source with array formulas recalculates
-that state's projection, since spilled values reach the effects). The
+recalculating the workbook (only a state whose projection holds array
+formulas is recalculated, since spilled values reach the effects). The
 replica therefore never holds a state and serves any state of its base, an
 older one included; another base replaces it. A state that is not a whole
 workbook document is applied to a fresh session as before. Only
 `xlsxPendingEffects` takes a room: agent edits, inspection, exports and
-rebases open their own session, and a failed call drops the room's replica.
-The room's unload drops it too, and a replaced worker loses them all.
+rebases open their own session. A call on the replica that fails drops it;
+a fresh fallback session that fails leaves it, since the replica took no
+part. The room's unload drops it too, and a replaced worker loses them all.
 Replicas stay within `OFFICE_REPLICA_BUDGET_BYTES`
 (`collaboration/src/officeRuntime.ts`) of estimated WASM heap, least
 recently used first, and a new replica pushes out only replicas idle for 2
