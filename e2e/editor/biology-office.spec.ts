@@ -463,6 +463,86 @@ test('XLSX keyboard selection scrolls into view and takes typing', async ({
   await expect(nameBox).toHaveValue('B1');
 });
 
+test('XLSX cell edit ends when focus moves into Capy, not on a window switch', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await page.goto('/workspaces/ws_bio');
+  await page.getByRole('button', { exact: true, name: 'Files' }).click();
+  await page
+    .locator('[data-workspace-file-tree] a[href*="file=bio-office-xlsx"]')
+    .click();
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await page.getByRole('button', { name: 'Material mode' }).click();
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { exact: true, name: 'Chat' }).click();
+  const chat = page.getByRole('textbox', { name: 'Ask about your sources…' });
+  await expect(chat).toBeVisible();
+
+  const grid = frame.getByTestId('xlsx-scroll');
+  const formula = frame.getByTestId('xlsx-formula-input');
+  const editor = frame.getByTestId('xlsx-cell-editor');
+  const saved = page.getByRole('status').filter({ hasText: /^Saved$/ });
+  const box = await grid.boundingBox();
+  if (!box) throw new Error('Grid is not laid out');
+
+  // Into Capy's chat: the edit commits and saves; the chat keeps the focus.
+  await page.mouse.click(box.x + 150, box.y + 75);
+  await page.keyboard.press('5');
+  await expect(editor).toHaveValue('5');
+  await expect(saved).toHaveCount(0);
+  await chat.click();
+  await expect(chat).toBeFocused();
+  await expect(editor).toHaveCount(0);
+  await expect(formula).toHaveValue('5');
+  await expect(saved).toBeVisible({ timeout: 30_000 });
+
+  // The same where the frame cannot tell from its own blur (it sees no focus,
+  // as on a switch): Capy's focus-left message ends the edit.
+  const frameFocus = (has: boolean) =>
+    frame.locator(':root').evaluate((_, value) => {
+      document.hasFocus = value ? Document.prototype.hasFocus : () => false;
+    }, has);
+  await page.mouse.click(box.x + 150, box.y + 75);
+  await page.keyboard.press('8');
+  await expect(editor).toHaveValue('8');
+  await frameFocus(false);
+  await chat.click();
+  await expect(chat).toBeFocused();
+  await expect(editor).toHaveCount(0);
+  await expect(formula).toHaveValue('8');
+  await frameFocus(true);
+
+  // An app or browser-tab switch takes focus from the whole page: the edit
+  // stays open and takes the next key on return.
+  await page.mouse.click(box.x + 150, box.y + 75);
+  await page.keyboard.press('6');
+  await expect(editor).toHaveValue('6');
+  // During a real switch neither document has focus and focus stays in the
+  // frame (Capy's window gets no focus event): stub both, blur in the frame.
+  for (const target of [page, frame.locator(':root')])
+    await target.evaluate(() => {
+      document.hasFocus = () => false;
+    });
+  await editor.evaluate((input) => input.blur());
+  await expect(editor).not.toBeFocused();
+  await expect(editor).toHaveValue('6');
+  for (const target of [page, frame.locator(':root')])
+    await target.evaluate(() => {
+      document.hasFocus = Document.prototype.hasFocus;
+    });
+  await editor.focus();
+  await page.keyboard.press('7');
+  await page.keyboard.press('Enter');
+  await expect(editor).toHaveCount(0);
+  await page.keyboard.press('ArrowUp');
+  await expect(formula).toHaveValue('67');
+});
+
 test("Office runtime keeps Capy's theme after reloading and asks for a page reload on a protocol mismatch", async ({
   page,
 }) => {

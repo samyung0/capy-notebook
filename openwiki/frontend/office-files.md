@@ -727,7 +727,13 @@ and Sheets; modifier keys and Ctrl/Cmd shortcuts leave the view alone. An edit
 ends on blur without taking focus back, so a click on the formula bar commits
 it and leaves the formula bar focused; a press on nothing focusable commits it
 and gives the grid the keys, and a window or tab switch keeps it open for the
-next key on return. Clicking a sheet tab gives the grid the keys. A cell wider
+next key on return. Focus moving from the runtime to another part of Capy
+(chat, sidebar, header) commits it too: Capy's window gets a `focus` event when
+focus comes back to its document from the frame, and `useOfficeRuntime` then
+sends the runtime `focus-left`, which flushes pending input (an app or tab
+switch, and the return from one, leave focus in the frame and send nothing).
+A draft whose sheet a peer removes is dropped, not committed. Clicking a sheet
+tab gives the grid the keys. A cell wider
 or taller than the view stays put while it spans it. The editor only asks the engine where
 the cell is (`cellPosition`, from the geometry `sheet_info` memoized) when the
 painted frame, if it is the live view, does not show it whole, and a key that

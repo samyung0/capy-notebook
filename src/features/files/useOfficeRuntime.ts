@@ -157,6 +157,20 @@ export function useOfficeRuntime({
       ),
     [config.origin]
   );
+  // Focus moving from an editing runtime to another part of Capy (chat,
+  // sidebar, header) ends an open cell edit there. Capy's own window gets
+  // `focus` when focus comes back to its document from the frame; an app or
+  // browser-tab switch and the return from one leave focus in the frame and
+  // send nothing, so the edit stays open for the next key (Excel and Sheets).
+  useEffect(() => {
+    const returned = (event: FocusEvent) => {
+      if (event.target !== window || modeRef.current !== 'edit') return;
+      post({ type: 'focus-left', version: OFFICE_PROTOCOL_VERSION });
+    };
+    window.addEventListener('focus', returned);
+    return () => window.removeEventListener('focus', returned);
+  }, [post]);
+
   // Before the load below, and again whenever the runtime document boots: the
   // runtime paints in Capy's theme from the start.
   useEffect(() => {

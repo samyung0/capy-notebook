@@ -379,6 +379,12 @@ function OfficeRuntime() {
         );
         return;
       }
+      // Pending input lands, as a press elsewhere in the editor lands it; an
+      // editor still loading has none.
+      if (message.type === 'focus-left') {
+        if (replicaRef.current) await flush();
+        return;
+      }
       if (
         message.type === 'export' &&
         exporterRef.current &&

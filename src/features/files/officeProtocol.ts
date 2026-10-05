@@ -81,6 +81,12 @@ export type OfficeHostMessage =
       id: string;
     }
   | { version: typeof OFFICE_PROTOCOL_VERSION; type: 'export'; id: string }
+  /**
+   * Focus left the runtime for another part of Capy while the page kept it
+   * (not an app or tab switch): an open cell edit ends, as a click elsewhere
+   * in the sheet would end it.
+   */
+  | { version: typeof OFFICE_PROTOCOL_VERSION; type: 'focus-left' }
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;
       type: 'set-capabilities';
@@ -241,6 +247,7 @@ export function isOfficeHostMessage(
   if (candidate.type === 'flush')
     return isCount(candidate.epoch) && typeof candidate.id === 'string';
   if (candidate.type === 'export') return typeof candidate.id === 'string';
+  if (candidate.type === 'focus-left') return true;
   if (candidate.type === 'set-appearance')
     return (
       STYLES.some((style) => style.value === candidate.style) &&
