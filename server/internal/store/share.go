@@ -997,7 +997,7 @@ func (s *Store) cloneWorkspaceOnce(
 	}
 
 	for oldID, newID := range fileMap {
-		if err := cloneImageCaptionAssociations(ctx, tx, oldID, newID, false); err != nil {
+		if err := cloneImageCaptionAssociations(ctx, tx, oldID, newID); err != nil {
 			return Workspace{}, err
 		}
 	}
@@ -1014,9 +1014,6 @@ func (s *Store) cloneWorkspaceOnce(
 			asset.newID, newID, userID, asset.name, asset.purpose,
 			asset.objectPath, asset.contentType, asset.sizeBytes, asset.etag,
 			asset.createdAt, asset.completedAt); err != nil {
-			return Workspace{}, err
-		}
-		if err := cloneImageCaptionAssociations(ctx, tx, asset.oldID, asset.newID, true); err != nil {
 			return Workspace{}, err
 		}
 	}
@@ -1475,9 +1472,6 @@ func (s *Store) cloneMaterialKindOnce(
 			asset.completedAt); err != nil {
 			return Material{}, err
 		}
-		if err := cloneImageCaptionAssociations(ctx, tx, asset.oldID, asset.newID, true); err != nil {
-			return Material{}, err
-		}
 	}
 	for _, cid := range cardIDs {
 		if _, err := tx.Exec(ctx, `INSERT INTO flashcard_cards (card_id, material_id) VALUES ($1,$2)`,
@@ -1594,13 +1588,9 @@ func (s *Store) UpdateFlashcardSet(ctx context.Context, id string, p FlashcardSe
 	return s.GetFlashcardSet(ctx, id)
 }
 
-// Explicit authorized copies carry resource-owned caption references. Hash
+// A cloned file carries its source file's published caption references. Hash
 // discovery uses a separate live-visibility check in the caption resolver.
-func cloneImageCaptionAssociations(ctx context.Context, tx pgx.Tx, oldID, newID string, asset bool) error {
-	column := "file_id"
-	if asset {
-		column = "editor_asset_id"
-	}
-	_, err := tx.Exec(ctx, `INSERT INTO image_caption_associations(id,`+column+`,image_sha256,caption_blob_path,size_bytes) SELECT 'ica_'||substr(md5(random()::text||clock_timestamp()::text||id),1,24),$2,image_sha256,caption_blob_path,size_bytes FROM image_caption_associations WHERE published AND `+column+`=$1`, oldID, newID)
+func cloneImageCaptionAssociations(ctx context.Context, tx pgx.Tx, oldID, newID string) error {
+	_, err := tx.Exec(ctx, `INSERT INTO image_caption_associations(id,file_id,image_sha256,caption_blob_path,size_bytes) SELECT 'ica_'||substr(md5(random()::text||clock_timestamp()::text||id),1,24),$2,image_sha256,caption_blob_path,size_bytes FROM image_caption_associations WHERE published AND file_id=$1`, oldID, newID)
 	return err
 }

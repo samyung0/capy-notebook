@@ -1195,7 +1195,9 @@ another actor's marks. Clones and downloads do not include them.
 
 Image-caption reuse checks current containing files. Private workspace reuse
 stays within that workspace; link/public workspaces permit global reuse.
-Only image-file ingest attaches captions, so editor assets hold none.
+Only image-file ingest attaches captions, so every association names a file
+(migration `0057` dropped `editor_asset_id`), and a clone copies its files'
+published captions only.
 Authorized reuse attaches a new resource reference; visibility changes
 affect subsequent lookups without moving payloads. A resource's existing
 association remains its own grant after the donor becomes private or is deleted.
