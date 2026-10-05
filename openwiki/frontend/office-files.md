@@ -452,15 +452,20 @@ field. Backspace, Delete or a range delete back rejoins it when only the moved
 runs sit there, in order; otherwise the split stays, keeping every run and
 typed character. A nested field after the split point that projects nothing
 of its own moves into the second paragraph as its own field, inside the split
-field's result, and goes back with the join; a tracked deletion there moves
-with it, keeping its text position (struck text in the second paragraph), so
-Reject All while split restores it in place. Accept or Reject All while a
-field is split resolves the field without the content Enter moved out, which
-resolves where it now is (the moved runs were duplicated before 2026-10-05). Enter racing a peer's delete of
-the whole field may bring the field back (accepted with the concurrent-join
-class). A field whose result holds a kept
-insertion, a content control, foreign markup or a nested field holding a link
-after the split point keeps the old Enter (the text after it leaves the
+field's result, and goes back with the join; a tracked deletion of plain
+text (text and tabs) there moves with it, keeping its text position (struck
+text in the second paragraph), so Reject All while split restores it in
+place. Accept or Reject All while a field is split resolves the field without
+the content Enter moved out, which resolves where it now is (the moved runs
+were duplicated before 2026-10-05), and once that content is resolved the
+field reports no change left for Accept or Reject All. Enter racing a peer's
+delete of the whole field may bring the field back (accepted with the
+concurrent-join class); both peers pressing Enter in one link duplicate the
+field and the moved content (pending a decision, recorded in the matrix). A
+field whose result holds a kept insertion, a tracked deletion holding more
+than text (a simple field, a note reference, a bookmark, a break, a control
+or a symbol), a content control, foreign markup or a nested field holding a
+link after the split point keeps the old Enter (the text after it leaves the
 field). Text typed at the end of a paragraph whose field
 code continues into the next lands ahead of the field. Two peers joining a
 just-split field at once can duplicate or revive text, and the join drops

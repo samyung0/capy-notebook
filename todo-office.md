@@ -115,6 +115,14 @@ check); it applies at the first promotion.
   `REF=Qyy`). Not in the matrix.
 - **Enter before a nested field holding a link** after the split point keeps
   the old Enter (the half-link before the split leaves the field).
+- **Two peers pressing Enter in one link at once** (review round 2, R2-3,
+  waiting on Epo): the field code and the moved content (runs, a nested field,
+  a tracked deletion) come back twice; matrix rows `… Enter in 1st by both
+  peers at once`.
+- **Tracked-deleted note references and `w:fldSimple` results** (R2-8, separate
+  DOCX fidelity task): after any edit in their paragraph, a deleted footnote or
+  endnote reference saves live and a deleted simple field saves its result
+  empty; reproduces on capy-ci in a plain paragraph.
 - **Positional-tab alignment.** `w:ptab` now survives and draws as an ordinary
   tab (next tab stop), not aligned to the margin as Word does; layout work.
 - **Two peers on the nested shape** (one Backspaces while the other types in
