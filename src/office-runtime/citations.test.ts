@@ -78,6 +78,34 @@ describe('native citation matching', () => {
     ])
       expect(docxCitation(list(override), { quote })).toBeNull();
   });
+  it('matches a DOCX quote across a page break inside its paragraph', () => {
+    const run: TextRunPrimitive = {
+      baselineY: 80,
+      color: '#000',
+      font: '16px Arial',
+      kind: 'text',
+      paraId: '1A2B3C4D',
+      text: '',
+      width: 300,
+      x: 20,
+    };
+    const page = (pageIndex: number, blockKey: string, text: string) => ({
+      height: 1000,
+      pageIndex,
+      primitives: [{ ...run, blockKey, text }],
+      width: 800,
+    });
+    const list: DisplayList = {
+      pages: [
+        page(0, '1A2B3C4D', 'Text before the page break '),
+        page(1, '1A2B3C4D#1', 'and the text after it.'),
+      ],
+    };
+    const match = docxCitation(list, {
+      quote: 'before the page break and the text after',
+    });
+    expect(match?.rects.map((rect) => rect.page)).toEqual([0, 1]);
+  });
   it('abstains when part of a matched slide text box is off-slide or overflows', () => {
     const quote = 'The quoted passage has unsafe geometry';
     const line = {

@@ -356,7 +356,9 @@ and one list number. Each fragment after the first gets its own layout block id
 display look measured blocks up by id; the text after the break starts at the
 top of the next page or column at the paragraph's left indent, without
 first-line or hanging indent, space-before or number, as Word continues the
-paragraph there. View-mode copy puts a newline at the break. Enter at the
+paragraph there. The paragraph's space-after and a tracked paragraph mark's
+pilcrow stay on its last part. A paragraph an in-flow chart splits gets the
+same per-part ids. View-mode copy puts a newline at the break. Enter at the
 start of a heading after a trailing column break puts the empty line after
 that break, even if the preceding text changed.
 A bookmark opening before a paragraph's leading breaks stays before them, and an empty
@@ -1188,8 +1190,9 @@ PDF regions use 1-based pages and normalized `[x0,y0,x1,y1]` coordinates in
 Office PDF coordinates do not map directly to the native editor layout.
 
 Office citation clicks pass the quoted passage through protocol v4 to the existing
-native viewer. DOCX searches current paragraph text and overlays its current run
-geometry. PPTX searches native text boxes and draws their current line rectangles.
+native viewer. DOCX searches current paragraph text (grouped by `w14:paraId`, so a
+quote can span a page or column break inside its paragraph; the layout block
+key when the file has none) and overlays its current run geometry. PPTX searches native text boxes and draws their current line rectangles.
 XLSX enumerates defined cell addresses in the current OOXML package, matches the
 viewer's displayed cell text, and uses its current viewport geometry. Matching
 requires a complete unique quote of at least 12 non-whitespace characters; short,

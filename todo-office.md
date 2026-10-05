@@ -207,11 +207,35 @@ check); it applies at the first promotion.
   column break inside a complex field's result is drawn after the field, so
   the field's text stays on one line and the next paragraph moves to the next
   page; a page or column break in a table cell shows as a line break (Word's
-  behaviour not checked); the editor copies a mid-paragraph break as nothing
-  while view mode copies a newline. Also: a footnote longer than a page is
-  never continued; viewer list numbers may ignore start values (8, 9), legal
+  behaviour not checked); a paragraph an in-flow chart (or a non-anchored
+  shape) splits numbers its list item once per part and keeps its
+  space-before and first-line indent on each part (shared `list_state` in
+  `flush_paragraph_parts`). Also: a footnote longer than a page is never
+  continued; viewer list numbers may ignore start values (8, 9), legal
   numbering and Chinese numbering (seen with minimal numbering XML — confirm on
   a real Word file first).
+- **Copy at a mid-paragraph break (needs Epo's decision):** view mode copies a
+  newline at a page or column break inside a paragraph; the editor
+  (`yrsCommands.ts` `yrsSelectionText`) copies nothing there and marks the copy
+  not plain. LibreOffice's text export writes a newline; Word's clipboard is
+  unchecked (its object model uses U+000C/U+000E). Recommended: a newline in
+  both modes when text precedes the break in its paragraph, keeping
+  `plain = false` so Cut still only copies.
+- **DOCX arrows over breaks** (docx-breaks review, 2026-10-06): Left/Right step
+  through `session.paragraphs(story)[i].text`, which leaves break units out
+  (`YrsInput.tsx:829`, `:850-856`), so ArrowRight stops before the last
+  character of a paragraph holding a page, column or soft line break, and
+  Alt/Ctrl+Arrow word steps are off by one per break. Step through the story's
+  unit segments instead. Home/End go to the paragraph's start and end, not the
+  line's (Shift+End from text before a break selects across it; Word stops at
+  the line end).
+- **Enter right after a mid-paragraph break** (docx-breaks review,
+  2026-10-06): it leaves `Aa<pageBreak>¶Bb¶`, so an empty line paints at the
+  top of the next page and "Bb" sits one line down; reopening the saved file
+  shows "Bb" at the top, because the seed moves the break onto the next
+  paragraph. Split before the break instead (the shape the seed makes, and no
+  text ahead of a break in its slot, as decided 2026-09-28); queue with the
+  matrix's `break-paragraph` rows.
 - **Chat can't describe an image added to an Office file** (decided
   2026-10-05): attach the image to the next model request as `capture_page`
   does and remove the source-change caption path (`captioning_spec()` needs
