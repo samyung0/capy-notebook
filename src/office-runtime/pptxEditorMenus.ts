@@ -1,7 +1,7 @@
 import {
-  PPTX_COMMAND_EDITS,
   BULLET_PRESETS,
   NUMBER_PRESETS,
+  PPTX_COMMAND_EDITS,
   type PptxCommandId,
   type PptxCommandState,
   presetLabel,
