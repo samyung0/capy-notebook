@@ -225,6 +225,87 @@ for (const [format, name] of [
   });
 }
 
+test('DOCX view mode selects and copies text from its text layer', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await page.goto('/workspaces/ws_bio?file=bio-office-docx');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  const run = (text: string) =>
+    frame
+      .locator(
+        '.canvas-page-mirror--selectable .layout-page-mirror:not(.layout-page-mirror-text) .layout-run-text'
+      )
+      .filter({ hasText: new RegExp(`^${text}$`) })
+      .first();
+  const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
+  const copy = async () => {
+    await page.evaluate(() => navigator.clipboard.writeText(''));
+    await page.keyboard.press('ControlOrMeta+c');
+  };
+
+  // Drag across the title's three paragraphs: one line each, as the editor
+  // copies them.
+  const from = await run('2').boundingBox();
+  const to = await run('書').boundingBox();
+  if (!from || !to) throw new Error('Missing title runs');
+  await page.mouse.move(from.x + 1, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + to.width - 1, to.y + to.height / 2, {
+    steps: 8,
+  });
+  await page.mouse.up();
+  await copy();
+  await expect
+    .poll(clipboard)
+    .toBe('2022 至 2023 年度\n香港大學工程學院 \n交流學習團活動計劃書');
+
+  // A double click takes the word, a triple click the paragraph.
+  await run('3').dblclick();
+  await copy();
+  await expect.poll(clipboard).toBe('2023');
+  await run('團').click({ clickCount: 3 });
+  await copy();
+  await expect.poll(clipboard).toBe('交流學習團活動計劃書');
+
+  // The selection survives its page leaving the viewport and coming back.
+  const viewer = frame.locator('.docx-runtime-viewer');
+  await viewer.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  // The window has moved once the pages near the top went plain text; the
+  // first page keeps its positioned mirror while it holds the selection.
+  const mirrors = frame.locator('.layout-page-mirror');
+  await expect(mirrors.nth(2)).toHaveClass(/layout-page-mirror-text/, {
+    timeout: 15_000,
+  });
+  await expect(mirrors.first()).not.toHaveClass(/layout-page-mirror-text/);
+  await viewer.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await copy();
+  await expect.poll(clipboard).toBe('交流學習團活動計劃書');
+
+  // Select all takes the whole document, far pages included.
+  await page.keyboard.press('ControlOrMeta+a');
+  await copy();
+  await expect
+    .poll(clipboard)
+    .toMatch(
+      /^ {2}2022 至 2023 年度\n香港大學工程學院 \n交流學習團活動計劃書\n/
+    );
+  const all = await clipboard();
+  expect(all).toContain(
+    '\n7:00-8:00\t香港快運航空\t酒店早餐\t酒店早餐\t酒店早餐\n'
+  );
+  expect(all).toContain('並且在回港後，本會會向保險公司索償。');
+});
+
 test('Office viewer keeps its iframe when the workspace layout changes', async ({
   page,
 }) => {

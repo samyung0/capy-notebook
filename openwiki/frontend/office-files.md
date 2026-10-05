@@ -121,6 +121,47 @@ swapped in at idle, so screen readers reach the whole document while scrolling
 stays cheap. The positioned mirror follows the viewport only once the scroll
 has held still for 300 ms, so pages that scroll past keep their plain text.
 
+DOCX view mode (`DocxDisplayListViewer`) makes that mirror its text layer, as a
+PDF viewer's: there is no second copy of the text. The positioned mirror's text
+is transparent and hit-testable (a text cursor over text) and is painted only
+while a selection exists, so reading and scrolling paint nothing new; the
+selection is the editor's blue, `rgba(66, 133, 244, 0.3)`, on the white page in
+both themes. Far pages keep the invisible, pointer-inert plain-text mirror.
+Headers, footers, chart labels, repeated table header rows and runs clipped out
+of their row (a row split across pages repeats its cut line, which is not
+painted, and an exact row height can hide text) are not selectable; the mirror
+hides those clipped runs from screen readers too. Body, footnotes and endnotes
+are separate stories, as in Word: a selection keeps to the story it starts in
+(its anchor), so a body selection neither highlights nor copies note text and
+one started in a footnote copies footnote text only. Cmd/Ctrl+A selects the
+body (the document's pages, not the frame), or every footnote (endnote) when
+the selection is in one. A press on empty page area clears the selection.
+
+Each glyph cluster is its own positioned run, so
+`packages/docx-react/src/components/textLayer.ts` rebuilds what the browser
+would get wrong. Copy (Cmd/Ctrl+C and the context menu's Copy, through the
+`copy` event) writes plain text as the editor copies it: paragraphs and line
+breaks as newlines, tabs as tabs, fields as their shown text, list numbers and
+bullets as shown followed by a tab (Symbol and Wingdings markers as the Unicode
+character the fonts' tables map them to, such as ✓ or ➢, otherwise •), table
+cells tab-separated and rows on their own lines. Tabs and line breaks come from
+the display list (`tabsBefore`, `breaksBefore`, `tabsAfter` and `breaksAfter`
+on runs, so a tab ending a line or paragraph is kept), not from gaps in the
+runs' document positions, which hidden text and content-control edges also
+leave; a tab leader's dots copy as the tab. Double and triple click select the
+word (`Intl.Segmenter`) and the paragraph's part on that page. Far pages are
+copied from a positioned mirror built off-DOM at the same text offsets. A page
+holding a selection end (or the caret a drag starts from) keeps its positioned
+mirror when it leaves the viewport until the selection lets go of it, and while
+a mouse or pen drag is held the page window moves at once (no 300 ms settle),
+so an auto-scrolling drag keeps extending the selection; a touch press pans, so
+touch scrolling keeps the settle. A left click on a mirror link does nothing;
+hovering shows its URL and right-click offers the browser's link menu (new tabs
+are blocked by the frame's sandbox). Copied text is what the pages show: a
+table row split across pages copies as two rows, rows set to an exact height
+that hides their text copy nothing, and a vertically merged cell's continuation
+adds no empty cell.
+
 Viewing shows the last saved state, not only the last published blob. View
 mode reads `GET /api/files/{id}/source-session?view=true`, a lock-free read
 (read authorization only, no `source_documents` row is created, no account

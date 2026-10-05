@@ -152,10 +152,11 @@ check); it applies at the first promotion.
   (Office print shortcut waits for it).
 - **Header:** DOCX ruler as a View toggle (Google Docs); Chinese text mixes
   weights in the header (CJK falls back from Fustat to the system font).
-- **DOCX view-mode copy.** View mode draws pages on a canvas
-  (`DocxDisplayListViewer`) with no selection. Add a selectable text layer over
-  the pages, as PDF viewers have, so text can be selected and copied. Approved
-  2026-10-03.
+- **DOCX view-mode copy** (built 2026-10-05 on `capy/docx-view-text`, waiting
+  for its landing and Epo's visual checkpoint): the positioned a11y mirror is
+  the view-mode text layer (`textLayer.ts`). Unchecked: Safari and Firefox
+  (word/paragraph clicks use `caretPositionFromPoint`/`caretRangeFromPoint`,
+  Firefox drags links instead of selecting from them).
 - **PPTX presenter view.** Show speaker notes while presenting. Notes are
   already hidden by default and toggled in edit and view mode.
 - **PPTX parity with Google Slides** (decided 2026-10-05): lists, indent and
