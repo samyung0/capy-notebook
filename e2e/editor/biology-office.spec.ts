@@ -1452,34 +1452,44 @@ test('DOCX Format › Table fits, centres and pins a table, and pauses with the 
   await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
   await officeMenu(page, 'Insert').click();
   await page.getByRole('menuitem', { name: 'Table' }).click();
-  await page.getByRole('button', { name: 'Insert 2 by 2 table' }).click();
-  const table = async (item: string, choice?: string) => {
+  await page.getByRole('gridcell', { name: 'Insert 2 by 2 table' }).click();
+  // Format › Table's `item`, or `choice` in its submenu.
+  const table = async (
+    item: string,
+    choice?: string,
+    role: 'menuitem' | 'menuitemcheckbox' = 'menuitemcheckbox'
+  ) => {
     await officeMenu(page, 'Format').click();
     await page.getByRole('menuitem', { exact: true, name: 'Table' }).click();
-    const row = page.getByRole('menuitem', { exact: true, name: item });
-    if (choice) {
-      await row.click();
-      return page.getByRole('menuitemcheckbox', { exact: true, name: choice });
-    }
-    return page.getByRole('menuitemcheckbox', { exact: true, name: item });
+    if (!choice) return page.getByRole(role, { exact: true, name: item });
+    await page.getByRole('menuitem', { exact: true, name: item }).click();
+    return page.getByRole(role, { exact: true, name: choice });
   };
   const pin = await table('Pin header row');
   await expect(pin).toHaveAttribute('aria-checked', 'false');
   await pin.click();
   // The table items hand the caret back to its cell.
   await page.keyboard.type('Cell');
-  const cell = frame.locator('.layout-run-text', { hasText: 'Cell' }).first();
+  // The positioned mirror draws one run per glyph.
+  const cell = frame
+    .locator('.layout-page-mirror:not(.layout-page-mirror-text)')
+    .getByRole('paragraph')
+    .filter({ hasText: /^Cell$/ })
+    .getByText('C', { exact: true });
   await expect(cell).toBeAttached();
   const left = (await cell.boundingBox())?.x ?? Number.NaN;
 
-  await (await table('Auto-fit to contents')).click();
+  await table('Auto-fit to contents', undefined, 'menuitem').then((item) =>
+    item.click()
+  );
   const center = await table('Table alignment', 'Center');
   await expect(center).toHaveAttribute('aria-checked', 'false');
   await center.click();
-  // A table about one word wide, centred on the page.
+  // The first column shrinks to "Cell" (the empty one keeps its width),
+  // so the centred table starts over 100px further right.
   await expect
     .poll(async () => ((await cell.boundingBox())?.x ?? left) - left)
-    .toBeGreaterThan(200);
+    .toBeGreaterThan(100);
   await expect(await table('Table alignment', 'Center')).toHaveAttribute(
     'aria-checked',
     'true'
