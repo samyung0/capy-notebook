@@ -193,8 +193,8 @@ check); it applies at the first promotion.
   ingest job pins the retrieval service never sets; the test mocks it).
 - **File descriptors cut mid-phrase** (retrieval): the prompt asks for one
   ~50-word sentence and `_truncate_words` cuts at word 50, the only bound on
-  that call (no `max_tokens`). Decided 2026-10-05: cap at ~80 words plus
-  `max_tokens` on the call.
+  that call (no `max_tokens`). Decided 2026-10-05: bounded like compaction,
+  `max_tokens` 400 is the only cut, an empty reply fails explicitly.
 - **CJK refresh trigger:** `effectTokens` counts a CJK character as a token and
   each effect carries 40 characters of context on each side in `before` and
   `after`, so a small CJK edit counts ~160 tokens against ~41 in English (the
