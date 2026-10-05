@@ -602,7 +602,11 @@ changes only: a field whose kept changes resolve becomes what the seed makes of
 its export, a projected child the user edited keeps its edit and one the user
 deleted stays deleted, and a child resolves only for the field that records it.
 Run-formatting revisions (`w:rPrChange`) appear in the change list; Accept keeps
-the current formatting and Reject restores the previous formatting. Both also
+the current formatting and Reject restores the previous formatting. A tracked
+deletion keeps what it holds through edits to its paragraph: deleted text inside
+a simple field or a link reads as text (the field keeps its result, the link
+its text), and a deleted note reference saves inside its `w:del`; every saved
+note reference keeps its run formatting (its FootnoteReference style). Both also
 resolve revisions in nested fields and controls and remove resolved move
 wrappers and range markers. Deleting a break in a field result removes it from
 the saved field too.
@@ -1335,16 +1339,34 @@ input drains and with available geometry must set a valid selection before typin
 resumes; the input exposes placement state and selection for browser checks.
 Run language metadata survives the native seed, Yjs projection and OOXML export,
 and so does a run's font hint (`w:rFonts w:hint`), held in its own `fontHint`
-mark so typing in the run and picking a font keep it.
+mark so typing in the run and picking a font keep it. Picking a font sets each
+run's Latin and complex-script fonts (`w:ascii`, `w:hAnsi`, `w:cs`, dropping
+those slots' theme fonts, which would win over it) and keeps its East Asian
+font, as Word's font box does (`picked_font`); the save writes the fonts the
+editor holds and adds none (no `w:cs` copied from `w:ascii`, no name the seed
+resolved for a slot that has a theme font).
 A DOCX save writes each paragraph's source properties back as they were and
 writes over them every paragraph property the editor holds differently from
 what the seed gave it (direct formatting, else the list level, else the style,
 with a table style's paragraph formatting in cells; `seededParagraphProperties`,
 shared by the projector and the save). Style, list and table values are never
 copied into a paragraph, so an untouched paragraph saves with the paragraph
-properties its source had, as far as the model holds them: pPr children it has
-no field for (`w:kinsoku`, `w:wordWrap`, `w:textDirection` and the like) are
-dropped by every save. A property the editor holds nothing for is removed. Line
+properties its source had. The pPr children the model has no field for
+(`w:kinsoku`, `w:wordWrap`, `w:overflowPunct`, `w:topLinePunct`,
+`w:adjustRightInd`, `w:mirrorIndents`, `w:suppressOverlap`, `w:textDirection`,
+`w:textAlignment`, `w:textboxTightWrap`, `w:divId`, `w:cnfStyle`) ride the
+source formatting (`extraChildren`), so they stay on a paragraph the editor
+changed and on both halves of a split, and `w:framePr` keeps its drop-cap,
+lines, spacing, height-rule and anchor-lock attributes; the writer puts pPr
+children in schema order. A vertically merged continuation cell, which the
+seed folds into its restart cell, saves with its source paragraphs' properties
+and no text (`continuationContent`, found from the restart cell's story and its
+row offset, so it follows rows inserted above, while a row inserted inside the
+merge shifts which continuation gets which); one the session made saves an
+empty paragraph. A row's skipped grid columns (`w:gridBefore`, `w:gridAfter`,
+`w:wBefore`, `w:wAfter`) save, and a cell paragraph made by inserting a row,
+column or table holds no alignment, so it takes its table style's (a header
+row's centring). A property the editor holds nothing for is removed. Line
 spacing and its rule, and the first-line indent and its hanging flag, save
 together; a changed indent drops its character-unit twin (`w:leftChars` and the
 like), which Word would otherwise prefer.
@@ -1393,6 +1415,17 @@ without listing the story. A cell whose row moved keeps
 the look it seeded with in the editor, and the save writes what differs from its
 new position. Ops store tab stops in the seed's shape (`position`, `alignment`,
 reading the older `pos`/`val` too) and the hanging first-line flag as a boolean.
+Enter at the end of a paragraph starts a clean one that keeps only its style,
+spacing and the font, size and colour carry (`INHERITED_PARA_ATTRS`), plus the
+numbering and level indents of a list its style gives (List Bullet), so the
+editor shows the bullet the file and Word show; a list set on the paragraph
+itself does not continue. A split in the middle of a paragraph or before a block
+leaves the source mark's tracked insertion or deletion (`pPrIns`, `pPrDel`) on
+the source mark, and the new mark's copy of a tracked property change
+(`w:pPrChange`) takes new revision ids, so the file never repeats an id and two
+peers' splits of one paragraph get one each. The engine's suggesting-mode
+paragraph property changes (unused in Capy) save, but with the editor's
+resolved values as the previous pPr rather than the paragraph's own.
 PPTX uses a native textarea for typing, clipboard copy and paste, and IME composition. Copy puts the selected text on the clipboard as plain text and HTML (bold, italic and underline set on the run); a selected shape copies its whole text, one story per line. Read-only allows selecting and copying text, with typing, paste and cut refused; there is no cut. Edits over a selection that crosses paragraphs (typing, paste, IME, Enter, Backspace, Delete) replace it in one transaction and one undo step, joining the paragraphs under the first one's id and properties; a split (Enter or a newline) keeps the original paragraph's id on the first half and its properties on both halves, as PowerPoint continues a list, so Enter then Backspace restores the paragraph exactly (in a list item Backspace first removes the new item's marker, then joins); a refused edit changes nothing and no longer blocks later saves. Read-only speaker notes are `readOnly`, so they can be selected and copied.
 Save waits for composition to commit, and refuses an unmounted presentation or
 an interrupted composition instead of claiming it was saved.
