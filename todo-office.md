@@ -183,6 +183,12 @@ check); it applies at the first promotion.
   the page number then sits one digit left of the others. Fix: measure an
   empty result as nothing unless the field is PAGE/NUMPAGES (whose text each
   page resolves), in the JSON and typed measure paths alike.
+- **DOCX section break from the toolbar may not reach the saved file**
+  (found by docx-toc review 2, probes J/J2 in
+  `capy-docx-review-harnesses/2026-10-05-office-batch/docx-toc/review-2/`):
+  in that harness `exportOffice` wrote no paragraph `sectPr` for an
+  `insertSectionBreak` embed, with or without a table of contents. Check
+  whether it's a harness artefact (breaks owner).
 - **DOCX table of contents in content controls and cells** (docx-toc review N2,
   2026-10-06; a follow-up track): Word's References › Table of Contents gallery
   wraps the field in a `docPartObj` block content control (`body:sdt0`), which
@@ -194,7 +200,12 @@ check); it applies at the first promotion.
 - **DOCX table of contents leftovers** (docx-toc, 2026-10-06): entries leave
   out a numbered heading's list number (Word copies it with a tab); a code
   with `\t`, `\f`, `\l`, `\b` or a Table of Figures (`\c`, `\a`) is left
-  alone by Update; `\n "2-3"` drops every page number, not only those levels;
+  alone by Update, and so is one with `\* MERGEFORMAT` or a bare `\f`
+  (LibreOffice may write `TOC \f \o "1-9" \h` for its default table, which
+  would then get no Update and a second table on Insert: check a LibreOffice
+  file); Update does not read `\p` (a `\p "-"` table gets a dot-leader tab
+  instead of its separator), `\w` or `\x`; `\n "2-3"` drops every page
+  number, not only those levels;
   add "Word opens and updates a Capy-inserted TOC" to the UAT checks (Word was
   not available on the dev machine).
 - **DOCX paragraph properties the model doesn't hold are dropped on save**
