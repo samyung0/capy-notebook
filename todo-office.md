@@ -163,9 +163,16 @@ check); it applies at the first promotion.
   (the parity track landed 2026-10-06). Next parity gaps from its GAP.md: find
   and replace, links, duplicate and object copy-paste, rotate/flip, group and
   border dash.
-- **DOCX table-menu items.** Vertical alignment, table alignment, header row,
-  distribute columns, auto-fit and no-wrap. Hidden until the engine supports
-  them.
+- **DOCX table leftovers** (docx-table-menu, 2026-10-06): a new table draws
+  its text in another font in edit mode than in view mode, and after Auto-fit
+  is about 478px wide in edit against 560px in view; Auto-fit offers only
+  Word's AutoFit Contents (Window and Fixed column width if asked); no-wrap
+  widens a column only into empty room (Word also squeezes other columns to
+  their longest word, which needs a minimum-width measure in `ooxml-text`);
+  two peers changing the same table's rows at once keep one of the two
+  changes. The table ops apply as plain edits in suggesting mode (unused in
+  Capy). Notes in
+  `capy-docx-review-harnesses/2026-10-05-office-batch/docx-table-menu/`.
 - **Unplaceable sync step 2 (lowest priority).** A client whose own sync step 2
   the room cannot place (it holds content out of order) is closed after 2 tries
   (`resyncUnheld`, `collaboration/src/officeRoots.ts`) and then reconnects
