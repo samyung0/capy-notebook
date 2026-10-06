@@ -118,7 +118,10 @@ func TestShareHTTPReads(t *testing.T) {
 		{"anon public ws", "", "/api/workspaces/ws_e2e_public", 401},
 		{"anon private quiz", "", "/api/quizzes/qz_e2e_private", 401},
 		{"anon link quiz", "", "/api/quizzes/qz_e2e_link", 401},
+		{"anon public quiz", "", "/api/quizzes/qz_e2e_public", 401},
+		{"anon private flashcards", "", "/api/flashcards/dk_e2e_private", 401},
 		{"anon link flashcards", "", "/api/flashcards/dk_e2e_link", 401},
+		{"anon public flashcards", "", "/api/flashcards/dk_e2e_public", 401},
 		{"anon link cards", "", "/api/flashcards/dk_e2e_link/cards", 401},
 		{"anon link chapters", "", "/api/workspaces/ws_e2e_link/chapters", 401},
 		{"anon link files", "", "/api/workspaces/ws_e2e_link/files", 401},
@@ -268,6 +271,24 @@ func TestShareHTTPWritesAndClone(t *testing.T) {
 	rec = doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/clone", "u_other", nil)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("private clone by other = %d %s", rec.Code, rec.Body.String())
+	}
+
+	// Signed-out callers clone nothing, and a link set takes no metadata
+	// change from a visitor or a stranger.
+	for _, tc := range []struct {
+		method, path, user string
+		body               any
+		status             int
+	}{
+		{http.MethodPost, "/api/quizzes/qz_e2e_link/clone", "", nil, http.StatusUnauthorized},
+		{http.MethodPost, "/api/flashcards/dk_e2e_link/clone", "", nil, http.StatusUnauthorized},
+		{http.MethodPatch, "/api/flashcards/dk_e2e_link/metadata", "", map[string]any{"name": "Hacked"}, http.StatusUnauthorized},
+		{http.MethodPatch, "/api/flashcards/dk_e2e_link/metadata", "u_other", map[string]any{"name": "Hacked"}, http.StatusNotFound},
+	} {
+		rec = doReq(t, h, tc.method, tc.path, tc.user, tc.body)
+		if rec.Code != tc.status {
+			t.Fatalf("%s %s as %q = %d body=%s, want %d", tc.method, tc.path, tc.user, rec.Code, rec.Body.String(), tc.status)
+		}
 	}
 
 	rec = doReq(t, h, http.MethodPost, "/api/quizzes/qz_e2e_link/clone", "u_other", nil)

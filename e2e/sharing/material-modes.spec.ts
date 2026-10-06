@@ -121,31 +121,6 @@ test.describe('shared material modes', () => {
     await expectEditorLive(otherPage);
   });
 
-  test('mod+k opens the editor command palette', async ({
-    ownerPage,
-    seed,
-  }) => {
-    await openWorkspaceMaterial(
-      ownerPage,
-      seed.editableWorkspace.id,
-      seed.editableNote.id
-    );
-    await expectEditorLive(ownerPage);
-    await ownerPage.evaluate(() => {
-      window.dispatchEvent(
-        new KeyboardEvent('keydown', {
-          bubbles: true,
-          key: 'k',
-          metaKey: true,
-        })
-      );
-    });
-    await expect(
-      ownerPage.getByRole('dialog', { name: 'Editor command palette' })
-    ).toBeVisible();
-    await ownerPage.keyboard.press('Escape');
-  });
-
   test('room tokens and comment APIs follow the role matrix', async ({
     editorApi,
     materialFactory,

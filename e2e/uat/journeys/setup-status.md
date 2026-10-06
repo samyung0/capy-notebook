@@ -91,7 +91,7 @@ on `stablestudio.org`.
    changing the GitHub secret alone does not update a running container.
 4. Before the study progress journey (added 2026-10-06) runs, extend the
    existing verifier role on the UAT database, as its owner:
-   `GRANT SELECT ON attempts, study_progress, review_states, review_log TO capy_uat_verifier;`
+   `GRANT SELECT ON attempts, study_progress, review_states TO capy_uat_verifier;`
    `scripts/uat/verifier-role.sql` lists them for a new role. Not applied yet.
 5. Dispatch Deterministic UAT quality from `main`, with the deployed full SHA
    and `critical_paths=true`.

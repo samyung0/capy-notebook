@@ -67,8 +67,7 @@ GRANT SELECT ON TABLE
     public.stripe_checkout_sessions,
     public.attempts,
     public.study_progress,
-    public.review_states,
-    public.review_log
+    public.review_states
 TO capy_uat_verifier;
 
 -- Refuse ambient PUBLIC write grants; do not change other roles' permissions.

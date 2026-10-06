@@ -288,8 +288,14 @@ account on sign-in. `SrsState` is a hand-written type in `src/lib/srs.ts`.
 - `src/features/study/ratings.test.ts`: the review session's rating queue and
   question scoring; `src/features/study/StudyPanel.test.tsx`: the Study tab
   with progress off.
-- `e2e/study/study-progress.spec.ts`: Mark as read on a file row, Continue,
-  and a mixed review session.
+- `e2e/study/study-progress.spec.ts` (Docker stack, the detailed checks): a
+  file read and unread from its row menu and its header; quizzes and sets
+  started and finished through the attempt and study pages; Continue skipping
+  done and removed items across chapters; Learning → Review counts; a mixed
+  review session.
+- `e2e/uat/journeys/study.spec.ts` (deployed stack, thin): one file read, one
+  quiz finished, one set studied, Continue, a two-item review, and the
+  `study_progress`, `attempts` and `review_states` rows.
 
 Sources: [migration](../server/migrations/0051_study_progress.sql),
 [FSRS wrapper](../server/internal/review/review.go),

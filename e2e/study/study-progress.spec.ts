@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { APIRequestContext, Page } from '@playwright/test';
-import type { Chapter, SourceFile } from '../../src/api/types';
+import type { Chapter, SourceFile, StudySummary } from '../../src/api/types';
 import { expect, test } from '../fixtures/actors';
 import { apiEndsWith, waitForApi } from '../helpers/api';
 
@@ -60,6 +60,75 @@ async function createMaterial(
   return (await res.json()) as { id: string; title: string };
 }
 
+/** True/false questions: closed parts the server grades without Jev. */
+function quizValue(questions: Array<{ prompt: string; correct: boolean }>) {
+  return [
+    {
+      children: questions.map(({ prompt, correct }, index) => {
+        const id = `q_${index + 1}`;
+        return {
+          children: [{ text: '' }],
+          id,
+          question: {
+            id,
+            labels: 'letters',
+            layout: 'paper',
+            parts: [
+              {
+                answer: { correct, type: 'boolean' },
+                blocks: [{ text: prompt, type: 'text' }],
+                id: `${id}:part:1`,
+                marks: 1,
+                solution: [],
+              },
+            ],
+            stem: [],
+          },
+          type: 'quiz_question',
+        };
+      }),
+      id: 'quiz_root',
+      type: 'quiz',
+    },
+  ];
+}
+
+/** Card ids are global keys, so each call mints its own. */
+function cardsValue(faces: Array<[string, string]>) {
+  return [
+    {
+      children: faces.map(([front, back]) => ({
+        children: [
+          { children: [{ text: front }], type: 'flashcard_front' },
+          { children: [{ text: back }], type: 'flashcard_back' },
+        ],
+        id: `c_e2e_${randomUUID()}`,
+        type: 'flashcard',
+      })),
+      id: 'cards_root',
+      type: 'flashcards',
+    },
+  ];
+}
+
+async function readStudy(api: APIRequestContext, workspaceId: string) {
+  const res = await api.get(`/api/workspaces/${workspaceId}/study`);
+  expect(res.status()).toBe(200);
+  return (await res.json()) as StudySummary;
+}
+
+function stateOf(study: StudySummary, id: string) {
+  return study.items.find((it) => it.fileId === id || it.materialId === id)
+    ?.state;
+}
+
+/** Clicks a rating tile and waits for the rating it posts. */
+async function rate(page: Page, rating: 'Again' | 'Hard' | 'Good' | 'Easy') {
+  const rated = waitForApi(page, apiEndsWith('/api/review/ratings', 'POST'));
+  await page.getByRole('button', { exact: true, name: rating }).click();
+  expect((await rated).status()).toBe(204);
+}
+
 /** A file row's ⋮ menu in the Files panel. */
 async function openRowMenu(page: Page, name: string) {
   const row = page
@@ -71,7 +140,7 @@ async function openRowMenu(page: Page, name: string) {
 }
 
 test.describe('study progress', () => {
-  test('Mark as read shows the done check on the file panel row', async ({
+  test('a file is marked read and unread from its row menu and its header', async ({
     editorApi,
     editorPage,
     seed,
@@ -131,6 +200,42 @@ test.describe('study progress', () => {
         .getByRole('menuitem', { exact: true, name: 'Mark as unread' })
         .click();
       await expect(doneMark).toHaveCount(0);
+
+      // The open file's header toggles the same record.
+      await editorPage
+        .locator('[data-workspace-file-tree]')
+        .getByRole('link', { name: fileName })
+        .click();
+      await expect(editorPage).toHaveURL(
+        new RegExp(`[?&]file=${file.id}(&|$)`)
+      );
+      const header = editorPage.getByTestId('content-header');
+      let put = waitForApi(
+        editorPage,
+        apiEndsWith(`/api/workspaces/${workspaceId}/study/items`, 'PUT')
+      );
+      await header.getByRole('button', { name: 'Mark as read' }).click();
+      expect((await put).status()).toBe(204);
+      await expect(
+        header.getByRole('button', { name: 'Mark as unread' })
+      ).toBeVisible();
+      await expect(doneMark).toBeVisible();
+      expect(stateOf(await readStudy(editorApi, workspaceId), file.id)).toBe(
+        'done'
+      );
+      put = waitForApi(
+        editorPage,
+        apiEndsWith(`/api/workspaces/${workspaceId}/study/items`, 'PUT')
+      );
+      await header.getByRole('button', { name: 'Mark as unread' }).click();
+      expect((await put).status()).toBe(204);
+      await expect(
+        header.getByRole('button', { name: 'Mark as read' })
+      ).toBeVisible();
+      await expect(doneMark).toHaveCount(0);
+      expect(
+        stateOf(await readStudy(editorApi, workspaceId), file.id)
+      ).toBeUndefined();
     } finally {
       await setStudyItem(editorApi, workspaceId, { fileId: file.id });
     }
@@ -187,6 +292,138 @@ test.describe('study progress', () => {
     await expect(
       ownerPage.getByRole('button', { name: 'Mark as unread' })
     ).toBeVisible();
+  });
+
+  test('quizzes and flashcard sets go started and done, Continue skips the done ones, and Learning counts them', async ({
+    ownerApi,
+    ownerPage,
+    workspaceFactory,
+  }) => {
+    test.setTimeout(120_000);
+    const ws = await workspaceFactory.create({
+      name: `E2E Study Practice ${randomUUID()}`,
+    });
+    const questions = [
+      { correct: true, prompt: 'Wetland plants absorb carbon.' },
+      { correct: false, prompt: 'Mangroves grow only in fresh water.' },
+    ];
+    const faces: Array<[string, string]> = [
+      ['Estuary', 'Where a river meets the sea'],
+      ['Salt marsh', 'Coastal grassland flooded by tides'],
+    ];
+    const quiz = (title: string) =>
+      createMaterial(ownerApi, ws.id, 'quiz', title, quizValue(questions));
+    const set = (title: string) =>
+      createMaterial(ownerApi, ws.id, 'flashcards', title, cardsValue(faces));
+    const finishedQuiz = await quiz('Finished quiz');
+    const finishedSet = await set('Finished cards');
+    const startedQuiz = await quiz('Started quiz');
+    const startedSet = await set('Started cards');
+    // Week 1 is finished by the steps below; Week 2 is only started.
+    const one = await addChapter(ownerApi, ws.id, 'Week 1');
+    const two = await addChapter(ownerApi, ws.id, 'Week 2');
+    await placeInChapter(ownerApi, ws.id, one.id, [
+      finishedQuiz.id,
+      finishedSet.id,
+    ]);
+    await placeInChapter(ownerApi, ws.id, two.id, [
+      startedQuiz.id,
+      startedSet.id,
+    ]);
+
+    // A quiz answered in part and left: nothing reaches the server.
+    await ownerPage.goto(`/quizzes/${startedQuiz.id}/attempt`);
+    await ownerPage
+      .getByRole('button', { exact: true, name: 'True' })
+      .first()
+      .click();
+    await expect(ownerPage.getByText('1 of 2 answered')).toBeVisible();
+    // Another submitted: one right, one wrong.
+    await ownerPage.goto(`/quizzes/${finishedQuiz.id}/attempt`);
+    const trueButtons = ownerPage.getByRole('button', {
+      exact: true,
+      name: 'True',
+    });
+    await trueButtons.nth(0).click();
+    await trueButtons.nth(1).click();
+    await expect(ownerPage.getByText('2 of 2 answered')).toBeVisible();
+    const submitted = waitForApi(
+      ownerPage,
+      apiEndsWith(`/api/quizzes/${finishedQuiz.id}/attempts`, 'POST')
+    );
+    await ownerPage
+      .getByRole('button', { exact: true, name: 'Submit answers' })
+      .click();
+    expect((await submitted).status()).toBe(201);
+    await expect(
+      ownerPage.getByRole('button', { name: 'Redo quiz' })
+    ).toBeVisible();
+
+    // A set studied to the end: Again sends the first card to the back.
+    await ownerPage.goto(`/flashcards/${finishedSet.id}`);
+    const showAnswer = ownerPage.getByRole('button', { name: 'Show answer' });
+    await showAnswer.click();
+    for (const tile of ['Again', 'Hard', 'Good', 'Easy']) {
+      await expect(
+        ownerPage.getByRole('button', { exact: true, name: tile })
+      ).toBeVisible();
+    }
+    await rate(ownerPage, 'Again');
+    await showAnswer.click();
+    await rate(ownerPage, 'Good');
+    await expect(ownerPage.getByText(faces[0][0])).toBeVisible();
+    await showAnswer.click();
+    await rate(ownerPage, 'Good');
+    await expect(
+      ownerPage.getByRole('heading', { name: 'Done for now' })
+    ).toBeVisible();
+    // Another left after its first card.
+    await ownerPage.goto(`/flashcards/${startedSet.id}`);
+    await showAnswer.click();
+    await rate(ownerPage, 'Easy');
+
+    const study = await readStudy(ownerApi, ws.id);
+    expect(stateOf(study, finishedQuiz.id)).toBe('done');
+    expect(stateOf(study, startedQuiz.id)).toBeUndefined();
+    expect(stateOf(study, finishedSet.id)).toBe('done');
+    expect(stateOf(study, startedSet.id)).toBe('started');
+    expect(
+      study.recentAttempts.map(({ correct, materialId, total }) => ({
+        correct,
+        materialId,
+        total,
+      }))
+    ).toEqual([{ correct: 1, materialId: finishedQuiz.id, total: 2 }]);
+    // Both questions of the attempt, both finished cards, one started card.
+    expect(study.reviewable).toBe(5);
+
+    // Continue passes Week 1 and opens the quiz that was only started.
+    await ownerPage.goto(`/workspaces/${ws.id}`);
+    const continueButton = ownerPage.getByRole('button', {
+      exact: true,
+      name: 'Continue',
+    });
+    await expect(
+      continueButton.locator('xpath=..').getByText(startedQuiz.title)
+    ).toBeVisible();
+    await continueButton.click();
+    await expect(ownerPage).toHaveURL(
+      new RegExp(`[?&]material=${startedQuiz.id}(&|$)`)
+    );
+
+    // Learning → Review: five to review, 2 of 4 done, and its Review opens
+    // the session.
+    await ownerPage.goto('/learning');
+    const row = ownerPage
+      .getByText(ws.name, { exact: true })
+      .locator('xpath=ancestor::div[.//button[normalize-space()="Review"]][1]');
+    await expect(row.getByText('5', { exact: true })).toBeVisible();
+    await expect(row.getByText('2 of 4', { exact: true })).toBeVisible();
+    await row.getByRole('button', { exact: true, name: 'Review' }).click();
+    await expect(ownerPage).toHaveURL(
+      `/learning/review/${ws.id}?from=learning`
+    );
+    await expect(ownerPage.getByText('5 left')).toBeVisible();
   });
 
   test('a mixed review session rates a flashcard and checks a question, then ends', async ({
@@ -272,13 +509,9 @@ test.describe('study progress', () => {
     expect(cardRating.status()).toBe(204);
 
     await ownerPage.goto(`/workspaces/${ws.id}`);
-    const review = ownerPage.locator('section').filter({
-      has: ownerPage.getByRole('heading', { exact: true, name: 'Review' }),
-    });
-    await expect(
-      review.getByText('2 questions and cards in progress')
-    ).toBeVisible();
-    await review.getByRole('button', { exact: true, name: 'Review' }).click();
+    await ownerPage
+      .getByRole('button', { exact: true, name: 'Review' })
+      .click();
     await expect(ownerPage).toHaveURL(
       `/learning/review/${ws.id}?from=workspace`
     );
