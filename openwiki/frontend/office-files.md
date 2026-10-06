@@ -1444,10 +1444,10 @@ A split in the middle of a paragraph or before a block
 leaves the source mark's tracked insertion or deletion (`pPrIns`, `pPrDel`) on
 the source mark, and the new mark's copy of a tracked property change
 (`w:pPrChange`) takes a new revision id. A revision id the editor makes saves as
-the source's largest revision id + 1 + a 30-bit hash of the editor id (the
-largest read once per source package, over every revision record and kept raw
-markup), so it keeps its number in every save, incremental ones too, and on
-every peer, within int32; two editor ids colliding is possible but unlikely. The engine's suggesting-mode
+2^30 + a 30-bit hash of the editor id, so it keeps its number in every save,
+incremental ones too, on every peer and across publications, and stays within
+int32 above the small ids Word writes; two editor ids, or one and an id from an
+earlier publication, colliding is possible but unlikely. The engine's suggesting-mode
 paragraph property changes (unused in Capy) save, but with the editor's
 resolved values as the previous pPr rather than the paragraph's own.
 PPTX uses a native textarea for typing, clipboard copy and paste, and IME composition. Copy puts the selected text on the clipboard as plain text and HTML (bold, italic and underline set on the run); a selected shape copies its whole text, one story per line. Read-only allows selecting and copying text, with typing, paste and cut refused; there is no cut. Edits over a selection that crosses paragraphs (typing, paste, IME, Enter, Backspace, Delete) replace it in one transaction and one undo step, joining the paragraphs under the first one's id and properties; a split (Enter or a newline) keeps the original paragraph's id on the first half and its properties on both halves, as PowerPoint continues a list, so Enter then Backspace restores the paragraph exactly (in a list item Backspace first removes the new item's marker, then joins); a refused edit changes nothing and no longer blocks later saves. Read-only speaker notes are `readOnly`, so they can be selected and copied.
