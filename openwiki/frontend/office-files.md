@@ -1058,22 +1058,24 @@ slide, move slide, delete object) are host menu commands that
 which edit. Delete or Backspace deletes a selected object unless its text is
 being edited.
 
-PPTX lists, levels and paragraph spacing are written as PowerPoint writes
-them (`crates/pptx-edit/src/story.rs`): a bulleted item gets `a:buChar` with
+PPTX lists, levels and paragraph spacing are written as PowerPoint writes them
+(`crates/pptx-edit/src/story.rs`): a bulleted item gets `a:buChar` with
 `a:buFont` Arial, a numbered one `a:buAutoNum` with `a:buFontTx`. A plain
 paragraph becoming a list item takes the `marL`/`indent` the selection's first
-list item at its level lays out with (an edit's value, else the file's). An
-indent that item inherits is not written when the paragraph inherits it too.
-When the paragraph's own file markup sets it (PowerPoint's `marL="0"
-indent="0"` on a plain paragraph), the value the item inherits is written
-explicitly, since saving cannot drop a file attribute; it is resolved as the
-renderer does (master text style, master and layout placeholders, the shape's
-list styles) and does not follow a later layout or master change. With no item
-at its level the default is a hanging indent of 0.375 in plus 0.5 in per level. An item already in a list
-(its own marker, or one it inherits, which the editor passes by paragraph id)
-only changes its marker and `a:buFont`, keeping its indents, so a new style or
-a switch between numbers and bullets never moves its text. Removing a list writes `a:buNone`
-and no hanging indent. A list style (`BULLET_PRESETS`,
+list item at its level lays out with: an edit's value, else the file's, else
+what it inherits, resolved by the rules the renderer uses
+(`crates/pptx-parse/src/cascade.rs`). Nothing is written where the paragraph
+already inherits the same value. Otherwise the value is written explicitly:
+over PowerPoint's `marL="0" indent="0"` on a plain paragraph, since saving
+cannot drop a file attribute, or where the layout's paragraphs, looked up by
+position, give the two different values. A written value is clamped to the
+schema's range and no longer follows a later layout or master change. With no
+item at its level the default is a hanging indent of 0.375 in plus 0.5 in per
+level. An item already in a list (its own marker, or one it inherits, which
+the editor passes by paragraph id) only changes its marker and `a:buFont`,
+keeping its indents, so a new style or a switch between numbers and bullets
+never moves its text. Removing a list writes `a:buNone` and no hanging indent.
+A list style (`BULLET_PRESETS`,
 `NUMBER_PRESETS` in `pptx-react/src/paragraphFormatting.ts`: five bullet and
 four number styles, three markers each, repeating by level) gives each level
 its marker, and indenting moves `lvl` one step, shifting an explicit `marL`
