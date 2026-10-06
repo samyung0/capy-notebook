@@ -176,7 +176,16 @@ pipeline's agent loop directly, so no Go deploy is needed for the experiment.
   block judged faithful or not against the page image, for both the MinerU
   text and the live reviewed text of the same pages. This gives the parser
   error rate the arm's materials were built on and a direct ODL+review versus
-  MinerU number.
+  MinerU number. Mechanics (built 2026-10-06): `audit_sample.py` froze the 62
+  pages; `audit_packets.py` renders each page (long edge 1568) and stores the
+  chunk texts covering it from arm B's corpus and from the live library
+  through the tunnel; `audit_judge.py` shows the image and both texts in a
+  per-page random A/B order to Claude Opus 5.5 at medium effort through the
+  CLI (updated to 2.1.291 for the model) under a verdict schema, one call per
+  page, about 15 s; `summary` tallies faithful blocks and issue kinds per
+  parser and book. The first page judged (AHSS p50) came out 4 of 4 blocks
+  faithful for the reviewed text and 3 of 4 for MinerU, whose one defect was
+  a garbled subscript line in a worked Z-score example.
 - Scratch database: `pgvector/pgvector:pg16` as `intake-eval-scratch` on
   127.0.0.1:15445 (55443 sits in a Windows reserved port range), schema
   created 2026-10-06 with `knowledge_base_library.py schema`; publish with
@@ -222,7 +231,12 @@ Requests, frozen 2026-10-06 in `bench/rag/intake/fixtures/requests.json`
 
 Output is notes with embedded quizzes only, decks off (Epo, 2026-10-06:
 decks are meant to be less text-dense and would not compare), study
-preferences at the app defaults, Library on.
+preferences at the app defaults, Library on. Amendment 1 (2026-10-06, before
+the first run, `bench/rag/intake/fixtures/protocol-amendments.json`): every
+pilot and formula request ends with "Build it as a note I can study from",
+because the build flow answers a "help me learn X" question in chat and
+writes nothing unless asked to build; the arm B smoke request came back as a
+3.4k-character answer with the book's worked example and no material.
 
 What a build produces, fixed in the request text so arms are comparable:
 

@@ -1,0 +1,13 @@
+{
+  "amendments": [
+    {
+      "number": 1,
+      "date": "2026-10-06",
+      "before_first_run": true,
+      "change": "Every pilot and formula request ends with ' Build it as a note I can study from.' (24 requests); generic flows unchanged.",
+      "reason": "The current build flow answers a 'help me learn X' question in chat and writes nothing unless asked to build; the smoke request stat-01 through arm B returned a 3.4k-character answer with a worked example from the book and no material. The comparison judges notes, so the requests ask for one. The smoke output was discarded.",
+      "requests_sha256_before": "89e2b1a6da5dad74fa247913c59a91d15374b694ec52be7c5476c68c34624fc5",
+      "requests_sha256_after": "62aedc06cb1eb49c8c8b7cb80ce6420735a1e7a6b7cc06e2908ebb80ed94af71"
+    }
+  ]
+}
