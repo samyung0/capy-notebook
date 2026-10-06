@@ -21,9 +21,9 @@ import {
 /**
  * Unsaved collaborative edits kept on this device (notes, Office and text
  * sources), so they outlive a lost connection, a reload or a closed tab. A row
- * is one session's (one editor mount's) full Yjs state or one of its local
- * updates (an earlier build merged runs of them). Rows are deleted only once a
- * checkpoint receipt covers them: the room's sync alone is not durable.
+ * is one session's (one editor mount's) full Yjs state, one of its local
+ * updates, or a merged run of them. Rows are deleted only once a checkpoint
+ * receipt covers them: the room's sync alone is not durable.
  *
  * `lineage` names the room state the edits grew from: the room name (a note's
  * `material:<id>:schema:<n>`, a source's `source:<id>:epoch:<n>@<baseSHA>`).
@@ -34,7 +34,8 @@ export interface EditDraft {
   /** A source's base (`bases` store), which recovery opens the edits over. */
   base?: string;
   data: Uint8Array;
-  /** `${session}:state`, or `${session}:${seq}` for an update. */
+  /** `${session}:state`, or `${session}:${seq}` for an update (or a run
+   * ending at `seq`). */
   id: string;
   /** `${actorId}:material:${id}` or `${actorId}:file:${id}`. */
   key: string;
