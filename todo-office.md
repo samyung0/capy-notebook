@@ -208,22 +208,32 @@ check); it applies at the first promotion.
   number, not only those levels;
   add "Word opens and updates a Capy-inserted TOC" to the UAT checks (Word was
   not available on the dev machine).
-- **DOCX paragraph properties the model doesn't hold are dropped on save**
-  (found by the paragraph-save review, 2026-10-05; pre-existing): `kinsoku`,
-  `wordWrap`, `overflowPunct`, `topLinePunct`, `textDirection`,
-  `textAlignment`, `divId`, `cnfStyle` and others vanish on every save,
-  hurting CJK documents most. Also: pPr in a vertically merged continuation
-  cell is dropped; Enter copies a tracked pPr change to both halves (duplicate
-  revision ids); the font picker drops the East Asian font and the save adds a
-  complex-script font the source lacked; any suggesting-mode paragraph change
-  makes the save throw (not exposed in Capy). After any edit to its paragraph a
-  tracked-deleted footnote reference saves as live and a deleted `w:fldSimple`
-  loses its result (docx-fields review round 2, R2-8). Also on the baseline
-  (paragraph-save final review, 2026-10-06): new table cells get an explicit
-  `left` alignment, every save drops a row's `gridBefore`, and Enter after a
-  List Bullet paragraph loses its numbering. Keep what the model doesn't
-  hold; Word is the oracle. Probes in
-  `capy-docx-review-harnesses/2026-10-05-office-batch/docx-paragraph-save/review-probes/`.
+- **DOCX save leftovers after the fidelity track** (2026-10-06; pre-existing):
+  the engine's suggesting-mode paragraph property change (unused in Capy) no
+  longer makes the save throw but writes the editor's resolved values as the
+  previous pPr (no `w:pStyle`, style values as direct), so Reject in Word
+  would restyle the paragraph; convert the record through the paragraph save
+  as the current pPr is. A vMerge continuation cell saves its restart cell's
+  `w:tcPr`, losing its own borders and shading. The editor lays out a row's
+  skipped grid columns (`w:gridBefore`) from the first column (view mode and
+  Word shift the row). Enter at the end of a paragraph keeps only style,
+  spacing, font carry and the list, where Word copies all direct pPr
+  (alignment, indents, the unmodeled children): needs a decision. Cells whose
+  row or column position changes (a row inserted above the header, a column
+  after the last) keep their old table-style values and save them as direct
+  formatting, where Word shows the new position's. A style list paragraph with
+  an ilvl-only `numPr` shows no bullet in the editor. A font pick diffs the
+  whole story (about 0.75 ms more a keystroke with a stored caret font on a
+  4000-paragraph story). Probes in
+  `capy-docx-review-harnesses/2026-10-05-office-batch/docx-fidelity/`.
+- **DOCX run formatting written as direct on every save** (pre-existing, found
+  by the docx-fidelity review 2026-10-06): every save writes the style's run
+  formatting as direct formatting on every run of a saved story (long-handbook
+  0 → 1103 `w:rFonts`; book-30p's Title gains `sz`, `kern`, `spacing`, its
+  Heading 1 runs colour, `kern` and `sz`, every run `lang`), so later style
+  changes in Word no longer reach those runs. The run-level counterpart of the
+  paragraph save: write each run property the editor holds differently from
+  what the seed gave it, source kept for the rest.
 - **PPTX typed text size** (pre-existing, found by pptx-parity): text typed
   where the run inherits its size from the placeholder gets an explicit 24 pt
   (`pptx-parity/shots/slide-bulleted.png`, "Nested item").
