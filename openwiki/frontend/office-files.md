@@ -680,7 +680,9 @@ pause ends nothing moves the focus: it stays in Capy's field, Find, the
 document input (read-only never blurs it) or wherever it was. A newly opened
 DOCX editor focuses the document only through its frame: when the replica is
 ready (`collaboration-ready`) Capy focuses the frame unless its own focus is
-in a field taking typing (the chat box, say), and the editor takes the focus
+in a field taking typing (the chat box, say, also one behind a shadow root such
+as MathLive's) or anywhere in an open dialog, alert dialog or menu
+(`keepsFocus`), and the editor takes the focus
 once the frame has it. Closing or removing a header or footer from its Options
 menu, or Escape out of it, gives the document input the focus back. Each menu
 item says whether it edits (`edits`), declared where it is defined: DOCX's in
@@ -897,7 +899,9 @@ file error and no failed Save, since nobody asked to save. A formula-bar draft
 stays open over an app or tab switch too. A draft whose sheet a peer removes,
 or whose sheet stops being the active one in a peer's update, is dropped, not
 committed; otherwise a draft commits to its own sheet even when a peer's update
-shifted that sheet's index. Clicking a sheet
+shifted that sheet's index. Once a draft is dropped neither the grid nor the
+formula bar keeps the focus, so the keys still being typed do nothing until a
+click. Clicking a sheet
 tab gives the grid the keys. A cell wider
 or taller than the view stays put while it spans it. The editor only asks the engine where
 the cell is (`cellPosition`, from the geometry `sheet_info` memoized) when the
@@ -1555,9 +1559,13 @@ session's table, so a row or table made in the session, by a peer too, gets its
 own and a reused cell id never a deleted cell's). It reads only the parent
 story's table payloads (`storyTables`), once per style per toolbar or ruler
 command, and Enter's next style passes the current paragraph's style values
-without listing the story. A cell whose row moved keeps
-the look it seeded with in the editor, and the save writes what differs from its
-new position. Ops store tab stops in the seed's shape (`position`, `alignment`,
+without listing the story. A cell whose row or column moved keeps
+the look it seeded with in the editor until the file reopens. The save compares
+a cell the table had at open (its story still holds one of its source
+paragraphs, by paraId from the materialized base) against that seed-time look
+and a cell made in the session against its current position (`cellContext` in
+`yrsToDocument.ts`), so an untouched cell writes no stale header, last-row or
+last-column look as direct formatting and Word shows its new place's. Ops store tab stops in the seed's shape (`position`, `alignment`,
 reading the older `pos`/`val` too) and the hanging first-line flag as a boolean.
 Enter at the end of a paragraph starts a clean one that keeps only its style,
 spacing and the font, size and colour carry (`INHERITED_PARA_ATTRS`), plus its
