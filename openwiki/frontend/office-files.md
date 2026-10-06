@@ -1061,12 +1061,15 @@ being edited.
 PPTX lists, levels and paragraph spacing are written as PowerPoint writes
 them (`crates/pptx-edit/src/story.rs`): a bulleted item gets `a:buChar` with
 `a:buFont` Arial, a numbered one `a:buAutoNum` with `a:buFontTx`. A plain
-paragraph becoming a list item takes the `marL`/`indent` of the selection's
-first list item at its level, as laid out (an edit's value, else the file's);
-an indent that item inherits is not written, and the paragraph inherits it too
-unless its own file markup sets one (saving cannot drop a file attribute), in
-which case it gets the default. With no item at its level the default is a
-hanging indent of 0.375 in plus 0.5 in per level. An item already in a list
+paragraph becoming a list item takes the `marL`/`indent` the selection's first
+list item at its level lays out with (an edit's value, else the file's). An
+indent that item inherits is not written when the paragraph inherits it too.
+When the paragraph's own file markup sets it (PowerPoint's `marL="0"
+indent="0"` on a plain paragraph), the value the item inherits is written
+explicitly, since saving cannot drop a file attribute; it is resolved as the
+renderer does (master text style, master and layout placeholders, the shape's
+list styles) and does not follow a later layout or master change. With no item
+at its level the default is a hanging indent of 0.375 in plus 0.5 in per level. An item already in a list
 (its own marker, or one it inherits, which the editor passes by paragraph id)
 only changes its marker and `a:buFont`, keeping its indents, so a new style or
 a switch between numbers and bullets never moves its text. Removing a list writes `a:buNone`
