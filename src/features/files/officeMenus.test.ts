@@ -57,6 +57,27 @@ describe('Office menu items on the host', () => {
     expect(fitOfficeMenus(menus)[0].items).toEqual([item('bold')]);
   });
 
+  it('takes radio items and refuses a radio flag that is not a boolean', () => {
+    const menu = (radio: unknown) => [
+      {
+        id: 'format',
+        items: [
+          {
+            checked: true,
+            edits: true,
+            id: 'table-align:left',
+            kind: 'item',
+            label: 'Left',
+            radio,
+          },
+        ],
+        label: 'Format',
+      },
+    ];
+    expect(isOfficeMenus(menu(true))).toBe(true);
+    expect(isOfficeMenus(menu('yes'))).toBe(false);
+  });
+
   it('names shortcuts for aria-keyshortcuts on Mac and elsewhere', () => {
     expect(ariaKeyShortcut('⌘⇧V')).toBe('Meta+Shift+V');
     expect(ariaKeyShortcut('Ctrl+Shift+V')).toBe('Control+Shift+V');

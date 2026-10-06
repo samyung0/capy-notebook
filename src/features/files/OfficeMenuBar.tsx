@@ -240,7 +240,13 @@ function Entries({
             pickFile(action.accept, (file) => onFile(entry.id, file));
           else onCommand(entry.id);
         }}
-        role={checkable ? 'menuitemcheckbox' : 'menuitem'}
+        role={
+          checkable
+            ? entry.radio
+              ? 'menuitemradio'
+              : 'menuitemcheckbox'
+            : 'menuitem'
+        }
       >
         <Lead column={column} icon={entry.icon} />
         <span className="min-w-0 flex-1">{entry.label}</span>

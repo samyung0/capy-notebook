@@ -726,13 +726,56 @@ Print), Edit (Undo, Redo, Select all, Delete, Find and replace), View (Show
 ruler ✓, Show document outline ✓, Show comments ✓, Zoom ▸), Insert (Image, Table ▸, Link,
 Comment, Watermark, Break ▸, Table of contents, and Update table of contents
 while the document has one) and Format (Text ▸, Paragraph styles ▸, Align &
-indent ▸, Line spacing ▸, Bullets & numbering ▸, Text direction ▸, Table
-properties and Image options in context, Clear formatting). Placeholders that
-do nothing stay hidden: the table menu's vertical
-alignment, table alignment, header row, distribute columns, auto-fit and
-no-wrap, and Line spacing's empty Paragraph spacing heading. Cut, Copy and
+indent ▸, Line spacing ▸, Bullets & numbering ▸, Text direction ▸, Table ▸
+and Image options in context, Clear formatting). Placeholders that do nothing
+stay hidden: Line spacing's empty Paragraph spacing heading. Cut, Copy and
 Paste are left out of the menus (a host click cannot reach the frame's
 clipboard). Find and replace works in edit mode only (Ctrl/Cmd+F and H too).
+
+Format › Table ▸ (Google Docs' place) has Vertical alignment ▸
+Top/Middle/Bottom and Table alignment ▸ Left/Center/Right (radio items ticked
+for the caret's cell and table), then Pin header row ✓, Wrap text ✓,
+Distribute columns, Auto-fit to contents and Table properties. The toolbar's
+table ⋮ menu follows Google Docs' table menu: insert, delete, merge and split,
+Distribute columns, Auto-fit to contents, Pin header row, Wrap text, Select
+table and Table properties (the alignments stay in Format › Table, as Google
+keeps them in Table properties). Each item is one engine op
+(`crates/docx-edit/src/ops/table.rs`), one transaction and one Undo step, and
+edits (paused or read-only editors refuse it). Defaults come from Word and
+Google Docs
+(`capy-docx-review-harnesses/2026-10-05-office-batch/docx-table-menu/GAP.md`):
+vertical alignment and Wrap text apply to the selected cells (`w:vAlign`,
+`w:noWrap`); table alignment writes only `w:jc` (`w:tblInd` applies again on
+Left); Pin header row makes every row down to the selection's last a
+`w:tblHeader` row, repeated on each page the table spans, and unticking
+unpins them all; Distribute columns evens the selected columns (every column
+when one is selected), keeping their total, and writes `w:gridCol` and dxa
+`w:tcW`; Auto-fit to contents is Word's AutoFit Contents: the table and every
+cell get `w:w="0" w:type="auto"` widths and lose a fixed layout. A table of
+that shape (no table width, every `w:tcW` explicitly auto, no fixed layout,
+cells holding only paragraphs) is sized from content as Word does: each
+column takes its widest unwrapped line plus the cell margins, so it shrinks to
+content (an empty column to its margins) and grows as text is typed; a table
+with a nested table or another block in a cell keeps its grid. The saved
+`w:gridCol` keeps the old widths (Word recomputes them); a column drag starts
+from the drawn widths (`columnWidths` on the layout's table fragment) and
+writes every column, so none snaps back. A no-wrap cell without a dxa width
+keeps its text on one line by widening its column into the other columns'
+empty room and the page's (ECMA-376 §17.4.30); with a dxa width, in a fixed
+table (`w:tblLayout`, which the bridge passes to the layout) or holding other
+blocks it changes nothing. A new table gets Word's Normal Table cell margins
+(108 twips left and right, saved as `w:tblCellMar`) and the document's
+compatibility mode (`compatibilityModeFromDocument`, stamped as the seed
+stamps every table), so it draws where it will after a reopen: in a Word
+2013+ document (mode 15) its border sits at the margin, in older modes it
+hangs into the margin by its cell margin, as Word draws them. A floating
+picture in a cell keeps an auto-fitted table on its grid, as a nested table
+does. Table ops write `tblPr` only when it changed and `grid` with `rows`
+together, so table alignment survives a peer's row insert, while a row change
+(alignment in cells, header rows, widths, wrap, shading, borders) racing a
+peer's row or column insert or delete keeps one of the two (Auto-fit's
+table-width part can survive on its own); tables stay consistent and both
+peers converge.
 
 Insert › Table of contents writes Word's field (`TOC \o "1-3" \h \z \u`,
 `ops/toc.rs` in docx-edit) at the caret in the body: one paragraph per body

@@ -1435,3 +1435,115 @@ test('DOCX View › Show ruler is remembered, edit mode only, and stays usable w
   await toggleRuler(true);
   await expect(rulers).toHaveCount(0);
 });
+
+// Format › Table runs the table items in the engine: Auto-fit shrinks a new
+// table to its text and Center then moves it right; the ticks follow the
+// caret's table and a paused editor disables them all.
+test('DOCX Format › Table fits, centres and pins a table, a drag keeps the fit, and it pauses with the editor', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 120_000,
+  });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+  await officeMenu(page, 'Insert').click();
+  await page.getByRole('menuitem', { name: 'Table' }).click();
+  await page.getByRole('gridcell', { name: 'Insert 2 by 2 table' }).click();
+  // Format › Table's `item`, or `choice` in its submenu.
+  const table = async (
+    item: string,
+    choice?: string,
+    role: 'menuitem' | 'menuitemcheckbox' | 'menuitemradio' = 'menuitemcheckbox'
+  ) => {
+    await officeMenu(page, 'Format').click();
+    await page.getByRole('menuitem', { exact: true, name: 'Table' }).click();
+    if (!choice) return page.getByRole(role, { exact: true, name: item });
+    await page.getByRole('menuitem', { exact: true, name: item }).click();
+    return page.getByRole(role, { exact: true, name: choice });
+  };
+  const pin = await table('Pin header row');
+  await expect(pin).toHaveAttribute('aria-checked', 'false');
+  await pin.click();
+  // The table items hand the caret back to its cell.
+  await page.keyboard.type('Cell');
+  // The positioned mirror draws one run per glyph.
+  const cell = frame
+    .locator('.layout-page-mirror:not(.layout-page-mirror-text)')
+    .getByRole('paragraph')
+    .filter({ hasText: /^Cell$/ })
+    .getByText('C', { exact: true });
+  await expect(cell).toBeAttached();
+  const left = (await cell.boundingBox())?.x ?? Number.NaN;
+  // exchange-plan.docx is a Word 2013+ (mode 15) document: the new table's
+  // border sits at the margin, so its text is one cell margin (7.2px) in.
+  const body = frame
+    .locator('.layout-page-mirror:not(.layout-page-mirror-text)')
+    .getByRole('paragraph')
+    .filter({ hasText: /^籌委會籌備小組$/ })
+    .getByText('籌', { exact: true })
+    .first();
+  const inset = left - ((await body.boundingBox())?.x ?? Number.NaN);
+  expect(inset).toBeGreaterThan(5);
+  expect(inset).toBeLessThan(10);
+
+  await table('Auto-fit to contents', undefined, 'menuitem').then((item) =>
+    item.click()
+  );
+  const center = await table('Table alignment', 'Center', 'menuitemradio');
+  await expect(center).toHaveAttribute('aria-checked', 'false');
+  await center.click();
+  // The columns shrink to "Cell" and to the empty cell's margins, so the
+  // centred table starts over 100px further right.
+  await expect
+    .poll(async () => ((await cell.boundingBox())?.x ?? left) - left)
+    .toBeGreaterThan(100);
+  await expect(
+    await table('Table alignment', 'Center', 'menuitemradio')
+  ).toHaveAttribute('aria-checked', 'true');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(await table('Pin header row')).toHaveAttribute(
+    'aria-checked',
+    'true'
+  );
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+
+  // A column drag starts from the drawn columns: widening the last one keeps
+  // the first at its fitted width instead of snapping back to the old grid.
+  const edge = frame.locator('.layout-table-edge-handle-right').first();
+  const span = async () =>
+    ((await edge.boundingBox())?.x ?? Number.NaN) -
+    ((await cell.boundingBox())?.x ?? Number.NaN);
+  await expect.poll(span).toBeLessThan(150);
+  const before = await span();
+  const handle = await edge.boundingBox();
+  if (!handle) throw new Error('Missing the table edge handle');
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + 4);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2 + 40, handle.y + 4, {
+    steps: 5,
+  });
+  await page.mouse.up();
+  await expect.poll(span).toBeGreaterThan(before + 20);
+  expect(await span()).toBeLessThan(before + 60);
+
+  await page.evaluate(() => {
+    const iframe = document.querySelector<HTMLIFrameElement>(
+      'iframe[src*="office-runtime"]'
+    );
+    if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
+    iframe.contentWindow.postMessage(
+      { canEdit: false, type: 'set-capabilities', version: 7 },
+      new URL(iframe.src).origin
+    );
+  });
+  await officeMenu(page, 'Format').click();
+  await expect(
+    page.getByRole('menuitem', { exact: true, name: 'Table' })
+  ).toHaveAttribute('aria-disabled', 'true');
+});
