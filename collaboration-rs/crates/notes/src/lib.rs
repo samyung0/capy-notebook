@@ -1,11 +1,14 @@
 //! Pure functions over a note's yrs document (track rust-notes): the Plate
 //! projection exactly as `@slate-yjs/core` gives it, exact metrics and the
 //! per-update growth bound, agent edit commands, children, questions and
-//! material validation. No I/O, clocks or globals: the server owns rooms,
-//! Postgres, API calls and timers.
+//! material validation. No I/O, clocks or globals: the server (`crates/server`)
+//! owns rooms, Postgres, API calls and timers. Interface contract:
+//! capy-harness/2026-10-06-rust-round/rust-core/DESIGN.md section 6.
 //!
-//! Documents must count text in UTF-16 units (`yrs::OffsetKind::Utf16`), as
-//! Yjs and Slate do: [`doc_options`].
+//! A note document has two roots: `content` (a Y.XmlText written by
+//! `@slate-yjs/core`, children are Y.XmlText blocks) and the server-owned
+//! contributor marker map (`ydoc::CONTRIBUTORS_ROOT`). Documents count text
+//! in UTF-16 units, as Yjs and Slate do (`ydoc::doc_options`).
 
 pub mod bound;
 pub mod json;
@@ -17,10 +20,3 @@ pub mod update;
 pub mod validate;
 
 pub use plate::CONTENT_ROOT;
-
-/// Options for a note document: UTF-16 offsets, garbage collection on.
-pub fn doc_options(client_id: u64) -> yrs::Options {
-    let mut options = yrs::Options::with_client_id(yrs::block::ClientID::new(client_id));
-    options.offset_kind = yrs::OffsetKind::Utf16;
-    options
-}

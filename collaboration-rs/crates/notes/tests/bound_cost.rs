@@ -5,7 +5,8 @@
 //! cost stays linear in the note.
 use std::time::{Duration, Instant};
 
-use notes::{bound, doc_options, plate};
+use notes::{bound, plate};
+use ydoc::doc_options;
 use yrs::types::Attrs;
 use yrs::updates::decoder::Decode;
 use yrs::{Any, Doc, ReadTxn, StateVector, Text, Transact, Update, Xml, XmlTextPrelim};
@@ -81,11 +82,10 @@ fn corrected_note(paragraphs: u32) -> (Doc, Vec<u8>) {
 
 fn growth_time(paragraphs: u32) -> Duration {
     let (room, update) = corrected_note(paragraphs);
-    let ranges: usize = notes::update::Decoded::decode(&update)
-        .unwrap()
-        .deletes
-        .values()
-        .map(Vec::len)
+    let decoded = ydoc::decode(&update).unwrap();
+    let ranges: usize = notes::update::Incoming::new(&decoded)
+        .delete_ranges()
+        .map(|(_, ranges)| ranges.len())
         .sum();
     assert!(ranges as u32 >= paragraphs * 40, "{ranges} delete ranges");
     let txn = room.transact();

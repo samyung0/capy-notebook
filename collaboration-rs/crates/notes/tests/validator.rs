@@ -4,9 +4,10 @@
 use notes::limits::{
     self, Admission, LimitCode, MAX_CONTENT_BYTES, MAX_DEPTH, MAX_NODES, Refusal, Validator,
 };
-use notes::validate::{CONTRIBUTORS_ROOT, RootError};
-use notes::{doc_options, plate, slate_yjs};
+use notes::validate::RootError;
+use notes::{plate, slate_yjs};
 use serde_json::{Value, json};
+use ydoc::{CONTRIBUTORS_ROOT, doc_options};
 use yrs::updates::decoder::Decode;
 use yrs::{
     Array, Doc, GetString, Map, ReadTxn, StateVector, Text, Transact, Update, Xml, XmlTextRef,

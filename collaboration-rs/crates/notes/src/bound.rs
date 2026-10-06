@@ -20,7 +20,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use yrs::block::{ItemContent, ItemPtr};
+use yrs::block::{Item, ItemContent, ItemPtr, UpdateParent};
 use yrs::branch::{BranchID, BranchPtr};
 use yrs::types::TypeRef;
 use yrs::{Any, ID, ReadTxn, StateVector};
@@ -28,7 +28,7 @@ use yrs::{Any, ID, ReadTxn, StateVector};
 use crate::json;
 use crate::limits::{DEPTH_CEILING, Metrics};
 use crate::plate;
-use crate::update::{Decoded, Item, Parent};
+use crate::update::Incoming;
 
 // JSON bytes an update can add on top of its own strings and attributes: a
 // text leaf `{"text":""}` and a block `{"children":[]}`, each with its comma;
@@ -98,23 +98,23 @@ fn text_bytes(text: &str) -> u64 {
 /// update holds something the bound does not model (the caller measures
 /// exactly). Call it only for an update the room can place.
 pub fn update_growth<T: ReadTxn>(txn: &T, update: &[u8]) -> Option<Metrics> {
-    let decoded = Decoded::decode(update).ok()?;
-    growth(txn, &decoded)
+    let update = ydoc::decode(update).ok()?;
+    growth(txn, &Incoming::new(&update))
 }
 
-pub fn growth<T: ReadTxn>(txn: &T, decoded: &Decoded) -> Option<Metrics> {
+pub fn growth<T: ReadTxn>(txn: &T, decoded: &Incoming) -> Option<Metrics> {
     Bound::new(txn, decoded)?.run().ok()
 }
 
 struct Bound<'a, T: ReadTxn> {
     txn: &'a T,
-    decoded: &'a Decoded,
+    decoded: &'a Incoming<'a>,
     state: StateVector,
     content: BranchPtr,
 }
 
 impl<'a, T: ReadTxn> Bound<'a, T> {
-    fn new(txn: &'a T, decoded: &'a Decoded) -> Option<Self> {
+    fn new(txn: &'a T, decoded: &'a Incoming<'a>) -> Option<Self> {
         Some(Bound {
             txn,
             decoded,
@@ -169,13 +169,13 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
         let mut chain = Vec::new();
         let mut item = start;
         let found = loop {
-            if let Some(known) = places.get(&item.id) {
+            if let Some(known) = places.get(item.id()) {
                 break known.clone();
             }
-            places.insert(item.id, Place::Unknown); // a reference cycle stays unknown
-            chain.push(item.id);
+            places.insert(*item.id(), Place::Unknown); // a reference cycle stays unknown
+            chain.push(*item.id());
             // Yjs drops an item next to a garbage-collected struct.
-            let sides = [item.origin, item.right_origin];
+            let sides = [item.origin(), item.right_origin()];
             if sides
                 .iter()
                 .flatten()
@@ -183,17 +183,17 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
             {
                 break Place::Gone;
             }
-            match &item.parent {
-                Parent::Root(name) => {
+            match item.update_parent() {
+                UpdateParent::Root(name) => {
                     break match BranchID::get_root(self.txn, name.as_ref()) {
                         Some(root) => Place::At {
-                            key: item.parent_sub.clone(),
+                            key: item.parent_sub().cloned(),
                             parent: Target::Held(root),
                         },
                         None => Place::Unknown,
                     };
                 }
-                Parent::Item(parent) => {
+                UpdateParent::Item(parent) => {
                     if self.held(parent) {
                         // Yjs also drops an item whose parent block was deleted
                         // and collected, as after a writer deletes a block
@@ -202,7 +202,7 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
                             Some(holder) => match holder.content() {
                                 ItemContent::Deleted(_) => Place::Gone,
                                 ItemContent::Type(branch) => Place::At {
-                                    key: item.parent_sub.clone(),
+                                    key: item.parent_sub().cloned(),
                                     parent: Target::Held(BranchPtr::from(branch.as_ref())),
                                 },
                                 _ => Place::Unknown,
@@ -212,14 +212,15 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
                     }
                     break match self.decoded.item_at(parent) {
                         Some(holder) => Place::At {
-                            key: item.parent_sub.clone(),
-                            parent: Target::New(holder.id),
+                            key: item.parent_sub().cloned(),
+                            parent: Target::New(*holder.id()),
                         },
                         None => Place::Unknown,
                     };
                 }
-                Parent::Origin => {
-                    let Some(sibling) = item.origin.or(item.right_origin) else {
+                UpdateParent::Branch(_) => break Place::Unknown,
+                UpdateParent::Unknown => {
+                    let Some(&sibling) = item.origin().or(item.right_origin()) else {
                         break Place::Unknown;
                     };
                     if self.held(&sibling) {
@@ -266,7 +267,7 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
             };
 
         for item in self.decoded.items() {
-            if item.id.clock + item.len <= self.state.get(&item.id.client) {
+            if item.id().clock + item.len() <= self.state.get(&item.id().client) {
                 continue;
             }
             let (key, parent) = match self.place_of(item, &mut places) {
@@ -274,10 +275,10 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
                 Place::Unknown => return Err(Unbounded),
                 Place::At { key, parent } => (key, parent),
             };
-            let kind = kind_of(&item.content);
+            let kind = kind_of(item.content());
             if let Some(key) = key {
                 // An attribute: `"key":value,` at most (it may replace a longer one).
-                let added = match &item.content {
+                let added = match item.content() {
                     ItemContent::Deleted(_) => continue,
                     ItemContent::Any(values) => {
                         attribute_bytes(&key, values.last().unwrap_or(&Any::Undefined))?
@@ -307,7 +308,7 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
             match parent {
                 Target::New(block) => {
                     let holder = self.decoded.item_at(&block).ok_or(Unbounded)?;
-                    if kind_of(&holder.content) != Kind::Element {
+                    if kind_of(holder.content()) != Kind::Element {
                         return Err(Unbounded);
                     }
                     blocks.entry(block).or_default().items.push((item, kind));
@@ -329,7 +330,7 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
         // a text is re-priced below.
         let mut reformatted: HashSet<BranchID> = HashSet::new();
         let store = self.txn.store();
-        for (client, ranges) in &self.decoded.deletes {
+        for (client, ranges) in self.decoded.delete_ranges() {
             let end = self.state.get(client);
             for &(from, to) in ranges {
                 let until = to.min(end);
@@ -367,8 +368,8 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
                 if retext {
                     break;
                 }
-                let left = self.held_side(item.origin, Side::Origin)?;
-                let right = self.held_side(item.right_origin, Side::Right)?;
+                let left = self.held_side(item.origin().copied(), Side::Origin)?;
+                let right = self.held_side(item.right_origin().copied(), Side::Right)?;
                 retext = if !self.adjacent(*text, left, right) {
                     true
                 } else if *kind == Kind::String {
@@ -412,11 +413,11 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
             }
             for (item, kind) in items {
                 bytes += SPLIT_BYTES;
-                match (&item.content, kind) {
+                match (item.content(), kind) {
                     (ItemContent::String(text), _) => bytes += text_bytes(text.as_str()),
                     (ItemContent::Format(key, value), _) => widen(&mut widest, key, value)?,
                     (_, Kind::Element) => {
-                        let block = subtree(&blocks, item.id, level + 1)?;
+                        let block = subtree(&blocks, *item.id(), level + 1)?;
                         bytes += block.bytes;
                         nodes += block.nodes;
                         depth = depth.max(block.depth);
@@ -450,9 +451,10 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
             }
             let next = self.decoded.item_at(&current).ok_or(Unbounded)?;
             id = match side {
-                Side::Origin => next.origin,
-                Side::Right => next.right_origin,
-            };
+                Side::Origin => next.origin(),
+                Side::Right => next.right_origin(),
+            }
+            .copied();
         }
         Ok(id)
     }
@@ -572,7 +574,7 @@ fn subtree(blocks: &HashMap<ID, Children>, block: ID, level: i64) -> Result<Subt
     let mut boundaries: u64 = 0;
     for (item, kind) in &children.items {
         size += SPLIT_BYTES;
-        match (&item.content, kind) {
+        match (item.content(), kind) {
             (ItemContent::String(text), _) => {
                 size += text_bytes(text.as_str());
                 continue;
@@ -583,7 +585,7 @@ fn subtree(blocks: &HashMap<ID, Children>, block: ID, level: i64) -> Result<Subt
             }
             (_, Kind::Element) => {
                 boundaries += 1;
-                let child = subtree(blocks, item.id, level + 1)?;
+                let child = subtree(blocks, *item.id(), level + 1)?;
                 size += child.bytes;
                 count += child.nodes;
                 deepest = deepest.max(child.depth);

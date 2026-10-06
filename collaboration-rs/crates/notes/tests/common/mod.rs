@@ -50,7 +50,7 @@ pub fn hash(value: &Value) -> String {
 
 /// A document holding `state`, as the room or a client.
 pub fn doc(state: &[u8], client: u64) -> yrs::Doc {
-    let doc = yrs::Doc::with_options(notes::doc_options(client));
+    let doc = yrs::Doc::with_options(ydoc::doc_options(client));
     apply(&doc, state);
     doc
 }

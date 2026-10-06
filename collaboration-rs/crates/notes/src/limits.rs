@@ -238,8 +238,8 @@ pub enum Refusal {
     Limit { code: LimitCode, metrics: Metrics },
     #[error(transparent)]
     Roots(#[from] crate::validate::RootError),
-    #[error("malformed yjs update: {0}")]
-    Update(String),
+    #[error(transparent)]
+    Update(#[from] ydoc::UpdateError),
     #[error(transparent)]
     Projection(#[from] ProjectionError),
 }
@@ -265,44 +265,45 @@ impl Validator {
     /// update, so the only remedy left would be discarding the whole room.
     pub fn admit(&mut self, doc: &yrs::Doc, update: &[u8]) -> Result<Admission, Refusal> {
         use yrs::Transact;
-        use yrs::updates::decoder::Decode;
         let txn = doc.transact();
         crate::validate::assert_roots(&txn)?;
-        let decoded =
-            crate::update::Decoded::decode(update).map_err(|e| Refusal::Update(e.to_string()))?;
-        let inspection = crate::update::inspect(&txn, &decoded);
+        let decoded = ydoc::decode(update)?;
+        let inspection = ydoc::inspect_update(&txn, &decoded);
         if inspection.unheld {
             return Ok(Admission::Unheld);
         }
         // The common case: the room's bound plus this update's growth bound
         // stays within every limit, so the room is not copied per keystroke.
-        if let Some(bound) = self.bound {
-            if plate::content_root(&txn).is_some()
-                && crate::validate::keeps_roots(&inspection.containers)
+        // The exact measurement below decides anything else, and refuses a
+        // root violation.
+        let growth = match self.bound {
+            Some(_)
+                if plate::content_root(&txn).is_some()
+                    && crate::validate::keeps_roots(&inspection.containers) =>
             {
-                if let Some(growth) = crate::bound::growth(&txn, &decoded) {
-                    let next = Metrics {
-                        content_bytes: bound.content_bytes + growth.content_bytes,
-                        max_depth: bound.max_depth.max(growth.max_depth),
-                        node_count: bound.node_count + growth.node_count,
-                    };
-                    if limit_code(&next).is_none() {
-                        self.bound = Some(next);
-                        return Ok(Admission::Accepted);
-                    }
-                }
+                crate::bound::growth(&txn, &crate::update::Incoming::new(&decoded))
+            }
+            _ => None,
+        };
+        if let (Some(bound), Some(growth)) = (self.bound, growth) {
+            let next = Metrics {
+                content_bytes: bound.content_bytes + growth.content_bytes,
+                max_depth: bound.max_depth.max(growth.max_depth),
+                node_count: bound.node_count + growth.node_count,
+            };
+            if limit_code(&next).is_none() {
+                self.bound = Some(next);
+                return Ok(Admission::Accepted);
             }
         }
         self.exact_checks += 1;
-        let candidate = yrs::Doc::with_options(crate::doc_options(doc.client_id().get()));
+        let candidate = ydoc::scratch_doc();
         {
             let mut copy = candidate.transact_mut();
             let state = txn.encode_state_as_update_v1(&yrs::StateVector::default());
             for bytes in [state.as_slice(), update] {
-                let decoded =
-                    yrs::Update::decode_v1(bytes).map_err(|e| Refusal::Update(e.to_string()))?;
-                copy.apply_update(decoded)
-                    .map_err(|e| Refusal::Update(e.to_string()))?;
+                copy.apply_update(ydoc::decode(bytes)?)
+                    .map_err(|error| ydoc::UpdateError::Decode(error.to_string()))?;
             }
         }
         let candidate_txn = candidate.transact();
@@ -316,10 +317,10 @@ impl Validator {
             self.metrics = Some(measure(&txn)?);
         }
         let metrics = measure(&candidate_txn)?;
-        if let Some(code) = limit_code(&metrics) {
-            if !recovers(&metrics, self.metrics.as_ref()) {
-                return Err(Refusal::Limit { code, metrics });
-            }
+        if let Some(code) = limit_code(&metrics)
+            && !recovers(&metrics, self.metrics.as_ref())
+        {
+            return Err(Refusal::Limit { code, metrics });
         }
         self.bound = Some(metrics);
         self.metrics = Some(metrics);

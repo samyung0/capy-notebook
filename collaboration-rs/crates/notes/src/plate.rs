@@ -303,3 +303,9 @@ pub fn value<T: ReadTxn>(txn: &T) -> Result<Vec<Value>, ProjectionError> {
         None => Ok(vec![leaf("", &[])?]),
     }
 }
+
+/// A fresh document state holding `value` (the bootstrap from
+/// `materials.content` and the compaction rebuild), by a random client.
+pub fn state_from_value(value: &[Value]) -> Vec<u8> {
+    crate::slate_yjs::bootstrap_state(value, 0)
+}

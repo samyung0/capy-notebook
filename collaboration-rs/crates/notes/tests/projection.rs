@@ -55,7 +55,7 @@ fn bootstrap_matches_slate_nodes_to_insert_delta() {
     for case in corpus.as_array().unwrap() {
         let name = case["name"].as_str().unwrap();
         let value = case["value"].as_array().unwrap();
-        let ours = notes::slate_yjs::state_from_value(value, 5);
+        let ours = notes::slate_yjs::bootstrap_state(value, 5);
         let theirs = common::bytes(&case["state"]);
         identical += usize::from(ours == theirs);
         let project = |state: &[u8]| {
