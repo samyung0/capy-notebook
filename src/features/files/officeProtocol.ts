@@ -466,10 +466,12 @@ function isCollaboration(value: unknown): boolean {
   );
 }
 
+// 25–400%, the widest any editor takes: a level outside it never reaches the
+// next frame.
 function isOfficeZoom(value: unknown): value is OfficeZoom {
   return (
     value === 'fit' ||
-    (typeof value === 'number' && Number.isFinite(value) && value > 0)
+    (typeof value === 'number' && value >= 0.25 && value <= 4)
   );
 }
 

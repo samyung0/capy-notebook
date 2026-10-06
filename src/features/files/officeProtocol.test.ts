@@ -227,7 +227,7 @@ describe('office host protocol', () => {
       version: OFFICE_PROTOCOL_VERSION,
       zoom: value,
     });
-    for (const value of [1.5, 0.5, 'fit']) {
+    for (const value of [1.5, 0.25, 4, 'fit']) {
       expect(isOfficeHostMessage({ ...load, zoom: value })).toBe(true);
       expect(isOfficeRuntimeMessage(zoom(value))).toBe(true);
     }
@@ -235,6 +235,9 @@ describe('office host protocol', () => {
     for (const value of [
       0,
       -1,
+      0.2,
+      4.5,
+      1e9,
       Number.NaN,
       Number.POSITIVE_INFINITY,
       '150%',
