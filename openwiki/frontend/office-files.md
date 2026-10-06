@@ -1095,25 +1095,25 @@ level. An item already in a list (its own marker, or one it inherits, which
 the editor passes by paragraph id) only changes its marker and `a:buFont`,
 keeping its indents, so a new style or a switch between numbers and bullets
 never moves its text. Removing a list writes `a:buNone` and no hanging indent.
-A list style (`BULLET_PRESETS`,
-`NUMBER_PRESETS` in `pptx-react/src/paragraphFormatting.ts`: five bullet and
-four number styles, three markers each, repeating by level) gives each level
-its marker, and indenting moves `lvl` one step, shifting an explicit `marL`
-(the paragraph's own or its file paragraph's) by 0.5 in and switching a
-style's marker to the new level's. Line spacing and space before/after are
+A list style (`BULLET_PRESETS`, `NUMBER_PRESETS` in
+`pptx-react/src/paragraphFormatting.ts`: five bullet and four number styles,
+three markers each, repeating by level) gives each level its marker, and
+indenting moves `lvl` one step, shifting an explicit `marL` (the paragraph's
+own or its file paragraph's) by 0.5 in and switching a style's marker to the
+new level's. Line spacing and space before/after are
 `a:lnSpc`/`a:spcBef`/`a:spcAft`, a text box's vertical alignment
 `a:bodyPr@anchor`, strikethrough `a:rPr@strike` (`dblStrike` drawn as two
 lines) and highlight `a:highlight` (painted at the text's height, so wide line
 spacing leaves gaps); clear formatting removes every run attribute an edit
 sets. The paragraph and shape keys are written only by edits, but strike and
-highlight runs are seeded from the file, so a deck with highlight or any strike
-attribute reseeds (LibreOffice writes `noStrike` on every run); strike and
-underline values outside the schema's lists are not modelled. Every client
+highlight runs are seeded from the file, so a deck with highlight or any
+strike attribute reseeds (LibreOffice writes `noStrike` on every run); strike
+and underline values outside the schema's lists are not modelled. Every client
 refuses a peer's update carrying an out-of-range paragraph value or an invalid
 strike, underline, colour or highlight value (the collaboration service checks
-which containers an update touches, not their values). An empty list item shows its marker
-only while the caret is in it (`layoutSlide(index, caret)`), as PowerPoint and
-Google Slides draw it while typing.
+which containers an update touches, not their values). An empty list item
+shows its marker only while the caret is in it (`layoutSlide(index, caret)`),
+as PowerPoint and Google Slides draw it while typing.
 
 Keys follow Google Slides: Enter in an empty list item leaves the list (a
 nested one steps out a level first), Backspace at the start of a list item
