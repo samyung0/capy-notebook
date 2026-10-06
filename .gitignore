@@ -64,6 +64,17 @@ pipeline/data/
 *.test
 *.out
 server/bin/
+# A bare `go build ./cmd/<name>` inside server/ drops the binary as server/<name>.
+/server/api
+/server/bank
+/server/cancel-deletion
+/server/migrate
+/server/office-maintenance
+/server/openapi
+/server/ops
+/server/quizcheck
+/server/reconcile
+/server/testdb
 
 # --- Data / artifacts ---
 data/
