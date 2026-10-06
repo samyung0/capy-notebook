@@ -361,7 +361,6 @@ var registryRequiredPrivileges = []columnPrivilege{
 	{"user_llm_credentials", "provider_slug", "SELECT"},
 	{"notification_prefs", "user_id", "SELECT"},
 	{"notification_prefs", "email_workspace_invite", "SELECT"},
-	{"notification_prefs", "email_membership", "SELECT"},
 	{"notification_prefs", "email_billing", "SELECT"},
 	{"notifications", "id", "SELECT"},
 	{"notifications", "user_id", "SELECT"},

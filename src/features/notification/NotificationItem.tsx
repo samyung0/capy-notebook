@@ -8,86 +8,94 @@ import { cn } from '@/lib/cn';
 type NotificationKind = AppNotification['kind'];
 
 const KIND_ICON: Record<NotificationKind, IconName> = {
-  event: 'schedule',
-  quiz: 'quiz',
   system: 'bell',
   workspace_invite: 'workspaces',
   workspace_member_removed: 'workspaces',
   workspace_role_changed: 'workspaces',
 };
 
+function dataValue(data: AppNotification['data'], key: string): unknown {
+  if (typeof data !== 'object' || data === null) return;
+  return (data as Record<string, unknown>)[key];
+}
+
 function dataString(data: AppNotification['data'], key: string): string {
-  if (typeof data !== 'object' || data === null) return '';
-  const value = (data as Record<string, unknown>)[key];
+  const value = dataValue(data, key);
   return typeof value === 'string' ? value : '';
 }
 
+function dataNumber(data: AppNotification['data'], key: string): number {
+  const value = dataValue(data, key);
+  return typeof value === 'number' ? value : 0;
+}
+
+function systemCopy(data: AppNotification['data']) {
+  switch (dataString(data, 'code')) {
+    case 'source_batch': {
+      const done = dataNumber(data, 'done');
+      const failed = dataNumber(data, 'failed');
+      if (dataString(data, 'source') === 'import') {
+        return {
+          body: failed
+            ? m.notification_system_source_imported_failed_body({
+                done,
+                failed,
+              })
+            : m.notification_system_source_imported_body({ done }),
+          title: m.notification_system_source_import_title(),
+        };
+      }
+      return {
+        body: failed
+          ? m.notification_system_source_uploaded_failed_body({ done, failed })
+          : m.notification_system_source_uploaded_body({ done }),
+        title: m.notification_system_source_upload_title(),
+      };
+    }
+    case 'pending_edits_too_large':
+      return {
+        body: m.notification_system_pending_edits_body({
+          fileName: dataString(data, 'fileName'),
+        }),
+        title: m.notification_system_pending_edits_title(),
+      };
+    case 'model_deprecated':
+      return {
+        body: m.notification_system_model_deprecated_body({
+          fromName: dataString(data, 'fromName'),
+          toName: dataString(data, 'toName'),
+        }),
+        title: m.notification_system_model_deprecated_title(),
+      };
+    case 'over_quota_started':
+      return {
+        body: m.notification_system_over_quota_body(),
+        title: m.notification_system_over_quota_title(),
+      };
+    case 'over_quota_frozen':
+      return {
+        body: m.notification_system_frozen_body(),
+        title: m.notification_system_frozen_title(),
+      };
+    case 'account_deletion_requested':
+      return {
+        body: m.notification_system_deletion_requested_body(),
+        title: m.notification_system_deletion_requested_title(),
+      };
+    case 'account_deletion_cancelled':
+      return {
+        body: m.notification_system_deletion_cancelled_body(),
+        title: m.notification_system_deletion_cancelled_title(),
+      };
+  }
+  return { body: '', title: m.notifications_title() };
+}
+
 function notificationCopy(notification: AppNotification) {
-  const code = dataString(notification.data, 'code');
-  const eventName = dataString(notification.data, 'eventName');
-  const fileName = dataString(notification.data, 'fileName');
-  const location = dataString(notification.data, 'location');
-  const score = dataString(notification.data, 'score');
   const workspaceName = dataString(notification.data, 'workspaceName');
-  const role = dataString(notification.data, 'role');
-  const time = dataString(notification.data, 'time');
-  const quizName = dataString(notification.data, 'quizName');
   switch (notification.kind) {
-    case 'event':
-      if (code === 'event_starting') {
-        return {
-          body: m.notification_event_starting_body({
-            eventName,
-            location,
-            time,
-          }),
-          title: m.notification_event_starting_title(),
-        };
-      }
-      break;
-    case 'quiz':
-      if (code === 'quiz_attempt_graded') {
-        return {
-          body: m.notification_quiz_attempt_graded_body({ quizName, score }),
-          title: m.notification_quiz_attempt_graded_title(),
-        };
-      }
-      break;
     case 'system':
-      if (code === 'source_duplicate') {
-        return {
-          body: m.notification_system_source_duplicate_body({ fileName }),
-          title: m.notification_system_source_duplicate_title(),
-        };
-      }
-      if (code === 'source_ready') {
-        return {
-          body: m.notification_system_source_ready_body({ fileName }),
-          title: m.notification_system_source_ready_title(),
-        };
-      }
-      if (code === 'source_stored') {
-        return {
-          body: m.notification_system_source_stored_body({ fileName }),
-          title: m.notification_system_source_stored_title(),
-        };
-      }
-      if (code === 'welcome') {
-        return {
-          body: m.notification_system_welcome_body(),
-          title: m.notification_system_welcome_title(),
-        };
-      }
-      if (code === 'model_deprecated') {
-        return {
-          body: m.notification_system_model_deprecated_body({
-            fromName: dataString(notification.data, 'fromName'),
-            toName: dataString(notification.data, 'toName'),
-          }),
-          title: m.notification_system_model_deprecated_title(),
-        };
-      }
-      break;
+      return systemCopy(notification.data);
     case 'workspace_invite':
       return {
         body: m.notification_workspace_invite_body({ workspaceName }),
@@ -96,7 +104,7 @@ function notificationCopy(notification: AppNotification) {
     case 'workspace_role_changed':
       return {
         body: m.notification_workspace_role_changed_body({
-          role: roleLabel(role),
+          role: roleLabel(dataString(notification.data, 'role')),
           workspaceName,
         }),
         title: m.notification_workspace_role_changed_title(),
@@ -107,10 +115,6 @@ function notificationCopy(notification: AppNotification) {
         title: m.notification_workspace_member_removed_title(),
       };
   }
-  return {
-    body: '',
-    title: m.notifications_title(),
-  };
 }
 
 function roleLabel(role: string) {

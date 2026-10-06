@@ -224,7 +224,7 @@ export const failureScenarios = [
     id: 'upload-failed',
     label: 'Upload POST 500',
     method: 'post',
-    paths: ['/api/workspaces/:id/sources'],
+    paths: ['/api/workspaces/:id/sources/uploads'],
     status: 500,
   },
   {
@@ -232,7 +232,7 @@ export const failureScenarios = [
     id: 'upload-file-cap',
     label: 'Upload file cap 403',
     method: 'post',
-    paths: ['/api/workspaces/:id/sources'],
+    paths: ['/api/workspaces/:id/sources/uploads'],
     status: 403,
   },
   {
@@ -240,7 +240,7 @@ export const failureScenarios = [
     id: 'upload-batch-cap',
     label: 'Upload batch cap 403',
     method: 'post',
-    paths: ['/api/workspaces/:id/sources'],
+    paths: ['/api/workspaces/:id/sources/uploads'],
     status: 403,
   },
   {
@@ -249,7 +249,7 @@ export const failureScenarios = [
     label: 'Ingest slots exhausted 429',
     method: 'post',
     paths: [
-      '/api/workspaces/:id/sources',
+      '/api/workspaces/:id/sources/uploads',
       '/api/workspaces/:id/sources/import',
     ],
     status: 429,
@@ -637,7 +637,10 @@ export const failureScenarios = [
     id: 'account-locked',
     label: 'Account locked on write 403',
     method: 'post',
-    paths: ['/api/workspaces/:id/materials', '/api/workspaces/:id/sources'],
+    paths: [
+      '/api/workspaces/:id/materials',
+      '/api/workspaces/:id/sources/uploads',
+    ],
     status: 403,
   },
 ] as const satisfies readonly Failure[];

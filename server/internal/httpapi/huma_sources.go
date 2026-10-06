@@ -163,10 +163,45 @@ type sourceImportStatusOutput struct {
 }
 
 func (a *api) createSourceUpload(ctx context.Context, in *createSourceUploadInput) (*sourceUploadReservationOutput, error) {
-	wsID := in.ID
-	if err := a.assertWorkspaceEditor(ctx, wsID); err != nil {
+	if err := a.assertWorkspaceEditor(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
+	if err := a.openSourceBatch(ctx, in.ID, "upload", in.Body.BatchID, in.Body.BatchTotal); err != nil {
+		return nil, err
+	}
+	out, err := a.reserveSourceUpload(ctx, in)
+	// A refused reservation is a failed file of its batch, except a 429 the
+	// browser retries (withUploadRetry).
+	if err != nil && errorStatus(err) != http.StatusTooManyRequests {
+		a.failSourceBatchFile(ctx, in.Body.BatchID)
+	}
+	return out, err
+}
+
+func (a *api) openSourceBatch(ctx context.Context, wsID, source, batchID string, total int) error {
+	err := a.s.OpenSourceBatch(ctx, batchID, wsID, userID(ctx), source, total)
+	if errors.Is(err, store.ErrConflict) {
+		return huma.Error409Conflict("batch id belongs to another submission")
+	}
+	return hErr(err)
+}
+
+func (a *api) failSourceBatchFile(ctx context.Context, batchID string) {
+	if err := a.s.FailSourceBatchFile(context.WithoutCancel(ctx), batchID); err != nil {
+		log.Printf("count refused source in batch %s: %v", batchID, err)
+	}
+}
+
+func errorStatus(err error) int {
+	var status huma.StatusError
+	if errors.As(err, &status) {
+		return status.GetStatus()
+	}
+	return http.StatusInternalServerError
+}
+
+func (a *api) reserveSourceUpload(ctx context.Context, in *createSourceUploadInput) (*sourceUploadReservationOutput, error) {
+	wsID := in.ID
 	if a.blob == nil {
 		return nil, huma.Error503ServiceUnavailable("blob store not configured")
 	}
@@ -234,7 +269,7 @@ func (a *api) createSourceUpload(ctx context.Context, in *createSourceUploadInpu
 		ObjectPath: incoming, FinalPath: finalPath, Name: name, Kind: body.Kind,
 		ContentType: body.ContentType, DeclaredSize: body.SizeBytes,
 		ParseMode: body.ParseMode,
-		ExpiresAt: signed.ExpiresAt,
+		ExpiresAt: signed.ExpiresAt, BatchID: body.BatchID,
 	})
 	if err != nil {
 		return nil, hErr(err)
@@ -342,11 +377,26 @@ func promoteMatchingObject(
 }
 
 func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourceImportOutput, error) {
-	actor := userID(ctx)
-	wsID := in.ID
-	if err := a.assertWorkspaceEditor(ctx, wsID); err != nil {
+	if err := a.assertWorkspaceEditor(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
+	if err := a.openSourceBatch(ctx, in.ID, "import", in.Body.BatchID, in.Body.BatchTotal); err != nil {
+		return nil, err
+	}
+	out, err := a.queueSourceImports(ctx, in)
+	// A refused request is a failed item of its batch. The browser retries
+	// 408, 429 and 5xx (withSourceImportRequestRetry); an item whose retries
+	// run out is left to the idle sweep.
+	if status := errorStatus(err); err != nil && status < 500 &&
+		status != http.StatusRequestTimeout && status != http.StatusTooManyRequests {
+		a.failSourceBatchFile(ctx, in.Body.BatchID)
+	}
+	return out, err
+}
+
+func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*sourceImportOutput, error) {
+	actor := userID(ctx)
+	wsID := in.ID
 	if len(in.Body.FileIds) == 0 {
 		return nil, huma.Error400BadRequest("provider and fileIds required")
 	}
@@ -586,7 +636,8 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 		return nil, hErr(err)
 	}
 	stored, err := a.s.CreateSourceImportsAndCompleteRequest(
-		ctx, actor, wsID, requestID, fingerprint, pending, encoded,
+		ctx, actor, wsID, requestID, fingerprint, pending, in.Body.BatchID,
+		len(rejected), encoded,
 	)
 	if errors.Is(err, store.ErrImportIdempotencyConflict) {
 		return nil, huma.Error409Conflict("source import request id was reused")
@@ -615,4 +666,40 @@ func (a *api) getSourceImport(
 		JobID: job.ID, Status: job.Status, Name: job.Name,
 		FileID: job.FileID, ErrorCode: job.LastErrorCode,
 	}}, nil
+}
+
+// checkParsePages refuses a fast parse the browser counted past the parser's
+// page cap. The count is the client's claim; the parser enforces the cap on
+// the real document either way.
+func (a *api) checkParsePages(parseMode string, pages int) error {
+	if pages < 0 {
+		return huma.Error400BadRequest("pageCount must not be negative")
+	}
+	if parseMode == sourceupload.ParseModeFast && pages > a.cfg.ParseMaxPages {
+		return huma.Error400BadRequest(fmt.Sprintf("fast parsing reads at most %d pages per file", a.cfg.ParseMaxPages))
+	}
+	return nil
+}
+
+func (a *api) sourceMaxBytes(ctx context.Context, wsID string) (int64, error) {
+	if wsID != "" {
+		tier, err := a.s.WorkspaceOwnerPlan(ctx, wsID)
+		if err != nil {
+			return 0, err
+		}
+		limits, err := a.s.PlanLimits(tier)
+		if err != nil {
+			return 0, err
+		}
+		return limits.SourceFileBytes, nil
+	}
+	me, err := a.s.Me(ctx, userID(ctx))
+	if err != nil {
+		return 0, err
+	}
+	limits, err := a.s.PlanLimits(me.PlanTier)
+	if err != nil {
+		return 0, err
+	}
+	return limits.SourceFileBytes, nil
 }

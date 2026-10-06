@@ -1432,21 +1432,16 @@ export const tasks: Task[] = [
 export const notifications: AppNotification[] = [
   {
     at: hours(1),
-    data: {
-      code: 'event_starting',
-      eventName: 'Calculus tutorial',
-      location: 'Room 124',
-      time: '11:00',
-    },
+    data: { code: 'source_batch', done: 3, failed: 1, source: 'upload' },
     id: 'nt_1',
     kind: 'system',
   },
   {
     at: hours(5),
     data: {
-      code: 'quiz_attempt_graded',
-      quizName: 'Cell biology basics',
-      score: '8/10',
+      code: 'model_deprecated',
+      fromName: 'Previous model',
+      toName: 'GLM-5.3 Flash',
     },
     id: 'nt_2',
     kind: 'system',
@@ -1461,7 +1456,6 @@ export const notifications: AppNotification[] = [
 
 export const notificationPrefs: NotificationPrefs = {
   emailBilling: true,
-  emailMembership: true,
   emailWorkspaceInvite: true,
 };
 

@@ -100,7 +100,7 @@ function CustomizationsTab() {
 }
 
 const NOTIFICATION_ROWS: {
-  field: 'emailWorkspaceInvite' | 'emailMembership' | 'emailBilling';
+  field: 'emailWorkspaceInvite' | 'emailBilling';
   title: () => string;
   hint: () => string;
 }[] = [
@@ -108,11 +108,6 @@ const NOTIFICATION_ROWS: {
     field: 'emailWorkspaceInvite',
     hint: m.settings_email_workspace_invite_hint,
     title: m.settings_email_workspace_invite,
-  },
-  {
-    field: 'emailMembership',
-    hint: m.settings_email_membership_hint,
-    title: m.settings_email_membership,
   },
   {
     field: 'emailBilling',

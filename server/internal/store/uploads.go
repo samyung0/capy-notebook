@@ -55,6 +55,61 @@ type NewUploadSession struct {
 	DeclaredSize int64
 	ParseMode    string
 	ExpiresAt    time.Time
+	BatchID      string
+}
+
+// OpenSourceBatch records a submission's batch on its first upload reservation
+// or import request and touches it on later ones. A batch id held by another
+// actor, workspace or source conflicts.
+func (s *Store) OpenSourceBatch(ctx context.Context, id, workspaceID, userID, source string, total int) error {
+	err := s.pool.QueryRow(ctx, `INSERT INTO source_batches (id, workspace_id, user_id, source, total)
+		VALUES ($1,$2,$3,$4,$5)
+		ON CONFLICT (id) DO UPDATE SET updated_at=now()
+		WHERE source_batches.workspace_id=$2 AND source_batches.user_id=$3
+			AND source_batches.source=$4
+		RETURNING id`, id, workspaceID, userID, source, total).Scan(&id)
+	if isNoRows(err) {
+		return ErrConflict
+	}
+	return err
+}
+
+// FailSourceBatchFile counts a refused reservation or import request as a
+// failed file.
+func (s *Store) FailSourceBatchFile(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx, `SELECT source_batch_settle($1, 0, 1)`, id)
+	return err
+}
+
+// SourceBatchIdle closes batches idle this long, counting their unsettled files
+// as failed (tab closed, file never sent).
+const SourceBatchIdle = time.Hour
+
+// SettleSourceBatches closes idle batches, then takes the batches that have
+// notified: their rows are deleted and their notifications returned for the
+// live push. A late file of a deleted batch settles nothing.
+func (s *Store) SettleSourceBatches(ctx context.Context) ([]Notification, error) {
+	if _, err := s.pool.Exec(ctx, `SELECT source_batch_settle(id, 0, total-done-failed)
+		FROM (SELECT id, total, done, failed FROM source_batches
+			WHERE notified_at IS NULL AND updated_at < now() - make_interval(secs => $1)
+			ORDER BY updated_at LIMIT 100) idle`, SourceBatchIdle.Seconds()); err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(ctx, `WITH taken AS (
+			DELETE FROM source_batches WHERE id IN (
+				SELECT id FROM source_batches WHERE notified_at IS NOT NULL
+				LIMIT 100 FOR UPDATE SKIP LOCKED)
+			RETURNING notification_id)
+		SELECT n.id, n.kind, n.data, COALESCE(n.href,''), n.at, n.user_id, COALESCE(n.workspace_id,'')
+		FROM taken JOIN notifications n ON n.id=taken.notification_id`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Notification, error) {
+		var n Notification
+		err := row.Scan(&n.ID, &n.Kind, &n.Data, &n.Href, &n.At, &n.UserID, &n.WorkspaceID)
+		return n, err
+	})
 }
 
 func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (UploadSession, error) {
@@ -78,12 +133,12 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 	_, err = tx.Exec(ctx, `INSERT INTO upload_sessions
 		(id, target, workspace_id, user_id, created_by, chapter_id, chapter_name,
 		 object_path, final_path, name, kind, content_type, declared_size, reserved_size, parse_mode,
-		 expires_at)
-		VALUES ($1,'source',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,$14)`,
+		 expires_at, batch_id)
+		VALUES ($1,'source',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,$14,$15)`,
 		in.ID, in.WorkspaceID, ownerID, nullStr(in.CreatedBy), in.ChapterID, in.ChapterName,
 		in.ObjectPath, in.FinalPath,
 		in.Name, in.Kind, in.ContentType, in.DeclaredSize, in.ParseMode,
-		in.ExpiresAt)
+		in.ExpiresAt, nullStr(in.BatchID))
 	if err != nil {
 		return UploadSession{}, err
 	}
@@ -218,10 +273,11 @@ func (s *Store) finalizeUploadSessionTx(
 		status = "ready"
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO files
-		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, blob_path, source_etag, parse_mode)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, blob_path, source_etag, parse_mode, batch_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
+			(SELECT batch_id FROM upload_sessions WHERE id=$15))`,
 		fileID, u.WorkspaceID, u.UserID, u.CreatedBy, chapterID, u.Name, u.Kind, u.DeclaredSize,
-		now, status, parser, u.FinalPath, sourceETag, u.ParseMode)
+		now, status, parser, u.FinalPath, sourceETag, u.ParseMode, u.ID)
 	if err != nil {
 		return File{}, err
 	}

@@ -37,19 +37,21 @@ afterEach(() => {
 
 describe('source transfers', () => {
   it('sends every file after one fails and merges failures into one toast', async () => {
-    const uploadSource = vi.fn(({ file }: { file: File }) => {
-      if (file.name === 'full.pdf') {
-        return Promise.reject(
-          new ApiError(413, 'Payload Too Large', '', {
-            code: 'storage_quota_exceeded',
-          })
-        );
+    const uploadSource = vi.fn(
+      ({ file }: { batchId: string; batchTotal: number; file: File }) => {
+        if (file.name === 'full.pdf') {
+          return Promise.reject(
+            new ApiError(413, 'Payload Too Large', '', {
+              code: 'storage_quota_exceeded',
+            })
+          );
+        }
+        if (file.name === 'broken.pdf') {
+          return Promise.reject(new Error('network'));
+        }
+        return Promise.resolve({ id: `f_${file.name}` } as SourceFile);
       }
-      if (file.name === 'broken.pdf') {
-        return Promise.reject(new Error('network'));
-      }
-      return Promise.resolve({ id: `f_${file.name}` } as SourceFile);
-    });
+    );
 
     startSourceTransfer({
       importSources: vi.fn(),
@@ -62,6 +64,12 @@ describe('source transfers', () => {
     );
 
     expect(uploadSource).toHaveBeenCalledTimes(4);
+    // The whole submission is one notification batch.
+    const batches = new Set(
+      uploadSource.mock.calls.map(([v]) => `${v.batchId}/${v.batchTotal}`)
+    );
+    expect(batches.size).toBe(1);
+    expect([...batches][0].endsWith('/4')).toBe(true);
     expect(
       useSourceTransfers
         .getState()

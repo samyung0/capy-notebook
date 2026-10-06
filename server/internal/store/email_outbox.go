@@ -51,7 +51,7 @@ type EmailOutboxParams struct {
 // the same transaction as the domain event.
 func EnqueueEmailTx(ctx context.Context, tx pgx.Tx, params EmailOutboxParams) (bool, error) {
 	switch params.Category {
-	case "workspace_invite", "membership", "billing", "lifecycle":
+	case "workspace_invite", "billing", "lifecycle":
 	default:
 		return false, ErrInvalidEmailCategory
 	}
@@ -325,24 +325,6 @@ func emailClaimActive(ctx context.Context, q rowQueryer, item EmailOutbox) (bool
 		FROM email_outbox o
 		WHERE o.id=$1 AND o.status='sending' AND o.lease_token=$2
 			AND o.lease_expires_at > now()
-			AND (
-				o.template <> 'workspace-role-changed'
-				OR EXISTS (
-					SELECT 1 FROM workspace_members wm
-					WHERE wm.workspace_id=o.payload->>'workspaceId'
-						AND wm.user_id=o.user_id
-						AND wm.role::text=o.payload->>'role'
-						AND wm.updated_at=NULLIF(o.payload->>'updatedAt', '')::timestamptz
-				)
-			)
-			AND (
-				o.template <> 'workspace-member-removed'
-				OR NOT EXISTS (
-					SELECT 1 FROM workspace_members wm
-					WHERE wm.workspace_id=o.payload->>'workspaceId'
-						AND wm.user_id=o.user_id
-				)
-			)
 	)`, item.ID, item.LeaseToken).Scan(&active)
 	return active, err
 }

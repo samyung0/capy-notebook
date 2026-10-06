@@ -181,6 +181,31 @@ func TestOfficeAutomaticRefreshAdmission(t *testing.T) {
 // schedulerSource reads a statement or constant of the collaboration
 // scheduler (collaboration/src/sourceDocuments.ts), the first capture group of
 // pattern, so the Go tests run it verbatim.
+func TestPendingOverflowNotifiesOwnerOnceUntilProcessed(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "source_overflow_notice")
+	ws, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+	sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "edited-state")
+	notify := func(want int) {
+		t.Helper()
+		created, err := s.NotifyPendingEditsTooLarge(ctx, ws.ID, []string{file.ID})
+		if err != nil || len(created) != want {
+			t.Fatalf("notified %d (err=%v), want %d", len(created), err, want)
+		}
+		if want == 1 && (created[0].UserID != owner || created[0].Href != "/workspaces/"+ws.ID+"?file="+file.ID) {
+			t.Fatalf("notification %+v", created[0])
+		}
+	}
+	notify(1)
+	notify(0)
+	// Processing publishes a newer indexed checkpoint; later edits overflow again.
+	if _, err := s.pool.Exec(ctx, `UPDATE source_documents SET indexed_checkpoint=checkpoint WHERE file_id=$1`, file.ID); err != nil {
+		t.Fatal(err)
+	}
+	notify(1)
+}
+
 func schedulerSource(t *testing.T, pattern string) string {
 	t.Helper()
 	raw, err := os.ReadFile("../../../collaboration/src/sourceDocuments.ts")

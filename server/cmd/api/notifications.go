@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"log"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 
@@ -38,5 +40,39 @@ func publishNotificationRemovals(
 			continue
 		}
 		_ = rdb.Publish(ctx, "notif:"+userID, payload).Err()
+	}
+}
+
+type notificationCreatedEvent struct {
+	Type         string             `json:"type"`
+	Notification store.Notification `json:"notification"`
+}
+
+// runSourceBatchWorker pushes the per-upload/import batch notifications the
+// database triggers wrote, and closes idle batches. One indexed query a second
+// keeps the bell as live as the per-file notifications were.
+func runSourceBatchWorker(ctx context.Context, st *store.Store, rdb *redis.Client) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		notifications, err := st.SettleSourceBatches(ctx)
+		if err != nil && ctx.Err() == nil {
+			log.Printf("settle source batches: %v", err)
+		}
+		for _, n := range notifications {
+			if rdb == nil {
+				break
+			}
+			payload, err := json.Marshal(notificationCreatedEvent{Type: "created", Notification: n})
+			if err != nil {
+				continue
+			}
+			_ = rdb.Publish(ctx, "notif:"+n.UserID, payload).Err()
+		}
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			return
+		}
 	}
 }

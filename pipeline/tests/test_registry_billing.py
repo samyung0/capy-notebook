@@ -320,7 +320,6 @@ def test_ingest_closes_the_actor_reservation_after_page_billing(monkeypatch):
     monkeypatch.setattr(db, "set_file_indexed", lambda *_a, **_k: None)
     monkeypatch.setattr(db, "set_job", lambda *_a, **_k: None)
     monkeypatch.setattr(db, "ingest_accounts_active", lambda *_a, **_k: True)
-    monkeypatch.setattr(db, "add_notification", lambda *_a, **_k: None)
 
     worker.obs.start_usage()
     worker.obs.record_parse_usage(
@@ -373,7 +372,6 @@ def test_ingest_closes_the_actor_reservation_after_page_billing(monkeypatch):
     try:
         worker._finish_ok(
             "f_1",
-            "notes.pdf",
             "job_1",
             attempt=1,
             actor_user_id="u_actor",

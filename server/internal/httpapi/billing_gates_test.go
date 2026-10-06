@@ -259,6 +259,7 @@ func TestUploadRefusesActorCreditsAndOwnerStorageSeparately(t *testing.T) {
 	body := map[string]any{
 		"name": "notes.pdf", "kind": "pdf", "parseMode": "fast",
 		"sizeBytes": 1024, "contentType": "application/pdf",
+		"batchId": fx.workspaceID, "batchTotal": 1,
 	}
 
 	exhaustCredits(t, fx.store, fx.pool, fx.actorID)
@@ -273,6 +274,7 @@ func TestUploadRefusesActorCreditsAndOwnerStorageSeparately(t *testing.T) {
 		"ballast.pdf", "pdf", nil, "", mustPlanLimits(t, fx2.store, store.PlanFree).StorageBytes, "sources/"+fx2.ownerID); err != nil {
 		t.Fatal(err)
 	}
+	body["batchId"] = fx2.workspaceID
 	storage := doReq(t, fx2.handler, http.MethodPost,
 		"/api/workspaces/"+fx2.workspaceID+"/sources/uploads", fx2.actorID, body)
 	if storage.Code != http.StatusForbidden || errorCode(t, storage) != "storage_quota_exceeded" {
@@ -303,6 +305,7 @@ func TestUploadPolicyServesParserPageCapsAndReservationEnforcesThem(t *testing.T
 			"/api/workspaces/"+fx.workspaceID+"/sources/uploads", fx.actorID, map[string]any{
 				"name": "book.pdf", "kind": "pdf", "parseMode": parseMode,
 				"sizeBytes": 1024, "contentType": "application/pdf", "pageCount": pages,
+				"batchId": fx.workspaceID, "batchTotal": 3,
 			})
 	}
 	if over := reserve("fast", 1401); over.Code != http.StatusBadRequest ||

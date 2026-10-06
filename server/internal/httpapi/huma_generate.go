@@ -262,6 +262,9 @@ func (a *api) generateViaPipe(
 			return nil, usage, mapped
 		}
 		if mapped := pipelineGenerateError(err); mapped != nil {
+			if tooLarge, ok := mapped.(*pendingSourcesTooLargeError); ok {
+				a.notifyPendingOverflow(ctx, wsID, tooLarge.FileIDs)
+			}
 			return nil, usage, mapped
 		}
 		return nil, usage, &aiServiceError{cause: err}

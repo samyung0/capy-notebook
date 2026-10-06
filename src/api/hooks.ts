@@ -130,8 +130,6 @@ import type {
   WorkspaceStats,
 } from './types';
 
-const USE_DIRECT_B2_UPLOAD = import.meta.env.VITE_DIRECT_B2_UPLOAD !== 'false';
-
 export interface QueryUiOptions {
   errorBoundary?: false;
 }
@@ -667,6 +665,9 @@ export function useImportSources(
   return useMutation({
     meta: mutationMeta(options),
     mutationFn: (body: {
+      /** The submission and its picked-item count; one notification for all. */
+      batchId: string;
+      batchTotal: number;
       chapterId?: string | null;
       chapterName?: string | null;
       driveIds?: string[];
@@ -1313,11 +1314,17 @@ export function useUploadSource(wsId: string) {
       parseMode,
       estimatedCreditMicros,
       pageCount,
+      batchId,
+      batchTotal,
       onUploadProgress,
       signal,
     }: {
       file: File;
       kind: SourceFile['kind'];
+      /** The submission this file belongs to and its file count; the server
+       * sends one notification once every file of the batch settles. */
+      batchId: string;
+      batchTotal: number;
       chapterId?: string | null;
       chapterName?: string | null;
       /** fast = OpenDataLoader, with OCR on text-less pages; none = store-only
@@ -1334,26 +1341,7 @@ export function useUploadSource(wsId: string) {
       onUploadProgress?: (pct: number) => void;
       signal?: AbortSignal;
     }) => {
-      if (USE_MSW || !USE_DIRECT_B2_UPLOAD) {
-        if (USE_MSW) await simulateMswUploadProgress(onUploadProgress, signal);
-        const form = new FormData();
-        form.append('file', file, file.name);
-        form.append('name', file.name);
-        form.append('kind', kind);
-        if (chapterId) form.append('chapterId', chapterId);
-        if (chapterName) form.append('chapterName', chapterName);
-        if (parseMode) form.append('parseMode', parseMode);
-        if (estimatedCreditMicros) {
-          form.append('estimatedCreditMicros', String(estimatedCreditMicros));
-        }
-        if (pageCount) form.append('pageCount', String(pageCount));
-        return api.upload<SourceFile>(
-          `/workspaces/${wsId}/sources`,
-          form,
-          USE_MSW ? undefined : onUploadProgress,
-          signal
-        );
-      }
+      if (USE_MSW) await simulateMswUploadProgress(onUploadProgress, signal);
       return api
         .post<{
           uploadId: string;
@@ -1362,6 +1350,8 @@ export function useUploadSource(wsId: string) {
           headers: Record<string, string>;
           expiresAt: string;
         }>(`/workspaces/${wsId}/sources/uploads`, {
+          batchId,
+          batchTotal,
           chapterId: chapterId ?? null,
           chapterName: chapterName ?? null,
           contentType: file.type || 'application/octet-stream',

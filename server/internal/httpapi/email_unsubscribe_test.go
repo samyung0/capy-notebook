@@ -47,7 +47,7 @@ func TestEmailUnsubscribeGETDoesNotMutate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !prefs.EmailWorkspaceInvite || !prefs.EmailMembership {
+	if !prefs.EmailWorkspaceInvite || !prefs.EmailBilling {
 		t.Fatalf("GET mutated preferences: %#v", prefs)
 	}
 
@@ -60,7 +60,7 @@ func TestEmailUnsubscribeGETDoesNotMutate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prefs.EmailWorkspaceInvite || !prefs.EmailMembership {
+	if prefs.EmailWorkspaceInvite || !prefs.EmailBilling {
 		t.Fatalf("POST changed the wrong category: %#v", prefs)
 	}
 }

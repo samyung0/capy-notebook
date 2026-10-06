@@ -299,7 +299,6 @@ export * from './updateWorkspaceMemberReq.ts';
 export * from './updateWorkspaceReq.ts';
 export * from './updateWorkspaceSharingReq.ts';
 export * from './uploadBankAssetBody.ts';
-export * from './uploadSourceBody.ts';
 export * from './upsertLLMCredentialReq.ts';
 export * from './uRLResp.ts';
 export * from './usageBucket.ts';

@@ -286,8 +286,6 @@ func (FileStatus) Schema(r huma.Registry) *huma.Schema {
 type NotificationKind string
 
 const (
-	NotifEvent                  NotificationKind = "event"
-	NotifQuiz                   NotificationKind = "quiz"
 	NotifSystem                 NotificationKind = "system"
 	NotifWorkspaceInvite        NotificationKind = "workspace_invite"
 	NotifWorkspaceRoleChanged   NotificationKind = "workspace_role_changed"
@@ -295,7 +293,7 @@ const (
 )
 
 func (NotificationKind) Schema(r huma.Registry) *huma.Schema {
-	return enumRef(r, "NotificationKind", "event", "quiz", "system", "workspace_invite", "workspace_role_changed", "workspace_member_removed")
+	return enumRef(r, "NotificationKind", "system", "workspace_invite", "workspace_role_changed", "workspace_member_removed")
 }
 
 // SearchKind is the category of a global-search hit.

@@ -186,7 +186,7 @@ func TestCloudImportAuthorization(t *testing.T) {
 	}{
 		{"owner reaches request validation", "u_owner", map[string]any{}, http.StatusUnprocessableEntity},
 		{"editor reaches request validation", "u_editor", map[string]any{}, http.StatusUnprocessableEntity},
-		{"viewer is rejected", "u_viewer", map[string]any{"provider": "google", "fileIds": []string{"drive-file"}}, http.StatusNotFound},
+		{"viewer is rejected", "u_viewer", map[string]any{"provider": "google", "fileIds": []string{"drive-file"}, "batchId": "b1", "batchTotal": 1}, http.StatusNotFound},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

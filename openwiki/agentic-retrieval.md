@@ -874,8 +874,8 @@ reservation, and marks the job and attempt terminal in one database transaction.
 A delayed reaper cannot overwrite a newer replacement. Its post-commit progress
 event and local-spool cleanup are best effort. Neither is a correctness step.
 
-The legacy multipart upload route has no provider ETag. It stores and carries
-the empty string as its source fence. Heartbeat cancellation, final lease
+A source stored without a provider ETag carries the empty string as its
+source fence. Heartbeat cancellation, final lease
 reaping, and account-deletion cancellation compare that normalized value rather
 than treating a missing SQL value as an unfenced wildcard.
 
@@ -1341,6 +1341,28 @@ write instead of failing on a foreign key. Refreshing or dropping by file instea
 would let a live waiter mask a dead creator forever, and a dead waiter cascade a
 live creator's chunks away mid-write. A waiter returns from the wait only once the
 content is ready or it has taken the claim over itself.
+
+### Upload and import notifications
+
+The actor gets one `system` notification per upload or import, never per file
+(`{"code":"source_batch","source":"upload"|"import","done","failed"}`, href
+`/workspaces/{id}`). A `source_batches` row (migration 0061) counts the batch:
+the browser sends `batchId` and `batchTotal` (files or picked items of one
+AddSourceDialog submission) with every upload reservation and every
+`POST /sources/import` request. Each picked import item holds a placeholder of
+one in the total until its request commits, which swaps it for that request's
+accepted jobs plus rejected refs (the rejected ones count failed at once), so
+the batch cannot settle before every request has arrived. Database triggers settle
+it in the transaction of each terminal change, so Go and pipeline paths need no
+call: a file reaching `ready` (indexed, duplicate or stored-only) counts done
+and `failed` counts failed (`files.batch_id` is cleared, so a file counts
+once); an upload session expiring without a file (abandoned PUT, failed import)
+counts failed, as does an upload reservation or import request the handler
+refuses (other than the statuses the browser retries: 429 for uploads; 408, 429
+and 5xx for imports, whose exhausted retries are left to the idle sweep). The settle that reaches `total` writes the notification. The
+API's `runSourceBatchWorker` polls every second: it closes batches idle for an
+hour (unsent or unsettled files count failed), then deletes notified rows and
+publishes their notifications to `notif:{userId}`.
 
 ### File descriptors (no tree)
 
@@ -2795,6 +2817,13 @@ keeps it durably and explicitly tells both the model and user; the UI offers
 Process file changes. Generation uses the same evidence and returns
 `pending_sources_too_large` with the edited file ids when it cannot include it,
 so Process file changes sends exactly the files chat would.
+Either overflow (chat dropping the pending evidence, or generation refusing)
+also sends the workspace owner a `system` notification per affected file
+(`pending_edits_too_large`, linking to the file), best effort and off the
+request path. Chat drops all pending evidence together, so every file with
+pending edits in the turn counts. `source_documents.overflow_notified_checkpoint`
+records the indexed checkpoint it was sent at; processing advances
+`indexed_checkpoint`, so the file notifies again only after it is processed.
 
 Text refresh uses normal full-file normalization and chunking with parsing
 skipped. A small lookup reuses embeddings only for exact indexed input and the

@@ -139,9 +139,9 @@ INSERT INTO tasks (id, user_id, title, meta, done, due_date) VALUES
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO notifications (id, user_id, kind, data, at, read_at) VALUES
-  ('nt_1', 'u_1', 'event',  '{"code":"event_starting","eventName":"Calculus tutorial","time":"11:00","location":"Room 124"}', now()-interval '1 hour', NULL),
-  ('nt_2', 'u_1', 'quiz',   '{"code":"quiz_attempt_graded","quizName":"Cell biology basics","score":"8/10"}', now()-interval '5 hour', NULL),
-  ('nt_3', 'u_1', 'system', '{"code":"welcome"}', now()-interval '1 day', now()-interval '1 day')
+  ('nt_1', 'u_1', 'system', '{"code":"source_batch","source":"upload","done":3,"failed":1}', now()-interval '1 hour', NULL),
+  ('nt_2', 'u_1', 'system', '{"code":"model_deprecated","fromName":"Previous model","toName":"GLM-5.3 Flash"}', now()-interval '5 hour', NULL),
+  ('nt_3', 'u_1', 'system', '{"code":"pending_edits_too_large","fileId":"f_1","fileName":"Lecture notes"}', now()-interval '1 day', now()-interval '1 day')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO canvases (id, user_id, name, updated_at) VALUES

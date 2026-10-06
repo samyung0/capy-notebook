@@ -396,18 +396,6 @@ function completeMockSourceImport(sourceImport: MockSourceImport) {
   }
 }
 
-function clampFileName(name: string): string {
-  if ([...name].length <= createSourceUploadBodyNameMax) return name;
-  const dot = name.lastIndexOf('.');
-  const ext = dot > 0 && name.length - dot <= 12 ? name.slice(dot) : '';
-  const base = ext ? name.slice(0, dot) : name;
-  return (
-    [...base]
-      .slice(0, createSourceUploadBodyNameMax - [...ext].length)
-      .join('') + ext
-  );
-}
-
 const TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 function trashItem(
@@ -534,6 +522,18 @@ function mockFileChanges(sourceFiles: SourceFile[]) {
     state: change.state,
   }));
 }
+
+type SourceUploadReservation = {
+  body: {
+    chapterId?: string | null;
+    chapterName?: string | null;
+    kind: string;
+    name: string;
+  };
+  bytes?: Blob;
+  workspaceId: string;
+};
+const sourceUploadReservations = new Map<string, SourceUploadReservation>();
 
 export const handlers = [
   ...questionBankHandlers,
@@ -2046,99 +2046,129 @@ export const handlers = [
   http.get('/api/source-upload-policy', async () =>
     HttpResponse.json(sourceUploadPolicy)
   ),
-  http.post('/api/workspaces/:id/sources', async ({ params, request }) => {
-    await delay(500);
-    const form = await request.formData();
-    const file = form.get('file');
-    const uploadedFile = file instanceof File ? file : null;
-    const sentName = String(form.get('name') || '');
-    if ([...sentName].length > createSourceUploadBodyNameMax) {
-      return HttpResponse.json(
-        { message: 'validation failed' },
-        { status: 422 }
-      );
-    }
-    // Like the server, a filename taken from the file part is clamped, not
-    // rejected, keeping its extension.
-    const name = sentName || clampFileName(uploadedFile?.name || 'Untitled');
-    const kind = (String(form.get('kind') || '') ||
-      getFileKind(name, sourceUploadPolicy)) as SourceKindFix;
-    let chapterId = (form.get('chapterId') as string) || null;
-    const chapterName = (form.get('chapterName') as string) || null;
-    const expectedKind = getFileKind(name, sourceUploadPolicy);
-    if (chapterId && chapterName?.trim()) {
-      return HttpResponse.json(
-        { message: 'chapterId and chapterName cannot both be set' },
-        { status: 400 }
-      );
-    }
-    if (expectedKind === 'unknown' || kind !== expectedKind) {
-      return HttpResponse.json(
-        { message: 'unsupported source file type' },
-        { status: 400 }
-      );
-    }
-    if (!chapterId && chapterName?.trim()) {
-      const normalizedName = chapterName.trim().toLowerCase();
-      const existing = db.chapters.find(
-        (chapter) =>
-          chapter.workspaceId === params.id &&
-          chapter.name.trim().toLowerCase() === normalizedName
-      );
-      if (existing) {
-        chapterId = existing.id;
-      } else {
-        const order = db.chapters.filter(
-          (chapter) => chapter.workspaceId === params.id
-        ).length;
-        const chapter: Chapter = {
-          fileIds: [],
-          id: uid('ch'),
-          name: chapterName.trim(),
-          order,
-          workspaceId: String(params.id),
-        };
-        db.chapters.push(chapter);
-        const ws = db.workspaces.find(
-          (workspace) => workspace.id === params.id
+  // Mirrors the direct B2 flow: reserve, PUT the bytes, then complete.
+  http.post(
+    '/api/workspaces/:id/sources/uploads',
+    async ({ params, request }) => {
+      const body = (await request.json()) as SourceUploadReservation['body'];
+      if ([...body.name].length > createSourceUploadBodyNameMax) {
+        return HttpResponse.json(
+          { message: 'validation failed' },
+          { status: 422 }
         );
-        if (ws) ws.chapterCount += 1;
-        chapterId = chapter.id;
       }
+      const uploadId = uid('up');
+      sourceUploadReservations.set(uploadId, {
+        body,
+        workspaceId: String(params.id),
+      });
+      return HttpResponse.json(
+        {
+          expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+          headers: {},
+          method: 'PUT',
+          uploadId,
+          url: `/__mock/b2/${uploadId}`,
+        },
+        { status: 201 }
+      );
     }
-    const f: (typeof db.files)[number] = {
-      addedAt: new Date().toISOString(),
-      chapterId,
-      // Mirror the real backend: uploads start 'pending' until a worker
-      // claims the ingest job, then the client animates progress.
-      hasBytes: Boolean(uploadedFile),
-      id: uid('f'),
-      indexed: false,
-      kind,
-      name,
-      position: db.nextContentPosition(String(params.id), chapterId),
-      revision: 1,
-      sizeBytes:
-        uploadedFile?.size ?? Math.round(200 + Math.random() * 3000) * 1024,
-      status: 'pending',
-      workspaceId: String(params.id),
-    };
-    if (uploadedFile) {
-      db.fileLinks[f.id] = { url: URL.createObjectURL(uploadedFile) };
-    }
-    db.files.push(f);
-    const ws = db.workspaces.find((w) => w.id === params.id);
-    if (ws) ws.fileCount += 1;
-    if (f.chapterId)
-      db.chapters.find((c) => c.id === f.chapterId)?.fileIds.push(f.id);
-    // Finish the ingest before the client's animation (5 × 450 ms) refetches
-    // the list; scenarios can rewrite the outcome on that read.
-    setTimeout(() => {
-      f.status = 'ready';
-      f.indexed = f.kind !== 'audio';
-    }, 2000);
-    return HttpResponse.json(f, { status: 201 });
+  ),
+  http.put('/__mock/b2/:uploadId', async ({ params, request }) => {
+    const reservation = sourceUploadReservations.get(String(params.uploadId));
+    if (!reservation) return new HttpResponse(null, { status: 404 });
+    reservation.bytes = await request.blob();
+    return new HttpResponse(null, { status: 200 });
   }),
+  http.post(
+    '/api/workspaces/:id/sources/uploads/:uploadId/complete',
+    async ({ params }) => {
+      await delay(500);
+      const reservation = sourceUploadReservations.get(String(params.uploadId));
+      if (!reservation?.bytes || reservation.workspaceId !== params.id) {
+        return HttpResponse.json(
+          { message: 'upload not found' },
+          { status: 404 }
+        );
+      }
+      sourceUploadReservations.delete(String(params.uploadId));
+      const { body, bytes } = reservation;
+      const name = body.name;
+      const kind = body.kind as SourceKindFix;
+      let chapterId = body.chapterId ?? null;
+      const chapterName = body.chapterName ?? null;
+      const expectedKind = getFileKind(name, sourceUploadPolicy);
+      if (chapterId && chapterName?.trim()) {
+        return HttpResponse.json(
+          { message: 'chapterId and chapterName cannot both be set' },
+          { status: 400 }
+        );
+      }
+      if (expectedKind === 'unknown' || kind !== expectedKind) {
+        return HttpResponse.json(
+          { message: 'unsupported source file type' },
+          { status: 400 }
+        );
+      }
+      if (!chapterId && chapterName?.trim()) {
+        const normalizedName = chapterName.trim().toLowerCase();
+        const existing = db.chapters.find(
+          (chapter) =>
+            chapter.workspaceId === params.id &&
+            chapter.name.trim().toLowerCase() === normalizedName
+        );
+        if (existing) {
+          chapterId = existing.id;
+        } else {
+          const order = db.chapters.filter(
+            (chapter) => chapter.workspaceId === params.id
+          ).length;
+          const chapter: Chapter = {
+            fileIds: [],
+            id: uid('ch'),
+            name: chapterName.trim(),
+            order,
+            workspaceId: String(params.id),
+          };
+          db.chapters.push(chapter);
+          const ws = db.workspaces.find(
+            (workspace) => workspace.id === params.id
+          );
+          if (ws) ws.chapterCount += 1;
+          chapterId = chapter.id;
+        }
+      }
+      const f: (typeof db.files)[number] = {
+        addedAt: new Date().toISOString(),
+        chapterId,
+        // Mirror the real backend: uploads start 'pending' until a worker
+        // claims the ingest job, then the client animates progress.
+        hasBytes: true,
+        id: uid('f'),
+        indexed: false,
+        kind,
+        name,
+        position: db.nextContentPosition(String(params.id), chapterId),
+        revision: 1,
+        sizeBytes: bytes.size,
+        status: 'pending',
+        workspaceId: String(params.id),
+      };
+      db.fileLinks[f.id] = { url: URL.createObjectURL(bytes) };
+      db.files.push(f);
+      const ws = db.workspaces.find((w) => w.id === params.id);
+      if (ws) ws.fileCount += 1;
+      if (f.chapterId)
+        db.chapters.find((c) => c.id === f.chapterId)?.fileIds.push(f.id);
+      // Finish the ingest before the client's animation (5 × 450 ms) refetches
+      // the list; scenarios can rewrite the outcome on that read.
+      setTimeout(() => {
+        f.status = 'ready';
+        f.indexed = f.kind !== 'audio';
+      }, 2000);
+      return HttpResponse.json(f, { status: 201 });
+    }
+  ),
   /* ---------------- chat & generate ---------------- */
   /* ---------------- conversations ---------------- */
   http.get('/api/workspaces/:id/conversations', async ({ params }) => {

@@ -10,24 +10,10 @@ var subjectTemplates = map[string]string{
 	"account-deletion-cancelled.zh": "你的 Capy Notebook 账户删除已取消",
 	"account-deletion-requested.en": "Your Capy Notebook account deletion is scheduled",
 	"account-deletion-requested.zh": "你的 Capy Notebook 账户删除已安排",
-	"model-deprecated.en":           "{{.FromName}} is no longer available on Capy Notebook",
-	"model-deprecated.zh":           "{{.FromName}} 已从 Capy Notebook 下线",
 	"subscription-frozen.en":        "Your Capy Notebook account is frozen",
 	"subscription-frozen.zh":        "你的 Capy Notebook 账户已被冻结",
 	"subscription-over-quota.en":    "Your Capy Notebook storage is over the free limit",
 	"subscription-over-quota.zh":    "你的 Capy Notebook 存储已超过免费额度",
 	"workspace-invite.en":           "You're invited to join {{.WorkspaceName}} on Capy Notebook",
 	"workspace-invite.zh":           "邀请你加入 Capy Notebook 工作区 {{.WorkspaceName}}",
-	"workspace-member-removed.en":   "You were removed from {{.WorkspaceName}}",
-	"workspace-member-removed.zh":   "你已被移出 {{.WorkspaceName}}",
-	"workspace-role-changed.en":     "Your role changed in {{.WorkspaceName}}",
-	"workspace-role-changed.zh":     "你在 {{.WorkspaceName}} 中的角色已更改",
-}
-
-// roleLabels holds workspace role names keyed by "<role>.<locale>".
-var roleLabels = map[string]string{
-	"editor.en": "Editor",
-	"editor.zh": "编辑者",
-	"viewer.en": "Viewer",
-	"viewer.zh": "查看者",
 }

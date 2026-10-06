@@ -247,18 +247,15 @@ func (s *Store) GetNotificationPrefs(ctx context.Context, userID string) (Notifi
 	var prefs NotificationPrefs
 	err := s.pool.QueryRow(ctx, `SELECT
 			COALESCE(email_workspace_invite, true),
-			COALESCE(email_membership, true),
 			COALESCE(email_billing, true)
 		FROM notification_prefs
 		WHERE user_id=$1`, userID).Scan(
 		&prefs.EmailWorkspaceInvite,
-		&prefs.EmailMembership,
 		&prefs.EmailBilling,
 	)
 	if isNoRows(err) {
 		return NotificationPrefs{
 			EmailWorkspaceInvite: true,
-			EmailMembership:      true,
 			EmailBilling:         true,
 		}, nil
 	}
@@ -275,14 +272,13 @@ func (s *Store) SetNotificationPrefs(ctx context.Context, userID string, prefs N
 		return NotificationPrefs{}, err
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO notification_prefs
-			(user_id, email_workspace_invite, email_membership, email_billing, updated_at)
-		VALUES ($1,$2,$3,$4,now())
+			(user_id, email_workspace_invite, email_billing, updated_at)
+		VALUES ($1,$2,$3,now())
 		ON CONFLICT (user_id) DO UPDATE SET
 			email_workspace_invite=EXCLUDED.email_workspace_invite,
-			email_membership=EXCLUDED.email_membership,
 			email_billing=EXCLUDED.email_billing,
 			updated_at=now()`,
-		userID, prefs.EmailWorkspaceInvite, prefs.EmailMembership, prefs.EmailBilling)
+		userID, prefs.EmailWorkspaceInvite, prefs.EmailBilling)
 	if err != nil {
 		return NotificationPrefs{}, err
 	}
@@ -300,8 +296,6 @@ func (s *Store) DisableNotificationCategory(ctx context.Context, userID, categor
 	switch category {
 	case "workspace_invite":
 		column = "email_workspace_invite"
-	case "membership":
-		column = "email_membership"
 	case "billing":
 		column = "email_billing"
 	default:
@@ -311,13 +305,12 @@ func (s *Store) DisableNotificationCategory(ctx context.Context, userID, categor
 	// runs when the row exists, so a successful first insert must not leave the
 	// category enabled — that is what makes concurrent unsubscribes atomic.
 	invite := category != "workspace_invite"
-	membership := category != "membership"
 	billing := category != "billing"
 	_, err := s.pool.Exec(ctx, `INSERT INTO notification_prefs
-			(user_id, email_workspace_invite, email_membership, email_billing, updated_at)
-		VALUES ($1, $2, $3, $4, now())
+			(user_id, email_workspace_invite, email_billing, updated_at)
+		VALUES ($1, $2, $3, now())
 		ON CONFLICT (user_id) DO UPDATE SET `+column+`=false, updated_at=now()`,
-		userID, invite, membership, billing)
+		userID, invite, billing)
 	return err
 }
 
@@ -330,7 +323,6 @@ func notificationEmailEnabled(ctx context.Context, tx pgx.Tx, userID, category s
 	var enabled bool
 	err := tx.QueryRow(ctx, `SELECT CASE
 			WHEN $2='workspace_invite' THEN COALESCE(email_workspace_invite, true)
-			WHEN $2='membership' THEN COALESCE(email_membership, true)
 			WHEN $2='billing' THEN COALESCE(email_billing, true)
 			ELSE true
 		END
@@ -338,4 +330,51 @@ func notificationEmailEnabled(ctx context.Context, tx pgx.Tx, userID, category s
 		LEFT JOIN notification_prefs p ON p.user_id=u.id
 		WHERE u.id=$1`, userID, category).Scan(&enabled)
 	return enabled, err
+}
+
+// NotifyPendingEditsTooLarge tells the workspace owner that these files'
+// pending edits no longer fit the AI context: once per file until it is
+// processed (publication advances indexed_checkpoint, re-arming the notice).
+func (s *Store) NotifyPendingEditsTooLarge(ctx context.Context, workspaceID string, fileIDs []string) ([]Notification, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	rows, err := tx.Query(ctx, `UPDATE source_documents d
+		SET overflow_notified_checkpoint=d.indexed_checkpoint
+		FROM files f JOIN workspaces w ON w.id=f.workspace_id
+		WHERE d.file_id=f.id AND f.workspace_id=$1 AND f.id=ANY($2)
+		  AND d.pending_effects<>'[]'::jsonb
+		  AND d.overflow_notified_checkpoint IS DISTINCT FROM d.indexed_checkpoint
+		RETURNING f.id, f.name, w.user_id`, workspaceID, fileIDs)
+	if err != nil {
+		return nil, err
+	}
+	var params []NotificationParams
+	for rows.Next() {
+		var fileID, name, ownerID string
+		if err := rows.Scan(&fileID, &name, &ownerID); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		data, _ := json.Marshal(map[string]string{"code": "pending_edits_too_large", "fileId": fileID, "fileName": name})
+		params = append(params, NotificationParams{
+			UserID: ownerID, Kind: NotifSystem, Data: data, WorkspaceID: workspaceID,
+			Href: "/workspaces/" + workspaceID + "?file=" + fileID,
+		})
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	created := make([]Notification, 0, len(params))
+	for _, p := range params {
+		n, err := CreateNotificationTx(ctx, tx, p)
+		if err != nil {
+			return nil, err
+		}
+		created = append(created, n)
+	}
+	return created, tx.Commit(ctx)
 }

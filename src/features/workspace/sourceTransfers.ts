@@ -256,6 +256,8 @@ export function startSourceTransfer(start: StartTransfer) {
     unsent: state.unsent + requests.length,
   }));
 
+  // One notification batch for the whole submission.
+  const batchId = crypto.randomUUID();
   let unsent = requests.length;
   function sent() {
     unsent -= 1;
@@ -290,6 +292,8 @@ export function startSourceTransfer(start: StartTransfer) {
           try {
             const file = await withUploadRetry(() =>
               start.uploadSource({
+                batchId,
+                batchTotal: requests.length,
                 chapterId: request.chapterId,
                 chapterName: request.chapterName,
                 estimatedCreditMicros: request.estimatedCreditMicros,
@@ -369,6 +373,8 @@ export function startSourceTransfer(start: StartTransfer) {
               async () =>
                 parseSourceImportAcceptedResponse(
                   await start.importSources({
+                    batchId,
+                    batchTotal: requests.length,
                     chapterId: request.chapterId,
                     chapterName: request.chapterName,
                     ...(request.driveId ? { driveIds: [request.driveId] } : {}),

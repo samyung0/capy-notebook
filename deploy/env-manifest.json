@@ -985,10 +985,6 @@
       "kind": "variable",
       "targets": ["local"]
     },
-    "VITE_DIRECT_B2_UPLOAD": {
-      "kind": "variable",
-      "targets": ["workflow", "build"]
-    },
     "VITE_E2E_EDITOR_SEED": {
       "kind": "variable",
       "targets": ["local"]

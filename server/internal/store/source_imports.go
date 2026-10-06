@@ -150,6 +150,10 @@ type sourceImportRequestCompletion struct {
 	fingerprint string
 	response    json.RawMessage
 	stored      json.RawMessage
+	// batchID names the submission's notification batch; rejected refs count
+	// as its failed files.
+	batchID  string
+	rejected int
 }
 
 // CreateSourceImportsAndCompleteRequest commits the canonical response in the
@@ -158,6 +162,8 @@ func (s *Store) CreateSourceImportsAndCompleteRequest(
 	ctx context.Context,
 	actorUserID, workspaceID, requestID, fingerprint string,
 	imports []NewSourceImport,
+	batchID string,
+	rejected int,
 	response json.RawMessage,
 ) (json.RawMessage, error) {
 	completion := sourceImportRequestCompletion{
@@ -166,6 +172,8 @@ func (s *Store) CreateSourceImportsAndCompleteRequest(
 		requestID:   requestID,
 		fingerprint: fingerprint,
 		response:    response,
+		batchID:     batchID,
+		rejected:    rejected,
 	}
 	for range 3 {
 		completion.stored = nil
@@ -335,18 +343,22 @@ func (s *Store) createSourceImports(
 		return nil, err
 	}
 
+	batchID := ""
+	if completion != nil {
+		batchID = completion.batchID
+	}
 	out := make([]SourceImportJob, 0, len(imports))
 	for _, item := range imports {
 		u := item.Upload
 		if _, err := tx.Exec(ctx, `INSERT INTO upload_sessions
 			(id, target, workspace_id, user_id, created_by, chapter_id, chapter_name,
 			 object_path, final_path, name, kind, content_type, declared_size, reserved_size,
-			 parse_mode, expires_at)
-			VALUES ($1,'source',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,$14)`,
+			 parse_mode, expires_at, batch_id)
+			VALUES ($1,'source',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,$14,$15)`,
 			u.ID, u.WorkspaceID, ownerID, nullStr(u.CreatedBy), u.ChapterID,
 			u.ChapterName, u.ObjectPath, u.FinalPath, u.Name, u.Kind,
 			u.ContentType, u.DeclaredSize, u.ParseMode,
-			u.ExpiresAt); err != nil {
+			u.ExpiresAt, nullStr(batchID)); err != nil {
 			return nil, err
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO source_import_jobs
@@ -381,6 +393,16 @@ func (s *Store) createSourceImports(
 		out = append(out, job)
 	}
 	if completion != nil {
+		// The request held one placeholder in the batch total; it now counts
+		// its files, the rejected ones as failed.
+		if _, err := tx.Exec(ctx, `UPDATE source_batches SET total=total+$2 WHERE id=$1`,
+			nullStr(batchID), len(imports)+completion.rejected-1); err != nil {
+			return nil, err
+		}
+		if _, err := tx.Exec(ctx, `SELECT source_batch_settle($1, 0, $2)`,
+			nullStr(batchID), completion.rejected); err != nil {
+			return nil, err
+		}
 		var stored []byte
 		err := tx.QueryRow(ctx, `UPDATE source_import_requests
 			SET response=$5::jsonb, completed_at=now()

@@ -315,6 +315,15 @@ func TestRegistrySaveRemapsRemovedPrefToDefault(t *testing.T) {
 	if emails != 0 {
 		t.Fatalf("remap must not send mail, got %d", emails)
 	}
+	var code, toName string
+	if err := tx.QueryRow(ctx,
+		`SELECT data->>'code', data->>'toName' FROM notifications WHERE user_id=$1`, userID,
+	).Scan(&code, &toName); err != nil {
+		t.Fatal(err)
+	}
+	if code != "model_deprecated" || toName == "" {
+		t.Fatalf("unexpected remap notification: %q %q", code, toName)
+	}
 }
 
 func TestRegistrySaveRevalidatesExistingRowsAgainstSlotRequirements(t *testing.T) {

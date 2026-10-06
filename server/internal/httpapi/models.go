@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -311,6 +312,23 @@ type pendingSourcesTooLargeError struct{ FileIDs []string }
 
 func (e *pendingSourcesTooLargeError) Error() string {
 	return "unprocessed file changes exceed the selected model's input limit"
+}
+
+// notifyPendingOverflow tells the workspace owner which files' pending edits no
+// longer fit. Best effort and off the request path: failures are logged only.
+func (a *api) notifyPendingOverflow(ctx context.Context, wsID string, fileIDs []string) {
+	ctx, cancel := obs.Detach(ctx, 10*time.Second)
+	go func() {
+		defer cancel()
+		created, err := a.s.NotifyPendingEditsTooLarge(ctx, wsID, fileIDs)
+		if err != nil {
+			obs.Log(ctx).Warn("pending overflow notification failed", "workspace_id", wsID, "error", err)
+			return
+		}
+		for i := range created {
+			a.publishNotificationEvent(ctx, created[i].UserID, notificationEvent{Type: "created", Notification: &created[i]})
+		}
+	}()
 }
 
 func keyErrorFromEvent(code, message string) error {

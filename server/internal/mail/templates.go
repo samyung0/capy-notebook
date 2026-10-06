@@ -15,15 +15,6 @@ import (
 //go:embed templates/*.gohtml templates/*.txt
 var templateFS embed.FS
 
-// RoleLabel translates a workspace role for use inside an email. Unknown roles
-// fall back to the raw identifier so a new role never blocks delivery.
-func RoleLabel(role, locale string) string {
-	if label, ok := roleLabels[role+"."+normalizeLocale(locale)]; ok {
-		return label
-	}
-	return role
-}
-
 func Render(templateName, locale string, data any) (subject, html, text string, err error) {
 	locale = normalizeLocale(locale)
 	key := templateName + "." + locale

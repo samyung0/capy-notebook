@@ -408,6 +408,7 @@ func main() {
 	go runAccountPurgeWorker(ctx, st, clerkSecret != "")
 	go runOverQuotaNoticeWorker(ctx, st)
 	go runCollaborationEvictionWorker(ctx, st, rdb)
+	go runSourceBatchWorker(ctx, st, rdb)
 
 	bankStore := bank.New(env("BANK_DATABASE_URL", ""), env("BANK_EDITOR_DATABASE_URL", ""), env("BANK_ASSETS_URL", ""), env("LIBRARY_DATABASE_URL", ""))
 	// Questions copied from the bank into quizzes keep linking its figures.

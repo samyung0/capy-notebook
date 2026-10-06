@@ -243,6 +243,10 @@ type CreateSourceUploadReq struct {
 	// PageCount is the browser's page count for a fast-parse document; a
 	// count past the upload policy's maxPages is refused.
 	PageCount int `json:"pageCount,omitempty" minimum:"0"`
+	// BatchID names the upload (one AddSourceDialog submission) this file
+	// belongs to; its notification fires once BatchTotal files settle.
+	BatchID    string `json:"batchId" minLength:"1" maxLength:"64" pattern:"^[A-Za-z0-9_-]+$"`
+	BatchTotal int    `json:"batchTotal" minimum:"1" maximum:"10000"`
 }
 
 // SourceUploadReservation is the presigned PUT the browser uses after reserve.
@@ -263,6 +267,10 @@ type ImportSourcesReq struct {
 	ChapterName ChapterName `json:"chapterName,omitempty"`
 	ParseMode   string      `json:"parseMode,omitempty" enum:"fast,none"`
 	RequestID   string      `json:"requestId,omitempty" maxLength:"128"`
+	// BatchID names the import submission; BatchTotal is its picked items.
+	// Each request then counts its own files in the batch.
+	BatchID    string `json:"batchId" minLength:"1" maxLength:"64" pattern:"^[A-Za-z0-9_-]+$"`
+	BatchTotal int    `json:"batchTotal" minimum:"1" maximum:"10000"`
 }
 
 type SourceImportAccepted struct {

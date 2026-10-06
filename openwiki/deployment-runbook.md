@@ -937,9 +937,9 @@ Pick one:
    so it must cover a slow full-size upload) and `B2_LINK_TTL` (default 300 s:
    read links, which the browser fetches as soon as they land).
 4. **CORS rules on the bucket.** The browser uploads directly to B2 via
-   presigned PUT (`VITE_DIRECT_B2_UPLOAD`, on by default in every deployed
-   build), so B2 itself must allow the SPA origin. Apply the file for the
-   bucket's environment rather than hand-writing rules:
+   presigned PUT (the only source upload path), so B2 itself must allow the
+   SPA origin. Apply the file for the bucket's environment rather than
+   hand-writing rules:
 
    | Bucket             | File                       | Origins                                            |
    | ------------------ | -------------------------- | -------------------------------------------------- |

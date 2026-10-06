@@ -9,6 +9,5 @@ export interface NotificationPrefs {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   emailBilling: boolean;
-  emailMembership: boolean;
   emailWorkspaceInvite: boolean;
 }

@@ -1101,29 +1101,50 @@ func remapPrefsToDefaults(ctx context.Context, tx pgx.Tx) (int64, error) {
 			}
 			return remapped, err
 		}
+		// Each moved user gets a model_deprecated notification naming the
+		// retired model and the slot default that replaced it. users AS old is
+		// the pre-update snapshot, so it still holds the retired slugs.
 		tag, err := tx.Exec(ctx, fmt.Sprintf(`
-			UPDATE users u SET %s = $1, %s = $2, updated_at = now()
-			 WHERE (u.%s, u.%s) IS DISTINCT FROM ($1, $2)
-			   AND NOT EXISTS (
-			     SELECT 1 FROM model_configs c
-			      WHERE c.provider_slug = u.%s
-			        AND c.model_slug = u.%s
-			        AND c.enabled
-			        AND $3 = ANY(c.slots)
-			        AND (
-			          c.platform_enabled
-			          OR (
-			            c.byok_enabled
-			            AND EXISTS (
-			              SELECT 1 FROM user_llm_credentials k
-			               WHERE k.user_id = u.id
-			                 AND k.provider_slug = c.provider_slug
+			WITH moved AS (
+			  UPDATE users u SET %[1]s = $1, %[2]s = $2, updated_at = now()
+			    FROM users old
+			   WHERE old.id = u.id
+			     AND (u.%[1]s, u.%[2]s) IS DISTINCT FROM ($1, $2)
+			     AND NOT EXISTS (
+			       SELECT 1 FROM model_configs c
+			        WHERE c.provider_slug = u.%[1]s
+			          AND c.model_slug = u.%[2]s
+			          AND c.enabled
+			          AND $3 = ANY(c.slots)
+			          AND (
+			            c.platform_enabled
+			            OR (
+			              c.byok_enabled
+			              AND EXISTS (
+			                SELECT 1 FROM user_llm_credentials k
+			                 WHERE k.user_id = u.id
+			                   AND k.provider_slug = c.provider_slug
+			              )
 			            )
 			          )
-			        )
-			   )`, columns.Provider, columns.Model,
-			columns.Provider, columns.Model,
-			columns.Provider, columns.Model),
+			     )
+			  RETURNING u.id, old.%[1]s AS provider_slug, old.%[2]s AS model_slug
+			)
+			INSERT INTO notifications (id, user_id, kind, data, href)
+			SELECT 'nt_' || substr(md5(random()::text || clock_timestamp()::text || m.id), 1, 10),
+			       m.id, 'system',
+			       jsonb_build_object(
+			         'code', 'model_deprecated',
+			         'fromName', COALESCE((
+			           SELECT c.model_name FROM model_configs c
+			            WHERE c.provider_slug = m.provider_slug AND c.model_slug = m.model_slug
+			            ORDER BY c.version DESC LIMIT 1), m.model_slug),
+			         'toName', COALESCE((
+			           SELECT c.model_name FROM model_configs c
+			            WHERE c.provider_slug = $1 AND c.model_slug = $2
+			            ORDER BY c.version DESC LIMIT 1), $2)),
+			       '/settings?tab=llm'
+			  FROM moved m`, columns.Provider, columns.Model),
 			defaultRef.ProviderSlug, defaultRef.ModelSlug, slot)
 		if err != nil {
 			return remapped, err

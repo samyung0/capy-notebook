@@ -76,9 +76,12 @@ describe('mock user scenarios', () => {
 
   it('uses the real upload, cloud-job and flashcard study endpoints', async () => {
     server.use(...getMockScenarioHandlers('ingest-slots'));
-    const upload = await fetch('http://localhost/api/workspaces/ws_1/sources', {
-      method: 'POST',
-    });
+    const upload = await fetch(
+      'http://localhost/api/workspaces/ws_1/sources/uploads',
+      {
+        method: 'POST',
+      }
+    );
     expect(upload.status).toBe(429);
     expect(await upload.json()).toMatchObject({
       errors: [{ message: 'too_many_ingest_leases' }],

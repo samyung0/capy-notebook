@@ -401,7 +401,6 @@ func registerRoutes(api huma.API, a *api) {
 	a.registerChat(api)
 	a.registerContent(api)
 	a.registerSourceUploads(api)
-	a.registerSourceUpload(api)
 	a.registerGenerate(api)
 	a.registerMaterials(api)
 	a.registerQuizzes(api)
@@ -440,4 +439,20 @@ func quotaDetail(err error, requester string) map[string]any {
 		"storageLimitBytes":     quota.LimitBytes,
 		"ownerUserId":           quota.UserID,
 	}
+}
+
+// writeStatusErr renders an hErr result from middleware, where the handler's
+// error return is not available.
+func writeStatusErr(api huma.API, ctx huma.Context, err error) {
+	err = reportHandlerError(ctx.Context(), err)
+	var model *huma.ErrorModel
+	if !errors.As(err, &model) {
+		_ = huma.WriteErr(api, ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	details := make([]error, len(model.Errors))
+	for i, detail := range model.Errors {
+		details[i] = detail
+	}
+	_ = huma.WriteErr(api, ctx, model.Status, model.Detail, details...)
 }

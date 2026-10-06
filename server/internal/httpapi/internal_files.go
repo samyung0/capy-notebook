@@ -45,8 +45,8 @@ func (a *api) internalCreateFile(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	// Base64 grows the bytes by a third.
-	r.Body = http.MaxBytesReader(w, r.Body, ceiling/3*4+multipartHeadroom)
+	// Base64 grows the bytes by a third; 4 MiB covers the JSON fields.
+	r.Body = http.MaxBytesReader(w, r.Body, ceiling/3*4+4<<20)
 	var req internalFileReq
 	if err := decode(r, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": err.Error()})

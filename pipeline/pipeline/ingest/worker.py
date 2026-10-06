@@ -453,10 +453,8 @@ def _resume_source_publication(job: dict) -> bool:
 
 def _finish_ok(
     file_id: str,
-    name: str,
     job_id: str,
     content_hash: str | None = None,
-    notification_code: str = "source_ready",
     indexed: bool = True,
     attempt: int | None = None,
     actor_user_id: str = "",
@@ -469,7 +467,6 @@ def _finish_ok(
     refresh = db.source_refresh_for(file_id)
     if refresh is not None:
         return _finish_source_refresh(file_id, job_id, content_hash)
-    notification = None
     usage = obs.take_parse_usage()
     try:
         with db.connect() as conn:
@@ -524,25 +521,6 @@ def _finish_ok(
     except Exception:
         obs.restore_parse_usage(usage)
         raise
-    try:
-        with db.connect() as conn:
-            with conn.cursor() as cur:
-                if source_revision is not None:
-                    db.require_current_file_source(
-                        cur, file_id, source_revision, source_etag
-                    )
-                notification = db.add_notification(
-                    cur,
-                    file_id,
-                    "system",
-                    {"code": notification_code, "fileName": name},
-                )
-            conn.commit()
-    except Exception:
-        log.warning("could not notify for file %s", file_id, exc_info=True)
-    if notification is not None:
-        user_id = str(notification.pop("userId"))
-        progress.publish_notification(user_id, notification)
     return True
 
 
@@ -1957,10 +1935,8 @@ async def _reuse_donor(
         committed = await asyncio.to_thread(
             _finish_ok,
             file_id,
-            name,
             job["id"],
             donor["content_hash"],
-            "source_duplicate",
             attempt=attempt,
             actor_user_id=payload.get("actorUserId") or "",
             workspace_id=ws,
@@ -2015,10 +1991,8 @@ async def _reuse_donor(
     committed = await asyncio.to_thread(
         _finish_ok,
         file_id,
-        name,
         job["id"],
         donor["content_hash"],
-        "source_duplicate",
         attempt=attempt,
         actor_user_id=payload.get("actorUserId") or "",
         workspace_id=ws,
@@ -2095,9 +2069,7 @@ async def _process_ingest_job(
         committed = await asyncio.to_thread(
             _finish_ok,
             file_id,
-            name,
             job["id"],
-            notification_code="source_stored",
             indexed=False,
             attempt=attempt,
             actor_user_id=payload.get("actorUserId") or "",
@@ -2304,10 +2276,8 @@ async def _process_ingest_job(
         committed = await asyncio.to_thread(
             _finish_ok,
             file_id,
-            name,
             job["id"],
             digest,
-            "source_duplicate",
             attempt=attempt,
             actor_user_id=payload.get("actorUserId") or "",
             workspace_id=ws,
@@ -2352,7 +2322,6 @@ async def _process_ingest_job(
     committed = await asyncio.to_thread(
         _finish_ok,
         file_id,
-        name,
         job["id"],
         digest,
         attempt=attempt,

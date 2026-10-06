@@ -79,7 +79,7 @@ func (s *Store) SetWorkspaceMemberRoleWithResult(ctx context.Context, actorID, w
 		return nil, false, ErrForbidden
 	}
 
-	var memberEmail, locale, workspaceName string
+	var workspaceName string
 	var currentRole WorkspaceRole
 	// FOR UPDATE OF wm: an unqualified FOR UPDATE over this join would also
 	// lock the users and workspaces rows, which nothing here mutates.
@@ -110,27 +110,17 @@ func (s *Store) SetWorkspaceMemberRoleWithResult(ctx context.Context, actorID, w
 			return nil, false, err
 		}
 	}
-	// Only pending rows are dropped here. A row already claimed for sending is
-	// row-locked by the dispatcher for the whole provider call, so deleting it
-	// would block this request behind Resend; emailClaimActive re-derives its
-	// validity from workspace_members instead and cancels it before the send.
-	if _, err := tx.Exec(ctx, `DELETE FROM email_outbox
-		WHERE template IN ('workspace-role-changed','workspace-member-removed')
-			AND status='pending'
-			AND user_id=$2 AND payload->>'workspaceId'=$1`, wsID, memberID); err != nil {
-		return nil, false, err
-	}
 
 	var updatedRole WorkspaceRole
 	var updatedAt time.Time
 	err = tx.QueryRow(ctx, `UPDATE workspace_members wm
 		SET role=$3, updated_at=now()
-		FROM users u, workspaces w
+		FROM workspaces w
 		WHERE wm.workspace_id=$1 AND wm.user_id=$2 AND wm.role<>'owner'
-			AND u.id=wm.user_id AND w.id=wm.workspace_id
-		RETURNING COALESCE(u.email,''), u.locale, w.name, wm.role, wm.updated_at`,
+			AND w.id=wm.workspace_id
+		RETURNING w.name, wm.role, wm.updated_at`,
 		wsID, memberID, role).
-		Scan(&memberEmail, &locale, &workspaceName, &updatedRole, &updatedAt)
+		Scan(&workspaceName, &updatedRole, &updatedAt)
 	if err != nil {
 		return nil, false, err
 	}
@@ -151,18 +141,6 @@ func (s *Store) SetWorkspaceMemberRoleWithResult(ctx context.Context, actorID, w
 		Href:        "/workspaces/" + wsID,
 		WorkspaceID: wsID,
 		At:          now,
-	})
-	if err != nil {
-		return nil, false, err
-	}
-	_, err = EnqueueEmailTx(ctx, tx, EmailOutboxParams{
-		UserID:         memberID,
-		ToEmail:        memberEmail,
-		Template:       "workspace-role-changed",
-		Locale:         locale,
-		Payload:        data,
-		IdempotencyKey: "workspace-role:" + notification.ID,
-		Category:       "membership",
 	})
 	if err != nil {
 		return nil, false, err
@@ -192,19 +170,13 @@ func (s *Store) RemoveWorkspaceMemberWithResult(ctx context.Context, actorID, ws
 		return nil, false, ErrForbidden
 	}
 
-	var memberEmail, locale, workspaceName string
-	if _, err := tx.Exec(ctx, `DELETE FROM email_outbox
-		WHERE template IN ('workspace-role-changed','workspace-member-removed')
-			AND status='pending'
-			AND user_id=$2 AND payload->>'workspaceId'=$1`, wsID, memberID); err != nil {
-		return nil, false, err
-	}
+	var workspaceName string
 	err = tx.QueryRow(ctx, `DELETE FROM workspace_members wm
-		USING users u, workspaces w
+		USING workspaces w
 		WHERE wm.workspace_id=$1 AND wm.user_id=$2 AND wm.role<>'owner'
-			AND u.id=wm.user_id AND w.id=wm.workspace_id
-		RETURNING COALESCE(u.email,''), u.locale, w.name`,
-		wsID, memberID).Scan(&memberEmail, &locale, &workspaceName)
+			AND w.id=wm.workspace_id
+		RETURNING w.name`,
+		wsID, memberID).Scan(&workspaceName)
 	if isNoRows(err) {
 		return nil, false, ErrNotFound
 	}
@@ -228,18 +200,6 @@ func (s *Store) RemoveWorkspaceMemberWithResult(ctx context.Context, actorID, ws
 		Href:        "/workspaces",
 		WorkspaceID: wsID,
 		At:          now,
-	})
-	if err != nil {
-		return nil, false, err
-	}
-	_, err = EnqueueEmailTx(ctx, tx, EmailOutboxParams{
-		UserID:         memberID,
-		ToEmail:        memberEmail,
-		Template:       "workspace-member-removed",
-		Locale:         locale,
-		Payload:        data,
-		IdempotencyKey: "workspace-removed:" + notification.ID,
-		Category:       "membership",
 	})
 	if err != nil {
 		return nil, false, err
@@ -571,13 +531,6 @@ func (s *Store) AcceptWorkspaceInviteWithResult(ctx context.Context, reference, 
 		return WorkspaceMember{}, "", err
 	}
 	if err := recipientStatus.Err(); err != nil {
-		return WorkspaceMember{}, "", err
-	}
-	if _, err := tx.Exec(ctx, `DELETE FROM email_outbox
-		WHERE template IN ('workspace-role-changed','workspace-member-removed')
-			AND status='pending'
-			AND user_id=$2 AND payload->>'workspaceId'=$1`,
-		invite.WorkspaceID, userID); err != nil {
 		return WorkspaceMember{}, "", err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role)

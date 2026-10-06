@@ -733,12 +733,6 @@ func (s *Store) deleteWorkspaceWithResultTx(
 		return nil, err
 	}
 	rows.Close()
-	if _, err := tx.Exec(ctx, `DELETE FROM email_outbox
-		WHERE template IN ('workspace-role-changed','workspace-member-removed')
-			AND status='pending'
-			AND payload->>'workspaceId'=$1`, id); err != nil {
-		return nil, err
-	}
 	if _, err := tx.Exec(ctx, `DELETE FROM workspaces WHERE id=$1`, id); err != nil {
 		return nil, err
 	}

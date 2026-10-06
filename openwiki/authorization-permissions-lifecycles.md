@@ -280,8 +280,9 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   bytes is a recovery action; the recipient must be able to edit.
 - Invite email delivery is intentionally independent of later workspace
   deletion. A message already queued may still send; its link is the authority.
-  A live account without a nonblank email still receives the in-app invite or
-  membership notification, but no email-outbox row is created.
+  A live account without a nonblank email still receives the in-app invite
+  notification, but no email-outbox row is created. Role changes and removals
+  are in-app notifications only; they never email.
   Invite acceptance joins the workspace owner lifecycle, so a missing,
   frozen, suspended, deletion-pending, deleted, expired, revoked, or
   otherwise invalid invite uses the same non-disclosing unavailable-workspace

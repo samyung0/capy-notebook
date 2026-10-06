@@ -5,7 +5,6 @@
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { compile } from '@inlang/paraglide-js';
 import { Maily } from '@maily-to/render';
 import type { JSONContent } from '@tiptap/core';
 import {
@@ -18,20 +17,10 @@ import {
 } from '../emails/schema';
 
 const projectRoot = process.cwd();
-const paraglideOutDir = join(projectRoot, 'src', 'i18n', 'paraglide');
 const sourceDir = join(projectRoot, 'emails', 'templates');
 const mailDir = join(projectRoot, 'server', 'internal', 'mail');
 const templateDir = join(mailDir, 'templates');
 const TRAILING_WHITESPACE_PATTERN = /[ \t]+$/gm;
-
-// Workspace roles remain application messages because they also appear outside
-// email templates. Compile the catalog before importing the generated module.
-await compile({
-  outdir: paraglideOutDir,
-  project: join(projectRoot, 'project.inlang'),
-});
-
-const { m } = await import('../src/i18n/paraglide/messages.js');
 
 async function readSource(templateId: string, locale: EmailLocale) {
   const file = join(sourceDir, `${templateId}.${locale}.json`);
@@ -66,11 +55,6 @@ async function renderSource(
   };
 }
 
-const roleLabels: Record<string, (locale: EmailLocale) => string> = {
-  editor: (locale) => m.notification_role_editor({}, { locale }),
-  viewer: (locale) => m.notification_role_viewer({}, { locale }),
-};
-
 function goMap(name: string, doc: string, entries: Map<string, string>) {
   const rows = [...entries]
     .sort(([a], [b]) => a.localeCompare(b))
@@ -88,7 +72,6 @@ function goMap(name: string, doc: string, entries: Map<string, string>) {
 }
 
 const subjects = new Map<string, string>();
-const roles = new Map<string, string>();
 
 await mkdir(templateDir, { recursive: true });
 for (const locale of emailLocales) {
@@ -100,9 +83,6 @@ for (const locale of emailLocales) {
     subjects.set(key, source.subject);
     await writeFile(join(templateDir, `${key}.gohtml`), `${rendered.html}\n`);
     await writeFile(join(templateDir, `${key}.txt`), `${rendered.text}\n`);
-  }
-  for (const [role, label] of Object.entries(roleLabels)) {
-    roles.set(`${role}.${locale}`, label(locale));
   }
 }
 
@@ -116,11 +96,6 @@ const generatedGo = [
     'subjectTemplates',
     '// subjectTemplates holds subject lines keyed by "<template>.<locale>". They\n// are Go text/template sources and share the body templates\' data.',
     subjects
-  ),
-  goMap(
-    'roleLabels',
-    '// roleLabels holds workspace role names keyed by "<role>.<locale>".',
-    roles
   ),
 ].join('\n');
 

@@ -257,6 +257,7 @@ func TestOwnerColumnsAreCoveredByTransfer(t *testing.T) {
 		"study_progress.user_id":    "per-user study progress, not billable bytes",
 		"workspace_study.user_id":   "per-user study setting, not billable bytes",
 		"conversations.user_id":     "who held the chat; history stays with them",
+		"source_batches.user_id":    "who started the upload, the notification recipient",
 	}
 	covered := map[string]bool{}
 	for _, col := range ownerColumns {

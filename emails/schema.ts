@@ -31,25 +31,6 @@ export const emailTemplateDefinitions = [
     ],
   },
   {
-    id: 'workspace-role-changed',
-    label: 'Workspace role changed',
-    variables: [
-      variable('OpenURL', 'https://example.test/workspaces/biology'),
-      variable('RoleName', 'Editor'),
-      variable('UnsubscribeURL', 'https://example.test/settings'),
-      variable('WorkspaceName', 'Biology'),
-    ],
-  },
-  {
-    id: 'workspace-member-removed',
-    label: 'Workspace member removed',
-    variables: [
-      variable('OpenURL', 'https://example.test'),
-      variable('UnsubscribeURL', 'https://example.test/settings'),
-      variable('WorkspaceName', 'Biology'),
-    ],
-  },
-  {
     id: 'account-deletion-requested',
     label: 'Account deletion requested',
     variables: [
@@ -79,16 +60,6 @@ export const emailTemplateDefinitions = [
     label: 'Subscription frozen',
     variables: [
       variable('OpenURL', 'https://example.test/settings?tab=billing'),
-      variable('UnsubscribeURL', 'https://example.test/settings'),
-    ],
-  },
-  {
-    id: 'model-deprecated',
-    label: 'Model deprecated',
-    variables: [
-      variable('FromName', 'Previous model'),
-      variable('OpenURL', 'https://example.test/settings?tab=llm'),
-      variable('ToName', 'DeepSeek Flash'),
       variable('UnsubscribeURL', 'https://example.test/settings'),
     ],
   },

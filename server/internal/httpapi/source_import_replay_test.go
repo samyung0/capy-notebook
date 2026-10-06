@@ -114,7 +114,7 @@ func TestCompletedSourceImportReplaysBeforeMutableAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := st.CreateSourceImportsAndCompleteRequest(
-		ctx, actor, workspace.ID, requestID, fingerprint, imports, encoded,
+		ctx, actor, workspace.ID, requestID, fingerprint, imports, "", 0, encoded,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -123,11 +123,13 @@ func TestCompletedSourceImportReplaysBeforeMutableAdmission(t *testing.T) {
 	}
 
 	body := map[string]any{
-		"provider":  integrations.ProviderGoogle,
-		"fileIds":   fileIDs,
-		"chapterId": chapter.ID,
-		"parseMode": "none",
-		"requestId": requestID,
+		"provider":   integrations.ProviderGoogle,
+		"fileIds":    fileIDs,
+		"chapterId":  chapter.ID,
+		"parseMode":  "none",
+		"requestId":  requestID,
+		"batchId":    requestID,
+		"batchTotal": 1,
 	}
 	configured := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", httpapi.Config{
 		AuthDisabled: true, DevUserID: actor,

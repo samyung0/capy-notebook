@@ -248,7 +248,7 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 			editor_model_provider_slug, editor_model_slug
 		) ON users TO %s;
 		GRANT SELECT (
-			user_id, email_workspace_invite, email_membership, email_billing
+			user_id, email_workspace_invite, email_billing
 		) ON notification_prefs TO %s;
 		GRANT SELECT (
 			id, user_id, kind, data, href, workspace_id, workspace_invite_id,

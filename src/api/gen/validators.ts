@@ -3413,7 +3413,6 @@ export const ListModelsResponse = zod.object({
 export const GetNotificationPrefsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "emailBilling": zod.boolean(),
-  "emailMembership": zod.boolean(),
   "emailWorkspaceInvite": zod.boolean()
 })
 
@@ -3423,14 +3422,12 @@ export const GetNotificationPrefsResponse = zod.object({
  */
 export const SetNotificationPrefsBody = zod.object({
   "emailBilling": zod.boolean(),
-  "emailMembership": zod.boolean(),
   "emailWorkspaceInvite": zod.boolean()
 })
 
 export const SetNotificationPrefsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "emailBilling": zod.boolean(),
-  "emailMembership": zod.boolean(),
   "emailWorkspaceInvite": zod.boolean()
 })
 
@@ -3455,7 +3452,7 @@ export const ListNotificationsResponse = zod.object({
   "data": zod.unknown(),
   "href": zod.string().optional(),
   "id": zod.string(),
-  "kind": zod.enum(['event', 'quiz', 'system', 'workspace_invite', 'workspace_role_changed', 'workspace_member_removed']),
+  "kind": zod.enum(['system', 'workspace_invite', 'workspace_role_changed', 'workspace_member_removed']),
   "readAt": zod.iso.datetime({"offset":true}).optional()
 })),
   "next": zod.string().optional()
@@ -5558,93 +5555,17 @@ export const UpdateWorkspaceSharingResponse = zod.object({
 
 
 /**
- * @summary Upload a source through the API
- */
-export const UploadSourceParams = zod.object({
-  "id": zod.string()
-})
-
-export const UploadSourceBody = zod.object({
-  "chapterId": zod.instanceof(File).or(zod.string()).optional(),
-  "chapterName": zod.instanceof(File).or(zod.string()).optional(),
-  "estimatedCreditMicros": zod.int().optional(),
-  "file": zod.instanceof(File),
-  "kind": zod.instanceof(File).or(zod.string()).optional(),
-  "name": zod.instanceof(File).or(zod.string()).optional(),
-  "pageCount": zod.int().optional(),
-  "parseMode": zod.instanceof(File).or(zod.string()).optional()
-})
-
-export const UploadSourceResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "addedAt": zod.iso.datetime({"offset":true}),
-  "chapterId": zod.string().nullable(),
-  "hasBytes": zod.boolean(),
-  "id": zod.string(),
-  "indexed": zod.boolean(),
-  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
-  "name": zod.string(),
-  "position": zod.int(),
-  "previewUrl": zod.string().optional(),
-  "provenance": zod.object({
-  "books": zod.array(zod.object({
-  "authors": zod.array(zod.string()),
-  "edition": zod.string().optional(),
-  "excerptIds": zod.array(zod.string()),
-  "id": zod.string(),
-  "license": zod.string().optional(),
-  "licenseUrl": zod.string().optional(),
-  "sourceUrl": zod.string().optional(),
-  "title": zod.string(),
-  "version": zod.int()
-})),
-  "license": zod.string().optional(),
-  "questions": zod.record(zod.string(), zod.object({
-  "books": zod.array(zod.object({
-  "authors": zod.array(zod.string()),
-  "edition": zod.string().optional(),
-  "excerptIds": zod.array(zod.string()),
-  "id": zod.string(),
-  "license": zod.string().optional(),
-  "licenseUrl": zod.string().optional(),
-  "sourceUrl": zod.string().optional(),
-  "title": zod.string(),
-  "version": zod.int()
-})),
-  "license": zod.string().optional(),
-  "web": zod.array(zod.object({
-  "authors": zod.array(zod.string()),
-  "license": zod.string(),
-  "licenseUrl": zod.string().optional(),
-  "publisher": zod.string().optional(),
-  "retrievedAt": zod.string(),
-  "title": zod.string(),
-  "url": zod.string()
-})).nullish()
-})).optional(),
-  "web": zod.array(zod.object({
-  "authors": zod.array(zod.string()),
-  "license": zod.string(),
-  "licenseUrl": zod.string().optional(),
-  "publisher": zod.string().optional(),
-  "retrievedAt": zod.string(),
-  "title": zod.string(),
-  "url": zod.string()
-})).nullish()
-}).optional(),
-  "revision": zod.int(),
-  "sizeBytes": zod.int(),
-  "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
-  "workspaceId": zod.string()
-})
-
-
-/**
  * @summary Queue sources from a connected drive
  */
 export const ImportSourcesParams = zod.object({
   "id": zod.string()
 })
+
+export const importSourcesBodyBatchIdMax = 64;
+
+
+export const importSourcesBodyBatchIdRegExp = new RegExp('^[A-Za-z0-9_-]+$');
+export const importSourcesBodyBatchTotalMax = 10000;
 
 export const importSourcesBodyChapterNameMax = 60;
 
@@ -5655,6 +5576,8 @@ export const importSourcesBodyRequestIdMax = 128;
 
 
 export const ImportSourcesBody = zod.object({
+  "batchId": zod.string().min(1).max(importSourcesBodyBatchIdMax).regex(importSourcesBodyBatchIdRegExp),
+  "batchTotal": zod.int().min(1).max(importSourcesBodyBatchTotalMax),
   "chapterId": zod.string().optional(),
   "chapterName": zod.string().max(importSourcesBodyChapterNameMax).optional(),
   "driveIds": zod.array(zod.string()).optional(),
@@ -5739,6 +5662,12 @@ export const CreateSourceUploadParams = zod.object({
   "id": zod.string()
 })
 
+export const createSourceUploadBodyBatchIdMax = 64;
+
+
+export const createSourceUploadBodyBatchIdRegExp = new RegExp('^[A-Za-z0-9_-]+$');
+export const createSourceUploadBodyBatchTotalMax = 10000;
+
 export const createSourceUploadBodyChapterNameMax = 60;
 
 export const createSourceUploadBodyEstimatedCreditMicrosMin = 0;
@@ -5750,6 +5679,8 @@ export const createSourceUploadBodyPageCountMin = 0;
 
 
 export const CreateSourceUploadBody = zod.object({
+  "batchId": zod.string().min(1).max(createSourceUploadBodyBatchIdMax).regex(createSourceUploadBodyBatchIdRegExp),
+  "batchTotal": zod.int().min(1).max(createSourceUploadBodyBatchTotalMax),
   "chapterId": zod.string().optional(),
   "chapterName": zod.string().max(createSourceUploadBodyChapterNameMax).optional(),
   "contentType": zod.string().optional(),

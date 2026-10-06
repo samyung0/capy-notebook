@@ -74,7 +74,7 @@ const queryClient = new QueryClient({
 });
 const initialNotice: AppNotification = {
   at: '2026-09-14T00:00:00Z',
-  data: { code: 'welcome' },
+  data: { code: 'source_batch', done: 2, failed: 0, source: 'upload' },
   id: 'existing',
   kind: 'system',
 };
@@ -158,7 +158,7 @@ function MotionChecks() {
         notification={{
           at: '2026-09-14T00:00:00Z',
           data: {
-            code: 'source_ready',
+            code: 'pending_edits_too_large',
             fileName: copy ? 'Updated file' : 'Original file',
           },
           id: 'one',

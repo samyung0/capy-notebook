@@ -485,7 +485,6 @@ type Notification struct {
 
 type NotificationPrefs struct {
 	EmailWorkspaceInvite bool `json:"emailWorkspaceInvite"`
-	EmailMembership      bool `json:"emailMembership"`
 	EmailBilling         bool `json:"emailBilling"`
 }
 

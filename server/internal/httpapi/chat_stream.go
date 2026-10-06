@@ -289,6 +289,9 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 			if access.canEdit {
 				send(ev)
 			}
+			if ev.Omitted != nil && *ev.Omitted {
+				a.notifyPendingOverflow(ctx, wsID, ev.FileIDs)
+			}
 		case "done", "error":
 			if ev.Type == "error" {
 				errorCode = ev.Code

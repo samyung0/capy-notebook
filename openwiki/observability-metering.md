@@ -380,7 +380,11 @@ pinned pair that is not in cache is a point read of the table. A cache miss
 in-flight pin. Operators disable rows rather than deleting them for that
 reason (ops dashboard registry grid). In-flight assistant pins keep resolving
 via `Get` of the disabled row. Clearing a preference remaps users to the
-slot default. A pref that still names an unusable key fails
+slot default. A registry save that moves a user off a model they can no
+longer use (`remapPrefsToDefaults` in `server/internal/ops/registry.go`)
+also writes one `model_deprecated` in-app notification per moved slot; it
+sends no email and is not pushed live (the ops process has no Redis), so it
+appears on the next bell load. A pref that still names an unusable key fails
 `model_unavailable`, except BYOK-only rows that the user still has a key
 for.
 
@@ -763,7 +767,7 @@ attempt. Lease reclamation therefore skips an admission transaction instead of
 changing the job and then waiting on its attempt. Suspension or deletion stops
 an in-flight actor before its next durable stage or external provider call.
 
-Upload reservation (`createSourceUpload`, and the proxied multipart upload)
+Upload reservation (`createSourceUpload`, the only source upload path)
 checks the same two budgets up front, with the same distinct errors, plus a
 headroom gate: the browser sends `estimatedCreditMicros` from the upload policy
 rates, and the reservation refuses as `llm_credits_exhausted` when used +

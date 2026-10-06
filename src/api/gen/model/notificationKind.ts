@@ -9,8 +9,6 @@ export type NotificationKind = typeof NotificationKind[keyof typeof Notification
 
 
 export const NotificationKind = {
-  event: 'event',
-  quiz: 'quiz',
   system: 'system',
   workspace_invite: 'workspace_invite',
   workspace_role_changed: 'workspace_role_changed',

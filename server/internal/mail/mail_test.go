@@ -27,32 +27,6 @@ func TestRenderWorkspaceInvite(t *testing.T) {
 	}
 }
 
-func TestRenderModelDeprecated(t *testing.T) {
-	subject, html, text, err := Render("model-deprecated", "en", map[string]string{
-		"FromName":       "Previous model",
-		"ToName":         "DeepSeek Flash",
-		"OpenURL":        "https://example.test/settings?tab=llm",
-		"UnsubscribeURL": "https://example.test/unsubscribe",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(subject, "Previous model") {
-		t.Fatalf("subject = %q", subject)
-	}
-	for _, content := range []string{html, text} {
-		if strings.Contains(content, "{{.") {
-			t.Fatalf("unrendered placeholder in %q", content)
-		}
-		if !strings.Contains(content, "Previous model") || !strings.Contains(content, "DeepSeek Flash") {
-			t.Fatalf("model names missing from %q", content)
-		}
-	}
-	if !strings.Contains(html, "https://example.test/settings?tab=llm") {
-		t.Fatalf("settings URL missing from HTML")
-	}
-}
-
 func TestRenderUsesLocalizedCopy(t *testing.T) {
 	subject, html, _, err := Render("workspace-invite", "zh", map[string]string{
 		"InviteURL":      "https://example.test/invite",
@@ -72,25 +46,13 @@ func TestRenderUsesLocalizedCopy(t *testing.T) {
 	}
 }
 
-func TestRoleLabel(t *testing.T) {
-	if got := RoleLabel("editor", "zh"); got != "编辑者" {
-		t.Fatalf("RoleLabel(editor, zh) = %q", got)
-	}
-	if got := RoleLabel("editor", "fr"); got != "Editor" {
-		t.Fatalf("unknown locale should fall back to English, got %q", got)
-	}
-	if got := RoleLabel("owner", "en"); got != "owner" {
-		t.Fatalf("unknown role should pass through, got %q", got)
-	}
-}
-
 func TestUnsubscribeToken(t *testing.T) {
-	token := UnsubscribeToken("secret", "u_1", "membership")
+	token := UnsubscribeToken("secret", "u_1", "billing")
 	userID, category, err := ParseUnsubscribeToken("secret", token)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if userID != "u_1" || category != "membership" {
+	if userID != "u_1" || category != "billing" {
 		t.Fatalf("parsed token = %q/%q", userID, category)
 	}
 	if _, _, err := ParseUnsubscribeToken("wrong", token); err == nil {

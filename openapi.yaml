@@ -1208,6 +1208,16 @@ components:
           format: uri
           readOnly: true
           type: string
+        batchId:
+          maxLength: 64
+          minLength: 1
+          pattern: ^[A-Za-z0-9_-]+$
+          type: string
+        batchTotal:
+          format: int64
+          maximum: 10000
+          minimum: 1
+          type: integer
         chapterId:
           type: string
         chapterName:
@@ -1237,6 +1247,8 @@ components:
       required:
         - name
         - sizeBytes
+        - batchId
+        - batchTotal
       type: object
     CreateWorkspaceInviteReq:
       additionalProperties: false
@@ -1973,6 +1985,16 @@ components:
           format: uri
           readOnly: true
           type: string
+        batchId:
+          maxLength: 64
+          minLength: 1
+          pattern: ^[A-Za-z0-9_-]+$
+          type: string
+        batchTotal:
+          format: int64
+          maximum: 10000
+          minimum: 1
+          type: integer
         chapterId:
           type: string
         chapterName:
@@ -2004,6 +2026,8 @@ components:
       required:
         - provider
         - fileIds
+        - batchId
+        - batchTotal
       type: object
     IngestSlots:
       additionalProperties: false
@@ -2731,8 +2755,6 @@ components:
       type: object
     NotificationKind:
       enum:
-        - event
-        - quiz
         - system
         - workspace_invite
         - workspace_role_changed
@@ -2767,13 +2789,10 @@ components:
           type: string
         emailBilling:
           type: boolean
-        emailMembership:
-          type: boolean
         emailWorkspaceInvite:
           type: boolean
       required:
         - emailWorkspaceInvite
-        - emailMembership
         - emailBilling
       type: object
     PDFAnnotation:
@@ -9763,79 +9782,6 @@ paths:
       summary: Update workspace sharing
       tags:
         - Workspaces
-  /api/workspaces/{id}/sources:
-    post:
-      operationId: uploadSource
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          multipart/form-data:
-            encoding:
-              chapterId:
-                contentType: text/plain
-              chapterName:
-                contentType: text/plain
-              estimatedCreditMicros:
-                contentType: text/plain
-              file:
-                contentType: application/octet-stream
-              kind:
-                contentType: text/plain
-              name:
-                contentType: text/plain
-              pageCount:
-                contentType: text/plain
-              parseMode:
-                contentType: text/plain
-            schema:
-              properties:
-                chapterId:
-                  type: string
-                chapterName:
-                  maxLength: 60
-                  type: string
-                estimatedCreditMicros:
-                  format: int64
-                  type: integer
-                file:
-                  format: binary
-                  type: string
-                  x-contentEncoding: binary
-                  x-contentMediaType: application/octet-stream
-                kind:
-                  type: string
-                name:
-                  maxLength: 120
-                  type: string
-                pageCount:
-                  format: int64
-                  type: integer
-                parseMode:
-                  type: string
-              required:
-                - file
-              type: object
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/File"
-          description: Created
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Upload a source through the API
-      tags:
-        - Content
   /api/workspaces/{id}/sources/import:
     post:
       operationId: importSources

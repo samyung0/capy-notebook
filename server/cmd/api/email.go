@@ -158,25 +158,16 @@ func sendOutboxEmail(
 		locale = "en"
 	}
 	// Promote camelCase JSON payload fields into the PascalCase names the
-	// Go templates expect. Existing membership mails already rely on this
-	// for WorkspaceName / RoleName.
+	// Go templates expect.
 	if v := stringValue(data, "workspaceName"); v != "" {
 		data["WorkspaceName"] = v
 	}
 	if v := data["graceDays"]; v != nil {
 		data["GraceDays"] = v
 	}
-	if v := stringValue(data, "fromName"); v != "" {
-		data["FromName"] = v
-	}
-	if v := stringValue(data, "toName"); v != "" {
-		data["ToName"] = v
-	}
 	data["InviteURL"] = appURL + stringValue(data, "invitePath")
 	data["OpenURL"] = appURL + "/workspaces"
 	switch item.Template {
-	case "workspace-member-removed":
-		// stay on the workspaces index
 	case "account-deletion-requested":
 		// Account is locked; Settings is unreachable. Point at the marketing
 		// site / app root where support contact lives.
@@ -185,25 +176,20 @@ func sendOutboxEmail(
 		data["OpenURL"] = appURL + "/settings"
 	case "subscription-over-quota", "subscription-frozen":
 		data["OpenURL"] = appURL + "/billing?tab=subscription"
-	case "model-deprecated":
-		data["OpenURL"] = appURL + "/settings?tab=llm"
 	default:
 		if workspaceID := stringValue(data, "workspaceId"); workspaceID != "" {
 			data["OpenURL"] = appURL + "/workspaces/" + url.PathEscape(workspaceID)
 		}
 	}
-	data["RoleName"] = mail.RoleLabel(stringValue(data, "role"), locale)
 
-	category := "membership"
+	category := ""
 	switch item.Template {
 	case "workspace-invite":
 		category = "workspace_invite"
-	case "subscription-over-quota", "subscription-frozen", "model-deprecated":
+	case "subscription-over-quota", "subscription-frozen":
 		category = "billing"
-	case "account-deletion-requested", "account-deletion-cancelled":
-		// Lifecycle mail is non-optional: no unsubscribe token.
-		category = ""
 	}
+	// Lifecycle mail (account deletion) is non-optional: no unsubscribe token.
 	unsubscribeURL := appURL + "/settings?tab=notifications"
 	if category != "" {
 		if token := mail.UnsubscribeToken(unsubscribeSecret, item.UserID, category); token != "" {

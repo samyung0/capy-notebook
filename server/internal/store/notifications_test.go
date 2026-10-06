@@ -73,7 +73,7 @@ func TestEmailOutboxPreferencesIdempotencyAndFailureCleanup(t *testing.T) {
 	})
 
 	if _, err := s.SetNotificationPrefs(ctx, userID, NotificationPrefs{
-		EmailMembership:      false,
+		EmailBilling:         false,
 		EmailWorkspaceInvite: true,
 	}); err != nil {
 		t.Fatal(err)
@@ -85,11 +85,11 @@ func TestEmailOutboxPreferencesIdempotencyAndFailureCleanup(t *testing.T) {
 			return false, err
 		}
 		created, err := EnqueueEmailTx(ctx, tx, EmailOutboxParams{
-			Category:       "membership",
+			Category:       "billing",
 			IdempotencyKey: idempotencyKey,
 			Locale:         "en",
 			Payload:        json.RawMessage(`{"workspaceName":"Test"}`),
-			Template:       "workspace-role-changed",
+			Template:       "subscription-over-quota",
 			ToEmail:        userID + "@example.test",
 			UserID:         userID,
 		})
@@ -108,10 +108,10 @@ func TestEmailOutboxPreferencesIdempotencyAndFailureCleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 	if created {
-		t.Fatal("disabled membership email was enqueued")
+		t.Fatal("disabled billing email was enqueued")
 	}
 	if _, err := s.SetNotificationPrefs(ctx, userID, NotificationPrefs{
-		EmailMembership:      true,
+		EmailBilling:         true,
 		EmailWorkspaceInvite: true,
 	}); err != nil {
 		t.Fatal(err)
@@ -121,7 +121,7 @@ func TestEmailOutboxPreferencesIdempotencyAndFailureCleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !created {
-		t.Fatal("enabled membership email was not enqueued")
+		t.Fatal("enabled billing email was not enqueued")
 	}
 	created, err = enqueue()
 	if err != nil {
@@ -203,9 +203,9 @@ func TestEmailOutboxSuppressesBlankRecipient(t *testing.T) {
 		t.Fatal(err)
 	}
 	created, err := EnqueueEmailTx(ctx, tx, EmailOutboxParams{
-		Category:       "membership",
+		Category:       "billing",
 		IdempotencyKey: uid("blank-email-key"),
-		Template:       "workspace-role-changed",
+		Template:       "subscription-over-quota",
 		ToEmail:        " \t\n ",
 		UserID:         userID,
 	})
@@ -251,11 +251,11 @@ func TestClaimEmailsLeavesTerminalRowsAloneAndShutdownRefundsAttempts(t *testing
 			t.Fatal(err)
 		}
 		if _, err := EnqueueEmailTx(ctx, tx, EmailOutboxParams{
-			Category:       "membership",
+			Category:       "billing",
 			IdempotencyKey: uid("claim-key"),
 			Locale:         "en",
 			Payload:        json.RawMessage(`{"workspaceId":"ws_test"}`),
-			Template:       "workspace-member-removed",
+			Template:       "subscription-over-quota",
 			ToEmail:        userID + "@example.test",
 			UserID:         userID,
 		}); err != nil {
@@ -333,7 +333,7 @@ func TestDisableNotificationCategoryIsAtomic(t *testing.T) {
 
 	var wg sync.WaitGroup
 	errs := make(chan error, 2)
-	for _, category := range []string{"workspace_invite", "membership"} {
+	for _, category := range []string{"workspace_invite", "billing"} {
 		wg.Add(1)
 		go func(category string) {
 			defer wg.Done()
@@ -352,7 +352,7 @@ func TestDisableNotificationCategoryIsAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prefs.EmailWorkspaceInvite || prefs.EmailMembership {
+	if prefs.EmailWorkspaceInvite || prefs.EmailBilling {
 		t.Fatalf("concurrent unsubscribe lost an update: %#v", prefs)
 	}
 }
@@ -375,11 +375,11 @@ func TestEmailCompletionRequiresCurrentLease(t *testing.T) {
 		t.Fatal(err)
 	}
 	created, err := EnqueueEmailTx(ctx, tx, EmailOutboxParams{
-		Category:       "membership",
+		Category:       "billing",
 		IdempotencyKey: uid("lease-key"),
 		Locale:         "en",
 		Payload:        json.RawMessage(`{"workspaceId":"ws_test","role":"viewer"}`),
-		Template:       "workspace-member-removed",
+		Template:       "subscription-over-quota",
 		ToEmail:        userID + "@example.test",
 		UserID:         userID,
 	})

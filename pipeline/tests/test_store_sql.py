@@ -2370,19 +2370,13 @@ def test_a_stale_worker_does_not_finish_the_successors_job(workspace):
         "UPDATE files SET status='processing' WHERE id=%s RETURNING id", (file_id,)
     )
 
-    worker._finish_ok(file_id, "late.txt", job_id, attempt=1)
+    worker._finish_ok(file_id, job_id, attempt=1)
 
     assert (
         workspace.scalar("SELECT status FROM jobs WHERE id=%s", (job_id,)) == "running"
     )
     assert workspace.scalar("SELECT status FROM files WHERE id=%s", (file_id,)) == (
         "processing"
-    )
-    assert (
-        workspace.scalar(
-            "SELECT count(*) FROM notifications WHERE workspace_id=%s", (workspace.id,)
-        )
-        == 0
     )
 
 
@@ -2433,7 +2427,6 @@ def test_lost_attempt_does_not_close_the_successors_reservation(workspace):
     # the reservation shared with attempt 2 or change the successor's job.
     worker._finish_ok(
         file_id,
-        "retry.txt",
         job_id,
         "attempt-one",
         attempt=1,
@@ -2452,7 +2445,6 @@ def test_lost_attempt_does_not_close_the_successors_reservation(workspace):
 
     worker._finish_ok(
         file_id,
-        "retry.txt",
         job_id,
         "attempt-two",
         attempt=2,
@@ -2546,7 +2538,6 @@ async def test_replaced_source_rejects_a_paused_ingests_stale_writes(workspace):
         )
     assert not worker._finish_ok(
         file_id,
-        "replacement.docx",
         job_id,
         "content-a",
         attempt=1,
@@ -3357,16 +3348,9 @@ def test_deleting_a_file_fences_its_inflight_job(workspace):
         (job_id, json.dumps({"fileId": file_id, "workspaceId": workspace.id})),
     )
     workspace.scalar("DELETE FROM files WHERE id = %s RETURNING id", (file_id,))
-    worker._finish_ok(file_id, "gone.txt", job_id, attempt=1)
+    worker._finish_ok(file_id, job_id, attempt=1)
     assert (
         workspace.scalar("SELECT status FROM jobs WHERE id=%s", (job_id,)) == "failed"
-    )
-    assert (
-        workspace.scalar(
-            "SELECT count(*) FROM notifications WHERE workspace_id=%s",
-            (workspace.id,),
-        )
-        == 0
     )
 
 

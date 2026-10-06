@@ -63,7 +63,7 @@ func TestSourceImportRequestCommitsJobsAndResponseAtomically(t *testing.T) {
 
 	if _, err := s.CreateSourceImportsAndCompleteRequest(
 		ctx, owner, existing.WorkspaceID, requestID, fingerprint,
-		[]NewSourceImport{first}, want,
+		[]NewSourceImport{first}, "", 0, want,
 	); err == nil {
 		t.Fatal("injected response failure committed")
 	}
@@ -85,7 +85,7 @@ func TestSourceImportRequestCommitsJobsAndResponseAtomically(t *testing.T) {
 	dropFailure()
 	stored, err := s.CreateSourceImportsAndCompleteRequest(
 		ctx, owner, existing.WorkspaceID, requestID, fingerprint,
-		[]NewSourceImport{first}, want,
+		[]NewSourceImport{first}, "", 0, want,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -106,7 +106,7 @@ func TestSourceImportRequestCommitsJobsAndResponseAtomically(t *testing.T) {
 	changedResponse := json.RawMessage(`{"jobs":[],"rejected":[{"fileId":"provider-file-after-replay","code":"provider_file_unavailable"}]}`)
 	replayed, err := s.CreateSourceImportsAndCompleteRequest(
 		ctx, owner, existing.WorkspaceID, requestID, fingerprint,
-		[]NewSourceImport{changed}, changedResponse,
+		[]NewSourceImport{changed}, "", 0, changedResponse,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -137,7 +137,7 @@ func TestSourceImportRequestReplaysCompletedResponse(t *testing.T) {
 	}
 	want := json.RawMessage(`{"jobs":[],"rejected":[{"fileId":"missing","code":"unsupported_file"}]}`)
 	stored, err := s.CreateSourceImportsAndCompleteRequest(
-		ctx, owner, job.WorkspaceID, requestID, "fingerprint", nil, want,
+		ctx, owner, job.WorkspaceID, requestID, "fingerprint", nil, "", 0, want,
 	)
 	var wantValue, storedValue any
 	if err == nil {
@@ -207,7 +207,7 @@ func TestSourceImportRequestRechecksActorLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := s.CreateSourceImportsAndCompleteRequest(
-		ctx, owner, job.WorkspaceID, requestID, "fingerprint", nil,
+		ctx, owner, job.WorkspaceID, requestID, "fingerprint", nil, "", 0,
 		json.RawMessage(`{"jobs":[]}`),
 	)
 	var locked *AccountLockedError
