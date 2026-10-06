@@ -27,7 +27,7 @@ import type {
 } from '@/features/files/officeProtocol';
 import { m } from '@/i18n';
 import { CITATION_FILL, slideCitationItems, uniqueCitation } from './citations';
-import type { RuntimeNotesWindow } from './notesWindow';
+import { runtimeNotesWindow } from './notesWindow';
 import { loadPptxFonts } from './pptxFonts';
 import { pptxIcons } from './pptxIcons';
 import { PptxImageCache } from './pptxImageCache';
@@ -49,9 +49,9 @@ export function PptxViewer({
   onAnalysis,
   onError,
   onMenus,
+  onAskPresenter,
   onPresentingChange,
   onRenderer,
-  presenter,
 }: {
   bytes: Uint8Array;
   citation: OfficeCitation | null;
@@ -59,9 +59,10 @@ export function PptxViewer({
   onAnalysis: (analysis: PresentationAnalysis) => void;
   onError: (error: Error) => void;
   onMenus: OfficeMenuReporter;
+  /** Asks Capy for Presenter view's notes window, from a click in the show. */
+  onAskPresenter: () => void;
   onPresentingChange: (presenting: boolean) => void;
   onRenderer: (renderer: OfficeRenderer | null) => void;
-  presenter: RuntimeNotesWindow;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -79,6 +80,8 @@ export function PptxViewer({
   const [stageSize, setStageSize] = useState({ height: 0, width: 0 });
   // The slide a show starts from; null while not presenting.
   const [presenting, setPresenting] = useState<number | null>(null);
+  const [presenter] = useState(() => runtimeNotesWindow(onAskPresenter));
+  useEffect(() => () => presenter.dispose(), [presenter]);
   // The same remembered choice as edit mode; hidden by default.
   const [speakerNotes, setSpeakerNotes] = useState(() =>
     readViewToggle('speakerNotes')

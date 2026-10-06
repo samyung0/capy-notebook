@@ -10,7 +10,7 @@ import type {
   OfficeLocale,
 } from '@/features/files/officeProtocol';
 import { m } from '@/i18n';
-import { PRESENTER_VIEW, type RuntimeNotesWindow } from './notesWindow';
+import { runtimeNotesWindow } from './notesWindow';
 import type {
   OfficeCollaboration,
   OfficeExporter,
@@ -21,6 +21,7 @@ import { loadPptxFonts } from './pptxFonts';
 import { pptxIcons } from './pptxIcons';
 import { pptxStrings, presentAction } from './pptxMenus';
 import { renderSlides } from './pptxRender';
+import { PRESENTER_VIEW } from './presenterWindow';
 import type { OfficeMenuReporter, OfficeRenderer } from './runtimeMenus';
 import {
   readNotesSize,
@@ -41,11 +42,11 @@ export function PptxEditorHost({
   onAnalysis,
   onError,
   onMenus,
+  onAskPresenter,
   onPendingChange,
   onPresentingChange,
   onRenderer,
   onSave,
-  presenter,
   readOnly,
 }: {
   bytes: Uint8Array;
@@ -60,12 +61,12 @@ export function PptxEditorHost({
   onAnalysis: (analysis: OfficeAnalysis) => void;
   onError: (error: Error) => void;
   onMenus: OfficeMenuReporter;
+  /** Asks Capy for Presenter view's notes window, from a click in the show. */
+  onAskPresenter: () => void;
   onPendingChange: (pending: boolean) => void;
   onPresentingChange: (presenting: boolean) => void;
   onRenderer: (renderer: OfficeRenderer | null) => void;
   onSave: () => void;
-  /** Presenter view's notes window, which Capy opens. */
-  presenter: RuntimeNotesWindow;
   /** Recovery: selection and copy only. */
   readOnly: boolean;
 }) {
@@ -73,6 +74,8 @@ export function PptxEditorHost({
   const [commandState, setCommandState] = useState<PptxCommandState | null>(
     null
   );
+  const [presenter] = useState(() => runtimeNotesWindow(onAskPresenter));
+  useEffect(() => () => presenter.dispose(), [presenter]);
   // Read once: the editor only takes it as its starting state.
   const [speakerNotes] = useState(() => readViewToggle('speakerNotes'));
   // Each show starts at the size last picked, in this editor or before.

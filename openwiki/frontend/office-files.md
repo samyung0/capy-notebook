@@ -1176,9 +1176,11 @@ Google Slides warns). Capy sends the command with a fresh token, then opens
 pop-up every time (`openPresenterWindow`; a named window would be reused with
 only its hash changed and never hand itself over); that page only finds the
 runtime frame among its opener's frames, hands itself over and drops its
-`opener` (`handOverPresenterWindow` in `notesWindow.ts`), and the runtime
-renders pptx-react's presenter window into it through a React portal,
-painting the slides with the same `paintSlide`, so the deck is loaded once. A
+`opener` (`handOverPresenterWindow` in `presenterWindow.ts`, which every
+runtime loads without pptx-react), and the PPTX viewer or editor, which owns
+the window's store (`notesWindow.ts`), renders pptx-react's presenter window
+into it through a React portal, painting the slides with the same
+`paintSlide`, so the deck is loaded once. A
 window nobody expects (reloaded, or the show ended first) closes itself; the
 runtime closes it with a message, since it did not open it, also when the
 frame goes away (its `pagehide`: Back, another file, a runtime reload, a new

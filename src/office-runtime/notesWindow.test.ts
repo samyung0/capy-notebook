@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { handOverPresenterWindow, runtimeNotesWindow } from './notesWindow';
+import { runtimeNotesWindow } from './notesWindow';
+import { handOverPresenterWindow } from './presenterWindow';
 
 const RUNTIME = 'https://office.example.com';
 
@@ -104,6 +105,33 @@ describe('PPTX presenter window, runtime side', () => {
     // Nothing open: a later pagehide sends nothing.
     frame.dispatch('pagehide');
     expect(popup.postMessage).toHaveBeenCalledOnce();
+  });
+
+  it('lets go when its viewer or editor unmounts: the window closes and is no longer taken', () => {
+    const frame = fakeWindow();
+    const removed: string[] = [];
+    Object.assign(frame, {
+      removeEventListener: (type: string) => removed.push(type),
+    });
+    vi.stubGlobal('window', frame);
+    const presenter = runtimeNotesWindow(() => {});
+    const attach = frame.capyAttachPresenter!;
+    const popup = fakeWindow() as unknown as Window;
+    presenter.expect('t1');
+    expect(attach('t1', popup)).toBe(true);
+    presenter.dispose();
+    expect(popup.postMessage).toHaveBeenCalledWith(
+      'capy-presenter-close',
+      RUNTIME
+    );
+    expect(removed).toEqual(['pagehide']);
+    expect(frame.capyAttachPresenter).toBeUndefined();
+    // A newer viewer's hook stays when an older one lets go.
+    const next = runtimeNotesWindow(() => {});
+    const newer = frame.capyAttachPresenter;
+    presenter.dispose();
+    expect(frame.capyAttachPresenter).toBe(newer);
+    next.dispose();
   });
 });
 

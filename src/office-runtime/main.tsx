@@ -27,16 +27,12 @@ import {
 import { m, setLocale } from '@/i18n';
 import { THEMES } from '@/theme/theme';
 import { exportCheckpoint } from './exportCheckpoint';
-import {
-  handOverPresenterWindow,
-  PRESENTER_VIEW,
-  runtimeNotesWindow,
-} from './notesWindow';
 import type {
   OfficeExporter,
   OfficeFlusher,
   OfficeReplica,
 } from './officeCollaboration';
+import { handOverPresenterWindow, PRESENTER_VIEW } from './presenterWindow';
 import {
   type OfficeMenuSource,
   type OfficeRenderer,
@@ -95,16 +91,14 @@ function OfficeRuntime() {
   const rendererRef = useRef<OfficeRenderer | null>(null);
   const revisionRef = useRef<number | null>(null);
   // PPTX Presenter view: Capy opens the notes window, even from a click here.
-  const [presenter] = useState(() =>
-    runtimeNotesWindow(() => {
-      if (revisionRef.current !== null)
-        post({
-          id: PRESENTER_VIEW,
-          revision: revisionRef.current,
-          type: 'open-presenter',
-        });
-    })
-  );
+  const askPresenter = useCallback(() => {
+    if (revisionRef.current !== null)
+      post({
+        id: PRESENTER_VIEW,
+        revision: revisionRef.current,
+        type: 'open-presenter',
+      });
+  }, []);
   const reportPresenting = useCallback((presenting: boolean) => {
     if (revisionRef.current !== null)
       post({ presenting, revision: revisionRef.current, type: 'presenting' });
@@ -620,6 +614,7 @@ function OfficeRuntime() {
               locale={locale}
               narrow={narrow}
               onAnalysis={reportAnalysis}
+              onAskPresenter={askPresenter}
               onError={reportError}
               onExporter={reportExporter}
               onFlusher={reportFlusher}
@@ -628,7 +623,6 @@ function OfficeRuntime() {
               onPresentingChange={reportPresenting}
               onRenderer={reportRenderer}
               onSave={save}
-              presenter={presenter}
               readOnly={readOnly}
             />
           )
@@ -658,11 +652,11 @@ function OfficeRuntime() {
             citation={citation}
             locale={locale}
             onAnalysis={reportAnalysis}
+            onAskPresenter={askPresenter}
             onError={reportError}
             onMenus={reportMenus}
             onPresentingChange={reportPresenting}
             onRenderer={reportRenderer}
-            presenter={presenter}
           />
         )}
       </Suspense>
