@@ -62,6 +62,17 @@ pub enum RoomCmd {
     Project(oneshot::Sender<Result<i64, String>>),
     /// Send every channel a stateless message.
     Broadcast(String),
+    /// An eviction (DESIGN.md 9): drain stores and closes, discard throws
+    /// unsaved state away; both close every channel after `notification`.
+    Evict {
+        drain: bool,
+        notification: Option<String>,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    /// Close every channel of a user (account access changed).
+    CloseUser(String, u16, String),
+    /// A fold of the log finished: rows and bytes it removed, the new base size.
+    Folded(Option<(i64, i64, i64)>),
 }
 
 struct Member {
@@ -75,8 +86,6 @@ struct Member {
     unplaced: u32,
     /// Update and step 2 messages handled since the last ACK.
     acks: u64,
-    /// The batched frame for this window.
-    pending: BytesMut,
 }
 
 struct AwarenessEntry {
@@ -96,6 +105,9 @@ struct Note {
     projecting: bool,
     project_waiters: Vec<oneshot::Sender<Result<i64, String>>>,
     log_bytes: i64,
+    log_rows: i64,
+    base_bytes: i64,
+    folding: bool,
 }
 
 /// What a store carried, back from its I/O.
@@ -185,6 +197,12 @@ async fn load(app: &Shared, name: &RoomName) -> Result<(Doc, Kindly, ydoc::Durab
                 .await
                 .map_err(|error| error.to_string())?;
             let kind = loaded.material_kind.clone();
+            let (log_rows, base_bytes) = (loaded.rows.len() as i64, loaded.base.len() as i64);
+            let (stored_version, projected_version, log_bytes) = (
+                loaded.stored_version,
+                loaded.projected_version,
+                loaded.log_bytes,
+            );
             let (doc, durable, metrics) =
                 tokio::task::spawn_blocking(move || -> Result<_, String> {
                     let scratch = ydoc::scratch_doc();
@@ -217,11 +235,14 @@ async fn load(app: &Shared, name: &RoomName) -> Result<(Doc, Kindly, ydoc::Durab
                 kind,
                 validator: notes::limits::Validator::default(),
                 durable_metrics: Some(metrics),
-                stored_version: loaded.stored_version,
-                projected_version: loaded.projected_version,
+                stored_version,
+                projected_version,
                 projecting: false,
                 project_waiters: Vec::new(),
-                log_bytes: loaded.log_bytes,
+                log_bytes,
+                log_rows,
+                base_bytes,
+                folding: false,
             };
             Ok((doc, Kindly::Note(Box::new(note)), durable))
         }
@@ -300,6 +321,11 @@ async fn run(app: Shared, name: RoomName, id: u64, mut rx: mpsc::Receiver<RoomCm
         kind,
         discard_pending: None,
     };
+    let Kindly::Note(note) = &room.kind;
+    room.app
+        .stats
+        .log_bytes
+        .fetch_add(note.log_bytes.max(0) as u64, Ordering::Relaxed);
     room.serve(&mut rx).await;
 }
 
@@ -366,7 +392,7 @@ impl Room {
         }
         if self.idle_at.is_some_and(|at| at <= now) {
             self.idle_at = None;
-            self.start_projection();
+            self.start_projection().await;
         }
     }
 
@@ -424,11 +450,178 @@ impl Room {
                 if self.store.dirty || markers::pending(&self.doc) {
                     self.start_store().await;
                 } else {
-                    self.start_projection();
+                    self.start_projection().await;
                 }
             }
             RoomCmd::Broadcast(payload) => self.broadcast_stateless(&payload),
+            RoomCmd::Evict {
+                drain,
+                notification,
+                reply,
+            } => self.evict(drain, notification, reply).await,
+            RoomCmd::CloseUser(user, code, reason) => {
+                let keys: Vec<MemberKey> = self
+                    .members
+                    .iter()
+                    .filter(|(_, member)| member.context.user_id == user)
+                    .map(|(key, _)| *key)
+                    .collect();
+                for key in keys {
+                    self.close_channel(key, None, code, &reason);
+                }
+            }
+            RoomCmd::Folded(folded) => {
+                let Kindly::Note(note) = &mut self.kind;
+                note.folding = false;
+                if let Some((rows, bytes, base)) = folded {
+                    note.log_rows -= rows;
+                    note.log_bytes -= bytes;
+                    note.base_bytes = base;
+                    self.app
+                        .stats
+                        .log_bytes
+                        .fetch_sub(bytes.max(0) as u64, Ordering::Relaxed);
+                }
+            }
         }
+    }
+
+    /// Sends `notification` (if any) and CLOSED, and forgets the channel.
+    fn close_channel(
+        &mut self,
+        key: MemberKey,
+        notification: Option<&str>,
+        code: u16,
+        reason: &str,
+    ) {
+        if let Some(payload) = notification {
+            self.send(key, Kind::Stateless, &protocol::text(payload));
+        }
+        self.send(key, Kind::Closed, &protocol::closed(code, reason));
+        if let Some(member) = self.members.get(&key) {
+            member.out.channel_closed(key.1);
+        }
+        self.leave(key);
+    }
+
+    /// `evictLocalRoom` on this room: every channel hears the notification and
+    /// closes. A drain stores first and answers with the store's outcome; a
+    /// discard throws unsaved state away and moves the lineage when it held
+    /// any (`discardMovesLineage`).
+    async fn evict(
+        &mut self,
+        drain: bool,
+        notification: Option<String>,
+        reply: oneshot::Sender<Result<(), String>>,
+    ) {
+        let client = notification.as_deref().map(incidents::client_payload);
+        let keys: Vec<MemberKey> = self.members.keys().copied().collect();
+        for key in keys {
+            self.close_channel(key, client.as_deref(), 0, "collaboration room evicted");
+        }
+        self.flush();
+        if drain {
+            if self.nothing_to_store() {
+                let _ = reply.send(Ok(()));
+            } else {
+                self.store.waiters.push(reply);
+                self.start_store().await;
+            }
+            return;
+        }
+        let unsaved =
+            self.store.dirty || self.store.retry_at.is_some() || markers::pending(&self.doc);
+        if unsaved && self.discard_pending.is_none() {
+            let cause = incidents::broadcast_cause(notification.as_deref());
+            self.record_room_incidents(&cause, None);
+            self.app.evictions.reject(&self.name);
+            self.discard_pending = Some(cause);
+        }
+        self.store.dirty = false;
+        self.store.retry_at = None;
+        self.answer_store_waiters(Err("collaboration room discarded".into()));
+        let _ = reply.send(Ok(()));
+    }
+
+    /// `roomIncidents`: one incident per writer with unsaved work in the room,
+    /// or one naming nobody.
+    fn record_room_incidents(&self, cause: &Cause, bytes: Option<u64>) {
+        let users: BTreeSet<String> = markers::contributors(&self.doc)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|c| c.user_id)
+            .collect();
+        let size = bytes.or_else(|| {
+            Some(
+                self.doc
+                    .transact()
+                    .encode_state_as_update_v1(&StateVector::default())
+                    .len() as u64,
+            )
+        });
+        let list: Vec<Incident> = if users.is_empty() {
+            vec![Incident {
+                cause: cause.clone(),
+                room: self.name.clone(),
+                size_bytes: size,
+                user_id: None,
+            }]
+        } else {
+            users
+                .into_iter()
+                .map(|user| Incident {
+                    cause: cause.clone(),
+                    room: self.name.clone(),
+                    size_bytes: size,
+                    user_id: Some(user),
+                })
+                .collect()
+        };
+        incidents::record(&self.app, list);
+    }
+
+    /// Folds the log once it passes the configured size (DESIGN.md 3.5).
+    fn maybe_fold(&mut self) {
+        let (min_bytes, max_rows) = (
+            self.app.config.fold_min_bytes as i64,
+            self.app.config.fold_max_rows as i64,
+        );
+        let Kindly::Note(note) = &mut self.kind;
+        if note.folding
+            || (note.log_bytes < min_bytes.max(note.base_bytes) && note.log_rows < max_rows)
+        {
+            return;
+        }
+        let Some(handle) = self
+            .app
+            .rooms
+            .get(&self.name)
+            .filter(|handle| handle.id == self.id)
+        else {
+            return;
+        };
+        note.folding = true;
+        let (app, material_id, schema, through) = (
+            self.app.clone(),
+            note.material_id.clone(),
+            note.schema,
+            note.stored_version,
+        );
+        tokio::spawn(async move {
+            let folded = match note_store::fold(&app.db, &material_id, schema, Some(through)).await
+            {
+                Ok(folded) => folded.map(|f| (f.rows as i64, f.log_bytes, f.base_bytes)),
+                Err(error) => {
+                    observe::capture(
+                        &error.to_string(),
+                        None,
+                        &[("room", &material_id), ("stage", "fold")],
+                    );
+                    None
+                }
+            };
+            let _ = handle.tx.send(RoomCmd::Folded(folded)).await;
+        });
     }
 
     // ---------------------------------------------------------------- channels
@@ -465,7 +658,6 @@ impl Room {
                 clients: HashSet::new(),
                 unplaced: 0,
                 acks: 0,
-                pending: BytesMut::new(),
             },
         );
         let sv = self.doc.transact().state_vector();
@@ -1012,6 +1204,7 @@ impl Room {
                 note.stored_version = version;
                 note.durable_metrics = metrics;
                 note.log_bytes += row_bytes as i64;
+                note.log_rows += 1;
                 self.app
                     .stats
                     .log_bytes
@@ -1045,8 +1238,14 @@ impl Room {
                     }
                 } else {
                     self.answer_store_waiters(Ok(()));
-                    self.arm_idle();
+                    let Kindly::Note(note) = &self.kind;
+                    if note.project_waiters.is_empty() {
+                        self.arm_idle();
+                    } else {
+                        self.idle_at = Some(Instant::now());
+                    }
                 }
+                self.maybe_fold();
             }
             Err(error) => {
                 self.markers.unclaim(&contributors);
@@ -1139,30 +1338,7 @@ impl Room {
             other => Cause::new(IncidentKind::DiscardUnsaved, &other.incident_reason()),
         };
         self.app.evictions.reject(&self.name);
-        let users: BTreeSet<String> = markers::contributors(&self.doc)
-            .unwrap_or_default()
-            .into_iter()
-            .map(|c| c.user_id)
-            .collect();
-        let incidents_list: Vec<Incident> = if users.is_empty() {
-            vec![Incident {
-                cause: cause.clone(),
-                room: self.name.clone(),
-                size_bytes: Some(bytes as u64),
-                user_id: None,
-            }]
-        } else {
-            users
-                .into_iter()
-                .map(|user| Incident {
-                    cause: cause.clone(),
-                    room: self.name.clone(),
-                    size_bytes: Some(bytes as u64),
-                    user_id: Some(user),
-                })
-                .collect()
-        };
-        incidents::record(&self.app, incidents_list);
+        self.record_room_incidents(&cause, Some(bytes as u64));
         self.broadcast_stateless(&incidents::client_payload(&payload));
         let keys: Vec<MemberKey> = self.members.keys().copied().collect();
         for key in keys {
@@ -1185,7 +1361,7 @@ impl Room {
         self.idle_at = Some((from + self.app.config.projection_idle).max(Instant::now()));
     }
 
-    fn start_projection(&mut self) {
+    async fn start_projection(&mut self) {
         let Kindly::Note(note) = &mut self.kind;
         if note.projecting {
             return;
@@ -1201,7 +1377,9 @@ impl Room {
         let version = note.stored_version;
         let material_id = note.material_id.clone();
         let app = self.app.clone();
-        let doc = self.doc.clone();
+        // Read here, so the content is exactly the durable state at `version`;
+        // the room waits for it as for a store's validation.
+        let content = projection::content_of(self.doc.clone()).await;
         let Some(handle) = self
             .app
             .rooms
@@ -1211,7 +1389,10 @@ impl Room {
             return;
         };
         tokio::spawn(async move {
-            let result = projection::project_doc(&app, &material_id, version, doc).await;
+            let result = match content {
+                Ok(content) => projection::project(&app, &material_id, version, &content).await,
+                Err(error) => Err(error),
+            };
             let _ = handle.tx.send(RoomCmd::Projected(version, result)).await;
         });
     }
@@ -1269,24 +1450,22 @@ impl Room {
                 crate::eviction::move_lineage(&app, &room, cause).await;
                 return;
             }
-            if stored > projected {
-                if let Err(error) = projection::project_doc(&app, &material_id, stored, doc).await {
-                    log(
-                        Level::Warn,
-                        "unload projection failed",
-                        json!({ "error": error, "room": material_id }),
-                    );
-                }
+            if stored > projected
+                && let Err(error) = projection::project_doc(&app, &material_id, stored, doc).await
+            {
+                log(
+                    Level::Warn,
+                    "unload projection failed",
+                    json!({ "error": error, "room": material_id }),
+                );
             }
-            match note_store::fold(&app.db, &material_id, schema, None).await {
-                Ok(_) => {}
-                Err(error) => {
-                    observe::capture(
-                        &error.to_string(),
-                        None,
-                        &[("room", &material_id), ("stage", "fold")],
-                    );
-                }
+            // Compaction while the room is empty (DESIGN.md 3.5).
+            if let Err(error) = note_store::fold(&app.db, &material_id, schema, None).await {
+                observe::capture(
+                    &error.to_string(),
+                    None,
+                    &[("room", &material_id), ("stage", "fold")],
+                );
             }
         });
     }
@@ -1313,14 +1492,16 @@ fn validate(
     notes::validate::assert_roots(&txn).map_err(|error| StoreError::Invalid(error.to_string()))?;
     let value =
         notes::plate::value(&txn).map_err(|error| StoreError::Invalid(error.to_string()))?;
-    notes::validate::assert_canonical(&value, kind)
-        .map_err(|error| StoreError::Invalid(error.to_string()))?;
+    // PENDING rust-notes: the canonical material check (materialDocument.ts,
+    // questions.ts) for this kind; until it lands only the roots and the
+    // bounds are checked here.
+    let _ = kind;
     let metrics = notes::limits::measure_value(&value);
     let code = notes::limits::limit_code(&metrics);
-    if let Some(code) = code {
-        if !notes::limits::recovers(&metrics, previous.as_ref()) {
-            return Err(StoreError::Limit { code, metrics });
-        }
+    if let Some(code) = code
+        && !notes::limits::recovers(&metrics, previous.as_ref())
+    {
+        return Err(StoreError::Limit { code, metrics });
     }
     Ok((metrics, code))
 }

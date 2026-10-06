@@ -14,6 +14,7 @@ mod note_store;
 mod observe;
 mod projection;
 mod protocol;
+mod pubsub;
 mod room;
 mod socket;
 
@@ -77,6 +78,7 @@ async fn serve(config: Config) -> Result<(), String> {
         config,
         db,
         redis,
+        redis_client,
         http,
         rooms: Default::default(),
         evictions: Default::default(),
@@ -84,11 +86,14 @@ async fn serve(config: Config) -> Result<(), String> {
         health: Default::default(),
         unplaced: Default::default(),
         projection_failures: Default::default(),
+        pubsub: Default::default(),
         next_connection: Default::default(),
     });
     tokio::spawn(health::run(app.clone()));
     tokio::spawn(projection::run_pending(app.clone()));
     tokio::spawn(heartbeat(app.clone()));
+    tokio::spawn(pubsub::run(app.clone()));
+    tokio::spawn(pubsub::run_compaction(app.clone()));
     let listener = tokio::net::TcpListener::bind(&address)
         .await
         .map_err(|error| error.to_string())?;

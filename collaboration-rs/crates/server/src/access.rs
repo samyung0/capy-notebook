@@ -240,7 +240,6 @@ pub struct LockedAccount {
 }
 
 pub struct Boundary {
-    pub material_kind: String,
     pub owner_user_id: String,
     pub accounts: HashMap<String, LockedAccount>,
 }
@@ -342,7 +341,6 @@ pub async fn lock_boundary<C: GenericClient>(
         return Err(AccessError::Forbidden("material placement changed".into()));
     }
     Ok(Boundary {
-        material_kind: kind,
         owner_user_id: owner,
         accounts,
     })

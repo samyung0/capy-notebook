@@ -37,7 +37,6 @@ fn settings() -> &'static Settings {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Level {
-    Debug,
     Info,
     Warn,
     Error,
@@ -46,7 +45,6 @@ pub enum Level {
 impl Level {
     fn as_str(self) -> &'static str {
         match self {
-            Level::Debug => "debug",
             Level::Info => "info",
             Level::Warn => "warn",
             Level::Error => "error",
@@ -145,14 +143,6 @@ pub fn init() -> Option<sentry::ClientInitGuard> {
         json!({ "environment": environment }),
     );
     Some(guard)
-}
-
-/// An error with the event that already reported it (a gateway answer's
-/// `X-Sentry-Event-Id`, or an earlier capture), so it is not sent twice.
-#[derive(Clone, Debug)]
-pub struct Reported {
-    pub message: String,
-    pub event_id: Option<String>,
 }
 
 fn valid_event_id(value: &str) -> bool {

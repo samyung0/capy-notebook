@@ -256,7 +256,7 @@ impl Markers {
             let current = map.get(&txn, &contributor.key);
             let same = current
                 .as_ref()
-                .and_then(|value| contributor_nonce(value))
+                .and_then(contributor_nonce)
                 .is_some_and(|nonce| nonce == contributor.nonce);
             if same {
                 map.remove(&mut txn, &contributor.key);
@@ -279,7 +279,7 @@ fn contributor_nonce(value: &Out) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use yrs::{StateVector, Text, WriteTxn};
+    use yrs::{Text, WriteTxn};
 
     use super::*;
     use crate::auth::Access;

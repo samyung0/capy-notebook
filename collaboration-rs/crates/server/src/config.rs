@@ -24,9 +24,15 @@ pub struct Config {
     pub redis_url: String,
     pub secret: String,
     /// Source rooms' store debounce and its cap.
+    #[expect(dead_code, reason = "source rooms come with rust-sources")]
     pub source_debounce: Duration,
+    #[expect(dead_code, reason = "source rooms come with rust-sources")]
     pub source_max_debounce: Duration,
     /// UAT only: holds a publication while its file's name has the marker.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "source rooms come with rust-sources")
+    )]
     pub uat_publication_hold: bool,
     /// A note projects after this long without a content change (Epo 2026-10-07).
     pub projection_idle: Duration,
@@ -35,6 +41,7 @@ pub struct Config {
     pub fold_min_bytes: u64,
     pub fold_max_rows: u64,
     /// Office engine child processes (rust-sources' pool).
+    #[expect(dead_code, reason = "the engine pool comes with rust-sources")]
     pub engine_processes: u64,
     /// The `collab_health` interval (capacity runs log more often).
     pub health_interval: Duration,

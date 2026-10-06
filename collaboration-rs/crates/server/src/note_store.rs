@@ -100,7 +100,9 @@ async fn bootstrap(tx: &Transaction<'_>, material_id: &str, schema: i64) -> Resu
         return Err(StoreError::Other("material not found".into()));
     };
     let content: Value = row.get("content");
-    let state = notes::plate::state_from_value(envelope_value(&content)?);
+    // A random writer for the bootstrap, as a fresh Y.Doc has.
+    let client = u64::from(rand::random::<u32>()) + 1;
+    let state = notes::slate_yjs::state_from_value(envelope_value(&content)?, client);
     let schema = i32::try_from(schema)
         .map_err(|_| StoreError::Other("invalid collaboration room schema".into()))?;
     tx.execute(
@@ -220,10 +222,11 @@ pub async fn append(
     Ok(version)
 }
 
+/// What a fold removed from the log, and the new base size.
 pub struct Folded {
     pub rows: usize,
-    pub before_bytes: i64,
-    pub after_bytes: i64,
+    pub log_bytes: i64,
+    pub base_bytes: i64,
 }
 
 /// Merges the base and the rows up to `through` (all when `None`) into a new
@@ -255,7 +258,6 @@ pub async fn fold(
         return Ok(None);
     };
     let folded_bytes: i64 = log.iter().map(|(_, row)| row.len() as i64).sum();
-    let before_bytes = base.len() as i64 + folded_bytes;
     let count = log.len();
     let state = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, StoreError> {
         let doc = ydoc::scratch_doc();
@@ -286,8 +288,8 @@ pub async fn fold(
     tx.commit().await?;
     Ok(Some(Folded {
         rows: count,
-        before_bytes,
-        after_bytes,
+        log_bytes: folded_bytes,
+        base_bytes: after_bytes,
     }))
 }
 
@@ -398,4 +400,107 @@ pub async fn durable(
         .collect();
     tx.commit().await?;
     Ok(Some((schema, version, base, log)))
+}
+
+/// Idle rooms whose stored bytes (base + log) passed
+/// `max(floor, materials.size_bytes × multiplier)` and whose projection is
+/// current: lineage compaction candidates, oldest first.
+pub async fn compaction_candidates(
+    pool: &Pool,
+    idle_seconds: f64,
+    floor: i64,
+    multiplier: i64,
+    limit: i64,
+) -> Result<Vec<(String, i64, i64)>, StoreError> {
+    let client = pool.get().await?;
+    let rows = client
+        .query(
+            "SELECT d.material_id, d.room_schema, (octet_length(d.state) + d.log_bytes)::bigint AS bytes
+             FROM material_yjs_documents d JOIN materials m ON m.id=d.material_id
+             WHERE d.updated_at < now() - make_interval(secs => $1)
+               AND d.projected_version = d.stored_version
+               AND octet_length(d.state) + d.log_bytes >= GREATEST($2, m.size_bytes * $3)
+             ORDER BY d.updated_at LIMIT $4",
+            &[&idle_seconds, &floor, &multiplier, &limit],
+        )
+        .await?;
+    Ok(rows
+        .iter()
+        .map(|row| {
+            (
+                row.get("material_id"),
+                i64::from(row.get::<_, i32>("room_schema")),
+                row.get("bytes"),
+            )
+        })
+        .collect())
+}
+
+/// Lineage compaction: rebuilds the document from its projection under the
+/// next room schema (fresh item identities, so earlier agent edits lose their
+/// Undo). `None` when the room moved or its projection lags.
+pub async fn compact(
+    pool: &Pool,
+    material_id: &str,
+    schema: i64,
+) -> Result<Option<(String, i64)>, StoreError> {
+    let mut client = pool.get().await?;
+    let tx = client.transaction().await?;
+    access::lock_material(&tx, material_id).await?;
+    let found = tx
+        .query(
+            "SELECT room_schema, stored_version, projected_version FROM material_yjs_documents
+             WHERE material_id=$1 FOR UPDATE",
+            &[&material_id],
+        )
+        .await?;
+    let Some(row) = found.first() else {
+        return Ok(None);
+    };
+    let stored: i64 = row.get("stored_version");
+    if i64::from(row.get::<_, i32>("room_schema")) != schema
+        || stored != row.get::<_, i64>("projected_version")
+    {
+        return Ok(None);
+    }
+    let content = tx
+        .query(
+            "SELECT content FROM materials WHERE id=$1 FOR UPDATE",
+            &[&material_id],
+        )
+        .await?;
+    let Some(content) = content.first() else {
+        return Err(StoreError::Other("material not found".into()));
+    };
+    let content: Value = content.get("content");
+    let client_id = u64::from(rand::random::<u32>()) + 1;
+    let state = notes::slate_yjs::state_from_value(envelope_value(&content)?, client_id);
+    let next_schema = i32::try_from(schema + 1)
+        .map_err(|_| StoreError::Other("invalid collaboration room schema".into()))?;
+    tx.execute(
+        "UPDATE material_yjs_documents
+         SET room_schema=$2, state=$3, stored_version=$4, projected_version=$4, log_bytes=0, log_rows=0,
+             projection_error=NULL, updated_at=now(), projected_at=now()
+         WHERE material_id=$1",
+        &[&material_id, &next_schema, &state, &(stored + 1)],
+    )
+    .await?;
+    tx.execute(
+        "DELETE FROM material_yjs_updates WHERE material_id=$1",
+        &[&material_id],
+    )
+    .await?;
+    tx.execute(
+        "UPDATE agent_edit_inverses
+         SET undo_status='unavailable', undo_reason='compacted', inverse='[]'::jsonb,
+             guards='[]'::jsonb, inverse_bytes=0, updated_at=now()
+         WHERE resource_kind='material' AND resource_id=$1 AND undo_status='available'",
+        &[&material_id],
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(Some((
+        format!("material:{material_id}:schema:{next_schema}"),
+        state.len() as i64,
+    )))
 }

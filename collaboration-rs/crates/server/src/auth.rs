@@ -106,10 +106,6 @@ impl RoomName {
             RoomName::Source { epoch, .. } => *epoch,
         }
     }
-
-    pub fn is_source(&self) -> bool {
-        matches!(self, RoomName::Source { .. })
-    }
 }
 
 impl std::fmt::Display for RoomName {
@@ -196,7 +192,8 @@ pub fn verify(token: &str, secret: &str, room: &str, now: i64) -> Result<Claims,
     Ok(claims)
 }
 
-/// Signs claims (tests and tools; the Go API mints production tokens).
+/// Signs claims (tests; the Go API mints production tokens).
+#[cfg(test)]
 pub fn mint(secret: &str, claims: &Claims) -> String {
     let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"HS256","typ":"JWT"}"#);
     let payload = URL_SAFE_NO_PAD.encode(serde_json::to_vec(claims).unwrap_or_default());
@@ -204,7 +201,8 @@ pub fn mint(secret: &str, claims: &Claims) -> String {
     format!("{header}.{payload}.{signature}")
 }
 
-/// A test or tool token for `room`, valid `seconds` from `now`.
+/// A test token for `room`, valid `seconds` from `now`.
+#[cfg(test)]
 pub fn claims_for(room: &str, user: &str, access: Access, now: i64, seconds: i64) -> Claims {
     Claims {
         access,
@@ -246,11 +244,10 @@ mod tests {
         let name = RoomName::parse(ROOM).unwrap();
         assert_eq!(name.to_string(), ROOM);
         assert_eq!(name.number(), 2);
-        assert!(
-            RoomName::parse("source:file-1:epoch:3")
-                .unwrap()
-                .is_source()
-        );
+        assert!(matches!(
+            RoomName::parse("source:file-1:epoch:3"),
+            Some(RoomName::Source { epoch: 3, .. })
+        ));
         for bad in [
             "material:a b:schema:1",
             "material:a:epoch:1",

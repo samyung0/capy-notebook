@@ -158,10 +158,6 @@ impl Evictions {
         self.with(room, |flags| flags.rejected = false);
     }
 
-    pub fn is_rejected(&self, room: &str) -> bool {
-        self.with(room, |flags| flags.rejected)
-    }
-
     pub fn begin(&self, room: &str, drain: bool) {
         self.with(room, |flags| {
             if drain {
@@ -180,10 +176,6 @@ impl Evictions {
                 flags.discarding = flags.discarding.saturating_sub(1);
             }
         });
-    }
-
-    pub fn is_discarding(&self, room: &str) -> bool {
-        self.with(room, |flags| flags.discarding > 0)
     }
 
     /// `assertRoomAvailable`: whether the room refuses traffic now. A store
@@ -212,6 +204,8 @@ pub struct App {
     pub instance_id: String,
     pub db: deadpool_postgres::Pool,
     pub redis: redis::aio::ConnectionManager,
+    /// For the pub/sub connection.
+    pub redis_client: redis::Client,
     pub http: reqwest::Client,
     pub rooms: Registry,
     pub evictions: Evictions,
@@ -219,6 +213,7 @@ pub struct App {
     pub health: crate::health::Health,
     pub unplaced: crate::incidents::UnplacedOnce,
     pub projection_failures: crate::projection::Failures,
+    pub pubsub: crate::pubsub::Waiters,
     pub next_connection: AtomicU64,
 }
 

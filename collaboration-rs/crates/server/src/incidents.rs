@@ -60,10 +60,6 @@ impl Cause {
             reason: Some(token(reason)),
         }
     }
-
-    pub fn json(&self) -> Value {
-        serde_json::json!({ "kind": self.kind.as_str(), "reason": self.reason })
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -103,14 +99,12 @@ pub fn broadcast_cause(notification: Option<&str>) -> Cause {
             reason: event["incident"]["reason"].as_str().map(token),
         };
     }
-    if event["type"] == "document-rejected" {
-        if let Some(code) = event["code"].as_str() {
-            return if code == "invalid_document" {
-                Cause::new(Kind::SaveRefused, "invalid_document")
-            } else {
-                Cause::new(Kind::OverLimit, code)
-            };
-        }
+    if let (true, Some(code)) = (event["type"] == "document-rejected", event["code"].as_str()) {
+        return if code == "invalid_document" {
+            Cause::new(Kind::SaveRefused, "invalid_document")
+        } else {
+            Cause::new(Kind::OverLimit, code)
+        };
     }
     Cause {
         kind: Kind::DiscardUnsaved,
@@ -140,8 +134,10 @@ pub fn client_payload(notification: &str) -> String {
 
 /// `UnplacedOnce`: a stuck writer's unplaceable step 2 is recorded once per
 /// room and user until one of its updates is placed. At most `cap` entries.
+type Key = (String, String);
+
 pub struct UnplacedOnce {
-    keys: Mutex<(HashSet<(String, String)>, VecDeque<(String, String)>)>,
+    keys: Mutex<(HashSet<Key>, VecDeque<Key>)>,
     cap: usize,
 }
 
@@ -162,10 +158,10 @@ impl UnplacedOnce {
         if keys.0.contains(&key) {
             return false;
         }
-        if keys.0.len() >= self.cap {
-            if let Some(oldest) = keys.1.pop_front() {
-                keys.0.remove(&oldest);
-            }
+        if keys.0.len() >= self.cap
+            && let Some(oldest) = keys.1.pop_front()
+        {
+            keys.0.remove(&oldest);
         }
         keys.0.insert(key.clone());
         keys.1.push_back(key);
