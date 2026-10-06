@@ -60,7 +60,8 @@ pins collaboration to cores 2–3 (`docker-compose.prod.yml`
 check); it applies at the first promotion.
 
 **Open:**
-- **Live document per Office room** (one more full pass off each save): the
+- **Live document per Office room** (superseded 2026-10-06 by delta saves in
+  the Rust server; kept for its numbers) (one more full pass off each save): the
   engine cache added ~0.6 GiB at 20 large rooms and Epo is fine with memory;
   for now the optimization round moves the save's rebuild into a worker
   instead (Epo 2026-10-06); revisit after the prod-box stress run if saves
@@ -86,8 +87,9 @@ check); it applies at the first promotion.
   (`collaboration/src/contributors.ts`): it knows only this instance's marker
   client, so a crafted delete of another instance's markers isn't rejected;
   design the trade-off (rejecting honest resends after a room reload) first.
-- **Store CPU off the main thread** (a save worker holding a replica) or a Rust
-  server: shelved unless prod shows saves still stall rooms.
+- **Rust/yrs collaboration server** (decided 2026-10-06): full rewrite with
+  delta saves and native Office engines, in progress in the rust round
+  (`capy-harness/2026-10-06-rust-round/PLAN.md`).
 - **Load generator limits:** at 2×100+ peers the generator saturated its own
   two cores; split peers across machines for bigger shapes.
 - **Text source history** is not compacted (see `openwiki/backend-storage-quota.md`,
@@ -137,7 +139,9 @@ check); it applies at the first promotion.
   tracks plate, clients-bench (bench fixes land first, incl. the stress job's
   upload path broken by 8c7d7199), office-save, docx-editor, xlsx-editor.
   Epo widened it the same day: any measure, client or server, extreme ones
-  included (the collaboration server is to be rewritten in Rust on yrs).
+  included. Continued 2026-10-06 as the rust round: delta saves, the full
+  Rust/yrs server, notes projected on idle, DOCX/PPTX override seeds, drafts
+  per update (`capy-harness/2026-10-06-rust-round/PLAN.md`).
 - **Office size limit** (decided 2026-10-05): refuse oversized Office files at
   upload, per format on the unzipped size of the XML parts only (Epo
   2026-10-06; media stays under the upload cap); numbers come from the
@@ -343,8 +347,9 @@ The 2026-09-25 storage probes stay in `artifacts/2026-09-25-office-storage/`
   Office data.
 - **Safari and Firefox pass:** DOCX ⌘C/⌘X rely on `beforecopy`/`beforecut`
   for WebKit, and the menu bar's edge fades were checked in Chromium only.
-- **Draft writes per action instead of every 250 ms** (Epo, 2026-10-06; weigh
-  during optimization): `src/lib/editDrafts.ts` writes at most every 250 ms
+- **Draft writes per action instead of every 250 ms** (decided 2026-10-06:
+  per local update, whichever of an IndexedDB append or an OPFS worker log is
+  faster; in the rust round): `src/lib/editDrafts.ts` writes at most every 250 ms
   (`FLUSH_MS`), an agent's choice when Office drafts landed (a26c7ddc,
   2026-09-25) that notes inherited (c81cbdd3), never decided. A browser crash
   or killed tab loses up to the last 250 ms (`pagehide` flushes on a normal
