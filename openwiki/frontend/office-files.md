@@ -1172,23 +1172,29 @@ Presenter view spends the click on the pop-up: the tab shows the slides
 windowed over the page, and Full screen there is the second click, after the
 tab is on the projector (on one screen, full screen hides the notes window, as
 Google Slides warns). Capy sends the command with a fresh token, then opens
-`office-runtime.html#presenter=<token>` on the runtime origin in an 860×640
-pop-up (`presenterWindowUrl`); that page only finds the runtime frame among
-its opener's frames and hands itself over (`handOverPresenterWindow` in
-`notesWindow.ts`), and the runtime renders pptx-react's presenter window into
-it through a React portal, painting the slides with the same `paintSlide`, so
-the deck is loaded once. A window nobody expects (reloaded, or the show ended
-first) closes itself; the runtime closes it with a message, since it did not
-open it. The frame's sandbox stays `allow-same-origin allow-scripts`, without
+`office-runtime.html#presenter=<token>` on the runtime origin in a new 860×640
+pop-up every time (`openPresenterWindow`; a named window would be reused with
+only its hash changed and never hand itself over); that page only finds the
+runtime frame among its opener's frames, hands itself over and drops its
+`opener` (`handOverPresenterWindow` in `notesWindow.ts`), and the runtime
+renders pptx-react's presenter window into it through a React portal,
+painting the slides with the same `paintSlide`, so the deck is loaded once. A
+window nobody expects (reloaded, or the show ended first) closes itself; the
+runtime closes it with a message, since it did not open it, also when the
+frame goes away (its `pagehide`: Back, another file, a runtime reload, a new
+revision), and the window closes itself if its frame is gone without one. The frame's sandbox stays `allow-same-origin allow-scripts`, without
 `allow-popups`: Capy opens every window.
 
 The presenter window is always dark (Capy's mocha colours), in Capy's font
 (the runtime gives it its `data-style` and language), and lays out notes
 first, as Google Slides' presenter window: a top bar with the elapsed time
-(from the start of the show, with pause and reset and no keys), whether the
+(from the start of the show, ticking in the notes window, which stays
+visible while the slides' window may be throttled, with pause and reset and
+no keys), whether the
 slides are in full screen, the notes text size (16, 20, 24, 32 or 40 px, 24 at
 first, remembered under `capy.pptx.presenterNotesSize` in `viewToggles.ts`)
-and End; the current and next slide small below it ("End of slides" after the
+and End (in edit mode the next show starts at the size last picked); the
+current and next slide small below it ("End of slides" after the
 last), with previous, "Slide n of m" and next under the current one (clicking
 it goes next); and the notes across the full width ("No speaker notes" when
 the slide has none). Icons beside its text sit 1px up to meet Fustat's cap band.
@@ -1284,7 +1290,11 @@ clipboard (Paste shows the browser's permission prompt once) and PPTX Present
 can go full screen from the separate runtime origin with the full-screen
 permission Capy hands over (without `fullscreen` in `allow` the request is
 refused); the sandbox flags are unchanged: the PPTX presenter window is one
-Capy opens.
+Capy opens, and Capy opens it only for a command its menus mark
+`popup: 'presenter'` (an `open-presenter` naming anything else is ignored).
+While the runtime reports a PPTX show (`presenting`) its frame covers the
+whole page at the top z-index, so a compromised runtime could draw over Capy
+for as long as it claims a show; the frame stays sandboxed and cross-origin.
 
 PDF is not loaded into the Office iframe. `react-pdf` is the only PDF viewer
 surface and `pdfjs-dist` is its engine. Both the viewer and upload-analysis

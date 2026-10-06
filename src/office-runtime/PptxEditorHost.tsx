@@ -73,21 +73,26 @@ export function PptxEditorHost({
   const [commandState, setCommandState] = useState<PptxCommandState | null>(
     null
   );
-  // Read once: the editor only takes them as its starting state.
+  // Read once: the editor only takes it as its starting state.
   const [speakerNotes] = useState(() => readViewToggle('speakerNotes'));
-  const [notesSize] = useState(readNotesSize);
+  // Each show starts at the size last picked, in this editor or before.
+  const [notesSize, setNotesSize] = useState(readNotesSize);
   // The header's menus and Present run the editor's commands; Insert › Image
   // arrives with the file Capy's picker chose.
   useEffect(() => {
     if (!commandState) return;
+    const presentable = commandState.enabled['view.presenterView'];
     onMenus({
-      actions: [presentAction(locale)],
+      actions: [presentAction(locale, !presentable)],
       menus: editorMenus(commandState, locale),
       run: (id, value, file) => {
         const api = apiRef.current;
         if (!api) return;
-        // Capy opened the notes window: the show starts (or keeps going) here.
+        // Capy opened the notes window: the show starts (or keeps going)
+        // here. Without slides there is no show, and the window, expected by
+        // nobody, closes itself.
         if (id === PRESENTER_VIEW) {
+          if (!presentable) return;
           presenter.expect(value ?? '');
           api.runCommand('view.present');
           return;
@@ -206,7 +211,10 @@ export function PptxEditorHost({
           onAnalysis(analyzeOpenPresentation({ snapshot: () => snapshot }))
         }
         onPendingChange={onPendingChange}
-        onPresenterNotesSizeChange={writeNotesSize}
+        onPresenterNotesSizeChange={(size) => {
+          writeNotesSize(size);
+          setNotesSize(size);
+        }}
         onPresentingChange={onPresentingChange}
         onReady={(api) => {
           apiRef.current = api;

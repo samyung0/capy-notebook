@@ -125,14 +125,18 @@ export function presentItems(
 
 /**
  * Present, as Google Slides' Slideshow ▾, in both modes: the main part
- * presents from the current slide, the arrow lists `presentItems`.
+ * presents from the current slide, the arrow lists `presentItems`, disabled
+ * in a deck without slides.
  */
-export function presentAction(locale: OfficeLocale): OfficeHeaderAction {
+export function presentAction(
+  locale: OfficeLocale,
+  disabled?: boolean
+): OfficeHeaderAction {
   return {
     fullscreen: true,
     icon: 'presentation',
     id: 'view.present',
-    items: presentItems(locale),
+    items: presentItems(locale, disabled),
     label: pptxT(locale)('toolbar.present'),
   };
 }

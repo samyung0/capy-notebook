@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  openPresenterWindow,
   presenterTokenFromUrl,
   presenterWindowUrl,
   resolveOfficeRuntimeConfig,
@@ -48,4 +49,21 @@ describe('PPTX presenter window', () => {
     expect(presenterTokenFromUrl('#presenter=')).toBeNull();
     expect(presenterTokenFromUrl('#presenter=a b')).toBeNull();
   });
+
+  it('opens a new window every time, Google Slides-sized; null when blocked', () => {
+    const open = vi.fn<
+      (url: string, target: string, features: string) => Window | null
+    >(() => null);
+    vi.stubGlobal('window', { open });
+    expect(openPresenterWindow('https://office.example.com', 't1')).toBeNull();
+    expect(open).toHaveBeenCalledWith(
+      'https://office.example.com/office-runtime.html#presenter=t1',
+      '_blank',
+      'popup,width=860,height=640'
+    );
+  });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });

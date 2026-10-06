@@ -20,7 +20,7 @@ export interface RuntimeNotesWindow {
 /**
  * The runtime's side of Presenter view's speaker notes window. Capy opens
  * it, as the sandboxed frame gets no user activation from Capy's header
- * (`presenterWindowUrl`); the window then hands itself over here. `ask`
+ * (`openPresenterWindow`); the window then hands itself over here. `ask`
  * requests one from a click in the show.
  */
 export function runtimeNotesWindow(ask: () => void): RuntimeNotesWindow {
@@ -41,6 +41,9 @@ export function runtimeNotesWindow(ask: () => void): RuntimeNotesWindow {
     notes.set(presenter);
     return true;
   };
+  // The frame going away (Back, another file, a reload, the tab closing)
+  // takes the notes window with it instead of leaving it stale.
+  window.addEventListener('pagehide', () => notes.close());
   return {
     expect: (token) => {
       expected = token || null;
@@ -52,8 +55,10 @@ export function runtimeNotesWindow(ask: () => void): RuntimeNotesWindow {
 
 /**
  * In the presenter window (`#presenter=<token>`): hands it to the runtime
- * frame that expects the token, found among the opener's frames; a window
- * nobody expects (reloaded, or the show ended first) closes.
+ * frame that expects the token, found among the opener's frames, then drops
+ * its opener (Capy) so nothing it shows can reach Capy's page. A window
+ * nobody expects (reloaded, or the show ended first) closes, and so does
+ * one whose runtime frame is gone without a word.
  */
 export function handOverPresenterWindow(token: string, self: Window = window) {
   self.addEventListener('message', (event) => {
@@ -69,7 +74,15 @@ export function handOverPresenterWindow(token: string, self: Window = window) {
     : [];
   for (const owner of owners) {
     try {
-      if (owner?.capyAttachPresenter?.(token, self)) return true;
+      if (owner?.capyAttachPresenter?.(token, self)) {
+        self.opener = null;
+        const watch = self.setInterval(() => {
+          if (!owner.closed) return;
+          self.clearInterval(watch);
+          self.close();
+        }, 1000);
+        return true;
+      }
     } catch {
       // Another origin: Capy itself and its other frames.
     }

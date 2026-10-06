@@ -10,7 +10,9 @@ function fakeWindow(origin = RUNTIME) {
     addEventListener: (type: string, listener: (event: unknown) => void) =>
       listeners.set(type, [...(listeners.get(type) ?? []), listener]),
     capyAttachPresenter: undefined as Window['capyAttachPresenter'],
+    clearInterval: (id: number) => clearInterval(id),
     close: vi.fn(),
+    closed: false,
     dispatch: (type: string, event: unknown = {}) => {
       for (const listener of listeners.get(type) ?? []) listener(event);
     },
@@ -18,6 +20,7 @@ function fakeWindow(origin = RUNTIME) {
     location: { origin },
     opener: null as unknown,
     postMessage: vi.fn(),
+    setInterval: (handler: () => void, ms: number) => setInterval(handler, ms),
   };
   return self;
 }
@@ -40,6 +43,7 @@ function crossOrigin(frames: unknown[]) {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe('PPTX presenter window, runtime side', () => {
@@ -83,6 +87,24 @@ describe('PPTX presenter window, runtime side', () => {
     presenter.notes.close();
     expect(attach('t3', popup)).toBe(false);
   });
+
+  it('closes the notes window when the frame goes away (Back, another file, a reload)', () => {
+    const frame = fakeWindow();
+    vi.stubGlobal('window', frame);
+    const presenter = runtimeNotesWindow(() => {});
+    const popup = fakeWindow() as unknown as Window;
+    presenter.expect('t1');
+    expect(frame.capyAttachPresenter!('t1', popup)).toBe(true);
+    frame.dispatch('pagehide');
+    expect(popup.postMessage).toHaveBeenCalledWith(
+      'capy-presenter-close',
+      RUNTIME
+    );
+    expect(presenter.notes.get()).toBeNull();
+    // Nothing open: a later pagehide sends nothing.
+    frame.dispatch('pagehide');
+    expect(popup.postMessage).toHaveBeenCalledOnce();
+  });
 });
 
 describe('PPTX presenter window, its own side', () => {
@@ -98,6 +120,8 @@ describe('PPTX presenter window, its own side', () => {
     expect(handOverPresenterWindow('t1', self as unknown as Window)).toBe(true);
     expect(taken).toEqual([['t1', self]]);
     expect(self.close).not.toHaveBeenCalled();
+    // Capy is out of its reach from now on.
+    expect(self.opener).toBeNull();
 
     self.dispatch('message', {
       data: 'capy-presenter-close',
@@ -105,6 +129,22 @@ describe('PPTX presenter window, its own side', () => {
     });
     expect(self.close).not.toHaveBeenCalled();
     self.dispatch('message', { data: 'capy-presenter-close', origin: RUNTIME });
+    expect(self.close).toHaveBeenCalledOnce();
+  });
+
+  it('closes once its runtime frame is gone without a word', () => {
+    vi.useFakeTimers();
+    const self = fakeWindow();
+    const runtime = fakeWindow();
+    runtime.capyAttachPresenter = () => true;
+    self.opener = crossOrigin([runtime]);
+    expect(handOverPresenterWindow('t1', self as unknown as Window)).toBe(true);
+    vi.advanceTimersByTime(3000);
+    expect(self.close).not.toHaveBeenCalled();
+    runtime.closed = true;
+    vi.advanceTimersByTime(1000);
+    expect(self.close).toHaveBeenCalledOnce();
+    vi.advanceTimersByTime(3000);
     expect(self.close).toHaveBeenCalledOnce();
   });
 

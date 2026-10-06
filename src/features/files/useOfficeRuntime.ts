@@ -29,8 +29,7 @@ import {
 } from './officeProtocol';
 import {
   getOfficeRuntimeConfig,
-  PRESENTER_WINDOW_FEATURES,
-  presenterWindowUrl,
+  openPresenterWindow,
 } from './officeRuntimeConfig';
 import { printPages } from './printPages';
 import {
@@ -454,12 +453,7 @@ export function useOfficeRuntime({
         });
       const token = crypto.randomUUID();
       send(token);
-      const opened = window.open(
-        presenterWindowUrl(config.origin, token),
-        'capy-presenter',
-        PRESENTER_WINDOW_FEATURES
-      );
-      if (!opened) send('');
+      if (!openPresenterWindow(config.origin, token)) send('');
     },
     [config.origin, post]
   );
@@ -498,7 +492,11 @@ export function useOfficeRuntime({
         return;
       }
       if (message.type === 'open-presenter') {
-        openPresenter(message.id);
+        // Only a command Capy would open the window for itself.
+        if (
+          officeCommandNeeds(menusRef.current, message.id).popup === 'presenter'
+        )
+          openPresenter(message.id);
         return;
       }
       if (message.type === 'menus') {

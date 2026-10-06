@@ -1415,6 +1415,31 @@ test('PPTX Present fills the screen, and Presenter view drives the show from a s
   await closed;
   await expect(show).toHaveCount(0);
   await expect(frame.getByText('Slide 2 of 20')).toBeVisible();
+
+  // The runtime reloading by itself takes the notes window with it, and the
+  // next Presenter view gets a fresh one that shows its notes.
+  const presenterView = async () => {
+    await page.getByRole('button', { name: 'More ways to present' }).click();
+    const popup = page.waitForEvent('popup');
+    await page.getByRole('menuitem', { name: 'Presenter view' }).click();
+    return popup;
+  };
+  const stale = await presenterView();
+  await expect(stale.getByText('Slide 2 of 20')).toBeVisible();
+  const runtime = page
+    .frames()
+    .find((candidate) => candidate.url().includes('office-runtime'));
+  if (!runtime) throw new Error('Missing Office runtime');
+  const gone = stale.waitForEvent('close');
+  await runtime.evaluate(() => setTimeout(() => location.reload()));
+  await gone;
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  const fresh = await presenterView();
+  await expect(fresh.getByText('Slide 1 of 20')).toBeVisible();
+  await fresh.getByRole('button', { exact: true, name: 'End' }).click();
+  await expect(show).toHaveCount(0);
 });
 
 test('DOCX View › Show ruler is remembered, edit mode only, and stays usable while paused', async ({

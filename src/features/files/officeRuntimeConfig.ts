@@ -83,4 +83,17 @@ export function presenterTokenFromUrl(hash = window.location.hash) {
 }
 
 /** The size of Google Slides' presenter window, which shows the notes first. */
-export const PRESENTER_WINDOW_FEATURES = 'popup,width=860,height=640';
+const PRESENTER_WINDOW_FEATURES = 'popup,width=860,height=640';
+
+/**
+ * Opens a presenter window from a click Capy got; null when the browser
+ * blocked it. Always a new window: a named one would be reused with only its
+ * hash changed, and its page would never hand itself over again.
+ */
+export function openPresenterWindow(origin: string, token: string) {
+  return window.open(
+    presenterWindowUrl(origin, token),
+    '_blank',
+    PRESENTER_WINDOW_FEATURES
+  );
+}

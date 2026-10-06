@@ -256,6 +256,12 @@ describe('PPTX header menus', () => {
         (entry) => entry.disabled
       )
     ).toBe(true);
+    // The editor's action in a deck without slides.
+    expect(
+      items(presentAction('en', true).items ?? []).every(
+        (entry) => entry.disabled
+      )
+    ).toBe(true);
     expect(presentAction('zh').items).toMatchObject([
       { label: '从当前幻灯片开始' },
       { label: '从头开始' },
