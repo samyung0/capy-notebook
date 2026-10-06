@@ -650,8 +650,9 @@ export async function noteAndQuizImages(run: UatRun) {
  * Flashcard front images, the quiz image rule for cards: one front image per
  * card, shrunk under 2 MB in the browser and uploaded only on Save; removing
  * it and saving deletes the row. Not on main yet, so the card dialog's image
- * controls (the file input and its Remove) are assumed here and need
- * confirming when they land.
+ * controls (the file input and its "Remove image") are assumed here and need
+ * confirming when they land; the grid, "Add card" tile and "Edit card N/M"
+ * dialog follow the flashcards rework.
  */
 export async function cardImages(run: UatRun) {
   const workspaceId = await workspace(run, 'card-images');
@@ -666,8 +667,11 @@ export async function cardImages(run: UatRun) {
       uploads.push(request.url());
   });
   await page.goto(`${run.env.appUrl}/flashcards/${setId}/edit`);
-  await page.getByRole('button', { name: 'Edit card' }).first().click();
-  const dialog = page.getByRole('dialog');
+  // The edit page is a grid of front tiles plus a dashed "Add card" tile; a
+  // tile opens the "Edit card N/M" dialog, and changes stay staged until the
+  // page's Save.
+  await page.getByRole('button', { exact: true, name: 'Add card' }).click();
+  const dialog = page.getByRole('dialog', { name: /^Edit card/ });
   await dialog.getByRole('textbox', { name: 'Front' }).fill('Salt marsh');
   await dialog
     .getByRole('textbox', { name: 'Back' })
@@ -692,7 +696,7 @@ export async function cardImages(run: UatRun) {
   assert((await contentText(run, setId)).includes(asset.id));
   await run.record('blob', asset.object_path, { assetId: asset.id, setId });
   await aged(run, setId, [asset.id]);
-  await page.getByRole('button', { name: 'Edit card' }).first().click();
+  await page.getByRole('button', { exact: true, name: 'Salt marsh' }).click();
   await dialog.getByRole('button', { name: 'Remove image' }).click();
   await dialog.getByRole('button', { exact: true, name: 'Save' }).click();
   await pageSave(page);
