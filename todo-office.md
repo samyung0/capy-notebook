@@ -256,8 +256,9 @@ check); it applies at the first promotion.
   spacing, font carry and the list, where Word copies all direct pPr
   (alignment, indents, the unmodeled children): needs a decision. Cells whose
   row or column position changes (a row inserted above the header, a column
-  after the last) keep their old table-style values and save them as direct
-  formatting, where Word shows the new position's. A style list paragraph with
+  after the last) keep their old table-style look in the editor until the
+  file reopens; the save already compares them against that look, so the
+  file follows Word (office-small, 2026-10-06). A style list paragraph with
   an ilvl-only `numPr` shows no bullet in the editor. A font pick diffs the
   whole story (about 0.75 ms more a keystroke with a stored caret font on a
   4000-paragraph story). Probes in

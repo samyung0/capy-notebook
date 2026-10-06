@@ -551,9 +551,9 @@ export function useOfficeRuntime({
       if (message.type === 'collaboration-ready') {
         setReplicaReady(true);
         // A newly opened DOCX editor takes the focus (it waits for its frame
-        // to get it) unless Capy's focus is in a field taking typing, such as
-        // the chat box.
-        if (format === 'docx' && !takesTyping(document.activeElement))
+        // to get it) unless Capy's focus is somewhere it keeps (the chat box,
+        // an open dialog or menu).
+        if (format === 'docx' && !keepsFocus(document.activeElement))
           iframeRef.current?.focus({ preventScroll: true });
       }
       if (
@@ -820,12 +820,20 @@ function saveBlob(blob: Blob, name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/** A focused field the user types into: Capy keeps the focus there. */
-function takesTyping(element: Element | null) {
+/**
+ * Capy focus a newly opened DOCX leaves alone: anything in an open dialog,
+ * alert dialog or menu, or a field taking typing, also behind a shadow root
+ * (MathLive's math-field).
+ */
+export function keepsFocus(element: Element | null): boolean {
+  if (!element) return false;
+  if (element.closest('[role=dialog],[role=alertdialog],[role=menu]'))
+    return true;
+  let focused = element;
+  while (focused.shadowRoot?.activeElement)
+    focused = focused.shadowRoot.activeElement;
   return (
-    element instanceof HTMLInputElement ||
-    element instanceof HTMLTextAreaElement ||
-    element instanceof HTMLSelectElement ||
-    (element instanceof HTMLElement && element.isContentEditable)
+    ['INPUT', 'TEXTAREA', 'SELECT'].includes(focused.tagName) ||
+    (focused as HTMLElement).isContentEditable === true
   );
 }
