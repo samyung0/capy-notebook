@@ -6,7 +6,7 @@ work is in [openwiki/question-bank.md](openwiki/question-bank.md) and
 `human/question-bank.md` (and older ones in `human/agentic-retrieval.md`,
 `human/frontend/plate-editor.md`, `human/miscellaneous.md`).
 
-## State (2026-10-05)
+## State (2026-10-06)
 
 - **Live bank.** 32 round-2 questions, all unreviewed: Basic properties of
   circles, More about trigonometry and Measures of dispersion (10 each), and
@@ -14,7 +14,8 @@ work is in [openwiki/question-bank.md](openwiki/question-bank.md) and
   other 15 HKDSE units and 5 IELTS subject areas are empty. Topics use the EDB
   unit names and the seven IELTS subject areas; IELTS task types are stored per
   question in `questions.question_types` (bank migration 0002).
-- **Code.** On `main`; UAT runs e158285f with the chat's bank tools.
+- **Code.** On `main`; UAT runs 9d4d6170 with the chat's bank tools, learner
+  answering and the answer-key rule.
   Production is not promoted and must not be until Epo says UAT is ready.
 - **UAT config (2026-10-05).** Until now UAT had no `BANK_DATABASE_URL` or
   `BANK_ASSETS_URL` (the bank had only run locally), so its bank was off.

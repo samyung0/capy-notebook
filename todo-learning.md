@@ -13,10 +13,21 @@ Decisions: `human/miscellaneous.md`, `human/authorization-permissions-lifecycles
 `openwiki/authorization-permissions-lifecycles.md` (signed-out quizzes and
 flashcards).
 
-## State (2026-10-05)
+## State (2026-10-06)
 
-Everything below is on `main`. UAT runs e158285f (deployed 2026-10-05 after
-the review fix round, CI green), with the question bank configured.
+Everything below is on `main`. UAT runs 9d4d6170 (deployed 2026-10-06), with
+the question bank, decks and interactive blocks configured. Not on UAT yet:
+the Safari JPEG fallback for quiz images (d06114e9) and uploading quiz images
+on Save (45c85c77). CI has been red since 8c7d7199 (another session's
+notification change: a Biome regex lint in a notifications test and the
+`source-failures` upload e2e).
+
+- **Built 2026-10-06:** the answer-key rule (53f232fa: keys only for editing
+  and for what was just checked, grading on the server, for quizzes and the
+  bank everywhere); the `/bank` landing (Continue and Finished); quiz images
+  capped at 2 MB, shrunk in the browser, tied to their quiz and deleted when a
+  save drops them (9d4d6170, migration 0063), uploaded only on Save
+  (45c85c77). Decisions in `human/question-bank.md`.
 
 - **Part 1 is built.** Server: migration 0051, `server/internal/review`,
   `store/study.go`, `httpapi/huma_study.go`, the attempt hook, `card_stats`
@@ -128,13 +139,11 @@ None.
 ## Order
 
 1. Done: part 1 mocks, server, frontend, tests and docs; part 2 phase 1;
-   phase 2 steps 2.1 to 2.5 and 2.7; the review fix round; UAT at e158285f.
-2. Done on `main`: the `/generate` defaults, 2.6 decks, phase 3. UAT after
-   the Cloudflare setup and the bank migration.
-3. Done: the playground output preview (`lab/playground/preview/`, built
-   with `pnpm exec vite build --config lab/playground/preview/vite.config.ts`).
-4. The playground output preview.
-5. Epo's acceptance test (1.9), last: mostly prompt tuning.
+   phase 2 steps 2.1 to 2.7; phase 3; the review fix round; the playground
+   output preview (`lab/playground/preview/`, built with
+   `pnpm exec vite build --config lab/playground/preview/vite.config.ts`).
+   On UAT at 9d4d6170.
+2. Epo's acceptance test (1.9), last: mostly prompt tuning.
 
 ---
 
