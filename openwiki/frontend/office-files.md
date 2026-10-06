@@ -1344,9 +1344,10 @@ run's Latin and complex-script fonts (`w:ascii`, `w:hAnsi`, `w:cs`, dropping
 those slots' theme fonts, which would win over it) and keeps its East Asian
 font, as Word's font box does (`picked_font`, one pass over the range with one
 retain per stretch of equal fonts); an East Asian face (SimSun, Microsoft
-YaHei, MS Mincho, Noto Sans CJK and the faces Word's metrics table lists, or a
-name in CJK, kana or Hangul script; `is_east_asian_family` in ooxml-text) also
-sets the East Asian font. A select-all pick in a file whose runs alternate East
+YaHei, MS Mincho, Noto Sans CJK, the faces Word's metrics table lists and
+their weights and variants, the ST, FZ and Nanum faces, or a name in CJK, kana
+or Hangul script; `is_east_asian_family` in ooxml-text) also sets the East
+Asian font. A select-all pick in a file whose runs alternate East
 Asian fonts takes about 24 ms against 7 ms before and stores about 1.4 MB of
 room update against 0.5 MB, since each stretch keeps its own font. The save
 writes the fonts the editor holds and adds none (no `w:cs` copied from
@@ -1376,8 +1377,9 @@ save while the row's cells and skipped columns fill the grid; the editor lays
 every row out from the first column, so a row it adds next to such a row, or
 one a column deletion leaves too wide, drops them. A cell paragraph made by
 inserting a row, column or table or splitting a cell holds no alignment of its
-own, and the editor gives it its style's values in its cell (`styleNewCells`),
-so a new header-row cell shows centred as the file and Word do. A property the
+own, and the editor gives it its style's values in its cell (`styleNewCells`,
+one style read per cell), so a new header-row cell shows centred as the file
+and Word do; the insert and that styling undo in one step (`inOneUndoStep`). A property the
 editor holds nothing for is removed. Line
 spacing and its rule, and the first-line indent and its hanging flag, save
 together; a changed indent drops its character-unit twin (`w:leftChars` and the
@@ -1430,16 +1432,22 @@ reading the older `pos`/`val` too) and the hanging first-line flag as a boolean.
 Enter at the end of a paragraph starts a clean one that keeps only its style,
 spacing and the font, size and colour carry (`INHERITED_PARA_ATTRS`), plus its
 list's numbering and level indents, so a list goes on as in Word whether the
-paragraph or its style gives it. Enter in an empty list item ends the list
-instead (`endEmptyListItem`): numbering set on the paragraph goes, a style's is
-turned off with `numId` 0, and the indents become the style's without its list.
+paragraph or its style gives it; where the paragraph's style names another
+next style, the new paragraph takes that style clean, without the list
+(`applyNextStyle`), so body text after a numbered heading is not numbered.
+Enter in a list item that was empty before it (one holding a field, picture or
+break is not) works as in Word (`endEmptyListItem`): a nested item moves up one
+level, and a first-level item leaves the list, numbering set on the paragraph
+going and a style's list turned off with `numId` 0 whenever the style gives
+one, the indents becoming the style's without its list.
 A split in the middle of a paragraph or before a block
 leaves the source mark's tracked insertion or deletion (`pPrIns`, `pPrDel`) on
 the source mark, and the new mark's copy of a tracked property change
-(`w:pPrChange`) takes a new revision id, so the file never repeats an id and two
-peers' splits of one paragraph get one each. Revision ids the editor makes save
-as the numbers after the largest revision id the document holds, in id order,
-so every peer writes the same small ids. The engine's suggesting-mode
+(`w:pPrChange`) takes a new revision id. A revision id the editor makes saves as
+the source's largest revision id + 1 + a 30-bit hash of the editor id (the
+largest read once per source package, over every revision record and kept raw
+markup), so it keeps its number in every save, incremental ones too, and on
+every peer, within int32; two editor ids colliding is possible but unlikely. The engine's suggesting-mode
 paragraph property changes (unused in Capy) save, but with the editor's
 resolved values as the previous pPr rather than the paragraph's own.
 PPTX uses a native textarea for typing, clipboard copy and paste, and IME composition. Copy puts the selected text on the clipboard as plain text and HTML (bold, italic and underline set on the run); a selected shape copies its whole text, one story per line. Read-only allows selecting and copying text, with typing, paste and cut refused; there is no cut. Edits over a selection that crosses paragraphs (typing, paste, IME, Enter, Backspace, Delete) replace it in one transaction and one undo step, joining the paragraphs under the first one's id and properties; a split (Enter or a newline) keeps the original paragraph's id on the first half and its properties on both halves, as PowerPoint continues a list, so Enter then Backspace restores the paragraph exactly (in a list item Backspace first removes the new item's marker, then joins); a refused edit changes nothing and no longer blocks later saves. Read-only speaker notes are `readOnly`, so they can be selected and copied.
