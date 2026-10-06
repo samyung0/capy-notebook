@@ -24,18 +24,20 @@ fn low_surrogate(unit: Option<&u16>) -> bool {
 /// The one contiguous replacement turning `before` into `after`, or none
 /// when they are equal (textEffects).
 pub fn text_effects(before: &[u16], after: &[u16]) -> Vec<NetEffect> {
-    text_effects_with(before, after.len(), |index| after[index], 0)
+    text_effects_with(before, after.len(), |index| after[index], 0, 0)
 }
 
-/// [`text_effects`] over `after` read through `at`, with its first `equal`
-/// units known to equal `before`'s (the scan starts there).
+/// [`text_effects`] over `after` read through `at`, with its first `head`
+/// and last `tail` units known to equal `before`'s: the scans skip them, so
+/// the work is the changed span's, not the text's.
 pub(crate) fn text_effects_with(
     before: &[u16],
     after_len: usize,
     at: impl Fn(usize) -> u16,
-    equal: usize,
+    head: usize,
+    tail: usize,
 ) -> Vec<NetEffect> {
-    let mut prefix = equal.min(before.len()).min(after_len);
+    let mut prefix = head.min(before.len()).min(after_len);
     while prefix < before.len() && prefix < after_len && before[prefix] == at(prefix) {
         prefix += 1;
     }
@@ -45,7 +47,9 @@ pub(crate) fn text_effects_with(
     if prefix > 0 && low_surrogate(before.get(prefix)) {
         prefix -= 1;
     }
-    let (mut end_before, mut end_after) = (before.len(), after_len);
+    // The known-equal tail, as far as the scan below would walk it.
+    let skip = tail.min(before.len() - prefix).min(after_len - prefix);
+    let (mut end_before, mut end_after) = (before.len() - skip, after_len - skip);
     while end_before > prefix && end_after > prefix && before[end_before - 1] == at(end_after - 1) {
         end_before -= 1;
         end_after -= 1;

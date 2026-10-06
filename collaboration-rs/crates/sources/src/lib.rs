@@ -7,14 +7,20 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
 pub mod admit;
+mod cache;
 pub mod effects;
 pub mod engine;
 pub mod failure;
+pub mod gateway;
+pub mod handoff;
+pub mod refresh;
 pub mod schedule;
+pub mod store;
 pub mod text;
 
 pub use admit::{Admission, Refusal, admit_update};
 pub use failure::SourceError;
+pub use store::{Loaded, Save, Saved, Sources, SourcesConfig};
 
 use std::future::Future;
 use std::pin::Pin;
@@ -69,19 +75,39 @@ pub type ChannelId = u64;
 
 pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
 
+/// A channel of a loaded room as the handoff sees it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Channel {
+    pub id: ChannelId,
+    /// Its token grants write access.
+    pub write: bool,
+    /// It is read-only now (a read token, or a writer the handoff stopped).
+    pub read_only: bool,
+}
+
 /// What source rooms (the publication handoff, the maintenance pause, the
-/// rebuild) ask of the server's room layer.
+/// rebuild) ask of the server's room layer. Changed from the 366a5e23
+/// sketch: `channels` replaces `writers`, `busy` takes the pause's
+/// writers-only rule, `restore_access` and `loaded` are new, and `close`
+/// takes an optional code.
 pub trait Rooms: Send + Sync + 'static {
     fn broadcast(&self, room: &str, payload: String);
-    /// The room's live write channels.
-    fn writers(&self, room: &str) -> Vec<ChannelId>;
+    /// The room's channels; empty when the room is not loaded here.
+    fn channels(&self, room: &str) -> Vec<Channel>;
+    fn loaded(&self, room: &str) -> bool;
     fn set_read_only(&self, room: &str, channel: ChannelId);
-    /// Closes one channel, or every channel of the room when `None`.
-    fn close(&self, room: &str, channel: Option<ChannelId>, code: u16, reason: &str);
+    /// Every channel back to its token's access (a handoff that ended).
+    fn restore_access(&self, room: &str);
+    /// Closes one channel, or every channel of the room when `None`. Without
+    /// a code the client reconnects with backoff (Hocuspocus closeConnections).
+    fn close(&self, room: &str, channel: Option<ChannelId>, code: Option<u16>, reason: &str);
     /// Stores the room now (its save queue), as `persistSource`.
     fn persist(&self, room: &str) -> BoxFuture<Result<(), String>>;
-    /// Loaded, loading, a socket joining, or a store running or awaiting retry.
-    fn busy(&self, room: &str) -> bool;
+    /// The room is in use here: a store running or awaiting its retry, a
+    /// socket joining (forgotten after 30 s), loading, or loaded; with
+    /// `writers_only` (the maintenance pause) a loaded room counts only while
+    /// a channel is writable.
+    fn busy(&self, room: &str, writers_only: bool) -> bool;
     fn unload(&self, room: &str) -> BoxFuture<()>;
 }
 

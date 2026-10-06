@@ -174,3 +174,216 @@ pub fn dispatch(request: &Frame) -> Answer {
         other => Err(Failure::invalid(format!("unknown engine method {other}"))),
     }
 }
+
+/// The typed calls the server makes, on the lane each belongs to: saves
+/// (effects, seeds for a load, replica drops) never wait behind background
+/// work (exports, rebases, inspect, agent commands, locate, assets).
+pub mod calls {
+    use office_service::{BaselineEntry, Command, Entry, Format, NetEffect, ObjectRef, Target};
+    use serde::de::DeserializeOwned;
+    use serde_json::Value;
+
+    use super::Args;
+    use crate::engine::{EngineError, EnginePool, Failure, Frame, Lane, Reply};
+
+    /// What a save-lane call needs to name its base and state.
+    #[derive(Clone, Copy, Debug)]
+    pub struct On<'a> {
+        pub format: Format,
+        pub base: &'a [u8],
+        pub base_sha256: &'a str,
+        pub room: Option<&'a str>,
+    }
+
+    fn frame(method: &str, args: &Args, blobs: Vec<Vec<u8>>) -> Frame {
+        Frame::new(method, serde_json::to_vec(args).unwrap_or_default(), blobs)
+    }
+
+    fn args(on: On<'_>) -> Args {
+        Args {
+            format: Some(on.format),
+            base_sha256: Some(on.base_sha256.to_owned()),
+            ..Args::default()
+        }
+    }
+
+    fn parse<T: DeserializeOwned>(value: Value) -> Result<T, EngineError> {
+        serde_json::from_value(value).map_err(|error| {
+            EngineError::Refused(Failure::invalid(format!("engine answer: {error}")))
+        })
+    }
+
+    fn blob(reply: &mut Reply) -> Result<Vec<u8>, EngineError> {
+        if reply.blobs.is_empty() {
+            return Err(EngineError::Transient(
+                "Office engine answered without its bytes".into(),
+            ));
+        }
+        Ok(reply.blobs.swap_remove(0))
+    }
+
+    impl EnginePool {
+        /// seed(base): the state a NULL row stands for (seedOffice).
+        pub async fn seed(&self, on: On<'_>) -> Result<Vec<u8>, EngineError> {
+            let request = frame("seedOffice", &args(on), vec![on.base.to_vec()]);
+            blob(&mut self.call(Lane::Save, on.room, request).await?)
+        }
+
+        /// officeBaseline of `state`.
+        pub async fn baseline(
+            &self,
+            on: On<'_>,
+            state: &[u8],
+        ) -> Result<Vec<BaselineEntry>, EngineError> {
+            let request = frame(
+                "officeBaseline",
+                &args(on),
+                vec![on.base.to_vec(), state.to_vec()],
+            );
+            parse(self.call(Lane::Save, on.room, request).await?.value)
+        }
+
+        /// XLSX effects read off `state`'s overrides, with the room's replica.
+        pub async fn xlsx_pending_effects(
+            &self,
+            on: On<'_>,
+            state: &[u8],
+        ) -> Result<Vec<NetEffect>, EngineError> {
+            let mut request = args(on);
+            request.room = on.room.map(str::to_owned);
+            let request = frame(
+                "xlsxPendingEffects",
+                &request,
+                vec![on.base.to_vec(), state.to_vec()],
+            );
+            parse(self.call(Lane::Save, on.room, request).await?.value)
+        }
+
+        /// Frees a room's replica once the room unloaded. A process that is
+        /// not running holds none.
+        pub async fn drop_room(&self, room: &str) {
+            if !self.holds_room(room) {
+                return;
+            }
+            let request = frame(
+                "dropOfficeReplica",
+                &Args {
+                    room: Some(room.to_owned()),
+                    ..Args::default()
+                },
+                Vec::new(),
+            );
+            let _ = self.call(Lane::Save, Some(room), request).await;
+        }
+
+        /// Edits saved after `captured`, landed on seed(exported), and their
+        /// effects against the export (rebaseOffice).
+        pub async fn rebase(
+            &self,
+            on: On<'_>,
+            captured: &[u8],
+            latest: &[u8],
+            exported: &[u8],
+        ) -> Result<(Vec<u8>, Vec<NetEffect>), EngineError> {
+            let request = frame(
+                "rebaseOffice",
+                &args(on),
+                vec![
+                    on.base.to_vec(),
+                    captured.to_vec(),
+                    latest.to_vec(),
+                    exported.to_vec(),
+                ],
+            );
+            let mut reply = self.call(Lane::Background, on.room, request).await?;
+            let state = blob(&mut reply)?;
+            Ok((state, parse(reply.value)?))
+        }
+
+        /// The package bytes of `state` (exportOffice).
+        pub async fn export(
+            &self,
+            on: On<'_>,
+            state: &[u8],
+            seed: &str,
+            now: &str,
+        ) -> Result<Vec<u8>, EngineError> {
+            let mut request = args(on);
+            request.seed = Some(seed.to_owned());
+            request.now = Some(now.to_owned());
+            let request = frame(
+                "exportOffice",
+                &request,
+                vec![on.base.to_vec(), state.to_vec()],
+            );
+            blob(&mut self.call(Lane::Background, on.room, request).await?)
+        }
+
+        pub async fn inspect(&self, on: On<'_>, state: &[u8]) -> Result<Vec<Entry>, EngineError> {
+            let request = frame(
+                "inspectOffice",
+                &args(on),
+                vec![on.base.to_vec(), state.to_vec()],
+            );
+            parse(self.call(Lane::Background, on.room, request).await?.value)
+        }
+
+        /// Applies agent commands: the new state, the inverse in undo order and
+        /// the post-edit target locations.
+        pub async fn apply_commands(
+            &self,
+            on: On<'_>,
+            state: &[u8],
+            commands: &[Command],
+        ) -> Result<(Vec<u8>, Vec<Command>, Vec<Target>), EngineError> {
+            let mut request = args(on);
+            request.commands = Some(commands.to_vec());
+            let request = frame(
+                "applyOfficeCommands",
+                &request,
+                vec![on.base.to_vec(), state.to_vec()],
+            );
+            let mut reply = self.call(Lane::Background, on.room, request).await?;
+            let state = blob(&mut reply)?;
+            let inverse = parse(reply.value["inverse"].take())?;
+            let targets = parse(reply.value["targets"].take())?;
+            Ok((state, inverse, targets))
+        }
+
+        pub async fn locate_targets(
+            &self,
+            on: On<'_>,
+            state: &[u8],
+            ids: &[String],
+        ) -> Result<Vec<Target>, EngineError> {
+            let mut request = args(on);
+            request.ids = Some(ids.to_vec());
+            let request = frame(
+                "locateOfficeTargets",
+                &request,
+                vec![on.base.to_vec(), state.to_vec()],
+            );
+            parse(self.call(Lane::Background, on.room, request).await?.value)
+        }
+
+        /// The image bytes of an effect's asset: (bytes, mime type, sha256).
+        pub async fn resolve_asset(
+            &self,
+            on: On<'_>,
+            state: &[u8],
+            object_ref: &ObjectRef,
+        ) -> Result<(Vec<u8>, String, String), EngineError> {
+            let mut request = args(on);
+            request.object_ref = Some(object_ref.clone());
+            let request = frame(
+                "resolveAsset",
+                &request,
+                vec![on.base.to_vec(), state.to_vec()],
+            );
+            let mut reply = self.call(Lane::Background, on.room, request).await?;
+            let bytes = blob(&mut reply)?;
+            let text = |key: &str| reply.value[key].as_str().unwrap_or_default().to_owned();
+            Ok((bytes, text("mimeType"), text("sha256")))
+        }
+    }
+}
