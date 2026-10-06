@@ -62,8 +62,9 @@ check); it applies at the first promotion.
 **Open:**
 - **Live document per Office room** (one more full pass off each save): the
   engine cache added ~0.6 GiB at 20 large rooms and Epo is fine with memory;
-  decide whether the extra document per room is worth it after the XLSX
-  effects fix.
+  for now the optimization round moves the save's rebuild into a worker
+  instead (Epo 2026-10-06); revisit after the prod-box stress run if saves
+  still stall.
 - **XLSX effects without a full recalculation** (BetterOffice): computing a
   save's pending effects only reads the Yjs document, but applying any update
   (a 127-byte delta or the full state alike, ~0.5 s on the gradebook) rebuilds
@@ -131,8 +132,13 @@ check); it applies at the first promotion.
 - **Final optimization review (Epo 2026-10-05):** after the optimization round,
   one read-only review of the performance and load work by a Fable 5.1
   subagent (Agent tool `model: "fable"`) before setting the ceilings.
+- **Optimization round (in progress 2026-10-06):** plan in
+  `capy-docx-review-harnesses/2026-10-05-office-batch/opt-survey/PLAN.md`;
+  tracks plate, clients-bench (bench fixes land first, incl. the stress job's
+  upload path broken by 8c7d7199), office-save, docx-editor, xlsx-editor.
 - **Office size limit** (decided 2026-10-05): refuse oversized Office files at
-  upload, per format on the unzipped package size; numbers come from the
+  upload, per format on the unzipped size of the XML parts only (Epo
+  2026-10-06; media stays under the upload cap); numbers come from the
   optimization round. Edits that would make a file oversized are refused too,
   as notes do: a cheap per-update estimate in the incoming-update check
   (`updateFitsRoom` beside the 100 MB state cap), the exact unzipped size at
