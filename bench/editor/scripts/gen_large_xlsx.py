@@ -5,10 +5,17 @@ and nested IF formulas) and a Summary sheet of cross-sheet COUNTA, AVERAGE,
 MAX and COUNTIF formulas. Every formula carries its cached value, frozen
 header rows, shared strings for names.
 
-usage: gen_large_xlsx.py <out.xlsx> [sheets] [rows]
+The shape, for the size ladder (gen_office_ladder.py): `formula` (the
+default, large-gradebook.xlsx at 8 sheets of 2,000 rows), `values` (the same
+cells, every formula replaced by its cached value) or `style` (the values,
+each cell in one of 512 distinct formats: fill, font colour, border, number
+format).
+
+usage: gen_large_xlsx.py <out.xlsx> [sheets] [rows] [formula|values|style]
 """
 
 import random
+import re
 import sys
 import zipfile
 from xml.sax.saxutils import escape
@@ -16,7 +23,12 @@ from xml.sax.saxutils import escape
 out = sys.argv[1]
 SHEETS = int(sys.argv[2]) if len(sys.argv) > 2 else 8
 ROWS = int(sys.argv[3]) if len(sys.argv) > 3 else 2000
+SHAPE = sys.argv[4] if len(sys.argv) > 4 else "formula"
+if SHAPE not in ("formula", "values", "style"):
+    sys.exit(f"unknown shape {SHAPE}")
 rng = random.Random(20261004)
+# The style shape's formats, after the three base ones.
+STYLES = 512
 
 FIRST = ["Aiko", "Ben", "Chen", "Dana", "Eli", "Fatima", "Grace", "Hiro", "Ivan", "Jia",
          "Kofi", "Lena", "Mei", "Noah", "Omar", "Priya", "Quinn", "Rosa", "Sven", "Tara"]
@@ -52,8 +64,21 @@ def n(ref, value, style=0):
 
 
 def f(ref, formula, value, style=0, text=False):
+    if SHAPE != "formula":
+        # The cached value alone, as a plain cell.
+        return s(ref, value, style) if text else n(ref, value, style)
     t = ' t="str"' if text else ""
     return f'<c r="{ref}"{t}{st(style)}><f>{escape(formula)}</f><v>{value}</v></c>'
+
+
+def styled(cells, r):
+    """The style shape: every cell of row r in its own format."""
+    if SHAPE != "style":
+        return cells
+    return [
+        re.sub(r'^<c r="([A-Z]+\d+)"(?: s="\d+")?', f'<c r="\\1" s="{3 + (r * 13 + c * 7) % STYLES}"', cell, count=1)
+        for c, cell in enumerate(cells)
+    ]
 
 
 def grade(avg):
@@ -98,6 +123,7 @@ def class_sheet(number):
             f(f"M{r}", f"AVERAGE({FIRST_TEST}{r}:{LAST_TEST}{r})", fmt(avg), 2),
             f(f"N{r}", f'IF(M{r}>=80,"A",IF(M{r}>=65,"B",IF(M{r}>=50,"C","D")))', g, text=True),
         ]
+        cells = styled(cells, r)
         rows.append(f'<row r="{r}">{"".join(cells)}</row>')
     cols = '<cols><col min="1" max="1" width="9" customWidth="1"/><col min="2" max="2" width="18" customWidth="1"/></cols>'
     xml = (
@@ -149,19 +175,47 @@ workbook_rels = (
     + f'<Relationship Id="rIdStrings" Type="{R}/sharedStrings" Target="sharedStrings.xml"/>'
     + "</Relationships>"
 )
-# 0 default, 1 bold header on grey, 2 one decimal place.
+# 0 default, 1 bold header on grey, 2 one decimal place; the style shape's
+# formats after them.
+PALETTE = ["FFF2CC", "DDEBF7", "E2EFDA", "FCE4D6", "EDEDED", "FFE699", "BDD7EE", "C6E0B4"]
+FONT_COLOURS = ["FF000000", "FF1F4E79", "FF833C0B", "FF375623"]
+NUMBER_FORMATS = ["0", "0.0", "0.00", "#,##0", "0%", "0.0%", "#,##0.00", "0.000"]
+
+
+def style_parts():
+    if SHAPE != "style":
+        return "", "", "", ""
+    fills = "".join(
+        f'<fill><patternFill patternType="solid"><fgColor rgb="FF{PALETTE[i % 8]}"/></patternFill></fill>' for i in range(8)
+    )
+    fonts = "".join(
+        f'<font>{"<b/>" if i % 2 else ""}<sz val="11"/><color rgb="{FONT_COLOURS[i // 2]}"/><name val="Calibri"/></font>'
+        for i in range(8)
+    )
+    borders = '<border><left style="thin"><color rgb="FF808080"/></left><right style="thin"><color rgb="FF808080"/></right><top/><bottom style="hair"/><diagonal/></border>'
+    xfs = "".join(
+        f'<xf numFmtId="{165 + (i // 64) % 8}" fontId="{2 + (i // 8) % 8}" fillId="{3 + i % 8}" borderId="{1 + (i // 256)}" xfId="0" '
+        'applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/>'
+        for i in range(STYLES)
+    )
+    return fills, fonts, borders * 2, xfs
+
+
+extra_fills, extra_fonts, extra_borders, extra_xfs = style_parts()
+formats = "".join(f'<numFmt numFmtId="{165 + i}" formatCode="{escape(code)}"/>' for i, code in enumerate(NUMBER_FORMATS))
 styles = (
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
     '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-    '<numFmts count="1"><numFmt numFmtId="164" formatCode="0.0"/></numFmts>'
-    '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
-    '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
-    '<fill><patternFill patternType="solid"><fgColor rgb="FFD9E1F2"/></patternFill></fill></fills>'
-    '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
+    + (f'<numFmts count="{1 + len(NUMBER_FORMATS)}"><numFmt numFmtId="164" formatCode="0.0"/>{formats}</numFmts>'
+       if SHAPE == "style" else '<numFmts count="1"><numFmt numFmtId="164" formatCode="0.0"/></numFmts>')
+    + f'<fonts count="{2 + (8 if extra_fonts else 0)}"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font>{extra_fonts}</fonts>'
+    f'<fills count="{3 + (8 if extra_fills else 0)}"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
+    f'<fill><patternFill patternType="solid"><fgColor rgb="FFD9E1F2"/></patternFill></fill>{extra_fills}</fills>'
+    f'<borders count="{1 + (2 if extra_borders else 0)}"><border><left/><right/><top/><bottom/><diagonal/></border>{extra_borders}</borders>'
     '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
-    '<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+    f'<cellXfs count="{3 + (STYLES if extra_xfs else 0)}"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
     '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>'
-    '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs>'
+    f'<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>{extra_xfs}</cellXfs>'
     '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'
 )
 shared = (
