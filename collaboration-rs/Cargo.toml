@@ -1,0 +1,38 @@
+# The Rust collaboration server (replaces `collaboration/` at the UAT cutover).
+# Design and the behaviour checklist: capy-harness/2026-10-06-rust-round/rust-core/DESIGN.md.
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "UNLICENSED"
+publish = false
+
+[workspace.dependencies]
+notes = { path = "crates/notes" }
+sources = { path = "crates/sources" }
+ydoc = { path = "crates/ydoc" }
+# One yrs for the server and the Office engines: the fork's patched copy.
+yrs = { path = "../vendor/betteroffice/third_party/yrs" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+# The fork's engine crates depend on `yrs = "0.27.3"` from crates.io; this
+# resolves them to the same patched copy, so documents cross crate lines.
+[patch.crates-io]
+yrs = { path = "../vendor/betteroffice/third_party/yrs" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+print_stdout = "warn"
+unwrap_used = "warn"
+
+[profile.release]
+debug = "line-tables-only"

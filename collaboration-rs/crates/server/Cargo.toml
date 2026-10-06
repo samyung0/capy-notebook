@@ -1,0 +1,20 @@
+[package]
+name = "server"
+description = "The Capy collaboration server: transport, rooms, persistence, internal commands."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "capy-collaboration"
+path = "src/main.rs"
+
+[dependencies]
+notes.workspace = true
+sources.workspace = true
+ydoc.workspace = true
+yrs.workspace = true
+
+[lints]
+workspace = true
