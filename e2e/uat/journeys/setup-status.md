@@ -89,9 +89,13 @@ on `stablestudio.org`.
    The verifier grants are table-level and survive the removed preview columns.
    Deploy UAT also applies the replacement Resend key to the application;
    changing the GitHub secret alone does not update a running container.
-4. Dispatch Deterministic UAT quality from `main`, with the deployed full SHA
+4. Before the study progress journey (added 2026-10-06) runs, extend the
+   existing verifier role on the UAT database, as its owner:
+   `GRANT SELECT ON attempts, study_progress, review_states, review_log TO capy_uat_verifier;`
+   `scripts/uat/verifier-role.sql` lists them for a new role. Not applied yet.
+5. Dispatch Deterministic UAT quality from `main`, with the deployed full SHA
    and `critical_paths=true`.
-5. Review the uploaded journey evidence and cleanup report. Retry cleanup from
+6. Review the uploaded journey evidence and cleanup report. Retry cleanup from
    its manifest if a run is interrupted, as described in the main guide.
 
 Setup changed configuration and verifier permissions only. It did not deploy

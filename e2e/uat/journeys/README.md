@@ -1,6 +1,6 @@
 # UAT critical paths
 
-Run these fourteen journeys deliberately through **Deterministic UAT quality**.
+Run these sixteen journeys deliberately through **Deterministic UAT quality**.
 Its `critical_paths` input defaults to true for manual dispatch and false for
 the lightweight deploy check. **Promote revision to production** requires it.
 Normal pull-request CI does not contact UAT or these providers.
@@ -28,6 +28,8 @@ asserted. The existing authorization suite remains separate.
 | UTF-8 text | Browser edit, persisted Y.Text, automatic indexing and exact published bytes. |
 | Digital PDF | Upload/index and unchanged bytes; unavailable source collaboration room and API-based private annotation isolation. Pointer gestures and visual rendering are outside this assertion policy. |
 | Invalid CSV | Direct-ingest cell limit fails terminally with the exact persisted job error, no index/model spend publishes, exact expected error reaches Sentry. |
+| Study progress | One owner, progress on, store-only files and true/false quizzes (graded on the server, no Jev or other model call). Files panel Mark as read on one file, Mark as read then Mark as unread on another; a quiz answered in part and left records nothing, another submitted records one attempt (1 of 2) and rates both questions; a flashcard set studied to the end on its study page is done, another left after one card is started. `study_progress`, `attempts` and `review_states` match. Continue opens the unread file, then, once the header marks it read, the unanswered quiz. The Study tab's Review session takes all five rated items (cards rated, questions checked), each item then has two reps and ten ratings are logged, the started set stays started. Learning → Review shows 5 to review and 4 of 6 done, and its Review opens the session. |
+| Note and quiz images | Steps in `images.ts`, hooked into `richContent.spec.ts`. A 5.8 MB PNG picked in the quiz editor (a quiz embedded in a note) is shrunk to WebP under 2 MB in the browser and nothing reserves or uploads until Save; Save stores one ready `editor_assets` row naming the quiz, the quiz content names it, the B2 object is WebP of that size and the owner's charge grows by the asset plus the content. Pasting the quiz block into its own note keeps the quiz; into a second note makes that note's copy, and copying that block within the note makes a second quiz; each copy has its own asset row over the shared object. Removing the original's image (over a minute old) deletes its row and releases its bytes while the copies keep theirs. An editor's note image, over a minute old, deleted: the save deletes its row and blob reference; Undo gets no id back from adopt and re-uploads the tab's kept bytes under a new asset id with identical bytes, and the image survives a reload. A flashcard front-image case is written and marked fixme until card images land. |
 
 Each test registers a disposable primary account. Collaborators use real Clerk
 accounts and short-lived sign-in tickets. No test writes the database, bypasses
@@ -45,7 +47,7 @@ it sends an instance testing token and overrides only the Clerk client CAPTCHA
 flag. The token alone does not prevent the browser from waiting for a challenge.
 The initial suite does not yet cover every feature or file type. Image/audio
 codecs, scans, legacy Office, structural Office edits, native citation paint,
-study tools, account restoration and actual OAuth consent remain gaps.
+study tool generation, account restoration and actual OAuth consent remain gaps.
 
 Google/OneDrive downloads are fixture-backed isolated tests in
 `pipeline/tests/test_import_stage.py` and `server/internal/integrations/oauth_test.go`.
@@ -92,7 +94,7 @@ Configure these GitHub **uat environment** values. Full mappings are in
 | `UAT_APP_URL`, `UAT_API_URL`, `UAT_COLLAB_URL` | Exactly `https://app.uat.capynotebook.com`, `https://uat-api.capynotebook.com`, `wss://uat-collab.capynotebook.com`. Office is `https://uat-office.capynotebook.com`. |
 | `UAT_CLERK_TEST_MODE` | Exactly `true`, after enabling Clerk test emails/fixed code `424242` on the isolated UAT instance. Keys must resolve to its primary domain and `clerk.uat.capynotebook.com`. |
 | `CLERK_PUBLISHABLE_KEY`, `UAT_ACTOR_EMAIL_DOMAIN` | UAT frontend key and a controlled domain accepting generated `uat-…+clerk_test` mailboxes. Clerk auth uses fixed codes; app Resend mail must actually deliver. |
-| `UAT_DATABASE_NAME` | Actual dedicated UAT database. Apply `scripts/uat/verifier-role.sql` manually as its owner, with the explicit psql variables described in that file; then set the role password interactively. This is operational setup, not an app migration. |
+| `UAT_DATABASE_NAME` | Actual dedicated UAT database. Apply `scripts/uat/verifier-role.sql` manually as its owner, with the explicit psql variables described in that file; then set the role password interactively. This is operational setup, not an app migration. A role created before the study journey also needs `GRANT SELECT ON attempts, study_progress, review_states, review_log TO capy_uat_verifier;`. |
 | `B2_BUCKET`, `B2_ENDPOINT`, `B2_REGION` | Dedicated bucket whose name contains a separated `uat` component, Backblaze HTTPS endpoint and region. Existing browser CORS and hidden-version lifecycle must be configured. |
 | `UAT_STRIPE_ACCOUNT_ID`, `STRIPE_PRICE_PRO` | Exact sandbox account and active recurring Pro price. Existing UAT Stripe webhook subscription must deliver subscription and invoice events. |
 | `UAT_RESEND_FROM` | Exact provider sender string, including display name if configured. |

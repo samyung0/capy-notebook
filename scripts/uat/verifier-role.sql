@@ -64,7 +64,11 @@ GRANT SELECT ON TABLE
     public.webhook_events,
     public.email_outbox,
     public.user_subscriptions,
-    public.stripe_checkout_sessions
+    public.stripe_checkout_sessions,
+    public.attempts,
+    public.study_progress,
+    public.review_states,
+    public.review_log
 TO capy_uat_verifier;
 
 -- Refuse ambient PUBLIC write grants; do not change other roles' permissions.
