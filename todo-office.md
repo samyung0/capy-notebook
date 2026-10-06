@@ -181,6 +181,17 @@ check); it applies at the first promotion.
 
 ## Unverified or small
 
+- **AI-edit Undo storage is not released on source publications** (upload
+  audit 2026-10-06, unverified; context in `todo-storage.md`):
+  `agent_edit_inverses` are charged at up to 256 KiB each
+  (`collaboration/src/persistence.ts` ~66) and released only by Undo, an
+  immediate Office publication or rebuild (`source_refresh.go` ~435, ~691),
+  trash, compaction (small notes rarely qualify, `persistence.ts` ~1262) or
+  deleting the chat or workspace. Text-source publications
+  (`source_refresh.go` ~424-428) and deferred Office publications (~417-423)
+  leave them charged with no expiry; maintenance-window resets release them
+  for the reset formats only. Decide with Epo whether a publication
+  invalidates Undo (it rewrites the base the inverse applies to).
 - **A field that shows nothing is laid out one digit wide** (pre-existing,
   found by docx-toc 2026-10-06): ooxml-text measures an empty field result as
   `"1"` (`prepare_field_run`, `crates/ooxml-text/src/measure/prepare.rs`), so a
