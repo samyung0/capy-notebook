@@ -89,10 +89,11 @@ export function QuestionBlockView({ block }: { block: QuestionBlock }) {
   }
 }
 
-/** Signed-out pages load quiz images through the site Worker's share route
- * instead of the authenticated resolve endpoint. */
-export const PublicAssetUrlContext = createContext<
-  ((assetId: string) => string) | null
+/** Overrides where a quiz image loads from: signed-out pages use the site
+ * Worker's share route, and the quiz editor shows images picked but not yet
+ * uploaded. Undefined falls back to the authenticated resolve endpoint. */
+export const AssetUrlContext = createContext<
+  ((assetId: string) => string | undefined) | null
 >(null);
 
 /** Quiz images are private editor assets; the signed URL is resolved per render. */
@@ -103,9 +104,9 @@ function AssetFigure({
   assetId: string;
   block: ImageBlock | GraphBlock;
 }) {
-  const publicUrl = useContext(PublicAssetUrlContext);
-  return publicUrl ? (
-    <Figure block={block} src={publicUrl(assetId)} />
+  const src = useContext(AssetUrlContext)?.(assetId);
+  return src ? (
+    <Figure block={block} src={src} />
   ) : (
     <ResolvedAssetFigure assetId={assetId} block={block} />
   );

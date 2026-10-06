@@ -235,6 +235,27 @@ export function blankQuestion(): Question {
   };
 }
 
+/** The question with image asset ids swapped through `ids` (others kept). */
+export function replaceAssetIds(
+  question: Question,
+  ids: Map<string, string>
+): Question {
+  const swap = (block: QuestionBlock): QuestionBlock => {
+    if (block.type !== 'image' || !('assetId' in block.image)) return block;
+    const assetId = ids.get(block.image.assetId);
+    return assetId ? { ...block, image: { assetId } } : block;
+  };
+  return {
+    ...question,
+    parts: question.parts.map((part) => ({
+      ...part,
+      blocks: part.blocks.map(swap),
+      solution: part.solution.map(swap),
+    })),
+    stem: question.stem.map(swap),
+  };
+}
+
 /** Editor assets referenced by a quiz question's images. */
 export function questionAssetIds(question: Question): string[] {
   return [

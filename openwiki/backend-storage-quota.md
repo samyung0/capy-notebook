@@ -307,7 +307,11 @@ quiz's asset records both the workspace (which pays) and the quiz
 (`material_id`, migration `0063`). Images uploaded through a quiz are capped at
 2 MB before any bytes are reserved (`quizImageMaxBytes`); the quiz editor
 shrinks a larger image first (`src/features/quizzes/quizImage.ts`: long side
-to 2000 px, WebP at falling quality, animated GIFs refused). Notes keep the
+to 2000 px, WebP at falling quality, animated GIFs refused) and holds it in
+the browser under a local id, previewed from an object URL, until Save
+uploads the referenced ones and swaps in their asset ids
+(`src/routes/QuizEdit.tsx`); a picked image the user abandons never reaches
+storage, and a failed upload fails the save. Notes keep the
 20 MB image limit and bank figures keep their own. Every quiz content write
 (the quiz PATCH and the collaboration projection behind agent and bank-copy
 edits) deletes, in its transaction, the quiz's assets the new content no

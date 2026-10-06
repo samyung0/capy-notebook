@@ -20,14 +20,63 @@ const assets: Record<string, { name: string; url: string }> = {
   },
 };
 
+// Uploads keep their bytes as an object URL so resolve serves them back.
+const uploads = new Map<string, { contentType: string; name: string }>();
+
 export const editorAssetHandlers = [
+  http.post('/api/materials/:id/editor-assets/uploads', async ({ request }) => {
+    const body = (await request.json()) as {
+      contentType: string;
+      name: string;
+    };
+    const id = `asset_mock_${crypto.randomUUID()}`;
+    uploads.set(id, body);
+    return HttpResponse.json({
+      assetId: id,
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      headers: { 'Content-Type': body.contentType },
+      method: 'PUT',
+      uploadId: id,
+      url: `/mock-editor-uploads/${id}`,
+    });
+  }),
+  http.put('/mock-editor-uploads/:id', async ({ params, request }) => {
+    const id = String(params.id);
+    const upload = uploads.get(id);
+    if (!upload) return new HttpResponse(null, { status: 404 });
+    assets[id] = {
+      name: upload.name,
+      url: URL.createObjectURL(await request.blob()),
+    };
+    return new HttpResponse(null, { status: 200 });
+  }),
+  http.post(
+    '/api/materials/:id/editor-assets/uploads/:uploadId/complete',
+    ({ params }) => {
+      const id = String(params.uploadId);
+      const upload = uploads.get(id);
+      if (!upload || !assets[id])
+        return new HttpResponse(null, { status: 409 });
+      return HttpResponse.json({
+        assetId: id,
+        completedAt: new Date().toISOString(),
+        contentType: upload.contentType,
+        createdAt: new Date().toISOString(),
+        name: upload.name,
+        purpose: 'image',
+        sizeBytes: 0,
+        status: 'ready',
+        workspaceId: '',
+      });
+    }
+  ),
   http.get('/api/editor-assets/:id/resolve', ({ params }) => {
     const id = String(params.id);
     const asset = assets[id];
     if (!asset) return new HttpResponse(null, { status: 404 });
     return HttpResponse.json({
       assetId: id,
-      contentType: 'image/svg+xml',
+      contentType: uploads.get(id)?.contentType ?? 'image/svg+xml',
       expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
       name: asset.name,
       purpose: 'image',

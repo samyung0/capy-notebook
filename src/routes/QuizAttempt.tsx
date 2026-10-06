@@ -26,7 +26,7 @@ import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
-import { PublicAssetUrlContext } from '@/features/questions/QuestionView';
+import { AssetUrlContext } from '@/features/questions/QuestionView';
 import type { LearnerQuestion } from '@/features/questions/types';
 import type { Answer } from '@/features/quizzes/grade';
 import { isAnswered } from '@/features/quizzes/QuestionRunner';
@@ -224,7 +224,7 @@ function AnonymousAttempt({ token }: { token: string }) {
     );
 
   return (
-    <PublicAssetUrlContext.Provider
+    <AssetUrlContext.Provider
       value={(assetId) => anonymousAssetUrl(token, assetId)}
     >
       <AttemptBody
@@ -278,7 +278,7 @@ function AnonymousAttempt({ token }: { token: string }) {
         questions={quiz.questions}
         trail={[m.quiz_shared()]}
       />
-    </PublicAssetUrlContext.Provider>
+    </AssetUrlContext.Provider>
   );
 }
 
