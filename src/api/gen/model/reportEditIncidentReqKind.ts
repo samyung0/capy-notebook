@@ -14,4 +14,5 @@ export const ReportEditIncidentReqKind = {
   draft_storage_failed: 'draft_storage_failed',
   unconfirmed_edit: 'unconfirmed_edit',
   offline_episode: 'offline_episode',
+  discard_unsaved: 'discard_unsaved',
 } as const;

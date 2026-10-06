@@ -692,11 +692,17 @@ export class SourceDocumentStore {
    * Moves the file to its next editing epoch once a discard threw unsaved room
    * state away (discardMovesLineage): the room name carries the epoch, so a
    * client still holding that state sees a new epoch and opens recovery
-   * instead of resyncing it. The gateway leaves an epoch that moved on alone.
+   * instead of resyncing it. The gateway leaves an epoch that moved on alone
+   * and answers false.
    */
-  async resetEpoch(room: string): Promise<void> {
+  async resetEpoch(room: string): Promise<boolean> {
     const { epoch, fileId } = sourceRoom(room);
-    await this.request<void>(fileId, 'epoch-reset', { epoch });
+    const { moved } = await this.request<{ moved: boolean }>(
+      fileId,
+      'epoch-reset',
+      { epoch }
+    );
+    return moved;
   }
 
   async session(fileId: string, actorId: string) {

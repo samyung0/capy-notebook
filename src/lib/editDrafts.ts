@@ -3,6 +3,8 @@ import { USE_MSW } from '@/api/auth';
 import { isAccountForbiddenError, isApiError } from '@/api/client';
 import {
   type EditIncidentReporter,
+  editIncidentReporter,
+  reportOnce,
   storageFailureReason,
 } from '@/lib/editIncidents';
 
@@ -30,6 +32,9 @@ export interface EditDraft {
   lineage: string;
   /** A save refused for good: shown for copying, never merged back. */
   refused?: true;
+  /** Its group entered recovery and was reported (edit_incidents): a later
+   * open shows it without reporting it again. */
+  reported?: true;
   savedAt: number;
   /** The session's local edit count this row covers. */
   seq: number;
@@ -298,14 +303,51 @@ export function deleteDrafts(
   });
 }
 
-/** Every row of a document, all sessions: its user lost access or it is gone. */
-export function deleteDocumentDrafts(key: string): Promise<void> {
+/** Every row of a document, all sessions: its user lost access or it is
+ * gone. Resolves to the bytes the deleted rows held. */
+export function deleteDocumentDrafts(key: string): Promise<number> {
+  if (!stored(key)) return Promise.resolve(0);
+  return enqueue(async () => {
+    let bytes = 0;
+    await transact('readwrite', (stores) => {
+      const rows = stores.drafts.index('key').getAll(key);
+      rows.onsuccess = () => {
+        for (const row of rows.result as EditDraft[]) {
+          bytes += row.data.byteLength;
+          deleteRow(stores, row);
+        }
+      };
+    });
+    return bytes;
+  });
+}
+
+/** Deletes the stored edits of a document this account lost (a 404, or a 403
+ * not about the account itself) and reports them as discarded, when there
+ * were any (edit_incidents). Queued before a live recorder's own discard, it
+ * counts that session's rows too. */
+export async function dropLostDrafts(
+  key: string,
+  reason: 'forbidden' | 'not_found',
+  report: EditIncidentReporter
+) {
+  const bytes = await deleteDocumentDrafts(key);
+  if (bytes) report('discard_unsaved', reason, bytes);
+}
+
+/** Marks a document's rows `which` picks as reported (edit_incidents). */
+export function markDraftsReported(
+  key: string,
+  which: (row: EditDraft) => boolean
+): Promise<void> {
   if (!stored(key)) return Promise.resolve();
   return enqueue(async () => {
     await transact('readwrite', (stores) => {
       const rows = stores.drafts.index('key').getAll(key);
       rows.onsuccess = () => {
-        for (const row of rows.result as EditDraft[]) deleteRow(stores, row);
+        for (const row of rows.result as EditDraft[])
+          if (which(row) && !row.reported)
+            stores.drafts.put({ ...row, reported: true });
       };
     });
   });
@@ -313,12 +355,15 @@ export function deleteDocumentDrafts(key: string): Promise<void> {
 
 /**
  * Once per app start: delete the stored edits of every document of this
- * account that `gone` says it no longer has (403/404). A failed check keeps
- * them.
+ * account that `gone` says it no longer has (403 `forbidden`, 404
+ * `not_found`), and report them. A failed check keeps them.
  */
 export async function sweepDrafts(
   actorId: string,
-  gone: (kind: 'material' | 'file', id: string) => Promise<boolean>
+  gone: (
+    kind: 'material' | 'file',
+    id: string
+  ) => Promise<'forbidden' | 'not_found' | null>
 ) {
   const prefix = `${actorId}:`;
   const keys = await enqueue(async () => {
@@ -338,8 +383,16 @@ export async function sweepDrafts(
   for (const key of keys) {
     const [, kind, id] = key.split(':');
     if ((kind === 'material' || kind === 'file') && id) {
-      const missing = await gone(kind, id).catch(() => false);
-      if (missing) await deleteDocumentDrafts(key);
+      const missing = await gone(kind, id).catch(() => null);
+      if (missing)
+        await dropLostDrafts(
+          key,
+          missing,
+          editIncidentReporter(
+            kind === 'material' ? 'material' : 'source_file',
+            id
+          )
+        );
     }
   }
 }
@@ -372,6 +425,27 @@ export function draftGroups(
 /** The bytes a group of rows holds (edit_incidents sizes). */
 export function draftBytes(rows: readonly EditDraft[]) {
   return rows.reduce((sum, row) => sum + row.data.byteLength, 0);
+}
+
+/**
+ * Reports a recovery group of another lineage entering recovery, once: its
+ * rows are marked `reported`, so an open in a later page load shows it
+ * without reporting it again (Reload deletes them, mark and all). A refused
+ * group was recorded when the service refused it.
+ */
+export function reportRecoveryGroup(
+  group: EditDraft[],
+  report: EditIncidentReporter
+) {
+  const [first] = group;
+  if (!first || first.refused || group.some((row) => row.reported)) return;
+  reportOnce(first.id, () => {
+    report('other_epoch_draft', 'reopen', draftBytes(group));
+    const ids = new Set(group.map((row) => row.id));
+    void markDraftsReported(first.key, (row) => ids.has(row.id)).catch(
+      (error) => console.warn('Draft storage failed:', error)
+    );
+  });
 }
 
 /** Apply rows into a document as one update (states first). Updates whose
@@ -470,7 +544,9 @@ export function recordDrafts({
   let state: { seq: number; bytes: number } | null = null;
   let offline = false;
   // How the current offline episode started (its incident reason).
-  let offlineReason = '';
+  let offlineReason: 'browser_offline' | 'unreachable' = 'unreachable';
+  // A storage failure while offline, reported once the room is back.
+  let heldStorageReport: (() => void) | null = null;
   let snapshotDue = false;
   // A write failed: storage may lack anything since, so the next write holds
   // the whole state, and storage reads as working only once that lands.
@@ -522,11 +598,11 @@ export function recordDrafts({
         if (!storageOk) return;
         storageOk = false;
         onStorage?.(false);
-        report?.(
-          'draft_storage_failed',
-          storageFailureReason(error),
-          unsavedBytes()
-        );
+        const reason = storageFailureReason(error);
+        const bytes = unsavedBytes();
+        const send = () => report?.('draft_storage_failed', reason, bytes);
+        if (offline) heldStorageReport = send;
+        else send();
       }
     );
 
@@ -628,6 +704,8 @@ export function recordDrafts({
 
   return {
     connected() {
+      heldStorageReport?.();
+      heldStorageReport = null;
       if (offline) report?.('offline_episode', offlineReason, unsavedBytes());
       offline = false;
       snapshotDue = false;
@@ -721,13 +799,13 @@ export type DraftRecorder = ReturnType<typeof recordDrafts>;
 async function documentGone(probe: () => Promise<unknown>) {
   try {
     await probe();
-    return false;
+    return null;
   } catch (error) {
-    if (!isApiError(error)) return false;
-    return (
-      error.status === 404 ||
-      (error.status === 403 && !isAccountForbiddenError(error))
-    );
+    if (!isApiError(error)) return null;
+    if (error.status === 404) return 'not_found';
+    return error.status === 403 && !isAccountForbiddenError(error)
+      ? 'forbidden'
+      : null;
   }
 }
 

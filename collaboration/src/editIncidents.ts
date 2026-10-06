@@ -10,6 +10,7 @@ import { UnplacedStepError } from './officeRoots.js';
 import { OfficeEngineError } from './officeRuntime.js';
 import {
   CollaborationAuthorizationError,
+  CollaborationNotFoundError,
   CollaborationReadOnlyError,
   materialIdFromRoom,
 } from './persistence.js';
@@ -26,13 +27,15 @@ import {
  * are the collaboration service's kinds; the browser reports its own through
  * POST /api/edit-incidents.
  */
-export type IncidentKind =
-  | 'save_refused'
-  | 'discard_unsaved'
-  | 'epoch_reset'
-  | 'over_limit'
-  | 'slow_save_limit'
-  | 'step2_unplaced';
+const KINDS = [
+  'save_refused',
+  'discard_unsaved',
+  'epoch_reset',
+  'over_limit',
+  'slow_save_limit',
+  'step2_unplaced',
+] as const;
+type IncidentKind = (typeof KINDS)[number];
 
 /** What happened and a short token why (`reason`). */
 export interface IncidentCause {
@@ -48,21 +51,40 @@ export interface EditIncident extends IncidentCause {
   userId: string | null;
 }
 
-/** An error as a reason token (the table allows `[a-z0-9_-]`, 64 at most). */
-export function errorReason(error: unknown): string {
+/** An error as a reason token (the table allows `[a-z0-9_-]`, 64 at most).
+ * Lost access reads as the browser reports it: `forbidden`, `not_found`. */
+function errorReason(error: unknown): string {
   if (error instanceof SourcePendingError) return 'pending';
   if (error instanceof SourceBackoffError) return 'backoff';
   // Transient: a timeout or a lost worker.
   if (error instanceof OfficeEngineError)
     return error.transient ? 'engine_transient' : 'engine_refused';
   if (error instanceof SourceRequestError)
-    return token(error.code ?? `http_${error.status}`);
+    return token(
+      error.code ??
+        ({ 403: 'forbidden', 404: 'not_found' } as Record<number, string>)[
+          error.status
+        ] ??
+        `http_${error.status}`
+    );
   if (error instanceof MaterialDocumentLimitError) return token(error.code);
   if (error instanceof MaterialDocumentValidationError)
     return 'invalid_document';
   if (error instanceof CollaborationReadOnlyError) return 'read_only';
-  if (error instanceof CollaborationAuthorizationError) return 'authorization';
+  if (error instanceof CollaborationNotFoundError) return 'not_found';
+  if (error instanceof CollaborationAuthorizationError) return 'forbidden';
   return 'error';
+}
+
+/** The writer lost write access: read-only (storage limit, frozen), revoked,
+ * the file gone, or a locked account. Its unsaved state is thrown away. */
+function lostWriteAccess(error: unknown) {
+  return (
+    readOnlyRefusal(error) ||
+    error instanceof CollaborationAuthorizationError ||
+    (error instanceof SourceRequestError &&
+      (error.status === 403 || error.status === 404))
+  );
 }
 
 function token(value: string) {
@@ -75,17 +97,17 @@ function token(value: string) {
 }
 
 /**
- * Why a source save failure discards its room: a read-only refusal (storage
- * limit, frozen) throws the unsaved state away, the state byte limit is the
- * over-limit refusal, a failure that always fails is a refused save, and
- * anything else reached the slow-save limit (`slowLimit`).
+ * Why a source save failure discards its room: lost write access throws the
+ * unsaved state away, the state byte limit is the over-limit refusal, a
+ * failure that always fails is a refused save, and anything else reached the
+ * slow-save limit (`slowLimit`).
  */
 export function sourceDiscardCause(
   error: unknown,
   slowLimit: boolean
 ): IncidentCause {
   const reason = errorReason(error);
-  if (readOnlyRefusal(error)) return { kind: 'discard_unsaved', reason };
+  if (lostWriteAccess(error)) return { kind: 'discard_unsaved', reason };
   if (error instanceof SourceRequestError && error.status === 413)
     return { kind: 'over_limit', reason: 'source_state_bytes' };
   if (sourceSaveRefused(error)) return { kind: 'save_refused', reason };
@@ -93,7 +115,8 @@ export function sourceDiscardCause(
   return { kind: 'discard_unsaved', reason };
 }
 
-/** Why a material store refused for good discards its room. */
+/** Why a material store refused for good discards its room: a limit, an
+ * invalid document, or lost write access. */
 export function materialDiscardCause(error: unknown): IncidentCause {
   const reason = errorReason(error);
   if (error instanceof MaterialDocumentLimitError)
@@ -105,18 +128,29 @@ export function materialDiscardCause(error: unknown): IncidentCause {
 
 /**
  * A discard named only by its broadcast (an outbox event, or another
- * instance's rejection reaching this one): its `type`, and a rejection's code.
+ * instance's discard reaching this one): the `incident` the discarding
+ * instance put in it, a rejection's code, else the event `type`.
  */
 export function broadcastDiscardCause(
   notification: boolean | string
 ): IncidentCause {
-  let event: { code?: unknown; type?: unknown } = {};
+  let event: {
+    code?: unknown;
+    incident?: { kind?: unknown; reason?: unknown };
+    type?: unknown;
+  } = {};
   if (typeof notification === 'string')
     try {
       event = JSON.parse(notification);
     } catch {
       // Not ours to read: the cause stays generic.
     }
+  const { kind, reason } = event.incident ?? {};
+  if (KINDS.includes(kind as IncidentKind))
+    return {
+      kind: kind as IncidentKind,
+      reason: typeof reason === 'string' ? token(reason) : null,
+    };
   if (event.type === 'document-rejected' && typeof event.code === 'string')
     return event.code === 'invalid_document'
       ? { kind: 'save_refused', reason: 'invalid_document' }
@@ -130,20 +164,15 @@ export function broadcastDiscardCause(
 /**
  * Why one writer's update was refused for good, with its unsaved edits: the
  * document limits, a sync step 2 the room could not place twice, or the
- * writer losing write access (read-only, revoked, the file gone). Null for a
- * refusal the client recovers from by reconnecting.
+ * writer losing write access. Null for a refusal the client recovers from by
+ * reconnecting.
  */
 export function refusedUpdateCause(error: unknown): IncidentCause | null {
   if (error instanceof MaterialDocumentLimitError)
     return { kind: 'over_limit', reason: errorReason(error) };
   if (error instanceof UnplacedStepError)
     return { kind: 'step2_unplaced', reason: null };
-  if (
-    readOnlyRefusal(error) ||
-    error instanceof CollaborationAuthorizationError ||
-    (error instanceof SourceRequestError &&
-      (error.status === 403 || error.status === 404))
-  )
+  if (lostWriteAccess(error))
     return { kind: 'discard_unsaved', reason: errorReason(error) };
   return null;
 }

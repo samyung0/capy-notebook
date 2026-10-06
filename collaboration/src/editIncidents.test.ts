@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
+
+const captureError = vi.hoisted(() => vi.fn());
+vi.mock('./observability.js', async (load) => ({
+  ...(await load<typeof import('./observability.js')>()),
+  captureError,
+}));
+
 import { attachDocumentContributorTracker } from './contributors.js';
 import {
   broadcastDiscardCause,
@@ -15,6 +22,7 @@ import { UnplacedStepError } from './officeRoots.js';
 import { OfficeEngineError } from './officeRuntime.js';
 import {
   CollaborationAuthorizationError,
+  CollaborationNotFoundError,
   CollaborationReadOnlyError,
 } from './persistence.js';
 import { SourceRequestError } from './sourceDocuments.js';
@@ -28,7 +36,7 @@ const limit = () =>
   });
 
 describe('source save discards', () => {
-  it('names the read-only refusal, the byte limit, refusals and the slow-save limit', () => {
+  it('names lost access, the byte limit, refusals and the slow-save limit', () => {
     expect(
       sourceDiscardCause(
         new SourceRequestError(403, 'full', 'storage_quota_exceeded'),
@@ -47,9 +55,13 @@ describe('source save discards', () => {
         false
       )
     ).toEqual({ kind: 'save_refused', reason: 'epoch_changed' });
+    // Lost access reads as the browser reports it.
     expect(
       sourceDiscardCause(new SourceRequestError(404, 'gone'), false)
-    ).toEqual({ kind: 'save_refused', reason: 'http_404' });
+    ).toEqual({ kind: 'discard_unsaved', reason: 'not_found' });
+    expect(
+      sourceDiscardCause(new SourceRequestError(403, 'revoked'), false)
+    ).toEqual({ kind: 'discard_unsaved', reason: 'forbidden' });
     // Anything slow counts only once the limit is reached.
     expect(
       sourceDiscardCause(new OfficeEngineError('timed out', true), true)
@@ -94,6 +106,23 @@ describe('broadcast discards', () => {
     expect(
       broadcastDiscardCause(JSON.stringify({ type: 'access-changed' }))
     ).toEqual({ kind: 'discard_unsaved', reason: 'access-changed' });
+    // Another instance's refused source save carries its own incident.
+    expect(
+      broadcastDiscardCause(
+        JSON.stringify({
+          incident: { kind: 'slow_save_limit', reason: 'engine_transient' },
+          type: 'authorization-revoked',
+        })
+      )
+    ).toEqual({ kind: 'slow_save_limit', reason: 'engine_transient' });
+    expect(
+      broadcastDiscardCause(
+        JSON.stringify({
+          incident: { kind: 'anything', reason: 'x' },
+          type: 'authorization-revoked',
+        })
+      )
+    ).toEqual({ kind: 'discard_unsaved', reason: 'authorization-revoked' });
     expect(broadcastDiscardCause(true)).toEqual({
       kind: 'discard_unsaved',
       reason: 'discard',
@@ -113,7 +142,10 @@ describe('refused updates', () => {
     });
     expect(
       refusedUpdateCause(new CollaborationAuthorizationError('revoked'))
-    ).toEqual({ kind: 'discard_unsaved', reason: 'authorization' });
+    ).toEqual({ kind: 'discard_unsaved', reason: 'forbidden' });
+    expect(
+      refusedUpdateCause(new CollaborationNotFoundError('trashed'))
+    ).toEqual({ kind: 'discard_unsaved', reason: 'not_found' });
     expect(
       refusedUpdateCause(
         new SourceRequestError(403, 'frozen', 'account_over_quota')
@@ -195,10 +227,9 @@ describe('recording', () => {
     ]);
   });
 
-  it('never throws when the write fails', async () => {
-    const query = vi.fn().mockRejectedValue(new Error('database down'));
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    vi.spyOn(console, 'info').mockImplementation(() => undefined);
+  it('reports a failed write to Sentry and never throws', async () => {
+    const failure = new Error('database down');
+    const query = vi.fn().mockRejectedValue(failure);
     await expect(
       recordEditIncidents({ query } as never, [
         {
@@ -210,6 +241,11 @@ describe('recording', () => {
         },
       ])
     ).resolves.toBeUndefined();
-    vi.restoreAllMocks();
+    expect(query).toHaveBeenCalledOnce();
+    expect(captureError).toHaveBeenCalledExactlyOnceWith(failure, {
+      kind: 'step2_unplaced',
+      room: 'source:f_1:epoch:1',
+      stage: 'edit_incident_write',
+    });
   });
 });

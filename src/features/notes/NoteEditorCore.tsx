@@ -40,6 +40,7 @@ import { MATERIAL_DOCUMENT_LIMITS } from '@/lib/const';
 import {
   applyDrafts,
   type DraftRecorder,
+  dropLostDrafts,
   type EditDraft,
   recordDrafts,
 } from '@/lib/editDrafts';
@@ -378,9 +379,9 @@ export function NoteEditorCore({
    * NOTE_SAVE_DELAY_MS while the editor keeps its edits; false once the
    * receipts catch up. */
   onSaveDelayed?: (delayed: boolean) => void;
-  /** The note was trashed or deleted, or this user lost access to it;
-   * `dropDrafts`: its stored edits go too (not for an account lock). */
-  onUnavailable?: (kind: 'notFound' | 'forbidden', dropDrafts: boolean) => void;
+  /** The note was trashed or deleted, or this user lost access to it (its
+   * stored edits went too, except for an account lock). */
+  onUnavailable?: (kind: 'notFound' | 'forbidden') => void;
 }) {
   const qc = useQueryClient();
   const ydoc = useMemo(
@@ -516,7 +517,9 @@ export function NoteEditorCore({
   const goOfflineNow = useRef(goOffline);
   goOfflineNow.current = goOffline;
   // Set once the editor exists; reports a room that turned read-only once.
-  const readOnlyNow = useRef(() => {});
+  // `refusedConnect`: a (re)connect refused read-only, which only this
+  // client sees; the service records the refusals it sends itself.
+  const readOnlyNow = useRef((_refusedConnect?: boolean) => {});
   const projectionStale = useRef(false);
 
   useEffect(
@@ -730,13 +733,24 @@ export function NoteEditorCore({
                       const failedToken = tokenError.current;
                       const refusal = roomRefusal(reason, failedToken);
                       tokenError.current = null;
-                      if (refusal === 'readOnly') readOnlyNow.current();
+                      if (refusal === 'readOnly') readOnlyNow.current(true);
                       else if (refusal === 'retry')
                         reconnector.current?.refused();
                       else {
-                        const drop = refusalDropsDrafts(refusal, failedToken);
-                        if (drop) void recorder.current?.discard();
-                        reportUnavailable.current?.(refusal, drop);
+                        // The note's stored edits go too (not for an account
+                        // lock); queued before the recorder's discard, the
+                        // report counts this session's rows.
+                        if (refusalDropsDrafts(refusal, failedToken)) {
+                          void dropLostDrafts(
+                            draftKey,
+                            refusal === 'notFound' ? 'not_found' : 'forbidden',
+                            reportIncident
+                          ).catch((error) =>
+                            console.warn('Draft storage failed:', error)
+                          );
+                          void recorder.current?.discard();
+                        }
+                        reportUnavailable.current?.(refusal);
                       }
                     },
                     onClose: () => {
@@ -769,7 +783,7 @@ export function NoteEditorCore({
                       }
                       // A reconnect after the account froze gets a read token.
                       if (token.access === 'read') {
-                        readOnlyNow.current();
+                        readOnlyNow.current(true);
                         throw new Error(COLLABORATION_READ_ONLY_REASON);
                       }
                       return token.token;
@@ -988,10 +1002,13 @@ export function NoteEditorCore({
     reportUnavailable.current = onUnavailable;
     reportOffline.current = onOffline;
     let reported = false;
-    readOnlyNow.current = () => {
+    readOnlyNow.current = (refusedConnect = false) => {
       if (reported) return;
       reported = true;
       // The room refused the unsaved edits: they are discarded.
+      const unsaved = recorder.current;
+      if (refusedConnect && unsaved?.unsaved)
+        reportIncident('discard_unsaved', 'read_only', unsaved.unsavedBytes);
       void recorder.current?.discard();
       onReadOnly?.();
     };

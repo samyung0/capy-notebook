@@ -46,7 +46,7 @@ describe('edit incident reports', () => {
       fileId: 'f_1',
       fileKind: 'source_file',
       kind: 'unconfirmed_edit',
-      reason: 'not a token',
+      reason: 'not a token' as never,
     });
     expect(post).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledOnce();

@@ -319,6 +319,16 @@ function recordIncidents(incidents: EditIncident[]) {
   void recordEditIncidents(pool, incidents);
 }
 
+// Users whose unplaceable step 2 closed their connection, per loaded room.
+const unplacedUsers = new Map<string, Set<string>>();
+function firstUnplaced(room: string, userId: string) {
+  const users = unplacedUsers.get(room) ?? new Set<string>();
+  unplacedUsers.set(room, users);
+  if (users.has(userId)) return false;
+  users.add(userId);
+  return true;
+}
+
 function evictLocalRoom(
   room: string,
   notification: boolean | string = false,
@@ -327,7 +337,9 @@ function evictLocalRoom(
   /** A store-time rejection started this discard: its snapshot is lost. */
   storeRejected = false,
   /** Why it discards (edit_incidents); else read from the notification. */
-  cause?: IncidentCause
+  cause?: IncidentCause,
+  /** The discarded state's exact size, when the caller holds it. */
+  sizeBytes?: number
 ) {
   return localEvictions.run(room, operationId, async () => {
     let unloaded = false;
@@ -350,7 +362,8 @@ function evictLocalRoom(
           room,
           discarded,
           loaded,
-          failedStores.get(room)?.state.byteLength ??
+          sizeBytes ??
+            failedStores.get(room)?.state.byteLength ??
             (loaded && roomSizes.get(loaded)) ??
             null
         )
@@ -422,19 +435,21 @@ function evictLocalRoom(
       // Before the room is accepted again: a failure keeps it refused and
       // retries the discard, which then moves it (the room stays rejected).
       if (due) {
-        await (SOURCE_ROOM_PATTERN.test(room)
+        // False when another instance's discard moved it already.
+        const moved = await (SOURCE_ROOM_PATTERN.test(room)
           ? sources.resetEpoch(room)
           : store.resetLineage(room));
         lineageDue.delete(room);
-        recordIncidents([
-          {
-            kind: 'epoch_reset',
-            reason: due.kind,
-            room,
-            sizeBytes: null,
-            userId: null,
-          },
-        ]);
+        if (moved)
+          recordIncidents([
+            {
+              kind: 'epoch_reset',
+              reason: due.kind,
+              room,
+              sizeBytes: null,
+              userId: null,
+            },
+          ]);
       }
       failedStores.delete(room);
       pendingSources.delete(room);
@@ -550,7 +565,8 @@ function rejectRoom(
     | { broadcastStateless: (payload: string) => void }
     | null
     | undefined,
-  error: MaterialDocumentLimitError
+  error: MaterialDocumentLimitError,
+  sizeBytes?: number
 ) {
   if (roomEvictions.isRejected(room)) return;
   roomEvictions.reject(room);
@@ -573,7 +589,8 @@ function rejectRoom(
           evictionId,
           'discard',
           true,
-          materialDiscardCause(error)
+          materialDiscardCause(error),
+          sizeBytes
         );
       } finally {
         await publication;
@@ -594,6 +611,8 @@ function rejectRoom(
 function handleRejectedStore(
   room: string,
   error: unknown,
+  /** The refused snapshot's size (edit_incidents). */
+  sizeBytes: number,
   document?: { broadcastStateless: (payload: string) => void } | null,
   clearFailedStore: () => void = () => {
     failedStores.delete(room);
@@ -602,22 +621,29 @@ function handleRejectedStore(
   return handlePermanentStoreFailure(error, {
     clearFailedStore,
     rejectAuthorization: () =>
-      rejectAuthorizationRoom(room, materialDiscardCause(error)),
-    rejectInvalidDocument: () => rejectInvalidDocumentRoom(room),
-    rejectLimit: (limitError) => rejectRoom(room, document, limitError),
+      rejectAuthorizationRoom(room, materialDiscardCause(error), sizeBytes),
+    rejectInvalidDocument: () => rejectInvalidDocumentRoom(room, sizeBytes),
+    rejectLimit: (limitError) =>
+      rejectRoom(room, document, limitError, sizeBytes),
   });
 }
 
 // An update can race membership/account changes after the connection was
 // admitted. The store rejects it transactionally; unloading the room then
 // removes that rejected update from memory before an authorized client reloads.
-// Source saves refused for good discard their room here too (`cause`).
-function rejectAuthorizationRoom(room: string, cause: IncidentCause) {
+// Source saves refused for good discard their room here too (`cause`, sent
+// along so other instances record the same incident).
+function rejectAuthorizationRoom(
+  room: string,
+  cause: IncidentCause,
+  sizeBytes?: number
+) {
   if (roomEvictions.isRejected(room)) return;
   roomEvictions.reject(room);
   const evictionId = randomUUID();
   const payload = JSON.stringify({
     evictionId,
+    incident: cause,
     room,
     type: 'authorization-revoked',
   });
@@ -629,7 +655,15 @@ function rejectAuthorizationRoom(room: string, cause: IncidentCause) {
         'authorization_eviction_publish'
       );
       try {
-        await evictLocalRoom(room, payload, evictionId, 'discard', true, cause);
+        await evictLocalRoom(
+          room,
+          payload,
+          evictionId,
+          'discard',
+          true,
+          cause,
+          sizeBytes
+        );
       } finally {
         await publication;
       }
@@ -643,7 +677,7 @@ function rejectAuthorizationRoom(room: string, cause: IncidentCause) {
 // A structurally invalid in-memory snapshot cannot be retried into durability.
 // Discard it and reload the last valid SQL-backed Yjs state instead of leaving
 // the room live and permanently unsavable.
-function rejectInvalidDocumentRoom(room: string) {
+function rejectInvalidDocumentRoom(room: string, sizeBytes?: number) {
   if (roomEvictions.isRejected(room)) return;
   roomEvictions.reject(room);
   const evictionId = randomUUID();
@@ -664,10 +698,15 @@ function rejectInvalidDocumentRoom(room: string) {
         'invalid_document_eviction_publish'
       );
       try {
-        await evictLocalRoom(room, payload, evictionId, 'discard', true, {
-          kind: 'save_refused',
-          reason: 'invalid_document',
-        });
+        await evictLocalRoom(
+          room,
+          payload,
+          evictionId,
+          'discard',
+          true,
+          { kind: 'save_refused', reason: 'invalid_document' },
+          sizeBytes
+        );
       } finally {
         await publication;
       }
@@ -754,6 +793,7 @@ const server = new Server<CollaborationContext>({
       room: documentName,
     });
     unloadSizes.delete(documentName);
+    unplacedUsers.delete(documentName);
     pendingCheckpoints.delete(documentName);
     if (SOURCE_ROOM_PATTERN.test(documentName)) {
       sources.forget(documentName);
@@ -873,7 +913,13 @@ const server = new Server<CollaborationContext>({
         connection.sendStateless(rejectionPayload(document.name, error));
       }
       const refused = refusedUpdateCause(error);
-      if (refused)
+      if (
+        refused &&
+        // A client whose step 2 never places reconnects about every 30 s:
+        // one row per user and loaded room.
+        (refused.kind !== 'step2_unplaced' ||
+          firstUnplaced(document.name, context.userId))
+      )
         recordIncidents([
           {
             ...refused,
@@ -887,6 +933,12 @@ const server = new Server<CollaborationContext>({
   },
   async beforeUnloadDocument({ document, documentName }) {
     unloadSizes.set(documentName, roomSizes.get(document) ?? 0);
+    // Hocuspocus keeps the room when a connection came in meanwhile, and then
+    // never calls afterUnloadDocument: drop the size once that is settled.
+    setImmediate(() => {
+      if (server.hocuspocus.documents.get(documentName) === document)
+        unloadSizes.delete(documentName);
+    });
   },
   async connected({ connection, documentName }) {
     endSourceJoin(connection.socketId, documentName);
@@ -1123,7 +1175,12 @@ const server = new Server<CollaborationContext>({
               (storeFailureGenerations.get(documentName) ?? 0) + 1
             );
             if (
-              !handleRejectedStore(documentName, error, document) &&
+              !handleRejectedStore(
+                documentName,
+                error,
+                snapshot.state.byteLength,
+                document
+              ) &&
               !roomEvictions.isDiscarding(documentName)
             ) {
               // Retried below; the editors keep their edits and show it.
@@ -1361,7 +1418,7 @@ async function storeSource(document: Document) {
       reportFailedStore(undefined, error, room);
       failedStores.delete(room);
       slowSaves.clear(room);
-      rejectAuthorizationRoom(room, cause);
+      rejectAuthorizationRoom(room, cause, rawState.byteLength);
     } else if (error instanceof SourcePendingError) {
       // Reported above; the live room, not this snapshot, is what saves
       // once its pending content integrates (pendingSources keeps it unsaved).
@@ -1379,7 +1436,7 @@ async function storeSource(document: Document) {
           room,
         });
       failedStores.delete(room);
-      rejectAuthorizationRoom(room, cause);
+      rejectAuthorizationRoom(room, cause, rawState.byteLength);
     }
     throw error;
   }
@@ -1922,7 +1979,11 @@ const failedStoreRetries = new FailedStoreRetryRunner(
             )
           );
           clearIfCurrent();
-          rejectAuthorizationRoom(room, sourceDiscardCause(error, slowLimit));
+          rejectAuthorizationRoom(
+            room,
+            sourceDiscardCause(error, slowLimit),
+            failed.state.byteLength
+          );
         } else reportFailedStore(failed, error, room);
         return;
       }
@@ -1930,6 +1991,7 @@ const failedStoreRetries = new FailedStoreRetryRunner(
         !handleRejectedStore(
           room,
           error,
+          failed.state.byteLength,
           server.hocuspocus.documents.get(room),
           clearIfCurrent
         )

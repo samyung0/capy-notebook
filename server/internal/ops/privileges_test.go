@@ -145,6 +145,7 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 		GRANT USAGE ON SCHEMA public TO %s, %s;
 
 		GRANT SELECT ON ops_assistant_turns TO %s;
+		GRANT SELECT ON edit_incidents TO %s;
 		GRANT SELECT (
 			user_id, period_start, used_micros, reserved_micros
 		) ON user_credits TO %s;
@@ -283,7 +284,7 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 		readIdent, adminIdent,
 		readIdent, adminIdent,
 		readIdent, readIdent, readIdent, readIdent, readIdent, readIdent,
-		readIdent,
+		readIdent, readIdent,
 		readIdent, readIdent, readIdent, readIdent, readIdent, readIdent,
 		readIdent, readIdent, readIdent, readIdent, readIdent, readIdent,
 		readIdent, readIdent,

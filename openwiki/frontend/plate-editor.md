@@ -606,10 +606,12 @@ The lineage moves whenever the server throws away room state a client may
 hold (see below), so stored or in-memory edits from another lineage are never
 merged into a live note.
 
-A group of another lineage entering recovery, a group dropped as
-unrestorable, a failing draft write, the save-delay warning and each offline
-episode (after the reconnect) are reported as editing incidents; the
-service records its discards, refusals and lineage moves itself (see
+A group of another lineage entering recovery (once: its rows keep a
+`reported` mark), a group dropped as unrestorable, drafts deleted after a 403
+or 404, edits a read-only reconnect discards, a failing draft write, the
+save-delay warning and each offline episode (after the reconnect) are
+reported as editing incidents; the service records its discards, refusals and
+lineage moves itself (see
 [observability](../observability-metering.md#editing-incidents)).
 
 ## Document limits and rejection

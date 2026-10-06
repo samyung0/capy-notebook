@@ -3,9 +3,11 @@ package store
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/samyung0/capy-notebook/server/migrations"
 )
 
 func TestEditIncidentsRecordAndPrune(t *testing.T) {
@@ -80,5 +82,36 @@ func TestEditIncidentsRecordAndPrune(t *testing.T) {
 	}
 	if len(kinds) != 1 || kinds[0] != "unconfirmed_edit" {
 		t.Fatalf("kinds after prune = %v, want [unconfirmed_edit]", kinds)
+	}
+}
+
+// Migration 0065 grants the ops read role SELECT where the role exists; here
+// its grant block runs again once a capy_ops role does.
+func TestEditIncidentsMigrationGrantsTheOpsRole(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	sql, err := migrations.FS.ReadFile("0065_edit_incidents.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := string(sql[strings.Index(string(sql), "DO $grant$"):])
+	var exists bool
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='capy_ops')`).Scan(&exists); err != nil {
+		t.Fatal(err)
+	}
+	if !exists {
+		if _, err := s.pool.Exec(ctx, `CREATE ROLE capy_ops NOLOGIN`); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			_, _ = s.pool.Exec(context.Background(), `DROP OWNED BY capy_ops; DROP ROLE capy_ops`)
+		})
+	}
+	if _, err := s.pool.Exec(ctx, grant); err != nil {
+		t.Fatal(err)
+	}
+	var allowed bool
+	if err := s.pool.QueryRow(ctx, `SELECT has_table_privilege('capy_ops', 'edit_incidents', 'SELECT')`).Scan(&allowed); err != nil || !allowed {
+		t.Fatalf("capy_ops SELECT on edit_incidents = %v (%v)", allowed, err)
 	}
 }

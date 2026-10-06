@@ -97,7 +97,12 @@ test('a slow engine call logs one line with its method, time and bytes', async (
   const infos = vi.spyOn(console, 'info').mockImplementation(record);
   try {
     const fast = runOffice('seedOffice', 'docx', new Uint8Array(10));
-    const slow = runOffice('seedOffice', 'docx', new Uint8Array(1234));
+    const slow = runOffice(
+      'xlsxPendingEffects',
+      new Uint8Array(1234),
+      {} as never,
+      'source:f_1:epoch:2'
+    );
     const [worker] = workers;
     vi.advanceTimersByTime(SLOW_OFFICE_CALL_MS - 1);
     worker.emit('message', { value: 'fast' });
@@ -110,10 +115,14 @@ test('a slow engine call logs one line with its method, time and bytes', async (
     infos.mockRestore();
   }
   expect(lines).toHaveLength(1);
+  // Run time counts from the start, not the queue: it waited behind `fast`.
   for (const field of [
     'slow_office_call',
-    '"method":"seedOffice"',
+    '"method":"xlsxPendingEffects"',
     '"bytes":1234',
+    `"ms":${SLOW_OFFICE_CALL_MS}`,
+    `"wait_ms":${SLOW_OFFICE_CALL_MS - 1}`,
+    '"room":"source:f_1:epoch:2"',
   ])
     expect(lines[0]).toContain(field);
 });

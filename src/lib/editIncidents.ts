@@ -20,10 +20,9 @@ export function reportEditIncident(incident: ReportEditIncidentReq) {
     .catch((error) => console.warn('Edit incident report failed:', error));
 }
 
-export type EditIncidentKind = ReportEditIncidentReq['kind'];
 export type EditIncidentReporter = (
-  kind: EditIncidentKind,
-  reason?: string,
+  kind: ReportEditIncidentReq['kind'],
+  reason?: ReportEditIncidentReq['reason'],
   sizeBytes?: number
 ) => void;
 

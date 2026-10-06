@@ -31,10 +31,13 @@ import {
   draftKey as documentDraftKey,
   draftBytes,
   draftGroups,
+  dropLostDrafts,
   type EditDraft,
+  markDraftsReported,
   readDraftBase,
   readDrafts,
   recordDrafts,
+  reportRecoveryGroup,
   sameSourceLineage,
   sourceLineage,
 } from '@/lib/editDrafts';
@@ -294,11 +297,14 @@ export function useSourceSession(
         return;
       }
       if (isApiError(value) && (value.status === 404 || value.status === 403)) {
+        const gone = value.status === 404;
         // The user no longer has this file: its stored edits go too (not
         // for a 403 about the account itself: suspended, deletion pending).
         if (!isAccountForbiddenError(value))
-          void bestEffort(() => deleteDocumentDrafts(draftKey));
-        setUnavailable(value.status === 404 ? 'notFound' : 'forbidden');
+          void bestEffort(() =>
+            dropLostDrafts(draftKey, gone ? 'not_found' : 'forbidden', report)
+          );
+        setUnavailable(gone ? 'notFound' : 'forbidden');
         return;
       }
       const next = new SourceSessionError(
@@ -368,12 +374,7 @@ export function useSourceSession(
           : await bestEffort(() => readDraftBase(draftKey, draft.base!));
       if (cancelled) return;
       if (draft && base) {
-        // Edits of another epoch enter recovery; refused ones were recorded
-        // when the service refused their save.
-        if (!draft.refused)
-          reportOnce(draft.id, () =>
-            report('other_epoch_draft', 'reopen', draftBytes(found))
-          );
+        reportRecoveryGroup(found, report);
         recoveryDrafts = found;
         shared.destroy();
         const recovered = new Y.Doc();
@@ -533,11 +534,16 @@ export function useSourceSession(
       // room. A saved client keeps its view read-only under the reload
       // banner; unsaved changes go to recovery. A storage or frozen refusal
       // (readOnly) discards the unsaved changes and their drafts instead, and
-      // the view drops to view mode (onReadOnly).
+      // the view drops to view mode (onReadOnly). Only this client sees a
+      // (re)connect refused read-only (`refusedConnect`): it reports what it
+      // discards; the service records the refusals it sends itself.
       const replace = (
-        reason: 'paused' | 'readOnly' | 'replaced' = 'replaced'
+        reason: 'paused' | 'readOnly' | 'replaced' = 'replaced',
+        refusedConnect = false
       ) => {
         if (reason === 'readOnly') {
+          if (refusedConnect && (recorder?.unsaved || bufferDirtyRef.current))
+            report('discard_unsaved', 'read_only', recorder?.unsavedBytes);
           // Discarded, not saved: the status never reads Saved.
           cancelled = true;
           active.acknowledged = active.sequence;
@@ -570,6 +576,9 @@ export function useSourceSession(
           );
           active.recovery = true;
           void recorder?.flush();
+          // Reported: a later open shows these rows without a `reopen`.
+          const own = recorder?.session;
+          void markDraftsReported(draftKey, (row) => row.session === own);
           setLoaded({ bytes, doc: shared, session });
           setStatus('recovery');
           setBanner('changed');
@@ -618,15 +627,22 @@ export function useSourceSession(
           const failedToken = tokenError;
           const refusal = roomRefusal(reason, failedToken);
           tokenError = null;
-          if (refusal === 'readOnly') replace('readOnly');
+          if (refusal === 'readOnly') replace('readOnly', true);
           else if (refusal === 'retry') reconnect.refused();
           else if (!cancelled) {
             cancelled = true;
             provider?.disconnect();
-            // An account lock keeps them (refusalDropsDrafts).
+            // An account lock keeps them (refusalDropsDrafts). Queued before
+            // the recorder's discard, the report counts this session's rows.
             if (refusalDropsDrafts(refusal, failedToken)) {
+              void bestEffort(() =>
+                dropLostDrafts(
+                  draftKey,
+                  refusal === 'notFound' ? 'not_found' : 'forbidden',
+                  report
+                )
+              );
               void recorder?.discard();
-              void bestEffort(() => deleteDocumentDrafts(draftKey));
             }
             setUnavailable(refusal);
           }
@@ -822,7 +838,7 @@ export function useSourceSession(
           }
           // A reconnect after the account froze gets a read token.
           if (token.access === 'read') {
-            replace('readOnly');
+            replace('readOnly', true);
             throw new Error(COLLABORATION_READ_ONLY_REASON);
           }
           return token.token;

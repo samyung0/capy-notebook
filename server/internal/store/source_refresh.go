@@ -708,21 +708,22 @@ type SourceEpochReset struct {
 // refused for good, an access discard). The room name carries the epoch, so a
 // client still holding the thrown-away state cannot resync it: it sees a new
 // epoch and opens its edits read-only instead. An epoch that already moved on
-// is left alone. A refresh captured under the old epoch is superseded, as
-// after any epoch change.
-func (s *Store) ResetSourceEpoch(ctx context.Context, fileID string, in SourceEpochReset) error {
+// is left alone (moved is false). A refresh captured under the old epoch is
+// superseded, as after any epoch change.
+func (s *Store) ResetSourceEpoch(ctx context.Context, fileID string, in SourceEpochReset) (moved bool, err error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer tx.Rollback(ctx)
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, fileID); err != nil {
-		return err
+		return false, err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE source_documents SET epoch=epoch+1,updated_at=now() WHERE file_id=$1 AND epoch=$2`, fileID, in.Epoch); err != nil {
-		return err
+	tag, err := tx.Exec(ctx, `UPDATE source_documents SET epoch=epoch+1,updated_at=now() WHERE file_id=$1 AND epoch=$2`, fileID, in.Epoch)
+	if err != nil {
+		return false, err
 	}
-	return tx.Commit(ctx)
+	return tag.RowsAffected() > 0, tx.Commit(ctx)
 }
 
 // SourceRebuildRefusal reports that the engine refused the rebase of a

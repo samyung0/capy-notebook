@@ -21,7 +21,7 @@ export class StoreTimings {
     this.kind = kind;
   }
 
-  record(ms: number, ok: boolean, save?: { bytes: number; room: string }) {
+  record(ms: number, ok: boolean, save: { bytes: number; room: string }) {
     this.durations.push(ms);
     if (!ok) this.failures += 1;
     if (ms >= SLOW_SAVE_MS)

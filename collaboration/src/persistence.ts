@@ -662,21 +662,23 @@ export class YjsDocumentStore {
    * a discard threw unsaved room state away (discardMovesLineage): the old
    * room no longer loads, so a client still holding that state cannot resync
    * it, and its editor sees a new room and opens recovery instead. Tokens,
-   * outbox events and commands already resolve the current schema.
+   * outbox events and commands already resolve the current schema. False
+   * when the room had moved on already (another instance's discard).
    */
-  async resetLineage(room: string): Promise<void> {
+  async resetLineage(room: string): Promise<boolean> {
     const materialId = materialIdFromRoom(room);
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
       await lockMaterial(client, materialId);
-      await client.query(
+      const moved = await client.query(
         `UPDATE material_yjs_documents
          SET room_schema=room_schema+1, updated_at=now()
          WHERE material_id=$1 AND room_schema=$2`,
         [materialId, roomSchemaFromRoom(room)]
       );
       await client.query('COMMIT');
+      return (moved.rowCount ?? 0) > 0;
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;

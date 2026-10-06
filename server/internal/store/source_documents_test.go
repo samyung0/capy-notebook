@@ -824,12 +824,12 @@ func TestSourceEpochResetKeepsTheSaveAndRetiresTheOldEpoch(t *testing.T) {
 	owner := newBlobTestUser(t, s, "epoch_reset_owner")
 	_, file := sourceTestFile(t, s, owner, "notes.txt", "txt")
 	doc := sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "saved")
-	if err := s.ResetSourceEpoch(ctx, file.ID, SourceEpochReset{Epoch: doc.Epoch}); err != nil {
-		t.Fatal(err)
+	if moved, err := s.ResetSourceEpoch(ctx, file.ID, SourceEpochReset{Epoch: doc.Epoch}); err != nil || !moved {
+		t.Fatalf("reset moved=%v err=%v", moved, err)
 	}
 	// A second report of the same discard leaves the new epoch alone.
-	if err := s.ResetSourceEpoch(ctx, file.ID, SourceEpochReset{Epoch: doc.Epoch}); err != nil {
-		t.Fatal(err)
+	if moved, err := s.ResetSourceEpoch(ctx, file.ID, SourceEpochReset{Epoch: doc.Epoch}); err != nil || moved {
+		t.Fatalf("second reset moved=%v err=%v", moved, err)
 	}
 	after := sourceTestSeed(t, s, owner, file.ID)
 	if after.Epoch != doc.Epoch+1 || after.Checkpoint != doc.Checkpoint || string(after.State) != "saved" {

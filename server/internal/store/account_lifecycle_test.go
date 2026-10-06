@@ -995,6 +995,11 @@ func TestPurgeRemovesMembershipsInvitesAndAuxiliaryPII(t *testing.T) {
 		suspended_reason='private support note' WHERE id=$1`, leaverID); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.RecordEditIncident(ctx, leaverID, EditIncident{
+		FileID: material.ID, FileKind: "material", Kind: "unconfirmed_edit",
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err := s.RequestAccountDeletion(ctx, leaverID, true); err != nil {
 		t.Fatal(err)
@@ -1026,6 +1031,7 @@ func TestPurgeRemovesMembershipsInvitesAndAuxiliaryPII(t *testing.T) {
 		{name: "membership", query: `SELECT count(*) FROM workspace_members WHERE user_id=$1`, args: []any{leaverID}},
 		{name: "invite", query: `SELECT count(*) FROM workspace_invites WHERE id=$1`, args: []any{inviteID}},
 		{name: "mail", query: `SELECT count(*) FROM email_outbox WHERE id=$1`, args: []any{mailID}},
+		{name: "edit incidents", query: `SELECT count(*) FROM edit_incidents WHERE user_id=$1`, args: []any{leaverID}},
 		{name: "host workspace", query: `SELECT count(*) FROM workspaces WHERE id=$1`, args: []any{hostWorkspace.ID}, want: 1},
 		{name: "host material", query: `SELECT count(*) FROM materials WHERE id=$1`, args: []any{material.ID}, want: 1},
 	} {
