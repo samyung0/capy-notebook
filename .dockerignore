@@ -11,4 +11,5 @@
 **/dist
 **/node_modules
 vendor/betteroffice/target
+collaboration-rs/target
 vendor/betteroffice/.git

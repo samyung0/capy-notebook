@@ -34,5 +34,8 @@ uuid.workspace = true
 ydoc.workspace = true
 yrs.workspace = true
 
+[dev-dependencies]
+tokio-tungstenite = "0.29"
+
 [lints]
 workspace = true

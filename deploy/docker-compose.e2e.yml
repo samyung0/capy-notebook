@@ -40,7 +40,7 @@ services:
     image: capy-e2e-collaboration:local
     build:
       context: ..
-      dockerfile: collaboration/Dockerfile
+      dockerfile: collaboration-rs/Dockerfile
     environment:
       API_URL: http://server:8080
       COLLABORATION_ALLOWED_ORIGINS: ${E2E_BASE_URL:-http://127.0.0.1:5174}
@@ -48,6 +48,9 @@ services:
       DATABASE_URL: postgres://capy:capy@db:5432/capy?sslmode=disable
       REDIS_URL: redis://redis:6379/0
       PORT: "1234"
+      # Notes project to materials.content after this long without a content
+      # change (30 s in production); the specs read the projection soon after.
+      COLLABORATION_PROJECTION_IDLE_MS: "1000"
     ports:
       - "127.0.0.1:${E2E_COLLABORATION_PORT:-11234}:1234"
     healthcheck:

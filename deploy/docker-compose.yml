@@ -69,7 +69,7 @@ services:
   collaboration:
     build:
       context: ..
-      dockerfile: collaboration/Dockerfile
+      dockerfile: collaboration-rs/Dockerfile
     environment:
       <<: *observability
       API_URL: http://server:8080
