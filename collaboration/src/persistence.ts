@@ -22,11 +22,11 @@ import {
   verifyMaterialGuards,
 } from './editCommands.js';
 import {
-  MATERIAL_DOCUMENT_LIMITS,
   MaterialDocumentLimitError,
   type MaterialDocumentMetrics,
   type MaterialLimitCode,
   materialLimitCode,
+  materialUpdateGrowth,
   measureMaterialValue,
   recoversMaterialLimits,
 } from './limits.js';
@@ -37,13 +37,6 @@ import { scratchDoc } from './scratchDoc.js';
 const CONTENT_ROOT = 'content';
 const CONTRIBUTORS_ROOT = '__capy_pending_contributors';
 const ROOM_PATTERN = /^material:([A-Za-z0-9_-]+):schema:(\d+)$/;
-// Measuring a document means cloning it and serializing it to Plate JSON, so
-// doing it per inbound update costs O(document) per keystroke. Amortize it over
-// a budget of applied update bytes, and fall back to measuring every update
-// once the document is close enough to a limit that the budget could overshoot.
-const VALIDATION_BUDGET_BYTES = 32 * 1024;
-const VALIDATION_HEADROOM = 0.9;
-const DEPTH_HEADROOM = 4;
 
 /** Trusted operation identity forwarded by the gateway for one edit or Undo. */
 /**
@@ -142,30 +135,73 @@ export interface StoredDocument {
   version: number;
 }
 
+const isConnectionOrigin = (origin: unknown) =>
+  (origin as { source?: unknown } | null)?.source === 'connection';
+
 /**
- * Per-room accounting that decides when the expensive measurement is worth
- * running and remembers the last accepted metrics as the shrink baseline.
+ * Yjs's own cleanup after a remote edit of formatted text (a local
+ * transaction without origin that only deletes format items it found
+ * redundant): the Plate value does not change.
+ */
+function isFormattingCleanup(transaction: Y.Transaction) {
+  if (transaction.origin !== null || !transaction.local) return false;
+  for (const [client, clock] of transaction.afterState)
+    if (clock !== (transaction.beforeState.get(client) ?? 0)) return false;
+  let formatsOnly = true;
+  Y.iterateDeletedStructs(transaction, transaction.deleteSet, (struct) => {
+    if (
+      !(struct instanceof Y.Item && struct.content instanceof Y.ContentFormat)
+    )
+      formatsOnly = false;
+  });
+  return formatsOnly;
+}
+
+/**
+ * What a note room knows of its metrics between exact measurements: the last
+ * exact metrics (the shrink baseline) and an upper bound of the metrics now,
+ * the exact ones plus each later update's growth bound. The bound holds only
+ * while every content change is an update validateUpdate checked against the
+ * room as it was: a service edit, or two updates checked before either
+ * applied, drops both, and the next update measures exactly.
  */
 class RoomValidator {
+  bound: MaterialDocumentMetrics | null = null;
   metrics: MaterialDocumentMetrics | null = null;
-  pendingBytes = 0;
+  readonly document: Y.Doc;
+  // Content transactions applied, and the count the last checked update saw.
+  private checkedAt = -1;
+  private version = 0;
+  private readonly watch = (transaction: Y.Transaction) => {
+    const contributors = this.document.share.get(CONTRIBUTORS_ROOT);
+    let changed = false;
+    for (const type of transaction.changed.keys())
+      if (type !== contributors) changed = true;
+    if (!changed || isFormattingCleanup(transaction)) return;
+    const checked =
+      isConnectionOrigin(transaction.origin) && this.checkedAt === this.version;
+    this.version += 1;
+    this.checkedAt = -1;
+    if (!checked) {
+      this.bound = null;
+      this.metrics = null;
+    }
+  };
 
-  shouldMeasure(): boolean {
-    if (!this.metrics) return true;
-    if (this.pendingBytes >= VALIDATION_BUDGET_BYTES) return true;
-    return (
-      this.metrics.contentBytes + this.pendingBytes >
-        MATERIAL_DOCUMENT_LIMITS.maxContentBytes * VALIDATION_HEADROOM ||
-      this.metrics.nodeCount + this.pendingBytes >
-        MATERIAL_DOCUMENT_LIMITS.maxNodes * VALIDATION_HEADROOM ||
-      this.metrics.maxDepth >=
-        MATERIAL_DOCUMENT_LIMITS.maxDepth - DEPTH_HEADROOM
-    );
+  constructor(document: Y.Doc) {
+    this.document = document;
+    document.on('afterTransaction', this.watch);
   }
 
-  accept(metrics: MaterialDocumentMetrics) {
-    this.metrics = metrics;
-    this.pendingBytes = 0;
+  /** The update about to apply was checked: `bound` covers the room after it. */
+  checked(bound: MaterialDocumentMetrics, exact = false) {
+    this.bound = bound;
+    if (exact) this.metrics = bound;
+    this.checkedAt = this.version;
+  }
+
+  detach() {
+    this.document.off('afterTransaction', this.watch);
   }
 }
 
@@ -572,16 +608,34 @@ export class YjsDocumentStore {
     const { containers, unheld } = inspectUpdate(current, update);
     if (unheld) return UPDATE_UNHELD;
     let validator = this.validators.get(room);
-    if (!validator) {
-      validator = new RoomValidator();
+    if (validator?.document !== current) {
+      validator?.detach();
+      validator = new RoomValidator(current);
       this.validators.set(room, validator);
     }
-    validator.pendingBytes += update.byteLength;
-    const measure = validator.shouldMeasure();
-    // The common case: no measurement due and the roots provably kept, so
-    // the room is not copied for every keystroke. A violation takes the copy
-    // for its exact refusal.
-    if (!measure && keepsMaterialRoots(containers)) return;
+    // The common case: the room's bound plus this update's growth bound stays
+    // within every limit, so the room is not copied for every keystroke. The
+    // exact measurement below decides anything else, and refuses a root
+    // violation.
+    const content = current.share.get(CONTENT_ROOT);
+    if (
+      validator.bound &&
+      content instanceof Y.XmlText &&
+      keepsMaterialRoots(containers)
+    ) {
+      const growth = materialUpdateGrowth(content, update);
+      if (growth) {
+        const bound = {
+          contentBytes: validator.bound.contentBytes + growth.contentBytes,
+          maxDepth: Math.max(validator.bound.maxDepth, growth.maxDepth),
+          nodeCount: validator.bound.nodeCount + growth.nodeCount,
+        };
+        if (!materialLimitCode(bound)) {
+          validator.checked(bound);
+          return;
+        }
+      }
+    }
     const candidate = scratchDoc();
     try {
       Y.applyUpdate(candidate, Y.encodeStateAsUpdate(current));
@@ -591,13 +645,12 @@ export class YjsDocumentStore {
       candidate.destroy();
       throw error;
     }
-    if (!measure) {
-      candidate.destroy();
-      return;
-    }
     // A document that loaded from PostgreSQL already over the limit still needs
     // a baseline, otherwise the edits that would bring it back under are the
-    // ones we reject.
+    // ones we reject. Between exact measurements the baseline may be older
+    // than the room, but then the bound kept the room within every limit, and
+    // against any baseline within the limits an over-limit candidate never
+    // recovers.
     if (!validator.metrics) {
       validator.metrics = measureMaterialValue(plateValue(current));
     }
@@ -611,10 +664,11 @@ export class YjsDocumentStore {
     if (code && !recoversMaterialLimits(metrics, validator.metrics)) {
       throw new MaterialDocumentLimitError(code, metrics);
     }
-    validator.accept(metrics);
+    validator.checked(metrics, true);
   }
 
   forgetRoom(room: string) {
+    this.validators.get(room)?.detach();
     this.validators.delete(room);
   }
 
@@ -823,7 +877,6 @@ export class YjsDocumentStore {
         [materialId, roomSchema, Buffer.from(state), version]
       );
       await client.query('COMMIT');
-      this.validators.get(room)?.accept(metrics);
       return {
         content: { schemaVersion: 1, value },
         contributors,
@@ -1128,7 +1181,6 @@ export class YjsDocumentStore {
         );
       }
       await client.query('COMMIT');
-      this.validators.get(input.room)?.accept(metrics);
       const receipt: Receipt = {
         callId: input.operation.callId,
         effect,
