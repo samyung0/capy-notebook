@@ -14,6 +14,7 @@ function fakeWindow(origin = RUNTIME) {
     dispatch: (type: string, event: unknown = {}) => {
       for (const listener of listeners.get(type) ?? []) listener(event);
     },
+    document: { documentElement: { dataset: {} as DOMStringMap, lang: '' } },
     location: { origin },
     opener: null as unknown,
     postMessage: vi.fn(),
@@ -44,6 +45,8 @@ afterEach(() => {
 describe('PPTX presenter window, runtime side', () => {
   it('takes the window Capy opened only for the token it expects, while it expects one', () => {
     const frame = fakeWindow();
+    frame.document.documentElement.dataset.style = 'classroom';
+    frame.document.documentElement.lang = 'zh';
     vi.stubGlobal('window', frame);
     const ask = vi.fn();
     const presenter = runtimeNotesWindow(ask);
@@ -56,6 +59,9 @@ describe('PPTX presenter window, runtime side', () => {
     expect(attach('t2', popup)).toBe(false);
     expect(attach('t1', popup)).toBe(true);
     expect(presenter.notes.get()).toBe(popup);
+    // Capy's style (its font) and language reach the window.
+    expect(popup.document.documentElement.dataset.style).toBe('classroom');
+    expect(popup.document.documentElement.lang).toBe('zh');
     // A reload of the same window is not taken again.
     expect(attach('t1', popup)).toBe(false);
 

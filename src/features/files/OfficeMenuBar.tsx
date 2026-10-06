@@ -156,7 +156,7 @@ function HeaderAction({
     <div className="mr-1 flex items-center" role="group">
       {main}
       <span aria-hidden className="h-4 w-px bg-divider" />
-      <DropdownMenu>
+      <DropdownMenu modal={false}>
         <ButtonTooltip label={m.files_office_present_options()}>
           <DropdownMenuTrigger asChild>
             <Button
@@ -169,7 +169,7 @@ function HeaderAction({
             </Button>
           </DropdownMenuTrigger>
         </ButtonTooltip>
-        {/* The header menus' look (OfficeMenuBar). */}
+        {/* The menu bar's look (OfficeMenuBar below). */}
         <DropdownMenuContent
           align="end"
           className="min-w-48 rounded-lg px-1 py-1.5 font-medium text-sm leading-(--body-line-height)"

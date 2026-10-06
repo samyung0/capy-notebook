@@ -33,6 +33,11 @@ export function runtimeNotesWindow(ask: () => void): RuntimeNotesWindow {
   window.capyAttachPresenter = (token, presenter) => {
     if (token !== expected || notes.get() !== 'opening') return false;
     expected = null;
+    // Capy's style gives the window its font (--font-sans); it stays dark.
+    const root = presenter.document.documentElement;
+    const { lang, dataset } = window.document.documentElement;
+    if (dataset.style) root.dataset.style = dataset.style;
+    root.lang = lang;
     notes.set(presenter);
     return true;
   };

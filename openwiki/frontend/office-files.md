@@ -635,7 +635,7 @@ document already has it, so a menu opened during load stays open. Without a
 file header (no portal target) a row of its own carries the label and the
 toggle. Notes, PDFs and other files keep the one-row header.
 
-The menus come from the runtime as data (protocol v7, `officeMenus.ts`): a
+The menus come from the runtime as data (protocol v8, `officeMenus.ts`): a
 `menus` message carries the whole bar (items with labels already in Capy's
 locale, shortcuts, ticks, Capy icon names, submenus, Capy's table-size grid)
 and the header actions, and is re-sent when either changes; in edit mode it
@@ -643,7 +643,12 @@ waits for the editor's replica, as the old Save button did. A click sends
 `menu-command` {id, value?}; an item's parameter rides in its id after a colon
 ("zoom:125"), `value` carries only the grid's "<rows>x<cols>". Items marked
 `pick: 'image'` open Capy's own file picker, because a click in the host gives
-the frame no user activation, and the file goes over as `menu-file`. Capy
+the frame no user activation, and the file goes over as `menu-file`. For the
+same reason items marked `fullscreen` (and a header action marked so) go over
+with the click's full-screen permission, and items marked `popup: 'presenter'`
+have Capy open the PPTX presenter window first (`officeCommandNeeds`, see PPTX
+Present below). A header action with `items` is a split button: its main part
+runs the action, its arrow lists the items. Capy
 performs its own commands without a round trip to the runtime's code:
 `capy.save` takes the checkpoint, `capy.download` saves the bytes `export`
 returns (in view mode the saved state the viewer opened), `capy.print` prints
@@ -1040,7 +1045,8 @@ its adjustment. Strikethrough, superscript, subscript and the font size steps
 are in Format › Text, as in DOCX. Below lg zoom, font and size are hidden. The
 row scrolls sideways under a vertical wheel, with edge fades.
 `src/office-runtime/pptxIcons.tsx` maps every toolbar icon name and the
-presenter's exit, previous and next controls to Capy's Hugeicons
+show's and presenter window's controls (exit, previous, next, Full screen, ⋮,
+pause, resume, reset, notes size) to Capy's Hugeicons
 (`PptxEditor`'s `icons`; the viewer provides the same set to
 `PresentationOverlay` through pptx-react's `IconSetContext`), the presenter's
 arrows matching the viewer pager's. Capy hides the editor's agent
@@ -1108,7 +1114,6 @@ editor takes it as `defaultSpeakerNotes` and reports changes through
 production the runtime is a separate origin inside Capy's page, so browsers
 keep that storage partitioned under Capy's site, and Safari may clear it after
 some days without a visit, after which the notes start hidden again.
-Presenter view (notes while presenting) is a later track.
 
 Below lg the workspace's floating tools button covers the frame's bottom
 right. The runtime marks its root `data-narrow` then, and
@@ -1119,7 +1124,7 @@ sets `data-office-notes-open` when the runtime's menus tick
 
 PPTX's header menus follow Google Slides: File (Save, which Capy performs as
 `capy.save`, Download ▸ PowerPoint or PNG of the current slide, Print), Edit
-(Undo, Redo, Select all, Delete), View (Present, Zoom, Show speaker notes),
+(Undo, Redo, Select all, Delete), View (Present ▸, Zoom, Show speaker notes),
 Insert, Format (Text ▸ bold to subscript and Size ▸; Align & indent ▸ with the
 vertical alignment and indent; Line & paragraph spacing ▸; Bullets & numbering
 ▸ Numbered list ▸ and Bulleted list ▸ styles, ticked for the selection's;
@@ -1131,11 +1136,80 @@ messages for the rest). A menu id carries
 its command's value after a colon (`view.zoom:1.5`, `insert.shape:ellipse`,
 `slide.newWithLayout:<layout part>`). Insert › Image is a `pick` item: Capy's
 picker hands the file to `PptxEditorApi.insertImage`. View mode offers File ›
-Download and Print and View › Present and Show speaker notes (`pptxMenus.ts`). Present is a header
-action in both modes; the viewer presents through pptx-react's
-`PresentationOverlay`, exported alone as `@betteroffice/pptx-react/presentation`
-so the viewer loads no editor code. Print and PNG pages are the slides painted
+Download and Print and View › Present ▸ and Show speaker notes (`pptxMenus.ts`). Present is a header
+split button in both modes; the viewer presents through pptx-react's
+`PresentationOverlay`, exported alone (with the notes window store and
+`PRESENT_ITEMS`) as `@betteroffice/pptx-react/presentation` so the viewer loads
+no editor code. Print and PNG pages are the slides painted
 at twice their size from the open deck (`pptxRender.ts`).
+
+Present in the header is a split button in both modes, as Google Slides'
+Slideshow ▾ (`presentAction`, `presentItems` in `pptxMenus.ts`; below 640px
+its main part shows only the icon, the arrow stays). The main part presents
+from the current slide in full screen in the Capy tab, with no second window;
+the arrow lists From this slide, From the start and Presenter view, which
+View › Present repeats. None of them edits (`PRESENT_ITEMS` in pptx-react,
+`edits: false`), so they run while editing is paused. A show draws the slides
+over the page with previous, the slide counter, next, ⋮ and an exit button;
+clicking the slide goes next.
+
+Full screen: the click lands in Capy's header, and a frame on another origin
+gets no user activation from it, so its own `requestFullscreen()` is refused.
+Capy sends those `menu-command`s with `postMessage(…, { delegate: 'fullscreen' })`
+(Chromium's Capability Delegation, Chrome and Edge 104+), which lets the frame
+go full screen from that click. Firefox and Safari have no delegation: there
+the show starts windowed, Capy lets the frame cover the page while the runtime
+reports `presenting` (`PptxView`), and the show offers a Full screen button (a
+click in the frame works in every browser). Esc, or leaving full screen any
+other way, ends the show, and the file returns at the slide it ended on.
+
+Presenter view follows Google Slides: the tab shows the slides (the audience
+view) and a pop-up shows the speaker notes and controls, which the presenter
+keeps on the laptop while the tab goes to the projector. One click buys either
+full screen or a pop-up (each consumes the click's activation), and Chrome
+drops a tab's full screen when it opens a window on the same screen, so
+Presenter view spends the click on the pop-up: the tab shows the slides
+windowed over the page, and Full screen there is the second click, after the
+tab is on the projector (on one screen, full screen hides the notes window, as
+Google Slides warns). Capy sends the command with a fresh token, then opens
+`office-runtime.html#presenter=<token>` on the runtime origin in an 860×640
+pop-up (`presenterWindowUrl`); that page only finds the runtime frame among
+its opener's frames and hands itself over (`handOverPresenterWindow` in
+`notesWindow.ts`), and the runtime renders pptx-react's presenter window into
+it through a React portal, painting the slides with the same `paintSlide`, so
+the deck is loaded once. A window nobody expects (reloaded, or the show ended
+first) closes itself; the runtime closes it with a message, since it did not
+open it. The frame's sandbox stays `allow-same-origin allow-scripts`, without
+`allow-popups`: Capy opens every window.
+
+The presenter window is always dark (Capy's mocha colours), in Capy's font
+(the runtime gives it its `data-style` and language), and lays out notes
+first, as Google Slides' presenter window: a top bar with the elapsed time
+(from the start of the show, with pause and reset and no keys), whether the
+slides are in full screen, the notes text size (16, 20, 24, 32 or 40 px, 24 at
+first, remembered under `capy.pptx.presenterNotesSize` in `viewToggles.ts`)
+and End; the current and next slide small below it ("End of slides" after the
+last), with previous, "Slide n of m" and next under the current one (clicking
+it goes next); and the notes across the full width ("No speaker notes" when
+the slide has none). Icons beside its text sit 1px up to meet Fustat's cap band.
+
+Both windows drive one slide and take the same keys: → ↓ Space PageDown next,
+← ↑ PageUp previous, Home and End the first and last slide, Esc ends the show (a
+focused size dropdown keeps its own arrows). End in either window ends the
+show: the notes window closes and the file returns at the current slide.
+Closing the notes window keeps the show running; ⋮ › Open speaker notes in the
+tab opens it again (in a plain Present show too, as Google Slides' slideshow
+menu does). That click is in the frame, and its activation reaches Capy, so
+the runtime asks Capy (`open-presenter`) and Capy opens the window as above;
+from full screen the show leaves full screen first (Chrome would drop it) and
+keeps running windowed. When the browser blocks the pop-up Capy sends the
+command again with an empty token: the show keeps running and shows a notice
+with Open speaker notes, which tries again from that click.
+
+Not built yet: placing the windows on screens (Window Management API), a
+one-screen notes mode, audience tools, pen, laser pointer, black screen and
+typing a slide number. iPhone pages cannot go full screen (the show stays
+windowed), and on iPad and phones the notes window opens as a tab.
 
 PPTX's dropdowns inside the runtime take the note toolbar's popover look
 through the shared `--office-menu-*` variables in `office-runtime.css`, which
@@ -1207,9 +1281,10 @@ origin without isolating the SPA. The iframes also get
 `allow="clipboard-read; clipboard-write; fullscreen"` (`officeRuntimeConfig.ts`,
 next to `sandbox`) so the editors' right-click Cut, Copy and Paste reach the
 clipboard (Paste shows the browser's permission prompt once) and PPTX Present
-can go full screen from the separate runtime origin (without `fullscreen` the
-request is refused and Present stays inside the file frame); the sandbox
-flags are unchanged.
+can go full screen from the separate runtime origin with the full-screen
+permission Capy hands over (without `fullscreen` in `allow` the request is
+refused); the sandbox flags are unchanged: the PPTX presenter window is one
+Capy opens.
 
 PDF is not loaded into the Office iframe. `react-pdf` is the only PDF viewer
 surface and `pdfjs-dist` is its engine. Both the viewer and upload-analysis
