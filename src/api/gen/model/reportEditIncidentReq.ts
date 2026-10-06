@@ -6,6 +6,7 @@
  */
 import type { ReportEditIncidentReqFileKind } from './reportEditIncidentReqFileKind.ts';
 import type { ReportEditIncidentReqKind } from './reportEditIncidentReqKind.ts';
+import type { ReportEditIncidentReqReason } from './reportEditIncidentReqReason.ts';
 
 export interface ReportEditIncidentReq {
   /** A URL to the JSON Schema for this object. */
@@ -19,12 +20,10 @@ export interface ReportEditIncidentReq {
   fileId: string;
   fileKind: ReportEditIncidentReqFileKind;
   kind: ReportEditIncidentReqKind;
+  reason?: ReportEditIncidentReqReason;
   /**
-     * A short token, such as quota or unreachable
-     * @maxLength 64
-     * @pattern ^[a-z0-9_-]+$
+     * @minimum 0
+     * @maximum 1073741824
      */
-  reason?: string;
-  /** @minimum 0 */
   sizeBytes?: number;
 }

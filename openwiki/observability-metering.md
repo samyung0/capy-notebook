@@ -119,55 +119,71 @@ was; NULL when a room incident names no writer), `file_id` and `file_kind`
 key, so rows outlive their file), `kind`, `reason` (a short token, never
 text) and `size_bytes` (the bytes at risk). Rows are kept 90 days: the API's
 minute sweep beside the upload sweep deletes older ones
-(`PruneEditIncidents`, `server/cmd/api/main.go`). Nothing in the app reads
-them.
+(`PruneEditIncidents`, `server/cmd/api/main.go`), and an account purge
+deletes its user's rows (`PurgeUser`). Nothing in the app reads them; the ops
+read role `capy_ops` can (`SELECT`, granted by the migration where the role
+exists and by `deploy/ops-roles.sql`, and part of its startup contract in
+`server/internal/ops/privileges.go`).
 
 The collaboration service writes its kinds straight into Postgres
 (`collaboration/src/editIncidents.ts`): in the background, never retried, a
 failed write reported to Sentry as `edit_incident_write`. A room discard writes
 one row per writer whose unsaved update the room held (its pending contributor
-markers), or one naming nobody; when the discard then moves the file to its
-next epoch (a note to its next room schema), an `epoch_reset` row follows. A
+markers), or one naming nobody, sized by the discarded state (exact where the
+refused save held it, else the room's estimate); when the discard then moves
+the file to its next epoch (a note to its next room schema), an `epoch_reset`
+row follows, written only by the instance whose move landed. The discarding
+instance puts its kind and reason in the eviction it broadcasts, so another
+instance holding the room records its own writers under the same kind. A
 client that was away during the discard later reports its draft as
-`other_epoch_draft`. On several instances each one records what it threw away.
+`other_epoch_draft`.
+
+The `users` a kind counts is an upper bound: a writer's sync leaves a
+contributor marker even when it brings nothing new, so a writer who only
+opened the file since the last save counts as one with unsaved work (the same
+rule decides whether a discard moves the epoch).
 
 | `kind` | Written by | When | `reason` | `size_bytes` |
 | --- | --- | --- | --- | --- |
-| `save_refused` | collaboration | a save refused for good discarded the room (an engine refusal, a 403/404/422, an ended epoch, an invalid note), or an Office update broke the room's roots and its writer went to recovery | the error: `engine_refused`, `epoch_changed`, `http_404`, `invalid_document`, `office_update` | room state, or the update |
+| `save_refused` | collaboration | a save refused for good discarded the room (an engine refusal, a 422, an ended epoch, an invalid note), or an Office update broke the room's roots and its writer went to recovery | the error: `engine_refused`, `epoch_changed`, `http_422`, `invalid_document`, `office_update` | room state, or the update |
 | `slow_save_limit` | collaboration | five minutes of failed saves discarded a source room | the last failure: `engine_transient`, `pending`, `backoff`, `http_503` | room state |
 | `over_limit` | collaboration | a note update or store past the document limits, a source update or save past the 100 MB state cap | the limit code, `source_state_bytes` | room state, or the update |
-| `discard_unsaved` | collaboration | a discard with unsaved state for any other cause (a read-only or access refusal at a store, an outbox eviction), and a writer's update refused because it lost write access | `storage_quota_exceeded`, `account_over_quota`, `read_only`, `authorization`, the outbox event type | room state, or the update |
+| `discard_unsaved` | collaboration | a discard with unsaved state for any other cause: lost write access at a store (read-only for the storage limit or a frozen account, revoked, the file gone, a locked account) or an outbox eviction; and a writer's update refused for lost write access | `storage_quota_exceeded`, `account_over_quota`, `read_only`, `forbidden`, `not_found`, an account-lock code, the outbox event type | room state, or the update |
+| `discard_unsaved` | browser | a connect or reconnect refused read-only discarded this session's unsaved edits; drafts deleted because the account lost the file (at open, on a refused reconnect, or by the once-per-load sweep) | `read_only`, `forbidden`, `not_found` | unsaved bytes, or the drafts deleted |
 | `epoch_reset` | collaboration | that discard's epoch (or room schema) move landed | the discard's kind | NULL, user NULL |
-| `step2_unplaced` | collaboration | the second unplaceable sync step 2 in a row closed a connection | NULL | the step 2 |
-| `other_epoch_draft` | browser | a draft of another epoch or room entered copy-only recovery: found at open (`reopen`, once per page load per group), or a live source session whose file moved on (`epoch_changed`) or paused (`paused`) | as listed | the drafts |
+| `step2_unplaced` | collaboration | the second unplaceable sync step 2 in a row closed a connection; once per user and loaded room, since a stuck client reconnects about every 30 s | NULL | the step 2 |
+| `other_epoch_draft` | browser | a draft group of another epoch or room entered copy-only recovery, once per group: found at open (`reopen`), or a live source session whose file moved on (`epoch_changed`) or paused (`paused`). The group's rows keep a `reported` mark until Reload deletes them | as listed | the drafts |
 | `draft_unrestorable` | browser | a stored group nothing could draw was dropped ("Some unsaved edits from your last session couldn't be restored.") | `base_missing` | the drafts |
-| `draft_storage_failed` | browser | a draft write failed (the `offline-unstored` banner offline) | `quota`, `unavailable`, `write` | unsaved bytes |
+| `draft_storage_failed` | browser | a draft write failed (the `offline-unstored` banner offline); a failure while offline is sent after the reconnect | `quota`, `unavailable`, `write` | unsaved bytes |
 | `unconfirmed_edit` | browser | the save-delay warning (25 s for notes, 45 s for sources), once until a receipt arrives | NULL | unsaved bytes |
 | `offline_episode` | browser | an editor's offline episode ended, reported after the reconnect | `browser_offline`, `unreachable` | unsaved bytes at the reconnect |
 
-The browser reports through `POST /api/edit-incidents`
-(`src/lib/editIncidents.ts`): authenticated, the default rate-limit class, a
-4 KiB body of the browser's kinds only, checked with the generated zod
-validator before it is sent and by the API's schema again. A report is sent
-once and never retried (a failure is only logged); the file is not
-access-checked, so drafts of a file the account lost are reported too. The
-draft recorder (`src/lib/editDrafts.ts`) reports storage failures and offline
-episodes; the note and source editors report the rest. A tab closed while
-offline never reports that episode; its drafts come back on the next open.
-Unsaved bytes are what the drafts hold: a note's update rows, a source's last
-whole state.
+The service's read-only refusals (`room-read-only` from a store or the writer
+recheck) are its own rows; the browser reports only what it alone sees.
 
-Operator queries, as the owner role:
+The browser reports through `POST /api/edit-incidents`
+(`src/lib/editIncidents.ts`): authenticated, its own rate-limit class, a 4 KiB
+body of the browser's kinds and reasons only (both enums) with a size of at
+most 1 GiB, checked with the generated zod validator before it is sent and by
+the API's schema again. A report is sent once and never retried (a failure is
+only logged); the file is not access-checked, so drafts of a file the account
+lost are reported too. The draft store (`src/lib/editDrafts.ts`) reports
+storage failures, offline episodes, lost drafts and recovery groups; the note
+and source editors report the rest. A tab closed while offline never reports
+that episode; its drafts come back on the next open. Unsaved bytes are what
+the drafts hold: a note's update rows, a source's last whole state.
+
+Operator queries, as `capy_ops`:
 
 ```sql
--- The last week by kind and reason
+-- The last week by kind and reason (users: an upper bound, see above)
 SELECT kind, reason, count(*) AS incidents, count(DISTINCT user_id) AS users,
        pg_size_pretty(sum(size_bytes)) AS at_risk
 FROM edit_incidents
 WHERE created_at > now() - interval '7 days'
 GROUP BY kind, reason ORDER BY incidents DESC;
 
--- One file's history
+-- One file's history (edit_incidents_file_idx)
 SELECT created_at, user_id, kind, reason, size_bytes
 FROM edit_incidents WHERE file_id = 'f_…' ORDER BY created_at;
 ```
@@ -1081,8 +1097,10 @@ compaction, embedding, and cumulative input counts are telemetry. AI routes
 a 15/minute short-window guard so a scripted loop trips immediately. Cheap
 editor routes (`/ai/copilot`) have their own 120/minute
 class so typing in the note does not consume the chat allowance. Upload
-routes carry a tighter budget on top of the general one. Credits remain the
-money bound; these limits only stop abuse patterns.
+routes carry a tighter budget on top of the general one, and so do the
+browser's editing incident reports (`/api/edit-incidents`, 60/hour with burst
+20; a working client sends a few an hour). Credits remain the money bound;
+these limits only stop abuse patterns.
 
 **Never limited:** `/webhooks/*`. Stripe and Clerk deliver subscription and
 identity changes there, and a 429 becomes billing state that silently drifts.

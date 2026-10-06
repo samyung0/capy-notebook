@@ -190,6 +190,21 @@ describe('live collaboration authorization', () => {
     );
   });
 
+  it('says whether a lineage reset moved the room or found it moved', async () => {
+    for (const rowCount of [1, 0]) {
+      const query = vi.fn(async (sql: string) => ({
+        rowCount: sql.includes('UPDATE material_yjs_documents') ? rowCount : 1,
+        rows: [],
+      }));
+      const pool = {
+        connect: async () => ({ query, release: vi.fn() }),
+      } as unknown as Pool;
+      await expect(
+        new YjsDocumentStore(pool).resetLineage('material:mat_1:schema:4')
+      ).resolves.toBe(rowCount === 1);
+    }
+  });
+
   it('rejects a durable document with an unknown top-level root', async () => {
     const invalid = new Y.Doc({ gc: true });
     invalid.getText('unmetered').insert(0, 'hidden growth');

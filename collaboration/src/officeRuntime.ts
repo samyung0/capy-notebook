@@ -342,6 +342,10 @@ function finish() {
         ),
         method: call.method,
         ms: Math.round(ms),
+        // The calls that take a room name it (xlsxPendingEffects, replicas).
+        room: call.args.find(
+          (arg) => typeof arg === 'string' && arg.startsWith('source:')
+        ),
         wait_ms: Math.round(call.ranAt - call.queuedAt),
       });
   }

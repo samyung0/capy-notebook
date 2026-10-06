@@ -502,6 +502,7 @@ func ValidateDatabaseRole(
 		problems = append(problems, validateRequiredColumns(ctx, pool, readRequiredPrivileges)...)
 		problems = append(problems, validateRequiredTables(ctx, pool, []tablePrivilege{
 			{"ops_assistant_turns", "SELECT"},
+			{"edit_incidents", "SELECT"},
 		})...)
 		problems = append(problems, validateNoBroadWrites(ctx, pool)...)
 		problems = append(problems, validateForbiddenColumns(ctx, pool, customerContentColumns)...)

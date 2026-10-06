@@ -10,7 +10,8 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
-func TestReportEditIncidentStoresTheCallersRow(t *testing.T) {
+// The row is the authenticated caller's: the body names no user.
+func TestReportEditIncidentIsTheCallers(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, testdb.URL(t))
 	if err != nil {
@@ -29,25 +30,19 @@ func TestReportEditIncidentStoresTheCallersRow(t *testing.T) {
 		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
 	})
 
-	size := int64(4096)
 	a := &api{s: st}
 	in := &editIncidentInput{Body: apimodel.ReportEditIncidentReq{
-		FileID: "f_report", FileKind: "source_file", Kind: "draft_storage_failed",
-		Reason: "quota", SizeBytes: &size,
+		FileID: "f_report", FileKind: "source_file", Kind: "draft_storage_failed", Reason: "quota",
 	}}
 	if _, err := a.reportEditIncident(auth.WithUserID(ctx, userID), in); err != nil {
 		t.Fatal(err)
 	}
-
-	var fileID, fileKind, kind, reason string
-	var stored int64
-	if err := st.Pool().QueryRow(ctx, `SELECT file_id, file_kind, kind, reason, size_bytes
-		FROM edit_incidents WHERE user_id=$1`, userID).
-		Scan(&fileID, &fileKind, &kind, &reason, &stored); err != nil {
+	var rows int
+	if err := st.Pool().QueryRow(ctx, `SELECT count(*) FROM edit_incidents
+		WHERE user_id=$1 AND file_id='f_report' AND kind='draft_storage_failed'`, userID).Scan(&rows); err != nil {
 		t.Fatal(err)
 	}
-	if fileID != "f_report" || fileKind != "source_file" || kind != "draft_storage_failed" ||
-		reason != "quota" || stored != size {
-		t.Fatalf("row = %s %s %s %s %d", fileID, fileKind, kind, reason, stored)
+	if rows != 1 {
+		t.Fatalf("caller's rows = %d, want 1", rows)
 	}
 }

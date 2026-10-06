@@ -1115,7 +1115,11 @@ memberships, invitations, notification data, credentials, and other
 product-content rows are deleted atomically with the account tombstone.
 Remaining cross-account attribution is anonymized. Profile PII is scrubbed;
 pseudonymous billing, usage, provider, storage, and audit ledgers may remain
-under their own retention requirements. A purged account and the 30-day deleted
+under their own retention requirements. The account's editing incidents
+(`edit_incidents`, see
+[observability-metering.md](observability-metering.md#editing-incidents)) are
+deleted with it; incidents that name no user, or another user, keep the
+purged account's file ids until their 90 days pass. A purged account and the 30-day deleted
 data cannot be restored.
 
 Deletion requests, support cancellation, purge, Clerk `user.deleted` handling

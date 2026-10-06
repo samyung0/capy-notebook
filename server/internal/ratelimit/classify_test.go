@@ -24,7 +24,7 @@ func TestClassifySplitsEditorFromChat(t *testing.T) {
 		"/api/workspaces/ws_1/sources/import-inspect": classUpload,
 		"/api/workspaces/ws_1/sources/import-content": classUpload,
 		"/api/workspaces":                             classDefault,
-		"/api/edit-incidents":                         classDefault,
+		"/api/edit-incidents":                         classIncident,
 	}
 	for path, want := range cases {
 		if got := classify(path); got != want {
@@ -43,5 +43,8 @@ func TestDefaultConfigRaisesAIAndAddsBurst(t *testing.T) {
 	}
 	if cfg.Editor.Limit != 120 || cfg.Editor.Window != time.Minute {
 		t.Fatalf("editor = %+v", cfg.Editor)
+	}
+	if cfg.Incident.Limit != 60 || cfg.Incident.Window != time.Hour || cfg.Incident.Burst != 20 {
+		t.Fatalf("incident = %+v", cfg.Incident)
 	}
 }

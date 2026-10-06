@@ -15,6 +15,7 @@ import {
   type EditDraft,
   readDrafts,
   recoveryDocument,
+  reportRecoveryGroup,
 } from '@/lib/editDrafts';
 import { editIncidentReporter, reportOnce } from '@/lib/editIncidents';
 import type { NoteEditorStatus } from './editorMode';
@@ -33,8 +34,8 @@ export interface NoteDrafts {
  * Reads a note's stored edits for the room it opens (`for`: room and mount
  * generation, so a remount reads what the old mount wrote). A recovery group
  * nothing can draw is dropped with a toast and the next one is read. Both
- * are reported once per page load (edit_incidents), except a refused group
- * entering recovery: the service recorded its refusal.
+ * are reported (edit_incidents): a group of another lineage once
+ * (reportRecoveryGroup), a dropped group once per page load.
  */
 export function useNoteDrafts(
   materialId: string,
@@ -65,11 +66,7 @@ export function useNoteDrafts(
         }
         const doc = recoveryDocument(recovery);
         if (doc) {
-          // Refused rows were recorded when the service refused them.
-          if (!recovery[0].refused)
-            reportOnce(recovery[0].id, () =>
-              report('other_epoch_draft', 'reopen', draftBytes(recovery))
-            );
+          reportRecoveryGroup(recovery, report);
           if (active)
             setDrafts({
               current,

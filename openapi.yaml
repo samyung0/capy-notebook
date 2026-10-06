@@ -3516,14 +3516,26 @@ components:
             - draft_storage_failed
             - unconfirmed_edit
             - offline_episode
+            - discard_unsaved
           type: string
         reason:
-          description: A short token, such as quota or unreachable
-          maxLength: 64
-          pattern: ^[a-z0-9_-]+$
+          enum:
+            - reopen
+            - epoch_changed
+            - paused
+            - base_missing
+            - quota
+            - unavailable
+            - write
+            - browser_offline
+            - unreachable
+            - read_only
+            - forbidden
+            - not_found
           type: string
         sizeBytes:
           format: int64
+          maximum: 1073741824
           minimum: 0
           type: integer
       required:
@@ -4114,6 +4126,20 @@ components:
           type: integer
       required:
         - epoch
+      type: object
+    SourceEpochResetOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SourceEpochResetOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        moved:
+          type: boolean
+      required:
+        - moved
       type: object
     SourceFailureInputBody:
       additionalProperties: false
@@ -10326,8 +10352,12 @@ paths:
               $ref: "#/components/schemas/SourceEpochReset"
         required: true
       responses:
-        "204":
-          description: No Content
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceEpochResetOutputBody"
+          description: OK
         default:
           content:
             application/problem+json:

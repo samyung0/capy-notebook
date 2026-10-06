@@ -1,17 +1,27 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
+
+// The sweep reports what it drops (edit_incidents) through the API client.
+const post = vi.hoisted(() => vi.fn(async () => undefined));
+vi.mock('@/api/client', async (load) => ({
+  ...(await load<typeof import('@/api/client')>()),
+  api: { post },
+}));
+
 import {
   applyDrafts,
   deleteDocumentDrafts,
   deleteDrafts,
   draftGroups,
+  dropLostDrafts,
   type EditDraft,
   putDrafts,
   readDraftBase,
   readDrafts,
   recordDrafts,
   recoveryDocument,
+  reportRecoveryGroup,
   sameSourceLineage,
   sweepDrafts,
 } from './editDrafts';
@@ -72,19 +82,79 @@ describe('the draft store', () => {
   it('sweeps the documents an account no longer has', async () => {
     await putDrafts([
       draft('kept', { key: 'u_sweep:material:kept' }),
-      draft('gone', { key: 'u_sweep:file:gone' }),
+      draft('gone', { data: new Uint8Array(5), key: 'u_sweep:file:gone' }),
       draft('other', { key: 'u_other:file:gone' }),
     ]);
     const checked: string[] = [];
+    post.mockClear();
     await sweepDrafts('u_sweep', async (kind, id) => {
       checked.push(`${kind}:${id}`);
-      return id === 'gone';
+      return id === 'gone' ? 'not_found' : null;
     });
     expect(checked.sort()).toEqual(['file:gone', 'material:kept']);
     expect(await readDrafts('u_sweep:file:gone')).toEqual([]);
+    // Rows deleted after a 404 are a discard the browser alone sees.
+    expect(post).toHaveBeenCalledExactlyOnceWith('/edit-incidents', {
+      fileId: 'gone',
+      fileKind: 'source_file',
+      kind: 'discard_unsaved',
+      reason: 'not_found',
+      sizeBytes: 5,
+    });
     expect(await readDrafts('u_sweep:material:kept')).toHaveLength(1);
     // Another account's rows are never checked.
     expect(await readDrafts('u_other:file:gone')).toHaveLength(1);
+  });
+
+  it('reports lost drafts with their bytes, and nothing when there were none', async () => {
+    const key = 'u_1:file:lost';
+    await putDrafts([
+      draft('lost_a', { data: new Uint8Array(3), key }),
+      draft('lost_b', { data: new Uint8Array(4), key }),
+    ]);
+    const report = vi.fn();
+    await dropLostDrafts(key, 'forbidden', report);
+    expect(report).toHaveBeenCalledExactlyOnceWith(
+      'discard_unsaved',
+      'forbidden',
+      7
+    );
+    expect(await readDrafts(key)).toEqual([]);
+    await dropLostDrafts(key, 'forbidden', report);
+    expect(report).toHaveBeenCalledOnce();
+  });
+
+  it('reports a group of another lineage once, whatever reopens it', async () => {
+    const key = 'u_1:material:moved';
+    const lineage = 'material:mat_1:schema:0';
+    await putDrafts([
+      draft('moved_1', { data: new Uint8Array(2), key, lineage }),
+      draft('moved_2', { data: new Uint8Array(3), key, lineage }),
+    ]);
+    const report = vi.fn();
+    const group = () =>
+      readDrafts(key).then((rows) => draftGroups(rows, ROOM).recovery);
+    reportRecoveryGroup(await group(), report);
+    expect(report).toHaveBeenCalledExactlyOnceWith(
+      'other_epoch_draft',
+      'reopen',
+      5
+    );
+    // The mark is stored with the rows: a later page load (a fresh group
+    // under another first id) reports nothing.
+    const reopened = await group();
+    expect(reopened.every((row) => row.reported)).toBe(true);
+    reportRecoveryGroup(
+      reopened.map((row) => ({ ...row, id: `${row.id}:next-load` })),
+      report
+    );
+    expect(report).toHaveBeenCalledOnce();
+    // A refused group was recorded by the service.
+    reportRecoveryGroup(
+      [draft('refused', { key, lineage: ROOM, refused: true })],
+      report
+    );
+    expect(report).toHaveBeenCalledOnce();
   });
 
   it('upgrades a version 1 database, keeping its drafts', async () => {
@@ -416,6 +486,36 @@ describe('recording a note session', () => {
     const restored = new Y.Doc();
     applyDrafts(restored, rows, 'restore');
     expect(restored.getText('content').toString()).toBe('ab');
+  });
+
+  it('holds a storage failure made offline until the room is back', async () => {
+    const key = 'u_1:material:offline-storage';
+    const report = vi.fn();
+    const { client } = syncedClient('');
+    const recorder = recordDrafts({
+      doc: client,
+      ignore: (origin) => origin === REMOTE,
+      key,
+      limitBytes: 1024 * 1024,
+      lineage: ROOM,
+      report,
+    });
+    recorder.disconnected();
+    const put = vi
+      .spyOn(IDBObjectStore.prototype, 'put')
+      .mockImplementation(() => {
+        throw new DOMException('full', 'QuotaExceededError');
+      });
+    client.getText('content').insert(0, 'offline');
+    await recorder.flush();
+    put.mockRestore();
+    // Sent offline, the report would only fail.
+    expect(report).not.toHaveBeenCalled();
+    recorder.connected();
+    expect(report.mock.calls.map(([kind, reason]) => [kind, reason])).toEqual([
+      ['draft_storage_failed', 'quota'],
+      ['offline_episode', 'unreachable'],
+    ]);
   });
 
   it('keeps a refused session as one whole refused document', async () => {

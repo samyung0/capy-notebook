@@ -134,6 +134,7 @@ import type {
   SourceCheckpointSaved,
   SourceCollaborationToken,
   SourceEpochReset,
+  SourceEpochResetOutputBody,
   SourceFailureInputBody,
   SourceImportStatus,
   SourceProcessResult,
@@ -8827,17 +8828,17 @@ export const checkpointSourceDocument = async (id: string,
 
 
 
-export type resetSourceEpochResponse204 = {
-  data: void
-  status: 204
+export type resetSourceEpochResponse200 = {
+  data: SourceEpochResetOutputBody
+  status: 200
 }
 
 export type resetSourceEpochResponseDefault = {
   data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 204>
+  status: Exclude<HTTPStatusCodes, 200>
 }
 
-export type resetSourceEpochResponseSuccess = (resetSourceEpochResponse204) & {
+export type resetSourceEpochResponseSuccess = (resetSourceEpochResponse200) & {
   headers: Headers;
 };
 export type resetSourceEpochResponseError = (resetSourceEpochResponseDefault) & {
@@ -8872,7 +8873,7 @@ export const resetSourceEpoch = async (id: string,
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: resetSourceEpochResponse['data'] = body ? JSON.parse(body) : undefined
+  const data: resetSourceEpochResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as resetSourceEpochResponse
 }
 

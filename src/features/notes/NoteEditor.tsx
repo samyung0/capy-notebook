@@ -22,7 +22,8 @@ import { userToast } from '@/components/ui/userToast';
 import { FileError, FileLoading } from '@/features/files/FileStates';
 import { MaterialRenderProvider } from '@/features/materials/MaterialRenderContext';
 import { m } from '@/i18n';
-import { deleteDocumentDrafts, draftKey } from '@/lib/editDrafts';
+import { draftKey, dropLostDrafts } from '@/lib/editDrafts';
+import { editIncidentReporter } from '@/lib/editIncidents';
 import {
   type MaterialLimitCode,
   materialLimitMessage,
@@ -170,11 +171,9 @@ function CollaborativeNoteEditor({
   const storedKey = meData
     ? draftKey(meData.id, 'material', material.id)
     : null;
+  // The editor already dropped the stored edits (NoteEditorCore).
   const onUnavailable = useCallback(
-    (kind: 'notFound' | 'forbidden', dropDrafts: boolean) => {
-      // The user no longer has this note: its stored edits go too.
-      if (storedKey && dropDrafts)
-        void deleteDocumentDrafts(storedKey).catch(() => undefined);
+    (kind: 'notFound' | 'forbidden') => {
       setUnavailable(kind);
       void qc.invalidateQueries({ queryKey: qk.material(material.id) });
       if (material.workspaceId)
@@ -182,7 +181,7 @@ function CollaborativeNoteEditor({
           queryKey: qk.materials(material.workspaceId),
         });
     },
-    [qc, material.id, material.workspaceId, storedKey]
+    [qc, material.id, material.workspaceId]
   );
   const reportReadOnly = useCallback(() => {
     // Capabilities and the storage status follow from the refreshed reads.
@@ -225,8 +224,12 @@ function CollaborativeNoteEditor({
     (tokenStatus === 403 && !isAccountForbiddenError(collaborationTokenError));
   useEffect(() => {
     if (storedKey && tokenDropsDrafts)
-      void deleteDocumentDrafts(storedKey).catch(() => undefined);
-  }, [storedKey, tokenDropsDrafts]);
+      void dropLostDrafts(
+        storedKey,
+        tokenStatus === 404 ? 'not_found' : 'forbidden',
+        editIncidentReporter('material', material.id)
+      ).catch(() => undefined);
+  }, [storedKey, tokenDropsDrafts, tokenStatus, material.id]);
   // Identity matters more than the allocation: this context is read from inside
   // the document tree, so a fresh object on every render makes React walk every
   // node's fiber looking for consumers instead of bailing out at the top.

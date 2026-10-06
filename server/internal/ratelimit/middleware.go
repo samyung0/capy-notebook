@@ -21,6 +21,7 @@ const (
 	classAI
 	classEditor
 	classUpload
+	classIncident
 )
 
 // aiSuffixes are the model-backed routes. Matching by suffix rather than exact
@@ -79,6 +80,9 @@ func classify(path string) class {
 	// AI burst guard.
 	if strings.HasPrefix(path, "/api/public/") {
 		return classDefault
+	}
+	if path == "/api/edit-incidents" {
+		return classIncident
 	}
 	for _, suffix := range editorSuffixes {
 		if strings.HasSuffix(path, suffix) {
@@ -153,6 +157,11 @@ func Middleware(l *Limiter, userFunc func(*http.Request) string) func(http.Handl
 			case classUpload:
 				if ok, retry := l.Allow(ctx, "upload:"+subject, l.cfg.Upload); !ok {
 					reject(w, r, retry, "upload_rate_limited")
+					return
+				}
+			case classIncident:
+				if ok, retry := l.Allow(ctx, "incident:"+subject, l.cfg.Incident); !ok {
+					reject(w, r, retry, "rate_limited")
 					return
 				}
 			}

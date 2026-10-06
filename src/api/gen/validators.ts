@@ -1061,20 +1061,17 @@ export const reportEditIncidentBodyFileIdMax = 64;
 
 
 export const reportEditIncidentBodyFileIdRegExp = new RegExp('^[A-Za-z0-9_-]+$');
-export const reportEditIncidentBodyReasonMax = 64;
-
-
-export const reportEditIncidentBodyReasonRegExp = new RegExp('^[a-z0-9_-]+$');
 export const reportEditIncidentBodySizeBytesMin = 0;
+export const reportEditIncidentBodySizeBytesMax = 1073741824;
 
 
 
 export const ReportEditIncidentBody = zod.object({
   "fileId": zod.string().min(1).max(reportEditIncidentBodyFileIdMax).regex(reportEditIncidentBodyFileIdRegExp).describe('The note (material) or source file'),
   "fileKind": zod.enum(['material', 'source_file']),
-  "kind": zod.enum(['other_epoch_draft', 'draft_unrestorable', 'draft_storage_failed', 'unconfirmed_edit', 'offline_episode']),
-  "reason": zod.string().max(reportEditIncidentBodyReasonMax).regex(reportEditIncidentBodyReasonRegExp).optional().describe('A short token, such as quota or unreachable'),
-  "sizeBytes": zod.int().min(reportEditIncidentBodySizeBytesMin).optional()
+  "kind": zod.enum(['other_epoch_draft', 'draft_unrestorable', 'draft_storage_failed', 'unconfirmed_edit', 'offline_episode', 'discard_unsaved']),
+  "reason": zod.enum(['reopen', 'epoch_changed', 'paused', 'base_missing', 'quota', 'unavailable', 'write', 'browser_offline', 'unreachable', 'read_only', 'forbidden', 'not_found']).optional(),
+  "sizeBytes": zod.int().min(reportEditIncidentBodySizeBytesMin).max(reportEditIncidentBodySizeBytesMax).optional()
 })
 
 export const ReportEditIncidentResponse = zod.void()
@@ -6109,7 +6106,10 @@ export const ResetSourceEpochBody = zod.object({
   "epoch": zod.int().min(1)
 })
 
-export const ResetSourceEpochResponse = zod.void()
+export const ResetSourceEpochResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "moved": zod.boolean()
+})
 
 
 /**

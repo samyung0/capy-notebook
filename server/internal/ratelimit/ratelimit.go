@@ -56,6 +56,9 @@ type Config struct {
 	// Upload applies to upload reservation and import routes, which are cheap
 	// to call but expensive downstream once ingest picks them up.
 	Upload Rule
+	// Incident applies to the browser's editing incident reports, a few an
+	// hour from a working client; each one is a row kept 90 days.
+	Incident Rule
 }
 
 // DefaultConfig is tuned for a single-seat free tier: generous enough that
@@ -70,6 +73,7 @@ func DefaultConfig() Config {
 		AIBurst:       Rule{Limit: 15, Window: time.Minute, Burst: 15},
 		Editor:        Rule{Limit: 120, Window: time.Minute, Burst: 30},
 		Upload:        Rule{Limit: 120, Window: time.Hour, Burst: 20},
+		Incident:      Rule{Limit: 60, Window: time.Hour, Burst: 20},
 	}
 }
 
