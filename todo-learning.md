@@ -15,19 +15,27 @@ flashcards).
 
 ## State (2026-10-06)
 
-Everything below is on `main`. UAT runs 9d4d6170 (deployed 2026-10-06), with
-the question bank, decks and interactive blocks configured. Not on UAT yet:
-the Safari JPEG fallback for quiz images (d06114e9) and uploading quiz images
-on Save (45c85c77). CI has been red since 8c7d7199 (another session's
-notification change: a Biome regex lint in a notifications test and the
-`source-failures` upload e2e).
+Everything below is on `main` and CI is green. UAT runs 9d4d6170; the Office
+session deploys UAT next and takes everything below with it.
 
 - **Built 2026-10-06:** the answer-key rule (53f232fa: keys only for editing
   and for what was just checked, grading on the server, for quizzes and the
-  bank everywhere); the `/bank` landing (Continue and Finished); quiz images
-  capped at 2 MB, shrunk in the browser, tied to their quiz and deleted when a
-  save drops them (9d4d6170, migration 0063), uploaded only on Save
-  (45c85c77). Decisions in `human/question-bank.md`.
+  bank everywhere); the `/bank` landing (Continue and Finished) and the bank
+  page refinements, Copy to quiz with chapters and counts, and the sidebar's
+  Explore section (49a8eed4); quiz images capped at 2 MB, shrunk in the
+  browser and uploaded on Save (9d4d6170, d06114e9, 45c85c77); every editor
+  asset belongs to its note or quiz and a save deletes the ones it stops
+  using after a 60 s grace, with paste copies, and undo/redo/paste re-upload
+  from bytes the tab kept (b74c893f, c06677e9); a quiz or flashcard block
+  pasted from another note becomes this note's copy (36727524). Decisions in
+  `human/question-bank.md` and `human/authorization-permissions-lifecycles.md`.
+- **User-journey checks to add at the end** (not covered by the MSW suites):
+  an image over a minute old deleted, saved, then undone comes back under a
+  new id and survives a reload; the same with a large PDF on a throttled
+  network (the bytes are downloaded, not read from cache); redo after an
+  image or quiz-block swap does not make a second copy; a quiz block pasted
+  into another note is a separate quiz with its images, and one whose note
+  you cannot read is dropped.
 
 - **Part 1 is built.** Server: migration 0051, `server/internal/review`,
   `store/study.go`, `httpapi/huma_study.go`, the attempt hook, `card_stats`
