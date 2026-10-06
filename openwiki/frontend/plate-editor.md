@@ -1063,6 +1063,17 @@ validation and are not rendered.
   only when a flash starts or ends, and renders the same `data-nav-*`
   attributes Plate would. No stylesheet styles those attributes today, so the
   flash itself is invisible.
+- A block's interaction chrome mounts only once the block comes within a
+  screen of the note's scroll area or the pointer enters it, and then stays
+  (`useNearViewport` in `BlockInteractions.tsx`): the gutter with its drag
+  handle, the drop line, and the react-dnd drag source and drop target
+  (`BlockDnd`). Each react-dnd registration dispatches to every registered
+  monitor, so registering all ~3,600 top-level blocks of a near-limit note on
+  open cost O(n²), and the gutters were about three in four of the editor's
+  DOM nodes, which React walks before every commit while the editor has focus
+  (`getSelectionInformation`). Drops land where the pointer is and dragging
+  auto-scrolls blocks into range, so the handle shows on hover and drag and
+  drop work as before (`e2e/editor/block-interactions.spec.ts`).
 - Remote cursor decorations must match Slate paths structurally (not
   dot-joined path strings). Shared-link editors may be absent from the
   workspace member directory, so cursor labels fall back to the authenticated
