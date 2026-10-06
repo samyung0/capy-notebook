@@ -134,6 +134,17 @@ export function lostSourceAccess(error: unknown) {
   );
 }
 
+/** The `lostAccess` field of a refused save's `source-checkpoint-failed`:
+ * which loss it was, so the browser can report the drafts it then deletes
+ * (edit_incidents). */
+export function lostAccessField(error: unknown) {
+  if (!lostSourceAccess(error)) return {};
+  return {
+    lostAccess:
+      (error as SourceRequestError).status === 404 ? 'not_found' : 'forbidden',
+  };
+}
+
 /**
  * The gateway refused the collaboration service's own secret (a 401 from an
  * internal source route; user tokens are verified at connect and never reach

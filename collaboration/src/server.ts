@@ -28,6 +28,7 @@ import {
 import { EditError } from './editCommands.js';
 import {
   broadcastDiscardCause,
+  clientPayload,
   type EditIncident,
   type IncidentCause,
   materialDiscardCause,
@@ -35,6 +36,7 @@ import {
   refusedUpdateCause,
   roomIncidents,
   sourceDiscardCause,
+  UnplacedOnce,
 } from './editIncidents.js';
 import {
   discardMovesLineage,
@@ -114,7 +116,7 @@ import {
 } from './sourceHandoff.js';
 import {
   handlePermanentStoreFailure,
-  lostSourceAccess,
+  lostAccessField,
   pendingSourceSave,
   SlowSaveClock,
   SourceBackoffError,
@@ -319,15 +321,8 @@ function recordIncidents(incidents: EditIncident[]) {
   void recordEditIncidents(pool, incidents);
 }
 
-// Users whose unplaceable step 2 closed their connection, per loaded room.
-const unplacedUsers = new Map<string, Set<string>>();
-function firstUnplaced(room: string, userId: string) {
-  const users = unplacedUsers.get(room) ?? new Set<string>();
-  unplacedUsers.set(room, users);
-  if (users.has(userId)) return false;
-  users.add(userId);
-  return true;
-}
+// step2_unplaced once per stuck writer and room, across room unloads.
+const unplaced = new UnplacedOnce();
 
 function evictLocalRoom(
   room: string,
@@ -379,7 +374,7 @@ function evictLocalRoom(
         if (notification) {
           document.broadcastStateless(
             typeof notification === 'string'
-              ? notification
+              ? clientPayload(notification)
               : JSON.stringify({ room, type: 'compaction-evict' })
           );
         }
@@ -789,11 +784,11 @@ const server = new Server<CollaborationContext>({
   },
   async afterUnloadDocument({ documentName }) {
     log('info', 'room_unload', {
-      bytes: unloadSizes.get(documentName) ?? 0,
+      // Unknown (never measured) is left out, not 0.
+      bytes: unloadSizes.get(documentName),
       room: documentName,
     });
     unloadSizes.delete(documentName);
-    unplacedUsers.delete(documentName);
     pendingCheckpoints.delete(documentName);
     if (SOURCE_ROOM_PATTERN.test(documentName)) {
       sources.forget(documentName);
@@ -870,6 +865,7 @@ const server = new Server<CollaborationContext>({
           return;
         }
         placedUpdate(connection);
+        unplaced.placed(document.name, context.userId);
         if (refusal) {
           // Stateless and unrecoverable, so the client stops resending it.
           connection.sendStateless(
@@ -906,6 +902,7 @@ const server = new Server<CollaborationContext>({
         return;
       }
       placedUpdate(connection);
+      unplaced.placed(document.name, context.userId);
     } catch (error) {
       // Throwing closes only this connection. Tell it why first so it can drop
       // its diverged Y.Doc instead of reconnecting and resending forever.
@@ -916,9 +913,9 @@ const server = new Server<CollaborationContext>({
       if (
         refused &&
         // A client whose step 2 never places reconnects about every 30 s:
-        // one row per user and loaded room.
+        // one row until that user's update in the room is placed.
         (refused.kind !== 'step2_unplaced' ||
-          firstUnplaced(document.name, context.userId))
+          unplaced.first(document.name, context.userId))
       )
         recordIncidents([
           {
@@ -932,7 +929,8 @@ const server = new Server<CollaborationContext>({
     }
   },
   async beforeUnloadDocument({ document, documentName }) {
-    unloadSizes.set(documentName, roomSizes.get(document) ?? 0);
+    const bytes = roomSizes.get(document);
+    if (bytes !== undefined) unloadSizes.set(documentName, bytes);
     // Hocuspocus keeps the room when a connection came in meanwhile, and then
     // never calls afterUnloadDocument: drop the size once that is settled.
     setImmediate(() => {
@@ -1051,7 +1049,7 @@ const server = new Server<CollaborationContext>({
       sourceFormats.set(document, session.format);
     } else await store.load(documentName, document);
     log('info', 'room_load', {
-      bytes: roomSizes.get(document) ?? 0,
+      bytes: roomSizes.get(document),
       ms: Math.round(performance.now() - started),
       room: documentName,
     });
@@ -1409,7 +1407,7 @@ async function storeSource(document: Document) {
               type: 'source-checkpoint-failed',
               ...sourceRoom(room),
               checkpointIds: claimed,
-              ...(lostSourceAccess(error) && { lostAccess: true }),
+              ...lostAccessField(error),
               recoverable,
             }
       )
@@ -1973,7 +1971,7 @@ const failedStoreRetries = new FailedStoreRetryRunner(
                     type: 'source-checkpoint-failed',
                     ...sourceRoom(room),
                     checkpointIds: failed.checkpointIds,
-                    ...(lostSourceAccess(error) && { lostAccess: true }),
+                    ...lostAccessField(error),
                     recoverable: false,
                   }
             )

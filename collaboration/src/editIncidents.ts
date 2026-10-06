@@ -177,6 +177,51 @@ export function refusedUpdateCause(error: unknown): IncidentCause | null {
   return null;
 }
 
+/**
+ * The eviction payload as clients receive it: without the `incident` the
+ * discarding instance added for other instances, which may name another
+ * account's lock (`account_suspended`). Clients read only `room` and `type`.
+ */
+export function clientPayload(notification: string) {
+  if (!notification.includes('"incident"')) return notification;
+  try {
+    const { incident: _incident, ...client } = JSON.parse(notification);
+    return JSON.stringify(client);
+  } catch {
+    return notification;
+  }
+}
+
+/**
+ * Writers whose unplaceable sync step 2 closed their connection, by room and
+ * user, so a stuck client (it reconnects about every 30 s, and its room may
+ * unload in between) is recorded once, not per close. A placed update of
+ * that user in that room clears it. At most `cap` entries, oldest out first.
+ */
+export class UnplacedOnce {
+  private readonly keys = new Set<string>();
+  private readonly cap: number;
+
+  constructor(cap = 10_000) {
+    this.cap = cap;
+  }
+
+  /** Whether this close is the first since the user's last placed update. */
+  first(room: string, userId: string) {
+    const key = `${room}\u0000${userId}`;
+    if (this.keys.has(key)) return false;
+    if (this.keys.size >= this.cap)
+      this.keys.delete(this.keys.values().next().value as string);
+    this.keys.add(key);
+    return true;
+  }
+
+  /** On every placed update: free once nothing is held. */
+  placed(room: string, userId: string) {
+    if (this.keys.size) this.keys.delete(`${room}\u0000${userId}`);
+  }
+}
+
 /** One incident per writer with unsaved work in the room (its pending
  * contributor markers), or one naming nobody when it holds none. */
 export function roomIncidents(

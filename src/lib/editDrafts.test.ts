@@ -13,9 +13,11 @@ import {
   applyDrafts,
   deleteDocumentDrafts,
   deleteDrafts,
+  draftBytes,
   draftGroups,
   dropLostDrafts,
   type EditDraft,
+  markDraftsReported,
   putDrafts,
   readDraftBase,
   readDrafts,
@@ -567,5 +569,77 @@ describe('recording a source session', () => {
     const restored = new Y.Doc();
     applyDrafts(restored, rows, 'restore');
     expect(restored.getText('source').toString()).toBe('one two');
+  });
+
+  // The live path of a source whose file moved on (useSourceSession's
+  // `replace`): flush, report, then mark the lineage's rows.
+  const SOURCE = 'source:f_1:epoch:1@sha';
+  const MOVED = 'source:f_1:epoch:2@sha';
+  async function oldState(key: string, text: string) {
+    const doc = new Y.Doc();
+    doc.getText('source').insert(0, text);
+    const data = Y.encodeStateAsUpdate(doc);
+    await putDrafts([
+      draft(`${key}:old:state`, { data, key, kind: 'state', lineage: SOURCE }),
+    ]);
+    return readDrafts(key);
+  }
+
+  it('marks an adopted-only session reported and counts its bytes', async () => {
+    const key = 'u_1:file:adopted';
+    const adopted = await oldState(key, 'kept from the last visit');
+    const doc = new Y.Doc();
+    applyDrafts(doc, adopted, 'restore');
+    const recorder = recordDrafts({
+      adopted,
+      doc,
+      fullState: true,
+      ignore: (origin) => origin === 'restore',
+      key,
+      limitBytes: 1024 * 1024,
+      lineage: SOURCE,
+    });
+    // Nothing typed: the flush writes nothing, the adopted rows still count.
+    void recorder.flush();
+    expect(recorder.unsavedBytes).toBe(draftBytes(adopted));
+    await markDraftsReported(key, (row) => row.lineage === SOURCE);
+    const report = vi.fn();
+    reportRecoveryGroup(
+      draftGroups(await readDrafts(key), MOVED).recovery,
+      report
+    );
+    expect(report).not.toHaveBeenCalled();
+  });
+
+  it('reports a new episode over rows a kept epoch left marked', async () => {
+    const key = 'u_1:file:paused';
+    await oldState(key, 'marked during a pause');
+    await markDraftsReported(key, () => true);
+    // The pause ended without a new epoch: the next open adopts the marked
+    // rows as current, types, and closes before a receipt.
+    const adopted = draftGroups(await readDrafts(key), SOURCE).current;
+    const doc = new Y.Doc();
+    applyDrafts(doc, adopted, 'restore');
+    const recorder = recordDrafts({
+      adopted,
+      doc,
+      fullState: true,
+      ignore: (origin) => origin === 'restore',
+      key,
+      limitBytes: 1024 * 1024,
+      lineage: SOURCE,
+    });
+    doc.getText('source').insert(0, 'new ');
+    await recorder.dispose();
+    // The file then moves on: the group holds a marked and a new row.
+    const group = draftGroups(await readDrafts(key), MOVED).recovery;
+    expect(group.map((row) => !!row.reported).sort()).toEqual([false, true]);
+    const report = vi.fn();
+    reportRecoveryGroup(group, report);
+    expect(report).toHaveBeenCalledExactlyOnceWith(
+      'other_epoch_draft',
+      'reopen',
+      draftBytes(group)
+    );
   });
 });

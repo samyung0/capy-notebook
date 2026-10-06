@@ -10,11 +10,13 @@ vi.mock('./observability.js', async (load) => ({
 import { attachDocumentContributorTracker } from './contributors.js';
 import {
   broadcastDiscardCause,
+  clientPayload,
   materialDiscardCause,
   recordEditIncidents,
   refusedUpdateCause,
   roomIncidents,
   sourceDiscardCause,
+  UnplacedOnce,
 } from './editIncidents.js';
 import { MaterialDocumentLimitError } from './limits.js';
 import { MaterialDocumentValidationError } from './materialDocument.js';
@@ -127,6 +129,54 @@ describe('broadcast discards', () => {
       kind: 'discard_unsaved',
       reason: 'discard',
     });
+  });
+});
+
+describe('eviction payloads', () => {
+  it('keep the incident between instances and never send it to clients', () => {
+    const payload = JSON.stringify({
+      evictionId: 'e_1',
+      incident: { kind: 'discard_unsaved', reason: 'account_suspended' },
+      room: 'source:f_1:epoch:2',
+      type: 'authorization-revoked',
+    });
+    const client = clientPayload(payload);
+    expect(client).not.toContain('account_suspended');
+    expect(JSON.parse(client)).toEqual({
+      evictionId: 'e_1',
+      room: 'source:f_1:epoch:2',
+      type: 'authorization-revoked',
+    });
+    // Another instance still reads the cause off the Redis message.
+    expect(broadcastDiscardCause(payload)).toEqual({
+      kind: 'discard_unsaved',
+      reason: 'account_suspended',
+    });
+    const plain = JSON.stringify({ room: 'r', type: 'access-changed' });
+    expect(clientPayload(plain)).toBe(plain);
+  });
+});
+
+describe('the unplaced step 2 close', () => {
+  it('is recorded once per stuck writer and room, across room unloads', () => {
+    const once = new UnplacedOnce();
+    expect(once.first('source:f_1:epoch:1', 'u_a')).toBe(true);
+    // The room unloads (nothing here clears it) and the client reconnects
+    // about 30 s later into a fresh room, stuck again: no new row.
+    expect(once.first('source:f_1:epoch:1', 'u_a')).toBe(false);
+    expect(once.first('source:f_1:epoch:1', 'u_b')).toBe(true);
+    // Once that writer's update is placed, a later stuck episode counts.
+    once.placed('source:f_1:epoch:1', 'u_a');
+    expect(once.first('source:f_1:epoch:1', 'u_a')).toBe(true);
+  });
+
+  it('keeps at most its cap, dropping the oldest', () => {
+    const once = new UnplacedOnce(2);
+    once.first('r', 'u_1');
+    once.first('r', 'u_2');
+    once.first('r', 'u_3');
+    expect(once.first('r', 'u_1')).toBe(true);
+    expect(once.first('r', 'u_3')).toBe(false);
   });
 });
 

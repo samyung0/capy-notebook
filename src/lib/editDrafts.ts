@@ -430,15 +430,17 @@ export function draftBytes(rows: readonly EditDraft[]) {
 /**
  * Reports a recovery group of another lineage entering recovery, once: its
  * rows are marked `reported`, so an open in a later page load shows it
- * without reporting it again (Reload deletes them, mark and all). A refused
- * group was recorded when the service refused it.
+ * without reporting it again (Reload deletes them, mark and all). A group
+ * with an unmarked row is a new episode (a marked row the epoch kept, then
+ * newer edits) and is reported. A refused group was recorded when the
+ * service refused it.
  */
 export function reportRecoveryGroup(
   group: EditDraft[],
   report: EditIncidentReporter
 ) {
   const [first] = group;
-  if (!first || first.refused || group.some((row) => row.reported)) return;
+  if (!first || first.refused || group.every((row) => row.reported)) return;
   reportOnce(first.id, () => {
     report('other_epoch_draft', 'reopen', draftBytes(group));
     const ids = new Set(group.map((row) => row.id));
@@ -573,10 +575,18 @@ export function recordDrafts({
     ...(base && { base: base.sha }),
     ...(refused && { refused }),
   });
+  // This session's own unsaved bytes: what the offline bound counts.
   const unsavedBytes = () =>
     fullState
       ? (state?.bytes ?? 0)
       : [...rows, ...buffer].reduce((sum, item) => sum + item.data.length, 0);
+  // What the device holds unsaved for this document (edit_incidents sizes):
+  // a source's last whole state, which holds the adopted edits too, else the
+  // adopted rows no receipt covered yet plus this session's own.
+  const heldBytes = () =>
+    fullState
+      ? (state?.bytes ?? draftBytes(pendingAdopted))
+      : unsavedBytes() + draftBytes(pendingAdopted);
   const checkLimit = () => {
     if (offline && !over && unsavedBytes() > limitBytes) {
       over = true;
@@ -599,7 +609,7 @@ export function recordDrafts({
         storageOk = false;
         onStorage?.(false);
         const reason = storageFailureReason(error);
-        const bytes = unsavedBytes();
+        const bytes = heldBytes();
         const send = () => report?.('draft_storage_failed', reason, bytes);
         if (offline) heldStorageReport = send;
         else send();
@@ -706,7 +716,7 @@ export function recordDrafts({
     connected() {
       heldStorageReport?.();
       heldStorageReport = null;
-      if (offline) report?.('offline_episode', offlineReason, unsavedBytes());
+      if (offline) report?.('offline_episode', offlineReason, heldBytes());
       offline = false;
       snapshotDue = false;
       if (over) {
@@ -783,10 +793,10 @@ export function recordDrafts({
     get unsaved() {
       return sequence > covered;
     },
-    /** What this session holds unsaved: its update rows (notes) or its last
-     * whole state (sources), as stored. */
+    /** What this device holds unsaved for the document, adopted rows
+     * included: update rows (notes) or the last whole state (sources). */
     get unsavedBytes() {
-      return unsavedBytes();
+      return heldBytes();
     },
   };
 }

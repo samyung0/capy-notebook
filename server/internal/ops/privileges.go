@@ -26,6 +26,10 @@ type columnPrivilege struct {
 type tablePrivilege struct {
 	table     string
 	privilege string
+	// ifPresent: required only where the table exists. Ops validates other
+	// environments' databases (OPS_INGEST_*_DATABASE_URL) with the same
+	// contract, and those may not have run the table's migration yet.
+	ifPresent bool
 }
 
 var readRequiredPrivileges = []columnPrivilege{
@@ -501,8 +505,8 @@ func ValidateDatabaseRole(
 	case ReadDatabaseRole:
 		problems = append(problems, validateRequiredColumns(ctx, pool, readRequiredPrivileges)...)
 		problems = append(problems, validateRequiredTables(ctx, pool, []tablePrivilege{
-			{"ops_assistant_turns", "SELECT"},
-			{"edit_incidents", "SELECT"},
+			{table: "ops_assistant_turns", privilege: "SELECT"},
+			{table: "edit_incidents", privilege: "SELECT", ifPresent: true},
 		})...)
 		problems = append(problems, validateNoBroadWrites(ctx, pool)...)
 		problems = append(problems, validateForbiddenColumns(ctx, pool, customerContentColumns)...)
@@ -610,6 +614,14 @@ func validateRequiredTables(
 ) []string {
 	var problems []string
 	for _, requirement := range requirements {
+		if requirement.ifPresent {
+			var exists bool
+			if err := pool.QueryRow(ctx,
+				`SELECT to_regclass($1) IS NOT NULL`, requirement.table,
+			).Scan(&exists); err == nil && !exists {
+				continue
+			}
+		}
 		var allowed bool
 		if err := pool.QueryRow(ctx,
 			`SELECT has_table_privilege(current_user, $1, $2)`,

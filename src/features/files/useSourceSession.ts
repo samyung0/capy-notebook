@@ -26,7 +26,6 @@ import { m } from '@/i18n';
 import { SOURCE_STATE_MAX_BYTES } from '@/lib/const';
 import {
   type DraftRecorder,
-  deleteDocumentDrafts,
   deleteDrafts,
   draftKey as documentDraftKey,
   draftBytes,
@@ -475,8 +474,10 @@ export function useSourceSession(
       // Back to the last saved version with nothing unsaved worth keeping:
       // this session's drafts go. Lost access or a file gone (`lostAccess`)
       // drops every session's drafts of the file, other tabs' included; the
-      // reopened session shows the missing or no-access panel.
-      const reset = (lostAccess = false) => {
+      // reopened session shows the missing or no-access panel. The service
+      // recorded this session's edits; the other sessions' drafts deleted
+      // after it are reported here.
+      const reset = (lostAccess?: 'forbidden' | 'not_found') => {
         if (cancelled) return;
         if (!sourceChangesCovered(active) || bufferDirtyRef.current)
           toastSaveUndone();
@@ -488,7 +489,9 @@ export function useSourceSession(
         void (async () => {
           await recorder?.discard();
           if (lostAccess)
-            await bestEffort(() => deleteDocumentDrafts(draftKey));
+            await bestEffort(() =>
+              dropLostDrafts(draftKey, lostAccess, report)
+            );
           pendingInput(false);
           setGeneration((value) => value + 1);
         })();
@@ -569,16 +572,20 @@ export function useSourceSession(
         } else {
           // The file moved on while edits waited: they open read-only, and
           // this session's rows stay until Reload discards them.
+          active.recovery = true;
+          // The flush sets the state it writes at once: the size counts it.
+          void recorder?.flush();
           report(
             'other_epoch_draft',
             reason === 'paused' ? 'paused' : 'epoch_changed',
             recorder?.unsavedBytes
           );
-          active.recovery = true;
-          void recorder?.flush();
-          // Reported: a later open shows these rows without a `reopen`.
-          const own = recorder?.session;
-          void markDraftsReported(draftKey, (row) => row.session === own);
+          // Reported: a later open shows this lineage's rows (adopted ones
+          // included) without a `reopen`. Queued after the flush.
+          const same = sameSourceLineage(session.format);
+          void markDraftsReported(draftKey, (row) =>
+            same(row.lineage, lineage)
+          );
           setLoaded({ bytes, doc: shared, session });
           setStatus('recovery');
           setBanner('changed');
@@ -678,7 +685,7 @@ export function useSourceSession(
             checkpointIds?: string[];
             message?: string;
             recoverable?: boolean;
-            lostAccess?: boolean;
+            lostAccess?: 'forbidden' | 'not_found';
             room?: string;
           };
           try {
@@ -752,7 +759,7 @@ export function useSourceSession(
             event.epoch === session.epoch
           ) {
             if (event.recoverable === false) {
-              if (event.lostAccess) reset(true);
+              if (event.lostAccess) reset(event.lostAccess);
               else refuse();
               return;
             }
