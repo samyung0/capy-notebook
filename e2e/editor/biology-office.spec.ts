@@ -1254,10 +1254,10 @@ for (const [format, text] of [
 // One open DOCX (exchange-plan.docx) for these focus checks: the runtime
 // boots once. Its load arrives 5 s late on every open (the init script), so
 // typing in the chat box comes first.
-test('DOCX editor focus: chat typing while it opens, first open before a save receipt and resuming from a pause', async ({
+test('DOCX editor focus: chat typing while it opens, first open before a save receipt, resuming from a pause and an open menu', async ({
   page,
 }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(420_000);
   await page.addInitScript(() => {
     if (!location.pathname.includes('office-runtime')) return;
     const add = window.addEventListener.bind(window);
@@ -1432,6 +1432,40 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
     await page.waitForTimeout(1000);
     await expect(reply).toHaveValue('Re');
     expect(await updates.evaluate((seen) => seen.count)).toBe(settled);
+  });
+
+  // An open Capy menu keeps the focus too: it stays open and takes the keys.
+  await test.step('a newly opened editor leaves the focus in an open Capy menu', async () => {
+    await mode.click();
+    await expect(officeEditMenu(page)).toHaveCount(0, { timeout: 30_000 });
+    await expect(frame.locator('canvas').first()).toBeVisible({
+      timeout: 60_000,
+    });
+    const ready = await page.evaluateHandle(() => {
+      const seen = { count: 0 };
+      window.addEventListener('message', (event) => {
+        if (event.data?.type === 'collaboration-ready') seen.count += 1;
+      });
+      return seen;
+    });
+    await mode.click();
+    await page.getByRole('button', { exact: true, name: 'Files' }).click();
+    await page
+      .locator('[data-workspace-file-tree]')
+      .locator('..')
+      .getByRole('button', { exact: true, name: 'Add file' })
+      .first()
+      .click();
+    const menu = page.getByRole('menu');
+    await expect(menu).toBeVisible();
+    expect(await ready.evaluate((seen) => seen.count)).toBe(0);
+    await expect
+      .poll(() => ready.evaluate((seen) => seen.count), { timeout: 60_000 })
+      .toBeGreaterThan(0);
+    await page.waitForTimeout(1500);
+    await expect(menu).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
   });
 });
 
