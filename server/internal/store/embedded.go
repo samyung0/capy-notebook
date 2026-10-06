@@ -292,25 +292,39 @@ func (s *Store) createEmbeddedTx(ctx context.Context, tx pgx.Tx, note Material, 
 }
 
 // DiscardEmbeddedDrafts trashes the rows a refused agent edit created under
-// noteID: no projection has referenced them, so without this they would stay
-// as hidden rows charged to the owner. Trash is the lifecycle an unreferenced
-// row already has, so the sweep purges them later.
+// noteID at once, rather than at the note's next save. A row the note's
+// content already references (a retry of an edit that committed) is kept.
 func (s *Store) DiscardEmbeddedDrafts(ctx context.Context, noteID string, ids []string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
+	var content string
+	if err := tx.QueryRow(ctx, `SELECT content FROM materials WHERE id=$1 FOR UPDATE`, noteID).Scan(&content); err != nil {
+		return err
+	}
+	refs, err := materialdoc.ExtractMaterialRefs(content)
+	if err != nil {
+		return err
+	}
 	rows, err := tx.Query(ctx, `SELECT id FROM materials WHERE id = ANY($1) AND parent_material_id=$2
-		AND reference_seen_at IS NULL AND trashed_at IS NULL FOR UPDATE`, ids, noteID)
+		AND trashed_at IS NULL FOR UPDATE`, ids, noteID)
 	if err != nil {
 		return err
 	}
-	unseen, err := scanIDs(rows)
+	live, err := scanIDs(rows)
 	if err != nil {
 		return err
 	}
-	for _, id := range unseen {
+	referenced := make(map[string]bool, len(refs))
+	for _, ref := range refs {
+		referenced[ref.MaterialID] = true
+	}
+	for _, id := range live {
+		if referenced[id] {
+			continue
+		}
 		if err := trashEmbeddedRowTx(ctx, tx, id, "", uid("trash")); err != nil {
 			return err
 		}
@@ -319,10 +333,11 @@ func (s *Store) DiscardEmbeddedDrafts(ctx context.Context, noteID string, ids []
 }
 
 // reconcileEmbeddedTx aligns the note's embedded rows with the references in
-// its projected content. A row is first noted as referenced (reference_seen_at)
-// and from then on follows its block: a referenced row that was trashed comes
-// back (undo of a block removal), an unreferenced row is trashed. A row no
-// projection has referenced yet is still being inserted and is left alone.
+// its projected content, like pruneMaterialAssetsTx does for its assets: a
+// referenced row that was trashed comes back (undo of a block removal), an
+// unreferenced row created over 60 seconds ago is trashed. The minute lets a
+// new row's block reach the note; a row whose block never lands (the tab
+// closed, an undo before the save) goes at a later save.
 func reconcileEmbeddedTx(ctx context.Context, tx pgx.Tx, noteID, content, actorID string) error {
 	refs, err := materialdoc.ExtractMaterialRefs(content)
 	if err != nil {
@@ -332,41 +347,31 @@ func reconcileEmbeddedTx(ctx context.Context, tx pgx.Tx, noteID, content, actorI
 	for _, ref := range refs {
 		referenced[ref.MaterialID] = true
 	}
-	rows, err := tx.Query(ctx, `SELECT id, trashed_at IS NOT NULL, reference_seen_at IS NOT NULL
+	rows, err := tx.Query(ctx, `SELECT id, trashed_at IS NOT NULL, created_at < now() - interval '60 seconds'
 		FROM materials WHERE parent_material_id=$1 FOR UPDATE`, noteID)
 	if err != nil {
 		return err
 	}
-	var seen, restore, trash []string
+	var restore, trash []string
 	for rows.Next() {
 		var id string
-		var trashed, wasSeen bool
-		if err := rows.Scan(&id, &trashed, &wasSeen); err != nil {
+		var trashed, settled bool
+		if err := rows.Scan(&id, &trashed, &settled); err != nil {
 			rows.Close()
 			return err
 		}
 		switch {
-		case referenced[id]:
-			if !wasSeen {
-				seen = append(seen, id)
-			}
-			// Also a row a refused agent edit discarded before a retry of the
-			// same call referenced it (DiscardEmbeddedDrafts).
-			if trashed {
-				restore = append(restore, id)
-			}
-		case !trashed && wasSeen:
+		// Also a row a refused agent edit discarded before a retry of the
+		// same call referenced it (DiscardEmbeddedDrafts).
+		case referenced[id] && trashed:
+			restore = append(restore, id)
+		case !referenced[id] && !trashed && settled:
 			trash = append(trash, id)
 		}
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return err
-	}
-	if len(seen) > 0 {
-		if _, err := tx.Exec(ctx, `UPDATE materials SET reference_seen_at=now() WHERE id = ANY($1)`, seen); err != nil {
-			return err
-		}
 	}
 	for _, id := range restore {
 		if err := restoreEmbeddedRowTx(ctx, tx, id); err != nil {

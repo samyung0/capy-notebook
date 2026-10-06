@@ -471,9 +471,14 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   the sharing endpoint rejects it, it is hidden from the workspace tree, the
   trash listing and the agent's source list, and it cannot be trashed
   directly. Trashing, restoring, purging and cloning the note carry its rows
-  along (clones rewrite the reference ids). Removing the reference block
-  trashes the row on the next projection once a projection has referenced it
-  (`reference_seen_at`), and a projection that references it again restores it.
+  along (clones rewrite the reference ids). Like the note's images, every
+  content save of the note trashes the rows it does not reference once they
+  were created over 60 seconds ago (`reconcileEmbeddedTx`), and a save that
+  references a trashed row again restores it. The minute lets a new row's
+  block reach the note; a row whose block never lands (the tab closed, an undo
+  before the save) goes at a later save, or with the note's purge if the note
+  is never saved again. A refused agent edit trashes the rows it created at
+  once (`DiscardEmbeddedDrafts`).
 - A quiz or flashcard block pasted into a note becomes that note's own through
   `POST /api/materials/{id}/embedded/adopt` (an editor of the note, 1–20
   blocks as `{materialId, copy?}`, one answer per block in order). Every
@@ -488,8 +493,8 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   sharing the stored objects, all charged to the note's payer; attempts,
   progress and review state stay with the original. Anything else answers no
   id and the editor drops the block. Over quota fails the whole call. A copy
-  starts unseen like a created row, so one whose block never lands (the tab
-  closes first) stays hidden until the note is purged.
+  is a created row, so one whose block never lands goes at the note's next
+  save after its first minute.
 - Cloning a readable standalone quiz, flashcards, or material creates a new
   owner-controlled copy charged to the signed-in cloner. Cloning a workspace
   additionally requires membership of any role or an effective editor grant.

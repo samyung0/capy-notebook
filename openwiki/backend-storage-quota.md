@@ -319,9 +319,14 @@ seconds ago (`pruneMaterialAssetsTx`), so the row triggers release the bytes at
 once. The minute covers a shared note: the image node's asset id reaches the
 server a moment after the upload completes, and a collaborator's save in that
 window must not delete it; an image removed within the minute goes at a later
-save. Pending reservations are left to the upload expiry. Purging the material
-deletes the rest through the `material_id` cascade; there is no periodic
-sweep. Both write to an `editor-assets/incoming/…` key and are promoted to
+save. The same save deletes an interrupted flow's leftovers: an upload or paste
+copy whose node never landed (the tab closed) and quiz or flashcard images
+uploaded by a Save whose content PATCH failed. Embedded quiz and flashcard
+rows follow the same rule (trashed, see
+[authorization-permissions-lifecycles.md](authorization-permissions-lifecycles.md)).
+Pending reservations are left to the upload expiry. Purging the material
+deletes the rest through the `material_id` cascade, including leftovers of a
+material never saved again; there is no periodic sweep. Both write to an `editor-assets/incoming/…` key and are promoted to
 an unpresigned stable `editor-assets/{id}/…` key before finalization, so the
 still-valid upload URL cannot overwrite a ready object. If creating the
 durable DB row fails after a source object was written, handlers delete the

@@ -79,26 +79,27 @@ func TestEmbeddedMaterialFollowsItsNote(t *testing.T) {
 		t.Fatalf("an embedded row cannot be trashed directly, got %v", err)
 	}
 
-	// A row nobody has referenced yet is still being inserted and is left
-	// alone; once a projection has referenced it, dropping the reference
-	// trashes it and referencing it again restores it.
+	// A save leaves an unreferenced row alone for its first minute (its block
+	// may not have reached the note yet) and trashes it after, whether or not
+	// a save ever referenced it; referencing it again restores it.
 	onlyQuiz := noteWithRefs(t, quiz)
 	if _, err := s.UpdateMaterial(ctx, note.ID, MaterialPatch{Content: &onlyQuiz, UpdatedBy: ownerID}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.GetMaterial(ctx, cards.ID); err != nil {
-		t.Fatalf("a never-referenced row is left alone: %v", err)
+		t.Fatalf("a new unreferenced row is kept for its first minute: %v", err)
 	}
-	content := noteWithRefs(t, quiz, cards)
-	if _, err := s.UpdateMaterial(ctx, note.ID, MaterialPatch{Content: &content, UpdatedBy: ownerID}); err != nil {
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET created_at=now()-interval '2 minutes'
+		WHERE parent_material_id=$1`, note.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.UpdateMaterial(ctx, note.ID, MaterialPatch{Content: &onlyQuiz, UpdatedBy: ownerID}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.GetMaterial(ctx, cards.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("unreferenced row should be trashed, got %v", err)
+		t.Fatalf("a never-referenced row over a minute old should be trashed, got %v", err)
 	}
+	content := noteWithRefs(t, quiz, cards)
 	trash, err := s.ListTrash(ctx, ownerID, "", 10, "")
 	if err != nil {
 		t.Fatal(err)
