@@ -185,6 +185,11 @@ func (s *Store) ProjectMaterialContent(
 			return Material{}, err
 		}
 	}
+	if kind == "quiz" {
+		if err := pruneQuizAssetsTx(ctx, tx, materialID, content); err != nil {
+			return Material{}, err
+		}
+	}
 	if _, err := tx.Exec(ctx, `UPDATE material_yjs_documents
 		SET projected_version=$2, projection_error=NULL, projected_at=$3
 		WHERE material_id=$1`, materialID, yjsVersion, now); err != nil {

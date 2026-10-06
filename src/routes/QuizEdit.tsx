@@ -21,6 +21,7 @@ import { Tabs } from '@/components/ui/Tabs';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { QuizForm } from '@/features/quizzes/QuizForm';
 import { QuizPageHeader } from '@/features/quizzes/QuizPage';
+import { fitQuizImage } from '@/features/quizzes/quizImage';
 import { m } from '@/i18n';
 
 const detailsSchema = z.object({
@@ -158,11 +159,14 @@ function QuizEditor({ quizId }: { quizId: string }) {
                   name={name}
                   onQuestionsChange={setQuestions}
                   questions={questions}
-                  uploadAsset={(file) =>
-                    uploadEditorAsset(quiz.id, file, 'image').then(
-                      ({ assetId }) => ({ assetId })
-                    )
-                  }
+                  uploadAsset={async (file) => {
+                    const { assetId } = await uploadEditorAsset(
+                      quiz.id,
+                      await fitQuizImage(file),
+                      'image'
+                    );
+                    return { assetId };
+                  }}
                 />
               </>
             )}

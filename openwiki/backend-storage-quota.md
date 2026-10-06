@@ -302,7 +302,18 @@ Editor assets upload through the material that uses them
 (`/api/materials/{id}/editor-assets/uploads`, any editor of the material). A
 workspace material's asset belongs to the workspace and is charged to its
 owner; a standalone note or quiz's asset belongs to that material and is
-charged to the material owner, the only account that can edit it. Both write to an `editor-assets/incoming/…` key and are promoted to
+charged to the material owner, the only account that can edit it. A workspace
+quiz's asset records both the workspace (which pays) and the quiz
+(`material_id`, migration `0063`). Images uploaded through a quiz are capped at
+2 MB before any bytes are reserved (`quizImageMaxBytes`); the quiz editor
+shrinks a larger image first (`src/features/quizzes/quizImage.ts`: long side
+to 2000 px, WebP at falling quality, animated GIFs refused). Notes keep the
+20 MB image limit and bank figures keep their own. Every quiz content write
+(the quiz PATCH and the collaboration projection behind agent and bank-copy
+edits) deletes, in its transaction, the quiz's assets the new content no
+longer references, ready or pending (`pruneQuizAssetsTx`), so the row
+triggers release used and reserved bytes at once. Purging the quiz deletes
+the rest through the `material_id` cascade; there is no periodic sweep. Both write to an `editor-assets/incoming/…` key and are promoted to
 an unpresigned stable `editor-assets/{id}/…` key before finalization, so the
 still-valid upload URL cannot overwrite a ready object. If creating the
 durable DB row fails after a source object was written, handlers delete the
@@ -310,7 +321,8 @@ orphan object.
 
 Workspace clones snapshot the source, gate the total file + material + ready
 editor-asset payload against the **cloner's** quota, copy ready asset rows
-with new logical IDs (rewriting embedded references), and reuse physical blob
+with new logical IDs (rewriting embedded references; a quiz's image names the
+cloned quiz, and a trashed quiz's images are left out), and reuse physical blob
 paths under reference counting. Only `ready` source files are copied; pending,
 processing, and failed files are omitted. Material nodes (and quiz image blocks) referring to a pending,
 failed, missing, or otherwise uncopied editor asset are removed from the cloned

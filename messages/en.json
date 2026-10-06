@@ -1208,6 +1208,7 @@
   "workspaces_empty": "No workspaces yet.",
   "quiz_untitled": "Untitled quiz",
   "quiz_edit": "Edit quiz",
+  "quiz_image_too_large": "Images in a quiz must be 2 MB or smaller, and this one is still too large after shrinking.",
   "quiz_unable_load": "Unable to load quiz.",
   "flashcards_unable_load": "Unable to load flashcards.",
   "quiz_prompt_placeholder": "Question prompt",

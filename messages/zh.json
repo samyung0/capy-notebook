@@ -1208,6 +1208,7 @@
   "workspaces_empty": "还没有工作区。",
   "quiz_untitled": "未命名测验",
   "quiz_edit": "编辑测验",
+  "quiz_image_too_large": "测验中的图片不能超过 2 MB，这张图片压缩后仍然太大。",
   "quiz_unable_load": "无法加载测验。",
   "flashcards_unable_load": "无法加载卡组。",
   "quiz_prompt_placeholder": "题目",

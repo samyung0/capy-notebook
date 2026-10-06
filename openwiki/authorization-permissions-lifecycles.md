@@ -925,6 +925,13 @@ source epoch or the material `room_schema` so stale clients cannot resume.
 `DELETE /api/trash/{kind}/{id}` are owner-only; a background sweep purges rows
 past `purge_after`, which then reaches the blob outbox like any deletion.
 
+A quiz's images follow the quiz (their `editor_assets.material_id` names it,
+in a workspace too): trashing keeps them, still charged, and restore brings
+them back with it; purging deletes them through the cascade. An image a quiz
+save stops referencing is deleted in that save's transaction, so the owner
+stops paying at once and the object reaches the blob outbox. A note's
+workspace images have no such link and stay until the workspace goes.
+
 Trash covers `source_file` and `material` only: there is no workspace trash.
 Deleting a workspace is `DELETE FROM workspaces`, so its files and materials go
 by foreign-key cascade without passing through trash, and any of its rows

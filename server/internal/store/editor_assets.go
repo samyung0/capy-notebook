@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
 var (
@@ -47,8 +49,9 @@ type EditorAssetUpload struct {
 	ExpiresAt    time.Time
 }
 
-// NewEditorAssetReservation is scoped to exactly one of WorkspaceID or
-// MaterialID (a standalone material, charged to its owner).
+// NewEditorAssetReservation is scoped to a workspace, a standalone material
+// (charged to its owner), or for a workspace quiz both: the workspace pays and
+// the quiz's purge or saves delete it.
 type NewEditorAssetReservation struct {
 	AssetID      string
 	UploadID     string
@@ -274,13 +277,51 @@ func (s *Store) MarkEditorAssetUploadExpired(ctx context.Context, uploadID strin
 	return tx.Commit(ctx)
 }
 
+// EditorAssetMaterial returns the live material's workspace (empty when
+// standalone) and whether it is a quiz, which picks the asset scope and limit.
+func (s *Store) EditorAssetMaterial(ctx context.Context, id string) (workspaceID string, quiz bool, err error) {
+	err = s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id,''), kind='quiz'
+		FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&workspaceID, &quiz)
+	if isNoRows(err) {
+		return "", false, ErrNotFound
+	}
+	return workspaceID, quiz, err
+}
+
+// pruneQuizAssetsTx deletes the quiz's own editor assets (ready or pending)
+// that its new content no longer references, so the owner stops paying at
+// once: the row triggers release the bytes, cancel a pending reservation and
+// queue the object for the reaper.
+func pruneQuizAssetsTx(ctx context.Context, tx pgx.Tx, quizID, content string) error {
+	kept, err := materialdoc.EditorAssetIDs(content)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `DELETE FROM editor_assets WHERE material_id=$1 AND id <> ALL($2::text[])`,
+		quizID, append([]string{}, kept...))
+	return err
+}
+
 // lockEditorAssetScopeTx admits an editor-asset write for the actor and returns
 // the storage owner. A workspace asset needs workspace edit access; a
 // standalone material is edited only by its owner. Accounts lock before the
 // material row, matching standalone material saves.
 func (s *Store) lockEditorAssetScopeTx(ctx context.Context, tx pgx.Tx, workspaceID, materialID, actorID string) (string, error) {
 	if workspaceID != "" {
-		return s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actorID)
+		ownerID, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actorID)
+		if err != nil || materialID == "" {
+			return ownerID, err
+		}
+		// A workspace quiz's asset also names the quiz, which must be live there.
+		var live bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM materials
+			WHERE id=$1 AND workspace_id=$2 AND trashed_at IS NULL)`, materialID, workspaceID).Scan(&live); err != nil {
+			return "", err
+		}
+		if !live {
+			return "", ErrNotFound
+		}
+		return ownerID, nil
 	}
 	var ownerID string
 	err := tx.QueryRow(ctx, `SELECT owner_user_id FROM materials

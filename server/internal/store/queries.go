@@ -1743,6 +1743,11 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 			return Material{}, err
 		}
 	}
+	if p.Content != nil && contentKind == "quiz" {
+		if err := pruneQuizAssetsTx(ctx, tx, id, *p.Content); err != nil {
+			return Material{}, err
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return Material{}, err
 	}

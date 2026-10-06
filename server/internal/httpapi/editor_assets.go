@@ -61,11 +61,12 @@ var editorAssetRules = map[string]editorAssetRule{
 	},
 }
 
-func editorAssetMaxBytes(rule editorAssetRule, storageCeiling int64) int64 {
-	if rule.maxBytes > storageCeiling {
-		return storageCeiling
+func editorAssetMaxBytes(rule editorAssetRule, purpose string, storageCeiling int64, quiz bool) int64 {
+	maxBytes := min(rule.maxBytes, storageCeiling)
+	if quiz && purpose == "image" {
+		maxBytes = min(maxBytes, quizImageMaxBytes)
 	}
-	return rule.maxBytes
+	return maxBytes
 }
 
 type reserveEditorAssetRequest struct {
@@ -89,6 +90,7 @@ func normalizeMediaType(value string) (string, error) {
 func validateEditorAssetMetadata(
 	in reserveEditorAssetRequest,
 	storageCeiling int64,
+	quiz bool,
 ) (name, ext, contentType string, err error) {
 	name = strings.TrimSpace(in.Name)
 	name = fieldlimits.ClampFileName(path.Base(strings.ReplaceAll(name, `\`, "/")))
@@ -100,7 +102,7 @@ func validateEditorAssetMetadata(
 	if !ok {
 		return "", "", "", errors.New("purpose must be image, audio, pdf, or file")
 	}
-	maxBytes := editorAssetMaxBytes(rule, storageCeiling)
+	maxBytes := editorAssetMaxBytes(rule, in.Purpose, storageCeiling, quiz)
 	if in.SizeBytes <= 0 || in.SizeBytes > maxBytes {
 		return "", "", "", fmt.Errorf("%s uploads must be between 1 byte and %d MB", in.Purpose, maxBytes>>20)
 	}
@@ -121,13 +123,22 @@ func validateEditorAssetMetadata(
 	return "", "", "", fmt.Errorf("content type %q does not match %s extension %q", contentType, in.Purpose, ext)
 }
 
-// editorAssetScope is where a material's editor assets live; exactly one is set.
-type editorAssetScope struct{ workspaceID, materialID string }
+// quizImageMaxBytes caps images uploaded through a quiz; the browser shrinks
+// larger ones first. Bank figures have their own limit (bank/assets.go).
+const quizImageMaxBytes = 2 << 20
+
+// editorAssetScope is where a material's editor assets live: a workspace, a
+// standalone material, or for a workspace quiz both, so the quiz's purge and
+// saves can delete its images.
+type editorAssetScope struct {
+	workspaceID, materialID string
+	quiz                    bool
+}
 
 // editorAssetScopeFor admits an editor of the route's material and resolves the
 // scope: its workspace (charged to the workspace owner) or, for a standalone
-// material, the material itself (charged to its owner). The store transaction
-// rechecks both.
+// material, the material itself (charged to its owner). A quiz is always named.
+// The store transaction rechecks both.
 func (a *api) editorAssetScopeFor(w http.ResponseWriter, r *http.Request) (editorAssetScope, bool) {
 	materialID := id(r)
 	err := a.s.AssertMaterialEditor(r.Context(), uid(r), materialID)
@@ -139,15 +150,15 @@ func (a *api) editorAssetScopeFor(w http.ResponseWriter, r *http.Request) (edito
 		a.fail(w, err)
 		return editorAssetScope{}, false
 	}
-	workspaceID, err := a.s.MaterialWorkspaceID(r.Context(), materialID)
+	workspaceID, quiz, err := a.s.EditorAssetMaterial(r.Context(), materialID)
 	if err != nil {
 		a.fail(w, err)
 		return editorAssetScope{}, false
 	}
-	if workspaceID != "" {
+	if workspaceID != "" && !quiz {
 		return editorAssetScope{workspaceID: workspaceID}, true
 	}
-	return editorAssetScope{materialID: materialID}, true
+	return editorAssetScope{workspaceID: workspaceID, materialID: materialID, quiz: quiz}, true
 }
 
 func (a *api) reserveEditorAsset(w http.ResponseWriter, r *http.Request) {
@@ -170,7 +181,7 @@ func (a *api) reserveEditorAsset(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	name, ext, contentType, err := validateEditorAssetMetadata(in, freeLimits.StorageBytes)
+	name, ext, contentType, err := validateEditorAssetMetadata(in, freeLimits.StorageBytes, scope.quiz)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
 		return

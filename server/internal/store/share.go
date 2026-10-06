@@ -524,6 +524,7 @@ type workspaceCloneFile struct {
 
 type workspaceCloneAsset struct {
 	oldID, newID                           string
+	materialID                             string // a quiz's image; '' otherwise
 	name, purpose, objectPath, contentType string
 	status                                 string
 	sizeBytes                              int64
@@ -630,11 +631,13 @@ func (s *Store) snapshotWorkspaceForClone(
 	}
 	rows.Close()
 
+	// A trashed quiz is not cloned, so neither are its images.
 	rows, err = tx.Query(ctx,
-		`SELECT id, name, purpose, object_path, content_type, size_bytes,
+		`SELECT id, COALESCE(material_id,''), name, purpose, object_path, content_type, size_bytes,
 			status, COALESCE(etag,''), created_at, completed_at
-		 FROM editor_assets
-		 WHERE workspace_id=$1 AND status='ready'
+		 FROM editor_assets a
+		 WHERE workspace_id=$1 AND status='ready' AND (material_id IS NULL OR EXISTS (
+			SELECT 1 FROM materials m WHERE m.id=a.material_id AND m.trashed_at IS NULL))
 		 ORDER BY created_at`,
 		workspaceID,
 	)
@@ -645,6 +648,7 @@ func (s *Store) snapshotWorkspaceForClone(
 		var asset workspaceCloneAsset
 		if err := rows.Scan(
 			&asset.oldID,
+			&asset.materialID,
 			&asset.name,
 			&asset.purpose,
 			&asset.objectPath,
@@ -1002,22 +1006,6 @@ func (s *Store) cloneWorkspaceOnce(
 		}
 	}
 
-	// Ready editor assets are logical resources too. Their blob paths remain
-	// shared, but each clone receives a new asset row and therefore its own
-	// quota charge. Material content was rewritten to these IDs in the
-	// snapshot phase.
-	for _, asset := range snapshot.assets {
-		if _, err := tx.Exec(ctx, `INSERT INTO editor_assets
-			(id, workspace_id, user_id, created_by, name, purpose, object_path,
-			 content_type, size_bytes, status, etag, created_at, completed_at)
-			VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,'ready',$9,$10,$11)`,
-			asset.newID, newID, userID, asset.name, asset.purpose,
-			asset.objectPath, asset.contentType, asset.sizeBytes, asset.etag,
-			asset.createdAt, asset.completedAt); err != nil {
-			return Workspace{}, err
-		}
-	}
-
 	// Materials (clone lands private; retained history shares the same fresh
 	// asset/card ID maps as current content, while comments are not copied).
 	{
@@ -1078,6 +1066,22 @@ func (s *Store) cloneWorkspaceOnce(
 					return Workspace{}, err
 				}
 			}
+		}
+	}
+
+	// Ready editor assets are logical resources too. Their blob paths remain
+	// shared, but each clone receives a new asset row and therefore its own
+	// quota charge, and a quiz's image names the cloned quiz. Material content
+	// was rewritten to these IDs in the snapshot phase.
+	for _, asset := range snapshot.assets {
+		if _, err := tx.Exec(ctx, `INSERT INTO editor_assets
+			(id, workspace_id, material_id, user_id, created_by, name, purpose, object_path,
+			 content_type, size_bytes, status, etag, created_at, completed_at)
+			VALUES ($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,'ready',$10,$11,$12)`,
+			asset.newID, newID, nullStr(snapshot.materialIDs[asset.materialID]), userID, asset.name, asset.purpose,
+			asset.objectPath, asset.contentType, asset.sizeBytes, asset.etag,
+			asset.createdAt, asset.completedAt); err != nil {
+			return Workspace{}, err
 		}
 	}
 
