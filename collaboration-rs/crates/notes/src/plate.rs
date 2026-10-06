@@ -233,14 +233,22 @@ fn strict_equal(a: &Any, b: &Any, same: bool) -> bool {
     }
 }
 
-/// An element's properties (`getAttributes()`), keys sorted: the JS order is
-/// the order Yjs integrated them in, which the document does not keep.
+/// An element's properties (`getAttributes()`) in the order their keys were
+/// first written: JS keeps the order Yjs integrated them in, which is this
+/// for an element one client wrote (every slate-yjs insert) and which the
+/// document does not keep across clients (then client, then clock).
 pub fn properties(branch: &Branch) -> Result<Vec<(Arc<str>, Any)>, ProjectionError> {
     let mut out = Vec::new();
+    let mut firsts = Vec::new();
     for (key, item) in branch.map_items() {
         if item.is_deleted() {
             continue;
         }
+        let mut first = item;
+        while let Some(left) = first.left() {
+            first = left;
+        }
+        firsts.push((first.id().client.get(), first.id().clock));
         let value = match item.content() {
             ItemContent::Any(values) => values.last().cloned().unwrap_or(Any::Undefined),
             ItemContent::Embed(value) => value.clone(),
@@ -254,8 +262,10 @@ pub fn properties(branch: &Branch) -> Result<Vec<(Arc<str>, Any)>, ProjectionErr
         };
         out.push((key.clone(), value));
     }
-    out.sort_by(|a, b| a.0.cmp(&b.0));
-    Ok(out)
+    let mut order: Vec<usize> = (0..out.len()).collect();
+    order.sort_by_key(|&i| firsts[i]);
+    let mut slots: Vec<Option<(Arc<str>, Any)>> = out.into_iter().map(Some).collect();
+    Ok(order.into_iter().filter_map(|i| slots[i].take()).collect())
 }
 
 /// `yTextToSlateElement(branch)`: `{...attributes, children}`.

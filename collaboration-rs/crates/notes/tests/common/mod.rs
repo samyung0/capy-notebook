@@ -174,3 +174,72 @@ impl Room {
         )
     }
 }
+
+/// An update's content in a fixed order: its structs by client and clock
+/// (each as yrs prints it: id, length, origins, parent, content) and its
+/// deleted ranges. Two encoders that order clients differently give the same
+/// form for the same items.
+pub fn update_form(bytes: &[u8]) -> (Vec<(u64, u32, String)>, Vec<(u64, Vec<(u32, u32)>)>) {
+    let update = yrs::Update::decode_v1(bytes).unwrap();
+    let mut structs: Vec<(u64, u32, String)> = update
+        .blocks()
+        .map(|block| match block {
+            yrs::UpdateBlock::Item(item) => {
+                (item.id().client.get(), item.id().clock, item_form(item))
+            }
+            yrs::UpdateBlock::Gc(range) => {
+                (range.client.get(), range.clock, format!("gc {}", range.len))
+            }
+            yrs::UpdateBlock::Skip(range) => (
+                range.client.get(),
+                range.clock,
+                format!("skip {}", range.len),
+            ),
+        })
+        .collect();
+    structs.sort();
+    let mut deletes: Vec<(u64, Vec<(u32, u32)>)> = update
+        .delete_set()
+        .iter()
+        .map(|(client, ranges)| {
+            (
+                client.get(),
+                ranges.iter().map(|r| (r.start, r.end)).collect(),
+            )
+        })
+        .collect();
+    deletes.sort();
+    (structs, deletes)
+}
+
+/// One decoded item: where it goes and what it holds, maps with sorted keys.
+fn item_form(item: &yrs::block::Item) -> String {
+    use yrs::block::ItemContent;
+    let any = |value: &yrs::Any| {
+        notes::json::any_to_value(value)
+            .map_or_else(|_| format!("{value:?}"), |v| notes::json::canonical(&v))
+    };
+    let content = match item.content() {
+        ItemContent::Any(values) => format!("any {:?}", values.iter().map(any).collect::<Vec<_>>()),
+        ItemContent::Format(key, value) => format!("format {key}={}", any(value)),
+        ItemContent::Embed(value) => format!("embed {}", any(value)),
+        ItemContent::String(text) => format!("string {:?}", text.as_str()),
+        ItemContent::Type(branch) => format!("type {:?}", branch.type_ref()),
+        ItemContent::Deleted(len) => format!("deleted {len}"),
+        other => format!("{other:?}"),
+    };
+    format!(
+        "{:?} len {} origin {:?} right {:?} parent {:?} key {:?} {content}",
+        item.id(),
+        item.len(),
+        item.origin(),
+        item.right_origin(),
+        item.update_parent(),
+        item.parent_sub()
+    )
+}
+
+/// The same items and deletions, whatever the client order of the encoding.
+pub fn same_update(a: &[u8], b: &[u8]) -> bool {
+    update_form(a) == update_form(b)
+}

@@ -11,6 +11,9 @@
 //! in UTF-16 units, as Yjs and Slate do (`ydoc::doc_options`).
 
 pub mod bound;
+pub mod children;
+pub mod commands;
+pub mod edit;
 pub mod json;
 pub mod limits;
 pub mod material;

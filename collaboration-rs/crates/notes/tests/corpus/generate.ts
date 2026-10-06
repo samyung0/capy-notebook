@@ -1204,6 +1204,704 @@ function validationFamily() {
   write('validation', { cases, questions: questionCases }, true);
 }
 
+/* ------------------------------------------------------------------ edits */
+
+const EDIT_CLIENT = 4_000;
+
+/** One call of a document function on a copy of `state`, by a fixed client:
+ * its result or EditError, the update it made, and the value after. */
+function editCall(
+  state: Uint8Array,
+  clientID: number,
+  run: (document: Y.Doc) => unknown
+): Record<string, unknown> {
+  const document = docFromState(state, clientID);
+  const before = Y.encodeStateVector(document);
+  try {
+    const result = run(document);
+    const update = Y.encodeStateAsUpdate(document, before);
+    return {
+      ok: result ?? null,
+      update: b64(update),
+      value: plate(document),
+    };
+  } catch (error) {
+    return error instanceof EditError
+      ? { error: { code: error.code, message: error.message } }
+      : { thrown: (error as Error).message };
+  }
+}
+
+function textOf(document: Y.Doc) {
+  return document.getText('source').toString();
+}
+
+/** A scripted sequence on one document: each step runs on the state the
+ * previous steps left (a failed step leaves it unchanged, as the caller
+ * discards the copy). */
+type Step = (
+  document: Y.Doc,
+  outcomes: Record<string, unknown>[],
+  action: Record<string, unknown>
+) => unknown;
+
+function script(name: string, initial: Uint8Array, steps: Step[]) {
+  let state = initial;
+  let client = EDIT_CLIENT;
+  const records: Record<string, unknown>[] = [];
+  for (const step of steps) {
+    client += 1;
+    const action: Record<string, unknown> = {};
+    const record = editCall(state, client, (document) =>
+      step(document, records, action)
+    );
+    const before = state;
+    if ('update' in record) {
+      const next = docFromState(state, 1);
+      Y.applyUpdate(next, b64decode(record.update as string));
+      state = Y.encodeStateAsUpdate(next);
+    }
+    records.push({ ...record, action, client, state: b64(before) });
+  }
+  return { name, steps: records };
+}
+
+const b64decode = (text: string) => new Uint8Array(Buffer.from(text, 'base64'));
+
+/** The scenarios of editCommands.test.ts, as data. */
+function editScenarios() {
+  const paragraphOf = (id: string, text: string) => ({
+    children: [{ text }],
+    id,
+    type: 'p',
+  });
+  const material = (value: unknown[]) =>
+    Y.encodeStateAsUpdate(docWithValue(value, 1));
+  const apply =
+    (commands: DocumentCommand[]): Step =>
+    (document, _records, action) => {
+      Object.assign(action, { commands, kind: 'apply' });
+      return applyMaterialCommands(document, commands);
+    };
+  const outcomeOf = (records: Record<string, unknown>[], index: number) =>
+    records[index].ok as { guards: GuardTarget[]; inverse: DocumentCommand[] };
+  const verify =
+    (index: number): Step =>
+    (document, records, action) => {
+      Object.assign(action, { kind: 'verify', of: index });
+      return verifyMaterialGuards(document, outcomeOf(records, index).guards);
+    };
+  const undo =
+    (index: number): Step =>
+    (document, records, action) => {
+      Object.assign(action, { kind: 'undo', of: index });
+      return applyMaterialCommands(document, outcomeOf(records, index).inverse);
+    };
+  const inspect = (): Step => (document, _records, action) => {
+    action.kind = 'inspect';
+    return inspectMaterial(document);
+  };
+  const question = {
+    id: 'q1',
+    labels: 'letters',
+    layout: 'paper',
+    parts: [
+      {
+        answer: { correct: true, type: 'boolean' },
+        blocks: [{ text: 'True?', type: 'text' }],
+        id: 'p1',
+        marks: 1,
+        solution: [],
+      },
+    ],
+    stem: [{ text: 'Shared context', type: 'text' }],
+  };
+  const quizQuestion = (q: Record<string, unknown>) => ({
+    children: [{ text: '' }],
+    id: 'q1',
+    question: q,
+    type: 'quiz_question',
+  });
+  const card = (id: string, front: string) => ({
+    children: [
+      { children: [{ text: front }], type: 'flashcard_front' },
+      { children: [{ text: `${front} back` }], type: 'flashcard_back' },
+    ],
+    id,
+    type: 'flashcard',
+  });
+  const four = [
+    paragraphOf('b1', 'alpha'),
+    paragraphOf('b2', 'beta'),
+    paragraphOf('b3', 'gamma'),
+    paragraphOf('b4', 'delta'),
+  ];
+  return [
+    script('void question', material([{ children: [quizQuestion(question)], id: 'quiz1', type: 'quiz' }]), [
+      inspect(),
+      apply([
+        {
+          node: quizQuestion({ ...question, stem: [{ text: 'Changed context', type: 'text' }] }),
+          nodeId: 'q1',
+          parentType: 'quiz',
+          type: 'replace_child',
+        },
+      ]),
+      verify(1),
+      undo(1),
+      inspect(),
+    ]),
+    script('replace text and undo', material([paragraphOf('b1', 'alpha beta'), paragraphOf('b2', 'gamma')]), [
+      apply([{ blockId: 'b1', expectedText: 'beta', text: 'delta', type: 'replace_text' }]),
+      inspect(),
+      verify(0),
+      undo(0),
+      inspect(),
+    ]),
+    script(
+      'material reference',
+      material([
+        paragraphOf('b1', 'intro'),
+        { children: [{ text: '' }], id: 'r1', materialId: 'mat_q', refKind: 'quiz', type: 'material_ref' },
+      ]),
+      [inspect()]
+    ),
+    script('removal undo and a written gap', material(four.slice(0, 3)), [
+      apply([{ blockId: 'b2', expectedText: 'beta', type: 'remove_block' }]),
+      verify(0),
+      undo(0),
+      apply([{ afterBlockId: 'b1', blocks: [paragraphOf('bx', 'x')], type: 'insert_block' }]),
+      apply([{ blockId: 'bx', expectedText: 'x', type: 'remove_block' }]),
+      verify(0),
+    ]),
+    script(
+      'neighbours keep an undo valid',
+      material([
+        paragraphOf('b1', 'alpha'),
+        paragraphOf('b2', 'beta'),
+        { children: [card('c1', 'one'), card('c2', 'two')], id: 'deck', type: 'flashcards' },
+      ]),
+      [
+        apply([
+          { blockId: 'b2', expectedText: 'beta', text: 'BETA', type: 'replace_text' },
+          { node: card('c1', 'uno'), nodeId: 'c1', parentType: 'flashcards', type: 'replace_child' },
+        ]),
+        apply([
+          { blockId: 'b1', expectedText: 'alpha', text: 'ALPHA', type: 'replace_text' },
+          { node: card('c2', 'dos'), nodeId: 'c2', parentType: 'flashcards', type: 'replace_child' },
+        ]),
+        verify(0),
+        apply([{ node: card('c1', 'ein'), nodeId: 'c1', parentType: 'flashcards', type: 'replace_child' }]),
+        verify(0),
+        apply([{ afterNodeId: 'c1', node: card('c3', 'three'), parentType: 'flashcards', type: 'insert_child' }]),
+        apply([{ nodeId: 'c2', parentType: 'flashcards', type: 'remove_child' }]),
+        undo(6),
+        apply([{ nodeId: 'c9', parentType: 'flashcards', type: 'remove_child' }]),
+        apply([{ afterNodeId: 'c9', node: card('c4', 'x'), parentType: 'flashcards', type: 'insert_child' }]),
+      ]
+    ),
+    script('adjacent removals', material(four), [
+      apply([
+        { blockId: 'b3', expectedText: 'gamma', type: 'remove_block' },
+        { blockId: 'b2', expectedText: 'beta', type: 'remove_block' },
+      ]),
+      verify(0),
+      undo(0),
+    ]),
+    script('insert then remove in one call', material(four.slice(0, 2)), [
+      apply([
+        { afterBlockId: 'b1', blocks: [paragraphOf('b9', 'nine')], type: 'insert_block' },
+        { blockId: 'b9', expectedText: 'nine', type: 'remove_block' },
+      ]),
+      verify(0),
+    ]),
+    script('gap two away', material(four), [
+      apply([{ blockId: 'b2', expectedText: 'beta', type: 'remove_block' }]),
+      apply([{ blockId: 'b4', expectedText: 'delta', type: 'remove_block' }]),
+      verify(0),
+    ]),
+    script('gap beside an edit', material(four.slice(0, 2)), [
+      apply([{ blockId: 'b2', expectedText: 'beta', type: 'remove_block' }]),
+      apply([{ blockId: 'b1', expectedText: 'alpha', text: 'alpha!', type: 'replace_text' }]),
+      verify(0),
+    ]),
+    script('stale expectation', material(four.slice(0, 1)), [
+      apply([
+        { blockId: 'b1', expectedText: 'nope', text: 'x', type: 'replace_text' },
+        { afterBlockId: 'b1', blocks: [paragraphOf('b9', 'new')], type: 'insert_block' },
+      ]),
+    ]),
+    script('changed after the edit', material(four.slice(0, 2)), [
+      apply([{ afterBlockId: 'b1', blocks: [paragraphOf('b3', 'inserted')], type: 'insert_block' }]),
+      verify(0),
+      apply([{ blockId: 'b3', expectedText: 'inserted', text: 'changed', type: 'replace_text' }]),
+      verify(0),
+      apply([{ blockId: 'b3', expectedText: 'changed', type: 'remove_block' }]),
+      verify(0),
+    ]),
+    script('refusals', material([paragraphOf('b1', 'aa aa'), { children: [{ text: '' }], id: 'm1', assetId: 'a1', type: 'img' }]), [
+      apply([]),
+      apply([{ expectedText: 'aa', text: 'b', type: 'replace_text' }]),
+      apply([{ blockId: 'b1', expectedText: 'aa', text: 'b', type: 'replace_text' }]),
+      apply([{ blockId: 'b1', expectedText: '', text: 'b', type: 'replace_text' }]),
+      apply([{ blockId: 'zz', expectedText: 'aa', text: 'b', type: 'replace_text' }]),
+      apply([{ blockId: 'm1', expectedText: 'x', text: 'b', type: 'replace_text' }]),
+      apply([{ blockId: 'm1', expectedText: '', type: 'remove_block' }]),
+      apply([{ afterBlockId: null, blocks: [], type: 'insert_block' }]),
+      apply([{ afterBlockId: null, blocks: [{ children: [], type: 'p' }], type: 'insert_block' }]),
+      apply([{ afterBlockId: null, blocks: [{ id: 'x', type: 'p' }], type: 'insert_block' }]),
+      apply([{ afterBlockId: null, blocks: [{ children: [{ text: '' }], id: 'x', type: 'video' }], type: 'insert_block' }]),
+      apply([{ afterBlockId: null, blocks: [paragraphOf('b1', 'dup')], type: 'insert_block' }]),
+      apply([{ blockId: 'b1', expectedText: 'aa aa', type: 'remove_block' }]),
+      apply([{ expectedValue: '', nodeType: 'p', property: 'align', type: 'set_property', value: 'center' }]),
+      apply([{ expectedValue: 'x', nodeType: 'p', property: 'align', type: 'set_property', value: 'left' }]),
+      apply([{ expectedValue: '', nodeType: 'quiz', property: 'title', type: 'set_property', value: 'x' }]),
+      apply([{ node: paragraphOf('b1', 'x'), nodeId: 'b1', parentType: 'quiz', type: 'replace_child' }]),
+      apply([{ blockId: 'b1', expectedText: 'a'.repeat(200_001), text: 'x', type: 'replace_text' }]),
+      apply([{ blockId: 'b1', expectedText: 'aa', offset: 3, text: 'XY', type: 'replace_text' }]),
+      apply([{ blockId: 'b1', expectedText: 'aa', offset: 1, text: 'XY', type: 'replace_text' }]),
+    ]),
+  ];
+}
+
+/** Text source scenarios from editCommands.test.ts. */
+function textScenarios() {
+  const source = (text: string) => {
+    const document = newDoc(1);
+    document.getText('source').insert(0, text);
+    return Y.encodeStateAsUpdate(document);
+  };
+  const apply =
+    (commands: DocumentCommand[]): Step =>
+    (document, _records, action) => {
+      Object.assign(action, { commands, kind: 'apply' });
+      const outcome = applyTextCommands(document, commands);
+      return { ...outcome, text: textOf(document) };
+    };
+  const verify =
+    (index: number): Step =>
+    (document, records, action) => {
+      Object.assign(action, { kind: 'verify', of: index });
+      return verifyTextGuards(document, (records[index].ok as { guards: GuardTarget[] }).guards);
+    };
+  const edit =
+    (change: (text: Y.Text) => void): Step =>
+    (document, _records, action) => {
+      action.kind = 'edit';
+      change(document.getText('source'));
+      return textOf(document);
+    };
+  return [
+    script('text replace and guards', source('one two three'), [
+      apply([{ expectedText: 'two', text: '2', type: 'replace_text' }]),
+      verify(0),
+      edit((text) => text.insert(5, '!')),
+      verify(0),
+      edit((text) => text.delete(4, 1)),
+      verify(0),
+    ]),
+    script('text batch', source('AAA BBB'), [
+      apply([
+        { expectedText: 'BBB', text: 'CCCCCC', type: 'replace_text' },
+        { expectedText: 'AAA', text: '', type: 'replace_text' },
+      ]),
+      verify(0),
+    ]),
+    script('text moved span', source('one two three'), [
+      apply([{ expectedText: 'two', text: '2', type: 'replace_text' }]),
+      edit((text) => text.insert(0, 'prefix ')),
+      verify(0),
+      edit((text) => text.insert(11, '!')),
+      verify(0),
+      edit((text) => text.delete(text.toString().indexOf('2'), 1)),
+      verify(0),
+    ]),
+    script('text refusals', source('abcdef aa aa'), [
+      apply([
+        { expectedText: 'bcd', text: 'X', type: 'replace_text' },
+        { expectedText: 'aX', text: 'y', type: 'replace_text' },
+      ]),
+      apply([{ expectedText: 'aa', text: 'b', type: 'replace_text' }]),
+      apply([{ blockId: 'x', expectedText: 'cde', text: 'é😀', type: 'replace_text' }]),
+      apply([{ afterBlockId: null, blocks: [], type: 'insert_block' }]),
+      apply([{ expectedText: 'f', text: 'x'.repeat(200_001), type: 'replace_text' }]),
+    ]),
+  ];
+}
+
+/** Random agent edits on the fixture notes, each followed by its guard check
+ * and its Undo. */
+function randomEditScripts(seed: number) {
+  const random = seeded(seed);
+  const pick = <T>(list: readonly T[]) =>
+    list[Math.floor(random() * list.length)];
+  const words = ['alpha', 'β', 'é', '😀', ' ', 'x', '"q"', '\\', '\n', 'cell'];
+  const word = () =>
+    Array.from({ length: 1 + Math.floor(random() * 4) }, () => pick(words)).join('');
+  const bases: { name: string; value: unknown[] }[] = [
+    ...seedNotes.slice(0, 4).map((note) => ({ name: note.id, value: withIds(note.value) })),
+    ...Object.entries(smallNotes).map(([name, value]) => ({ name, value: withIds(value) })),
+    ...embeddedSeeds.slice(0, 3).map((seed) => ({ name: seed.id, value: withIds([seed.block]) })),
+  ];
+  const scripts = [];
+  for (const base of bases) {
+    const steps: Step[] = [];
+    for (let round = 0; round < 12; round += 1) {
+      steps.push((document, _records, action) => {
+        const value = (yTextToSlateElement(document.get('content', Y.XmlText)) as { children: Record<string, unknown>[] }).children;
+        const block = pick(value);
+        const id = typeof block.id === 'string' ? block.id : '';
+        const text = Node.string(block as never);
+        const roll = random();
+        let commands: DocumentCommand[];
+        if (roll < 0.5 && text.length > 0) {
+          // A unique span: grow from a random point until it occurs once.
+          let from = Math.floor(random() * text.length);
+          if (/[\uDC00-\uDFFF]/.test(text[from] ?? '')) from -= 1;
+          let to = from + 1;
+          while (to < text.length && text.split(text.slice(from, to)).length > 2) to += 1;
+          if (/[\uD800-\uDBFF]/.test(text[to - 1] ?? '')) to += 1;
+          commands = [{ blockId: id, expectedText: text.slice(from, to), text: random() < 0.2 ? '' : word(), type: 'replace_text' }];
+        } else if (roll < 0.7) {
+          commands = [{ afterBlockId: random() < 0.2 ? null : id, blocks: [{ children: [{ text: word() }, { bold: true, text: word() }], id: `n${round}${Math.floor(random() * 1e6)}`, type: 'p' }], type: 'insert_block' }];
+        } else if (roll < 0.85) {
+          commands = [{ blockId: id, expectedText: text, type: 'remove_block' }];
+        } else if (roll < 0.95) {
+          commands = [{ expectedValue: typeof block.align === 'string' ? block.align : '', nodeType: String(block.type), property: 'align', type: 'set_property', value: pick(['center', 'right', '']) }];
+        } else {
+          commands = [{ blockId: id, expectedText: 'not there', text: 'x', type: 'replace_text' }];
+        }
+        Object.assign(action, { commands, kind: 'apply' });
+        return applyMaterialCommands(document, commands);
+      });
+      const index = steps.length - 1;
+      steps.push((document, records, action) => {
+        const done = records[index]?.ok as { guards: GuardTarget[] } | undefined;
+        if (!done) return 'skipped';
+        Object.assign(action, { kind: 'verify', of: index });
+        return verifyMaterialGuards(document, done.guards);
+      });
+      steps.push((document, records, action) => {
+        const done = records[index]?.ok as { inverse: DocumentCommand[] } | undefined;
+        if (!done || random() < 0.5) return 'kept';
+        Object.assign(action, { kind: 'undo', of: index });
+        return applyMaterialCommands(document, done.inverse);
+      });
+    }
+    scripts.push(script(`random ${base.name}`, Y.encodeStateAsUpdate(docWithValue(base.value, 1)), steps));
+  }
+  return scripts;
+}
+
+function editsFamily() {
+  write(
+    'edits',
+    {
+      material: [...editScenarios(), ...randomEditScripts(21)],
+      text: textScenarios(),
+    },
+    true
+  );
+}
+
+/* --------------------------------------------- children, replace-block, inspect */
+
+function childrenFamily() {
+  const random = seeded(31);
+  const pick = <T>(list: readonly T[]) =>
+    list[Math.floor(random() * list.length)];
+  const quizBlock = (id: string, materialId: string) => ({
+    children: [{ text: '' }],
+    id,
+    materialId,
+    refKind: 'quiz',
+    type: 'material_ref',
+  });
+  const image = (id: string, assetId: string) => ({
+    assetId,
+    children: [{ text: '' }],
+    id,
+    type: 'img',
+  });
+  const para = (text: string) => ({
+    children: [{ text }],
+    id: `p-${text}`,
+    type: 'p',
+  });
+  const cases: unknown[] = [];
+  const record = (
+    name: string,
+    before: unknown[],
+    edit: (root: Y.XmlText, document: Y.Doc) => void,
+    answer: (plan: { assetIds: string[]; blocks: { blockId: string }[] }) => {
+      assets: [string, string][];
+      blocks: [string, string][];
+    }
+  ) => {
+    const document = docWithValue(before, 1);
+    const state = Y.encodeStateAsUpdate(document);
+    const writer = docFromState(state, 2);
+    edit(writer.get('content', Y.XmlText), writer);
+    const update = Y.encodeStateAsUpdate(
+      writer,
+      Y.encodeStateVector(document)
+    );
+    Y.applyUpdate(document, update);
+    const writes = childWrites(document, update);
+    const plan = writes ? planChildren(document, writes) : null;
+    const chosen = plan ? answer(plan) : { assets: [], blocks: [] };
+    const map = {
+      assets: new Map(chosen.assets),
+      blocks: new Map(chosen.blocks),
+    };
+    const after = Y.encodeStateAsUpdate(document);
+    cases.push({
+      answer: chosen,
+      applied: editCall(after, 7, (copy) => applyChildren(copy, map)),
+      kept: plan ? keptIds(plan, map) : null,
+      name,
+      plan,
+      state: b64(after),
+      update: b64(update),
+      writes: writes && {
+        assetIds: writes.assetIds,
+        blocks: [...writes.blocks].map((block) => block.getAttribute('id')),
+      },
+    });
+  };
+  const append = (inserted: unknown[]) => (root: Y.XmlText) =>
+    root.applyDelta([
+      { retain: root.length },
+      ...slateNodesToInsertDelta(inserted as never),
+    ]);
+  const none = () => ({ assets: [], blocks: [] });
+  record(
+    'writes, not typing',
+    [para('intro'), quizBlock('b1', 'mat_own')],
+    append([quizBlock('b2', 'mat_other'), image('i1', 'asset_other')]),
+    none
+  );
+  record('typing', [para('intro')], append([para('more')]), none);
+  record(
+    'overwrite',
+    [para('intro'), quizBlock('b1', 'mat_own')],
+    (root) => {
+      (root.toDelta()[1].insert as Y.XmlText).setAttribute(
+        'materialId',
+        'mat_next'
+      );
+    },
+    (plan) => ({
+      assets: [],
+      blocks: plan.blocks.map((b) => [b.blockId, 'mat_copy']),
+    })
+  );
+  record(
+    'copies',
+    [quizBlock('b1', 'mat_own')],
+    append([
+      quizBlock('b2', 'mat_own'),
+      quizBlock('b3', 'mat_other'),
+      quizBlock('b4', 'mat_other'),
+    ]),
+    (plan) => ({
+      assets: [],
+      blocks: plan.blocks.map((b, i) => [b.blockId, i === 0 ? '' : `mat_c${i}`]),
+    })
+  );
+  record(
+    'repoint and drop',
+    [para('intro')],
+    append([
+      quizBlock('b1', 'mat_other'),
+      quizBlock('b2', 'mat_purged'),
+      image('i1', 'asset_other'),
+      image('i2', 'asset_own'),
+      image('i3', 'asset_gone'),
+    ]),
+    () => ({
+      assets: [
+        ['asset_other', 'asset_copy'],
+        ['asset_own', 'asset_own'],
+        ['asset_gone', ''],
+      ],
+      blocks: [
+        ['b1', 'mat_copy'],
+        ['b2', ''],
+      ],
+    })
+  );
+  record(
+    'inline link elsewhere',
+    [
+      {
+        children: [
+          { text: 'see ' },
+          { children: [{ text: 'link' }], type: 'a', url: 'https://x.test' },
+          { text: ' end' },
+        ],
+        id: 'l1',
+        type: 'p',
+      },
+    ],
+    append([image('i1', 'asset_other')]),
+    () => ({ assets: [['asset_other', 'asset_other']], blocks: [] })
+  );
+  for (let round = 0; round < 30; round += 1) {
+    const base = withIds(pick(seedNotes).value);
+    const extra = Array.from({ length: 1 + Math.floor(random() * 4) }, (_, i) =>
+      random() < 0.5
+        ? quizBlock(`r${round}-${i}`, pick(['mat_a', 'mat_b', 'mat_c']))
+        : image(`i${round}-${i}`, pick(['asset_a', 'asset_b']))
+    );
+    record(`random ${round}`, base, append(extra), (plan) => ({
+      assets: plan.assetIds.map((id) => [id, pick(['', id, `${id}_copy`])]),
+      blocks: plan.blocks.map((b) => [b.blockId, pick(['', 'mat_a', 'mat_x'])]),
+    }));
+  }
+  write('children', cases, true);
+}
+
+function commandsFamily() {
+  const random = seeded(41);
+  const cases: unknown[] = [];
+  const record = (
+    name: string,
+    value: unknown[],
+    command: Record<string, unknown>
+  ) => {
+    const state = Y.encodeStateAsUpdate(docWithValue(value, 1));
+    cases.push({
+      command,
+      name,
+      result: editCall(state, 8, (document) =>
+        applyCollaborationCommand(document, command as never)
+      ),
+      state: b64(state),
+    });
+  };
+  const base = {
+    actorUserId: 'u_editor',
+    materialId: 'material-1',
+    room: 'material:material-1:schema:1',
+    type: 'replace-block',
+  };
+  const first = { children: [{ text: 'Keep me' }], id: 'first', type: 'p' };
+  const quiz = {
+    children: [{ children: [{ text: 'Old' }], id: 'q1', type: 'p' }],
+    id: 'quiz',
+    type: 'quiz',
+  };
+  const replacement = {
+    ...quiz,
+    children: [{ children: [{ text: 'New' }], id: 'q1', type: 'p' }],
+  };
+  record('replace', [first, quiz], {
+    ...base,
+    expectedBlock: quiz,
+    replacementBlock: replacement,
+  });
+  record('stale', [first], {
+    ...base,
+    expectedBlock: { ...first, children: [{ text: 'Old' }] },
+    replacementBlock: first,
+  });
+  record('same', [first], {
+    ...base,
+    expectedBlock: first,
+    replacementBlock: first,
+  });
+  record('revision stale', [first], {
+    ...base,
+    expectedBlock: { ...first, id: ' first ' },
+    expectedRevision: 3,
+    replacementBlock: first,
+  });
+  record('id changed', [first], {
+    ...base,
+    expectedBlock: first,
+    replacementBlock: { ...first, id: 'other' },
+  });
+  record('type changed', [first], {
+    ...base,
+    expectedBlock: first,
+    replacementBlock: { ...first, type: 'h1' },
+  });
+  record('no children', [first], {
+    ...base,
+    expectedBlock: first,
+    replacementBlock: { id: 'first', type: 'p' },
+  });
+  record('missing', [first], {
+    ...base,
+    expectedBlock: { ...first, id: 'gone' },
+    replacementBlock: { ...first, id: 'gone' },
+  });
+  record(
+    'nested target',
+    [
+      {
+        children: [{ children: [{ text: 'cell' }], id: 'inner', type: 'p' }],
+        id: 'outer',
+        type: 'blockquote',
+      },
+    ],
+    {
+      ...base,
+      expectedBlock: { children: [{ text: 'cell' }], id: 'inner', type: 'p' },
+      replacementBlock: {
+        children: [{ text: 'cell!' }, { bold: true, text: 'b' }],
+        id: 'inner',
+        type: 'p',
+      },
+    }
+  );
+  for (const note of seedNotes.slice(0, 5)) {
+    const value = withIds(note.value) as Record<string, unknown>[];
+    for (let round = 0; round < 4; round += 1) {
+      const target = value[Math.floor(random() * value.length)];
+      record(`${note.id} ${round}`, value, {
+        ...base,
+        expectedBlock: target,
+        replacementBlock: {
+          ...target,
+          children: [
+            { text: `replaced ${round}` },
+            { italic: true, text: 'é😀' },
+          ],
+        },
+      });
+    }
+  }
+  write('commands', cases, true);
+}
+
+function inspectFamily() {
+  const values: [string, unknown[]][] = [
+    ...seedNotes.map((note): [string, unknown[]] => [
+      note.id,
+      withIds(note.value),
+    ]),
+    ...Object.entries(smallNotes),
+    ...embeddedSeeds.map((seed): [string, unknown[]] => [
+      seed.id,
+      withIds([seed.block]),
+    ]),
+  ];
+  write(
+    'inspect',
+    values.map(([name, value]) => {
+      const document = docWithValue(value, 1);
+      return {
+        blocks: inspectMaterial(document),
+        name,
+        state: b64(Y.encodeStateAsUpdate(document)),
+      };
+    }),
+    true
+  );
+}
+
 /* ------------------------------------------------------------------- main */
 
 const finals: { name: string; state: Uint8Array }[] = [];
@@ -1253,6 +1951,10 @@ if (families.has('multi'))
   for (const seed of [1, 2, 3, 4, 5, 6]) multiWriterFamily(seed, 600);
 if (families.has('projection')) projectionFamily(finals);
 if (families.has('validation')) validationFamily();
+if (families.has('edits')) editsFamily();
+if (families.has('children')) childrenFamily();
+if (families.has('commands')) commandsFamily();
+if (families.has('inspect')) inspectFamily();
 if (families.has('bootstrap')) {
   // `load`'s first open: materials.content into a fresh document.
   const values: [string, unknown[]][] = [
@@ -1270,18 +1972,3 @@ if (families.has('bootstrap')) {
     true
   );
 }
-
-export {
-  applyChildren,
-  applyCollaborationCommand,
-  applyMaterialCommands,
-  applyTextCommands,
-  childWrites,
-  EditError,
-  inspectMaterial,
-  keptIds,
-  planChildren,
-  verifyMaterialGuards,
-  verifyTextGuards,
-};
-export type { DocumentCommand, GuardTarget, Operation };

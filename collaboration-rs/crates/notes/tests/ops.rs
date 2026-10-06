@@ -96,9 +96,34 @@ fn slate_operations_and_room_checks_match_the_node_server() {
                 };
                 steps += 1;
                 with_update += usize::from(update.is_some());
-                if ours == update {
-                    same_bytes += 1;
+                let same = match (&ours, &update) {
+                    (Some(a), Some(b)) => a == b || common::same_update(a, b),
+                    (a, b) => a == b,
+                };
+                if same {
+                    same_bytes += usize::from(update.is_some());
                 } else {
+                    if std::env::var("OPS_DEBUG")
+                        .is_ok_and(|k| k == ops.iter().map(kind).collect::<Vec<_>>().join("+"))
+                    {
+                        if let (Some(a), Some(b)) = (&ours, &update) {
+                            let (x, y) = (common::update_form(a), common::update_form(b));
+                            eprintln!("{at} ops {}", step["ops"]);
+                            for (o, t) in x.0.iter().zip(y.0.iter()).filter(|(o, t)| o != t).take(2)
+                            {
+                                eprintln!(
+                                    "  rust: {o:?}
+  js:   {t:?}"
+                                );
+                            }
+                            if x.0.len() != y.0.len() {
+                                eprintln!("  struct counts {} vs {}", x.0.len(), y.0.len());
+                            }
+                            if x.1 != y.1 {
+                                eprintln!("  deletes {:?} vs {:?}", x.1, y.1);
+                            }
+                        }
+                    }
                     let kinds: Vec<&str> = ops.iter().map(kind).collect();
                     *byte_mismatches.entry(kinds.join("+")).or_insert(0) += 1;
                     // The next step starts from the JS client's own state.
@@ -129,7 +154,7 @@ fn slate_operations_and_room_checks_match_the_node_server() {
             }
         }
         report.push(format!(
-            "{family}: {steps} writer steps ({with_update} with an update), {same_bytes} byte-identical; {}",
+            "{family}: {steps} writer steps, {same_bytes} of {with_update} updates with the same items; {}",
             room.summary()
         ));
     }

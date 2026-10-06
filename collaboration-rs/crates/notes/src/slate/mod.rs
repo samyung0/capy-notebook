@@ -3,6 +3,8 @@
 //! and (in submodules) the transforms and core normalization the edit
 //! commands call. Text offsets are UTF-16 units, as in JS.
 
+pub mod editor;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 

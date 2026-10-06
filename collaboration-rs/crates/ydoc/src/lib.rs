@@ -345,20 +345,133 @@ pub mod guards {
     }
 
     /// `rangeGuard`: runs of one shared type clipped to `[start, end)` plus
-    /// `pad` neighbour units each side.
+    /// `pad` neighbour units each side. Gaps need a neighbour to be observable
+    /// at all; a present target is guarded on its own so edits beside it keep
+    /// its Undo valid. Tombstones and format items count only strictly inside
+    /// the padded window; a nested type inside the target carries its full
+    /// guard.
     pub fn range_guard<T: yrs::ReadTxn>(
         _txn: &T,
-        _branch: &yrs::branch::Branch,
-        _start: u32,
-        _end: u32,
-        _pad: u32,
+        branch: &yrs::branch::Branch,
+        start: u32,
+        end: u32,
+        pad: u32,
     ) -> Vec<GuardRun> {
-        todo!("rust-notes")
+        let low = start as i64 - pad as i64;
+        let from = low.max(0);
+        let to = (end + pad) as i64;
+        let mut runs = Vec::new();
+        let mut index: i64 = 0;
+        let mut next = branch.start();
+        while let Some(item) = next {
+            next = item.right();
+            let id = item.id();
+            if item.is_deleted() || !item.is_countable() {
+                if index > low && index < to {
+                    runs.push(GuardRun {
+                        client: id.client.get(),
+                        clock: id.clock,
+                        deleted: item.is_deleted(),
+                        format: !item.is_deleted(),
+                        len: item.len(),
+                        nested: None,
+                    });
+                }
+                continue;
+            }
+            let item_start = index;
+            let item_end = index + item.len() as i64;
+            index = item_end;
+            if item_end <= from {
+                continue;
+            }
+            if item_start >= to {
+                break;
+            }
+            let clip_from = from.max(item_start) - item_start;
+            let clip_to = to.min(item_end) - item_start;
+            // Padding neighbours count by identity only; their content is not ours.
+            let nested = if item_start >= start as i64 && item_start < end as i64 {
+                nested_of(item).map(|b| full_runs(&b))
+            } else {
+                None
+            };
+            runs.push(GuardRun {
+                client: id.client.get(),
+                clock: id.clock + clip_from as u32,
+                deleted: false,
+                format: false,
+                len: (clip_to - clip_from) as u32,
+                nested,
+            });
+        }
+        normalize(runs)
     }
 
     /// `fullGuard`: every run of a type, nested types included.
-    pub fn full_guard<T: yrs::ReadTxn>(_txn: &T, _branch: &yrs::branch::Branch) -> Vec<GuardRun> {
-        todo!("rust-notes")
+    pub fn full_guard<T: yrs::ReadTxn>(_txn: &T, branch: &yrs::branch::Branch) -> Vec<GuardRun> {
+        full_runs(branch)
+    }
+
+    fn nested_of(item: yrs::block::ItemPtr) -> Option<yrs::branch::BranchPtr> {
+        match item.content() {
+            yrs::block::ItemContent::Type(branch) => {
+                Some(yrs::branch::BranchPtr::from(branch.as_ref()))
+            }
+            _ => None,
+        }
+    }
+
+    fn full_runs(branch: &yrs::branch::Branch) -> Vec<GuardRun> {
+        let mut runs = Vec::new();
+        let mut next = branch.start();
+        while let Some(item) = next {
+            next = item.right();
+            let id = item.id();
+            let deleted = item.is_deleted();
+            let countable = item.is_countable();
+            runs.push(GuardRun {
+                client: id.client.get(),
+                clock: id.clock,
+                deleted,
+                format: !deleted && !countable,
+                len: item.len(),
+                nested: if !deleted && countable {
+                    nested_of(item).map(|b| full_runs(&b))
+                } else {
+                    None
+                },
+            });
+        }
+        normalize(runs)
+    }
+
+    /// Yjs merges adjacent items of one client lazily, so two identical
+    /// documents can split their runs differently: contiguous plain runs
+    /// merge, which makes the signature independent of that split.
+    fn normalize(runs: Vec<GuardRun>) -> Vec<GuardRun> {
+        let mut out: Vec<GuardRun> = Vec::with_capacity(runs.len());
+        for run in runs {
+            if let Some(last) = out.last_mut() {
+                if last.nested.is_none()
+                    && run.nested.is_none()
+                    && last.client == run.client
+                    && last.clock + last.len == run.clock
+                    && last.deleted == run.deleted
+                    && last.format == run.format
+                {
+                    last.len += run.len;
+                    continue;
+                }
+            }
+            out.push(run);
+        }
+        out
+    }
+
+    /// `guardsEqual`.
+    pub fn guards_equal(a: &[GuardRun], b: &[GuardRun]) -> bool {
+        a == b
     }
 }
 
