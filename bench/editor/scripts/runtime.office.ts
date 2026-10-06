@@ -207,12 +207,15 @@ declare global {
     __officeBench: { clicks: number[]; messages: RuntimeMessage[] };
     __officeKeys: { keys: number[]; presents: number[] };
     __officeKeysInstalled?: boolean;
+    __officeUpdateReceipts: number[];
     __officeRemote: {
-      arrivals: number[];
+      ends: number[];
+      frames: number[];
       longTasks: { duration: number; start: number }[];
-      paints: number[];
+      posted: number[];
       presents: number[];
-      taskEnds: number[];
+      /** Receipts before this probe (installHostProbe's array). */
+      receivedFrom: number;
     };
     __officeWasm: WeakRef<WebAssembly.Memory>[];
     __officeWasmModules: {
@@ -310,6 +313,20 @@ async function installHostProbe(page: Page) {
       () => probe.clicks.push(performance.now()),
       true
     );
+    // In the runtime frame: when each host `update` reaches it. Registered
+    // here, before any page script, this listener runs before the runtime's
+    // own (a window's message listeners run in registration order, capturing
+    // or not: measured on 2026-10-06), so it marks the receipt.
+    const receipts: number[] = [];
+    window.__officeUpdateReceipts = receipts;
+    window.addEventListener('message', (event) => {
+      if (
+        window.parent !== window &&
+        event.source === window.parent &&
+        (event.data as { type?: unknown })?.type === 'update'
+      )
+        receipts.push(performance.now());
+    });
     window.addEventListener('message', (event) => {
       const data = event.data as Partial<RuntimeMessage>;
       if (
@@ -397,11 +414,16 @@ const RUNNER = { cpuModel: cpus()[0]?.model ?? 'unknown', cpus: cpus().length };
 
 const browserSessions = new WeakMap<Browser, Promise<CDPSession>>();
 
+/** Per CDP call to a worker; one that does not answer is reported missing. */
+const WORKER_CALL_MS = 5000;
+
 /**
  * Each dedicated worker of the page's context (the DOCX engine and its
  * helpers): JS heap after a GC and its WASM memories, overall and per module.
  * Playwright gives workers no CDP session, so a browser session attaches to
- * each one unflattened and talks through Target.sendMessageToTarget.
+ * each one unflattened and talks through Target.sendMessageToTarget. A
+ * worker that ends or stops answering on the way is listed as missing, never
+ * waited on (every call is bounded, a detach fails what is pending).
  */
 async function workerHeaps(page: Page) {
   const browser = page.context().browser();
@@ -423,14 +445,19 @@ async function workerHeaps(page: Page) {
   );
   const out = [];
   for (const worker of workers) {
+    const named = {
+      name: worker.title,
+      url: worker.url.split('/').at(-1) ?? worker.url,
+    };
     let sessionId: string;
     try {
       ({ sessionId } = await session.send('Target.attachToTarget', {
         flatten: false,
         targetId: worker.targetId,
       }));
-    } catch {
-      // Ended since the listing: nothing left to count.
+    } catch (error) {
+      // Ended since the listing.
+      out.push({ ...named, missing: String(error).slice(0, 200) });
       continue;
     }
     const replies = new Map<
@@ -438,6 +465,7 @@ async function workerHeaps(page: Page) {
       (reply: { error?: { message: string }; result?: unknown }) => void
     >();
     let nextId = 0;
+    let detached = false;
     const onMessage = (event: { message: string; sessionId?: string }) => {
       if (event.sessionId !== sessionId) return;
       const reply = JSON.parse(event.message) as {
@@ -447,22 +475,42 @@ async function workerHeaps(page: Page) {
       };
       if (reply.id !== undefined) replies.get(reply.id)?.(reply);
     };
+    const onDetached = (event: { sessionId: string }) => {
+      if (event.sessionId !== sessionId) return;
+      detached = true;
+      for (const reply of [...replies.values()])
+        reply({ error: { message: 'worker ended' } });
+    };
     session.on('Target.receivedMessageFromTarget', onMessage);
+    session.on('Target.detachedFromTarget', onDetached);
     const send = <T>(method: string, params: object = {}) =>
       new Promise<T>((resolve, reject) => {
+        if (detached) return reject(new Error(`${method}: worker ended`));
         const id = ++nextId;
-        replies.set(id, (reply) => {
+        const timer = setTimeout(
+          () =>
+            settle({ error: { message: `no answer in ${WORKER_CALL_MS} ms` } }),
+          WORKER_CALL_MS
+        );
+        const settle = (reply: {
+          error?: { message: string };
+          result?: unknown;
+        }) => {
+          clearTimeout(timer);
           replies.delete(id);
           if (reply.error)
             reject(new Error(`${method}: ${reply.error.message}`));
           else resolve(reply.result as T);
-        });
+        };
+        replies.set(id, settle);
         session
           .send('Target.sendMessageToTarget', {
             message: JSON.stringify({ id, method, params }),
             sessionId,
           })
-          .catch(reject);
+          .catch((error: unknown) =>
+            settle({ error: { message: String(error) } })
+          );
       });
     // Every live object with the prototype `expression`, mapped in the worker.
     const query = async <T>(expression: string, map: string) => {
@@ -503,26 +551,43 @@ async function workerHeaps(page: Page) {
           names: Object.keys(instance.exports),
         })`
       );
+      const wasmMB = mb(memories.reduce((sum, bytes) => sum + bytes, 0));
+      const wasmModules = byModule(instances);
       out.push({
+        ...named,
         jsMB: mb(usage.usedSize),
-        name: worker.title,
-        url: worker.url.split('/').at(-1) ?? worker.url,
-        wasmMB: mb(memories.reduce((sum, bytes) => sum + bytes, 0)),
-        wasmModules: byModule(instances),
+        // Memories no module exports (created in JS and imported), or, when
+        // negative, one memory exported by several instances.
+        unattributedMB: unattributed(wasmMB, wasmModules),
+        wasmMB,
+        wasmModules,
       });
+    } catch (error) {
+      out.push({ ...named, missing: String(error).slice(0, 200) });
     } finally {
       session.off('Target.receivedMessageFromTarget', onMessage);
-      await session.send('Target.detachFromTarget', { sessionId });
+      session.off('Target.detachedFromTarget', onDetached);
+      // Already gone when the worker ended.
+      if (!detached)
+        await session
+          .send('Target.detachFromTarget', { sessionId })
+          .catch(() => undefined);
     }
   }
   return out;
 }
 
+const unattributed = (total: number, modules: Record<string, number>) =>
+  Math.round(
+    (total - Object.values(modules).reduce((sum, value) => sum + value, 0)) *
+      10
+  ) / 10;
+
 /**
  * The page isolate's retained heap after a GC (runtime frame included), the
  * WASM linear memory still alive in any frame, and the workers' (above).
  */
-async function heap(page: Page) {
+async function heap(page: Page, { workers: withWorkers = true } = {}) {
   const session = await cdpSession(page);
   await session.send('HeapProfiler.collectGarbage');
   const usage = await session.send('Runtime.getHeapUsage');
@@ -553,7 +618,10 @@ async function heap(page: Page) {
     wasm += live.bytes;
     modules.push(...live.modules);
   }
-  const workers = await workerHeaps(page);
+  // Not before a budgeted step: a forced GC and object queries in the
+  // engine worker would change what the budgets were calibrated under.
+  const workers = withWorkers ? await workerHeaps(page) : null;
+  const wasmModules = byModule(modules);
   return {
     // ArrayBuffers and external strings; WASM memory is not among them.
     backingMB: mb(usage.backingStorageSize),
@@ -562,28 +630,34 @@ async function heap(page: Page) {
     jsMB: mb(usage.usedSize),
     // The frames' WASM (the page's main thread), in all and per module.
     wasmMB: mb(wasm),
-    wasmModules: byModule(modules),
+    wasmModules,
+    unattributedWasmMB: unattributed(mb(wasm), wasmModules),
+    // null: not read at this step (see above).
     workers,
-    workersJsMB:
-      Math.round(workers.reduce((sum, worker) => sum + worker.jsMB, 0) * 10) /
-      10,
+    workersJsMB: workers &&
+      sum(workers.map((worker) => ('jsMB' in worker ? worker.jsMB : 0))),
+    workersMissing:
+      workers && workers.filter((worker) => 'missing' in worker).length,
     workersWasmMB:
-      Math.round(
-        workers.reduce((sum, worker) => sum + worker.wasmMB, 0) * 10
-      ) / 10,
+      workers &&
+      sum(workers.map((worker) => ('wasmMB' in worker ? worker.wasmMB : 0))),
   };
 }
 
 type Heap = Awaited<ReturnType<typeof heap>>;
 
+const sum = (values: number[]) =>
+  Math.round(values.reduce((total, value) => total + value, 0) * 10) / 10;
 const delta = (a: number, b: number) => Math.round((a - b) * 10) / 10;
+const deltaOf = (a: number | null, b: number | null) =>
+  a === null || b === null ? null : delta(a, b);
 const growth = (to: Heap, from: Heap) => ({
   backingMB: delta(to.backingMB, from.backingMB),
   documents: to.documents - from.documents,
   jsMB: delta(to.jsMB, from.jsMB),
   wasmMB: delta(to.wasmMB, from.wasmMB),
-  workersJsMB: delta(to.workersJsMB, from.workersJsMB),
-  workersWasmMB: delta(to.workersWasmMB, from.workersWasmMB),
+  workersJsMB: deltaOf(to.workersJsMB, from.workersJsMB),
+  workersWasmMB: deltaOf(to.workersWasmMB, from.workersWasmMB),
 });
 
 async function openWorkspace(page: Page) {
@@ -869,21 +943,31 @@ async function remoteEdit(page: Page, fixture: Fixture, edit: number) {
 }
 
 /**
- * Remote edits one at a time, each to its paint in the open editor. In the
- * runtime frame: the host's `update` message's arrival (its event
- * timestamp), the end of the task that delivered it (the synchronous apply),
- * the first task after the next frame (XLSX/PPTX) or the next
- * `docx-pages-presented` (DOCX), and the long tasks in between.
+ * Remote edits one at a time, each to its frame in the open editor. In the
+ * runtime frame, per edit:
+ * - `queue`: from the host's postMessage (the event's timestamp) to the
+ *   frame starting to handle it: the rest of the host's task, which shares
+ *   the renderer's main thread, and the wait for the frame's turn;
+ * - `apply`: from that receipt to the end of the runtime's synchronous
+ *   handler: the receipt is taken by a listener the init script registered
+ *   before the runtime's (installHostProbe), the end by one registered after
+ *   it. For XLSX and PPTX that is the editor's apply; for DOCX only the
+ *   hand-off to the engine worker (`applyScope`);
+ * - `toFrame`: from receipt to the next `docx-pages-presented` (DOCX, a real
+ *   paint) or to the first task after the next animation frame (XLSX, PPTX:
+ *   the next frame, which an asynchronous render could miss; `frameSignal`);
+ * - `longTask`: main-thread long tasks from the postMessage to that frame.
  */
 async function timeRemoteEdits(page: Page, fixture: Fixture) {
   const frame = runtimeFrame(page);
   await frame.evaluate((format) => {
     const probe: Window['__officeRemote'] = {
-      arrivals: [],
+      ends: [],
+      frames: [],
       longTasks: [],
-      paints: [],
+      posted: [],
       presents: [],
-      taskEnds: [],
+      receivedFrom: window.__officeUpdateReceipts.length,
     };
     window.__officeRemote = probe;
     const nextTask = (then: () => void) => {
@@ -891,26 +975,20 @@ async function timeRemoteEdits(page: Page, fixture: Fixture) {
       channel.port1.onmessage = then;
       channel.port2.postMessage(null);
     };
-    // Arrival is the event's own timestamp: the runtime's listener, which
-    // applies the update, runs before this one (registered first on the
-    // window), so performance.now() here would already be after the apply.
-    window.addEventListener(
-      'message',
-      (event) => {
-        if ((event.data as { type?: unknown })?.type !== 'update') return;
-        const index = probe.arrivals.push(event.timeStamp) - 1;
-        nextTask(() => {
-          probe.taskEnds[index] = performance.now();
-          if (format !== 'docx')
-            requestAnimationFrame(() =>
-              nextTask(() => {
-                probe.paints[index] = performance.now();
-              })
-            );
-        });
-      },
-      true
-    );
+    const isUpdate = (event: MessageEvent) =>
+      (event.data as { type?: unknown })?.type === 'update';
+    // After the runtime's listener: the end of its synchronous handling.
+    window.addEventListener('message', (event) => {
+      if (!isUpdate(event)) return;
+      probe.posted.push(event.timeStamp);
+      const index = probe.ends.push(performance.now()) - 1;
+      if (format !== 'docx')
+        requestAnimationFrame(() =>
+          nextTask(() => {
+            probe.frames[index] = performance.now();
+          })
+        );
+    });
     document.addEventListener('docx-pages-presented', () =>
       probe.presents.push(performance.now())
     );
@@ -928,12 +1006,12 @@ async function timeRemoteEdits(page: Page, fixture: Fixture) {
     await frame
       .waitForFunction(
         ({ edit, format }) => {
-          const { arrivals, paints, presents } = window.__officeRemote;
-          const arrival = arrivals[edit];
-          if (arrival === undefined) return false;
+          const { frames, presents, receivedFrom } = window.__officeRemote;
+          const at = window.__officeUpdateReceipts[receivedFrom + edit];
+          if (at === undefined) return false;
           return format === 'docx'
-            ? presents.some((at) => at > arrival)
-            : paints[edit] !== undefined;
+            ? presents.some((present) => present > at)
+            : frames[edit] !== undefined;
         },
         { edit, format: fixture.format },
         { polling: 50, timeout: 30_000 }
@@ -942,22 +1020,24 @@ async function timeRemoteEdits(page: Page, fixture: Fixture) {
     await page.waitForTimeout(500);
   }
   const edits = await frame.evaluate((format) => {
-    const { arrivals, longTasks, paints, presents, taskEnds } =
+    const { ends, frames, longTasks, posted, presents, receivedFrom } =
       window.__officeRemote;
-    return arrivals.map((arrival, index) => {
-      const painted =
+    const received = window.__officeUpdateReceipts.slice(receivedFrom);
+    return received.map((at, index) => {
+      const framed =
         format === 'docx'
-          ? presents.find((at) => at > arrival)
-          : paints[index];
-      const until = painted ?? taskEnds[index] ?? arrival;
+          ? presents.find((present) => present > at)
+          : frames[index];
+      const until = framed ?? ends[index] ?? at;
       return {
-        // Long tasks that started between the arrival and the paint.
+        applyMs: ends[index] === undefined ? null : ends[index] - at,
         longTaskMs: longTasks
-          .filter(({ start }) => start >= arrival - 1 && start < until)
+          .filter(
+            ({ start }) => start >= posted[index] - 1 && start < until
+          )
           .reduce((sum, { duration }) => sum + duration, 0),
-        paintMs: painted === undefined ? null : painted - arrival,
-        taskMs:
-          taskEnds[index] === undefined ? null : taskEnds[index] - arrival,
+        queueMs: at - posted[index],
+        toFrameMs: framed === undefined ? null : framed - at,
       };
     });
   }, fixture.format);
@@ -970,16 +1050,18 @@ async function timeRemoteEdits(page: Page, fixture: Fixture) {
     };
   };
   return {
+    apply: stats(edits.map((edit) => edit.applyMs)),
+    applyScope:
+      fixture.format === 'docx' ? 'handoff only' : 'synchronous apply',
     // Remote updates the runtime received (one per edit).
     arrived: edits.length,
     edits: REMOTE_EDITS,
-    // Main-thread long tasks from the arrival to the paint.
+    frameSignal:
+      fixture.format === 'docx' ? 'docx-pages-presented' : 'next frame',
     longTask: stats(edits.map((edit) => edit.longTaskMs)),
-    // Arrival to the painted result.
-    paint: stats(edits.map((edit) => edit.paintMs)),
-    // The task that delivered the update: the synchronous apply.
-    task: stats(edits.map((edit) => edit.taskMs)),
-    unpainted: edits.filter((edit) => edit.paintMs === null).length,
+    queue: stats(edits.map((edit) => edit.queueMs)),
+    toFrame: stats(edits.map((edit) => edit.toFrameMs)),
+    unframed: edits.filter((edit) => edit.toFrameMs === null).length,
     updateBytes: Math.max(0, ...updateBytes),
   };
 }
@@ -1058,7 +1140,8 @@ for (const fixture of FIXTURES) {
 
     const open = await openInView(page, fixture);
     await page.waitForTimeout(2000);
-    const openHeap = await heap(page);
+    // Page only until the budgeted steps are done (heap(), workers).
+    const openHeap = await heap(page, { workers: false });
 
     const mode = page.getByRole('button', { name: m.material_mode() });
     await expect(mode).toBeEnabled({ timeout: 60_000 });
@@ -1072,7 +1155,7 @@ for (const fixture of FIXTURES) {
     const edit = { ...replica, firstPaintMs: painted.ms };
     // Let the edit frame's idle work (mirror, glyph cache) settle first.
     await page.waitForTimeout(5000);
-    const editHeap = await heap(page);
+    const editHeap = await heap(page, { workers: false });
     const typing = await typeAndTime(page, fixture);
     await page.waitForTimeout(2000);
     const typingHeap = await heap(page);
@@ -1151,6 +1234,10 @@ for (const fixture of FIXTURES) {
       () => mode.click()
     );
     await page.waitForTimeout(5000);
+    // Report-only case: the workers' memory after View to Edit is read here,
+    // where no budget follows.
+    const editHeap = await heap(page);
+    await page.waitForTimeout(2000);
     const remote = await timeRemoteEdits(page, fixture);
     await page.waitForTimeout(2000);
     const errors = await page.evaluate(() =>
@@ -1165,7 +1252,7 @@ for (const fixture of FIXTURES) {
         budget: 'report-only',
         errors,
         fixture: fixture.name,
-        heap: await heap(page),
+        heap: { afterEdit: editHeap, afterRemoteEdits: await heap(page) },
         remote,
         runner: RUNNER,
       },
@@ -1173,7 +1260,7 @@ for (const fixture of FIXTURES) {
     );
     expect(errors).toEqual([]);
     expect(remote.arrived).toBe(REMOTE_EDITS);
-    expect(remote.unpainted).toBe(0);
+    expect(remote.unframed).toBe(0);
     // The sheet's own reading of the peer's last value.
     if (fixture.format === 'xlsx') {
       const frame = runtimeFrame(page);

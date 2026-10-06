@@ -1,0 +1,21 @@
+# Layered after docker-compose.stress.yml by stress.ts only (the Office
+# storage-charging bench and the capacity harness use the shared overlay
+# without it).
+services:
+  # The client uploads with presigned PUTs from the host, so the fake S3's
+  # plain HTTP port is published (it checks no signatures: the URL's path
+  # and query are all it needs).
+  s3:
+    ports:
+      - "127.0.0.1:${STRESS_S3_PORT:?set by stress.ts}:9000"
+
+  # STRESS_COLLABORATION_IMAGE runs the same scenarios against another server
+  # implementation; stress.ts refuses it without E2E_PREBUILT_IMAGES=true, so
+  # compose never builds the Node service under that name. It gets the same
+  # environment and must trust the fake S3's certificate: Node through
+  # NODE_EXTRA_CA_CERTS (docker-compose.stress.yml), OpenSSL and
+  # native-roots clients through SSL_CERT_FILE.
+  collaboration:
+    image: ${STRESS_COLLABORATION_IMAGE:-capy-e2e-collaboration:local}
+    environment:
+      SSL_CERT_FILE: /stress/tls/cert.pem
