@@ -54,6 +54,13 @@ to publish content-addressed backend images once and make both environments
 pull the same digests; do that when the deployment exists and registry access
 can be tested.
 
+The gateway (`server`) and the collaboration service always deploy together
+from one revision, as the Compose stack does (collaboration waits for a healthy
+`server`). Do not roll back or pin one without the other: their internal
+routes change in step. A collaboration service ahead of its gateway can, for
+example, misread the gateway's `epoch-reset` answer and keep a discarded room
+refused until the gateway catches up.
+
 ---
 
 ## 1. DNS & hostnames
@@ -1686,6 +1693,13 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://example.com      # root on the
    `ops_assistant_turns` exposes only an assistant message id, owning user id,
    lifecycle status, trace id, and timestamp. Do not replace that view grant
    with `SELECT` on `messages`.
+
+   `edit_incidents` holds ids, kinds, reason tokens and sizes, never content.
+   Migration 0065 grants `capy_ops` `SELECT` on it where the role already
+   exists, and this file grants it where the role is created later. Ops
+   requires the grant only where the table exists, so a secondary database
+   (`OPS_INGEST_UAT_DATABASE_URL`, `OPS_INGEST_LOCAL_DATABASE_URL`) that has not
+   run 0065 yet does not stop ops at boot.
    `touch_operator_seen`, `request_reconciliation`, and
    `record_registry_audit` are `SECURITY DEFINER`.
    The read/auth role cannot update `operators` directly. The admin-actions

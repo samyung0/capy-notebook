@@ -101,7 +101,7 @@ again:
 | --- | --- | --- |
 | `slow_save` (warn) | a material or source save took 2 s or more (`SLOW_SAVE_MS`, `health.ts`), failed ones included | `room`, `kind` (`material`, `source`), `ms`, `ok`, `bytes` (the saved state) |
 | `slow_office_call` (warn) | an Office engine call ran 2 s or more (`SLOW_OFFICE_CALL_MS`, `officeRuntime.ts`), a timeout included | `method`, `ms` (running), `wait_ms` (queued before it), `bytes` (its byte arguments: the base or exported file) |
-| `room_load` / `room_unload` (info) | a room loaded or unloaded on this instance | `room`, `bytes` (applied update bytes since the load, the load included: an estimate that never subtracts deletions), `ms` (load only) |
+| `room_load` / `room_unload` (info) | a room loaded or unloaded on this instance | `room`, `bytes` (applied update bytes since the load, the load included: an estimate that never subtracts deletions; left out when nothing was applied), `ms` (load only) |
 
 PostHog gets nothing from editing.
 
@@ -133,9 +133,10 @@ markers), or one naming nobody, sized by the discarded state (exact where the
 refused save held it, else the room's estimate); when the discard then moves
 the file to its next epoch (a note to its next room schema), an `epoch_reset`
 row follows, written only by the instance whose move landed. The discarding
-instance puts its kind and reason in the eviction it broadcasts, so another
-instance holding the room records its own writers under the same kind. A
-client that was away during the discard later reports its draft as
+instance puts its kind and reason in the eviction it publishes, so another
+instance holding the room records its own writers under the same kind; the
+copy sent to the room's clients leaves it out (it may name another account's
+lock). A client that was away during the discard later reports its draft as
 `other_epoch_draft`.
 
 The `users` a kind counts is an upper bound: a writer's sync leaves a
@@ -149,10 +150,10 @@ rule decides whether a discard moves the epoch).
 | `slow_save_limit` | collaboration | five minutes of failed saves discarded a source room | the last failure: `engine_transient`, `pending`, `backoff`, `http_503` | room state |
 | `over_limit` | collaboration | a note update or store past the document limits, a source update or save past the 100 MB state cap | the limit code, `source_state_bytes` | room state, or the update |
 | `discard_unsaved` | collaboration | a discard with unsaved state for any other cause: lost write access at a store (read-only for the storage limit or a frozen account, revoked, the file gone, a locked account) or an outbox eviction; and a writer's update refused for lost write access | `storage_quota_exceeded`, `account_over_quota`, `read_only`, `forbidden`, `not_found`, an account-lock code, the outbox event type | room state, or the update |
-| `discard_unsaved` | browser | a connect or reconnect refused read-only discarded this session's unsaved edits; drafts deleted because the account lost the file (at open, on a refused reconnect, or by the once-per-load sweep) | `read_only`, `forbidden`, `not_found` | unsaved bytes, or the drafts deleted |
+| `discard_unsaved` | browser | a connect or reconnect refused read-only discarded this session's unsaved edits; drafts deleted because the account lost the file (at open, on a refused reconnect, by the once-per-load sweep, or the other sessions' drafts after a save refused for lost access, whose own edits the service recorded) | `read_only`, `forbidden`, `not_found` | unsaved bytes, or the drafts deleted |
 | `epoch_reset` | collaboration | that discard's epoch (or room schema) move landed | the discard's kind | NULL, user NULL |
-| `step2_unplaced` | collaboration | the second unplaceable sync step 2 in a row closed a connection; once per user and loaded room, since a stuck client reconnects about every 30 s | NULL | the step 2 |
-| `other_epoch_draft` | browser | a draft group of another epoch or room entered copy-only recovery, once per group: found at open (`reopen`), or a live source session whose file moved on (`epoch_changed`) or paused (`paused`). The group's rows keep a `reported` mark until Reload deletes them | as listed | the drafts |
+| `step2_unplaced` | collaboration | the second unplaceable sync step 2 in a row closed a connection; once per user and room until that user's update in the room is placed, across room unloads (a stuck client reconnects about every 30 s, often into a reloaded room), per instance and process, at most 10,000 pairs held | NULL | the step 2 |
+| `other_epoch_draft` | browser | a draft group of another epoch or room entered copy-only recovery, once per group: found at open (`reopen`), or a live source session whose file moved on (`epoch_changed`) or paused (`paused`), which marks every row of its lineage, adopted ones included. The rows keep a `reported` mark until Reload deletes them; a group with an unmarked row (newer edits over rows a kept epoch left marked) is a new episode and is reported | as listed | the drafts |
 | `draft_unrestorable` | browser | a stored group nothing could draw was dropped ("Some unsaved edits from your last session couldn't be restored.") | `base_missing` | the drafts |
 | `draft_storage_failed` | browser | a draft write failed (the `offline-unstored` banner offline); a failure while offline is sent after the reconnect | `quota`, `unavailable`, `write` | unsaved bytes |
 | `unconfirmed_edit` | browser | the save-delay warning (25 s for notes, 45 s for sources), once until a receipt arrives | NULL | unsaved bytes |
@@ -170,8 +171,11 @@ only logged); the file is not access-checked, so drafts of a file the account
 lost are reported too. The draft store (`src/lib/editDrafts.ts`) reports
 storage failures, offline episodes, lost drafts and recovery groups; the note
 and source editors report the rest. A tab closed while offline never reports
-that episode; its drafts come back on the next open. Unsaved bytes are what
-the drafts hold: a note's update rows, a source's last whole state.
+that episode; its drafts come back on the next open, except when storage
+failed: a storage failure held offline is lost with the tab or the editor,
+and so are the edits it could not store. Unsaved bytes are what the drafts
+hold, adopted rows no receipt covered yet included: a note's update rows, a
+source's last whole state.
 
 Operator queries, as `capy_ops`:
 

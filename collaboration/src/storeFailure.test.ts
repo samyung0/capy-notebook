@@ -7,6 +7,7 @@ import { CollaborationAuthorizationError } from './persistence.js';
 import { SourceRequestError } from './sourceDocuments.js';
 import {
   handlePermanentStoreFailure,
+  lostAccessField,
   lostSourceAccess,
   pendingSourceSave,
   SLOW_SAVE_LIMIT_MS,
@@ -112,11 +113,20 @@ describe('source save failures', () => {
     );
     expect(lostSourceAccess(new SourceRequestError(404, 'gone'))).toBe(true);
     // The account itself is suspended: the browser keeps its drafts.
-    expect(
-      lostSourceAccess(
-        new SourceRequestError(403, 'account unavailable', 'account_suspended')
-      )
-    ).toBe(false);
+    const locked = new SourceRequestError(
+      403,
+      'account unavailable',
+      'account_suspended'
+    );
+    expect(lostSourceAccess(locked)).toBe(false);
+    // The browser learns which loss, to report the drafts it deletes.
+    expect(lostAccessField(new SourceRequestError(404, 'gone'))).toEqual({
+      lostAccess: 'not_found',
+    });
+    expect(lostAccessField(new SourceRequestError(403, 'revoked'))).toEqual({
+      lostAccess: 'forbidden',
+    });
+    expect(lostAccessField(locked)).toEqual({});
   });
 });
 
