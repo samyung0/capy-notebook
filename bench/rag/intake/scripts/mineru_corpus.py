@@ -140,7 +140,7 @@ def convert(middle: dict, outline: Outline) -> tuple[list[dict], dict]:
     for page in middle["pages"]:
         page_idx = int(page["page_idx"])
         page_start = len(blocks)
-        for block in sorted(page["blocks"], key=lambda b: b.get("index", 0)):
+        for block in sorted(page.get("blocks") or [], key=lambda b: b.get("index", 0)):
             kind = block["type"]
             counts[kind] = counts.get(kind, 0) + 1
             if kind in SKIP:

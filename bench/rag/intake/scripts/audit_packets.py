@@ -56,16 +56,28 @@ def live_texts(conn, book: str, page: int) -> list[dict]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--live-url", help="live library connection string (through the tunnel); fills the reviewed side")
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="fill the reviewed side from the live library: LIBRARY_DATABASE_URL in .env.local, reached through the tunnel on 15433",
+    )
     parser.add_argument("--book")
     args = parser.parse_args()
     sample = json.loads(PAGES.read_text(encoding="utf-8"))["books"]
     manifest = {b["id"]: b for b in json.loads((ROOT / "lab/knowledge/books.json").read_text(encoding="utf-8"))["books"]}
     conn = None
-    if args.live_url:
-        import psycopg
+    if args.live:
+        from urllib.parse import urlsplit, urlunsplit
 
-        conn = psycopg.connect(args.live_url)
+        import psycopg
+        from dotenv import dotenv_values
+
+        url = dotenv_values(ROOT / ".env.local").get("LIBRARY_DATABASE_URL")
+        if not url:
+            raise SystemExit("LIBRARY_DATABASE_URL is not in .env.local")
+        parts = urlsplit(url)
+        credentials = f"{parts.username}:{parts.password}@" if parts.username else ""
+        conn = psycopg.connect(urlunsplit(parts._replace(netloc=f"{credentials}127.0.0.1:15433")))
     index = []
     for book, entry in sample.items():
         if args.book and book != args.book:
@@ -88,6 +100,13 @@ def main() -> None:
                 packet["texts"]["reviewed"] = live_texts(conn, book, page)
             packet_path.write_text(json.dumps(packet, ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n")
             index.append({"book": book, "page": page, "sides": sorted(packet["texts"]), "packet": str(packet_path.relative_to(ROOT)).replace("\\", "/")})
+    # The index covers every packet on disk, not only this run's books.
+    index = []
+    for packet_path in sorted(OUT.glob("*/p*.json")):
+        if packet_path.name.endswith(".verdict.json"):
+            continue
+        packet = json.loads(packet_path.read_text(encoding="utf-8"))
+        index.append({"book": packet["book"], "page": packet["page"], "sides": sorted(packet["texts"]), "packet": str(packet_path.relative_to(ROOT)).replace("\\", "/")})
     (OUT / "index.json").write_text(json.dumps(index, indent=1) + "\n", encoding="utf-8", newline="\n")
     done = {}
     for item in index:

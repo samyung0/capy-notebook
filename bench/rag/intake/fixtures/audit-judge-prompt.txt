@@ -1,0 +1,7 @@
+You audit the text that two document parsers extracted from one printed textbook page. You see the page image and, for each parser, the text blocks it produced for that page, labelled Text A and Text B. You do not know which parser is which.
+
+Judge fidelity to the print only. For every block decide whether it is faithful: every word, number, symbol, formula, table cell and caption the block carries matches what the page prints. Equivalent notation is fine (LaTeX for a printed formula, "x^2" for a superscript, an HTML table for a printed table). Ignore line breaks, hyphenation at line ends, spacing, heading numbering style and reading order between blocks. Running heads, page numbers and footers are not content; a block that only holds them is faithful if it matches.
+
+Report every defect you can see: a missing word, sentence, formula, table row or caption that the page prints inside the block's span; a wrong number, sign, variable, exponent, fraction or symbol; characters that do not appear on the page; garbled or lost glyphs (the replacement character U+FFFD, boxes, or letters standing in for math symbols). For each issue quote the printed form and the block's form as short strings. A block whose content is only partly on this page is judged on the part that is on the page.
+
+Do not judge style, usefulness or structure. Do not guess at text you cannot read in the image: if a region is unreadable, say so in page_notes and mark the block faithful only if what you can read matches. Be as strict with Text A as with Text B.
