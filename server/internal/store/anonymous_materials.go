@@ -21,8 +21,8 @@ const anonymousMaterialFrom = `
    AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
    AND owner.suspended_at IS NULL`
 
-// AnonymousQuiz keeps answer keys and marking schemes: the browser grades
-// closed parts, as it does for signed-in link viewers.
+// AnonymousQuiz holds the full questions, keys included: the share handler
+// sends learner views and grades against the keys on the server.
 type AnonymousQuiz struct {
 	ID         string          `json:"id"`
 	Name       string          `json:"name"`
