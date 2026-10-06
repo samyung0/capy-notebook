@@ -649,10 +649,10 @@ export async function noteAndQuizImages(run: UatRun) {
 /**
  * Flashcard front images, the quiz image rule for cards: one front image per
  * card, shrunk under 2 MB in the browser and uploaded only on Save; removing
- * it and saving deletes the row. Not on main yet, so the card dialog's image
- * controls (the file input and its "Remove image") are assumed here and need
- * confirming when they land; the grid, "Add card" tile and "Edit card N/M"
- * dialog follow the flashcards rework.
+ * it and saving deletes the row. Labels from the flashcards session
+ * (2026-10-06): "New card" with an "Add card" submit, "Edit card N/M" with
+ * "Save", the image's hidden file input behind "Add image", and "Replace" /
+ * "Remove" once set. A fixme until card images are deployed to UAT.
  */
 export async function cardImages(run: UatRun) {
   const workspaceId = await workspace(run, 'card-images');
@@ -667,11 +667,11 @@ export async function cardImages(run: UatRun) {
       uploads.push(request.url());
   });
   await page.goto(`${run.env.appUrl}/flashcards/${setId}/edit`);
-  // The edit page is a grid of front tiles plus a dashed "Add card" tile; a
-  // tile opens the "Edit card N/M" dialog, and changes stay staged until the
-  // page's Save.
+  // The edit page is a grid of front tiles plus a dashed "Add card" tile,
+  // which opens "New card"; a front tile opens "Edit card N/M". Dialogs only
+  // stage changes until the page's Save.
   await page.getByRole('button', { exact: true, name: 'Add card' }).click();
-  const dialog = page.getByRole('dialog', { name: /^Edit card/ });
+  let dialog = page.getByRole('dialog', { name: 'New card' });
   await dialog.getByRole('textbox', { name: 'Front' }).fill('Salt marsh');
   await dialog
     .getByRole('textbox', { name: 'Back' })
@@ -684,7 +684,7 @@ export async function cardImages(run: UatRun) {
   await expect(dialog.locator('img[src^="blob:"]').first()).toBeVisible({
     timeout: 60_000,
   });
-  await dialog.getByRole('button', { exact: true, name: 'Save' }).click();
+  await dialog.getByRole('button', { exact: true, name: 'Add card' }).click();
   assert.deepEqual(uploads, []);
   await pageSave(page);
   const [asset] = await run.poll(
@@ -697,7 +697,8 @@ export async function cardImages(run: UatRun) {
   await run.record('blob', asset.object_path, { assetId: asset.id, setId });
   await aged(run, setId, [asset.id]);
   await page.getByRole('button', { exact: true, name: 'Salt marsh' }).click();
-  await dialog.getByRole('button', { name: 'Remove image' }).click();
+  dialog = page.getByRole('dialog', { name: /^Edit card/ });
+  await dialog.getByRole('button', { exact: true, name: 'Remove' }).click();
   await dialog.getByRole('button', { exact: true, name: 'Save' }).click();
   await pageSave(page);
   await run.poll(
