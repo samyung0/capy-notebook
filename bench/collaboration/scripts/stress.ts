@@ -74,11 +74,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { createClerkClient } from '@clerk/backend';
-import {
-  HocuspocusProvider,
-  type HocuspocusProviderConfiguration,
-} from '@hocuspocus/provider';
 import * as Y from 'yjs';
+import { RoomProvider } from '../../../src/features/collaboration/roomProvider';
+import { CollabSocket } from '../../../src/features/collaboration/socket';
 import { buildBiologyLoadTestValue } from '../../../src/mocks/noteContent/loadTest';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -871,10 +869,12 @@ class OriginWebSocket extends WebSocket {
     super(url, { headers: { Origin: target.origin }, protocols } as unknown as string[]);
   }
 }
+// The room provider opens its sockets with the global constructor.
+globalThis.WebSocket = OriginWebSocket;
 
 interface Peer {
   doc: Y.Doc;
-  provider: HocuspocusProvider;
+  provider: RoomProvider;
 }
 
 // Joins at most this many peers at once on UAT, so a step ramps up instead of
@@ -903,9 +903,18 @@ async function join(room: Room, name: string): Promise<Peer> {
   const doc = new Y.Doc(room.kind === 'office' ? { meta: { formattingCleanup: false } } : {});
   const first = await room.token();
   let token: string | null = first.token;
-  const provider = new HocuspocusProvider({
+  let synced: () => void = () => undefined;
+  let failed: (error: Error) => void = () => undefined;
+  const provider = new RoomProvider({
     document: doc,
     name: first.room,
+    onAuthenticationFailed: ({ reason }) =>
+      failed(new Error(`${name}: authentication failed: ${reason}`)),
+    onSynced: ({ state }) => {
+      if (state) synced();
+    },
+    // Each peer is a browser of its own: its own socket.
+    socket: CollabSocket.create(first.url),
     // A reconnect asks the API for a fresh token, as the app does.
     token: async () => {
       try {
@@ -918,17 +927,15 @@ async function join(room: Room, name: string): Promise<Peer> {
       }
     },
     url: first.url,
-    WebSocketPolyfill: OriginWebSocket,
-  } as HocuspocusProviderConfiguration);
+  });
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`${name} did not sync in 60 s`)), 60_000);
-    provider.on('synced', () => {
+    synced = () => {
       clearTimeout(timer);
       resolve();
-    });
-    provider.on('authenticationFailed', ({ reason }: { reason: string }) =>
-      reject(new Error(`${name}: authentication failed: ${reason}`))
-    );
+    };
+    failed = reject;
+    provider.connect();
   });
   return { doc, provider };
 }
@@ -947,8 +954,8 @@ function percentile(values: number[], p: number) {
   return Math.round(sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)]);
 }
 
-const status = ({ provider }: Peer) =>
-  (provider.configuration.websocketProvider as { status: string }).status;
+// Joined to the room: a peer that left (dropped offline) is disconnected.
+const status = ({ provider }: Peer) => (provider.isConnected ? 'connected' : 'disconnected');
 const online = (peer: Peer) => status(peer) === 'connected';
 const settledPeer = (peer: Peer) =>
   online(peer) && peer.provider.isSynced && !peer.provider.hasUnsyncedChanges;

@@ -36,6 +36,8 @@ export interface RoomProviderConfig {
   onStateless?: (event: { payload: string }) => void;
   onSynced?: (event: { state: boolean }) => void;
   onUnsyncedChanges?: (event: { number: number }) => void;
+  /** The socket to join on; the tab's shared one for the URL by default. */
+  socket?: CollabSocket;
   token: () => Promise<string>;
   url: string;
 }
@@ -64,7 +66,7 @@ export class RoomProvider implements ChannelHandler {
     this.config = config;
     this.document = config.document;
     this.awareness = config.awareness ?? new Awareness(config.document);
-    this.socket = CollabSocket.for(config.url);
+    this.socket = config.socket ?? CollabSocket.for(config.url);
     this.document.on('update', this.documentUpdate);
     this.awareness.on('update', this.awarenessUpdate);
   }

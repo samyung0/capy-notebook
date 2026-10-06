@@ -24,6 +24,11 @@ const IDLE_CLOSE_MS = 5000;
 export class CollabSocket {
   private static readonly sockets = new Map<string, CollabSocket>();
 
+  /** A socket of its own (a load generator's peer), not the tab's shared one. */
+  static create(url: string): CollabSocket {
+    return new CollabSocket(url);
+  }
+
   static for(url: string): CollabSocket {
     let socket = CollabSocket.sockets.get(url);
     if (!socket) {
