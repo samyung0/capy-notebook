@@ -1017,27 +1017,47 @@ test('a PPTX citation on a zoomed slide scrolls into view', async ({
       x: node.scrollLeft + node.clientWidth / 2,
       y: node.scrollTop + node.clientHeight / 2,
     }));
-  await scroller.evaluate((node) => node.scrollTo(0, 0));
+  const position = () =>
+    scroller.evaluate((node) => [node.scrollLeft, node.scrollTop]);
+  const cite = () =>
+    page.evaluate(() => {
+      const iframe = document.querySelector<HTMLIFrameElement>(
+        'iframe[src*="office-runtime"]'
+      );
+      if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
+      iframe.contentWindow.postMessage(
+        {
+          citation: { quote: 'UAT_RUN_MARKER' },
+          type: 'set-citation',
+          version: 8,
+        },
+        new URL(iframe.src).origin
+      );
+    });
   // Slide 1's UAT_RUN_MARKER line, centred across the 960x540 slide in a box
-  // from y 333 to 485, is out of view at 200% from the top-left.
-  await page.evaluate(() => {
-    const iframe = document.querySelector<HTMLIFrameElement>(
-      'iframe[src*="office-runtime"]'
-    );
-    if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
-    iframe.contentWindow.postMessage(
-      {
-        citation: { quote: 'UAT_RUN_MARKER' },
-        type: 'set-citation',
-        version: 8,
-      },
-      new URL(iframe.src).origin
-    );
-  });
-  await expect.poll(async () => (await centre()).y).toBeGreaterThan(666);
-  const { x, y } = await centre();
-  expect(Math.abs(x - 960)).toBeLessThan(40);
-  expect(y).toBeLessThan(970);
+  // from y 333 to 485, is out of view at 200% from the top-right.
+  await scroller.evaluate((node) => node.scrollTo(node.scrollWidth, 0));
+  await cite();
+  await expect
+    .poll(async () => {
+      const { x, y } = await centre();
+      return Math.abs(x - 960) < 40 && y > 666 && y < 970;
+    })
+    .toBe(true);
+
+  // A citation already in view leaves the scroll alone.
+  await scroller.evaluate((node) => node.scrollBy(0, 150));
+  const shifted = await position();
+  await cite();
+  await page.waitForTimeout(1500);
+  expect(await position()).toEqual(shifted);
+
+  // Each highlight scrolls once: a repaint (the window resizing) keeps where
+  // the reader scrolled to.
+  await scroller.evaluate((node) => node.scrollTo(0, 0));
+  await page.setViewportSize({ height: 790, width: 1270 });
+  await page.waitForTimeout(1500);
+  expect(await position()).toEqual([0, 0]);
 });
 
 // A paused editor is read-only in every pause state; a replaced session is

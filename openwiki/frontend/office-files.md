@@ -1161,7 +1161,7 @@ edit mode, `zoomMenu`) and Show speaker notes (`pptxMenus.ts`); a level above
 the fit scrolls the slide from its edges in an inner scroller
 (`.pptx-viewer-scroll`, as the editor's canvas host), so the Notes button
 keeps its corner; a new citation highlight is centred in that scroller once
-it is painted, as the DOCX viewer scrolls to its highlight. Present is a header
+it is painted, unless it is already in view. Present is a header
 split button in both modes; the viewer presents through pptx-react's
 `PresentationOverlay`, exported alone (with the notes window store and
 `PRESENT_ITEMS`) as `@betteroffice/pptx-react/presentation` so the viewer loads
