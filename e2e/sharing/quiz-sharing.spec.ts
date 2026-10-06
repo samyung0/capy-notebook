@@ -115,7 +115,14 @@ test.describe('quiz sharing', () => {
       apiEndsWith(`/api/quizzes/${seed.linkQuiz.id}`)
     );
     await otherPage.goto(`/share/quizzes/${seed.linkQuiz.id}`);
-    expect((await linkRes).status()).toBe(200);
+    const linkQuiz = await linkRes;
+    expect(linkQuiz.status()).toBe(200);
+    // Viewing and taking read no answer key.
+    const { questions } = await linkQuiz.json();
+    expect(questions.length).toBeGreaterThan(0);
+    expect(JSON.stringify(questions)).not.toMatch(
+      /"(correct|accepted|pairs|solution|markscheme)"/
+    );
     await expect(otherPage.getByText(seed.linkQuiz.prompt)).toBeVisible();
     await expect(
       otherPage.getByRole('button', { name: 'Clone' })
@@ -178,9 +185,7 @@ test.describe('quiz sharing', () => {
       expect(clone.status()).toBe(401);
       const attempt = await anonymousApi.post(
         `/api/quizzes/${quiz.id}/attempts`,
-        {
-          data: { answers: {}, correct: 0, questions: [], total: 1 },
-        }
+        { data: { answers: {} } }
       );
       expect(attempt.status()).toBe(401);
     }
@@ -192,14 +197,7 @@ test.describe('quiz sharing', () => {
   }) => {
     const res = await otherApi.post(
       `/api/quizzes/${seed.privateQuiz.id}/attempts`,
-      {
-        data: {
-          answers: {},
-          correct: 0,
-          questions: [],
-          total: 1,
-        },
-      }
+      { data: { answers: {} } }
     );
     expect(res.status()).toBe(404);
   });

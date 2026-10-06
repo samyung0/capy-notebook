@@ -112,7 +112,8 @@ func (a *api) registerBank(api huma.API) {
 	reg(api, "GET", "/api/bank/syllabus", "bankSyllabus", tag, "Read the exam syllabus", 200, a.bankSyllabus)
 	reg(api, "GET", "/api/bank/topics/{topicId}/questions", "bankQuestions", tag, "List topic questions", 200, a.bankList)
 	reg(api, "GET", "/api/bank/questions", "bankQuestionBatch", tag, "Read bank questions by id", 200, a.bankBatch)
-	reg(api, "GET", "/api/bank/questions/{id}", "bankQuestion", tag, "Read a bank question", 200, a.bankQuestion)
+	reg(api, "GET", "/api/bank/questions/{id}", "bankQuestion", tag, "Read a bank question without answers", 200, a.bankQuestion)
+	reg(api, "GET", "/api/bank/questions/{id}/edit", "bankQuestionForEdit", tag, "Read a bank question with its answers to edit it", 200, a.bankQuestionForEdit)
 	regWithMaxBody(api, "PUT", "/api/bank/questions/{id}", "saveBankQuestion", tag, "Edit a bank question", 200, materialRequestMaxBytes, a.bankSave)
 	reg(api, "PUT", "/api/bank/questions/{id}/review", "reviewBankQuestion", tag, "Set the review marker", 200, a.bankReview)
 	reg(api, "POST", "/api/bank/questions/{id}/comments", "commentBankQuestion", tag, "Email a question comment", 204, a.bankComment)
@@ -166,20 +167,24 @@ func (a *api) bankList(ctx context.Context, in *bankTopicInput) (*bankListOutput
 	}
 	return &bankListOutput{Body: bankListBody{Questions: rows}}, nil
 }
-func (a *api) bankDetail(ctx context.Context, id string, editor bool) (*bankDetailOutput, error) {
+
+// bankDetail reads one question; keys only for an editor's edit read and the
+// edit routes' own responses.
+func (a *api) bankDetail(ctx context.Context, id string, editor, keys bool) (*bankDetailOutput, error) {
 	body, err := a.cfg.Bank.Get(ctx, id)
 	if err != nil {
 		return nil, bankHTTPError(err)
 	}
 	details := []bank.Detail{body}
-	if err := a.bankPresent(ctx, details, editor); err != nil {
+	if err := a.bankPresent(ctx, details, editor, keys); err != nil {
 		return nil, err
 	}
 	return &bankDetailOutput{Body: details[0]}, nil
 }
 
-// bankPresent adds attribution and reviewer names, and hides answers from learners.
-func (a *api) bankPresent(ctx context.Context, details []bank.Detail, editor bool) error {
+// bankPresent adds attribution and reviewer names, and hides answers unless
+// keys is set. Editor is the grant, which shows the Edit mode toggle.
+func (a *api) bankPresent(ctx context.Context, details []bank.Detail, editor, keys bool) error {
 	ids := []string{}
 	for i := range details {
 		body := &details[i]
@@ -194,7 +199,7 @@ func (a *api) bankPresent(ctx context.Context, details []bank.Detail, editor boo
 				return bankHTTPError(bank.ErrUnavailable)
 			}
 		}
-		if !editor {
+		if !keys {
 			body.Question = questions.LearnerView(body.Question)
 		}
 		if body.ReviewedBy != "" {
@@ -213,6 +218,9 @@ func (a *api) bankPresent(ctx context.Context, details []bank.Detail, editor boo
 	}
 	return nil
 }
+
+// bankBatch and bankQuestion are View mode reads, answer-free for everyone,
+// editors included.
 func (a *api) bankBatch(ctx context.Context, in *bankBatchInput) (*bankBatchOutput, error) {
 	editor, err := a.bankAccess(ctx, false)
 	if err != nil {
@@ -222,7 +230,7 @@ func (a *api) bankBatch(ctx context.Context, in *bankBatchInput) (*bankBatchOutp
 	if err != nil {
 		return nil, bankHTTPError(err)
 	}
-	if err := a.bankPresent(ctx, details, editor); err != nil {
+	if err := a.bankPresent(ctx, details, editor, false); err != nil {
 		return nil, err
 	}
 	return &bankBatchOutput{Body: bankBatchBody{Questions: details}}, nil
@@ -232,7 +240,15 @@ func (a *api) bankQuestion(ctx context.Context, in *bankQuestionInput) (*bankDet
 	if err != nil {
 		return nil, err
 	}
-	return a.bankDetail(ctx, in.ID, editor)
+	return a.bankDetail(ctx, in.ID, editor, false)
+}
+
+// bankQuestionForEdit is Edit mode's read, for bank editors only.
+func (a *api) bankQuestionForEdit(ctx context.Context, in *bankQuestionInput) (*bankDetailOutput, error) {
+	if _, err := a.bankAccess(ctx, true); err != nil {
+		return nil, err
+	}
+	return a.bankDetail(ctx, in.ID, true, true)
 }
 func (a *api) bankSave(ctx context.Context, in *bankSaveInput) (*bankDetailOutput, error) {
 	if _, err := a.bankAccess(ctx, true); err != nil {
@@ -247,7 +263,7 @@ func (a *api) bankSave(ctx context.Context, in *bankSaveInput) (*bankDetailOutpu
 	if err := a.cfg.Bank.Save(ctx, in.ID, userID(ctx), in.Body.Question, in.Body.UpdatedAt); err != nil {
 		return nil, bankHTTPError(err)
 	}
-	return a.bankDetail(ctx, in.ID, true)
+	return a.bankDetail(ctx, in.ID, true, true)
 }
 func (a *api) bankReview(ctx context.Context, in *bankReviewInput) (*bankDetailOutput, error) {
 	if _, err := a.bankAccess(ctx, true); err != nil {
@@ -256,7 +272,7 @@ func (a *api) bankReview(ctx context.Context, in *bankReviewInput) (*bankDetailO
 	if err := a.cfg.Bank.Review(ctx, in.ID, userID(ctx), in.Body.Reviewed); err != nil {
 		return nil, bankHTTPError(err)
 	}
-	return a.bankDetail(ctx, in.ID, true)
+	return a.bankDetail(ctx, in.ID, true, true)
 }
 func (a *api) bankAsset(ctx context.Context, in *bankAssetInput) (*bankAssetOutput, error) {
 	if _, err := a.bankAccess(ctx, true); err != nil {

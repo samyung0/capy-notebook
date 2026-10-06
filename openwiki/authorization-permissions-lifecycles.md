@@ -145,20 +145,22 @@ do: `GET /p/quizzes/{token}`, `GET /p/quizzes/{token}/assets/{assetId}` and
 API without the visitor's IP, which the per-IP caps need. Go verifies the
 token again on `/api/public/...` because the API hostname is public, and reads
 visibility and the owner's lifecycle in the same statement as the content.
-Quiz reads keep answer keys and marking schemes, as signed-in link viewers
-already receive them; flashcard reads carry written cards only (a new set's
+Quiz reads are answer-free (`questions.LearnerView`), like every read for
+viewing; grading returns the keys for the attempt just graded and stores
+nothing on the server. Flashcard reads carry written cards only (a new set's
 blank starter card is left out), never the owner's study state. An image is served only when it belongs to the quiz and appears
-in its current content. Unsharing takes up to five minutes to clear the edge.
+in its current content, checked against the full content so a worked
+solution's images resolve after grading. Unsharing takes up to five minutes to clear the edge.
 
 These pages use the workspace summary's public layout and header
 (`src/components/app/PublicHeader.tsx`), which reads the session client side:
 a skeleton while Clerk loads, then sign-in and sign-up or the profile pill.
 
 Visitors' attempts and flashcard reviews live only in that browser's IndexedDB
-(`src/lib/localDb.ts`) and are never imported into an account on sign-in. Open
-parts are graded through that API route, by reference to the stored quiz,
-under the anonymous caps in
-[observability-metering.md](observability-metering.md).
+(`src/lib/localDb.ts`) and are never imported into an account on sign-in. Every
+part is graded through that API route, by reference to the stored quiz; the
+anonymous caps in [observability-metering.md](observability-metering.md) count
+only the open parts Jev grades.
 
 Sources: [Worker routes](../workers/site/public.ts),
 [public handlers](../server/internal/httpapi/huma_anonymous.go) and
@@ -436,6 +438,16 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   Study progress below). Signed-out visitors can take standalone link/public
   quizzes and study flashcards; their progress stays in the browser (see
   Anonymous quizzes and flashcards).
+- Answer keys follow one rule (Epo, 2026-10-06; details in
+  [question-bank.md](question-bank.md#answer-keys-and-server-grading)):
+  reading to view or study never sends them, owners and editors included
+  (`GET /api/quizzes/{id}`, a quiz through `GET /api/materials/{id}`, Explore,
+  signed-out pages, review sessions, the bank's View mode, and the chat agent
+  for a user who cannot edit the quiz or the bank). Editing sends them to
+  whoever may edit: `GET /api/quizzes/{id}/edit` uses the content-edit check,
+  `GET /api/bank/questions/{id}/edit` the bank editor grant, and a clone's or
+  copy's new owner edits its keys. Checking or submitting returns the key for
+  what was graded; grading is server-side only and retakes are unlimited.
 - Quiz/flashcard responses distinguish `isOwner` from `canEdit`. Effective
   workspace editors receive content controls without receiving owner-only
   sharing/privacy controls; viewers do not receive mutation controls.

@@ -13,15 +13,9 @@ export interface RateReviewItemReq {
   /** @minLength 1 */
   materialId: string;
   /**
-     * A flashcard's button: 1 Again .. 4 Easy
+     * A flashcard's button: 1 Again .. 4 Easy; questions are rated by POST /api/review/check
      * @minimum 1
      * @maximum 4
      */
-  rating?: number;
-  /**
-     * A question's awarded marks over its marks
-     * @minimum 0
-     * @maximum 1
-     */
-  score?: number;
+  rating: number;
 }

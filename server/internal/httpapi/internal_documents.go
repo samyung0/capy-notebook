@@ -11,6 +11,7 @@ import (
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/questions"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -109,6 +110,39 @@ func (a *api) internalListDocuments(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
+// learnerInspectedQuestions replaces each inspected quiz question, whose text
+// is the question JSON, with its answer-free questions.LearnerView.
+func learnerInspectedQuestions(children []json.RawMessage) ([]json.RawMessage, error) {
+	out := make([]json.RawMessage, len(children))
+	for i, raw := range children {
+		var child struct {
+			ID   string `json:"id"`
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal(raw, &child); err != nil {
+			return nil, err
+		}
+		out[i] = raw
+		if child.Type != "quiz_question" {
+			continue
+		}
+		var q map[string]any
+		if err := json.Unmarshal([]byte(child.Text), &q); err != nil {
+			return nil, err
+		}
+		text, err := json.Marshal(questions.LearnerView(q))
+		if err != nil {
+			return nil, err
+		}
+		child.Text = string(text)
+		if out[i], err = json.Marshal(child); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
 type internalDocumentsInspectReq struct {
 	WorkspaceID string                 `json:"workspaceId"`
 	UserID      string                 `json:"userId"`
@@ -153,6 +187,22 @@ func (a *api) internalInspectDocument(w http.ResponseWriter, r *http.Request) {
 		total := len(inspection.Blocks)
 		end := min(req.Start+req.Count, total)
 		blocks := inspection.Blocks[min(req.Start, total):end]
+		// The agent reads a quiz's keys only for a user who may edit it.
+		if mt.Kind == "quiz" {
+			err := a.s.AssertMaterialEditor(ctx, req.UserID, req.Target.ID)
+			if err != nil && !errors.Is(err, store.ErrForbidden) {
+				a.fail(w, err)
+				return
+			}
+			if err != nil {
+				for i := range blocks {
+					if blocks[i].Children, err = learnerInspectedQuestions(blocks[i].Children); err != nil {
+						a.fail(w, err)
+						return
+					}
+				}
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"format": "plate", "materialKind": mt.Kind, "title": mt.Title,
 			"incarnation":         inspection.RoomSchema,

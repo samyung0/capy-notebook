@@ -1,0 +1,254 @@
+{
+  "cases": [
+    {
+      "name": "case is ignored",
+      "part": {
+        "answer": { "type": "short", "accepted": ["mitochondria"] },
+        "marks": 1
+      },
+      "answer": "Mitochondria",
+      "awarded": 1,
+      "items": [true]
+    },
+    {
+      "name": "spacing is collapsed",
+      "part": {
+        "answer": { "type": "short", "accepted": ["cell wall"] },
+        "marks": 1
+      },
+      "answer": "  cell   wall ",
+      "awarded": 1,
+      "items": [true]
+    },
+    {
+      "name": "any accepted answer",
+      "part": {
+        "answer": {
+          "type": "short",
+          "accepted": ["cell membrane", "plasma membrane"]
+        },
+        "marks": 1
+      },
+      "answer": "plasma membrane",
+      "awarded": 1,
+      "items": [true]
+    },
+    {
+      "name": "one typo in twelve letters",
+      "part": {
+        "answer": { "type": "short", "accepted": ["mitochondria"] },
+        "marks": 1
+      },
+      "answer": "mitocondria",
+      "awarded": 1,
+      "items": [true]
+    },
+    {
+      "name": "swapped letters are two edits",
+      "part": {
+        "answer": { "type": "short", "accepted": ["mitochondria"] },
+        "marks": 1
+      },
+      "answer": "mitochondira",
+      "awarded": 0,
+      "items": [false]
+    },
+    {
+      "name": "three edits in twenty is the threshold",
+      "part": {
+        "answer": { "type": "short", "accepted": ["abcdefghijklmnopqrst"] },
+        "marks": 1
+      },
+      "answer": "abcdefghijklmnopqXYZ",
+      "awarded": 1,
+      "items": [true]
+    },
+    {
+      "name": "four edits in twenty",
+      "part": {
+        "answer": { "type": "short", "accepted": ["abcdefghijklmnopqrst"] },
+        "marks": 1
+      },
+      "answer": "abcdefghijklmnopWXYZ",
+      "awarded": 0,
+      "items": [false]
+    },
+    {
+      "name": "under four letters is never fuzzy",
+      "part": {
+        "answer": { "type": "short", "accepted": ["cat"] },
+        "marks": 1
+      },
+      "answer": "cut",
+      "awarded": 0,
+      "items": [false]
+    },
+    {
+      "name": "digits are never fuzzy",
+      "part": {
+        "answer": { "type": "short", "accepted": ["3.14159"] },
+        "marks": 1
+      },
+      "answer": "3.14158",
+      "awarded": 0,
+      "items": [false]
+    },
+    {
+      "name": "digits match exactly",
+      "part": {
+        "answer": { "type": "short", "accepted": ["3.14159"] },
+        "marks": 1
+      },
+      "answer": " 3.14159 ",
+      "awarded": 1,
+      "items": [true]
+    },
+    {
+      "name": "operators are never fuzzy",
+      "part": {
+        "answer": { "type": "short", "accepted": ["alpha+beta"] },
+        "marks": 1
+      },
+      "answer": "alpha-beta",
+      "awarded": 0,
+      "items": [false]
+    },
+    {
+      "name": "blank never matches",
+      "part": {
+        "answer": { "type": "short", "accepted": ["alpha"] },
+        "marks": 1
+      },
+      "answer": "   ",
+      "awarded": 0,
+      "items": [false]
+    },
+    {
+      "name": "full-width letters normalise",
+      "part": {
+        "answer": { "type": "short", "accepted": ["abcd"] },
+        "marks": 1
+      },
+      "answer": "ＡＢＣＤ",
+      "awarded": 1,
+      "items": [true]
+    },
+    {
+      "name": "edits count UTF-16 units",
+      "part": {
+        "answer": { "type": "short", "accepted": ["abcde😀"] },
+        "marks": 1
+      },
+      "answer": "abcde😃",
+      "awarded": 1,
+      "items": [true]
+    },
+    {
+      "name": "capital final sigma",
+      "part": {
+        "answer": { "type": "short", "accepted": ["ΟΔΟΣ"] },
+        "marks": 1
+      },
+      "answer": "οδος",
+      "awarded": 1,
+      "items": [true]
+    },
+    {
+      "name": "a number is not text",
+      "part": { "answer": { "type": "short", "accepted": ["4"] }, "marks": 1 },
+      "answer": 4,
+      "awarded": 0,
+      "items": [false]
+    },
+    {
+      "name": "quantity with trailing zeros",
+      "part": {
+        "answer": { "type": "short", "accepted": ["2.5"], "unit": "m" },
+        "marks": 2
+      },
+      "answer": "2.50",
+      "awarded": 2,
+      "items": [true]
+    },
+    {
+      "name": "quantity as a fraction",
+      "part": {
+        "answer": { "type": "short", "accepted": ["2.5"], "unit": "m" },
+        "marks": 2
+      },
+      "answer": "5 / 2",
+      "awarded": 2,
+      "items": [true]
+    },
+    {
+      "name": "quantity with an exponent",
+      "part": {
+        "answer": { "type": "short", "accepted": ["2.5"], "unit": "m" },
+        "marks": 2
+      },
+      "answer": "25E-1",
+      "awarded": 2,
+      "items": [true]
+    },
+    {
+      "name": "quantity off by a little",
+      "part": {
+        "answer": { "type": "short", "accepted": ["2.5"], "unit": "m" },
+        "marks": 2
+      },
+      "answer": "2.51",
+      "awarded": 0,
+      "items": [false]
+    },
+    {
+      "name": "quantity with its unit typed",
+      "part": {
+        "answer": { "type": "short", "accepted": ["2.5"], "unit": "m" },
+        "marks": 2
+      },
+      "answer": "2.5 m",
+      "awarded": 0,
+      "items": [false]
+    },
+    {
+      "name": "a rounded third is not a third",
+      "part": {
+        "answer": { "type": "short", "accepted": ["1/3"], "unit": "kg" },
+        "marks": 1
+      },
+      "answer": "0.333",
+      "awarded": 0,
+      "items": [false]
+    },
+    {
+      "name": "the sign may sit below the bar",
+      "part": {
+        "answer": { "type": "short", "accepted": ["-1/2"], "unit": "kg" },
+        "marks": 1
+      },
+      "answer": "1/-2",
+      "awarded": 1,
+      "items": [true]
+    },
+    {
+      "name": "zero denominator",
+      "part": {
+        "answer": { "type": "short", "accepted": ["0"], "unit": "kg" },
+        "marks": 1
+      },
+      "answer": "0/0",
+      "awarded": 0,
+      "items": [false]
+    },
+    {
+      "name": "zero in any form",
+      "part": {
+        "answer": { "type": "short", "accepted": ["0"], "unit": "kg" },
+        "marks": 1
+      },
+      "answer": "-0.000e5",
+      "awarded": 1,
+      "items": [true]
+    }
+  ]
+}

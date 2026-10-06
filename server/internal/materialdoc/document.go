@@ -863,6 +863,24 @@ func validateTopLevelBlockIDs(nodes []map[string]any) error {
 	return nil
 }
 
+// LearnerQuiz replaces every quiz question in doc with its answer-free
+// questions.LearnerView, for readers who are viewing rather than editing. doc
+// is changed in place and no longer validates as stored content.
+func LearnerQuiz(doc Envelope) {
+	var strip func(map[string]any)
+	strip = func(node map[string]any) {
+		if q, ok := node["question"].(map[string]any); ok && node["type"] == "quiz_question" {
+			node["question"] = questions.LearnerView(q)
+		}
+		for _, child := range children(node) {
+			strip(child)
+		}
+	}
+	for _, node := range doc.Value {
+		strip(node)
+	}
+}
+
 func ExtractQuiz(raw string) (json.RawMessage, *int, error) {
 	doc, err := Parse(raw)
 	if err != nil {

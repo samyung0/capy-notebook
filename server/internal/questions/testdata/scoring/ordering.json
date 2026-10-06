@@ -1,0 +1,69 @@
+{
+  "cases": [
+    {
+      "name": "whole order",
+      "part": {
+        "answer": {
+          "type": "ordering",
+          "items": ["Prophase", "Metaphase", "Anaphase"]
+        },
+        "marks": 2
+      },
+      "answer": ["Prophase", "Metaphase", "Anaphase"],
+      "awarded": 2,
+      "items": [true]
+    },
+    {
+      "name": "one swap is wrong",
+      "part": {
+        "answer": {
+          "type": "ordering",
+          "items": ["Prophase", "Metaphase", "Anaphase"]
+        },
+        "marks": 2
+      },
+      "answer": ["Metaphase", "Prophase", "Anaphase"],
+      "awarded": 0,
+      "items": [false]
+    },
+    {
+      "name": "an item missing",
+      "part": {
+        "answer": {
+          "type": "ordering",
+          "items": ["Prophase", "Metaphase", "Anaphase"]
+        },
+        "marks": 2
+      },
+      "answer": ["Prophase", "Metaphase"],
+      "awarded": 0,
+      "items": [false]
+    },
+    {
+      "name": "stored positions are not item text",
+      "part": {
+        "answer": {
+          "type": "ordering",
+          "items": ["Prophase", "Metaphase", "Anaphase"]
+        },
+        "marks": 2
+      },
+      "answer": [0, 1, 2],
+      "awarded": 0,
+      "items": [false]
+    },
+    {
+      "name": "item text is exact",
+      "part": {
+        "answer": {
+          "type": "ordering",
+          "items": ["Prophase", "Metaphase", "Anaphase"]
+        },
+        "marks": 2
+      },
+      "answer": ["prophase", "Metaphase", "Anaphase"],
+      "awarded": 0,
+      "items": [false]
+    }
+  ]
+}

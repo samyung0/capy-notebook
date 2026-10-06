@@ -432,6 +432,7 @@ export const questionSchema = z.strictObject({
           .max(limits.QUESTION_BLOCKS_MAX),
         id: identifier,
         itemAwards: z.array(finite).optional(),
+        itemResults: z.array(z.boolean()).optional(),
         marks: z.number().int().min(1).max(limits.QUESTION_MARKS_MAX),
         markscheme: z
           .array(
@@ -485,7 +486,9 @@ export function validateQuestion(
     ids.add(part.id);
     if (
       !policy.snapshot &&
-      (part.awarded !== undefined || part.itemAwards !== undefined)
+      (part.awarded !== undefined ||
+        part.itemAwards !== undefined ||
+        part.itemResults !== undefined)
     )
       throw new CopyError(m.question_validation_awarded_marks());
     // Each accepted list belongs to one blank, numbered 1 to n in the text.

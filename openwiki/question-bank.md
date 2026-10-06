@@ -129,9 +129,9 @@ each marking item earns none, half or all of its marks from a zero/partial/full
 answer that is only a list of subject vocabulary earns 0 on every item. The
 part's award is the sum and the snapshot keeps `itemAwards`. The grading text
 is built in Go (`questions.GradingText`) from the stem, earlier parts and the
-part, with figures as their descriptions, tables and chart data. The browser
-sends part ids and answers for one attempt; the server loads the scheme, so the
-endpoints cannot grade arbitrary text. Saving an open part in the quiz editor
+part, with figures as their descriptions, tables and chart data. Requests carry
+only part ids and answers; the server loads the scheme, so the endpoints cannot
+grade arbitrary text (see Answer keys and server grading below). Saving an open part in the quiz editor
 asks Jev whether grading it needs a calculation checked and warns the author
 at a probability of 0.3 or more; the save is never blocked. Usage and the
 anonymous caps are in [observability-metering.md](observability-metering.md).
@@ -165,6 +165,98 @@ split-layout questions keep one column beside their passage.
 Workspace quiz previews center the question column in the viewer; other quiz
 entry points retain left alignment.
 
+## Answer keys and server grading
+
+One rule for quizzes and the bank in every situation (Epo, 2026-10-06):
+reading to view or study never sends answer keys, accepted answers, marking
+schemes or worked solutions; editing sends them to whoever may edit; checking
+an answer or submitting an attempt returns the key for what was just checked.
+Grading happens only on the server, and retakes and Try again are unlimited.
+Answer-free questions are `questions.LearnerView` (`server/internal/questions/questions.go`):
+part ids, blocks and marks, mcq/multi options in stored order, a short answer's
+unit, matching `left` items with shuffled `options`, shuffled ordering `items`
+and the number of `gaps`. It reads stored content with checked assertions, so a
+malformed question loses fields instead of failing the read.
+
+| Read | Who | Keys |
+| --- | --- | --- |
+| `GET /api/quizzes/{id}` | anyone who can read the quiz, owners and editors included | none |
+| `GET /api/quizzes/{id}/edit` | whoever may edit it (`assertMaterialOwner`, the content-edit check); others 404 | full |
+| `GET /api/materials/{id}` for a quiz | readers; the workspace view (`materialdoc.LearnerQuiz`) | none |
+| `GET /api/explore/quizzes`, `GET /api/public/quizzes/{token}` | anyone; signed-out visitors | none |
+| `GET /api/workspaces/{id}/review` | workspace readers; question items | none |
+| `GET /api/bank/questions/{id}`, `GET /api/bank/questions?ids=` | bank readers, editors included (View mode); `editor` still reports the grant | none |
+| `GET /api/bank/questions/{id}/edit` | bank editors on an editable bank; others 404 | full |
+| Create, content/metadata/sharing PATCH, clone, bank save and review marker | editors and a copy's new owner | full |
+| Chat `inspect_document` on a quiz, `read_question`, `list_question_bank` pages | the acting user | full only for a material editor or a bank editor |
+
+Copies keep keys because their owner edits them: clones, Copy to quiz
+(`POST /api/bank/copy`) and the chat's `copy_questions`. The signed-out image
+route (`AnonymousQuizAssetPath`) still checks the full content, so a solution's
+images resolve once an answer is checked. Collaboration needs no change:
+viewers never get a room token and quizzes are edited through the form route.
+
+| Grading route | Request | Effect |
+| --- | --- | --- |
+| `POST /api/quizzes/{id}/attempts` | `{answers}` | Grades every part (closed in Go, open with Jev), stores the answers and graded questions, rates review and marks progress for workspace quizzes; 201 with the `AttemptDetail`. Needs read access; frozen accounts submit. |
+| `POST /api/public/quizzes/{token}/grade` | `{answers, localId?}` | Signed out: `{correct, total, questions}`, nothing stored. The per-IP and global caps count only the answered open parts; over a cap it is 429 with `errors[0].message` `anonymous_grading_limit`. |
+| `POST /api/review/check` | `{materialId, itemId, answers}` | One question of a review session: `{correct, total, question}`, rated from `correct / total`. A card is 422; cards keep `POST /api/review/ratings` with a required `rating`, which no longer takes a `score`. |
+| `POST /api/bank/questions/{id}/check` | `{answers}` | One bank question: `{correct, total, question}`, and records the learner's latest score. |
+
+Graded questions carry their keys, and every part `awarded`; open parts also
+carry `itemAwards` (Jev's marks per marking item, zeros for a blank answer,
+which makes no Jev call) and matching and gaps parts `itemResults`, right or
+wrong per pair or gap. `questions.Graded` builds them. `POST /api/quizzes/{id}/grade`,
+`POST /api/bank/questions/{id}/reveal` and `/answers` are removed, and the
+browser no longer sends scores or graded snapshots. Answers naming a part the
+questions lack, or an open answer that is not text or exceeds 5,000 characters,
+are 422; an unanswered part is wrong. Attempts and checks are in the
+rate limiter's AI class (`server/internal/ratelimit/middleware.go`), as the
+grade route was, because they may call Jev.
+
+Answers are keyed by part id, one shape per answer type, the same for a
+learner view and a full question:
+
+| Type | Answer |
+| --- | --- |
+| `mcq`, `multi` | option indices in stored order (the learner view keeps it) |
+| `boolean` | `true` or `false` |
+| `short`, `open` | the typed text |
+| `ordering` | the item texts in the learner's order |
+| `matching` | `{"0": "option text", …}`, keyed by the left item's index |
+| `gaps` | one string per gap, in gap order |
+
+Matching and ordering answer by text because the learner view shuffles them;
+duplicate texts are interchangeable. `questions.ScorePart`
+(`server/internal/questions/score.go`) ports `scorePart` from
+`src/features/quizzes/grade.ts`, JavaScript string rules included (its trim and
+`\s` set, final sigma, UTF-16 lengths and edits), and the fixtures in
+`server/internal/questions/testdata/scoring/` (README there) run against both.
+Attempts stored before 2026-10-06 keep index-shaped matching and ordering
+answers and lack `itemResults`.
+
+In the browser, viewing and studying use the answer-free reads: quiz view mode
+(`QuizPreview` in `CenterContent.tsx` renders the material document's learner
+questions as they come), taking a quiz, the note embed card, review sessions,
+signed-out pages and the bank's View mode. The quiz editor and note export
+read `quizEditQuery` (`GET /api/quizzes/{id}/edit`). The bank's Edit mode reads
+each question through its `/edit` route, because the batch route is View
+mode's, and caches it apart (`bankQuestionQuery(id, mode)`); a save or review
+marker replaces the Edit entry and marks View's stale (`storeBankEdit`).
+Submit posts `{answers}` (`useSubmitAttempt`) and shows the returned attempt;
+signed out, the public grade route's result goes to IndexedDB
+(`LocalQuizAttempt`). Check in a review session posts `/api/review/check` and
+the bank's Check answer its `/check` route; both show the returned question.
+`QuestionRunner`'s review shows the server's grading as it is: each part's
+`awarded`, the key's correct options and accepted answers, matching and gap
+results from `itemResults`, and an ordering row is right when its text sits at
+that stored position. Nothing in the app scores answers: `grade.ts` keeps the
+answer types and a scorer only the MSW mocks use (`src/mocks/answerKeys.ts`
+also mirrors `LearnerView` and stands in for Jev), and `grade.test.ts` runs it
+over the shared scoring fixtures. A pre-2026-10-06 attempt still shows its
+score and awards, but its matching letters and ordering rows show as
+unanswered and its gaps as wrong.
+
 Answer areas span the text and marks columns of a part row; phones use 16px
 pane padding and a 1.5rem number column. Every answer item is a fully rounded
 bordered row keyed by a dotted letter or number (A., 1.); matching items stay
@@ -175,8 +267,10 @@ and "Correct answer", true/false shows two result rows, a short answer marks its
 field and lists every accepted answer with its unit, matching rows show the chosen
 letter and the correct one beside the option list, and wrong ordering rows show
 their right position.
-Matching dropdowns list letters in stored option order. Ordering starts
-shuffled and the shown order is committed as the answer as soon as it renders.
+Matching dropdowns letter the options in the order the read sent them (shuffled
+for learners) and store the chosen option's text. Ordering lists the items in
+that order and commits their texts as the answer as soon as it renders; editors'
+previews show the stored order. Reviews letter the stored options.
 The static view numbers matching items above the lettered options on phones and
 beside them from md.
 Review batches respect the existing 200-question and 2 MiB bounds, namespace
@@ -234,8 +328,7 @@ storage.
 
 | Endpoint | Effect |
 | --- | --- |
-| `POST /api/bank/questions/{id}/reveal` | `{answers}`, the learner's answers by part id. Returns `{question}`, that one question in full (answer key, marking schemes, worked solutions); 404 when unknown or retracted. The answers are not stored or graded on the server. |
-| `POST /api/bank/questions/{id}/answers` | `{score}`, the answer's awarded marks over the question's marks, 0 to 1. Reads the question from the bank (404 when unknown or retracted) and upserts its topic, hash, score and time; 204. |
+| `POST /api/bank/questions/{id}/check` | `{answers}`, the learner's answers by part id. Grades them on the server (open parts with Jev), upserts the question's topic, hash, score (`correct / total`, 0 to 1) and time, and returns `{correct, total, question}`, that one question with its key and awards; 404 when unknown or retracted. |
 | `GET /api/bank/topics/{topicId}/marks` | `{marks: {questionId: score}}` for the topic list: the latest score of each answered current question. |
 | `GET /api/bank/progress` | `{topics}`: every topic with at least one answered current question, most recent answer first. Each carries exam, subject and topic ids and labels, `total` (current questions), `answered`, `correct` (score 1), `lastAnsweredAt` and `nextQuestionId`: the first unanswered question after the most recently answered one in topic order, wrapping to the start, or null when every question is answered. |
 | `POST /api/bank/copy` | `{questionIds (1–20), workspaceId, quizId \| quizName, chapterId?}` returns `{workspaceId, quizId}`. Below. |
@@ -266,7 +359,7 @@ Bank migration `0003_retracted.sql` adds `questions.retracted_at`, which only
 the owner sets (see [deployment-runbook.md](deployment-runbook.md)); the editor
 role has no grant on it. Syllabus counts, the topic list, single and batch
 reads (a retracted id fails a batch with 404 like an unknown one), comments,
-answers, reveal, marks, progress, copy and the chat's list, read and
+check, marks, progress, copy and the chat's list, read and
 `copy_questions` routes all skip retracted questions. Editors' save and review
 routes do not check the flag; the page never lists those questions. UAT and
 production share the bank: run `go run ./cmd/bank migrate` before deploying
@@ -278,22 +371,17 @@ retracted questions.
 View mode renders every question as `QuestionRunner` with the learner's answers
 and a Check answer button under it, right-aligned on a divider like the editors'
 review bar (`CheckableQuestion` in `src/routes/QuestionBank.tsx`). Reads stay
-answer-free (`questions.LearnerView`); Check answer posts the answers to the
-reveal route and gets that question's key only. The learner view shuffles
-matching options and ordering items, so `alignReveal` (`src/features/questions/bank.ts`)
-reorders the revealed matching options to the letters the learner saw (its
-pairs follow) and maps ordering answers to stored positions. The question then
-shows the quiz review (`QuestionReview`: part score in the marks column with no
-question total, the answer rows tagged Your answer and Correct answer, accepted
-answers, the worked solution collapsed). `bankScore` sums `scorePart` over the
-parts and divides by their marks; the browser posts that 0–1 score to the
-answers route and refreshes the topic's marks and the landing. A question with open parts
-(none in the bank today) shows its key but records no score, because only Jev
-grades open answers. Try again clears the answers and the key; the next check
-records a new attempt, and the list shows the latest. Edit mode keeps the
-answer key, review bar and disabled runner. Both requests fail through the
-global mutation toast: a failed reveal keeps the answers for another check, and
-a failed record still shows the review but leaves the list unchanged.
+answer-free (`questions.LearnerView`), editors' View mode included; Check
+answer posts the answers to the check route, which grades and records them and
+returns that question's key and awards only. The question then shows the quiz
+review (`QuestionReview`: part score in the marks column with no question total,
+the answer rows tagged Your answer and Correct answer, accepted answers, the
+worked solution collapsed), and the topic's marks and the landing refresh. Open
+parts (none in the bank today) are graded by Jev like a quiz's. Try again
+clears the answers and the key; the next check records a new attempt, and the
+list shows the latest. Edit mode reads `GET /api/bank/questions/{id}/edit` and
+keeps the answer key, review bar and disabled runner. A failed check keeps the
+answers for another check.
 
 The topic list uses the shared `QuestionListRow`
 (`src/features/questions/QuestionListRow.tsx`): bold number, two-line stem,
@@ -342,7 +430,13 @@ answer types, fixed-unit quantities, multipart questions, both layouts, formulas
 tables, an editable graph and all six chart styles. Every part has a worked
 solution. The graph SVG is rendered from its stored JSXGraph recipe. The seeded
 `at_1` attempt includes correct, incorrect, blank and partially credited answers
-for inspecting review states. Image examples are deferred.
+for inspecting review states; the seeded attempts are graded by the mock scorer
+from text-shaped answers, as the server stores them. Image examples are
+deferred. The MSW routes follow the answer-key rule like the server's, the
+view-only and frozen-account scenarios included (`learnerMaterial` in
+`src/mocks/db.ts`); attempt lists carry scores without answers or snapshots,
+and Biology 101's review seeds one missed question so a session has a
+question to check.
 
 The separate bank database and B2 buckets are provisioned; the public asset
 hostname is configured in Cloudflare, which serves a published graph with HTTP

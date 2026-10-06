@@ -1,9 +1,4 @@
-import type { Question, RateReviewItemReq } from '@/api/types';
-import type { Answers } from '@/features/quizzes/grade';
-import {
-  type GradeOpenParts,
-  gradeAttemptQuestions,
-} from '@/features/quizzes/scoreAttempt';
+import type { RateReviewItemReq } from '@/api/types';
 import { m } from '@/i18n';
 import type { SrsRating } from '@/lib/srs';
 
@@ -36,19 +31,5 @@ export function ratingQueue(
       pending = [];
       await Promise.all(ratings);
     },
-  };
-}
-
-/** Grades a review question the quiz page's way; its score is the awarded
- * share of its marks. */
-export async function gradeReviewQuestion(
-  question: Question,
-  answers: Answers,
-  gradeOpen: GradeOpenParts
-): Promise<{ graded: Question; score: number }> {
-  const result = await gradeAttemptQuestions([question], answers, gradeOpen);
-  return {
-    graded: result.questions[0] ?? question,
-    score: result.max > 0 ? result.awarded / result.max : 0,
   };
 }

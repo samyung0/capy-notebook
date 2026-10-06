@@ -1,15 +1,14 @@
 import { type QueryClient, queryOptions } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import type {
-  BankAnswerReq,
   BankCopyReq,
   BankCopyResult,
   BankProgress,
-  BankRevealReq,
   BankTopicMarks,
+  CheckBankQuestionReq,
+  GradedQuestion,
   Provenance,
 } from '@/api/types';
-import { type Answers, scoreQuestion } from '@/features/quizzes/grade';
 import type { LearnerQuestion, Question } from './types';
 
 export type BankTopic = {
@@ -67,12 +66,18 @@ export const bankQuestionsQuery = (topicId: string) =>
     queryKey: ['bank', 'topics', topicId],
     retry: false,
   });
-export const bankQuestionQuery = (id: string) =>
+/** View mode reads questions without their key, for editors too; Edit mode
+ * reads the key, which only editors get. */
+export type BankMode = 'view' | 'edit';
+const bankQuestionPath = (id: string, mode: BankMode) =>
+  '/bank/questions/' +
+  encodeURIComponent(id) +
+  (mode === 'edit' ? '/edit' : '');
+export const bankQuestionQuery = (id: string, mode: BankMode) =>
   queryOptions({
     enabled: Boolean(id),
-    queryFn: () =>
-      api.get<BankDetail>('/bank/questions/' + encodeURIComponent(id)),
-    queryKey: ['bank', 'questions', id],
+    queryFn: () => api.get<BankDetail>(bankQuestionPath(id, mode)),
+    queryKey: ['bank', 'questions', id, mode],
     retry: false,
   });
 /** The server's cap on ids per batch request. */
@@ -82,36 +87,64 @@ const BATCH_MAX = 50;
  * invalidated) and stores each in its bankQuestionQuery entry, where the page
  * reads it; edits and reviews update those entries directly.
  */
-export const bankBatchQuery = (client: QueryClient, ids: string[]) =>
+export const bankBatchQuery = (
+  client: QueryClient,
+  ids: string[],
+  mode: BankMode
+) =>
   queryOptions({
     enabled: ids.length > 0,
     queryFn: async () => {
       const missing = ids.filter((id) => {
-        const state = client.getQueryState(bankQuestionQuery(id).queryKey);
+        const state = client.getQueryState(
+          bankQuestionQuery(id, mode).queryKey
+        );
         return !state?.data || state.isInvalidated;
       });
-      const pages: string[][] = [];
-      for (let i = 0; i < missing.length; i += BATCH_MAX)
-        pages.push(missing.slice(i, i + BATCH_MAX));
-      const results = await Promise.all(
-        pages.map((page) =>
-          api.get<{ questions: BankDetail[] }>(
-            '/bank/questions?ids=' + page.map(encodeURIComponent).join(',')
-          )
-        )
-      );
-      for (const { questions } of results)
-        for (const detail of questions)
-          client.setQueryData(
-            bankQuestionQuery(detail.question.id).queryKey,
-            detail
-          );
+      // The batch route is View mode's; Edit mode reads each question's key.
+      const details =
+        mode === 'edit'
+          ? await Promise.all(
+              missing.map((id) =>
+                api.get<BankDetail>(bankQuestionPath(id, mode))
+              )
+            )
+          : await batchDetails(missing);
+      for (const detail of details)
+        client.setQueryData(
+          bankQuestionQuery(detail.question.id, mode).queryKey,
+          detail
+        );
       return missing.length;
     },
-    queryKey: ['bank', 'batch', ...ids],
+    queryKey: ['bank', 'batch', mode, ...ids],
     retry: false,
     staleTime: Number.POSITIVE_INFINITY,
   });
+async function batchDetails(ids: string[]): Promise<BankDetail[]> {
+  const pages: string[][] = [];
+  for (let i = 0; i < ids.length; i += BATCH_MAX)
+    pages.push(ids.slice(i, i + BATCH_MAX));
+  const results = await Promise.all(
+    pages.map((page) =>
+      api.get<{ questions: BankDetail[] }>(
+        '/bank/questions?ids=' + page.map(encodeURIComponent).join(',')
+      )
+    )
+  );
+  return results.flatMap(({ questions }) => questions);
+}
+/** An editor's save or review returns the question with its key: it replaces
+ * the Edit mode entry, and View mode reloads its answer-free copy. */
+export function storeBankEdit(client: QueryClient, detail: BankDetail) {
+  const id = detail.question.id;
+  client.setQueryData(bankQuestionQuery(id, 'edit').queryKey, detail);
+  void client.invalidateQueries({
+    queryKey: bankQuestionQuery(id, 'view').queryKey,
+    refetchType: 'none',
+  });
+  void client.invalidateQueries({ queryKey: ['bank', 'batch', 'view'] });
+}
 /** The topic list's results: answered current questions' latest scores, 0 to 1. */
 export const bankMarksQuery = (topicId: string) =>
   queryOptions({
@@ -132,15 +165,11 @@ export const bankProgressQuery = () =>
   });
 export const copyBankQuestions = (body: BankCopyReq) =>
   api.post<BankCopyResult>('/bank/copy', body);
-/** Checking answers is what reveals a question's key, one question at a time. */
-export const revealBankQuestion = (id: string, body: BankRevealReq) =>
-  api.post<{ question: Question }>(
-    '/bank/questions/' + encodeURIComponent(id) + '/reveal',
-    body
-  );
-export const recordBankAnswer = (id: string, body: BankAnswerReq) =>
-  api.post<void>(
-    '/bank/questions/' + encodeURIComponent(id) + '/answers',
+/** Grades the answers on the server, which records the result, and returns
+ * the question with its key: checking is what reveals it, one at a time. */
+export const checkBankQuestion = (id: string, body: CheckBankQuestionReq) =>
+  api.post<GradedQuestion>(
+    '/bank/questions/' + encodeURIComponent(id) + '/check',
     body
   );
 
@@ -171,69 +200,6 @@ export function filterBankRows<R extends Pick<BankRow, 'id' | 'answerTypes'>>(
       (!types.length || row.answerTypes.some((type) => types.includes(type))) &&
       (!statuses.length || statuses.includes(bankStatus(marks[row.id])))
   );
-}
-
-/** Pairs equal texts, each target used once: for every `from` index, its
- * index in `to` (-1 when missing). */
-function textIndices(from: string[], to: string[]): number[] {
-  const used = new Set<number>();
-  return from.map((text) => {
-    const index = to.findIndex((item, j) => item === text && !used.has(j));
-    used.add(index);
-    return index;
-  });
-}
-
-/**
- * The revealed question and answers in terms the shared scorer reads.
- * Learners answered a view with matching options and ordering items shuffled
- * by the server: matching keeps the shown letters (its key follows them) and
- * ordering answers turn into stored positions, which are the key.
- */
-export function alignReveal(
-  shown: Question | LearnerQuestion,
-  full: Question,
-  answers: Answers
-): { question: Question; answers: Answers } {
-  const aligned: Answers = { ...answers };
-  const parts = full.parts.map((part) => {
-    const seen = shown.parts.find((item) => item.id === part.id)?.answer;
-    const value = answers[part.id];
-    if (part.answer.type === 'matching' && seen?.type === 'matching') {
-      const toShown = textIndices(part.answer.options, seen.options);
-      return {
-        ...part,
-        answer: {
-          ...part.answer,
-          options: seen.options,
-          pairs: part.answer.pairs.map((pair) => ({
-            ...pair,
-            right: toShown[pair.right] ?? -1,
-          })),
-        },
-      };
-    }
-    if (
-      part.answer.type === 'ordering' &&
-      seen?.type === 'ordering' &&
-      Array.isArray(value)
-    ) {
-      const toStored = textIndices(seen.items, part.answer.items);
-      aligned[part.id] = value.map((i) =>
-        typeof i === 'number' ? (toStored[i] ?? -1) : -1
-      );
-    }
-    return part;
-  });
-  return { answers: aligned, question: { ...full, parts } };
-}
-
-/** Awarded over available marks, the score the answers route records; null
- * when the question has open parts, which only Jev can grade. */
-export function bankScore(question: Question, answers: Answers): number | null {
-  if (question.parts.some((part) => part.answer.type === 'open')) return null;
-  const { awarded, max } = scoreQuestion(question, answers);
-  return max > 0 ? awarded / max : 0;
 }
 
 export function uploadBankAsset(file: File): Promise<{ url: string }> {

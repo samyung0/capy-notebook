@@ -5,4 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type CreateAttemptReqQuestionsItem = {[key: string]: unknown};
+/**
+ * The learner's answers by part id
+ */
+export type GradeAnonymousQuizReqAnswers = {[key: string]: unknown};

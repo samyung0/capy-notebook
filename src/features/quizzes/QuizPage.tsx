@@ -4,14 +4,17 @@ import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { QuestionCreditNote } from '@/features/materials/MaterialAttributionFooter';
-import { questionMarks } from '@/features/questions/types';
+import {
+  type LearnerQuestion,
+  questionMarks,
+} from '@/features/questions/types';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { type Answers, formatPoints, scoreQuestion } from './grade';
+import { type Answers, formatPoints } from './grade';
 import { QuestionRunner } from './QuestionRunner';
 
 /** "10 questions · 12 marks". */
-export function quizMeta(questions: Question[]) {
+export function quizMeta(questions: (Question | LearnerQuestion)[]) {
   const marks = questions.reduce((sum, q) => sum + questionMarks(q), 0);
   return `${
     questions.length === 1
@@ -98,8 +101,9 @@ export function QuizPageHeader({
   );
 }
 
-/** Every question of a quiz on one page. */
-export function QuizQuestionList({
+/** Every question of a quiz on one page. Learner questions (no answer key)
+ * render for taking and viewing; review needs the graded questions. */
+export function QuizQuestionList<Q extends Question | LearnerQuestion>({
   questions,
   answers = {},
   onChange,
@@ -109,14 +113,14 @@ export function QuizQuestionList({
   renderAfter,
   credits,
 }: {
-  questions: Question[];
+  questions: Q[];
   answers?: Answers;
   onChange?: (partId: string, value: Answers[string]) => void;
   review?: boolean;
   disabled?: boolean;
   showAnswerKey?: boolean;
   /** Per-question actions under each question, e.g. Remove and Edit. */
-  renderAfter?: (question: Question, index: number) => ReactNode;
+  renderAfter?: (question: Q, index: number) => ReactNode;
   /** Bank credits of copied questions, by question id (the quiz's provenance). */
   credits?: Record<string, QuestionCredit> | null;
 }) {
@@ -189,13 +193,12 @@ function Confetti() {
  */
 export function QuizScore({
   questions,
-  answers,
   awarded,
   max,
   confetti = false,
 }: {
+  /** Graded questions: every part carries the server's `awarded`. */
   questions: Question[];
-  answers: Answers;
   awarded: number;
   max: number;
   confetti?: boolean;
@@ -210,24 +213,22 @@ export function QuizScore({
         </p>
         {confetti && <Confetti />}
       </div>
-      <ResultSquares answers={answers} questions={questions} />
+      <ResultSquares questions={questions} />
     </div>
   );
 }
 
 /** One square per question: green for full marks, red otherwise (blank answers are wrong). */
-function ResultSquares({
-  questions,
-  answers,
-}: {
-  questions: Question[];
-  answers: Answers;
-}) {
+function ResultSquares({ questions }: { questions: Question[] }) {
   return (
     <ol aria-label={m.quiz_question_results()} className="flex flex-wrap gap-1">
       {questions.map((question, i) => {
-        const score = scoreQuestion(question, answers);
-        const right = score.max > 0 && score.awarded === score.max;
+        const max = questionMarks(question);
+        const awarded = question.parts.reduce(
+          (sum, part) => sum + (part.awarded ?? 0),
+          0
+        );
+        const right = max > 0 && awarded === max;
         const label = right
           ? m.quiz_question_right({ number: i + 1 })
           : m.quiz_question_wrong({ number: i + 1 });

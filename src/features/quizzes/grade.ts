@@ -1,17 +1,25 @@
-import type { Question, QuestionPart } from '@/api/types';
+import type { QuestionPart } from '@/api/types';
 import type { LearnerPart } from '@/features/questions/types';
-import { questionMarks } from '@/features/questions/types';
 import { quantityValuePattern } from '@/features/questions/validation';
 
+/**
+ * A learner's answer per part, as the server takes it: option indices for
+ * multiple choice, true/false, typed text, one string per gap, the items'
+ * texts in the learner's order for ordering, and the chosen option's text per
+ * item for matching (learners read those two shuffled).
+ *
+ * The browser never grades: the server does (`questions.ScorePart`) and returns
+ * the key with the result. The scorer below emulates it for the MSW mocks,
+ * and grade.test.ts runs it over the server's shared fixtures.
+ */
 export type Answer =
   | number[]
   | boolean
   | string
   | string[]
-  | Record<string, number>
+  | Record<string, string>
   | null;
 export type Answers = Record<string, Answer>;
-export type QuestionScore = { awarded: number; max: number };
 const numericOrSymbolic = /[\d+\-*/^=<>]/;
 const norm = (value: string) =>
   value.trim().normalize('NFKC').toLowerCase().replace(/\s+/g, ' ');
@@ -30,7 +38,7 @@ function levenshtein(a: string, b: string): number {
   }
   return previous[b.length];
 }
-export function fuzzyMatch(a: string, b: string, threshold = 0.85): boolean {
+function fuzzyMatch(a: string, b: string, threshold = 0.85): boolean {
   const x = norm(a);
   const y = norm(b);
   if (!x || !y) return false;
@@ -86,7 +94,6 @@ function sameQuantity(a: Quantity, b: Quantity): boolean {
     left.coefficient === right.coefficient && left.exponent === right.exponent
   );
 }
-export const questionPoints = questionMarks;
 export const formatPoints = (value: number) =>
   Number.isInteger(value) ? String(value) : value.toFixed(1);
 function shortCorrect(
@@ -117,7 +124,7 @@ function itemResults(part: QuestionPart, value: Answer | undefined): boolean[] {
         value != null &&
         typeof value === 'object' &&
         !Array.isArray(value) &&
-        value[String(i)] === pair.right
+        value[String(i)] === answer.options[pair.right]
     );
   if (answer.type === 'gaps')
     return answer.accepted.map((accepted, i) => {
@@ -153,7 +160,7 @@ function closedCorrect(part: QuestionPart, value: Answer | undefined): boolean {
       return (
         Array.isArray(value) &&
         value.length === answer.items.length &&
-        value.every((item, i) => item === i)
+        value.every((item, i) => item === answer.items[i])
       );
     case 'matching':
     case 'gaps':
@@ -163,27 +170,26 @@ function closedCorrect(part: QuestionPart, value: Answer | undefined): boolean {
   }
 }
 /** Closed parts earn each right item's share of the marks, rounded down to a
- * half mark; a single-item answer is all or nothing. */
+ * half mark; a single-item answer is all or nothing. `items` says whether
+ * each scored item is right; open parts have none (Jev grades them). */
 export function scorePart(
   part: QuestionPart,
   answer: Answer | undefined
-): QuestionScore {
+): { awarded: number; max: number; items: boolean[] } {
   const max = part.marks;
   if (part.answer.type === 'open')
-    return { awarded: Math.min(max, Math.max(0, part.awarded ?? 0)), max };
+    return {
+      awarded: Math.min(max, Math.max(0, part.awarded ?? 0)),
+      items: [],
+      max,
+    };
   const items = itemResults(part, answer);
   const right = items.filter(Boolean).length;
-  return { awarded: Math.floor(((max * right) / items.length) * 2) / 2, max };
-}
-/** Per-item results for review rows (matching pairs, gaps). */
-export const scoredItems = itemResults;
-export function scoreQuestion(
-  question: Question,
-  answers: Answers
-): QuestionScore {
-  return sumScores(
-    question.parts.map((part) => scorePart(part, answers[part.id]))
-  );
+  return {
+    awarded: Math.floor(((max * right) / items.length) * 2) / 2,
+    items,
+    max,
+  };
 }
 /** An open part's per-item marks; a blank answer earns 0 on every item. */
 export function applyItemAwards(
@@ -195,14 +201,6 @@ export function applyItemAwards(
     awarded: itemAwards.reduce((sum, award) => sum + award, 0),
     itemAwards,
   };
-}
-export function shuffledIndices(length: number): number[] {
-  const indices = Array.from({ length }, (_, i) => i);
-  for (let i = length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [indices[i], indices[j]] = [indices[j], indices[i]];
-  }
-  return indices;
 }
 export function emptyAnswer(part: QuestionPart | LearnerPart): Answer {
   switch (part.answer.type) {
@@ -228,44 +226,4 @@ export function emptyAnswer(part: QuestionPart | LearnerPart): Answer {
     case 'matching':
       return {};
   }
-}
-export function answerKey(question: Question): Answers {
-  return Object.fromEntries(
-    question.parts.map((part) => {
-      const answer = part.answer;
-      let value: Answer;
-      switch (answer.type) {
-        case 'mcq':
-        case 'multi':
-        case 'boolean':
-          value = answer.correct;
-          break;
-        case 'short':
-        case 'open':
-          value = answer.accepted[0] ?? '';
-          break;
-        case 'ordering':
-          value = answer.items.map((_, i) => i);
-          break;
-        case 'gaps':
-          value = answer.accepted.map((accepted) => accepted[0] ?? '');
-          break;
-        case 'matching':
-          value = Object.fromEntries(
-            answer.pairs.map((pair, i) => [String(i), pair.right])
-          );
-          break;
-      }
-      return [part.id, value];
-    })
-  );
-}
-export function sumScores(scores: QuestionScore[]): QuestionScore {
-  return scores.reduce(
-    (total, score) => ({
-      awarded: total.awarded + score.awarded,
-      max: total.max + score.max,
-    }),
-    { awarded: 0, max: 0 }
-  );
 }

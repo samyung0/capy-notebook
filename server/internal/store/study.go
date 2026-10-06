@@ -459,6 +459,30 @@ func (s *Store) RateItem(ctx context.Context, userID string, in Rating, now time
 	})
 }
 
+// ReviewQuestion returns one question of a quiz, in full, for grading a review
+// check, with the quiz's workspace. A card is ErrStudyRating: cards take a
+// rating.
+func (s *Store) ReviewQuestion(ctx context.Context, materialID, itemID string) (map[string]any, string, error) {
+	mt, err := s.GetMaterial(ctx, materialID)
+	if err != nil {
+		return nil, "", err
+	}
+	items, err := itemsOf(mt)
+	if err != nil {
+		return nil, "", err
+	}
+	for _, it := range items {
+		if it.ItemID != itemID {
+			continue
+		}
+		if it.Kind != "question" {
+			return nil, "", ErrStudyRating
+		}
+		return it.Question, mt.WorkspaceID, nil
+	}
+	return nil, "", ErrNotFound
+}
+
 // ErrStudyRating means a card got a score or a question got a button rating.
 var ErrStudyRating = errors.New("cards take a rating and questions take a score")
 

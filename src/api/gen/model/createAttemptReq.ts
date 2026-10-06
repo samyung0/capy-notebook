@@ -5,20 +5,10 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CreateAttemptReqAnswers } from './createAttemptReqAnswers.ts';
-import type { CreateAttemptReqQuestionsItem } from './createAttemptReqQuestionsItem.ts';
 
 export interface CreateAttemptReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** User answers keyed by stable part id */
-  answers?: CreateAttemptReqAnswers;
-  /** @minimum 0 */
-  correct: number;
-  /**
-     * Question snapshot taken at submit time
-     * @nullable
-     */
-  questions?: CreateAttemptReqQuestionsItem[] | null;
-  /** @exclusiveMinimum 0 */
-  total: number;
+  /** The learner's answers by part id */
+  answers: CreateAttemptReqAnswers;
 }

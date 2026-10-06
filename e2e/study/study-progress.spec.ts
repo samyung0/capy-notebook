@@ -189,7 +189,7 @@ test.describe('study progress', () => {
     ).toBeVisible();
   });
 
-  test('a mixed review session rates a flashcard and a question, then ends', async ({
+  test('a mixed review session rates a flashcard and checks a question, then ends', async ({
     ownerApi,
     ownerPage,
     workspaceFactory,
@@ -256,13 +256,20 @@ test.describe('study progress', () => {
     );
     // Review draws only on rated items. A question answered right (Good) is
     // better retained than a card missed (Again), so the card comes first.
-    for (const data of [
-      { itemId: questionId, materialId: quiz.id, score: 1 },
-      { itemId: cardId, materialId: cards.id, rating: 1 },
-    ]) {
-      const res = await ownerApi.post('/api/review/ratings', { data });
-      expect(res.status()).toBe(204);
-    }
+    // The server grades and rates a question's check.
+    const seeded = await ownerApi.post('/api/review/check', {
+      data: {
+        answers: { [`${questionId}:part:1`]: true },
+        itemId: questionId,
+        materialId: quiz.id,
+      },
+    });
+    expect(seeded.status()).toBe(200);
+    expect(await seeded.json()).toMatchObject({ correct: 1, total: 1 });
+    const cardRating = await ownerApi.post('/api/review/ratings', {
+      data: { itemId: cardId, materialId: cards.id, rating: 1 },
+    });
+    expect(cardRating.status()).toBe(204);
 
     await ownerPage.goto(`/workspaces/${ws.id}`);
     const review = ownerPage.locator('section').filter({
@@ -295,13 +302,20 @@ test.describe('study progress', () => {
 
     await expect(ownerPage.getByText(prompt)).toBeVisible();
     await expect(ownerPage.getByText('1 left')).toBeVisible();
+    // The question arrives answer-free; Check returns its key and rates it.
     await ownerPage.getByRole('button', { exact: true, name: 'True' }).click();
-    const questionRated = waitForApi(
+    const questionChecked = waitForApi(
       ownerPage,
-      apiEndsWith('/api/review/ratings', 'POST')
+      apiEndsWith('/api/review/check', 'POST')
     );
     await ownerPage.getByRole('button', { exact: true, name: 'Check' }).click();
-    expect((await questionRated).status()).toBe(204);
+    const checked = await questionChecked;
+    expect(checked.status()).toBe(200);
+    expect(checked.request().postDataJSON()).toEqual({
+      answers: { [`${questionId}:part:1`]: true },
+      itemId: questionId,
+      materialId: quiz.id,
+    });
     await expect(ownerPage.getByText('Your answer')).toBeVisible();
     await ownerPage.getByRole('button', { exact: true, name: 'Next' }).click();
 
@@ -311,7 +325,6 @@ test.describe('study progress', () => {
     ).toBeVisible();
     expect(ratings).toEqual([
       { itemId: cardId, materialId: cards.id, rating: 3 },
-      { itemId: questionId, materialId: quiz.id, score: 1 },
     ]);
 
     // Done returns to where the session started.

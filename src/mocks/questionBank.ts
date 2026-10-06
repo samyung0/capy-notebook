@@ -1,8 +1,6 @@
 import { delay, HttpResponse, http } from 'msw';
 import type {
-  BankAnswerReq,
   BankCopyReq,
-  BankRevealReq,
   BankTopicMarks,
   BankTopicProgress,
 } from '@/api/types';
@@ -19,6 +17,8 @@ import { exampleQuestion } from '@/features/questions/questionFixtures';
 import type { Question } from '@/features/questions/types';
 import { questionMarks } from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
+import type { Answers } from '@/features/quizzes/grade';
+import { gradeQuestions, learnerView } from './answerKeys';
 import * as db from './db';
 import { uid } from './db';
 
@@ -145,7 +145,7 @@ const topicRows = (id: string): BankRow[] =>
     }));
 // The learner's latest score per question and when it was checked, seeded
 // so the landing lists a topic to continue and one to summarize.
-const answers = new Map<string, { at: number; score: number }>([
+const answersById = new Map<string, { at: number; score: number }>([
   ['bank-quadratic', { at: Date.now() - 86_400_000, score: 1 }],
   ['bank-practice-2', { at: Date.now() - 3_600_000, score: 1 }],
   ['bank-practice-3', { at: Date.now() - 3_000_000, score: 0 }],
@@ -155,13 +155,13 @@ const answers = new Map<string, { at: number; score: number }>([
 function topicProgress(topicId: string): BankTopicProgress | null {
   const rows = topicRows(topicId);
   const done = rows.flatMap((row, index) => {
-    const answer = answers.get(row.id);
+    const answer = answersById.get(row.id);
     return answer ? [{ index, ...answer }] : [];
   });
   if (!done.length) return null;
   const last = done.reduce((a, b) => (b.at > a.at ? b : a));
   const next = [...rows.slice(last.index + 1), ...rows].find(
-    (row) => !answers.has(row.id)
+    (row) => !answersById.has(row.id)
   );
   const detail = details.get(rows[0].id) as BankDetail;
   return {
@@ -178,6 +178,11 @@ function topicProgress(topicId: string): BankTopicProgress | null {
     total: rows.length,
   };
 }
+/** A question as View mode reads it. */
+const learnerDetail = (detail: BankDetail): BankDetail => ({
+  ...detail,
+  question: learnerView(detail.question as Question),
+});
 const ownerAccess = {
   capabilities: {
     canEdit: true,
@@ -248,20 +253,29 @@ export const questionBankHandlers = [
   http.get('/api/bank/topics/:topicId/questions', ({ params }) =>
     HttpResponse.json({ questions: topicRows(String(params.topicId)) })
   ),
+  // View mode reads, answer-free for editors too.
   http.get('/api/bank/questions', async ({ request }) => {
     const ids = new URL(request.url).searchParams.get('ids')?.split(',') ?? [];
     const found = ids.flatMap((id) => details.get(id) ?? []);
     // A short delay makes the loading steps visible in dev.
     await delay(400);
     return found.length === ids.length
-      ? HttpResponse.json({ questions: found })
+      ? HttpResponse.json({ questions: found.map(learnerDetail) })
       : new HttpResponse(null, { status: 404 });
   }),
-  http.get('/api/bank/questions/:id', ({ params }) =>
-    details.has(String(params.id))
-      ? HttpResponse.json(details.get(String(params.id)))
-      : new HttpResponse(null, { status: 404 })
-  ),
+  http.get('/api/bank/questions/:id', ({ params }) => {
+    const detail = details.get(String(params.id));
+    return detail
+      ? HttpResponse.json(learnerDetail(detail))
+      : new HttpResponse(null, { status: 404 });
+  }),
+  // Edit mode's read, with the key, for editors only.
+  http.get('/api/bank/questions/:id/edit', ({ params }) => {
+    const detail = details.get(String(params.id));
+    return detail?.editor
+      ? HttpResponse.json(detail)
+      : new HttpResponse(null, { status: 404 });
+  }),
   http.put('/api/bank/questions/:id', async ({ params, request }) => {
     const detail = details.get(String(params.id));
     if (!detail) return new HttpResponse(null, { status: 404 });
@@ -303,28 +317,30 @@ export const questionBankHandlers = [
     detail.reviewerName = reviewed ? 'You' : '';
     return HttpResponse.json(detail);
   }),
-  http.post('/api/bank/questions/:id/reveal', async ({ params, request }) => {
-    const detail = details.get(String(params.id));
+  // Grades the answers, keeps the latest score and returns the key.
+  http.post('/api/bank/questions/:id/check', async ({ params, request }) => {
+    const id = String(params.id);
+    const detail = details.get(id);
     if (!detail) return new HttpResponse(null, { status: 404 });
-    const { answers } = (await request.json()) as BankRevealReq;
+    const { answers } = (await request.json()) as { answers: Answers };
     if (typeof answers !== 'object' || answers === null)
       return new HttpResponse(null, { status: 422 });
-    return HttpResponse.json({ question: detail.question });
-  }),
-  http.post('/api/bank/questions/:id/answers', async ({ params, request }) => {
-    const id = String(params.id);
-    if (!details.has(id)) return new HttpResponse(null, { status: 404 });
-    const { score } = (await request.json()) as BankAnswerReq;
-    if (!(score >= 0 && score <= 1))
-      return new HttpResponse(null, { status: 422 });
-    answers.set(id, { at: Date.now(), score });
-    return new HttpResponse(null, { status: 204 });
+    const graded = gradeQuestions([detail.question as Question], answers);
+    answersById.set(id, {
+      at: Date.now(),
+      score: graded.awarded / graded.max,
+    });
+    return HttpResponse.json({
+      correct: graded.awarded,
+      question: graded.questions[0],
+      total: graded.max,
+    });
   }),
   http.get('/api/bank/topics/:topicId/marks', ({ params }) => {
     const body: BankTopicMarks = {
       marks: Object.fromEntries(
         topicRows(String(params.topicId)).flatMap((row) => {
-          const answer = answers.get(row.id);
+          const answer = answersById.get(row.id);
           return answer ? [[row.id, answer.score]] : [];
         })
       ),

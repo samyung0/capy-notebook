@@ -985,25 +985,10 @@ export async function runJourney(
       await formSave();
       return;
     case 'quiz-submit':
-    case 'quiz-grade':
+      // Submitting grades on the server, so one request covers grading too.
       await go(`/quizzes/${scenarioQuiz}/attempt`);
       fail();
-      if (id === 'quiz-grade') {
-        const text = await ui.element<HTMLTextAreaElement>('textarea');
-        await ui.fill('textarea', 'A scenario answer about cells.');
-        text.blur();
-      }
-      for (
-        let i = 0;
-        i <
-        db.quizFromMaterial(
-          db.materials.find((row) => row.id === scenarioQuiz)!
-        ).questions.length -
-          1;
-        i++
-      )
-        await ui.click(m.action_next());
-      await ui.click(m.action_finish());
+      await ui.click(m.quiz_submit());
       return;
     case 'flashcard-progress':
       await go(`/flashcards/${scenarioCards}`);

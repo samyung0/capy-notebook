@@ -14,7 +14,6 @@ import type {
   AnonymousQuiz,
   Attempt,
   AttemptDetail,
-  BankAnswerInputBody,
   BankAssetOutputBody,
   BankBatchBody,
   BankCommentInputBody,
@@ -24,8 +23,6 @@ import type {
   BankMarksOutputBody,
   BankProgressOutputBody,
   BankQuestionBatchParams,
-  BankRevealInputBody,
-  BankRevealOutputBody,
   BankReviewInputBody,
   BankSaveInputBody,
   BillingCheckoutReq,
@@ -33,6 +30,8 @@ import type {
   BootstrapSourceDocumentParams,
   Canvas,
   Chapter,
+  CheckBankQuestionReq,
+  CheckReviewItemReq,
   CheckSourceAccessParams,
   ClaimSourceRefreshParams,
   CloneWorkspaceResp,
@@ -73,8 +72,9 @@ import type {
   GenerateReq,
   GetSourceSessionParams,
   GetSourceUploadPolicyParams,
-  GradeQuizReq,
-  GradeQuizResp,
+  GradeAnonymousQuizReq,
+  GradedQuestion,
+  GradedQuiz,
   ImportSourcesAccepted,
   ImportSourcesReq,
   IngestSlots,
@@ -656,7 +656,7 @@ export const getBankQuestionUrl = (id: string,) => {
 }
 
 /**
- * @summary Read a bank question
+ * @summary Read a bank question without answers
  */
 export const bankQuestion = async (id: string, options?: RequestInit): Promise<bankQuestionResponse> => {
 
@@ -729,53 +729,53 @@ export const saveBankQuestion = async (id: string,
 
 
 
-export type answerBankQuestionResponse204 = {
-  data: void
-  status: 204
+export type checkBankQuestionResponse200 = {
+  data: GradedQuestion
+  status: 200
 }
 
-export type answerBankQuestionResponseDefault = {
+export type checkBankQuestionResponseDefault = {
   data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 204>
+  status: Exclude<HTTPStatusCodes, 200>
 }
 
-export type answerBankQuestionResponseSuccess = (answerBankQuestionResponse204) & {
+export type checkBankQuestionResponseSuccess = (checkBankQuestionResponse200) & {
   headers: Headers;
 };
-export type answerBankQuestionResponseError = (answerBankQuestionResponseDefault) & {
+export type checkBankQuestionResponseError = (checkBankQuestionResponseDefault) & {
   headers: Headers;
 };
 
-export type answerBankQuestionResponse = (answerBankQuestionResponseSuccess | answerBankQuestionResponseError)
+export type checkBankQuestionResponse = (checkBankQuestionResponseSuccess | checkBankQuestionResponseError)
 
-export const getAnswerBankQuestionUrl = (id: string,) => {
-
-
+export const getCheckBankQuestionUrl = (id: string,) => {
 
 
-  return `/api/bank/questions/${id}/answers`
+
+
+  return `/api/bank/questions/${id}/check`
 }
 
 /**
- * @summary Record a checked answer
+ * @summary Grade and record one question's answers
  */
-export const answerBankQuestion = async (id: string,
-    bankAnswerInputBody: NonReadonly<BankAnswerInputBody>, options?: RequestInit): Promise<answerBankQuestionResponse> => {
+export const checkBankQuestion = async (id: string,
+    checkBankQuestionReq: NonReadonly<CheckBankQuestionReq>, options?: RequestInit): Promise<checkBankQuestionResponse> => {
 
-  const res = await fetch(getAnswerBankQuestionUrl(id),
+  const res = await fetch(getCheckBankQuestionUrl(id),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(bankAnswerInputBody)
+    body: JSON.stringify(checkBankQuestionReq)
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: answerBankQuestionResponse['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as answerBankQuestionResponse
+  const data: checkBankQuestionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as checkBankQuestionResponse
 }
 
 
@@ -831,53 +831,52 @@ export const commentBankQuestion = async (id: string,
 
 
 
-export type revealBankQuestionResponse200 = {
-  data: BankRevealOutputBody
+export type bankQuestionForEditResponse200 = {
+  data: Detail
   status: 200
 }
 
-export type revealBankQuestionResponseDefault = {
+export type bankQuestionForEditResponseDefault = {
   data: ErrorModel
   status: Exclude<HTTPStatusCodes, 200>
 }
 
-export type revealBankQuestionResponseSuccess = (revealBankQuestionResponse200) & {
+export type bankQuestionForEditResponseSuccess = (bankQuestionForEditResponse200) & {
   headers: Headers;
 };
-export type revealBankQuestionResponseError = (revealBankQuestionResponseDefault) & {
+export type bankQuestionForEditResponseError = (bankQuestionForEditResponseDefault) & {
   headers: Headers;
 };
 
-export type revealBankQuestionResponse = (revealBankQuestionResponseSuccess | revealBankQuestionResponseError)
+export type bankQuestionForEditResponse = (bankQuestionForEditResponseSuccess | bankQuestionForEditResponseError)
 
-export const getRevealBankQuestionUrl = (id: string,) => {
-
-
+export const getBankQuestionForEditUrl = (id: string,) => {
 
 
-  return `/api/bank/questions/${id}/reveal`
+
+
+  return `/api/bank/questions/${id}/edit`
 }
 
 /**
- * @summary Show one question's answer key once its answers are checked
+ * @summary Read a bank question with its answers to edit it
  */
-export const revealBankQuestion = async (id: string,
-    bankRevealInputBody: NonReadonly<BankRevealInputBody>, options?: RequestInit): Promise<revealBankQuestionResponse> => {
+export const bankQuestionForEdit = async (id: string, options?: RequestInit): Promise<bankQuestionForEditResponse> => {
 
-  const res = await fetch(getRevealBankQuestionUrl(id),
+  const res = await fetch(getBankQuestionForEditUrl(id),
   {
     ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(bankRevealInputBody)
+    method: 'GET'
+
+
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: revealBankQuestionResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as revealBankQuestionResponse
+  const data: bankQuestionForEditResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as bankQuestionForEditResponse
 }
 
 
@@ -5271,6 +5270,57 @@ export const getAnonymousQuizAsset = async (token: string,
 
 
 
+export type gradeAnonymousQuizResponse200 = {
+  data: GradedQuiz
+  status: 200
+}
+
+export type gradeAnonymousQuizResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type gradeAnonymousQuizResponseSuccess = (gradeAnonymousQuizResponse200) & {
+  headers: Headers;
+};
+export type gradeAnonymousQuizResponseError = (gradeAnonymousQuizResponseDefault) & {
+  headers: Headers;
+};
+
+export type gradeAnonymousQuizResponse = (gradeAnonymousQuizResponseSuccess | gradeAnonymousQuizResponseError)
+
+export const getGradeAnonymousQuizUrl = (token: string,) => {
+
+
+
+
+  return `/api/public/quizzes/${token}/grade`
+}
+
+/**
+ * @summary Grade a signed-out attempt at a shared quiz
+ */
+export const gradeAnonymousQuiz = async (token: string,
+    gradeAnonymousQuizReq: NonReadonly<GradeAnonymousQuizReq>, options?: RequestInit): Promise<gradeAnonymousQuizResponse> => {
+
+  const res = await fetch(getGradeAnonymousQuizUrl(token),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(gradeAnonymousQuizReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: gradeAnonymousQuizResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as gradeAnonymousQuizResponse
+}
+
+
+
 export type getPublicWorkspaceSummaryResponse200 = {
   data: WorkspaceSummary
   status: 200
@@ -5558,7 +5608,7 @@ export const getGetQuizUrl = (id: string,) => {
 }
 
 /**
- * @summary Get a quiz
+ * @summary Get a quiz to view or take, without answers
  */
 export const getQuiz = async (id: string, options?: RequestInit): Promise<getQuizResponse> => {
 
@@ -5581,7 +5631,7 @@ export const getQuiz = async (id: string, options?: RequestInit): Promise<getQui
 
 
 export type createAttemptResponse201 = {
-  data: Attempt
+  data: AttemptDetail
   status: 201
 }
 
@@ -5608,7 +5658,7 @@ export const getCreateAttemptUrl = (id: string,) => {
 }
 
 /**
- * @summary Record a quiz attempt
+ * @summary Grade and record a quiz attempt
  */
 export const createAttempt = async (id: string,
     createAttemptReq: NonReadonly<CreateAttemptReq>, options?: RequestInit): Promise<createAttemptResponse> => {
@@ -5732,53 +5782,52 @@ export const updateQuizContent = async (id: string,
 
 
 
-export type gradeQuizResponse200 = {
-  data: GradeQuizResp
+export type getQuizForEditResponse200 = {
+  data: Quiz
   status: 200
 }
 
-export type gradeQuizResponseDefault = {
+export type getQuizForEditResponseDefault = {
   data: ErrorModel
   status: Exclude<HTTPStatusCodes, 200>
 }
 
-export type gradeQuizResponseSuccess = (gradeQuizResponse200) & {
+export type getQuizForEditResponseSuccess = (getQuizForEditResponse200) & {
   headers: Headers;
 };
-export type gradeQuizResponseError = (gradeQuizResponseDefault) & {
+export type getQuizForEditResponseError = (getQuizForEditResponseDefault) & {
   headers: Headers;
 };
 
-export type gradeQuizResponse = (gradeQuizResponseSuccess | gradeQuizResponseError)
+export type getQuizForEditResponse = (getQuizForEditResponseSuccess | getQuizForEditResponseError)
 
-export const getGradeQuizUrl = (id: string,) => {
-
-
+export const getGetQuizForEditUrl = (id: string,) => {
 
 
-  return `/api/quizzes/${id}/grade`
+
+
+  return `/api/quizzes/${id}/edit`
 }
 
 /**
- * @summary Grade the open parts of one quiz attempt
+ * @summary Get a quiz with its answers to edit it
  */
-export const gradeQuiz = async (id: string,
-    gradeQuizReq: NonReadonly<GradeQuizReq>, options?: RequestInit): Promise<gradeQuizResponse> => {
+export const getQuizForEdit = async (id: string, options?: RequestInit): Promise<getQuizForEditResponse> => {
 
-  const res = await fetch(getGradeQuizUrl(id),
+  const res = await fetch(getGetQuizForEditUrl(id),
   {
     ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(gradeQuizReq)
+    method: 'GET'
+
+
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: gradeQuizResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as gradeQuizResponse
+  const data: getQuizForEditResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getQuizForEditResponse
 }
 
 
@@ -5885,6 +5934,56 @@ export const updateQuizSharing = async (id: string,
 
 
 
+export type checkReviewItemResponse200 = {
+  data: GradedQuestion
+  status: 200
+}
+
+export type checkReviewItemResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type checkReviewItemResponseSuccess = (checkReviewItemResponse200) & {
+  headers: Headers;
+};
+export type checkReviewItemResponseError = (checkReviewItemResponseDefault) & {
+  headers: Headers;
+};
+
+export type checkReviewItemResponse = (checkReviewItemResponseSuccess | checkReviewItemResponseError)
+
+export const getCheckReviewItemUrl = () => {
+
+
+
+
+  return `/api/review/check`
+}
+
+/**
+ * @summary Grade and rate one question of a review session
+ */
+export const checkReviewItem = async (checkReviewItemReq: NonReadonly<CheckReviewItemReq>, options?: RequestInit): Promise<checkReviewItemResponse> => {
+
+  const res = await fetch(getCheckReviewItemUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(checkReviewItemReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: checkReviewItemResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as checkReviewItemResponse
+}
+
+
+
 export type rateReviewItemResponse204 = {
   data: void
   status: 204
@@ -5913,7 +6012,7 @@ export const getRateReviewItemUrl = () => {
 }
 
 /**
- * @summary Record a review rating
+ * @summary Record a flashcard's review rating
  */
 export const rateReviewItem = async (rateReviewItemReq: NonReadonly<RateReviewItemReq>, options?: RequestInit): Promise<rateReviewItemResponse> => {
 

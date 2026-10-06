@@ -592,8 +592,9 @@ func Definitions() []Definition {
 		chatTool(Definition{
 			Name:      "read_question",
 			Retention: RetainFull,
-			Description: "Read one question-bank question in full, with its solution, marking " +
-				"scheme and sources.",
+			Description: "Read one question-bank question with its sources: in full (answer key, " +
+				"solution, marking scheme) when the user edits the bank, otherwise without answers. " +
+				"copy_questions copies the answers either way.",
 			InputSchema: obj(map[string]any{
 				"question_id": str(""),
 			}, "question_id"),
@@ -760,7 +761,8 @@ func Definitions() []Definition {
 			Name:      "inspect_document",
 			Retention: RetainFull,
 			Description: "Read a document's current content as editable targets with stable " +
-				"ids. Inspect before editing; never take edit positions from search results.",
+				"ids. Inspect before editing; never take edit positions from search results. A quiz's " +
+				"answers, solutions and marking schemes appear only when the user may edit it.",
 			InputSchema: obj(map[string]any{
 				"target": resourceTarget("The document to inspect."),
 				"start":  map[string]any{"type": "integer", "minimum": 0, "default": 0, "description": "First target index to return."},

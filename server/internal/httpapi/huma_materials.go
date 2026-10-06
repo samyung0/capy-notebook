@@ -273,7 +273,12 @@ func (a *api) getMaterial(ctx context.Context, in *materialIDInput) (*materialOu
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return materialResponse(res, role, readOnly, full)
+	out, err := materialResponse(res, role, readOnly, full)
+	// The workspace reads a quiz to view it; editing loads GET /api/quizzes/{id}/edit.
+	if err == nil && res.Kind == "quiz" {
+		materialdoc.LearnerQuiz(out.Body.Content)
+	}
+	return out, err
 }
 
 func (a *api) updateMaterial(

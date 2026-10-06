@@ -8,6 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
+	"github.com/samyung0/capy-notebook/server/internal/questions"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -36,6 +37,12 @@ type studyItemInput struct {
 type reviewRatingInput struct {
 	Body apimodel.RateReviewItemReq
 }
+type reviewCheckInput struct {
+	Body apimodel.CheckReviewItemReq
+}
+type gradedQuestionOutput struct {
+	Body apimodel.GradedQuestion
+}
 type studyDefaultInput struct {
 	Body apimodel.SetStudyEnabledReq
 }
@@ -51,7 +58,8 @@ func (a *api) registerStudy(api huma.API) {
 	reg(api, http.MethodPut, "/api/workspaces/{id}/study/items", "setStudyItem", tag, "Mark a file or material read, unread or removed", http.StatusNoContent, a.setStudyItem)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/study/reset", "resetWorkspaceStudy", tag, "Clear study progress in a workspace", http.StatusNoContent, a.resetWorkspaceStudy)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/review", "getWorkspaceReview", tag, "Next mixed review session", http.StatusOK, a.getWorkspaceReview)
-	reg(api, http.MethodPost, "/api/review/ratings", "rateReviewItem", tag, "Record a review rating", http.StatusNoContent, a.rateReviewItem)
+	reg(api, http.MethodPost, "/api/review/ratings", "rateReviewItem", tag, "Record a flashcard's review rating", http.StatusNoContent, a.rateReviewItem)
+	regWithMaxBody(api, http.MethodPost, "/api/review/check", "checkReviewItem", tag, "Grade and rate one question of a review session", http.StatusOK, answersMaxBytes, a.checkReviewItem)
 	reg(api, http.MethodGet, "/api/review/workspaces", "listReviewWorkspaces", tag, "Workspaces with study progress, for Learning's Review tab", http.StatusOK, a.listReviewWorkspaces)
 	reg(api, http.MethodPatch, "/api/me/study-progress", "setStudyProgressDefault", tag, "Default study progress setting", http.StatusNoContent, a.setStudyProgressDefault)
 	reg(api, http.MethodPatch, "/api/me/study-preferences", "setStudyPreferences", tag, "Save study preferences", http.StatusNoContent, a.setStudyPreferences)
@@ -104,6 +112,13 @@ func (a *api) getWorkspaceReview(ctx context.Context, in *workspaceIDInput) (*re
 	if err != nil {
 		return nil, hErr(err)
 	}
+	// A review session is studying: questions come answer-free and are
+	// graded by checkReviewItem.
+	for i, it := range res.Items {
+		if it.Question != nil {
+			res.Items[i].Question = questions.LearnerView(it.Question)
+		}
+	}
 	return &reviewOutput{Body: res}, nil
 }
 
@@ -125,12 +140,45 @@ func (a *api) rateReviewItem(ctx context.Context, in *reviewRatingInput) (*Empty
 		return nil, hErr(err)
 	}
 	err := a.s.RateItem(ctx, userID(ctx), store.Rating{
-		MaterialID: in.Body.MaterialID, ItemID: in.Body.ItemID, Rating: in.Body.Rating, Score: in.Body.Score,
+		MaterialID: in.Body.MaterialID, ItemID: in.Body.ItemID, Rating: &in.Body.Rating,
 	}, time.Now())
 	if errors.Is(err, store.ErrStudyRating) {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	return &Empty{}, hErr(err)
+}
+
+// checkReviewItem grades one question of a review session on the server,
+// rates it from the score and returns it with its key.
+func (a *api) checkReviewItem(ctx context.Context, in *reviewCheckInput) (*gradedQuestionOutput, error) {
+	if err := a.requireAccountMutate(ctx); err != nil {
+		return nil, err
+	}
+	if _, err := a.materialRead(ctx, in.Body.MaterialID); err != nil {
+		return nil, hErr(err)
+	}
+	q, workspaceID, err := a.s.ReviewQuestion(ctx, in.Body.MaterialID, in.Body.ItemID)
+	if errors.Is(err, store.ErrStudyRating) {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	if err != nil {
+		return nil, hErr(err)
+	}
+	plan, err := planGrading([]map[string]any{q}, in.Body.Answers)
+	if err != nil {
+		return nil, gradeRequestError(err)
+	}
+	graded, correct, total, err := a.gradeSignedIn(ctx, plan, workspaceID, map[string]any{"quizId": in.Body.MaterialID})
+	if err != nil {
+		return nil, err
+	}
+	score := correct / total
+	if err := a.s.RateItem(ctx, userID(ctx), store.Rating{
+		MaterialID: in.Body.MaterialID, ItemID: in.Body.ItemID, Score: &score,
+	}, time.Now()); err != nil {
+		return nil, hErr(err)
+	}
+	return &gradedQuestionOutput{Body: apimodel.GradedQuestion{Correct: correct, Total: total, Question: graded[0]}}, nil
 }
 
 // setStudyPreferences replaces the saved preferences; the chat agent reads

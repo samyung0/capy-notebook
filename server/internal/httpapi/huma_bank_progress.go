@@ -18,27 +18,15 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-// Question-bank progress: signed-in learners record checked answers on /bank,
-// which keeps each one's latest result, and copy questions into their quizzes.
+// Question-bank progress: signed-in learners check answers on /bank, graded
+// here, which keeps each one's latest result, and copy questions into their
+// quizzes with the keys (the copy is theirs to edit).
 // Read access to the bank is enough to record, and frozen accounts record, as
 // in workspace review.
 
-type bankAnswerInput struct {
+type bankCheckInput struct {
 	ID   string `path:"id"`
-	Body struct {
-		Score float64 `json:"score" minimum:"0" maximum:"1" doc:"The answer's awarded marks over the question's marks"`
-	}
-}
-type bankRevealInput struct {
-	ID   string `path:"id"`
-	Body struct {
-		Answers map[string]any `json:"answers" doc:"The learner's answers by part id, given before the key is shown"`
-	}
-}
-type bankRevealOutput struct {
-	Body struct {
-		Question map[string]any `json:"question" doc:"The whole question: answer key, marking scheme and worked solution"`
-	}
+	Body apimodel.CheckBankQuestionReq
 }
 type bankMarksOutput struct {
 	Body struct {
@@ -68,30 +56,16 @@ type bankCopyOutput struct {
 
 func (a *api) registerBankProgress(api huma.API) {
 	tag := "Question bank"
-	reg(api, http.MethodPost, "/api/bank/questions/{id}/reveal", "revealBankQuestion", tag, "Show one question's answer key once its answers are checked", http.StatusOK, a.bankReveal)
-	reg(api, http.MethodPost, "/api/bank/questions/{id}/answers", "answerBankQuestion", tag, "Record a checked answer", http.StatusNoContent, a.bankAnswer)
+	regWithMaxBody(api, http.MethodPost, "/api/bank/questions/{id}/check", "checkBankQuestion", tag, "Grade and record one question's answers", http.StatusOK, answersMaxBytes, a.bankCheck)
 	reg(api, http.MethodGet, "/api/bank/topics/{topicId}/marks", "bankTopicMarks", tag, "Latest scores for a topic's questions", http.StatusOK, a.bankMarks)
 	reg(api, http.MethodGet, "/api/bank/progress", "bankProgress", tag, "Topics the learner has answered questions in", http.StatusOK, a.bankProgress)
 	reg(api, http.MethodPost, "/api/bank/copy", "copyBankQuestions", tag, "Copy bank questions into a workspace quiz", http.StatusOK, a.bankCopy)
 }
 
-// bankReveal returns one question in full when the learner checks their
-// answers; browsing stays answer-free (questions.LearnerView). The browser
-// scores the answers against it and records the score through bankAnswer.
-func (a *api) bankReveal(ctx context.Context, in *bankRevealInput) (*bankRevealOutput, error) {
-	if _, err := a.bankAccess(ctx, false); err != nil {
-		return nil, err
-	}
-	q, err := a.cfg.Bank.Get(ctx, in.ID)
-	if err != nil {
-		return nil, bankHTTPError(err)
-	}
-	out := &bankRevealOutput{}
-	out.Body.Question = q.Question
-	return out, nil
-}
-
-func (a *api) bankAnswer(ctx context.Context, in *bankAnswerInput) (*Empty, error) {
+// bankCheck grades one question's answers on the server, records the
+// learner's latest result and returns the question with its key. Browsing
+// stays answer-free (questions.LearnerView); Try again is unlimited.
+func (a *api) bankCheck(ctx context.Context, in *bankCheckInput) (*gradedQuestionOutput, error) {
 	if _, err := a.bankAccess(ctx, false); err != nil {
 		return nil, err
 	}
@@ -102,8 +76,18 @@ func (a *api) bankAnswer(ctx context.Context, in *bankAnswerInput) (*Empty, erro
 	if err != nil {
 		return nil, bankHTTPError(err)
 	}
-	err = a.s.RecordBankAnswer(ctx, userID(ctx), in.ID, q.TopicID, review.QuestionHash(q.Question), in.Body.Score, time.Now())
-	return &Empty{}, hErr(err)
+	plan, err := planGrading([]map[string]any{q.Question}, in.Body.Answers)
+	if err != nil {
+		return nil, gradeRequestError(err)
+	}
+	graded, correct, total, err := a.gradeSignedIn(ctx, plan, "", map[string]any{"bankQuestionId": in.ID})
+	if err != nil {
+		return nil, err
+	}
+	if err := a.s.RecordBankAnswer(ctx, userID(ctx), in.ID, q.TopicID, review.QuestionHash(q.Question), correct/total, time.Now()); err != nil {
+		return nil, hErr(err)
+	}
+	return &gradedQuestionOutput{Body: apimodel.GradedQuestion{Correct: correct, Total: total, Question: graded[0]}}, nil
 }
 
 func (a *api) bankMarks(ctx context.Context, in *bankTopicInput) (*bankMarksOutput, error) {

@@ -1,0 +1,137 @@
+{
+  "cases": [
+    {
+      "name": "mcq right",
+      "part": {
+        "answer": { "type": "mcq", "options": ["A", "B", "C"], "correct": [1] },
+        "marks": 2
+      },
+      "answer": [1],
+      "awarded": 2,
+      "items": [true]
+    },
+    {
+      "name": "mcq wrong",
+      "part": {
+        "answer": { "type": "mcq", "options": ["A", "B", "C"], "correct": [1] },
+        "marks": 2
+      },
+      "answer": [0],
+      "awarded": 0,
+      "items": [false]
+    },
+    {
+      "name": "mcq nothing chosen",
+      "part": {
+        "answer": { "type": "mcq", "options": ["A", "B", "C"], "correct": [1] },
+        "marks": 2
+      },
+      "answer": [],
+      "awarded": 0,
+      "items": [false]
+    },
+    {
+      "name": "mcq unanswered",
+      "part": {
+        "answer": { "type": "mcq", "options": ["A", "B", "C"], "correct": [1] },
+        "marks": 2
+      },
+      "awarded": 0,
+      "items": [false]
+    },
+    {
+      "name": "mcq index as text",
+      "part": {
+        "answer": { "type": "mcq", "options": ["A", "B", "C"], "correct": [1] },
+        "marks": 2
+      },
+      "answer": ["1"],
+      "awarded": 0,
+      "items": [false]
+    },
+    {
+      "name": "multi exact set in any order",
+      "part": {
+        "answer": {
+          "type": "multi",
+          "options": ["A", "B", "C"],
+          "correct": [0, 2]
+        },
+        "marks": 3
+      },
+      "answer": [2, 0],
+      "awarded": 3,
+      "items": [true]
+    },
+    {
+      "name": "multi subset",
+      "part": {
+        "answer": {
+          "type": "multi",
+          "options": ["A", "B", "C"],
+          "correct": [0, 2]
+        },
+        "marks": 3
+      },
+      "answer": [0],
+      "awarded": 0,
+      "items": [false]
+    },
+    {
+      "name": "multi superset",
+      "part": {
+        "answer": {
+          "type": "multi",
+          "options": ["A", "B", "C"],
+          "correct": [0, 2]
+        },
+        "marks": 3
+      },
+      "answer": [0, 1, 2],
+      "awarded": 0,
+      "items": [false]
+    },
+    {
+      "name": "multi repeated option",
+      "part": {
+        "answer": {
+          "type": "multi",
+          "options": ["A", "B", "C"],
+          "correct": [0, 2]
+        },
+        "marks": 3
+      },
+      "answer": [0, 0],
+      "awarded": 0,
+      "items": [false]
+    },
+    {
+      "name": "boolean right",
+      "part": { "answer": { "type": "boolean", "correct": false }, "marks": 1 },
+      "answer": false,
+      "awarded": 1,
+      "items": [true]
+    },
+    {
+      "name": "boolean wrong",
+      "part": { "answer": { "type": "boolean", "correct": false }, "marks": 1 },
+      "answer": true,
+      "awarded": 0,
+      "items": [false]
+    },
+    {
+      "name": "boolean as text",
+      "part": { "answer": { "type": "boolean", "correct": true }, "marks": 1 },
+      "answer": "true",
+      "awarded": 0,
+      "items": [false]
+    },
+    {
+      "name": "boolean null",
+      "part": { "answer": { "type": "boolean", "correct": true }, "marks": 1 },
+      "answer": null,
+      "awarded": 0,
+      "items": [false]
+    }
+  ]
+}

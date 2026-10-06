@@ -45,9 +45,6 @@ type createAttemptInput struct {
 type attemptsOutput struct {
 	Body []apimodel.Attempt `nullable:"false"`
 }
-type attemptOutput struct {
-	Body apimodel.Attempt
-}
 type attemptIDInput struct {
 	ID string `path:"id"`
 }
@@ -58,37 +55,47 @@ type attemptDetailOutput struct {
 func (a *api) registerQuizzes(api huma.API) {
 	const tag = "Quizzes"
 	regWithMaxBody(api, http.MethodPost, "/api/quizzes", "createQuiz", tag, "Create a quiz", http.StatusCreated, materialRequestMaxBytes, a.createQuiz)
-	reg(api, http.MethodGet, "/api/quizzes/{id}", "getQuiz", tag, "Get a quiz", http.StatusOK, a.getQuiz)
+	reg(api, http.MethodGet, "/api/quizzes/{id}", "getQuiz", tag, "Get a quiz to view or take, without answers", http.StatusOK, a.getQuiz)
+	reg(api, http.MethodGet, "/api/quizzes/{id}/edit", "getQuizForEdit", tag, "Get a quiz with its answers to edit it", http.StatusOK, a.getQuizForEdit)
 	regWithMaxBody(api, http.MethodPatch, "/api/quizzes/{id}/content", "updateQuizContent", tag, "Update quiz content", http.StatusOK, materialRequestMaxBytes, a.updateQuizContent)
 	reg(api, http.MethodPatch, "/api/quizzes/{id}/metadata", "updateQuizMetadata", tag, "Update quiz metadata", http.StatusOK, a.updateQuizMetadata)
 	reg(api, http.MethodPatch, "/api/quizzes/{id}/sharing", "updateQuizSharing", tag, "Update standalone quiz sharing", http.StatusOK, a.updateQuizSharing)
 	reg(api, http.MethodDelete, "/api/quizzes/{id}", "deleteQuiz", tag, "Delete a quiz", http.StatusNoContent, a.deleteQuiz)
-	regWithMaxBody(api, http.MethodPost, "/api/quizzes/{id}/attempts", "createAttempt", tag, "Record a quiz attempt", http.StatusCreated, 8<<20, a.createAttempt)
+	regWithMaxBody(api, http.MethodPost, "/api/quizzes/{id}/attempts", "createAttempt", tag, "Grade and record a quiz attempt", http.StatusCreated, answersMaxBytes, a.createAttempt)
 	reg(api, http.MethodGet, "/api/attempts", "listAttempts", tag, "List attempts", http.StatusOK, a.listAttempts)
 	reg(api, http.MethodGet, "/api/attempts/{id}", "getAttempt", tag, "Get an attempt's result breakdown", http.StatusOK, a.getAttempt)
-	a.registerQuizGrading(api)
 	a.registerComputationCheck(api)
 }
 
+// getQuiz is the read for viewing and studying: owners, editors and
+// link/public visitors alike get answer-free questions (questions.LearnerView).
 func (a *api) getQuiz(ctx context.Context, in *quizIDInput) (*quizOutput, error) {
-	// Owners plus link/public viewers (shared quizzes can be attempted).
 	if _, err := a.materialRead(ctx, in.ID); err != nil {
-		return nil, hErr(err)
-	}
-	role, err := a.s.MaterialEffectiveRole(ctx, userID(ctx), in.ID)
-	if err != nil {
 		return nil, hErr(err)
 	}
 	res, err := a.s.GetQuiz(ctx, in.ID)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	body := apimodel.FromQuiz(res)
-	body.IsOwner = role == store.RoleOwner
-	if body.CanEdit, body.CanEditContent, err = a.canEditMaterial(ctx, in.ID, role); err != nil {
+	out, err := a.quizOutputWithAccess(ctx, in.ID, res)
+	if err != nil {
+		return nil, err
+	}
+	out.Body.Questions = questions.LearnerViews(out.Body.Questions)
+	return out, nil
+}
+
+// getQuizForEdit returns the questions with their keys to whoever may edit
+// them, the same check as a content edit.
+func (a *api) getQuizForEdit(ctx context.Context, in *quizIDInput) (*quizOutput, error) {
+	if err := a.assertMaterialOwner(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	return &quizOutput{Body: body}, nil
+	res, err := a.s.GetQuiz(ctx, in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return a.quizOutputWithAccess(ctx, in.ID, res)
 }
 
 func (a *api) createQuiz(ctx context.Context, in *createQuizInput) (*quizOutput, error) {
@@ -212,7 +219,10 @@ func (a *api) listAttempts(ctx context.Context, _ *struct{}) (*attemptsOutput, e
 	return &attemptsOutput{Body: res}, nil
 }
 
-func (a *api) createAttempt(ctx context.Context, in *createAttemptInput) (*attemptOutput, error) {
+// createAttempt grades every part of a submitted attempt on the server, stores
+// the graded questions, rates review and marks progress, and returns the
+// result with the keys. Retakes are unlimited.
+func (a *api) createAttempt(ctx context.Context, in *createAttemptInput) (*attemptDetailOutput, error) {
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
@@ -220,18 +230,28 @@ func (a *api) createAttempt(ctx context.Context, in *createAttemptInput) (*attem
 	if _, err := a.materialRead(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	if in.Body.Correct > in.Body.Total {
-		return nil, huma.Error422UnprocessableEntity("correct cannot exceed total")
-	}
-	if err := questions.ValidateAll(in.Body.Questions, questions.Policy{Snapshot: true}); err != nil {
-		return nil, huma.Error422UnprocessableEntity("invalid question snapshot: " + err.Error())
-	}
-	res, err := a.s.CreateAttempt(ctx, userID(ctx), in.ID, in.Body.Correct, in.Body.Total,
-		apimodel.EncodeRaw(in.Body.Answers), apimodel.EncodeQuestions(in.Body.Questions))
+	quiz, err := a.s.GetQuiz(ctx, in.ID)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &attemptOutput{Body: res}, nil
+	qs, err := decodeStoredQuestions(quiz.Questions)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	plan, err := planGrading(qs, in.Body.Answers)
+	if err != nil {
+		return nil, gradeRequestError(err)
+	}
+	graded, correct, total, err := a.gradeSignedIn(ctx, plan, quiz.WorkspaceID, map[string]any{"quizId": quiz.ID})
+	if err != nil {
+		return nil, err
+	}
+	res, err := a.s.CreateAttempt(ctx, userID(ctx), in.ID, correct, total,
+		apimodel.EncodeRaw(in.Body.Answers), apimodel.EncodeQuestions(graded))
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &attemptDetailOutput{Body: apimodel.AttemptDetail{Attempt: res, Answers: in.Body.Answers, Questions: graded}}, nil
 }
 
 func (a *api) getAttempt(ctx context.Context, in *attemptIDInput) (*attemptDetailOutput, error) {

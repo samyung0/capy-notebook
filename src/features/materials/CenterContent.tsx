@@ -24,6 +24,7 @@ import {
 import { fileIsIngesting, IMAGE_MIN_ZOOM } from '@/features/files/fileUtils';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
+import type { LearnerQuestion } from '@/features/questions/types';
 import { QuizQuestionList } from '@/features/quizzes/QuizPage';
 import { quizEditSearch } from '@/features/quizzes/quizNavigation';
 import {
@@ -33,11 +34,7 @@ import {
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { createEditorStatusStore, Header } from './CenterContentHeader';
-import {
-  type MaterialDocument,
-  type QuizElement,
-  quizElementToBlock,
-} from './document';
+import type { MaterialDocument, QuizElement } from './document';
 import { HeavyMaterialGate } from './HeavyMaterialGate';
 import { type HeavyMaterialChoice, heavyMaterial } from './heavyDocument';
 import { MaterialAttributionFooter } from './MaterialAttributionFooter';
@@ -359,7 +356,9 @@ export function MaterialContent({
 }
 
 /** A quiz reads exactly like the quiz page, without taking answers. Its
- * questions come from the material already loaded, so this works offline. */
+ * questions come from the material already loaded, so this works offline.
+ * Material reads carry learner questions with no answer key; only the quiz
+ * editor loads the key. */
 function QuizPreview({
   centered,
   content,
@@ -370,12 +369,14 @@ function QuizPreview({
   const quiz = content.value.find(
     (node): node is QuizElement => node.type === 'quiz'
   );
+  const questions = (quiz?.children ?? []).flatMap((node) =>
+    'type' in node && node.type === 'quiz_question'
+      ? [node.question as unknown as LearnerQuestion]
+      : []
+  );
   return (
     <TabContent centered={centered}>
-      <QuizQuestionList
-        disabled
-        questions={quiz ? quizElementToBlock(quiz).questions : []}
-      />
+      <QuizQuestionList disabled questions={questions} />
     </TabContent>
   );
 }

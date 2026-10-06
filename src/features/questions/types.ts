@@ -165,6 +165,8 @@ export type QuestionPart = {
   awarded?: number;
   /** Open parts: none, half or all of each item's marks, summing to `awarded`. */
   itemAwards?: number[];
+  /** Matching and gaps parts: whether each pair or gap was right. */
+  itemResults?: boolean[];
 };
 export type Question = {
   id: string;

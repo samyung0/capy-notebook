@@ -1,0 +1,95 @@
+{
+  "cases": [
+    {
+      "name": "every gap",
+      "part": {
+        "answer": {
+          "type": "gaps",
+          "accepted": [["mitochondria"], ["ATP", "adenosine triphosphate"]]
+        },
+        "marks": 2
+      },
+      "answer": ["Mitochondria", " atp "],
+      "awarded": 2,
+      "items": [true, true]
+    },
+    {
+      "name": "spacing inside a gap",
+      "part": {
+        "answer": {
+          "type": "gaps",
+          "accepted": [["mitochondria"], ["ATP", "adenosine triphosphate"]]
+        },
+        "marks": 2
+      },
+      "answer": ["mitochondria", "Adenosine   triphosphate"],
+      "awarded": 2,
+      "items": [true, true]
+    },
+    {
+      "name": "no typo tolerance",
+      "part": {
+        "answer": {
+          "type": "gaps",
+          "accepted": [["mitochondria"], ["ATP", "adenosine triphosphate"]]
+        },
+        "marks": 2
+      },
+      "answer": ["mitocondria", "ATP"],
+      "awarded": 1,
+      "items": [false, true]
+    },
+    {
+      "name": "a blank gap",
+      "part": {
+        "answer": {
+          "type": "gaps",
+          "accepted": [["mitochondria"], ["ATP", "adenosine triphosphate"]]
+        },
+        "marks": 2
+      },
+      "answer": ["  ", "ATP"],
+      "awarded": 1,
+      "items": [false, true]
+    },
+    {
+      "name": "fewer answers than gaps",
+      "part": {
+        "answer": {
+          "type": "gaps",
+          "accepted": [["mitochondria"], ["ATP", "adenosine triphosphate"]]
+        },
+        "marks": 2
+      },
+      "answer": ["mitochondria"],
+      "awarded": 1,
+      "items": [true, false]
+    },
+    {
+      "name": "half of three marks",
+      "part": {
+        "answer": {
+          "type": "gaps",
+          "accepted": [["mitochondria"], ["ATP", "adenosine triphosphate"]]
+        },
+        "marks": 3
+      },
+      "answer": ["mitochondria", "glucose"],
+      "awarded": 1.5,
+      "items": [true, false]
+    },
+    {
+      "name": "text is not a list",
+      "part": {
+        "answer": {
+          "type": "gaps",
+          "accepted": [["mitochondria"], ["ATP", "adenosine triphosphate"]]
+        },
+        "marks": 2
+      },
+      "answer": "mitochondria",
+      "awarded": 0,
+      "items": [false, false]
+    }
+  ]
+}

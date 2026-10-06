@@ -123,10 +123,10 @@ func TestRequestBodyValidation(t *testing.T) {
 			body:   `{"start":"2026-08-13T09:00:00Z","end":"2026-08-13T10:00:00Z"}`,
 		},
 		{
-			name:   "create attempt total zero",
+			name:   "create attempt with a client score",
 			method: http.MethodPost,
 			path:   "/api/quizzes/qz_1/attempts",
-			body:   `{"correct":0,"total":0}`,
+			body:   `{"answers":{},"correct":1,"total":1}`,
 		},
 		{
 			name:   "update label name too long",

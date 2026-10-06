@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 import type { PlateEditor } from 'platejs/react';
 import { resolveEditorAsset } from '@/api/editorAssets';
-import { cardsQuery, quizQuery } from '@/api/hooks';
+import { cardsQuery, quizEditQuery } from '@/api/hooks';
 import {
   assertMaterialDocument,
   createMaterialDocument,
@@ -46,9 +46,11 @@ async function resolveMaterialRefs(
   return Promise.all(
     value.map(async (node) => {
       if (!isMaterialRefElement(node) || !node.materialId) return node;
+      // Export sits in the note's edit mode and writes the answer key, so it
+      // reads the quiz the way its editor does.
       if (node.refKind === 'quiz') {
         const quiz = await queryClient.fetchQuery({
-          ...quizQuery(node.materialId),
+          ...quizEditQuery(node.materialId),
           retry: false,
           staleTime: 0,
         });

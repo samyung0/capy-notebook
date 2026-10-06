@@ -273,12 +273,6 @@ components:
     Attempt:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/Attempt.json
-          format: uri
-          readOnly: true
-          type: string
         chapters:
           items:
             type: string
@@ -369,24 +363,6 @@ components:
         - total
         - pct
         - takenAt
-      type: object
-    BankAnswerInputBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/BankAnswerInputBody.json
-          format: uri
-          readOnly: true
-          type: string
-        score:
-          description: The answer's awarded marks over the question's marks
-          format: double
-          maximum: 1
-          minimum: 0
-          type: number
-      required:
-        - score
       type: object
     BankAssetOutputBody:
       additionalProperties: false
@@ -537,38 +513,6 @@ components:
           type: array
       required:
         - topics
-      type: object
-    BankRevealInputBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/BankRevealInputBody.json
-          format: uri
-          readOnly: true
-          type: string
-        answers:
-          additionalProperties: {}
-          description: The learner's answers by part id, given before the key is shown
-          type: object
-      required:
-        - answers
-      type: object
-    BankRevealOutputBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/BankRevealOutputBody.json
-          format: uri
-          readOnly: true
-          type: string
-        question:
-          additionalProperties: {}
-          description: "The whole question: answer key, marking scheme and worked solution"
-          type: object
-      required:
-        - question
       type: object
     BankReviewInputBody:
       additionalProperties: false
@@ -745,6 +689,46 @@ components:
         - name
         - order
         - fileIds
+      type: object
+    CheckBankQuestionReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CheckBankQuestionReq.json
+          format: uri
+          readOnly: true
+          type: string
+        answers:
+          additionalProperties: {}
+          description: The learner's answers by part id
+          type: object
+      required:
+        - answers
+      type: object
+    CheckReviewItemReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CheckReviewItemReq.json
+          format: uri
+          readOnly: true
+          type: string
+        answers:
+          additionalProperties: {}
+          description: The learner's answers by part id
+          type: object
+        itemId:
+          minLength: 1
+          type: string
+        materialId:
+          minLength: 1
+          type: string
+      required:
+        - materialId
+        - itemId
+        - answers
       type: object
     Citation:
       additionalProperties: false
@@ -961,27 +945,10 @@ components:
           type: string
         answers:
           additionalProperties: {}
-          description: User answers keyed by stable part id
+          description: The learner's answers by part id
           type: object
-        correct:
-          format: double
-          minimum: 0
-          type: number
-        questions:
-          description: Question snapshot taken at submit time
-          items:
-            additionalProperties: {}
-            type: object
-          nullable: true
-          type: array
-        total:
-          exclusiveMinimum: true
-          format: double
-          minimum: 0
-          type: number
       required:
-        - correct
-        - total
+        - answers
       type: object
     CreateCanvasReq:
       additionalProperties: false
@@ -1909,54 +1876,72 @@ components:
         - kind
         - title
       type: object
-    GradeQuizReq:
+    GradeAnonymousQuizReq:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/GradeQuizReq.json
+          example: https://example.com/schemas/GradeAnonymousQuizReq.json
           format: uri
           readOnly: true
           type: string
         answers:
-          additionalProperties:
-            type: string
+          additionalProperties: {}
+          description: The learner's answers by part id
           type: object
         localId:
+          maxLength: 64
           type: string
       required:
         - answers
       type: object
-    GradeQuizResp:
+    GradedQuestion:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/GradeQuizResp.json
+          example: https://example.com/schemas/GradedQuestion.json
           format: uri
           readOnly: true
           type: string
-        parts:
-          additionalProperties:
-            $ref: "#/components/schemas/GradedPart"
-          type: object
-      required:
-        - parts
-      type: object
-    GradedPart:
-      additionalProperties: false
-      properties:
-        awarded:
+        correct:
           format: double
           type: number
-        itemAwards:
-          items:
-            format: double
-            type: number
-          type: array
+        question:
+          additionalProperties: {}
+          type: object
+        total:
+          format: double
+          type: number
       required:
-        - awarded
-        - itemAwards
+        - correct
+        - total
+        - question
+      type: object
+    GradedQuiz:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/GradedQuiz.json
+          format: uri
+          readOnly: true
+          type: string
+        correct:
+          format: double
+          type: number
+        questions:
+          items:
+            additionalProperties: {}
+            type: object
+          type: array
+        total:
+          format: double
+          type: number
+      required:
+        - correct
+        - total
+        - questions
       type: object
     ImportSourcesAccepted:
       additionalProperties: false
@@ -3325,20 +3310,15 @@ components:
           minLength: 1
           type: string
         rating:
-          description: "A flashcard's button: 1 Again .. 4 Easy"
+          description: "A flashcard's button: 1 Again .. 4 Easy; questions are rated by POST /api/review/check"
           format: int64
           maximum: 4
           minimum: 1
           type: integer
-        score:
-          description: A question's awarded marks over its marks
-          format: double
-          maximum: 1
-          minimum: 0
-          type: number
       required:
         - materialId
         - itemId
+        - rating
       type: object
     Ref:
       additionalProperties: false
@@ -5874,7 +5854,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Read a bank question
+      summary: Read a bank question without answers
       tags:
         - Question bank
     put:
@@ -5907,9 +5887,9 @@ paths:
       summary: Edit a bank question
       tags:
         - Question bank
-  /api/bank/questions/{id}/answers:
+  /api/bank/questions/{id}/check:
     post:
-      operationId: answerBankQuestion
+      operationId: checkBankQuestion
       parameters:
         - in: path
           name: id
@@ -5920,18 +5900,22 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/BankAnswerInputBody"
+              $ref: "#/components/schemas/CheckBankQuestionReq"
         required: true
       responses:
-        "204":
-          description: No Content
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GradedQuestion"
+          description: OK
         default:
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Record a checked answer
+      summary: Grade and record one question's answers
       tags:
         - Question bank
   /api/bank/questions/{id}/comments:
@@ -5961,27 +5945,21 @@ paths:
       summary: Email a question comment
       tags:
         - Question bank
-  /api/bank/questions/{id}/reveal:
-    post:
-      operationId: revealBankQuestion
+  /api/bank/questions/{id}/edit:
+    get:
+      operationId: bankQuestionForEdit
       parameters:
         - in: path
           name: id
           required: true
           schema:
             type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/BankRevealInputBody"
-        required: true
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BankRevealOutputBody"
+                $ref: "#/components/schemas/Detail"
           description: OK
         default:
           content:
@@ -5989,7 +5967,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Show one question's answer key once its answers are checked
+      summary: Read a bank question with its answers to edit it
       tags:
         - Question bank
   /api/bank/questions/{id}/review:
@@ -8255,6 +8233,37 @@ paths:
       summary: Get a shared quiz image URL
       tags:
         - Sharing
+  /api/public/quizzes/{token}/grade:
+    post:
+      operationId: gradeAnonymousQuiz
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GradeAnonymousQuizReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GradedQuiz"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Grade a signed-out attempt at a shared quiz
+      tags:
+        - Sharing
   /api/public/workspaces/{id}/summary:
     get:
       operationId: getPublicWorkspaceSummary
@@ -8408,7 +8417,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get a quiz
+      summary: Get a quiz to view or take, without answers
       tags:
         - Quizzes
   /api/quizzes/{id}/attempts:
@@ -8431,7 +8440,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Attempt"
+                $ref: "#/components/schemas/AttemptDetail"
           description: Created
         default:
           content:
@@ -8439,7 +8448,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Record a quiz attempt
+      summary: Grade and record a quiz attempt
       tags:
         - Quizzes
   /api/quizzes/{id}/clone:
@@ -8498,27 +8507,21 @@ paths:
       summary: Update quiz content
       tags:
         - Quizzes
-  /api/quizzes/{id}/grade:
-    post:
-      operationId: gradeQuiz
+  /api/quizzes/{id}/edit:
+    get:
+      operationId: getQuizForEdit
       parameters:
         - in: path
           name: id
           required: true
           schema:
             type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/GradeQuizReq"
-        required: true
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GradeQuizResp"
+                $ref: "#/components/schemas/Quiz"
           description: OK
         default:
           content:
@@ -8526,7 +8529,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Grade the open parts of one quiz attempt
+      summary: Get a quiz with its answers to edit it
       tags:
         - Quizzes
   /api/quizzes/{id}/metadata:
@@ -8591,6 +8594,31 @@ paths:
       summary: Update standalone quiz sharing
       tags:
         - Quizzes
+  /api/review/check:
+    post:
+      operationId: checkReviewItem
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckReviewItemReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GradedQuestion"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Grade and rate one question of a review session
+      tags:
+        - Study
   /api/review/ratings:
     post:
       operationId: rateReviewItem
@@ -8609,7 +8637,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Record a review rating
+      summary: Record a flashcard's review rating
       tags:
         - Study
   /api/review/workspaces:

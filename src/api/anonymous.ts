@@ -1,10 +1,11 @@
 import { queryOptions } from '@tanstack/react-query';
-import { ApiError, type ApiErrorBody, api } from './client';
+import { ApiError, parseErrorBody } from './client';
 import type {
   AnonymousFlashcards,
   AnonymousQuiz,
-  GradedPart,
-  GradeQuizResp,
+  GradeAnonymousQuizReq,
+  GradedQuiz,
+  Question,
 } from './types';
 
 /**
@@ -19,13 +20,12 @@ async function publicJson<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { Accept: 'application/json', ...init?.headers },
   });
   if (!response.ok) {
-    const body = (await response
-      .json()
-      .catch(() => null)) as ApiErrorBody | null;
+    // Machine codes such as anonymous_grading_limit arrive in errors[].message.
+    const body = parseErrorBody(await response.json().catch(() => null));
     throw new ApiError(
       response.status,
       response.statusText,
-      body?.message,
+      body?.message ?? body?.detail,
       body
     );
   }
@@ -48,30 +48,25 @@ export const anonymousFlashcardsQuery = (token: string) =>
 export const anonymousAssetUrl = (token: string, assetId: string) =>
   `/p/quizzes/${token}/assets/${assetId}`;
 
+/** Grades every part of a signed-out attempt; the result carries each
+ * question's key, so the page shows it and keeps it in this browser. */
 export async function gradeAnonymousQuiz(
   token: string,
-  answers: Record<string, string>,
-  localId: string | undefined
-): Promise<Record<string, GradedPart>> {
-  const { parts } = await publicJson<GradeQuizResp>(
+  body: GradeAnonymousQuizReq
+): Promise<{ questions: Question[]; awarded: number; max: number }> {
+  const graded = await publicJson<GradedQuiz>(
     `/api/public/quizzes/${token}/grade`,
     {
-      body: JSON.stringify({ answers, localId }),
+      body: JSON.stringify(body),
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
     }
   );
-  return parts;
-}
-
-export async function gradeQuiz(
-  quizId: string,
-  answers: Record<string, string>
-): Promise<Record<string, GradedPart>> {
-  const { parts } = await api.post<GradeQuizResp>(`/quizzes/${quizId}/grade`, {
-    answers,
-  });
-  return parts;
+  return {
+    awarded: graded.correct,
+    max: graded.total,
+    questions: graded.questions,
+  };
 }
 
 /** The daily anonymous grading cap; the visitor can sign in to keep going. */

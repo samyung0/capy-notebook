@@ -62,11 +62,12 @@ Ratings:
 
 - Flashcards: the four buttons map directly, 1 Again, 2 Hard, 3 Good, 4 Easy.
 - Questions: a score from 0 to 1 (`ScoreRating`): below 0.5 Again, below 0.7
-  Hard, otherwise Good, never Easy. In review the browser sends
-  `awarded / questionMarks(question)`. For an attempt, `QuestionScore` sums the
-  snapshot's part `awarded` over part `marks` (half marks included); a
-  question carrying no marks is not rated. Scores come from the client, as
-  attempt totals already do, so a user can only distort their own progress.
+  Hard, otherwise Good, never Easy. The server grades every question
+  ([question-bank.md](question-bank.md#answer-keys-and-server-grading)): a
+  review check rates `correct / total` of the one question, and an attempt's
+  `QuestionScore` sums the graded snapshot's part `awarded` over part `marks`
+  (half marks included); a question carrying no marks is not rated. The
+  browser sends answers only, never scores.
 
 ## Items, hashes and resets
 
@@ -106,17 +107,19 @@ workspace; writes need read access plus an account that can sign in
 | `PUT /api/workspaces/{id}/study/enabled` | Upserts `workspace_study`. |
 | `PUT /api/workspaces/{id}/study/items` | `{fileId \| materialId, state?}`: `done` (Mark as read), `removed` (Stop tracking), omitted deletes the row (Mark as unread, Start tracking). The target must be an untrashed file or untrashed, non-embedded material of the workspace, else 404; both or neither id is 422. |
 | `POST /api/workspaces/{id}/study/reset` | Deletes the user's `study_progress` rows in the workspace and `review_states` of every material in it. Attempts, the review log and the switch stay. |
-| `GET /api/workspaces/{id}/review` | The next session: the first 20 of the review pool, each with its content (card faces, or the question JSON with its answer key) and material title. |
-| `POST /api/review/ratings` | `{materialId, itemId, rating}` for a card, `{materialId, itemId, score}` for a question; the wrong field for the item's kind is 422. Needs read access to the material, so standalone shared sets and embedded sets (through their note) can be rated too. |
+| `GET /api/workspaces/{id}/review` | The next session: the first 20 of the review pool, each with its content (card faces, or the answer-free question, `questions.LearnerView`) and material title. |
+| `POST /api/review/ratings` | `{materialId, itemId, rating}` for a card; a question is 422 (it is rated by a check). Needs read access to the material, so standalone shared sets and embedded sets (through their note) can be rated too. |
+| `POST /api/review/check` | `{materialId, itemId, answers}` for a question: grades it on the server (open parts with Jev), rates it from `correct / total` and returns `{correct, total, question}`, the question with its key and awards. A card is 422. |
 | `GET /api/review/workspaces` | Learning's Review tab, below. |
 | `PATCH /api/me/study-progress` | The global default. |
-| `POST /api/quizzes/{id}/attempts` | Existing route; its side effect is below. |
+| `POST /api/quizzes/{id}/attempts` | `{answers}`, graded on the server ([question-bank.md](question-bank.md#answer-keys-and-server-grading)); its side effect is below. |
 | `POST /api/internal/study-progress` | The chat agent's `read_study_progress`, below. |
 
 Side effects, in the same transaction as the write:
 
-- An attempt on a workspace quiz that is not embedded rates every snapshot
-  question still in the document and sets the quiz `done`. Attempts on
+- An attempt on a workspace quiz that is not embedded rates every question of
+  the snapshot the server graded that is still in the document and sets the
+  quiz `done`. Attempts on
   embedded and standalone quizzes record no review state at all.
 - A rating writes `review_states` and `review_log`. For a workspace material
   that is not embedded it also sets progress: a question makes its quiz
@@ -187,11 +190,11 @@ green closed book once read) and the same items in its ⋮ menu, for every role.
 (`src/routes/ReviewSession.tsx`), a full page scoped to one workspace. The
 session is the batch fetched when it began, so it does not reshuffle as
 ratings land. Cards flip and take the four ratings. Questions use the quiz
-page's `QuestionRunner`; Check grades closed parts in the browser and sends
-open parts to `POST /api/quizzes/{quizId}/grade` (Jev) for the item's own
-quiz, one question at a time, then posts the score and shows the marked
-answer. A failed grade shows an error and the learner checks again; a failed
-rating shows a toast. Ratings save in the background. The end screen says how
+page's `QuestionRunner` on the answer-free question; Check posts the answers
+to `POST /api/review/check`, which grades (open parts with Jev), rates and
+returns the question with its key, then shows the marked answer. A failed
+check shows an error and the learner checks again. Card ratings save in the
+background; a failed one shows a toast. The end screen says how
 many were reviewed and offers Done (back to where the session started) and
 Review 20 more, which waits for every pending rating, refreshes, and selects
 again from the saved ratings, so FSRS may bring back an item just rated.
@@ -269,6 +272,10 @@ account on sign-in. `SrsState` is a hand-written type in `src/lib/srs.ts`.
   and purge.
 - `server/internal/httpapi/share_access_test.go`
   (`TestShareHTTPReadersRecordReviewRatings`): viewers and link visitors rate.
+- `server/internal/httpapi/answer_keys_test.go`
+  (`TestReviewSessionChecksQuestionsOnTheServer`): the session is
+  answer-free, a check grades, rates and returns the key, and a question
+  score through the ratings route is refused.
 - `server/internal/httpapi/account_gates_test.go`: frozen accounts and members
   of a frozen owner's workspace record over HTTP.
 - `src/features/workspace/workspaceContent.test.ts`: reading order.

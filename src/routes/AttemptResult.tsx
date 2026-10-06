@@ -99,7 +99,6 @@ export default function AttemptResult() {
         {hasBreakdown ? (
           <>
             <QuizScore
-              answers={answers}
               awarded={attempt.correct}
               max={attempt.total}
               questions={attempt.questions}

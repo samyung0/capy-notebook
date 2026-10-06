@@ -13,6 +13,7 @@ import (
 
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/questions"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -451,6 +452,23 @@ func FromAttemptDetail(d store.AttemptDetail) AttemptDetail {
 	}
 }
 
+// GradedQuiz is a graded signed-out attempt: every question with its key and,
+// on each part, the awarded marks (open parts also itemAwards, Jev's marks per
+// marking item; matching and gaps parts also itemResults, right or wrong per
+// pair or gap). Correct is the awarded marks over Total, the quiz's marks.
+type GradedQuiz struct {
+	Correct   float64          `json:"correct"`
+	Total     float64          `json:"total"`
+	Questions []map[string]any `json:"questions" nullable:"false"`
+}
+
+// GradedQuestion is one checked question, keyed and awarded like GradedQuiz.
+type GradedQuestion struct {
+	Correct  float64        `json:"correct"`
+	Total    float64        `json:"total"`
+	Question map[string]any `json:"question"`
+}
+
 // PublicQuiz is a quiz shared on Explore.
 type PublicQuiz struct {
 	Quiz
@@ -458,10 +476,12 @@ type PublicQuiz struct {
 	Clones int    `json:"clones"`
 }
 
+// FromPublicQuizzes lists quizzes for browsing, so questions are answer-free.
 func FromPublicQuizzes(qs []store.PublicQuiz) []PublicQuiz {
 	out := make([]PublicQuiz, len(qs))
 	for i, q := range qs {
 		pq := PublicQuiz{Quiz: FromQuiz(q.Quiz), Author: q.Author, Clones: q.Clones}
+		pq.Questions = questions.LearnerViews(pq.Questions)
 		pq.IsOwner = false
 		pq.CanEdit, pq.CanEditContent = false, false
 		out[i] = pq

@@ -6,6 +6,7 @@ import {
 } from '@/api/gen/validators';
 import type {
   Chapter,
+  EditableQuiz,
   Flashcard,
   FlashcardSet,
   GenerateOptions,
@@ -17,7 +18,6 @@ import type {
   PDFAnnotation,
   PDFAnnotationBody,
   Question,
-  Quiz,
   SearchResult,
   SourceCollaborationToken,
   SourceFile,
@@ -45,6 +45,7 @@ import {
   exampleAnswers,
   exampleQuestion,
 } from '@/features/questions/questionFixtures';
+import type { Answers } from '@/features/quizzes/grade';
 import {
   modelRefValue,
   optionRef,
@@ -52,6 +53,7 @@ import {
 } from '@/features/settings/llmOptions';
 import { getFileKind } from '@/features/workspace/sourceUpload';
 import { DEV_SHARE_LINK_SECRET, sharePath } from '@/lib/shareLink';
+import { gradeQuestions, learnerView } from './answerKeys';
 import { mockChatStream } from './chatStream';
 import {
   mockMaterialRoom,
@@ -846,18 +848,6 @@ export const handlers = [
     }
     return new HttpResponse(null, { status: 204 });
   }),
-  http.post('/api/quizzes/:id/grade', async ({ params, request }) => {
-    const mt = db.materials.find(
-      (x) => x.id === params.id && x.kind === 'quiz'
-    );
-    if (!mt) return new HttpResponse(null, { status: 404 });
-    const { answers } = (await request.json()) as {
-      answers: Record<string, string>;
-    };
-    return HttpResponse.json({
-      parts: mockGradeParts(db.quizFromMaterial(mt).questions, answers),
-    });
-  }),
   http.post('/api/questions/computation-check', async ({ request }) => {
     const { question } = (await request.json()) as { question: Question };
     const text = JSON.stringify(question.parts).toLowerCase();
@@ -875,17 +865,23 @@ export const handlers = [
     if (!mt)
       return HttpResponse.json({ message: 'not found' }, { status: 404 });
     const { id, name, privacy, questions } = db.quizFromMaterial(mt);
-    return HttpResponse.json({ id, name, privacy, questions });
+    return HttpResponse.json({
+      id,
+      name,
+      privacy,
+      questions: questions.map(learnerView),
+    });
   }),
   http.post('/api/public/quizzes/:token/grade', async ({ params, request }) => {
     const mt = anonymousMaterial(String(params.token), 'quiz');
     if (!mt)
       return HttpResponse.json({ message: 'not found' }, { status: 404 });
-    const { answers } = (await request.json()) as {
-      answers: Record<string, string>;
-    };
+    const { answers } = (await request.json()) as { answers: Answers };
+    const graded = gradeQuestions(db.quizFromMaterial(mt).questions, answers);
     return HttpResponse.json({
-      parts: mockGradeParts(db.quizFromMaterial(mt).questions, answers),
+      correct: graded.awarded,
+      questions: graded.questions,
+      total: graded.max,
     });
   }),
   http.get('/p/flashcards/:token', ({ params }) => {
@@ -1878,7 +1874,9 @@ export const handlers = [
 
     await hydrateEditorState(String(params.id));
     const mt = db.materials.find((x) => x.id === params.id);
-    return mt ? HttpResponse.json(mt) : new HttpResponse(null, { status: 404 });
+    return mt
+      ? HttpResponse.json(db.learnerMaterial(mt))
+      : new HttpResponse(null, { status: 404 });
   }),
   http.post('/api/materials/:id/collaboration-token', async ({ params }) => {
     const material = db.materials.find((item) => item.id === params.id);
@@ -2479,7 +2477,7 @@ export const handlers = [
   }),
   /* ---------------- quizzes & attempts ---------------- */
   http.post('/api/quizzes', async ({ request }) => {
-    const body = (await request.json()) as Partial<Quiz>;
+    const body = (await request.json()) as Partial<EditableQuiz>;
     const ws = db.workspaces.find((w) => w.id === body.workspaceId);
     const name = body.name || copyText(db.user.locale, 'untitled_quiz');
     const material = db.makeMaterial({
@@ -2499,20 +2497,33 @@ export const handlers = [
     db.materials.unshift(material);
     return HttpResponse.json(db.quizFromMaterial(material), { status: 201 });
   }),
+  // Viewing and taking read answer-free questions; only the editor reads the key.
   http.get('/api/quizzes/:id', async ({ params }) => {
     const mt = db.materials.find(
       (x) => x.id === params.id && x.kind === 'quiz'
     );
-    return mt
-      ? HttpResponse.json(db.quizFromMaterial(mt))
-      : new HttpResponse(null, { status: 404 });
+    if (!mt) return new HttpResponse(null, { status: 404 });
+    const quiz = db.quizFromMaterial(mt);
+    return HttpResponse.json({
+      ...quiz,
+      questions: quiz.questions.map(learnerView),
+    });
+  }),
+  http.get('/api/quizzes/:id/edit', async ({ params }) => {
+    const mt = db.materials.find(
+      (x) => x.id === params.id && x.kind === 'quiz'
+    );
+    // Without edit access the quiz's key does not exist for the caller.
+    if (!mt?.capabilities.canEditContent)
+      return new HttpResponse(null, { status: 404 });
+    return HttpResponse.json(db.quizFromMaterial(mt));
   }),
   http.patch('/api/quizzes/:id/content', async ({ params, request }) => {
     const mt = db.materials.find(
       (x) => x.id === params.id && x.kind === 'quiz'
     );
     if (!mt) return new HttpResponse(null, { status: 404 });
-    const body = (await request.json()) as Partial<Quiz> & {
+    const body = (await request.json()) as Partial<EditableQuiz> & {
       expectedRevision: number;
     };
     if (body.expectedRevision !== mt.revision)
@@ -2529,7 +2540,7 @@ export const handlers = [
       (item) => item.id === params.id && item.kind === 'quiz'
     );
     if (!material) return new HttpResponse(null, { status: 404 });
-    const body = (await request.json()) as Partial<Quiz>;
+    const body = (await request.json()) as Partial<EditableQuiz>;
     if (body.name !== undefined) material.title = body.name;
     if (body.chapters !== undefined) material.scopeChapters = body.chapters;
     return HttpResponse.json(db.quizFromMaterial(material));
@@ -2540,7 +2551,7 @@ export const handlers = [
         item.id === params.id && item.kind === 'quiz' && !item.workspaceId
     );
     if (!material) return new HttpResponse(null, { status: 404 });
-    const body = (await request.json()) as Pick<Quiz, 'privacy'>;
+    const body = (await request.json()) as Pick<EditableQuiz, 'privacy'>;
     material.privacy = body.privacy;
     return HttpResponse.json(db.quizFromMaterial(material));
   }),
@@ -2578,9 +2589,9 @@ export const handlers = [
   }),
   http.get('/api/attempts', async () =>
     HttpResponse.json(
-      [...db.attempts].sort(
-        (a, b) => +new Date(b.takenAt) - +new Date(a.takenAt)
-      )
+      [...db.attempts]
+        .sort((a, b) => +new Date(b.takenAt) - +new Date(a.takenAt))
+        .map(db.attemptSummary)
     )
   ),
   http.get('/api/attempts/:id', async ({ params }) => {
@@ -2592,29 +2603,28 @@ export const handlers = [
       questions: at.questions ?? [],
     });
   }),
+  // Grades every part, records the attempt and returns it with the keys.
   http.post('/api/quizzes/:id/attempts', async ({ params, request }) => {
-    const body = (await request.json()) as {
-      correct: number;
-      total: number;
-      answers?: Record<string, unknown>;
-      questions?: Question[];
-    };
+    const { answers } = (await request.json()) as { answers: Answers };
     const quizMt = db.materials.find(
       (x) => x.id === params.id && x.kind === 'quiz'
     );
-    const quiz = quizMt ? db.quizFromMaterial(quizMt) : undefined;
+    if (!quizMt) return new HttpResponse(null, { status: 404 });
+    const quiz = db.quizFromMaterial(quizMt);
+    const graded = gradeQuestions(quiz.questions, answers);
+    if (graded.max <= 0) return new HttpResponse(null, { status: 422 });
     const at = {
-      answers: body.answers ?? {},
-      chapters: quiz?.chapters ?? [],
-      correct: body.correct,
+      answers,
+      chapters: quiz.chapters,
+      correct: graded.awarded,
       id: uid('at'),
-      materialId: String(params.id),
-      pct: Math.round((body.correct / Math.max(1, body.total)) * 100),
-      questions: body.questions ?? [],
-      quizName: quiz?.name ?? 'Quiz',
+      materialId: quiz.id,
+      pct: Math.round((graded.awarded / graded.max) * 100),
+      questions: graded.questions,
+      quizName: quiz.name,
       takenAt: new Date().toISOString(),
-      total: body.total,
-      workspaceName: quiz?.workspaceName ?? '',
+      total: graded.max,
+      workspaceName: quiz.workspaceName,
     };
     db.attempts.unshift(at);
     return HttpResponse.json(at, { status: 201 });
@@ -2925,7 +2935,12 @@ export const handlers = [
     HttpResponse.json(db.publicWorkspaces)
   ),
   http.get('/api/explore/quizzes', async () =>
-    HttpResponse.json(db.publicQuizzes)
+    HttpResponse.json(
+      db.publicQuizzes.map((quiz) => ({
+        ...quiz,
+        questions: quiz.questions.map(learnerView),
+      }))
+    )
   ),
   http.get('/api/explore/flashcards', async () =>
     HttpResponse.json(db.publicFlashcardSets)
@@ -3145,29 +3160,4 @@ function anonymousMaterial(token: string, kind: 'quiz' | 'flashcards') {
       !x.parentMaterialId &&
       x.privacy !== 'private'
   );
-}
-
-/** Credits a marking item's marks when the answer shares a long word with it. */
-function mockGradeParts(
-  questions: Question[],
-  answers: Record<string, string>
-) {
-  const parts: Record<string, { awarded: number; itemAwards: number[] }> = {};
-  for (const part of questions.flatMap((question) => question.parts)) {
-    const answer = answers[part.id]?.toLowerCase().trim();
-    if (part.answer.type !== 'open' || !part.markscheme || !answer) continue;
-    const itemAwards = part.markscheme.map((item): number =>
-      item.text
-        .toLowerCase()
-        .split(/\s+/)
-        .some((word) => word.length > 3 && answer.includes(word))
-        ? item.marks
-        : 0
-    );
-    parts[part.id] = {
-      awarded: itemAwards.reduce((sum, award) => sum + award, 0),
-      itemAwards,
-    };
-  }
-  return parts;
 }

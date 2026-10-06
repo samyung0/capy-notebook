@@ -10,6 +10,7 @@ import type {
   CalendarEvent,
   Chapter,
   Conversation,
+  EditableQuiz,
   FileChange,
   Flashcard,
   FlashcardSet,
@@ -22,7 +23,6 @@ import type {
   PublicQuiz,
   PublicWorkspace,
   Question,
-  Quiz,
   SourceFile,
   Task,
   ThinkingCanvas,
@@ -48,6 +48,13 @@ import {
   quizElementToBlock,
   quizNode,
 } from '@/features/materials/document';
+import {
+  type Answer,
+  type Answers,
+  applyItemAwards,
+} from '@/features/quizzes/grade';
+import { MATERIAL_SCHEMA_VERSION } from '@/lib/const';
+import { gradeQuestions, learnerView } from './answerKeys';
 import { biologyQuizQuestions } from './biologyQuiz';
 import {
   chatFixtures,
@@ -609,7 +616,7 @@ for (const workspace of workspaces) {
   ).length;
 }
 
-const seedQuizzes: Quiz[] = [
+const seedQuizzes: EditableQuiz[] = [
   {
     canEdit: true,
     canEditContent: true,
@@ -1104,25 +1111,75 @@ const seedQuizzes: Quiz[] = [
 ];
 
 /** Seed answers are written per question; grading reads them per part. */
-const byPart = (answers: Record<string, unknown>) =>
+const byPart = (answers: Record<string, Answer>) =>
   Object.fromEntries(
     Object.entries(answers).map(([id, a]) => [`${id}:part`, a])
   );
 
-export const attempts: (Attempt & {
-  answers?: Record<string, unknown>;
-  questions?: Question[];
-})[] = [
-  {
-    answers: {
+type SeedAttempt = Attempt & { answers?: Answers; questions?: Question[] };
+
+/** A seeded attempt graded the way the server stores one. */
+function seedAttempt(
+  quiz: EditableQuiz,
+  answers: Answers,
+  fields: Omit<
+    SeedAttempt,
+    'answers' | 'correct' | 'materialId' | 'pct' | 'questions' | 'total'
+  >,
+  /** Open parts' item marks, standing in for Jev's. */
+  itemAwards: Record<string, number[]> = {}
+): SeedAttempt {
+  const graded = gradeQuestions(quiz.questions, answers);
+  const questions = graded.questions.map((question) => ({
+    ...question,
+    parts: question.parts.map((part) =>
+      itemAwards[part.id] ? applyItemAwards(part, itemAwards[part.id]) : part
+    ),
+  }));
+  const correct = questions
+    .flatMap((question) => question.parts)
+    .reduce((sum, part) => sum + (part.awarded ?? 0), 0);
+  return {
+    ...fields,
+    answers,
+    correct,
+    materialId: quiz.id,
+    pct: Math.round((correct / graded.max) * 100),
+    questions,
+    total: graded.max,
+  };
+}
+
+/** An attempt as lists carry it: the score, without answers or graded questions. */
+export const attemptSummary = ({
+  answers: _,
+  questions: __,
+  ...attempt
+}: SeedAttempt): Attempt => attempt;
+
+export const attempts: SeedAttempt[] = [
+  seedAttempt(
+    seedQuizzes[0],
+    {
       ...byPart({
         q1: [1],
         q2: true,
         q3: [1, 2],
         q4: 'osmosis',
-        q5: [0, 1, 2, 3, 4],
+        q5: [
+          'Ribosome',
+          'Rough ER',
+          'Golgi apparatus',
+          'Vesicle',
+          'Cell membrane',
+        ],
         // Wrong: swapped Nucleus/Mitochondria functions.
-        q6: { 0: 1, 1: 0, 2: 2, 3: 1 },
+        q6: {
+          0: 'Makes ATP using a proton gradient',
+          1: 'Stores DNA',
+          2: 'Builds proteins',
+          3: 'Makes ATP using a proton gradient',
+        },
         q11: [1],
         q12: true, // Wrong: correct answer is false.
         q13: '24/8',
@@ -1132,33 +1189,34 @@ export const attempts: (Attempt & {
       'q14:control': null,
       'q14:increase': '4',
     },
-    chapters: ['Cell structure'],
-    correct: 18.5,
-    id: 'at_1',
-    materialId: 'qz_1',
-    pct: 71,
-    questions: seedQuizzes[0].questions.map((question) => ({
-      ...question,
-      parts: question.parts.map((part) =>
-        part.answer.type === 'open' && part.markscheme
-          ? {
-              ...part,
-              // Full, half and none of the first three items' marks.
-              awarded: 1.5,
-              itemAwards: part.markscheme.map((item, i) =>
-                i === 0 ? item.marks : i === 1 ? item.marks / 2 : 0
-              ),
-            }
-          : part
-      ),
-    })),
-    quizName: 'Cell biology basics',
-    takenAt: days(2),
-    total: 26,
-    workspaceName: 'Biology 101',
-  },
-  {
-    answers: byPart({
+    {
+      chapters: ['Cell structure'],
+      id: 'at_1',
+      quizName: 'Cell biology basics',
+      takenAt: days(2),
+      workspaceName: 'Biology 101',
+    },
+    // Full, half and none of the open part's first three items' marks.
+    Object.fromEntries(
+      seedQuizzes[0].questions
+        .flatMap((question) => question.parts)
+        .flatMap((part) =>
+          part.answer.type === 'open' && part.markscheme
+            ? [
+                [
+                  part.id,
+                  part.markscheme.map((item, i) =>
+                    i === 0 ? item.marks : i === 1 ? item.marks / 2 : 0
+                  ),
+                ],
+              ]
+            : []
+        )
+    )
+  ),
+  seedAttempt(
+    seedQuizzes[2],
+    byPart({
       q9: [1],
       q10: true,
       q23: [0],
@@ -1167,22 +1225,26 @@ export const attempts: (Attempt & {
       q26: [0],
       q27: false, // Wrong: correct answer is true.
       q28: [0], // Wrong: correct is [0, 1].
-      q29: [3, 0, 2, 1], // Wrong order.
+      // Wrong order.
+      q29: [
+        'Apply the formula',
+        'Choose u and dv',
+        'Integrate dv',
+        'Differentiate u',
+      ],
       q30: '', // Blank: wrong.
     }),
-    chapters: ['Techniques of integration'],
-    correct: 6,
-    id: 'at_2',
-    materialId: 'qz_3',
-    pct: 60,
-    questions: seedQuizzes[2].questions,
-    quizName: 'Integration techniques',
-    takenAt: days(3),
-    total: 10,
-    workspaceName: 'Calculus II',
-  },
-  {
-    answers: byPart({
+    {
+      chapters: ['Techniques of integration'],
+      id: 'at_2',
+      quizName: 'Integration techniques',
+      takenAt: days(3),
+      workspaceName: 'Calculus II',
+    }
+  ),
+  seedAttempt(
+    seedQuizzes[1],
+    byPart({
       q7: [0],
       q8: '', // Blank: wrong.
       q15: [0],
@@ -1191,20 +1253,17 @@ export const attempts: (Attempt & {
       q18: 'Punnett',
       q19: true,
       q20: [1], // Wrong: correct is [0].
-      q21: [3, 2, 1, 0], // Wrong order.
+      q21: ['Telophase', 'Anaphase', 'Metaphase', 'Prophase'], // Wrong order.
       q22: '', // Blank: wrong.
     }),
-    chapters: ['Genetics'],
-    correct: 4,
-    id: 'at_3',
-    materialId: 'qz_2',
-    pct: 40,
-    questions: seedQuizzes[1].questions,
-    quizName: 'Genetics check-in',
-    takenAt: days(5),
-    total: 10,
-    workspaceName: 'Biology 101',
-  },
+    {
+      chapters: ['Genetics'],
+      id: 'at_3',
+      quizName: 'Genetics check-in',
+      takenAt: days(5),
+      workspaceName: 'Biology 101',
+    }
+  ),
 ];
 
 const seedFlashcardSets: FlashcardSet[] = [
@@ -1380,7 +1439,7 @@ export const notifications: AppNotification[] = [
       time: '11:00',
     },
     id: 'nt_1',
-    kind: 'event',
+    kind: 'system',
   },
   {
     at: hours(5),
@@ -1390,28 +1449,13 @@ export const notifications: AppNotification[] = [
       score: '8/10',
     },
     id: 'nt_2',
-    kind: 'quiz',
+    kind: 'system',
   },
   {
-    at: hours(1),
-    data: {
-      code: 'event_starting',
-      eventName: 'Calculus tutorial',
-      location: 'Room 124',
-      time: '11:00',
-    },
-    id: 'nt_1',
-    kind: 'event',
-  },
-  {
-    at: hours(5),
-    data: {
-      code: 'quiz_attempt_graded',
-      quizName: 'Cell biology basics',
-      score: '8/10',
-    },
-    id: 'nt_2',
-    kind: 'quiz',
+    at: hours(26),
+    data: { role: 'editor', workspaceName: 'Biology' },
+    id: 'nt_3',
+    kind: 'workspace_role_changed',
   },
 ];
 
@@ -1818,7 +1862,10 @@ export const publicWorkspaces: PublicWorkspace[] = [
     sharePath: '/w/pub_ws_2.IT_5zt_99G56MWnD',
   },
 ];
-export const publicQuizzes: PublicQuiz[] = [
+/** Explore's quizzes with their keys; the route sends learner views. */
+export const publicQuizzes: (Omit<PublicQuiz, 'questions'> & {
+  questions: Question[];
+})[] = [
   {
     ...seedQuizzes[0],
     author: 'mrslee',
@@ -2060,7 +2107,7 @@ export function mockSharePath(mt: Material): string | undefined {
 }
 
 /** Derive the typed Quiz view from a quiz material (questions from the fence). */
-export function quizFromMaterial(mt: Material): Quiz {
+export function quizFromMaterial(mt: Material): EditableQuiz {
   const { questions } =
     typeof mt.content === 'string'
       ? parseQuizBlock(mt.content)
@@ -2081,6 +2128,38 @@ export function quizFromMaterial(mt: Material): Quiz {
     sharePath: mockSharePath(mt),
     workspaceId: mt.workspaceId,
     workspaceName: mt.workspaceName,
+  };
+}
+
+/** A quiz material as its readers get it: each question in its learner view.
+ * Other kinds are unchanged. */
+export function learnerMaterial(material: Material): Material {
+  if (material.kind !== 'quiz') return material;
+  const quiz =
+    typeof material.content === 'string'
+      ? undefined
+      : material.content.value.find((node) => node.type === 'quiz');
+  const { questions } = quizFromMaterial(material);
+  return {
+    ...material,
+    content: {
+      schemaVersion: MATERIAL_SCHEMA_VERSION,
+      value: [
+        {
+          children: questions.length
+            ? questions.map((question) => ({
+                children: [{ text: '' }],
+                id: question.id,
+                // The node is typed for authored questions; readers get the learner view.
+                question: learnerView(question) as unknown as Question,
+                type: 'quiz_question' as const,
+              }))
+            : [{ text: '' }],
+          id: quiz?.id ?? material.id,
+          type: 'quiz',
+        },
+      ],
+    },
   };
 }
 

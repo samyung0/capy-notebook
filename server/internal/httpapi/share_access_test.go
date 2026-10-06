@@ -342,21 +342,21 @@ func TestShareHTTPExploreAndAttempts(t *testing.T) {
 	}
 
 	rec = doReq(t, h, http.MethodPost, "/api/quizzes/qz_e2e_link/attempts", "", map[string]any{
-		"correct": 1, "total": 1, "answers": map[string]any{}, "questions": []any{},
+		"answers": map[string]any{"q_link_1:part:1": true},
 	})
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("anon attempt = %d", rec.Code)
 	}
 
 	rec = doReq(t, h, http.MethodPost, "/api/quizzes/qz_e2e_private/attempts", "u_other", map[string]any{
-		"correct": 0, "total": 1, "answers": map[string]any{}, "questions": []any{},
+		"answers": map[string]any{},
 	})
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("private attempt by other = %d %s", rec.Code, rec.Body.String())
 	}
 
 	rec = doReq(t, h, http.MethodPost, "/api/quizzes/qz_e2e_link/attempts", "u_other", map[string]any{
-		"correct": 1, "total": 1, "answers": map[string]any{}, "questions": []any{},
+		"answers": map[string]any{"q_link_1:part:1": true},
 	})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("link attempt = %d %s", rec.Code, rec.Body.String())
@@ -364,7 +364,7 @@ func TestShareHTTPExploreAndAttempts(t *testing.T) {
 
 	// Flashcard material IDs must not accept quiz attempts.
 	rec = doReq(t, h, http.MethodPost, "/api/quizzes/dk_e2e_link/attempts", "u_other", map[string]any{
-		"correct": 1, "total": 1, "answers": map[string]any{}, "questions": []any{},
+		"answers": map[string]any{"q_link_1:part:1": true},
 	})
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("non-quiz attempt = %d %s", rec.Code, rec.Body.String())

@@ -125,7 +125,6 @@ export const RequestAccountDeletionResponse = zod.object({
  * @summary List attempts
  */
 export const ListAttemptsResponseItem = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "chapters": zod.array(zod.string()),
   "correct": zod.number(),
   "id": zod.string(),
@@ -311,7 +310,7 @@ export const BankQuestionBatchResponse = zod.object({
 
 
 /**
- * @summary Read a bank question
+ * @summary Read a bank question without answers
  */
 export const BankQuestionParams = zod.object({
   "id": zod.string()
@@ -480,22 +479,22 @@ export const SaveBankQuestionResponse = zod.object({
 
 
 /**
- * @summary Record a checked answer
+ * @summary Grade and record one question's answers
  */
-export const AnswerBankQuestionParams = zod.object({
+export const CheckBankQuestionParams = zod.object({
   "id": zod.string()
 })
 
-export const answerBankQuestionBodyScoreMin = 0;
-export const answerBankQuestionBodyScoreMax = 1;
-
-
-
-export const AnswerBankQuestionBody = zod.object({
-  "score": zod.number().min(answerBankQuestionBodyScoreMin).max(answerBankQuestionBodyScoreMax).describe('The answer\'s awarded marks over the question\'s marks')
+export const CheckBankQuestionBody = zod.object({
+  "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers by part id')
 })
 
-export const AnswerBankQuestionResponse = zod.void()
+export const CheckBankQuestionResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "correct": zod.number(),
+  "question": zod.record(zod.string(), zod.unknown()),
+  "total": zod.number()
+})
 
 
 /**
@@ -517,19 +516,84 @@ export const CommentBankQuestionResponse = zod.void()
 
 
 /**
- * @summary Show one question's answer key once its answers are checked
+ * @summary Read a bank question with its answers to edit it
  */
-export const RevealBankQuestionParams = zod.object({
+export const BankQuestionForEditParams = zod.object({
   "id": zod.string()
 })
 
-export const RevealBankQuestionBody = zod.object({
-  "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers by part id, given before the key is shown')
-})
-
-export const RevealBankQuestionResponse = zod.object({
+export const BankQuestionForEditResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "question": zod.record(zod.string(), zod.unknown()).describe('The whole question: answer key, marking scheme and worked solution')
+  "editor": zod.boolean(),
+  "examLabel": zod.string(),
+  "position": zod.int(),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "questions": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+}).optional(),
+  "question": zod.record(zod.string(), zod.unknown()),
+  "reviewedAt": zod.iso.datetime({"offset":true}).nullable(),
+  "reviewedBy": zod.string(),
+  "reviewerName": zod.string(),
+  "sources": zod.array(zod.object({
+  "authors": zod.array(zod.string()).nullish(),
+  "bookId": zod.string().optional(),
+  "excerptId": zod.string().optional(),
+  "kind": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string().optional(),
+  "title": zod.string().optional(),
+  "url": zod.string().optional(),
+  "version": zod.int().optional()
+})).nullable(),
+  "subjectLabel": zod.string(),
+  "topicId": zod.string(),
+  "topicLabel": zod.string(),
+  "updatedAt": zod.iso.datetime({"offset":true})
 })
 
 
@@ -3569,6 +3633,30 @@ export const GetAnonymousQuizAssetResponse = zod.object({
 
 
 /**
+ * @summary Grade a signed-out attempt at a shared quiz
+ */
+export const GradeAnonymousQuizParams = zod.object({
+  "token": zod.string()
+})
+
+export const gradeAnonymousQuizBodyLocalIdMax = 64;
+
+
+
+export const GradeAnonymousQuizBody = zod.object({
+  "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers by part id'),
+  "localId": zod.string().max(gradeAnonymousQuizBodyLocalIdMax).optional()
+})
+
+export const GradeAnonymousQuizResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "correct": zod.number(),
+  "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "total": zod.number()
+})
+
+
+/**
  * @summary Get public workspace metadata
  */
 export const GetPublicWorkspaceSummaryParams = zod.object({
@@ -3722,7 +3810,7 @@ export const DeleteQuizResponse = zod.void()
 
 
 /**
- * @summary Get a quiz
+ * @summary Get a quiz to view or take, without answers
  */
 export const GetQuizParams = zod.object({
   "id": zod.string()
@@ -3793,32 +3881,25 @@ export const GetQuizResponse = zod.object({
 
 
 /**
- * @summary Record a quiz attempt
+ * @summary Grade and record a quiz attempt
  */
 export const CreateAttemptParams = zod.object({
   "id": zod.string()
 })
 
-export const createAttemptBodyCorrectMin = 0;
-
-export const createAttemptBodyTotalExclusiveMin = 0;
-
-
-
 export const CreateAttemptBody = zod.object({
-  "answers": zod.record(zod.string(), zod.unknown()).optional().describe('User answers keyed by stable part id'),
-  "correct": zod.number().min(createAttemptBodyCorrectMin),
-  "questions": zod.array(zod.record(zod.string(), zod.unknown())).nullish().describe('Question snapshot taken at submit time'),
-  "total": zod.number().gt(createAttemptBodyTotalExclusiveMin)
+  "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers by part id')
 })
 
 export const CreateAttemptResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "answers": zod.record(zod.string(), zod.unknown()),
   "chapters": zod.array(zod.string()),
   "correct": zod.number(),
   "id": zod.string(),
   "materialId": zod.string().nullable(),
   "pct": zod.int(),
+  "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "quizName": zod.string(),
   "takenAt": zod.iso.datetime({"offset":true}),
   "total": zod.number(),
@@ -3977,23 +4058,73 @@ export const UpdateQuizContentResponse = zod.object({
 
 
 /**
- * @summary Grade the open parts of one quiz attempt
+ * @summary Get a quiz with its answers to edit it
  */
-export const GradeQuizParams = zod.object({
+export const GetQuizForEditParams = zod.object({
   "id": zod.string()
 })
 
-export const GradeQuizBody = zod.object({
-  "answers": zod.record(zod.string(), zod.string()),
-  "localId": zod.string().optional()
-})
-
-export const GradeQuizResponse = zod.object({
+export const GetQuizForEditResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "parts": zod.record(zod.string(), zod.object({
-  "awarded": zod.number(),
-  "itemAwards": zod.array(zod.number())
-}))
+  "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
+  "chapters": zod.array(zod.string()),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "isOwner": zod.boolean(),
+  "name": zod.string(),
+  "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "questions": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+}).optional(),
+  "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "revision": zod.int(),
+  "sharePath": zod.string().optional(),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string()
 })
 
 
@@ -4153,22 +4284,39 @@ export const UpdateQuizSharingResponse = zod.object({
 
 
 /**
- * @summary Record a review rating
+ * @summary Grade and rate one question of a review session
+ */
+
+
+
+
+export const CheckReviewItemBody = zod.object({
+  "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers by part id'),
+  "itemId": zod.string().min(1),
+  "materialId": zod.string().min(1)
+})
+
+export const CheckReviewItemResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "correct": zod.number(),
+  "question": zod.record(zod.string(), zod.unknown()),
+  "total": zod.number()
+})
+
+
+/**
+ * @summary Record a flashcard's review rating
  */
 
 
 export const rateReviewItemBodyRatingMax = 4;
-
-export const rateReviewItemBodyScoreMin = 0;
-export const rateReviewItemBodyScoreMax = 1;
 
 
 
 export const RateReviewItemBody = zod.object({
   "itemId": zod.string().min(1),
   "materialId": zod.string().min(1),
-  "rating": zod.int().min(1).max(rateReviewItemBodyRatingMax).optional().describe('A flashcard\'s button: 1 Again .. 4 Easy'),
-  "score": zod.number().min(rateReviewItemBodyScoreMin).max(rateReviewItemBodyScoreMax).optional().describe('A question\'s awarded marks over its marks')
+  "rating": zod.int().min(1).max(rateReviewItemBodyRatingMax).describe('A flashcard\'s button: 1 Again .. 4 Easy; questions are rated by POST \/api\/review\/check')
 })
 
 export const RateReviewItemResponse = zod.void()
@@ -5748,7 +5896,6 @@ export const GetWorkspaceStudyResponse = zod.object({
   "question": zod.record(zod.string(), zod.unknown()).optional()
 })),
   "recentAttempts": zod.array(zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "chapters": zod.array(zod.string()),
   "correct": zod.number(),
   "id": zod.string(),

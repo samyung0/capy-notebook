@@ -50,6 +50,7 @@ import type {
   CreateWorkspaceInviteReq,
   CreateWorkspaceReq,
   DeletionPreflight,
+  EditableQuiz,
   FileLinks,
   FileListParams,
   FilePage,
@@ -1918,6 +1919,16 @@ export const useQuiz = (
     ...(options?.fresh ? { refetchOnMount: 'always' as const } : {}),
     meta: queryMeta(options),
   });
+/** The quiz with its answer key, for those who may edit it (the editor and
+ * note export). Every other read is answer-free. */
+export const quizEditQuery = (id: string) =>
+  queryOptions({
+    enabled: !!id,
+    queryFn: () => api.get<EditableQuiz>(`/quizzes/${id}/edit`),
+    queryKey: [...qk.quiz(id), 'edit'] as const,
+  });
+export const useQuizEdit = (id: string) =>
+  useQuery({ ...quizEditQuery(id), refetchOnMount: 'always' });
 
 export const attemptsQuery = () =>
   queryOptions({
@@ -1950,7 +1961,8 @@ function invalidateAllMaterials(qc: ReturnType<typeof useQueryClient>) {
 export function useCreateQuiz() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: CreateQuizReq) => api.post<Quiz>('/quizzes', body),
+    mutationFn: (body: CreateQuizReq) =>
+      api.post<EditableQuiz>('/quizzes', body),
     onSuccess: () => {
       invalidateOwnedMaterials(qc);
       invalidateAllMaterials(qc);
@@ -1968,7 +1980,7 @@ export function useUpdateQuizContent() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, ...body }: UpdateQuizContentReq & { id: string }) =>
-      api.patch<Quiz>(`/quizzes/${id}/content`, body),
+      api.patch<EditableQuiz>(`/quizzes/${id}/content`, body),
     onSuccess: (_d, v) => {
       invalidateQuiz(qc, v.id);
     },
@@ -1978,7 +1990,7 @@ export function useUpdateQuizMetadata() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, ...body }: UpdateQuizMetadataReq & { id: string }) =>
-      api.patch<Quiz>(`/quizzes/${id}/metadata`, body),
+      api.patch<EditableQuiz>(`/quizzes/${id}/metadata`, body),
     onSuccess: (_d, v) => invalidateQuiz(qc, v.id),
   });
 }
@@ -1989,7 +2001,7 @@ export function useUpdateQuizSharing() {
       id,
       ...body
     }: UpdateStandaloneSharingReq & { id: string }) =>
-      api.patch<Quiz>(`/quizzes/${id}/sharing`, body),
+      api.patch<EditableQuiz>(`/quizzes/${id}/sharing`, body),
     onSuccess: (_d, v) => invalidateQuiz(qc, v.id),
   });
 }
@@ -2004,13 +2016,16 @@ export function useDeleteQuiz() {
     },
   });
 }
+/** Submits the answers; the server grades every part, records the attempt
+ * and returns it graded, with the key for each question. */
 export function useSubmitAttempt(options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
     meta: mutationMeta(options),
     mutationFn: ({ quizId, ...body }: CreateAttemptReq & { quizId: string }) =>
-      api.post<Attempt>(`/quizzes/${quizId}/attempts`, body),
-    onSuccess: () => {
+      api.post<AttemptDetail>(`/quizzes/${quizId}/attempts`, body),
+    onSuccess: (attempt) => {
+      qc.setQueryData(qk.attempt(attempt.id), attempt);
       qc.invalidateQueries({ queryKey: qk.attempts });
       void invalidateStudy(qc);
     },
@@ -2443,7 +2458,7 @@ export function useCloneQuiz(options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
     meta: mutationMeta(options),
-    mutationFn: (id: string) => api.post<Quiz>(`/quizzes/${id}/clone`),
+    mutationFn: (id: string) => api.post<EditableQuiz>(`/quizzes/${id}/clone`),
     onSuccess: () => {
       trackItemCloned('quiz');
       invalidateOwnedMaterials(qc);

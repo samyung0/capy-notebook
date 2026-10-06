@@ -6,6 +6,6 @@
  */
 
 /**
- * User answers keyed by stable part id
+ * The learner's answers by part id
  */
 export type CreateAttemptReqAnswers = {[key: string]: unknown};

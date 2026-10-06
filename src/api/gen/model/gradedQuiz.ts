@@ -4,10 +4,12 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { GradeQuizRespParts } from './gradeQuizRespParts.ts';
+import type { GradedQuizQuestionsItem } from './gradedQuizQuestionsItem.ts';
 
-export interface GradeQuizResp {
+export interface GradedQuiz {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  parts: GradeQuizRespParts;
+  correct: number;
+  questions: GradedQuizQuestionsItem[];
+  total: number;
 }

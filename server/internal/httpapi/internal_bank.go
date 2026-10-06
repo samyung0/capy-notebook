@@ -12,6 +12,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/bank"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/questions"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -116,6 +117,15 @@ func (a *api) internalBankList(w http.ResponseWriter, r *http.Request) {
 			a.failBank(w, err, "No bank topic "+req.TopicID+".")
 			return
 		}
+		keys, ok := a.agentBankKeys(w, r, req.UserID)
+		if !ok {
+			return
+		}
+		if !keys {
+			for i := range page {
+				page[i].Question = questions.LearnerView(page[i].Question)
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"total": total, "questions": page})
 		return
 	}
@@ -161,7 +171,23 @@ func (a *api) internalBankList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"subjects": subjects})
 }
 
-// internalBankRead returns one question in full, with its sources and labels.
+// agentBankKeys reports whether the agent may read bank answer keys for this
+// user: only a bank editor's agent does. ok is false once a response has been
+// written.
+func (a *api) agentBankKeys(w http.ResponseWriter, r *http.Request, userID string) (keys, ok bool) {
+	if !a.cfg.Bank.Editable() {
+		return false, true
+	}
+	editor, err := a.s.BankEditor(r.Context(), userID)
+	if err != nil {
+		a.fail(w, err)
+		return false, false
+	}
+	return editor, true
+}
+
+// internalBankRead returns one question with its sources and labels, keyed
+// only for a bank editor; copy_questions copies the keys either way.
 func (a *api) internalBankRead(w http.ResponseWriter, r *http.Request) {
 	var req internalBankReadReq
 	if err := decode(r, &req); err != nil {
@@ -175,6 +201,13 @@ func (a *api) internalBankRead(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		a.failBank(w, err, "No bank question "+req.QuestionID+".")
 		return
+	}
+	keys, ok := a.agentBankKeys(w, r, req.UserID)
+	if !ok {
+		return
+	}
+	if !keys {
+		detail.Question = questions.LearnerView(detail.Question)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id": req.QuestionID, "question": detail.Question, "sources": detail.Sources,

@@ -969,8 +969,11 @@ func Authored(q map[string]any) map[string]any {
 	return out
 }
 
-// LearnerView must be called only after validation. An allowlist prevents new
-// author-only fields from accidentally leaking through the learner endpoint.
+// LearnerView is a question as readers who are not editing see it: no answer
+// keys, accepted answers, marking schemes or worked solutions, with matching
+// options and ordering items shuffled. An allowlist keeps new author-only
+// fields out. Stored content is read with checked assertions, so a malformed
+// question loses fields instead of panicking.
 func LearnerView(q map[string]any) map[string]any {
 	out := map[string]any{}
 	for _, key := range []string{"id", "stem", "layout", "labels", "level"} {
@@ -979,9 +982,10 @@ func LearnerView(q map[string]any) map[string]any {
 		}
 	}
 	parts := []any{}
-	for _, raw := range q["parts"].([]any) {
-		p := raw.(map[string]any)
-		a := p["answer"].(map[string]any)
+	list, _ := q["parts"].([]any)
+	for _, raw := range list {
+		p, _ := raw.(map[string]any)
+		a, _ := p["answer"].(map[string]any)
 		learner := map[string]any{"type": a["type"]}
 		switch a["type"] {
 		case "mcq", "multi":
@@ -991,24 +995,40 @@ func LearnerView(q map[string]any) map[string]any {
 				learner["unit"] = unit
 			}
 		case "matching":
-			options := append([]any{}, a["options"].([]any)...)
-			rand.Shuffle(len(options), func(i, j int) { options[i], options[j] = options[j], options[i] })
-			learner["options"] = options
+			options, _ := a["options"].([]any)
+			learner["options"] = shuffled(options)
 			left := []any{}
-			for _, pair := range a["pairs"].([]any) {
-				left = append(left, pair.(map[string]any)["left"])
+			pairs, _ := a["pairs"].([]any)
+			for _, raw := range pairs {
+				pair, _ := raw.(map[string]any)
+				left = append(left, pair["left"])
 			}
 			learner["left"] = left
 		case "gaps":
-			learner["gaps"] = len(a["accepted"].([]any))
+			accepted, _ := a["accepted"].([]any)
+			learner["gaps"] = len(accepted)
 		case "ordering":
-			items := append([]any{}, a["items"].([]any)...)
-			rand.Shuffle(len(items), func(i, j int) { items[i], items[j] = items[j], items[i] })
-			learner["items"] = items
+			items, _ := a["items"].([]any)
+			learner["items"] = shuffled(items)
 		}
 		parts = append(parts, map[string]any{"id": p["id"], "blocks": p["blocks"], "answer": learner, "marks": partMarks(p)})
 	}
 	out["parts"] = parts
+	return out
+}
+
+// LearnerViews applies LearnerView to a list.
+func LearnerViews(qs []map[string]any) []map[string]any {
+	out := make([]map[string]any, len(qs))
+	for i, q := range qs {
+		out[i] = LearnerView(q)
+	}
+	return out
+}
+
+func shuffled(values []any) []any {
+	out := append([]any{}, values...)
+	rand.Shuffle(len(out), func(i, j int) { out[i], out[j] = out[j], out[i] })
 	return out
 }
 

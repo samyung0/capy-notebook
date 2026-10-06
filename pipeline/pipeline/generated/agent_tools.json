@@ -372,7 +372,7 @@
     {
       "name": "read_question",
       "version": 1,
-      "description": "Read one question-bank question in full, with its solution, marking scheme and sources.",
+      "description": "Read one question-bank question with its sources: in full (answer key, solution, marking scheme) when the user edits the bank, otherwise without answers. copy_questions copies the answers either way.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -859,7 +859,7 @@
     {
       "name": "inspect_document",
       "version": 1,
-      "description": "Read a document's current content as editable targets with stable ids. Inspect before editing; never take edit positions from search results.",
+      "description": "Read a document's current content as editable targets with stable ids. Inspect before editing; never take edit positions from search results. A quiz's answers, solutions and marking schemes appear only when the user may edit it.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

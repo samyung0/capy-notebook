@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { uploadEditorAsset } from '@/api/editorAssets';
 import { UpdateQuizMetadataBody } from '@/api/gen/validators';
 import {
-  useQuiz,
+  useQuizEdit,
   useUpdateQuizContent,
   useUpdateQuizMetadata,
 } from '@/api/hooks';
@@ -42,7 +42,7 @@ function QuizEditor({ quizId }: { quizId: string }) {
     isLoading,
     isFetchedAfterMount,
     isError,
-  } = useQuiz(quizId, { fresh: true });
+  } = useQuizEdit(quizId);
   const { isPending: contentIsPending, mutateAsync: updateContent } =
     useUpdateQuizContent();
   const { isPending: metadataIsPending, mutateAsync: updateMetadata } =

@@ -10,55 +10,29 @@ import (
 	"unicode/utf8"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/go-chi/chi/v5"
+	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
+	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/jev"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-// Open quiz parts are graded by Jev, one request per part and one award per
-// marking item. Requests name parts of a stored quiz and carry only answers,
-// so the endpoints cannot grade arbitrary text against arbitrary schemes.
+// Grading happens here, never in the browser: readers who are not editing get
+// answer-free questions (questions.LearnerView), and checking an answer or
+// submitting an attempt sends the learner's answers by part id. Closed parts
+// are scored by questions.ScorePart; open parts go to Jev, one request per
+// answered part and one award per marking item. The response carries the key
+// for what was just checked.
 
-// GradeQuizReq maps open part ids to the learner's answers. Blank answers may
-// be omitted; the browser scores them 0.
-type GradeQuizReq struct {
-	Answers map[string]string `json:"answers"`
-	// LocalID is the anonymous browser's reporting id; ignored when signed in.
-	LocalID string `json:"localId,omitempty"`
-}
+// answersMaxBytes bounds a request of answers: twenty 5,000-character open
+// answers plus every closed answer of a 100-part quiz.
+const answersMaxBytes = 2 << 20
 
-// GradedPart awards each marking item 0, 0.5 or 1; Awarded is their sum.
-type GradedPart struct {
-	Awarded    float64   `json:"awarded"`
-	ItemAwards []float64 `json:"itemAwards" nullable:"false"`
-}
-
-type GradeQuizResp struct {
-	Parts map[string]GradedPart `json:"parts" nullable:"false"`
-}
-
-type gradeQuizInput struct {
-	ID   string `path:"id"`
-	Body GradeQuizReq
-}
-type gradeQuizOutput struct {
-	Body GradeQuizResp
-}
-
-// gradeBodyMaxBytes fits twenty 5,000-character answers as UTF-8.
-const gradeBodyMaxBytes = 512 << 10
-
-var errGradeRequest = errors.New("answers must name open parts of this quiz")
-
-func (a *api) registerQuizGrading(api huma.API) {
-	regWithMaxBody(api, http.MethodPost, "/api/quizzes/{id}/grade", "gradeQuiz", "Quizzes",
-		"Grade the open parts of one quiz attempt", http.StatusOK, gradeBodyMaxBytes, a.gradeQuiz)
-}
+var errGradeRequest = errors.New("answers must name parts of these questions, and an open answer is text of at most 5,000 characters")
 
 type openPart struct {
 	question   string
@@ -67,50 +41,61 @@ type openPart struct {
 	answer     string
 }
 
-// openParts matches answers to the quiz's open parts and drops blank ones.
-func openParts(raw json.RawMessage, answers map[string]string) (map[string]openPart, error) {
-	if len(answers) > fieldlimits.QuizOpenParts {
-		return nil, errGradeRequest
-	}
-	var qs []map[string]any
-	if err := json.Unmarshal(raw, &qs); err != nil {
-		return nil, err
-	}
-	type location struct {
-		question map[string]any
-		index    int
-		part     map[string]any
-	}
-	open := map[string]location{}
+// gradePlan is a grading request checked against the stored questions; open
+// holds the answered open parts, the ones Jev grades.
+type gradePlan struct {
+	questions []map[string]any
+	answers   map[string]any
+	open      map[string]openPart
+}
+
+// planGrading refuses answers to parts the questions do not have and open
+// answers that are not text or are too long. Blank open answers earn 0
+// without a Jev call.
+func planGrading(qs []map[string]any, answers map[string]any) (gradePlan, error) {
+	plan := gradePlan{questions: qs, answers: answers, open: map[string]openPart{}}
+	known := map[string]bool{}
 	for _, q := range qs {
 		parts, _ := q["parts"].([]any)
-		for i, rawPart := range parts {
-			p, _ := rawPart.(map[string]any)
-			if a, _ := p["answer"].(map[string]any); a["type"] == "open" {
-				id, _ := p["id"].(string)
-				open[id] = location{q, i, p}
+		for i, raw := range parts {
+			p, _ := raw.(map[string]any)
+			id, _ := p["id"].(string)
+			known[id] = true
+			if a, _ := p["answer"].(map[string]any); a["type"] != "open" || answers[id] == nil {
+				continue
 			}
+			text, ok := answers[id].(string)
+			if !ok || utf8.RuneCountInString(text) > fieldlimits.QuizOpenAnswer {
+				return gradePlan{}, errGradeRequest
+			}
+			if strings.TrimSpace(text) == "" {
+				continue
+			}
+			items, marks := questions.MarkItems(p)
+			plan.open[id] = openPart{question: questions.GradingText(q, i), markscheme: items, itemMarks: marks, answer: text}
 		}
 	}
-	out := map[string]openPart{}
-	for id, answer := range answers {
-		loc, ok := open[id]
-		if !ok || utf8.RuneCountInString(answer) > fieldlimits.QuizOpenAnswer {
-			return nil, errGradeRequest
+	for id := range answers {
+		if !known[id] {
+			return gradePlan{}, errGradeRequest
 		}
-		if strings.TrimSpace(answer) == "" {
-			continue
-		}
-		items, marks := questions.MarkItems(loc.part)
-		out[id] = openPart{question: questions.GradingText(loc.question, loc.index), markscheme: items, itemMarks: marks, answer: answer}
 	}
-	return out, nil
+	return plan, nil
+}
+
+// gradeRequestError answers a refused plan with 422 and passes others on.
+func gradeRequestError(err error) error {
+	if errors.Is(err, errGradeRequest) {
+		return huma.Error422UnprocessableEntity(err.Error())
+	}
+	return hErr(err)
 }
 
 // gradeOpenParts sends each part to Jev with bounded concurrency. Any failure
-// fails the whole attempt; the learner retries.
-func (a *api) gradeOpenParts(ctx context.Context, parts map[string]openPart) (GradeQuizResp, jev.Usage, error) {
-	resp := GradeQuizResp{Parts: map[string]GradedPart{}}
+// fails the whole request; the learner retries. It returns each part's marks
+// per marking item.
+func (a *api) gradeOpenParts(ctx context.Context, parts map[string]openPart) (map[string][]float64, jev.Usage, error) {
+	out := map[string][]float64{}
 	var usage jev.Usage
 	var mu sync.Mutex
 	group, ctx := errgroup.WithContext(ctx)
@@ -122,117 +107,154 @@ func (a *api) gradeOpenParts(ctx context.Context, parts map[string]openPart) (Gr
 				return err
 			}
 			// Jev judges each item as none, half or all of it; items carry their own marks.
-			total := 0.0
 			for i := range awards {
 				awards[i] *= part.itemMarks[i]
-				total += awards[i]
 			}
 			mu.Lock()
 			defer mu.Unlock()
-			resp.Parts[id] = GradedPart{Awarded: total, ItemAwards: awards}
+			out[id] = awards
 			usage.Model = used.Model
 			usage.InputTokens += used.InputTokens
 			return nil
 		})
 	}
-	return resp, usage, group.Wait()
+	return out, usage, group.Wait()
 }
 
-func (a *api) gradeQuiz(ctx context.Context, in *gradeQuizInput) (*gradeQuizOutput, error) {
-	// Anyone who can read the quiz, including link/public viewers, can take it.
-	if _, err := a.materialRead(ctx, in.ID); err != nil {
-		return nil, hErr(err)
+// grade grades every part of the plan and returns the questions with keys and
+// awards (questions.Graded) and the awarded marks over the total.
+func (a *api) grade(ctx context.Context, plan gradePlan) ([]map[string]any, float64, float64, jev.Usage, error) {
+	var open map[string][]float64
+	var usage jev.Usage
+	if len(plan.open) > 0 {
+		var err error
+		if open, usage, err = a.gradeOpenParts(ctx, plan.open); err != nil {
+			return nil, 0, 0, usage, err
+		}
 	}
-	quiz, err := a.s.GetQuiz(ctx, in.ID)
-	if err != nil {
-		return nil, hErr(err)
+	graded := make([]map[string]any, len(plan.questions))
+	var correct, total float64
+	for i, q := range plan.questions {
+		var awarded, marks float64
+		graded[i], awarded, marks = questions.Graded(q, plan.answers, open)
+		correct, total = correct+awarded, total+marks
 	}
-	parts, err := openParts(quiz.Questions, in.Body.Answers)
-	if errors.Is(err, errGradeRequest) {
-		return nil, huma.Error422UnprocessableEntity(err.Error())
-	}
-	if err != nil {
-		return nil, hErr(err)
-	}
-	if len(parts) == 0 {
-		return &gradeQuizOutput{Body: GradeQuizResp{Parts: map[string]GradedPart{}}}, nil
-	}
-	resp, usage, err := a.gradeOpenParts(ctx, parts)
+	return graded, correct, total, usage, nil
+}
+
+// gradeSignedIn grades for a signed-in learner and records Jev's usage,
+// uncharged. A failed usage write must not discard grades the learner waited for.
+func (a *api) gradeSignedIn(ctx context.Context, plan gradePlan, workspaceID string, metadata map[string]any) ([]map[string]any, float64, float64, error) {
+	graded, correct, total, usage, err := a.grade(ctx, plan)
 	if err != nil {
 		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})
-		return nil, huma.Error503ServiceUnavailable("grading is unavailable, try again")
+		return nil, 0, 0, huma.Error503ServiceUnavailable("grading is unavailable, try again")
 	}
-	// Usage is recorded, never charged. A failed write must not discard grades
-	// the learner already waited for.
+	if total <= 0 {
+		return nil, 0, 0, huma.Error422UnprocessableEntity("there are no questions to grade")
+	}
+	if len(plan.open) == 0 {
+		return graded, correct, total, nil
+	}
+	metadata["costMicroUsd"] = jev.CostMicroUSD(usage.InputTokens)
 	if err := a.s.RecordUsage(ctx, store.UsageEvent{
-		ActorUserID: userID(ctx), WorkspaceID: quiz.WorkspaceID,
+		ActorUserID: userID(ctx), WorkspaceID: workspaceID,
 		Kind: store.KindLLM, Surface: store.SurfaceQuiz, Provider: "typesafe", Model: usage.Model,
-		InputTokens: usage.InputTokens, Units: int64(len(parts)), Unit: "parts",
-		Metadata: map[string]any{"quizId": quiz.ID, "costMicroUsd": jev.CostMicroUSD(usage.InputTokens)},
+		InputTokens: usage.InputTokens, Units: int64(len(plan.open)), Unit: "parts", Metadata: metadata,
 	}); err != nil {
 		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})
 	}
-	return &gradeQuizOutput{Body: resp}, nil
+	return graded, correct, total, nil
 }
 
-// gradeAnonymousQuiz serves POST /api/public/quizzes/{token}/grade, reached
-// through the site Worker. It is a plain handler because the daily caps key on
-// the client IP.
-func (a *api) gradeAnonymousQuiz(w http.ResponseWriter, r *http.Request) {
-	id, ok := a.s.VerifyShareToken(chi.URLParam(r, "token"))
-	if !ok {
-		a.fail(w, store.ErrNotFound)
-		return
+func decodeStoredQuestions(raw json.RawMessage) ([]map[string]any, error) {
+	var qs []map[string]any
+	if len(raw) == 0 {
+		return qs, nil
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, gradeBodyMaxBytes)
-	var in GradeQuizReq
-	if err := decode(r, &in); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "invalid grading request"})
-		return
-	}
-	quiz, err := a.s.AnonymousQuiz(r.Context(), id)
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	parts, err := openParts(quiz.Questions, in.Answers)
-	if errors.Is(err, errGradeRequest) {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"message": err.Error()})
-		return
-	}
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	if len(parts) == 0 {
-		writeJSON(w, http.StatusOK, GradeQuizResp{Parts: map[string]GradedPart{}})
-		return
-	}
-	if a.jev == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "grading is unavailable, try again"})
-		return
-	}
-	ipHash := a.s.AnonymousIPHash(obs.ClientIP(r))
-	if err := a.s.ReserveAnonymousGrading(r.Context(), ipHash, in.LocalID, len(parts)); errors.Is(err, store.ErrAnonymousGradingLimit) {
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{
-			"code": "anonymous_grading_limit", "message": "sign in to keep grading open answers today",
-		})
-		return
-	} else if err != nil {
-		a.fail(w, err)
-		return
-	}
-	resp, usage, err := a.gradeOpenParts(r.Context(), parts)
-	if err != nil {
-		obs.CaptureErr(r.Context(), err, map[string]string{"surface": "anonymous_quiz"})
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "grading is unavailable, try again"})
-		return
-	}
-	if err := a.s.RecordAnonymousGradingUsage(r.Context(), ipHash, in.LocalID, usage.InputTokens, jev.CostMicroUSD(usage.InputTokens)); err != nil {
-		obs.CaptureErr(r.Context(), err, map[string]string{"surface": "anonymous_quiz"})
-	}
-	writeJSON(w, http.StatusOK, resp)
+	return qs, json.Unmarshal(raw, &qs)
 }
+
+/* ------------------------------------------------------- signed-out grading */
+
+type clientIPKey struct{}
+
+type gradeAnonymousQuizInput struct {
+	Token string `path:"token"`
+	Body  apimodel.GradeAnonymousQuizReq
+}
+type gradedQuizOutput struct {
+	Body apimodel.GradedQuiz
+}
+
+// registerAnonymousGrading serves POST /api/public/quizzes/{token}/grade,
+// reached directly, not through the site Worker. Nothing is stored; the daily
+// caps key on the client IP and count only the open parts Jev grades.
+func (a *api) registerAnonymousGrading(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID: "gradeAnonymousQuiz", Method: http.MethodPost, Path: "/api/public/quizzes/{token}/grade",
+		Summary: "Grade a signed-out attempt at a shared quiz", Tags: []string{"Sharing"},
+		DefaultStatus: http.StatusOK, MaxBodyBytes: answersMaxBytes,
+		Middlewares: huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
+			r, _ := humachi.Unwrap(ctx)
+			next(huma.WithValue(ctx, clientIPKey{}, obs.ClientIP(r)))
+		}},
+	}, func(ctx context.Context, in *gradeAnonymousQuizInput) (*gradedQuizOutput, error) {
+		out, err := a.gradeAnonymousQuiz(ctx, in)
+		return out, reportHandlerError(ctx, err)
+	})
+}
+
+func (a *api) gradeAnonymousQuiz(ctx context.Context, in *gradeAnonymousQuizInput) (*gradedQuizOutput, error) {
+	id, err := a.sharedMaterialID(in.Token)
+	if err != nil {
+		return nil, err
+	}
+	quiz, err := a.s.AnonymousQuiz(ctx, id)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	qs, err := decodeStoredQuestions(quiz.Questions)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	plan, err := planGrading(qs, in.Body.Answers)
+	if err != nil {
+		return nil, gradeRequestError(err)
+	}
+	var ipHash string
+	if len(plan.open) > 0 {
+		if a.jev == nil {
+			return nil, huma.Error503ServiceUnavailable("grading is unavailable, try again")
+		}
+		ip, _ := ctx.Value(clientIPKey{}).(string)
+		ipHash = a.s.AnonymousIPHash(ip)
+		if err := a.s.ReserveAnonymousGrading(ctx, ipHash, in.Body.LocalID, len(plan.open)); errors.Is(err, store.ErrAnonymousGradingLimit) {
+			return nil, &huma.ErrorModel{
+				Status: http.StatusTooManyRequests, Title: http.StatusText(http.StatusTooManyRequests),
+				Detail: "sign in to keep grading open answers today", Errors: []*huma.ErrorDetail{{Message: "anonymous_grading_limit"}},
+			}
+		} else if err != nil {
+			return nil, hErr(err)
+		}
+	}
+	graded, correct, total, usage, err := a.grade(ctx, plan)
+	if err != nil {
+		obs.CaptureErr(ctx, err, map[string]string{"surface": "anonymous_quiz"})
+		return nil, huma.Error503ServiceUnavailable("grading is unavailable, try again")
+	}
+	if total <= 0 {
+		return nil, huma.Error422UnprocessableEntity("there are no questions to grade")
+	}
+	if len(plan.open) > 0 {
+		if err := a.s.RecordAnonymousGradingUsage(ctx, ipHash, in.Body.LocalID, usage.InputTokens, jev.CostMicroUSD(usage.InputTokens)); err != nil {
+			obs.CaptureErr(ctx, err, map[string]string{"surface": "anonymous_quiz"})
+		}
+	}
+	return &gradedQuizOutput{Body: apimodel.GradedQuiz{Correct: correct, Total: total, Questions: graded}}, nil
+}
+
+/* --------------------------------------------------------- authoring check */
 
 // ComputationCheckReq names one open part of a draft question.
 type ComputationCheckReq struct {

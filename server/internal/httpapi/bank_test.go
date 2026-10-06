@@ -111,9 +111,13 @@ func TestBankHTTPPermissionsAssetsAndComments(t *testing.T) {
 		h.ServeHTTP(w, r)
 		return w
 	}
+	// View mode is answer-free for editors too; Edit mode's read has the keys.
 	get := request(handler, "GET", "/api/bank/questions/q", "")
-	if get.Code != 200 || !strings.Contains(get.Body.String(), "secret-answer") {
-		t.Fatalf("editor get: %d %s", get.Code, get.Body.String())
+	if get.Code != 200 || strings.Contains(get.Body.String(), "secret-") || !strings.Contains(get.Body.String(), `"editor":true`) {
+		t.Fatalf("editor view get: %d %s", get.Code, get.Body.String())
+	}
+	if edit := request(handler, "GET", "/api/bank/questions/q/edit", ""); edit.Code != 200 || !strings.Contains(edit.Body.String(), "secret-answer") {
+		t.Fatalf("editor edit get: %d %s", edit.Code, edit.Body.String())
 	}
 	var credited bank.Detail
 	if err := json.Unmarshal(get.Body.Bytes(), &credited); err != nil {
@@ -129,6 +133,9 @@ func TestBankHTTPPermissionsAssetsAndComments(t *testing.T) {
 	if get.Code != 200 || strings.Contains(get.Body.String(), "secret-") {
 		t.Fatalf("learner leak: %d %s", get.Code, get.Body.String())
 	}
+	if edit := request(learnerHandler, "GET", "/api/bank/questions/q/edit", ""); edit.Code != 404 {
+		t.Fatalf("learner edit get: %d", edit.Code)
+	}
 	batch := request(handler, "GET", "/api/bank/questions?ids=q2,q", "")
 	var page struct{ Questions []bank.Detail }
 	if err := json.Unmarshal(batch.Body.Bytes(), &page); err != nil || batch.Code != 200 {
@@ -137,7 +144,7 @@ func TestBankHTTPPermissionsAssetsAndComments(t *testing.T) {
 	if web := page.Questions[0].Provenance; web == nil || len(web.Web) != 1 || web.Web[0].URL != "https://open.example/essay" || len(web.Books) != 0 || web.License != "" {
 		t.Fatalf("web attribution: %#v", web)
 	}
-	if len(page.Questions) != 2 || page.Questions[0].Question["id"] != "q2" || page.Questions[1].Provenance == nil || !strings.Contains(batch.Body.String(), "secret-answer") {
+	if len(page.Questions) != 2 || page.Questions[0].Question["id"] != "q2" || page.Questions[1].Provenance == nil || strings.Contains(batch.Body.String(), "secret-") {
 		t.Fatalf("batch order or attribution: %s", batch.Body.String())
 	}
 	if batch = request(learnerHandler, "GET", "/api/bank/questions?ids=q,q2", ""); batch.Code != 200 || strings.Contains(batch.Body.String(), "secret-") {

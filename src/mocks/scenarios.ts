@@ -1,5 +1,6 @@
 import { delay, HttpResponse, http, type RequestHandler } from 'msw';
 import { PLAN_LIMITS } from '@/features/billing/planLimits';
+import { learnerView } from './answerKeys';
 import { chatFixtureOptions, chatFixtures } from './chatFixtures';
 import { mockChatStream } from './chatStream';
 import {
@@ -8,6 +9,7 @@ import {
   files,
   flashcardCards,
   flashcardSetFromMaterial,
+  learnerMaterial,
   listWorkspaces,
   materials,
   quizFromMaterial,
@@ -721,7 +723,7 @@ function frozenMaterialHandlers(): RequestHandler[] {
       const material = materials.find((row) => row.id === params.id);
       if (!material) return new HttpResponse(null, { status: 404 });
       return HttpResponse.json({
-        ...material,
+        ...learnerMaterial(material),
         capabilities: {
           ...material.capabilities,
           canEdit: false,
@@ -789,8 +791,8 @@ const keptWhenFrozen = [
   /^PATCH \/api\/[a-z]+\/[^/]+\/sharing$/,
   /^POST \/api\/workspaces\/[^/]+\/(transfer|chat\/stream)$/,
   /^POST \/api\/(materials|files)\/[^/]+\/collaboration-token$/,
-  /^POST \/api\/quizzes\/[^/]+\/(attempts|grade)$/,
-  /^(POST|PUT) \/api\/(review\/ratings|workspaces\/[^/]+\/study\/)/,
+  /^POST \/api\/quizzes\/[^/]+\/attempts$/,
+  /^(POST|PUT) \/api\/(review\/(ratings|check)|workspaces\/[^/]+\/study\/)/,
   /^POST \/api\/(notifications|billing|account)\//,
   /^(PATCH|PUT|DELETE) \/api\/(me|notification-prefs)(\/|$)/,
   /^[A-Z]+ \/api\/bank\//,
@@ -911,16 +913,18 @@ function viewOnlyContent(scope: 'own' | 'member'): RequestHandler[] {
       const material = find(params.id);
       if (!material || !paysFor(material.workspaceId)) return;
       return HttpResponse.json({
-        ...material,
+        ...learnerMaterial(material),
         capabilities: { ...material.capabilities, canEditContent: false },
       });
     }),
     http.get('/api/quizzes/:id', ({ params }) => {
       const material = find(params.id, 'quiz');
       if (!material || !paysFor(material.workspaceId)) return;
+      const quiz = quizFromMaterial(material);
       return HttpResponse.json({
-        ...quizFromMaterial(material),
+        ...quiz,
         canEditContent: false,
+        questions: quiz.questions.map(learnerView),
       });
     }),
     http.get('/api/flashcards/:id', ({ params }) => {

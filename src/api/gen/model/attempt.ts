@@ -6,8 +6,6 @@
  */
 
 export interface Attempt {
-  /** A URL to the JSON Schema for this object. */
-  readonly $schema?: string;
   chapters: string[];
   correct: number;
   id: string;

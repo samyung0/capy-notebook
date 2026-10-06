@@ -6,6 +6,7 @@ import (
 	"maps"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -27,10 +28,10 @@ func insertBankQuestions(t *testing.T, pool *pgxpool.Pool, ids ...string) {
 	}
 }
 
-// Learners reveal one checked question's key, record checked answers and read
-// back their latest scores and topic progress; a prompt edit or a retraction
-// takes a question out, and retracted questions leave every bank list, read,
-// reveal and copy.
+// Learners check answers, graded on the server, which returns that question's
+// key and records the score, and read back their latest scores and topic
+// progress; a prompt edit or a retraction takes a question out, and retracted
+// questions leave every bank list, read, check and copy.
 func TestBankProgressAndRetraction(t *testing.T) {
 	var pool *pgxpool.Pool
 	h, st, _, _ := openInternalHTTPWith(t, nil, func(st *store.Store, c *httpapi.Config) {
@@ -45,9 +46,14 @@ func TestBankProgressAndRetraction(t *testing.T) {
 		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM bank_progress WHERE question_id LIKE 'bp%'`)
 	})
 	const learner = "u_viewer"
-	answer := func(id string, score float64) int {
+	// Each question is one mcq part, right with option 0.
+	answer := func(id string, right bool) int {
 		t.Helper()
-		return doReq(t, h, http.MethodPost, "/api/bank/questions/"+id+"/answers", learner, map[string]any{"score": score}).Code
+		choice := 1
+		if right {
+			choice = 0
+		}
+		return doReq(t, h, http.MethodPost, "/api/bank/questions/"+id+"/check", learner, map[string]any{"answers": map[string]any{id + "p": []int{choice}}}).Code
 	}
 	marks := func(user string) map[string]float64 {
 		t.Helper()
@@ -68,7 +74,7 @@ func TestBankProgressAndRetraction(t *testing.T) {
 		return out.Topics
 	}
 
-	// The key of one question, as the reveal route or a read returns it.
+	// The key of one question, as the check route or a read returns it.
 	key := func(user, method, path string, body any) (int, map[string]any) {
 		t.Helper()
 		rec := doReq(t, h, method, path, user, body)
@@ -81,22 +87,28 @@ func TestBankProgressAndRetraction(t *testing.T) {
 		return rec.Code, map[string]any{"correct": part["answer"].(map[string]any)["correct"], "solution": part["solution"]}
 	}
 	checked := map[string]any{"answers": map[string]any{"bp1p": []int{1}}}
-	if code, got := key(learner, http.MethodPost, "/api/bank/questions/bp1/reveal", checked); code != 200 || got["correct"] == nil || got["solution"] == nil {
-		t.Fatalf("reveal = %d %v", code, got)
+	if code, got := key(learner, http.MethodPost, "/api/bank/questions/bp1/check", checked); code != 200 || got["correct"] == nil || got["solution"] == nil {
+		t.Fatalf("check = %d %v", code, got)
 	}
-	if code, _ := key("", http.MethodPost, "/api/bank/questions/bp1/reveal", checked); code != 401 {
-		t.Fatalf("signed-out reveal = %d", code)
+	if code, _ := key("", http.MethodPost, "/api/bank/questions/bp1/check", checked); code != 401 {
+		t.Fatalf("signed-out check = %d", code)
 	}
 	for _, id := range []string{"bp1", "bp2"} {
 		if code, got := key(learner, http.MethodGet, "/api/bank/questions/"+id, nil); code != 200 || got["correct"] != nil || got["solution"] != nil {
-			t.Fatalf("read %s after a reveal = %d %v", id, code, got)
+			t.Fatalf("read %s after a check = %d %v", id, code, got)
 		}
 	}
-	if code := doReq(t, h, http.MethodPost, "/api/bank/questions/bp1/answers", "", map[string]any{"score": 1}).Code; code != 401 {
-		t.Fatalf("signed-out answer = %d", code)
+	if code := doReq(t, h, http.MethodPost, "/api/bank/questions/bp1/check", learner, map[string]any{"answers": map[string]any{"bp2p": []int{0}}}).Code; code != 422 {
+		t.Fatalf("answers to another question's part = %d", code)
 	}
-	if code := answer("bp1", 1.5); code != 422 {
-		t.Fatalf("score above 1 = %d", code)
+	for _, removed := range []string{"/reveal", "/answers"} {
+		if code := doReq(t, h, http.MethodPost, "/api/bank/questions/bp1"+removed, learner, map[string]any{"score": 1}).Code; code != 404 && code != 405 {
+			t.Fatalf("removed route %s = %d", removed, code)
+		}
+	}
+	// The check above recorded bp1; clear it to start from no progress.
+	if _, err := st.Pool().Exec(ctx, `DELETE FROM bank_progress WHERE user_id=$1`, learner); err != nil {
+		t.Fatal(err)
 	}
 	if got := progress(learner); len(got) != 0 {
 		t.Fatalf("progress before answering = %v", got)
@@ -104,13 +116,13 @@ func TestBankProgressAndRetraction(t *testing.T) {
 	// In order, so bp3 is the latest answer and Continue wraps past bp4's gap.
 	for _, a := range []struct {
 		id    string
-		score float64
-	}{{"bp1", 0}, {"bp2", 1}, {"bp3", 0.5}} {
-		if code := answer(a.id, a.score); code != 204 {
+		right bool
+	}{{"bp1", false}, {"bp2", true}, {"bp3", false}} {
+		if code := answer(a.id, a.right); code != 200 {
 			t.Fatalf("answer %s = %d", a.id, code)
 		}
 	}
-	if got := marks(learner); !maps.Equal(got, map[string]float64{"bp1": 0, "bp2": 1, "bp3": 0.5}) {
+	if got := marks(learner); !maps.Equal(got, map[string]float64{"bp1": 0, "bp2": 1, "bp3": 0}) {
 		t.Fatalf("marks = %v", got)
 	}
 	if got := marks("u_editor"); len(got) != 0 {
@@ -133,7 +145,7 @@ func TestBankProgressAndRetraction(t *testing.T) {
 		UPDATE questions SET retracted_at=now() WHERE id='bp1'`); err != nil {
 		t.Fatal(err)
 	}
-	if got := marks(learner); !maps.Equal(got, map[string]float64{"bp3": 0.5}) {
+	if got := marks(learner); !maps.Equal(got, map[string]float64{"bp3": 0}) {
 		t.Fatalf("marks after edit and retraction = %v", got)
 	}
 	// bp2 counts as unanswered again; after the latest answer (bp3) comes bp4.
@@ -141,18 +153,15 @@ func TestBankProgressAndRetraction(t *testing.T) {
 		t.Fatalf("progress after edit and retraction = %+v", got)
 	}
 	for _, id := range []string{"bp2", "bp4"} {
-		if code := answer(id, 1); code != 204 {
+		if code := answer(id, true); code != 200 {
 			t.Fatalf("answer %s = %d", id, code)
 		}
 	}
 	if got := progress(learner); len(got) != 1 || got[0].Answered != 3 || got[0].Correct != 2 || got[0].NextQuestionID != nil {
 		t.Fatalf("progress with every question answered = %+v", got)
 	}
-	if code := answer("bp1", 1); code != 404 {
-		t.Fatalf("answer a retracted question = %d", code)
-	}
-	if code, _ := key(learner, http.MethodPost, "/api/bank/questions/bp1/reveal", checked); code != 404 {
-		t.Fatalf("reveal a retracted question = %d", code)
+	if code := answer("bp1", true); code != 404 {
+		t.Fatalf("check a retracted question = %d", code)
 	}
 
 	list := doReq(t, h, http.MethodGet, "/api/bank/topics/t/questions", learner, nil)
@@ -208,11 +217,60 @@ func TestFrozenAccountRecordsBankAnswers(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = f.store.Pool().Exec(context.Background(), `DELETE FROM bank_progress WHERE user_id=$1`, frozen)
 	})
-	if rec := doReq(t, h, http.MethodPost, "/api/bank/questions/fz1/answers", "", map[string]any{"score": 0}); rec.Code != 204 {
-		t.Fatalf("frozen answer = %d %s", rec.Code, rec.Body.String())
+	if rec := doReq(t, h, http.MethodPost, "/api/bank/questions/fz1/check", "", map[string]any{"answers": map[string]any{"fz1p": []int{1}}}); rec.Code != 200 {
+		t.Fatalf("frozen check = %d %s", rec.Code, rec.Body.String())
 	}
 	if rec := doReq(t, h, http.MethodPost, "/api/bank/copy", "", map[string]any{
 		"questionIds": []string{"fz1"}, "workspaceId": f.workspaceID, "quizName": "Frozen"}); rec.Code != 403 {
 		t.Fatalf("frozen copy = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// The bank's keys follow the editor grant and the mode: View mode reads and a
+// learner's agent are answer-free, an editor's Edit mode read and agent are not.
+func TestBankAnswerKeysFollowTheEditorGrant(t *testing.T) {
+	h, st, _, _ := openInternalHTTPWith(t, nil, func(st *store.Store, c *httpapi.Config) {
+		bankDSN, pool := openTestBank(t, st, testdb.URL(t))
+		insertBankQuestions(t, pool, "key1")
+		c.Bank = bank.New(bankDSN, bankDSN, "https://bank.example/assets", bankDSN)
+		t.Cleanup(c.Bank.Close)
+	})
+	ctx := context.Background()
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO bank_editors(user_id) VALUES ('u_editor') ON CONFLICT DO NOTHING`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM bank_editors WHERE user_id='u_editor'`)
+	})
+	keyed := func(body string) bool { return strings.Contains(body, `"correct":[0]`) }
+	for _, tc := range []struct {
+		user, path string
+		status     int
+		keys       bool
+	}{
+		{"u_editor", "/api/bank/questions/key1", 200, false},
+		{"u_editor", "/api/bank/questions?ids=key1", 200, false},
+		{"u_editor", "/api/bank/questions/key1/edit", 200, true},
+		{"u_viewer", "/api/bank/questions/key1", 200, false},
+		{"u_viewer", "/api/bank/questions/key1/edit", 404, false},
+	} {
+		rec := doReq(t, h, http.MethodGet, tc.path, tc.user, nil)
+		if rec.Code != tc.status || keyed(rec.Body.String()) != tc.keys {
+			t.Fatalf("%s %s = %d %s", tc.user, tc.path, rec.Code, rec.Body.String())
+		}
+	}
+	for _, user := range []string{"u_viewer", "u_editor"} {
+		for _, req := range []struct {
+			path string
+			body map[string]any
+		}{
+			{"/api/internal/bank/read", map[string]any{"userId": user, "questionId": "key1"}},
+			{"/api/internal/bank/list", map[string]any{"userId": user, "topicId": "t"}},
+		} {
+			rec := doInternal(t, h, http.MethodPost, req.path, pipeSecret, req.body)
+			if rec.Code != 200 || keyed(rec.Body.String()) != (user == "u_editor") {
+				t.Fatalf("agent %s as %s = %d %s", req.path, user, rec.Code, rec.Body.String())
+			}
+		}
 	}
 }

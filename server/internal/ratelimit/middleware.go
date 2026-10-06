@@ -30,9 +30,10 @@ var aiSuffixes = []string{
 	"/chat/stream",
 	"/ai/command",
 	"/generate",
-	// Jev grading of a quiz attempt, signed in or anonymous, and the author's
-	// computation check.
-	"/grade",
+	// Server grading, which sends open answers to Jev: a review or bank check
+	// (quiz attempts are matched in classify; the signed-out grade is under
+	// /api/public/), and the author's computation check.
+	"/check",
 	"/computation-check",
 }
 
@@ -83,6 +84,10 @@ func classify(path string) class {
 		if strings.HasSuffix(path, suffix) {
 			return classEditor
 		}
+	}
+	// POST /api/quizzes/{id}/attempts, but not the GET /api/attempts list.
+	if strings.HasPrefix(path, "/api/quizzes/") && strings.HasSuffix(path, "/attempts") {
+		return classAI
 	}
 	for _, suffix := range aiSuffixes {
 		if strings.HasSuffix(path, suffix) {

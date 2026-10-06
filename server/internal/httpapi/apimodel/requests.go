@@ -176,11 +176,31 @@ type UpdateQuizMetadataReq struct {
 	Chapters *[]string      `json:"chapters,omitempty"`
 }
 
+// Answers maps part ids to a learner's answers; questions.ScorePart documents
+// each answer type's shape. The server grades them against the stored key.
+type Answers = map[string]any
+
 type CreateAttemptReq struct {
-	Correct   float64          `json:"correct" minimum:"0"`
-	Total     float64          `json:"total" exclusiveMinimum:"0"`
-	Answers   map[string]any   `json:"answers,omitempty" doc:"User answers keyed by stable part id"`
-	Questions []map[string]any `json:"questions,omitempty" doc:"Question snapshot taken at submit time"`
+	Answers Answers `json:"answers" nullable:"false" doc:"The learner's answers by part id"`
+}
+
+// GradeAnonymousQuizReq is a signed-out attempt at a shared quiz.
+type GradeAnonymousQuizReq struct {
+	Answers Answers `json:"answers" nullable:"false" doc:"The learner's answers by part id"`
+	// LocalID is the anonymous browser's reporting id for the grading caps.
+	LocalID string `json:"localId,omitempty" maxLength:"64"`
+}
+
+// CheckReviewItemReq checks one question of a review session.
+type CheckReviewItemReq struct {
+	MaterialID string  `json:"materialId" minLength:"1"`
+	ItemID     string  `json:"itemId" minLength:"1"`
+	Answers    Answers `json:"answers" nullable:"false" doc:"The learner's answers by part id"`
+}
+
+// CheckBankQuestionReq checks one bank question.
+type CheckBankQuestionReq struct {
+	Answers Answers `json:"answers" nullable:"false" doc:"The learner's answers by part id"`
 }
 
 type CreateFlashcardSetReq struct {
@@ -436,8 +456,7 @@ type SetStudyItemReq struct {
 // RateReviewItemReq rates a flashcard (rating) or a question answered in
 // review (score).
 type RateReviewItemReq struct {
-	MaterialID string   `json:"materialId" minLength:"1"`
-	ItemID     string   `json:"itemId" minLength:"1"`
-	Rating     *int     `json:"rating,omitempty" minimum:"1" maximum:"4" doc:"A flashcard's button: 1 Again .. 4 Easy"`
-	Score      *float64 `json:"score,omitempty" minimum:"0" maximum:"1" doc:"A question's awarded marks over its marks"`
+	MaterialID string `json:"materialId" minLength:"1"`
+	ItemID     string `json:"itemId" minLength:"1"`
+	Rating     int    `json:"rating" minimum:"1" maximum:"4" doc:"A flashcard's button: 1 Again .. 4 Easy; questions are rated by POST /api/review/check"`
 }

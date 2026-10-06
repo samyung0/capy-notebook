@@ -11,7 +11,6 @@ import {
   anonymousAssetUrl,
   anonymousQuizQuery,
   gradeAnonymousQuiz,
-  gradeQuiz,
   isAnonymousGradingLimit,
 } from '@/api/anonymous';
 import { isApiError } from '@/api/client';
@@ -28,6 +27,7 @@ import { Skeleton } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { PublicAssetUrlContext } from '@/features/questions/QuestionView';
+import type { LearnerQuestion } from '@/features/questions/types';
 import type { Answer } from '@/features/quizzes/grade';
 import { isAnswered } from '@/features/quizzes/QuestionRunner';
 import {
@@ -36,10 +36,6 @@ import {
   QuizScore,
   quizMeta,
 } from '@/features/quizzes/QuizPage';
-import {
-  type GradeOpenParts,
-  gradeAttemptQuestions,
-} from '@/features/quizzes/scoreAttempt';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { scoreBucket } from '@/lib/analytics';
@@ -53,8 +49,10 @@ import {
 } from '@/lib/localDb';
 import { track } from '@/lib/observability';
 
-type Graded = Awaited<ReturnType<typeof gradeAttemptQuestions>>;
 type Answers = Record<string, Answer>;
+/** An attempt graded on the server: its questions with their keys and each
+ * part's award, and the marks over the quiz's total. */
+type Graded = { questions: Question[]; awarded: number; max: number };
 
 export default function QuizAttempt() {
   const params = useParams({ strict: false });
@@ -103,7 +101,7 @@ function Attempt({ quizId, shared }: { quizId: string; shared: boolean }) {
     errorBoundary: false,
     fresh: true,
   });
-  const { mutate: submit } = useSubmitAttempt({ errorToast: false });
+  const { mutateAsync: submit } = useSubmitAttempt({ errorToast: false });
   const { isPending: cloneQuizIsPending, mutate: cloneQuiz } = useCloneQuiz({
     errorToast: false,
   });
@@ -158,7 +156,14 @@ function Attempt({ quizId, shared }: { quizId: string; shared: boolean }) {
           </Button>
         )
       }
-      grade={(answers) => gradeQuiz(quizId, answers)}
+      grade={async (answers) => {
+        const attempt = await submit({ answers, quizId });
+        return {
+          awarded: attempt.correct,
+          max: attempt.total,
+          questions: attempt.questions,
+        };
+      }}
       name={quiz.name}
       onBack={
         shared
@@ -170,26 +175,6 @@ function Attempt({ quizId, shared }: { quizId: string; shared: boolean }) {
       }
       provenance={quiz.provenance}
       questions={quiz.questions}
-      save={(answers, graded) => {
-        // The result is already on screen; a failed save only loses history.
-        submit(
-          {
-            answers,
-            correct: graded.awarded,
-            questions: graded.questions,
-            quizId,
-            total: graded.max,
-          },
-          {
-            onError: (err) =>
-              userToast({
-                description: errorCopy(err, m.quiz_save_attempt_retry()),
-                title: m.quiz_save_attempt_failed(),
-                variant: 'error',
-              }),
-          }
-        );
-      }}
       trail={
         shared
           ? [m.quiz_shared()]
@@ -263,16 +248,13 @@ function AnonymousAttempt({ token }: { token: string }) {
         }
         frame={PublicQuizFrame}
         grade={async (answers) =>
-          gradeAnonymousQuiz(
-            token,
+          gradeAnonymousQuiz(token, {
             answers,
-            await anonymousId().catch(() => undefined)
-          )
+            localId: await anonymousId().catch(() => undefined),
+          })
         }
         name={quiz.name}
-        provenance={quiz.provenance}
-        questions={quiz.questions}
-        save={(answers, graded) => {
+        onGraded={(answers, graded) => {
           const attempt: LocalQuizAttempt = {
             answers,
             correct: graded.awarded,
@@ -292,6 +274,8 @@ function AnonymousAttempt({ token }: { token: string }) {
               })
             );
         }}
+        provenance={quiz.provenance}
+        questions={quiz.questions}
         trail={[m.quiz_shared()]}
       />
     </PublicAssetUrlContext.Provider>
@@ -312,21 +296,24 @@ function AttemptBody({
   grade,
   name,
   onBack,
+  onGraded,
   provenance,
   questions,
-  save,
   trail,
 }: {
   actions?: ReactNode;
   footer?: ReactNode;
   /** The surrounding panel; the result view remounts it to open at the top. */
   frame?: (props: { children: ReactNode }) => ReactNode;
-  grade: GradeOpenParts;
+  /** Grades every part on the server; signed in, this also records the attempt. */
+  grade: (answers: Answers) => Promise<Graded>;
   name: string;
   onBack?: () => void;
+  /** Signed out: keeps the graded attempt in this browser. */
+  onGraded?: (answers: Answers, graded: Graded) => void;
   provenance?: Provenance;
-  questions: Question[];
-  save: (answers: Answers, graded: Graded) => void;
+  /** Answer-free: the key arrives with the graded attempt. */
+  questions: (Question | LearnerQuestion)[];
   trail: string[];
 }) {
   const [answers, setAnswers] = useState<Answers>({});
@@ -374,11 +361,11 @@ function AttemptBody({
   async function finish() {
     setGrading(true);
     try {
-      const result = await gradeAttemptQuestions(questions, answers, grade);
+      const result = await grade(answers);
       const pct = result.max > 0 ? (result.awarded / result.max) * 100 : 0;
       track('quiz_attempt_finished', { scoreBucket: scoreBucket(pct) });
       setGraded(result);
-      save(answers, result);
+      onGraded?.(answers, result);
     } catch (err) {
       if (isAnonymousGradingLimit(err)) {
         toastSignInRequired(
@@ -404,7 +391,6 @@ function AttemptBody({
         {header()}
         <TabContent>
           <QuizScore
-            answers={answers}
             awarded={graded.awarded}
             confetti
             max={graded.max}
@@ -437,8 +423,8 @@ function AttemptBody({
     );
   }
 
-  const parts = questions.flatMap((q) => q.parts);
-  const answered = parts.filter((part) => isAnswered(answers[part.id])).length;
+  const parts = questions.flatMap((q) => q.parts.map((part) => part.id));
+  const answered = parts.filter((id) => isAnswered(answers[id])).length;
 
   return (
     <Frame>

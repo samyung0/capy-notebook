@@ -4,6 +4,8 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { GradedPart } from './gradedPart.ts';
 
-export type GradeQuizRespParts = {[key: string]: GradedPart};
+/**
+ * The learner's answers by part id
+ */
+export type CheckReviewItemReqAnswers = {[key: string]: unknown};

@@ -43,9 +43,9 @@ import { userToast } from '@/components/ui/userToast';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import {
-  alignReveal,
   BANK_STATUSES,
   type BankDetail,
+  type BankMode,
   type BankRow,
   type BankSyllabus,
   bankBatchQuery,
@@ -53,11 +53,10 @@ import {
   bankProgressQuery,
   bankQuestionQuery,
   bankQuestionsQuery,
-  bankScore,
   bankSyllabusQuery,
+  checkBankQuestion,
   filterBankRows,
-  recordBankAnswer,
-  revealBankQuestion,
+  storeBankEdit,
   uploadBankAsset,
 } from '@/features/questions/bank';
 import { CopyToQuizDialog } from '@/features/questions/CopyToQuizDialog';
@@ -204,7 +203,7 @@ export default function QuestionBank() {
         { question, updatedAt: snapshot.updatedAt }
       ),
     onSuccess: (saved) => {
-      client.setQueryData(bankQuestionQuery(saved.question.id).queryKey, saved);
+      storeBankEdit(client, saved);
       void client.invalidateQueries({
         queryKey: bankQuestionsQuery(saved.topicId).queryKey,
       });
@@ -217,7 +216,7 @@ export default function QuestionBank() {
         { reviewed }
       ),
     onSuccess: (saved) => {
-      client.setQueryData(bankQuestionQuery(saved.question.id).queryKey, saved);
+      storeBankEdit(client, saved);
       void client.invalidateQueries({
         queryKey: bankQuestionsQuery(saved.topicId).queryKey,
       });
@@ -598,7 +597,7 @@ export default function QuestionBank() {
               conflict
                 ? async () => {
                     const latest = await client.fetchQuery({
-                      ...bankQuestionQuery(editing.question.id),
+                      ...bankQuestionQuery(editing.question.id, 'edit'),
                       staleTime: 0,
                     });
                     setEditing(structuredClone(latest));
@@ -616,7 +615,7 @@ export default function QuestionBank() {
                 if (isApiError(error) && error.status === 409) {
                   setConflict(true);
                   void client.invalidateQueries({
-                    queryKey: bankQuestionQuery(question.id).queryKey,
+                    queryKey: bankQuestionQuery(question.id, 'edit').queryKey,
                   });
                   throw new CopyError(m.question_ui_conflict_message(), {
                     cause: error,
@@ -694,7 +693,7 @@ function BankQuestions({
   rows: BankRow[];
   questionId: string;
   topicId: string;
-  mode: 'view' | 'edit';
+  mode: BankMode;
   reviewing: boolean;
   /** Question ids ticked for Copy to quiz. */
   selected: string[];
@@ -713,14 +712,15 @@ function BankQuestions({
   const { error, isFetching, refetch } = useQuery({
     ...bankBatchQuery(
       client,
-      shown.map((row) => row.id)
+      shown.map((row) => row.id),
+      mode
     ),
     meta: { errorBoundary: false },
   });
   // Read-only views of the cache the batch fills.
   const details = useQueries({
     queries: shown.map((row) => ({
-      ...bankQuestionQuery(row.id),
+      ...bankQuestionQuery(row.id, mode),
       enabled: false,
     })),
   });
@@ -767,7 +767,8 @@ function BankQuestions({
       await client.fetchQuery(
         bankBatchQuery(
           client,
-          rows.slice(earlier, range.start).map((row) => row.id)
+          rows.slice(earlier, range.start).map((row) => row.id),
+          mode
         )
       );
       const first = rows[range.start];
@@ -884,8 +885,9 @@ function BankQuestions({
 }
 
 /**
- * View mode: the learner answers, and Check answer reveals this question's
- * key, shows the quiz review and records the score; Try again starts over.
+ * View mode: the learner answers, and Check answer grades them on the server,
+ * which records the result and returns this question's key for the quiz
+ * review; Try again starts over.
  */
 function CheckableQuestion({
   question,
@@ -898,11 +900,14 @@ function CheckableQuestion({
 }) {
   const client = useQueryClient();
   const [answers, setAnswers] = useState<Answers>({});
-  const [checked, setChecked] = useState<ReturnType<typeof alignReveal> | null>(
-    null
-  );
-  const { mutate: record } = useMutation({
-    mutationFn: (score: number) => recordBankAnswer(question.id, { score }),
+  const {
+    data: checked,
+    isPending,
+    mutate: check,
+    reset,
+  } = useMutation({
+    mutationFn: (sent: Answers) =>
+      checkBankQuestion(question.id, { answers: sent }),
     onSuccess: () => {
       void client.invalidateQueries({
         queryKey: bankMarksQuery(topicId).queryKey,
@@ -910,21 +915,10 @@ function CheckableQuestion({
       void client.invalidateQueries({ queryKey: bankProgressQuery().queryKey });
     },
   });
-  const { mutate: check, isPending } = useMutation({
-    mutationFn: (sent: Answers) =>
-      revealBankQuestion(question.id, { answers: sent }),
-    onSuccess: (revealed, sent) => {
-      const next = alignReveal(question, revealed.question, sent);
-      setChecked(next);
-      // Open parts need Jev, so their questions show the key unscored.
-      const score = bankScore(next.question, next.answers);
-      if (score !== null) record(score);
-    },
-  });
   return (
     <>
       <QuestionRunner
-        answers={checked?.answers ?? answers}
+        answers={answers}
         disabled={Boolean(checked) || isPending}
         onChange={(partId, value) =>
           setAnswers((current) => ({ ...current, [partId]: value }))
@@ -940,7 +934,7 @@ function CheckableQuestion({
             iconLeft="refresh"
             iconLeftClassName="size-3.5 sm:size-3.75"
             onClick={() => {
-              setChecked(null);
+              reset();
               setAnswers({});
             }}
             size="sm"

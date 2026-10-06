@@ -2,11 +2,13 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/samyung0/capy-notebook/server/internal/questions"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -47,6 +49,7 @@ func (a *api) registerAnonymousMaterials(api huma.API) {
 	reg(api, http.MethodGet, "/api/public/quizzes/{token}", "getAnonymousQuiz", "Sharing", "Get a shared quiz for signed-out visitors", http.StatusOK, a.getAnonymousQuiz)
 	reg(api, http.MethodGet, "/api/public/quizzes/{token}/assets/{assetId}", "getAnonymousQuizAsset", "Sharing", "Get a shared quiz image URL", http.StatusOK, a.getAnonymousQuizAsset)
 	reg(api, http.MethodGet, "/api/public/flashcards/{token}", "getAnonymousFlashcards", "Sharing", "Get a shared flashcard set for signed-out visitors", http.StatusOK, a.getAnonymousFlashcards)
+	a.registerAnonymousGrading(api)
 }
 
 // sharedMaterialID returns the id a share token signs; forged tokens are 404.
@@ -66,6 +69,16 @@ func (a *api) getAnonymousQuiz(ctx context.Context, in *shareTokenInput) (*anony
 	}
 	quiz, err := a.s.AnonymousQuiz(ctx, id)
 	if err != nil {
+		return nil, hErr(err)
+	}
+	// Visitors take the quiz, so it is answer-free; the image route below
+	// still checks against the full content, so solution images resolve once
+	// an answer is checked.
+	qs, err := decodeStoredQuestions(quiz.Questions)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	if quiz.Questions, err = json.Marshal(questions.LearnerViews(qs)); err != nil {
 		return nil, hErr(err)
 	}
 	return &anonymousQuizOutput{CacheControl: "no-store", Body: quiz}, nil

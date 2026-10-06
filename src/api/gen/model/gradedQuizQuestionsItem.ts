@@ -5,4 +5,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GradeQuizReqAnswers = {[key: string]: string};
+export type GradedQuizQuestionsItem = {[key: string]: unknown};

@@ -1,0 +1,165 @@
+{
+  "cases": [
+    {
+      "name": "every pair",
+      "part": {
+        "answer": {
+          "type": "matching",
+          "options": ["Paris", "Rome", "Berlin"],
+          "pairs": [
+            { "left": "France", "right": 0 },
+            { "left": "Italy", "right": 1 },
+            { "left": "Germany", "right": 2 }
+          ]
+        },
+        "marks": 3
+      },
+      "answer": { "0": "Paris", "1": "Rome", "2": "Berlin" },
+      "awarded": 3,
+      "items": [true, true, true]
+    },
+    {
+      "name": "two of three pairs",
+      "part": {
+        "answer": {
+          "type": "matching",
+          "options": ["Paris", "Rome", "Berlin"],
+          "pairs": [
+            { "left": "France", "right": 0 },
+            { "left": "Italy", "right": 1 },
+            { "left": "Germany", "right": 2 }
+          ]
+        },
+        "marks": 3
+      },
+      "answer": { "0": "Paris", "1": "Berlin", "2": "Berlin" },
+      "awarded": 2,
+      "items": [true, false, true]
+    },
+    {
+      "name": "a share rounds down to a half mark",
+      "part": {
+        "answer": {
+          "type": "matching",
+          "options": ["Paris", "Rome", "Berlin"],
+          "pairs": [
+            { "left": "France", "right": 0 },
+            { "left": "Italy", "right": 1 },
+            { "left": "Germany", "right": 2 }
+          ]
+        },
+        "marks": 2
+      },
+      "answer": { "0": "Paris" },
+      "awarded": 0.5,
+      "items": [true, false, false]
+    },
+    {
+      "name": "two thirds of two marks",
+      "part": {
+        "answer": {
+          "type": "matching",
+          "options": ["Paris", "Rome", "Berlin"],
+          "pairs": [
+            { "left": "France", "right": 0 },
+            { "left": "Italy", "right": 1 },
+            { "left": "Germany", "right": 2 }
+          ]
+        },
+        "marks": 2
+      },
+      "answer": { "0": "Paris", "2": "Berlin" },
+      "awarded": 1,
+      "items": [true, false, true]
+    },
+    {
+      "name": "three quarters of five marks",
+      "part": {
+        "answer": {
+          "type": "matching",
+          "options": ["A", "B", "C", "D"],
+          "pairs": [
+            { "left": "1", "right": 0 },
+            { "left": "2", "right": 1 },
+            { "left": "3", "right": 2 },
+            { "left": "4", "right": 3 }
+          ]
+        },
+        "marks": 5
+      },
+      "answer": { "0": "A", "1": "B", "2": "C", "3": "A" },
+      "awarded": 3.5,
+      "items": [true, true, true, false]
+    },
+    {
+      "name": "an option used twice",
+      "part": {
+        "answer": {
+          "type": "matching",
+          "options": ["Yes", "No"],
+          "pairs": [
+            { "left": "One", "right": 0 },
+            { "left": "Two", "right": 0 }
+          ]
+        },
+        "marks": 2
+      },
+      "answer": { "0": "Yes", "1": "Yes" },
+      "awarded": 2,
+      "items": [true, true]
+    },
+    {
+      "name": "stored indices are not option text",
+      "part": {
+        "answer": {
+          "type": "matching",
+          "options": ["Paris", "Rome", "Berlin"],
+          "pairs": [
+            { "left": "France", "right": 0 },
+            { "left": "Italy", "right": 1 },
+            { "left": "Germany", "right": 2 }
+          ]
+        },
+        "marks": 3
+      },
+      "answer": { "0": 0, "1": 1, "2": 2 },
+      "awarded": 0,
+      "items": [false, false, false]
+    },
+    {
+      "name": "a list is not a matching",
+      "part": {
+        "answer": {
+          "type": "matching",
+          "options": ["Paris", "Rome", "Berlin"],
+          "pairs": [
+            { "left": "France", "right": 0 },
+            { "left": "Italy", "right": 1 },
+            { "left": "Germany", "right": 2 }
+          ]
+        },
+        "marks": 3
+      },
+      "answer": ["Paris", "Rome", "Berlin"],
+      "awarded": 0,
+      "items": [false, false, false]
+    },
+    {
+      "name": "unanswered",
+      "part": {
+        "answer": {
+          "type": "matching",
+          "options": ["Paris", "Rome", "Berlin"],
+          "pairs": [
+            { "left": "France", "right": 0 },
+            { "left": "Italy", "right": 1 },
+            { "left": "Germany", "right": 2 }
+          ]
+        },
+        "marks": 3
+      },
+      "awarded": 0,
+      "items": [false, false, false]
+    }
+  ]
+}

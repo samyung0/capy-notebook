@@ -27,7 +27,6 @@ import type {
   AttemptDetail as GenAttemptDetail,
   Citation as GenCitation,
   Comment as GenComment,
-  CreateAttemptReq as GenCreateAttemptReq,
   CreateCardReq as GenCreateCardReq,
   CreateCommentReq as GenCreateCommentReq,
   CreateDiscussionReq as GenCreateDiscussionReq,
@@ -38,6 +37,8 @@ import type {
   Discussion as GenDiscussion,
   UserModelSlot as GeneratedModelSlot,
   File as GenFile,
+  GradedQuestion as GenGradedQuestion,
+  GradedQuiz as GenGradedQuiz,
   Material as GenMaterial,
   Message as GenMessage,
   PublicQuiz as GenPublicQuiz,
@@ -191,11 +192,23 @@ export type SystemColor =
 /* ---------------- overridden contracts ----------------
    Same generated shape, minus the wire's opaque / client-only fields. */
 
-/** A past attempt with its per-question breakdown. `questions` is the rich
- * union (opaque on the wire); `answers` maps question id -> the user's answer
- * (the `Answer` union from grade.ts, kept loose here to avoid an import cycle). */
+/** An attempt as the server graded it, also POST /quizzes/{id}/attempts'
+ * response: `questions` carry their keys and, on each part, `awarded`, plus
+ * `itemAwards` (open) or `itemResults` (matching, gaps); `answers` maps part
+ * id -> the user's answer (the `Answer` union from grade.ts, kept loose here
+ * to avoid an import cycle). */
 export type AttemptDetail = Omit<GenAttemptDetail, 'questions'> & {
   questions: Question[];
+};
+/** A signed-out attempt graded by POST /public/quizzes/{token}/grade, keyed
+ * and awarded like AttemptDetail; nothing is stored server-side. */
+export type GradedQuiz = Omit<GenGradedQuiz, 'questions'> & {
+  questions: Question[];
+};
+/** One question checked by POST /review/check or /bank/questions/{id}/check,
+ * with its key and awards. */
+export type GradedQuestion = Omit<GenGradedQuestion, 'question'> & {
+  question: Question;
 };
 
 /** `ingestPct` is transient upload progress, never persisted. */
@@ -208,25 +221,36 @@ export type ViewableFile = SourceFile & { url: string };
 /** `color` is a client-side tint derived from the owning workspace/label/flashcardSet. */
 export type SearchResult = GenSearchResult & { color?: UserColor };
 
-/** `questions` is the rich discriminated union; the wire keeps it opaque. */
-export type Quiz = Omit<GenQuiz, 'questions'> & { questions: Question[] };
-/** A shared standalone quiz as signed-out visitors read it. */
-export type AnonymousQuiz = Omit<GenAnonymousQuiz, 'questions'> & {
+/** GET /quizzes/{id}: the quiz to view or take, answer-free (the wire keeps
+ * questions opaque). */
+export type Quiz = Omit<GenQuiz, 'questions'> & {
+  questions: LearnerQuestion[];
+};
+/** GET /quizzes/{id}/edit, for whoever may edit, and the responses of the
+ * create, content, metadata, sharing and clone routes: with keys. */
+export type EditableQuiz = Omit<GenQuiz, 'questions'> & {
   questions: Question[];
+};
+/** A shared standalone quiz as signed-out visitors read it, answer-free. */
+export type AnonymousQuiz = Omit<GenAnonymousQuiz, 'questions'> & {
+  questions: LearnerQuestion[];
 };
 export type {
   AnonymousFlashcards,
+  CheckBankQuestionReq,
+  CheckReviewItemReq,
   ComputationCheckResp,
-  GradedPart,
-  GradeQuizResp,
+  GradeAnonymousQuizReq,
 } from './gen/model';
+/** An Explore quiz, answer-free. */
 export type PublicQuiz = Omit<GenPublicQuiz, 'questions'> & {
-  questions: Question[];
+  questions: LearnerQuestion[];
 };
 
-/** A card or question in a review session; `question` is the rich union. */
+/** A card or question in a review session; questions are answer-free and
+ * checked through POST /review/check. */
 export type ReviewItem = Omit<GenReviewItem, 'question'> & {
-  question?: Question;
+  question?: LearnerQuestion;
 };
 export type ReviewSession = Omit<GenReviewSession, 'items'> & {
   items: ReviewItem[];
@@ -236,12 +260,10 @@ export type StudySummary = Omit<GenStudySummary, 'quickReview'> & {
   quickReview: ReviewItem[];
 };
 export type {
-  BankAnswerInputBody as BankAnswerReq,
   BankCopyInputBody as BankCopyReq,
   BankCopyOutputBody as BankCopyResult,
   BankMarksOutputBody as BankTopicMarks,
   BankProgressOutputBody as BankProgress,
-  BankRevealInputBody as BankRevealReq,
   RateReviewItemReq,
   ReviewWorkspace,
   Row as BankListRow,
@@ -263,9 +285,7 @@ export type UpdateQuizContentReq = Omit<
 > & {
   questions?: Question[];
 };
-export type CreateAttemptReq = Omit<GenCreateAttemptReq, 'questions'> & {
-  questions?: Question[];
-};
+export type { CreateAttemptReq } from './gen/model';
 
 /** Both faces are optional on the wire; nothing in the UI creates a blank card. */
 export type CreateCardReq = Required<Pick<GenCreateCardReq, 'back' | 'front'>>;
@@ -377,6 +397,7 @@ export interface ChatMessage {
 
 export type {
   CognitiveLevel,
+  LearnerQuestion,
   Question,
   QuestionAnswer,
   QuestionBlock,
@@ -388,6 +409,7 @@ export { QUESTION_TYPES } from '@/features/questions/types';
 
 import type {
   CognitiveLevel,
+  LearnerQuestion,
   Question,
   QuestionType,
 } from '@/features/questions/types';

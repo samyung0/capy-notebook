@@ -1,14 +1,19 @@
-import { useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
-import { gradeQuiz } from '@/api/anonymous';
+import { api } from '@/api/client';
 import {
   invalidateStudy,
   useRateReviewItem,
   useWorkspace,
   useWorkspaceReview,
 } from '@/api/hooks';
-import type { Question, RateReviewItemReq, ReviewItem } from '@/api/types';
+import type {
+  CheckReviewItemReq,
+  GradedQuestion,
+  RateReviewItemReq,
+  ReviewItem,
+} from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { Button, ErrorAction } from '@/components/ui/Button';
@@ -17,7 +22,6 @@ import { userToast } from '@/components/ui/userToast';
 import type { Answers } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import {
-  gradeReviewQuestion,
   RATING_LABEL,
   RATING_STYLE,
   ratingQueue,
@@ -133,7 +137,6 @@ export default function ReviewSession() {
               item={item}
               key={`${item.materialId}/${item.itemId}`}
               onNext={() => setIndex(index + 1)}
-              onRate={ratings.rate}
             />
           )
         ) : (
@@ -213,51 +216,46 @@ function CardItem({
   );
 }
 
-/** A question answered and graded the quiz page's way, then scored. */
+/** A question answered the quiz page's way. Check sends the answers; the
+ * server grades them, records the rating and returns the question's key. */
 function QuestionItem({
   item,
   onNext,
-  onRate,
 }: {
   item: ReviewItem;
   onNext: () => void;
-  onRate: (body: RateReviewItemReq) => void;
 }) {
-  const question = item.question as Question;
   const [answers, setAnswers] = useState<Answers>({});
-  const [graded, setGraded] = useState<Question | null>(null);
-  const [grading, setGrading] = useState(false);
-
-  async function check() {
-    setGrading(true);
-    try {
-      const { graded: scored, score } = await gradeReviewQuestion(
-        question,
+  const {
+    data: checked,
+    isPending: grading,
+    mutate: check,
+  } = useMutation({
+    meta: { errorToast: false },
+    mutationFn: () =>
+      api.post<GradedQuestion>('/review/check', {
         answers,
-        (open) => gradeQuiz(item.materialId, open)
-      );
-      setGraded(scored);
-      onRate({ itemId: item.itemId, materialId: item.materialId, score });
-    } catch {
+        itemId: item.itemId,
+        materialId: item.materialId,
+      } satisfies CheckReviewItemReq),
+    onError: () =>
       userToast({
         id: 'review-grade-failed',
         title: m.review_grade_failed(),
         variant: 'error',
-      });
-    } finally {
-      setGrading(false);
-    }
-  }
+      }),
+  });
+  const graded = checked?.question;
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
       <QuestionRunner
         answers={answers}
-        disabled={!!graded}
+        disabled={!!graded || grading}
         onChange={(partId, value) =>
           setAnswers((a) => ({ ...a, [partId]: value }))
         }
-        question={graded ?? question}
+        question={graded ?? item.question!}
         review={!!graded}
       />
       <div className="flex items-center justify-between gap-3">
@@ -267,7 +265,7 @@ function QuestionItem({
         {graded ? (
           <Button onClick={onNext}>{m.review_next()}</Button>
         ) : (
-          <Button disabled={grading} onClick={() => void check()}>
+          <Button disabled={grading} onClick={() => check()}>
             {m.review_check()}
           </Button>
         )}

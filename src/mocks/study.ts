@@ -5,6 +5,8 @@ import {
   type FlashcardsElement,
   flashcardsElementToCards,
 } from '@/features/materials/document';
+import type { Answers } from '@/features/quizzes/grade';
+import { gradeQuestions, learnerView } from './answerKeys';
 import * as db from './db';
 
 /* Study progress and review, per signed-in user (the mock has one). A
@@ -41,6 +43,8 @@ for (const [card, lapses] of [
   ['c_1', 0],
 ] as const)
   rated.set(`dk_1/${card}`, { at: Date.now() - lapses * 3_600_000, lapses });
+// A missed quiz question, so a session has a question to check too.
+rated.set('qz_1/q4', { at: Date.now() - 7_200_000, lapses: 1 });
 
 function cardsOf(materialId: string) {
   const mt = db.materials.find((x) => x.id === materialId);
@@ -84,7 +88,8 @@ function pool(wsId: string): ReviewItem[] {
             kind: 'question',
             materialId: id,
             materialTitle: mt.title,
-            question,
+            // Questions come without their key; checking one returns it.
+            question: learnerView(question),
             rank,
           });
       }
@@ -110,13 +115,29 @@ function summary(wsId: string): StudySummary {
     ),
     recentAttempts: db.attempts
       .filter((a) => a.workspaceName === ws?.name)
-      .slice(0, 5),
+      .slice(0, 5)
+      .map(db.attemptSummary),
     reviewable: all.length,
   };
 }
 
 function workspaceOf(materialId: string) {
   return db.materials.find((x) => x.id === materialId)?.workspaceId ?? null;
+}
+
+/** Records a rating and starts the material's progress. */
+function rate(materialId: string, itemId: string, missed: boolean) {
+  const key = `${materialId}/${itemId}`;
+  rated.set(key, {
+    at: Date.now(),
+    lapses: (rated.get(key)?.lapses ?? 0) + (missed ? 1 : 0),
+  });
+  const wsId = workspaceOf(materialId);
+  if (wsId) {
+    const map = items(wsId);
+    if (map.get(materialId)?.state !== 'done')
+      map.set(materialId, { kind: 'material', state: 'started' });
+  }
 }
 
 export const studyHandlers = [
@@ -181,21 +202,33 @@ export const studyHandlers = [
     const body = (await request.json()) as {
       materialId: string;
       itemId: string;
-      rating?: number;
-      score?: number;
+      rating: number;
     };
-    const key = `${body.materialId}/${body.itemId}`;
-    const missed = body.rating === 1 || (body.score ?? 1) < 0.5;
-    rated.set(key, {
-      at: Date.now(),
-      lapses: (rated.get(key)?.lapses ?? 0) + (missed ? 1 : 0),
-    });
-    const wsId = workspaceOf(body.materialId);
-    if (wsId) {
-      const map = items(wsId);
-      if (map.get(body.materialId)?.state !== 'done')
-        map.set(body.materialId, { kind: 'material', state: 'started' });
-    }
+    rate(body.materialId, body.itemId, body.rating === 1);
     return new HttpResponse(null, { status: 204 });
+  }),
+  // Grades one question, rates it from the score and returns its key.
+  http.post('/api/review/check', async ({ request }) => {
+    const body = (await request.json()) as {
+      materialId: string;
+      itemId: string;
+      answers: Answers;
+    };
+    const mt = db.materials.find(
+      (x) => x.id === body.materialId && x.kind === 'quiz'
+    );
+    const question = mt
+      ? db
+          .quizFromMaterial(mt)
+          .questions.find((item) => item.id === body.itemId)
+      : undefined;
+    if (!question) return new HttpResponse(null, { status: 404 });
+    const graded = gradeQuestions([question], body.answers);
+    rate(body.materialId, body.itemId, graded.awarded / graded.max < 0.5);
+    return HttpResponse.json({
+      correct: graded.awarded,
+      question: graded.questions[0],
+      total: graded.max,
+    });
   }),
 ];

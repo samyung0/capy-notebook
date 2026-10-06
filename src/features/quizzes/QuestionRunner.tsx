@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import type { Question, QuestionPart } from '@/api/types';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
@@ -34,15 +34,7 @@ import {
 } from '@/features/questions/types';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import {
-  type Answer,
-  type Answers,
-  emptyAnswer,
-  quantityValue,
-  scoredItems,
-  scorePart,
-  shuffledIndices,
-} from './grade';
+import { type Answer, type Answers, emptyAnswer, quantityValue } from './grade';
 
 const NON_QUANTITY_CHAR = /[^\d\s+\-./eE]/;
 
@@ -71,7 +63,8 @@ export function QuestionRunner({
   questionNumber,
   renderBlock,
 }: {
-  /** Learner questions (no answer key) only render without `review`. */
+  /** Learner questions (no answer key) only render without `review`, which
+   * shows a question graded on the server: its key and each part's `awarded`. */
   question: Question | LearnerQuestion;
   answers: Answers;
   onChange?: (partId: string, value: Answer) => void;
@@ -132,16 +125,9 @@ export function QuestionRunner({
         review={showAnswerKey}
       />
     );
-  const graded = question as Question;
   return (
     <QuestionReview
-      question={{
-        ...graded,
-        parts: graded.parts.map((part) => ({
-          ...part,
-          awarded: scorePart(part, answers[part.id]).awarded,
-        })),
-      }}
+      question={question as Question}
       questionNumber={questionNumber}
       renderAnswer={answer}
       renderBlock={gapBlock}
@@ -173,8 +159,9 @@ function GapText({
     const item = Array.isArray(value) ? value[i] : undefined;
     return typeof item === 'string' ? item : '';
   });
+  // The server's verdict per gap.
   const results =
-    review && isAuthoredPart(part) ? scoredItems(part, value) : undefined;
+    review && isAuthoredPart(part) ? (part.itemResults ?? []) : undefined;
   // split() with a capture group alternates text and blank numbers.
   const pieces = block.text.split(new RegExp(GAP_MARKER.source));
   return (
@@ -305,18 +292,17 @@ function PartRunner({
   const answer = part.answer;
   // Learner questions carry no key; only a graded review reads it.
   const key = isAuthoredPart(part) ? part.answer : undefined;
-  // Ordering starts shuffled and the shown order is the answer, so it is
-  // committed as soon as a learner sees it. Matching letters follow the
-  // stored option order.
-  // Keyed on the item count so an edited question never keeps a stale index.
-  const itemCount = answer.type === 'ordering' ? answer.items.length : 0;
-  const order = useMemo(() => shuffledIndices(itemCount), [itemCount]);
+  // Learners read matching options and ordering items shuffled by the server,
+  // so those answers are texts: the chosen option per item, and the items in
+  // the learner's order. The shown order is the answer, committed as soon as
+  // a learner sees it; a review shows them against the stored key.
+  const items = answer.type === 'ordering' ? answer.items : null;
   const taking = !(review || disabled);
   useEffect(() => {
-    if (taking && answer.type === 'ordering' && value === null) onChange(order);
-  }, [taking, answer.type, value, onChange, order]);
+    if (taking && items && value === null) onChange([...items]);
+  }, [taking, items, value, onChange]);
   const [unitError, setUnitError] = useState(false);
-  // Choice and ordering answers are option indices; gaps are typed strings.
+  // Choice answers are option indices; gaps and ordering are strings.
   const indices = Array.isArray(value)
     ? value.filter((item) => typeof item === 'number')
     : null;
@@ -477,9 +463,13 @@ function PartRunner({
           : answer.pairs.map((pair) => pair.left)
         ).map((left, i) => {
           const chosen = choices[String(i)];
+          const letter =
+            chosen === undefined ? -1 : answer.options.indexOf(chosen);
           const right =
             key?.type === 'matching' ? key.pairs[i]?.right : undefined;
-          const correct = chosen === right;
+          // The server's verdict per pair.
+          const correct =
+            isAuthoredPart(part) && part.itemResults?.[i] === true;
           return (
             <li className="flex min-h-11 items-center gap-3" key={i}>
               <OptionKey>{i + 1}.</OptionKey>
@@ -491,7 +481,7 @@ function PartRunner({
                     correct ? 'text-tint-success-fg' : 'text-tint-error-fg'
                   )}
                 >
-                  {chosen === undefined ? '–' : optionLetter(chosen)}
+                  {letter < 0 ? '–' : optionLetter(letter)}
                   {!correct && right !== undefined && (
                     <span className="text-tint-success-fg">
                       {m.question_ui_correct_letter({
@@ -505,9 +495,12 @@ function PartRunner({
                   <Select
                     disabled={disabled}
                     onValueChange={(next) =>
-                      onChange({ ...choices, [String(i)]: Number(next) })
+                      onChange({
+                        ...choices,
+                        [String(i)]: answer.options[Number(next)],
+                      })
                     }
-                    value={chosen === undefined ? '' : String(chosen)}
+                    value={letter < 0 ? '' : String(letter)}
                   >
                     <SelectTrigger aria-label={left} size="sm">
                       <SelectValue placeholder="–" />
@@ -537,8 +530,21 @@ function PartRunner({
     return <MatchingLayout items={rows} options={answer.options} />;
   }
   if (answer.type === 'ordering') {
-    if (review && !indices) return <p>—</p>;
-    const current = indices ?? order;
+    const ordered = Array.isArray(value)
+      ? value.filter((item) => typeof item === 'string')
+      : null;
+    if (review && !ordered?.length) return <p>—</p>;
+    const current = ordered ?? answer.items;
+    // On review the items are the key's stored order.
+    const right = (item: string, i: number) => answer.items[i] === item;
+    // Rows keep their identity while moving, so focus stays on the button;
+    // a repeated text is told apart by its occurrence.
+    const seen = new Map<string, number>();
+    const keys = current.map((item) => {
+      const count = seen.get(item) ?? 0;
+      seen.set(item, count + 1);
+      return `${count}:${item}`;
+    });
     function move(index: number, direction: number) {
       const next = [...current];
       [next[index], next[index + direction]] = [
@@ -553,28 +559,29 @@ function PartRunner({
           <div
             className={cn(
               answerRowClass(
-                review ? (item === i ? 'success' : 'danger') : undefined
+                review ? (right(item, i) ? 'success' : 'danger') : undefined
               ),
               !review && 'py-1 pr-1.5'
             )}
-            key={item}
+            key={keys[i]}
           >
             <OptionKey
               className={cn(
                 review &&
-                  (item === i ? 'text-tint-success-fg' : 'text-tint-error-fg')
+                  (right(item, i)
+                    ? 'text-tint-success-fg'
+                    : 'text-tint-error-fg')
               )}
             >
               {i + 1}.
             </OptionKey>
-            <TextView
-              className="min-w-0 flex-1 text-fg"
-              text={answer.items[item]}
-            />
+            <TextView className="min-w-0 flex-1 text-fg" text={item} />
             {review ? (
-              item !== i && (
+              !right(item, i) && (
                 <span className="shrink-0 whitespace-nowrap font-bold text-tint-error-fg text-xs">
-                  {m.question_ui_should_be({ position: item + 1 })}
+                  {m.question_ui_should_be({
+                    position: answer.items.indexOf(item) + 1,
+                  })}
                 </span>
               )
             ) : (
