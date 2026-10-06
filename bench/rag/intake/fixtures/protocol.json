@@ -112,5 +112,19 @@
     "B replaces intake for new books only if its audit error rate <= the reviewed text's on the same pages, fidelity not worse than A, cost per material <= 2x A.",
     "If B's text is worse but C wins, keep ODL + page transcription and drop tagging."
   ],
-  "amendments": "bench/rag/intake/fixtures/protocol-amendments.json (created only if something changes after the first run)"
+  "amendments": "bench/rag/intake/fixtures/protocol-amendments.json (created only if something changes after the first run)",
+  "mineru": {
+    "version": "4.0.10",
+    "tier": "standard",
+    "install": "WSL Ubuntu venv ~/mineru-venv, pip mineru[full] (torch 2.13.0+cu130, vllm 0.28.0)",
+    "small_models": "MinerU-4_models_torch on CUDA",
+    "vlm": "MinerU2.5-Pro-2605-1.2B on vLLM, gpu_memory_utilization 0.75 (MinerU default for an 8 GB card), VLLM_USE_FLASHINFER_SAMPLER=0 (no nvcc in WSL)",
+    "measured_2026-10-06": {
+      "front_matter_3_pages": "26.8 s inference, 8.9 s/page",
+      "body_20_pages_ahss4_111_130": "60.3 s inference, 3.0 s/page",
+      "engine_start_per_invocation": "37 to 85 s",
+      "llama_cpp_cpu_alternative": "117.6 s for 3 pages, 39 s/page, rejected"
+    },
+    "output": "mineru-kit parse --format zip: markdown.md, middle_json.json (docvortex.middle 2.0; pages[].blocks[] with type, bbox 0..1, content spans; equations as LaTeX), structured_content.json, model_output.json, images/"
+  }
 }

@@ -114,12 +114,17 @@ pipeline's agent loop directly, so no Go deploy is needed for the experiment.
   CUDA 13 base, run with `--gpus all --shm-size 32g`); Docker Desktop passes
   the RTX 3060 Ti through (verified today). Every September MinerU test ran
   the 3.4.5 CPU pipeline backend; no GPU or VLM run exists.
-- Smoke: 20 pages of ahss4 with `--pages all` semantics checked (the CLI
-  defaults to the first 10 pages), content list v1 fields checked against
-  Capy's shape (type, text, text_level, bbox on the 0..1000 grid, page_idx,
-  img_path, table_body, equation), seconds per page recorded. If standard
-  tier does not fit the card, record it and run `--tier basic` (no VLM),
-  stating the quality difference in the report.
+- Smoke (done 2026-10-06): MinerU 4.0.10, `mineru-kit parse --tier standard
+  --format zip`. The small models run on Torch CUDA; the 1.2B VLM runs on
+  vLLM 0.28 at MinerU's default 0.75 memory fraction (6 GB) with
+  `VLLM_USE_FLASHINFER_SAMPLER=0` because WSL has no nvcc; the llama.cpp
+  engine that ships with the torch extra is CPU-only here and took 39 s a
+  page, so it is out. Measured: 20 body pages of ahss4 (111 to 130) in 60 s
+  of inference, 3.0 s a page, plus 37 to 85 s of engine start per invocation;
+  about two hours for the five books. The standard tier fits the card, so
+  no basic-tier decision is needed. Output is the middle JSON (blocks with
+  type, 0..1 bbox, LaTeX equations, inline equation spans, table bodies,
+  image paths) rather than a content list v1; the adapter maps it.
 - Adapter: the retired `parser/mineru_worker.py` (git `711e3fe6^`) passed
   MinerU's content list through with page offsets, so the mapping is small. A
   `parse_books` sibling in the pilot script that takes a content list file
@@ -141,6 +146,24 @@ pipeline's agent loop directly, so no Go deploy is needed for the experiment.
   figure exclusions) is copied from the live book record; the pilot books
   have none. The source PDFs already sit in the bucket under the same sha256,
   so `capture_knowledge_page` works in every arm.
+- Arm B build path (verified on the 20-page smoke corpus, 2026-10-06):
+  `bench/rag/intake/scripts/mineru_corpus.py` maps the middle JSON onto
+  Capy's content list (headings levelled by the PDF outline, a heading the
+  outline does not know nests one level under the current one; inline
+  equations as `$...$`, display equations as `$$...$$`, tables as HTML with
+  captions, images and charts as image blocks with captions; header, footer
+  and page-number blocks dropped) and writes `corpus.json` through the
+  pilot's `page_chunks`, `figure_records`, `drawing_records` and
+  `build_excerpts`, plus a one-book manifest, `topics.json` with no topics and
+  an all-failed `tags.json`. `armb_pipeline.py` then runs the pilot `index`
+  stage and the loader's `publish` per book. Arm B has its own pilot
+  database (`intake-eval-pilot`, 127.0.0.1:15446): `book_identity` hashes id,
+  edition, sha256, source url and licence, so the MinerU corpus of a live book
+  has the live book's content id and the index stage would replace the live
+  pilot rows. The converter's text-layer confidence runs low on formula-heavy
+  chunks because the LaTeX differs from the PDF text (17 of 56 smoke chunks
+  under 0.9); it is the same scorer for every arm and is reported, not used
+  to filter.
 - Audit (measurement, not repair): 3% of pages per book, fixed seed, each
   block judged faithful or not against the page image, for both the MinerU
   text and the live reviewed text of the same pages. This gives the parser
