@@ -1478,6 +1478,17 @@ test('DOCX Format › Table fits, centres and pins a table, a drag keeps the fit
     .getByText('C', { exact: true });
   await expect(cell).toBeAttached();
   const left = (await cell.boundingBox())?.x ?? Number.NaN;
+  // exchange-plan.docx is a Word 2013+ (mode 15) document: the new table's
+  // border sits at the margin, so its text is one cell margin (7.2px) in.
+  const body = frame
+    .locator('.layout-page-mirror:not(.layout-page-mirror-text)')
+    .getByRole('paragraph')
+    .filter({ hasText: /^籌委會籌備小組$/ })
+    .getByText('籌', { exact: true })
+    .first();
+  const inset = left - ((await body.boundingBox())?.x ?? Number.NaN);
+  expect(inset).toBeGreaterThan(5);
+  expect(inset).toBeLessThan(10);
 
   await table('Auto-fit to contents', undefined, 'menuitem').then((item) =>
     item.click()
