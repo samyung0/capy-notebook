@@ -156,8 +156,12 @@ check); it applies at the first promotion.
   (`textLayer.ts`). Unchecked: Safari and Firefox
   (word/paragraph clicks use `caretPositionFromPoint`/`caretRangeFromPoint`,
   Firefox drags links instead of selecting from them).
-- **PPTX presenter view.** Show speaker notes while presenting. Notes are
-  already hidden by default and toggled in edit and view mode.
+- **PPTX presenter view** (decided 2026-10-06, `human/frontend/office-files.md`):
+  Present as a split button (main part full screen in the tab; dropdown From
+  this slide, From the start, Presenter view); Presenter view keeps the slides
+  in the tab and opens the notes in a window (Google Slides), always dark,
+  timer from the show's start. Mocks in
+  `capy-docx-review-harnesses/2026-10-05-office-batch/presenter-mocks/`.
 - **PPTX comments UI (parked):** comments are kept on save
   (`crates/pptx-edit/src/comments.rs`) but Capy shows none; start from a mock
   (the parity track landed 2026-10-06). Next parity gaps from its GAP.md: find
