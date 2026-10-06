@@ -11,7 +11,12 @@
  */
 
 import { AIChatPlugin } from '@platejs/ai/react';
-import { DndPlugin, useDraggable, useDropLine } from '@platejs/dnd';
+import {
+  DndPlugin,
+  DRAG_ITEM_BLOCK,
+  useDndNode,
+  useDropLine,
+} from '@platejs/dnd';
 import { expandListItemsWithChildren } from '@platejs/list';
 import {
   BLOCK_CONTEXT_MENU_ID,
@@ -50,6 +55,7 @@ import { cn } from '@/lib/cn';
 import { editorAiEnabled } from '@/lib/features';
 import { openAiMenu } from './ai/aiMenuState';
 import { useEditorRuntime } from './EditorRuntime';
+import { useEditorScrollArea } from './editorScrollArea';
 import { toggleEditorBlock } from './editorTransforms';
 
 const UNDRAGGABLE_KEYS = [KEYS.column, KEYS.tr, KEYS.td, KEYS.th];
@@ -105,19 +111,96 @@ export function firstLineMiddle(
   return block.getBoundingClientRect().top - containerTop + middle;
 }
 
+// One observer per note scroll area for every block's near-viewport latch.
+const nearObservers = new WeakMap<Element, IntersectionObserver>();
+const nearCallbacks = new WeakMap<Element, () => void>();
+
+/**
+ * Whether a block has come within a screen of the note's viewport, or the
+ * pointer entered it; it stays true. Outside a note scroll area every block is
+ * near at once, as before.
+ */
+function useNearViewport(ref: React.RefObject<HTMLElement | null>) {
+  const root = useEditorScrollArea();
+  const [near, setNear] = React.useState(!root);
+  React.useEffect(() => {
+    const element = ref.current;
+    if (near || !(root && element)) return;
+    let observer = nearObservers.get(root);
+    if (!observer) {
+      observer = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries)
+            if (entry.isIntersecting) nearCallbacks.get(entry.target)?.();
+        },
+        { root, rootMargin: '100% 0px' }
+      );
+      nearObservers.set(root, observer);
+    }
+    nearCallbacks.set(element, () => setNear(true));
+    observer.observe(element);
+    return () => {
+      observer.unobserve(element);
+      nearCallbacks.delete(element);
+    };
+  }, [near, ref, root]);
+  return [near, () => setNear(true)] as const;
+}
+
+type DragState = { isAboutToDrag: boolean; isDragging: boolean };
+const IDLE: DragState = { isAboutToDrag: false, isDragging: false };
+
+/**
+ * A block's drag source and drop target. Mounted only once the block is near
+ * the viewport: each react-dnd registration dispatches to every registered
+ * monitor, so registering all blocks of a near-limit note at once cost
+ * O(blocks²) and most of its open, and their gutters were about three DOM
+ * nodes in four, which React walks on every commit while the editor has focus.
+ * A drop lands where the pointer is, and dragging auto-scrolls, so only blocks
+ * near the viewport need a target; the handle shows on hover anyway.
+ */
+function BlockDnd({
+  element,
+  handleRef,
+  nodeRef,
+  onDrag,
+  onDropHandler,
+  previewRef,
+}: {
+  element: TElement;
+  handleRef: React.RefObject<HTMLButtonElement | null>;
+  nodeRef: React.RefObject<HTMLDivElement | null>;
+  onDrag: (state: DragState) => void;
+  onDropHandler: NonNullable<Parameters<typeof useDndNode>[0]['onDropHandler']>;
+  previewRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  const { dragRef, isAboutToDrag, isDragging } = useDndNode({
+    element,
+    multiplePreviewRef: previewRef,
+    nodeRef,
+    onDropHandler,
+    orientation: 'vertical',
+    type: DRAG_ITEM_BLOCK,
+  });
+  // Rendered after the handle, so its ref is attached here (null in a table).
+  React.useLayoutEffect(() => {
+    dragRef(handleRef.current);
+  }, [dragRef, handleRef]);
+  React.useLayoutEffect(() => {
+    onDrag({ isAboutToDrag: !!isAboutToDrag, isDragging: !!isDragging });
+  }, [isAboutToDrag, isDragging, onDrag]);
+  return null;
+}
+
 function DraggableBlock(props: PlateElementProps) {
   const { children, editor, element, path } = props;
   const blockSelectionApi = editor.getApi(BlockSelectionPlugin).blockSelection;
-
-  const { isAboutToDrag, isDragging, nodeRef, previewRef, handleRef } =
-    useDraggable({
-      element,
-      onDropHandler: (_, { dragItem }) => {
-        const id = (dragItem as { id: string[] | string }).id;
-        if (blockSelectionApi) blockSelectionApi.add(id);
-        resetPreview();
-      },
-    });
+  const wrapperRef = React.useRef<HTMLDivElement>(null);
+  const nodeRef = React.useRef<HTMLDivElement>(null);
+  const previewRef = React.useRef<HTMLDivElement>(null);
+  const handleRef = React.useRef<HTMLButtonElement>(null);
+  const [near, approach] = useNearViewport(wrapperRef);
+  const [{ isAboutToDrag, isDragging }, setDrag] = React.useState(IDLE);
 
   const isInColumn = path.length === 3;
   const isInTable = path.length === 4;
@@ -141,7 +224,6 @@ function DraggableBlock(props: PlateElementProps) {
 
   React.useEffect(() => {
     if (isAboutToDrag) previewRef.current?.classList.remove('opacity-0');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAboutToDrag]);
 
   return (
@@ -155,13 +237,15 @@ function DraggableBlock(props: PlateElementProps) {
       )}
       data-slot="block-wrapper"
       onMouseEnter={(event) => {
+        approach();
         if (isDragging || isMaterialRef) return;
         const middle = firstLineMiddle(editor, element, event.currentTarget);
         // Center the 24px handle on the first line.
         if (middle !== null) setHandleTop(middle - 12);
       }}
+      ref={wrapperRef}
     >
-      {!isInTable && (
+      {near && !isInTable && (
         <Gutter>
           <div
             className={cn(
@@ -216,8 +300,22 @@ function DraggableBlock(props: PlateElementProps) {
         ref={nodeRef}
       >
         <MemoizedChildren>{children}</MemoizedChildren>
-        <DropLine />
+        {near && <DropLine />}
       </div>
+      {near && (
+        <BlockDnd
+          element={element}
+          handleRef={handleRef}
+          nodeRef={nodeRef}
+          onDrag={setDrag}
+          onDropHandler={(_, { dragItem }) => {
+            const id = (dragItem as { id: string[] | string }).id;
+            if (blockSelectionApi) blockSelectionApi.add(id);
+            resetPreview();
+          }}
+          previewRef={previewRef}
+        />
+      )}
     </div>
   );
 }
