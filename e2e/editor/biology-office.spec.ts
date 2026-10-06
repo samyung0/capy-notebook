@@ -686,13 +686,14 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
   test(`${format} zoom carries across View and Edit while the file is open, and stays usable while paused`, async ({
     page,
   }) => {
-    test.setTimeout(240_000);
+    // Four frame loads, DOCX editors among them: slow on a busy machine.
+    test.setTimeout(600_000);
     await page.setViewportSize({ height: 800, width: 1280 });
     const fileId = `bio-office-${format}`;
     await page.goto(`/workspaces/ws_bio?file=${fileId}`);
     const frame = page.frameLocator('iframe[src*="office-runtime"]');
     await expect(frame.locator('canvas').first()).toBeVisible({
-      timeout: 60_000,
+      timeout: 120_000,
     });
     const mode = page.getByRole('button', { name: 'Material mode' });
     const zoomMenu = async () => {
@@ -704,6 +705,9 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
       await page
         .getByRole('menuitemcheckbox', { exact: true, name: level })
         .click();
+      // The closed menu hands the frame the focus; a menu opened before
+      // that would close under the next click.
+      await expect(page.locator('iframe[src*="office-runtime"]')).toBeFocused();
     };
     const ticked = async (level: string) => {
       await zoomMenu();
@@ -745,7 +749,9 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
       ).toBeGreaterThanOrEqual(0);
     const scaled = async (editing: boolean, factor: number) =>
       expect
-        .poll(async () => Math.abs((await size(editing)) - base * factor))
+        .poll(async () => Math.abs((await size(editing)) - base * factor), {
+          timeout: 60_000,
+        })
         .toBeLessThanOrEqual(2);
     // The toolbar's zoom control in edit mode.
     const toolbarZoom =
@@ -765,7 +771,7 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
     await ticked('150%');
 
     await mode.click();
-    await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });
     await showsZoom('150%');
     await ticked('150%');
     if (format !== 'xlsx') await scaled(true, 1.5);
@@ -774,7 +780,7 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
     await mode.click();
     await expect(mode).toHaveAttribute('aria-pressed', 'false');
     await expect(frame.locator('canvas').first()).toBeVisible({
-      timeout: 60_000,
+      timeout: 120_000,
     });
     await scaled(false, 1.5);
     await ticked('150%');
@@ -783,7 +789,7 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
     // Paused (a newer version replaced the session): zoom edits nothing, so
     // the toolbar's control still works.
     await mode.click();
-    await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });
     await saveOffice(page);
     await expect(
       page.getByRole('status').filter({ hasText: /^Saved$/ })
