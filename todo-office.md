@@ -163,8 +163,6 @@ check); it applies at the first promotion.
   (the parity track landed 2026-10-06). Next parity gaps from its GAP.md: find
   and replace, links, duplicate and object copy-paste, rotate/flip, group and
   border dash.
-- **DOCX Insert/Update table of contents.** An engine track; the menu item is
-  hidden until it works.
 - **DOCX table-menu items.** Vertical alignment, table alignment, header row,
   distribute columns, auto-fit and no-wrap. Hidden until the engine supports
   them.
@@ -177,22 +175,65 @@ check); it applies at the first promotion.
 
 ## Unverified or small
 
-- **DOCX paragraph properties the model doesn't hold are dropped on save**
-  (found by the paragraph-save review, 2026-10-05; pre-existing): `kinsoku`,
-  `wordWrap`, `overflowPunct`, `topLinePunct`, `textDirection`,
-  `textAlignment`, `divId`, `cnfStyle` and others vanish on every save,
-  hurting CJK documents most. Also: pPr in a vertically merged continuation
-  cell is dropped; Enter copies a tracked pPr change to both halves (duplicate
-  revision ids); the font picker drops the East Asian font and the save adds a
-  complex-script font the source lacked; any suggesting-mode paragraph change
-  makes the save throw (not exposed in Capy). After any edit to its paragraph a
-  tracked-deleted footnote reference saves as live and a deleted `w:fldSimple`
-  loses its result (docx-fields review round 2, R2-8). Also on the baseline
-  (paragraph-save final review, 2026-10-06): new table cells get an explicit
-  `left` alignment, every save drops a row's `gridBefore`, and Enter after a
-  List Bullet paragraph loses its numbering. Keep what the model doesn't
-  hold; Word is the oracle. Probes in
-  `capy-docx-review-harnesses/2026-10-05-office-batch/docx-paragraph-save/review-probes/`.
+- **A field that shows nothing is laid out one digit wide** (pre-existing,
+  found by docx-toc 2026-10-06): ooxml-text measures an empty field result as
+  `"1"` (`prepare_field_run`, `crates/ooxml-text/src/measure/prepare.rs`), so a
+  table of contents' own marker (and a REF over links, a split field's first
+  half) takes ~9 px at 12 pt. In every TOC's first entry, Word's or Insert's,
+  the page number then sits one digit left of the others. Fix: measure an
+  empty result as nothing unless the field is PAGE/NUMPAGES (whose text each
+  page resolves), in the JSON and typed measure paths alike.
+- **DOCX section break from the toolbar may not reach the saved file**
+  (found by docx-toc review 2, probes J/J2 in
+  `capy-docx-review-harnesses/2026-10-05-office-batch/docx-toc/review-2/`):
+  in that harness `exportOffice` wrote no paragraph `sectPr` for an
+  `insertSectionBreak` embed, with or without a table of contents. Check
+  whether it's a harness artefact (breaks owner).
+- **DOCX table of contents in content controls and cells** (docx-toc review N2,
+  2026-10-06; a follow-up track): Word's References › Table of Contents gallery
+  wraps the field in a `docPartObj` block content control (`body:sdt0`), which
+  `toc_fields`/`toc_count` don't read, so Update isn't offered for most
+  Word-made tables and Insert adds a second one; headings inside table cells
+  and content controls (and headers and notes) are not listed (Word lists
+  table-cell headings). Read TOC fields and headings in block-control and cell
+  stories.
+- **DOCX table of contents leftovers** (docx-toc, 2026-10-06): entries leave
+  out a numbered heading's list number (Word copies it with a tab); a code
+  with `\t`, `\f`, `\l`, `\b` or a Table of Figures (`\c`, `\a`) is left
+  alone by Update, and so is one with `\* MERGEFORMAT` or a bare `\f`
+  (LibreOffice may write `TOC \f \o "1-9" \h` for its default table, which
+  would then get no Update and a second table on Insert: check a LibreOffice
+  file); Update does not read `\p` (a `\p "-"` table gets a dot-leader tab
+  instead of its separator), `\w` or `\x`; `\n "2-3"` drops every page
+  number, not only those levels;
+  add "Word opens and updates a Capy-inserted TOC" to the UAT checks (Word was
+  not available on the dev machine).
+- **DOCX save leftovers after the fidelity track** (2026-10-06; pre-existing):
+  the engine's suggesting-mode paragraph property change (unused in Capy) no
+  longer makes the save throw but writes the editor's resolved values as the
+  previous pPr (no `w:pStyle`, style values as direct), so Reject in Word
+  would restyle the paragraph; convert the record through the paragraph save
+  as the current pPr is. A vMerge continuation cell saves its restart cell's
+  `w:tcPr`, losing its own borders and shading. The editor lays out a row's
+  skipped grid columns (`w:gridBefore`) from the first column (view mode and
+  Word shift the row). Enter at the end of a paragraph keeps only style,
+  spacing, font carry and the list, where Word copies all direct pPr
+  (alignment, indents, the unmodeled children): needs a decision. Cells whose
+  row or column position changes (a row inserted above the header, a column
+  after the last) keep their old table-style values and save them as direct
+  formatting, where Word shows the new position's. A style list paragraph with
+  an ilvl-only `numPr` shows no bullet in the editor. A font pick diffs the
+  whole story (about 0.75 ms more a keystroke with a stored caret font on a
+  4000-paragraph story). Probes in
+  `capy-docx-review-harnesses/2026-10-05-office-batch/docx-fidelity/`.
+- **DOCX run formatting written as direct on every save** (pre-existing, found
+  by the docx-fidelity review 2026-10-06): every save writes the style's run
+  formatting as direct formatting on every run of a saved story (long-handbook
+  0 → 1103 `w:rFonts`; book-30p's Title gains `sz`, `kern`, `spacing`, its
+  Heading 1 runs colour, `kern` and `sz`, every run `lang`), so later style
+  changes in Word no longer reach those runs. The run-level counterpart of the
+  paragraph save: write each run property the editor holds differently from
+  what the seed gave it, source kept for the rest.
 - **PPTX typed text size** (pre-existing, found by pptx-parity): text typed
   where the run inherits its size from the placeholder gets an explicit 24 pt
   (`pptx-parity/shots/slide-bulleted.png`, "Nested item").
@@ -202,14 +243,40 @@ check); it applies at the first promotion.
   Enter inside a field suggested for deletion as a whole turns its result into
   live text that Accept All leaves behind. Probes `r3-join-vs-suggest.ts`,
   `r3-struck-field.ts` in the docx-fields harness folder.
-- **DOCX mid-paragraph page/column break loses text** (found 2026-10-05/06 by
-  docx-view-text and its review; also on the base build): a page or column
-  break in the middle of a paragraph draws the line before it twice and drops
-  the text after it, in view mode and probably edit mode (same layout), e.g.
-  `wordprocessingml-comprehensive.docx`. Also: a footnote longer than a page is
-  never continued; viewer list numbers may ignore start values (8, 9), legal
+- **DOCX layout leftovers from the mid-paragraph break fix** (docx-breaks,
+  2026-10-06; the break itself is fixed on `capy/docx-breaks`): a page or
+  column break inside a complex field's result is drawn after the field, so
+  the field's text stays on one line and the next paragraph moves to the next
+  page; a page or column break in a table cell shows as a line break (Word's
+  behaviour not checked); a paragraph an in-flow chart (or a non-anchored
+  shape) splits numbers its list item once per part and keeps its
+  space-before and first-line indent on each part (shared `list_state` in
+  `flush_paragraph_parts`). Also: a footnote longer than a page is never
+  continued; viewer list numbers may ignore start values (8, 9), legal
   numbering and Chinese numbering (seen with minimal numbering XML — confirm on
   a real Word file first).
+- **Copy at a mid-paragraph break (needs Epo's decision):** view mode copies a
+  newline at a page or column break inside a paragraph; the editor
+  (`yrsCommands.ts` `yrsSelectionText`) copies nothing there and marks the copy
+  not plain. LibreOffice's text export writes a newline; Word's clipboard is
+  unchecked (its object model uses U+000C/U+000E). Recommended: a newline in
+  both modes when text precedes the break in its paragraph, keeping
+  `plain = false` so Cut still only copies.
+- **DOCX arrows over breaks** (docx-breaks review, 2026-10-06): Left/Right step
+  through `session.paragraphs(story)[i].text`, which leaves break units out
+  (`YrsInput.tsx:829`, `:850-856`), so ArrowRight stops before the last
+  character of a paragraph holding a page, column or soft line break, and
+  Alt/Ctrl+Arrow word steps are off by one per break. Step through the story's
+  unit segments instead. Home/End go to the paragraph's start and end, not the
+  line's (Shift+End from text before a break selects across it; Word stops at
+  the line end).
+- **Enter right after a mid-paragraph break** (docx-breaks review,
+  2026-10-06): it leaves `Aa<pageBreak>¶Bb¶`, so an empty line paints at the
+  top of the next page and "Bb" sits one line down; reopening the saved file
+  shows "Bb" at the top, because the seed moves the break onto the next
+  paragraph. Split before the break instead (the shape the seed makes, and no
+  text ahead of a break in its slot, as decided 2026-09-28); queue with the
+  matrix's `break-paragraph` rows.
 - **Chat can't describe an image added to an Office file** (decided
   2026-10-05): attach the image to the next model request as `capture_page`
   does and remove the source-change caption path (`captioning_spec()` needs

@@ -68,7 +68,9 @@ export function docxCitation(
   for (const page of list.pages) {
     for (const item of page.primitives) {
       if (item.kind !== 'text' && item.kind !== 'glyphRun') continue;
-      const identity = item.blockKey ?? item.paraId;
+      // A paragraph a page or column break splits paints as several blocks
+      // sharing its paraId, so a quote can span the break.
+      const identity = item.paraId ?? item.blockKey;
       if (!identity) continue;
       const key = String(identity);
       const group = paragraphs.get(key) ?? { rects: [], safe: true, text: '' };

@@ -351,8 +351,16 @@ its own paragraph instead of closing the one before it. Mid-paragraph breaks sta
 typing, Enter, Accept/Reject all and publication, including breaks inside
 links, inline content controls and tracked changes. The render bridge splits
 an inline break into paragraph fragments while keeping one editable paragraph
-and one list number. Enter at the start of a heading after a trailing column
-break puts the empty line after that break, even if the preceding text changed.
+and one list number. Each fragment after the first gets its own layout block id
+(the paragraph's id plus `#1`, `#2`, …), since layout, painting and the resident
+display look measured blocks up by id; the text after the break starts at the
+top of the next page or column at the paragraph's left indent, without
+first-line or hanging indent, space-before or number, as Word continues the
+paragraph there. The paragraph's space-after and a tracked paragraph mark's
+pilcrow stay on its last part. A paragraph an in-flow chart splits gets the
+same per-part ids. View-mode copy puts a newline at the break. Enter at the
+start of a heading after a trailing column break puts the empty line after
+that break, even if the preceding text changed.
 A bookmark opening before a paragraph's leading breaks stays before them, and an empty
 list item before a leading break keeps its number. Tracked breaks keep
 `w:ins`/`w:del`. The toolbar offers a page break only outside table cells,
@@ -594,7 +602,11 @@ changes only: a field whose kept changes resolve becomes what the seed makes of
 its export, a projected child the user edited keeps its edit and one the user
 deleted stays deleted, and a child resolves only for the field that records it.
 Run-formatting revisions (`w:rPrChange`) appear in the change list; Accept keeps
-the current formatting and Reject restores the previous formatting. Both also
+the current formatting and Reject restores the previous formatting. A tracked
+deletion keeps what it holds through edits to its paragraph: deleted text inside
+a simple field or a link reads as text (the field keeps its result, the link
+its text), and a deleted note reference saves inside its `w:del`; every saved
+note reference keeps its run formatting (its FootnoteReference style). Both also
 resolve revisions in nested fields and controls and remove resolved move
 wrappers and range markers. Deleting a break in a field result removes it from
 the saved field too.
@@ -712,14 +724,61 @@ menus (`hostMenus.tsx` in the fork, Capy's icons and File › Download and Print
 added in `docxMenus.ts`) are File (Save, Download ▸ Word document, Page setup,
 Print), Edit (Undo, Redo, Select all, Delete, Find and replace), View (Show
 ruler ✓, Show document outline ✓, Show comments ✓, Zoom ▸), Insert (Image, Table ▸, Link,
-Comment, Watermark, Break ▸) and Format (Text ▸, Paragraph styles ▸, Align &
+Comment, Watermark, Break ▸, Table of contents, and Update table of contents
+while the document has one) and Format (Text ▸, Paragraph styles ▸, Align &
 indent ▸, Line spacing ▸, Bullets & numbering ▸, Text direction ▸, Table
 properties and Image options in context, Clear formatting). Placeholders that
-do nothing stay hidden: Insert › Table of contents, the table menu's vertical
+do nothing stay hidden: the table menu's vertical
 alignment, table alignment, header row, distribute columns, auto-fit and
 no-wrap, and Line spacing's empty Paragraph spacing heading. Cut, Copy and
 Paste are left out of the menus (a host click cannot reach the frame's
 clipboard). Find and replace works in edit mode only (Ctrl/Cmd+F and H too).
+
+Insert › Table of contents writes Word's field (`TOC \o "1-3" \h \z \u`,
+`ops/toc.rs` in docx-edit) at the caret in the body: one paragraph per body
+heading of outline level 1–3 (its own level, else its style's, as the saved
+file has them; an empty heading is skipped), each a link to a `_Toc` bookmark
+the command puts around the heading's text (one the heading already has is
+reused), then a dot-leader right tab at the text width less 10 twips and a
+`PAGEREF \h` field with the page the heading starts on, as that page shows its
+number. Entries take the document's `toc 1`–`toc 3` styles; a document without
+them gets `TOC1`–`TOC3` with Word's built-in spacing (after 5pt) and indents
+(0, 11pt, 22pt) written directly, since the save cannot add a style. The field
+begins with the first entry and ends after the last; text before the caret is
+split off into its own paragraph above, and the caret's paragraph follows the
+table. With no heading the result is Word's "No table of contents entries
+found." The entries are written as markup, read by docx-parse and seeded with
+the document's styles (`seed::fragment_ops`), so the editor holds exactly what
+the saved file seeds to. Page
+numbers come from the editor's layout: after inserting, the editor lays the
+document out again and, when a heading moved page, rebuilds the table once
+more, all in one Undo step (manual undo capture), so the numbers count the
+table's own pages. Insert with the caret inside a table of contents updates
+that table instead (Word asks to replace it; Yes is its default). Update table
+of contents rebuilds the table holding the caret, else the body's first, from
+the current headings and layout, keeping its field code (`\o` levels, quoted or
+not, `\h` links, `\n` without page numbers): Word's "Update entire table", so text typed
+inside the table is replaced. It writes the new entries in front of the old
+table, then removes the old one; a paragraph the old field's end opens (Word's
+shape, often the one breaking a roman-numbered section) stays, with its
+section. Only a table built from headings is updated or counted for the menu:
+a field code with switches beyond `\o \h \z \u \n \w \x \p` (a Table of
+Figures' `\c`, or `\t`, `\f`, `\l`, `\b`) is left as it is, Update does
+nothing with the caret in one, and Insert there puts the new table in front of
+it. Two peers updating at once each leave a whole table, so the document then
+holds two (the concurrent-join class); a further Update rebuilds the one at the
+caret, or the first, and leaves the other for the user to delete (Undo of one
+peer's Update brings the old table back beside the other peer's). Text a peer
+types in the old entries during an Update ends up after the new table (the
+concurrent-join class). A peer's heading change made during an update shows at
+the next update. A paragraph inside a table of contents is never listed as a
+heading, as in Word (Update reads the headings before it removes the old
+table). Neither
+command runs in suggesting mode, and heading list numbers are not copied into
+the entries. Not yet seen: a table inside a block content control (Word's
+References › Table of Contents gallery wraps the field in one), so Update is
+not offered for it and Insert adds a second table; and headings inside table
+cells and content controls are not listed (a follow-up in `todo-office.md`).
 
 View › Show ruler (`show-ruler`, a checkbox item that does not edit, so it
 stays usable while paused) shows docx-react's rulers as Google Docs does: the
@@ -1182,8 +1241,9 @@ PDF regions use 1-based pages and normalized `[x0,y0,x1,y1]` coordinates in
 Office PDF coordinates do not map directly to the native editor layout.
 
 Office citation clicks pass the quoted passage through protocol v4 to the existing
-native viewer. DOCX searches current paragraph text and overlays its current run
-geometry. PPTX searches native text boxes and draws their current line rectangles.
+native viewer. DOCX searches current paragraph text (grouped by `w14:paraId`, so a
+quote can span a page or column break inside its paragraph; the layout block
+key when the file has none) and overlays its current run geometry. PPTX searches native text boxes and draws their current line rectangles.
 XLSX enumerates defined cell addresses in the current OOXML package, matches the
 viewer's displayed cell text, and uses its current viewport geometry. Matching
 requires a complete unique quote of at least 12 non-whitespace characters; short,
@@ -1279,16 +1339,48 @@ input drains and with available geometry must set a valid selection before typin
 resumes; the input exposes placement state and selection for browser checks.
 Run language metadata survives the native seed, Yjs projection and OOXML export,
 and so does a run's font hint (`w:rFonts w:hint`), held in its own `fontHint`
-mark so typing in the run and picking a font keep it.
+mark so typing in the run and picking a font keep it. Picking a font sets each
+run's Latin and complex-script fonts (`w:ascii`, `w:hAnsi`, `w:cs`, dropping
+those slots' theme fonts, which would win over it) and keeps its East Asian
+font, as Word's font box does (`picked_font`, one pass over the range with one
+retain per stretch of equal fonts); an East Asian face (SimSun, Microsoft
+YaHei, MS Mincho, Noto Sans CJK, the faces Word's metrics table lists and
+their weights and variants, the ST, FZ and Nanum faces, or a name in CJK, kana
+or Hangul script; `is_east_asian_family` in ooxml-text) also sets the East
+Asian font. A select-all pick in a file whose runs alternate East
+Asian fonts takes about 24 ms against 7 ms before and stores about 1.4 MB of
+room update against 0.5 MB, since each stretch keeps its own font. The save
+writes the fonts the editor holds and adds none (no `w:cs` copied from
+`w:ascii`, no name the seed resolved for a slot that has a theme font).
 A DOCX save writes each paragraph's source properties back as they were and
 writes over them every paragraph property the editor holds differently from
 what the seed gave it (direct formatting, else the list level, else the style,
 with a table style's paragraph formatting in cells; `seededParagraphProperties`,
 shared by the projector and the save). Style, list and table values are never
 copied into a paragraph, so an untouched paragraph saves with the paragraph
-properties its source had, as far as the model holds them: pPr children it has
-no field for (`w:kinsoku`, `w:wordWrap`, `w:textDirection` and the like) are
-dropped by every save. A property the editor holds nothing for is removed. Line
+properties its source had. The pPr children the model has no field for
+(`w:kinsoku`, `w:wordWrap`, `w:overflowPunct`, `w:topLinePunct`,
+`w:adjustRightInd`, `w:mirrorIndents`, `w:suppressOverlap`, `w:textDirection`,
+`w:textAlignment`, `w:textboxTightWrap`, `w:divId`, `w:cnfStyle`) ride the
+source formatting (`extraChildren`), so they stay on a paragraph the editor
+changed and on both halves of a split, and `w:framePr` keeps its drop-cap,
+lines, spacing, height-rule and anchor-lock attributes; the writer puts pPr
+children in schema order. A vertically merged continuation cell, which the
+seed folds into its restart cell, saves with its source paragraphs' properties
+and no text (`continuationContent`: the source row is the one a seeded cell of
+the same row names, within the restart cell's own merge, and a cell counts as
+seeded only while its story holds one of its source paragraphs, so a new table
+in a deleted table's slot takes nothing); a continuation in a row with no
+seeded cell, as in a row the session added, saves an empty paragraph. A row's
+skipped grid columns (`w:gridBefore`, `w:gridAfter`, `w:wBefore`, `w:wAfter`)
+save while the row's cells and skipped columns fill the grid; the editor lays
+every row out from the first column, so a row it adds next to such a row, or
+one a column deletion leaves too wide, drops them. A cell paragraph made by
+inserting a row, column or table or splitting a cell holds no alignment of its
+own, and the editor gives it its style's values in its cell (`styleNewCells`,
+one style read per cell), so a new header-row cell shows centred as the file
+and Word do; the insert and that styling undo in one step (`inOneUndoStep`). A property the
+editor holds nothing for is removed. Line
 spacing and its rule, and the first-line indent and its hanging flag, save
 together; a changed indent drops its character-unit twin (`w:leftChars` and the
 like), which Word would otherwise prefer.
@@ -1337,6 +1429,27 @@ without listing the story. A cell whose row moved keeps
 the look it seeded with in the editor, and the save writes what differs from its
 new position. Ops store tab stops in the seed's shape (`position`, `alignment`,
 reading the older `pos`/`val` too) and the hanging first-line flag as a boolean.
+Enter at the end of a paragraph starts a clean one that keeps only its style,
+spacing and the font, size and colour carry (`INHERITED_PARA_ATTRS`), plus its
+list's numbering and level indents, so a list goes on as in Word whether the
+paragraph or its style gives it; where the paragraph's style names another
+next style, the new paragraph takes that style clean, without the list
+(`applyNextStyle`), so body text after a numbered heading is not numbered.
+Enter in a list item that was empty before it (one holding a field, picture or
+break is not) works as in Word (`endEmptyListItem`): a nested item moves up one
+level, and a first-level item leaves the list, numbering set on the paragraph
+going and a style's list turned off with `numId` 0 whenever the style gives
+one, the indents becoming the style's without its list.
+A split in the middle of a paragraph or before a block
+leaves the source mark's tracked insertion or deletion (`pPrIns`, `pPrDel`) on
+the source mark, and the new mark's copy of a tracked property change
+(`w:pPrChange`) takes a new revision id. A revision id the editor makes saves as
+2^30 + a 30-bit hash of the editor id, so it keeps its number in every save,
+incremental ones too, on every peer and across publications, and stays within
+int32 above the small ids Word writes; two editor ids, or one and an id from an
+earlier publication, colliding is possible but unlikely. The engine's suggesting-mode
+paragraph property changes (unused in Capy) save, but with the editor's
+resolved values as the previous pPr rather than the paragraph's own.
 PPTX uses a native textarea for typing, clipboard copy and paste, and IME composition. Copy puts the selected text on the clipboard as plain text and HTML (bold, italic and underline set on the run); a selected shape copies its whole text, one story per line. Read-only allows selecting and copying text, with typing, paste and cut refused; there is no cut. Edits over a selection that crosses paragraphs (typing, paste, IME, Enter, Backspace, Delete) replace it in one transaction and one undo step, joining the paragraphs under the first one's id and properties; a split (Enter or a newline) keeps the original paragraph's id on the first half and its properties on both halves, as PowerPoint continues a list, so Enter then Backspace restores the paragraph exactly (in a list item Backspace first removes the new item's marker, then joins); a refused edit changes nothing and no longer blocks later saves. Read-only speaker notes are `readOnly`, so they can be selected and copied.
 Save waits for composition to commit, and refuses an unmounted presentation or
 an interrupted composition instead of claiming it was saved.
@@ -1666,6 +1779,11 @@ differently now. PPTX decks with a run highlight or any strike attribute
 reseed too (`lecture.pptx` pins it). Migration
 `0058_docx_pptx_seed_reset.sql` applies the guarded reset to `'docx','pptx'`,
 so that pin deploys inside the maintenance window.
+Keeping paragraph properties the model doesn't hold (`w:kinsoku`,
+`w:cnfStyle` and the like), more `w:framePr` attributes and deleted text inside
+fields and links changes the seed of every DOCX holding them (the e2e sample
+`bo-corpus-1`; a golden test pins a file with unmodeled pPr children), so
+migration `0059_docx_kept_properties_seed_reset.sql` resets `'docx'` again.
 
 ## Private PDF annotations
 
