@@ -45,14 +45,18 @@ function findItem(
 
 /**
  * Whether a command may run while editing is paused (handoff, replaced,
- * recovery, connecting, discarding): a header action, or a menu item that
- * does not edit (`edits`, declared by the editor that defines it).
+ * recovery, connecting, discarding): a header action, or a menu or header
+ * action item that does not edit (`edits`, declared by the editor that
+ * defines it).
  */
 export function runsWhilePaused(source: OfficeMenuSource | null, id: string) {
   if (!source) return false;
   if (source.actions?.some((action) => action.id === id)) return true;
   const item = findItem(
-    source.menus.flatMap((menu) => menu.items),
+    [
+      ...source.menus.flatMap((menu) => menu.items),
+      ...(source.actions?.flatMap((action) => action.items ?? []) ?? []),
+    ],
     id
   );
   return !!item && !item.edits;

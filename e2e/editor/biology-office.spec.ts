@@ -972,7 +972,7 @@ for (const [format, text] of [
         );
         if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
         iframe.contentWindow.postMessage(
-          { id, type: 'menu-command', version: 7 },
+          { id, type: 'menu-command', version: 8 },
           new URL(iframe.src).origin
         );
       },
@@ -1053,7 +1053,7 @@ test('a DOCX editor resuming from a pause leaves the focus where it was', async 
       );
       if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
       iframe.contentWindow.postMessage(
-        { canEdit, type: 'set-capabilities', version: 7 },
+        { canEdit, type: 'set-capabilities', version: 8 },
         new URL(iframe.src).origin
       );
     }, canEdit);
@@ -1286,7 +1286,7 @@ test('a view-only XLSX viewer still selects and copies a cell after canEdit:fals
     );
     if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
     iframe.contentWindow.postMessage(
-      { canEdit: false, type: 'set-capabilities', version: 7 },
+      { canEdit: false, type: 'set-capabilities', version: 8 },
       new URL(iframe.src).origin
     );
   });
@@ -1367,6 +1367,81 @@ test('PPTX speaker notes start hidden, and one remembered toggle serves view and
   await expect(viewNotes).toHaveCount(0);
 });
 
+test('PPTX Present fills the screen, and Presenter view drives the show from a speaker notes window', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await page.goto('/workspaces/ws_bio?file=bio-office-pptx');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  const show = frame.getByRole('dialog', { name: 'Slide presentation' });
+  const fullscreen = () =>
+    page.evaluate(() => document.fullscreenElement?.tagName ?? null);
+
+  // Present: the slides in full screen in this tab, no second window.
+  await page.getByRole('button', { exact: true, name: 'Present' }).click();
+  await expect(show).toBeVisible();
+  await expect.poll(fullscreen).toBe('IFRAME');
+  await show.press('Escape');
+  await expect(show).toHaveCount(0);
+  await expect.poll(fullscreen).toBeNull();
+
+  // Presenter view: the notes window opens beside the tab's show.
+  await page.getByRole('button', { name: 'More ways to present' }).click();
+  const opened = page.waitForEvent('popup');
+  await page.getByRole('menuitem', { name: 'Presenter view' }).click();
+  const notes = await opened;
+  await expect(
+    notes.getByRole('main', { name: 'Presenter view' })
+  ).toBeVisible();
+  await expect(notes.getByText('Slide 1 of 20')).toBeVisible();
+  await expect(notes.getByText('No speaker notes')).toBeVisible();
+  await expect(show.getByText('1 / 20')).toBeVisible();
+
+  // Next in the notes window advances the tab, which shows slide 2's notes.
+  await notes.getByRole('button', { name: 'Next slide' }).click();
+  await expect(show.getByText('2 / 20')).toBeVisible();
+  await expect(notes.getByText('Slide 2 of 20')).toBeVisible();
+  await expect(notes.getByTestId('pptx-presenter-notes')).toHaveText(
+    'Speaker note: the rehearsal takes 12 minutes.'
+  );
+
+  // End closes the notes window and returns to the file at that slide.
+  const closed = notes.waitForEvent('close');
+  await notes.getByRole('button', { exact: true, name: 'End' }).click();
+  await closed;
+  await expect(show).toHaveCount(0);
+  await expect(frame.getByText('Slide 2 of 20')).toBeVisible();
+
+  // The runtime reloading by itself takes the notes window with it, and the
+  // next Presenter view gets a fresh one that shows its notes.
+  const presenterView = async () => {
+    await page.getByRole('button', { name: 'More ways to present' }).click();
+    const popup = page.waitForEvent('popup');
+    await page.getByRole('menuitem', { name: 'Presenter view' }).click();
+    return popup;
+  };
+  const stale = await presenterView();
+  await expect(stale.getByText('Slide 2 of 20')).toBeVisible();
+  const runtime = page
+    .frames()
+    .find((candidate) => candidate.url().includes('office-runtime'));
+  if (!runtime) throw new Error('Missing Office runtime');
+  const gone = stale.waitForEvent('close');
+  await runtime.evaluate(() => setTimeout(() => location.reload()));
+  await gone;
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  const fresh = await presenterView();
+  await expect(fresh.getByText('Slide 1 of 20')).toBeVisible();
+  await fresh.getByRole('button', { exact: true, name: 'End' }).click();
+  await expect(show).toHaveCount(0);
+});
+
 test('DOCX View › Show ruler is remembered, edit mode only, and stays usable while paused', async ({
   page,
 }) => {
@@ -1421,7 +1496,7 @@ test('DOCX View › Show ruler is remembered, edit mode only, and stays usable w
     );
     if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
     iframe.contentWindow.postMessage(
-      { canEdit: false, type: 'set-capabilities', version: 7 },
+      { canEdit: false, type: 'set-capabilities', version: 8 },
       new URL(iframe.src).origin
     );
   });
@@ -1538,7 +1613,7 @@ test('DOCX Format › Table fits, centres and pins a table, a drag keeps the fit
     );
     if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
     iframe.contentWindow.postMessage(
-      { canEdit: false, type: 'set-capabilities', version: 7 },
+      { canEdit: false, type: 'set-capabilities', version: 8 },
       new URL(iframe.src).origin
     );
   });

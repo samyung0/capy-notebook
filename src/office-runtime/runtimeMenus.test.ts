@@ -1,5 +1,11 @@
+import {
+  PPTX_COMMAND_IDS,
+  type PptxCommandState,
+} from '@betteroffice/pptx-react';
 import { describe, expect, it } from 'vitest';
 import type { OfficeMenu } from '@/features/files/officeMenus';
+import { editorMenus } from './pptxEditorMenus';
+import { presentAction } from './pptxMenus';
 import { pausedMenus, runsWhilePaused } from './runtimeMenus';
 
 const edit = (id: string) => ({
@@ -111,5 +117,54 @@ describe('menus while editing is paused', () => {
     expect(runsWhilePaused(source, 'freezeRows:1')).toBe(false);
     expect(runsWhilePaused(source, 'unknown')).toBe(false);
     expect(runsWhilePaused(null, 'zoom:100')).toBe(false);
+  });
+
+  it('keeps every way to present running while a PPTX editor is paused', () => {
+    const enabled = Object.fromEntries(
+      PPTX_COMMAND_IDS.map((id) => [id, true])
+    ) as PptxCommandState['enabled'];
+    const menus = pausedMenus(
+      editorMenus(
+        {
+          borderWeight: null,
+          checked: [],
+          enabled,
+          lineSpacing: null,
+          listStyle: null,
+          slideIndex: 0,
+          slideLayouts: [],
+          zoom: 'fit',
+        },
+        'en'
+      )
+    );
+    const view = menus.find((menu) => menu.id === 'view')!;
+    expect(view.items[0]).toMatchObject({
+      disabled: false,
+      id: 'present',
+      items: [
+        { id: 'view.present' },
+        { id: 'view.present:start' },
+        { kind: 'separator' },
+        { id: 'view.presenterView' },
+      ],
+    });
+    for (const entry of (view.items[0] as { items: { disabled?: boolean }[] })
+      .items)
+      expect(entry.disabled).toBeFalsy();
+    const source = { actions: [presentAction('en')], menus, run: () => {} };
+    for (const id of [
+      'view.present',
+      'view.present:start',
+      'view.presenterView',
+    ])
+      expect(runsWhilePaused(source, id)).toBe(true);
+    // An action's items run too when no menu lists them.
+    expect(
+      runsWhilePaused(
+        { actions: [presentAction('en')], menus: [], run: () => {} },
+        'view.presenterView'
+      )
+    ).toBe(true);
   });
 });

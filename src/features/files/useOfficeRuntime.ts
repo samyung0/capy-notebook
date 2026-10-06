@@ -13,6 +13,7 @@ import {
   fitOfficeMenus,
   type OfficeHeaderAction,
   type OfficeMenu,
+  officeCommandNeeds,
   officeHostCommand,
 } from './officeMenus';
 import {
@@ -26,7 +27,10 @@ import {
   type OfficeMode,
   type OfficeRenderedPage,
 } from './officeProtocol';
-import { getOfficeRuntimeConfig } from './officeRuntimeConfig';
+import {
+  getOfficeRuntimeConfig,
+  openPresenterWindow,
+} from './officeRuntimeConfig';
 import { printPages } from './printPages';
 import {
   decodeSourceState,
@@ -103,6 +107,10 @@ export function useOfficeRuntime({
     menus: OfficeMenu[];
     actions: OfficeHeaderAction[];
   } | null>(null);
+  const menusRef = useRef(menus);
+  menusRef.current = menus;
+  // A PPTX show is on: the frame covers the page.
+  const [presenting, setPresenting] = useState(false);
   const [replicaReady, setReplicaReady] = useState(false);
   const [leaving, setLeaving] = useState(false);
   // The room turned read-only (a storage or frozen refusal): the session
@@ -112,6 +120,7 @@ export function useOfficeRuntime({
     initializedFrame.current = -1;
     setFrameLoaded(false);
     setFrameGeneration((value) => value + 1);
+    setPresenting(false);
     setViewBytes(null);
     setAnalysis(null);
     setMode('view');
@@ -266,6 +275,7 @@ export function useOfficeRuntime({
     if (sourceDocument.current && sourceDocument.current !== doc) {
       setFrameLoaded(false);
       setFrameGeneration((value) => value + 1);
+      setPresenting(false);
       setAnalysis(null);
       setError(null);
     }
@@ -279,6 +289,7 @@ export function useOfficeRuntime({
     revisionRef.current = revision;
     setFrameLoaded(false);
     setFrameGeneration((value) => value + 1);
+    setPresenting(false);
     setViewBytes(null);
     setAnalysis(null);
     setError(config.error);
@@ -289,6 +300,7 @@ export function useOfficeRuntime({
     initializedFrame.current = -1;
     setFrameLoaded(false);
     setFrameGeneration((value) => value + 1);
+    setPresenting(false);
     setViewBytes(null);
     setAnalysis(null);
     setError(config.error);
@@ -429,6 +441,27 @@ export function useOfficeRuntime({
     return () => doc.off('update', send);
   }, [source.doc, source.session, mode, post]);
 
+  /**
+   * A `popup: 'presenter'` command: opens the presenter window from the
+   * click Capy got (in its header, or in the frame, whose activation reaches
+   * Capy), after telling the runtime the token to expect; '' when blocked.
+   */
+  const openPresenter = useCallback(
+    (id: string) => {
+      const send = (value: string) =>
+        post({
+          id,
+          type: 'menu-command',
+          value,
+          version: OFFICE_PROTOCOL_VERSION,
+        });
+      const token = crypto.randomUUID();
+      send(token);
+      if (!openPresenterWindow(config.origin, token)) send('');
+    },
+    [config.origin, post]
+  );
+
   useEffect(() => {
     const receive = (event: MessageEvent<unknown>) => {
       if (
@@ -446,6 +479,7 @@ export function useOfficeRuntime({
       if (message.type === 'initialized') {
         setReplicaReady(false);
         setMenus(null);
+        setPresenting(false);
         initializedFrame.current = -1;
         setFrameLoaded(true);
         setFrameBoot((value) => value + 1);
@@ -455,6 +489,18 @@ export function useOfficeRuntime({
         return;
       if (message.type === 'dirty') {
         active.pendingInput(message.dirty);
+        return;
+      }
+      if (message.type === 'presenting') {
+        setPresenting(message.presenting);
+        return;
+      }
+      if (message.type === 'open-presenter') {
+        // Only a command Capy would open the window for itself.
+        if (
+          officeCommandNeeds(menusRef.current, message.id).popup === 'presenter'
+        )
+          openPresenter(message.id);
         return;
       }
       if (message.type === 'menus') {
@@ -546,7 +592,7 @@ export function useOfficeRuntime({
     };
     window.addEventListener('message', receive);
     return () => window.removeEventListener('message', receive);
-  }, [config.origin, post, checkpoint]);
+  }, [config.origin, post, checkpoint, openPresenter]);
 
   const downloadDraft = useCallback(async () => {
     saveBlob(new Blob([await request('export')]), file.name);
@@ -578,6 +624,28 @@ export function useOfficeRuntime({
   /** A menu item or header action: Capy's own commands run here. */
   const runMenuCommand = useCallback(
     (id: string, value?: string) => {
+      const needs = officeCommandNeeds(menusRef.current, id);
+      if (needs.popup === 'presenter') return openPresenter(id);
+      if (needs.fullscreen) {
+        // Chromium lets the frame go full screen from this click; elsewhere
+        // (or without the click's activation) the show starts windowed.
+        const message: OfficeHostMessage = {
+          id,
+          type: 'menu-command',
+          value,
+          version: OFFICE_PROTOCOL_VERSION,
+        };
+        const target = iframeRef.current?.contentWindow;
+        try {
+          target?.postMessage(message, {
+            delegate: 'fullscreen',
+            targetOrigin: config.origin,
+          } as WindowPostMessageOptions);
+        } catch {
+          post(message);
+        }
+        return;
+      }
       const command = officeHostCommand(id);
       const run = async () => {
         if (command === 'save') {
@@ -623,7 +691,16 @@ export function useOfficeRuntime({
           setError(errorCopy(value, m.error_generic_body()));
       });
     },
-    [checkpoint, downloadDraft, editable, file.name, post, render]
+    [
+      checkpoint,
+      config.origin,
+      downloadDraft,
+      editable,
+      file.name,
+      openPresenter,
+      post,
+      render,
+    ]
   );
 
   /** A `pick` item's file, from Capy's picker. */
@@ -667,6 +744,7 @@ export function useOfficeRuntime({
       initializedFrame.current = -1;
       setFrameLoaded(false);
       setFrameGeneration((value) => value + 1);
+      setPresenting(false);
       // The new frame reports its own: an edit frame's ready also sets one.
       setAnalysis(null);
       setMode(next);
@@ -704,6 +782,7 @@ export function useOfficeRuntime({
     mode,
     paused: source.paused,
     pausedAtOpen,
+    presenting,
     readOnly: source.readOnly,
     ready: mode === 'view' ? !!analysis : replicaReady,
     replaced: source.replaced,

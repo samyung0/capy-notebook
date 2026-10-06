@@ -1,7 +1,8 @@
 /**
  * View toggles one person keeps in this browser for every file of a format:
- * PPTX speaker notes and the DOCX rulers. Storage can be missing or blocked
- * (private windows, storage access denied); a toggle then starts off.
+ * PPTX speaker notes and the DOCX rulers, and Presenter view's notes size.
+ * Storage can be missing or blocked (private windows, storage access
+ * denied); a toggle then starts off, the size at its default.
  */
 const KEYS = {
   docxRuler: 'capy.docx.ruler',
@@ -36,5 +37,27 @@ export function writeViewToggle(
     storage().setItem(KEYS[toggle], shown ? 'shown' : 'hidden');
   } catch {
     // Not remembered; the next open starts off.
+  }
+}
+
+const NOTES_SIZE_KEY = 'capy.pptx.presenterNotesSize';
+
+/** Presenter view's notes text size, as the person last picked it; undefined when unset. */
+export function readNotesSize(
+  storage: () => Store = browserStorage
+): number | undefined {
+  try {
+    return Number(storage().getItem(NOTES_SIZE_KEY)) || undefined;
+  } catch {}
+}
+
+export function writeNotesSize(
+  size: number,
+  storage: () => Store = browserStorage
+): void {
+  try {
+    storage().setItem(NOTES_SIZE_KEY, String(size));
+  } catch {
+    // Not remembered; the next show starts at the default size.
   }
 }

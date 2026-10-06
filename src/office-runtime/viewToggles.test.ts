@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { readViewToggle, writeViewToggle } from './viewToggles';
+import {
+  readNotesSize,
+  readViewToggle,
+  writeNotesSize,
+  writeViewToggle,
+} from './viewToggles';
 
 function memoryStorage() {
   const items = new Map<string, string>();
@@ -30,5 +35,20 @@ describe('remembered Office view toggles', () => {
     };
     expect(() => writeViewToggle('docxRuler', true, blocked)).not.toThrow();
     expect(readViewToggle('docxRuler', blocked)).toBe(false);
+  });
+});
+
+describe("Presenter view's remembered notes size", () => {
+  it('is unset until picked, then the last pick, and survives blocked storage', () => {
+    const storage = memoryStorage();
+    expect(readNotesSize(storage)).toBeUndefined();
+    writeNotesSize(32, storage);
+    expect(readNotesSize(storage)).toBe(32);
+    expect(readViewToggle('speakerNotes', storage)).toBe(false);
+    const blocked = () => {
+      throw new DOMException('blocked', 'SecurityError');
+    };
+    expect(() => writeNotesSize(20, blocked)).not.toThrow();
+    expect(readNotesSize(blocked)).toBeUndefined();
   });
 });

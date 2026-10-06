@@ -6,7 +6,7 @@ import {
   type OfficeMenu,
 } from './officeMenus';
 
-export const OFFICE_PROTOCOL_VERSION = 7 as const;
+export const OFFICE_PROTOCOL_VERSION = 8 as const;
 
 /** Capy's UI locales; the runtime draws its chrome and menus in the same one. */
 export type OfficeLocale = 'en' | 'zh';
@@ -227,6 +227,25 @@ export type OfficeRuntimeMessage =
       type: 'render-failed';
       id: string;
       revision: number;
+    }
+  /** A PPTX show started or ended: the frame gets the whole page meanwhile. */
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'presenting';
+      presenting: boolean;
+      revision: number;
+    }
+  /**
+   * A click in the show asks for the presenter window, which Capy opens from
+   * that click's activation (it reaches the frame's ancestors) as from a
+   * `popup` item.
+   */
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'open-presenter';
+      /** The `popup: 'presenter'` command to run. */
+      id: string;
+      revision: number;
     };
 
 type WithoutVersion<T> = T extends unknown ? Omit<T, 'version'> : never;
@@ -332,6 +351,8 @@ export function isOfficeRuntimeMessage(
         raw.pages.every(isRenderedPage)
       );
     if (raw.type === 'render-failed') return typeof raw.id === 'string';
+    if (raw.type === 'presenting') return typeof raw.presenting === 'boolean';
+    if (raw.type === 'open-presenter') return typeof raw.id === 'string';
     if (raw.type === 'exported')
       return typeof raw.id === 'string' && raw.bytes instanceof ArrayBuffer;
     if (

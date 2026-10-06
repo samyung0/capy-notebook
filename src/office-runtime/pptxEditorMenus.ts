@@ -18,6 +18,7 @@ import {
   fileOutputs,
   item,
   pptxT,
+  presentItems,
   separator,
   shortcut,
   submenu,
@@ -116,7 +117,12 @@ export function editorMenus(
     {
       id: 'view',
       items: [
-        command('view.present', t('toolbar.present'), { icon: 'presentation' }),
+        submenu(
+          'present',
+          t('toolbar.present'),
+          presentItems(locale, !state.enabled['view.present']),
+          'presentation'
+        ),
         submenu(
           'zoom',
           t('toolbar.groups.zoom'),

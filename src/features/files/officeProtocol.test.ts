@@ -158,6 +158,56 @@ describe('office host protocol', () => {
         menus([], [{ icon: 'not-an-icon', id: 'p', label: 'Present' }])
       )
     ).toBe(false);
+    // PPTX Present: a split action whose items hand over full screen or
+    // need the presenter window.
+    const present = {
+      fullscreen: true,
+      icon: 'presentation',
+      id: 'view.present',
+      items: [
+        { fullscreen: true, id: 'view.present', kind: 'item', label: 'A' },
+        { kind: 'separator' },
+        {
+          id: 'view.presenterView',
+          kind: 'item',
+          label: 'B',
+          popup: 'presenter',
+        },
+      ],
+      label: 'Present',
+    };
+    expect(isOfficeRuntimeMessage(menus([], [present]))).toBe(true);
+    for (const bad of [
+      { ...present, fullscreen: 'yes' },
+      {
+        ...present,
+        items: [{ id: 'x', kind: 'item', label: 'X', popup: 'window' }],
+      },
+      { ...present, items: 'none' },
+    ])
+      expect(isOfficeRuntimeMessage(menus([], [bad]))).toBe(false);
+  });
+
+  it('accepts a show starting or ending and a request for the presenter window', () => {
+    const message = (fields: Record<string, unknown>) => ({
+      revision: 1,
+      version: OFFICE_PROTOCOL_VERSION,
+      ...fields,
+    });
+    expect(
+      isOfficeRuntimeMessage(message({ presenting: true, type: 'presenting' }))
+    ).toBe(true);
+    expect(
+      isOfficeRuntimeMessage(
+        message({ id: 'view.presenterView', type: 'open-presenter' })
+      )
+    ).toBe(true);
+    expect(
+      isOfficeRuntimeMessage(message({ presenting: 'yes', type: 'presenting' }))
+    ).toBe(false);
+    expect(isOfficeRuntimeMessage(message({ type: 'open-presenter' }))).toBe(
+      false
+    );
   });
 
   it('accepts rendered pages as PNG bytes with their size', () => {

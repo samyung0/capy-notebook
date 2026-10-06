@@ -5,6 +5,7 @@ import {
   isOfficeMenus,
   OFFICE_HOST_COMMANDS,
   type OfficeMenu,
+  officeCommandNeeds,
   officeItemAction,
 } from './officeMenus';
 
@@ -76,6 +77,61 @@ describe('Office menu items on the host', () => {
     ];
     expect(isOfficeMenus(menu(true))).toBe(true);
     expect(isOfficeMenus(menu('yes'))).toBe(false);
+  });
+
+  it('hands over full screen or opens the presenter window first for the items that ask', () => {
+    const present = (id: string, extra: object) => ({
+      edits: false,
+      id,
+      kind: 'item' as const,
+      label: id,
+      ...extra,
+    });
+    const menus = {
+      actions: [
+        {
+          fullscreen: true,
+          icon: 'presentation' as const,
+          id: 'view.present',
+          items: [present('view.present:start', { fullscreen: true })],
+          label: 'Present',
+        },
+      ],
+      menus: [
+        {
+          id: 'view',
+          items: [
+            {
+              id: 'present',
+              items: [present('view.presenterView', { popup: 'presenter' })],
+              kind: 'submenu' as const,
+              label: 'Present',
+            },
+            present('view.speakerNotes', {}),
+          ],
+          label: 'View',
+        },
+      ],
+    };
+    expect(officeCommandNeeds(menus, 'view.present')).toEqual({
+      fullscreen: true,
+    });
+    expect(officeCommandNeeds(menus, 'view.present:start')).toEqual({
+      fullscreen: true,
+      popup: undefined,
+    });
+    expect(officeCommandNeeds(menus, 'view.presenterView')).toEqual({
+      fullscreen: false,
+      popup: 'presenter',
+    });
+    expect(officeCommandNeeds(menus, 'view.speakerNotes')).toEqual({
+      fullscreen: false,
+      popup: undefined,
+    });
+    expect(officeCommandNeeds(null, 'view.present')).toEqual({
+      fullscreen: false,
+      popup: undefined,
+    });
   });
 
   it('names shortcuts for aria-keyshortcuts on Mac and elsewhere', () => {

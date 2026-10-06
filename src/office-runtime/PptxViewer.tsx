@@ -11,6 +11,7 @@ import {
 } from '@betteroffice/pptx/viewer';
 import {
   IconSetContext,
+  LocaleProvider,
   PresentationOverlay,
 } from '@betteroffice/pptx-react/presentation';
 import {
@@ -26,13 +27,19 @@ import type {
 } from '@/features/files/officeProtocol';
 import { m } from '@/i18n';
 import { CITATION_FILL, slideCitationItems, uniqueCitation } from './citations';
+import { runtimeNotesWindow } from './notesWindow';
 import { loadPptxFonts } from './pptxFonts';
 import { pptxIcons } from './pptxIcons';
 import { PptxImageCache } from './pptxImageCache';
-import { pptxT, presentAction, viewerMenus } from './pptxMenus';
+import { pptxStrings, pptxT, presentAction, viewerMenus } from './pptxMenus';
 import { renderSlides } from './pptxRender';
 import type { OfficeMenuReporter, OfficeRenderer } from './runtimeMenus';
-import { readViewToggle, writeViewToggle } from './viewToggles';
+import {
+  readNotesSize,
+  readViewToggle,
+  writeNotesSize,
+  writeViewToggle,
+} from './viewToggles';
 import './pptx-runtime.css';
 
 export function PptxViewer({
@@ -42,6 +49,8 @@ export function PptxViewer({
   onAnalysis,
   onError,
   onMenus,
+  onAskPresenter,
+  onPresentingChange,
   onRenderer,
 }: {
   bytes: Uint8Array;
@@ -50,6 +59,9 @@ export function PptxViewer({
   onAnalysis: (analysis: PresentationAnalysis) => void;
   onError: (error: Error) => void;
   onMenus: OfficeMenuReporter;
+  /** Asks Capy for Presenter view's notes window, from a click in the show. */
+  onAskPresenter: () => void;
+  onPresentingChange: (presenting: boolean) => void;
   onRenderer: (renderer: OfficeRenderer | null) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -66,7 +78,10 @@ export function PptxViewer({
     { frame: SlideDisplayList; notes: string }[] | null
   >(null);
   const [stageSize, setStageSize] = useState({ height: 0, width: 0 });
-  const [presenting, setPresenting] = useState(false);
+  // The slide a show starts from; null while not presenting.
+  const [presenting, setPresenting] = useState<number | null>(null);
+  const [presenter] = useState(() => runtimeNotesWindow(onAskPresenter));
+  useEffect(() => () => presenter.dispose(), [presenter]);
   // The same remembered choice as edit mode; hidden by default.
   const [speakerNotes, setSpeakerNotes] = useState(() =>
     readViewToggle('speakerNotes')
@@ -86,12 +101,24 @@ export function PptxViewer({
     onMenus({
       actions: hasSlides ? [presentAction(locale)] : [],
       menus: viewerMenus(locale, hasSlides, speakerNotes),
-      run: (id) => {
-        if (id === 'view.present' && hasSlides) setPresenting(true);
-        if (id === 'view.speakerNotes' && hasSlides) toggleSpeakerNotes();
+      run: (id, value) => {
+        if (!hasSlides) return;
+        if (id === 'view.present') setPresenting(slideIndexRef.current);
+        if (id === 'view.present:start') setPresenting(0);
+        if (id === 'view.presenterView') {
+          presenter.expect(value ?? '');
+          setPresenting((current) => current ?? slideIndexRef.current);
+        }
+        if (id === 'view.speakerNotes') toggleSpeakerNotes();
       },
     });
-  }, [locale, onMenus, slides, speakerNotes, toggleSpeakerNotes]);
+  }, [locale, onMenus, presenter, slides, speakerNotes, toggleSpeakerNotes]);
+  const isPresenting = presenting !== null;
+  useEffect(() => {
+    if (!isPresenting) return;
+    onPresentingChange(true);
+    return () => onPresentingChange(false);
+  }, [isPresenting, onPresentingChange]);
   useEffect(() => () => onMenus(null), [onMenus]);
 
   // Capy prints the slides and saves the PNG: the sandboxed frame can do neither.
@@ -395,24 +422,26 @@ export function PptxViewer({
           </div>
         </div>
       )}
-      {presenting && handleRef.current && slideCount > 0 && (
-        <IconSetContext.Provider value={pptxIcons}>
-          <PresentationOverlay
-            counterLabel={(current, total) =>
-              pptxT(locale)('presentation.slideCounter', { current, total })
-            }
-            exitLabel={pptxT(locale)('presentation.exit')}
-            handle={handleRef.current}
-            label={pptxT(locale)('presentation.label')}
-            nextLabel={pptxT(locale)('presentation.nextSlide')}
-            onError={(value) => onError(toError(value))}
-            onExit={() => setPresenting(false)}
-            previousLabel={pptxT(locale)('presentation.previousSlide')}
-            resolveImage={resolveImage}
-            slideCount={slideCount}
-            startIndex={slideIndex}
-          />
-        </IconSetContext.Provider>
+      {presenting !== null && handleRef.current && slideCount > 0 && (
+        <LocaleProvider i18n={pptxStrings(locale)}>
+          <IconSetContext.Provider value={pptxIcons}>
+            <PresentationOverlay
+              defaultNotesSize={readNotesSize()}
+              handle={handleRef.current}
+              notesFor={(index) => slides?.[index]?.notes ?? ''}
+              notesWindow={presenter.notes}
+              onError={(value) => onError(toError(value))}
+              onExit={(index) => {
+                setPresenting(null);
+                setSlideIndex(index);
+              }}
+              onNotesSizeChange={(size) => writeNotesSize(size)}
+              resolveImage={resolveImage}
+              slideCount={slideCount}
+              startIndex={presenting}
+            />
+          </IconSetContext.Provider>
+        </LocaleProvider>
       )}
     </div>
   );
