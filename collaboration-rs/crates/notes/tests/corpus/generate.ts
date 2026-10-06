@@ -10,6 +10,7 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import {
   slateNodesToInsertDelta,
@@ -50,7 +51,7 @@ import {
 import { assertCanonicalMaterialValue } from './materialDocument.js';
 import { UPDATE_UNHELD } from './officeRoots.js';
 import { YjsDocumentStore } from './persistence.js';
-import { validateQuestion, validateQuestions } from './questions.js';
+import { type QuestionPolicy, validateQuestion } from './questions.js';
 
 const OUT = process.env.CORPUS_OUT;
 if (!OUT) throw new Error('CORPUS_OUT is required');
@@ -154,6 +155,14 @@ const { buildBiologyLoadTestValue } = (await import(
 const { seedNotes } = (await import('../../src/mocks/noteContent/index.ts')) as {
   seedNotes: { id: string; value: unknown[] }[];
 };
+const { embeddedSeeds } = (await import(
+  '../../src/mocks/noteContent/helpers.ts'
+)) as {
+  embeddedSeeds: { block: unknown; id: string; kind: string }[];
+};
+const { biologyQuizQuestions } = (await import(
+  '../../src/mocks/biologyQuiz.ts'
+)) as { biologyQuizQuestions: unknown[] };
 
 const loadNote = buildBiologyLoadTestValue();
 const paragraph = (text: string, mark: Record<string, unknown> = {}) => ({
@@ -912,6 +921,289 @@ function multiWriterFamily(seed: number, steps: number) {
   );
 }
 
+/* ------------------------------------------------------------- validation */
+
+const QUESTION_FIXTURES = fileURLToPath(
+  new URL('../../server/internal/questions/testdata/', import.meta.url)
+);
+const BANK_HOST = 'https://bank.example/assets';
+
+/** A thrown validation's message, and whether zod raised it (zod's message
+ * is its issue list as JSON, which the Rust port does not reproduce). */
+function outcome(run: () => unknown): Record<string, unknown> {
+  try {
+    run();
+    return { ok: true };
+  } catch (error) {
+    const message = (error as Error).message;
+    return {
+      message,
+      ok: false,
+      zod: /^(invalid material document: )*\[/.test(message),
+    };
+  }
+}
+
+function withEnv<T>(host: string | null, run: () => T): T {
+  const previous = process.env.BANK_ASSETS_URL;
+  if (host === null) delete process.env.BANK_ASSETS_URL;
+  else process.env.BANK_ASSETS_URL = host;
+  try {
+    return run();
+  } finally {
+    if (previous === undefined) delete process.env.BANK_ASSETS_URL;
+    else process.env.BANK_ASSETS_URL = previous;
+  }
+}
+
+/** Random structural damage to a Plate value, for pass/fail parity. */
+function mutate(value: unknown[], random: () => number): unknown[] {
+  const copy = structuredClone(value) as Record<string, unknown>[];
+  const nodes: Record<string, unknown>[] = [];
+  const walk = (node: unknown) => {
+    if (!node || typeof node !== 'object' || Array.isArray(node)) return;
+    nodes.push(node as Record<string, unknown>);
+    const record = node as Record<string, unknown>;
+    for (const child of Object.values(record))
+      if (Array.isArray(child)) child.forEach(walk);
+      else if (child && typeof child === 'object') walk(child);
+  };
+  copy.forEach(walk);
+  const pick = <T>(list: readonly T[]) =>
+    list[Math.floor(random() * list.length)];
+  const values = [
+    null,
+    0,
+    -1,
+    1.5,
+    '',
+    ' ',
+    'x',
+    'é😀',
+    true,
+    [],
+    {},
+    [{ text: '' }],
+    'x'.repeat(13_000),
+    'quiz',
+    'flashcards',
+    'material_ref',
+    'chart',
+    'graph',
+    'p',
+    'https://bank.example/assets/a.png',
+    'https://evil.example/a.png',
+  ];
+  const steps = 1 + Math.floor(random() * 3);
+  for (let i = 0; i < steps; i += 1) {
+    const node = pick(nodes);
+    if (!node) break;
+    const keys = Object.keys(node);
+    const roll = random();
+    if (roll < 0.3 && keys.length) delete node[pick(keys)];
+    else if (roll < 0.6 && keys.length) node[pick(keys)] = pick(values);
+    else if (roll < 0.7)
+      node[
+        pick([
+          'suggestion',
+          'suggestion_x',
+          'questions',
+          'cards',
+          'code',
+          'timeLimitMin',
+          'extra',
+          'pending',
+          'src',
+          'children',
+          'text',
+        ])
+      ] = pick(values);
+    else if (roll < 0.8 && Array.isArray(node.children) && node.children.length)
+      (node.children as unknown[]).push(
+        structuredClone(pick(node.children as unknown[]))
+      );
+    else if (roll < 0.9) copy.push(structuredClone(pick(copy)));
+    else
+      copy.splice(Math.floor(random() * copy.length), 0, {
+        children: [structuredClone(pick(copy))],
+        id: `wrap${i}`,
+        type: 'callout',
+      });
+  }
+  return copy;
+}
+
+function validationFamily() {
+  const random = seeded(11);
+  const questionCases: unknown[] = [];
+  for (const file of readdirSync(QUESTION_FIXTURES).filter((name) =>
+    name.endsWith('.json')
+  )) {
+    const fixture = JSON.parse(
+      readFileSync(`${QUESTION_FIXTURES}${file}`, 'utf8')
+    ) as { policy: QuestionPolicy; question: unknown; valid: boolean };
+    for (const host of [null, BANK_HOST]) {
+      questionCases.push({
+        file,
+        host,
+        outcome: withEnv(host, () =>
+          outcome(() => validateQuestion(fixture.question, fixture.policy))
+        ),
+        policy: fixture.policy,
+        question: fixture.question,
+        valid: fixture.valid,
+      });
+    }
+  }
+
+  const quizOf = (question: unknown, id = 'quiz1') => [
+    {
+      children: [
+        {
+          children: [{ text: '' }],
+          id: (question as { id: string }).id,
+          question,
+          type: 'quiz_question',
+        },
+      ],
+      id,
+      type: 'quiz',
+    },
+  ];
+  const fixtureQuestions = readdirSync(QUESTION_FIXTURES)
+    .filter((name) => name.endsWith('.json'))
+    .map(
+      (name) =>
+        JSON.parse(readFileSync(`${QUESTION_FIXTURES}${name}`, 'utf8')) as {
+          question: { stem?: unknown[] };
+          valid: boolean;
+        }
+    );
+  const richStem = fixtureQuestions.find(
+    (fixture) => fixture.question.stem?.length
+  )?.question.stem as Record<string, unknown>[];
+  const bases: { kind: string; name: string; value: unknown[] }[] = [
+    ...seedNotes.map((note) => ({
+      kind: 'note',
+      name: note.id,
+      value: withIds(note.value),
+    })),
+    { kind: 'note', name: 'load-note', value: withIds(loadNote) },
+    ...Object.entries(smallNotes).map(([name, value]) => ({
+      kind: 'note',
+      name,
+      value: withIds(value),
+    })),
+    ...embeddedSeeds.map((seed) => ({
+      kind: seed.kind,
+      name: seed.id,
+      value: withIds([seed.block]),
+    })),
+    ...fixtureQuestions
+      .filter((fixture) => fixture.valid)
+      .map((fixture, index) => ({
+        kind: 'quiz',
+        name: `fixture-quiz-${index}`,
+        value: quizOf(fixture.question),
+      })),
+    ...biologyQuizQuestions.map((question, index) => ({
+      kind: 'quiz',
+      name: `biology-quiz-${index}`,
+      value: quizOf(question),
+    })),
+    ...richStem
+      .filter((block) => block.type === 'chart' || block.type === 'graph')
+      .map((block, index) => ({
+        kind: 'note',
+        name: `embed-${index}`,
+        value: [
+          {
+            block,
+            children: [{ text: '' }],
+            id: `embed${index}`,
+            type: block.type,
+          },
+        ],
+      })),
+    {
+      kind: 'mindmap',
+      name: 'mindmap',
+      value: [
+        {
+          children: [
+            { children: [{ text: 'cap' }], id: 'c1', type: 'mermaid_caption' },
+          ],
+          id: 'm1',
+          source: 'mindmap\n  root',
+          type: 'mindmap',
+        },
+      ],
+    },
+    {
+      kind: 'note',
+      name: 'html-embeds',
+      value: Array.from({ length: 10 }, (_, i) => ({
+        children: [{ text: '' }],
+        html: 'é'.repeat(32_768),
+        id: `e${i}`,
+        title: 'Tangent',
+        type: 'html_embed',
+      })),
+    },
+  ];
+  const cases: unknown[] = [];
+  const record = (
+    name: string,
+    kind: string,
+    value: unknown[],
+    host: string | null = null
+  ) =>
+    cases.push({
+      host,
+      kind,
+      name,
+      outcome: withEnv(host, () =>
+        outcome(() => assertCanonicalMaterialValue(value, kind))
+      ),
+      value,
+    });
+  for (const base of bases) {
+    const small = JSON.stringify(base.value).length < 64_000;
+    const kinds = ['note', 'quiz', 'flashcards', 'diagram', 'x'];
+    for (const kind of small ? [base.kind, ...kinds] : [base.kind])
+      record(base.name, kind, base.value);
+    for (let index = 0; small && index < 40; index += 1)
+      record(`${base.name} mutation ${index}`, base.kind, mutate(base.value, random));
+  }
+  for (const url of [
+    'https://bank.example/assets/f.png',
+    'https://bank.example.evil/assets/f.png',
+    'https://bank.example/assets/../private/f.png',
+    'https://bank.example/assetsx/f.png',
+    'https://bank.example/assets/f.png?x=1',
+    'https://bank.example/assets/f.png#x',
+    'https://user@bank.example/assets/f.png',
+    'http://bank.example/assets/f.png',
+    '  https://bank.example/assets/f.png  ',
+  ]) {
+    const question = structuredClone(biologyQuizQuestions[0]) as {
+      stem: unknown[];
+    };
+    question.stem = [
+      {
+        description: 'A figure',
+        height: 300,
+        image: { url },
+        type: 'image',
+        width: 400,
+      },
+    ];
+    for (const host of [null, '', BANK_HOST, `${BANK_HOST}/`])
+      record(`figure ${url}`, 'quiz', quizOf(question), host);
+  }
+  write('validation', { cases, questions: questionCases }, true);
+}
+
 /* ------------------------------------------------------------------- main */
 
 const finals: { name: string; state: Uint8Array }[] = [];
@@ -960,6 +1252,7 @@ if (families.has('ops')) {
 if (families.has('multi'))
   for (const seed of [1, 2, 3, 4, 5, 6]) multiWriterFamily(seed, 600);
 if (families.has('projection')) projectionFamily(finals);
+if (families.has('validation')) validationFamily();
 if (families.has('bootstrap')) {
   // `load`'s first open: materials.content into a fresh document.
   const values: [string, unknown[]][] = [
@@ -983,16 +1276,11 @@ export {
   applyCollaborationCommand,
   applyMaterialCommands,
   applyTextCommands,
-  assertCanonicalMaterialValue,
   childWrites,
   EditError,
   inspectMaterial,
   keptIds,
   planChildren,
-  readdirSync,
-  readFileSync,
-  validateQuestion,
-  validateQuestions,
   verifyMaterialGuards,
   verifyTextGuards,
 };

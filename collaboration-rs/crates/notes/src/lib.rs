@@ -13,7 +13,9 @@
 pub mod bound;
 pub mod json;
 pub mod limits;
+pub mod material;
 pub mod plate;
+pub mod questions;
 pub mod slate;
 pub mod slate_yjs;
 pub mod update;

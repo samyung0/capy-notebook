@@ -4,7 +4,6 @@
 use yrs::ReadTxn;
 use yrs::branch::BranchID;
 
-use serde_json::Value;
 use ydoc::{CONTRIBUTORS_ROOT, Container};
 
 use crate::plate::CONTENT_ROOT;
@@ -55,11 +54,4 @@ pub fn keeps_roots(containers: &[Container]) -> bool {
     })
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("invalid material document: {0}")]
-pub struct ValidationError(pub String);
-
-/// `assertCanonicalMaterialValue(value, kind)`, in sync with Go `materialdoc`.
-pub fn assert_canonical(_value: &[Value], _kind: &str) -> Result<(), ValidationError> {
-    todo!("rust-notes: materialDocument.ts port")
-}
+pub use crate::material::{ValidationError, assert_canonical};
