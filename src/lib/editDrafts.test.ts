@@ -1,6 +1,26 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
+import type { DraftMessage, DraftReply } from './draftStore';
+
+// The drafts worker, run in this process: messages are copied as
+// postMessage copies them, and each worker loads its own store module (a
+// fresh one after vi.resetModules, like a new page).
+vi.stubGlobal(
+  'Worker',
+  class {
+    onmessage: ((event: { data: DraftReply }) => void) | null = null;
+    store = import('./draftStore');
+    postMessage(message: DraftMessage) {
+      const copy = structuredClone(message);
+      void this.store.then(({ handleDraftMessage }) =>
+        handleDraftMessage(copy, (answer) =>
+          this.onmessage?.({ data: structuredClone(answer) })
+        )
+      );
+    }
+  }
+);
 
 // The sweep reports what it drops (edit_incidents) through the API client.
 const post = vi.hoisted(() => vi.fn(async () => undefined));
@@ -18,7 +38,7 @@ import {
   dropLostDrafts,
   type EditDraft,
   markDraftsReported,
-  openRecoveryBase,
+  openRecoveryGroup,
   putDrafts,
   readDraftBase,
   readDrafts,
@@ -109,16 +129,19 @@ describe('the draft store', () => {
     expect(await readDrafts('u_other:file:gone')).toHaveLength(1);
   });
 
-  it('keeps a recovery group whose base read failed, and drops one whose base is gone', async () => {
+  it('keeps a recovery group whose base read failed, and drops one nothing can draw', async () => {
     const key = 'u_1:file:base';
     const base = new Uint8Array([1, 2, 3]);
     const lineage = 'source:f_1:epoch:1@sha_1';
+    const { client } = syncedClient('kept in recovery');
+    const state = Y.encodeStateAsUpdate(client);
     await putDrafts(
       [
         draft('based', {
           base: 'sha_1',
-          data: new Uint8Array(2),
+          data: state,
           key,
+          kind: 'state',
           lineage,
         }),
       ],
@@ -133,25 +156,50 @@ describe('the draft store', () => {
       .mockImplementation(() => {
         throw new DOMException('busy', 'UnknownError');
       });
-    expect(await openRecoveryBase(group, report)).toBe('kept');
-    expect(await openRecoveryBase(group, report)).toBe('kept');
+    expect(await openRecoveryGroup(group, report)).toBe('kept');
+    expect(await openRecoveryGroup(group, report)).toBe('kept');
     get.mockRestore();
     expect(report).toHaveBeenCalledExactlyOnceWith(
       'draft_storage_failed',
       'write',
-      2
+      state.length
     );
     expect(await readDrafts(key)).toHaveLength(1);
-    expect(await openRecoveryBase(group, report)).toEqual(base);
+    const opened = await openRecoveryGroup(group, report);
+    expect(opened).toMatchObject({ base });
+    expect(
+      typeof opened === 'object' && opened.doc.getText('content').toString()
+    ).toBe('kept in recovery');
     // A base this device never stored: the group is dropped and reported.
     report.mockClear();
     const gone = draft('gone', { base: 'sha_gone', key, lineage });
     await putDrafts([gone]);
-    expect(await openRecoveryBase([gone], report)).toBe('dropped');
+    expect(await openRecoveryGroup([gone], report)).toBe('dropped');
     expect(report).toHaveBeenCalledExactlyOnceWith(
       'draft_unrestorable',
       'base_missing',
       0
+    );
+    // Updates without the whole state they grew from (a tab closed online,
+    // then the file moved on): the base is there, the document is not.
+    report.mockClear();
+    let typed: Uint8Array = new Uint8Array();
+    client.on('update', (update: Uint8Array) => {
+      typed = update;
+    });
+    client.getText('content').insert(0, 'typed ');
+    const orphan = draft('orphan', {
+      base: 'sha_1',
+      data: typed,
+      key,
+      lineage: 'source:f_1:epoch:0@sha_1',
+    });
+    await putDrafts([orphan]);
+    expect(await openRecoveryGroup([orphan], report)).toBe('dropped');
+    expect(report).toHaveBeenCalledExactlyOnceWith(
+      'draft_unrestorable',
+      'base_missing',
+      typed.length
     );
     expect((await readDrafts(key)).map((row) => row.id)).toEqual(['based']);
   });
@@ -380,24 +428,34 @@ describe('lineage', () => {
   });
 });
 
+/** A recorder on a client synced to a room, as the note editor sets one up. */
+function noteRecorder(
+  key: string,
+  text: string,
+  options: Partial<Parameters<typeof recordDrafts>[0]> = {}
+) {
+  const { client, room } = syncedClient(text);
+  const recorder = recordDrafts({
+    doc: client,
+    ignore: (origin) => origin === REMOTE,
+    key,
+    limitBytes: 1024 * 1024,
+    lineage: ROOM,
+    ...options,
+  });
+  return { client, recorder, room };
+}
+
 describe('recording a note session', () => {
   it('keeps offline edits across a reload and syncs them into the same room', async () => {
     const key = 'u_1:material:reload';
-    const { client, room } = syncedClient('shared ');
-    const recorder = recordDrafts({
-      doc: client,
-      ignore: (origin) => origin === REMOTE,
-      key,
-      limitBytes: 1024 * 1024,
-      lineage: ROOM,
-    });
+    const { client, recorder, room } = noteRecorder(key, 'shared ');
     // A remote update is the room's own: never recorded.
     Y.applyUpdate(client, Y.encodeStateAsUpdate(room), REMOTE);
     expect(recorder.sequence).toBe(0);
     recorder.disconnected();
     client.getText('content').insert(7, 'offline');
     expect(recorder.sequence).toBe(1);
-    await recorder.flush();
     const rows = await readDrafts(key);
     // The update, and the whole document once for the offline episode.
     expect(rows.map((row) => row.kind).sort()).toEqual(['state', 'update']);
@@ -414,18 +472,29 @@ describe('recording a note session', () => {
     expect(room.getText('content').toString()).toBe('shared offline');
   });
 
+  it('writes each local update as it happens, so a killed tab loses none', async () => {
+    const key = 'u_1:material:killed';
+    const { client, room } = noteRecorder(key, 'base ');
+    const typed = 'every key counts';
+    for (const [index, character] of [...typed].entries())
+      client.getText('content').insert(5 + index, character);
+    // No unmount, no pagehide: the tab is gone, and what it posted is all
+    // there is.
+    const rows = await readDrafts(key);
+    expect(rows.every((row) => row.kind === 'update')).toBe(true);
+    expect(rows.map((row) => row.seq).sort((a, b) => a - b)).toEqual(
+      [...typed].map((_, index) => index + 1)
+    );
+    const reopened = new Y.Doc();
+    applyDrafts(reopened, rows, 'restore');
+    Y.applyUpdate(reopened, Y.encodeStateAsUpdate(room), REMOTE);
+    expect(reopened.getText('content').toString()).toBe(`base ${typed}`);
+  });
+
   it('restores online edits without a base once the room sync brings it', async () => {
     const key = 'u_1:material:online';
-    const { client, room } = syncedClient('base ');
-    const recorder = recordDrafts({
-      doc: client,
-      ignore: (origin) => origin === REMOTE,
-      key,
-      limitBytes: 1024 * 1024,
-      lineage: ROOM,
-    });
+    const { client, room } = noteRecorder(key, 'base ');
     client.getText('content').insert(5, 'typed');
-    await recorder.flush();
     const rows = await readDrafts(key);
     expect(rows.map((row) => row.kind)).toEqual(['update']);
     const reopened = new Y.Doc();
@@ -437,20 +506,11 @@ describe('recording a note session', () => {
 
   it('deletes rows as receipts cover them, keeping the base while newer edits need it', async () => {
     const key = 'u_1:material:receipts';
-    const { client } = syncedClient('a');
-    const recorder = recordDrafts({
-      doc: client,
-      ignore: (origin) => origin === REMOTE,
-      key,
-      limitBytes: 1024 * 1024,
-      lineage: ROOM,
-    });
+    const { client, recorder } = noteRecorder(key, 'a');
     recorder.disconnected();
     client.getText('content').insert(1, 'b');
-    await recorder.flush();
     const requested = recorder.sequence;
     client.getText('content').insert(2, 'c');
-    await recorder.flush();
     await recorder.covered(requested);
     const left = await readDrafts(key);
     expect(left.map((row) => [row.kind, row.seq])).toEqual([
@@ -460,6 +520,34 @@ describe('recording a note session', () => {
     await recorder.covered(recorder.sequence);
     expect(await readDrafts(key)).toEqual([]);
     expect(recorder.unsaved).toBe(false);
+  });
+
+  it('keeps two tabs apart: a receipt deletes only its own rows', async () => {
+    const key = 'u_1:material:tabs';
+    const { client: first, recorder: one, room } = noteRecorder(key, 'x');
+    const second = new Y.Doc();
+    Y.applyUpdate(second, Y.encodeStateAsUpdate(room), REMOTE);
+    const two = recordDrafts({
+      doc: second,
+      ignore: (origin) => origin === REMOTE,
+      key,
+      limitBytes: 1024 * 1024,
+      lineage: ROOM,
+    });
+    first.getText('content').insert(1, ' one');
+    second.getText('content').insert(1, ' two');
+    await one.covered(one.sequence);
+    const left = await readDrafts(key);
+    expect(new Set(left.map((row) => row.session))).toEqual(
+      new Set([two.session])
+    );
+    // The other tab's edits still reach the room from its rows.
+    const reopened = new Y.Doc();
+    applyDrafts(reopened, left, 'restore');
+    Y.applyUpdate(reopened, Y.encodeStateAsUpdate(room), REMOTE);
+    expect(reopened.getText('content').toString()).toBe('x two');
+    await two.covered(two.sequence);
+    expect(await readDrafts(key)).toEqual([]);
   });
 
   it('deletes the rows it adopted from an earlier session once a receipt covers them', async () => {
@@ -479,17 +567,31 @@ describe('recording a note session', () => {
     expect(await readDrafts(key)).toEqual([]);
   });
 
+  it('writes the whole document at unmount only when unsaved work outgrew it', async () => {
+    const key = 'u_1:material:unmount';
+    const { client, recorder } = noteRecorder(key, 'a');
+    client.getText('content').insert(1, 'b');
+    await recorder.covered(recorder.sequence);
+    // Saved: nothing to keep.
+    await recorder.dispose();
+    expect(await readDrafts(key)).toEqual([]);
+    const next = noteRecorder(key, 'a');
+    next.client.getText('content').insert(1, 'c');
+    await next.recorder.dispose();
+    const rows = await readDrafts(key);
+    expect(rows.map((row) => [row.kind, row.seq])).toEqual([
+      ['update', 1],
+      ['state', 1],
+    ]);
+    expect(recoveryDocument(rows)?.getText('content').toString()).toBe('ac');
+  });
+
   it('reports the offline byte bound, stores nothing past it, and lifts it on reconnect', async () => {
     const key = 'u_1:material:limit';
     const onLimit = vi.fn();
     const report = vi.fn();
-    const { client } = syncedClient('');
-    const recorder = recordDrafts({
-      doc: client,
-      ignore: (origin) => origin === REMOTE,
-      key,
+    const { client, recorder } = noteRecorder(key, '', {
       limitBytes: 64,
-      lineage: ROOM,
       onLimit,
       report,
     });
@@ -498,10 +600,8 @@ describe('recording a note session', () => {
     expect(onLimit).not.toHaveBeenCalled();
     recorder.disconnected();
     expect(onLimit).toHaveBeenLastCalledWith(true);
-    await recorder.flush();
     // Past the bound nothing more is stored: what was held stays.
     client.getText('content').insert(0, 'y');
-    await recorder.flush();
     const text = new Y.Doc();
     applyDrafts(text, await readDrafts(key), 'restore');
     expect(text.getText('content').toString()).toBe('x'.repeat(100));
@@ -523,23 +623,15 @@ describe('recording a note session', () => {
     const key = 'u_1:material:storage';
     const onStorage = vi.fn();
     const report = vi.fn();
-    const { client } = syncedClient('');
-    const recorder = recordDrafts({
-      doc: client,
-      ignore: (origin) => origin === REMOTE,
-      key,
-      limitBytes: 1024 * 1024,
-      lineage: ROOM,
-      onStorage,
-      report,
-    });
+    const { client } = noteRecorder(key, '', { onStorage, report });
     const put = vi
       .spyOn(IDBObjectStore.prototype, 'put')
       .mockImplementation(() => {
         throw new DOMException('full', 'QuotaExceededError');
       });
     client.getText('content').insert(0, 'a');
-    await recorder.flush();
+    // Answered after the failed append.
+    await readDrafts(key);
     expect(onStorage).toHaveBeenLastCalledWith(false);
     expect(report).toHaveBeenCalledExactlyOnceWith(
       'draft_storage_failed',
@@ -548,11 +640,10 @@ describe('recording a note session', () => {
     );
     put.mockRestore();
     client.getText('content').insert(1, 'b');
-    await recorder.flush();
-    expect(onStorage).toHaveBeenLastCalledWith(true);
     // The write after the failure held the whole document, so nothing the
     // failed one lost is missing.
     const rows = await readDrafts(key);
+    expect(onStorage).toHaveBeenLastCalledWith(true);
     expect(rows.map((row) => row.kind).sort()).toEqual(['state', 'update']);
     const restored = new Y.Doc();
     applyDrafts(restored, rows, 'restore');
@@ -562,15 +653,7 @@ describe('recording a note session', () => {
   it('holds a storage failure made offline until the room is back', async () => {
     const key = 'u_1:material:offline-storage';
     const report = vi.fn();
-    const { client } = syncedClient('');
-    const recorder = recordDrafts({
-      doc: client,
-      ignore: (origin) => origin === REMOTE,
-      key,
-      limitBytes: 1024 * 1024,
-      lineage: ROOM,
-      report,
-    });
+    const { client, recorder } = noteRecorder(key, '', { report });
     recorder.disconnected();
     const put = vi
       .spyOn(IDBObjectStore.prototype, 'put')
@@ -578,7 +661,7 @@ describe('recording a note session', () => {
         throw new DOMException('full', 'QuotaExceededError');
       });
     client.getText('content').insert(0, 'offline');
-    await recorder.flush();
+    await readDrafts(key);
     put.mockRestore();
     // Sent offline, the report would only fail.
     expect(report).not.toHaveBeenCalled();
@@ -591,20 +674,11 @@ describe('recording a note session', () => {
 
   it('keeps a refused session as one whole refused document', async () => {
     const key = 'u_1:material:refused';
-    const { client } = syncedClient('kept ');
-    const recorder = recordDrafts({
-      doc: client,
-      ignore: (origin) => origin === REMOTE,
-      key,
-      limitBytes: 1024 * 1024,
-      lineage: ROOM,
-    });
+    const { client, recorder } = noteRecorder(key, 'kept ');
     client.getText('content').insert(5, 'refused');
-    await recorder.flush();
-    await recorder.refuse();
+    recorder.refuse();
     // Recording stopped: later typing writes nothing.
     client.getText('content').insert(0, 'x');
-    await recorder.flush();
     const rows = await readDrafts(key);
     expect(rows.map((row) => [row.kind, row.refused])).toEqual([
       ['state', true],
@@ -618,32 +692,84 @@ describe('recording a note session', () => {
 });
 
 describe('recording a source session', () => {
-  it('writes the latest whole state only', async () => {
-    const key = 'u_1:file:text';
+  const SOURCE = 'source:f_1:epoch:1@sha';
+  const MOVED = 'source:f_1:epoch:2@sha';
+
+  /** An Office-like session: the base bytes beside the rows, the bound on
+   * the whole state. */
+  function sourceRecorder(
+    key: string,
+    text: string,
+    options: Partial<Parameters<typeof recordDrafts>[0]> = {}
+  ) {
     const doc = new Y.Doc();
+    doc.getText('source').insert(0, text);
     const recorder = recordDrafts({
+      base: { bytes: new Uint8Array([7]), sha: 'sha' },
       doc,
-      fullState: true,
-      ignore: () => false,
+      ignore: (origin) => origin === 'restore',
       key,
       limitBytes: 1024 * 1024,
-      lineage: 'source:text:epoch:1',
+      limitsState: true,
+      lineage: SOURCE,
+      ...options,
     });
-    doc.getText('source').insert(0, 'one');
-    await recorder.flush();
-    doc.getText('source').insert(3, ' two');
-    await recorder.flush();
+    return { doc, recorder };
+  }
+  const states = async (key: string) =>
+    (await readDrafts(key))
+      .filter((row) => row.kind === 'state')
+      .map((row) => row.seq);
+
+  it('appends each update and writes the whole state once per offline episode and at unmount', async () => {
+    const key = 'u_1:file:episodes';
+    const { doc, recorder } = sourceRecorder(key, 'one');
+    const text = doc.getText('source');
+    text.insert(3, ' two');
+    expect(await states(key)).toEqual([]);
+    recorder.disconnected();
+    text.insert(7, ' three');
+    text.insert(13, ' four');
+    // One whole state for the episode, taken when it started.
+    expect(await states(key)).toEqual([1]);
+    recorder.connected();
+    recorder.disconnected();
+    expect(await states(key)).toEqual([3]);
+    text.insert(18, ' five');
+    await recorder.dispose();
     const rows = await readDrafts(key);
-    expect(rows).toHaveLength(1);
-    const restored = new Y.Doc();
-    applyDrafts(restored, rows, 'restore');
-    expect(restored.getText('source').toString()).toBe('one two');
+    expect(rows.filter((row) => row.kind === 'update')).toHaveLength(4);
+    expect(await states(key)).toEqual([4]);
+    expect(await readDraftBase(key, 'sha')).toEqual(new Uint8Array([7]));
+    // The rows draw the document in another lineage too.
+    expect(
+      recoveryDocument(draftGroups(rows, MOVED).recovery)
+        ?.getText('source')
+        .toString()
+    ).toBe('one two three four five');
+  });
+
+  it('bounds offline edits by the whole state they make', async () => {
+    const key = 'u_1:file:bound';
+    const onLimit = vi.fn();
+    const { doc, recorder } = sourceRecorder(key, 'x'.repeat(500), {
+      limitBytes: 600,
+      onLimit,
+    });
+    doc.getText('source').insert(0, 'a');
+    recorder.disconnected();
+    // The state (500 bytes of text and its encoding) fits; edits on top of
+    // it cross the bound, though they alone are far below it.
+    expect(onLimit).not.toHaveBeenCalled();
+    doc.getText('source').insert(0, 'y'.repeat(120));
+    expect(onLimit).toHaveBeenLastCalledWith(true);
+    expect(recorder.unsavedBytes).toBeLessThan(600);
+    recorder.connected();
+    expect(onLimit).toHaveBeenLastCalledWith(false);
   });
 
   // The live path of a source whose file moved on (useSourceSession's
-  // `replace`): flush, report, then mark the lineage's rows.
-  const SOURCE = 'source:f_1:epoch:1@sha';
-  const MOVED = 'source:f_1:epoch:2@sha';
+  // `replace`): snapshot, report, then mark the lineage's rows.
   async function oldState(key: string, text: string) {
     const doc = new Y.Doc();
     doc.getText('source').insert(0, text);
@@ -662,16 +788,19 @@ describe('recording a source session', () => {
     const recorder = recordDrafts({
       adopted,
       doc,
-      fullState: true,
       ignore: (origin) => origin === 'restore',
       key,
       limitBytes: 1024 * 1024,
+      limitsState: true,
       lineage: SOURCE,
     });
-    // Nothing typed: the flush writes nothing, the adopted rows still count.
-    void recorder.flush();
+    // Nothing typed: the snapshot writes nothing, the adopted rows count.
+    await recorder.snapshot();
     expect(recorder.unsavedBytes).toBe(draftBytes(adopted));
-    await markDraftsReported(key, (row) => row.lineage === SOURCE);
+    await markDraftsReported(
+      key,
+      adopted.map((row) => row.id)
+    );
     const report = vi.fn();
     reportRecoveryGroup(
       draftGroups(await readDrafts(key), MOVED).recovery,
@@ -682,8 +811,11 @@ describe('recording a source session', () => {
 
   it('reports a new episode over rows a kept epoch left marked', async () => {
     const key = 'u_1:file:paused';
-    await oldState(key, 'marked during a pause');
-    await markDraftsReported(key, () => true);
+    const marked = await oldState(key, 'marked during a pause');
+    await markDraftsReported(
+      key,
+      marked.map((row) => row.id)
+    );
     // The pause ended without a new epoch: the next open adopts the marked
     // rows as current, types, and closes before a receipt.
     const adopted = draftGroups(await readDrafts(key), SOURCE).current;
@@ -692,17 +824,22 @@ describe('recording a source session', () => {
     const recorder = recordDrafts({
       adopted,
       doc,
-      fullState: true,
       ignore: (origin) => origin === 'restore',
       key,
       limitBytes: 1024 * 1024,
+      limitsState: true,
       lineage: SOURCE,
     });
     doc.getText('source').insert(0, 'new ');
     await recorder.dispose();
-    // The file then moves on: the group holds a marked and a new row.
+    // The file then moves on: the group holds the marked row and the new
+    // update and state.
     const group = draftGroups(await readDrafts(key), MOVED).recovery;
-    expect(group.map((row) => !!row.reported).sort()).toEqual([false, true]);
+    expect(group.map((row) => !!row.reported).sort()).toEqual([
+      false,
+      false,
+      true,
+    ]);
     const report = vi.fn();
     reportRecoveryGroup(group, report);
     expect(report).toHaveBeenCalledExactlyOnceWith(

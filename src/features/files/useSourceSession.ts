@@ -32,7 +32,7 @@ import {
   dropLostDrafts,
   type EditDraft,
   markDraftsReported,
-  openRecoveryBase,
+  openRecoveryGroup,
   readDrafts,
   recordDrafts,
   reportRecoveryGroup,
@@ -366,22 +366,20 @@ export function useSourceSession(
         sameSourceLineage(session.format)
       );
       const draft = found[0];
-      const base = draft ? await openRecoveryBase(found, report) : null;
+      const opened = draft ? await openRecoveryGroup(found, report) : null;
       if (cancelled) return;
-      if (draft && base instanceof Uint8Array) {
+      if (draft && opened && typeof opened === 'object') {
         reportRecoveryGroup(found, report);
         recoveryDrafts = found;
         shared.destroy();
-        const recovered = new Y.Doc();
+        const recovered = opened.doc;
         doc = recovered;
-        for (const snapshot of found)
-          Y.applyUpdate(recovered, snapshot.data, RESTORE_ORIGIN);
         // The lineage names the epoch and base the edits grew from.
         const epoch = LINEAGE_EPOCH.exec(draft.lineage)?.[1];
         if (epoch === undefined)
           throw new Error(`Draft lineage names no epoch: ${draft.lineage}`);
         setLoaded({
-          bytes: base,
+          bytes: opened.base,
           doc: recovered,
           session: {
             ...session,
@@ -394,9 +392,9 @@ export function useSourceSession(
         setBanner(draft.refused ? 'refused' : 'changed');
         return;
       }
-      // A draft whose base this device no longer holds was dropped; one
-      // whose base could not be read stays for the next open.
-      if (base === 'dropped') toastDraftsLost();
+      // A draft nothing can draw was dropped; one whose base could not be
+      // read stays for the next open.
+      if (opened === 'dropped') toastDraftsLost();
       recoveryDrafts = null;
       for (const restored of restoredDrafts)
         Y.applyUpdate(shared, restored.data, RESTORE_ORIGIN);
@@ -572,20 +570,25 @@ export function useSourceSession(
           setReplaced(true);
         } else {
           // The file moved on while edits waited: they open read-only, and
-          // this session's rows stay until Reload discards them.
+          // this session's rows stay until Reload discards them, with the
+          // whole document a later open draws them over.
           active.recovery = true;
-          // The flush sets the state it writes at once: the size counts it.
-          void recorder?.flush();
+          void recorder?.snapshot();
           report(
             'other_epoch_draft',
             reason === 'paused' ? 'paused' : 'epoch_changed',
             recorder?.unsavedBytes
           );
           // Reported: a later open shows this lineage's rows (adopted ones
-          // included) without a `reopen`. Queued after the flush.
+          // included) without a `reopen`. Read after the snapshot.
           const same = sameSourceLineage(session.format);
-          void bestEffort(() =>
-            markDraftsReported(draftKey, (row) => same(row.lineage, lineage))
+          void bestEffort(async () =>
+            markDraftsReported(
+              draftKey,
+              (await readDrafts(draftKey))
+                .filter((row) => same(row.lineage, lineage))
+                .map((row) => row.id)
+            )
           );
           setLoaded({ bytes, doc: shared, session });
           setStatus('recovery');
@@ -856,17 +859,18 @@ export function useSourceSession(
       active.provider = provider;
       runtime.current = active;
       disposeReconnect = reconnect.dispose;
-      // Unsaved work is written as it happens (the latest whole state) and
-      // deleted by the receipts that cover it. Storage that fails never
-      // blocks editing; offline, the banner says the device holds nothing.
+      // Unsaved work is written as it happens (each local update, the whole
+      // state once per offline episode and at unmount) and deleted by the
+      // receipts that cover it. Storage that fails never blocks editing;
+      // offline, the banner says the device holds nothing.
       recorder = recordDrafts({
         adopted: restoredDrafts,
         base: { bytes, sha: session.baseSourceSHA256 },
         doc: shared,
-        fullState: true,
         ignore: (origin) => origin === provider || origin === RESTORE_ORIGIN,
         key: draftKey,
         limitBytes: SOURCE_STATE_MAX_BYTES,
+        limitsState: true,
         lineage,
         onLimit: (over) => {
           overLimit = over;
