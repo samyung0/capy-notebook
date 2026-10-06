@@ -186,7 +186,9 @@ jobs:
   stress:
     if: inputs.stress
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # Three typing phases (budgeted rooms, near-limit rooms, one cost window
+    # per room kind) after the stack starts: about 20 minutes.
+    timeout-minutes: 40
     # The p95 budget (45 ms) holds with the 30 ms broadcast batching: four
     # runs at 33 to 35 ms, so a miss fails the run.
     permissions:

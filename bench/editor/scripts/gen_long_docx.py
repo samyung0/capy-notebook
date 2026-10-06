@@ -3,7 +3,12 @@
 paragraphs, headings, a TOC field, PAGE/NUMPAGES footer fields, a header,
 bullet lists, tables and inline pictures (the exchange-plan PNGs).
 
-usage: gen_long_docx.py <exchange-plan.docx> <out.docx> [sections]
+The shape picks what the sections hold, for the size ladder
+(gen_office_ladder.py): `text` (the default, long-handbook.docx at 24
+sections), `table` (two 24-row tables per section) or `picture` (two
+different 320x240 pictures per section, ~230 KB each).
+
+usage: gen_long_docx.py <exchange-plan.docx> <out.docx> [sections] [text|table|picture]
 """
 
 import os
@@ -12,8 +17,13 @@ import sys
 import zipfile
 from xml.sax.saxutils import escape
 
+from ladder_media import noise_png
+
 src, out = sys.argv[1], sys.argv[2]
 SECTIONS = int(sys.argv[3]) if len(sys.argv) > 3 else 24
+SHAPE = sys.argv[4] if len(sys.argv) > 4 else "text"
+if SHAPE not in ("text", "table", "picture"):
+    sys.exit(f"unknown shape {SHAPE}")
 rng = random.Random(20261002)
 
 LATIN = (
@@ -149,7 +159,22 @@ for _ in range(4):
     body.append(para(run(latin_sentences(5))))
     body.append(para(run("".join(rng.choice(TC) for _ in range(4)))))
 toc_at = len(body)
+pictures = []  # the picture shape's media, one per picture
 for s in range(1, SECTIONS + 1):
+    if SHAPE == "table":
+        body.append(heading(1, f"{s}. 第{s}章 Chapter {s}"))
+        body.append(mixed_paragraph())
+        body.append(table(24, 5))
+        body.append(heading(2, f"{s}.1 細則 Details"))
+        body.append(table(24, 5))
+        continue
+    if SHAPE == "picture":
+        body.append(heading(1, f"{s}. 第{s}章 Chapter {s}"))
+        body.append(mixed_paragraph())
+        for _ in range(2):
+            pictures.append(noise_png(320, 240, len(pictures) + 1))
+            body.append(picture(f"rIdPic{len(pictures)}"))
+        continue
     body.append(heading(1, f"{s}. 第{s}章 Chapter {s}"))
     for sub in range(1, 3):
         body.append(heading(2, f"{s}.{sub} 細則 Details"))
@@ -219,7 +244,7 @@ rels = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationship Id="rIdImg1" Type="{R}/image" Target="media/image1.png"/>
 <Relationship Id="rIdImg2" Type="{R}/image" Target="media/image2.png"/>
 <Relationship Id="rIdImg3" Type="{R}/image" Target="media/image3.png"/>
-</Relationships>"""
+{"".join(f'<Relationship Id="rIdPic{i}" Type="{R}/image" Target="media/pic{i}.png"/>' for i in range(1, len(pictures) + 1))}</Relationships>"""
 
 ct = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -254,4 +279,6 @@ with zipfile.ZipFile(src) as source, zipfile.ZipFile(out, "w") as z:
     put(z, "word/footer1.xml", footer)
     for i in (1, 2, 3):
         put(z, f"word/media/image{i}.png", source.read(f"word/media/image{i}.png"))
+    for i, png in enumerate(pictures, start=1):
+        put(z, f"word/media/pic{i}.png", png)
 print(out, len(body), "blocks", len(toc_entries), "headings")
