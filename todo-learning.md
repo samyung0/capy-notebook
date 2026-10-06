@@ -1051,12 +1051,10 @@ progress keeps each learner's latest score per question.
   progress, and the storage that takes on a phone.
 - **Clock skew** between devices when ordering the log.
 
-### Study suggestions
-
-A small, optional suggestion (for example a dashboard banner) once progress has
-data. No due dates, deadlines or "study this today" pressure anywhere.
-
 ### Agent loop quality
+
+Deferred (Epo, 2026-10-06).
+
 
 From the curate experiments of 2026-09-21 to 09-23 (`bench/rag/reports/`): keep
 the current retrieval defaults; the compact twenty-preview library search stays
@@ -1088,6 +1086,9 @@ material completion, evidence support, retrieval fit and latency and token cost.
   whose target lacks the promised facts (business-statistics excerpt 261 → 262).
 
 ### Duplicate examples in library search
+
+Deferred (Epo, 2026-10-06).
+
 
 Lower priority until crowded results cause a final-material failure the loop
 does not recover from. Similar topic or difficulty does not make two passages
