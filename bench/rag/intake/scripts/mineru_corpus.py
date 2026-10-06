@@ -104,19 +104,29 @@ class Outline:
             self.entries = [(lvl, t.strip(), p) for lvl, t, p in doc.get_toc()]
         self.keys = [norm_title(t) for _, t, _ in self.entries]
         self.matched: set[int] = set()
-        self.current = 0
+        self.current = 0  # level of the last outline-matched heading
+        self.structural = 0  # level of the last outline-matched or numbered heading
 
     def match(self, title: str, page: int) -> int | None:
         key = norm_title(title)
         for i, (lvl, _, entry_page) in enumerate(self.entries):
             if self.keys[i] == key and abs(entry_page - page) <= 1 and i not in self.matched:
                 self.matched.add(i)
-                self.current = lvl
+                self.current = self.structural = lvl
                 return lvl
         return None
 
-    def nested(self) -> int:
-        return (self.current or 0) + 1
+    def nested(self, title: str) -> int:
+        """A heading the outline does not know. A numbered one ("2.3.1 Limits")
+        sits under the last outline heading by its numbering depth; a plain one
+        (an example or definition box) nests one level under the last structural
+        heading, so a run of boxes stays flat instead of nesting ever deeper."""
+        numbered = re.match(r"^(\d+(?:\.\d+)*)\s", title.strip())
+        if numbered:
+            depth = numbered.group(1).count(".") + 1
+            self.structural = max(1, (self.current or 1) + depth - 1)
+            return self.structural
+        return self.structural + 1
 
     def unmatched_on(self, page: int) -> list[tuple[int, str]]:
         found = [(lvl, t) for i, (lvl, t, p) in enumerate(self.entries) if p == page and i not in self.matched]
@@ -150,7 +160,7 @@ def convert(middle: dict, outline: Outline) -> tuple[list[dict], dict]:
                 text = span_text(block.get("content"))
                 level = outline.match(text, page_idx + 1)
                 if level is None and kind == "paragraph_title":
-                    level = outline.nested()
+                    level = outline.nested(text)
                 if level is not None:
                     blocks.append({**common, "type": "text", "text": text, "text_level": level})
                 elif text.strip():

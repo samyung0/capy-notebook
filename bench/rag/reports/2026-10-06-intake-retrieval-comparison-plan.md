@@ -171,7 +171,24 @@ pipeline's agent loop directly, so no Go deploy is needed for the experiment.
   binomial-coefficient font) come out as C0 control characters, which
   Postgres refuses, so each becomes U+FFFD and is counted in the corpus
   metrics. Full AHSS: 514 pages in 635 s wall, 1,371 chunks, 889 excerpts,
-  424 figure records, published to the scratch library as v1.
+  424 figure records, published to the scratch library as v1. A third rule
+  followed review 1: a heading the outline does not know takes its level
+  from its numbering ("3.1.1 Limits" sits two under the chapter) and an
+  unnumbered one (an example or definition box) nests one under the last
+  structural heading, so boxes stay flat. OpenIntro's two-level outline fell
+  from 717 lines to 91 (the live books' outlines are 18 to 145 lines); the
+  five books were rebuilt and republished with it. The audit judged the
+  first conversion's chunks; the rule moves chunk boundaries, not text.
+- Decisions Claude took on review 1 under the approved plan (Epo to confirm
+  or overrule): the book outline pages at 120 lines through `page`; the
+  browse description lists books only when the subject catalog is empty
+  (arm B), so arm C's prompt stays the size of A's; a section's chunks form
+  contiguous runs bridged over at most two chunks, a read serves one run and
+  names the next; the B/C rules keep production's scope and applicability
+  lines and replace only the workflow lines; the dev repeat is all 18
+  dev-split requests (amendment 2). Contract v16 carries the section
+  arguments in production behind the flag; if section reading is not
+  adopted, v17 removes them.
 - Audit (measurement, not repair): 3% of pages per book, fixed seed, each
   block judged faithful or not against the page image, for both the MinerU
   text and the live reviewed text of the same pages. This gives the parser
