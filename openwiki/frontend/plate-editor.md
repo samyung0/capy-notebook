@@ -581,7 +581,10 @@ no storage work. The worker runs requests in the order they were posted, so a
 read sees every write posted before it and a receipt's delete lands after the
 updates it covers. Each editor mount is a session; each of its local Yjs
 updates (origin neither the room provider nor a restore) is one `update` row,
-posted as it happens, and the whole document is one `state` row written once
+posted as it happens; every 64 of a session's rows are merged into the run's
+last one (reopening 10k one-edit rows took over a second, 50k 39 s: one
+`Y.mergeUpdates` over thousands of updates is quadratic, so `applyDrafts` also
+merges in runs of 64). The whole document is one `state` row written once
 per offline episode, at unmount and at `pagehide` with unsaved work, and after
 a failed write: the base later updates need when they open in recovery
 (encoding a near-limit note takes 30–80 ms, too slow for every edit). A
