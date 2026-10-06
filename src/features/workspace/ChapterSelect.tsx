@@ -84,7 +84,7 @@ export function ChapterSelect({
             <SelectGroup className="scroll-my-0">
               <SelectItem size="sm" value={CREATE_CHAPTER}>
                 <span className="flex items-center gap-1.5">
-                  <Icon name="plus" size={14} />
+                  <Icon className="-translate-y-px" name="plus" size={12} />
                   {m.source_new_chapter()}
                 </span>
               </SelectItem>

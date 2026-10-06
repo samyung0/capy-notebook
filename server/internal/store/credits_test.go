@@ -1057,7 +1057,7 @@ func TestCreateSourceWithJobTakesIngestLease(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	f, _, err := s.CreateSourceWithJob(ctx, ws.ID, owner, "notes.md", "md",
+	f, _, err := s.createSourceWithJob(ctx, ws.ID, owner, "notes.md", "md",
 		nil, "", 1, "sources/"+uid("blob"), "", "none")
 	if err != nil {
 		t.Fatal(err)
@@ -1095,7 +1095,7 @@ func TestCreateSourceWithJobTakesIngestLease(t *testing.T) {
 			fileETag, payloadETag)
 	}
 
-	if _, err := s.CreateSourceReady(ctx, ws.ID, owner, "clip.mp3", "audio",
+	if _, err := s.createReadyFile(ctx, ws.ID, owner, "clip.mp3", "audio",
 		nil, "", 1, "sources/"+uid("blob")); err != nil {
 		t.Fatal(err)
 	}
@@ -1116,7 +1116,7 @@ func TestCreateSourceWithJobWithoutRegistryLeavesNoLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = s.CreateSourceWithJob(ctx, ws.ID, owner, "notes.md", "md",
+	_, _, err = s.createSourceWithJob(ctx, ws.ID, owner, "notes.md", "md",
 		nil, "", 1, "sources/"+uid("blob"), "", "none")
 	if !errors.Is(err, ErrIngestUnpinnable) {
 		t.Fatalf("err = %v, want ErrIngestUnpinnable", err)

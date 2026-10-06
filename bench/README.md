@@ -21,7 +21,7 @@ Raw run artifacts sit in a sibling `YYYY-MM-DD-<machine>/` directory.
 | Family                     | Measures                                                                                        | Run with                                    |
 | -------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------- |
 | [`collaboration/`](collaboration/) | Collaboration stress: many peers typing with reconnects in one Office and one Plate room; convergence, lost updates, latency | `pnpm bench:stress` (Docker)     |
-| [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle; DOCX, XLSX and PPTX open, View to Edit, typing and heap in the Office runtime | `pnpm bench:editor`, `pnpm bench:office` |
+| [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle; DOCX, XLSX and PPTX open, View to Edit, typing and heap in the Office runtime; formula View/Edit parity | `pnpm bench:editor`, `pnpm bench:office`, `pnpm bench:formula` |
 | [`parsers/`](parsers/)     | Ingest-host parser accuracy and capacity: OCR modes, concurrency, worker memory, OOM behavior    | `python bench/parsers/scripts/…` (needs VM) |
 | [`grading/`](grading/)     | Small local models against the production quiz-grading rubric, native and in-browser             | `python bench/grading/scripts/benchmark.py` |
 | [`rag/`](rag/scripts/)     | Retrieval and chat-agent quality: live diagnostic plus six frozen experiments                    | see below                                   |
@@ -51,6 +51,13 @@ fails on unpainted keys, typing that reaches no edit, a fallback to the
 main-thread engine, or a missed budget (from three CI runs per format); the
 heap figures are report-only until a ceiling is defined. It runs as
 the `office` job of the same `Performance` workflow, on dispatch only.
+
+`pnpm bench:formula` is an audit for MathLive upgrades, not a budget
+(`editor/scripts/formula-parity.audit.ts`, no workflow runs it): every formula
+Insert and matrix template, empty and filled, inline and block, must match in
+View and Edit within 0.1px per glyph, with the same fonts and LaTeX. It uses the
+editor e2e seed and writes captures and geometry JSON to
+`editor/.results/formula-parity/`.
 
 ### collaboration
 

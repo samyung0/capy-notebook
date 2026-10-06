@@ -1,8 +1,7 @@
-"""Redis publishers for live upload progress and notifications.
+"""Redis publisher for live upload progress.
 
-The worker PUBLISHes small JSON events to ``ingest:{workspaceId}`` and
-``notif:{userId}``; the Go gateway SUBSCRIBEs and fans them out to the browser
-over SSE. Publishing is best-effort and fire-and-forget — a Redis hiccup must
+The worker PUBLISHes small JSON events to ``ingest:{workspaceId}``; the Go
+gateway SUBSCRIBEs and fans them out to the browser over SSE. Publishing is best-effort and fire-and-forget — a Redis hiccup must
 never fail an ingest job.
 """
 
@@ -33,10 +32,6 @@ def channel(workspace_id: str) -> str:
     return f"ingest:{workspace_id}"
 
 
-def notification_channel(user_id: str) -> str:
-    return f"notif:{user_id}"
-
-
 def publish(
     workspace_id: str,
     file_id: str,
@@ -63,12 +58,3 @@ def publish(
         log.warning(
             "redis publish failed for %s/%s", workspace_id, file_id, exc_info=True
         )
-
-
-def publish_notification(user_id: str, notification: dict) -> None:
-    """Emit a newly committed notification for one user."""
-    event = {"notification": notification, "type": "created"}
-    try:
-        _redis().publish(notification_channel(user_id), json.dumps(event))
-    except Exception:
-        log.warning("redis notification publish failed for %s", user_id, exc_info=True)

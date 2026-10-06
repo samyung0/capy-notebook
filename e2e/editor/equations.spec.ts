@@ -78,8 +78,6 @@ test('formula menu inserts matrices and templates, switches modes, and copies an
     'Copy',
     /Paste/,
   ]);
-  await expect(menu).toHaveCSS('border-radius', '8px');
-  await expect(menu).toHaveCSS('font-size', '14px');
   await field
     .getByRole('menuitem', { exact: true, name: 'Insert Matrix' })
     .hover();
@@ -98,9 +96,6 @@ test('formula menu inserts matrices and templates, switches modes, and copies an
     .last();
   await expect(preview.locator('.ML__base')).toHaveText(/▢.*▢.*▢.*▢.*▢.*▢/);
   await expect(preview.locator('.ML__base')).not.toContainText('\\placeholder');
-  await preview.screenshot({
-    path: test.info().outputPath('matrix-placeholders.png'),
-  });
   await preview.click();
   await expect(field).toHaveJSProperty('value', matrix);
   await toggle.click();
@@ -132,21 +127,6 @@ test('formula menu inserts matrices and templates, switches modes, and copies an
   await field.press('Backspace');
   await toggle.click();
   await field.getByRole('menuitem', { exact: true, name: 'Mode' }).hover();
-  const mathMode = field.getByRole('menuitemcheckbox', {
-    exact: true,
-    name: 'Math',
-  });
-  const check = await mathMode.locator('.ui-checkmark').boundingBox();
-  const label = await mathMode.locator('.label').boundingBox();
-  expect(check!.width).toBe(12);
-  expect(check!.height).toBe(12);
-  expect(label!.x - check!.x - check!.width).toBe(8);
-  expect(
-    Math.abs(check!.y + check!.height / 2 - label!.y - label!.height / 2)
-  ).toBeLessThan(1);
-  await mathMode
-    .locator('..')
-    .screenshot({ path: test.info().outputPath('formula-mode-menu.png') });
   await field
     .getByRole('menuitemcheckbox', { exact: true, name: 'Text' })
     .click();

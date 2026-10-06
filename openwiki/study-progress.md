@@ -153,13 +153,15 @@ first unless the URL already names an item. Sections hide while empty; with
 nothing tracked one centred line says how to start, and with progress off a
 line says quiz results are still kept. Top to bottom:
 
-- **Up next** with Continue: the first item in reading order that is neither
+- **Quick actions**, two rows. The next item with Continue: the first item
+  in reading order that is neither
   `done` nor `removed`. Reading order (`readingOrder` in
   `features/workspace/workspaceContent.ts`, shared with the Files panel's
   `contentFor`) is chapters by `order`, each chapter's files and materials by
   position (files first on ties, then newest), then unfiled items. It is
   computed in the browser from the loaded tree; there is no plan order.
-- **Review**: the reviewable count and Review, which opens the session.
+  Then, while anything is reviewable, "Refresh your knowledge" with Review,
+  which opens the session.
 - **Quick review**: one card at a time from `quickReview`, the pool's cards
   with at least one lapse, least retained first, at most 20. A card flips and
   takes the four ratings, posted like any rating; the round is a snapshot of
@@ -169,7 +171,7 @@ line says quiz results are still kept. Top to bottom:
   (not removed) items. A finished chapter shows the green check, a started
   one a solid circle and an unstarted one a dashed circle.
 - **Recent quizzes**, linking to each attempt's results.
-- The Track progress switch, with "N of M done" and started sets.
+- The Track progress switch.
 
 Reset is a row in Workspace settings → Danger with a confirm dialog; viewers,
 who cannot manage settings, get the dialog with only that row.

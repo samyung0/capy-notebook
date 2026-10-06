@@ -28,6 +28,15 @@ const sent: Pick<AppNotification, 'data' | 'kind'>[] = [
   { data: { code: 'over_quota_frozen' }, kind: 'system' },
   { data: { code: 'account_deletion_requested' }, kind: 'system' },
   { data: { code: 'account_deletion_cancelled' }, kind: 'system' },
+  {
+    data: {
+      code: 'office_maintenance',
+      hours: 4,
+      reminder: false,
+      startsAt: '2026-10-13T02:00:00Z',
+    },
+    kind: 'system',
+  },
   { data: { workspaceName: 'Bio' }, kind: 'workspace_invite' },
   {
     data: { role: 'editor', workspaceName: 'Bio' },

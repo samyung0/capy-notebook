@@ -121,7 +121,7 @@ func TestOwnedMaterialListingScopesFiltersAndPages(t *testing.T) {
 		t.Fatalf("third page = %+v", third)
 	}
 
-	file, err := s.CreateSourceReady(ctx, ws.ID, ownerID, "notes.md", "md", nil, "", 4096, "sources/"+uid("blob")+"/notes.md")
+	file, err := s.createReadyFile(ctx, ws.ID, ownerID, "notes.md", "md", nil, "", 4096, "sources/"+uid("blob")+"/notes.md")
 	if err != nil {
 		t.Fatal(err)
 	}

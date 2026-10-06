@@ -2658,8 +2658,10 @@ run against the environment's database:
 
 | Command | Effect |
 | --- | --- |
+| `announce --at <RFC 3339> --hours <n> [--reminder]` | Tells every active account (not suspended, deleted or pending deletion) that Office editing pauses at that time for about that long: an in-app `system` notification (`office_maintenance`, shown in the reader's time zone) and, without `--reminder`, the `office-maintenance` email, a service notice sent whatever the email preferences (time in UTC). Rerunning for the same start skips accounts already told. Prints the notifications and emails written. |
+| `drain [--limit N]` | Runs while editing is live, before the window: requests a system-paid republish (`paid_by='system'`, whatever auto-process says) for each Office source with unpublished edits, oldest first. Its publication is deferred like any refresh, so open editors keep working and move onto the new version when the room empties; only a system publication while the pause is on hands editors off at once. Files that can only publish export-only, and trashed rebuilds, wait for `publish-all`. |
 | `pause` | Inserts the `office_editing_pause` row. The gateway answers `423 office_editing_paused` to Office edit sessions (`source-session` for editing, `collaboration-token`, after authorization) and to seeding, and agent edits and their Undo refuse with the tool code `office_editing_paused`, also where they commit. Within about 15 seconds (5 to notice, up to 10 for the flush) every collaboration instance runs the handoff flush on each loaded Office room, persists it once and closes its writers with `source-editing-paused`; a saved editor keeps its view read-only under the maintenance banner, one with unsaved changes goes to recovery. A room that loads later is flushed on a later tick, a room mid-publication after its handoff. Authentication refuses new writers with the reason `office-editing-paused`, a paused room refuses updates from any writer that slipped through, and a client refused on reconnect goes to the same banner or recovery. Viewing and text sources keep working. |
-| `publish-all` | Requests a publication for every Office source with unpublished edits (checkpoint ahead of the indexed one, or pending effects), clearing a stale `refresh_error`. Files of active and blocked owners republish with the system payer (`paid_by='system'`), skipping the credit, storage and owner-state checks. Files never parsed successfully (store-only uploads and failed first parses, so maintenance never runs a first parse), trashed files, files of suspended or deletion-pending owners, and files whose system republish of the same checkpoint already failed publish export-only. A file with a refresh in flight is left for the next run. A trashed file waiting for its rebuild onto a deferred publication, with nothing saved since, is rebuilt here (`rebuild`), since the collaboration service skips trashed files. Prints one line per file and the number refused. |
+| `publish-all [--limit N]` | Requests a publication for every Office source with unpublished edits (at most N, oldest first, with `--limit`) (checkpoint ahead of the indexed one, or pending effects), clearing a stale `refresh_error`. Files of active and blocked owners republish with the system payer (`paid_by='system'`), skipping the credit, storage and owner-state checks. Files never parsed successfully (store-only uploads and failed first parses, so maintenance never runs a first parse), trashed files, files of suspended or deletion-pending owners, and files whose system republish of the same checkpoint already failed publish export-only. A file with a refresh in flight is left for the next run. A trashed file waiting for its rebuild onto a deferred publication, with nothing saved since, is rebuilt here (`rebuild`), since the collaboration service skips trashed files. Prints one line per file and the number refused. |
 | `status` | Prints whether editing is paused, every Office source still unpublished (with its running job and `refresh_error`) and the Office publication and reprocess work in flight: `source_refresh` jobs, the `parse` or `ingest` jobs they became, and system-paid reprocess jobs. Other uploads and text refreshes are not counted. Exits 1 until editing is paused and both lists are empty. A refused rebuild shows as a pending rebuild on a file with unpublished edits; the file's automatic republication, or `publish-all`, clears it. |
 | `resume` | Deletes the pause row. |
 | `seed-manifest` | Prints one JSON line per base a stored Office change was taken over: format, base SHA, the seed's SHA-256, the number of files, and a signed base link (lifetime `B2_LINK_TTL` seconds, default 300; pass `-e B2_LINK_TTL=3600` to `docker exec` for a slow copy). Reads only. |
@@ -2705,9 +2707,17 @@ first parse.
 Steps:
 
 1. Beforehand, deploy the maintenance tooling on the old pin, and on UAT run
-   `pause`, `status` and `resume` once to check them.
-2. `pause`. Connected editors flush and go read-only.
-3. `publish-all`, then `status`. Repeat both until `status` prints
+   `pause`, `status` and `resume` once to check them. Pick the start and an
+   expected length from the last rehearsal.
+2. Seven days before: `announce --at <start> --hours <n>` (notification and
+   email to every account).
+3. One day before: `announce --at <start> --hours <n> --reminder` (notification
+   only), then `drain --limit N` repeatedly while watching `status`, so the
+   window only has the last day's edits left. N paces the shared ingest host
+   and the collaboration Office worker, which also serves live editing; take
+   it from the latest capacity measurement.
+4. `pause`. Connected editors flush and go read-only.
+5. `publish-all --limit N`, then `status`. Repeat both until `status` prints
    `0 unpublished, 0 in flight` with editing paused. A second `publish-all`
    sends each file whose system republish failed to export-only. An export
    that fails again (an engine error) stays listed with its `refresh_error`:
@@ -2717,7 +2727,7 @@ Steps:
    `resume` on the old engine without deploying. The old engine's export
    losses in these publications (charts, opaque drawings) are known and
    accepted for UAT data.
-4. Deploy the pin bump with that window's reset migration, still paused. The
+6. Deploy the pin bump with that window's reset migration, still paused. The
    pin bump copies
    [`server/migrations/templates/office_window_reset.sql`](../server/migrations/templates/office_window_reset.sql)
    into the next numbered migration, fills the formats whose seeds changed,
@@ -2727,10 +2737,10 @@ Steps:
    a lock on `source_documents` for its transaction. Then, in one statement,
    it releases AI edit Undo, deletes refresh candidates, bumps the epoch,
    drops the state and empties pending effects. No dropped state is kept.
-5. `resume`. Tabs from before the deploy get 403 on reconnect and go to
+7. `resume`. Tabs from before the deploy get 403 on reconnect and go to
    recovery or the banner. Editing needs the pause off, so the check comes
    after this step.
-6. Check: open one file of each format in Edit, make an edit, publish it, and
+8. Check: open one file of each format in Edit, make an edit, publish it, and
    confirm quota and the `source_documents` rows (an Office edit stores a small
    `state` with `state_seed_sha256` set).
 

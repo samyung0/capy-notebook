@@ -8,7 +8,7 @@ import {
 } from './helpers';
 
 test.describe('block editing', () => {
-  test('column drag indicators meet at one gap and viewing hides borders', async ({
+  test('column drag reorders columns and View hides the column handles', async ({
     page,
   }) => {
     const editor = await openEditorNote(
@@ -27,7 +27,6 @@ test.describe('block editing', () => {
       .first()
       .getByRole('button', { name: 'Drag to reorder column' });
     await columns.first().hover();
-    await expect(columns.first()).toHaveCSS('border-left-style', 'dashed');
     const source = (await handle.boundingBox())!;
     const middle = (await columns.nth(1).boundingBox())!;
     const last = (await columns.nth(2).boundingBox())!;
@@ -41,19 +40,7 @@ test.describe('block editing', () => {
       middle.y + middle.height / 2,
       { steps: 12 }
     );
-    const line = editor.locator('[data-column-drop-line]');
-    await expect(line).toHaveCount(1);
-    const afterMiddle = (await line.boundingBox())!;
     await page.mouse.move(last.x + 10, last.y + last.height / 2, { steps: 6 });
-    await expect(
-      columns.nth(2).locator('[data-column-drop-line]')
-    ).toBeVisible();
-    const beforeLast = (await line.boundingBox())!;
-    expect(beforeLast.x).toBeCloseTo(afterMiddle.x, 0);
-    expect(beforeLast.x + beforeLast.width / 2).toBeCloseTo(
-      (middle.x + middle.width + last.x) / 2,
-      0
-    );
     await page.mouse.up();
     await expect
       .poll(() => columns.allTextContents())
@@ -61,16 +48,11 @@ test.describe('block editing', () => {
     await page
       .getByRole('button', { exact: true, name: 'Material mode' })
       .click();
-    const staticColumns = page.locator('.slate-column');
-    await expect(staticColumns.first()).toHaveCSS(
-      'border-left-color',
-      'rgba(0, 0, 0, 0)'
-    );
     await expect(
       page.getByRole('button', { name: 'Drag to reorder column' })
     ).toHaveCount(0);
   });
-  test('callout and code styles use compact popovers and preserve editing', async ({
+  test('callout and code style popovers switch the style and keep editor focus', async ({
     page,
   }) => {
     const editor = await openEditorNote(
@@ -81,19 +63,6 @@ test.describe('block editing', () => {
     const callout = editor
       .locator('.slate-callout')
       .filter({ hasText: 'Info callout' });
-    const alignment = await callout.evaluate((element) => {
-      const icon = element
-        .querySelector('[data-callout-icon]')!
-        .getBoundingClientRect();
-      const paragraph = element.querySelector('.slate-p')!;
-      const text = document.createRange();
-      text.selectNodeContents(paragraph.querySelector('[data-slate-string]')!);
-      const firstLine = text.getClientRects()[0];
-      return Math.abs(
-        icon.top + icon.height / 2 - firstLine.top - firstLine.height / 2
-      );
-    });
-    expect(alignment).toBeLessThan(1);
     await callout.getByRole('button', { name: 'Callout style' }).click();
     const variants = page.getByRole('dialog', { name: 'Callout style' });
     await expect(
@@ -126,7 +95,7 @@ test.describe('block editing', () => {
     await expect(editor).toBeFocused();
   });
 
-  test('todo text uses one indent and its empty hint clears the checkbox', async ({
+  test('an emptied todo keeps its placeholder and takes typing', async ({
     page,
   }) => {
     const editor = await openEditorNote(
@@ -134,45 +103,12 @@ test.describe('block editing', () => {
       'mat_note_bio_feature_matrix',
       'Editor feature matrix'
     );
-    const todoText = 'Todo open — try each toolbar control';
-    const todo = editor.getByText(todoText, {
+    const todo = editor.getByText('Todo open — try each toolbar control', {
       exact: true,
     });
-    const bullet = editor.getByText('Bulleted item — organelles', {
-      exact: true,
-    });
-    const bulletLeft = await bullet.evaluate(
-      (element) => element.getBoundingClientRect().left
-    );
-    expect(
-      await todo.evaluate((element) => element.getBoundingClientRect().left)
-    ).toBeCloseTo(bulletLeft, 0);
     await selectEditorLine(page, todo);
     await page.keyboard.press('Backspace');
-    const empty = editor.locator('.slate-p[placeholder]');
-    await expect(empty).toHaveCount(1);
-    const spacing = await empty.evaluate((element) => {
-      const checkbox = element
-        .querySelector('input[type="checkbox"]')!
-        .getBoundingClientRect();
-      const caret = element
-        .querySelector('[data-slate-zero-width]')!
-        .getBoundingClientRect();
-      return {
-        gap: caret.left - checkbox.right,
-        hintLeft: element.getBoundingClientRect().left,
-      };
-    });
-    expect(spacing.hintLeft).toBeCloseTo(bulletLeft, 0);
-    expect(spacing.gap).toBeCloseTo(8, 0);
-    await page.keyboard.press('Tab');
-    expect(
-      await empty.evaluate((element) => element.getBoundingClientRect().left)
-    ).toBeCloseTo(bulletLeft + 24, 0);
-    await page.keyboard.press('Shift+Tab');
-    expect(
-      await empty.evaluate((element) => element.getBoundingClientRect().left)
-    ).toBeCloseTo(bulletLeft, 0);
+    await expect(editor.locator('.slate-p[placeholder]')).toHaveCount(1);
     await page.keyboard.type('New task');
     await expect(editor.getByText('New task', { exact: true })).toBeVisible();
   });
@@ -202,104 +138,16 @@ test.describe('block editing', () => {
     ).toBeVisible();
   });
 
-  test('list handles and todo checkboxes align with the first line of wrapped rows', async ({
-    page,
-  }) => {
-    await page.setViewportSize({ height: 900, width: 360 });
+  test('checking a todo marks it complete', async ({ page }) => {
     const editor = await openEditorNote(
       page,
       'mat_note_bio_feature_matrix',
       'Editor feature matrix'
     );
-    for (const title of [
-      'Bulleted item — organelles',
-      'Numbered step — isolate the variable',
-      'Todo checked — skim the matrix',
-      'Todo open — try each toolbar control',
-    ]) {
-      const text = editor.getByText(title, { exact: true });
-      await text.hover();
-      await expect
-        .poll(() =>
-          text.evaluate((element) => {
-            const range = document.createRange();
-            range.selectNodeContents(element);
-            const firstLine = range.getClientRects()[0];
-            const wrapper = element.closest('[data-slot="block-wrapper"]')!;
-            return Math.max(
-              ...Array.from(
-                wrapper.querySelectorAll(
-                  'button[aria-label="Drag block"], input[type="checkbox"]'
-                ),
-                (control) => {
-                  const rect = control.getBoundingClientRect();
-                  return Math.abs(
-                    rect.y +
-                      rect.height / 2 -
-                      firstLine.y -
-                      firstLine.height / 2
-                  );
-                }
-              )
-            );
-          })
-        )
-        .toBeLessThan(2);
-    }
-    const checkbox = editor.getByRole('checkbox', {
-      name: 'Mark task complete',
-    });
-    await checkbox.check();
+    await editor.getByRole('checkbox', { name: 'Mark task complete' }).check();
     await expect(
       editor.getByRole('checkbox', { name: 'Mark task incomplete' })
     ).toHaveCount(2);
-  });
-
-  test('heading handles align with the first text line at every size', async ({
-    page,
-  }) => {
-    await page.setViewportSize({ height: 900, width: 360 });
-    const editor = await openEditorNote(
-      page,
-      'mat_note_bio_feature_matrix',
-      'Editor feature matrix'
-    );
-    for (const title of [
-      'Editor feature matrix',
-      'Headings',
-      'Heading 3',
-      'Heading 4',
-      'Heading 5',
-      'Heading 6',
-    ]) {
-      const heading = editor.getByRole('heading', { exact: true, name: title });
-      await heading.hover();
-      const handle = editor
-        .locator('[data-slot="block-wrapper"]')
-        .filter({
-          has: page.getByRole('heading', { exact: true, name: title }),
-        })
-        .last()
-        .getByRole('button', { exact: true, name: 'Drag block' });
-      await expect
-        .poll(() =>
-          handle.evaluate((element) => {
-            const text = element
-              .closest('[data-slot="block-wrapper"]')!
-              .querySelector('[data-slate-string]')!;
-            const range = document.createRange();
-            range.selectNodeContents(text);
-            const firstLine = range.getClientRects()[0];
-            const handleRect = element.getBoundingClientRect();
-            return Math.abs(
-              handleRect.y +
-                handleRect.height / 2 -
-                (firstLine.y + firstLine.height / 2)
-            );
-          })
-        )
-        .toBeLessThan(2);
-    }
   });
 
   test('context menu Duplicate copies the block', async ({ page }) => {

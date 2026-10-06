@@ -1032,160 +1032,13 @@ for (const [format, text] of [
   });
 }
 
-// A pause that ends hands nothing to the editor: a host field keeps the
-// focus and the typing.
-test('a DOCX editor resuming from a pause leaves the focus where it was', async ({
+// One open DOCX (exchange-plan.docx) for every focus check: the runtime
+// boots once. Its load arrives 5 s late on every open (the init script), so
+// typing in the chat box comes first.
+test('DOCX editor focus: chat typing while it opens, first open before a save receipt, header editing and resuming from a pause', async ({
   page,
 }) => {
-  test.setTimeout(180_000);
-  await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
-  const frame = page.frameLocator('iframe[src*="office-runtime"]');
-  await expect(frame.locator('canvas').first()).toBeVisible({
-    timeout: 120_000,
-  });
-  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
-  const chat = page.getByRole('textbox', { name: 'Ask about your sources…' });
-  await chat.click();
-  const capabilities = (canEdit: boolean) =>
-    page.evaluate((canEdit) => {
-      const iframe = document.querySelector<HTMLIFrameElement>(
-        'iframe[src*="office-runtime"]'
-      );
-      if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
-      iframe.contentWindow.postMessage(
-        { canEdit, type: 'set-capabilities', version: 8 },
-        new URL(iframe.src).origin
-      );
-    }, canEdit);
-  await capabilities(false);
-  await page.waitForTimeout(1000);
-  const updates = await page.evaluateHandle(() => {
-    const seen = { count: 0 };
-    window.addEventListener('message', (event) => {
-      if (event.data?.type === 'update') seen.count += 1;
-    });
-    return seen;
-  });
-  await capabilities(true);
-  await page.waitForTimeout(1000);
-  await expect(chat).toBeFocused();
-  await page.keyboard.type('qq');
-  await expect(chat).toHaveValue('qq');
-  await page.waitForTimeout(1000);
-  expect(await updates.evaluate((seen) => seen.count)).toBe(0);
-
-  // Find, typed into while paused, keeps the focus: the next keys search.
-  await capabilities(false);
-  await page.waitForTimeout(1000);
-  await officeMenu(page, 'Edit').click();
-  await page.getByRole('menuitem', { name: /^Find and replace/ }).click();
-  const find = frame.getByLabel('Find text');
-  await find.click();
-  await page.keyboard.type('Cours');
-  await capabilities(true);
-  await page.waitForTimeout(1000);
-  await expect(find).toBeFocused();
-  await page.keyboard.type('e');
-  await page.keyboard.press('Enter');
-  await expect(find).toHaveValue('Course');
-  await page.waitForTimeout(1000);
-  expect(await updates.evaluate((seen) => seen.count)).toBe(0);
-  await find.press('Escape');
-  await expect(find).toHaveCount(0);
-
-  // A new comment being typed hides while paused and comes back with its
-  // draft; keys typed after the pause reach neither it nor the document.
-  await officeMenu(page, 'Edit').click();
-  await page.getByRole('menuitem', { name: /^Select all/ }).click();
-  await officeMenu(page, 'Insert').click();
-  await page.getByRole('menuitem', { name: /^Comment/ }).click();
-  const note = frame.getByPlaceholder('Add a comment...');
-  await expect(note).toBeFocused();
-  await page.keyboard.type('Note');
-  await capabilities(false);
-  await page.waitForTimeout(1000);
-  await expect(note).toBeHidden();
-  await capabilities(true);
-  await page.waitForTimeout(1000);
-  await expect(note).toHaveValue('Note');
-  await page.keyboard.type('x');
-  await page.keyboard.press('Enter');
-  await page.waitForTimeout(1000);
-  await expect(note).toHaveValue('Note');
-  expect(await updates.evaluate((seen) => seen.count)).toBe(0);
-  await note.click();
-  await page.keyboard.type(' more');
-  await expect(note).toHaveValue('Note more');
-
-  // A reply restored after a pause keeps its draft, and the keys typed after
-  // the pause reach neither it nor the document.
-  await page.keyboard.press('Enter');
-  await frame.locator('.docx-comment-card', { hasText: 'Note more' }).click();
-  const reply = frame.getByPlaceholder('Reply or add others with @');
-  await reply.click();
-  await expect(reply).toBeFocused();
-  await page.keyboard.type('Re');
-  await capabilities(false);
-  await page.waitForTimeout(1000);
-  await expect(reply).toBeHidden();
-  const settled = await updates.evaluate((seen) => seen.count);
-  await capabilities(true);
-  await page.waitForTimeout(1000);
-  await expect(reply).toHaveValue('Re');
-  await page.keyboard.type('x');
-  await page.keyboard.press('Enter');
-  await page.waitForTimeout(1000);
-  await expect(reply).toHaveValue('Re');
-  expect(await updates.evaluate((seen) => seen.count)).toBe(settled);
-});
-
-// A newly opened DOCX editor takes the focus, and edits from its first sync:
-// the room's first save receipt, held back here as a busy room sends it late,
-// is not waited for.
-test('a newly opened DOCX editor is focused and editable before its first save receipt', async ({
-  page,
-}) => {
-  test.setTimeout(240_000);
-  await page.goto('/workspaces/ws_bio?file=bio-office-docx');
-  const frame = page.frameLocator('iframe[src*="office-runtime"]');
-  await expect(frame.locator('canvas').first()).toBeVisible({
-    timeout: 120_000,
-  });
-  const receipts = (hold: boolean) =>
-    page.evaluate(async (hold) => {
-      const modulePath = '/src/mocks/collaboration.ts';
-      const { holdSourceSaveReceipts } = (await import(
-        modulePath
-      )) as typeof import('../../src/mocks/collaboration');
-      holdSourceSaveReceipts(hold);
-    }, hold);
-  await receipts(true);
-  const updates = await page.evaluateHandle(() => {
-    const seen = { count: 0 };
-    window.addEventListener('message', (event) => {
-      if (event.data?.type === 'update') seen.count += 1;
-    });
-    return seen;
-  });
-  await page.getByRole('button', { name: 'Material mode' }).click();
-  await expect(officeEditMenu(page)).toBeVisible({ timeout: 60_000 });
-  await expect(frame.getByLabel('Document input')).toBeFocused();
-  // Connecting ends at the first sync, before the receipt.
-  await expect(page.getByTestId('editor-save-state')).toHaveText('Saved');
-  await page.keyboard.type('Hello');
-  await expect
-    .poll(() => updates.evaluate((seen) => seen.count))
-    .toBeGreaterThan(0);
-  await receipts(false);
-});
-
-// A newly opened DOCX editor leaves the focus in Capy's chat box when the
-// user is typing there as it finishes loading (the runtime takes its load
-// 5 s late, so the typing comes first).
-test('a newly opened DOCX editor leaves the focus in the chat box', async ({
-  page,
-}) => {
-  test.setTimeout(240_000);
+  test.setTimeout(300_000);
   await page.addInitScript(() => {
     if (!location.pathname.includes('office-runtime')) return;
     const add = window.addEventListener.bind(window);
@@ -1207,66 +1060,188 @@ test('a newly opened DOCX editor leaves the focus in the chat box', async ({
       );
     }) as typeof window.addEventListener;
   });
-  await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
   const chat = page.getByRole('textbox', { name: 'Ask about your sources…' });
-  await chat.click();
-  await page.keyboard.type('hi');
-  // Typed before the editor was ready.
-  await expect(officeEditMenu(page)).toHaveCount(0);
-  const frame = page.frameLocator('iframe[src*="office-runtime"]');
-  await expect(frame.locator('canvas').first()).toBeVisible({
-    timeout: 120_000,
-  });
-  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
-  await page.waitForTimeout(1500);
-  await expect(chat).toBeFocused();
-  await page.keyboard.type(' there');
-  await expect(chat).toHaveValue('hi there');
-});
+  const mode = page.getByRole('button', { name: 'Material mode' });
+  const documentInput = frame.getByLabel('Document input');
 
-// Closing a header from its Options menu gives the document the focus back
-// (lesson.docx, the DOCX scenario's file, has a header).
-test('closing DOCX header editing gives the document the focus back', async ({
-  page,
-}) => {
-  test.setTimeout(240_000);
-  await page.goto('/workspaces/ws_bio');
-  const panel = page.getByTestId('mock-scenario-panel');
-  await panel.evaluate((node: HTMLDetailsElement) => {
-    node.open = true;
+  await test.step('a newly opened editor leaves the focus in the chat box', async () => {
+    await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
+    await chat.click();
+    await page.keyboard.type('hi');
+    // Typed before the editor was ready.
+    await expect(officeEditMenu(page)).toHaveCount(0);
+    await expect(frame.locator('canvas').first()).toBeVisible({
+      timeout: 120_000,
+    });
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+    await page.waitForTimeout(1500);
+    await expect(chat).toBeFocused();
+    await page.keyboard.type(' there');
+    await expect(chat).toHaveValue('hi there');
   });
-  await panel.locator('[data-scenario="office-docx-save"]').click();
-  await expect(panel).toHaveAttribute('data-scenario-status', 'ready', {
-    timeout: 60_000,
-  });
-  const frame = page.frameLocator('iframe[src*="office-runtime"]');
-  const pageCanvas = frame.locator('canvas[data-page-index="0"]');
-  await expect(pageCanvas).toBeVisible({ timeout: 120_000 });
-  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
-  const box = await pageCanvas.boundingBox();
-  if (!box) throw new Error('Missing page canvas');
-  // The header band near the page's top edge; try a few heights.
-  const options = frame.getByRole('button', { name: /^Options/ });
-  const openHeader = async () => {
-    for (const ratio of [0.06, 0.05, 0.08, 0.04, 0.1]) {
-      await pageCanvas.dblclick({
-        position: { x: box.width / 2, y: box.height * ratio },
+
+  // The room's first save receipt, held back here as a busy room sends it
+  // late, is not waited for: the editor edits from its first sync.
+  await test.step('a newly opened editor is focused and editable before its first save receipt', async () => {
+    await mode.click();
+    await expect(officeEditMenu(page)).toHaveCount(0, { timeout: 30_000 });
+    await expect(frame.locator('canvas').first()).toBeVisible({
+      timeout: 60_000,
+    });
+    const receipts = (hold: boolean) =>
+      page.evaluate(async (hold) => {
+        const modulePath = '/src/mocks/collaboration.ts';
+        const { holdSourceSaveReceipts } = (await import(
+          modulePath
+        )) as typeof import('../../src/mocks/collaboration');
+        holdSourceSaveReceipts(hold);
+      }, hold);
+    await receipts(true);
+    const updates = await page.evaluateHandle(() => {
+      const seen = { count: 0 };
+      window.addEventListener('message', (event) => {
+        if (event.data?.type === 'update') seen.count += 1;
       });
-      if (await options.isVisible()) return;
-      await page.waitForTimeout(500);
-    }
-  };
-  await openHeader();
-  await options.click();
-  await frame.getByRole('button', { name: 'Close header editing' }).click();
-  await expect(frame.getByLabel('Document input')).toBeFocused();
+      return seen;
+    });
+    await mode.click();
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 60_000 });
+    await expect(documentInput).toBeFocused();
+    // Connecting ends at the first sync, before the receipt.
+    await expect(page.getByTestId('editor-save-state')).toHaveText('Saved');
+    await page.keyboard.type('Hello');
+    await expect
+      .poll(() => updates.evaluate((seen) => seen.count))
+      .toBeGreaterThan(0);
+    await receipts(false);
+  });
 
-  // Escape from the Options button closes the header too.
-  await openHeader();
-  await options.click();
-  await page.keyboard.press('Escape');
-  await expect(options).toHaveCount(0);
-  await expect(frame.getByLabel('Document input')).toBeFocused();
+  // Closing a header from its Options menu gives the document the focus back.
+  await test.step('closing header editing gives the document the focus back', async () => {
+    const pageCanvas = frame.locator('canvas[data-page-index="0"]');
+    const box = await pageCanvas.boundingBox();
+    if (!box) throw new Error('Missing page canvas');
+    // The header band near the page's top edge; try a few heights.
+    const options = frame.getByRole('button', { name: /^Options/ });
+    const openHeader = async () => {
+      for (const ratio of [0.06, 0.05, 0.08, 0.04, 0.1]) {
+        await pageCanvas.dblclick({
+          position: { x: box.width / 2, y: box.height * ratio },
+        });
+        if (await options.isVisible()) return;
+        await page.waitForTimeout(500);
+      }
+    };
+    await openHeader();
+    await options.click();
+    await frame.getByRole('button', { name: 'Close header editing' }).click();
+    await expect(documentInput).toBeFocused();
+
+    // Escape from the Options button closes the header too.
+    await openHeader();
+    await options.click();
+    await page.keyboard.press('Escape');
+    await expect(options).toHaveCount(0);
+    await expect(documentInput).toBeFocused();
+  });
+
+  // A pause that ends hands nothing to the editor: a host field keeps the
+  // focus and the typing.
+  await test.step('resuming from a pause leaves the focus where it was', async () => {
+    await chat.click();
+    const capabilities = (canEdit: boolean) =>
+      page.evaluate((canEdit) => {
+        const iframe = document.querySelector<HTMLIFrameElement>(
+          'iframe[src*="office-runtime"]'
+        );
+        if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
+        iframe.contentWindow.postMessage(
+          { canEdit, type: 'set-capabilities', version: 8 },
+          new URL(iframe.src).origin
+        );
+      }, canEdit);
+    await capabilities(false);
+    await page.waitForTimeout(1000);
+    const updates = await page.evaluateHandle(() => {
+      const seen = { count: 0 };
+      window.addEventListener('message', (event) => {
+        if (event.data?.type === 'update') seen.count += 1;
+      });
+      return seen;
+    });
+    await capabilities(true);
+    await page.waitForTimeout(1000);
+    await expect(chat).toBeFocused();
+    await page.keyboard.type('qq');
+    await expect(chat).toHaveValue('qq');
+    await page.waitForTimeout(1000);
+    expect(await updates.evaluate((seen) => seen.count)).toBe(0);
+
+    // Find, typed into while paused, keeps the focus: the next keys search.
+    await capabilities(false);
+    await page.waitForTimeout(1000);
+    await officeMenu(page, 'Edit').click();
+    await page.getByRole('menuitem', { name: /^Find and replace/ }).click();
+    const find = frame.getByLabel('Find text');
+    await find.click();
+    await page.keyboard.type('Cours');
+    await capabilities(true);
+    await page.waitForTimeout(1000);
+    await expect(find).toBeFocused();
+    await page.keyboard.type('e');
+    await page.keyboard.press('Enter');
+    await expect(find).toHaveValue('Course');
+    await page.waitForTimeout(1000);
+    expect(await updates.evaluate((seen) => seen.count)).toBe(0);
+    await find.press('Escape');
+    await expect(find).toHaveCount(0);
+
+    // A new comment being typed hides while paused and comes back with its
+    // draft; keys typed after the pause reach neither it nor the document.
+    await officeMenu(page, 'Edit').click();
+    await page.getByRole('menuitem', { name: /^Select all/ }).click();
+    await officeMenu(page, 'Insert').click();
+    await page.getByRole('menuitem', { name: /^Comment/ }).click();
+    const note = frame.getByPlaceholder('Add a comment...');
+    await expect(note).toBeFocused();
+    await page.keyboard.type('Note');
+    await capabilities(false);
+    await page.waitForTimeout(1000);
+    await expect(note).toBeHidden();
+    await capabilities(true);
+    await page.waitForTimeout(1000);
+    await expect(note).toHaveValue('Note');
+    await page.keyboard.type('x');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(1000);
+    await expect(note).toHaveValue('Note');
+    expect(await updates.evaluate((seen) => seen.count)).toBe(0);
+    await note.click();
+    await page.keyboard.type(' more');
+    await expect(note).toHaveValue('Note more');
+
+    // A reply restored after a pause keeps its draft, and the keys typed after
+    // the pause reach neither it nor the document.
+    await page.keyboard.press('Enter');
+    await frame.locator('.docx-comment-card', { hasText: 'Note more' }).click();
+    const reply = frame.getByPlaceholder('Reply or add others with @');
+    await reply.click();
+    await expect(reply).toBeFocused();
+    await page.keyboard.type('Re');
+    await capabilities(false);
+    await page.waitForTimeout(1000);
+    await expect(reply).toBeHidden();
+    const settled = await updates.evaluate((seen) => seen.count);
+    await capabilities(true);
+    await page.waitForTimeout(1000);
+    await expect(reply).toHaveValue('Re');
+    await page.keyboard.type('x');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(1000);
+    await expect(reply).toHaveValue('Re');
+    expect(await updates.evaluate((seen) => seen.count)).toBe(settled);
+  });
 });
 
 // A view-only user's host sends canEdit:false; a viewer has nothing to pause,

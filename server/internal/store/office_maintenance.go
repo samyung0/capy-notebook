@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
@@ -98,24 +99,41 @@ type OfficePublication struct {
 	Err     error
 }
 
+// OfficePublishOptions selects a publish-all run. Drain runs while editing is
+// live, before the window: it requests only system republishes (their
+// publication is deferred, so open editors keep working) and leaves the files
+// that can only publish export-only, and trashed rebuilds, to the window.
+// Limit caps the requests, oldest unpublished first; 0 means no cap.
+type OfficePublishOptions struct {
+	Drain bool
+	Limit int
+}
+
 // PublishAllOfficeSources requests a maintenance publication of every Office
 // source with unpublished edits, clearing a stale refresh_error. Files never
 // parsed successfully (store-only uploads and failed first parses: maintenance
 // never runs a first parse), trashed files, files of suspended or deletion-pending owners and files whose
 // system republish of this checkpoint already failed publish export-only; the
 // rest republish at platform cost, without the credit, storage or owner-state
-// checks. A file with a refresh in flight waits for the next run.
-func (s *Store) PublishAllOfficeSources(ctx context.Context) ([]OfficePublication, error) {
-	var paused bool
-	if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM office_editing_pause)`).Scan(&paused); err != nil {
-		return nil, err
+// checks. A file with a refresh in flight waits for the next run. Outside a
+// drain it needs the pause.
+func (s *Store) PublishAllOfficeSources(ctx context.Context, opts OfficePublishOptions) ([]OfficePublication, error) {
+	if !opts.Drain {
+		var paused bool
+		if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM office_editing_pause)`).Scan(&paused); err != nil {
+			return nil, err
+		}
+		if !paused {
+			return nil, ErrOfficeEditingNotPaused
+		}
 	}
-	if !paused {
-		return nil, ErrOfficeEditingNotPaused
-	}
-	out, err := s.rebuildTrashedOfficeSources(ctx)
-	if err != nil {
-		return nil, err
+	var out []OfficePublication
+	if !opts.Drain {
+		rebuilt, err := s.rebuildTrashedOfficeSources(ctx)
+		if err != nil {
+			return nil, err
+		}
+		out = rebuilt
 	}
 	// ponytail: the failed-republish lookup scans failed jobs per file; index
 	// jobs by payload fileId if a window ever holds thousands of files.
@@ -128,7 +146,7 @@ func (s *Store) PublishAllOfficeSources(ctx context.Context) ([]OfficePublicatio
 			AND j.payload->>'sourceCheckpoint'=d.checkpoint::text)
 		FROM source_documents d JOIN files f ON f.id=d.file_id JOIN workspaces w ON w.id=f.workspace_id JOIN users u ON u.id=w.user_id
 		WHERE d.format<>'text' AND (d.checkpoint>d.indexed_checkpoint OR d.pending_effects<>'[]'::jsonb) AND d.running_job_id IS NULL
-		ORDER BY d.file_id`)
+		ORDER BY d.updated_at,d.file_id`)
 	if err != nil {
 		return nil, err
 	}
@@ -142,6 +160,12 @@ func (s *Store) PublishAllOfficeSources(ctx context.Context) ([]OfficePublicatio
 		if err = rows.Scan(&d.file, &d.owner, &d.exportOnly); err != nil {
 			rows.Close()
 			return nil, err
+		}
+		if opts.Drain && d.exportOnly {
+			continue
+		}
+		if opts.Limit > 0 && len(files) == opts.Limit {
+			break
 		}
 		files = append(files, d)
 	}
@@ -449,4 +473,53 @@ func (s *Store) upgradeExportTx(ctx context.Context, tx pgx.Tx, jobID, actor, ws
 	}
 	_, err = tx.Exec(ctx, `UPDATE jobs SET type=CASE WHEN $6 THEN $7 ELSE type END,status=CASE WHEN $6 THEN 'pending' ELSE status END,attempts=CASE WHEN $6 THEN 0 ELSE attempts END,locked_at=CASE WHEN $6 THEN NULL ELSE locked_at END,lease_expires_at=CASE WHEN $6 THEN NULL ELSE lease_expires_at END,queued_at=CASE WHEN $6 THEN now() ELSE queued_at END,updated_at=now(),payload=payload||jsonb_build_object('exportOnly',false,'paidBy',$2::text,'reservationId',$3::text,'parseFee',$4::boolean,'requestedBy',$5::text,'automatic',false) WHERE id=$1`, jobID, models.PaidByPlatform, reservation, !ever, actor, finalized, initialPipelineJobType(plan))
 	return err == nil, err
+}
+
+// AnnounceOfficeMaintenance tells every active account (not suspended, deleted
+// or pending deletion) that Office editing pauses at startsAt for about hours:
+// an in-app notification, plus an email when withEmail (the week-ahead notice;
+// the day-before reminder is in-app only). The email is a service notice, sent
+// whatever the email preferences. Rerunning for the same start skips accounts
+// already told. Returns the notifications and emails written.
+func (s *Store) AnnounceOfficeMaintenance(ctx context.Context, startsAt time.Time, hours int, withEmail bool) (int64, int64, error) {
+	data, err := json.Marshal(map[string]any{
+		"code":     "office_maintenance",
+		"startsAt": startsAt.UTC().Format(time.RFC3339),
+		"hours":    hours,
+		"reminder": !withEmail,
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer tx.Rollback(ctx)
+	const active = `u.deleted_at IS NULL AND u.deletion_requested_at IS NULL AND u.suspended_at IS NULL`
+	tag, err := tx.Exec(ctx, `INSERT INTO notifications (id, user_id, kind, data)
+		SELECT 'nt_'||substr(md5(random()::text||clock_timestamp()::text||u.id),1,10), u.id, 'system', $1::jsonb
+		FROM users u
+		WHERE `+active+` AND NOT EXISTS (
+			SELECT 1 FROM notifications n WHERE n.user_id=u.id AND n.kind='system'
+				AND n.data @> jsonb_build_object('code','office_maintenance','startsAt',$1::jsonb->>'startsAt','reminder',($1::jsonb->'reminder')))`,
+		data)
+	if err != nil {
+		return 0, 0, err
+	}
+	notified := tag.RowsAffected()
+	var emailed int64
+	if withEmail {
+		tag, err = tx.Exec(ctx, `INSERT INTO email_outbox (id, user_id, to_email, template, locale, payload, idempotency_key)
+			SELECT 'mail_'||substr(md5(random()::text||clock_timestamp()::text||u.id),1,10), u.id, btrim(u.email),
+				'office-maintenance', u.locale, $1::jsonb, 'office-maintenance:'||($1::jsonb->>'startsAt')||':'||u.id
+			FROM users u
+			WHERE `+active+` AND btrim(COALESCE(u.email,''))<>''
+			ON CONFLICT (idempotency_key) DO NOTHING`, data)
+		if err != nil {
+			return 0, 0, err
+		}
+		emailed = tag.RowsAffected()
+	}
+	return notified, emailed, tx.Commit(ctx)
 }

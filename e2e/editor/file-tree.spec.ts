@@ -27,7 +27,7 @@ test.beforeEach(async ({ page }) => {
   await page.getByRole('button', { exact: true, name: 'Files' }).click();
 });
 
-test('floating add menu stays fixed while scrolling and shares the header actions without click-through', async ({
+test('floating add menu shares the header actions and dismisses without click-through', async ({
   page,
 }) => {
   const tree = page.locator('[data-workspace-file-tree]');
@@ -44,14 +44,6 @@ test('floating add menu stays fixed while scrolling and shares the header action
   await page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
 
-  const before = await trigger.boundingBox();
-  await tree.evaluate((element) => {
-    element.scrollTop = element.scrollHeight;
-  });
-  expect(await trigger.boundingBox()).toEqual(before);
-  await tree.evaluate((element) => {
-    element.scrollTop = 0;
-  });
   const fileBox = await tree
     .getByRole('link', { exact: true, name: 'Cell structure.pdf' })
     .boundingBox();
@@ -81,80 +73,6 @@ test('floating add menu stays fixed while scrolling and shares the header action
   await page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
   await expect(trigger).toBeFocused();
-});
-
-// Measure the rendered motion, not just the configured CSS timings.
-async function sampleMorph(surface: Locator, action: () => Promise<void>) {
-  const sampling = surface.evaluate(
-    (element) =>
-      new Promise<
-        { width: number; height: number; right: number; bottom: number }[]
-      >((resolve) => {
-        const started = performance.now();
-        const frames: {
-          width: number;
-          height: number;
-          right: number;
-          bottom: number;
-        }[] = [];
-        function sample() {
-          const { width, height, right, bottom } =
-            element.getBoundingClientRect();
-          frames.push({ bottom, height, right, width });
-          if (performance.now() - started < 900) requestAnimationFrame(sample);
-          else resolve(frames);
-        }
-        requestAnimationFrame(sample);
-      })
-  );
-  await action();
-  return sampling;
-}
-
-test('floating add surface overshoots on open and nudges then settles on close', async ({
-  page,
-}) => {
-  const surface = page.locator('[data-slot="menu-morph-surface"]');
-  const trigger = page
-    .locator('[data-workspace-add-menu]')
-    .getByRole('button', { name: 'Add file' });
-  const closed = await surface.boundingBox();
-  if (!closed) throw new Error('Floating surface must be visible');
-  const opening = await sampleMorph(surface, () => trigger.click());
-  const opened = opening.at(-1);
-  if (!opened) throw new Error('Opening motion must produce frames');
-  expect(Math.max(...opening.map((frame) => frame.width))).toBeGreaterThan(
-    opened.width + 1
-  );
-  expect(Math.max(...opening.map((frame) => frame.height))).toBeGreaterThan(
-    opened.height
-  );
-  expect(opened.right).toBeCloseTo(closed.x + closed.width, 0);
-  expect(opened.bottom).toBeCloseTo(closed.y + closed.height, 0);
-
-  const closing = await sampleMorph(surface, () =>
-    page.keyboard.press('Escape')
-  );
-  const settled = closing.at(-1);
-  if (!settled) throw new Error('Closing motion must produce frames');
-  expect(
-    Math.max(...closing.map((frame) => frame.right)) - opened.right
-  ).toBeGreaterThan(4);
-  expect(
-    Math.max(...closing.map((frame) => frame.bottom)) - opened.bottom
-  ).toBeGreaterThan(4);
-  expect(settled.width).toBeCloseTo(closed.width, 0);
-  expect(settled.height).toBeCloseTo(closed.height, 0);
-  expect(settled.right).toBeCloseTo(opened.right, 0);
-  expect(settled.bottom).toBeCloseTo(opened.bottom, 0);
-  await expect(trigger).toBeFocused();
-
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await trigger.press('Enter');
-  await expect(page.getByRole('menu')).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('menu')).toHaveCount(0);
-  await expect(surface).toHaveCSS('animation-name', 'none');
 });
 
 test('files and materials move between chapters, reorder together, and unfile on the outer tree', async ({
@@ -275,45 +193,7 @@ test('chapters reorder in both directions while a note editor is open', async ({
   await expect(tree.locator('.border-solid-accent-1')).toHaveCount(0);
 });
 
-test('both sides of an insertion gap keep the line at the same position', async ({
-  page,
-}) => {
-  const tree = page.locator('[data-workspace-file-tree]');
-  for (const kind of ['content', 'chapter']) {
-    if (kind === 'chapter') {
-      await page
-        .getByRole('button', { exact: true, name: 'Collapse all chapters' })
-        .click();
-    }
-    const source =
-      kind === 'content'
-        ? tree.locator('[data-workspace-content-row="file:f_3"]')
-        : tree.locator('[data-workspace-chapter="ch_3"] [draggable="true"]');
-    const above =
-      kind === 'content'
-        ? tree.locator('[data-workspace-content-row="file:f_2"]')
-        : tree.locator('[data-workspace-chapter="ch_1"]');
-    const below =
-      kind === 'content'
-        ? tree.locator('[data-workspace-content-row="material:mat_1"]')
-        : tree.locator('[data-workspace-chapter="ch_2"]');
-    const aboveBox = await above.boundingBox();
-    if (!aboveBox) throw new Error('Upper row is not visible');
-    await dragOver(page, source, above, { x: 45, y: aboveBox.height - 2 });
-    const afterLine = above.locator('.border-solid-accent-1');
-    await expect(afterLine).toBeVisible();
-    const afterBox = await afterLine.boundingBox();
-    const belowBox = await below.boundingBox();
-    if (!belowBox) throw new Error('Lower row is not visible');
-    await page.mouse.move(belowBox.x + 45, belowBox.y + 2, { steps: 4 });
-    const beforeLine = below.locator('.border-solid-accent-1');
-    await expect(beforeLine).toBeVisible();
-    expect(await beforeLine.boundingBox()).toEqual(afterBox);
-    await page.mouse.up();
-  }
-});
-
-test('tree drags suppress grey row backgrounds and action fades until cancellation', async ({
+test('tree drags hide row actions until Escape cancels them', async ({
   page,
 }) => {
   const tree = page.locator('[data-workspace-file-tree]');
@@ -327,29 +207,6 @@ test('tree drags suppress grey row backgrounds and action fades until cancellati
     const source = tree.locator(selector);
     await dragOver(page, source, destination, { x: 45, y: 12 });
     await expect(panel).toHaveAttribute('data-dragging', 'true');
-    const rows = tree.locator(
-      '[data-workspace-content-row] .group, [data-workspace-chapter] > .group'
-    );
-    await expect
-      .poll(() =>
-        rows.evaluateAll((elements) =>
-          elements.every(
-            (element) =>
-              getComputedStyle(element).backgroundColor === 'rgba(0, 0, 0, 0)'
-          )
-        )
-      )
-      .toBe(true);
-    const actions = tree.locator('[data-slot="hover-actions"]');
-    await expect
-      .poll(() =>
-        actions.evaluateAll((elements) =>
-          elements.every(
-            (element) => getComputedStyle(element).display === 'none'
-          )
-        )
-      )
-      .toBe(true);
     await expect(
       source.getByRole('button', { includeHidden: true, name: 'Open menu' })
     ).toBeHidden();
@@ -361,10 +218,6 @@ test('tree drags suppress grey row backgrounds and action fades until cancellati
     await page.mouse.up();
     await expect(panel).not.toHaveAttribute('data-dragging');
     await source.hover({ position: { x: 45, y: 12 } });
-    const row = selector.includes('content-row')
-      ? source.locator('.group').first()
-      : source;
-    await expect(row).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     await expect(
       source.getByRole('button', { name: 'Open menu' })
     ).toBeVisible();

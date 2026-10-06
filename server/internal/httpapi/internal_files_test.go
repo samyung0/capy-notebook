@@ -139,7 +139,7 @@ func TestInternalFileRefusesAFullOwnerQuota(t *testing.T) {
 	fx := openDeckFiles(t)
 	ctx := context.Background()
 	limit := mustPlanLimits(t, fx.st, store.PlanFree).StorageBytes
-	if _, err := fx.st.CreateSourceReady(ctx, fx.ws, fx.owner, "ballast.pdf", "pdf", nil, "", limit, "sources/ballast_"+fx.owner); err != nil {
+	if _, err := uploadSource(ctx, fx.st, fx.ws, fx.owner, "ballast.pdf", limit, "sources/ballast_"+fx.owner); err != nil {
 		t.Fatal(err)
 	}
 	msgID := seedAssistantMessage(t, fx.st, fx.editor, fx.ws)

@@ -38,7 +38,7 @@ func TestTransferMovesOwnershipAndTheStorageBill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateSourceReady(ctx, ws.ID, senderID, "notes.pdf", "pdf",
+	if _, err := s.createReadyFile(ctx, ws.ID, senderID, "notes.pdf", "pdf",
 		nil, "", 4096, "sources/"+uid("blob")); err != nil {
 		t.Fatal(err)
 	}

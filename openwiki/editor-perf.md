@@ -141,6 +141,18 @@ file), then gate it from three CI runs.
 A laptop run is faster than the runner on typing and slower under load, so a
 local miss is not a regression by itself.
 
+## Formula parity audit (`pnpm bench:formula`)
+
+[`bench/editor/scripts/formula-parity.audit.ts`](../bench/editor/scripts/formula-parity.audit.ts)
+inserts each of MathLive's 13 Insert commands and 25 matrix sizes, empty and
+filled, inline and block (152 cases), and fails when View and Edit differ in
+size, per-glyph geometry (0.1px), font or text, or the LaTeX does not round
+trip. It left the editor e2e suite on 2026-10-06 (about 5.5 minutes of CI per
+run); run it by hand when MathLive is upgraded. It uses the editor e2e seed
+(`VITE_E2E_EDITOR_SEED`, [`playwright.formula.config.ts`](../bench/editor/scripts/playwright.formula.config.ts))
+and writes each case's captures and the geometry JSON to the gitignored
+`bench/editor/.results/formula-parity/`. No workflow runs it.
+
 ## Collaboration stress (`pnpm bench:stress`)
 
 [`bench/collaboration/scripts/stress.ts`](../bench/collaboration/scripts/stress.ts)

@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -90,7 +91,7 @@ func TestEventStreamCarriesNotificationsAndTreeChanges(t *testing.T) {
 	// relays the first insert.
 	deadline := time.Now().Add(5 * time.Second)
 	for attached := false; !attached; {
-		if _, err := st.CreateSourceReady(ctx, ws.ID, userID, "notes.md", "md", nil, "", 10, "sources/"+ws.ID+"/notes.md"); err != nil {
+		if _, err := uploadSource(ctx, st, ws.ID, userID, "notes.pdf", 10, fmt.Sprintf("sources/%s/%d.pdf", ws.ID, time.Now().UnixNano())); err != nil {
 			t.Fatal(err)
 		}
 		select {

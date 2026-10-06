@@ -104,7 +104,7 @@ does:
   the name, chapter, provenance and the content's SHA-256. A replay returns the
   receipt before any blob is written.
 - The blob goes under `sources/`, then `store.CreateAgentFileOperation` runs
-  `CreateSourceWithJob`'s transaction: the editor lock, the chapter, the
+  `createSourceWithJobTx`: the editor lock, the chapter, the
   owner's quota gate on the bytes plus the provenance JSON, the workspace file
   cap, the actor's ingest reservation (refused when their credits are
   exhausted), the `files` row with `provenance`, and the parse job that makes

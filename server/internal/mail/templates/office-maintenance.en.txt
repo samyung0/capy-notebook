@@ -1,0 +1,16 @@
+Capy Notebook
+
+
+SCHEDULED OFFICE UPGRADE
+
+Hello,
+
+Editing Word, PowerPoint and Excel files will be unavailable from {{.StartsAt}} for about {{.Hours}} hours while we upgrade the Office editor.
+
+You can still open and view every file, and your saved edits are kept. Everything else in Capy Notebook works as usual.
+
+Open Capy Notebook {{.OpenURL}}
+
+----------------------------------------
+
+This is a service notice sent to every Capy Notebook account.

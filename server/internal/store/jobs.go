@@ -14,30 +14,10 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
 
-// CreateSourceWithJob inserts an uploaded file as 'pending' and enqueues its
-// first pipeline stage in the same transaction. Document routes start as parse
+// createSourceWithJobTx inserts a source as 'pending' and enqueues its first
+// pipeline stage in the caller's transaction. Document routes start as parse
 // jobs; direct routes start as ingest jobs. The file stays pending until a
-// coordinator/worker actually starts (and, for documents, the parser admits
-// the request); then it becomes 'processing'. parseMode selects the document
-// parser route: 'fast' (OpenDataLoader with RapidOCR on text-less pages).
-// Unknown names fail validation. Text kinds ignore it and are inserted directly.
-func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, kind string, chapterID *string, chapterName string, sizeBytes int64, blobPath, parser, parseMode string) (File, string, error) {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return File{}, "", err
-	}
-	defer tx.Rollback(ctx)
-	f, jobID, err := s.createSourceWithJobTx(ctx, tx, wsID, createdBy, name, kind, chapterID, chapterName, sizeBytes, blobPath, parser, parseMode, nil)
-	if err != nil {
-		return File{}, "", err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return File{}, "", err
-	}
-	return f, jobID, nil
-}
-
-// createSourceWithJobTx is CreateSourceWithJob inside the caller's transaction.
+// worker starts it. Agent-created files land through here.
 // A file the chat agent made carries the library provenance it was written
 // from; the quota gate counts that record with the bytes, as for a material.
 func (s *Store) createSourceWithJobTx(ctx context.Context, tx pgx.Tx, wsID, createdBy, name, kind string, chapterID *string, chapterName string, sizeBytes int64, blobPath, parser, parseMode string, provenance *Provenance) (File, string, error) {
@@ -160,49 +140,6 @@ func initialPipelineJobType(plan sourceupload.ProcessingPlan) string {
 		return "parse"
 	}
 	return "ingest"
-}
-
-// CreateSourceReady inserts an uploaded file that skips parsing entirely
-// (parse mode 'none' / formats no parser supports). The blob is stored for
-// viewing but no ingest job is enqueued, so the file is 'ready' at once.
-func (s *Store) CreateSourceReady(ctx context.Context, wsID, createdBy, name, kind string, chapterID *string, chapterName string, sizeBytes int64, blobPath string) (File, error) {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return File{}, err
-	}
-	defer tx.Rollback(ctx)
-
-	ownerID, err := s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, createdBy)
-	if err != nil {
-		return File{}, err
-	}
-	chapterID, err = resolveUploadChapterID(ctx, tx, wsID, chapterID, chapterName)
-	if err != nil {
-		return File{}, err
-	}
-	if err := s.gateStorageTx(ctx, tx, ownerID, sizeBytes); err != nil {
-		return File{}, err
-	}
-	if err := s.gateWorkspaceFilesTx(ctx, tx, wsID, 1); err != nil {
-		return File{}, err
-	}
-	fileID := uid("f")
-	now := time.Now().UTC()
-	if _, err := tx.Exec(ctx, `INSERT INTO files
-		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, blob_path)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'ready',$10)`,
-		fileID, wsID, ownerID, nullStr(createdBy), chapterID, name, kind, sizeBytes, now, blobPath); err != nil {
-		return File{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return File{}, err
-	}
-	file := File{ID: fileID, WorkspaceID: wsID, ChapterID: chapterID, Name: name, Kind: FileKind(kind), SizeBytes: sizeBytes, AddedAt: now, Status: "ready", Indexed: false, HasBytes: blobPath != "", Revision: 1}
-	if FileKind(kind) == FilePDF && blobPath != "" {
-		previewURL := "/api/files/" + fileID + "/preview"
-		file.PreviewURL = &previewURL
-	}
-	return file, nil
 }
 
 // FileBlobPaths returns the source and the same object as a preview for PDFs.

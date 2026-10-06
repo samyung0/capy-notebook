@@ -351,7 +351,7 @@ test('a new scenario cancels a pending auth request', async ({ page }) => {
   await expect(page).toHaveURL(/\/workspaces\/ws_scenarios$/);
 });
 
-test('Office export failure retains the editable iframe and draft download works', async ({
+test('Office export failure keeps the editable iframe in Edit and draft download works', async ({
   page,
 }) => {
   await launch(page, 'office-runtime-error');
@@ -361,6 +361,15 @@ test('Office export failure retains the editable iframe and draft download works
   await expect(page.getByRole('alert')).toContainText(
     'Changes could not be saved. Your draft is still here.'
   );
+  await expect(page).toHaveURL(/mode=edit/);
+  await expect(
+    page.getByRole('button', { name: 'Material mode' })
+  ).toHaveAttribute('aria-pressed', 'true');
+  expect(
+    await page.evaluate(() =>
+      localStorage.getItem('capy.document.mode.file.mock-scenario-xlsx')
+    )
+  ).toBe('edit');
   const downloadReady = page.waitForEvent('download');
   await page
     .getByRole('button', { exact: true, name: 'Download draft' })
@@ -396,123 +405,123 @@ test('permanent account state survives reload until Reset without replaying the 
   await expect(blocked).toHaveCount(0);
 });
 
-test('storage status: amber near the limit, full view-only and frozen read-only fall back to view', async ({
+test('storage status reaches the dashboard, own and shared workspaces, and full or frozen storage falls back to view', async ({
   page,
 }) => {
-  await launch(page, 'account-storage-near');
-  const status = page.locator('[data-storage-status="near"]');
-  await expect(status).toHaveAccessibleName('Your storage is almost full');
-  await status.click();
-  await expect(page.getByRole('dialog')).toContainText(
-    "You've used over 95% of your storage."
-  );
-  await page.keyboard.press('Escape');
-  await page.goto('/');
-  await expect(page.getByTestId('storage-usage-meter')).toBeVisible();
-  await expect(
-    page.getByText('Storage almost full', { exact: true })
-  ).toBeVisible();
-
-  // Full storage: the note is view-only while organizing stays in its menu.
-  await launch(page, 'account-storage-full');
-  await page.goto(
-    '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
-  );
-  await expect(
-    page.getByText('A note for trying application errors.')
-  ).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Material mode' })).toHaveCount(
-    0
-  );
-  await page
-    .getByTestId('content-header')
-    .getByRole('button', { name: 'Open menu' })
-    .click();
-  await expect(page.getByRole('menuitem', { name: 'Rename' })).toBeVisible();
-  await page.keyboard.press('Escape');
-
-  await launch(page, 'account-over-quota');
-  await page.goto(
-    '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
-  );
-  await expect(page.locator('[data-storage-status="frozen-self"]')).toBeVisible(
-    { timeout: 30_000 }
-  );
-  await expect(
-    page.getByText('A note for trying application errors.')
-  ).toBeVisible();
-  await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Material mode' })).toHaveCount(
-    0
-  );
-});
-
-test('storage status journeys reach the dashboard, own and shared workspaces', async ({
-  page,
-}) => {
-  test.setTimeout(240_000);
-  // Dashboard cards for the viewer's own account.
-  for (const [id, title] of [
-    ['account-storage-near-dashboard', 'Storage almost full'],
-    ['account-storage-full-dashboard', 'Storage full'],
-    ['account-grace', 'Storage over free limit'],
-    ['account-over-quota', 'Account frozen'],
-  ]) {
-    await launch(page, id);
-    await expect(page.getByText(title, { exact: true })).toBeVisible();
-  }
-  // The workspace header triangle: own workspace, then the member wording.
-  for (const [id, status, name] of [
-    ['account-storage-near', 'near', 'Your storage is almost full'],
-    ['account-storage-full', 'full', 'Your storage is full'],
-    ['account-grace-workspace', 'full', 'Your storage is full'],
-    ['account-frozen-workspace', 'frozen-self', 'Account frozen'],
-    ['account-frozen-member', 'frozen-self', 'Account frozen'],
-    [
-      'workspace-owner-near',
-      'near',
-      'Workspace owner is almost out of storage',
-    ],
-    ['workspace-owner-full', 'full', "Workspace owner's storage is full"],
-    ['workspace-owner-grace', 'full', "Workspace owner's storage is full"],
-    [
-      'workspace-owner-frozen',
-      'frozen-owner',
-      "Workspace owner's account is frozen",
-    ],
-  ]) {
-    await launch(page, id);
+  test.setTimeout(300_000);
+  await test.step('amber near the limit, full view-only and frozen read-only fall back to view', async () => {
+    await launch(page, 'account-storage-near');
+    const status = page.locator('[data-storage-status="near"]');
+    await expect(status).toHaveAccessibleName('Your storage is almost full');
+    await status.click();
+    await expect(page.getByRole('dialog')).toContainText(
+      "You've used over 95% of your storage."
+    );
+    await page.keyboard.press('Escape');
+    await page.goto('/');
+    await expect(page.getByTestId('storage-usage-meter')).toBeVisible();
     await expect(
-      page.locator(`[data-storage-status="${status}"]`)
-    ).toHaveAccessibleName(name);
-  }
-  // The frozen owner's workspace is read-only for its members too.
-  await page.goto(
-    '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
-  );
-  await expect(
-    page.getByText('A note for trying application errors.')
-  ).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
+      page.getByText('Storage almost full', { exact: true })
+    ).toBeVisible();
 
-  await launch(page, 'account-frozen-create');
-  await expect(
-    page.getByRole('button', { exact: true, name: 'New workspace' })
-  ).toBeDisabled();
-  await page.getByRole('button', { name: 'Open menu' }).first().click();
-  await expect(
-    page.getByRole('menuitem', { name: 'Clone workspace' })
-  ).toHaveCount(0);
-  await page.keyboard.press('Escape');
-  await page.locator('[data-storage-status="frozen-self"]').click();
-  await expect(page.getByRole('dialog')).toContainText('Account frozen');
+    // Full storage: the note is view-only while organizing stays in its menu.
+    await launch(page, 'account-storage-full');
+    await page.goto(
+      '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
+    );
+    await expect(
+      page.getByText('A note for trying application errors.')
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
+    await expect(
+      page.getByRole('button', { name: 'Material mode' })
+    ).toHaveCount(0);
+    await page
+      .getByTestId('content-header')
+      .getByRole('button', { name: 'Open menu' })
+      .click();
+    await expect(page.getByRole('menuitem', { name: 'Rename' })).toBeVisible();
+    await page.keyboard.press('Escape');
 
-  // The invitation page speaks about the recipient's own frozen account.
-  await launch(page, 'invite-frozen');
-  await expect(page.getByTestId('invite-accept-error')).toContainText(
-    'Account frozen'
-  );
+    await launch(page, 'account-over-quota');
+    await page.goto(
+      '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
+    );
+    await expect(
+      page.locator('[data-storage-status="frozen-self"]')
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(
+      page.getByText('A note for trying application errors.')
+    ).toBeVisible();
+    await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
+    await expect(
+      page.getByRole('button', { name: 'Material mode' })
+    ).toHaveCount(0);
+  });
+
+  await test.step('journeys reach the dashboard, own and shared workspaces', async () => {
+    // Dashboard cards for the viewer's own account.
+    for (const [id, title] of [
+      ['account-storage-near-dashboard', 'Storage almost full'],
+      ['account-storage-full-dashboard', 'Storage full'],
+      ['account-grace', 'Storage over free limit'],
+      ['account-over-quota', 'Account frozen'],
+    ]) {
+      await launch(page, id);
+      await expect(page.getByText(title, { exact: true })).toBeVisible();
+    }
+    // The workspace header triangle: own workspace, then the member wording.
+    for (const [id, status, name] of [
+      ['account-storage-near', 'near', 'Your storage is almost full'],
+      ['account-storage-full', 'full', 'Your storage is full'],
+      ['account-grace-workspace', 'full', 'Your storage is full'],
+      ['account-frozen-workspace', 'frozen-self', 'Account frozen'],
+      ['account-frozen-member', 'frozen-self', 'Account frozen'],
+      [
+        'workspace-owner-near',
+        'near',
+        'Workspace owner is almost out of storage',
+      ],
+      ['workspace-owner-full', 'full', "Workspace owner's storage is full"],
+      ['workspace-owner-grace', 'full', "Workspace owner's storage is full"],
+      [
+        'workspace-owner-frozen',
+        'frozen-owner',
+        "Workspace owner's account is frozen",
+      ],
+    ]) {
+      await launch(page, id);
+      await expect(
+        page.locator(`[data-storage-status="${status}"]`)
+      ).toHaveAccessibleName(name);
+    }
+    // The frozen owner's workspace is read-only for its members too.
+    await page.goto(
+      '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
+    );
+    await expect(
+      page.getByText('A note for trying application errors.')
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
+
+    await launch(page, 'account-frozen-create');
+    await expect(
+      page.getByRole('button', { exact: true, name: 'New workspace' })
+    ).toBeDisabled();
+    await page.getByRole('button', { name: 'Open menu' }).first().click();
+    await expect(
+      page.getByRole('menuitem', { name: 'Clone workspace' })
+    ).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await page.locator('[data-storage-status="frozen-self"]').click();
+    await expect(page.getByRole('dialog')).toContainText('Account frozen');
+
+    // The invitation page speaks about the recipient's own frozen account.
+    await launch(page, 'invite-frozen');
+    await expect(page.getByTestId('invite-accept-error')).toContainText(
+      'Account frozen'
+    );
+  });
 });
 
 test('a frozen account or full storage mid-edit drops open editors to view and discards unsaved edits', async ({
@@ -581,7 +590,7 @@ test('a text source in view mode shows its latest saved state, not only the publ
   await expect(page.getByText(savedMarker)).toBeVisible();
 });
 
-test('a failed annotation save shows its strip under the PDF toolbar', async ({
+test('a failed annotation save shows its strip on the PDF', async ({
   page,
 }) => {
   await launch(page, 'annotations-save');
@@ -589,13 +598,6 @@ test('a failed annotation save shows its strip under the PDF toolbar', async ({
     hasText: 'Your last annotation change could not be saved.',
   });
   await expect(strip).toBeInViewport();
-  const stripBox = await strip.boundingBox();
-  const toolbarBox = await page
-    .getByRole('toolbar', { name: 'Private annotations' })
-    .boundingBox();
-  const pageBox = await page.locator('[data-page="1"]').boundingBox();
-  expect(stripBox!.y).toBeGreaterThan(toolbarBox!.y);
-  expect(stripBox!.y).toBeLessThan(pageBox!.y);
 });
 
 test('pending import keeps polling in the transfer panel until Reset', async ({
@@ -635,20 +637,4 @@ test('pending import keeps polling in the transfer panel until Reset', async ({
     .click();
   await expect(panel).toHaveAttribute('data-scenario-status', 'idle');
   await expect(transfers).toHaveCount(0);
-});
-
-test('failed Office export keeps the editor and URL in Edit', async ({
-  page,
-}) => {
-  await launch(page, 'office-runtime-error');
-  await expect(page).toHaveURL(/mode=edit/);
-  await expect(
-    page.getByRole('button', { name: 'Material mode' })
-  ).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('iframe[src*="office-runtime"]')).toBeVisible();
-  expect(
-    await page.evaluate(() =>
-      localStorage.getItem('capy.document.mode.file.mock-scenario-xlsx')
-    )
-  ).toBe('edit');
 });

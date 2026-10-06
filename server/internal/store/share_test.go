@@ -75,7 +75,7 @@ func TestWorkspaceCloneRejectsAPathReapedAfterItsSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := "sources/" + uid("clone-fence")
-	file, err := s.CreateSourceReady(
+	file, err := s.createReadyFile(
 		ctx, source.ID, ownerID, "source.pdf", "pdf", nil, "", 128, path,
 	)
 	if err != nil {

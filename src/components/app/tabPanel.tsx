@@ -2,8 +2,8 @@ import type { ReactNode } from 'react';
 import { InputTitle } from '@/components/ui/Input';
 import { cn } from '@/lib/cn';
 
-/** Scrolling body under a page's tabs. Positioned descendants stay inside this
- * scroll area; padding grows with the screen. */
+/** Body under a page's tabs. It grows with its content so the panel scrolls
+ * the header and tabs away with it; padding grows with the screen. */
 export function TabContent({
   children,
   centered,
@@ -12,7 +12,7 @@ export function TabContent({
   centered?: boolean;
 }) {
   return (
-    <div className="relative min-h-0 flex-1 overflow-auto px-4 pt-8 pb-8 sm:px-6 lg:px-10 xl:px-16">
+    <div className="relative flex-1 px-4 pt-8 pb-8 sm:px-6 lg:px-10 xl:px-16">
       <div className={cn('max-w-3xl', centered && 'mx-auto')}>{children}</div>
     </div>
   );

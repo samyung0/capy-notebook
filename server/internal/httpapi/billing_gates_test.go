@@ -270,8 +270,8 @@ func TestUploadRefusesActorCreditsAndOwnerStorageSeparately(t *testing.T) {
 	}
 
 	fx2 := openBilling(t)
-	if _, err := fx2.store.CreateSourceReady(context.Background(), fx2.workspaceID, fx2.ownerID,
-		"ballast.pdf", "pdf", nil, "", mustPlanLimits(t, fx2.store, store.PlanFree).StorageBytes, "sources/"+fx2.ownerID); err != nil {
+	if _, err := uploadSource(context.Background(), fx2.store, fx2.workspaceID, fx2.ownerID,
+		"ballast.pdf", mustPlanLimits(t, fx2.store, store.PlanFree).StorageBytes, "sources/"+fx2.ownerID); err != nil {
 		t.Fatal(err)
 	}
 	body["batchId"] = fx2.workspaceID

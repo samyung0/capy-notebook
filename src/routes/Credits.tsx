@@ -9,7 +9,7 @@ export default function Credits() {
   return (
     <Panel>
       <PageHeader subtitle={m.credits_hint()} title={m.credits_title()} />
-      <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
+      <div className="flex-1 px-6 py-5">
         <div className="mx-auto max-w-3xl">
           <Link
             className="mb-5 inline-block text-link hover:underline"

@@ -695,10 +695,11 @@ export class SourceHandoff {
     }
     // Editors stay writable during the hold: their saves land after the capture.
     if (this.publicationHold) await this.hold(input.fileId);
-    // The owner's and automatic work publishes without touching editing; only
-    // a maintenance (system) publication rebases open editors at once.
+    // The owner's, automatic and drain work publishes without touching
+    // editing; only a system publication during the pause (the window) rebases
+    // open editors at once.
     const job = await this.pool.query<{ system: boolean }>(
-      `SELECT COALESCE(payload->>'paidBy','')='system' AS system FROM jobs WHERE id=$1 AND payload->>'fileId'=$2`,
+      `SELECT COALESCE(payload->>'paidBy','')='system' AND EXISTS(SELECT 1 FROM office_editing_pause) AS system FROM jobs WHERE id=$1 AND payload->>'fileId'=$2`,
       [input.jobId, input.fileId]
     );
     if (!job.rows[0]?.system)

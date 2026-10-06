@@ -44,7 +44,7 @@ func TestFileAndAccountDeletionDoNotWaitForWorkerHeldJobRows(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		file, err := s.CreateSourceReady(
+		file, err := s.createReadyFile(
 			ctx, ws.ID, ownerID, "locked.pdf", "pdf", nil, "", 1, "sources/"+uid("blob"),
 		)
 		if err != nil {

@@ -68,7 +68,7 @@ export default function Explore() {
           value={tab}
         />
       </div>
-      <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
+      <div className="flex-1 px-6 py-5">
         {tab === 'workspaces' ? (
           workspacesFetchStatus === 'paused' ? (
             <QueryPausedState />

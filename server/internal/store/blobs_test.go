@@ -68,12 +68,12 @@ func TestBlobRefcountQueuesOnlyUnreferencedObjects(t *testing.T) {
 	soloPath := "sources/" + uid("blob")
 
 	// Two files naming the same source object, as a workspace clone produces.
-	first, err := s.CreateSourceReady(ctx, ws.ID, ownerID, "first.pdf", "pdf",
+	first, err := s.createReadyFile(ctx, ws.ID, ownerID, "first.pdf", "pdf",
 		nil, "", 100, sharedPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := s.CreateSourceReady(ctx, ws.ID, ownerID, "second.pdf", "pdf",
+	second, err := s.createReadyFile(ctx, ws.ID, ownerID, "second.pdf", "pdf",
 		nil, "", 100, sharedPath)
 	if err != nil {
 		t.Fatal(err)
@@ -135,7 +135,7 @@ func TestArtifactCacheRefsSurviveFileDelete(t *testing.T) {
 	sourcePath := "sources/" + uid("blob")
 	captionPath := "captions/" + uid("blob")
 	derivedPath := "derived-text/" + uid("blob") + ".json"
-	file, err := s.CreateSourceReady(ctx, ws.ID, ownerID, "doc.pdf", "pdf",
+	file, err := s.createReadyFile(ctx, ws.ID, ownerID, "doc.pdf", "pdf",
 		nil, "", 100, sourcePath)
 	if err != nil {
 		t.Fatal(err)
@@ -207,7 +207,7 @@ func TestBlobReferenceCancelsQueuedDeletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := "sources/" + uid("blob")
-	file, err := s.CreateSourceReady(ctx, ws.ID, ownerID, "only.pdf", "pdf",
+	file, err := s.createReadyFile(ctx, ws.ID, ownerID, "only.pdf", "pdf",
 		nil, "", 10, path)
 	if err != nil {
 		t.Fatal(err)
@@ -219,7 +219,7 @@ func TestBlobReferenceCancelsQueuedDeletion(t *testing.T) {
 		t.Fatal("path was not queued after its only reference was deleted")
 	}
 
-	if _, err := s.CreateSourceReady(ctx, ws.ID, ownerID, "again.pdf", "pdf",
+	if _, err := s.createReadyFile(ctx, ws.ID, ownerID, "again.pdf", "pdf",
 		nil, "", 10, path); err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +281,7 @@ func TestExpiredBlobDeletionClaimCannotBeResurrected(t *testing.T) {
 		WHERE object_path=$1`, path); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateSourceReady(ctx, workspace.ID, ownerID, "missing.pdf", "pdf",
+	if _, err := s.createReadyFile(ctx, workspace.ID, ownerID, "missing.pdf", "pdf",
 		nil, "", 10, path); err == nil {
 		t.Fatal("expired claimed path was allowed to become live again")
 	}
@@ -399,7 +399,7 @@ func TestCloneThenDeleteKeepsTheSurvivingCopy(t *testing.T) {
 	}
 	path := "sources/" + uid("blob")
 	cachePath := "derived-text/" + uid("blob") + ".json"
-	_, err = s.CreateSourceReady(ctx, source.ID, ownerID, "shared.pptx", "slides",
+	_, err = s.createReadyFile(ctx, source.ID, ownerID, "shared.pptx", "slides",
 		nil, "", 2048, path)
 	if err != nil {
 		t.Fatal(err)

@@ -165,6 +165,12 @@ func sendOutboxEmail(
 	if v := data["graceDays"]; v != nil {
 		data["GraceDays"] = v
 	}
+	if v := data["hours"]; v != nil {
+		data["Hours"] = v
+	}
+	if startsAt, err := time.Parse(time.RFC3339, stringValue(data, "startsAt")); err == nil {
+		data["StartsAt"] = maintenanceTime(startsAt, locale)
+	}
 	data["InviteURL"] = appURL + stringValue(data, "invitePath")
 	data["OpenURL"] = appURL + "/workspaces"
 	switch item.Template {
@@ -260,4 +266,14 @@ func stringValue(data map[string]any, key string) string {
 
 func normalizeAppURL(appURL string) string {
 	return strings.TrimRight(appURL, "/")
+}
+
+// maintenanceTime writes a maintenance start in UTC, which every recipient can
+// convert; the in-app notice shows it in the reader's own time zone.
+func maintenanceTime(t time.Time, locale string) string {
+	t = t.UTC()
+	if locale == "zh" {
+		return t.Format("2006年1月2日 15:04") + " (UTC)"
+	}
+	return t.Format("2 Jan 2006, 15:04") + " UTC"
 }

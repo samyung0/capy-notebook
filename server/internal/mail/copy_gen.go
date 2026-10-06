@@ -10,6 +10,8 @@ var subjectTemplates = map[string]string{
 	"account-deletion-cancelled.zh": "你的 Capy Notebook 账户删除已取消",
 	"account-deletion-requested.en": "Your Capy Notebook account deletion is scheduled",
 	"account-deletion-requested.zh": "你的 Capy Notebook 账户删除已安排",
+	"office-maintenance.en":         "Office editing on Capy Notebook pauses for an upgrade",
+	"office-maintenance.zh":         "Capy Notebook 的 Office 编辑将因升级暂停",
 	"subscription-frozen.en":        "Your Capy Notebook account is frozen",
 	"subscription-frozen.zh":        "你的 Capy Notebook 账户已被冻结",
 	"subscription-over-quota.en":    "Your Capy Notebook storage is over the free limit",

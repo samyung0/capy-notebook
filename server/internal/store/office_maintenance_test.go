@@ -128,12 +128,12 @@ func TestPublishAllOfficeSourcesRoutesSpecialGroupsExportOnly(t *testing.T) {
 		}
 	}
 	// Its export-only publications evict rooms unflushed: the pause comes first.
-	if _, err := s.PublishAllOfficeSources(ctx); !errors.Is(err, ErrOfficeEditingNotPaused) {
+	if _, err := s.PublishAllOfficeSources(ctx, OfficePublishOptions{}); !errors.Is(err, ErrOfficeEditingNotPaused) {
 		t.Fatalf("publish-all without the pause: %v", err)
 	}
 	maintenanceTestPause(t, s)
 
-	published, err := s.PublishAllOfficeSources(ctx)
+	published, err := s.PublishAllOfficeSources(ctx, OfficePublishOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,6 +159,85 @@ func TestPublishAllOfficeSourcesRoutesSpecialGroupsExportOnly(t *testing.T) {
 		if _, ok := got[file]; ok {
 			t.Fatalf("%s should wait (running) or stay out (text)", file)
 		}
+	}
+}
+
+// The drain runs with editing live: system republishes only, oldest first,
+// capped by Limit, leaving export-only files to the window.
+func TestDrainRepublishesOldestAndLeavesExportOnly(t *testing.T) {
+	s := maintenanceTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "drain_owner")
+	files := []string{
+		maintenanceTestEdited(t, s, owner, "a.docx", false),
+		maintenanceTestEdited(t, s, owner, "b.docx", false),
+		maintenanceTestEdited(t, s, owner, "c.docx", false),
+		maintenanceTestEdited(t, s, owner, "d.docx", true),
+	}
+	// Older than anything other tests left unpublished.
+	for i, file := range files {
+		if _, err := s.pool.Exec(ctx, `UPDATE source_documents SET updated_at='2000-01-01'::timestamptz+$2*interval '1 minute' WHERE file_id=$1`, file, i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	drain := func(limit int) []string {
+		t.Helper()
+		published, err := s.PublishAllOfficeSources(ctx, OfficePublishOptions{Drain: true, Limit: limit})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ids []string
+		for _, p := range published {
+			var paidBy string
+			if err = s.pool.QueryRow(ctx, `SELECT payload->>'paidBy' FROM jobs WHERE id=$1`, p.JobID).Scan(&paidBy); err != nil || p.Err != nil || p.ExportOnly || paidBy != models.PaidBySystem {
+				t.Fatalf("drain request %+v paidBy=%q %v", p, paidBy, err)
+			}
+			ids = append(ids, p.FileID)
+		}
+		return ids
+	}
+	if got := drain(2); !slices.Equal(got, files[:2]) {
+		t.Fatalf("first drain = %v, want %v", got, files[:2])
+	}
+	// a and b are in flight; d can only publish export-only.
+	if got := drain(1); !slices.Equal(got, files[2:3]) {
+		t.Fatalf("second drain = %v, want %v", got, files[2:3])
+	}
+}
+
+// Every active account hears once per start (week notice with email, day
+// reminder in-app only); suspended accounts are skipped.
+func TestAnnounceOfficeMaintenance(t *testing.T) {
+	s := maintenanceTestStore(t)
+	ctx := context.Background()
+	user := newBlobTestUser(t, s, "announce_user")
+	suspended := newBlobTestUser(t, s, "announce_suspended")
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET email=id||'@example.test' WHERE id=ANY($1)`, []string{user, suspended}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET suspended_at=now(),suspended_reason='test' WHERE id=$1`, suspended); err != nil {
+		t.Fatal(err)
+	}
+	startsAt := time.Now().Add(7 * 24 * time.Hour).Truncate(time.Second)
+	counts := func(id string) (notices, mails int) {
+		t.Helper()
+		if err := s.pool.QueryRow(ctx, `SELECT
+			(SELECT count(*) FROM notifications WHERE user_id=$1 AND data->>'code'='office_maintenance'),
+			(SELECT count(*) FROM email_outbox WHERE user_id=$1 AND template='office-maintenance')`, id).Scan(&notices, &mails); err != nil {
+			t.Fatal(err)
+		}
+		return notices, mails
+	}
+	for _, withEmail := range []bool{true, true, false, false} {
+		if _, _, err := s.AnnounceOfficeMaintenance(ctx, startsAt, 4, withEmail); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n, m := counts(user); n != 2 || m != 1 {
+		t.Fatalf("active account: %d notices, %d emails; want 2 and 1", n, m)
+	}
+	if n, m := counts(suspended); n != 0 || m != 0 {
+		t.Fatalf("suspended account: %d notices, %d emails", n, m)
 	}
 }
 
@@ -188,7 +267,7 @@ func TestPublishAllRebuildsTrashedDeferredPublication(t *testing.T) {
 	if !waiting() {
 		t.Fatal("readiness should wait on the pending rebuild")
 	}
-	published, err := s.PublishAllOfficeSources(ctx)
+	published, err := s.PublishAllOfficeSources(ctx, OfficePublishOptions{})
 	if err != nil || !slices.Contains(published, OfficePublication{FileID: file, Rebuilt: true}) {
 		t.Fatalf("publish-all: %+v %v", published, err)
 	}
@@ -366,7 +445,7 @@ func TestStoreOnlyExportIsQuotaGated(t *testing.T) {
 	if err = s.pool.QueryRow(ctx, `SELECT workspace_id,size_bytes FROM files WHERE id=$1`, file).Scan(&ws, &size); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.CreateSourceReady(ctx, ws, owner, "big.pdf", "pdf", nil, "", usage.LimitBytes-usage.UsedBytes-1000, "sources/"+uid("blob")); err != nil {
+	if _, err = s.createReadyFile(ctx, ws, owner, "big.pdf", "pdf", nil, "", usage.LimitBytes-usage.UsedBytes-1000, "sources/"+uid("blob")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = s.pool.Exec(ctx, `UPDATE source_documents SET net_tokens=3000,last_edited_at=now()-interval '2 minutes' WHERE file_id=$1`, file); err != nil {
@@ -497,7 +576,7 @@ func TestBlockedOwnerMaintenanceRepublish(t *testing.T) {
 	if err := s.pool.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1`, file).Scan(&ws); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateSourceReady(ctx, ws, owner, "big.pdf", "pdf", nil, "", mustPlanLimits(t, s, PlanFree).StorageBytes+1, "sources/"+uid("blob")); err != nil {
+	if _, err := s.createReadyFile(ctx, ws, owner, "big.pdf", "pdf", nil, "", mustPlanLimits(t, s, PlanFree).StorageBytes+1, "sources/"+uid("blob")); err != nil {
 		t.Fatal(err)
 	}
 	lapsed := time.Now().AddDate(0, 0, -(overQuotaBufferDays + 1)).UTC()
@@ -514,7 +593,7 @@ func TestBlockedOwnerMaintenanceRepublish(t *testing.T) {
 		t.Fatalf("owner refresh while frozen: %v", err)
 	}
 	maintenanceTestPause(t, s)
-	published, err := s.PublishAllOfficeSources(ctx)
+	published, err := s.PublishAllOfficeSources(ctx, OfficePublishOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -12,7 +12,7 @@ func seedWorkspaceFiles(t *testing.T, s *Store, wsID, ownerID string, n int) {
 	t.Helper()
 	ctx := context.Background()
 	for i := range n {
-		_, err := s.CreateSourceReady(ctx, wsID, ownerID,
+		_, err := s.createReadyFile(ctx, wsID, ownerID,
 			fmt.Sprintf("f%d.pdf", i), "pdf", nil, "", 1, "sources/"+uid("f"))
 		if err != nil {
 			t.Fatalf("seed file %d: %v", i, err)
@@ -31,7 +31,7 @@ func TestWorkspaceFileCapRejectsThe101stFile(t *testing.T) {
 	workspaceLimit := mustPlanLimits(t, s, PlanFree).FilesPerWorkspace
 	seedWorkspaceFiles(t, s, ws.ID, owner, workspaceLimit)
 
-	_, err = s.CreateSourceReady(ctx, ws.ID, owner, "overflow.pdf", "pdf",
+	_, err = s.createReadyFile(ctx, ws.ID, owner, "overflow.pdf", "pdf",
 		nil, "", 1, "sources/"+uid("f"))
 	var limit *FileLimitExceededError
 	if !errors.As(err, &limit) {

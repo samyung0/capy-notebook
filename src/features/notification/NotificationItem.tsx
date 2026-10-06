@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { AppNotification } from '@/api/types';
 import { ContentSwap } from '@/components/ui/ContentSwap';
 import { Icon, type IconName } from '@/components/ui/Icon';
-import { m } from '@/i18n';
+import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
 type NotificationKind = AppNotification['kind'];
@@ -81,6 +81,17 @@ function systemCopy(data: AppNotification['data']) {
       return {
         body: m.notification_system_deletion_requested_body(),
         title: m.notification_system_deletion_requested_title(),
+      };
+    case 'office_maintenance':
+      return {
+        body: m.notification_system_office_maintenance_body({
+          hours: dataNumber(data, 'hours'),
+          time: new Intl.DateTimeFormat(getLocale(), {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          }).format(new Date(dataString(data, 'startsAt'))),
+        }),
+        title: m.notification_system_office_maintenance_title(),
       };
     case 'account_deletion_cancelled':
       return {

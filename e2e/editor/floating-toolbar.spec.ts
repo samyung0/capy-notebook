@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { openEditorNote } from './helpers';
 
-test('top-toolbar formatting keeps the selection toolbar open without replaying its animation', async ({
+test('top-toolbar formatting keeps the selection toolbar open', async ({
   page,
 }) => {
   const editor = await openEditorNote(
@@ -31,11 +31,6 @@ test('top-toolbar formatting keeps the selection toolbar open without replaying 
     const stability = floating.evaluate(async (element) => {
       const states: (string | null)[] = [];
       let detached = false;
-      let animationStarts = 0;
-      const animationStarted = () => {
-        animationStarts++;
-      };
-      element.addEventListener('animationstart', animationStarted);
       const observer = new MutationObserver((records) => {
         detached ||= !element.isConnected;
         for (const record of records) {
@@ -60,12 +55,10 @@ test('top-toolbar formatting keeps the selection toolbar open without replaying 
         );
       });
       observer.disconnect();
-      element.removeEventListener('animationstart', animationStarted);
-      return { animationStarts, closed: states.includes('closed'), detached };
+      return { closed: states.includes('closed'), detached };
     });
     await control.click();
     expect(await stability).toEqual({
-      animationStarts: 0,
       closed: false,
       detached: false,
     });

@@ -22,7 +22,7 @@ func sourceTestFile(t *testing.T, s *Store, owner, name, kind string) (Workspace
 	if err != nil {
 		t.Fatal(err)
 	}
-	file, err := s.CreateSourceReady(ctx, ws.ID, owner, name, kind, nil, "", 100, "sources/"+uid("base"))
+	file, err := s.createReadyFile(ctx, ws.ID, owner, name, kind, nil, "", 100, "sources/"+uid("base"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1009,7 +1009,7 @@ func TestWorkspaceSourceIndexCountsAndSettings(t *testing.T) {
 		t.Fatal("settings not saved")
 	}
 	for _, src := range []struct{ name, kind string }{{"not-indexed.txt", "txt"}, {"archive.zip", "unknown"}} {
-		if _, err = s.CreateSourceReady(ctx, ws.ID, owner, src.name, src.kind, nil, "", 10, "sources/"+uid("count")); err != nil {
+		if _, err = s.createReadyFile(ctx, ws.ID, owner, src.name, src.kind, nil, "", 10, "sources/"+uid("count")); err != nil {
 			t.Fatal(err)
 		}
 	}

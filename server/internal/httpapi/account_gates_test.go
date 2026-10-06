@@ -103,7 +103,7 @@ func overQuotaFixture(t *testing.T, lapsedDays int) quotaFixture {
 	if err := st.UpsertSubscription(ctx, sub); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.CreateSourceReady(ctx, ws.ID, userID, "ballast.pdf", "pdf", nil, "",
+	if _, err := uploadSource(ctx, st, ws.ID, userID, "ballast.pdf",
 		mustPlanLimits(t, st, store.PlanFree).StorageBytes+1, "sources/"+userID); err != nil {
 		t.Fatal(err)
 	}

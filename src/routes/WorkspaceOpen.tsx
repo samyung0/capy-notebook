@@ -44,6 +44,7 @@ import { StudyPanel } from '@/features/study/StudyPanel';
 import {
   AddSourceDialog,
   type AddSourceMode,
+  resumedConnect,
 } from '@/features/workspace/AddSourceDialog';
 import { isWorkspaceReadOnly } from '@/features/workspace/access';
 import { ChatPanel } from '@/features/workspace/ChatPanel';
@@ -172,7 +173,10 @@ export default function WorkspaceOpen() {
     { mode: 'add' } | { mode: 'rename'; id: string; name: string } | null
   >(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [addSource, setAddSource] = useState<AddSourceMode | null>(null);
+  const [resumeProvider] = useState(() => resumedConnect(workspaceId));
+  const [addSource, setAddSource] = useState<AddSourceMode | null>(
+    resumeProvider ? 'import' : null
+  );
 
   if (wsLoading) {
     return (
@@ -589,6 +593,7 @@ export default function WorkspaceOpen() {
           onGeneratingChange={setGenerating}
           onOpenItem={setOpenItem}
           open
+          resumeProvider={resumeProvider}
           workspaceId={workspaceId}
         />
       )}

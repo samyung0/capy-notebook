@@ -1669,8 +1669,9 @@ Maintenance window below). The owner's Process stays the opt-in first parse;
 pressed while such an export runs, it turns that job into the owner-paid parse
 of the same capture. Editing continues during processing.
 
-**Deferred publication.** An Office publication of the owner's or automatic
-work (every one but a maintenance publication) never touches open editors: it
+**Deferred publication.** An Office publication of the owner's, automatic or
+drain work (every one but a system publication while editing is paused) never
+touches open editors: it
 swaps the file's bytes and index, and editing stays on the old base and epoch
 (`rebuild_pending`, `published_state`: the published capture as its change over
 seed(base), migration 0046). Edits saved after the capture stay pending,
@@ -1721,8 +1722,9 @@ performs the swap for a trashed file with nothing saved since its publication
 (nobody can open or save it, and the rebuilt state is the published file), so
 readiness does not wait on it until the trash purge.
 
-The immediate handoff remains for a maintenance publication, where editing is
-paused anyway. A started handoff always completes. Each connected writer goes
+The immediate handoff remains for a system publication while the pause is on
+(the window), where editing is paused anyway; the drain's system publications
+before the window are deferred. A started handoff always completes. Each connected writer goes
 read-only, flushes pending input into the document, waits until its provider
 has nothing unsent, and reports ready; it does not wait for its own checkpoint
 receipt. After 10 seconds the service disconnects writers that have not
@@ -1825,6 +1827,13 @@ returns; it now stays near the opened workbook (338 MiB). Measurements:
 An engine upgrade that changes seed output runs in a maintenance window; the
 steps and the `office-maintenance` commands are in the
 [deployment runbook](../deployment-runbook.md#office-maintenance-window).
+
+**Announcement and drain.** Every active account hears about the window seven
+days ahead (in-app notification and a service email sent whatever the email
+preferences) and again one day ahead (notification only), from `announce`.
+After the reminder, `drain` republishes pending edits at platform cost while
+editing is still live, oldest first and `--limit` at a time, so the window only
+publishes the last day's edits; export-only files wait for the window.
 
 **Pause.** While the `office_editing_pause` row exists, the gateway refuses
 Office edit sessions (`source-session` for editing and `collaboration-token`

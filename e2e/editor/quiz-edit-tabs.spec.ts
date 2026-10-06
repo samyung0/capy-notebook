@@ -1,55 +1,5 @@
 import { expect, test } from '@playwright/test';
 
-test('quiz content scrolls without moving the outer page or header', async ({
-  page,
-}) => {
-  await page.goto('/quizzes/mat_embed_bio_matrix_quiz/edit');
-  await expect(page.locator('math-field .ML__base').last()).toBeVisible({
-    timeout: 30_000,
-  });
-
-  for (const viewport of [
-    { height: 720, width: 1280 },
-    { height: 844, width: 390 },
-  ]) {
-    await page.setViewportSize(viewport);
-    const header = page.getByRole('heading', {
-      exact: true,
-      name: 'Edit quiz',
-    });
-    const headerTop = await header.evaluate(
-      (el) => el.getBoundingClientRect().top
-    );
-    await expect
-      .poll(() =>
-        page
-          .locator('[data-question-id]')
-          .first()
-          .evaluate((question) => {
-            let count = 0;
-            for (let el = question.parentElement; el; el = el.parentElement) {
-              if (
-                /auto|scroll/.test(getComputedStyle(el).overflowY) &&
-                el.scrollHeight > el.clientHeight + 1
-              )
-                count += 1;
-            }
-            return count;
-          })
-      )
-      .toBe(1);
-    const save = page.getByRole('button', { exact: true, name: 'Save' });
-    await save.scrollIntoViewIfNeeded();
-    await expect(save).toBeInViewport();
-    expect(await header.evaluate((el) => el.getBoundingClientRect().top)).toBe(
-      headerTop
-    );
-    await expect(
-      page.getByRole('button', { exact: true, name: 'General' })
-    ).toBeInViewport();
-  }
-});
-
 test('quiz tabs retain both drafts and reveal name validation before saving', async ({
   page,
 }) => {

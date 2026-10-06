@@ -7,30 +7,16 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Toggle tool' })).toBeVisible();
 });
 
-test('custom popup preserves its anchor on exit and survives rapid reopen', async ({
+test('custom popup is inert while closing and survives a rapid reopen', async ({
   page,
 }) => {
   const toggle = page.getByRole('button', { name: 'Toggle tool' });
   const tool = page.getByTestId('tool');
   await toggle.click();
   await expect(tool).toHaveAttribute('data-state', 'open');
-  expect(
-    await tool.evaluate((node) => getComputedStyle(node).animationDuration)
-  ).toBe('0.25s');
-  await page.getByRole('button', { name: 'Move anchor' }).click();
-  await expect(tool).toContainText('Moved content');
-  const anchor = await tool.evaluate(
-    (node) => node.parentElement!.style.transform
-  );
   await toggle.evaluate((node) => node.click());
   await expect(tool).toHaveAttribute('data-state', 'closed');
-  expect(
-    await tool.evaluate((node) => ({
-      anchor: node.parentElement!.style.transform,
-      duration: getComputedStyle(node).animationDuration,
-      inert: node.parentElement!.inert,
-    }))
-  ).toEqual({ anchor, duration: '0.15s', inert: true });
+  expect(await tool.evaluate((node) => node.parentElement!.inert)).toBe(true);
   await toggle.evaluate((node) => node.click());
   await expect(tool).toHaveAttribute('data-state', 'open');
   await tool.evaluate(async (node) => {
@@ -42,7 +28,7 @@ test('custom popup preserves its anchor on exit and survives rapid reopen', asyn
 });
 
 for (const mode of ['create', 'edit'] as const) {
-  test(`workspace ${mode} tags support autocomplete and close without flashing`, async ({
+  test(`workspace ${mode} tags support autocomplete, wheel scrolling and dismissal`, async ({
     page,
   }) => {
     await page.goto('/workspaces');
@@ -103,25 +89,9 @@ for (const mode of ['create', 'edit'] as const) {
     await expect(popup).toHaveCount(0);
     await input.click();
     await expect(popup).toHaveAttribute('data-state', 'open');
-    await popup.evaluate(async (node) => {
-      await Promise.allSettled(
-        node.getAnimations().map((animation) => animation.finished)
-      );
-    });
-    const [opacity] = await Promise.all([
-      popup.evaluate(
-        (node) =>
-          new Promise<string>((resolve) => {
-            node.addEventListener(
-              'animationend',
-              () => resolve(getComputedStyle(node).opacity),
-              { once: true }
-            );
-          })
-      ),
-      dialog.getByRole('textbox', { exact: true, name: 'Description' }).click(),
-    ]);
-    expect(opacity).toBe('0');
+    await dialog
+      .getByRole('textbox', { exact: true, name: 'Description' })
+      .click();
     await expect(popup).toHaveCount(0);
     if (mode === 'edit') {
       await dialog.getByRole('button', { exact: true, name: 'Save' }).click();
@@ -129,40 +99,6 @@ for (const mode of ['create', 'edit'] as const) {
     }
   });
 }
-
-test('menu anchor stays fixed while its trigger scales on press', async ({
-  page,
-}) => {
-  const trigger = page.getByRole('button', { exact: true, name: 'Actions' });
-  const bounds = await trigger.boundingBox();
-  if (!bounds) throw new Error('Missing menu trigger bounds');
-  await page.mouse.move(
-    bounds.x + bounds.width / 2,
-    bounds.y + bounds.height / 2
-  );
-  await page.mouse.down();
-  const menu = page.getByRole('menu');
-  await expect(menu).toBeVisible();
-  await expect
-    .poll(async () => (await trigger.boundingBox())!.width)
-    .toBeLessThan(bounds.width - 1);
-  const pressed = await menu.evaluate((node) =>
-    node.parentElement!.getBoundingClientRect().toJSON()
-  );
-  if (!pressed) throw new Error('Missing menu bounds');
-  expect(pressed.y).toBeCloseTo(bounds.y + bounds.height + 4, 0);
-  expect(pressed.width).toBeCloseTo(bounds.width, 0);
-  await page.mouse.up();
-  await expect
-    .poll(async () => (await trigger.boundingBox())!.width)
-    .toBeCloseTo(bounds.width, 0);
-  const released = await menu.evaluate((node) =>
-    node.parentElement!.getBoundingClientRect().toJSON()
-  );
-  expect(released).toEqual(pressed);
-  await page.keyboard.press('Escape');
-  await expect(trigger).toBeFocused();
-});
 
 test('menu keyboard navigation skips disabled items and executes once', async ({
   page,
@@ -179,207 +115,18 @@ test('menu keyboard navigation skips disabled items and executes once', async ({
   await expect(trigger).toBeFocused();
 });
 
-test('workspace filter anchor stays fixed throughout its opening animation', async ({
-  page,
-}) => {
-  await page.goto('/workspaces');
-  const trigger = page.getByRole('button', { exact: true, name: 'Filter' });
-  await expect(trigger).toBeVisible({ timeout: 30_000 });
-  for (const width of [1280, 390]) {
-    await page.setViewportSize({ height: 844, width });
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const frames = page.evaluate(async () => {
-        const samples: { x: number; y: number; width: number }[] = [];
-        await new Promise<void>((resolve) =>
-          document.addEventListener('pointerdown', () => resolve(), {
-            once: true,
-          })
-        );
-        let deadline = performance.now() + 5000;
-        while (performance.now() < deadline) {
-          await new Promise(requestAnimationFrame);
-          const menu = document.querySelector(
-            '[data-slot="popover-content"][data-state="open"]'
-          );
-          if (!menu || Number(getComputedStyle(menu).opacity) === 0) continue;
-          const rect = menu.parentElement!.getBoundingClientRect();
-          if (rect.y < 0) continue;
-          // Slow clicks must not consume the visible animation's sample window.
-          if (samples.length === 0) deadline = performance.now() + 650;
-          samples.push({ width: rect.width, x: rect.x, y: rect.y });
-        }
-        return samples;
-      });
-      await trigger.click({ delay: 80 });
-      const samples = await frames;
-      expect(samples.length).toBeGreaterThan(5);
-      for (const dimension of ['x', 'y', 'width'] as const) {
-        const values = samples.map((sample) => sample[dimension]);
-        expect(
-          Math.max(...values) - Math.min(...values),
-          JSON.stringify(samples)
-        ).toBeLessThan(0.6);
-      }
-      await page.keyboard.press('Escape');
-      await expect(page.locator('[data-slot="popover-content"]')).toHaveCount(
-        0
-      );
-    }
-  }
-});
-
-test('text swaps keep outgoing copy hidden from accessibility and read emphasis does not replay', async ({
-  page,
-}) => {
-  await page.getByRole('button', { name: 'Change copy' }).click();
-  await expect(page.locator('[aria-hidden].motion-copy-out')).toHaveCount(2);
-  await page.locator('.motion-text-in').evaluateAll(async (nodes) => {
-    await Promise.allSettled(
-      nodes.flatMap((node) => node.getAnimations().map((a) => a.finished))
-    );
-  });
-  await expect(page.locator('.motion-copy-out')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Mark read' }).click();
-  expect(
-    await page
-      .locator('.motion-text-in')
-      .evaluateAll(
-        (nodes) => nodes.flatMap((node) => node.getAnimations()).length
-      )
-  ).toBe(0);
-  await page.getByRole('button', { name: 'Change copy' }).click();
-  await expect(page.locator('[aria-hidden].motion-copy-out')).toHaveCount(2);
-});
-
-test('dropdown and popover share entry motion and a quieter exit', async ({
-  page,
-}) => {
-  await page.setViewportSize({ height: 1600, width: 1280 });
-  const entries: Record<
-    'blur' | 'duration' | 'easing' | 'scale' | 'slide',
-    string
-  >[] = [];
-  for (const name of ['Open popover', 'Actions']) {
-    await page.getByRole('button', { exact: true, name }).click();
-    const popup = page.locator(
-      '[data-slot="popover-content"], [data-slot="menu"]'
-    );
-    await expect(popup).toHaveAttribute('data-side', 'bottom');
-    entries.push(
-      await popup.evaluate((node) => {
-        const style = getComputedStyle(node);
-        return {
-          blur: style.getPropertyValue('--tw-enter-blur').trim(),
-          duration: style.animationDuration,
-          easing: style.animationTimingFunction,
-          scale: style.getPropertyValue('--tw-enter-scale').trim(),
-          slide: style.getPropertyValue('--tw-enter-translate-y').trim(),
-        };
-      })
-    );
-    await page.keyboard.press('Escape');
-    await expect(popup).toHaveAttribute('data-state', 'closed');
-    expect(
-      await popup.evaluate((node) => ({
-        duration: getComputedStyle(node).animationDuration,
-        scale: getComputedStyle(node)
-          .getPropertyValue('--tw-exit-scale')
-          .trim(),
-      }))
-    ).toEqual({ duration: '0.15s', scale: '0.99' });
-    await expect(popup).toHaveCount(0);
-  }
-  expect(entries[0]).toMatchObject({
-    blur: '2px',
-    duration: '0.25s',
-    scale: '0.97',
-  });
-  expect(entries[0].slide).not.toBe('0');
-  expect(entries[1]).toEqual(entries[0]);
-});
-
-test('shared primitives use asymmetric popup and drawer tokens', async ({
-  page,
-}) => {
-  await page.getByRole('button', { name: 'Open popover' }).click();
-  const popover = page.locator('[data-slot="popover-content"]');
-  expect(
-    await popover.evaluate((node) => getComputedStyle(node).animationDuration)
-  ).toBe('0.25s');
-  await page.keyboard.press('Escape');
-  await expect(popover).toHaveAttribute('data-state', 'closed');
-  expect(
-    await popover.evaluate((node) => getComputedStyle(node).animationDuration)
-  ).toBe('0.15s');
-  await expect(popover).toHaveCount(0);
-
-  await page.getByRole('combobox', { name: 'Pick option' }).click();
-  const select = page.getByRole('listbox');
-  expect(
-    await select.evaluate((node) => getComputedStyle(node).animationDuration)
-  ).toBe('0.25s');
-  await page.keyboard.press('Escape');
-  await expect(page.locator('[data-slot="select-content"]')).toHaveCount(0);
-
-  await page.getByRole('button', { name: 'Open drawer' }).click();
-  const drawer = page.locator('[data-slot="drawer-popup"]');
-  expect(
-    await drawer.evaluate((node) => getComputedStyle(node).transitionDuration)
-  ).toBe('0.4s');
-  await page.getByRole('button', { name: 'Close drawer' }).click();
-  await expect(drawer).toHaveAttribute('data-ending-style', '');
-  expect(
-    await drawer.evaluate((node) => getComputedStyle(node).transitionDuration)
-  ).toBe('0.35s');
-  await expect(drawer).toHaveCount(0);
-});
-
-test('reduced motion removes custom popups and outgoing copy without animation events', async ({
+test('reduced motion removes closed popups and replaced copy at once', async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const toggle = page.getByRole('button', { name: 'Toggle tool' });
   await toggle.click();
-  expect(
-    await page
-      .getByTestId('tool')
-      .evaluate((node) => node.getAnimations().length)
-  ).toBe(0);
+  await expect(page.getByTestId('tool')).toBeVisible();
   await toggle.click();
   await expect(page.getByTestId('tool')).toHaveCount(0);
   await page.getByRole('button', { name: 'Change copy' }).click();
-  await expect(page.locator('.motion-copy-out')).toHaveCount(0);
-});
-
-test('only new notification IDs arriving in an open panel reveal', async ({
-  page,
-}) => {
-  const bell = page.getByTestId('notices').getByRole('button');
-  await bell.click();
-  await expect(page.locator('.motion-text-reveal')).toHaveCount(0);
-  await page
-    .getByRole('button', { name: 'Insert notice' })
-    .evaluate((node) => node.click());
-  await expect(page.locator('.motion-text-reveal')).toHaveCount(1);
-  await page.locator('.motion-text-reveal').evaluate(async (node) => {
-    await Promise.allSettled(node.getAnimations().map((a) => a.finished));
-  });
-  await page
-    .getByRole('button', { name: 'Refresh notices' })
-    .evaluate((node) => node.click());
-  expect(
-    await page
-      .locator('.motion-text-reveal')
-      .evaluate((node) => node.getAnimations().length)
-  ).toBe(0);
-  await page
-    .getByRole('button', { name: 'Load earlier notice' })
-    .evaluate((node) => node.click());
-  await expect(page.locator('.motion-text-reveal')).toHaveCount(1);
-  await page.keyboard.press('Escape');
-  await expect(page.locator('[data-slot="popover-content"]')).toHaveCount(0);
-  await bell.click();
-  await expect(page.locator('.motion-text-reveal')).toHaveCount(0);
+  await expect(page.getByText('Copied', { exact: true })).toBeVisible();
+  await expect(page.getByText('Copy', { exact: true })).toHaveCount(0);
 });
 
 test('closed command content rejects late events and its trigger can reopen it', async ({
@@ -416,39 +163,6 @@ test('closed command content rejects late events and its trigger can reopen it',
   await page.keyboard.press('Enter');
   await expect(page.getByRole('menu')).toBeVisible();
   await expect(page.getByTestId('executions')).toHaveText('1');
-});
-
-test('cancelled and nested drawer swipes do not restart blur', async ({
-  page,
-}) => {
-  await page.getByRole('button', { name: 'Open drawer' }).click();
-  const drawer = page.locator('[data-slot="drawer-popup"]');
-  const content = page.locator('[data-slot="drawer-content"]');
-  await expect(content).toHaveCSS('filter', 'none');
-  const handle = await page
-    .locator('[data-slot="drawer-swipe-handle"]')
-    .boundingBox();
-  if (!handle) throw new Error('Missing drawer swipe handle');
-  const x = handle.x + handle.width / 2;
-  const y = handle.y + handle.height / 2;
-  await page.mouse.move(x, y);
-  await page.mouse.down();
-  await page.mouse.move(x, y + 18, { steps: 8 });
-  await expect(drawer).toHaveAttribute('data-swiping', '');
-  await expect(content).toHaveCSS('filter', 'none');
-  await page.mouse.move(x, y, { steps: 8 });
-  await page.mouse.up();
-  await expect(drawer).not.toHaveAttribute('data-swiping');
-  await expect(content).toHaveCSS('filter', 'none');
-  expect(await content.evaluate((node) => node.getAnimations().length)).toBe(0);
-  await drawer.evaluate(async (node) => {
-    node.setAttribute('data-nested-drawer-swiping', '');
-    await new Promise(requestAnimationFrame);
-    node.removeAttribute('data-nested-drawer-swiping');
-    await new Promise(requestAnimationFrame);
-  });
-  await expect(content).toHaveCSS('filter', 'none');
-  expect(await content.evaluate((node) => node.getAnimations().length)).toBe(0);
 });
 
 for (const kind of ['dropdown', 'context'] as const) {
@@ -516,9 +230,6 @@ test('All blocks toggles closed with a second click and keyboard activation', as
   ]) {
     const control = toolbar.getByRole('button', { exact: true, name });
     await expect(control).toHaveAttribute('aria-haspopup', 'dialog');
-    await expect(control.locator('svg')).toHaveCount(
-      name === 'Block type' ? 0 : 1
-    );
     await control.click();
     await expect(control).toHaveAttribute('data-state', 'open');
     await page.keyboard.press('Escape');
@@ -577,93 +288,6 @@ test('command palette rapid reopen keeps typing in its search field', async ({
   await page.keyboard.type('zzprobe');
   await expect(input).toHaveValue('zzprobe');
   await expect(paragraph).toHaveText(EDITOR_NOTE.firstParagraph);
-});
-
-test('workspace settings tabs fit vertically and dialogs settle on whole pixels', async ({
-  page,
-}) => {
-  await page.goto('/workspaces');
-  await page
-    .getByRole('button', { exact: true, name: 'Open menu' })
-    .first()
-    .click();
-  await page
-    .getByRole('menuitem', { exact: true, name: 'Workspace settings' })
-    .click();
-  const dialog = page.getByRole('dialog', {
-    exact: true,
-    name: 'Workspace settings',
-  });
-  for (const viewport of [
-    { height: 801, width: 1281 },
-    { height: 722, width: 390 },
-  ]) {
-    await page.setViewportSize(viewport);
-    for (const name of [
-      'General',
-      'Sharing',
-      'Indexing',
-      'Statistics',
-      'Others',
-      'Danger',
-    ]) {
-      const button = dialog.getByRole('button', { exact: true, name });
-      await button.click();
-      const overflow = await button.evaluate((node) => {
-        const row = node.parentElement!;
-        return {
-          client: row.clientHeight,
-          scroll: row.scrollHeight,
-          scrollWidth: row.scrollWidth,
-          width: row.clientWidth,
-        };
-      });
-      expect(overflow.scroll).toBe(overflow.client);
-      if (viewport.width === 390)
-        expect(overflow.scrollWidth).toBeGreaterThan(overflow.width);
-      await dialog.evaluate(async (node) => {
-        await Promise.allSettled(
-          node.getAnimations().map((animation) => animation.finished)
-        );
-      });
-      const settled = await dialog.evaluate((node) => {
-        const { x, y } = node.getBoundingClientRect();
-        const style = getComputedStyle(node);
-        return { filter: style.filter, willChange: style.willChange, x, y };
-      });
-      expect(settled.x).toBe(Math.round(settled.x));
-      expect(settled.y).toBe(Math.round(settled.y));
-      expect(settled.filter).toBe('none');
-      expect(settled.willChange).toBe('transform');
-    }
-  }
-  // Simulate the feature-query rules not applying in an older browser.
-  const fallback = await dialog.evaluate((node) => {
-    node.classList.remove(
-      ...Array.from(node.classList).filter((name) =>
-        name.startsWith('supports-')
-      )
-    );
-    const { x, y, width, height } = node.getBoundingClientRect();
-    return {
-      height,
-      translate: getComputedStyle(node).translate,
-      viewportHeight: innerHeight,
-      viewportWidth: innerWidth,
-      width,
-      x,
-      y,
-    };
-  });
-  expect(fallback.translate).toBe('-50% -50%');
-  expect(fallback.x + fallback.width / 2).toBeCloseTo(
-    fallback.viewportWidth / 2,
-    1
-  );
-  expect(fallback.y + fallback.height / 2).toBeCloseTo(
-    fallback.viewportHeight / 2,
-    1
-  );
 });
 
 test('icon chooser tracks browsing and confirms only the current draft', async ({

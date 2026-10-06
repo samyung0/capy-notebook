@@ -63,6 +63,15 @@ export const emailTemplateDefinitions = [
       variable('UnsubscribeURL', 'https://example.test/settings'),
     ],
   },
+  {
+    id: 'office-maintenance',
+    label: 'Office maintenance',
+    variables: [
+      variable('Hours', '4'),
+      variable('OpenURL', 'https://example.test/workspaces'),
+      variable('StartsAt', '13 Oct 2026, 02:00 UTC'),
+    ],
+  },
 ] as const;
 
 export type EmailTemplateDefinition = (typeof emailTemplateDefinitions)[number];

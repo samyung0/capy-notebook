@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "subject": "Office editing on Capy Notebook pauses for an upgrade",
+  "preview": "Office files will be view-only for a few hours.",
+  "content": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              {
+                "type": "bold"
+              },
+              {
+                "type": "textStyle",
+                "attrs": {
+                  "color": "#5e5cdb"
+                }
+              }
+            ],
+            "text": "Capy Notebook"
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "attrs": {
+          "level": 1
+        },
+        "content": [
+          {
+            "type": "text",
+            "text": "Scheduled Office upgrade"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello,"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Editing Word, PowerPoint and Excel files will be unavailable from "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "StartsAt",
+              "label": "Start time",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": " for about "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "Hours",
+              "label": "Hours",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": " hours while we upgrade the Office editor."
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "You can still open and view every file, and your saved edits are kept. Everything else in Capy Notebook works as usual."
+          }
+        ]
+      },
+      {
+        "type": "button",
+        "attrs": {
+          "text": "Open Capy Notebook",
+          "url": "OpenURL",
+          "isUrlVariable": true,
+          "alignment": "left",
+          "variant": "filled",
+          "borderRadius": "smooth"
+        }
+      },
+      {
+        "type": "horizontalRule"
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "This is a service notice sent to every Capy Notebook account."
+          }
+        ]
+      }
+    ]
+  }
+}

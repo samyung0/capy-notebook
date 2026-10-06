@@ -171,7 +171,7 @@ export default function Learning() {
           value={tab}
         />
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-6 py-5">
+      <div className="flex flex-1 flex-col gap-4 px-6 py-5">
         {tab === 'review' ? <ReviewWorkspaces /> : <PastAttempts />}
       </div>
     </PanelWithInvertedRadius>

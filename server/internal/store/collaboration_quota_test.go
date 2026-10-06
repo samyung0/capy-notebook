@@ -21,7 +21,7 @@ func TestCollaborationQuotaLiveFreeOnlyAccountStaysActive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	file, err := s.CreateSourceReady(
+	file, err := s.createReadyFile(
 		ctx, workspace.ID, user, "legacy-over-free.pdf", "pdf", nil, "", 1, "sources/"+uid("blob"),
 	)
 	if err != nil {

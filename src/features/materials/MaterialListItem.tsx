@@ -77,9 +77,10 @@ export function MaterialListItem({
           content={toMaterialActionTarget(matRef)}
           display="hover"
           hoverClassName={cn(
-            'absolute top-1/2 right-1 -translate-y-1/2',
+            'absolute top-1/2 right-1 -translate-y-1/2 pl-0 [--scroll-fade-start:0px]',
             active && 'bg-surface-hover-bg'
           )}
+          hoverIconContainerClassName="p-1"
           leadingItems={study?.menuItems}
           onDeleted={onDeleted}
           onMove={(chapterId) => onMove?.(chapterId)}

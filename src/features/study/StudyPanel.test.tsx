@@ -50,8 +50,7 @@ it('shows only the off line and the switch while progress is off', () => {
   expect(html).toContain(m.study_off());
   expect(html).toContain('aria-checked="false"');
   for (const hidden of [
-    m.study_up_next(),
-    m.study_review(),
+    m.study_quick_actions(),
     m.study_quick_review(),
     m.study_done(),
     'Golgi',

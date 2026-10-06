@@ -22,7 +22,7 @@ func trashFixture(t *testing.T, s *Store) (ownerID, editorID string, ws Workspac
 		ws.ID, editorID); err != nil {
 		t.Fatal(err)
 	}
-	file, err = s.CreateSourceReady(ctx, ws.ID, editorID, "notes.md", "md", nil, "", 4096, "sources/"+uid("blob")+"/notes.md")
+	file, err = s.createReadyFile(ctx, ws.ID, editorID, "notes.md", "md", nil, "", 4096, "sources/"+uid("blob")+"/notes.md")
 	if err != nil {
 		t.Fatal(err)
 	}

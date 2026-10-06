@@ -23,7 +23,7 @@ func pushOverQuota(t *testing.T, s *Store, userID, workspaceID string) {
 	if err := s.UpsertSubscription(ctx, proSubscription(userID, subID, now-1)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateSourceReady(ctx, workspaceID, userID, "big.pdf", "pdf", nil, "",
+	if _, err := s.createReadyFile(ctx, workspaceID, userID, "big.pdf", "pdf", nil, "",
 		mustPlanLimits(t, s, PlanFree).StorageBytes+1, "sources/"+uid("blob")); err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestViewOnlyAtTheStorageLimit(t *testing.T) {
 			owner := newBlobTestUser(t, s, "limit_owner")
 			member := newBlobTestUser(t, s, "limit_member")
 			ws, pdf := sourceTestFile(t, s, owner, "marks.pdf", "pdf")
-			text, err := s.CreateSourceReady(ctx, ws.ID, owner, "notes.txt", "txt", nil, "", 100, "sources/"+uid("base"))
+			text, err := s.createReadyFile(ctx, ws.ID, owner, "notes.txt", "txt", nil, "", 100, "sources/"+uid("base"))
 			if err != nil {
 				t.Fatal(err)
 			}

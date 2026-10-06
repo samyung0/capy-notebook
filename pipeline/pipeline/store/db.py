@@ -1348,37 +1348,6 @@ def require_current_file_source(
         raise SourceSupersededError("ingest source was superseded by a newer revision")
 
 
-def add_workspace_notification(
-    cur,
-    *,
-    user_id: str,
-    workspace_id: str,
-    kind: str,
-    data: dict[str, Any],
-) -> dict[str, Any] | None:
-    """Notify a user about workspace-level work that is not tied to a file."""
-    if not user_id:
-        return None
-    notification_id = uid("nt")
-    href = f"/workspaces/{workspace_id}"
-    cur.execute(
-        """INSERT INTO notifications
-            (id, user_id, kind, data, href, workspace_id)
-        VALUES (%s,%s,%s,%s,%s,%s)
-        RETURNING id, at""",
-        (notification_id, user_id, kind, Jsonb(data), href, workspace_id),
-    )
-    row = cur.fetchone()
-    return {
-        "at": row[1].isoformat(),
-        "data": data,
-        "href": href,
-        "id": row[0],
-        "kind": kind,
-        "userId": user_id,
-    }
-
-
 def upsert_artifact_cache(
     cur,
     *,

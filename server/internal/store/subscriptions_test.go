@@ -885,7 +885,7 @@ func TestLapsedSubscriptionOverQuotaFreezesButNeverDeletes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateSourceReady(ctx, ws.ID, user, "big.pdf", "pdf", nil, "",
+	if _, err := s.createReadyFile(ctx, ws.ID, user, "big.pdf", "pdf", nil, "",
 		mustPlanLimits(t, s, PlanFree).StorageBytes+1, "sources/"+uid("blob")); err != nil {
 		t.Fatal(err)
 	}
@@ -1042,7 +1042,7 @@ func TestCurrentFreeSubscriptionBeatsExpiredProSubscription(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	file, err := s.CreateSourceReady(
+	file, err := s.createReadyFile(
 		ctx, workspace.ID, user, "over-free.pdf", "pdf", nil, "", 1, "sources/"+uid("blob"),
 	)
 	if err != nil {
@@ -1096,7 +1096,7 @@ func TestOverQuotaNoticesIncludeLiveFreeAfterPaidLapse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	file, err := s.CreateSourceReady(
+	file, err := s.createReadyFile(
 		ctx, workspace.ID, user, "over-free.pdf", "pdf", nil, "", 1, "sources/"+uid("blob"),
 	)
 	if err != nil {

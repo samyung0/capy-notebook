@@ -64,7 +64,7 @@ function Section({
   );
 }
 
-/** The workspace's Study tab: what to read next, review, Quick review, done
+/** The workspace's Study tab: quick actions (read next, review), Quick review, done
  * per chapter, recent quiz results and the progress switch. Every section
  * hides while it has nothing to show. */
 export function StudyPanel({
@@ -92,10 +92,6 @@ export function StudyPanel({
     return state !== 'done' && state !== 'removed';
   });
   const tracked = ordered.filter((it) => states.get(it.id) !== 'removed');
-  const doneCount = tracked.filter((it) => states.get(it.id) === 'done').length;
-  const setsStarted = ordered.filter(
-    (it) => it.type === 'material' && states.get(it.id) === 'started'
-  ).length;
   const nothingYet =
     !study?.items.length && !study?.recentAttempts.length && !study?.reviewable;
 
@@ -118,25 +114,13 @@ export function StudyPanel({
     .filter((ch) => ch.total > 0);
 
   const toggle = (
-    <div className="mt-auto flex flex-col gap-2 border-divider border-t px-1.5 pt-3">
-      <div className="flex items-center justify-between gap-3">
-        <span className="font-semibold">{m.study_track_progress()}</span>
-        <Switch
-          aria-label={m.study_track_progress()}
-          checked={!!study?.enabled}
-          onCheckedChange={(checked) => setEnabled(checked)}
-        />
-      </div>
-      {study?.enabled && !nothingYet && (
-        <p className="t-meta text-fg-muted">
-          {[
-            m.study_done_count({ done: doneCount, total: tracked.length }),
-            setsStarted ? m.study_sets_started({ count: setsStarted }) : '',
-          ]
-            .filter(Boolean)
-            .join(' · ')}
-        </p>
-      )}
+    <div className="mt-auto flex items-center justify-between gap-3 border-divider border-t px-1.5 pt-3">
+      <span className="font-semibold">{m.study_track_progress()}</span>
+      <Switch
+        aria-label={m.study_track_progress()}
+        checked={!!study?.enabled}
+        onCheckedChange={(checked) => setEnabled(checked)}
+      />
     </div>
   );
 
@@ -155,32 +139,39 @@ export function StudyPanel({
               </>
             ) : (
               <>
-                {next && (
-                  <Section title={m.study_up_next()}>
-                    <div className="flex items-center gap-2 px-2">
-                      <ItemIcon item={next} />
-                      <span className="line-clamp-1 flex-1 translate-y-px">
-                        {itemTitle(next)}
-                      </span>
-                      <Button
-                        iconRight="arrowRight"
-                        onClick={() =>
-                          onOpenItem({ id: next.id, kind: next.type })
-                        }
-                        size="sm"
-                      >
-                        {m.study_continue()}
-                      </Button>
-                    </div>
-                  </Section>
-                )}
-                {study.reviewable > 0 && (
-                  <Section title={m.study_review()}>
-                    <div className="flex items-center gap-2 px-2">
-                      <span className="flex-1 translate-y-px">
-                        {m.study_review_count({ count: study.reviewable })}
-                      </span>
-                      <ReviewButton workspaceId={workspaceId} />
+                {(next || study.reviewable > 0) && (
+                  <Section title={m.study_quick_actions()}>
+                    <div className="flex flex-col gap-2 px-2">
+                      {next && (
+                        <div className="flex items-center gap-2">
+                          <ItemIcon item={next} />
+                          <span className="line-clamp-1 flex-1 translate-y-px">
+                            {itemTitle(next)}
+                          </span>
+                          <Button
+                            iconRight="arrowRight"
+                            onClick={() =>
+                              onOpenItem({ id: next.id, kind: next.type })
+                            }
+                            size="sm"
+                          >
+                            {m.study_continue()}
+                          </Button>
+                        </div>
+                      )}
+                      {study.reviewable > 0 && (
+                        <div className="flex items-center gap-2">
+                          <Icon
+                            className="shrink-0 text-fg-muted"
+                            name="refresh"
+                            size={15}
+                          />
+                          <span className="flex-1 translate-y-px">
+                            {m.study_refresh_knowledge()}
+                          </span>
+                          <ReviewButton workspaceId={workspaceId} />
+                        </div>
+                      )}
                     </div>
                   </Section>
                 )}

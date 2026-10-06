@@ -1,0 +1,16 @@
+Capy Notebook
+
+
+OFFICE 计划升级
+
+你好，
+
+我们将升级 Office 编辑器，从 {{.StartsAt}} 起约 {{.Hours}} 小时内无法编辑 Word、PowerPoint 和 Excel 文件。
+
+你仍可打开和查看所有文件，已保存的编辑会保留。Capy Notebook 的其他功能照常可用。
+
+打开 Capy Notebook {{.OpenURL}}
+
+----------------------------------------
+
+这是发送给所有 Capy Notebook 账户的服务通知。

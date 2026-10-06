@@ -788,7 +788,7 @@ func TestDeletionPendingHidesContentAndCancelsAsyncWork(t *testing.T) {
 		workspace.ID); err != nil {
 		t.Fatal(err)
 	}
-	file, err := s.CreateSourceReady(
+	file, err := s.createReadyFile(
 		ctx, workspace.ID, ownerID, "deleting.pdf", "pdf", nil, "", 100,
 		"sources/deleting",
 	)

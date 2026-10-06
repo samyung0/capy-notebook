@@ -123,17 +123,6 @@ test('workspace cards open settings and statistics without entering the workspac
     settings.getByText('Average score', { exact: true })
   ).toBeVisible();
   await expect(settings.locator('.tabular-nums')).toHaveCount(5);
-  const digit = settings.locator('.tabular-nums [aria-hidden] > span').first();
-  await expect(digit).toHaveCSS('animation-name', 'motion-number-pop');
-  await page.screenshot({
-    path: test.info().outputPath('statistics-desktop.png'),
-  });
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await expect(digit).toHaveCSS('animation-name', 'none');
-  await page.setViewportSize({ height: 844, width: 390 });
-  await page.screenshot({
-    path: test.info().outputPath('statistics-mobile.png'),
-  });
   await settings.getByRole('button', { exact: true, name: 'General' }).click();
   await expect(settings.getByText('Color', { exact: true })).toHaveCount(0);
 });

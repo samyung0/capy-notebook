@@ -27,6 +27,20 @@ func TestRenderWorkspaceInvite(t *testing.T) {
 	}
 }
 
+func TestRenderOfficeMaintenance(t *testing.T) {
+	_, html, text, err := Render("office-maintenance", "en", map[string]any{
+		"Hours":    4,
+		"OpenURL":  "https://example.test/workspaces",
+		"StartsAt": "13 Oct 2026, 02:00 UTC",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(html+text, "{{.") || !strings.Contains(text, "from 13 Oct 2026, 02:00 UTC for about 4 hours") {
+		t.Fatalf("office maintenance text = %q", text)
+	}
+}
+
 func TestRenderUsesLocalizedCopy(t *testing.T) {
 	subject, html, _, err := Render("workspace-invite", "zh", map[string]string{
 		"InviteURL":      "https://example.test/invite",

@@ -74,7 +74,7 @@ export default function HelpAndLegal() {
   return (
     <Panel>
       <PageHeader subtitle={m.help_legal_hint()} title={m.nav_help_legal()} />
-      <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
+      <div className="flex-1 px-6 py-5">
         <div className="mx-auto flex max-w-4xl flex-col gap-8">
           <section>
             <h2 className="t-large-card-title mb-3">{m.nav_support()}</h2>

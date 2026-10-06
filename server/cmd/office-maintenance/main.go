@@ -1,8 +1,11 @@
 // Command office-maintenance runs the Office maintenance window
 // (openwiki/deployment-runbook.md, "Office maintenance window"):
 //
+//	office-maintenance announce --at <RFC3339> --hours <n> [--reminder]
+//	                                # tell every user (notification, plus email unless --reminder)
+//	office-maintenance drain [--limit N] # before the window, editing live: system republishes, deferred
 //	office-maintenance pause        # refuse Office editing; open rooms flush and go read-only
-//	office-maintenance publish-all  # publish every Office source with unpublished edits
+//	office-maintenance publish-all [--limit N] # publish every Office source with unpublished edits
 //	office-maintenance status       # the pause, unpublished files, work in flight; exit 1 until ready
 //	office-maintenance resume       # allow Office editing again
 //	office-maintenance seed-manifest # JSON lines of every seed a stored Office change was taken over
@@ -16,6 +19,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -27,13 +31,19 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-const usage = "usage: office-maintenance pause|publish-all|status|resume|seed-manifest"
+const usage = "usage: office-maintenance announce|drain|pause|publish-all|status|resume|seed-manifest"
 
 func main() {
-	if len(os.Args) != 2 {
+	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)
 	}
+	flags := flag.NewFlagSet(os.Args[1], flag.ExitOnError)
+	limit := flags.Int("limit", 0, "request at most N publications, oldest unpublished first (0: all)")
+	at := flags.String("at", "", "announce: the window's start, RFC 3339")
+	hours := flags.Int("hours", 0, "announce: the window's expected length in hours")
+	reminder := flags.Bool("reminder", false, "announce: the day-before reminder, in-app only")
+	_ = flags.Parse(os.Args[2:])
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		dsn = "postgres://capy:capy@localhost:5432/capy?sslmode=disable"
@@ -55,15 +65,27 @@ func main() {
 		} else {
 			fmt.Println("Office editing resumed")
 		}
-	case "publish-all":
+	case "announce":
+		startsAt, err := time.Parse(time.RFC3339, *at)
+		if err != nil || *hours <= 0 || !startsAt.After(time.Now()) {
+			log.Fatal("announce needs --at <future RFC 3339 time> and --hours <n>")
+		}
+		notified, emailed, err := st.AnnounceOfficeMaintenance(ctx, startsAt, *hours, !*reminder)
+		if err != nil {
+			log.Fatalf("announce: %v", err)
+		}
+		fmt.Printf("%d notified, %d emailed\n", notified, emailed)
+	case "publish-all", "drain":
 		registry, err := models.New(ctx, st.Pool())
 		if err != nil {
 			log.Fatalf("model registry: %v", err)
 		}
 		st.SetModelRegistry(registry)
-		published, err := st.PublishAllOfficeSources(ctx)
+		published, err := st.PublishAllOfficeSources(ctx, store.OfficePublishOptions{
+			Drain: os.Args[1] == "drain", Limit: *limit,
+		})
 		if err != nil {
-			log.Fatalf("publish-all: %v", err)
+			log.Fatalf("%s: %v", os.Args[1], err)
 		}
 		failed := 0
 		for _, p := range published {

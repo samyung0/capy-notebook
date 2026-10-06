@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "subject": "Capy Notebook 的 Office 编辑将因升级暂停",
+  "preview": "Office 文件将有几个小时只能查看。",
+  "content": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              {
+                "type": "bold"
+              },
+              {
+                "type": "textStyle",
+                "attrs": {
+                  "color": "#5e5cdb"
+                }
+              }
+            ],
+            "text": "Capy Notebook"
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "attrs": {
+          "level": 1
+        },
+        "content": [
+          {
+            "type": "text",
+            "text": "Office 计划升级"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "你好，"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "我们将升级 Office 编辑器，从 "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "StartsAt",
+              "label": "Start time",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": " 起约 "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "Hours",
+              "label": "Hours",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": " 小时内无法编辑 Word、PowerPoint 和 Excel 文件。"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "你仍可打开和查看所有文件，已保存的编辑会保留。Capy Notebook 的其他功能照常可用。"
+          }
+        ]
+      },
+      {
+        "type": "button",
+        "attrs": {
+          "text": "打开 Capy Notebook",
+          "url": "OpenURL",
+          "isUrlVariable": true,
+          "alignment": "left",
+          "variant": "filled",
+          "borderRadius": "smooth"
+        }
+      },
+      {
+        "type": "horizontalRule"
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "这是发送给所有 Capy Notebook 账户的服务通知。"
+          }
+        ]
+      }
+    ]
+  }
+}

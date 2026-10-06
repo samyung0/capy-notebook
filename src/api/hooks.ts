@@ -2117,10 +2117,27 @@ export function invalidateStudy(
 /** Mark as read (done), Stop tracking (removed), or untouched again (null). */
 export function useSetStudyItem(workspaceId: string) {
   const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (body: SetStudyItemReq) =>
+  return useMutation<void, Error, SetStudyItemReq, { prev?: StudySummary }>({
+    mutationFn: (body) =>
       api.put<void>(`/workspaces/${workspaceId}/study/items`, body),
-    onSuccess: () => invalidateStudy(qc, workspaceId),
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(qk.study(workspaceId), ctx.prev);
+    },
+    // The read toggle and row marks flip at once; the refetch settles it.
+    onMutate: async ({ fileId, materialId, state }) => {
+      await qc.cancelQueries({ queryKey: qk.study(workspaceId) });
+      const prev = qc.getQueryData<StudySummary>(qk.study(workspaceId));
+      qc.setQueryData<StudySummary>(qk.study(workspaceId), (summary) => {
+        if (!summary) return summary;
+        const items = summary.items.filter((it) =>
+          fileId ? it.fileId !== fileId : it.materialId !== materialId
+        );
+        if (state) items.push({ fileId, materialId, state });
+        return { ...summary, items };
+      });
+      return { prev };
+    },
+    onSettled: () => invalidateStudy(qc, workspaceId),
   });
 }
 

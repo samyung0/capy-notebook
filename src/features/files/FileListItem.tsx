@@ -86,9 +86,10 @@ export function FileListItem({
             content={toFileActionTarget(file)}
             display="hover"
             hoverClassName={cn(
-              'absolute top-1/2 right-1 -translate-y-1/2',
+              'absolute top-1/2 right-1 -translate-y-1/2 pl-0 [--scroll-fade-start:0px]',
               active && 'bg-surface-hover-bg'
             )}
+            hoverIconContainerClassName="p-1"
             leadingItems={study?.menuItems}
             onDeleted={() => onDeleted?.(file.id)}
             propertiesClassName="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2"

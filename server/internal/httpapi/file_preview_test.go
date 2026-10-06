@@ -42,8 +42,8 @@ func TestOfficeFileLinksPresignTheAuthorizedEditableSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.DeleteWorkspace(context.Background(), "u_owner", workspace.ID) })
-	file, err := st.CreateSourceReady(
-		ctx, workspace.ID, "u_owner", "lesson.pptx", "slides", nil, "", 100,
+	file, err := uploadSource(
+		ctx, st, workspace.ID, "u_owner", "lesson.pptx", 100,
 		"sources/lesson.pptx",
 	)
 	if err != nil {
@@ -84,8 +84,8 @@ func TestPDFPreviewUsesTheOriginalSourceBlob(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.DeleteWorkspace(context.Background(), "u_owner", workspace.ID) })
-	file, err := st.CreateSourceReady(
-		ctx, workspace.ID, "u_owner", "paper.pdf", "pdf", nil, "", 20,
+	file, err := uploadSource(
+		ctx, st, workspace.ID, "u_owner", "paper.pdf", 20,
 		"sources/paper.pdf",
 	)
 	if err != nil {
@@ -137,7 +137,7 @@ func TestSourceSessionViewTrimsStateToUnpublishedEdits(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.DeleteWorkspace(context.Background(), "u_owner", workspace.ID) })
-	file, err := st.CreateSourceReady(ctx, workspace.ID, "u_owner", "book.xlsx", "sheet", nil, "", 100, "sources/book.xlsx")
+	file, err := uploadSource(ctx, st, workspace.ID, "u_owner", "book.xlsx", 100, "sources/book.xlsx")
 	if err != nil {
 		t.Fatal(err)
 	}

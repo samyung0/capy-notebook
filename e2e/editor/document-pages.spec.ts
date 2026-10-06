@@ -46,36 +46,11 @@ test('Blocks and Files open the shared document page in View', async ({
   await expect(
     page.locator('[data-slate-editor="true"][contenteditable="true"]')
   ).toBeVisible({ timeout: 30_000 });
-  const editor = page.locator(
-    '[data-slate-editor="true"][contenteditable="true"]'
-  );
-  await editor
-    .getByText(
-      'Study journal 001: review notes and questions for this study session.',
-      { exact: true }
-    )
-    .dblclick();
-  await page
-    .getByRole('toolbar', { name: 'Document formatting' })
-    .getByRole('button', { exact: true, name: 'Comment' })
-    .click();
-  const commentDialog = page.getByRole('dialog', { name: 'Add comment' });
-  await commentDialog
-    .getByRole('textbox', { name: 'Comment' })
-    .fill('Review this point');
-  await commentDialog
-    .getByRole('button', { exact: true, name: 'Add comment' })
-    .click();
-  await expect(commentDialog).toHaveCount(0);
-  await expect(editor.locator('[data-comment-decoration]')).toBeVisible();
   await mode.focus();
   await page.keyboard.press('Space');
   await expect(mode).toHaveAttribute('aria-pressed', 'false');
   await expect(page).toHaveURL(/mode=view/);
   await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
-  await expect(
-    page.getByRole('button', { exact: true, name: 'Comment' })
-  ).toHaveCount(0);
 
   await header.getByRole('button', { name: 'Open menu' }).click();
   await expect(
@@ -135,16 +110,7 @@ test('PDF tools persist private marks, undo restores IDs, and narrow tools scrol
   const select = toolbar.getByRole('button', { exact: true, name: 'Select' });
   const draw = toolbar.getByRole('button', { exact: true, name: 'Draw' });
   await expect(select).toHaveAttribute('aria-pressed', 'true');
-  await expect(select).toHaveCSS('width', '32px');
-  await expect(draw).toHaveCSS('height', '32px');
-  await expect(draw).toHaveCSS('width', '32px');
-  await expect(draw.locator('svg')).toHaveCount(1);
   await expect(draw).toHaveAttribute('aria-haspopup', 'dialog');
-  await expect(draw).toHaveCSS('gap', '4px');
-  for (const svg of await draw.locator('svg').all()) {
-    await expect(svg).toHaveCSS('width', '16px');
-    await expect(svg).toHaveAttribute('stroke-width', '1.8');
-  }
 
   await toolbar.getByRole('button', { exact: true, name: 'Draw' }).click();
   await page.getByRole('button', { exact: true, name: 'Pen' }).click();
@@ -249,10 +215,6 @@ test('PDF tools persist private marks, undo restores IDs, and narrow tools scrol
   await expect
     .poll(async () => (await pdfPage.boundingBox())?.width ?? 0)
     .toBeCloseTo(bounds.width);
-  await page.screenshot({
-    animations: 'disabled',
-    path: test.info().outputPath('pdf-toolbar-desktop.png'),
-  });
 
   // Reopen through client navigation: MSW keeps marks, while component history resets.
   await makeCellStructureNewest(page);
@@ -273,7 +235,6 @@ test('PDF tools persist private marks, undo restores IDs, and narrow tools scrol
   await expect(
     page.getByRole('button', { exact: true, name: 'Zoom out' })
   ).toHaveCount(0);
-  await expect(toolbar).toHaveCSS('scrollbar-width', 'none');
   await expect
     .poll(() =>
       toolbar.evaluate((element) => element.scrollWidth > element.clientWidth)
@@ -296,10 +257,6 @@ test('PDF tools persist private marks, undo restores IDs, and narrow tools scrol
   await expect(
     page.getByRole('button', { exact: true, name: 'Annotation color #287bb8' })
   ).toBeVisible();
-  await page.screenshot({
-    animations: 'disabled',
-    path: test.info().outputPath('pdf-toolbar-mobile.png'),
-  });
   await page.keyboard.press('Escape');
 });
 

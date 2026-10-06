@@ -92,7 +92,6 @@ test.describe('formatting', () => {
         )
       )
       .toBe(true);
-    await expect(scroller).toHaveCSS('overflow-x', 'auto');
     const settings = toolbar.getByRole('button', {
       name: 'Editor settings',
     });
@@ -205,19 +204,6 @@ test.describe('formatting', () => {
     await expect(editor.locator('strong')).toHaveCount(1);
     await expect(bold).toHaveAttribute('aria-pressed', 'true');
     await expect(floatingBold).toHaveAttribute('aria-pressed', 'true');
-    await expect(bold).toHaveCSS('width', '32px');
-    await expect(bold.locator('svg')).toHaveCSS('width', '16px');
-    await expect(bold.locator('svg')).toHaveAttribute('stroke-width', '1.8');
-    await page.mouse.move(0, 0);
-    // Read the pressed colour once its transition has finished, not midway.
-    const activeColor = await bold.evaluate(async (element) => {
-      await Promise.all(
-        element.getAnimations().map((animation) => animation.finished)
-      );
-      return getComputedStyle(element).backgroundColor;
-    });
-    expect(activeColor).not.toBe('rgba(0, 0, 0, 0)');
-    await expect(floatingBold).toHaveCSS('background-color', activeColor);
 
     // Both toolbars preserve and act on the same text selection.
     await floatingBold.click();

@@ -1269,7 +1269,7 @@ Worth knowing before trusting a dashboard:
 
 Ingest enqueue used to be listed here as two fail-open billing holes and now
 fails closed instead, which is worth knowing because the failure is visible to
-users. `ingestJobPayload` returns an error — and `CreateSourceWithJob` /
+users. `ingestJobPayload` returns an error — and `CreateAgentFileOperation` /
 `completeSourceUpload` roll back their transaction — when there is no
 `actorUserId`, no registry, or no resolvable ingest/vision default. The worker
 does the same at claim time: `_account_allows_ingest` refuses a job with no

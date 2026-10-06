@@ -143,6 +143,7 @@ paraglide is used for internationalization. use paraglide functions to support i
 - Sometimes its ok to use arbitary values instead of canonical values for tailwind, e.g. w-[200px] instead of w-50, in order to prevent element size changing when switching themes.
 - DO NOT use template strings NOR variables just to hold classNames for tailwind, use `cn()` to inject conditional themes
 - DO NOT use chevron icon for navigational links icon, use navigationback and navigationForward
+- Do not make the tabs or title sticky/fixed to top unless told to do so.
 
 ## Final Remarks
 
