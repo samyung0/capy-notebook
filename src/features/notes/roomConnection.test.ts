@@ -6,6 +6,7 @@ import {
   roomReconnector,
   roomRefusal,
   sendCheckpointRequest,
+  socketOpen,
 } from './roomConnection';
 
 describe('roomRefusal', () => {
@@ -87,22 +88,19 @@ describe('roomReconnector', () => {
     expect(provider.connect).toHaveBeenCalledTimes(1);
   });
 
-  it('connects only once the old socket has closed', () => {
-    const socket = { status: 'connected' };
+  it('rejoins on the shared socket that stays open', () => {
     const provider = {
-      configuration: { websocketProvider: socket },
       connect: vi.fn(),
       disconnect: vi.fn(),
+      socketStatus: 'connected',
     };
     const reconnector = roomReconnector({
       onStuck: vi.fn(),
       provider: () => provider,
     });
+    expect(socketOpen(provider)).toBe(true);
     reconnector.refused();
-    vi.advanceTimersByTime(1000);
-    expect(provider.connect).not.toHaveBeenCalled();
-    socket.status = 'disconnected';
-    vi.advanceTimersByTime(250);
+    vi.advanceTimersByTime(500);
     expect(provider.connect).toHaveBeenCalledTimes(1);
   });
 

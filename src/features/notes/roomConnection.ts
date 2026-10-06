@@ -72,7 +72,6 @@ export function sendCheckpointRequest(
 
 const RETRY_BASE_MS = 500;
 const RETRY_MAX_MS = 30_000;
-const CLOSE_POLL_MS = 250;
 /** How long a lost room connection may keep failing before the editor says it
  * cannot save. */
 export const RECONNECT_GRACE_MS = 30_000;
@@ -84,10 +83,9 @@ interface ReconnectableProvider {
 
 /**
  * Keeps an editor's room connection alive. The server can close one room on
- * an open socket (token expiry, eviction, an access recheck); the provider then
- * only emits `close`, never `disconnect`, and stays detached until its idle
- * check drops the socket about 30 s later. This reconnects at once instead,
- * fetching a fresh token, and backs off while refusals keep coming.
+ * the tab's shared socket (token expiry, eviction, an access recheck); the
+ * provider then only emits `close`, never `disconnect`. This rejoins on that
+ * socket with a fresh token, and backs off while refusals keep coming.
  */
 export function roomReconnector({
   provider,
@@ -111,14 +109,10 @@ export function roomReconnector({
       else watch();
     }, RECONNECT_GRACE_MS);
   };
-  // `connect()` is a no-op until the old socket has finished closing, so it
-  // waits for that instead of stranding the provider disconnected.
-  const connectWhenClosed = (current: ReconnectableProvider) => {
+  const rejoin = (current: ReconnectableProvider) => {
     retry = undefined;
     if (disposed || provider() !== current) return;
-    if (socketOpen(current))
-      retry = setTimeout(() => connectWhenClosed(current), CLOSE_POLL_MS);
-    else void current.connect();
+    void current.connect();
   };
   const reconnect = () => {
     const current = provider();
@@ -129,7 +123,7 @@ export function roomReconnector({
     const delay =
       Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** attempts++) *
       (0.5 + Math.random());
-    retry = setTimeout(() => connectWhenClosed(current), delay);
+    retry = setTimeout(() => rejoin(current), delay);
   };
   return {
     /** The provider's `close`. A socket close reconnects by itself. */
@@ -157,14 +151,10 @@ export function roomReconnector({
 
 export type RoomReconnector = ReturnType<typeof roomReconnector>;
 
-/** Whether a Hocuspocus provider's shared socket is still open, i.e. the
- * server closed only this room. */
+/** Whether the room provider's shared socket is still open, i.e. the server
+ * closed only this room. */
 export function socketOpen(provider: unknown): boolean {
   return (
-    (
-      provider as {
-        configuration?: { websocketProvider?: { status?: string } };
-      } | null
-    )?.configuration?.websocketProvider?.status === 'connected'
+    (provider as { socketStatus?: string } | null)?.socketStatus === 'connected'
   );
 }

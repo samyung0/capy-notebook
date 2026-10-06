@@ -1,7 +1,7 @@
-import { HocuspocusProvider } from '@hocuspocus/provider';
 import type * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
 import type { SourceSession } from '@/api/types';
+import { RoomProvider } from '@/features/collaboration/roomProvider';
 
 /** Options for a source room's Y.Doc. An Office document skips Yjs's
  * after-transaction formatting cleanup (patches/yjs@13.6.31.patch), which
@@ -11,7 +11,7 @@ export function sourceDocOptions(format: SourceSession['format']) {
   return format === 'text' ? {} : { meta: { formattingCleanup: false } };
 }
 
-/** The slice of HocuspocusProvider that source editing drives. Under MSW an
+/** The slice of the room provider that source editing drives. Under MSW an
  * in-page provider registered by the mocks stands in for the sidecar. */
 export interface SourceProvider {
   connect(): unknown;
@@ -21,6 +21,8 @@ export interface SourceProvider {
   hasUnsyncedChanges: boolean;
   isAuthenticated: boolean;
   sendStateless(payload: string): void;
+  /** The shared socket: still 'connected' when the server closed only this room. */
+  socketStatus?: string;
 }
 
 export interface SourceProviderConfig {
@@ -67,7 +69,7 @@ export function createSourceProvider(
   // a refusal before authenticating again does.
   let retry: ReturnType<typeof setTimeout> | undefined;
   let retried = false;
-  const provider: HocuspocusProvider = new HocuspocusProvider({
+  const provider: RoomProvider = new RoomProvider({
     ...config,
     onAuthenticated: () => {
       retried = false;
@@ -79,9 +81,26 @@ export function createSourceProvider(
       }
       retried = true;
       provider.disconnect();
-      retry = setTimeout(() => void provider.connect(), PUBLISHING_RETRY_MS);
+      retry = setTimeout(() => provider.connect(), PUBLISHING_RETRY_MS);
     },
-    onDestroy: () => clearTimeout(retry),
   });
-  return provider;
+  provider.connect();
+  return {
+    connect: () => provider.connect(),
+    destroy: () => {
+      clearTimeout(retry);
+      provider.destroy();
+    },
+    disconnect: () => provider.disconnect(),
+    get hasUnsyncedChanges() {
+      return provider.hasUnsyncedChanges;
+    },
+    get isAuthenticated() {
+      return provider.isAuthenticated;
+    },
+    sendStateless: (payload) => provider.sendStateless(payload),
+    get socketStatus() {
+      return provider.socketStatus;
+    },
+  };
 }

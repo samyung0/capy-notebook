@@ -18,10 +18,11 @@ const { providers } = vi.hoisted(() => ({
   }[],
 }));
 vi.mock('@/api/auth', () => ({ USE_MSW: false }));
-vi.mock('@hocuspocus/provider', () => ({
-  HocuspocusProvider: class {
+vi.mock('@/features/collaboration/roomProvider', () => ({
+  RoomProvider: class {
     readonly config: Handlers;
     readonly connect = vi.fn();
+    readonly destroy = vi.fn();
     readonly disconnect = vi.fn();
     constructor(config: Handlers) {
       this.config = config;
@@ -54,8 +55,10 @@ it('reconnects once, silently, when a publication refuses the room, and reports 
   provider.config.onAuthenticationFailed(locked);
   expect(onAuthenticationFailed).not.toHaveBeenCalled();
   expect(provider.disconnect).toHaveBeenCalledOnce();
-  vi.advanceTimersByTime(3000);
+  // Connected once at creation, then again after the retry delay.
   expect(provider.connect).toHaveBeenCalledOnce();
+  vi.advanceTimersByTime(3000);
+  expect(provider.connect).toHaveBeenCalledTimes(2);
   provider.config.onAuthenticationFailed(locked);
   expect(onAuthenticationFailed).toHaveBeenCalledWith(locked);
   // Once authenticated, a later publication gets its own silent retry.

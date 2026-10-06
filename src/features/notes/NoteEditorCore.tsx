@@ -38,6 +38,7 @@ import type {
 } from '@/api/types';
 import { FloatingBarContext } from '@/components/ui/floatingBarContext';
 import { userToast } from '@/components/ui/userToast';
+import '@/features/collaboration/platePlugin';
 import { FileLoading } from '@/features/files/FileStates';
 import {
   createMaterialDocument,
@@ -125,7 +126,7 @@ function roomProvider(editor: PlateEditor) {
   return editor
     .getOptions(YjsPlugin)
     ._providers.find((candidate) =>
-      USE_MSW ? candidate.type === 'mock' : candidate.type === 'hocuspocus'
+      USE_MSW ? candidate.type === 'mock' : candidate.type === 'capy'
     ) as StatelessProviderWrapper | undefined;
 }
 
@@ -845,7 +846,7 @@ export function NoteEditorCore({
                   },
                   type: 'mock',
                 } as never)
-              : {
+              : ({
                   options: {
                     name: collaborationToken.room,
                     onAuthenticationFailed: ({
@@ -913,8 +914,9 @@ export function NoteEditorCore({
                     },
                     url: collaborationToken.url,
                   },
-                  type: 'hocuspocus' as const,
-                },
+                  // The capy-sync room provider (features/collaboration/platePlugin).
+                  type: 'capy',
+                } as never),
           ],
           userId: currentUserId,
           ydoc,
