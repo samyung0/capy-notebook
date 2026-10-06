@@ -11,6 +11,7 @@ import {
   type AssetOperation,
   assetChanges,
   listenAssetOperations,
+  mediaPurpose,
   noteAssetsPlugin,
   swapAssetId,
 } from './noteAssets';
@@ -29,24 +30,41 @@ const paragraph = (text: string) => ({
 
 describe('assetChanges', () => {
   it('nets inserted, removed and re-pointed asset ids', () => {
-    expect(
-      assetChanges([
-        {
-          node: { children: [image('a'), paragraph('x')], type: 'column' },
-          type: 'insert_node',
-        },
-        { node: image('b'), type: 'remove_node' },
-        // Moved: removed and inserted again.
-        { node: image('c'), type: 'remove_node' },
-        { node: image('c'), type: 'insert_node' },
-        {
-          newProperties: { assetId: 'e' },
-          properties: { assetId: 'd' },
-          type: 'set_node',
-        },
-        { type: 'insert_text' },
-      ])
-    ).toEqual({ added: ['a', 'e'], removed: ['b', 'd'] });
+    const { added, nodes, removed } = assetChanges([
+      {
+        node: { children: [image('a'), paragraph('x')], type: 'column' },
+        type: 'insert_node',
+      },
+      { node: image('b'), type: 'remove_node' },
+      // Moved: removed and inserted again.
+      { node: image('c'), type: 'remove_node' },
+      { node: image('c'), type: 'insert_node' },
+      {
+        newProperties: { assetId: 'e' },
+        properties: { assetId: 'd' },
+        type: 'set_node',
+      },
+      { type: 'insert_text' },
+    ]);
+    expect({ added, removed }).toEqual({
+      added: ['a', 'e'],
+      removed: ['b', 'd'],
+    });
+    // The removed node carries what a re-upload needs.
+    expect(nodes.get('b')).toEqual(image('b'));
+  });
+});
+
+describe('mediaPurpose', () => {
+  it('maps a node to the purpose its asset was stored under', () => {
+    expect(mediaPurpose({ type: 'img' })).toBe('image');
+    expect(mediaPurpose({ type: 'audio' })).toBe('audio');
+    expect(mediaPurpose({ contentType: 'application/pdf', type: 'file' })).toBe(
+      'pdf'
+    );
+    expect(mediaPurpose({ contentType: 'text/csv', type: 'file' })).toBe(
+      'file'
+    );
   });
 });
 

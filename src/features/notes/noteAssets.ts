@@ -6,6 +6,7 @@ import {
   uploadEditorAsset,
 } from '@/api/editorAssets';
 import { showErrorToast } from '@/api/queryClient';
+import { shownAssetUrl } from '@/features/materials/MediaAssetView';
 import { deferStorageRefusal } from '@/lib/errors';
 import { dropKeptAssets, keepAsset, keptAsset } from '@/lib/localDb';
 
@@ -34,15 +35,26 @@ const assetIdOf = (value: unknown) => {
   return typeof id === 'string' && id ? id : undefined;
 };
 
+/** What a removed media node says about its asset, for uploading it again. */
+export interface RemovedMedia {
+  contentType?: string;
+  name?: string;
+  type?: string;
+}
+
 /** Asset ids a run of operations adds to and removes from the document, net:
- * one removed and inserted again (a move, cut and paste) is in neither. */
+ * one removed and inserted again (a move, cut and paste) is in neither.
+ * `nodes` holds the media node last seen for each id. */
 export function assetChanges(operations: readonly AssetOperation[]) {
   const counts = new Map<string, number>();
+  const nodes = new Map<string, RemovedMedia>();
   const count = (id: string | undefined, by: number) => {
     if (id) counts.set(id, (counts.get(id) ?? 0) + by);
   };
   const visit = (node: unknown, by: number) => {
-    count(assetIdOf(node), by);
+    const id = assetIdOf(node);
+    if (id) nodes.set(id, node as RemovedMedia);
+    count(id, by);
     const children = (node as { children?: unknown } | null)?.children;
     if (Array.isArray(children)) for (const child of children) visit(child, by);
   };
@@ -60,7 +72,16 @@ export function assetChanges(operations: readonly AssetOperation[]) {
     if (net > 0) added.push(id);
     else if (net < 0) removed.push(id);
   }
-  return { added, removed };
+  return { added, nodes, removed };
+}
+
+/** The upload purpose a media node's asset was stored under. */
+export function mediaPurpose({ contentType, type }: RemovedMedia) {
+  if (type === 'img') return 'image' as const;
+  if (type === 'audio') return 'audio' as const;
+  return contentType === 'application/pdf'
+    ? ('pdf' as const)
+    : ('file' as const);
 }
 
 const listeners = new WeakMap<object, (operation: AssetOperation) => void>();
@@ -189,25 +210,29 @@ export function watchNoteAssets(editor: SlateEditor, materialId: string) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
 
-  // Right away: the save that follows the edit deletes the asset.
-  const keep = (assetId: string) => {
+  // Right away: the save that follows the edit deletes the asset. An image
+  // this tab has shown is read back from the browser's cache under the URL it
+  // was shown with (no new link, no download); anything else, such as a PDF
+  // or audio that was never fully loaded, is fetched by a fresh link.
+  const keep = (assetId: string, node: RemovedMedia | undefined) => {
     const work = (async () => {
-      const asset = await resolveEditorAsset(assetId);
-      const response = await fetch(asset.url);
+      const shown = shownAssetUrl(assetId);
+      const asset =
+        shown && node?.name ? undefined : await resolveEditorAsset(assetId);
+      const response = await fetch(shown ?? asset?.url ?? '', {
+        cache: 'force-cache',
+      });
       if (!response.ok)
         throw new Error(`Asset download failed: ${response.status}`);
-      const blob = (await response.blob()).slice(
-        0,
-        undefined,
-        asset.contentType
-      );
+      const contentType = node?.contentType ?? asset?.contentType;
+      const blob = (await response.blob()).slice(0, undefined, contentType);
       await session.ready;
       if (disposed) return;
       await keepAsset({
         assetId,
         blob,
-        name: asset.name,
-        purpose: asset.purpose,
+        name: node?.name ?? asset?.name ?? assetId,
+        purpose: asset?.purpose ?? mediaPurpose(node ?? {}),
         savedAt: Date.now(),
         session: session.id,
       });
@@ -248,9 +273,9 @@ export function watchNoteAssets(editor: SlateEditor, materialId: string) {
 
   const flush = () => {
     timer = undefined;
-    const { added, removed } = assetChanges(operations);
+    const { added, nodes, removed } = assetChanges(operations);
     operations = [];
-    for (const id of removed) keep(id);
+    for (const id of removed) keep(id, nodes.get(id));
     if (!added.length) return;
     adopt(added).catch((error) => {
       // Offline, the banner already says so. No retry: the node stays and

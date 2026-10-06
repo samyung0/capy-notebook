@@ -224,9 +224,14 @@ origin is the editor's `localOrigin`, or its `undoManager` (undo and redo reach
 Slate as Yjs events).
 
 - A local change that removes media nodes (delete, cut, undo of an insert,
-  replace) resolves each removed asset at once, fetches its bytes and keeps
-  them in IndexedDB (`keptAssets` in `src/lib/localDb.ts`, keyed by session and
-  asset id, with name, purpose and content type). A session is one editor
+  replace) keeps each removed asset's bytes in IndexedDB at once
+  (`keptAssets` in `src/lib/localDb.ts`, keyed by session and asset id, with
+  name, purpose and content type taken from the node). An image this tab has
+  shown is read back from the browser cache under the URL it was shown with
+  (`shownAssetUrl` in `MediaAssetView.tsx`; images load with
+  `crossOrigin="anonymous"` so `fetch(url, { cache: 'force-cache' })` can read
+  the cached response), so no new link or download is needed; anything never
+  shown in full (a PDF, audio) is resolved and downloaded. A session is one editor
   mount: its rows go when it unmounts, and each session holds a Web Lock named
   by its id, so the first session of a page load deletes the rows of sessions
   no tab holds (`navigator.locks.query()`). The store keeps at most 500 MB and

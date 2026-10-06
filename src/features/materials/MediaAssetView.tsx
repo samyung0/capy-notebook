@@ -20,6 +20,12 @@ type AssetState =
   | { status: 'ready'; url: string; name: string; contentType: string }
   | { status: 'error'; kind: 'missing' | 'failed' };
 
+// The URL each asset was last shown with in this tab. The browser cache keys
+// the shown bytes by it, so a removed note image can be kept without a new
+// link or download (features/notes/noteAssets.ts).
+const shownUrls = new Map<string, string>();
+export const shownAssetUrl = (assetId: string) => shownUrls.get(assetId);
+
 export function useResolvedAsset(assetId: string | undefined) {
   const [state, setState] = useState<AssetState>({ status: 'loading' });
   const [generation, setGeneration] = useState(0);
@@ -32,14 +38,15 @@ export function useResolvedAsset(assetId: string | undefined) {
     }
     setState({ status: 'loading' });
     void resolveEditorAsset(assetId, controller.signal)
-      .then((asset) =>
+      .then((asset) => {
+        shownUrls.set(assetId, asset.url);
         setState({
           contentType: asset.contentType,
           name: asset.name,
           status: 'ready',
           url: asset.url,
-        })
-      )
+        });
+      })
       .catch(() => {
         if (!controller.signal.aborted) {
           setState({
@@ -130,6 +137,9 @@ export function MediaAssetView({
               'block h-auto rounded-card',
               element.width || fill ? 'w-full' : 'max-w-full'
             )}
+            // A CORS request, so its cached response can be read back by
+            // fetch when the image is removed (features/notes/noteAssets.ts).
+            crossOrigin="anonymous"
             onLoad={(event) => {
               const image = event.currentTarget;
               if (!image.offsetWidth) setFill(true);
@@ -154,6 +164,9 @@ export function MediaAssetView({
               // No intrinsic size: take the height, width from the viewBox.
               fill && 'h-full w-auto'
             )}
+            // A CORS request, so its cached response can be read back by
+            // fetch when the image is removed (features/notes/noteAssets.ts).
+            crossOrigin="anonymous"
             src={asset.url}
           />
         </MediaPreview>
