@@ -180,6 +180,11 @@ check); it applies at the first promotion.
   changes. The table ops apply as plain edits in suggesting mode (unused in
   Capy). Notes in
   `capy-docx-review-harnesses/2026-10-05-office-batch/docx-table-menu/`.
+- **DOCX Enter racing a peer's paragraph change** (decided 2026-10-06, fork):
+  Enter at a paragraph's end inserts the new mark after the existing one, so
+  a peer's concurrent pPr change stays on the text instead of landing on the
+  new empty paragraph. Changes how Enter is stored: matrix plus two-peer work.
+  Found by docx-enter-copy (`capy-docx-review-harnesses/2026-10-05-office-batch/docx-enter-copy/`).
 - **Unplaceable sync step 2 (lowest priority).** A client whose own sync step 2
   the room cannot place (it holds content out of order) is closed after 2 tries
   (`resyncUnheld`, `collaboration/src/officeRoots.ts`) and then reconnects
