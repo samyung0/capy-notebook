@@ -120,6 +120,7 @@ export function useOfficeRuntime({
     initializedFrame.current = -1;
     setFrameLoaded(false);
     setFrameGeneration((value) => value + 1);
+    setPresenting(false);
     setViewBytes(null);
     setAnalysis(null);
     setMode('view');
@@ -274,6 +275,7 @@ export function useOfficeRuntime({
     if (sourceDocument.current && sourceDocument.current !== doc) {
       setFrameLoaded(false);
       setFrameGeneration((value) => value + 1);
+      setPresenting(false);
       setAnalysis(null);
       setError(null);
     }
@@ -287,6 +289,7 @@ export function useOfficeRuntime({
     revisionRef.current = revision;
     setFrameLoaded(false);
     setFrameGeneration((value) => value + 1);
+    setPresenting(false);
     setViewBytes(null);
     setAnalysis(null);
     setError(config.error);
@@ -297,6 +300,7 @@ export function useOfficeRuntime({
     initializedFrame.current = -1;
     setFrameLoaded(false);
     setFrameGeneration((value) => value + 1);
+    setPresenting(false);
     setViewBytes(null);
     setAnalysis(null);
     setError(config.error);
@@ -740,6 +744,7 @@ export function useOfficeRuntime({
       initializedFrame.current = -1;
       setFrameLoaded(false);
       setFrameGeneration((value) => value + 1);
+      setPresenting(false);
       // The new frame reports its own: an edit frame's ready also sets one.
       setAnalysis(null);
       setMode(next);
