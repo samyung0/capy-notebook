@@ -4,6 +4,10 @@
 //! bases, uploads, engine pools) and reaches the room layer through [`Rooms`],
 //! which `crates/server` implements. Contract: DESIGN.md section 6.3.
 
+#![cfg_attr(test, allow(clippy::unwrap_used))]
+
+pub mod engine;
+
 use std::future::Future;
 use std::pin::Pin;
 
