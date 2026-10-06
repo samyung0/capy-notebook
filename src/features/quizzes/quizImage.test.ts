@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   fitSize,
+  hasAlpha,
   isAnimatedGif,
   QUIZ_IMAGE_MAX_BYTES,
   shrinkPlan,
@@ -50,5 +51,16 @@ describe('isAnimatedGif', () => {
   it('counts frames', () => {
     expect(isAnimatedGif(gif(1))).toBe(false);
     expect(isAnimatedGif(gif(3))).toBe(true);
+  });
+});
+
+describe('hasAlpha', () => {
+  it('finds any pixel that is not fully opaque', () => {
+    expect(hasAlpha(new Uint8ClampedArray([1, 2, 3, 255, 4, 5, 6, 255]))).toBe(
+      false
+    );
+    expect(hasAlpha(new Uint8ClampedArray([1, 2, 3, 255, 4, 5, 6, 254]))).toBe(
+      true
+    );
   });
 });

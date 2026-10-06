@@ -6,6 +6,11 @@ export const QUIZ_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_SIDE = 2000;
 const QUALITIES = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4];
 const EXTENSION = /\.[^.]*$/;
+const EXTENSIONS: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+};
 const SHRINKABLE = new Set([
   'image/avif',
   'image/gif',
@@ -42,6 +47,12 @@ export function shrinkPlan(
   return animated || !SHRINKABLE.has(file.type) ? 'too_large' : 'shrink';
 }
 
+/** True when any pixel is not fully opaque (RGBA bytes). */
+export function hasAlpha(rgba: Uint8ClampedArray) {
+  for (let i = 3; i < rgba.length; i += 4) if (rgba[i] < 255) return true;
+  return false;
+}
+
 /** Fits the long side within maxSide without upscaling. */
 export function fitSize(width: number, height: number, maxSide = MAX_SIDE) {
   const scale = Math.min(1, maxSide / Math.max(width, height));
@@ -52,7 +63,8 @@ export function fitSize(width: number, height: number, maxSide = MAX_SIDE) {
 }
 
 /** Returns the image to upload into a quiz: the file itself when it fits,
- * otherwise a resized WebP (transparency kept) at falling quality. Throws a
+ * otherwise a resized WebP (transparency kept) at falling quality, or JPEG
+ * (opaque) or PNG (transparent) where WebP cannot be encoded. Throws a
  * CopyError naming the 2 MB limit when nothing fits. */
 export async function fitQuizImage(file: File): Promise<File> {
   const animated =
@@ -69,21 +81,27 @@ export async function fitQuizImage(file: File): Promise<File> {
       const context = canvas.getContext('2d');
       if (!context) throw new Error('2d canvas is unavailable');
       context.drawImage(bitmap, 0, 0, width, height);
-      for (const quality of QUALITIES) {
-        const blob = await canvas.convertToBlob({
-          quality,
-          type: 'image/webp',
-        });
-        // A browser without a WebP encoder returns PNG and ignores quality.
-        const ext = blob.type === 'image/webp' ? 'webp' : 'png';
-        if (blob.size <= QUIZ_IMAGE_MAX_BYTES)
-          return new File(
-            [blob],
-            `${file.name.replace(EXTENSION, '')}.${ext}`,
-            { type: blob.type }
-          );
-        if (ext !== 'webp') break;
-      }
+      const encodeWithin = async (type: string) => {
+        for (const quality of QUALITIES) {
+          const blob = await canvas.convertToBlob({ quality, type });
+          // A browser without the encoder returns PNG and ignores quality.
+          if (blob.type !== type) return null;
+          if (blob.size <= QUIZ_IMAGE_MAX_BYTES) return blob;
+        }
+        return null;
+      };
+      // Safari has no WebP encoder: JPEG for opaque images, PNG keeps alpha.
+      const blob =
+        (await encodeWithin('image/webp')) ??
+        (hasAlpha(context.getImageData(0, 0, width, height).data)
+          ? await canvas.convertToBlob({ type: 'image/png' })
+          : await encodeWithin('image/jpeg'));
+      if (blob && blob.size <= QUIZ_IMAGE_MAX_BYTES)
+        return new File(
+          [blob],
+          `${file.name.replace(EXTENSION, '')}.${EXTENSIONS[blob.type] ?? 'png'}`,
+          { type: blob.type }
+        );
     } finally {
       bitmap.close();
     }
