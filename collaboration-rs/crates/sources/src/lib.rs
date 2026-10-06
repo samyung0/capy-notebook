@@ -15,6 +15,7 @@ pub mod gateway;
 pub mod handoff;
 pub mod refresh;
 pub mod schedule;
+pub mod seed_check;
 pub mod store;
 pub mod text;
 

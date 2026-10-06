@@ -39,7 +39,9 @@ yrs.workspace = true
 rlimit = "0.10"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "test-util"] }
+axum = "0.8"
+tokio = { version = "1", features = ["net", "rt-multi-thread", "test-util"] }
+tokio-postgres = { version = "0.7", features = ["with-serde_json-1"] }
 
 [lints]
 workspace = true
