@@ -13,8 +13,17 @@ interface PersistedCheckpoint {
   version: number;
 }
 
+/**
+ * Answers the receipts a committed store covers: the ones it claimed when it
+ * started, and, when no writer's update reached the room after its snapshot
+ * (no contributor marker is left once the store cleared its own), the ones
+ * registered while it ran. Their edits reached the room before them, so they
+ * are in the snapshot, and nothing would schedule another store to answer
+ * them. Otherwise the store the newer update scheduled claims them. Call it
+ * after clearDocumentContributors.
+ */
 export function broadcastCheckpointPersisted(
-  document: StatelessBroadcaster,
+  document: Y.Doc & StatelessBroadcaster,
   pending: Set<string> | undefined,
   claimed: readonly string[],
   materialId: string,
@@ -23,6 +32,10 @@ export function broadcastCheckpointPersisted(
   const checkpointIds = pending
     ? claimed.filter((id) => pending.delete(id))
     : [];
+  if (pending && !hasPendingContributors(document)) {
+    checkpointIds.push(...pending);
+    pending.clear();
+  }
   document.broadcastStateless(
     JSON.stringify({
       checkpointIds,

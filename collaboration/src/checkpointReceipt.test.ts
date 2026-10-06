@@ -9,19 +9,26 @@ import {
 import { attachDocumentContributorTracker } from './contributors.js';
 
 describe('checkpoint persistence receipts', () => {
+  const persisted = {
+    limitCode: 'document_depth_exceeded' as const,
+    metrics: { contentBytes: 123, maxDepth: 17, nodeCount: 42 },
+    version: 9,
+  };
+  // A live room: a Y.Doc that also broadcasts.
+  const room = () =>
+    Object.assign(new Y.Doc(), { broadcastStateless: vi.fn() });
+
   it('broadcasts a retry receipt for only still-pending claimed IDs', () => {
     const pending = new Set(['claimed', 'queued-later']);
-    const document = { broadcastStateless: vi.fn() };
+    const document = room();
+    // A writer's update arrived after the stored snapshot: its marker waits.
+    document.getMap('__capy_pending_contributors').set('writer', {});
     broadcastCheckpointPersisted(
       document,
       pending,
       ['claimed', 'already-settled'],
       'mat_1',
-      {
-        limitCode: 'document_depth_exceeded',
-        metrics: { contentBytes: 123, maxDepth: 17, nodeCount: 42 },
-        version: 9,
-      }
+      persisted
     );
 
     expect([...pending]).toEqual(['queued-later']);
@@ -33,6 +40,27 @@ describe('checkpoint persistence receipts', () => {
       type: 'checkpoint-persisted',
       yjsVersion: 9,
     });
+  });
+
+  // A request that arrives while the room's store runs is not in that
+  // store's claimed set. With no update after the stored snapshot nothing
+  // schedules another store, so this store answers it: the edits it asks
+  // about reached the room before it and are in the snapshot.
+  it('answers requests registered during the store when no update followed', () => {
+    const pending = new Set(['claimed', 'mid-save']);
+    const document = room();
+    broadcastCheckpointPersisted(
+      document,
+      pending,
+      ['claimed'],
+      'mat_1',
+      persisted
+    );
+
+    expect(pending.size).toBe(0);
+    expect(
+      JSON.parse(document.broadcastStateless.mock.calls[0][0]).checkpointIds
+    ).toEqual(['claimed', 'mid-save']);
   });
 });
 
