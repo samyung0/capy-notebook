@@ -25,6 +25,7 @@ import { toastDraftsLost, toastSaveUndone } from '@/features/notes/saveFailure';
 import { m } from '@/i18n';
 import { SOURCE_STATE_MAX_BYTES } from '@/lib/const';
 import {
+  applyDrafts,
   type DraftRecorder,
   deleteDrafts,
   draftKey as documentDraftKey,
@@ -396,8 +397,8 @@ export function useSourceSession(
       // read stays for the next open.
       if (opened === 'dropped') toastDraftsLost();
       recoveryDrafts = null;
-      for (const restored of restoredDrafts)
-        Y.applyUpdate(shared, restored.data, RESTORE_ORIGIN);
+      // One update for all of them: a long session leaves a row per edit.
+      applyDrafts(shared, restoredDrafts, RESTORE_ORIGIN);
       if (restoredDrafts.length) setDirty(true);
       let initialToken: SourceCollaborationToken | null = credentials;
       const pending = new Map<string, number>();
