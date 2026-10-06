@@ -1,5 +1,6 @@
 import type { IconSet } from '@betteroffice/pptx-react';
 import {
+  ALargeSmallIcon,
   AlignBottomIcon,
   AlignTopIcon,
   AlignVerticalCenterIcon,
@@ -11,6 +12,7 @@ import {
   ChevronDownIcon,
   Cursor01Icon,
   Download01Icon,
+  FullScreenIcon,
   GeometricShapes01Icon,
   HighlighterIcon,
   Image01Icon,
@@ -24,11 +26,15 @@ import {
   ListIndentIncreaseIcon,
   MinusSignIcon,
   MoreHorizontalIcon,
+  MoreVerticalIcon,
   Note01Icon,
   PaintBucketIcon,
+  PauseIcon,
   PencilEdit01Icon,
+  PlayIcon,
   PlusSignIcon,
   Redo03Icon,
+  RefreshIcon,
   TextAlignCenterIcon,
   TextAlignJustifyIcon,
   TextAlignLeftIcon,
@@ -46,9 +52,9 @@ import type { ComponentProps } from 'react';
 import { HugeIcon } from '@/components/ui/HugeIcon';
 
 /**
- * Every icon pptx-react's toolbar and presenter draw, from Capy's set (the
- * same icon as docxIcons.tsx for the same command, and the viewer pager's
- * arrows for the presenter's). Imported one by one so the rest of
+ * Every icon pptx-react's toolbar, show and presenter window draw, from
+ * Capy's set (the same icon as docxIcons.tsx for the same command, and the
+ * viewer pager's arrows for the presenter's). Imported one by one so the rest of
  * Hugeicons stays out of the runtime bundle.
  */
 const ICONS: Record<keyof IconSet, IconSvgElement | readonly string[]> = {
@@ -90,8 +96,14 @@ const ICONS: Record<keyof IconSet, IconSvgElement | readonly string[]> = {
   notes: Note01Icon,
   numberedList: LeftToRightListNumberIcon,
   presentationExit: Cancel01Icon,
+  presentationFullscreen: FullScreenIcon,
+  presentationMore: MoreVerticalIcon,
   presentationNext: ArrowRight04Icon,
   presentationPrevious: ArrowLeft04Icon,
+  presenterNotesSize: ALargeSmallIcon,
+  presenterPause: PauseIcon,
+  presenterReset: RefreshIcon,
+  presenterResume: PlayIcon,
   redo: Redo03Icon,
   remove: MinusSignIcon,
   save: Download01Icon,

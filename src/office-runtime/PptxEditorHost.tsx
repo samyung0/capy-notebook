@@ -10,6 +10,7 @@ import type {
   OfficeLocale,
 } from '@/features/files/officeProtocol';
 import { m } from '@/i18n';
+import { PRESENTER_VIEW, type RuntimeNotesWindow } from './notesWindow';
 import type {
   OfficeCollaboration,
   OfficeExporter,
@@ -21,7 +22,12 @@ import { pptxIcons } from './pptxIcons';
 import { pptxStrings, presentAction } from './pptxMenus';
 import { renderSlides } from './pptxRender';
 import type { OfficeMenuReporter, OfficeRenderer } from './runtimeMenus';
-import { readViewToggle, writeViewToggle } from './viewToggles';
+import {
+  readNotesSize,
+  readViewToggle,
+  writeNotesSize,
+  writeViewToggle,
+} from './viewToggles';
 import './pptx-runtime.css';
 
 export function PptxEditorHost({
@@ -36,8 +42,10 @@ export function PptxEditorHost({
   onError,
   onMenus,
   onPendingChange,
+  onPresentingChange,
   onRenderer,
   onSave,
+  presenter,
   readOnly,
 }: {
   bytes: Uint8Array;
@@ -53,8 +61,11 @@ export function PptxEditorHost({
   onError: (error: Error) => void;
   onMenus: OfficeMenuReporter;
   onPendingChange: (pending: boolean) => void;
+  onPresentingChange: (presenting: boolean) => void;
   onRenderer: (renderer: OfficeRenderer | null) => void;
   onSave: () => void;
+  /** Presenter view's notes window, which Capy opens. */
+  presenter: RuntimeNotesWindow;
   /** Recovery: selection and copy only. */
   readOnly: boolean;
 }) {
@@ -62,8 +73,9 @@ export function PptxEditorHost({
   const [commandState, setCommandState] = useState<PptxCommandState | null>(
     null
   );
-  // Read once: the editor only takes it as its starting state.
+  // Read once: the editor only takes them as its starting state.
   const [speakerNotes] = useState(() => readViewToggle('speakerNotes'));
+  const [notesSize] = useState(readNotesSize);
   // The header's menus and Present run the editor's commands; Insert › Image
   // arrives with the file Capy's picker chose.
   useEffect(() => {
@@ -71,9 +83,15 @@ export function PptxEditorHost({
     onMenus({
       actions: [presentAction(locale)],
       menus: editorMenus(commandState, locale),
-      run: (id, _value, file) => {
+      run: (id, value, file) => {
         const api = apiRef.current;
         if (!api) return;
+        // Capy opened the notes window: the show starts (or keeps going) here.
+        if (id === PRESENTER_VIEW) {
+          presenter.expect(value ?? '');
+          api.runCommand('view.present');
+          return;
+        }
         if (file) {
           if (id === 'insert.image')
             void file
@@ -88,7 +106,7 @@ export function PptxEditorHost({
         api.runCommand(...splitCommand(id));
       },
     });
-  }, [commandState, locale, onMenus]);
+  }, [commandState, locale, onMenus, presenter]);
   useEffect(() => () => onMenus(null), [onMenus]);
   // Capy prints the slides and saves the PNG: the sandboxed frame can do neither.
   useEffect(() => {
@@ -173,12 +191,14 @@ export function PptxEditorHost({
       <PptxEditor
         className="office-editor-host"
         collaboration={collaboration}
+        defaultPresenterNotesSize={notesSize}
         defaultSpeakerNotes={speakerNotes}
         file={bytes}
         fileName={fileName}
         fonts={fonts}
         i18n={pptxStrings(locale)}
         icons={pptxIcons}
+        notesWindow={presenter.notes}
         onCommandState={setCommandState}
         onError={onError}
         // The deck the editor already holds: no second snapshot from the engine.
@@ -186,6 +206,8 @@ export function PptxEditorHost({
           onAnalysis(analyzeOpenPresentation({ snapshot: () => snapshot }))
         }
         onPendingChange={onPendingChange}
+        onPresenterNotesSizeChange={writeNotesSize}
+        onPresentingChange={onPresentingChange}
         onReady={(api) => {
           apiRef.current = api;
         }}

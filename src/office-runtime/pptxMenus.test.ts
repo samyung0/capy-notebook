@@ -95,6 +95,8 @@ describe('PPTX header menus', () => {
       'capy.print',
       'edit.selectAll',
       'view.present',
+      'view.present:start',
+      'view.presenterView',
       'view.zoom:fit',
       'view.zoom:0.5',
       'view.zoom:0.75',
@@ -191,6 +193,8 @@ describe('PPTX header menus', () => {
       'capy.png',
       'capy.print',
       'view.present',
+      'view.present:start',
+      'view.presenterView',
       'view.speakerNotes',
     ]);
     // Ticked from the viewer's notes state, as in edit mode.
@@ -205,6 +209,58 @@ describe('PPTX header menus', () => {
     expect(notes(true)?.checked).toBe(true);
     expect(viewerMenus('en', false, false).map((menu) => menu.id)).toEqual([
       'file',
+    ]);
+  });
+
+  it("makes Present a split button with Google Slides' three ways to present, also under View", () => {
+    const expected = [
+      {
+        fullscreen: true,
+        icon: 'presentation',
+        id: 'view.present',
+        label: 'From this slide',
+      },
+      { fullscreen: true, id: 'view.present:start', label: 'From the start' },
+      { kind: 'separator' },
+      {
+        icon: 'speakerNotes',
+        id: 'view.presenterView',
+        label: 'Presenter view',
+        popup: 'presenter',
+      },
+    ];
+    const action = presentAction('en');
+    expect(action).toMatchObject({
+      fullscreen: true,
+      icon: 'presentation',
+      id: 'view.present',
+      label: 'Present',
+    });
+    expect(action.items).toMatchObject(expected);
+    expect(items(action.items ?? []).every((entry) => !entry.edits)).toBe(true);
+    const present = (menus: ReturnType<typeof viewerMenus>) =>
+      menus
+        .find((menu) => menu.id === 'view')
+        ?.items.find((entry) => entry.kind === 'submenu');
+    expect(present(viewerMenus('en', true, false))).toMatchObject({
+      icon: 'presentation',
+      items: expected,
+      label: 'Present',
+    });
+    expect(present(editorMenus(state(true), 'en'))?.items).toMatchObject(
+      expected
+    );
+    // A deck without slides has nothing to present.
+    expect(
+      items(present(editorMenus(state(false), 'en'))?.items ?? []).every(
+        (entry) => entry.disabled
+      )
+    ).toBe(true);
+    expect(presentAction('zh').items).toMatchObject([
+      { label: '从当前幻灯片开始' },
+      { label: '从头开始' },
+      { kind: 'separator' },
+      { label: '演示者视图' },
     ]);
   });
 

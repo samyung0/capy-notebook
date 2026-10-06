@@ -62,3 +62,25 @@ export function parentOriginFromRuntimeUrl(): string | null {
     return null;
   }
 }
+
+/**
+ * PPTX Presenter view's speaker notes window: the runtime's own page on its
+ * origin, which hands itself over to the runtime frame that expects `token`
+ * (the frame draws into it, so the deck is loaded once). Capy opens it, as
+ * the sandboxed frame gets no user activation from Capy's header.
+ */
+export function presenterWindowUrl(origin: string, token: string) {
+  const url = new URL('/office-runtime.html', origin);
+  url.hash = `presenter=${token}`;
+  return url.href;
+}
+
+const PRESENTER_HASH = /^#presenter=([\w-]+)$/;
+
+/** The token a presenter window was opened with, or null for the runtime itself. */
+export function presenterTokenFromUrl(hash = window.location.hash) {
+  return PRESENTER_HASH.exec(hash)?.[1] ?? null;
+}
+
+/** The size of Google Slides' presenter window, which shows the notes first. */
+export const PRESENTER_WINDOW_FEATURES = 'popup,width=860,height=640';

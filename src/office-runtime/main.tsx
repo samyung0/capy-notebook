@@ -20,10 +20,18 @@ import {
   type OfficeMode,
   type OfficeRuntimePayload,
 } from '@/features/files/officeProtocol';
-import { parentOriginFromRuntimeUrl } from '@/features/files/officeRuntimeConfig';
+import {
+  parentOriginFromRuntimeUrl,
+  presenterTokenFromUrl,
+} from '@/features/files/officeRuntimeConfig';
 import { m, setLocale } from '@/i18n';
 import { THEMES } from '@/theme/theme';
 import { exportCheckpoint } from './exportCheckpoint';
+import {
+  handOverPresenterWindow,
+  PRESENTER_VIEW,
+  runtimeNotesWindow,
+} from './notesWindow';
 import type {
   OfficeExporter,
   OfficeFlusher,
@@ -86,6 +94,21 @@ function OfficeRuntime() {
   const menuSourceRef = useRef<OfficeMenuSource | null>(null);
   const rendererRef = useRef<OfficeRenderer | null>(null);
   const revisionRef = useRef<number | null>(null);
+  // PPTX Presenter view: Capy opens the notes window, even from a click here.
+  const [presenter] = useState(() =>
+    runtimeNotesWindow(() => {
+      if (revisionRef.current !== null)
+        post({
+          id: PRESENTER_VIEW,
+          revision: revisionRef.current,
+          type: 'open-presenter',
+        });
+    })
+  );
+  const reportPresenting = useCallback((presenting: boolean) => {
+    if (revisionRef.current !== null)
+      post({ presenting, revision: revisionRef.current, type: 'presenting' });
+  }, []);
   // When `load` arrived, for the ready timings.
   const loadedAtRef = useRef(0);
   const epochRef = useRef<number | null>(null);
@@ -602,8 +625,10 @@ function OfficeRuntime() {
               onFlusher={reportFlusher}
               onMenus={reportMenus}
               onPendingChange={reportHostPending}
+              onPresentingChange={reportPresenting}
               onRenderer={reportRenderer}
               onSave={save}
+              presenter={presenter}
               readOnly={readOnly}
             />
           )
@@ -635,7 +660,9 @@ function OfficeRuntime() {
             onAnalysis={reportAnalysis}
             onError={reportError}
             onMenus={reportMenus}
+            onPresentingChange={reportPresenting}
             onRenderer={reportRenderer}
+            presenter={presenter}
           />
         )}
       </Suspense>
@@ -652,4 +679,7 @@ function post(message: OfficeRuntimePayload, transfer: Transferable[] = []) {
   );
 }
 
-createRoot(document.getElementById('root')!).render(<OfficeRuntime />);
+// The same page, opened by Capy as a PPTX presenter window, only hands itself over.
+const presenterToken = presenterTokenFromUrl();
+if (presenterToken) handOverPresenterWindow(presenterToken);
+else createRoot(document.getElementById('root')!).render(<OfficeRuntime />);

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import type { ViewableFile } from '@/api/types';
 import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { FileError, FileUnavailable, SourceBanners } from './FileStates';
 import { useReportEditorStatus } from './fileModeContext';
 import { OfficeHeader } from './OfficeMenuBar';
@@ -109,7 +110,13 @@ export default function PptxView({
         }
         runtime={runtime}
       />
-      <div className="relative min-h-0 flex-1">
+      {/* A show the browser did not put in full screen still gets the page. */}
+      <div
+        className={cn(
+          'relative min-h-0 flex-1',
+          runtime.presenting && 'fixed inset-0 z-[2147483000]'
+        )}
+      >
         {!runtime.analysis && runtime.mode === 'view' && (
           <Skeleton className="absolute inset-0 h-full w-full" />
         )}

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { resolveOfficeRuntimeConfig } from './officeRuntimeConfig';
+import {
+  presenterTokenFromUrl,
+  presenterWindowUrl,
+  resolveOfficeRuntimeConfig,
+} from './officeRuntimeConfig';
 
 const SEPARATE_ORIGIN_PATTERN = /separate origin/;
 
@@ -30,5 +34,18 @@ describe('Office runtime origin', () => {
     });
 
     expect(config.error).toMatch(SEPARATE_ORIGIN_PATTERN);
+  });
+});
+
+describe('PPTX presenter window', () => {
+  it("is the runtime's own page on its origin, carrying the token it hands over", () => {
+    const url = presenterWindowUrl('https://office.example.com', 'a1-b2');
+    expect(url).toBe(
+      'https://office.example.com/office-runtime.html#presenter=a1-b2'
+    );
+    expect(presenterTokenFromUrl(new URL(url).hash)).toBe('a1-b2');
+    expect(presenterTokenFromUrl('')).toBeNull();
+    expect(presenterTokenFromUrl('#presenter=')).toBeNull();
+    expect(presenterTokenFromUrl('#presenter=a b')).toBeNull();
   });
 });

@@ -972,7 +972,7 @@ for (const [format, text] of [
         );
         if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
         iframe.contentWindow.postMessage(
-          { id, type: 'menu-command', version: 7 },
+          { id, type: 'menu-command', version: 8 },
           new URL(iframe.src).origin
         );
       },
@@ -1053,7 +1053,7 @@ test('a DOCX editor resuming from a pause leaves the focus where it was', async 
       );
       if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
       iframe.contentWindow.postMessage(
-        { canEdit, type: 'set-capabilities', version: 7 },
+        { canEdit, type: 'set-capabilities', version: 8 },
         new URL(iframe.src).origin
       );
     }, canEdit);
@@ -1286,7 +1286,7 @@ test('a view-only XLSX viewer still selects and copies a cell after canEdit:fals
     );
     if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
     iframe.contentWindow.postMessage(
-      { canEdit: false, type: 'set-capabilities', version: 7 },
+      { canEdit: false, type: 'set-capabilities', version: 8 },
       new URL(iframe.src).origin
     );
   });
@@ -1421,7 +1421,7 @@ test('DOCX View › Show ruler is remembered, edit mode only, and stays usable w
     );
     if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
     iframe.contentWindow.postMessage(
-      { canEdit: false, type: 'set-capabilities', version: 7 },
+      { canEdit: false, type: 'set-capabilities', version: 8 },
       new URL(iframe.src).origin
     );
   });

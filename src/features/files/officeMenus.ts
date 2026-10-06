@@ -28,6 +28,17 @@ export type OfficeMenuEntry =
        * one) and sends the chosen file in `menu-file` instead of a command.
        */
       pick?: 'image';
+      /**
+       * Running it puts the runtime in full screen: Capy hands the click's
+       * full-screen permission to the frame with the command.
+       */
+      fullscreen?: boolean;
+      /**
+       * Capy opens the runtime's presenter window from the click (the frame
+       * gets no user activation from it) and sends the window's token as the
+       * command's value; a blocked window sends the command again with ''.
+       */
+      popup?: 'presenter';
     }
   | { kind: 'separator' }
   | {
@@ -49,10 +60,16 @@ export interface OfficeMenu {
   label: string;
 }
 
-/** A labelled button in the header's right cluster, e.g. PPTX Present. */
+/**
+ * A labelled button in the header's right cluster, e.g. PPTX Present; with
+ * `items` a split button whose arrow opens them.
+ */
 export interface OfficeHeaderAction {
+  /** As a menu item's `fullscreen`. */
+  fullscreen?: boolean;
   icon: IconName;
   id: string;
+  items?: OfficeMenuEntry[];
   label: string;
 }
 
@@ -172,7 +189,9 @@ function isEntry(value: unknown, depth: number): value is OfficeMenuEntry {
       isOptional(entry.radio, 'boolean') &&
       isOptional(entry.disabled, 'boolean') &&
       isOptionalIcon(entry.icon) &&
-      (entry.pick === undefined || entry.pick === 'image')
+      (entry.pick === undefined || entry.pick === 'image') &&
+      isOptional(entry.fullscreen, 'boolean') &&
+      (entry.popup === undefined || entry.popup === 'presenter')
     );
   if (entry.kind === 'submenu')
     return (
@@ -229,8 +248,36 @@ export function isOfficeHeaderActions(
         isText(candidate.id) &&
         isText(candidate.label) &&
         typeof candidate.icon === 'string' &&
-        isIconName(candidate.icon)
+        isIconName(candidate.icon) &&
+        isOptional(candidate.fullscreen, 'boolean') &&
+        (candidate.items === undefined || isEntries(candidate.items, 2))
       );
     })
   );
+}
+
+/**
+ * What Capy does with a click on the item or header action `id`, beyond
+ * sending it: hand over full screen, or open the presenter window first.
+ */
+export function officeCommandNeeds(
+  menus: { menus: OfficeMenu[]; actions: OfficeHeaderAction[] } | null,
+  id: string
+): { fullscreen: boolean; popup?: 'presenter' } {
+  const find = (
+    entries: readonly OfficeMenuEntry[]
+  ): Extract<OfficeMenuEntry, { kind: 'item' }> | undefined => {
+    for (const entry of entries) {
+      if (entry.kind === 'item' && entry.id === id) return entry;
+      const found = entry.kind === 'submenu' ? find(entry.items) : undefined;
+      if (found) return found;
+    }
+  };
+  const action = menus?.actions.find((candidate) => candidate.id === id);
+  if (action) return { fullscreen: !!action.fullscreen };
+  const item = find([
+    ...(menus?.menus.flatMap((menu) => menu.items) ?? []),
+    ...(menus?.actions.flatMap((candidate) => candidate.items ?? []) ?? []),
+  ]);
+  return { fullscreen: !!item?.fullscreen, popup: item?.popup };
 }

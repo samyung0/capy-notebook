@@ -10,6 +10,7 @@ import {
   type LocaleStrings,
   zhCN,
 } from '@betteroffice/pptx-i18n';
+import { PRESENT_ITEMS } from '@betteroffice/pptx-react/presentation';
 import type { IconName } from '@/components/ui/Icon';
 import {
   OFFICE_HOST_COMMANDS,
@@ -94,11 +95,44 @@ export function fileOutputs(): OfficeMenuEntry[] {
   ];
 }
 
-/** Present, as Google Slides' Slideshow button, in both modes. */
+/**
+ * From this slide, From the start and Presenter view (pptx-react's
+ * PRESENT_ITEMS): the first two go full screen in this tab, the last opens
+ * the speaker notes window. None edits, so they run while editing is paused.
+ */
+export function presentItems(
+  locale: OfficeLocale,
+  disabled?: boolean
+): OfficeMenuEntry[] {
+  const t = pptxT(locale);
+  return PRESENT_ITEMS.flatMap((entry) => {
+    const value = 'value' in entry ? entry.value : undefined;
+    const presenter = entry.command === 'view.presenterView';
+    const presented = item(
+      value ? `${entry.command}:${value}` : entry.command,
+      t(entry.labelKey),
+      {
+        disabled: disabled || undefined,
+        edits: false,
+        // From the start lines up under From this slide's icon.
+        icon: value ? undefined : presenter ? 'speakerNotes' : 'presentation',
+        ...(presenter ? { popup: 'presenter' as const } : { fullscreen: true }),
+      }
+    );
+    return presenter ? [separator, presented] : [presented];
+  });
+}
+
+/**
+ * Present, as Google Slides' Slideshow ▾, in both modes: the main part
+ * presents from the current slide, the arrow lists `presentItems`.
+ */
 export function presentAction(locale: OfficeLocale): OfficeHeaderAction {
   return {
+    fullscreen: true,
     icon: 'presentation',
     id: 'view.present',
+    items: presentItems(locale),
     label: pptxT(locale)('toolbar.present'),
   };
 }
@@ -121,10 +155,12 @@ export function viewerMenus(
           {
             id: 'view',
             items: [
-              item('view.present', t('toolbar.present'), {
-                edits: false,
-                icon: 'presentation',
-              }),
+              submenu(
+                'present',
+                t('toolbar.present'),
+                presentItems(locale),
+                'presentation'
+              ),
               separator,
               item('view.speakerNotes', t('notes.showSpeakerNotes'), {
                 checked: speakerNotes,

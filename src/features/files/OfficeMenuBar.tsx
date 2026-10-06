@@ -1,6 +1,13 @@
 import { type ReactNode, useContext, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/Button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/DropdownMenu';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import {
   Menubar,
@@ -16,6 +23,7 @@ import {
 import { ButtonTooltip } from '@/components/ui/Tooltip';
 import { TablePicker } from '@/features/notes/toolbar/ToolbarTableMenu';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { useHorizontalWheelScroll } from '@/lib/useHorizontalWheelScroll';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { FileModeControl } from './FileModeControl';
@@ -93,34 +101,101 @@ export function OfficeHeaderSlots({
         )}
       {actionsTarget &&
         createPortal(
-          menus.actions.map((action) =>
-            labelled ? (
-              <Button
-                className="mr-1 h-8 px-2.5 font-medium"
-                iconLeft={action.icon}
-                key={action.id}
-                onClick={() => onCommand(action.id)}
-                size="sm"
-                variant="ghost-hover"
-              >
-                {action.label}
-              </Button>
-            ) : (
-              <ButtonTooltip key={action.id} label={action.label}>
-                <Button
-                  aria-label={action.label}
-                  className="mr-1 size-8 px-0"
-                  iconLeft={action.icon}
-                  onClick={() => onCommand(action.id)}
-                  size="sm"
-                  variant="ghost-hover"
-                />
-              </ButtonTooltip>
-            )
-          ),
+          menus.actions.map((action) => (
+            <HeaderAction
+              action={action}
+              key={action.id}
+              labelled={labelled}
+              onCommand={onCommand}
+            />
+          )),
           actionsTarget
         )}
     </>
+  );
+}
+
+/**
+ * A header action; with `items`, a split button (PPTX Present, as Google
+ * Slides' Slideshow ▾): the main part runs the action, the arrow lists the rest.
+ */
+function HeaderAction({
+  action,
+  labelled,
+  onCommand,
+}: {
+  action: OfficeHeaderAction;
+  labelled: boolean;
+  onCommand: (id: string) => void;
+}) {
+  const split = !!action.items?.length;
+  const main = labelled ? (
+    <Button
+      className={cn('h-8 px-2.5 font-medium', split && 'rounded-r-none')}
+      iconLeft={action.icon}
+      onClick={() => onCommand(action.id)}
+      size="sm"
+      variant="ghost-hover"
+    >
+      {action.label}
+    </Button>
+  ) : (
+    <ButtonTooltip label={action.label}>
+      <Button
+        aria-label={action.label}
+        className={cn('size-8 px-0', split && 'rounded-r-none')}
+        iconLeft={action.icon}
+        onClick={() => onCommand(action.id)}
+        size="sm"
+        variant="ghost-hover"
+      />
+    </ButtonTooltip>
+  );
+  if (!split) return <span className="mr-1 inline-flex">{main}</span>;
+  return (
+    <div className="mr-1 flex items-center" role="group">
+      {main}
+      <span aria-hidden className="h-4 w-px bg-divider" />
+      <DropdownMenu>
+        <ButtonTooltip label={m.files_office_present_options()}>
+          <DropdownMenuTrigger asChild>
+            <Button
+              aria-label={m.files_office_present_options()}
+              className="h-8 w-[22px] rounded-l-none px-0 data-[state=open]:bg-surface-hover-bg"
+              size="sm"
+              variant="ghost-hover"
+            >
+              <Icon name="chevronDown" size={14} />
+            </Button>
+          </DropdownMenuTrigger>
+        </ButtonTooltip>
+        {/* The header menus' look (OfficeMenuBar). */}
+        <DropdownMenuContent
+          align="end"
+          className="min-w-48 rounded-lg px-1 py-1.5 font-medium text-sm leading-(--body-line-height)"
+        >
+          {action.items?.map((entry, index) =>
+            entry.kind === 'separator' ? (
+              <DropdownMenuSeparator key={`separator-${index}`} />
+            ) : entry.kind === 'item' ? (
+              <DropdownMenuItem
+                className="h-7 rounded-lg py-0 leading-(--body-line-height) focus:bg-surface-hover-bg/80 data-[highlighted]:bg-surface-hover-bg/80 [&_svg]:-translate-y-px"
+                disabled={entry.disabled}
+                key={entry.id}
+                onSelect={() => onCommand(entry.id)}
+              >
+                {entry.icon ? (
+                  <Icon name={entry.icon} />
+                ) : (
+                  <span aria-hidden className="size-4 shrink-0" />
+                )}
+                {entry.label}
+              </DropdownMenuItem>
+            ) : null
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 }
 
