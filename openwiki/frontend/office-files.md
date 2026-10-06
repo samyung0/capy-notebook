@@ -1557,7 +1557,9 @@ values, and the save's comparison, take the table-style paragraph formatting of
 the cell (`cellParagraphFormatting` in the editor, `cellContext` in
 `yrsToDocument.ts`, one helper behind both). A cell the table had at open (its
 story still holds one of its source paragraphs, by paraId from the materialized
-source, which the editor keeps as `sourceDocument` after save projections) keeps
+source: the editor keeps its first materialize as `sourceDocument` and passes it
+to every export as `yrsToDocument`'s `source`, since each later export's base is
+the previous projection; a failed materialize fails the export) keeps
 the look the seed gave it, also after its row or column moves; the editor shows
 that look until the file reopens. Any other cell, a row or table made in the
 session (by a peer too) and a reused cell id included, takes its current table
