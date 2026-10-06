@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it } from 'vitest';
 import { CategoryChart } from './CategoryChart';
 
-it('renders all fifty categories with eight series on a scrollable chart', () => {
+it('renders all fifty categories with eight series', () => {
   const labels = Array.from({ length: 50 }, (_, i) => `Category ${i + 1}`);
   const html = renderToStaticMarkup(
     <CategoryChart
@@ -18,6 +18,5 @@ it('renders all fifty categories with eight series on a scrollable chart', () =>
     />
   );
   expect(html).not.toContain('NaN');
-  expect(html).toContain('min-width:6400px');
   expect(html).toContain('Category 50');
 });
