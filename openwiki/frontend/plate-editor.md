@@ -632,19 +632,30 @@ over-limit document is therefore measured on every update, and still accepts
 edits that do not worsen any dimension, otherwise the deletions needed to
 recover would be rejected too and the material would be permanently unsavable.
 
+So an update that would take a note past a limit is refused when it arrives,
+however far from the limit the room was: only its writer's connection gets
+`document-rejected` and keeps its edits as a refused draft, while co-editors
+keep editing. The byte budget the bound replaced let an update far from the
+limit in unmeasured (32 KB of control characters escapes to six bytes each and
+can cross it); the store then refused the room and discarded it, sending every
+co-editor's unsaved edits to copy-only recovery.
+
 The bound prices what slate-yjs writes: a string typed next to a visible
 string joins its leaf and adds its escaped bytes; deleting strings, blocks or
 attributes never grows the value; an attribute adds `"key":value,`; a new block
 is priced from its own structs; anything else that touches a text's formatting
 (format items, a deleted format, a block between two strings) re-prices that
 text's leaves at the largest attributes its formats can give; each inserted
-item adds 4 bytes for a surrogate pair it could split. It holds only while
-every content change to the room is an update it checked against the room as
-it was: a service edit (an agent command), or two writers' updates checked
-before either applied, drops it, and the next update measures exactly. Yjs's
-own cleanup of redundant format items after a remote edit does not. On the
-2 MB load-test note this took the service from ~90 ms of CPU per keystroke to
-well under a millisecond (`plate/` harness of the 2026-10-05 office batch).
+item adds 4 bytes for a surrogate pair it could split. A text inside a block
+that is deleted, before or by the update, is not priced at all, and the
+update's delete set is merged once and binary-searched, so selecting all of a
+long, heavily corrected note and deleting it costs time linear in the update.
+It holds only while every content change to the room is an update it checked
+against the room as it was: a service edit (an agent command), or two writers'
+updates checked before either applied, drops it, and the next update measures
+exactly. Yjs's own cleanup of redundant format items after a remote edit does
+not. On the 2 MB load-test note this took the service from ~90 ms of CPU per
+keystroke to well under a millisecond.
 
 An update the room cannot place yet (it refers to content
 the room does not hold, skips its client's clocks, or deletes a range neither
@@ -672,8 +683,10 @@ markers before admitting the room.
 A rejected update closes only the offending connection, preceded by a
 `document-rejected` stateless message so the client discards its now-forked Y.Doc
 instead of reconnecting and resending forever. If an over-limit document reaches
-the store hook anyway, the sidecar broadcasts `document-rejected` to the room and
-evicts it; Hocuspocus swallows store failures, so leaving the room loaded would
+the store hook anyway, which with every update checked takes a sum no single
+check saw whole (two updates checked against the same room before either
+applied, the later one measured exactly without the earlier), the sidecar
+broadcasts `document-rejected` to the room and evicts it; Hocuspocus swallows store failures, so leaving the room loaded would
 mean it silently never persists again. A structurally invalid snapshot is
 discarded the same way (`document-rejected` with code `invalid_document`), and
 an `authorization-revoked` eviction makes every editor drop its copy too.
