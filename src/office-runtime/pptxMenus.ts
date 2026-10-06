@@ -141,11 +141,41 @@ export function presentAction(
   };
 }
 
+const ZOOMS = ['0.5', '0.75', '1', '1.25', '1.5', '2'];
+
+/**
+ * View › Zoom ▸ Fit and the toolbar's levels, `current` ('fit' or a scale
+ * such as '1.5') ticked. Zoom edits nothing, so it runs while paused.
+ */
+export function zoomMenu(
+  locale: OfficeLocale,
+  current: string,
+  disabled?: boolean
+): OfficeMenuEntry {
+  const t = pptxT(locale);
+  const level = (value: string, label: string) =>
+    item(`view.zoom:${value}`, label, {
+      checked: value === current,
+      disabled: disabled || undefined,
+      edits: false,
+    });
+  return submenu(
+    'zoom',
+    t('toolbar.groups.zoom'),
+    [
+      level('fit', t('toolbar.fit')),
+      ...ZOOMS.map((zoom) => level(zoom, `${Number(zoom) * 100}%`)),
+    ],
+    'zoomIn'
+  );
+}
+
 /** View mode: only what works, so nothing disabled. */
 export function viewerMenus(
   locale: OfficeLocale,
   hasSlides: boolean,
-  speakerNotes: boolean
+  speakerNotes: boolean,
+  zoom: string
 ): OfficeMenu[] {
   const t = pptxT(locale);
   return [
@@ -165,6 +195,7 @@ export function viewerMenus(
                 presentItems(locale),
                 'presentation'
               ),
+              zoomMenu(locale, zoom),
               separator,
               item('view.speakerNotes', t('notes.showSpeakerNotes'), {
                 checked: speakerNotes,

@@ -46,7 +46,7 @@ describe('PPTX header menus', () => {
   it('are a valid menu bar in both locales, the Present action included', () => {
     for (const locale of ['en', 'zh'] as const) {
       expect(isOfficeMenus(editorMenus(state(true), locale))).toBe(true);
-      expect(isOfficeMenus(viewerMenus(locale, true, false))).toBe(true);
+      expect(isOfficeMenus(viewerMenus(locale, true, false, 'fit'))).toBe(true);
       expect(isOfficeHeaderActions([presentAction(locale)])).toBe(true);
     }
   });
@@ -185,7 +185,7 @@ describe('PPTX header menus', () => {
 
   it('offers only working items in view mode', () => {
     const entries = items(
-      viewerMenus('en', true, false).flatMap((menu) => menu.items)
+      viewerMenus('en', true, false, 'fit').flatMap((menu) => menu.items)
     );
     expect(entries.some((entry) => entry.disabled)).toBe(false);
     expect(entries.map((entry) => entry.id)).toEqual([
@@ -195,21 +195,42 @@ describe('PPTX header menus', () => {
       'view.present',
       'view.present:start',
       'view.presenterView',
+      'view.zoom:fit',
+      'view.zoom:0.5',
+      'view.zoom:0.75',
+      'view.zoom:1',
+      'view.zoom:1.25',
+      'view.zoom:1.5',
+      'view.zoom:2',
       'view.speakerNotes',
     ]);
     // Ticked from the viewer's notes state, as in edit mode.
     const notes = (shown: boolean) =>
-      items(viewerMenus('en', true, shown).flatMap((menu) => menu.items)).find(
-        (entry) => entry.id === 'view.speakerNotes'
-      );
+      items(
+        viewerMenus('en', true, shown, 'fit').flatMap((menu) => menu.items)
+      ).find((entry) => entry.id === 'view.speakerNotes');
     expect(notes(false)).toMatchObject({
       checked: false,
       label: 'Show speaker notes',
     });
     expect(notes(true)?.checked).toBe(true);
-    expect(viewerMenus('en', false, false).map((menu) => menu.id)).toEqual([
-      'file',
-    ]);
+    expect(
+      viewerMenus('en', false, false, 'fit').map((menu) => menu.id)
+    ).toEqual(['file']);
+  });
+
+  it('ticks the zoom in both modes, the same levels, none of them editing', () => {
+    const zooms = (menus: ReturnType<typeof viewerMenus>) =>
+      items(menus.flatMap((menu) => menu.items)).filter((entry) =>
+        entry.id.startsWith('view.zoom:')
+      );
+    const view = zooms(viewerMenus('en', true, false, '1.5'));
+    const edit = zooms(editorMenus(state(true, { zoom: '1.5' }), 'en'));
+    expect(view).toEqual(edit);
+    expect(
+      view.filter((entry) => entry.checked).map((entry) => entry.id)
+    ).toEqual(['view.zoom:1.5']);
+    expect(view.every((entry) => !entry.edits)).toBe(true);
   });
 
   it("makes Present a split button with Google Slides' three ways to present, also under View", () => {
@@ -242,7 +263,7 @@ describe('PPTX header menus', () => {
       menus
         .find((menu) => menu.id === 'view')
         ?.items.find((entry) => entry.kind === 'submenu');
-    expect(present(viewerMenus('en', true, false))).toMatchObject({
+    expect(present(viewerMenus('en', true, false, 'fit'))).toMatchObject({
       icon: 'presentation',
       items: expected,
       label: 'Present',

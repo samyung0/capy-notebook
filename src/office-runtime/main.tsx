@@ -19,6 +19,7 @@ import {
   type OfficeLocale,
   type OfficeMode,
   type OfficeRuntimePayload,
+  type OfficeZoom,
 } from '@/features/files/officeProtocol';
 import {
   parentOriginFromRuntimeUrl,
@@ -78,6 +79,8 @@ interface LoadedFile {
   format: OfficeFormat;
   initialUpdate?: Uint8Array;
   revision: number;
+  /** Where the viewer or editor opens; the format's default without. */
+  zoom?: OfficeZoom;
 }
 
 function OfficeRuntime() {
@@ -102,6 +105,13 @@ function OfficeRuntime() {
   const reportPresenting = useCallback((presenting: boolean) => {
     if (revisionRef.current !== null)
       post({ presenting, revision: revisionRef.current, type: 'presenting' });
+  }, []);
+  // The host keeps the zoom for the next frame (View↔Edit, a reload).
+  const zoomSentRef = useRef<OfficeZoom | undefined>(undefined);
+  const reportZoom = useCallback((zoom: OfficeZoom) => {
+    if (revisionRef.current === null || zoom === zoomSentRef.current) return;
+    zoomSentRef.current = zoom;
+    post({ revision: revisionRef.current, type: 'zoom', zoom });
   }, []);
   // When `load` arrived, for the ready timings.
   const loadedAtRef = useRef(0);
@@ -297,6 +307,7 @@ function OfficeRuntime() {
         if (revisionRef.current !== null) return;
         loadedAtRef.current = performance.now();
         revisionRef.current = message.revision;
+        zoomSentRef.current = message.zoom;
         epochRef.current = message.collaboration?.epoch ?? null;
         pausedRef.current = pausedFor(canEditRef.current ?? message.canEdit);
         setReadOnly(pausedRef.current);
@@ -320,6 +331,7 @@ function OfficeRuntime() {
             ? new Uint8Array(message.collaboration.initialUpdate)
             : undefined,
           revision: message.revision,
+          zoom: message.zoom,
         });
         post({ mode: nextMode, revision: message.revision, type: 'mode' });
         return;
@@ -503,6 +515,9 @@ function OfficeRuntime() {
       </div>
     );
 
+  // DOCX and XLSX zoom by a number only; PPTX may also fit.
+  const zoom = typeof file.zoom === 'number' ? file.zoom : undefined;
+
   // Ctrl/Cmd+S and the editors' own Save; a paused editor saves nothing, as
   // its File › Save is disabled.
   const save = () => {
@@ -578,6 +593,7 @@ function OfficeRuntime() {
               bytes={file.bytes}
               collaboration={collaboration}
               colorMode={dark ? 'dark' : 'light'}
+              initialZoom={zoom}
               locale={locale}
               narrow={narrow}
               onAnalysis={reportAnalysis}
@@ -588,6 +604,7 @@ function OfficeRuntime() {
               onPendingChange={reportHostPending}
               onRenderer={reportRenderer}
               onSave={save}
+              onZoomChange={reportZoom}
               readOnly={readOnly}
             />
           ) : file.format === 'xlsx' ? (
@@ -595,6 +612,7 @@ function OfficeRuntime() {
               bytes={file.bytes}
               collaboration={collaboration}
               fileName={file.fileName}
+              initialZoom={zoom}
               locale={locale}
               narrow={narrow}
               onAnalysis={reportAnalysis}
@@ -604,6 +622,7 @@ function OfficeRuntime() {
               onPendingChange={reportHostPending}
               onRenderer={reportRenderer}
               onSave={save}
+              onZoomChange={reportZoom}
               readOnly={readOnly}
             />
           ) : (
@@ -611,6 +630,7 @@ function OfficeRuntime() {
               bytes={file.bytes}
               collaboration={collaboration}
               fileName={file.fileName}
+              initialZoom={file.zoom}
               locale={locale}
               narrow={narrow}
               onAnalysis={reportAnalysis}
@@ -623,6 +643,7 @@ function OfficeRuntime() {
               onPresentingChange={reportPresenting}
               onRenderer={reportRenderer}
               onSave={save}
+              onZoomChange={reportZoom}
               readOnly={readOnly}
             />
           )
@@ -630,26 +651,31 @@ function OfficeRuntime() {
           <DocxViewer
             bytes={file.bytes}
             citation={citation}
+            initialZoom={zoom}
             locale={locale}
             onAnalysis={reportAnalysis}
             onError={reportError}
             onMenus={reportMenus}
             onRenderer={reportRenderer}
+            onZoomChange={reportZoom}
           />
         ) : file.format === 'xlsx' ? (
           <XlsxViewer
             bytes={file.bytes}
             citation={citation}
+            initialZoom={zoom}
             locale={locale}
             onAnalysis={reportAnalysis}
             onError={reportError}
             onMenus={reportMenus}
             onRenderer={reportRenderer}
+            onZoomChange={reportZoom}
           />
         ) : (
           <PptxViewer
             bytes={file.bytes}
             citation={citation}
+            initialZoom={file.zoom}
             locale={locale}
             onAnalysis={reportAnalysis}
             onAskPresenter={askPresenter}
@@ -657,6 +683,7 @@ function OfficeRuntime() {
             onMenus={reportMenus}
             onPresentingChange={reportPresenting}
             onRenderer={reportRenderer}
+            onZoomChange={reportZoom}
           />
         )}
       </Suspense>

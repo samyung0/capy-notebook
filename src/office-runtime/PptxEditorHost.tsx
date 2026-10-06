@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import type {
   OfficeAnalysis,
   OfficeLocale,
+  OfficeZoom,
 } from '@/features/files/officeProtocol';
 import { m } from '@/i18n';
 import { runtimeNotesWindow } from './notesWindow';
@@ -37,6 +38,7 @@ export function PptxEditorHost({
   onExporter,
   onFlusher,
   fileName,
+  initialZoom,
   locale,
   narrow,
   onAnalysis,
@@ -47,6 +49,7 @@ export function PptxEditorHost({
   onPresentingChange,
   onRenderer,
   onSave,
+  onZoomChange,
   readOnly,
 }: {
   bytes: Uint8Array;
@@ -54,6 +57,8 @@ export function PptxEditorHost({
   onExporter: (exporter: OfficeExporter | null) => void;
   onFlusher: (flusher: OfficeFlusher | null) => void;
   fileName: string;
+  /** The level the file was last shown at; fit to the window without. */
+  initialZoom?: OfficeZoom;
   locale: OfficeLocale;
   /** Below lg: no zoom (as the PDF toolbar), font picker or size box. */
   narrow: boolean;
@@ -67,6 +72,7 @@ export function PptxEditorHost({
   onPresentingChange: (presenting: boolean) => void;
   onRenderer: (renderer: OfficeRenderer | null) => void;
   onSave: () => void;
+  onZoomChange: (zoom: OfficeZoom) => void;
   /** Recovery: selection and copy only. */
   readOnly: boolean;
 }) {
@@ -82,6 +88,10 @@ export function PptxEditorHost({
   const [notesSize, setNotesSize] = useState(readNotesSize);
   // The header's menus and Present run the editor's commands; Insert › Image
   // arrives with the file Capy's picker chose.
+  const zoom = commandState?.zoom;
+  useEffect(() => {
+    if (zoom) onZoomChange(zoom === 'fit' ? 'fit' : Number(zoom));
+  }, [onZoomChange, zoom]);
   useEffect(() => {
     if (!commandState) return;
     const presentable = commandState.enabled['view.presenterView'];
@@ -206,6 +216,7 @@ export function PptxEditorHost({
         fonts={fonts}
         i18n={pptxStrings(locale)}
         icons={pptxIcons}
+        initialZoom={initialZoom}
         notesWindow={presenter.notes}
         onCommandState={setCommandState}
         onError={onError}

@@ -24,6 +24,7 @@ import { HugeIcon } from '@/components/ui/HugeIcon';
 import type {
   OfficeCitation,
   OfficeLocale,
+  OfficeZoom,
 } from '@/features/files/officeProtocol';
 import { m } from '@/i18n';
 import { CITATION_FILL, slideCitationItems, uniqueCitation } from './citations';
@@ -45,6 +46,7 @@ import './pptx-runtime.css';
 export function PptxViewer({
   bytes,
   citation,
+  initialZoom = 'fit',
   locale,
   onAnalysis,
   onError,
@@ -52,9 +54,12 @@ export function PptxViewer({
   onAskPresenter,
   onPresentingChange,
   onRenderer,
+  onZoomChange,
 }: {
   bytes: Uint8Array;
   citation: OfficeCitation | null;
+  /** The level the file was last shown at; fit to the window without. */
+  initialZoom?: OfficeZoom;
   locale: OfficeLocale;
   onAnalysis: (analysis: PresentationAnalysis) => void;
   onError: (error: Error) => void;
@@ -63,6 +68,7 @@ export function PptxViewer({
   onAskPresenter: () => void;
   onPresentingChange: (presenting: boolean) => void;
   onRenderer: (renderer: OfficeRenderer | null) => void;
+  onZoomChange: (zoom: OfficeZoom) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -78,6 +84,9 @@ export function PptxViewer({
     { frame: SlideDisplayList; notes: string }[] | null
   >(null);
   const [stageSize, setStageSize] = useState({ height: 0, width: 0 });
+  // View › Zoom, as the editor's; the host carries it to the next frame.
+  const [zoom, setZoom] = useState(initialZoom);
+  useEffect(() => onZoomChange(zoom), [onZoomChange, zoom]);
   // The slide a show starts from; null while not presenting.
   const [presenting, setPresenting] = useState<number | null>(null);
   const [presenter] = useState(() => runtimeNotesWindow(onAskPresenter));
@@ -94,15 +103,19 @@ export function PptxViewer({
   const slideIndexRef = useRef(slideIndex);
   slideIndexRef.current = slideIndex;
 
-  // View mode offers what works here: Download, Print, Present and the notes.
+  // View mode offers what works here: Download, Print, Present, the zoom and
+  // the notes.
   useEffect(() => {
     if (!slides) return;
     const hasSlides = slides.length > 0;
     onMenus({
       actions: hasSlides ? [presentAction(locale)] : [],
-      menus: viewerMenus(locale, hasSlides, speakerNotes),
+      menus: viewerMenus(locale, hasSlides, speakerNotes, String(zoom)),
       run: (id, value) => {
         if (!hasSlides) return;
+        const [command, level] = id.split(':');
+        if (command === 'view.zoom' && level)
+          setZoom(level === 'fit' ? 'fit' : Number(level));
         if (id === 'view.present') setPresenting(slideIndexRef.current);
         if (id === 'view.present:start') setPresenting(0);
         if (id === 'view.presenterView') {
@@ -112,7 +125,15 @@ export function PptxViewer({
         if (id === 'view.speakerNotes') toggleSpeakerNotes();
       },
     });
-  }, [locale, onMenus, presenter, slides, speakerNotes, toggleSpeakerNotes]);
+  }, [
+    locale,
+    onMenus,
+    presenter,
+    slides,
+    speakerNotes,
+    toggleSpeakerNotes,
+    zoom,
+  ]);
   const isPresenting = presenting !== null;
   useEffect(() => {
     if (!isPresenting) return;
@@ -231,12 +252,15 @@ export function PptxViewer({
     const canvas = canvasRef.current;
     if (!canvas || !frame || stageSize.height === 0 || stageSize.width === 0)
       return;
-    // The editor's fit zoom (pptx-react fitScale), so the slide matches it.
-    const scale = Math.min(
-      (stageSize.width - 40) / frame.width,
-      (stageSize.height - 40) / frame.height,
-      1
-    );
+    // The editor's scale: its fit zoom (pptx-react fitScale) or the level.
+    const scale =
+      zoom === 'fit'
+        ? Math.min(
+            (stageSize.width - 40) / frame.width,
+            (stageSize.height - 40) / frame.height,
+            1
+          )
+        : zoom;
     const dpr = window.devicePixelRatio || 1;
     const renderCanvas = document.createElement('canvas');
     sizeCanvasForSlide(renderCanvas, frame, dpr, scale);
@@ -277,6 +301,7 @@ export function PptxViewer({
     stageSize,
     highlight,
     slideIndex,
+    zoom,
   ]);
 
   const selectSlide = (next: number) => {

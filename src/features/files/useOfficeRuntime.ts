@@ -26,6 +26,7 @@ import {
   type OfficeHostMessage,
   type OfficeMode,
   type OfficeRenderedPage,
+  type OfficeZoom,
 } from './officeProtocol';
 import {
   getOfficeRuntimeConfig,
@@ -139,6 +140,9 @@ export function useOfficeRuntime({
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const revisionRef = useRef(revision);
+  // The zoom the file was last shown at, kept (not stored) while it stays
+  // open: the next frame, for View or Edit or after a reload, opens at it.
+  const zoomRef = useRef<OfficeZoom | undefined>(undefined);
   const publishedRevision = useRef(revision);
   const initializedFrame = useRef(-1);
   // The source document the frame was loaded with: a frame still showing an
@@ -381,6 +385,7 @@ export function useOfficeRuntime({
         revision: revisionRef.current,
         type: 'load',
         version: OFFICE_PROTOCOL_VERSION,
+        zoom: zoomRef.current,
       },
       [bytes, collaboration?.initialUpdate, checkpoint].filter(
         (item): item is ArrayBuffer => !!item
@@ -493,6 +498,10 @@ export function useOfficeRuntime({
       }
       if (message.type === 'presenting') {
         setPresenting(message.presenting);
+        return;
+      }
+      if (message.type === 'zoom') {
+        zoomRef.current = message.zoom;
         return;
       }
       if (message.type === 'open-presenter') {
