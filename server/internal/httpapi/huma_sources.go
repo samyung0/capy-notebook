@@ -259,7 +259,7 @@ func (a *api) reserveSourceUpload(ctx context.Context, in *createSourceUploadInp
 	}
 	incoming := incomingObjectKey(uploadID, blobID+ext)
 	finalPath := sourceObjectKey(blobID + ext)
-	signed, err := a.blob.PresignPut(ctx, incoming, body.ContentType)
+	signed, err := a.blob.PresignPut(ctx, incoming, body.ContentType, body.SizeBytes)
 	if err != nil {
 		return nil, hErr(err)
 	}

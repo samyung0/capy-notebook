@@ -177,6 +177,9 @@ func mapHTTPError(err error) error {
 	if errors.Is(err, store.ErrNothingToProcess) {
 		return conflictError("nothing_to_process", "no saved changes to process")
 	}
+	if errors.Is(err, store.ErrParseModeUnsupported) {
+		return huma.Error400BadRequest("parse mode not available for this file")
+	}
 	if errors.Is(err, store.ErrInvalidPDFAnnotation) {
 		return huma.Error400BadRequest("invalid annotation")
 	}

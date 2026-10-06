@@ -5,8 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface AdoptEmbeddedMaterial {
-  copy?: boolean;
-  /** @minLength 1 */
-  materialId: string;
+export interface AdoptedMaterialChild {
+  id: string;
+  sourceId: string;
 }

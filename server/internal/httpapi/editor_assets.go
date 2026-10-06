@@ -190,7 +190,7 @@ func (a *api) reserveEditorAsset(w http.ResponseWriter, r *http.Request) {
 	uploadID := randID("eau")
 	uploadPath := "editor-assets/incoming/" + uploadID + "/" + randID("blob") + ext
 	finalPath := editorAssetObjectKey(assetID, ext)
-	signed, err := a.blob.PresignPut(r.Context(), uploadPath, contentType)
+	signed, err := a.blob.PresignPut(r.Context(), uploadPath, contentType, in.SizeBytes)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -306,58 +306,10 @@ func (a *api) completeEditorAssetUpload(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusCreated, asset)
 }
 
-type adoptEditorAssetsRequest struct {
-	AssetIDs []string `json:"assetIds"`
-}
-
-type adoptedEditorAsset struct {
-	SourceID string `json:"sourceId"`
-	AssetID  string `json:"assetId,omitempty"`
-}
-
-// adoptEditorAssetsMax bounds one paste's images.
-const adoptEditorAssetsMax = 50
-
-// adoptEditorAssets makes the route's material its own copy of each pasted
-// asset (store.AdoptEditorAssets). One entry per requested id in request
-// order; assetId is omitted for a source that cannot be adopted.
-func (a *api) adoptEditorAssets(w http.ResponseWriter, r *http.Request) {
-	scope, ok := a.editorAssetScopeFor(w, r)
-	if !ok {
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, editorAssetMetadataMaxBytes)
-	var in adoptEditorAssetsRequest
-	err := decode(r, &in)
-	valid := err == nil && len(in.AssetIDs) > 0 && len(in.AssetIDs) <= adoptEditorAssetsMax
-	seen := make(map[string]bool, len(in.AssetIDs))
-	for _, assetID := range in.AssetIDs {
-		valid = valid && assetID != "" && !seen[assetID]
-		seen[assetID] = true
-	}
-	if !valid {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "assetIds must list 1 to 50 distinct asset ids"})
-		return
-	}
-	var imageMaxBytes int64
-	if scope.study {
-		imageMaxBytes = studyImageMaxBytes
-	}
-	adopted, err := a.s.AdoptEditorAssets(r.Context(), uid(r), scope.workspaceID, scope.materialID, in.AssetIDs, imageMaxBytes)
-	if err != nil {
-		a.failFor(w, r, err)
-		return
-	}
-	out := make([]adoptedEditorAsset, len(in.AssetIDs))
-	for i, sourceID := range in.AssetIDs {
-		out[i] = adoptedEditorAsset{SourceID: sourceID, AssetID: adopted[sourceID]}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"assets": out})
-}
-
 func (a *api) resolveEditorAsset(w http.ResponseWriter, r *http.Request) {
 	asset, err := a.s.GetEditorAsset(r.Context(), chi.URLParam(r, "assetId"))
-	if err != nil || asset.Status != "ready" {
+	// A trashed asset stays hidden until its material's save restores it.
+	if err != nil || asset.Status != "ready" || asset.Trashed {
 		a.fail(w, store.ErrNotFound)
 		return
 	}
@@ -393,7 +345,7 @@ func (a *api) resolveEditorAsset(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"assetId": asset.ID, "url": signed.URL, "expiresAt": signed.ExpiresAt,
 		"name": asset.Name, "purpose": asset.Purpose, "contentType": asset.ContentType,
-		"sizeBytes": asset.SizeBytes,
+		"sizeBytes": asset.SizeBytes, "materialId": asset.MaterialID,
 	})
 }
 

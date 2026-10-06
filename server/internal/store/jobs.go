@@ -218,3 +218,73 @@ func (s *Store) ingestJobPayload(ctx context.Context, q rowsQueryer, actorUserID
 	base["resourceRates"] = rates
 	return json.Marshal(base)
 }
+
+// RetryFileProcessing runs a failed file's processing again on its stored
+// bytes, in the parse mode the owner picked ('none' just stores it). Only the
+// owner retries and pays, as automatic reprocessing charges the owner; the
+// automatic scheduler never retries a failed file. A file that is not failed,
+// has no bytes or already has a parse or ingest job queued answers
+// ErrConflict.
+func (s *Store) RetryFileProcessing(ctx context.Context, actorID, fileID, parseMode, parser string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var wsID, name, kind, status, blobPath, etag string
+	var revision int64
+	err = tx.QueryRow(ctx, `SELECT workspace_id,name,kind,status,COALESCE(blob_path,''),COALESCE(source_etag,''),revision
+		FROM files WHERE id=$1 AND trashed_at IS NULL`, fileID).Scan(&wsID, &name, &kind, &status, &blobPath, &etag, &revision)
+	if isNoRows(err) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	ownerID, err := s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, actorID)
+	if err != nil {
+		return err
+	}
+	if actorID != ownerID {
+		return ErrForbidden
+	}
+	var queued bool
+	err = tx.QueryRow(ctx, `SELECT status,EXISTS(SELECT 1 FROM jobs WHERE payload->>'fileId'=$1 AND type IN ('parse','ingest') AND status IN ('pending','running'))
+		FROM files WHERE id=$1 FOR UPDATE`, fileID).Scan(&status, &queued)
+	if err != nil {
+		return err
+	}
+	if status != string(FileFailed) || blobPath == "" || queued {
+		return ErrConflict
+	}
+	plan, err := sourceupload.BuildProcessingPlan(name, kind, parseMode)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrParseModeUnsupported, err)
+	}
+	if plan.Route == sourceupload.RouteStoreOnly {
+		_, err = tx.Exec(ctx, `UPDATE files SET status='ready',indexed=false,parse_mode=$2 WHERE id=$1`, fileID, parseMode)
+		if err != nil {
+			return err
+		}
+		return tx.Commit(ctx)
+	}
+	reservation, err := s.beginIngestSpendTx(ctx, tx, ownerID, wsID)
+	if err != nil {
+		return err
+	}
+	payload, err := s.ingestJobPayload(ctx, tx, ownerID, map[string]any{
+		"fileId": fileID, "workspaceId": wsID, "blobPath": blobPath, "kind": kind,
+		"parser": parser, "parseMode": parseMode, "processingPlan": plan,
+		"sourceETag": etag, "sourceRevision": revision, "reservationId": reservation,
+	})
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO jobs(id,type,payload) VALUES($1,$2,$3)`, uid("job"), initialPipelineJobType(plan), payload); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE files SET status='pending',indexed=false,parse_mode=$2 WHERE id=$1`, fileID, parseMode); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}

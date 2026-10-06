@@ -8,8 +8,6 @@ import type {
   AccessTokenResp,
   AccountStatus,
   AddChapterReq,
-  AdoptEmbeddedMaterialsReq,
-  AdoptEmbeddedMaterialsResp,
   AgentOperation,
   AnonymousAsset,
   AnonymousFlashcards,
@@ -94,6 +92,8 @@ import type {
   ListWorkspacesParams,
   LocaleInputBody,
   Material,
+  MaterialChildrenInputBody,
+  MaterialChildrenOutputBody,
   MaterialIndexOutputBody,
   MaterialPage,
   MaterialRef,
@@ -118,6 +118,7 @@ import type {
   ReorderChaptersReq,
   ReorderContentReq,
   RequestAccountDeletionReq,
+  RetryProcessingInputBody,
   ReviewSession,
   ReviewWorkspacesOutputBody,
   SaveCanvasReq,
@@ -2708,6 +2709,57 @@ export const processSourceChanges = async (id: string, options?: RequestInit): P
 
 
 
+export type retryFileProcessingResponse202 = {
+  data: void
+  status: 202
+}
+
+export type retryFileProcessingResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 202>
+}
+
+export type retryFileProcessingResponseSuccess = (retryFileProcessingResponse202) & {
+  headers: Headers;
+};
+export type retryFileProcessingResponseError = (retryFileProcessingResponseDefault) & {
+  headers: Headers;
+};
+
+export type retryFileProcessingResponse = (retryFileProcessingResponseSuccess | retryFileProcessingResponseError)
+
+export const getRetryFileProcessingUrl = (id: string,) => {
+
+
+
+
+  return `/api/files/${id}/retry-processing`
+}
+
+/**
+ * @summary Process a failed file again
+ */
+export const retryFileProcessing = async (id: string,
+    retryProcessingInputBody: NonReadonly<RetryProcessingInputBody>, options?: RequestInit): Promise<retryFileProcessingResponse> => {
+
+  const res = await fetch(getRetryFileProcessingUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(retryProcessingInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: retryFileProcessingResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as retryFileProcessingResponse
+}
+
+
+
 export type getSourceSessionResponse200 = {
   data: SourceSession
   status: 200
@@ -3935,57 +3987,6 @@ export const createEmbeddedMaterial = async (id: string,
 
   const data: createEmbeddedMaterialResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createEmbeddedMaterialResponse
-}
-
-
-
-export type adoptEmbeddedMaterialsResponse200 = {
-  data: AdoptEmbeddedMaterialsResp
-  status: 200
-}
-
-export type adoptEmbeddedMaterialsResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type adoptEmbeddedMaterialsResponseSuccess = (adoptEmbeddedMaterialsResponse200) & {
-  headers: Headers;
-};
-export type adoptEmbeddedMaterialsResponseError = (adoptEmbeddedMaterialsResponseDefault) & {
-  headers: Headers;
-};
-
-export type adoptEmbeddedMaterialsResponse = (adoptEmbeddedMaterialsResponseSuccess | adoptEmbeddedMaterialsResponseError)
-
-export const getAdoptEmbeddedMaterialsUrl = (id: string,) => {
-
-
-
-
-  return `/api/materials/${id}/embedded/adopt`
-}
-
-/**
- * @summary Make quiz and flashcard blocks pasted into a note the note's own
- */
-export const adoptEmbeddedMaterials = async (id: string,
-    adoptEmbeddedMaterialsReq: NonReadonly<AdoptEmbeddedMaterialsReq>, options?: RequestInit): Promise<adoptEmbeddedMaterialsResponse> => {
-
-  const res = await fetch(getAdoptEmbeddedMaterialsUrl(id),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(adoptEmbeddedMaterialsReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: adoptEmbeddedMaterialsResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as adoptEmbeddedMaterialsResponse
 }
 
 
@@ -9246,6 +9247,57 @@ export const readSourceRefresh = async (id: string,
 
   const data: readSourceRefreshResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as readSourceRefreshResponse
+}
+
+
+
+export type adoptMaterialChildrenResponse200 = {
+  data: MaterialChildrenOutputBody
+  status: 200
+}
+
+export type adoptMaterialChildrenResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adoptMaterialChildrenResponseSuccess = (adoptMaterialChildrenResponse200) & {
+  headers: Headers;
+};
+export type adoptMaterialChildrenResponseError = (adoptMaterialChildrenResponseDefault) & {
+  headers: Headers;
+};
+
+export type adoptMaterialChildrenResponse = (adoptMaterialChildrenResponseSuccess | adoptMaterialChildrenResponseError)
+
+export const getAdoptMaterialChildrenUrl = (id: string,) => {
+
+
+
+
+  return `/internal/collaboration/materials/${id}/children`
+}
+
+/**
+ * @summary Make the images and quiz or flashcard blocks an update brought in the material's own
+ */
+export const adoptMaterialChildren = async (id: string,
+    materialChildrenInputBody: NonReadonly<MaterialChildrenInputBody>, options?: RequestInit): Promise<adoptMaterialChildrenResponse> => {
+
+  const res = await fetch(getAdoptMaterialChildrenUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(materialChildrenInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adoptMaterialChildrenResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adoptMaterialChildrenResponse
 }
 
 

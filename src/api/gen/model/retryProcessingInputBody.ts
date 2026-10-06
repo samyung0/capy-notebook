@@ -4,10 +4,10 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { AdoptedEmbeddedMaterial } from './adoptedEmbeddedMaterial.ts';
+import type { RetryProcessingInputBodyParseMode } from './retryProcessingInputBodyParseMode.ts';
 
-export interface AdoptEmbeddedMaterialsResp {
+export interface RetryProcessingInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  materials: AdoptedEmbeddedMaterial[];
+  parseMode: RetryProcessingInputBodyParseMode;
 }

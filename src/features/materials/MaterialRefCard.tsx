@@ -13,16 +13,23 @@ import { materialIconName } from '@/lib/fileIcons';
 /** Compact card a note renders for an embedded quiz or flashcard set: kind
  * icon, title, counts and the study action. The content lives in the
  * referenced material; the note never inlines it. Static previews render the
- * same card without a query client, so the data-bound part is optional. */
+ * same card without a query client, so the data-bound part is optional.
+ *
+ * In an editing note (`ownerId`) a block waits as a skeleton until its
+ * material is the note's own: another note's (pasted) until the collaboration
+ * service repoints it to a copy, a trashed one (undo, cut and paste) until the
+ * service restores it and the query reloads. */
 export function MaterialRefCard({
   materialId,
   refKind,
   onEdit,
+  ownerId,
   className,
 }: {
   materialId: string;
   refKind: MaterialRefKind;
   onEdit?: () => void;
+  ownerId?: string;
   className?: string;
 }) {
   const hasQueries = useContext(QueryClientContext) !== undefined;
@@ -34,9 +41,17 @@ export function MaterialRefCard({
       <FileIcon className="size-6 shrink-0" name={materialIconName(refKind)} />
       {materialId && hasQueries ? (
         refKind === 'quiz' ? (
-          <QuizRefBody materialId={materialId} onEdit={onEdit} />
+          <QuizRefBody
+            materialId={materialId}
+            onEdit={onEdit}
+            ownerId={ownerId}
+          />
         ) : (
-          <FlashcardsRefBody materialId={materialId} onEdit={onEdit} />
+          <FlashcardsRefBody
+            materialId={materialId}
+            onEdit={onEdit}
+            ownerId={ownerId}
+          />
         )
       ) : (
         <div className="min-w-0 flex-1">
@@ -110,16 +125,26 @@ function Loading() {
   );
 }
 
+/** Waiting for the note's own material (see MaterialRefCard). */
+const waitingForOwn = (
+  ownerId: string | undefined,
+  isError: boolean,
+  data: { parentMaterialId?: string } | undefined
+) => !!ownerId && (isError || (!!data && data.parentMaterialId !== ownerId));
+
 function QuizRefBody({
   materialId,
   onEdit,
+  ownerId,
 }: {
   materialId: string;
   onEdit?: () => void;
+  ownerId?: string;
 }) {
   const { data, isPending, isError } = useQuiz(materialId, {
     errorBoundary: false,
   });
+  if (waitingForOwn(ownerId, isError, data)) return <Loading />;
   if (isError) return <Unavailable refKind="quiz" />;
   if (isPending || !data) return <Loading />;
   const meta = m.material_ref_questions({ count: data.questions.length });
@@ -142,13 +167,16 @@ function QuizRefBody({
 function FlashcardsRefBody({
   materialId,
   onEdit,
+  ownerId,
 }: {
   materialId: string;
   onEdit?: () => void;
+  ownerId?: string;
 }) {
   const { data, isPending, isError } = useFlashcardSet(materialId, {
     errorBoundary: false,
   });
+  if (waitingForOwn(ownerId, isError, data)) return <Loading />;
   if (isError) return <Unavailable refKind="flashcards" />;
   if (isPending || !data) return <Loading />;
   const meta = m.material_ref_cards({ count: data.cardCount });

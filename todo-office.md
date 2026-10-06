@@ -343,6 +343,15 @@ The 2026-09-25 storage probes stay in `artifacts/2026-09-25-office-storage/`
   Office data.
 - **Safari and Firefox pass:** DOCX ⌘C/⌘X rely on `beforecopy`/`beforecut`
   for WebKit, and the menu bar's edge fades were checked in Chromium only.
+- **Draft writes per action instead of every 250 ms** (Epo, 2026-10-06; weigh
+  during optimization): `src/lib/editDrafts.ts` writes at most every 250 ms
+  (`FLUSH_MS`), an agent's choice when Office drafts landed (a26c7ddc,
+  2026-09-25) that notes inherited (c81cbdd3), never decided. A browser crash
+  or killed tab loses up to the last 250 ms (`pagehide` flushes on a normal
+  close). Notes append small updates, so one IndexedDB write per local update
+  is affordable; Office encodes its whole state on every write, so it would
+  first need the notes' append model (whole state once per offline episode and
+  at unmount).
 
 Dropped 2026-10-05: parser-tolerant XLSX binding, compact XLSX keys and
 values, compression at rest and the DOCX style table (states are small changes

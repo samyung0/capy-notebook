@@ -126,7 +126,7 @@ func (s *Store) AnonymousFlashcardAssetPath(ctx context.Context, setID, assetID 
 
 func (s *Store) anonymousAssetPath(ctx context.Context, materialID, assetID string) (objectPath, contentType string, err error) {
 	err = s.pool.QueryRow(ctx, `SELECT object_path, content_type FROM editor_assets
-		WHERE id=$1 AND material_id=$2 AND status='ready'`, assetID, materialID).Scan(&objectPath, &contentType)
+		WHERE id=$1 AND material_id=$2 AND status='ready' AND trashed_at IS NULL`, assetID, materialID).Scan(&objectPath, &contentType)
 	if isNoRows(err) {
 		return "", "", ErrNotFound
 	}

@@ -18,6 +18,7 @@ export interface PublicQuiz {
   id: string;
   isOwner: boolean;
   name: string;
+  parentMaterialId?: string;
   privacy: Privacy;
   provenance?: Provenance;
   questions: PublicQuizQuestionsItem[];

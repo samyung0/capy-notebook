@@ -1,6 +1,11 @@
-import type { ReactNode } from 'react';
-import { useUpdateWorkspace } from '@/api/hooks';
-import type { FileChange, Workspace, WorkspaceStats } from '@/api/types';
+import { type ReactNode, useState } from 'react';
+import { useFiles, useUpdateWorkspace } from '@/api/hooks';
+import type {
+  FileChange,
+  SourceFile,
+  Workspace,
+  WorkspaceStats,
+} from '@/api/types';
 import {
   type Segment,
   UsageBar,
@@ -16,6 +21,7 @@ import { relativeTime } from '@/features/materials/MaterialListCard';
 import { m } from '@/i18n';
 import { fileIconName } from '@/lib/fileIcons';
 import { userColorPair } from '@/lib/userColor';
+import { AddSourceDialog } from './AddSourceDialog';
 import {
   useCancelFileChanges,
   useProcessFileChanges,
@@ -154,6 +160,58 @@ function FileChanges({
   );
 }
 
+/** Files whose processing failed. Automatic processing skips them; the owner
+ * retries one through the upload dialog's Retry processing. */
+function FailedFiles({
+  owner,
+  workspaceId,
+}: {
+  owner: boolean;
+  workspaceId: string;
+}) {
+  const { data: files } = useFiles(workspaceId, { errorBoundary: false });
+  const [retrying, setRetrying] = useState<SourceFile | null>(null);
+  const failed = files?.filter((file) => file.status === 'failed') ?? [];
+  if (!failed.length) return null;
+  return (
+    <div>
+      <p className="t-subtitle font-bold">{m.workspace_failed_files()}</p>
+      <p className="t-meta mt-1 text-fg-muted">
+        {m.workspace_failed_files_hint()}
+      </p>
+      <ul className="m-0 mt-3 flex list-none flex-col p-0">
+        {failed.map((file) => (
+          <li className="flex min-h-11 items-center gap-3 py-1.5" key={file.id}>
+            <FileIcon className="size-3.75" name={fileIconName(file)} />
+            <span className="min-w-0 flex-1 truncate">{file.name}</span>
+            <span className="t-meta flex shrink-0 items-center gap-1.5 text-tint-error-fg">
+              <Icon name="alert" size={14} />
+              {m.workspace_change_failed()}
+            </span>
+            {owner && (
+              <Button
+                onClick={() => setRetrying(file)}
+                size="sm"
+                variant="outline"
+              >
+                {m.files_retry_processing()}
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
+      {retrying && (
+        <AddSourceDialog
+          onClose={() => setRetrying(null)}
+          open
+          retryFile={retrying}
+          workspaceId={workspaceId}
+        />
+      )}
+    </div>
+  );
+}
+
 /** The tab's shape while the stats load: meter, legend, change list. */
 function IndexingSkeleton() {
   return (
@@ -239,6 +297,7 @@ export function IndexingTab({
         pendingNotes={stats.pendingNotes}
         workspaceId={workspace.id}
       />
+      <FailedFiles owner={workspace.isOwner} workspaceId={workspace.id} />
       <label className="flex items-center justify-between gap-5">
         <span className="font-medium">{m.workspace_auto_process()}</span>
         <Switch

@@ -1863,7 +1863,7 @@ func (s *Store) quizFromMaterial(mt Material) (Quiz, error) {
 		Revision: mt.Revision,
 		ID:       mt.ID, Name: mt.Title, WorkspaceID: mt.WorkspaceID, WorkspaceName: mt.WorkspaceName,
 		Chapters: chapters, ScopeFileNames: mt.ScopeFileNames, Questions: questions, CreatedAt: mt.CreatedAt,
-		Privacy: mt.Privacy, TimeLimitMin: timeLimit, Provenance: mt.Provenance,
+		Privacy: mt.Privacy, TimeLimitMin: timeLimit, Provenance: mt.Provenance, ParentMaterialID: mt.ParentMaterialID,
 		SharePath: materialSharePath(s.shareLinkSecret, string(mt.Kind), mt.ID, mt.WorkspaceID, mt.ParentMaterialID),
 		IsOwner:   mt.IsOwner, CanEdit: mt.Capabilities.CanEdit, CanEditContent: mt.Capabilities.CanEditContent,
 	}, nil
@@ -1975,7 +1975,9 @@ func (s *Store) ListAttempts(ctx context.Context, userID string) ([]Attempt, err
 }
 
 // CreateAttempt stores the attempt and, for a workspace quiz, rates each
-// question and marks the quiz done in the user's study progress.
+// question and marks the quiz done in the user's study progress. A quiz
+// embedded in a note is a quick check: its graded attempt is returned without
+// an id and nothing is stored.
 func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, correct, total float64, answers, questions json.RawMessage) (Attempt, error) {
 	q, err := s.GetQuiz(ctx, materialID)
 	if err != nil {
@@ -2003,6 +2005,10 @@ func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, co
 	}
 	if len(questions) == 0 {
 		questions = json.RawMessage("[]")
+	}
+	if mt.ParentMaterialID != "" {
+		a.ID = ""
+		return a, nil
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {

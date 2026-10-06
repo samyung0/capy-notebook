@@ -525,11 +525,11 @@ func (s *Store) requestSourceRefresh(ctx context.Context, actor, fileID string, 
 	if err != nil {
 		return SourceProcessResult{}, err
 	}
-	var name, kind, mode string
+	var name, kind, mode, status string
 	var ever, indexed, reprocess, autoProcess, manual bool
 	var edited, lastRequested time.Time
 	var running, refreshError, rebuildRefusal *string
-	err = tx.QueryRow(ctx, `SELECT f.name,f.kind,f.parse_mode,f.ever_parsed_successfully,f.indexed,COALESCE(d.reprocess_at<=now(),false),w.auto_process,d.last_edited_at,d.last_refresh_requested_at,d.running_job_id,d.desired_manual,d.refresh_error,d.rebuild_refusal FROM files f JOIN workspaces w ON w.id=f.workspace_id JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND (f.trashed_at IS NULL OR $2) FOR UPDATE OF f,d`, fileID, system).Scan(&name, &kind, &mode, &ever, &indexed, &reprocess, &autoProcess, &edited, &lastRequested, &running, &manual, &refreshError, &rebuildRefusal)
+	err = tx.QueryRow(ctx, `SELECT f.name,f.kind,f.parse_mode,f.status,f.ever_parsed_successfully,f.indexed,COALESCE(d.reprocess_at<=now(),false),w.auto_process,d.last_edited_at,d.last_refresh_requested_at,d.running_job_id,d.desired_manual,d.refresh_error,d.rebuild_refusal FROM files f JOIN workspaces w ON w.id=f.workspace_id JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND (f.trashed_at IS NULL OR $2) FOR UPDATE OF f,d`, fileID, system).Scan(&name, &kind, &mode, &status, &ever, &indexed, &reprocess, &autoProcess, &edited, &lastRequested, &running, &manual, &refreshError, &rebuildRefusal)
 	if isNoRows(err) {
 		return SourceProcessResult{}, ErrNothingToProcess
 	}
@@ -549,7 +549,9 @@ func (s *Store) requestSourceRefresh(ctx context.Context, actor, fileID string, 
 		if reprocess && !indexed && ever && doc.Format != "text" && running == nil {
 			return s.reprocessTx(ctx, tx, result, ws, owner, name, kind, mode)
 		}
-		if refreshError != nil {
+		// A failed file is processed only when the owner asks (Retry
+		// processing, or Process queued behind a running job).
+		if refreshError != nil || (status == string(FileFailed) && !manual) {
 			return result, ErrConflict
 		}
 		// An Office list of moves only is worth 0 tokens and still publishes

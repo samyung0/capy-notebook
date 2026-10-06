@@ -2595,7 +2595,11 @@ checkpoint state, the inverse and Yrs locators of the targets; Capy derives the
 guards from those locators. PDFs and store-only files refuse with
 `unsupported_format`. Undo is `POST /api/chat/edit-operations/{id}/undo`, only
 for the original chat actor with current edit access; a trash, source rebase or
-material compaction invalidates outstanding Undo entries. Browser idempotency
+material compaction invalidates outstanding Undo entries. After a material edit
+or its Undo the collaboration service runs its children pass over the update
+as the chat actor (`collaboration/src/children.ts`): a quiz, flashcard set or
+image the note trashed within the day comes back, one purged since (or never
+readable) is dropped from the note, so a late Undo brings back everything else. Browser idempotency
 keys for trash, restore, purge and Undo are scoped to the acting user
 (`req_<user>:<key>`, at most 64 characters).
 

@@ -8,10 +8,12 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-// Trashed files and materials expire 30 days after the trash transition. The
-// sweep performs the logical SQL DELETE under the same locks as an owner purge;
-// bucket objects follow through pending_blob_deletions and the blob reaper,
-// exactly like a manual delete. Same cadence as the other maintenance loops.
+// Trashed files and materials expire 30 days after the trash transition, a
+// note's trashed children (editor assets, embedded quizzes and sets) after one
+// day. The sweep performs the logical SQL DELETE under the same locks as an
+// owner purge; bucket objects follow through pending_blob_deletions and the
+// blob reaper, exactly like a manual delete. Same cadence as the other
+// maintenance loops.
 const (
 	trashSweepBatch    = 100
 	trashSweepInterval = time.Minute
@@ -25,6 +27,13 @@ func runTrashSweep(ctx context.Context, st *store.Store) {
 		}
 		if purged > 0 {
 			log.Printf("purged %d expired trash item(s)", purged)
+		}
+		assets, err := st.PurgeTrashedEditorAssets(ctx, trashSweepBatch)
+		if err != nil && ctx.Err() == nil {
+			log.Printf("purge trashed editor assets: %v", err)
+		}
+		if assets > 0 {
+			log.Printf("purged %d trashed editor asset(s)", assets)
 		}
 	}
 	sweep()

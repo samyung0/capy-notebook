@@ -9,6 +9,7 @@ import {
   assertAllowedOrigin,
   type CollaborationContext,
   claimsContext,
+  MATERIAL_ROOM_PATTERN,
   SOURCE_ROOM_PATTERN,
   verifyCollaborationToken,
 } from './auth.js';
@@ -18,6 +19,13 @@ import {
   nothingToStoreReceipt,
   registerCheckpointRequest,
 } from './checkpointReceipt.js';
+import {
+  adoptChildren,
+  applyChildren,
+  childWrites,
+  keptIds,
+  planChildren,
+} from './children.js';
 import { loadConfig } from './config.js';
 import {
   assertUpdatePreservesContributors,
@@ -161,6 +169,8 @@ const officeRoots = await officeDocumentRoots();
 let pausedRooms = new WeakSet<Document>();
 const projections = new ProjectionService(store, config.apiUrl, config.secret);
 const serviceCommandCompletions = new ServiceCommandCompletions();
+// One children pass at a time per material room, in update order (children.ts).
+const childPasses = new Map<string, Promise<void>>();
 const failedStores = new Map<string, FailedStoreSnapshot>();
 // Office rooms whose last save waited on pending content: unsaved until a
 // save succeeds. Rooms that reported pending content, once per load.
@@ -682,6 +692,85 @@ function endSourceJoin(socketId: string, room: string) {
   sourceJoins.delete(key);
 }
 
+/**
+ * Makes the children an update wrote the material's own (children.ts): asks
+ * the API as actorUserId, repoints or drops the nodes through a direct
+ * connection (stored like any edit), tells open editors which ids stayed (some
+ * left the trash) and, when storage refused a copy, the sender. A room that
+ * unloaded meanwhile is loaded for the pass.
+ */
+async function childrenPass(
+  room: string,
+  actorUserId: string,
+  update: Uint8Array,
+  notify?: (payload: string) => void
+) {
+  let connection: Awaited<
+    ReturnType<typeof server.hocuspocus.openDirectConnection>
+  > | null = null;
+  const open = () =>
+    server.hocuspocus.openDirectConnection(room, {
+      access: 'write',
+      expiresAt: Number.MAX_SAFE_INTEGER,
+      tokenId: 'children-pass',
+      userId: actorUserId,
+    });
+  try {
+    let document = server.hocuspocus.documents.get(room);
+    if (!document) {
+      connection = await open();
+      document = server.hocuspocus.documents.get(room);
+    }
+    const writes = document ? childWrites(document, update) : null;
+    if (!(document && writes)) return;
+    const plan = planChildren(document, writes);
+    const answer = await adoptChildren(
+      config.apiUrl,
+      config.secret,
+      materialIdFromRoom(room),
+      actorUserId,
+      plan
+    );
+    if (answer.storageRefused)
+      notify?.(JSON.stringify({ reason: 'storage', type: 'children-refused' }));
+    const moved =
+      [...answer.assets].some(([from, to]) => from !== to) ||
+      plan.blocks.some(
+        (block) => answer.blocks.get(block.blockId) !== block.materialId
+      );
+    if (moved) {
+      connection ??= await open();
+      await connection.transact((live) => {
+        applyChildren(live, answer);
+      });
+    }
+    server.hocuspocus.documents
+      .get(room)
+      ?.broadcastStateless(
+        JSON.stringify({ type: 'children-ready', ...keptIds(plan, answer) })
+      );
+  } finally {
+    await connection?.disconnect({ unloadImmediately: true });
+  }
+}
+
+function queueChildrenPass(
+  room: string,
+  actorUserId: string,
+  update: Uint8Array,
+  notify?: (payload: string) => void
+) {
+  const next = (childPasses.get(room) ?? Promise.resolve())
+    .then(() => childrenPass(room, actorUserId, update, notify))
+    .catch((error) => {
+      captureError(error, { room, stage: 'children_pass' });
+    });
+  childPasses.set(room, next);
+  void next.finally(() => {
+    if (childPasses.get(room) === next) childPasses.delete(room);
+  });
+}
+
 const server = new Server<CollaborationContext>({
   address: config.host,
   // A message dropped for a resync (resyncOfficeConnection) is behind us.
@@ -888,6 +977,21 @@ const server = new Server<CollaborationContext>({
         });
       throw error;
     }
+  },
+  // A writer's update that wrote child ids (a paste, undo, cut and paste,
+  // replayed draft) gets a children pass; typing writes none and costs a
+  // decode. Not awaited: the pass calls the API.
+  async onChange({ connection, context, document, documentName, update }) {
+    if (!MATERIAL_ROOM_PATTERN.test(documentName) || !connection) return;
+    const actor = (context as CollaborationContext | undefined)?.userId;
+    if (!actor || !childWrites(document, update)) return;
+    queueChildrenPass(documentName, actor, update, (payload) => {
+      try {
+        connection.sendStateless(payload);
+      } catch {
+        // The sender left; nobody to tell.
+      }
+    });
   },
   async onLoadDocument({ document, documentName, context }) {
     assertRoomAvailable(documentName);
@@ -1608,6 +1712,10 @@ async function handleDocumentRequest(
       if (result.update && live) {
         Y.applyUpdate(live, result.update, 'service-edit');
       }
+      // An AI edit or its Undo can bring back a quiz or image the note had
+      // trashed (restored) or one purged since (dropped).
+      if (result.update)
+        queueChildrenPass(body.room, body.actorUserId, result.update);
       if (result.version && result.content) {
         try {
           await projections.projectAndRecord(

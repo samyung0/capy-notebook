@@ -120,17 +120,10 @@ test('note: created in the browser, two editors converge, an image stored, expor
   );
 
   // 6. Delete after the grace minute, then Undo.
-  const restored = await deleteAndUndoNoteImage(
-    run,
-    editor,
-    noteId,
-    asset,
-    png,
-    imageName
-  );
+  await deleteAndUndoNoteImage(run, editor, noteId, asset, imageName);
   await run.attach(`${noteId}-note`, {
     embed: embed.id,
-    images: [asset.id, restored],
+    images: [asset.id],
   });
   await noProviderCalls(run, workspaceId);
 });

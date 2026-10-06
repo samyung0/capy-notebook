@@ -1,9 +1,10 @@
 import { Link } from '@tanstack/react-router';
-import type { MouseEventHandler } from 'react';
+import { type MouseEventHandler, useState } from 'react';
 import type { Chapter, SourceFile, UserColor } from '@/api/types';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { StudyMark, type StudyRow } from '@/features/study/studyItems';
+import { AddSourceDialog } from '@/features/workspace/AddSourceDialog';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import { toFileActionTarget } from '@/features/workspace/contentActionTarget';
 import { m } from '@/i18n';
@@ -24,6 +25,7 @@ export function FileListItem({
   chapters = [],
   onDeleted,
   readOnly = false,
+  canRetry = false,
   study,
 }: {
   beforeDelete?: () => boolean;
@@ -37,12 +39,15 @@ export function FileListItem({
   onDeleted?: (id: string) => void;
   /** Shared workspace viewers can open files but cannot mutate them. */
   readOnly?: boolean;
+  /** The workspace owner may retry a failed file's processing. */
+  canRetry?: boolean;
   /** The reader's own progress on this file, while progress is on. */
   study?: StudyRow;
 }) {
   const ingesting = fileIsIngesting(file.status);
   const waitingForBytes = ingesting && !file.hasBytes;
   const failed = file.status === 'failed';
+  const [retrying, setRetrying] = useState(false);
 
   return (
     <div className="relative flex flex-col">
@@ -90,7 +95,19 @@ export function FileListItem({
               active && 'bg-surface-hover-bg'
             )}
             hoverIconContainerClassName="p-1"
-            leadingItems={study?.menuItems}
+            leadingItems={[
+              ...(failed && canRetry
+                ? [
+                    {
+                      icon: 'refresh' as const,
+                      label: m.files_retry_processing(),
+                      onClick: () => setRetrying(true),
+                      warning: true,
+                    },
+                  ]
+                : []),
+              ...(study?.menuItems ?? []),
+            ]}
             onDeleted={() => onDeleted?.(file.id)}
             propertiesClassName="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2"
             propertyLabelClassName="text-fg-secondary"
@@ -99,6 +116,14 @@ export function FileListItem({
           />
         )}
       </div>
+      {retrying && (
+        <AddSourceDialog
+          onClose={() => setRetrying(false)}
+          open
+          retryFile={file}
+          workspaceId={workspaceId}
+        />
+      )}
       {failed && (
         <div className="t-label z-10 -mt-1 mb-0.5 px-2 font-medium text-fg-muted tracking-normal">
           {m.files_processing_error()}

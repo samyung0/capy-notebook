@@ -70,6 +70,86 @@ function checkpointState(checkpoint: Checkpoint): Uint8Array {
 }
 const REMOTE = 'mock-room';
 
+/** The quiz and flashcard blocks whose materialId an update wrote, as the
+ * service reads them (collaboration/src/children.ts childWrites). */
+function writtenBlocks(document: Y.Doc, update: Uint8Array) {
+  const blocks = new Set<Y.XmlText>();
+  for (const struct of Y.decodeUpdate(update).structs) {
+    if (!(struct instanceof Y.Item && struct.content instanceof Y.ContentAny))
+      continue;
+    let item: unknown;
+    try {
+      item = Y.getItem(document.store, struct.id);
+    } catch {
+      continue;
+    }
+    if (
+      item instanceof Y.Item &&
+      !item.deleted &&
+      item.parentSub === 'materialId' &&
+      item.parent instanceof Y.XmlText
+    )
+      blocks.add(item.parent);
+  }
+  return blocks;
+}
+
+/** The collaboration service's children pass (collaboration/src/children.ts)
+ * for quiz and flashcard blocks a writer's update wrote: a block naming
+ * another note's set gets the note's copy, a set already in another block gets
+ * its own copy, an unknown one goes. Mock assets all belong to every note, so
+ * images need nothing. */
+function mockChildrenPass(room: Room, update: Uint8Array) {
+  const note = db.materials.find((x) => x.id === room.target.id);
+  const written = writtenBlocks(room.document, update);
+  if (!(note && written.size)) return;
+  const root = room.document.get('content', Y.XmlText);
+  const ops = root.toDelta() as Array<{ insert: unknown }>;
+  const refOf = (block: unknown) => {
+    if (!(block instanceof Y.XmlText)) return '';
+    const { materialId, type } = block.getAttributes() as Record<
+      string,
+      unknown
+    >;
+    return type === 'material_ref' && typeof materialId === 'string'
+      ? materialId
+      : '';
+  };
+  // Sets the blocks the update did not write already hold.
+  const kept = new Set(
+    ops
+      .filter((op) => !written.has(op.insert as Y.XmlText))
+      .map((op) => refOf(op.insert))
+  );
+  const changes: Array<() => void> = [];
+  let index = 0;
+  for (const op of ops) {
+    const block = op.insert;
+    const at = index;
+    index += typeof block === 'string' ? block.length : 1;
+    const materialId = refOf(block);
+    if (!(materialId && written.has(block as Y.XmlText))) continue;
+    const own =
+      db.materials.find((x) => x.id === materialId)?.parentMaterialId ===
+      note.id;
+    if (own && !kept.has(materialId)) {
+      kept.add(materialId);
+      continue;
+    }
+    const copy = db.copyEmbeddedInto(note, materialId);
+    if (copy) kept.add(copy);
+    changes.push(() =>
+      copy
+        ? (block as Y.XmlText).setAttribute('materialId', copy)
+        : root.delete(at, 1)
+    );
+  }
+  if (!changes.length) return;
+  room.document.transact(() => {
+    for (const change of changes.reverse()) change();
+  }, REMOTE);
+}
+
 function createRoom(name: string, target: Room['target']): Room {
   const document = new Y.Doc({ gc: true, guid: name });
   let checkpoint = checkpoints.get(name);
@@ -105,6 +185,11 @@ function createRoom(name: string, target: Room['target']): Room {
       if (participant !== origin)
         Y.applyUpdate(participant.document, update, participant.origin);
     }
+    if (
+      target.kind === 'material' &&
+      room.participants.has(origin as Participant)
+    )
+      setTimeout(() => mockChildrenPass(room, update));
   });
   rooms.set(name, room);
   return room;

@@ -403,6 +403,8 @@ type Quiz struct {
 	CreatedAt     time.Time        `json:"createdAt"`
 	Privacy       store.Privacy    `json:"privacy"`
 	SharePath     string           `json:"sharePath,omitempty"`
+	// ParentMaterialID is the note a quiz is embedded in (a quick check).
+	ParentMaterialID string `json:"parentMaterialId,omitempty"`
 	// Provenance credits the library books the quiz was written from.
 	Provenance *store.Provenance `json:"provenance,omitempty"`
 	// IsOwner and CanEdit are request-scoped. Explicit workspace editors can
@@ -418,7 +420,7 @@ func FromQuiz(q store.Quiz) Quiz {
 		Revision: q.Revision,
 		ID:       q.ID, Name: q.Name, WorkspaceID: q.WorkspaceID, WorkspaceName: q.WorkspaceName,
 		Chapters: q.Chapters, Questions: decodeQuestions(q.Questions), CreatedAt: q.CreatedAt,
-		Privacy: q.Privacy, SharePath: q.SharePath, Provenance: q.Provenance,
+		Privacy: q.Privacy, SharePath: q.SharePath, ParentMaterialID: q.ParentMaterialID, Provenance: q.Provenance,
 		IsOwner: q.IsOwner, CanEdit: q.CanEdit, CanEditContent: q.CanEditContent,
 	}
 	if out.Chapters == nil {

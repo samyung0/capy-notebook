@@ -204,6 +204,9 @@ export const studyHandlers = [
       itemId: string;
       rating: number;
     };
+    // Embedded sets record nothing; the study page never sends their ratings.
+    if (db.materials.find((x) => x.id === body.materialId)?.parentMaterialId)
+      return new HttpResponse(null, { status: 422 });
     rate(body.materialId, body.itemId, body.rating === 1);
     return new HttpResponse(null, { status: 204 });
   }),

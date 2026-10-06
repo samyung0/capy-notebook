@@ -451,6 +451,20 @@ tab lists every file with unprocessed edits as waiting, queued, processing
 is queued or processing. The owner processes a waiting or failed file, or all
 of them, and cancels a queued one; a file whose processing started refuses
 with `processing_started`. Editors see the list without actions.
+
+A source file whose processing failed (`files.status='failed'`) is processed
+again only by its owner: automatic processing never picks it, even with Auto
+process edits on (the collaboration scheduler and `RequestSourceRefresh` skip
+it unless the owner asked). The file row's menu offers Retry processing in the
+warning tint (`MenuItem.warning`), and the Indexing tab lists every failed
+file under Failed files with the same action. Both open the upload dialog in a
+retry mode (`AddSourceDialog` `retryFile`): one fixed row read from the stored
+bytes through the file's presigned link, so the fast-parse check and estimate
+run as for an upload, then `POST /api/files/{id}/retry-processing` with the
+chosen parse mode. The server queues the file's first processing again on its
+stored bytes, charged to the owner like automatic reprocessing; `none` just
+stores it, a file that is not failed or already has a job answers 409, a mode
+the format does not offer 400 (`RetryFileProcessing`).
 If a published source changes while an answer or generation request gathers
 evidence, `source_changed` asks the user to retry. The Go relay preserves both
 codes for HTTP responses and chat events; neither starts an automatic retry.

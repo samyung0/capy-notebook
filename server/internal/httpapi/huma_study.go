@@ -142,7 +142,7 @@ func (a *api) rateReviewItem(ctx context.Context, in *reviewRatingInput) (*Empty
 	err := a.s.RateItem(ctx, userID(ctx), store.Rating{
 		MaterialID: in.Body.MaterialID, ItemID: in.Body.ItemID, Rating: &in.Body.Rating,
 	}, time.Now())
-	if errors.Is(err, store.ErrStudyRating) {
+	if errors.Is(err, store.ErrStudyRating) || errors.Is(err, store.ErrStudyEmbedded) {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	return &Empty{}, hErr(err)
@@ -175,7 +175,9 @@ func (a *api) checkReviewItem(ctx context.Context, in *reviewCheckInput) (*grade
 	score := correct / total
 	if err := a.s.RateItem(ctx, userID(ctx), store.Rating{
 		MaterialID: in.Body.MaterialID, ItemID: in.Body.ItemID, Score: &score,
-	}, time.Now()); err != nil {
+	}, time.Now()); errors.Is(err, store.ErrStudyEmbedded) {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	} else if err != nil {
 		return nil, hErr(err)
 	}
 	return &gradedQuestionOutput{Body: apimodel.GradedQuestion{Correct: correct, Total: total, Question: graded[0]}}, nil

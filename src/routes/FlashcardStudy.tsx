@@ -173,8 +173,10 @@ function SignedInStudy({ setId, shared }: { setId: string; shared: boolean }) {
         })
       }
       onRate={(card, rating) =>
-        // Every reader records their own progress. One toast however many
-        // ratings fail in a row.
+        // Every reader records their own progress, except in a set embedded in
+        // a note, which records nothing. One toast however many ratings fail
+        // in a row.
+        !set.parentMaterialId &&
         rateItem({
           itemId: card.id,
           materialId: setId,

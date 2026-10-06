@@ -56,7 +56,13 @@ export type CollaborationEvent =
       type: 'compaction-complete' | 'compaction-evict';
     }
   /** The room turned read-only for this writer (a frozen account). */
-  | { room: string; type: 'room-read-only' };
+  | { room: string; type: 'room-read-only' }
+  /** The children pass kept these ids as the note's own (some just left the
+   * trash): blocks waiting on one load it again. */
+  | { assetIds: string[]; materialIds: string[]; type: 'children-ready' }
+  /** A pasted copy did not fit the payer's storage; its block was removed.
+   * Sent only to the writer who pasted. */
+  | { type: 'children-refused' };
 
 const LIMIT_CODES = new Set<string>([
   'document_depth_exceeded',
@@ -140,6 +146,19 @@ export function parseCollaborationEvent(
       return typeof raw.room === 'string'
         ? { room: raw.room, type: 'room-read-only' }
         : null;
+    case 'children-ready': {
+      const ids = (value: unknown) =>
+        Array.isArray(value)
+          ? value.filter((id): id is string => typeof id === 'string')
+          : [];
+      return {
+        assetIds: ids(raw.assetIds),
+        materialIds: ids(raw.materialIds),
+        type: 'children-ready',
+      };
+    }
+    case 'children-refused':
+      return { type: 'children-refused' };
     case 'compaction-complete':
     case 'compaction-evict':
       return {

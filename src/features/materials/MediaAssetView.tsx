@@ -1,5 +1,13 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { resolveEditorAsset } from '@/api/editorAssets';
+import { Skeleton } from '@/components/ui/feedback';
+import { onChildrenReady } from '@/features/notes/childrenReady';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -17,14 +25,14 @@ export interface MediaAssetNode {
 
 type AssetState =
   | { status: 'loading' }
-  | { status: 'ready'; url: string; name: string; contentType: string }
+  | {
+      status: 'ready';
+      url: string;
+      name: string;
+      contentType: string;
+      materialId?: string;
+    }
   | { status: 'error'; kind: 'missing' | 'failed' };
-
-// The URL each asset was last shown with in this tab. The browser cache keys
-// the shown bytes by it, so a removed note image can be kept without a new
-// link or download (features/notes/noteAssets.ts).
-const shownUrls = new Map<string, string>();
-export const shownAssetUrl = (assetId: string) => shownUrls.get(assetId);
 
 export function useResolvedAsset(assetId: string | undefined) {
   const [state, setState] = useState<AssetState>({ status: 'loading' });
@@ -39,9 +47,9 @@ export function useResolvedAsset(assetId: string | undefined) {
     setState({ status: 'loading' });
     void resolveEditorAsset(assetId, controller.signal)
       .then((asset) => {
-        shownUrls.set(assetId, asset.url);
         setState({
           contentType: asset.contentType,
+          materialId: asset.materialId,
           name: asset.name,
           status: 'ready',
           url: asset.url,
@@ -58,7 +66,8 @@ export function useResolvedAsset(assetId: string | undefined) {
     return () => controller.abort();
   }, [assetId, generation]);
 
-  return [state, () => setGeneration((value) => value + 1)] as const;
+  const reload = useCallback(() => setGeneration((value) => value + 1), []);
+  return [state, reload] as const;
 }
 
 /** Signed when clicked, not when rendered: open the tab first so the
@@ -76,19 +85,39 @@ export function openEditorAsset(assetId: string) {
 
 /** Presentational media renderer shared by the editable node component and the
  * static preview. Resolves the asset URL and renders by media type. Images get
- * the hover `toolbar`, optional resize handles and a `caption` slot. */
+ * the hover `toolbar`, optional resize handles and a `caption` slot.
+ *
+ * In an editable note (`ownerId`) a node waits as a skeleton until its asset is
+ * the note's own: another note's (pasted) until the collaboration service
+ * repoints it to a copy, a trashed one (undo, cut and paste) until the service
+ * restores it and says so (childrenReady.ts). */
 export function MediaAssetView({
   caption,
   element,
   onWidthChange,
+  ownerId,
   toolbar,
 }: {
   caption?: ReactNode;
   element: MediaAssetNode;
   onWidthChange?: (width: string) => void;
+  ownerId?: string;
   toolbar?: ReactNode;
 }) {
   const [asset, reload] = useResolvedAsset(element.assetId);
+  const { assetId } = element;
+  useEffect(() => {
+    if (!(ownerId && assetId)) return;
+    return onChildrenReady((ready) => {
+      if (ready.assetIds.includes(assetId)) reload();
+    });
+  }, [assetId, ownerId, reload]);
+  const waiting =
+    !!ownerId &&
+    (asset.status === 'error' ||
+      (asset.status === 'ready' &&
+        !!asset.materialId &&
+        asset.materialId !== ownerId));
   // An SVG without width/height has no intrinsic width and collapses in a
   // fit-to-image frame, so it fills the block instead.
   const [fill, setFill] = useState(false);
@@ -115,14 +144,15 @@ export function MediaAssetView({
           />
         </div>
       )}
-      {asset.status === 'error' && (
+      {waiting && <Skeleton className="h-24 w-full rounded-card" />}
+      {asset.status === 'error' && !waiting && (
         <div className="rounded-card border border-solid-error/30 bg-tint-error px-3 py-4 text-sm text-solid-error">
           {asset.kind === 'missing'
             ? m.material_missing_asset()
             : m.material_asset_failed()}
         </div>
       )}
-      {asset.status === 'ready' && element.type === 'img' && (
+      {asset.status === 'ready' && !waiting && element.type === 'img' && (
         <MediaFrame
           aspectRatio={aspectRatio}
           fill={fill}
@@ -137,9 +167,6 @@ export function MediaAssetView({
               'block h-auto rounded-card',
               element.width || fill ? 'w-full' : 'max-w-full'
             )}
-            // A CORS request, so its cached response can be read back by
-            // fetch when the image is removed (features/notes/noteAssets.ts).
-            crossOrigin="anonymous"
             onLoad={(event) => {
               const image = event.currentTarget;
               if (!image.offsetWidth) setFill(true);
@@ -150,7 +177,7 @@ export function MediaAssetView({
           />
         </MediaFrame>
       )}
-      {asset.status === 'ready' && element.type === 'img' && (
+      {asset.status === 'ready' && !waiting && element.type === 'img' && (
         <MediaPreview
           caption={element.caption?.map((node) => node.text).join('')}
           onOpenChange={setPreviewing}
@@ -164,14 +191,11 @@ export function MediaAssetView({
               // No intrinsic size: take the height, width from the viewBox.
               fill && 'h-full w-auto'
             )}
-            // A CORS request, so its cached response can be read back by
-            // fetch when the image is removed (features/notes/noteAssets.ts).
-            crossOrigin="anonymous"
             src={asset.url}
           />
         </MediaPreview>
       )}
-      {asset.status === 'ready' && element.type === 'audio' && (
+      {asset.status === 'ready' && !waiting && element.type === 'audio' && (
         <audio
           className="w-full"
           controls
@@ -180,7 +204,7 @@ export function MediaAssetView({
           src={asset.url}
         />
       )}
-      {asset.status === 'ready' && element.type === 'file' && (
+      {asset.status === 'ready' && !waiting && element.type === 'file' && (
         <button
           className="flex w-full items-center gap-2 rounded-card border border-line bg-surface-hover-bg px-3 py-2 text-fg text-sm hover:border-line-strong"
           onClick={openFile}

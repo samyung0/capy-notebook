@@ -89,6 +89,10 @@ var (
 // ErrNothingToProcess means a file has no saved source edits to process.
 var ErrNothingToProcess = errors.New("nothing to process")
 
+// ErrParseModeUnsupported refuses a retry in a parse mode the file's format
+// does not offer.
+var ErrParseModeUnsupported = errors.New("parse mode not available for this file")
+
 // ErrAccountLifecycleChanged means an account-deletion confirmation was based
 // on a preflight taken before support restored the account.
 var ErrAccountLifecycleChanged = errors.New("account lifecycle changed")

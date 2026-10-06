@@ -37,13 +37,16 @@ const menuItemVariants = cva(
   ),
   {
     defaultVariants: {
-      danger: false,
+      tone: 'default',
     },
     variants: {
-      danger: {
-        false:
+      tone: {
+        danger:
+          'text-tint-error-fg hover:bg-tint-error data-[highlighted]:bg-tint-error',
+        default:
           'text-fg hover:bg-overlay-hover data-[highlighted]:bg-overlay-hover',
-        true: 'text-tint-error-fg hover:bg-tint-error data-[highlighted]:bg-tint-error',
+        warning:
+          'text-tint-warning-fg hover:bg-tint-warning data-[highlighted]:bg-tint-warning',
       },
     },
   }
@@ -57,6 +60,8 @@ export interface MenuItem {
   icon?: IconName;
   label: string;
   onClick?: () => void;
+  /** Something needs the user's attention, short of danger. */
+  warning?: boolean;
 }
 
 export interface MenuProps extends VariantProps<typeof menuVariants> {
@@ -183,7 +188,13 @@ export function Menu({
           {items.map((it, i) => (
             <DropdownMenuItem
               className={cn(
-                menuItemVariants({ danger: it.danger }),
+                menuItemVariants({
+                  tone: it.danger
+                    ? 'danger'
+                    : it.warning
+                      ? 'warning'
+                      : 'default',
+                }),
                 itemClassName
               )}
               disabled={it.disabled}

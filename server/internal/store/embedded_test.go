@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
@@ -99,6 +100,18 @@ func TestEmbeddedMaterialFollowsItsNote(t *testing.T) {
 	if _, err := s.GetMaterial(ctx, cards.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("a never-referenced row over a minute old should be trashed, got %v", err)
 	}
+	// purgeIn is how long a trashed row of this note waits for the sweep.
+	purgeIn := func(id string) time.Duration {
+		t.Helper()
+		var seconds float64
+		if err := s.pool.QueryRow(ctx, `SELECT EXTRACT(EPOCH FROM purge_after-now()) FROM materials WHERE id=$1`, id).Scan(&seconds); err != nil {
+			t.Fatal(err)
+		}
+		return time.Duration(seconds) * time.Second
+	}
+	if left := purgeIn(cards.ID); left < 23*time.Hour || left > 24*time.Hour {
+		t.Fatalf("an unreferenced row is purged in %s, want a day", left)
+	}
 	content := noteWithRefs(t, quiz, cards)
 	trash, err := s.ListTrash(ctx, ownerID, "", 10, "")
 	if err != nil {
@@ -127,6 +140,9 @@ func TestEmbeddedMaterialFollowsItsNote(t *testing.T) {
 	for _, id := range []string{quiz.ID, cards.ID} {
 		if _, err := s.GetMaterial(ctx, id); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("embedded row %s should be trashed with the note, got %v", id, err)
+		}
+		if left := purgeIn(id); left < 29*24*time.Hour {
+			t.Fatalf("a row trashed with its note is purged in %s, want the note's 30 days", left)
 		}
 	}
 	if _, err := s.RestoreTrashed(ctx, ownerID, agenttools.KindMaterial, note.ID, trashed.Effect.TrashEpisodeID, AgentOperation{}); err != nil {
@@ -345,10 +361,10 @@ func TestAdoptEmbeddedMaterials(t *testing.T) {
 		}
 		return out
 	}
-	list, err := s.AdoptEmbeddedMaterials(ctx, editorID, target.ID,
+	list, refused, err := s.AdoptEmbeddedMaterials(ctx, editorID, target.ID,
 		blocks(own.ID, quiz.ID, cards.ID, cut.ID, foreign.ID, "mat_purged"))
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || refused {
+		t.Fatal(err, refused)
 	}
 	adopted := map[string]string{}
 	for i, id := range []string{own.ID, quiz.ID, cards.ID, cut.ID, foreign.ID, "mat_purged"} {
@@ -407,7 +423,7 @@ func TestAdoptEmbeddedMaterials(t *testing.T) {
 
 	// The same quiz in several blocks: each block asking for a copy gets its
 	// own, the note's own row included, and one not asking keeps it.
-	twice, err := s.AdoptEmbeddedMaterials(ctx, editorID, target.ID, []EmbeddedAdoption{
+	twice, _, err := s.AdoptEmbeddedMaterials(ctx, editorID, target.ID, []EmbeddedAdoption{
 		{SourceID: own.ID}, {SourceID: own.ID, Copy: true}, {SourceID: own.ID, Copy: true},
 		{SourceID: quiz.ID}, {SourceID: quiz.ID, Copy: true},
 	})
@@ -424,24 +440,29 @@ func TestAdoptEmbeddedMaterials(t *testing.T) {
 		t.Fatalf("own row copy = %+v, %v", ownCopy, err)
 	}
 
-	// The note's own trashed row keeps its id (the next projection restores
-	// it) unless the block asks for a copy.
+	// The note's own trashed row keeps its id and leaves the trash at once,
+	// unless the block asks for a copy.
 	trash(own.ID)
-	trashed, err := s.AdoptEmbeddedMaterials(ctx, editorID, target.ID,
+	trashed, _, err := s.AdoptEmbeddedMaterials(ctx, editorID, target.ID,
 		[]EmbeddedAdoption{{SourceID: own.ID}, {SourceID: own.ID, Copy: true}})
 	if err != nil || trashed[0] != own.ID || trashed[1] == "" || trashed[1] == own.ID {
 		t.Fatalf("trashed own row = %v, %v", trashed, err)
 	}
+	if _, err := s.GetMaterial(ctx, own.ID); err != nil {
+		t.Fatalf("own row after its block came back: %v", err)
+	}
 
-	if _, err := s.AdoptEmbeddedMaterials(ctx, viewerID, target.ID, blocks(quiz.ID)); err == nil {
+	if _, _, err := s.AdoptEmbeddedMaterials(ctx, viewerID, target.ID, blocks(quiz.ID)); err == nil {
 		t.Fatal("a viewer adopted into the note")
 	}
 	limit := mustPlanLimits(t, s, PlanFree).StorageBytes
 	if _, err := s.pool.Exec(ctx, `UPDATE user_storage SET used_bytes=$2 WHERE user_id=$1`, ownerID, limit); err != nil {
 		t.Fatal(err)
 	}
-	var quota *QuotaExceededError
-	if _, err := s.AdoptEmbeddedMaterials(ctx, editorID, target.ID, blocks(quiz.ID)); !errors.As(err, &quota) {
-		t.Fatalf("adopt over quota err = %v, want quota exceeded", err)
+	// Over the quota the copy is left out and the call says so; the own row
+	// still answers.
+	if list, refused, err := s.AdoptEmbeddedMaterials(ctx, editorID, target.ID, blocks(own.ID, quiz.ID)); err != nil || !refused ||
+		list[0] != own.ID || list[1] != "" {
+		t.Fatalf("adopt over quota = %v refused %v, %v", list, refused, err)
 	}
 }

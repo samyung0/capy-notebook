@@ -1,6 +1,9 @@
 package blob
 
 import (
+	"context"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -54,5 +57,33 @@ func TestReadPrefixRejectsNonPositiveLimit(t *testing.T) {
 	store := &B2{}
 	if _, err := store.ReadPrefix(t.Context(), "editor-assets/asset_1/blob_1.png", 0); err == nil {
 		t.Fatal("ReadPrefix accepted a zero byte limit")
+	}
+}
+
+func TestPresignPutSignsDeclaredSize(t *testing.T) {
+	store, err := NewB2(B2Config{
+		Endpoint: "https://s3.us-west-004.backblazeb2.com",
+		Region:   "us-west-004",
+		Bucket:   "capy-notebook",
+		KeyID:    "test-key-id",
+		AppKey:   "test-app-key",
+	})
+	if err != nil {
+		t.Fatalf("NewB2: %v", err)
+	}
+	signed, err := store.PresignPut(context.Background(), "incoming/up/blob.pdf", "application/pdf", 1234)
+	if err != nil {
+		t.Fatalf("PresignPut: %v", err)
+	}
+	u, err := url.Parse(signed.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := u.Query().Get("X-Amz-SignedHeaders"); !strings.Contains(got, "content-length") {
+		t.Errorf("signed headers = %q, want content-length", got)
+	}
+	// The browser sets Content-Length itself and may not send it by hand.
+	if _, ok := signed.Headers["Content-Length"]; ok {
+		t.Error("headers for the browser carry Content-Length")
 	}
 }

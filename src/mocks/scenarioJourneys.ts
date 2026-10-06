@@ -40,6 +40,7 @@ import {
   getMockScenarioHandlers,
   type MockScenarioId,
   mockScenarioOptions,
+  scenarioUploadName,
 } from './scenarios';
 
 export const editorScenarios = [
@@ -835,9 +836,37 @@ export async function runJourney(
           ),
         'ingest outcome in the transfer panel'
       );
-      return id === 'upload-parse-failed'
-        ? 'The upload was added and its parsing failed.'
-        : 'The upload was added and stored without an index.';
+      if (id === 'upload-not-indexed')
+        return 'The upload was added and stored without an index.';
+      // The failed file offers Retry processing in its row menu, which opens
+      // the upload panel on its stored bytes.
+      const name = await ui.wait(
+        () =>
+          [...document.querySelectorAll('a span')].find(
+            (node) =>
+              node.textContent === scenarioUploadName &&
+              node
+                .closest('.group')
+                ?.parentElement?.textContent?.includes(
+                  m.files_processing_error()
+                )
+          ),
+        'failed upload row'
+      );
+      const menu = name
+        .closest('.group')
+        ?.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]');
+      if (!menu) throw new Error('Failed upload row menu is missing');
+      ui.activate(menu);
+      await ui.click(m.files_retry_processing());
+      await ui.wait(
+        () =>
+          document
+            .querySelector('[role="dialog"]')
+            ?.textContent?.includes(scenarioUploadName),
+        'retry processing dialog'
+      );
+      return 'The upload was added and its parsing failed; Retry processing reopens it in the upload panel.';
     }
     case 'import-analysis':
       fail();

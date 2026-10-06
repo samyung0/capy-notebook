@@ -59,6 +59,7 @@ import { quizEditSearch } from '@/features/quizzes/quizNavigation';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { uid } from '@/lib/id';
+import { useOptionalEditorRuntime } from '../EditorRuntime';
 import { useEditorScrollArea } from '../editorScrollArea';
 import {
   FLASHCARD_BACK_CLASS,
@@ -368,6 +369,7 @@ export function FlashcardsElement(props: PlateElementProps) {
 export function MaterialRefElement(props: PlateElementProps) {
   const editor = useEditorRef();
   const readOnly = useReadOnly();
+  const owner = useOptionalEditorRuntime()?.materialId;
   const dialogs = useOptionalNoteBlockDialogs();
   const element = props.element as unknown as MaterialRefNode;
   const { materialId, refKind, pending } = element;
@@ -445,6 +447,7 @@ export function MaterialRefElement(props: PlateElementProps) {
               : editFlashcards
             : undefined
         }
+        ownerId={readOnly ? undefined : owner}
         refKind={refKind}
       />
       {props.children}

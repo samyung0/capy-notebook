@@ -46,7 +46,7 @@ import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { deferStorageRefusal, errorCopy } from '@/lib/errors';
-import { useEditorRuntime } from './EditorRuntime';
+import { useEditorRuntime, useOptionalEditorRuntime } from './EditorRuntime';
 import {
   acceptsPurpose,
   editorAssetPurpose,
@@ -266,10 +266,13 @@ export const MediaPlaceholderElement = withHOC(
 export function MediaAssetElement(props: PlateElementProps) {
   const element = props.element as unknown as MediaAssetNode;
   const readOnly = useReadOnly();
+  // An editing note shows only its own assets (MediaAssetView).
+  const runtime = useOptionalEditorRuntime();
+  const ownerId = readOnly ? undefined : runtime?.materialId;
   if (element.type !== KEYS.img) {
     return (
       <PlateElement {...props} className="my-3">
-        <MediaAssetView element={element} />
+        <MediaAssetView element={element} ownerId={ownerId} />
         {props.children}
       </PlateElement>
     );
@@ -299,6 +302,7 @@ export function MediaAssetElement(props: PlateElementProps) {
             ? undefined
             : (width) => props.editor.tf.setNodes({ width }, { at: props.path })
         }
+        ownerId={ownerId}
         toolbar={<ImageToolbar node={props.element} readOnly={readOnly} />}
       />
       {props.children}

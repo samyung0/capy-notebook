@@ -47,7 +47,9 @@ type Store interface {
 	Put(id string, r io.Reader) (path string, size int64, err error)
 	PresignGet(ctx context.Context, path string) (url string, err error)
 	PresignGetWithExpiry(ctx context.Context, path string) (PresignedGet, error)
-	PresignPut(ctx context.Context, path, contentType string) (PresignedPut, error)
+	// PresignPut signs an upload of path. A positive size is signed as its
+	// Content-Length, so the bucket refuses a body of any other size.
+	PresignPut(ctx context.Context, path, contentType string, size int64) (PresignedPut, error)
 	Head(ctx context.Context, path string) (ObjectInfo, error)
 	// ReadPrefix returns at most maxBytes from the beginning of an object.
 	// It is intended for bounded post-upload signature inspection.

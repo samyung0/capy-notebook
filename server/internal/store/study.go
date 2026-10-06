@@ -411,6 +411,10 @@ func (s *Store) RateItem(ctx context.Context, userID string, in Rating, now time
 	if err != nil {
 		return err
 	}
+	// A set or quiz embedded in a note records nothing.
+	if mt.ParentMaterialID != "" {
+		return ErrStudyEmbedded
+	}
 	items, err := itemsOf(mt)
 	if err != nil {
 		return err
@@ -485,6 +489,10 @@ func (s *Store) ReviewQuestion(ctx context.Context, materialID, itemID string) (
 
 // ErrStudyRating means a card got a score or a question got a button rating.
 var ErrStudyRating = errors.New("cards take a rating and questions take a score")
+
+// ErrStudyEmbedded refuses a rating of a set or quiz embedded in a note, which
+// records nothing.
+var ErrStudyEmbedded = errors.New("embedded quizzes and flashcards record nothing")
 
 // rateAttemptTx rates every question of a workspace quiz from an attempt's
 // snapshot and marks the quiz done. Embedded and standalone quizzes record

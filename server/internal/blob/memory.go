@@ -59,7 +59,7 @@ func (s *Memory) PresignGetWithExpiry(_ context.Context, path string) (Presigned
 	}, nil
 }
 
-func (s *Memory) PresignPut(_ context.Context, path, contentType string) (PresignedPut, error) {
+func (s *Memory) PresignPut(_ context.Context, path, contentType string, _ int64) (PresignedPut, error) {
 	return PresignedPut{
 		URL:       "memory-put://" + path,
 		Headers:   map[string]string{"Content-Type": contentType},
@@ -239,7 +239,7 @@ func (s *Disk) PresignGetWithExpiry(_ context.Context, path string) (PresignedGe
 	return PresignedGet{URL: "file://" + full, ExpiresAt: time.Now().UTC().Add(s.ttl)}, nil
 }
 
-func (s *Disk) PresignPut(_ context.Context, path, contentType string) (PresignedPut, error) {
+func (s *Disk) PresignPut(_ context.Context, path, contentType string, _ int64) (PresignedPut, error) {
 	return PresignedPut{
 		URL:       "file-put://" + path,
 		Headers:   map[string]string{"Content-Type": contentType},

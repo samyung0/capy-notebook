@@ -215,34 +215,24 @@ note's material route, so standalone notes upload too (see
 [backend-storage-quota.md](../backend-storage-quota.md)). Renderers resolve signed URLs
 at runtime.
 
-Each asset belongs to one note: a save that stops using one deletes it on the
-server (once it was completed more than 60 s ago), and a note never shows
-another note's asset. `noteAssets.ts` keeps both true for this tab's own edits;
-collaborators' changes, which slate-yjs applies under the provider's origin,
-are left to the tab that made them. A local change is one whose slate-yjs
-origin is the editor's `localOrigin`, or its `undoManager` (undo and redo reach
-Slate as Yjs events).
-
-- A local change that removes media nodes (delete, cut, undo of an insert,
-  replace) keeps each removed asset's bytes in IndexedDB at once
-  (`keptAssets` in `src/lib/localDb.ts`, keyed by session and asset id, with
-  name, purpose and content type taken from the node). An image this tab has
-  shown is read back from the browser cache under the URL it was shown with
-  (`shownAssetUrl` in `MediaAssetView.tsx`; images load with
-  `crossOrigin="anonymous"` so `fetch(url, { cache: 'force-cache' })` can read
-  the cached response), so no new link or download is needed; anything never
-  shown in full (a PDF, audio) is resolved and downloaded. A session is one editor
-  mount: its rows go when it unmounts, and each session holds a Web Lock named
-  by its id, so the first session of a page load deletes the rows of sessions
-  no tab holds (`navigator.locks.query()`). The store keeps at most 500 MB and
-  drops the oldest rows first.
-- A local change that inserts media nodes (paste, drop, undo, redo) calls
-  `POST /materials/{id}/editor-assets/adopt` 150 ms later with the net new ids.
-  A different id back is the note's own copy, and a missing one means the asset
-  is gone: the session's kept bytes are uploaded again, or, with none kept, the
-  node stays and renders as failed. The nodes are then re-pointed with
-  `YHistoryEditor.withoutSaving`, so Undo never reverses the swap. An adopt or
-  upload error (over quota included) shows the error toast and is not retried.
+Each asset belongs to one note, and the server keeps it that way; the browser
+does nothing but render. A save that stops using an asset (once it was
+completed more than 60 s ago) puts it in a hidden trash for a day, still
+charged, and a save that uses it again restores it. A paste, drop, undo, cut
+and paste or a draft replayed after reconnect is an ordinary Yjs edit: the
+collaboration service's children pass (`collaboration/src/children.ts`, see
+[agentic-retrieval](../agentic-retrieval.md) for the AI edit side) reads the
+asset and quiz ids each writer's update wrote, asks Go to make them the note's
+own as that writer (a copy of another note's asset, the note's own one out of
+the trash), then repoints or drops the nodes through a direct connection and
+broadcasts `children-ready` with the ids it kept. In an editable note
+`MediaAssetView` (given the note as `ownerId`) shows a skeleton while a node's
+asset belongs to another material (the resolve answer's `materialId`) or does
+not resolve (trashed, waiting for the pass), and resolves again when
+`children-ready` names it (`childrenReady.ts`). A copy that does not fit the
+payer's storage is dropped and only the writer who pasted gets
+`children-refused`, shown as a toast. Nothing is kept in IndexedDB and the
+browser never calls an adopt route.
 
 Image, YouTube and mermaid blocks share `MediaFrame`: a toolbar docked top-right
 that shows on hover, and in edit mode two side handles that resize the block
@@ -303,25 +293,21 @@ imports as a pending reference (`materialId: ''` plus the fence body in
 (`resolvingBy`) and the client whose claim survives the merge creates the
 row; readable Markdown and DOCX exports resolve references into study handouts
 and fail explicitly if a required reference cannot be read. A reference
-belongs to its note: a local change that inserts references with a
-`materialId` (paste, drop, undo, redo; pending ones are skipped) is heard by
-the same `noteAssets.ts` listener and batch as media, and 150 ms later
-`POST /api/materials/{noteId}/embedded/adopt` answers per block. Every block
-has its own quiz: the listener looks at the whole document, and a quiz the
-batch inserted that is now in several blocks stays with one of them, the
-first that existed before the batch (the listener records the reference
-block ids before the batch's first inserted reference applies) or else the
-first in document order; every other block asks for a copy (`refAdoptions`).
-The note's own row keeps its id unless the block asks for a copy, so a cut
-and paste within the note (no net insert) changes nothing; another note's
-quiz or set comes back as this note's copy, one per block, even for the same
-quiz pasted twice; no id back (the original is unreadable or purged) removes
-the block. Blocks are re-pointed or removed one by one by block id through
-`repointMaterialRefs` under `YHistoryEditor.withoutSaving`, so Undo takes
-back the paste and never the swap. Errors show the error toast, with no
-retry. The copy's images are copied on the server. Removing the reference
-trashes the row at the next projection and undo restores it (see
-[authorization](../authorization-permissions-lifecycles.md)). Mermaid blocks
+belongs to its note through the same children pass as media: a block whose
+`materialId` an update wrote (paste, drop, undo, redo, a replayed draft; a
+pending one is skipped) is answered per block. Every block has its own quiz:
+a quiz now in several blocks stays with one of them, the first the update did
+not write or else the first in document order, and every other block asks for
+a copy (`planChildren`). The note's own row keeps its id (leaving the trash
+when it was in it), another note's quiz or set becomes this note's copy, one
+per block, its images copied on the server, and a block whose original is
+unreadable or purged (over a day in the trash) is dropped. `MaterialRefCard`
+shows a skeleton, without Edit, while the block names another note's material
+or one that does not load yet, and reloads when `children-ready` names it.
+Removing the reference trashes the row at the next save, hidden for a day (see
+[authorization](../authorization-permissions-lifecycles.md)). Embedded quizzes
+and sets are quick checks that record nothing (attempts, ratings; see
+[study-progress](../study-progress.md)). Mermaid blocks
 stay inline. Mermaid, chart and graph embeds render view-only in every editor
 mode. Selecting a chart or graph shows the shared floating Edit/Copy/Delete
 toolbar; Edit opens a dialog.

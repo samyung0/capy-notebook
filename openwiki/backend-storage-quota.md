@@ -314,39 +314,45 @@ card's image is `image: {assetId}` on its `flashcard` node); a picked image the 
 storage, and a failed upload fails the save. Notes keep the
 20 MB image limit and bank figures keep their own. Every material content
 write (the PATCH and the collaboration projection behind live editing, agent
-and bank-copy edits) deletes, in its transaction, the material's `ready`
+and bank-copy edits) trashes, in its transaction, the material's `ready`
 assets the new content no longer references and that completed more than 60
-seconds ago (`pruneMaterialAssetsTx`), so the row triggers release the bytes at
-once. The minute covers a shared note: the image node's asset id reaches the
-server a moment after the upload completes, and a collaborator's save in that
-window must not delete it; an image removed within the minute goes at a later
-save. The same save deletes an interrupted flow's leftovers: an upload or paste
-copy whose node never landed (the tab closed) and quiz or flashcard images
-uploaded by a Save whose content PATCH failed. Embedded quiz and flashcard
-rows follow the same rule (trashed, see
+seconds ago, and restores trashed ones it references again
+(`pruneMaterialAssetsTx`). A trashed asset (`editor_assets.trashed_at`) stays
+charged and keeps its object; the trash sweep deletes it a day later
+(`PurgeTrashedEditorAssets`, from `runTrashSweep`), one row per transaction
+under the payer's storage lock, so the row triggers release the bytes then.
+The minute covers a shared note: the image node's asset id reaches the server
+a moment after the upload completes, and a collaborator's save in that window
+must not trash it; an image removed within the minute goes at a later save.
+The same save trashes an interrupted flow's leftovers: an upload or paste copy
+whose node never landed (the tab closed) and quiz or flashcard images uploaded
+by a Save whose content PATCH failed. Embedded quiz and flashcard rows follow
+the same rule (trashed for a day, see
 [authorization-permissions-lifecycles.md](authorization-permissions-lifecycles.md)).
 Pending reservations are left to the upload expiry. Purging the material
 deletes the rest through the `material_id` cascade, including leftovers of a
-material never saved again; there is no periodic sweep. Both write to an `editor-assets/incoming/…` key and are promoted to
+material never saved again. Both write to an `editor-assets/incoming/…` key and are promoted to
 an unpresigned stable `editor-assets/{id}/…` key before finalization, so the
 still-valid upload URL cannot overwrite a ready object. If creating the
 durable DB row fails after a source object was written, handlers delete the
 orphan object.
 
-Pasting an image that belongs to another note or quiz calls
-`POST /api/materials/{id}/editor-assets/adopt` with `{"assetIds": [...]}`
-(1–50 distinct ids, any editor of the target, upload rate class). The response
-`{"assets": [{"sourceId", "assetId"}]}` has one entry per requested id in
-request order: the same id when the asset already belongs to the target, a new
-ready row for the target when the source is ready and readable by the caller
-(the resolve rule), and no `assetId` otherwise (deleted, unreadable, pending,
-unknown). A copy shares the stored object under blob refcounting and is
-charged to the target's payer like an upload, and counts as just completed,
-so the 60-second rule keeps it until the pasted node is saved. A bad body is
-400, a non-editor 403 (404 without read access), and the whole call fails with
-`storage_quota_exceeded` (403) when the copies do not fit. One transaction
-locks the target scope, share-locks the source rows, locks their blob paths in
-order and gates the quota (`AdoptEditorAssets`).
+An image another note's or quiz's id brings into a material (a paste, undo,
+cut and paste, replayed draft, AI edit) is made the material's own by the
+collaboration service's children pass, through
+`POST /internal/collaboration/materials/{id}/children` (service secret, the
+writer as `actorUserId`, at most 50 asset ids and 20 quiz blocks a call; see
+[authorization-permissions-lifecycles.md](authorization-permissions-lifecycles.md)).
+Per asset: the same id when it already belongs to the material (restored when
+trashed), a new ready row when the source is ready and readable by the writer
+(the resolve rule; a trashed source too), and "" otherwise (purged,
+unreadable, pending, unknown), which drops the node. A copy shares the stored
+object under blob refcounting, is charged to the material's payer like an
+upload and counts as just completed, so the 60-second rule keeps it until the
+repointed node is saved. Copies over the payer's quota are all left out and
+the answer says `storageRefused`; restores still land. One transaction locks
+the target scope, share-locks the source rows, locks their blob paths in order
+and gates the quota (`AdoptEditorAssets`).
 
 Workspace clones snapshot the source, gate the total file + material + ready
 editor-asset payload against the **cloner's** quota, copy ready asset rows

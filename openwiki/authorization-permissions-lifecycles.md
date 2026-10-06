@@ -474,28 +474,32 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   directly. Trashing, restoring, purging and cloning the note carry its rows
   along (clones rewrite the reference ids). Like the note's images, every
   content save of the note trashes the rows it does not reference once they
-  were created over 60 seconds ago (`reconcileEmbeddedTx`), and a save that
-  references a trashed row again restores it. The minute lets a new row's
-  block reach the note; a row whose block never lands (the tab closed, an undo
-  before the save) goes at a later save, or with the note's purge if the note
-  is never saved again. A refused agent edit trashes the rows it created at
-  once (`DiscardEmbeddedDrafts`).
-- A quiz or flashcard block pasted into a note becomes that note's own through
-  `POST /api/materials/{id}/embedded/adopt` (an editor of the note, 1–20
-  blocks as `{materialId, copy?}`, one answer per block in order). Every
-  block has its own quiz, so the editor sets `copy` on each block but one
-  when a quiz is in several blocks of the note. The note's own row answers
-  its id, trashed or not, unless the block asks for a copy. A copy of the
-  note's own row (trashed too), or another note's embedded quiz or set, live
-  or trashed (a cut's save may have trashed it), whose note the caller can
-  read, is copied under this note in one transaction, a separate row per
-  block: questions or cards (fresh card
+  were created over 60 seconds ago (`reconcileEmbeddedTx`), hidden and purged
+  after one day (`unreferencedRetention`; rows trashed with their note keep the
+  note's 30 days), and a save that references a trashed row again restores it.
+  The minute lets a new row's block reach the note; a row whose block never
+  lands (the tab closed, an undo before the save) goes at a later save, or
+  with the note's purge if the note is never saved again. A refused agent edit
+  trashes the rows it created at once (`DiscardEmbeddedDrafts`).
+- A quiz or flashcard block an update writes into a note (a paste, undo, cut
+  and paste, replayed draft, AI edit or Undo) becomes that note's own through
+  the collaboration service's children pass (`collaboration/src/children.ts`),
+  which calls `POST /internal/collaboration/materials/{id}/children` (service
+  secret) naming the writer as `actorUserId`; Go checks that user edits the
+  note (`AssertMaterialEditor`) and reads each source as them. Every block has
+  its own quiz, so the pass sets `copy` on each block but one when a quiz is in
+  several blocks. The note's own row answers its id, restored at once when
+  trashed, unless the block asks for a copy. A copy of the note's own row, or
+  another note's embedded quiz or set, live or trashed (a cut's save may have
+  trashed it), whose note the writer can read, is copied under this note, a
+  separate row per block in its own savepoint: questions or cards (fresh card
   ids), title as a new embedded row gets, its images as new editor assets
   sharing the stored objects, all charged to the note's payer; attempts,
-  progress and review state stay with the original. Anything else answers no
-  id and the editor drops the block. Over quota fails the whole call. A copy
-  is a created row, so one whose block never lands goes at the note's next
-  save after its first minute.
+  progress and review state stay with the original. Anything else (unreadable,
+  purged, unknown) answers "" and the pass drops the block. A copy over the
+  payer's quota answers "" with `storageRefused`, and only that writer is told.
+  A copy is a created row, so one whose block never lands goes at the note's
+  next save after its first minute.
 - Cloning a readable standalone quiz, flashcards, or material creates a new
   owner-controlled copy charged to the signed-in cloner. Cloning a workspace
   additionally requires membership of any role or an effective editor grant.
@@ -859,7 +863,11 @@ Source uploads and editor assets share the `upload_sessions` table but use
 different targets. Reserving an upload immediately reserves its declared bytes
 against the workspace owner, or for a standalone material's editor asset
 against the material owner. Editor assets upload through their material, so
-only that material's editors can reserve them, and every asset names it. A successful finalize promotes the object from a
+only that material's editors can reserve them, and every asset names it. The
+presigned PUT signs the declared size as its Content-Length (`blob.PresignPut`),
+so B2 refuses a body of any other size with a 403 (checked on the UAT bucket
+2026-10-06); the S3 SDK cannot sign a zero length, so a declared empty source
+file stays unbound and finalize's size check still refuses a mismatch. A successful finalize promotes the object from a
 temporary incoming key, creates the durable resource row, and marks the upload
 session completed. Finalization is idempotent, so retrying a completed source
 upload returns the already-created file. Concurrent duplicate completions may
@@ -951,16 +959,19 @@ A note's or quiz's images follow it (their `editor_assets.material_id` names
 it, in a workspace too; an embedded quiz's images name the quiz, not its
 note): trashing keeps them, still charged, and restore brings them back with
 it; purging deletes them through the cascade. An image a save stops
-referencing is deleted in that save's transaction once it completed more than
-60 seconds ago, so the payer stops paying at once and the object reaches the
-blob outbox; the minute lets a just-uploaded image's id reach a shared note
-before a collaborator's save. Chat Undo of an AI edit that removed an image
-brings the text back without it. Pasting an image from another note or quiz
-makes the target its own copy through
-`POST /api/materials/{id}/editor-assets/adopt` (any editor of the target; the
-source must be ready and readable under the resolve rule); the stored object
-is shared and each copy is charged (see
-[backend-storage-quota.md](backend-storage-quota.md)).
+referencing goes to a hidden trash in that save's transaction once it
+completed more than 60 seconds ago (`editor_assets.trashed_at`, migration
+0065): still charged and holding its object, hidden from resolve, share and
+clone reads, restored by a save that references it again, and deleted by the
+trash sweep a day later (`PurgeTrashedEditorAssets`), which releases the charge
+and sends the object to the blob outbox. The minute lets a just-uploaded
+image's id reach a shared note before a collaborator's save. The children pass
+above handles images too: the note's own image comes out of the trash at once
+(undo, cut and paste, chat Undo of an AI edit within the day), another note's
+or quiz's readable image (live or trashed) becomes the target's own copy
+sharing the stored object, each copy charged (see
+[backend-storage-quota.md](backend-storage-quota.md)), and a purged or unknown
+one is dropped from the note, as after a chat Undo replayed past the day.
 
 Trash covers `source_file` and `material` only: there is no workspace trash.
 Deleting a workspace is `DELETE FROM workspaces`, so its files and materials go

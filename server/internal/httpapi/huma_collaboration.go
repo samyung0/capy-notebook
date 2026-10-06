@@ -87,6 +87,94 @@ func (a *api) registerCollaboration(api huma.API) {
 	reg(api, http.MethodPost, "/api/materials/{id}/collaboration-token", "createMaterialCollaborationToken", tag, "Create a short-lived material room token", http.StatusCreated, a.createMaterialCollaborationToken)
 	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/materials/{id}/projection", "projectMaterialYjsDocument", tag, "Project a durably stored Yjs document", http.StatusOK, materialRequestMaxBytes, a.projectMaterialYjsDocument)
 	reg(api, http.MethodPost, "/internal/collaboration/materials/{id}/index", "requestMaterialIndex", tag, "Queue a dirty idle note for retrieval indexing", http.StatusAccepted, a.requestMaterialIndex)
+	reg(api, http.MethodPost, "/internal/collaboration/materials/{id}/children", "adoptMaterialChildren", tag, "Make the images and quiz or flashcard blocks an update brought in the material's own", http.StatusOK, a.adoptMaterialChildren)
+}
+
+// materialChildBlock is one quiz or flashcard block an update wrote.
+type materialChildBlock struct {
+	MaterialID string `json:"materialId" minLength:"1"`
+	// Copy asks for a copy of the material's own row too, for a block whose
+	// quiz another block keeps.
+	Copy bool `json:"copy,omitempty"`
+}
+
+type materialChildrenInput struct {
+	ID     string `path:"id"`
+	Secret string `header:"X-Collaboration-Secret"`
+	Body   struct {
+		// ActorUserID is the user whose connection sent the update (or whose
+		// AI edit or Undo brought the ids back); copies check their access.
+		ActorUserID string               `json:"actorUserId" minLength:"1"`
+		AssetIDs    []string             `json:"assetIds" maxItems:"50" nullable:"false"`
+		Materials   []materialChildBlock `json:"materials" maxItems:"20" nullable:"false"`
+	}
+}
+
+type adoptedMaterialChild struct {
+	SourceID string `json:"sourceId"`
+	// ID is the material's own child, "" when the block or node goes.
+	ID string `json:"id"`
+}
+
+type materialChildrenOutput struct {
+	Body struct {
+		Assets    []adoptedMaterialChild `json:"assets" nullable:"false"`
+		Materials []adoptedMaterialChild `json:"materials" nullable:"false"`
+		// StorageRefused: a copy did not fit the payer's storage; its block goes
+		// and the user who pasted is told.
+		StorageRefused bool `json:"storageRefused"`
+	}
+}
+
+// adoptMaterialChildren answers the collaboration service's pass over the
+// asset and quiz or flashcard ids an update brought into a material room
+// (collaboration/src/children.ts): the material's own child keeps its id and
+// leaves the trash, another material's child the actor can read becomes a
+// copy, and anything else (unreadable, purged, unknown) gets "".
+func (a *api) adoptMaterialChildren(ctx context.Context, in *materialChildrenInput) (*materialChildrenOutput, error) {
+	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {
+		return nil, err
+	}
+	actor := in.Body.ActorUserID
+	if err := a.s.AssertMaterialEditor(ctx, actor, in.ID); err != nil {
+		return nil, hErr(err)
+	}
+	out := &materialChildrenOutput{}
+	out.Body.Assets = []adoptedMaterialChild{}
+	out.Body.Materials = []adoptedMaterialChild{}
+	if len(in.Body.AssetIDs) > 0 {
+		workspaceID, study, err := a.s.EditorAssetMaterial(ctx, in.ID)
+		if err != nil {
+			return nil, hErr(err)
+		}
+		var imageMaxBytes int64
+		if study {
+			imageMaxBytes = studyImageMaxBytes
+		}
+		adopted, refused, err := a.s.AdoptEditorAssets(ctx, actor, workspaceID, in.ID, in.Body.AssetIDs, imageMaxBytes)
+		if err != nil {
+			return nil, hErr(err)
+		}
+		out.Body.StorageRefused = refused
+		for _, id := range in.Body.AssetIDs {
+			out.Body.Assets = append(out.Body.Assets, adoptedMaterialChild{SourceID: id, ID: adopted[id]})
+		}
+	}
+	if len(in.Body.Materials) > 0 {
+		blocks := make([]store.EmbeddedAdoption, len(in.Body.Materials))
+		for i, block := range in.Body.Materials {
+			blocks[i] = store.EmbeddedAdoption{SourceID: block.MaterialID, Copy: block.Copy}
+		}
+		adopted, refused, err := a.s.AdoptEmbeddedMaterials(ctx, actor, in.ID, blocks)
+		if err != nil {
+			return nil, hErr(err)
+		}
+		out.Body.StorageRefused = out.Body.StorageRefused || refused
+		for i, block := range blocks {
+			out.Body.Materials = append(out.Body.Materials, adoptedMaterialChild{SourceID: block.SourceID, ID: adopted[i]})
+		}
+	}
+	return out, nil
 }
 
 type materialIndexInput struct {

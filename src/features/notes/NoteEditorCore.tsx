@@ -28,6 +28,7 @@ import {
   type useMaterialDiscussions,
 } from '@/api/hooks';
 import type { Material, MaterialCollaborationToken } from '@/api/types';
+import { userToast } from '@/components/ui/userToast';
 import { FileLoading } from '@/features/files/FileStates';
 import {
   type MaterialValue,
@@ -51,6 +52,7 @@ import {
   commentDecorationRangesForEntry,
   resolveCommentDecorations,
 } from './Collaboration';
+import { announceChildrenReady } from './childrenReady';
 import {
   COLLABORATION_READ_ONLY_REASON,
   type MaterialDocumentStats,
@@ -69,7 +71,6 @@ import type { NoteEditorStatus } from './editorMode';
 import { EditorScrollAreaContext } from './editorScrollArea';
 import { FloatingToolbar } from './FloatingToolbar';
 import { noteComponents } from './nodeComponents';
-import { noteAssetsPlugin, watchNoteAssets } from './noteAssets';
 import { useNoteEditorPrefs } from './noteEditorPrefs';
 import { buildPlugins } from './plugins';
 import {
@@ -599,6 +600,23 @@ export function NoteEditorCore({
         readOnlyNow.current();
         return;
       }
+      if (event.type === 'children-ready') {
+        announceChildrenReady(event);
+        for (const id of event.materialIds) {
+          void qc.invalidateQueries({ queryKey: qk.quiz(id) });
+          void qc.invalidateQueries({ queryKey: qk.flashcardSet(id) });
+        }
+        return;
+      }
+      if (event.type === 'children-refused') {
+        userToast({
+          description: m.error_quota_body(),
+          id: 'paste-storage-refused',
+          title: m.editor_paste_storage_refused(),
+          variant: 'error',
+        });
+        return;
+      }
       if (
         event.type === 'comments-invalidated' &&
         event.materialId === material.id
@@ -767,7 +785,6 @@ export function NoteEditorCore({
           ydoc,
         },
       }),
-      noteAssetsPlugin,
       ...buildPlugins({
         allowExternalAssets,
         currentUserId,
@@ -842,10 +859,6 @@ export function NoteEditorCore({
       if (recorder.current === current) recorder.current = null;
     };
   }, [ydoc]);
-
-  // This tab's own edits keep the bytes of assets they remove and adopt the
-  // assets they insert (noteAssets.ts).
-  useEffect(() => watchNoteAssets(editor, material.id), [editor, material.id]);
 
   useEffect(() => {
     const current = roomReconnector({

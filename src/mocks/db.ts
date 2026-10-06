@@ -1533,6 +1533,48 @@ export function makeMaterial(draft: MaterialDraft): Material {
 
 export const materials: Material[] = [];
 
+/** The note's own copy of another note's quiz or flashcard set, as the
+ * collaboration service's children pass makes it (fresh card ids, numbered
+ * title); "" when the source is not an embedded quiz or set. */
+export function copyEmbeddedInto(note: Material, sourceId: string): string {
+  const source = materials.find((x) => x.id === sourceId);
+  if (
+    !source?.parentMaterialId ||
+    (source.kind !== 'quiz' && source.kind !== 'flashcards')
+  )
+    return '';
+  const rekey = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(rekey);
+    if (!node || typeof node !== 'object') return node;
+    const copy = Object.fromEntries(
+      Object.entries(node).map(([key, value]) => [key, rekey(value)])
+    );
+    return copy.type === 'flashcard' ? { ...copy, id: uid('card') } : copy;
+  };
+  const base = `${note.title} · ${source.kind === 'quiz' ? 'Quiz' : 'Flashcards'}`;
+  let title = base;
+  for (
+    let n = 2;
+    materials.some(
+      (x) => x.workspaceId === note.workspaceId && x.title === title
+    );
+    n++
+  )
+    title = `${base} ${n}`;
+  const mt = makeMaterial({
+    ...source,
+    content: rekey(source.content) as typeof source.content,
+    createdAt: new Date().toISOString(),
+    id: uid('mat'),
+    parentMaterialId: note.id,
+    title,
+    workspaceId: note.workspaceId,
+    workspaceName: note.workspaceName,
+  });
+  materials.unshift(mt);
+  return mt.id;
+}
+
 /** Unprocessed source edits by file, for the Indexing tab. `ticks` counts the
  * stats reads since the state was entered, so the handler advances queued
  * work as the tab polls. */
@@ -2125,6 +2167,7 @@ export function quizFromMaterial(mt: Material): EditableQuiz {
     id: mt.id,
     isOwner: true,
     name: mt.title,
+    ...(mt.parentMaterialId ? { parentMaterialId: mt.parentMaterialId } : {}),
     privacy: mt.privacy,
     questions,
     revision: mt.revision,
@@ -2194,6 +2237,7 @@ export function flashcardSetFromMaterial(mt: Material): FlashcardSet {
     canEditContent: true,
     cardCount: cs.length,
     color: mt.color ?? 'green',
+    ...(mt.parentMaterialId ? { parentMaterialId: mt.parentMaterialId } : {}),
     id: mt.id,
     isOwner: true,
     name: mt.title,

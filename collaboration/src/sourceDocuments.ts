@@ -59,7 +59,8 @@ const OFFICE_REFRESH_STALE = '7 days';
 // orders behind the other due files. A refused rebuild (rebuild_refusal) makes
 // an Office file due whatever its edits weigh. Store-only Office files (never processed)
 // take the same trigger whatever auto-process says; Go publishes them
-// export-only. A `reprocess` row is a file an export-only publication left
+// export-only. A failed file is never picked automatically: only its owner's
+// Retry processing or Process runs it again. A `reprocess` row is a file an export-only publication left
 // unindexed, due once its owner is active and it is out of the trash (a file
 // never parsed successfully waits for its owner's Process); Go indexes it at
 // platform cost, a refusal moves it an hour ahead (REPROCESS_DEFER_SQL) and
@@ -80,9 +81,9 @@ const REFRESH_CANDIDATES_SQL = `
       FROM source_documents d JOIN files f ON f.id=d.file_id JOIN workspaces w ON w.id=f.workspace_id
       WHERE d.checkpoint>d.indexed_checkpoint AND d.running_job_id IS NULL AND f.trashed_at IS NULL AND d.refresh_error IS NULL
         AND (d.net_tokens>0 OR (d.format<>'text' AND d.pending_effects<>'[]'::jsonb) OR d.rebuild_refusal IS NOT NULL)
-        AND ((d.format='text' AND (w.auto_process OR d.desired_manual) AND d.last_refresh_requested_at < now()-interval '15 seconds')
+        AND ((d.format='text' AND ((w.auto_process AND f.status<>'failed') OR d.desired_manual) AND d.last_refresh_requested_at < now()-interval '15 seconds')
           OR(d.format<>'text' AND d.last_edited_at < now()-$2::interval AND (d.desired_manual
-            OR ((d.net_tokens>=$1 OR d.last_edited_at < now()-$3::interval OR d.rebuild_refusal IS NOT NULL) AND ((w.auto_process AND f.ever_parsed_successfully)
+            OR (f.status<>'failed' AND (d.net_tokens>=$1 OR d.last_edited_at < now()-$3::interval OR d.rebuild_refusal IS NOT NULL) AND ((w.auto_process AND f.ever_parsed_successfully)
               OR (f.parse_mode='none' AND NOT f.ever_parsed_successfully))))))
       ORDER BY GREATEST(d.last_edited_at,d.last_refresh_requested_at) LIMIT 8)
   ) picked ORDER BY due LIMIT 8`;

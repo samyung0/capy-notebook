@@ -5,7 +5,6 @@ import {
   createSourceUploadBodyNameMax,
 } from '@/api/gen/validators';
 import type {
-  AdoptEmbeddedMaterialsReq,
   Chapter,
   EditableQuiz,
   FlashcardSet,
@@ -1042,6 +1041,20 @@ export const handlers = [
       { status: 202 }
     );
   }),
+  // Retry processing: the owner reruns a failed file on its stored bytes; the
+  // mock worker finishes it like an upload ('none' just stores it).
+  http.post('/api/files/:id/retry-processing', async ({ params, request }) => {
+    const file = db.files.find((item) => item.id === params.id);
+    if (!file) return new HttpResponse(null, { status: 404 });
+    if (file.status !== 'failed') return codeError(409, 'conflict');
+    const { parseMode } = (await request.json()) as { parseMode: string };
+    file.status = 'pending';
+    setTimeout(() => {
+      file.status = 'ready';
+      file.indexed = parseMode !== 'none' && file.kind !== 'audio';
+    }, 2000);
+    return new HttpResponse(null, { status: 202 });
+  }),
   http.delete('/api/files/:id/process-changes', ({ params }) => {
     const change = db.fileChanges.get(String(params.id));
     if (!change) return codeError(409, 'nothing_to_process');
@@ -1857,64 +1870,6 @@ export const handlers = [
     db.materials.unshift(mt);
     return HttpResponse.json(mt, { status: 201 });
   }),
-  // Pasted quiz and flashcard blocks: the note's own row keeps its id unless
-  // the block asks for a copy, another note's becomes a copy under this note
-  // (fresh card ids), anything else is left out so the editor removes the
-  // block.
-  http.post(
-    '/api/materials/:id/embedded/adopt',
-    async ({ params, request }) => {
-      const note = db.materials.find(
-        (x) => x.id === params.id && x.kind === 'note' && !x.parentMaterialId
-      );
-      if (!note) return new HttpResponse(null, { status: 404 });
-      const { materials: blocks = [] } = (await request
-        .json()
-        .catch(() => ({}))) as Partial<AdoptEmbeddedMaterialsReq>;
-      const rekey = (node: unknown): unknown => {
-        if (Array.isArray(node)) return node.map(rekey);
-        if (!node || typeof node !== 'object') return node;
-        const copy = Object.fromEntries(
-          Object.entries(node).map(([key, value]) => [key, rekey(value)])
-        );
-        return copy.type === 'flashcard' ? { ...copy, id: uid('card') } : copy;
-      };
-      const materials = blocks.map(({ copy, materialId: sourceId }) => {
-        const source = db.materials.find((x) => x.id === sourceId);
-        if (source?.parentMaterialId === note.id && !copy)
-          return { materialId: sourceId, sourceId };
-        if (
-          !source?.parentMaterialId ||
-          (source.kind !== 'quiz' && source.kind !== 'flashcards')
-        )
-          return { sourceId };
-        // Numbered like the server, so each copy is told apart.
-        const base = `${note.title} · ${source.kind === 'quiz' ? 'Quiz' : 'Flashcards'}`;
-        let title = base;
-        for (
-          let n = 2;
-          db.materials.some(
-            (x) => x.workspaceId === note.workspaceId && x.title === title
-          );
-          n++
-        )
-          title = `${base} ${n}`;
-        const mt = db.makeMaterial({
-          ...source,
-          content: rekey(source.content) as typeof source.content,
-          createdAt: new Date().toISOString(),
-          id: uid('mat'),
-          parentMaterialId: note.id,
-          title,
-          workspaceId: note.workspaceId,
-          workspaceName: note.workspaceName,
-        });
-        db.materials.unshift(mt);
-        return { materialId: mt.id, sourceId };
-      });
-      return HttpResponse.json({ materials });
-    }
-  ),
   http.get('/api/materials/:id', async ({ params }) => {
     const fixture = errorMaterials.find((item) => item.id === params.id);
     if (fixture?.failure) {
@@ -2714,6 +2669,9 @@ export const handlers = [
       total: graded.max,
       workspaceName: quiz.workspaceName,
     };
+    // An embedded quiz records nothing: graded, returned without an id.
+    if (quizMt.parentMaterialId)
+      return HttpResponse.json({ ...at, id: '' }, { status: 201 });
     db.attempts.unshift(at);
     return HttpResponse.json(at, { status: 201 });
   }),

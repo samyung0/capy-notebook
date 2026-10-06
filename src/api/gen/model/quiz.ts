@@ -18,6 +18,7 @@ export interface Quiz {
   id: string;
   isOwner: boolean;
   name: string;
+  parentMaterialId?: string;
   privacy: Privacy;
   provenance?: Provenance;
   questions: QuizQuestionsItem[];

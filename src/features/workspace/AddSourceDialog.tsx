@@ -9,14 +9,17 @@ import {
   useImportSources,
   useInspectSourceImports,
   useIntegrations,
+  useRetryFileProcessing,
   useSourceUploadPolicy,
   useUploadSource,
   useWorkspace,
 } from '@/api/hooks';
 import type {
   FileKind,
+  FileLinks,
   InspectSourceImportsResponse,
   MicrosoftDriveHost,
+  SourceFile,
   SourceUploadPolicy,
 } from '@/api/types';
 import { Badge } from '@/components/ui/Badge';
@@ -102,6 +105,7 @@ import {
   sourceAnalysisBlocksSubmit,
   sourceAnalysisIssue,
   sourceAnalysisIssueMessage,
+  storedSourceAnalysisInput,
   validateLocalSourceSelection,
 } from './sourceDetails';
 import { createSourceInspectionGuard } from './sourceInspectionGuard';
@@ -567,10 +571,13 @@ function useSourceBatch(
 
 function SourceList({
   batch,
+  fixed = false,
   uploadPolicy,
   workspaceId,
 }: {
   batch: SourceBatch;
+  /** A stored file being retried: its chapter stays and it can't be removed. */
+  fixed?: boolean;
   uploadPolicy: SourceUploadPolicy;
   workspaceId: string;
 }) {
@@ -637,7 +644,7 @@ function SourceList({
                 {source.kind.toUpperCase()}
               </span>
               <div className="ml-auto flex items-center">
-                {creatingKey === source.key ? (
+                {fixed ? null : creatingKey === source.key ? (
                   <NewChapterInput
                     onCancel={() => setCreatingKey(null)}
                     onChange={setNewChapterName}
@@ -663,10 +670,12 @@ function SourceList({
                 )}
                 {hasParseModes(source, uploadPolicy) && (
                   <>
-                    <span
-                      aria-hidden
-                      className="size-0.75 shrink-0 translate-y-px rounded-full bg-fg-muted"
-                    />
+                    {!fixed && (
+                      <span
+                        aria-hidden
+                        className="size-0.75 shrink-0 translate-y-px rounded-full bg-fg-muted"
+                      />
+                    )}
                     <ParseModeSelect
                       onChange={(mode) => batch.updateParseMode(source, mode)}
                       pending={source}
@@ -674,14 +683,16 @@ function SourceList({
                     />
                   </>
                 )}
-                <IconButton
-                  className="ml-0.5 text-fg-muted"
-                  icon="x"
-                  label={m.source_remove_file()}
-                  onClick={() => batch.remove(source)}
-                  size="xs"
-                  variant="ghost-hover"
-                />
+                {!fixed && (
+                  <IconButton
+                    className="ml-0.5 text-fg-muted"
+                    icon="x"
+                    label={m.source_remove_file()}
+                    onClick={() => batch.remove(source)}
+                    size="xs"
+                    variant="ghost-hover"
+                  />
+                )}
               </div>
             </div>
             {/* Every row issue sits here, under the size and settings line. */}
@@ -824,6 +835,7 @@ export function AddSourceDialog({
   onOpenItem,
   onGeneratingChange,
   resumeProvider,
+  retryFile,
 }: {
   open: boolean;
   onClose: () => void;
@@ -838,6 +850,9 @@ export function AddSourceDialog({
   onGeneratingChange?: (mode: GenerateMode | null) => void;
   /** Provider the user just connected through a full-tab redirect. */
   resumeProvider?: Provider | null;
+  /** A failed file to process again: the dialog shows only its row, read
+   * from the stored bytes, and submits Retry processing. */
+  retryFile?: SourceFile;
 }) {
   const { data: workspace } = useWorkspace(workspaceId, {
     errorBoundary: false,
@@ -855,6 +870,9 @@ export function AddSourceDialog({
     uploadPolicy,
     initialSources.filter((source) => source.origin === 'remote')
   );
+  const retries = useSourceBatch(uploadPolicy, []);
+  const { mutateAsync: retryProcessing } = useRetryFileProcessing(workspaceId);
+  const retryRead = useRef<string | null>(null);
   // Mutations keep running after the dialog unmounts, so the transfer
   // runner can hold on to these.
   const { mutateAsync: uploadSource } = useUploadSource(workspaceId);
@@ -911,6 +929,71 @@ export function AddSourceDialog({
   function closeDialog() {
     inspectionGuard.invalidate();
     onClose();
+  }
+
+  // The retried file's row, analysed from its stored bytes like an upload.
+  useEffect(() => {
+    if (!(open && retryFile && uploadPolicy)) return;
+    if (retryRead.current === retryFile.id) return;
+    retryRead.current = retryFile.id;
+    const kind = getFileKind(retryFile.name, uploadPolicy);
+    void api
+      .get<FileLinks>(`/files/${encodeURIComponent(retryFile.id)}/links`)
+      .then(({ url }) => {
+        const analysisInput = storedSourceAnalysisInput(
+          retryFile,
+          url,
+          uploadPolicy
+        );
+        retries.add([
+          {
+            analysisInput,
+            analysisStatus: initialAnalysisStatus(
+              retryFile.name,
+              analysisInput,
+              uploadPolicy
+            ),
+            chapterId: retryFile.chapterId ?? null,
+            chapterName: null,
+            contentType: '',
+            fileId: retryFile.id,
+            key: `retry-${retryFile.id}`,
+            kind,
+            name: retryFile.name,
+            origin: 'remote',
+            parseMode: defaultParseMode(
+              { name: retryFile.name, size: retryFile.sizeBytes },
+              kind,
+              uploadPolicy
+            ),
+            sizeBytes: retryFile.sizeBytes,
+            sizeEstimate: false,
+          },
+        ]);
+      })
+      .catch(() => {
+        retryRead.current = null;
+        userToast({ title: m.files_retry_link_failed(), variant: 'error' });
+        onClose();
+      });
+  }, [open, retryFile, uploadPolicy, retries.add, onClose]);
+
+  function submitRetry() {
+    const [source] = retries.take();
+    if (!(retryFile && source)) return;
+    closeDialog();
+    void retryProcessing({
+      id: retryFile.id,
+      parseMode: source.parseMode,
+    }).then(
+      () =>
+        userToast({
+          description: m.files_retry_started_body(),
+          title: m.files_process_started_title(),
+          variant: 'success',
+        }),
+      () => {}
+    );
   }
 
   /** Hands the tab's rows to the transfer panel. The dialog stays open while
@@ -1290,6 +1373,37 @@ export function AddSourceDialog({
   }
 
   if (googlePickerOpen) return null;
+
+  if (retryFile) {
+    return (
+      <SimpleDialog
+        cardScrollContainerClassName="max-h-[min(680px,88dvh)] overflow-hidden"
+        className="max-w-3xl"
+        onClose={closeDialog}
+        open={open}
+        title={m.files_retry_processing()}
+      >
+        <div className="flex min-h-0 flex-1 flex-col gap-4">
+          {uploadPolicy && retries.sources.length > 0 ? (
+            <SourceList
+              batch={retries}
+              fixed
+              uploadPolicy={uploadPolicy}
+              workspaceId={workspaceId}
+            />
+          ) : (
+            <p className="t-meta text-fg-muted">{m.files_retry_loading()}</p>
+          )}
+          <SourceFooter
+            batch={retries}
+            label={m.files_retry_processing()}
+            onSubmit={submitRetry}
+            uploadPolicy={uploadPolicy}
+          />
+        </div>
+      </SimpleDialog>
+    );
+  }
 
   const acceptsDrop = mode === 'upload' && Boolean(uploadPolicy) && canAdd;
   const tabLabel = (label: string, count: number) => (

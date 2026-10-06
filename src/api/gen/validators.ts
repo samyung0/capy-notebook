@@ -1161,6 +1161,7 @@ export const ExploreFlashcardSetsResponseItem = zod.object({
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "name": zod.string(),
+  "parentMaterialId": zod.string().optional(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
   "books": zod.array(zod.object({
@@ -1229,6 +1230,7 @@ export const ExploreQuizzesResponseItem = zod.object({
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "name": zod.string(),
+  "parentMaterialId": zod.string().optional(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
   "books": zod.array(zod.object({
@@ -1840,6 +1842,20 @@ export const ProcessSourceChangesResponse = zod.object({
 
 
 /**
+ * @summary Process a failed file again
+ */
+export const RetryFileProcessingParams = zod.object({
+  "id": zod.string()
+})
+
+export const RetryFileProcessingBody = zod.object({
+  "parseMode": zod.enum(['fast', 'none'])
+})
+
+export const RetryFileProcessingResponse = zod.void()
+
+
+/**
  * @summary Read source editing session
  */
 export const GetSourceSessionParams = zod.object({
@@ -1899,6 +1915,7 @@ export const CreateFlashcardSetResponse = zod.object({
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "name": zod.string(),
+  "parentMaterialId": zod.string().optional(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
   "books": zod.array(zod.object({
@@ -1969,6 +1986,7 @@ export const GetFlashcardSetResponse = zod.object({
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "name": zod.string(),
+  "parentMaterialId": zod.string().optional(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
   "books": zod.array(zod.object({
@@ -2059,6 +2077,7 @@ export const CloneFlashcardSetResponse = zod.object({
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "name": zod.string(),
+  "parentMaterialId": zod.string().optional(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
   "books": zod.array(zod.object({
@@ -2180,6 +2199,7 @@ export const UpdateFlashcardSetResponse = zod.object({
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "name": zod.string(),
+  "parentMaterialId": zod.string().optional(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
   "books": zod.array(zod.object({
@@ -2254,6 +2274,7 @@ export const UpdateFlashcardSetSharingResponse = zod.object({
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "name": zod.string(),
+  "parentMaterialId": zod.string().optional(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
   "books": zod.array(zod.object({
@@ -2942,34 +2963,6 @@ export const CreateEmbeddedMaterialResponse = zod.object({
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
-})
-
-
-/**
- * @summary Make quiz and flashcard blocks pasted into a note the note's own
- */
-export const AdoptEmbeddedMaterialsParams = zod.object({
-  "id": zod.string()
-})
-
-
-export const adoptEmbeddedMaterialsBodyMaterialsMax = 20;
-
-
-
-export const AdoptEmbeddedMaterialsBody = zod.object({
-  "materials": zod.array(zod.object({
-  "copy": zod.boolean().optional(),
-  "materialId": zod.string().min(1)
-})).min(1).max(adoptEmbeddedMaterialsBodyMaterialsMax)
-})
-
-export const AdoptEmbeddedMaterialsResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "materials": zod.array(zod.object({
-  "materialId": zod.string().optional(),
-  "sourceId": zod.string()
-}))
 })
 
 
@@ -3715,6 +3708,7 @@ export const CreateQuizResponse = zod.object({
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "name": zod.string(),
+  "parentMaterialId": zod.string().optional(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
   "books": zod.array(zod.object({
@@ -3804,6 +3798,7 @@ export const GetQuizResponse = zod.object({
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "name": zod.string(),
+  "parentMaterialId": zod.string().optional(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
   "books": zod.array(zod.object({
@@ -3902,6 +3897,7 @@ export const CloneQuizResponse = zod.object({
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "name": zod.string(),
+  "parentMaterialId": zod.string().optional(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
   "books": zod.array(zod.object({
@@ -3981,6 +3977,7 @@ export const UpdateQuizContentResponse = zod.object({
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "name": zod.string(),
+  "parentMaterialId": zod.string().optional(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
   "books": zod.array(zod.object({
@@ -4052,6 +4049,7 @@ export const GetQuizForEditResponse = zod.object({
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "name": zod.string(),
+  "parentMaterialId": zod.string().optional(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
   "books": zod.array(zod.object({
@@ -4132,6 +4130,7 @@ export const UpdateQuizMetadataResponse = zod.object({
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "name": zod.string(),
+  "parentMaterialId": zod.string().optional(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
   "books": zod.array(zod.object({
@@ -4207,6 +4206,7 @@ export const UpdateQuizSharingResponse = zod.object({
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "name": zod.string(),
+  "parentMaterialId": zod.string().optional(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
   "books": zod.array(zod.object({
@@ -6320,6 +6320,48 @@ export const ReadSourceRefreshHeader = zod.object({
 export const ReadSourceRefreshResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "sourceURL": zod.string()
+})
+
+
+/**
+ * @summary Make the images and quiz or flashcard blocks an update brought in the material's own
+ */
+export const AdoptMaterialChildrenParams = zod.object({
+  "id": zod.string()
+})
+
+export const AdoptMaterialChildrenHeader = zod.object({
+  "X-Collaboration-Secret": zod.string().optional()
+})
+
+
+export const adoptMaterialChildrenBodyAssetIdsMax = 50;
+
+
+export const adoptMaterialChildrenBodyMaterialsMax = 20;
+
+
+
+export const AdoptMaterialChildrenBody = zod.object({
+  "actorUserId": zod.string().min(1),
+  "assetIds": zod.array(zod.string()).max(adoptMaterialChildrenBodyAssetIdsMax),
+  "materials": zod.array(zod.object({
+  "copy": zod.boolean().optional(),
+  "materialId": zod.string().min(1)
+})).max(adoptMaterialChildrenBodyMaterialsMax)
+})
+
+export const AdoptMaterialChildrenResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "assets": zod.array(zod.object({
+  "id": zod.string(),
+  "sourceId": zod.string()
+})),
+  "materials": zod.array(zod.object({
+  "id": zod.string(),
+  "sourceId": zod.string()
+})),
+  "storageRefused": zod.boolean()
 })
 
 

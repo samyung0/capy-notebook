@@ -165,6 +165,8 @@ type Quiz struct {
 	TimeLimitMin   *int            `json:"timeLimitMin,omitempty"`
 	// SharePath is the signed share link of a standalone quiz.
 	SharePath string `json:"sharePath,omitempty"`
+	// ParentMaterialID is the note a quiz is embedded in (a quick check).
+	ParentMaterialID string `json:"parentMaterialId,omitempty"`
 	// Provenance is the source material's attribution record; the attempt page
 	// renders it as a footer.
 	Provenance *Provenance `json:"provenance,omitempty"`
@@ -208,8 +210,11 @@ type FlashcardSet struct {
 	Color         UserColor `json:"color"`
 	Privacy       Privacy   `json:"privacy"`
 	// SharePath is the signed share link of a standalone flashcard set.
-	SharePath        string `json:"sharePath,omitempty"`
-	ParentMaterialID string `json:"-"`
+	SharePath string `json:"sharePath,omitempty"`
+	// ParentMaterialID is the note a set is embedded in: a quick check that
+	// records nothing (its study page sends no ratings), and the note's own only
+	// when it names that note.
+	ParentMaterialID string `json:"parentMaterialId,omitempty"`
 	CardCount        int    `json:"cardCount"`
 	// Provenance is the source material's attribution record; the study page
 	// renders it as a footer.

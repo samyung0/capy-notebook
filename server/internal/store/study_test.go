@@ -97,7 +97,9 @@ func TestPracticeRecordsStudyProgress(t *testing.T) {
 		t.Fatalf("rated questions = %d", n)
 	}
 
-	// A quiz inside a note is a mini check: no progress, no review state.
+	// A quiz inside a note is a quick check that records nothing: the graded
+	// attempt comes back without an id, and no attempt, progress or review state
+	// is stored.
 	note, err := f.s.CreateMaterial(ctx, Material{CreatedBy: f.user, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name, Kind: "note", Title: "Note", Content: "# Note"})
 	if err != nil {
 		t.Fatal(err)
@@ -106,8 +108,11 @@ func TestPracticeRecordsStudyProgress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.s.CreateAttempt(ctx, f.user, embedded.ID, 1, 2, json.RawMessage(`{}`), json.RawMessage(studySnapshot)); err != nil {
-		t.Fatal(err)
+	if attempt, err := f.s.CreateAttempt(ctx, f.user, embedded.ID, 1, 2, json.RawMessage(`{}`), json.RawMessage(studySnapshot)); err != nil || attempt.ID != "" || attempt.Correct != 1 {
+		t.Fatalf("embedded attempt %+v %v", attempt, err)
+	}
+	if n := f.count(t, `SELECT count(*) FROM attempts WHERE material_id=$1`, embedded.ID); n != 0 {
+		t.Fatalf("embedded quiz attempts = %d", n)
 	}
 	if got := f.progress(t, embedded.ID); got != "" {
 		t.Fatalf("embedded quiz progress = %q", got)
@@ -296,7 +301,10 @@ func TestReviewSkipsEmbeddedOrphanedAndEditedItems(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.rate(t, inner[0], 1)
+	again := 1
+	if err := f.s.RateItem(ctx, f.user, Rating{MaterialID: embedded.ID, ItemID: inner[0].ID, Rating: &again}, time.Now()); !errors.Is(err, ErrStudyEmbedded) {
+		t.Fatalf("embedded card rating: %v, want ErrStudyEmbedded", err)
+	}
 
 	removeCard(t, f.s, f.user, cards[0].MaterialID, cards[1].ID)
 	editCardFront(t, f.s, f.user, cards[0].MaterialID, cards[2].ID, "Nucleus envelope")

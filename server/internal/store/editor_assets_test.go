@@ -154,6 +154,16 @@ func (f editorAssetFixture) exists(assetID string) bool {
 	return found
 }
 
+func (f editorAssetFixture) trashed(assetID string) bool {
+	f.t.Helper()
+	var trashed bool
+	if err := f.s.pool.QueryRow(f.ctx, `SELECT trashed_at IS NOT NULL FROM editor_assets WHERE id=$1`,
+		assetID).Scan(&trashed); err != nil {
+		f.t.Fatal(err)
+	}
+	return trashed
+}
+
 func (f editorAssetFixture) used(userID string) int64 {
 	f.t.Helper()
 	var used int64
@@ -195,10 +205,12 @@ func noteWithImages(t *testing.T, assetIDs ...string) string {
 	return content
 }
 
-// A workspace note's or quiz's assets name it: a save deletes the ready ones it
+// A workspace note's or quiz's assets name it: a save trashes the ready ones it
 // no longer references once they are a minute old (pending and fresh ones
-// stay), trashing keeps them, a workspace clone carries them to the cloned
-// material, and purging deletes them, releasing their bytes each time.
+// stay; the charge stays), a save using one again restores it, the sweep
+// deletes one trashed a day ago, trashing the material keeps them, a workspace
+// clone carries them to the cloned material, and purging deletes them,
+// releasing their bytes each time.
 func TestWorkspaceEditorAssetsFollowTheirMaterial(t *testing.T) {
 	s := openMaterialTestStore(t)
 	ctx := context.Background()
@@ -230,18 +242,40 @@ func TestWorkspaceEditorAssetsFollowTheirMaterial(t *testing.T) {
 			fresh := f.fresh(ownerID, workspace.ID, material.ID)
 			pending, _ := f.reserve(ownerID, workspace.ID, material.ID)
 			usedBefore := f.used(ownerID)
-			next := content(t, kept.ID)
-			if _, err := s.UpdateMaterial(ctx, material.ID, MaterialPatch{
-				Content: &next, UpdatedBy: ownerID, ExpectedRevision: &material.Revision,
-			}); err != nil {
+			save := func(ids ...string) {
+				t.Helper()
+				next := content(t, ids...)
+				updated, err := s.UpdateMaterial(ctx, material.ID, MaterialPatch{
+					Content: &next, UpdatedBy: ownerID, ExpectedRevision: &material.Revision,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				material = updated
+			}
+			save(kept.ID)
+			if f.trashed(kept.ID) || !f.trashed(dropped.ID) || f.trashed(fresh.ID) || !f.exists(pending.ID) {
+				t.Fatalf("after save kept=%v dropped=%v fresh=%v trashed, pending=%v, want only the old unreferenced one trashed",
+					f.trashed(kept.ID), f.trashed(dropped.ID), f.trashed(fresh.ID), f.exists(pending.ID))
+			}
+			if used := f.used(ownerID); used != usedBefore {
+				t.Fatalf("trashing released %d bytes, want none before the purge", usedBefore-used)
+			}
+			// Used again (undo, cut and paste): back out of the trash.
+			save(kept.ID, dropped.ID)
+			if f.trashed(dropped.ID) {
+				t.Fatal("a save using the trashed asset again left it trashed")
+			}
+			// Dropped again and a day passes: the sweep deletes it.
+			save(kept.ID)
+			if _, err := s.pool.Exec(ctx, `UPDATE editor_assets SET trashed_at=now()-interval '25 hours' WHERE id=$1`, dropped.ID); err != nil {
 				t.Fatal(err)
 			}
-			if !f.exists(kept.ID) || f.exists(dropped.ID) || !f.exists(fresh.ID) || !f.exists(pending.ID) {
-				t.Fatalf("after save kept=%v dropped=%v fresh=%v pending=%v, want only the old unreferenced one gone",
-					f.exists(kept.ID), f.exists(dropped.ID), f.exists(fresh.ID), f.exists(pending.ID))
+			if n, err := s.PurgeTrashedEditorAssets(ctx, 100); err != nil || n < 1 || f.exists(dropped.ID) {
+				t.Fatalf("sweep purged %d, %v; asset left %v", n, err, f.exists(dropped.ID))
 			}
 			if used := f.used(ownerID); used != usedBefore-100 {
-				t.Fatalf("save released %d bytes, want 100", usedBefore-used)
+				t.Fatalf("purge released %d bytes, want 100", usedBefore-used)
 			}
 
 			op, err := s.TrashMaterial(ctx, ownerID, material.ID, "", AgentOperation{})
@@ -394,15 +428,23 @@ func TestAdoptEditorAssets(t *testing.T) {
 		t.Fatal(err)
 	}
 	foreign := f.ready(strangerID, "", foreignNote.ID)
+	// The note's own trashed asset comes back; another note's trashed one is
+	// still copied.
+	if _, err := s.pool.Exec(ctx, `UPDATE editor_assets SET trashed_at=now() WHERE id = ANY($1)`, []string{own.ID, readable.ID}); err != nil {
+		t.Fatal(err)
+	}
 
 	usedBefore := f.used(ownerID)
-	adopted, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID,
+	adopted, refused, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID,
 		[]string{own.ID, readable.ID, pending.ID, deleted.ID, foreign.ID, "asset_unknown"}, 0)
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || refused {
+		t.Fatal(err, refused)
 	}
 	if len(adopted) != 2 || adopted[own.ID] != own.ID || adopted[readable.ID] == "" || adopted[readable.ID] == readable.ID {
 		t.Fatalf("adopted = %v, want the own asset unchanged and one copy", adopted)
+	}
+	if restored, err := s.GetEditorAsset(ctx, own.ID); err != nil || restored.Trashed {
+		t.Fatalf("own asset after adopt: trashed %v, %v", restored.Trashed, err)
 	}
 	copied, err := s.GetEditorAsset(ctx, adopted[readable.ID])
 	if err != nil {
@@ -423,24 +465,26 @@ func TestAdoptEditorAssets(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `UPDATE materials SET privacy='link' WHERE id=$1`, foreignNote.ID); err != nil {
 		t.Fatal(err)
 	}
-	if adopted, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID, []string{foreign.ID}, 0); err != nil || adopted[foreign.ID] == "" {
+	if adopted, _, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID, []string{foreign.ID}, 0); err != nil || adopted[foreign.ID] == "" {
 		t.Fatalf("adopt shared foreign asset = %v, %v", adopted, err)
 	}
 
 	// A quiz's image cap leaves out a larger image.
-	if adopted, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID, []string{readable.ID}, 50); err != nil || adopted[readable.ID] != "" {
+	if adopted, _, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID, []string{readable.ID}, 50); err != nil || adopted[readable.ID] != "" {
 		t.Fatalf("adopt over the image cap = %v, %v; want it left out", adopted, err)
 	}
 
-	if _, err := s.AdoptEditorAssets(ctx, viewerID, workspace.ID, target.ID, []string{readable.ID}, 0); err == nil {
+	if _, _, err := s.AdoptEditorAssets(ctx, viewerID, workspace.ID, target.ID, []string{readable.ID}, 0); err == nil {
 		t.Fatal("a viewer adopted into the note")
 	}
 	limit := mustPlanLimits(t, s, PlanFree).StorageBytes
 	if _, err := s.pool.Exec(ctx, `UPDATE user_storage SET used_bytes=$2 WHERE user_id=$1`, ownerID, limit); err != nil {
 		t.Fatal(err)
 	}
-	var quota *QuotaExceededError
-	if _, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID, []string{readable.ID}, 0); !errors.As(err, &quota) {
-		t.Fatalf("adopt over quota err = %v, want quota exceeded", err)
+	// Over the quota no copy is made and the call says so; the own asset
+	// still answers.
+	if adopted, refused, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID, []string{own.ID, readable.ID}, 0); err != nil || !refused ||
+		adopted[readable.ID] != "" || adopted[own.ID] != own.ID {
+		t.Fatalf("adopt over quota = %v refused %v, %v", adopted, refused, err)
 	}
 }

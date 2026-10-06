@@ -84,6 +84,7 @@ import type {
   Quiz,
   RateReviewItemReq,
   RequestAccountDeletionReq,
+  RetryProcessingReq,
   ReviewSession,
   ReviewWorkspace,
   SaveCanvasReq,
@@ -1015,6 +1016,22 @@ export function useDeleteFile(wsId: string) {
   return useMutation({
     mutationFn: (id: string) => api.del<void>(`/files/${id}`),
     onSuccess: () => invalidateAfterFileDelete(qc, wsId),
+  });
+}
+
+/** Process a failed file again on its stored bytes (owner only, charged like
+ * automatic reprocessing). The file list shows it pending once it lands. */
+export function useRetryFileProcessing(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, parseMode }: { id: string } & RetryProcessingReq) =>
+      api.post<void>(`/files/${encodeURIComponent(id)}/retry-processing`, {
+        parseMode,
+      } satisfies RetryProcessingReq),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: qk.files(wsId) });
+      qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) });
+    },
   });
 }
 
@@ -2013,6 +2030,8 @@ export function useSubmitAttempt(options?: MutationUiOptions) {
     mutationFn: ({ quizId, ...body }: CreateAttemptReq & { quizId: string }) =>
       api.post<AttemptDetail>(`/quizzes/${quizId}/attempts`, body),
     onSuccess: (attempt) => {
+      // An embedded quiz records nothing: its attempt comes back without an id.
+      if (!attempt.id) return;
       qc.setQueryData(qk.attempt(attempt.id), attempt);
       qc.invalidateQueries({ queryKey: qk.attempts });
       void invalidateStudy(qc);

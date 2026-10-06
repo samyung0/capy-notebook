@@ -51,3 +51,50 @@ test('Indexing tab lists file changes, cancels queued work and processes waiting
     { timeout: 20_000 }
   );
 });
+
+test('a failed file is retried from its row menu and listed in the Indexing tab', async ({
+  page,
+}) => {
+  await page.goto('/workspaces/ws_bio');
+  await page.getByRole('button', { exact: true, name: 'Files' }).click();
+  const name = 'Biology notes - failed.md';
+  const fileRow = page
+    .locator('.group')
+    .filter({ has: page.getByText(name, { exact: true }) });
+  await expect(page.getByText(name, { exact: true })).toBeVisible();
+
+  // Listed with the other failed files; automatic processing skips them.
+  await page
+    .getByRole('button', { exact: true, name: 'Workspace settings' })
+    .click();
+  const settings = page.getByRole('dialog', { name: 'Workspace settings' });
+  await settings.getByRole('button', { exact: true, name: 'Indexing' }).click();
+  await expect(
+    settings
+      .getByRole('listitem')
+      .filter({ hasText: name })
+      .getByRole('button', { exact: true, name: 'Retry processing' })
+  ).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  // The row menu opens the upload panel on the stored file.
+  await fileRow.hover();
+  await fileRow.getByRole('button', { name: 'Open menu' }).click();
+  await page
+    .getByRole('menuitem', { exact: true, name: 'Retry processing' })
+    .click();
+  const dialog = page.getByRole('dialog', { name: 'Retry processing' });
+  await expect(dialog.getByText(name, { exact: true })).toBeVisible();
+  await dialog
+    .getByRole('button', { exact: true, name: 'Retry processing' })
+    .click();
+  await expect(page.getByText('Processing started')).toBeVisible();
+  // No longer failed: gone from the Indexing tab's list.
+  await page
+    .getByRole('button', { exact: true, name: 'Workspace settings' })
+    .click();
+  await settings.getByRole('button', { exact: true, name: 'Indexing' }).click();
+  await expect(
+    settings.getByRole('listitem').filter({ hasText: name })
+  ).toHaveCount(0);
+});

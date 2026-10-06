@@ -469,7 +469,7 @@ func snapshotStandaloneCloneAssets(
 	rows, err := tx.Query(ctx, `SELECT id, name, purpose, object_path, content_type,
 		size_bytes, status, COALESCE(etag,''), created_at, completed_at
 		FROM editor_assets
-		WHERE id=ANY($1) AND status='ready' AND (
+		WHERE id=ANY($1) AND status='ready' AND trashed_at IS NULL AND (
 			($2 <> '' AND workspace_id=$2) OR
 			($2 = '' AND material_id=ANY($3))
 		)`, ids, source.WorkspaceID, materialIDs)
@@ -632,7 +632,7 @@ func (s *Store) snapshotWorkspaceForClone(
 		`SELECT id, COALESCE(material_id,''), name, purpose, object_path, content_type, size_bytes,
 			status, COALESCE(etag,''), created_at, completed_at
 		 FROM editor_assets a
-		 WHERE workspace_id=$1 AND status='ready' AND (material_id IS NULL OR EXISTS (
+		 WHERE workspace_id=$1 AND status='ready' AND trashed_at IS NULL AND (material_id IS NULL OR EXISTS (
 			SELECT 1 FROM materials m WHERE m.id=a.material_id AND m.trashed_at IS NULL))
 		 ORDER BY created_at`,
 		workspaceID,

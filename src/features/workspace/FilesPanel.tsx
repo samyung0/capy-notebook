@@ -7,6 +7,7 @@ import {
   useMoveMaterial,
   useReorderChapters,
   useReorderContent,
+  useWorkspace,
 } from '@/api/hooks';
 import type {
   Chapter,
@@ -87,6 +88,9 @@ export function FilesPanel({
 }) {
   const { data: chapters } = useChapters(workspaceId);
   const { data: files } = useFiles(workspaceId);
+  const { data: workspace } = useWorkspace(workspaceId, {
+    errorBoundary: false,
+  });
   const { data: materials } = useMaterials(workspaceId);
   const { mutate: reorder } = useReorderChapters(workspaceId);
   const { mutate: delChapter } = useDeleteChapter(workspaceId);
@@ -363,6 +367,7 @@ export function FilesPanel({
           <FileListItem
             active={isFileActive(item.id)}
             beforeDelete={isFileActive(item.id) ? beforeReplace : undefined}
+            canRetry={!!workspace?.isOwner}
             chapters={chapters}
             color="purple"
             file={item.data}

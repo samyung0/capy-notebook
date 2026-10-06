@@ -41,9 +41,10 @@ clone or charged to storage.
 `review_log` with their material. User foreign keys never cascade because user
 rows are tombstoned; `PurgeUser` deletes the four tables explicitly.
 
-Embedded quizzes and sets (`parent_material_id` set) never get a
-`study_progress` row and never enter review. Standalone materials have no
-workspace and so no progress either.
+Embedded quizzes and sets (`parent_material_id` set) are quick checks that
+record nothing (Epo, 2026-10-06): no `study_progress` row, no review, no
+stored attempt and no rating. Standalone materials have no workspace and so no
+progress either.
 
 ## FSRS
 
@@ -108,7 +109,7 @@ workspace; writes need read access plus an account that can sign in
 | `PUT /api/workspaces/{id}/study/items` | `{fileId \| materialId, state?}`: `done` (Mark as read), `removed` (Stop tracking), omitted deletes the row (Mark as unread, Start tracking). The target must be an untrashed file or untrashed, non-embedded material of the workspace, else 404; both or neither id is 422. |
 | `POST /api/workspaces/{id}/study/reset` | Deletes the user's `study_progress` rows in the workspace and `review_states` of every material in it. Attempts, the review log and the switch stay. |
 | `GET /api/workspaces/{id}/review` | The next session: the first 20 of the review pool, each with its content (card faces, or the answer-free question, `questions.LearnerView`) and material title. |
-| `POST /api/review/ratings` | `{materialId, itemId, rating}` for a card; a question is 422 (it is rated by a check). Needs read access to the material, so standalone shared sets and embedded sets (through their note) can be rated too. |
+| `POST /api/review/ratings` | `{materialId, itemId, rating}` for a card; a question is 422 (it is rated by a check). Needs read access to the material, so standalone shared sets can be rated too; an embedded set is 422 (`ErrStudyEmbedded`), its study page sends nothing. |
 | `POST /api/review/check` | `{materialId, itemId, answers}` for a question: grades it on the server (open parts with Jev), rates it from `correct / total` and returns `{correct, total, question}`, the question with its key and awards. A card is 422. |
 | `GET /api/review/workspaces` | Learning's Review tab, below. |
 | `PATCH /api/me/study-progress` | The global default. |
@@ -119,14 +120,16 @@ Side effects, in the same transaction as the write:
 
 - An attempt on a workspace quiz that is not embedded rates every question of
   the snapshot the server graded that is still in the document and sets the
-  quiz `done`. Attempts on
-  embedded and standalone quizzes record no review state at all.
+  quiz `done`. Attempts on standalone quizzes record no review state. An
+  embedded quiz's attempt is graded and returned without an id and stores
+  nothing (`CreateAttempt`): no Past attempts entry, and the result lives only
+  on the page.
 - A rating writes `review_states` and `review_log`. For a workspace material
   that is not embedded it also sets progress: a question makes its quiz
   `done`; a card makes its set `started`, or `done` once every current card has
   a state matching its hash. Ratings of one user on one material take an
   advisory lock, so a set's last cards rated at once still see each other and
-  mark it done. Embedded and standalone ratings write state that nothing reads.
+  mark it done. Standalone ratings write state that nothing reads.
 - A `done` row stays done; later cards do not reopen a set. Practising a
   `removed` item puts it back (started or done).
 - Recording happens with progress on or off; turning it on shows the history.
@@ -210,7 +213,8 @@ never edits cards: the card is centred and flips on a click, with the rating
 tiles (`src/features/study/RatingTiles.tsx`) under it. Signed in, each rating
 posts to `/api/review/ratings`; a shared link opened signed out renders the same
 page, rating with ts-fsrs into IndexedDB, as shared quizzes keep attempts in
-the browser. Embedded sets study there too, outside progress.
+the browser. Embedded sets study there too and send no ratings
+(`parentMaterialId` on the set).
 
 ## Learning
 

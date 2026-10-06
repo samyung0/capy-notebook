@@ -93,24 +93,24 @@ type EmbeddedAdoption struct {
 
 // AdoptEmbeddedMaterials makes each quiz or flashcard block pasted into noteID
 // the note's own. It returns the note's material id per block, in order: the
-// same id for the note's own row unless the block asks for a copy (trashed
-// too, since the next projection restores a referenced row), else a new
+// same id for the note's own row unless the block asks for a copy (restored
+// when trashed), else a new
 // embedded row with the source's questions or cards (fresh card ids) and
 // copies of its images, without its attempts or review state. Each block
 // asking gets its own copy. A source that is not an embedded quiz or
 // flashcard set, or whose note the actor cannot read, gets "". A trashed
 // source whose note is readable is copied: a cut's save may already have
 // trashed it. Like CreateEmbeddedMaterial the caller has checked edit access
-// on the note; the whole call fails when the copies do not fit the note's
-// payer's quota.
+// on the note; a copy that does not fit the note's payer's quota gets "" and
+// refused is true.
 func (s *Store) AdoptEmbeddedMaterials(
 	ctx context.Context,
 	actorID, noteID string,
 	blocks []EmbeddedAdoption,
-) ([]string, error) {
+) (adopted []string, refused bool, err error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer tx.Rollback(ctx)
 	note := Material{ID: noteID}
@@ -121,14 +121,14 @@ func (s *Store) AdoptEmbeddedMaterials(
 		WHERE m.id=$1 AND m.kind='note' AND m.parent_material_id IS NULL AND m.trashed_at IS NULL`,
 		noteID, actorID).Scan(&note.Title, &note.WorkspaceID, &note.WorkspaceName, &locale)
 	if isNoRows(err) {
-		return nil, ErrNotFound
+		return nil, false, ErrNotFound
 	}
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	payerID, err := s.lockEditorAssetScopeTx(ctx, tx, note.WorkspaceID, noteID, actorID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	sourceIDs := make([]string, len(blocks))
 	for i, block := range blocks {
@@ -136,23 +136,23 @@ func (s *Store) AdoptEmbeddedMaterials(
 	}
 	rows, err := tx.Query(ctx, `SELECT `+materialCols+` FROM materials WHERE id=ANY($1::text[])`, sourceIDs)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	sources := map[string]Material{}
 	for rows.Next() {
 		src, err := scanMaterial(rows)
 		if err != nil {
 			rows.Close()
-			return nil, err
+			return nil, false, err
 		}
 		sources[src.ID] = src
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
-	adopted := make([]string, len(blocks))
+	adopted = make([]string, len(blocks))
 	taken := map[string]bool{}
 	for i, block := range blocks {
 		src, ok := sources[block.SourceID]
@@ -160,6 +160,11 @@ func (s *Store) AdoptEmbeddedMaterials(
 			continue
 		}
 		if src.ParentMaterialID == noteID && !block.Copy {
+			// Its block came back (undo, cut and paste): back out of the trash
+			// at once, so the block loads it.
+			if err := restoreEmbeddedRowTx(ctx, tx, src.ID); err != nil {
+				return nil, false, err
+			}
 			adopted[i] = src.ID
 			continue
 		}
@@ -168,14 +173,33 @@ func (s *Store) AdoptEmbeddedMaterials(
 			if _, err := materialEffectiveAccess(ctx, tx, actorID, src.ParentMaterialID); errors.Is(err, ErrNotFound) {
 				continue
 			} else if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		}
-		if adopted[i], err = s.copyEmbeddedTx(ctx, tx, actorID, payerID, locale, note, src, taken); err != nil {
-			return nil, err
+		// Each copy in a savepoint: one over the quota is left out (refused)
+		// while the others land.
+		copyTx, err := tx.Begin(ctx)
+		if err != nil {
+			return nil, false, err
 		}
+		id, err := s.copyEmbeddedTx(ctx, copyTx, actorID, payerID, locale, note, src, taken)
+		var quota *QuotaExceededError
+		if errors.As(err, &quota) {
+			refused = true
+			if err := copyTx.Rollback(ctx); err != nil {
+				return nil, false, err
+			}
+			continue
+		}
+		if err != nil {
+			return nil, false, err
+		}
+		if err := copyTx.Commit(ctx); err != nil {
+			return nil, false, err
+		}
+		adopted[i] = id
 	}
-	return adopted, tx.Commit(ctx)
+	return adopted, refused, tx.Commit(ctx)
 }
 
 // copyEmbeddedTx copies src under note through the clone path: content with
@@ -325,7 +349,7 @@ func (s *Store) DiscardEmbeddedDrafts(ctx context.Context, noteID string, ids []
 		if referenced[id] {
 			continue
 		}
-		if err := trashEmbeddedRowTx(ctx, tx, id, "", uid("trash")); err != nil {
+		if err := trashEmbeddedRowTx(ctx, tx, id, "", uid("trash"), unreferencedRetention); err != nil {
 			return err
 		}
 	}
@@ -379,30 +403,42 @@ func reconcileEmbeddedTx(ctx context.Context, tx pgx.Tx, noteID, content, actorI
 		}
 	}
 	for _, id := range trash {
-		if err := trashEmbeddedRowTx(ctx, tx, id, actorID, uid("trash")); err != nil {
+		if err := trashEmbeddedRowTx(ctx, tx, id, actorID, uid("trash"), unreferencedRetention); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func trashEmbeddedRowTx(ctx context.Context, tx pgx.Tx, id, actorID, episode string) error {
+// Retention of an embedded row: one its note stopped referencing comes back
+// within a day (undo, cut and paste, a replayed draft), one trashed with its
+// note follows the note's 30 days.
+const (
+	unreferencedRetention = "1 day"
+	withNoteRetention     = "30 days"
+)
+
+// trashEmbeddedRowTx trashes an embedded row, hidden from the trash listing,
+// purged after retention unless a save references it again.
+func trashEmbeddedRowTx(ctx context.Context, tx pgx.Tx, id, actorID, episode, retention string) error {
 	if _, err := tx.Exec(ctx, `UPDATE materials SET trashed_at=now(), trashed_by=$2, trash_episode_id=$3,
-		purge_after=now() + interval '30 days'
-		WHERE id=$1 AND trashed_at IS NULL`, id, nullStr(actorID), episode); err != nil {
+		purge_after=now() + $4::interval
+		WHERE id=$1 AND trashed_at IS NULL`, id, nullStr(actorID), episode, retention); err != nil {
 		return err
 	}
 	return invalidateEditInversesTx(ctx, tx, agenttools.KindMaterial, id, "trashed")
 }
 
 // restoreEmbeddedRowTx reopens a trashed embedded row under a fresh
-// collaboration incarnation, like RestoreTrashed does for any material.
+// collaboration incarnation, like RestoreTrashed does for any material. A row
+// that is not trashed is left alone.
 func restoreEmbeddedRowTx(ctx context.Context, tx pgx.Tx, id string) error {
-	if _, err := tx.Exec(ctx, `UPDATE materials SET trashed_at=NULL, trashed_by=NULL, trash_episode_id=NULL,
-		purge_after=NULL, trash_restores=trash_restores+1 WHERE id=$1 AND trashed_at IS NOT NULL`, id); err != nil {
+	tag, err := tx.Exec(ctx, `UPDATE materials SET trashed_at=NULL, trashed_by=NULL, trash_episode_id=NULL,
+		purge_after=NULL, trash_restores=trash_restores+1 WHERE id=$1 AND trashed_at IS NOT NULL`, id)
+	if err != nil || tag.RowsAffected() == 0 {
 		return err
 	}
-	_, err := tx.Exec(ctx, `UPDATE material_yjs_documents SET room_schema=room_schema+1, updated_at=now()
+	_, err = tx.Exec(ctx, `UPDATE material_yjs_documents SET room_schema=room_schema+1, updated_at=now()
 		WHERE material_id=$1`, id)
 	return err
 }
@@ -419,7 +455,7 @@ func trashEmbeddedChildrenTx(ctx context.Context, tx pgx.Tx, noteID, actorID, ep
 		return err
 	}
 	for _, id := range ids {
-		if err := trashEmbeddedRowTx(ctx, tx, id, actorID, episode); err != nil {
+		if err := trashEmbeddedRowTx(ctx, tx, id, actorID, episode, withNoteRetention); err != nil {
 			return err
 		}
 	}

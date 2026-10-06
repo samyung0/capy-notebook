@@ -32,3 +32,8 @@ export function useEditorRuntime() {
   if (!value) throw new Error('EditorRuntimeProvider is missing');
   return value;
 }
+
+/** The runtime when the element sits in a note editor, else null. */
+export function useOptionalEditorRuntime() {
+  return useContext(EditorRuntimeContext);
+}

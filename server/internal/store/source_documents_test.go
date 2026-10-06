@@ -139,6 +139,57 @@ func TestSourceRefreshManualIsOwnerOnly(t *testing.T) {
 	}
 }
 
+// Retry processing: the owner only, a failed file only, one queued job, and
+// 'none' just stores the file.
+func TestRetryFileProcessing(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	owner := newBlobTestUser(t, s, "retry_processing_owner")
+	editor := newBlobTestUser(t, s, "retry_processing_editor")
+	ws, file := sourceTestFile(t, s, owner, "lesson.pdf", "pdf")
+	addWorkspaceEditor(t, s, ws.ID, editor)
+	if err = s.RetryFileProcessing(ctx, owner, file.ID, "fast", "test"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("retry of a ready file: %v, want conflict", err)
+	}
+	if _, err = s.pool.Exec(ctx, `UPDATE files SET status='failed' WHERE id=$1`, file.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RetryFileProcessing(ctx, editor, file.ID, "fast", "test"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("editor retry: %v, want forbidden", err)
+	}
+	if err = s.RetryFileProcessing(ctx, owner, file.ID, "fast", "test"); err != nil {
+		t.Fatal(err)
+	}
+	var status, mode, actor string
+	if err = s.pool.QueryRow(ctx, `SELECT f.status,f.parse_mode,j.payload->>'actorUserId' FROM files f
+		JOIN jobs j ON j.payload->>'fileId'=f.id AND j.status='pending' WHERE f.id=$1`, file.ID).Scan(&status, &mode, &actor); err != nil {
+		t.Fatal(err)
+	}
+	if status != "pending" || mode != "fast" || actor != owner {
+		t.Fatalf("after retry: status %q mode %q payer %q", status, mode, actor)
+	}
+	if _, err = s.pool.Exec(ctx, `UPDATE files SET status='failed' WHERE id=$1`, file.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RetryFileProcessing(ctx, owner, file.ID, "fast", "test"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("retry with a job queued: %v, want conflict", err)
+	}
+	if _, err = s.pool.Exec(ctx, `UPDATE jobs SET status='failed' WHERE payload->>'fileId'=$1`, file.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RetryFileProcessing(ctx, owner, file.ID, "none", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.pool.QueryRow(ctx, `SELECT status FROM files WHERE id=$1`, file.ID).Scan(&status); err != nil || status != "ready" {
+		t.Fatalf("store-only retry: status %q %v", status, err)
+	}
+}
+
 func TestOfficeAutomaticRefreshAdmission(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -255,13 +306,18 @@ func TestRefreshSchedulerQuery(t *testing.T) {
 	// Moves only: 0 tokens, published by the stale rule.
 	reordered := edited(0, "9 days", `[{"id":"p","kind":"text","label":"Paragraph","operation":"move"}]`)
 	unedited := edited(5, "8 days", "")
+	// Due by its edits, but failed: only the owner's Retry processing runs it.
+	failed := edited(3000, "3 minutes", "")
+	if _, err := s.pool.Exec(ctx, `UPDATE files SET status='failed' WHERE id=$1`, failed); err != nil {
+		t.Fatal(err)
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer tx.Rollback(ctx)
 	// Only this test's rows compete for the batch; the rollback restores the rest.
-	if _, err = tx.Exec(ctx, `UPDATE source_documents SET refresh_error='other test' WHERE NOT file_id=ANY($1)`, []string{due, worthless, reordered, unedited}); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE source_documents SET refresh_error='other test' WHERE NOT file_id=ANY($1)`, []string{due, worthless, reordered, unedited, failed}); err != nil {
 		t.Fatal(err)
 	}
 	candidates := func() []string {

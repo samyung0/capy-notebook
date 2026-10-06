@@ -75,13 +75,15 @@ export type AssetRow = {
   size_bytes: string;
   status: string;
   aged: boolean;
+  /** In the hidden trash: a save stopped using it; purged after a day. */
+  trashed: boolean;
 };
 
 /** The material's editor asset rows; `aged` once completed over 60 s ago. */
 export async function materialAssets(run: UatRun, materialId: string) {
   return run.query<AssetRow>(
     `SELECT id,material_id,user_id,created_by,object_path,content_type,size_bytes,status,
-    completed_at < now() - interval '60 seconds' AS aged
+    completed_at < now() - interval '60 seconds' AS aged, trashed_at IS NOT NULL AS trashed
     FROM editor_assets WHERE material_id=%s ORDER BY created_at`,
     [materialId]
   );
@@ -321,17 +323,16 @@ export async function insertNoteImage(
 }
 
 /**
- * Deletes the note image (over a minute old): the save deletes its row and
- * its object reference and releases its bytes from the owner's charge. Undo
- * gets no id back from adopt, so the bytes this tab kept in IndexedDB upload
- * again under a new asset id; the image survives a reload.
+ * Deletes the note image (over a minute old): the save trashes its row, which
+ * keeps its object reference and its charge for a day. Undo brings the node
+ * back and the collaboration service's children pass restores the same asset,
+ * which renders again and survives a reload.
  */
 export async function deleteAndUndoNoteImage(
   run: UatRun,
   actor: Actor,
   noteId: string,
   asset: AssetRow,
-  png: Buffer,
   name: string
 ) {
   const { page } = actor;
@@ -342,6 +343,7 @@ export async function deleteAndUndoNoteImage(
   await aged(run, noteId, [asset.id]);
   const before = await charge(run);
   const sizeBefore = Number((await materialRow(run, noteId)).size_bytes);
+  const refs = await blobRefs(run, asset.object_path);
   await image.click({ button: 'right' });
   await page
     .locator('[data-slot="context-menu-content"]')
@@ -349,57 +351,35 @@ export async function deleteAndUndoNoteImage(
     .click();
   await expect(image).toHaveCount(0);
   await run.poll(
-    'the save deletes the note image',
+    'the save trashes the note image',
     async () => ({
       assets: await materialAssets(run, noteId),
-      refs: await blobRefs(run, asset.object_path),
       text: await contentText(run, noteId),
     }),
-    ({ assets, refs, text }) =>
+    ({ assets, text }) =>
       !text.includes(asset.id) &&
-      !assets.some((row) => row.id === asset.id) &&
-      refs === 0,
+      assets.some((row) => row.id === asset.id && row.trashed),
     120_000
   );
-  // Released: the charge drops by the asset, less the content's own change.
+  // Still charged and still holding its object until the purge.
+  assert.equal(await blobRefs(run, asset.object_path), refs);
   assert.equal(
     (await charge(run)) - before,
-    Number((await materialRow(run, noteId)).size_bytes) -
-      sizeBefore -
-      Number(asset.size_bytes)
-  );
-  const adopted = page.waitForResponse(
-    (response) =>
-      new URL(response.url()).pathname ===
-        `/api/materials/${noteId}/editor-assets/adopt` &&
-      response.request().method() === 'POST'
-  );
-  const reuploaded = page.waitForResponse(
-    (response) =>
-      new URL(response.url()).pathname.startsWith(
-        `/api/materials/${noteId}/editor-assets/uploads/`
-      ) && new URL(response.url()).pathname.endsWith('/complete')
+    Number((await materialRow(run, noteId)).size_bytes) - sizeBefore
   );
   await page.keyboard.press('ControlOrMeta+z');
-  // The server copy is gone, so adopt answers no id and the kept bytes upload.
-  const adoption = object(await (await adopted).json());
-  assert.deepEqual(adoption.assets, [{ sourceId: asset.id }]); // no assetId
-  const second = await reuploaded;
-  assert.equal(second.status(), 201);
-  const secondId = string(object(await second.json()).assetId);
-  assert.notEqual(secondId, asset.id);
   await run.poll(
-    'the note projects the re-uploaded image',
-    () => contentText(run, noteId),
-    (text) => text.includes(secondId) && !text.includes(asset.id)
+    'undo restores the same image',
+    async () => ({
+      assets: await materialAssets(run, noteId),
+      text: await contentText(run, noteId),
+    }),
+    ({ assets, text }) =>
+      text.includes(asset.id) &&
+      assets.some((row) => row.id === asset.id && !row.trashed),
+    120_000
   );
-  const [restored] = (await materialAssets(run, noteId)).filter(
-    (row) => row.id === secondId
-  );
-  assert.equal(restored.status, 'ready');
-  assert.notEqual(restored.object_path, asset.object_path);
-  await run.record('blob', restored.object_path, { assetId: secondId, noteId });
-  assert.equal((await run.blob(restored.object_path)).sha256, sha256(png));
+  await expect(image).toBeVisible({ timeout: 60_000 });
   await page.reload();
   await expect(image).toBeVisible({ timeout: 60_000 });
   await expect
@@ -407,7 +387,6 @@ export async function deleteAndUndoNoteImage(
       image.evaluate((element) => (element as HTMLImageElement).naturalWidth)
     )
     .toBeGreaterThan(0);
-  return secondId;
 }
 
 /** An interactive block snippet: a fixed-height box its own script marks. */
@@ -592,7 +571,8 @@ export async function insertEmbedded(
 /**
  * Removes the quiz's block (the quiz over a minute old, so the save trashes
  * it): the row is trashed yet never listed in the owner's trash. Undo brings
- * the block back, adopt answers the note's own row and the save restores it.
+ * the block back and the collaboration service's children pass restores the
+ * row under the same id.
  */
 export async function removeAndUndoQuizBlock(
   run: UatRun,
@@ -637,18 +617,8 @@ export async function removeAndUndoQuizBlock(
     !(trash.items as { id: string }[]).some((item) => item.id === quizId),
     'an embedded quiz is listed in the trash'
   );
-  const adopted = page.waitForResponse(
-    (response) =>
-      new URL(response.url()).pathname ===
-        `/api/materials/${noteId}/embedded/adopt` &&
-      response.request().method() === 'POST'
-  );
   await page.keyboard.press('ControlOrMeta+z');
   await expect(cards).toHaveCount(blocks.length);
-  const adoption = object(await (await adopted).json());
-  assert.deepEqual(adoption.materials, [
-    { materialId: quizId, sourceId: quizId },
-  ]);
   await run.poll(
     'the restored block restores the quiz',
     async () => ({
@@ -699,22 +669,15 @@ export async function apiEmbeddedQuiz(run: UatRun, noteId: string) {
 
 /**
  * Pastes quiz blocks the way Slate copies them (its fragment, also inside the
- * HTML), through the paste events a real clipboard fires, and waits for the
- * note to adopt them. A synthetic clipboard keeps the custom fragment type
- * that the system clipboard of a headless browser may drop.
+ * HTML), through the paste events a real clipboard fires. The collaboration
+ * service makes them the note's own; callers poll the projection for that. A
+ * synthetic clipboard keeps the custom fragment type that the system clipboard
+ * of a headless browser may drop.
  */
 async function pasteQuizBlock(
-  page: Page,
   editor: Locator,
-  noteId: string,
   block: { id: string; materialId: string }
 ) {
-  const adopted = page.waitForResponse(
-    (response) =>
-      new URL(response.url()).pathname ===
-        `/api/materials/${noteId}/embedded/adopt` &&
-      response.request().method() === 'POST'
-  );
   await editor.evaluate(
     (element, node) => {
       const fragment = btoa(encodeURIComponent(JSON.stringify([node])));
@@ -749,7 +712,6 @@ async function pasteQuizBlock(
       type: 'material_ref',
     }
   );
-  assert.equal((await adopted).status(), 200);
 }
 
 /** Waits for the quiz editor's Save: the picked images upload, then the content. */
@@ -888,7 +850,7 @@ export async function pastedQuizCopies(
     notes.a,
     notes.aBody
   );
-  await pasteQuizBlock(page, editorA, notes.a, {
+  await pasteQuizBlock(editorA, {
     id: 'block_quiz_photo',
     materialId: quiz,
   });
@@ -904,7 +866,7 @@ export async function pastedQuizCopies(
     notes.b,
     notes.bBody
   );
-  await pasteQuizBlock(page, editorB, notes.b, {
+  await pasteQuizBlock(editorB, {
     id: 'block_quiz_photo',
     materialId: quiz,
   });
@@ -922,7 +884,7 @@ export async function pastedQuizCopies(
     .click({ position: { x: 2, y: 2 } });
   await page.keyboard.press('End');
   await page.keyboard.press('Enter');
-  await pasteQuizBlock(page, editorB, notes.b, {
+  await pasteQuizBlock(editorB, {
     id: pasted.id,
     materialId: string(pasted.materialId),
   });
@@ -984,8 +946,9 @@ async function removeQuizImage(run: UatRun, quizId: string) {
 }
 
 /**
- * Removing the original quiz's image (over a minute old) and saving deletes
- * its row and releases its bytes; the copies keep theirs and the shared object.
+ * Removing the original quiz's image (over a minute old) and saving trashes
+ * its row (charged and holding the shared object until the purge); the copies
+ * keep theirs.
  */
 export async function quizImageRemoved(
   run: UatRun,
@@ -998,15 +961,16 @@ export async function quizImageRemoved(
   const before = await charge(run);
   const sizeBefore = Number((await materialRow(run, quiz)).size_bytes);
   await removeQuizImage(run, quiz);
-  assert.deepEqual(await materialAssets(run, quiz), []);
+  assert.deepEqual(
+    (await materialAssets(run, quiz)).map((row) => [row.id, row.trashed]),
+    [[quizImage.id, true]]
+  );
   assert(!(await contentText(run, quiz)).includes(quizImage.id));
   assert.equal(
     (await charge(run)) - before,
-    Number((await materialRow(run, quiz)).size_bytes) -
-      sizeBefore -
-      Number(quizImage.size_bytes)
+    Number((await materialRow(run, quiz)).size_bytes) - sizeBefore
   );
-  assert.equal(await blobRefs(run, quizImage.object_path), refs - 1);
+  assert.equal(await blobRefs(run, quizImage.object_path), refs);
   for (const copy of copies)
     assert.equal((await materialAssets(run, copy)).length, 1);
   assert.equal(
@@ -1018,7 +982,7 @@ export async function quizImageRemoved(
 /**
  * Flashcard front images, the quiz image rule for cards: one front image per
  * card, shrunk under 2 MB in the browser and uploaded only on Save; removing
- * it and saving deletes the row. Labels from the flashcards session
+ * it and saving trashes the row. Labels from the flashcards session
  * (2026-10-06): "New card" with an "Add card" submit, "Edit card N/M" with
  * "Save", the image's hidden file input behind "Add image", and "Replace" /
  * "Remove" once set. A fixme until card images are deployed to UAT.
@@ -1071,9 +1035,9 @@ export async function cardImages(run: UatRun) {
   await dialog.getByRole('button', { exact: true, name: 'Save' }).click();
   await pageSave(page);
   await run.poll(
-    'card image deleted',
+    'card image trashed',
     () => materialAssets(run, setId),
-    (rows) => rows.length === 0
+    (rows) => rows.length === 1 && rows[0].trashed
   );
   await noProviderCalls(run, workspaceId);
 }

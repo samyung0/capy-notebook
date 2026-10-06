@@ -87,6 +87,7 @@ func (a *api) registerSourceDocuments(api huma.API) {
 	reg(api, http.MethodPost, "/api/files/{id}/collaboration-token", "createSourceCollaborationToken", tag, "Create source room token", http.StatusCreated, a.createSourceCollaborationToken)
 	reg(api, http.MethodPost, "/api/files/{id}/process-changes", "processSourceChanges", tag, "Process the latest saved source changes", http.StatusAccepted, a.processSourceChanges)
 	reg(api, http.MethodDelete, "/api/files/{id}/process-changes", "cancelSourceChanges", tag, "Cancel queued processing of source changes", http.StatusNoContent, a.cancelSourceChanges)
+	reg(api, http.MethodPost, "/api/files/{id}/retry-processing", "retryFileProcessing", tag, "Process a failed file again", http.StatusAccepted, a.retryFileProcessing)
 	reg(api, http.MethodGet, "/internal/collaboration/files/{id}/bootstrap", "bootstrapSourceDocument", tag, "Bootstrap an authorized source room", http.StatusOK, a.bootstrapSourceDocument)
 	reg(api, http.MethodGet, "/internal/collaboration/files/{id}/access", "checkSourceAccess", tag, "Revalidate source room access", http.StatusNoContent, a.checkSourceAccess)
 	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/files/{id}/checkpoint", "checkpointSourceDocument", tag, "Persist an authorized source checkpoint", http.StatusOK, 150<<20, a.checkpointSourceDocument)
@@ -202,6 +203,25 @@ func (a *api) processSourceChanges(ctx context.Context, in *collaborationTokenIn
 		return nil, hErr(err)
 	}
 	return &sourceProcessOutput{Body: out}, nil
+}
+
+type retryProcessingInput struct {
+	ID   string `path:"id"`
+	Body struct {
+		ParseMode string `json:"parseMode" enum:"fast,none"`
+	}
+}
+
+// retryFileProcessing queues a failed file's processing again on its stored
+// bytes; only the owner may, and pays like automatic reprocessing.
+func (a *api) retryFileProcessing(ctx context.Context, in *retryProcessingInput) (*struct{}, error) {
+	if err := a.requireAccountMutate(ctx); err != nil {
+		return nil, err
+	}
+	if err := a.s.RetryFileProcessing(ctx, userID(ctx), in.ID, in.Body.ParseMode, a.parser); err != nil {
+		return nil, hErr(err)
+	}
+	return nil, nil
 }
 
 type sourceRebuildInput struct {
@@ -368,7 +388,9 @@ func (a *api) claimSourceRefresh(ctx context.Context, in *sourceCandidateInput) 
 		return nil, hErr(err)
 	}
 	candidate.BaseSourceURL = url
-	upload, err := a.blob.PresignPut(ctx, candidate.SourceBlobPath, "application/octet-stream")
+	// The collaboration service exports the candidate after this claim, so its
+	// size is unknown here (0 leaves it unsigned); the route is service-only.
+	upload, err := a.blob.PresignPut(ctx, candidate.SourceBlobPath, "application/octet-stream", 0)
 	if err != nil {
 		return nil, hErr(err)
 	}

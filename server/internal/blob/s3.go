@@ -139,12 +139,16 @@ func (s *B2) PresignGetWithExpiry(ctx context.Context, path string) (PresignedGe
 	return PresignedGet{URL: req.URL, ExpiresAt: time.Now().UTC().Add(s.linkTTL)}, nil
 }
 
-func (s *B2) PresignPut(ctx context.Context, path, contentType string) (PresignedPut, error) {
+func (s *B2) PresignPut(ctx context.Context, path, contentType string, size int64) (PresignedPut, error) {
 	expiresAt := time.Now().UTC().Add(s.presignTTL)
 	in := &s3.PutObjectInput{
 		Bucket:      aws.String(s.bucket),
 		Key:         aws.String(path),
 		ContentType: aws.String(contentType),
+	}
+	// The browser sets Content-Length from the body itself; it is only signed.
+	if size > 0 {
+		in.ContentLength = aws.Int64(size)
 	}
 	req, err := s.presign.PresignPutObject(ctx, in, s3.WithPresignExpires(s.presignTTL))
 	if err != nil {

@@ -102,32 +102,6 @@ type CreateEmbeddedMaterialReq struct {
 	Cards     []CardContent      `json:"cards,omitempty"`
 }
 
-// AdoptEmbeddedMaterialsReq is the body for POST
-// /api/materials/{id}/embedded/adopt: one entry per quiz or flashcard block
-// just pasted into the note {id}.
-type AdoptEmbeddedMaterialsReq struct {
-	Materials []AdoptEmbeddedMaterial `json:"materials" minItems:"1" maxItems:"20" nullable:"false"`
-}
-
-// AdoptEmbeddedMaterial is one pasted block's reference. Copy asks for a copy
-// even of the note's own row, for a block whose quiz another block keeps.
-type AdoptEmbeddedMaterial struct {
-	MaterialID string `json:"materialId" minLength:"1"`
-	Copy       bool   `json:"copy,omitempty"`
-}
-
-// AdoptedEmbeddedMaterial is the note's own material for one pasted source;
-// MaterialID is omitted when the block cannot stay.
-type AdoptedEmbeddedMaterial struct {
-	SourceID   string `json:"sourceId"`
-	MaterialID string `json:"materialId,omitempty"`
-}
-
-// AdoptEmbeddedMaterialsResp has one entry per requested block, in request order.
-type AdoptEmbeddedMaterialsResp struct {
-	Materials []AdoptedEmbeddedMaterial `json:"materials" nullable:"false"`
-}
-
 // CardContent is one authored flashcard face pair.
 type CardContent struct {
 	Front string `json:"front"`

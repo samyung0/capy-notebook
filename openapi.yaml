@@ -158,60 +158,16 @@ components:
       required:
         - name
       type: object
-    AdoptEmbeddedMaterial:
+    AdoptedMaterialChild:
       additionalProperties: false
       properties:
-        copy:
-          type: boolean
-        materialId:
-          minLength: 1
-          type: string
-      required:
-        - materialId
-      type: object
-    AdoptEmbeddedMaterialsReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/AdoptEmbeddedMaterialsReq.json
-          format: uri
-          readOnly: true
-          type: string
-        materials:
-          items:
-            $ref: "#/components/schemas/AdoptEmbeddedMaterial"
-          maxItems: 20
-          minItems: 1
-          type: array
-      required:
-        - materials
-      type: object
-    AdoptEmbeddedMaterialsResp:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/AdoptEmbeddedMaterialsResp.json
-          format: uri
-          readOnly: true
-          type: string
-        materials:
-          items:
-            $ref: "#/components/schemas/AdoptedEmbeddedMaterial"
-          type: array
-      required:
-        - materials
-      type: object
-    AdoptedEmbeddedMaterial:
-      additionalProperties: false
-      properties:
-        materialId:
+        id:
           type: string
         sourceId:
           type: string
       required:
         - sourceId
+        - id
       type: object
     AgentOperation:
       additionalProperties: false
@@ -1832,6 +1788,8 @@ components:
           type: boolean
         name:
           type: string
+        parentMaterialId:
+          type: string
         privacy:
           $ref: "#/components/schemas/Privacy"
         provenance:
@@ -2440,6 +2398,68 @@ components:
         - revision
         - isOwner
         - capabilities
+      type: object
+    MaterialChildBlock:
+      additionalProperties: false
+      properties:
+        copy:
+          type: boolean
+        materialId:
+          minLength: 1
+          type: string
+      required:
+        - materialId
+      type: object
+    MaterialChildrenInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/MaterialChildrenInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        actorUserId:
+          minLength: 1
+          type: string
+        assetIds:
+          items:
+            type: string
+          maxItems: 50
+          type: array
+        materials:
+          items:
+            $ref: "#/components/schemas/MaterialChildBlock"
+          maxItems: 20
+          type: array
+      required:
+        - actorUserId
+        - assetIds
+        - materials
+      type: object
+    MaterialChildrenOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/MaterialChildrenOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        assets:
+          items:
+            $ref: "#/components/schemas/AdoptedMaterialChild"
+          type: array
+        materials:
+          items:
+            $ref: "#/components/schemas/AdoptedMaterialChild"
+          type: array
+        storageRefused:
+          type: boolean
+      required:
+        - assets
+        - materials
+        - storageRefused
       type: object
     MaterialIndexOutputBody:
       additionalProperties: false
@@ -3126,6 +3146,8 @@ components:
           type: boolean
         name:
           type: string
+        parentMaterialId:
+          type: string
         privacy:
           $ref: "#/components/schemas/Privacy"
         provenance:
@@ -3178,6 +3200,8 @@ components:
         isOwner:
           type: boolean
         name:
+          type: string
+        parentMaterialId:
           type: string
         privacy:
           $ref: "#/components/schemas/Privacy"
@@ -3331,6 +3355,8 @@ components:
         isOwner:
           type: boolean
         name:
+          type: string
+        parentMaterialId:
           type: string
         privacy:
           $ref: "#/components/schemas/Privacy"
@@ -3531,6 +3557,23 @@ components:
       required:
         - kind
         - id
+      type: object
+    RetryProcessingInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/RetryProcessingInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        parseMode:
+          enum:
+            - fast
+            - none
+          type: string
+      required:
+        - parseMode
       type: object
     ReviewItem:
       additionalProperties: false
@@ -6971,6 +7014,33 @@ paths:
       summary: Process the latest saved source changes
       tags:
         - Source collaboration
+  /api/files/{id}/retry-processing:
+    post:
+      operationId: retryFileProcessing
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RetryProcessingInputBody"
+        required: true
+      responses:
+        "202":
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Process a failed file again
+      tags:
+        - Source collaboration
   /api/files/{id}/source-session:
     get:
       operationId: getSourceSession
@@ -7651,37 +7721,6 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Create a quiz or flashcard set embedded in a note
-      tags:
-        - Materials
-  /api/materials/{id}/embedded/adopt:
-    post:
-      operationId: adoptEmbeddedMaterials
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AdoptEmbeddedMaterialsReq"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AdoptEmbeddedMaterialsResp"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Make quiz and flashcard blocks pasted into a note the note's own
       tags:
         - Materials
   /api/materials/{id}/metadata:
@@ -10501,6 +10540,41 @@ paths:
       summary: Read a leased source export
       tags:
         - Source collaboration
+  /internal/collaboration/materials/{id}/children:
+    post:
+      operationId: adoptMaterialChildren
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Collaboration-Secret
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MaterialChildrenInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaterialChildrenOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Make the images and quiz or flashcard blocks an update brought in the material's own
+      tags:
+        - Material collaboration
   /internal/collaboration/materials/{id}/index:
     post:
       operationId: requestMaterialIndex

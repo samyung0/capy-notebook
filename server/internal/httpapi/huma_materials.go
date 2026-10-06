@@ -71,13 +71,6 @@ type createEmbeddedMaterialInput struct {
 	ID   string `path:"id"`
 	Body apimodel.CreateEmbeddedMaterialReq
 }
-type adoptEmbeddedMaterialsInput struct {
-	ID   string `path:"id"`
-	Body apimodel.AdoptEmbeddedMaterialsReq
-}
-type adoptEmbeddedMaterialsOutput struct {
-	Body apimodel.AdoptEmbeddedMaterialsResp
-}
 type updateMaterialSharingInput struct {
 	ID   string `path:"id"`
 	Body apimodel.UpdateStandaloneSharingReq
@@ -91,7 +84,6 @@ func (a *api) registerMaterials(api huma.API) {
 	regWithMaxBody(api, http.MethodPost, "/api/workspaces/{id}/materials", "createMaterial", tag, "Create a note material", http.StatusCreated, materialRequestMaxBytes, a.createMaterial)
 	reg(api, http.MethodGet, "/api/materials/{id}", "getMaterial", tag, "Get a material", http.StatusOK, a.getMaterial)
 	regWithMaxBody(api, http.MethodPost, "/api/materials/{id}/embedded", "createEmbeddedMaterial", tag, "Create a quiz or flashcard set embedded in a note", http.StatusCreated, materialRequestMaxBytes, a.createEmbeddedMaterial)
-	reg(api, http.MethodPost, "/api/materials/{id}/embedded/adopt", "adoptEmbeddedMaterials", tag, "Make quiz and flashcard blocks pasted into a note the note's own", http.StatusOK, a.adoptEmbeddedMaterials)
 	regWithMaxBody(api, http.MethodPatch, "/api/materials/{id}/metadata", "updateMaterial", tag, "Update material metadata", http.StatusOK, materialRequestMaxBytes, a.updateMaterial)
 	reg(api, http.MethodPatch, "/api/materials/{id}/sharing", "updateMaterialSharing", tag, "Update standalone material sharing", http.StatusOK, a.updateMaterialSharing)
 	reg(api, http.MethodDelete, "/api/materials/{id}", "deleteMaterial", tag, "Move a material to the trash", http.StatusNoContent, a.deleteMaterial)
@@ -386,28 +378,6 @@ func (a *api) createEmbeddedMaterial(ctx context.Context, in *createEmbeddedMate
 		return nil, hErr(err)
 	}
 	return materialResponse(mt, role, false, false)
-}
-
-// adoptEmbeddedMaterials makes the note its own copy of each pasted quiz or
-// flashcard block (store.AdoptEmbeddedMaterials). materialId is omitted for a
-// source the caller cannot read, so the editor removes that block.
-func (a *api) adoptEmbeddedMaterials(ctx context.Context, in *adoptEmbeddedMaterialsInput) (*adoptEmbeddedMaterialsOutput, error) {
-	if err := a.assertMaterialOwner(ctx, in.ID); err != nil {
-		return nil, collaborationError(err)
-	}
-	blocks := make([]store.EmbeddedAdoption, len(in.Body.Materials))
-	for i, block := range in.Body.Materials {
-		blocks[i] = store.EmbeddedAdoption{SourceID: block.MaterialID, Copy: block.Copy}
-	}
-	adopted, err := a.s.AdoptEmbeddedMaterials(ctx, userID(ctx), in.ID, blocks)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	out := make([]apimodel.AdoptedEmbeddedMaterial, len(blocks))
-	for i, block := range blocks {
-		out[i] = apimodel.AdoptedEmbeddedMaterial{SourceID: block.SourceID, MaterialID: adopted[i]}
-	}
-	return &adoptEmbeddedMaterialsOutput{Body: apimodel.AdoptEmbeddedMaterialsResp{Materials: out}}, nil
 }
 
 func (a *api) deleteMaterial(ctx context.Context, in *trashMaterialInput) (*Empty, error) {
