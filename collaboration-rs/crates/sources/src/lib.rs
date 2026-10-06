@@ -6,7 +6,15 @@
 
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
+pub mod admit;
+pub mod effects;
 pub mod engine;
+pub mod failure;
+pub mod schedule;
+pub mod text;
+
+pub use admit::{Admission, Refusal, admit_update};
+pub use failure::SourceError;
 
 use std::future::Future;
 use std::pin::Pin;
@@ -33,38 +41,27 @@ pub struct SourceRoom {
 }
 
 impl SourceRoom {
-    pub fn parse(_name: &str) -> Option<Self> {
-        todo!("rust-sources")
+    /// `^source:([A-Za-z0-9_-]+):epoch:(\d+)$` (auth.ts SOURCE_ROOM_PATTERN).
+    pub fn parse(name: &str) -> Option<Self> {
+        let rest = name.strip_prefix("source:")?;
+        let (file_id, epoch) = rest.split_once(":epoch:")?;
+        let id_ok = !file_id.is_empty()
+            && file_id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-');
+        let epoch_ok = !epoch.is_empty() && epoch.bytes().all(|byte| byte.is_ascii_digit());
+        if !(id_ok && epoch_ok) {
+            return None;
+        }
+        Some(Self {
+            file_id: file_id.to_owned(),
+            epoch: epoch.parse().ok()?,
+        })
     }
-}
 
-/// Why a writer's update may not enter a source room.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Refusal {
-    /// `Source checkpoint exceeds byte limit` (incident `over_limit/source_state_bytes`).
-    StateBytes,
-    /// `officeUpdateViolation`'s message (incident `save_refused/office_update`).
-    OfficeUpdate(String),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Admission {
-    Accept,
-    /// The room cannot place it yet: the server drops it and resyncs.
-    Unheld,
-    Refuse(Refusal),
-}
-
-/// Per-update admission on the room task (`updateFitsRoom`,
-/// `officeUpdateViolation`, `sourceUpdateUnheld`). `estimate` is the room's
-/// running byte estimate, reset by an exact measure near the cap.
-pub fn admit_update(
-    _doc: &yrs::Doc,
-    _format: SourceFormat,
-    _update: &[u8],
-    _estimate: &mut u64,
-) -> Admission {
-    todo!("rust-sources")
+    pub fn name(&self) -> String {
+        format!("source:{}:epoch:{}", self.file_id, self.epoch)
+    }
 }
 
 /// A channel (one room on one socket) as the server numbers it.
@@ -86,4 +83,32 @@ pub trait Rooms: Send + Sync + 'static {
     /// Loaded, loading, a socket joining, or a store running or awaiting retry.
     fn busy(&self, room: &str) -> bool;
     fn unload(&self, room: &str) -> BoxFuture<()>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn source_room_names_parse_and_print() {
+        let room = SourceRoom::parse("source:f_1-A:epoch:12").unwrap();
+        assert_eq!(
+            room,
+            SourceRoom {
+                file_id: "f_1-A".into(),
+                epoch: 12
+            }
+        );
+        assert_eq!(room.name(), "source:f_1-A:epoch:12");
+        for bad in [
+            "source::epoch:1",
+            "source:f.1:epoch:1",
+            "source:f:epoch:",
+            "source:f:epoch:-1",
+            "material:m:schema:1",
+            "source:f:epoch:1:x",
+        ] {
+            assert_eq!(SourceRoom::parse(bad), None, "{bad}");
+        }
+    }
 }
