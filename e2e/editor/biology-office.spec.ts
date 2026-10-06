@@ -1451,7 +1451,7 @@ test('DOCX Format › Table fits, centres and pins a table, a drag keeps the fit
   });
   await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
   await officeMenu(page, 'Insert').click();
-  await page.getByRole('menuitem', { name: 'Table' }).click();
+  await page.getByRole('menuitem', { exact: true, name: 'Table' }).click();
   await page.getByRole('gridcell', { name: 'Insert 2 by 2 table' }).click();
   // Format › Table's `item`, or `choice` in its submenu.
   const table = async (
