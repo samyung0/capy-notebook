@@ -419,7 +419,7 @@ test('Blocks, Files and recent links use saved modes without reloading the app',
   await page.getByRole('link', { exact: true, name: 'Dashboard' }).click();
   const recent = page
     .getByRole('heading', { name: 'Recent Files' })
-    .locator('..');
+    .locator('xpath=../..');
   await recent.getByRole('link', { name: /Cell structure.pdf/ }).click();
   await expect(page).toHaveURL('/workspaces/ws_bio?file=f_1');
   await expect(mode).toHaveAttribute('aria-pressed', 'true');
