@@ -1060,12 +1060,16 @@ being edited.
 
 PPTX lists, levels and paragraph spacing are written as PowerPoint writes
 them (`crates/pptx-edit/src/story.rs`): a bulleted item gets `a:buChar` with
-`a:buFont` Arial, a numbered one `a:buAutoNum` with `a:buFontTx`, both a
-hanging `marL`/`indent` of 0.375 in plus 0.5 in per level when a plain
-paragraph becomes a list item. An item already in a list (its own marker, or
-one it inherits, which the editor passes by paragraph id) only changes its
-marker and `a:buFont`, keeping its indents, so a new style or a switch between
-numbers and bullets never moves its text. Removing a list writes `a:buNone`
+`a:buFont` Arial, a numbered one `a:buAutoNum` with `a:buFontTx`. A plain
+paragraph becoming a list item takes the `marL`/`indent` of the selection's
+first list item at its level, as laid out (an edit's value, else the file's);
+an indent that item inherits is not written, and the paragraph inherits it too
+unless its own file markup sets one (saving cannot drop a file attribute), in
+which case it gets the default. With no item at its level the default is a
+hanging indent of 0.375 in plus 0.5 in per level. An item already in a list
+(its own marker, or one it inherits, which the editor passes by paragraph id)
+only changes its marker and `a:buFont`, keeping its indents, so a new style or
+a switch between numbers and bullets never moves its text. Removing a list writes `a:buNone`
 and no hanging indent. A list style (`BULLET_PRESETS`,
 `NUMBER_PRESETS` in `pptx-react/src/paragraphFormatting.ts`: five bullet and
 four number styles, three markers each, repeating by level) gives each level
