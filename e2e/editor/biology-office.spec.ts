@@ -1032,10 +1032,10 @@ for (const [format, text] of [
   });
 }
 
-// One open DOCX (exchange-plan.docx) for every focus check: the runtime
+// One open DOCX (exchange-plan.docx) for these focus checks: the runtime
 // boots once. Its load arrives 5 s late on every open (the init script), so
 // typing in the chat box comes first.
-test('DOCX editor focus: chat typing while it opens, first open before a save receipt, header editing and resuming from a pause', async ({
+test('DOCX editor focus: chat typing while it opens, first open before a save receipt and resuming from a pause', async ({
   page,
 }) => {
   test.setTimeout(300_000);
@@ -1117,38 +1117,10 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
     await receipts(false);
   });
 
-  // Closing a header from its Options menu gives the document the focus back.
-  await test.step('closing header editing gives the document the focus back', async () => {
-    const pageCanvas = frame.locator('canvas[data-page-index="0"]');
-    const box = await pageCanvas.boundingBox();
-    if (!box) throw new Error('Missing page canvas');
-    // The header band near the page's top edge; try a few heights.
-    const options = frame.getByRole('button', { name: /^Options/ });
-    const openHeader = async () => {
-      for (const ratio of [0.06, 0.05, 0.08, 0.04, 0.1]) {
-        await pageCanvas.dblclick({
-          position: { x: box.width / 2, y: box.height * ratio },
-        });
-        if (await options.isVisible()) return;
-        await page.waitForTimeout(500);
-      }
-    };
-    await openHeader();
-    await options.click();
-    await frame.getByRole('button', { name: 'Close header editing' }).click();
-    await expect(documentInput).toBeFocused();
-
-    // Escape from the Options button closes the header too.
-    await openHeader();
-    await options.click();
-    await page.keyboard.press('Escape');
-    await expect(options).toHaveCount(0);
-    await expect(documentInput).toBeFocused();
-  });
-
   // A pause that ends hands nothing to the editor: a host field keeps the
   // focus and the typing.
   await test.step('resuming from a pause leaves the focus where it was', async () => {
+    await chat.fill('');
     await chat.click();
     const capabilities = (canEdit: boolean) =>
       page.evaluate((canEdit) => {
@@ -1242,6 +1214,52 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
     await expect(reply).toHaveValue('Re');
     expect(await updates.evaluate((seen) => seen.count)).toBe(settled);
   });
+});
+
+// Closing a header from its Options menu gives the document the focus back
+// (lesson.docx, the DOCX scenario's file, has a header; exchange-plan.docx
+// has none).
+test('closing DOCX header editing gives the document the focus back', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await page.goto('/workspaces/ws_bio');
+  const panel = page.getByTestId('mock-scenario-panel');
+  await panel.evaluate((node: HTMLDetailsElement) => {
+    node.open = true;
+  });
+  await panel.locator('[data-scenario="office-docx-save"]').click();
+  await expect(panel).toHaveAttribute('data-scenario-status', 'ready', {
+    timeout: 60_000,
+  });
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  const pageCanvas = frame.locator('canvas[data-page-index="0"]');
+  await expect(pageCanvas).toBeVisible({ timeout: 120_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+  const box = await pageCanvas.boundingBox();
+  if (!box) throw new Error('Missing page canvas');
+  // The header band near the page's top edge; try a few heights.
+  const options = frame.getByRole('button', { name: /^Options/ });
+  const openHeader = async () => {
+    for (const ratio of [0.06, 0.05, 0.08, 0.04, 0.1]) {
+      await pageCanvas.dblclick({
+        position: { x: box.width / 2, y: box.height * ratio },
+      });
+      if (await options.isVisible()) return;
+      await page.waitForTimeout(500);
+    }
+  };
+  await openHeader();
+  await options.click();
+  await frame.getByRole('button', { name: 'Close header editing' }).click();
+  await expect(frame.getByLabel('Document input')).toBeFocused();
+
+  // Escape from the Options button closes the header too.
+  await openHeader();
+  await options.click();
+  await page.keyboard.press('Escape');
+  await expect(options).toHaveCount(0);
+  await expect(frame.getByLabel('Document input')).toBeFocused();
 });
 
 // A view-only user's host sends canEdit:false; a viewer has nothing to pause,
