@@ -611,14 +611,38 @@ walks remain exact through the structural depth ceiling, including legacy
 documents that already exceed the product depth cap.
 
 `beforeHandleMessage` extracts writable updates from both Yjs sync-step-2 and
-ordinary update frames before they reach the authoritative document. It
-measures them amortized over a budget of applied update bytes and tightens to
-every update near a limit. An over-limit document still accepts edits that do
-not worsen any dimension, otherwise the deletions needed to recover would be
-rejected too and the material would be permanently unsavable.
+ordinary update frames before they reach the authoritative document
+(`validateUpdate` in `collaboration/src/persistence.ts`). The room keeps the
+exact metrics of its last measurement and an upper bound of its metrics now:
+each accepted update adds its growth bound (`materialUpdateGrowth` in
+`limits.ts`), read from the update's decoded structs against the room. While
+that bound stays within every limit the update goes in without a copy of the
+room; otherwise, or when the update holds content the bound does not model
+(nothing a Slate edit writes), the room is copied with the update and measured
+exactly, and the exact metrics become the new bound. The refusal rule is the
+exact one: a candidate over a limit is refused unless it worsens no dimension
+against the last exact metrics. Between measurements those may be older than
+the room, but the bound then kept the room within every limit, and against any
+baseline within the limits an over-limit candidate never recovers. An
+over-limit document is therefore measured on every update, and still accepts
+edits that do not worsen any dimension, otherwise the deletions needed to
+recover would be rejected too and the material would be permanently unsavable.
 
-Between measurements an update is checked from its own decoded structs, never
-a copy of the room. An update the room cannot place yet (it refers to content
+The bound prices what slate-yjs writes: a string typed next to a visible
+string joins its leaf and adds its escaped bytes; deleting strings, blocks or
+attributes never grows the value; an attribute adds `"key":value,`; a new block
+is priced from its own structs; anything else that touches a text's formatting
+(format items, a deleted format, a block between two strings) re-prices that
+text's leaves at the largest attributes its formats can give; each inserted
+item adds 4 bytes for a surrogate pair it could split. It holds only while
+every content change to the room is an update it checked against the room as
+it was: a service edit (an agent command), or two writers' updates checked
+before either applied, drops it, and the next update measures exactly. Yjs's
+own cleanup of redundant format items after a remote edit does not. On the
+2 MB load-test note this took the service from ~90 ms of CPU per keystroke to
+well under a millisecond (`plate/` harness of the 2026-10-05 office batch).
+
+An update the room cannot place yet (it refers to content
 the room does not hold, skips its client's clocks, or deletes a range neither
 side holds, as when a reconnecting writer types before its sync step 2) is
 dropped and that connection gets the room's sync step 1, as in source rooms
