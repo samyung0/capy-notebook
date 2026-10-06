@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -146,8 +147,10 @@ func (a *api) internalCreateFile(w http.ResponseWriter, r *http.Request) {
 		WorkspaceID: req.WorkspaceID, ConversationID: convID,
 		MessageID: req.AssistantMessageID, CallID: req.ToolCallID,
 	})
+	// Uncancelled: a pipeline timeout or disconnect that failed the insert
+	// must not also cancel the delete, or the object stays with no row.
 	if err != nil || !created {
-		_ = a.blob.Delete(ctx, blobPath)
+		_ = a.blob.Delete(context.WithoutCancel(ctx), blobPath)
 	}
 	if err != nil {
 		a.fail(w, err)

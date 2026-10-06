@@ -1,0 +1,1 @@
+- Developer Epo decided (2026-10-06) a deck PPTX written to the bucket before its file row is deleted on an uncancelled context when the row insert fails or finds an existing operation, so a pipeline timeout or disconnect leaves no object; an orphan from a crash between the write and the insert stays for the monthly report (accepted). server/internal/httpapi/internal_files.go
