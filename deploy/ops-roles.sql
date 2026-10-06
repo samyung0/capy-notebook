@@ -135,7 +135,7 @@ GRANT SELECT (
 ) ON resource_credit_rates TO capy_ops;
 GRANT SELECT (id, version, updated_at) ON model_registry_state TO capy_ops;
 GRANT SELECT ON ops_assistant_turns TO capy_ops;
--- Editing incidents (migration 0065 grants it too where the role existed).
+-- Editing incidents (migration 0066 grants it too where the role existed).
 GRANT SELECT ON edit_incidents TO capy_ops;
 GRANT SELECT (id, workspace_id, trashed_at)
   ON files TO capy_ops;

@@ -85,12 +85,12 @@ func TestEditIncidentsRecordAndPrune(t *testing.T) {
 	}
 }
 
-// Migration 0065 grants the ops read role SELECT where the role exists; here
+// Migration 0066 grants the ops read role SELECT where the role exists; here
 // its grant block runs again once a capy_ops role does.
 func TestEditIncidentsMigrationGrantsTheOpsRole(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	sql, err := migrations.FS.ReadFile("0065_edit_incidents.sql")
+	sql, err := migrations.FS.ReadFile("0066_edit_incidents.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

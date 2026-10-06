@@ -113,7 +113,7 @@ limit is bypassed.
 ### Editing incidents
 
 Every editing incident where a user lost or could lose work is one row of
-`edit_incidents` (migration 0065): `created_at`, `user_id` (whose work it
+`edit_incidents` (migration 0066): `created_at`, `user_id` (whose work it
 was; NULL when a room incident names no writer), `file_id` and `file_kind`
 (`material` for a note, `source_file` for an Office or text source; no foreign
 key, so rows outlive their file), `kind`, `reason` (a short token, never

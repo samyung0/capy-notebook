@@ -1695,11 +1695,11 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://example.com      # root on the
    with `SELECT` on `messages`.
 
    `edit_incidents` holds ids, kinds, reason tokens and sizes, never content.
-   Migration 0065 grants `capy_ops` `SELECT` on it where the role already
+   Migration 0066 grants `capy_ops` `SELECT` on it where the role already
    exists, and this file grants it where the role is created later. Ops
    requires the grant on its own database. On a secondary database
    (`OPS_INGEST_UAT_DATABASE_URL`, `OPS_INGEST_LOCAL_DATABASE_URL`) that has not
-   run 0065 yet, it logs one line and boots; once the table exists there, the
+   run 0066 yet, it logs one line and boots; once the table exists there, the
    grant is required too.
 
    `touch_operator_seen`, `request_reconciliation`, and
