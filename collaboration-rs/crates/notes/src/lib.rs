@@ -11,6 +11,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use yrs::{Doc, ReadTxn, TextRef, TransactionMut};
 
+/// A Plate value the document cannot give (track 3 refines the variants).
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub struct ProjectionError(pub String);
+
 pub const CONTENT_ROOT: &str = "content";
 
 /// `materials.content`: `{"schemaVersion":1,"value":[...]}`.
@@ -31,8 +36,9 @@ pub mod plate {
     use super::*;
 
     /// `yTextToSlateElement(root).children`: equal-attribute text runs merged,
-    /// the empty-text placeholder, attributes as slate-yjs writes them.
-    pub fn value<T: ReadTxn>(_txn: &T, _root: &TextRef) -> Vec<Value> {
+    /// the empty-text placeholder, attributes as slate-yjs writes them. The
+    /// content root is looked up in the transaction (empty when absent).
+    pub fn value<T: ReadTxn>(_txn: &T) -> Result<Vec<Value>, ProjectionError> {
         todo!("rust-notes")
     }
 
@@ -74,6 +80,17 @@ pub mod limits {
         UndoPayloadExceeded,
     }
 
+    impl LimitCode {
+        pub fn as_str(self) -> &'static str {
+            match self {
+                LimitCode::DocumentDepthExceeded => "document_depth_exceeded",
+                LimitCode::DocumentNodesExceeded => "document_nodes_exceeded",
+                LimitCode::DocumentSizeExceeded => "document_size_exceeded",
+                LimitCode::UndoPayloadExceeded => "undo_payload_exceeded",
+            }
+        }
+    }
+
     /// `materialLimitCode`.
     pub fn limit_code(_metrics: &Metrics) -> Option<LimitCode> {
         todo!("rust-notes")
@@ -86,7 +103,7 @@ pub mod limits {
     }
 
     /// `measureMaterialValue(plateValue(doc))`, read straight from the tree.
-    pub fn measure<T: ReadTxn>(_txn: &T, _root: &TextRef) -> Metrics {
+    pub fn measure<T: ReadTxn>(_txn: &T) -> Result<Metrics, ProjectionError> {
         todo!("rust-notes")
     }
 
