@@ -127,6 +127,7 @@ import { LinkFloatingToolbar } from './LinkFloatingToolbar';
 import { MediaPlaceholderElement, YouTubeEmbedElement } from './MediaNodes';
 import { MentionInputElement } from './MentionInput';
 import { noteMarkdownPlugin } from './markdown';
+import { navigationFeedbackPlugin } from './navigationFeedback';
 import { NoteParagraphPlugin, VscodeMarkdownPastePlugin } from './pastePlugins';
 import { remoteCursorDecorationPlugin } from './RemoteCursors';
 import { SlashInputElement } from './SlashInput';
@@ -622,6 +623,7 @@ export function buildPlugins(options: BuildPluginsOptions): AnyPlugin[] {
             render: { afterEditable: EditorCursorOverlay },
           }),
         ]),
+    navigationFeedbackPlugin,
     stableElementIdsPlugin,
     remoteCursorDecorationPlugin,
     ...MaterialKit,
