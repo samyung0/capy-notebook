@@ -87,3 +87,33 @@ test('a timed-out call fails, the queue moves to a new worker and a late result 
   workers[1].emit('message', { value: 'queued' });
   await expect(queued).resolves.toBe('queued');
 });
+
+test('a slow engine call logs one line with its method, time and bytes', async () => {
+  vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] });
+  const { runOffice, SLOW_OFFICE_CALL_MS } = await load();
+  const lines: string[] = [];
+  const record = (line: unknown) => void lines.push(String(line));
+  const warns = vi.spyOn(console, 'warn').mockImplementation(record);
+  const infos = vi.spyOn(console, 'info').mockImplementation(record);
+  try {
+    const fast = runOffice('seedOffice', 'docx', new Uint8Array(10));
+    const slow = runOffice('seedOffice', 'docx', new Uint8Array(1234));
+    const [worker] = workers;
+    vi.advanceTimersByTime(SLOW_OFFICE_CALL_MS - 1);
+    worker.emit('message', { value: 'fast' });
+    await fast;
+    vi.advanceTimersByTime(SLOW_OFFICE_CALL_MS);
+    worker.emit('message', { value: 'slow' });
+    await slow;
+  } finally {
+    warns.mockRestore();
+    infos.mockRestore();
+  }
+  expect(lines).toHaveLength(1);
+  for (const field of [
+    'slow_office_call',
+    '"method":"seedOffice"',
+    '"bytes":1234',
+  ])
+    expect(lines[0]).toContain(field);
+});

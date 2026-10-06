@@ -1,6 +1,10 @@
 import * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
 import { isAccountForbiddenError, isApiError } from '@/api/client';
+import {
+  type EditIncidentReporter,
+  storageFailureReason,
+} from '@/lib/editIncidents';
 
 /**
  * Unsaved collaborative edits kept on this device (notes, Office and text
@@ -365,6 +369,11 @@ export function draftGroups(
   };
 }
 
+/** The bytes a group of rows holds (edit_incidents sizes). */
+export function draftBytes(rows: readonly EditDraft[]) {
+  return rows.reduce((sum, row) => sum + row.data.byteLength, 0);
+}
+
 /** Apply rows into a document as one update (states first). Updates whose
  * base the document lacks stay pending until the room's sync brings it. */
 export function applyDrafts(doc: Y.Doc, rows: EditDraft[], origin: unknown) {
@@ -424,6 +433,9 @@ export interface DraftRecorderOptions {
   /** Whether the last write reached storage (false: private mode, a full
    * disk). Editing goes on either way. */
   onStorage?: (ok: boolean) => void;
+  /** Reports a failing draft store and each offline episode, after the
+   * reconnect (edit_incidents). */
+  report?: EditIncidentReporter;
 }
 
 /**
@@ -444,6 +456,7 @@ export function recordDrafts({
   lineage,
   onLimit,
   onStorage,
+  report,
 }: DraftRecorderOptions) {
   const session = crypto.randomUUID();
   const start = adopted.length ? 1 : 0;
@@ -456,6 +469,8 @@ export function recordDrafts({
   let rows: { id: string; seq: number; data: Uint8Array }[] = [];
   let state: { seq: number; bytes: number } | null = null;
   let offline = false;
+  // How the current offline episode started (its incident reason).
+  let offlineReason = '';
   let snapshotDue = false;
   // A write failed: storage may lack anything since, so the next write holds
   // the whole state, and storage reads as working only once that lands.
@@ -507,6 +522,11 @@ export function recordDrafts({
         if (!storageOk) return;
         storageOk = false;
         onStorage?.(false);
+        report?.(
+          'draft_storage_failed',
+          storageFailureReason(error),
+          unsavedBytes()
+        );
       }
     );
 
@@ -608,6 +628,7 @@ export function recordDrafts({
 
   return {
     connected() {
+      if (offline) report?.('offline_episode', offlineReason, unsavedBytes());
       offline = false;
       snapshotDue = false;
       if (over) {
@@ -644,6 +665,8 @@ export function recordDrafts({
      * holds, so the whole document is written once and the bound applies. */
     disconnected() {
       offline = true;
+      offlineReason =
+        navigator.onLine === false ? 'browser_offline' : 'unreachable';
       snapshotDue = !fullState;
       checkLimit();
       if (sequence > Math.max(covered, start)) void flush();
@@ -681,6 +704,11 @@ export function recordDrafts({
     session,
     get unsaved() {
       return sequence > covered;
+    },
+    /** What this session holds unsaved: its update rows (notes) or its last
+     * whole state (sources), as stored. */
+    get unsavedBytes() {
+      return unsavedBytes();
     },
   };
 }

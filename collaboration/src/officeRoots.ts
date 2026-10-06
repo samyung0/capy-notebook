@@ -208,6 +208,9 @@ const resyncing = new WeakSet<Connection>();
 const unplacedSteps = new WeakMap<Connection, number>();
 export const MAX_UNPLACED_STEPS = 2;
 
+/** A connection closed for MAX_UNPLACED_STEPS unplaceable step 2 replies. */
+export class UnplacedStepError extends Error {}
+
 /**
  * Resyncs the connection of an unheld update (resyncOfficeConnection) in a
  * source or note room. A sync step 2 answers the room's step 1 with
@@ -225,7 +228,9 @@ export function resyncUnheld(
   const unplaced = step2 ? (unplacedSteps.get(connection) ?? 0) + 1 : 0;
   unplacedSteps.set(connection, unplaced);
   if (unplaced >= MAX_UNPLACED_STEPS) {
-    const error = new Error(`${kind} sync step 2 cannot be placed in the room`);
+    const error = new UnplacedStepError(
+      `${kind} sync step 2 cannot be placed in the room`
+    );
     // The gateway's field names, so a user_id grep spans both services.
     captureError(error, {
       room: connection.document.name,

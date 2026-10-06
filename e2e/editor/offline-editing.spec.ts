@@ -59,6 +59,15 @@ async function storedDrafts(page: Page) {
   });
 }
 
+/** What the browser reported to POST /api/edit-incidents (the MSW store). */
+async function reportedIncidents(page: Page) {
+  return page.evaluate(async () => {
+    const dbPath = '/src/mocks/db.ts';
+    const { editIncidents } = await import(dbPath);
+    return editIncidents as { fileId: string; kind: string }[];
+  });
+}
+
 test('offline edits outlive a reload and save once the room is back', async ({
   page,
 }) => {
@@ -141,6 +150,17 @@ test('edits from a room that moved on open read-only for copying until Reload', 
   // banner from the editor that went before.
   await moveWhileOffline(' Copied first.');
   await shown(' Copied first.');
+  // Entering recovery from another lineage is an editing incident.
+  await expect
+    .poll(() => reportedIncidents(page))
+    .toContainEqual(
+      expect.objectContaining({
+        fileId: 'mock-scenario-note',
+        fileKind: 'material',
+        kind: 'other_epoch_draft',
+        reason: 'reopen',
+      })
+    );
   await banner.getByRole('button', { name: 'Reload' }).click();
   await expect(editor).toContainText(seed, { timeout: 30_000 });
   await expect(editor).not.toContainText('Copied first.');

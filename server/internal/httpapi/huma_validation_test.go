@@ -182,6 +182,27 @@ func TestRequestBodyValidation(t *testing.T) {
 			path:   "/api/materials/mat_1/discussions",
 			body:   `{"anchorVersion":0,"contentRich":[{"type":"p"}]}`,
 		},
+		// Only the browser's kinds; reasons are short tokens, never text.
+		{
+			name: "edit incident server kind", method: http.MethodPost, path: "/api/edit-incidents",
+			body: `{"fileId":"f_1","fileKind":"source_file","kind":"save_refused"}`,
+		},
+		{
+			name: "edit incident free-form reason", method: http.MethodPost, path: "/api/edit-incidents",
+			body: `{"fileId":"f_1","fileKind":"source_file","kind":"offline_episode","reason":"the wifi dropped"}`,
+		},
+		{
+			name: "edit incident long reason", method: http.MethodPost, path: "/api/edit-incidents",
+			body: `{"fileId":"f_1","fileKind":"material","kind":"offline_episode","reason":"` + strings.Repeat("a", 65) + `"}`,
+		},
+		{
+			name: "edit incident negative size", method: http.MethodPost, path: "/api/edit-incidents",
+			body: `{"fileId":"f_1","fileKind":"material","kind":"unconfirmed_edit","sizeBytes":-1}`,
+		},
+		{
+			name: "edit incident unknown file kind", method: http.MethodPost, path: "/api/edit-incidents",
+			body: `{"fileId":"f_1","fileKind":"workspace","kind":"unconfirmed_edit"}`,
+		},
 	}
 
 	for _, tc := range cases {

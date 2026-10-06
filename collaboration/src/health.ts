@@ -8,14 +8,29 @@ export function percentile(values: number[], p: number) {
   return values[Math.min(values.length - 1, Math.ceil(p * values.length) - 1)];
 }
 
+/** A save this long or longer also logs its own `slow_save` line. */
+export const SLOW_SAVE_MS = 2000;
+
 /** One interval's store durations and failures for a kind of room. */
 export class StoreTimings {
   private durations: number[] = [];
   private failures = 0;
+  private readonly kind: 'material' | 'source';
 
-  record(ms: number, ok: boolean) {
+  constructor(kind: 'material' | 'source') {
+    this.kind = kind;
+  }
+
+  record(ms: number, ok: boolean, save?: { bytes: number; room: string }) {
     this.durations.push(ms);
     if (!ok) this.failures += 1;
+    if (ms >= SLOW_SAVE_MS)
+      log('warn', 'slow_save', {
+        ...save,
+        kind: this.kind,
+        ms: Math.round(ms),
+        ok,
+      });
   }
 
   /** This interval's summary; the next interval starts empty. */
@@ -61,8 +76,8 @@ export function startHealthLog(
   let updates = 0;
   let awareness = 0;
   let since = Date.now();
-  const material = new StoreTimings();
-  const source = new StoreTimings();
+  const material = new StoreTimings('material');
+  const source = new StoreTimings('source');
   const timer = setInterval(() => {
     const seconds = Math.max((Date.now() - since) / 1000, 1);
     const ms = (ns: number) => Math.round(ns / 1e6);

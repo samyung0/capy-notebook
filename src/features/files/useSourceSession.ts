@@ -29,6 +29,7 @@ import {
   deleteDocumentDrafts,
   deleteDrafts,
   draftKey as documentDraftKey,
+  draftBytes,
   draftGroups,
   type EditDraft,
   readDraftBase,
@@ -37,6 +38,7 @@ import {
   sameSourceLineage,
   sourceLineage,
 } from '@/lib/editDrafts';
+import { editIncidentReporter, reportOnce } from '@/lib/editIncidents';
 import { CopyError, errorCopy } from '@/lib/errors';
 import {
   createSourceProvider,
@@ -265,9 +267,15 @@ export function useSourceSession(
     let timer: ReturnType<typeof setTimeout> | undefined;
     let disposeReconnect = () => {};
     let goOffline = () => {};
+    const report = editIncidentReporter('source_file', fileId);
+    // The unconfirmed-edit warning is reported once until saving works again.
+    let unconfirmedReported = false;
     const delay = new SaveDelayClock(SOURCE_SAVE_DELAY_MS, () => {
-      if (!cancelled && !runtime.current?.recovery)
-        setBanner((current) => current ?? 'delayed');
+      if (cancelled || runtime.current?.recovery) return;
+      setBanner((current) => current ?? 'delayed');
+      if (unconfirmedReported) return;
+      unconfirmedReported = true;
+      report('unconfirmed_edit', undefined, recorder?.unsavedBytes);
     });
     const offline = () => {
       delay.disconnected();
@@ -360,6 +368,12 @@ export function useSourceSession(
           : await bestEffort(() => readDraftBase(draftKey, draft.base!));
       if (cancelled) return;
       if (draft && base) {
+        // Edits of another epoch enter recovery; refused ones were recorded
+        // when the service refused their save.
+        if (!draft.refused)
+          reportOnce(draft.id, () =>
+            report('other_epoch_draft', 'reopen', draftBytes(found))
+          );
         recoveryDrafts = found;
         shared.destroy();
         const recovered = new Y.Doc();
@@ -388,6 +402,7 @@ export function useSourceSession(
       if (draft) {
         await bestEffort(() => deleteDrafts(found));
         toastDraftsLost();
+        report('draft_unrestorable', 'base_missing', draftBytes(found));
       }
       recoveryDrafts = null;
       for (const restored of restoredDrafts)
@@ -509,6 +524,7 @@ export function useSourceSession(
       const markSaved = () => {
         setStatus('saved');
         setBanner(null);
+        unconfirmedReported = false;
         settle();
       };
       // A newer version was published, or the maintenance pause closed the
@@ -545,6 +561,11 @@ export function useSourceSession(
         } else {
           // The file moved on while edits waited: they open read-only, and
           // this session's rows stay until Reload discards them.
+          report(
+            'other_epoch_draft',
+            reason === 'paused' ? 'paused' : 'epoch_changed',
+            recorder?.unsavedBytes
+          );
           active.recovery = true;
           void recorder?.flush();
           setLoaded({ bytes, doc: shared, session });
@@ -737,8 +758,10 @@ export function useSourceSession(
             markSaved();
           // Saving works again: the banner goes, and comes back only if the
           // oldest request still unanswered crosses the threshold.
-          else if (active.acknowledged > before)
+          else if (active.acknowledged > before) {
             setBanner((current) => (current === 'delayed' ? null : current));
+            unconfirmedReported = false;
+          }
           delay.retain(pending.keys());
           flushWaiters.current = flushWaiters.current.filter((waiter) => {
             if (waiter.sequence <= active.acknowledged) {
@@ -828,6 +851,7 @@ export function useSourceSession(
           storageOk = ok;
           showOffline();
         },
+        report,
       });
       shared.on('update', (_update: Uint8Array, origin: unknown) => {
         if (origin === provider || origin === RESTORE_ORIGIN || discarded)

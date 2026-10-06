@@ -341,6 +341,7 @@ describe('recording a note session', () => {
   it('reports the offline byte bound, stores nothing past it, and lifts it on reconnect', async () => {
     const key = 'u_1:material:limit';
     const onLimit = vi.fn();
+    const report = vi.fn();
     const { client } = syncedClient('');
     const recorder = recordDrafts({
       doc: client,
@@ -349,6 +350,7 @@ describe('recording a note session', () => {
       limitBytes: 64,
       lineage: ROOM,
       onLimit,
+      report,
     });
     // Online, the server enforces the real limits.
     client.getText('content').insert(0, 'x'.repeat(100));
@@ -362,13 +364,24 @@ describe('recording a note session', () => {
     const text = new Y.Doc();
     applyDrafts(text, await readDrafts(key), 'restore');
     expect(text.getText('content').toString()).toBe('x'.repeat(100));
+    expect(report).not.toHaveBeenCalled();
     recorder.connected();
     expect(onLimit).toHaveBeenLastCalledWith(false);
+    // The episode is reported once it is over, with what the device held.
+    expect(report).toHaveBeenCalledExactlyOnceWith(
+      'offline_episode',
+      'unreachable',
+      recorder.unsavedBytes
+    );
+    expect(recorder.unsavedBytes).toBeGreaterThan(100);
+    recorder.connected();
+    expect(report).toHaveBeenCalledOnce();
   });
 
   it('reports a storage failure and its recovery, and keeps editing', async () => {
     const key = 'u_1:material:storage';
     const onStorage = vi.fn();
+    const report = vi.fn();
     const { client } = syncedClient('');
     const recorder = recordDrafts({
       doc: client,
@@ -377,6 +390,7 @@ describe('recording a note session', () => {
       limitBytes: 1024 * 1024,
       lineage: ROOM,
       onStorage,
+      report,
     });
     const put = vi
       .spyOn(IDBObjectStore.prototype, 'put')
@@ -386,6 +400,11 @@ describe('recording a note session', () => {
     client.getText('content').insert(0, 'a');
     await recorder.flush();
     expect(onStorage).toHaveBeenLastCalledWith(false);
+    expect(report).toHaveBeenCalledExactlyOnceWith(
+      'draft_storage_failed',
+      'quota',
+      expect.any(Number)
+    );
     put.mockRestore();
     client.getText('content').insert(1, 'b');
     await recorder.flush();

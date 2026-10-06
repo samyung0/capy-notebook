@@ -94,10 +94,83 @@ saturated: Office saves queue behind each other and their duration grows
 while edits stay fast. `COLLAB_HEALTH_INTERVAL_MS` shortens the interval for
 capacity runs ([2026-10-05 report](../bench/collaboration/reports/2026-10-05-prod-capacity.md)).
 
+Beside it the collaboration server logs one line per event worth finding
+again:
+
+| `msg` | When | Fields |
+| --- | --- | --- |
+| `slow_save` (warn) | a material or source save took 2 s or more (`SLOW_SAVE_MS`, `health.ts`), failed ones included | `room`, `kind` (`material`, `source`), `ms`, `ok`, `bytes` (the saved state) |
+| `slow_office_call` (warn) | an Office engine call ran 2 s or more (`SLOW_OFFICE_CALL_MS`, `officeRuntime.ts`), a timeout included | `method`, `ms` (running), `wait_ms` (queued before it), `bytes` (its byte arguments: the base or exported file) |
+| `room_load` / `room_unload` (info) | a room loaded or unloaded on this instance | `room`, `bytes` (applied update bytes since the load, the load included: an estimate that never subtracts deletions), `ms` (load only) |
+
+PostHog gets nothing from editing.
+
 `obs.ClientIP` prefers `CF-Connecting-IP`. That header is only trustworthy while
 the origin refuses non-Cloudflare traffic; see step 3 of the runbook. If the
 origin is directly reachable, an attacker forges it and every IP-keyed rate
 limit is bypassed.
+
+### Editing incidents
+
+Every editing incident where a user lost or could lose work is one row of
+`edit_incidents` (migration 0065): `created_at`, `user_id` (whose work it
+was; NULL when a room incident names no writer), `file_id` and `file_kind`
+(`material` for a note, `source_file` for an Office or text source; no foreign
+key, so rows outlive their file), `kind`, `reason` (a short token, never
+text) and `size_bytes` (the bytes at risk). Rows are kept 90 days: the API's
+minute sweep beside the upload sweep deletes older ones
+(`PruneEditIncidents`, `server/cmd/api/main.go`). Nothing in the app reads
+them.
+
+The collaboration service writes its kinds straight into Postgres
+(`collaboration/src/editIncidents.ts`): in the background, never retried, a
+failed write reported to Sentry as `edit_incident_write`. A room discard writes
+one row per writer whose unsaved update the room held (its pending contributor
+markers), or one naming nobody; when the discard then moves the file to its
+next epoch (a note to its next room schema), an `epoch_reset` row follows. A
+client that was away during the discard later reports its draft as
+`other_epoch_draft`. On several instances each one records what it threw away.
+
+| `kind` | Written by | When | `reason` | `size_bytes` |
+| --- | --- | --- | --- | --- |
+| `save_refused` | collaboration | a save refused for good discarded the room (an engine refusal, a 403/404/422, an ended epoch, an invalid note), or an Office update broke the room's roots and its writer went to recovery | the error: `engine_refused`, `epoch_changed`, `http_404`, `invalid_document`, `office_update` | room state, or the update |
+| `slow_save_limit` | collaboration | five minutes of failed saves discarded a source room | the last failure: `engine_transient`, `pending`, `backoff`, `http_503` | room state |
+| `over_limit` | collaboration | a note update or store past the document limits, a source update or save past the 100 MB state cap | the limit code, `source_state_bytes` | room state, or the update |
+| `discard_unsaved` | collaboration | a discard with unsaved state for any other cause (a read-only or access refusal at a store, an outbox eviction), and a writer's update refused because it lost write access | `storage_quota_exceeded`, `account_over_quota`, `read_only`, `authorization`, the outbox event type | room state, or the update |
+| `epoch_reset` | collaboration | that discard's epoch (or room schema) move landed | the discard's kind | NULL, user NULL |
+| `step2_unplaced` | collaboration | the second unplaceable sync step 2 in a row closed a connection | NULL | the step 2 |
+| `other_epoch_draft` | browser | a draft of another epoch or room entered copy-only recovery: found at open (`reopen`, once per page load per group), or a live source session whose file moved on (`epoch_changed`) or paused (`paused`) | as listed | the drafts |
+| `draft_unrestorable` | browser | a stored group nothing could draw was dropped ("Some unsaved edits from your last session couldn't be restored.") | `base_missing` | the drafts |
+| `draft_storage_failed` | browser | a draft write failed (the `offline-unstored` banner offline) | `quota`, `unavailable`, `write` | unsaved bytes |
+| `unconfirmed_edit` | browser | the save-delay warning (25 s for notes, 45 s for sources), once until a receipt arrives | NULL | unsaved bytes |
+| `offline_episode` | browser | an editor's offline episode ended, reported after the reconnect | `browser_offline`, `unreachable` | unsaved bytes at the reconnect |
+
+The browser reports through `POST /api/edit-incidents`
+(`src/lib/editIncidents.ts`): authenticated, the default rate-limit class, a
+4 KiB body of the browser's kinds only, checked with the generated zod
+validator before it is sent and by the API's schema again. A report is sent
+once and never retried (a failure is only logged); the file is not
+access-checked, so drafts of a file the account lost are reported too. The
+draft recorder (`src/lib/editDrafts.ts`) reports storage failures and offline
+episodes; the note and source editors report the rest. A tab closed while
+offline never reports that episode; its drafts come back on the next open.
+Unsaved bytes are what the drafts hold: a note's update rows, a source's last
+whole state.
+
+Operator queries, as the owner role:
+
+```sql
+-- The last week by kind and reason
+SELECT kind, reason, count(*) AS incidents, count(DISTINCT user_id) AS users,
+       pg_size_pretty(sum(size_bytes)) AS at_risk
+FROM edit_incidents
+WHERE created_at > now() - interval '7 days'
+GROUP BY kind, reason ORDER BY incidents DESC;
+
+-- One file's history
+SELECT created_at, user_id, kind, reason, size_bytes
+FROM edit_incidents WHERE file_id = 'f_…' ORDER BY created_at;
+```
 
 ---
 

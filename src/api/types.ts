@@ -123,6 +123,7 @@ export type {
   Region,
   ReorderChaptersReq,
   ReorderContentReq,
+  ReportEditIncidentReq,
   RequestAccountDeletionReq,
   SaveCanvasReq,
   SetModelPrefsReq,

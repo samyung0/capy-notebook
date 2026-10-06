@@ -1631,7 +1631,10 @@ Network and recoverable save failures leave drafts available. Before sending
 buffered updates after reconnect, the token request verifies the current
 epoch. An old epoch with unsaved changes enters recovery instead of merging
 incompatible updates, under "This file changed while your edits were waiting
-to sync."; rows of another lineage on reopen do the same. Recovery shows the
+to sync."; rows of another lineage on reopen do the same. Each such draft
+entering recovery is recorded as an `other_epoch_draft` editing incident, as
+are the service's refusals, discards and epoch moves (see
+[observability](../observability-metering.md#editing-incidents)). Recovery shows the
 group read-only for copying (see
 [error handling](error-handling.md#collaborative-source-failures)); its Reload
 removes only those exact rows and advances to the next retained group, then

@@ -1,4 +1,5 @@
 import { Worker } from 'node:worker_threads';
+import { log } from './observability.js';
 
 export type OfficeFormat = 'docx' | 'xlsx' | 'pptx';
 export type SourceFormat = OfficeFormat | 'text';
@@ -131,6 +132,8 @@ export class OfficeEngineError extends Error {
 }
 
 export const CALL_TIMEOUT_MS = 120_000;
+/** A call running this long or longer logs a `slow_office_call` line. */
+export const SLOW_OFFICE_CALL_MS = 2000;
 /**
  * Estimated WASM heap the engine worker may keep in XLSX room replicas (the
  * room's source opened to read pending effects beside it), so a save does not
@@ -155,6 +158,8 @@ interface Call {
   args: unknown[];
   method: string;
   queuedAt: number;
+  /** When it started running (kept; startedAt moves with each interval). */
+  ranAt?: number;
   reject(error: Error): void;
   resolve(value: unknown): void;
   startedAt?: number;
@@ -326,6 +331,20 @@ function finish() {
     busyMs += ran;
     runs.push(ran);
   }
+  if (call?.ranAt !== undefined) {
+    const ms = performance.now() - call.ranAt;
+    if (ms >= SLOW_OFFICE_CALL_MS)
+      log('warn', 'slow_office_call', {
+        // The byte arguments: the base or exported file.
+        bytes: call.args.reduce<number>(
+          (sum, arg) => sum + (arg instanceof Uint8Array ? arg.byteLength : 0),
+          0
+        ),
+        method: call.method,
+        ms: Math.round(ms),
+        wait_ms: Math.round(call.ranAt - call.queuedAt),
+      });
+  }
   return call;
 }
 
@@ -345,6 +364,7 @@ function next() {
   }
   active = call;
   call.startedAt = performance.now();
+  call.ranAt = call.startedAt;
   waits.push(call.startedAt - call.queuedAt);
   worker ??= startWorker();
   worker.ref();
