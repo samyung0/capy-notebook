@@ -352,17 +352,20 @@ typing, Enter, Accept/Reject all and publication, including breaks inside
 links, inline content controls and tracked changes. The render bridge splits
 an inline break into paragraph fragments while keeping one editable paragraph
 and one list number. Each fragment after the first gets its own layout block id
-(the paragraph's id plus `#1`, `#2`, …), since layout, painting and the resident
+(the paragraph's id plus `#n`, `n` counting the breaks and other blocks
+between it and the first part), since layout, painting and the resident
 display look measured blocks up by id; the text after the break starts at the
 top of the next page or column at the paragraph's left indent, without
 first-line or hanging indent, space-before or number, as Word continues the
 paragraph there. The paragraph's space-after and a tracked paragraph mark's
 pilcrow stay on its last part. A paragraph an in-flow chart splits gets the
-same per-part ids. Copy puts a newline at the break in view and edit mode, as
-at a soft line break: the editor's `yrsSelectionText` writes it when text
-comes before the break in its paragraph (a break opening the paragraph follows
-the previous mark's newline), and its copy stays not plain text, so ⌘X over a
-break only copies. Enter at the
+same per-part ids. Copy puts a newline at each break in view and edit mode,
+as at a soft line break, so two breaks in a row copy two and a soft break then
+a page break copies as two soft breaks: the editor's `yrsSelectionText` writes
+one at each break that text comes before in its paragraph (a break opening the
+paragraph follows the previous mark's newline), view mode one for each step in
+the part number (`textLayer.ts`), and the editor's copy stays not plain text,
+so ⌘X over a break only copies. Enter at the
 start of a heading after a trailing column break puts the empty line after
 that break, even if the preceding text changed.
 A bookmark opening before a paragraph's leading breaks stays before them, and an empty
@@ -435,13 +438,13 @@ does. Suggesting mode marks what it removes deleted; only the author's own
 pending paragraph mark goes (Backspacing over one's own Enter, or removing an
 own empty paragraph before a break). Enter at the start of a slot that opens
 with a block inserts an
-empty paragraph before the block and leaves the block's paragraph (id and
-properties, borders included) as it was, so Delete in the new paragraph
-restores the document; the editor's Enter then gives the next style to
-neither paragraph. Any split leaves a section with the mark that ends it (the
-new mark never takes `sectPr` or `sectionBreakType`), and a paragraph that
-loses its borders in a split loses them from `_originalFormatting` too, so a
-save does not write them back.
+empty paragraph before the block, with the block paragraph's properties,
+and leaves the block's paragraph (id and properties) as it was, so Delete in
+the new paragraph restores the document; the editor's Enter then gives the
+next style to neither paragraph. Every split keeps the paragraph's borders on
+both halves, as Word copies the paragraph mark (mid-paragraph, at its start or
+end and before a block), and leaves a section with the mark that ends it (the
+new mark never takes `sectPr` or `sectionBreakType`).
 
 A range delete (a selection delete or a cut) ending at the start of such a
 slot keeps the paragraph mark before it (`kept_mark`), so the text left stays
@@ -1611,8 +1614,11 @@ payloads (`storyTables`), once per style per toolbar or ruler command, and
 Enter's next style passes the current paragraph's style values without listing
 the story. Ops store tab stops in the seed's shape (`position`, `alignment`,
 reading the older `pos`/`val` too) and the hanging first-line flag as a boolean.
-Enter at the end of a paragraph gives the new paragraph a copy of all its
-properties, as Word copies the paragraph mark (`split_paragraph`): style and
+Enter at the end of a paragraph (comment references after the caret aside,
+so the reference stays with the text; a field ending the paragraph counts, as
+the engine's split receipt reports it with `atEnd`, which the editor's Enter
+reads) gives the new paragraph a copy of all its properties, as Word copies
+the paragraph mark (`split_paragraph`): style and
 list (so a list goes on whether the paragraph or its style gives it),
 alignment, indents, spacing, borders, shading, tabs, keep with next, keep
 lines, widow control, page break before, the mark's run properties and the
@@ -1622,10 +1628,11 @@ source runs stay with the text's paragraph, the copy's `w:pPrChange` takes new
 revision ids, and a section the paragraph ends stays with the mark that ends
 it, the new paragraph's. Where the paragraph's style names another next style,
 the new paragraph takes that style clean (`applyNextStyle` first clears what
-the split copied), so body text after a numbered heading has neither its list
-nor its direct formatting. A peer's paragraph property change made while
-another peer presses Enter at that paragraph's end lands on the new paragraph,
-which ends with the source's mark, not on the text's.
+the split copied, tracked in suggesting mode so Reject all keeps the heading),
+so body text after a numbered heading has neither its list nor its direct
+formatting. A peer's paragraph property change made while another peer presses
+Enter at that paragraph's end lands on the new paragraph, which ends with the
+source's mark (a fork item moves the new mark after it).
 Enter in a list item that was empty before it (one holding a field, picture or
 break is not) works as in Word (`endEmptyListItem`): a nested item moves up one
 level, and a first-level item leaves the list, numbering set on the paragraph
