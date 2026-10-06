@@ -373,7 +373,7 @@ export function PptxViewer({
         <div className="pptx-viewer-stage" ref={stageRef}>
           {frame ? (
             <>
-              <div aria-hidden="true">
+              <div aria-hidden="true" className="pptx-viewer-canvas">
                 <canvas ref={canvasRef} />
               </div>
               <div

@@ -682,6 +682,139 @@ test('XLSX view mode opens a sheet at its saved scroll after a short sheet, zoom
     .toBeGreaterThan(2000);
 });
 
+for (const format of ['docx', 'xlsx', 'pptx'] as const) {
+  test(`${format} zoom carries across View and Edit while the file is open, and stays usable while paused`, async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const fileId = `bio-office-${format}`;
+    await page.goto(`/workspaces/ws_bio?file=${fileId}`);
+    const frame = page.frameLocator('iframe[src*="office-runtime"]');
+    await expect(frame.locator('canvas').first()).toBeVisible({
+      timeout: 60_000,
+    });
+    const mode = page.getByRole('button', { name: 'Material mode' });
+    const zoomMenu = async () => {
+      await officeMenu(page, 'View').click();
+      await page.getByRole('menuitem', { name: 'Zoom' }).click();
+    };
+    const zoomTo = async (level: string) => {
+      await zoomMenu();
+      await page
+        .getByRole('menuitemcheckbox', { exact: true, name: level })
+        .click();
+    };
+    const ticked = async (level: string) => {
+      await zoomMenu();
+      await expect(
+        page.getByRole('menuitemcheckbox', { exact: true, name: level })
+      ).toBeChecked();
+      await page.keyboard.press('Escape');
+      await page.keyboard.press('Escape');
+    };
+    // What the zoom scales: a page, the slide, the viewer's scroll area (the
+    // editor's also reaches past the sheet, so XLSX edit checks the box).
+    const size = (editing: boolean) =>
+      (format === 'docx'
+        ? frame.locator('[data-page-index="0"]').first()
+        : format === 'pptx'
+          ? editing
+            ? frame.getByTestId('pptx-slide-canvas')
+            : frame.locator('.pptx-viewer-stage canvas')
+          : frame.getByRole('tabpanel').locator(':scope > div').first()
+      ).evaluate((node) => (node as HTMLElement).offsetWidth);
+    // A PPTX slide wider than its stage scrolls from its left edge.
+    const scrollsFromEdge = async (editing: boolean) =>
+      expect(
+        await frame
+          .locator(
+            editing
+              ? '[data-testid="pptx-slide-canvas"]'
+              : '.pptx-viewer-stage canvas'
+          )
+          .evaluate((node) => {
+            const stage = node.parentElement?.parentElement;
+            if (!stage) throw new Error('Missing slide stage');
+            stage.scrollTo(0, 0);
+            return (
+              node.getBoundingClientRect().left -
+              stage.getBoundingClientRect().left
+            );
+          })
+      ).toBeGreaterThanOrEqual(0);
+    const scaled = async (editing: boolean, factor: number) =>
+      expect
+        .poll(async () => Math.abs((await size(editing)) - base * factor))
+        .toBeLessThanOrEqual(2);
+    // The toolbar's zoom control in edit mode.
+    const toolbarZoom =
+      format === 'docx'
+        ? frame.getByRole('combobox', { name: /^Zoom/ })
+        : frame.getByTestId(`${format}-zoom`);
+    const showsZoom = (level: string) =>
+      format === 'xlsx'
+        ? expect(toolbarZoom).toHaveValue(level)
+        : expect(toolbarZoom).toContainText(level);
+
+    // PPTX opens fitted to the window; 100% is the base for all three.
+    if (format === 'pptx') await zoomTo('100%');
+    const base = await size(false);
+    await zoomTo('150%');
+    await scaled(false, 1.5);
+    await ticked('150%');
+
+    await mode.click();
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+    await showsZoom('150%');
+    await ticked('150%');
+    if (format !== 'xlsx') await scaled(true, 1.5);
+    if (format === 'pptx') await scrollsFromEdge(true);
+
+    await mode.click();
+    await expect(mode).toHaveAttribute('aria-pressed', 'false');
+    await expect(frame.locator('canvas').first()).toBeVisible({
+      timeout: 60_000,
+    });
+    await scaled(false, 1.5);
+    await ticked('150%');
+    if (format === 'pptx') await scrollsFromEdge(false);
+
+    // Paused (a newer version replaced the session): zoom edits nothing, so
+    // the toolbar's control still works.
+    await mode.click();
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+    await saveOffice(page);
+    await expect(
+      page.getByRole('status').filter({ hasText: /^Saved$/ })
+    ).toBeVisible();
+    await page.evaluate(async (id) => {
+      const modulePath = '/src/mocks/collaboration.ts';
+      const { announceSourceEpoch } = (await import(
+        modulePath
+      )) as typeof import('../../src/mocks/collaboration');
+      announceSourceEpoch(id, 2);
+    }, fileId);
+    await expect(page.getByText('A newer version of this file')).toBeVisible();
+    await expect(toolbarZoom).toBeEnabled();
+    if (format === 'xlsx') {
+      // A typed zoom takes 50–200% as Google Sheets does: 300 is 200%.
+      await toolbarZoom.fill('300');
+      await toolbarZoom.press('Enter');
+    } else {
+      await toolbarZoom.click();
+      await frame
+        .getByRole(format === 'docx' ? 'option' : 'menuitem', {
+          exact: true,
+          name: '200%',
+        })
+        .click();
+    }
+    await showsZoom('200%');
+    if (format !== 'xlsx') await scaled(true, 2);
+  });
+}
+
 test('XLSX cell edit ends when focus moves into Capy, not on a window switch', async ({
   page,
 }) => {
