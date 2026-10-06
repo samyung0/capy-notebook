@@ -358,7 +358,11 @@ top of the next page or column at the paragraph's left indent, without
 first-line or hanging indent, space-before or number, as Word continues the
 paragraph there. The paragraph's space-after and a tracked paragraph mark's
 pilcrow stay on its last part. A paragraph an in-flow chart splits gets the
-same per-part ids. View-mode copy puts a newline at the break. Enter at the
+same per-part ids. Copy puts a newline at the break in view and edit mode, as
+at a soft line break: the editor's `yrsSelectionText` writes it when text
+comes before the break in its paragraph (a break opening the paragraph follows
+the previous mark's newline), and its copy stays not plain text, so ⌘X over a
+break only copies. Enter at the
 start of a heading after a trailing column break puts the empty line after
 that break, even if the preceding text changed.
 A bookmark opening before a paragraph's leading breaks stays before them, and an empty
@@ -1607,12 +1611,21 @@ payloads (`storyTables`), once per style per toolbar or ruler command, and
 Enter's next style passes the current paragraph's style values without listing
 the story. Ops store tab stops in the seed's shape (`position`, `alignment`,
 reading the older `pos`/`val` too) and the hanging first-line flag as a boolean.
-Enter at the end of a paragraph starts a clean one that keeps only its style,
-spacing and the font, size and colour carry (`INHERITED_PARA_ATTRS`), plus its
-list's numbering and level indents, so a list goes on as in Word whether the
-paragraph or its style gives it; where the paragraph's style names another
-next style, the new paragraph takes that style clean, without the list
-(`applyNextStyle`), so body text after a numbered heading is not numbered.
+Enter at the end of a paragraph gives the new paragraph a copy of all its
+properties, as Word copies the paragraph mark (`split_paragraph`): style and
+list (so a list goes on whether the paragraph or its style gives it),
+alignment, indents, spacing, borders, shading, tabs, keep with next, keep
+lines, widow control, page break before, the mark's run properties and the
+source formatting, so the save writes the source pPr, unmodeled children
+included, for both paragraphs. The tracked mark insertion or deletion and the
+source runs stay with the text's paragraph, the copy's `w:pPrChange` takes new
+revision ids, and a section the paragraph ends stays with the mark that ends
+it, the new paragraph's. Where the paragraph's style names another next style,
+the new paragraph takes that style clean (`applyNextStyle` first clears what
+the split copied), so body text after a numbered heading has neither its list
+nor its direct formatting. A peer's paragraph property change made while
+another peer presses Enter at that paragraph's end lands on the new paragraph,
+which ends with the source's mark, not on the text's.
 Enter in a list item that was empty before it (one holding a field, picture or
 break is not) works as in Word (`endEmptyListItem`): a nested item moves up one
 level, and a first-level item leaves the list, numbering set on the paragraph

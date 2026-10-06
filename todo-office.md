@@ -259,9 +259,7 @@ check); it applies at the first promotion.
   as the current pPr is. A vMerge continuation cell saves its restart cell's
   `w:tcPr`, losing its own borders and shading. The editor lays out a row's
   skipped grid columns (`w:gridBefore`) from the first column (view mode and
-  Word shift the row). Enter at the end of a paragraph keeps only style,
-  spacing, font carry and the list, where Word copies all direct pPr
-  (alignment, indents, the unmodeled children): needs a decision. Cells whose
+  Word shift the row). Cells whose
   row or column position changes (a row inserted above the header, a column
   after the last) keep their old table-style look in the editor until the
   file reopens; the save and the editor's style values already use that look,
@@ -303,13 +301,6 @@ check); it applies at the first promotion.
   continued; viewer list numbers may ignore start values (8, 9), legal
   numbering and Chinese numbering (seen with minimal numbering XML — confirm on
   a real Word file first).
-- **Copy at a mid-paragraph break (needs Epo's decision):** view mode copies a
-  newline at a page or column break inside a paragraph; the editor
-  (`yrsCommands.ts` `yrsSelectionText`) copies nothing there and marks the copy
-  not plain. LibreOffice's text export writes a newline; Word's clipboard is
-  unchecked (its object model uses U+000C/U+000E). Recommended: a newline in
-  both modes when text precedes the break in its paragraph, keeping
-  `plain = false` so Cut still only copies.
 - **DOCX arrows over breaks** (docx-breaks review, 2026-10-06): Left/Right step
   through `session.paragraphs(story)[i].text`, which leaves break units out
   (`YrsInput.tsx:829`, `:850-856`), so ArrowRight stops before the last
