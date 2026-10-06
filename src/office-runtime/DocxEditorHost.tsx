@@ -37,6 +37,7 @@ export function DocxEditorHost({
   bytes,
   collaboration,
   colorMode,
+  initialZoom,
   locale,
   narrow,
   onAnalysis,
@@ -47,11 +48,14 @@ export function DocxEditorHost({
   onError,
   onPendingChange,
   onSave,
+  onZoomChange,
   readOnly,
 }: {
   bytes: Uint8Array;
   collaboration: OfficeCollaboration;
   colorMode: 'light' | 'dark';
+  /** 1 = 100%, the level the file was last shown at. */
+  initialZoom?: number;
   locale: OfficeLocale;
   /** Below lg: no zoom (as the PDF toolbar), font picker or size box. */
   narrow: boolean;
@@ -64,6 +68,7 @@ export function DocxEditorHost({
   onError: (error: Error) => void;
   onPendingChange: (pending: boolean) => void;
   onSave: () => void;
+  onZoomChange: (zoom: number) => void;
   /** Recovery: selection and copy only. */
   readOnly: boolean;
 }) {
@@ -116,11 +121,13 @@ export function DocxEditorHost({
     return () => onRenderer(null);
   }, [onRenderer]);
   const reportMenus = useCallback(
-    (model: DocxMenuModel | null) =>
+    (model: DocxMenuModel | null) => {
+      if (model) onZoomChange(model.zoom);
       onMenus(
         model && { menus: editorMenus(model.menus, locale), run: model.run }
-      ),
-    [locale, onMenus]
+      );
+    },
+    [locale, onMenus, onZoomChange]
   );
   return (
     <div className="office-editor-host" ref={hostRef}>
@@ -133,6 +140,7 @@ export function DocxEditorHost({
         documentBuffer={bytes}
         i18n={docxStrings(locale)}
         icons={docxIcons}
+        initialZoom={initialZoom}
         onError={onError}
         onMenus={reportMenus}
         onPendingChange={onPendingChange}

@@ -22,6 +22,7 @@ import {
   separator,
   shortcut,
   submenu,
+  zoomMenu,
 } from './pptxMenus';
 
 /**
@@ -35,7 +36,6 @@ export function splitCommand(id: string): [PptxCommandId, string | undefined] {
     : [id.slice(0, at) as PptxCommandId, id.slice(at + 1)];
 }
 
-const ZOOMS = ['0.5', '0.75', '1', '1.25', '1.5', '2'];
 const BORDER_WEIGHTS = ['1', '2', '3', '4', '8'];
 const LINE_SPACINGS = ['1', '1.15', '1.5', '2'];
 
@@ -123,17 +123,7 @@ export function editorMenus(
           presentItems(locale, !state.enabled['view.present']),
           'presentation'
         ),
-        submenu(
-          'zoom',
-          t('toolbar.groups.zoom'),
-          [
-            valued('view.zoom', 'fit', t('toolbar.fit'), state.zoom),
-            ...ZOOMS.map((zoom) =>
-              valued('view.zoom', zoom, `${Number(zoom) * 100}%`, state.zoom)
-            ),
-          ],
-          'zoomIn'
-        ),
+        zoomMenu(locale, state.zoom, !state.enabled['view.zoom']),
         separator,
         toggle('view.speakerNotes', t('notes.showSpeakerNotes')),
       ],

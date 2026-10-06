@@ -37,23 +37,30 @@ type WorkerResponse =
 export function DocxViewer({
   bytes,
   citation,
+  initialZoom = 1,
   locale,
   onAnalysis,
   onError,
   onMenus,
   onRenderer,
+  onZoomChange,
 }: {
   bytes: Uint8Array;
   citation: OfficeCitation | null;
+  /** 1 = 100%, the level the file was last shown at. */
+  initialZoom?: number;
   locale: OfficeLocale;
   onAnalysis: (analysis: OfficeAnalysis) => void;
   onError: (error: Error) => void;
   onMenus: OfficeMenuReporter;
   onRenderer: (renderer: OfficeRenderer | null) => void;
+  onZoomChange: (zoom: number) => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [displayList, setDisplayList] = useState<DisplayList | null>(null);
-  const [zoom, setZoom] = useState(100);
+  // In percent, as the menu lists it.
+  const [zoom, setZoom] = useState(() => Math.round(initialZoom * 100));
+  useEffect(() => onZoomChange(zoom / 100), [onZoomChange, zoom]);
 
   // View mode offers what works here: Download and Print, and the zoom.
   useEffect(() => {

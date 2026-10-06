@@ -23,6 +23,12 @@ export type OfficeCitation = { quote: string; page?: number };
 
 export type OfficeMode = 'view' | 'edit';
 
+/**
+ * A file's zoom (1 = 100%; PPTX may also fit the slide to the window). The
+ * host keeps it while the file stays open, for the next frame to open at.
+ */
+export type OfficeZoom = number | 'fit';
+
 export type OfficeAnalysis =
   | {
       format: 'docx';
@@ -67,6 +73,8 @@ export type OfficeHostMessage =
        */
       checkpointSeedSHA256?: string;
       citation?: OfficeCitation | null;
+      /** The zoom the file was last shown at; the format's default without. */
+      zoom?: OfficeZoom;
     }
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;
@@ -228,6 +236,13 @@ export type OfficeRuntimeMessage =
       id: string;
       revision: number;
     }
+  /** The viewer's or editor's zoom changed (also sent once it opens). */
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'zoom';
+      zoom: OfficeZoom;
+      revision: number;
+    }
   /** A PPTX show started or ended: the frame gets the whole page meanwhile. */
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;
@@ -294,6 +309,7 @@ export function isOfficeHostMessage(
     ((candidate.type === 'load' &&
       (candidate.citation === undefined ||
         isOfficeCitation(candidate.citation)) &&
+      (candidate.zoom === undefined || isOfficeZoom(candidate.zoom)) &&
       ['docx', 'pptx', 'xlsx'].includes(
         String((candidate as { format?: unknown }).format)
       ) &&
@@ -351,6 +367,7 @@ export function isOfficeRuntimeMessage(
         raw.pages.every(isRenderedPage)
       );
     if (raw.type === 'render-failed') return typeof raw.id === 'string';
+    if (raw.type === 'zoom') return isOfficeZoom(raw.zoom);
     if (raw.type === 'presenting') return typeof raw.presenting === 'boolean';
     if (raw.type === 'open-presenter') return typeof raw.id === 'string';
     if (raw.type === 'exported')
@@ -446,6 +463,13 @@ function isCollaboration(value: unknown): boolean {
   const candidate = value as Record<string, unknown>;
   return (
     isCount(candidate.epoch) && candidate.initialUpdate instanceof ArrayBuffer
+  );
+}
+
+function isOfficeZoom(value: unknown): value is OfficeZoom {
+  return (
+    value === 'fit' ||
+    (typeof value === 'number' && Number.isFinite(value) && value > 0)
   );
 }
 

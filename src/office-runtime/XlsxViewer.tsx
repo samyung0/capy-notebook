@@ -54,19 +54,24 @@ const SELECTION_FILL = 'rgba(33, 115, 70, 0.12)';
 export function XlsxViewer({
   bytes,
   citation,
+  initialZoom = 1,
   locale,
   onAnalysis,
   onError,
   onMenus,
   onRenderer,
+  onZoomChange,
 }: {
   bytes: Uint8Array;
   citation: OfficeCitation | null;
+  /** 1 = 100%, the level the file was last shown at. */
+  initialZoom?: number;
   locale: OfficeLocale;
   onAnalysis: (analysis: WorkbookAnalysis) => void;
   onError: (error: Error) => void;
   onMenus: OfficeMenuReporter;
   onRenderer: (renderer: OfficeRenderer | null) => void;
+  onZoomChange: (zoom: number) => void;
 }) {
   const highlightRef = useRef<CellCitation | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -88,9 +93,10 @@ export function XlsxViewer({
   const [extent, setExtent] = useState({ height: 0, width: 0 });
   // The read-only formula bar: the selected cell's address and full text.
   const [formula, setFormula] = useState({ address: '', text: '' });
-  // View › Zoom (1 = 100%), for as long as the viewer is open, as DOCX's.
-  const [zoom, setZoom] = useState(1);
+  // View › Zoom (1 = 100%); the host carries it to the next frame.
+  const [zoom, setZoom] = useState(initialZoom);
   const zoomRef = useRef(zoom);
+  useEffect(() => onZoomChange(zoom), [onZoomChange, zoom]);
   // The sheet point at the grid's top-left when the zoom changed: it stays
   // there, as in Google Sheets.
   const zoomAnchorRef = useRef<{ x: number; y: number } | null>(null);

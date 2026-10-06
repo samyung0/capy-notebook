@@ -32,11 +32,15 @@ export function XlsxEditorHost({
   narrow,
   onPendingChange,
   fileName,
+  initialZoom,
   onSave,
+  onZoomChange,
   readOnly,
 }: {
   bytes: Uint8Array;
   collaboration: OfficeCollaboration;
+  /** 1 = 100%, the level the file was last shown at. */
+  initialZoom?: number;
   locale: OfficeLocale;
   /** Below lg: no zoom (as the PDF toolbar), font picker or size box. */
   narrow: boolean;
@@ -49,6 +53,7 @@ export function XlsxEditorHost({
   onPendingChange: (pending: boolean) => void;
   fileName: string;
   onSave: () => void;
+  onZoomChange: (zoom: number) => void;
   /** Recovery: selection and copy only. */
   readOnly: boolean;
 }) {
@@ -82,6 +87,10 @@ export function XlsxEditorHost({
     });
   }, [commandState, locale, onMenus]);
   useEffect(() => () => onMenus(null), [onMenus]);
+  const zoom = commandState?.zoom;
+  useEffect(() => {
+    if (zoom) onZoomChange(zoom);
+  }, [onZoomChange, zoom]);
   useEffect(() => {
     onRenderer(async (kind) => {
       const api = apiRef.current;
@@ -104,6 +113,7 @@ export function XlsxEditorHost({
         fileName={fileName}
         i18n={xlsxStrings(locale)}
         icons={xlsxIcons}
+        initialZoom={initialZoom}
         onCommandStateChange={setCommandState}
         onFirstPaint={() => {
           if (apiRef.current)

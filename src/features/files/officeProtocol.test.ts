@@ -210,6 +210,41 @@ describe('office host protocol', () => {
     );
   });
 
+  it('carries a zoom level or fit both ways, for the next frame of an open file', () => {
+    const load = {
+      bytes: new ArrayBuffer(4),
+      canEdit: true,
+      fileName: 'deck.pptx',
+      format: 'pptx' as const,
+      mode: 'view' as const,
+      revision: 1,
+      type: 'load' as const,
+      version: OFFICE_PROTOCOL_VERSION,
+    };
+    const zoom = (value: unknown) => ({
+      revision: 1,
+      type: 'zoom',
+      version: OFFICE_PROTOCOL_VERSION,
+      zoom: value,
+    });
+    for (const value of [1.5, 0.5, 'fit']) {
+      expect(isOfficeHostMessage({ ...load, zoom: value })).toBe(true);
+      expect(isOfficeRuntimeMessage(zoom(value))).toBe(true);
+    }
+    expect(isOfficeHostMessage(load)).toBe(true);
+    for (const value of [
+      0,
+      -1,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      '150%',
+      undefined,
+    ]) {
+      expect(isOfficeHostMessage({ ...load, zoom: value ?? null })).toBe(false);
+      expect(isOfficeRuntimeMessage(zoom(value))).toBe(false);
+    }
+  });
+
   it('accepts rendered pages as PNG bytes with their size', () => {
     const rendered = (pages: unknown[]) => ({
       id: 'r1',
