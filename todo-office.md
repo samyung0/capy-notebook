@@ -184,6 +184,8 @@ check); it applies at the first promotion.
   Enter at a paragraph's end inserts the new mark after the existing one, so
   a peer's concurrent pPr change stays on the text instead of landing on the
   new empty paragraph. Changes how Enter is stored: matrix plus two-peer work.
+  Same item: two peers pressing Enter at the same paragraph end save the same
+  `w14:paraId` twice (the repair helper has no caller outside tests).
   Found by docx-enter-copy (`capy-docx-review-harnesses/2026-10-05-office-batch/docx-enter-copy/`).
 - **Unplaceable sync step 2 (lowest priority).** A client whose own sync step 2
   the room cannot place (it holds content out of order) is closed after 2 tries
