@@ -61,10 +61,10 @@ var editorAssetRules = map[string]editorAssetRule{
 	},
 }
 
-func editorAssetMaxBytes(rule editorAssetRule, purpose string, storageCeiling int64, quiz bool) int64 {
+func editorAssetMaxBytes(rule editorAssetRule, purpose string, storageCeiling int64, study bool) int64 {
 	maxBytes := min(rule.maxBytes, storageCeiling)
-	if quiz && purpose == "image" {
-		maxBytes = min(maxBytes, quizImageMaxBytes)
+	if study && purpose == "image" {
+		maxBytes = min(maxBytes, studyImageMaxBytes)
 	}
 	return maxBytes
 }
@@ -90,7 +90,7 @@ func normalizeMediaType(value string) (string, error) {
 func validateEditorAssetMetadata(
 	in reserveEditorAssetRequest,
 	storageCeiling int64,
-	quiz bool,
+	study bool,
 ) (name, ext, contentType string, err error) {
 	name = strings.TrimSpace(in.Name)
 	name = fieldlimits.ClampFileName(path.Base(strings.ReplaceAll(name, `\`, "/")))
@@ -102,7 +102,7 @@ func validateEditorAssetMetadata(
 	if !ok {
 		return "", "", "", errors.New("purpose must be image, audio, pdf, or file")
 	}
-	maxBytes := editorAssetMaxBytes(rule, in.Purpose, storageCeiling, quiz)
+	maxBytes := editorAssetMaxBytes(rule, in.Purpose, storageCeiling, study)
 	if in.SizeBytes <= 0 || in.SizeBytes > maxBytes {
 		return "", "", "", fmt.Errorf("%s uploads must be between 1 byte and %d MB", in.Purpose, maxBytes>>20)
 	}
@@ -123,16 +123,18 @@ func validateEditorAssetMetadata(
 	return "", "", "", fmt.Errorf("content type %q does not match %s extension %q", contentType, in.Purpose, ext)
 }
 
-// quizImageMaxBytes caps images uploaded through a quiz; the browser shrinks
-// larger ones first. Bank figures have their own limit (bank/assets.go).
-const quizImageMaxBytes = 2 << 20
+// studyImageMaxBytes caps images uploaded through a quiz or a flashcard set;
+// the browser shrinks larger ones first. Bank figures have their own limit
+// (bank/assets.go).
+const studyImageMaxBytes = 2 << 20
 
 // editorAssetScope is where a material's editor assets live: always the
 // material, so its saves and purge delete them, and its workspace when it has
 // one, which pays.
 type editorAssetScope struct {
 	workspaceID, materialID string
-	quiz                    bool
+	// A quiz or flashcard set, whose images take the 2 MB cap.
+	study bool
 }
 
 // editorAssetScopeFor admits an editor of the route's material and resolves the
@@ -150,12 +152,12 @@ func (a *api) editorAssetScopeFor(w http.ResponseWriter, r *http.Request) (edito
 		a.fail(w, err)
 		return editorAssetScope{}, false
 	}
-	workspaceID, quiz, err := a.s.EditorAssetMaterial(r.Context(), materialID)
+	workspaceID, study, err := a.s.EditorAssetMaterial(r.Context(), materialID)
 	if err != nil {
 		a.fail(w, err)
 		return editorAssetScope{}, false
 	}
-	return editorAssetScope{workspaceID: workspaceID, materialID: materialID, quiz: quiz}, true
+	return editorAssetScope{workspaceID: workspaceID, materialID: materialID, study: study}, true
 }
 
 func (a *api) reserveEditorAsset(w http.ResponseWriter, r *http.Request) {
@@ -178,7 +180,7 @@ func (a *api) reserveEditorAsset(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	name, ext, contentType, err := validateEditorAssetMetadata(in, freeLimits.StorageBytes, scope.quiz)
+	name, ext, contentType, err := validateEditorAssetMetadata(in, freeLimits.StorageBytes, scope.study)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
 		return
@@ -338,8 +340,8 @@ func (a *api) adoptEditorAssets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var imageMaxBytes int64
-	if scope.quiz {
-		imageMaxBytes = quizImageMaxBytes
+	if scope.study {
+		imageMaxBytes = studyImageMaxBytes
 	}
 	adopted, err := a.s.AdoptEditorAssets(r.Context(), uid(r), scope.workspaceID, scope.materialID, in.AssetIDs, imageMaxBytes)
 	if err != nil {

@@ -332,24 +332,20 @@ type UpdateFlashcardSetReq struct {
 type FlashcardContentInput struct {
 	ID    string `json:"id,omitempty"`
 	Front string `json:"front" minLength:"1" maxLength:"4000"`
-	Back  string `json:"back" minLength:"1" maxLength:"4000"`
+	// A back holds at most 2,000 characters (human/frontend/plate-editor.md).
+	Back  string          `json:"back" minLength:"1" maxLength:"2000"`
+	Image *FlashcardImage `json:"image,omitempty"`
+}
+
+// FlashcardImage is a card's one image: an editor asset uploaded through the
+// set, shown on the front under the text.
+type FlashcardImage struct {
+	AssetID string `json:"assetId" minLength:"1" maxLength:"128"`
 }
 
 type UpdateFlashcardContentReq struct {
 	ExpectedRevision int64                   `json:"expectedRevision" minimum:"1"`
 	Cards            []FlashcardContentInput `json:"cards" minItems:"1"`
-}
-
-type CreateCardReq struct {
-	ExpectedRevision int64  `json:"expectedRevision" minimum:"1"`
-	Front            string `json:"front" minLength:"1" maxLength:"4000"`
-	Back             string `json:"back" minLength:"1" maxLength:"4000"`
-}
-
-type UpdateCardReq struct {
-	ExpectedRevision int64   `json:"expectedRevision" minimum:"1"`
-	Front            *string `json:"front,omitempty" minLength:"1" maxLength:"4000"`
-	Back             *string `json:"back,omitempty" minLength:"1" maxLength:"4000"`
 }
 
 type CreateEventReq struct {

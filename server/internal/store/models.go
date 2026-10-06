@@ -224,11 +224,12 @@ type FlashcardSet struct {
 }
 
 type Flashcard struct {
-	Revision   int64  `json:"revision"`
-	ID         string `json:"id"`
-	MaterialID string `json:"materialId"`
-	Front      string `json:"front"`
-	Back       string `json:"back"`
+	Revision   int64                  `json:"revision"`
+	ID         string                 `json:"id"`
+	MaterialID string                 `json:"materialId"`
+	Front      string                 `json:"front"`
+	Back       string                 `json:"back"`
+	Image      *materialdoc.CardImage `json:"image,omitempty"`
 }
 
 // Material is a persisted versioned Plate document scoped to chapters and/or

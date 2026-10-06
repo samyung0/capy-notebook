@@ -309,6 +309,15 @@ const appRoutes = [
       qc.prefetchQuery(cardsQuery(params.flashcardSetId));
     }
   ),
+  createRoute({
+    component: lazyRouteComponent(() => import('@/routes/FlashcardsEdit')),
+    getParentRoute: () => authShellRoute,
+    loader: ({ context: { queryClient: qc }, params }) => {
+      void qc.prefetchQuery(materialQuery(params.flashcardSetId));
+    },
+    path: '/flashcards/$flashcardSetId/edit',
+    validateSearch: parseQuizEditSearch,
+  }),
   // biome-ignore assist/source/useSortedKeys: TanStack types `deps` in the loader from `loaderDeps`, which must come first.
   createRoute({
     component: lazyRouteComponent(() => import('@/routes/Files')),

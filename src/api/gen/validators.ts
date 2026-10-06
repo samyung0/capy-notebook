@@ -1954,53 +1954,6 @@ export const CreateFlashcardSetResponse = zod.object({
 
 
 /**
- * @summary Delete a card
- */
-export const DeleteCardParams = zod.object({
-  "id": zod.string()
-})
-
-
-
-
-export const DeleteCardQueryParams = zod.object({
-  "expectedRevision": zod.int().min(1)
-})
-
-export const DeleteCardResponse = zod.void()
-
-
-/**
- * @summary Update card content
- */
-export const UpdateCardParams = zod.object({
-  "id": zod.string()
-})
-
-export const updateCardBodyBackMax = 4000;
-
-
-export const updateCardBodyFrontMax = 4000;
-
-
-
-export const UpdateCardBody = zod.object({
-  "back": zod.string().min(1).max(updateCardBodyBackMax).optional(),
-  "expectedRevision": zod.int().min(1),
-  "front": zod.string().min(1).max(updateCardBodyFrontMax).optional()
-})
-
-export const UpdateCardResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "back": zod.string(),
-  "front": zod.string(),
-  "id": zod.string(),
-  "materialId": zod.string(),
-  "revision": zod.int()
-})
-
-
-/**
  * @summary Get flashcards
  */
 export const GetFlashcardSetParams = zod.object({
@@ -2078,44 +2031,16 @@ export const ListCardsParams = zod.object({
 })
 
 export const ListCardsResponseItem = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "back": zod.string(),
   "front": zod.string(),
   "id": zod.string(),
+  "image": zod.object({
+  "assetId": zod.string()
+}).optional(),
   "materialId": zod.string(),
   "revision": zod.int()
 })
 export const ListCardsResponse = zod.array(ListCardsResponseItem)
-
-
-/**
- * @summary Create a card
- */
-export const CreateCardParams = zod.object({
-  "id": zod.string()
-})
-
-export const createCardBodyBackMax = 4000;
-
-
-export const createCardBodyFrontMax = 4000;
-
-
-
-export const CreateCardBody = zod.object({
-  "back": zod.string().min(1).max(createCardBodyBackMax),
-  "expectedRevision": zod.int().min(1),
-  "front": zod.string().min(1).max(createCardBodyFrontMax)
-})
-
-export const CreateCardResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "back": zod.string(),
-  "front": zod.string(),
-  "id": zod.string(),
-  "materialId": zod.string(),
-  "revision": zod.int()
-})
 
 
 /**
@@ -2195,9 +2120,11 @@ export const UpdateFlashcardContentParams = zod.object({
   "id": zod.string()
 })
 
-export const updateFlashcardContentBodyCardsItemBackMax = 4000;
+export const updateFlashcardContentBodyCardsItemBackMax = 2000;
 
 export const updateFlashcardContentBodyCardsItemFrontMax = 4000;
+
+export const updateFlashcardContentBodyCardsItemImageAssetIdMax = 128;
 
 
 
@@ -2207,16 +2134,21 @@ export const UpdateFlashcardContentBody = zod.object({
   "cards": zod.array(zod.object({
   "back": zod.string().min(1).max(updateFlashcardContentBodyCardsItemBackMax),
   "front": zod.string().min(1).max(updateFlashcardContentBodyCardsItemFrontMax),
-  "id": zod.string().optional()
+  "id": zod.string().optional(),
+  "image": zod.object({
+  "assetId": zod.string().min(1).max(updateFlashcardContentBodyCardsItemImageAssetIdMax)
+}).optional()
 })).min(1).nullable(),
   "expectedRevision": zod.int().min(1)
 })
 
 export const UpdateFlashcardContentResponseItem = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "back": zod.string(),
   "front": zod.string(),
   "id": zod.string(),
+  "image": zod.object({
+  "assetId": zod.string()
+}).optional(),
   "materialId": zod.string(),
   "revision": zod.int()
 })
@@ -3527,7 +3459,10 @@ export const GetAnonymousFlashcardsResponse = zod.object({
   "cards": zod.array(zod.object({
   "back": zod.string(),
   "front": zod.string(),
-  "id": zod.string()
+  "id": zod.string(),
+  "image": zod.object({
+  "assetId": zod.string()
+}).optional()
 })),
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
   "id": zod.string(),
@@ -3579,6 +3514,22 @@ export const GetAnonymousFlashcardsResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional()
+})
+
+
+/**
+ * @summary Get a shared flashcard image URL
+ */
+export const GetAnonymousFlashcardAssetParams = zod.object({
+  "token": zod.string(),
+  "assetId": zod.string()
+})
+
+export const GetAnonymousFlashcardAssetResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "contentType": zod.string(),
+  "expiresAt": zod.iso.datetime({"offset":true}),
+  "url": zod.string()
 })
 
 

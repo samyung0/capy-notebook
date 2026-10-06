@@ -302,14 +302,15 @@ Editor assets upload through the material that uses them
 (`/api/materials/{id}/editor-assets/uploads`, any editor of the material).
 Every asset names that material (`editor_assets.material_id`). A workspace
 material's asset also names the workspace and is charged to its owner; a
-standalone note or quiz's asset is charged to the material owner, the only
-account that can edit it. Images uploaded through a quiz are capped at
-2 MB before any bytes are reserved (`quizImageMaxBytes`); the quiz editor
-shrinks a larger image first (`src/features/quizzes/quizImage.ts`: long side
+standalone note, quiz or flashcard set's asset is charged to the material
+owner, the only account that can edit it. Images uploaded through a quiz or a
+flashcard set are capped at 2 MB before any bytes are reserved
+(`studyImageMaxBytes`); the quiz and flashcard editors shrink a larger image first (`src/features/quizzes/quizImage.ts`: long side
 to 2000 px, WebP at falling quality, animated GIFs refused) and holds it in
 the browser under a local id, previewed from an object URL, until Save
 uploads the referenced ones and swaps in their asset ids
-(`src/routes/QuizEdit.tsx`); a picked image the user abandons never reaches
+(`src/routes/QuizEdit.tsx`, `src/features/flashcards/FlashcardsEditor.tsx`; a
+card's image is `image: {assetId}` on its `flashcard` node); a picked image the user abandons never reaches
 storage, and a failed upload fails the save. Notes keep the
 20 MB image limit and bank figures keep their own. Every material content
 write (the PATCH and the collaboration projection behind live editing, agent
@@ -352,7 +353,7 @@ editor-asset payload against the **cloner's** quota, copy ready asset rows
 with new logical IDs (rewriting embedded references; each asset names the
 clone of its material, and a trashed material's assets are left out), and reuse physical blob
 paths under reference counting. Only `ready` source files are copied; pending,
-processing, and failed files are omitted. Material nodes (and quiz image blocks) referring to a pending,
+processing, and failed files are omitted. Material nodes (and quiz image blocks; a card keeps its text and loses only its image) referring to a pending,
 failed, missing, or otherwise uncopied editor asset are removed from the cloned
 document instead of retaining an unrenderable source id. The material's
 current content and cloned logical assets are the storage-accounted payload.

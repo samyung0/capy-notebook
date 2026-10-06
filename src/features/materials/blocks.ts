@@ -27,6 +27,8 @@ export interface FlashcardContent {
   back: string;
   front: string;
   id: string;
+  /** Shown on the front under the text. */
+  image?: { assetId: string };
 }
 export interface FlashcardsBlock {
   cards: FlashcardContent[];

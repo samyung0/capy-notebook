@@ -505,6 +505,51 @@ func TestQuizImageEditorAssetsAreFoundAndRewrittenOnClone(t *testing.T) {
 	}
 }
 
+func TestFlashcardImagesAreFoundRewrittenAndChecked(t *testing.T) {
+	raw, err := FlashcardsDocument([]Card{
+		{ID: "kept", Front: "Mitochondria", Back: "ATP", Image: &CardImage{AssetID: "asset-ready"}},
+		{ID: "lost", Front: "Nucleus", Back: "DNA", Image: &CardImage{AssetID: "asset-gone"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, err := EditorAssetIDs(raw)
+	if err != nil || len(ids) != 2 {
+		t.Fatalf("asset ids = %#v, %v; want both card images", ids, err)
+	}
+	rewritten, err := RewriteClonedEditorAssetIDs(raw, map[string]string{"asset-ready": "asset-clone"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cards, err := ExtractFlashcards(rewritten)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An uncopied image leaves its card in place, without the image.
+	if len(cards) != 2 || cards[0].Image == nil || cards[0].Image.AssetID != "asset-clone" || cards[1].Image != nil {
+		t.Fatalf("cloned cards = %+v", cards)
+	}
+	if err := ValidateKind(rewritten, "flashcards"); err != nil {
+		t.Fatalf("cloned set is invalid: %v", err)
+	}
+
+	long := Card{ID: "c", Front: "f", Back: strings.Repeat("é", MaxCardBackRunes+1)}
+	if _, err := FlashcardsDocument([]Card{long}); err == nil {
+		t.Fatal("a back over the limit was accepted")
+	}
+	atLimit, err := FlashcardsDocument([]Card{{ID: "c", Front: "f", Back: strings.Repeat("é", MaxCardBackRunes)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateKind(atLimit, "flashcards"); err != nil {
+		t.Fatalf("a back at the limit was refused: %v", err)
+	}
+	badImage := strings.Replace(raw, `"assetId":"asset-ready"`, `"assetId":"asset-ready","url":"https://x"`, 1)
+	if err := ValidateKind(badImage, "flashcards"); err == nil {
+		t.Fatal("an image with extra keys was accepted")
+	}
+}
+
 func TestDiagramContract(t *testing.T) {
 	raw, err := FromLegacyMarkdown("diagram", "```mermaid\nflowchart LR\nA-->B\n```")
 	if err != nil {

@@ -201,9 +201,14 @@ Review 20 more, which waits for every pending rating, refreshes, and selects
 again from the saved ratings, so FSRS may bring back an item just rated.
 Leaving the page refreshes progress once the pending ratings settle.
 
-The per-set Study page (`FlashcardStudy.tsx`) is unchanged in shape: every
-card in document order, Again sends a card to the end, and each rating posts
-to `/api/review/ratings`. Embedded sets study there too, outside progress.
+The per-set Study page (`src/routes/FlashcardStudy.tsx`) takes every written
+card in document order; Again sends a card to the end. It uses the quiz pages'
+frame (header with back, breadcrumb and title, "Card 1 of 6" under it) and
+never edits cards: the card is centred and flips on a click, with the rating
+tiles (`src/features/study/RatingTiles.tsx`) under it. Signed in, each rating
+posts to `/api/review/ratings`; a shared link opened signed out renders the same
+page, rating with ts-fsrs into IndexedDB, as shared quizzes keep attempts in
+the browser. Embedded sets study there too, outside progress.
 
 ## Learning
 

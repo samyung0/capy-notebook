@@ -39,7 +39,6 @@ import type {
   ContentOrderItem,
   Conversation,
   CreateAttemptReq,
-  CreateCardReq,
   CreateCommentReq,
   CreateDiscussionReq,
   CreateEmbeddedMaterialReq,
@@ -102,7 +101,6 @@ import type {
   TrashItem,
   TrashPage,
   UndoEditReq,
-  UpdateCardReq,
   UpdateChapterReq,
   UpdateCommentReq,
   UpdateEventReq,
@@ -2033,36 +2031,6 @@ export function useCreateFlashcardSet() {
     },
   });
 }
-export function useCreateCard(flashcardSetId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (body: CreateCardReq & { expectedRevision: number }) =>
-      api.post<Flashcard>(`/flashcards/${flashcardSetId}/cards`, body),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.cards(flashcardSetId) });
-      qc.invalidateQueries({ queryKey: qk.flashcardSet(flashcardSetId) });
-    },
-  });
-}
-export function useDeleteCard(flashcardSetId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      id,
-      expectedRevision,
-    }: {
-      id: string;
-      expectedRevision: number;
-    }) =>
-      api.del<void>(
-        `/flashcards/cards/${id}?expectedRevision=${expectedRevision}`
-      ),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.cards(flashcardSetId) });
-      qc.invalidateQueries({ queryKey: qk.flashcardSet(flashcardSetId) });
-    },
-  });
-}
 
 export const flashcardSetQuery = (id: string) =>
   queryOptions({
@@ -2076,11 +2044,17 @@ export function useUpdateFlashcardContent(id: string) {
   return useMutation({
     mutationFn: (body: {
       expectedRevision: number;
-      cards: { id?: string; front: string; back: string }[];
+      cards: {
+        id?: string;
+        front: string;
+        back: string;
+        image?: { assetId: string };
+      }[];
     }) => api.patch<Flashcard[]>(`/flashcards/${id}/content`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.cards(id) });
       qc.invalidateQueries({ queryKey: qk.flashcardSet(id) });
+      qc.invalidateQueries({ queryKey: qk.material(id) });
     },
   });
 }
@@ -2109,17 +2083,6 @@ export const useCards = (
     ...(options?.fresh ? { refetchOnMount: 'always' as const } : {}),
     meta: queryMeta(options),
   });
-export function useUpdateCard(flashcardSetId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, ...body }: UpdateCardReq & { id: string }) =>
-      api.patch<Flashcard>(`/flashcards/cards/${id}/content`, body),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.cards(flashcardSetId) });
-      qc.invalidateQueries({ queryKey: qk.flashcardSet(flashcardSetId) });
-    },
-  });
-}
 /* ---------------- study progress and review ---------------- */
 export const workspaceStudyQuery = (workspaceId: string) =>
   queryOptions({

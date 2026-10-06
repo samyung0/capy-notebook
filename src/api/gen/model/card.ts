@@ -4,9 +4,11 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { CardImage } from './cardImage.ts';
 
 export interface Card {
   back: string;
   front: string;
   id: string;
+  image?: CardImage;
 }

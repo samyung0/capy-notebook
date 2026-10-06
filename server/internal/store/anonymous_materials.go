@@ -106,8 +106,27 @@ func (s *Store) AnonymousQuizAssetPath(ctx context.Context, quizID, assetID stri
 	if !referenced {
 		return "", "", ErrNotFound
 	}
+	return s.anonymousAssetPath(ctx, quizID, assetID)
+}
+
+// AnonymousFlashcardAssetPath is AnonymousQuizAssetPath for a visible set's
+// card images: only a card a visitor studies can name the asset.
+func (s *Store) AnonymousFlashcardAssetPath(ctx context.Context, setID, assetID string) (objectPath, contentType string, err error) {
+	set, err := s.AnonymousFlashcards(ctx, setID)
+	if err != nil {
+		return "", "", err
+	}
+	if !slices.ContainsFunc(set.Cards, func(c materialdoc.Card) bool {
+		return c.Image != nil && c.Image.AssetID == assetID
+	}) {
+		return "", "", ErrNotFound
+	}
+	return s.anonymousAssetPath(ctx, setID, assetID)
+}
+
+func (s *Store) anonymousAssetPath(ctx context.Context, materialID, assetID string) (objectPath, contentType string, err error) {
 	err = s.pool.QueryRow(ctx, `SELECT object_path, content_type FROM editor_assets
-		WHERE id=$1 AND material_id=$2 AND status='ready'`, assetID, quizID).Scan(&objectPath, &contentType)
+		WHERE id=$1 AND material_id=$2 AND status='ready'`, assetID, materialID).Scan(&objectPath, &contentType)
 	if isNoRows(err) {
 		return "", "", ErrNotFound
 	}

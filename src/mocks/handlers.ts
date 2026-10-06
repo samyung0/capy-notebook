@@ -8,7 +8,6 @@ import type {
   AdoptEmbeddedMaterialsReq,
   Chapter,
   EditableQuiz,
-  Flashcard,
   FlashcardSet,
   GenerateOptions,
   Material,
@@ -894,7 +893,7 @@ export const handlers = [
       cards: db
         .cardsFromMaterial(mt)
         .filter(({ back, front }) => front.trim() || back.trim())
-        .map(({ back, front, id }) => ({ back, front, id })),
+        .map(({ back, front, id, image }) => ({ back, front, id, image })),
       color: set.color,
       id: set.id,
       name: set.name,
@@ -2853,82 +2852,6 @@ export const handlers = [
       ? HttpResponse.json(db.cardsFromMaterial(mt))
       : new HttpResponse(null, { status: 404 });
   }),
-  http.post('/api/flashcards/:id/cards', async ({ params, request }) => {
-    const mt = db.materials.find(
-      (x) => x.id === params.id && x.kind === 'flashcards'
-    );
-    if (!mt) return new HttpResponse(null, { status: 404 });
-    const body = (await request.json()) as {
-      front: string;
-      back: string;
-      expectedRevision: number;
-    };
-    if (body.expectedRevision !== mt.revision)
-      return new HttpResponse(null, { status: 409 });
-    const id = uid('c');
-    const cards = materialCards(mt);
-    cards.push({ back: body.back ?? '', front: body.front ?? '', id });
-    mt.content = flashcardsDocument(cards, mt.id);
-    mt.revision += 1;
-    db.refreshMaterialContentBytes(mt);
-    db.flashcardCards[id] = { materialId: mt.id };
-    return HttpResponse.json(
-      db.cardsFromMaterial(mt).find((c) => c.id === id)!,
-      { status: 201 }
-    );
-  }),
-  http.patch(
-    '/api/flashcards/cards/:id/content',
-    async ({ params, request }) => {
-      const stat = db.flashcardCards[String(params.id)];
-      if (!stat) return new HttpResponse(null, { status: 404 });
-      const mt = db.materials.find(
-        (x) => x.id === stat.materialId && x.kind === 'flashcards'
-      );
-      if (!mt) return new HttpResponse(null, { status: 404 });
-      const body = (await request.json()) as Partial<
-        Pick<Flashcard, 'front' | 'back'>
-      > & { expectedRevision: number };
-      if (body.expectedRevision !== mt.revision)
-        return new HttpResponse(null, { status: 409 });
-      if (body.front !== undefined || body.back !== undefined) {
-        const cards = materialCards(mt);
-        const card = cards.find((c) => c.id === params.id);
-        if (card) {
-          if (body.front !== undefined) card.front = body.front;
-          if (body.back !== undefined) card.back = body.back;
-          mt.content = flashcardsDocument(cards, mt.id);
-          mt.revision += 1;
-          db.refreshMaterialContentBytes(mt);
-        }
-      }
-      const cards = db.cardsFromMaterial(mt);
-      const out = cards.find((c) => c.id === params.id);
-      return out
-        ? HttpResponse.json(out)
-        : new HttpResponse(null, { status: 404 });
-    }
-  ),
-  http.delete('/api/flashcards/cards/:id', async ({ params, request }) => {
-    const stat = db.flashcardCards[String(params.id)];
-    if (!stat) return new HttpResponse(null, { status: 404 });
-    const mt = db.materials.find(
-      (x) => x.id === stat.materialId && x.kind === 'flashcards'
-    );
-    if (!mt) return new HttpResponse(null, { status: 404 });
-    if (
-      Number(new URL(request.url).searchParams.get('expectedRevision')) !==
-      mt.revision
-    )
-      return new HttpResponse(null, { status: 409 });
-    const kept = materialCards(mt).filter((c) => c.id !== params.id);
-    mt.content = flashcardsDocument(kept, mt.id);
-    mt.revision += 1;
-    db.refreshMaterialContentBytes(mt);
-    delete db.flashcardCards[String(params.id)];
-    return new HttpResponse(null, { status: 204 });
-  }),
-
   /* ---------------- study progress and review ---------------- */
   ...studyHandlers,
 

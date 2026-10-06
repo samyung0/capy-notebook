@@ -31,7 +31,6 @@ describe('anonymous material routes', () => {
     for (const path of [
       `/p/quizzes/${TOKEN.slice(0, -1)}x`,
       '/p/quizzes/mat_0123456789',
-      `/p/flashcards/${TOKEN}/assets/asset_1`,
       `/p/quizzes/${TOKEN}/grade`,
     ]) {
       const response = await handleSiteRequest(request(path), env, fetcher);
@@ -103,29 +102,32 @@ describe('anonymous material routes', () => {
     }
   });
 
-  it('serves quiz images as raster bytes only', async () => {
-    const assetPath = `/p/quizzes/${TOKEN}/assets/asset_abc`;
-    const png = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(
+  it.each(['quizzes', 'flashcards'])(
+    'serves %s images as raster bytes only',
+    async (kind) => {
+      const assetPath = `/p/${kind}/${TOKEN}/assets/asset_abc`;
+      const png = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          Response.json({
+            contentType: 'image/png',
+            url: 'https://b2.example.test/x',
+          })
+        )
+        .mockResolvedValueOnce(new Response(new Uint8Array([137, 80, 78, 71])));
+      const ok = await handleSiteRequest(request(assetPath), env, png);
+      expect(ok.status).toBe(200);
+      expect(ok.headers.get('Content-Type')).toBe('image/png');
+      const svg = vi.fn<typeof fetch>().mockResolvedValue(
         Response.json({
-          contentType: 'image/png',
+          contentType: 'image/svg+xml',
           url: 'https://b2.example.test/x',
         })
-      )
-      .mockResolvedValueOnce(new Response(new Uint8Array([137, 80, 78, 71])));
-    const ok = await handleSiteRequest(request(assetPath), env, png);
-    expect(ok.status).toBe(200);
-    expect(ok.headers.get('Content-Type')).toBe('image/png');
-    const svg = vi.fn<typeof fetch>().mockResolvedValue(
-      Response.json({
-        contentType: 'image/svg+xml',
-        url: 'https://b2.example.test/x',
-      })
-    );
-    expect((await handleSiteRequest(request(assetPath), env, svg)).status).toBe(
-      503
-    );
-    expect(svg).toHaveBeenCalledTimes(1);
-  });
+      );
+      expect(
+        (await handleSiteRequest(request(assetPath), env, svg)).status
+      ).toBe(503);
+      expect(svg).toHaveBeenCalledTimes(1);
+    }
+  );
 });

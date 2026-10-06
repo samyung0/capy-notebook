@@ -5,9 +5,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type DeleteCardParams = {
-/**
- * @minimum 1
- */
-expectedRevision: number;
-};
+export interface FlashcardImage {
+  /**
+     * @minLength 1
+     * @maxLength 128
+     */
+  assetId: string;
+}

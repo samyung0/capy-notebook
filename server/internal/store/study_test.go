@@ -127,9 +127,7 @@ func TestPracticeRecordsStudyProgress(t *testing.T) {
 		t.Fatalf("set after every card = %q", got)
 	}
 	// A card added later leaves the set done.
-	if _, err := f.s.CreateCard(ctx, f.user, set, "Nucleus", "Holds DNA", cards[0].Revision); err != nil {
-		t.Fatal(err)
-	}
+	appendCard(t, f.s, f.user, set, "Nucleus", "Holds DNA")
 	f.rate(t, cards[0], 3)
 	if got := f.progress(t, set); got != "done" {
 		t.Fatalf("set after a new card = %q", got)
@@ -180,10 +178,7 @@ func TestWorkspaceReviewSelection(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Editing a card makes it new: it leaves mixed review until it is rated again.
-	front := "Golgi apparatus"
-	if _, err := f.s.UpdateCardContent(ctx, kept[1].ID, CardContentPatch{ExpectedRevision: kept[1].Revision, Front: &front, UpdatedBy: f.user}); err != nil {
-		t.Fatal(err)
-	}
+	editCardFront(t, f.s, f.user, kept[1].MaterialID, kept[1].ID, "Golgi apparatus")
 
 	mixed, err := f.s.WorkspaceReview(ctx, f.user, f.ws.ID, time.Now())
 	if err != nil {
@@ -303,21 +298,8 @@ func TestReviewSkipsEmbeddedOrphanedAndEditedItems(t *testing.T) {
 	}
 	f.rate(t, inner[0], 1)
 
-	latest, err := f.s.ListCards(ctx, cards[0].MaterialID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := f.s.DeleteCard(ctx, f.user, cards[1].ID, latest[1].Revision); err != nil {
-		t.Fatal(err)
-	}
-	latest, err = f.s.ListCards(ctx, cards[0].MaterialID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	front := "Nucleus envelope"
-	if _, err := f.s.UpdateCardContent(ctx, cards[2].ID, CardContentPatch{ExpectedRevision: latest[1].Revision, Front: &front, UpdatedBy: f.user}); err != nil {
-		t.Fatal(err)
-	}
+	removeCard(t, f.s, f.user, cards[0].MaterialID, cards[1].ID)
+	editCardFront(t, f.s, f.user, cards[0].MaterialID, cards[2].ID, "Nucleus envelope")
 	mixed, err := f.s.WorkspaceReview(ctx, f.user, f.ws.ID, time.Now())
 	if err != nil {
 		t.Fatal(err)

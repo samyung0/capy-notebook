@@ -305,16 +305,6 @@ func (s *Store) FileWorkspaceID(ctx context.Context, fileID string) (string, err
 	return wsID, err
 }
 
-// CardMaterialID resolves the flashcardSet (flashcards material) owning a card.
-func (s *Store) CardMaterialID(ctx context.Context, cardID string) (string, error) {
-	var matID string
-	err := s.pool.QueryRow(ctx, `SELECT material_id FROM flashcard_cards WHERE card_id=$1`, cardID).Scan(&matID)
-	if isNoRows(err) {
-		return "", ErrNotFound
-	}
-	return matID, err
-}
-
 // ChapterWorkspaceID resolves the owning workspace of a chapter.
 func (s *Store) ChapterWorkspaceID(ctx context.Context, chapterID string) (string, error) {
 	var wsID string

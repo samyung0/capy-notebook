@@ -75,14 +75,6 @@ func (a *api) assertFileEditor(ctx context.Context, fileID string) error {
 	return a.assertWorkspaceEditor(ctx, wsID)
 }
 
-func (a *api) assertCardEditor(ctx context.Context, cardID string) error {
-	matID, err := a.s.CardMaterialID(ctx, cardID)
-	if err != nil {
-		return err
-	}
-	return a.assertMaterialOwner(ctx, matID)
-}
-
 /* ------------------------------------------------------------------ cloning */
 
 func (a *api) cloneWorkspace(ctx context.Context, in *workspaceIDInput) (*cloneWorkspaceOutput, error) {

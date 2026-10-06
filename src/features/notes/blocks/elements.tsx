@@ -6,7 +6,6 @@ import {
   shift,
   useVirtualFloating,
 } from '@platejs/floating';
-import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useRouter } from '@tanstack/react-router';
 import { NodeApi, type TElement } from 'platejs';
 import {
@@ -19,7 +18,6 @@ import {
   useSelected,
 } from 'platejs/react';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { materialQuery, useUpdateFlashcardContent } from '@/api/hooks';
 import { showErrorToast } from '@/api/queryClient';
 import { FloatingBlockToolbar } from '@/components/ui/BlockToolbar';
 import {
@@ -29,12 +27,8 @@ import {
 } from '@/components/ui/Popover';
 import { PopupMotion } from '@/components/ui/PopupMotion';
 import { ButtonTooltip } from '@/components/ui/Tooltip';
-import { parseFlashcardsFenceBody } from '@/features/materials/blocks';
 import {
   type FlashcardElement as FlashcardNode,
-  type FlashcardsElement as FlashcardsNode,
-  flashcardsElementToCards,
-  flashcardsNodeFromFence,
   type HtmlEmbedElement as HtmlEmbedNode,
   type MaterialElement,
   type MaterialNode,
@@ -82,7 +76,6 @@ import {
 } from '../toolbar/ToolbarPopover';
 import { useOptionalNoteBlockDialogs } from './dialogContext';
 import { setMermaidCaption } from './mermaidBlock';
-import { flashcardsFenceBody } from './shared';
 import type { NoteVisualBlock } from './VisualBlockDialog';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -92,12 +85,6 @@ type AnyEditor = any;
 const CLIENT_ID = uid('client');
 /** Long enough for a concurrent claim to merge back before creating a row. */
 const CLAIM_SETTLE_MS = 400;
-
-function replaceElement(editor: AnyEditor, current: object, next: object) {
-  const at = editor.api.findPath(current);
-  if (!at) return;
-  editor.tf.replaceNodes(next, { at });
-}
 
 function StudyBlockRoot({
   props,
@@ -368,27 +355,8 @@ export function QuizElement(props: PlateElementProps) {
 }
 
 export function FlashcardsElement(props: PlateElementProps) {
-  const editor = useEditorRef();
-  const dialogs = useOptionalNoteBlockDialogs();
-  const element = props.element as unknown as FlashcardsNode;
-  function edit() {
-    dialogs?.openFlashcards(
-      flashcardsFenceBody(flashcardsElementToCards(element)),
-      (code) => {
-        replaceElement(
-          editor,
-          props.element,
-          flashcardsNodeFromFence(code, element.id)
-        );
-      }
-    );
-  }
   return (
-    <StudyBlockRoot
-      className="gap-2"
-      onEdit={dialogs ? edit : undefined}
-      props={props}
-    >
+    <StudyBlockRoot className="gap-2" props={props}>
       <StandaloneMaterialTitle kinds="flashcards" />
     </StudyBlockRoot>
   );
@@ -401,13 +369,10 @@ export function MaterialRefElement(props: PlateElementProps) {
   const editor = useEditorRef();
   const readOnly = useReadOnly();
   const dialogs = useOptionalNoteBlockDialogs();
-  const queryClient = useQueryClient();
   const element = props.element as unknown as MaterialRefNode;
   const { materialId, refKind, pending } = element;
   const navigate = useNavigate();
   const router = useRouter();
-  const { mutateAsync: updateFlashcardContent } =
-    useUpdateFlashcardContent(materialId);
   const resolving = useRef(false);
 
   // A fence imported as markdown lands here without a row. Every client with
@@ -460,33 +425,12 @@ export function MaterialRefElement(props: PlateElementProps) {
     });
   }
 
-  async function editFlashcards() {
-    const latest = await queryClient.fetchQuery({
-      ...materialQuery(materialId),
-      staleTime: 0,
+  function editFlashcards() {
+    void navigate({
+      params: { flashcardSetId: materialId },
+      search: quizEditSearch(router.state.location.href),
+      to: '/flashcards/$flashcardSetId/edit',
     });
-    const block = latest.content.value.find(
-      (node): node is FlashcardsNode => node.type === 'flashcards'
-    );
-    if (!block) throw new Error('Flashcard content is unavailable');
-    const current = flashcardsElementToCards(block);
-    dialogs?.openFlashcards(
-      flashcardsFenceBody(
-        current.map(({ id, front, back }) => ({ back, front, id }))
-      ),
-      async (code) => {
-        await updateFlashcardContent({
-          cards: parseFlashcardsFenceBody(code).cards.map((card) => ({
-            back: card.back,
-            front: card.front,
-            ...(current.some((item) => item.id === card.id)
-              ? { id: card.id }
-              : {}),
-          })),
-          expectedRevision: latest.revision,
-        });
-      }
-    );
   }
 
   const canEdit = !readOnly && !!dialogs && !!materialId;
@@ -498,7 +442,7 @@ export function MaterialRefElement(props: PlateElementProps) {
           canEdit
             ? refKind === 'quiz'
               ? () => void editQuiz()
-              : () => void editFlashcards().catch(showErrorToast)
+              : editFlashcards
             : undefined
         }
         refKind={refKind}

@@ -22,7 +22,6 @@ describe('editor insertion command catalog', () => {
         createEmbedded: vi.fn(),
         insertEmbedded: vi.fn(),
         noteId: 'note',
-        openFlashcards: vi.fn(),
         openVisual,
         openYouTube: vi.fn(),
       });

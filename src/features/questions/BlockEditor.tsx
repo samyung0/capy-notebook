@@ -6,6 +6,7 @@ import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
 import { Toolbar, ToolbarGroup } from '@/components/ui/Toolbar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
+import { IMAGE_ACCEPT } from '@/features/quizzes/quizImage';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
@@ -343,7 +344,7 @@ export function BlockEditor({
         <QuestionBlockView block={block} />
         <Field label={m.question_ui_replace()}>
           <input
-            accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+            accept={IMAGE_ACCEPT}
             disabled={!uploadAsset || uploading}
             onChange={async (event) => {
               const file = event.target.files?.[0];

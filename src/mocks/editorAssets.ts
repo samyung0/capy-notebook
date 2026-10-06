@@ -24,6 +24,12 @@ const assets: Record<string, { name: string; url: string }> = {
 const uploads = new Map<string, { contentType: string; name: string }>();
 
 export const editorAssetHandlers = [
+  // Signed-out share pages load images through the site Worker's route.
+  http.get('/p/:kind/:token/assets/:assetId', async ({ params }) => {
+    const asset = assets[String(params.assetId)];
+    if (!asset) return new HttpResponse(null, { status: 404 });
+    return new HttpResponse(await (await fetch(asset.url)).blob());
+  }),
   http.post('/api/materials/:id/editor-assets/uploads', async ({ request }) => {
     const body = (await request.json()) as {
       contentType: string;

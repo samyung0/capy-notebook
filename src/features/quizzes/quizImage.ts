@@ -3,6 +3,9 @@ import { CopyError } from '@/lib/errors';
 
 /** The server's cap on images uploaded through a quiz (editor_assets.go). */
 export const QUIZ_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+/** The image types the server stores for quizzes and flashcards (no SVG). */
+export const IMAGE_ACCEPT =
+  'image/png,image/jpeg,image/webp,image/gif,image/avif';
 const MAX_SIDE = 2000;
 const QUALITIES = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4];
 const EXTENSION = /\.[^.]*$/;

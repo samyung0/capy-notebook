@@ -23,6 +23,8 @@ import {
 } from '@/features/files/fileModeContext';
 import { fileIsIngesting, IMAGE_MIN_ZOOM } from '@/features/files/fileUtils';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
+import { FlashcardGrid } from '@/features/flashcards/FlashcardGrid';
+import { FlashcardsEditor } from '@/features/flashcards/FlashcardsEditor';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import type { LearnerQuestion } from '@/features/questions/types';
 import { QuizQuestionList } from '@/features/quizzes/QuizPage';
@@ -34,7 +36,12 @@ import {
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { createEditorStatusStore, Header } from './CenterContentHeader';
-import type { MaterialDocument, QuizElement } from './document';
+import {
+  type FlashcardsElement,
+  flashcardsElementToCards,
+  type MaterialDocument,
+  type QuizElement,
+} from './document';
 import { HeavyMaterialGate } from './HeavyMaterialGate';
 import { type HeavyMaterialChoice, heavyMaterial } from './heavyDocument';
 import { MaterialAttributionFooter } from './MaterialAttributionFooter';
@@ -315,6 +322,32 @@ export function MaterialContent({
   if (material.kind === 'quiz' && activeMode === 'edit') {
     return <OpenQuizEditor quizId={materialId} />;
   }
+  if (material.kind === 'flashcards') {
+    const cards = flashcardsElementToCards(
+      material.content.value.find(
+        (node): node is FlashcardsElement => node.type === 'flashcards'
+      ) ?? { children: [], id: '', type: 'flashcards' }
+    );
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="min-h-0 flex-1 overflow-auto">
+          <TabContent centered={centerQuiz}>
+            {activeMode === 'edit' ? (
+              <FlashcardsEditor
+                cards={cards}
+                revision={material.revision}
+                setId={materialId}
+                title={material.title}
+              />
+            ) : (
+              <FlashcardGrid cards={cards} title={material.title} />
+            )}
+          </TabContent>
+        </div>
+        <MaterialAttributionFooter provenance={material.provenance} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -323,7 +356,11 @@ export function MaterialContent({
         {activeMode === 'view' && (
           <div className="h-full min-h-0 overflow-auto">
             {material.kind === 'quiz' ? (
-              <QuizPreview centered={centerQuiz} content={material.content} />
+              <QuizPreview
+                centered={centerQuiz}
+                content={material.content}
+                title={material.title}
+              />
             ) : (
               <Suspense fallback={<FileLoading />}>
                 <MaterialPreview
@@ -362,9 +399,11 @@ export function MaterialContent({
 function QuizPreview({
   centered,
   content,
+  title,
 }: {
   centered: boolean;
   content: MaterialDocument;
+  title: string;
 }) {
   const quiz = content.value.find(
     (node): node is QuizElement => node.type === 'quiz'
@@ -376,6 +415,7 @@ function QuizPreview({
   );
   return (
     <TabContent centered={centered}>
+      <h1 className="t-large-card-title mb-7">{title}</h1>
       <QuizQuestionList disabled questions={questions} />
     </TabContent>
   );

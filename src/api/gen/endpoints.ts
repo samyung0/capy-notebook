@@ -44,7 +44,6 @@ import type {
   Conversation,
   CreateAttemptReq,
   CreateCanvasReq,
-  CreateCardReq,
   CreateCommentReq,
   CreateConversationReq,
   CreateDiscussionReq,
@@ -56,7 +55,6 @@ import type {
   CreateSourceUploadReq,
   CreateWorkspaceInviteReq,
   CreateWorkspaceReq,
-  DeleteCardParams,
   DeleteFileParams,
   DeleteMaterialParams,
   DeleteQuizParams,
@@ -155,7 +153,6 @@ import type {
   TrashPage,
   URLResp,
   UndoEditReq,
-  UpdateCardReq,
   UpdateChapterReq,
   UpdateCommentReq,
   UpdateEventReq,
@@ -2820,116 +2817,6 @@ export const createFlashcardSet = async (createFlashcardSetReq: NonReadonly<Crea
 
 
 
-export type deleteCardResponse204 = {
-  data: void
-  status: 204
-}
-
-export type deleteCardResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 204>
-}
-
-export type deleteCardResponseSuccess = (deleteCardResponse204) & {
-  headers: Headers;
-};
-export type deleteCardResponseError = (deleteCardResponseDefault) & {
-  headers: Headers;
-};
-
-export type deleteCardResponse = (deleteCardResponseSuccess | deleteCardResponseError)
-
-export const getDeleteCardUrl = (id: string,
-    params: DeleteCardParams,) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0 ? `/api/flashcards/cards/${id}?${stringifiedParams}` : `/api/flashcards/cards/${id}`
-}
-
-/**
- * @summary Delete a card
- */
-export const deleteCard = async (id: string,
-    params: DeleteCardParams, options?: RequestInit): Promise<deleteCardResponse> => {
-
-  const res = await fetch(getDeleteCardUrl(id,params),
-  {
-    ...options,
-    method: 'DELETE'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: deleteCardResponse['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as deleteCardResponse
-}
-
-
-
-export type updateCardResponse200 = {
-  data: Flashcard
-  status: 200
-}
-
-export type updateCardResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type updateCardResponseSuccess = (updateCardResponse200) & {
-  headers: Headers;
-};
-export type updateCardResponseError = (updateCardResponseDefault) & {
-  headers: Headers;
-};
-
-export type updateCardResponse = (updateCardResponseSuccess | updateCardResponseError)
-
-export const getUpdateCardUrl = (id: string,) => {
-
-
-
-
-  return `/api/flashcards/cards/${id}/content`
-}
-
-/**
- * @summary Update card content
- */
-export const updateCard = async (id: string,
-    updateCardReq: NonReadonly<UpdateCardReq>, options?: RequestInit): Promise<updateCardResponse> => {
-
-  const res = await fetch(getUpdateCardUrl(id),
-  {
-    ...options,
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(updateCardReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: updateCardResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as updateCardResponse
-}
-
-
-
 export type getFlashcardSetResponse200 = {
   data: FlashcardSet
   status: 200
@@ -3026,57 +2913,6 @@ export const listCards = async (id: string, options?: RequestInit): Promise<list
 
   const data: listCardsResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as listCardsResponse
-}
-
-
-
-export type createCardResponse201 = {
-  data: Flashcard
-  status: 201
-}
-
-export type createCardResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 201>
-}
-
-export type createCardResponseSuccess = (createCardResponse201) & {
-  headers: Headers;
-};
-export type createCardResponseError = (createCardResponseDefault) & {
-  headers: Headers;
-};
-
-export type createCardResponse = (createCardResponseSuccess | createCardResponseError)
-
-export const getCreateCardUrl = (id: string,) => {
-
-
-
-
-  return `/api/flashcards/${id}/cards`
-}
-
-/**
- * @summary Create a card
- */
-export const createCard = async (id: string,
-    createCardReq: NonReadonly<CreateCardReq>, options?: RequestInit): Promise<createCardResponse> => {
-
-  const res = await fetch(getCreateCardUrl(id),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(createCardReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: createCardResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createCardResponse
 }
 
 
@@ -5216,6 +5052,58 @@ export const getAnonymousFlashcards = async (token: string, options?: RequestIni
 
   const data: getAnonymousFlashcardsResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getAnonymousFlashcardsResponse
+}
+
+
+
+export type getAnonymousFlashcardAssetResponse200 = {
+  data: AnonymousAsset
+  status: 200
+}
+
+export type getAnonymousFlashcardAssetResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getAnonymousFlashcardAssetResponseSuccess = (getAnonymousFlashcardAssetResponse200) & {
+  headers: Headers;
+};
+export type getAnonymousFlashcardAssetResponseError = (getAnonymousFlashcardAssetResponseDefault) & {
+  headers: Headers;
+};
+
+export type getAnonymousFlashcardAssetResponse = (getAnonymousFlashcardAssetResponseSuccess | getAnonymousFlashcardAssetResponseError)
+
+export const getGetAnonymousFlashcardAssetUrl = (token: string,
+    assetId: string,) => {
+
+
+
+
+  return `/api/public/flashcards/${token}/assets/${assetId}`
+}
+
+/**
+ * @summary Get a shared flashcard image URL
+ */
+export const getAnonymousFlashcardAsset = async (token: string,
+    assetId: string, options?: RequestInit): Promise<getAnonymousFlashcardAssetResponse> => {
+
+  const res = await fetch(getGetAnonymousFlashcardAssetUrl(token,assetId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getAnonymousFlashcardAssetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getAnonymousFlashcardAssetResponse
 }
 
 

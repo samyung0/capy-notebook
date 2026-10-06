@@ -75,15 +75,32 @@ func TestAnonymousMaterialsVisibilityAndAssets(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The set starts with one blank card, which visitors never receive.
-	if _, err := s.CreateCard(ctx, ownerID, cards.ID, "Front", "Back", cards.Revision); err != nil {
-		t.Fatal(err)
-	}
+	appendCard(t, s, ownerID, cards.ID, "Front", "Back")
 	if _, err := s.pool.Exec(ctx, `UPDATE materials SET privacy='public' WHERE id=$1`, cards.ID); err != nil {
 		t.Fatal(err)
 	}
 	set, err := s.AnonymousFlashcards(ctx, cards.ID)
 	if err != nil || len(set.Cards) != 1 || set.Cards[0].Front != "Front" {
 		t.Fatalf("public flashcards = %+v, %v", set, err)
+	}
+	// A visitor reads only the images of the cards they study.
+	f := editorAssetFixture{t: t, s: s, ctx: ctx}
+	shown, hidden := f.ready(ownerID, "", cards.ID), f.ready(ownerID, "", cards.ID)
+	setCards(t, s, ownerID, cards.ID, func(c []materialdoc.Card) []materialdoc.Card {
+		for i := range c {
+			if c[i].Front == "Front" {
+				c[i].Image = &materialdoc.CardImage{AssetID: shown.ID}
+			} else {
+				c[i].Image = &materialdoc.CardImage{AssetID: hidden.ID}
+			}
+		}
+		return c
+	})
+	if path, _, err := s.AnonymousFlashcardAssetPath(ctx, cards.ID, shown.ID); err != nil || path != shown.ObjectPath {
+		t.Fatalf("studied card image = %q, %v", path, err)
+	}
+	if _, _, err := s.AnonymousFlashcardAssetPath(ctx, cards.ID, hidden.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("blank card's image err = %v, want not found", err)
 	}
 
 	if _, err := s.pool.Exec(ctx, `UPDATE users SET suspended_at=now(), suspended_reason='test' WHERE id=$1`, ownerID); err != nil {

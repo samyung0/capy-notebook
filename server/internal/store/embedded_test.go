@@ -324,6 +324,11 @@ func TestAdoptEmbeddedMaterials(t *testing.T) {
 		t.Fatal(err)
 	}
 	cards := embed(editorID, source.ID, EmbeddedDraft{Kind: "flashcards", Cards: [][2]string{{"front", "back"}}})
+	cardImage := f.ready(editorID, sourceWS.ID, cards.ID)
+	setCards(t, s, editorID, cards.ID, func(c []materialdoc.Card) []materialdoc.Card {
+		c[0].Image = &materialdoc.CardImage{AssetID: cardImage.ID}
+		return c
+	})
 	cut := embed(editorID, source.ID, EmbeddedDraft{Kind: "quiz", Questions: questions})
 	trash(cut.ID)
 	foreignNote, err := s.CreateMaterial(ctx, Material{CreatedBy: strangerID, Kind: "note", Title: "Foreign", Content: "# Foreign\n\nbody"})
@@ -391,6 +396,9 @@ func TestAdoptEmbeddedMaterials(t *testing.T) {
 	}
 	if len(copiedCards) != 1 || copiedCards[0].ID == sourceCards[0].ID {
 		t.Fatalf("copied cards = %+v, want one card under a new id", copiedCards)
+	}
+	if copiedCards[0].Image == nil || copiedCards[0].Image.AssetID == cardImage.ID {
+		t.Fatalf("copied card image = %+v, want its own copy", copiedCards[0].Image)
 	}
 	if f.used(ownerID) <= usedBefore+100 || f.used(editorID) != editorBefore {
 		t.Fatalf("charged owner %d, editor %d; want the target's payer charged",

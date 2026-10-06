@@ -266,6 +266,13 @@ top-left corner, so `NoteEditorCore` skips slate's scroll-into-view while any
 part of the void is on screen; otherwise re-rendering a tall block (a theme
 change) jumped the page back to its top.
 
+Quizzes and flashcard sets never render through Plate. Opened as a file (in a
+workspace or standalone) the center pane shows the quiz page's question list or
+the flashcard grid (`src/features/flashcards/FlashcardGrid.tsx`: fronts as
+tiles, a preview dialog with the front over the back and Previous/Next), each
+under the material title, and flashcard edit mode is the staged card grid
+described under authoring below (`src/features/materials/CenterContent.tsx`).
+
 Standalone quiz, flashcard, mindmap, and diagram titles live only in relational
 material metadata. Their stored Plate documents contain the custom block but no
 generated title heading. `MaterialRenderProvider` gives the custom block
@@ -281,14 +288,15 @@ A note never inlines a quiz or flashcard set. Both are material rows of their
 own with `parent_material_id` set, sharing the note's workspace, private and
 unfiled, and the note stores a void `material_ref` block
 (`{materialId, refKind}`) rendered as a borderless row by `MaterialRefCard`:
-Start quiz / Study in view mode, only an outline Edit in edit mode. Inserting through the slash command or toolbar opens the existing
-dialog, creates the row through `POST /api/materials/{noteId}/embedded`, then
-inserts the reference at the top level; nothing is inserted when creation
-fails, and with the caret inside a callout, column, table or other container
+Start quiz / Study in view mode, only an outline Edit in edit mode. Inserting through the slash command or toolbar
+creates the row through `POST /api/materials/{noteId}/embedded` (a set with one
+blank card), inserts the reference at the top level and opens the row's edit
+page (`/quizzes/$id/edit` or `/flashcards/$id/edit`); nothing is inserted when
+creation fails, and with the caret inside a callout, column, table or other container
 the quiz, flashcards and mermaid commands do nothing. A reference that lands
-nested (a paste) is lifted to the top level by the plugin's normalizer. Edit reopens the dialog and saves through the quiz content endpoint or
-the per-card flashcard endpoints, so note undo covers only inserting and
-removing the reference. Go and the sidecar reject inline `quiz`/`flashcards`
+nested (a paste) is lifted to the top level by the plugin's normalizer. Edit opens the same edit page, which saves through the quiz or
+flashcard content endpoint, so note undo covers only inserting and removing the
+reference. Go and the sidecar reject inline `quiz`/`flashcards`
 nodes in a note and references anywhere but the top level. A markdown fence
 imports as a pending reference (`materialId: ''` plus the fence body in
 `pending`); the mounted editor claims it in the shared document
@@ -794,9 +802,15 @@ falling back to SQL.
 Quiz and flashcard authoring sends `expectedRevision` from the loaded draft.
 The sidecar locks the material row and checks that revision and completed
 projection before committing a replacement; its block precondition also checks
-the live Yjs content. Rejected saves retain the local draft. The embedded
-flashcard dialog saves its entire card list atomically through
-`PATCH /api/flashcards/{id}/content`, preserving study state for retained IDs.
+the live Yjs content. Rejected saves retain the local draft. Every flashcard set edits through
+`FlashcardsEditor` (`src/features/flashcards/`): the workspace file's edit mode,
+a standalone set and `/flashcards/$id/edit` for an embedded one. Like the quiz
+edit page it stages everything on screen: the card dialog (front, a back of at
+most 2,000 characters, one optional image under the front) and Remove change
+only the draft, Reset (with a confirmation) restores the loaded set, and Save
+(with a confirmation) uploads the picked card images, then writes the whole set
+atomically through `PATCH /api/flashcards/{id}/content`, preserving study state
+for retained ids and dropping blank cards. There are no single-card endpoints.
 Explicit quiz/flashcard study and edit opens fetch fresh content before seeding
 their view or draft; rendering references in a note does not force all their
 detail queries to refresh.

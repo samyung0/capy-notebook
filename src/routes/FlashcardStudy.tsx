@@ -1,308 +1,418 @@
-import { useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import {
+  useCanGoBack,
+  useNavigate,
+  useParams,
+  useRouter,
+} from '@tanstack/react-router';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
+import {
+  anonymousFlashcardAssetUrl,
+  anonymousFlashcardsQuery,
+} from '@/api/anonymous';
 import { isApiError } from '@/api/client';
 import {
-  cardsQuery,
-  flashcardSetQuery,
   useCards,
   useCloneFlashcardSet,
-  useDeleteCard,
   useFlashcardSet,
   useRateReviewItem,
-  useUpdateFlashcardSetSharing,
 } from '@/api/hooks';
-import { showErrorToast } from '@/api/queryClient';
-import type { Flashcard } from '@/api/types';
+import type { Provenance } from '@/api/types';
+import { SessionSwitch } from '@/components/app/AuthProvider';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
+import { PublicPage } from '@/components/app/PublicHeader';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
-import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
-import { IconButton } from '@/components/ui/IconButton';
-import { ProgressBar } from '@/components/ui/ProgressBar';
 import { userToast } from '@/components/ui/userToast';
-import { CardEditModal } from '@/features/flashcards/CardEditModal';
+import { CardBack, CardFront } from '@/features/flashcards/CardView';
+import type { FlashcardContent } from '@/features/materials/blocks';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
-import { RATING_LABEL, RATING_STYLE } from '@/features/study/ratings';
-import { ShareDialog } from '@/features/workspace/ShareDialog';
+import { AssetUrlContext } from '@/features/questions/QuestionView';
+import { QuizPageHeader } from '@/features/quizzes/QuizPage';
+import { RatingTiles } from '@/features/study/RatingTiles';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { cardCountBucket, flashcardsStudySource } from '@/lib/analytics';
 import { toastCloneError } from '@/lib/authToasts';
-import { cn } from '@/lib/cn';
+import { localCardStates, recordLocalCardReview } from '@/lib/localDb';
 import { track } from '@/lib/observability';
-import { SRS_RATINGS, type SrsRating } from '@/lib/srs';
+import {
+  newSrsState,
+  reviewSrs,
+  SRS_RATINGS,
+  type SrsRating,
+  type SrsState,
+} from '@/lib/srs';
 
+type Frame = (props: { children: ReactNode }) => ReactNode;
+
+/** `/flashcards/$flashcardSetId`, inside the app. */
 export default function FlashcardStudy() {
   const params = useParams({ strict: false });
-  // A share link's param is the signed token `{id}.{signature}`.
-  const flashcardSetId = (
-    params as { flashcardSetId: string }
-  ).flashcardSetId.split('.')[0];
+  const setId = (params as { flashcardSetId: string }).flashcardSetId;
+  return <SignedInStudy key={setId} setId={setId} shared={false} />;
+}
+
+/** `/share/flashcards/$flashcardSetId`: the param is the signed share token
+ * `{id}.{signature}`. Signed in, ratings go to the server; signed out, they
+ * stay in this browser, as on a shared quiz. */
+export function SharedFlashcardStudy() {
+  const params = useParams({ strict: false });
+  const token = (params as { flashcardSetId: string }).flashcardSetId;
+  const setId = token.split('.')[0];
+  return (
+    <SessionSwitch
+      anonymous={<AnonymousStudy key={token} token={token} />}
+      signedIn={
+        <div className="t-body h-dvh bg-page p-1.5 text-fg sm:p-2.5">
+          <SignedInStudy key={setId} setId={setId} shared />
+        </div>
+      }
+    />
+  );
+}
+
+function LoadingPanel({ frame: Frame }: { frame: Frame }) {
+  return (
+    <Frame>
+      <div className="h-full p-6">
+        <Skeleton className="h-full w-full" />
+      </div>
+    </Frame>
+  );
+}
+
+function SignedInStudy({ setId, shared }: { setId: string; shared: boolean }) {
   const {
-    data: flashcardSet,
-    fetchStatus: flashcardSetFetchStatus,
-    isLoading: flashcardSetLoading,
+    data: set,
+    fetchStatus: setFetchStatus,
     isFetchedAfterMount: setFetched,
-    isError: flashcardSetError,
-    error: flashcardSetErr,
-  } = useFlashcardSet(flashcardSetId, { errorBoundary: false, fresh: true });
+    error: setError,
+  } = useFlashcardSet(setId, { errorBoundary: false, fresh: true });
   const {
     data: cards,
     fetchStatus: cardsFetchStatus,
-    isLoading,
     isFetchedAfterMount: cardsFetched,
-    isError: cardsError,
-    error: cardsErr,
-  } = useCards(flashcardSetId, { errorBoundary: false, fresh: true });
+    error: cardsError,
+  } = useCards(setId, { errorBoundary: false, fresh: true });
   const { mutateAsync: rateItem } = useRateReviewItem();
-  const { mutateAsync: deleteCard } = useDeleteCard(flashcardSetId);
-  const queryClient = useQueryClient();
-  const { isPending: cloneFlashcardSetIsPending, mutate: cloneFlashcardSet } =
-    useCloneFlashcardSet({
-      errorToast: false,
-    });
+  const { isPending: cloneIsPending, mutate: cloneSet } = useCloneFlashcardSet({
+    errorToast: false,
+  });
   const frozen = useAccountFrozen();
-  const {
-    isPending: updateFlashcardSetIsPending,
-    mutateAsync: updateFlashcardSet,
-  } = useUpdateFlashcardSetSharing();
   const navigate = useNavigate();
-  const isOwner = flashcardSet?.isOwner === true;
-  const canEdit = flashcardSet?.canEdit === true;
-  // Card edits are content, off while the storage owner is at its limit.
-  const canEditCards = flashcardSet?.canEditContent === true;
+  const router = useRouter();
+  const canGoBack = useCanGoBack();
 
-  const [queue, setQueue] = useState<string[] | null>(null);
-  const [sessionTotal, setSessionTotal] = useState(0);
-  const studyFinished = useRef(false);
-  const [flipped, setFlipped] = useState(false);
-  const [editing, setEditing] = useState<Flashcard | 'new' | null>(null);
-  const [shareOpen, setShareOpen] = useState(false);
-  const [editRevision, setEditRevision] = useState<number>();
-
-  async function openEdit(card: Flashcard | 'new') {
-    if (card === 'new') {
-      const latest = await queryClient.fetchQuery({
-        ...flashcardSetQuery(flashcardSetId),
-        staleTime: 0,
-      });
-      setEditRevision(latest.revision);
-      setEditing('new');
-    } else {
-      const latest = await queryClient.fetchQuery({
-        ...cardsQuery(flashcardSetId),
-        staleTime: 0,
-      });
-      const found = latest.find((item) => item.id === card.id);
-      if (!found) return;
-      setEditRevision(found.revision);
-      setEditing(found);
-    }
-  }
-
-  // A session goes through every card in order; mixed review lives in Learning.
-  // Both sides blank is a new set's placeholder, which takes no rating.
-  const sessionIds = (list: Flashcard[]) =>
-    list.filter((c) => c.front.trim() || c.back.trim()).map((c) => c.id);
-
-  useEffect(() => {
-    if (cards && cardsFetched && queue === null) {
-      const ids = sessionIds(cards);
-      setQueue(ids);
-      setSessionTotal(ids.length);
-    }
-  }, [cards, cardsFetched, queue]);
-
-  function studyAgain() {
-    if (!cards) return;
-    const ids = sessionIds(cards);
-    studyFinished.current = false;
-    setQueue(ids);
-    setSessionTotal(ids.length);
-    setFlipped(false);
-  }
-
-  useEffect(() => {
-    if (!queue || queue.length > 0 || sessionTotal === 0) return;
-    if (studyFinished.current) return;
-    studyFinished.current = true;
-    track('flashcards_study_finished', {
-      cardCountBucket: cardCountBucket(sessionTotal),
-      source: flashcardsStudySource(window.location.pathname),
-    });
-  }, [queue, sessionTotal]);
-
-  if (flashcardSetFetchStatus === 'paused' || cardsFetchStatus === 'paused') {
+  if (setFetchStatus === 'paused' || cardsFetchStatus === 'paused') {
     return (
       <PanelWithInvertedRadius>
         <QueryPausedState className="h-full" />
       </PanelWithInvertedRadius>
     );
   }
-
-  if (
-    !setFetched ||
-    !cardsFetched ||
-    flashcardSetError ||
-    cardsError ||
-    flashcardSetLoading ||
-    isLoading ||
-    !flashcardSet ||
-    !cards ||
-    queue === null
-  ) {
-    if (
-      !flashcardSetLoading &&
-      !isLoading &&
-      (flashcardSetError || cardsError || !flashcardSet || !cards)
-    ) {
-      const err = flashcardSetErr ?? cardsErr;
-      const denied =
-        isApiError(err) && (err.status === 404 || err.status === 401);
-      return (
-        <WorkspaceError
-          backLabel={m.flashcards_back_to()}
-          backTo="/flashcards"
-          title={denied ? m.error_private_title() : m.flashcards_unable_load()}
-        />
-      );
-    }
+  const error = setError ?? cardsError;
+  if (error) {
+    const denied =
+      isApiError(error) && (error.status === 404 || error.status === 401);
     return (
-      <PanelWithInvertedRadius>
-        <div className="h-full p-6">
-          <Skeleton className="h-full w-full" />
-        </div>
-      </PanelWithInvertedRadius>
+      <WorkspaceError
+        backLabel={m.flashcards_back_to()}
+        backTo="/flashcards"
+        title={denied ? m.error_private_title() : m.flashcards_unable_load()}
+      />
     );
   }
+  if (!set || !cards || !setFetched || !cardsFetched)
+    return <LoadingPanel frame={PanelWithInvertedRadius} />;
 
+  return (
+    <StudyBody
+      actions={
+        !set.canEdit && (
+          <Button
+            className="rounded-input"
+            disabled={frozen || cloneIsPending}
+            iconLeft="plus"
+            onClick={() =>
+              cloneSet(setId, {
+                onError: (err) => toastCloneError(err, 'flashcards'),
+                onSuccess: (copy) => {
+                  navigate({
+                    params: { flashcardSetId: copy.id },
+                    to: '/flashcards/$flashcardSetId',
+                  });
+                },
+              })
+            }
+            size="sm"
+            variant="outline"
+          >
+            {cloneIsPending ? m.action_cloning() : m.action_clone_flashcards()}
+          </Button>
+        )
+      }
+      cards={cards}
+      frame={PanelWithInvertedRadius}
+      name={set.name}
+      onBack={
+        shared
+          ? undefined
+          : () =>
+              canGoBack
+                ? router.history.back()
+                : void navigate({ search: { tab: 'blocks' }, to: '/files' })
+      }
+      onFinished={(total) =>
+        track('flashcards_study_finished', {
+          cardCountBucket: cardCountBucket(total),
+          source: flashcardsStudySource(window.location.pathname),
+        })
+      }
+      onRate={(card, rating) =>
+        // Every reader records their own progress. One toast however many
+        // ratings fail in a row.
+        rateItem({
+          itemId: card.id,
+          materialId: setId,
+          rating: SRS_RATINGS.indexOf(rating) + 1,
+        }).catch(() =>
+          userToast({
+            button: {
+              label: m.error_action_reload(),
+              onClick: () => window.location.reload(),
+            },
+            id: 'flashcard-review-failed',
+            title: m.flashcards_review_failed(),
+            variant: 'error',
+          })
+        )
+      }
+      provenance={set.provenance}
+      trail={
+        shared
+          ? [m.editor_flashcards()]
+          : [set.workspaceName || m.files_tab_blocks(), m.editor_flashcards()]
+      }
+    />
+  );
+}
+
+/** Signed-out study of a shared set: ts-fsrs runs in the browser and every
+ * rating is logged to IndexedDB, never to the server. */
+function AnonymousStudy({ token }: { token: string }) {
+  const {
+    data: set,
+    error,
+    isError,
+    isLoading,
+  } = useQuery({ ...anonymousFlashcardsQuery(token), retry: false });
+  const states = useRef(new Map<string, SrsState>());
+  const saveFailed = useRef(false);
+  const setId = set?.id;
+
+  useEffect(() => {
+    if (!setId) return;
+    localCardStates(setId)
+      .then((rows) => {
+        states.current = new Map(rows.map((row) => [row.cardId, row.srs]));
+      })
+      .catch(() => {});
+  }, [setId]);
+
+  if (isLoading) return <LoadingPanel frame={PublicStudyFrame} />;
+  if (isError || !set)
+    return (
+      <PublicStudyFrame>
+        <WorkspaceError
+          title={
+            isApiError(error) && error.status === 404
+              ? m.error_private_title()
+              : m.flashcards_unable_load()
+          }
+        />
+      </PublicStudyFrame>
+    );
+
+  return (
+    <AssetUrlContext.Provider
+      value={(assetId) => anonymousFlashcardAssetUrl(token, assetId)}
+    >
+      <StudyBody
+        cards={set.cards}
+        footer={
+          <p className="t-meta text-center text-fg-muted">
+            {m.flashcards_saved_in_browser()}
+          </p>
+        }
+        frame={PublicStudyFrame}
+        name={set.name}
+        onRate={(card, rating) => {
+          const srs = reviewSrs(
+            states.current.get(card.id) ?? newSrsState(),
+            rating
+          );
+          states.current.set(card.id, srs);
+          recordLocalCardReview(
+            {
+              cardId: card.id,
+              rating,
+              reviewedAt: srs.last_review ?? new Date().toISOString(),
+              setId: set.id,
+            },
+            srs
+          ).catch(() => {
+            // One notice per session however many ratings fail.
+            if (saveFailed.current) return;
+            saveFailed.current = true;
+            userToast({
+              title: m.flashcards_browser_save_failed(),
+              variant: 'error',
+            });
+          });
+        }}
+        provenance={set.provenance}
+        trail={[m.editor_flashcards()]}
+      />
+    </AssetUrlContext.Provider>
+  );
+}
+
+/** Signed-out pages use the public layout and header, as shared quizzes do. */
+function PublicStudyFrame({ children }: { children: ReactNode }) {
+  return (
+    <PublicPage returnTo={window.location.pathname}>{children}</PublicPage>
+  );
+}
+
+/** One study session over every card in order: Again sends a card to the end,
+ * the others move on. A card with both faces blank (a new set's placeholder)
+ * takes no rating. */
+function StudyBody({
+  actions,
+  cards,
+  footer,
+  frame: Frame,
+  name,
+  onBack,
+  onFinished,
+  onRate,
+  provenance,
+  trail,
+}: {
+  actions?: ReactNode;
+  cards: FlashcardContent[];
+  footer?: ReactNode;
+  frame: Frame;
+  name: string;
+  onBack?: () => void;
+  onFinished?: (total: number) => void;
+  onRate: (card: FlashcardContent, rating: SrsRating) => void;
+  provenance?: Provenance;
+  trail: string[];
+}) {
+  const studyIds = () =>
+    cards.filter((c) => c.front.trim() || c.back.trim()).map((c) => c.id);
+  const [queue, setQueue] = useState(studyIds);
+  const [total, setTotal] = useState(queue.length);
+  const [flipped, setFlipped] = useState(false);
   const card = cards.find((c) => c.id === queue[0]);
 
   function rate(rating: SrsRating) {
     if (!card) return;
-    // Every reader records their own progress. One toast however many
-    // ratings fail in a row.
-    rateItem({
-      itemId: card.id,
-      materialId: flashcardSetId,
-      rating: SRS_RATINGS.indexOf(rating) + 1,
-    }).catch(() =>
-      userToast({
-        button: {
-          label: m.error_action_reload(),
-          onClick: () => window.location.reload(),
-        },
-        id: 'flashcard-review-failed',
-        title: m.flashcards_review_failed(),
-        variant: 'error',
-      })
-    );
+    onRate(card, rating);
     setFlipped(false);
-    setQueue((q) => {
-      if (!q) return q;
-      const [head, ...rest] = q;
-      // "Again" cycles the card back to the end of this session.
-      return rating === 'again' ? [...rest, head] : rest;
-    });
+    const [head, ...rest] = queue;
+    const next = rating === 'again' ? [...rest, head] : rest;
+    setQueue(next);
+    if (next.length === 0) onFinished?.(total);
   }
 
-  async function removeCurrent() {
-    if (!card) return;
-    try {
-      await deleteCard({ expectedRevision: card.revision, id: card.id });
-    } catch {
-      return;
-    }
+  function studyAgain() {
+    const ids = studyIds();
+    setQueue(ids);
+    setTotal(ids.length);
     setFlipped(false);
-    setQueue((q) => (q ? q.filter((id) => id !== card.id) : q));
   }
 
-  const header = (
-    <div className="mb-4 flex items-center gap-3">
-      <Link
-        className="text-fg-muted hover:text-fg"
-        preload="intent"
-        search={{ tab: 'blocks' }}
-        to="/files"
-      >
-        <Icon name="chevronLeft" size={20} />
-      </Link>
-      <h1 className="t-subtitle flex-1 truncate">{flashcardSet?.name}</h1>
-      {canEdit ? (
-        <>
-          {isOwner && !flashcardSet.workspaceId && (
-            <IconButton
-              icon="link"
-              label={m.flashcards_share_flashcards()}
-              onClick={() => setShareOpen(true)}
-              size="sm"
-              variant="outline"
-            />
-          )}
-          <IconButton
-            icon="plus"
-            label={m.flashcards_add_card()}
-            onClick={() => void openEdit('new').catch(showErrorToast)}
-            size="sm"
-            variant="outline"
-          />
-        </>
-      ) : (
-        <Button
-          disabled={frozen || cloneFlashcardSetIsPending}
-          iconLeft="plus"
-          onClick={() =>
-            cloneFlashcardSet(flashcardSetId, {
-              onError: (err) => toastCloneError(err, 'flashcards'),
-              onSuccess: (copy) => {
-                navigate({
-                  params: { flashcardSetId: copy.id },
-                  to: '/flashcards/$flashcardSetId',
-                });
-              },
-            })
-          }
-          size="sm"
-        >
-          {cloneFlashcardSetIsPending
-            ? m.action_cloning()
-            : m.action_clone_flashcards()}
-        </Button>
-      )}
-    </div>
-  );
-
-  // Nothing left in the session (or a new set without cards).
-  if (!card) {
-    return (
-      <PanelWithInvertedRadius>
-        <div className="mx-auto flex h-full w-full max-w-2xl flex-col px-6 py-6">
-          {header}
-          <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
-            <span className="flex h-16 w-16 items-center justify-center rounded-card-lg bg-tint-success text-tint-success-fg">
-              <Icon className="non-scaling-svg" name="check" size={30} />
+  return (
+    <Frame>
+      <QuizPageHeader
+        actions={actions}
+        meta={
+          card && (
+            <span className="t-subtitle">
+              {m.flashcards_card_of_total({
+                position: total - queue.length + 1,
+                total,
+              })}
             </span>
-            <h2 className="t-large-card-title">
-              {cards.length === 0
-                ? m.flashcards_empty_flashcards()
-                : m.flashcards_session_done()}
-            </h2>
-            <div className="mt-2 flex gap-3">
-              {canEditCards && (
-                <Button
-                  iconLeft="plus"
-                  onClick={() => void openEdit('new').catch(showErrorToast)}
-                  variant="outline"
+          )
+        }
+        onBack={onBack}
+        title={name}
+        // The app bar belongs in the panel's notch; public pages have their own header.
+        topBar={Frame === PanelWithInvertedRadius}
+        trail={trail}
+      />
+      <div className="px-4 pt-8 pb-8 sm:px-6 lg:px-10 xl:px-16">
+        <div className="mx-auto flex max-w-160 flex-col gap-6">
+          {card ? (
+            <>
+              <div className="relative pt-6">
+                <div className="absolute inset-x-12 top-0 h-15 rounded-card-lg bg-solid-accent-1/20" />
+                <div className="absolute inset-x-6 top-3 h-15 rounded-card-lg bg-solid-accent-1/40" />
+                <button
+                  aria-label={
+                    flipped ? m.flashcards_answer() : m.flashcards_term()
+                  }
+                  className="relative flex h-[clamp(300px,48vh,400px)] w-full flex-col items-center justify-center overflow-auto rounded-card-lg border border-line bg-surface p-8 shadow-card"
+                  onClick={() => setFlipped((f) => !f)}
+                  type="button"
                 >
-                  {m.flashcards_add_card()}
+                  {flipped ? (
+                    <div className="text-lg">
+                      <CardBack card={card} />
+                    </div>
+                  ) : (
+                    <CardFront card={card} large />
+                  )}
+                  <Icon
+                    className="absolute bottom-4 text-fg-muted opacity-60"
+                    name="refresh"
+                    size={20}
+                  />
+                </button>
+              </div>
+              {flipped ? (
+                <RatingTiles onRate={rate} />
+              ) : (
+                <Button
+                  className="rounded-input"
+                  fullWidth
+                  iconLeft="view"
+                  onClick={() => setFlipped(true)}
+                >
+                  {m.flashcards_show_answer()}
                 </Button>
               )}
-              {cards.length > 0 && (
+            </>
+          ) : (
+            <div className="flex flex-col items-center gap-4 py-16 text-center">
+              <span className="flex h-16 w-16 items-center justify-center rounded-card-lg bg-tint-success text-tint-success-fg">
+                <Icon className="non-scaling-svg" name="check" size={30} />
+              </span>
+              <h2 className="t-large-card-title">
+                {total === 0
+                  ? m.flashcards_empty_flashcards()
+                  : m.flashcards_session_done()}
+              </h2>
+              {total > 0 && (
                 <Button
+                  className="rounded-input"
                   iconLeft="flashcards"
                   onClick={studyAgain}
                   variant="accent"
@@ -311,122 +421,11 @@ export default function FlashcardStudy() {
                 </Button>
               )}
             </div>
-          </div>
+          )}
+          {footer}
+          <MaterialAttributionFooter provenance={provenance} />
         </div>
-        {canEditCards && editing !== null && editRevision !== undefined && (
-          <CardEditModal
-            card={editing === 'new' ? null : editing}
-            expectedRevision={editRevision}
-            flashcardSetId={flashcardSetId}
-            key={editing === 'new' ? 'new' : editing.id}
-            onClose={() => setEditing(null)}
-            open
-          />
-        )}
-      </PanelWithInvertedRadius>
-    );
-  }
-
-  const done = sessionTotal - queue.length;
-
-  return (
-    <PanelWithInvertedRadius>
-      <div className="mx-auto flex h-full w-full max-w-2xl flex-col px-6 py-6">
-        {header}
-        <div className="mb-4 flex items-center gap-3">
-          <div className="flex-1">
-            <ProgressBar
-              tone="purple"
-              value={(done / Math.max(1, sessionTotal)) * 100}
-            />
-          </div>
-          <Badge size="sm">
-            {queue.length} {m.flashcards_left()}
-          </Badge>
-        </div>
-
-        <button
-          className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-card-lg border border-line bg-surface p-8 text-center shadow-card transition-transform active:scale-[0.99]"
-          onClick={() => setFlipped((f) => !f)}
-          type="button"
-        >
-          <p className="t-label text-fg-muted">
-            {flipped ? m.flashcards_answer() : m.flashcards_term()}
-          </p>
-          <h2 className="t-section mt-3">{flipped ? card.back : card.front}</h2>
-          <p className="t-meta mt-6 flex items-center gap-1 text-fg-muted">
-            <Icon name="message" size={13} /> {m.flashcards_tap_flip()}
-          </p>
-        </button>
-
-        {canEditCards && (
-          <div className="mt-3 flex items-center justify-center gap-4">
-            <button
-              className="flex items-center gap-1 text-fg-muted text-xs hover:text-fg"
-              onClick={() => void openEdit(card).catch(showErrorToast)}
-              type="button"
-            >
-              <Icon name="write" size={13} /> {m.action_edit()}
-            </button>
-            <button
-              className="flex items-center gap-1 text-fg-muted text-xs hover:text-tint-error-fg"
-              onClick={removeCurrent}
-              type="button"
-            >
-              <Icon name="trash" size={13} /> {m.action_delete()}
-            </button>
-          </div>
-        )}
-
-        {flipped ? (
-          <div className="mt-3 grid grid-cols-4 gap-2">
-            {SRS_RATINGS.map((r) => (
-              <button
-                className={cn(
-                  'flex flex-col items-center gap-0.5 rounded-card border px-2 py-2.5 font-semibold text-sm transition-colors',
-                  RATING_STYLE[r]
-                )}
-                key={r}
-                onClick={() => rate(r)}
-                type="button"
-              >
-                {RATING_LABEL[r]()}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="mt-3">
-            <Button fullWidth onClick={() => setFlipped(true)}>
-              {m.flashcards_show_answer()}
-            </Button>
-          </div>
-        )}
-        <MaterialAttributionFooter provenance={flashcardSet?.provenance} />
       </div>
-
-      {canEditCards && editing !== null && editRevision !== undefined && (
-        <CardEditModal
-          card={editing === 'new' ? null : editing}
-          expectedRevision={editRevision}
-          flashcardSetId={flashcardSetId}
-          key={editing === 'new' ? 'new' : editing.id}
-          onClose={() => setEditing(null)}
-          open
-        />
-      )}
-      {isOwner && flashcardSet?.sharePath && (
-        <ShareDialog
-          link={flashcardSet.sharePath}
-          onClose={() => setShareOpen(false)}
-          onPrivacyChange={(privacy) =>
-            updateFlashcardSet({ id: flashcardSet.id, privacy })
-          }
-          open={shareOpen}
-          privacy={flashcardSet.privacy ?? 'private'}
-          saving={updateFlashcardSetIsPending}
-          title={m.flashcards_share_title({ name: flashcardSet.name })}
-        />
-      )}
-    </PanelWithInvertedRadius>
+    </Frame>
   );
 }

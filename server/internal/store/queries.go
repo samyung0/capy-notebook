@@ -51,12 +51,6 @@ type QuizMetadataPatch struct {
 	Chapters  *[]string `json:"chapters"`
 	UpdatedBy string    `json:"-"`
 }
-type CardContentPatch struct {
-	ExpectedRevision int64
-	Front            *string `json:"front"`
-	Back             *string `json:"back"`
-	UpdatedBy        string  `json:"-"`
-}
 type TaskPatch struct {
 	Title *string `json:"title"`
 	Meta  *string `json:"meta"`
@@ -2165,94 +2159,9 @@ func (s *Store) ListCards(ctx context.Context, flashcardSetID string) ([]Flashca
 	}
 	out := make([]Flashcard, 0, len(cards))
 	for _, c := range cards {
-		out = append(out, Flashcard{ID: c.ID, MaterialID: flashcardSetID, Revision: mt.Revision, Front: c.Front, Back: c.Back})
+		out = append(out, Flashcard{ID: c.ID, MaterialID: flashcardSetID, Revision: mt.Revision, Front: c.Front, Back: c.Back, Image: c.Image})
 	}
 	return out, nil
-}
-
-func (s *Store) GetCard(ctx context.Context, id string) (Flashcard, error) {
-	materialID, err := s.CardMaterialID(ctx, id)
-	if errors.Is(err, ErrNotFound) {
-		return Flashcard{}, ErrNotFound
-	}
-	if err != nil {
-		return Flashcard{}, err
-	}
-	mt, err := s.GetMaterial(ctx, materialID)
-	if err != nil {
-		return Flashcard{}, err
-	}
-	cards, err := materialdoc.ExtractFlashcards(mt.Content)
-	if err != nil {
-		return Flashcard{}, err
-	}
-	for _, c := range cards {
-		if c.ID == id {
-			return Flashcard{ID: c.ID, MaterialID: materialID, Revision: mt.Revision, Front: c.Front, Back: c.Back}, nil
-		}
-	}
-	return Flashcard{}, ErrNotFound
-}
-
-func (s *Store) CreateCard(ctx context.Context, actorID, flashcardSetID, front, back string, expectedRevision int64) (Flashcard, error) {
-	mt, err := s.GetMaterial(ctx, flashcardSetID)
-	if err != nil {
-		return Flashcard{}, err
-	}
-	cards, err := materialdoc.ExtractFlashcards(mt.Content)
-	if err != nil {
-		return Flashcard{}, err
-	}
-	id := uid("c")
-	cards = append(cards, materialdoc.Card{ID: id, Front: front, Back: back})
-	content, err := materialdoc.ReplaceFlashcards(mt.Content, cards)
-	if err != nil {
-		return Flashcard{}, err
-	}
-	if _, err := s.UpdateMaterial(ctx, flashcardSetID, MaterialPatch{
-		Content: &content, UpdatedBy: actorID, ExpectedRevision: &expectedRevision,
-	}); err != nil {
-		return Flashcard{}, err
-	}
-	return s.GetCard(ctx, id)
-}
-
-func (s *Store) UpdateCardContent(ctx context.Context, id string, p CardContentPatch) (Flashcard, error) {
-	materialID, err := s.CardMaterialID(ctx, id)
-	if err != nil {
-		return Flashcard{}, err
-	}
-	if p.Front != nil || p.Back != nil {
-		mt, err := s.GetMaterial(ctx, materialID)
-		if err != nil {
-			return Flashcard{}, err
-		}
-		cards, err := materialdoc.ExtractFlashcards(mt.Content)
-		if err != nil {
-			return Flashcard{}, err
-		}
-		for i := range cards {
-			if cards[i].ID != id {
-				continue
-			}
-			if p.Front != nil {
-				cards[i].Front = *p.Front
-			}
-			if p.Back != nil {
-				cards[i].Back = *p.Back
-			}
-		}
-		content, err := materialdoc.ReplaceFlashcards(mt.Content, cards)
-		if err != nil {
-			return Flashcard{}, err
-		}
-		if _, err := s.UpdateMaterial(ctx, materialID, MaterialPatch{
-			Content: &content, UpdatedBy: p.UpdatedBy, ExpectedRevision: &p.ExpectedRevision,
-		}); err != nil {
-			return Flashcard{}, err
-		}
-	}
-	return s.GetCard(ctx, id)
 }
 
 func (s *Store) UpdateFlashcardContent(ctx context.Context, actorID, id string, expectedRevision int64, cards []materialdoc.Card) ([]Flashcard, error) {
@@ -2289,37 +2198,6 @@ func (s *Store) UpdateFlashcardContent(ctx context.Context, actorID, id string, 
 		return nil, err
 	}
 	return s.ListCards(ctx, id)
-}
-
-func (s *Store) DeleteCard(ctx context.Context, actorID, id string, expectedRevision int64) error {
-	materialID, err := s.CardMaterialID(ctx, id)
-	if err != nil {
-		return err
-	}
-	mt, err := s.GetMaterial(ctx, materialID)
-	if err != nil {
-		return err
-	}
-	cards, err := materialdoc.ExtractFlashcards(mt.Content)
-	if err != nil {
-		return err
-	}
-	kept := cards[:0]
-	for _, c := range cards {
-		if c.ID != id {
-			kept = append(kept, c)
-		}
-	}
-	content, err := materialdoc.ReplaceFlashcards(mt.Content, kept)
-	if err != nil {
-		return err
-	}
-	if _, err := s.UpdateMaterial(ctx, materialID, MaterialPatch{
-		Content: &content, UpdatedBy: actorID, ExpectedRevision: &expectedRevision,
-	}); err != nil {
-		return err
-	}
-	return nil
 }
 
 // syncFlashcardCardsTx keeps the card -> set lookup aligned with the

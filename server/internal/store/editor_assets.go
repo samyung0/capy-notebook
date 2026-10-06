@@ -279,14 +279,14 @@ func (s *Store) MarkEditorAssetUploadExpired(ctx context.Context, uploadID strin
 }
 
 // EditorAssetMaterial returns the live material's workspace (empty when
-// standalone) and whether it is a quiz, which caps its images.
-func (s *Store) EditorAssetMaterial(ctx context.Context, id string) (workspaceID string, quiz bool, err error) {
-	err = s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id,''), kind='quiz'
-		FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&workspaceID, &quiz)
+// standalone) and whether it is a quiz or flashcard set, which caps its images.
+func (s *Store) EditorAssetMaterial(ctx context.Context, id string) (workspaceID string, study bool, err error) {
+	err = s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id,''), kind IN ('quiz','flashcards')
+		FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&workspaceID, &study)
 	if isNoRows(err) {
 		return "", false, ErrNotFound
 	}
-	return workspaceID, quiz, err
+	return workspaceID, study, err
 }
 
 // pruneMaterialAssetsTx deletes the material's own ready editor assets that its
@@ -318,7 +318,7 @@ func pruneMaterialAssetsTx(ctx context.Context, tx pgx.Tx, materialID, content s
 // target's, else a new ready row sharing the stored object under blob
 // refcounting and charged to the target's payer. A source that is unknown, not
 // ready, or unreadable by the actor (the resolve rule) is left out, as is an
-// image over imageMaxBytes when that is positive (a quiz's 2 MB cap). The
+// image over imageMaxBytes when that is positive (a quiz's or flashcard set's 2 MB cap). The
 // whole call fails when the copies do not fit the payer's quota.
 func (s *Store) AdoptEditorAssets(
 	ctx context.Context,

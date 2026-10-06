@@ -8,7 +8,6 @@ import { MATERIAL_SCHEMA_VERSION } from '@/lib/const';
 import { uid } from '@/lib/id';
 import {
   type FlashcardContent,
-  parseFlashcardsFenceBody,
   parseQuizFenceBody,
   type QuizBlock,
 } from './blocks';
@@ -66,6 +65,7 @@ export interface FlashcardFaceElement extends MaterialElement {
 export interface FlashcardElement extends MaterialElement {
   children: [FlashcardFaceElement, FlashcardFaceElement];
   id: string;
+  image?: { assetId: string };
   type: 'flashcard';
 }
 
@@ -549,6 +549,7 @@ export function flashcardsNode(
       textElement('flashcard_back', card.back) as FlashcardFaceElement,
     ],
     id: card.id || uid('card'),
+    ...(card.image ? { image: { assetId: card.image.assetId } } : {}),
     type: 'flashcard',
   }));
   if (!cardNodes.length) {
@@ -562,13 +563,6 @@ export function flashcardsNode(
     });
   }
   return { children: cardNodes, id, type: 'flashcards' };
-}
-
-export function flashcardsNodeFromFence(
-  code: string,
-  id?: string
-): FlashcardsElement {
-  return flashcardsNode(parseFlashcardsFenceBody(code).cards, id);
 }
 
 /** Reference block for an embedded material. Without a material id the fence
@@ -655,6 +649,7 @@ export function flashcardsElementToCards(
     back: nodeText(card.children[1] ?? { text: '' }),
     front: nodeText(card.children[0] ?? { text: '' }),
     id: card.id,
+    ...(card.image ? { image: { assetId: card.image.assetId } } : {}),
   }));
 }
 

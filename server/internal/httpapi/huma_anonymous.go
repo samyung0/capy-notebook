@@ -49,6 +49,7 @@ func (a *api) registerAnonymousMaterials(api huma.API) {
 	reg(api, http.MethodGet, "/api/public/quizzes/{token}", "getAnonymousQuiz", "Sharing", "Get a shared quiz for signed-out visitors", http.StatusOK, a.getAnonymousQuiz)
 	reg(api, http.MethodGet, "/api/public/quizzes/{token}/assets/{assetId}", "getAnonymousQuizAsset", "Sharing", "Get a shared quiz image URL", http.StatusOK, a.getAnonymousQuizAsset)
 	reg(api, http.MethodGet, "/api/public/flashcards/{token}", "getAnonymousFlashcards", "Sharing", "Get a shared flashcard set for signed-out visitors", http.StatusOK, a.getAnonymousFlashcards)
+	reg(api, http.MethodGet, "/api/public/flashcards/{token}/assets/{assetId}", "getAnonymousFlashcardAsset", "Sharing", "Get a shared flashcard image URL", http.StatusOK, a.getAnonymousFlashcardAsset)
 	a.registerAnonymousGrading(api)
 }
 
@@ -105,6 +106,23 @@ func (a *api) getAnonymousQuizAsset(ctx context.Context, in *anonymousAssetInput
 	if err != nil {
 		return nil, hErr(err)
 	}
+	return a.signedAnonymousAsset(ctx, objectPath, contentType)
+}
+
+func (a *api) getAnonymousFlashcardAsset(ctx context.Context, in *anonymousAssetInput) (*anonymousAssetOutput, error) {
+	id, err := a.sharedMaterialID(in.Token)
+	if err != nil {
+		return nil, err
+	}
+	objectPath, contentType, err := a.s.AnonymousFlashcardAssetPath(ctx, id, in.AssetID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return a.signedAnonymousAsset(ctx, objectPath, contentType)
+}
+
+// signedAnonymousAsset hands the site Worker a short-lived link to the image.
+func (a *api) signedAnonymousAsset(ctx context.Context, objectPath, contentType string) (*anonymousAssetOutput, error) {
 	if a.blob == nil {
 		return nil, hErr(errors.New("blob store not configured"))
 	}

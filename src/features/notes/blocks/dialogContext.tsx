@@ -23,12 +23,10 @@ import {
 import { quizEditSearch } from '@/features/quizzes/quizNavigation';
 import { insertEditorNode, type NoteEditorInstance } from '../insertEditorNode';
 import { YouTubeDialog } from '../YouTubeDialog';
-import { FlashcardsDialog } from './FlashcardsDialog';
 import type { NoteVisualBlock } from './VisualBlockDialog';
 
 const VisualBlockDialog = lazy(() => import('./VisualBlockDialog'));
 
-type SaveFn = (code: string) => void | Promise<void>;
 type SaveYouTubeFn = (videoId: string) => void;
 
 export interface NoteBlockDialogsApi {
@@ -42,7 +40,6 @@ export interface NoteBlockDialogsApi {
   ) => Promise<void>;
   /** The note this editor is bound to; embedded materials are created under it. */
   noteId: string;
-  openFlashcards: (initialCode: string | undefined, onSave: SaveFn) => void;
   openVisual: (
     block: NoteVisualBlock,
     onSave: (block: NoteVisualBlock) => void | Promise<void>
@@ -78,9 +75,9 @@ const Ctx = createContext<NoteBlockDialogsApi | null>(null);
  */
 let mountedDialogsApi: NoteBlockDialogsApi | null = null;
 
-/** Hosts the quiz/flashcards authoring popups and exposes imperative openers.
- * Used both for inserting new blocks (toolbar/slash) and editing existing ones
- * (block element "Edit" button). */
+/** Hosts the note's authoring popups and exposes imperative openers, used for
+ * inserting new blocks (toolbar/slash) and editing existing ones. Quizzes and
+ * flashcard sets are authored on their own edit pages. */
 export function NoteBlockDialogsProvider({
   children,
   noteId,
@@ -91,22 +88,13 @@ export function NoteBlockDialogsProvider({
   const { mutateAsync: createEmbeddedMaterial } = useCreateEmbeddedMaterial();
   const navigate = useNavigate();
   const router = useRouter();
-  const [flash, setFlash] = useState<{ code?: string } | null>(null);
   const [visual, setVisual] = useState<{
     block: NoteVisualBlock;
     onSave: (block: NoteVisualBlock) => void | Promise<void>;
   } | null>(null);
   const [youtube, setYouTube] = useState<{ url?: string } | null>(null);
-  const saveRef = useRef<SaveFn>(() => {});
   const youtubeSaveRef = useRef<SaveYouTubeFn>(() => {});
 
-  const openFlashcards = useCallback(
-    (initialCode: string | undefined, onSave: SaveFn) => {
-      saveRef.current = onSave;
-      setFlash({ code: initialCode });
-    },
-    []
-  );
   const openYouTube = useCallback(
     (initialUrl: string | undefined, onSave: SaveYouTubeFn) => {
       youtubeSaveRef.current = onSave;
@@ -131,12 +119,19 @@ export function NoteBlockDialogsProvider({
     async (editor: NoteEditorInstance, kind: MaterialRefKind, code: string) => {
       const material = await createEmbedded(kind, code);
       insertEditorNode(editor, materialRefNode(material.id, kind));
-      if (kind === 'quiz')
-        await navigate({
-          params: { quizId: material.id },
-          search: quizEditSearch(router.state.location.href),
-          to: '/quizzes/$quizId/edit',
-        });
+      // A new quiz or set is authored on its edit page.
+      const search = quizEditSearch(router.state.location.href);
+      await (kind === 'quiz'
+        ? navigate({
+            params: { quizId: material.id },
+            search,
+            to: '/quizzes/$quizId/edit',
+          })
+        : navigate({
+            params: { flashcardSetId: material.id },
+            search,
+            to: '/flashcards/$flashcardSetId/edit',
+          }));
     },
     [createEmbedded, navigate, router]
   );
@@ -146,18 +141,10 @@ export function NoteBlockDialogsProvider({
       createEmbedded,
       insertEmbedded,
       noteId,
-      openFlashcards,
       openVisual,
       openYouTube,
     }),
-    [
-      createEmbedded,
-      insertEmbedded,
-      noteId,
-      openFlashcards,
-      openVisual,
-      openYouTube,
-    ]
+    [createEmbedded, insertEmbedded, noteId, openVisual, openYouTube]
   );
 
   useEffect(() => {
@@ -179,15 +166,6 @@ export function NoteBlockDialogsProvider({
           />
         </Suspense>
       )}
-      <FlashcardsDialog
-        initialCode={flash?.code}
-        onClose={() => setFlash(null)}
-        onSave={async (code) => {
-          await saveRef.current(code);
-          setFlash(null);
-        }}
-        open={!!flash}
-      />
       <YouTubeDialog
         initialUrl={youtube?.url}
         onClose={() => setYouTube(null)}

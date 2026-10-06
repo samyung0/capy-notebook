@@ -1,0 +1,364 @@
+<title>Flashcards File Screen</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fustat:wght@400;600;700&family=IBM+Plex+Mono:wght@400&display=swap">
+<style>
+  /* Layout: one reading column of captioned screenshots, today first, then options side by side when wide. */
+  :root {
+    --bg: #f6f5f8;
+    --surface: #ffffff;
+    --fg: #23212b;
+    --muted: #66626f;
+    --line: #dddae4;
+    --accent: #7b63d6;
+    --warn: #b4472f;
+    --font-body: "Fustat", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17161c; --surface: #201f27; --fg: #ebe9f1; --muted: #a6a2b2;
+      --line: #36343f; --accent: #a895f0; --warn: #f08a72; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17161c; --surface: #201f27; --fg: #ebe9f1; --muted: #a6a2b2;
+    --line: #36343f; --accent: #a895f0; --warn: #f08a72; color-scheme: dark;
+  }
+  body { background: var(--bg); color: var(--fg); font: 16px/1.55 var(--font-body); }
+  main { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 80px; display: flex; flex-direction: column; gap: 48px; }
+  h1 { font-size: 2rem; line-height: 1.15; margin: 0; text-wrap: balance; }
+  h2 { font-size: 1.35rem; margin: 0; text-wrap: balance; }
+  h3 { font-size: 1.02rem; margin: 0; }
+  p { margin: 0; max-width: 68ch; }
+  .lede { display: flex; flex-direction: column; gap: 12px; }
+  .muted { color: var(--muted); }
+  section { display: flex; flex-direction: column; gap: 20px; }
+  .label { font: 12px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 28px 24px; }
+  figure { margin: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  figure img { display: block; width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+  figcaption { display: flex; flex-direction: column; gap: 4px; font-size: .95rem; }
+  figcaption span { color: var(--muted); }
+  .problem figcaption h3 { color: var(--warn); }
+  .option { display: flex; flex-direction: column; gap: 14px; padding-top: 20px; border-top: 1px solid var(--line); }
+  ul { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; max-width: 72ch; }
+  code { font: .88em var(--font-mono); }
+  .phones { display: flex; flex-wrap: wrap; gap: 24px; }
+  .phones figure { width: min(100%, 300px); }
+  table { border-collapse: collapse; width: 100%; font-size: .95rem; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--line); }
+  th { font-weight: 600; white-space: nowrap; }
+  .table-wrap { overflow-x: auto; }
+  details { display: flex; flex-direction: column; gap: 20px; }
+  summary { cursor: pointer; font-weight: 600; font-size: 1.1rem; }
+  ol { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 10px; max-width: 76ch; }
+</style>
+
+<main>
+  <header class="lede">
+    <span class="label">Mock · round 4 · 2026-10-06</span>
+    <h1>Opening a flashcards file in a workspace</h1>
+    <p class="muted">Round 4 explores the rating buttons. Everything else below is agreed and recorded. Every screen is the real app on MSW data with the new parts drawn in.</p>
+  </header>
+
+  <section>
+    <span class="label">Round 4 · rating buttons</span>
+    <h2>Six ideas for Again, Hard, Good, Easy</h2>
+    <p class="muted">The card and buttons are now centred on the page; the header stays left like the quiz pages. “Card 1 of 6” uses the Dashboard hint style.</p>
+    <div class="grid">
+      <figure>
+        <img src="page/r4-01-solid.jpg" alt="1 · Solid" loading="lazy">
+        <figcaption><h3>1 · Solid</h3><span>Round 3’s R1: full colour, dark text.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/r4-02-dots.jpg" alt="2 · Dot and key" loading="lazy">
+        <figcaption><h3>2 · Dot and key</h3><span>Quiet outlined buttons with a colour dot and the keyboard key (1–4) that rates the card.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/r4-03-scale.jpg" alt="3 · One scale" loading="lazy">
+        <figcaption><h3>3 · One scale</h3><span>A single bar from red to green split in four, with the two ends named under it.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/r4-04-tiles.jpg" alt="4 · Icon tiles" loading="lazy">
+        <figcaption><h3>4 · Icon tiles</h3><span>Tinted tiles with an icon over the label: retry, rough, tick, double tick.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/r4-05-pair.jpg" alt="5 · Two answers first" loading="lazy">
+        <figcaption><h3>5 · Two answers first</h3><span>Again and Good as the big choices; Hard and Easy as small links for the in-between.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/r4-06-card-footer.jpg" alt="6 · On the card" loading="lazy">
+        <figcaption><h3>6 · On the card</h3><span>After the flip the card grows a footer with the four ratings, so nothing appears below it.</span></figcaption>
+      </figure>
+    </div>
+    <div class="phones">
+      <figure>
+        <img src="page/r4-07-phone-swipe.jpg" alt="Phone · swipe" loading="lazy">
+        <figcaption><h3>Phone · swipe</h3><span>Swipe right for Good, left for Again, with a stamp while dragging; any button style stays as the fallback.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/r4-08-phone-tiles.jpg" alt="Phone · icon tiles" loading="lazy">
+        <figcaption><h3>Phone · icon tiles</h3><span></span></figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section>
+    <span class="label">View and edit</span>
+    <h2>Preview, hover toolbar, Add card</h2>
+    <div class="grid">
+      <figure>
+        <img src="page/r2-01-view-grid.jpg" alt="View mode" loading="lazy">
+        <figcaption><h3>View mode</h3><span>Unchanged from round 2.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/r3-01-preview-dialog.jpg" alt="Preview dialog" loading="lazy">
+        <figcaption><h3>Preview dialog</h3><span>Previous and Next as text buttons with the navigation arrows. Previous is greyed on the first card.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/r3-02-edit-hover-toolbar.jpg" alt="Edit mode" loading="lazy">
+        <figcaption><h3>Edit mode</h3><span>The Plate media toolbar (as on YouTube and diagram blocks) with Edit and Remove. Clicking a tile opens the card dialog. Add card copies the dashed New workspace card.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/r3-03-dialog-count.jpg" alt="Card dialog" loading="lazy">
+        <figcaption><h3>Card dialog</h3><span>The title carries the card position. Replace and Remove sit on the right.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/r3-04-quiz-edit-remove-right.jpg" alt="Quiz edit page" loading="lazy">
+        <figcaption><h3>Quiz edit page</h3><span>Remove moves to the right of Edit.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/r3-05-standalone-grid.jpg" alt="Standalone set" loading="lazy">
+        <figcaption><h3>Standalone set</h3><span>A set outside a workspace (/materials/…) uses the same grid.</span></figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section>
+    <span class="label">Study mode</span>
+    <h2>Quiz page frame, no editing</h2>
+    <p class="muted">Built on the quiz attempt page: top inset bar, back arrow and breadcrumb, large title, and a meta line that counts the cards. No Add, Edit or Delete. The card's height is capped and the buttons are the md size with rounded-input corners. Two colour treatments for the ratings:</p>
+    <div class="grid">
+      <figure>
+        <img src="page/r3-06-study-front.jpg" alt="Front" loading="lazy">
+        <figcaption><h3>Front</h3><span>Show answer under the card.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/r3-07-study-back-solid.jpg" alt="R1 · Solid colours" loading="lazy">
+        <figcaption><h3>R1 · Solid colours</h3><span>The theme’s solid red, yellow, blue and green, dark text.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/r3-08-study-back-tint.jpg" alt="R2 · Tints" loading="lazy">
+        <figcaption><h3>R2 · Tints</h3><span>The lighter tint colours used for callouts, with their tint text colour.</span></figcaption>
+      </figure>
+    </div>
+    <div class="phones">
+      <figure>
+        <img src="page/r3-09-study-phone-front.jpg" alt="Phone, front" loading="lazy">
+        <figcaption><h3>Phone, front</h3><span></span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/r3-10-study-phone-back.jpg" alt="Phone, back (R1)" loading="lazy">
+        <figcaption><h3>Phone, back (R1)</h3><span></span></figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section>
+    <span class="label">Images</span>
+    <h2>Card images follow quiz images</h2>
+    <ul>
+      <li>One image per card, on the front under the text.</li>
+      <li>2 MB, checked in the browser and on the server. The browser shrinks a larger image first (long side 2000 px, WebP, JPEG where WebP can’t be encoded, PNG for transparency, animated GIFs refused).</li>
+      <li>The picked image stays in the browser and uploads when the card is saved. An abandoned pick never reaches storage, and a failed upload fails the save.</li>
+      <li>The card stores only the asset id. The file sits in the private bucket, and every view asks the server for a short-lived signed link after an access check. Signed-out share pages go through the share token, as shared quizzes do.</li>
+      <li>Images belong to their set: trashing the set trashes them, purging deletes them, and an image removed from a card is deleted on save.</li>
+      <li>Changing an image keeps the card’s review progress.</li>
+    </ul>
+  </section>
+
+  <section>
+    <span class="label">Still to decide</span>
+    <ol>
+      <li>Which rating style (or a mix, such as icon tiles plus swipe on phones).</li>
+      <li>Signed-out study: shared flashcards opened while signed out use a separate page today (results in IndexedDB). Shared quizzes use one page signed in or out. Should flashcards follow the quiz pattern, one study page saving to the server or to IndexedDB?</li>
+    </ol>
+  </section>
+
+  <details>
+    <summary>Round 2 screens</summary>
+
+
+  <section>
+    <span class="label">View mode</span>
+    <h2>Grid of fronts, click to preview</h2>
+    <p class="muted">The set's name sits on top. Each tile shows the front, with the card's image under the text when it has one. Clicking a tile previews it: front on the top half, back on the bottom half. Two ways to show that preview:</p>
+    <div class="grid">
+      <figure>
+        <img src="page/r2-01-view-grid.jpg" alt="Grid" loading="lazy">
+        <figcaption><h3>Grid</h3><span>Three columns in the workspace pane, fewer on narrow screens.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/r2-02-view-preview-dialog.jpg" alt="P1 · Preview in a dialog" loading="lazy">
+        <figcaption><h3>P1 · Preview in a dialog</h3><span>Arrows step through the set without closing it.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/r2-03-view-preview-inline.jpg" alt="P2 · Preview in place" loading="lazy">
+        <figcaption><h3>P2 · Preview in place</h3><span>The clicked tile spans the row and grows; clicking it again folds it back.</span></figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section>
+    <span class="label">Quiz view</span>
+    <h2>Name on top</h2>
+    <div class="grid">
+      <figure>
+        <img src="page/r2-04-quiz-view-title.jpg" alt="Quiz file in view mode" loading="lazy">
+        <figcaption><h3>Quiz file in view mode</h3><span>Same title style and position as the flashcards grid.</span></figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section>
+    <span class="label">Edit mode</span>
+    <h2>Where the edit button goes</h2>
+    <p class="muted">Both keep the grid and add an Add card tile at the end. The note toolbar and save cloud are gone; every change saves through the card endpoints.</p>
+    <div class="grid">
+      <figure>
+        <img src="page/r2-05-edit-A-hover-toolbar.jpg" alt="E1 · Hover toolbar" loading="lazy">
+        <figcaption><h3>E1 · Hover toolbar</h3><span>Hovering a card shows a small icon-only toolbar: Edit and Remove. Clicking the card itself still previews it.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/r2-06-edit-B-click-to-edit.jpg" alt="E2 · Click the card to edit" loading="lazy">
+        <figcaption><h3>E2 · Click the card to edit</h3><span>In edit mode a click opens the card dialog. Hover shows only Remove. No preview in edit mode.</span></figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section>
+    <span class="label">Card dialog</span>
+    <h2>Large, like the question dialog</h2>
+    <p class="muted">920px wide like Edit question: fields on the left, the card as it will look on the right. The back is a text area that grows with long answers. The image sits under the front text. Remove card sits next to Save.</p>
+    <div class="grid">
+      <figure>
+        <img src="page/r2-07-dialog-edit-with-image.jpg" alt="Edit card, with an image" loading="lazy">
+        <figcaption><h3>Edit card, with an image</h3><span>Replace uploads a new file; Remove clears the image.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/r2-08-dialog-new-card.jpg" alt="New card, no image yet" loading="lazy">
+        <figcaption><h3>New card, no image yet</h3><span>Add image opens the file picker.</span></figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section>
+    <span class="label">Study mode</span>
+    <h2>Card stack, after the reference</h2>
+    <p class="muted">The next cards peek out behind the current one in the accent colour. Show answer turns the card to its back, then the four ratings appear. After a rating the card swings away and the next one is underneath. The back arrow replaces today's chevron, and the per-card Edit and Delete links under the card are gone in this mock.</p>
+    <div class="grid">
+      <figure>
+        <img src="page/r2-09-study-front.jpg" alt="Front" loading="lazy">
+        <figcaption><h3>Front</h3><span>Progress counts cards done out of the set.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/r2-10-study-back.jpg" alt="Back" loading="lazy">
+        <figcaption><h3>Back</h3><span>Long backs wrap inside the card.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/r2-11-study-next-card.jpg" alt="After a rating" loading="lazy">
+        <figcaption><h3>After a rating</h3><span>One frame of the swing-away animation.</span></figcaption>
+      </figure>
+    </div>
+    <div class="phones">
+      <figure>
+        <img src="page/r2-12-study-phone-front.jpg" alt="Phone, front" loading="lazy">
+        <figcaption><h3>Phone, front</h3><span></span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/r2-13-study-phone-back.jpg" alt="Phone, back" loading="lazy">
+        <figcaption><h3>Phone, back</h3><span></span></figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section>
+    <span class="label">Images</span>
+    <h2>How quiz images work today</h2>
+    <p class="muted">Card images would reuse the quiz image path: the browser uploads straight to storage, the server checks the file, and readers get a short-lived link.</p>
+    <div class="table-wrap">
+      <table>
+        <tr><th>Size</th><td>20 MiB per image, enforced by the server. It checks the declared size when the upload starts and the real size when it finishes, and rejects a mismatch. There is no check in the browser, so an oversized file fails only after it has uploaded.</td></tr>
+        <tr><th>Types</th><td>PNG, JPEG, GIF, WebP and AVIF, checked by extension and by the file's first bytes. The quiz picker offers SVG, which the server always rejects, and doesn't offer AVIF.</td></tr>
+        <tr><th>Dimensions</th><td>Up to 10,000 px a side, checked only when the question is saved, after the upload is already charged.</td></tr>
+        <tr><th>Who pays</th><td>The workspace owner for a workspace quiz, the quiz owner for a standalone one. An image removed from a question stays charged until the quiz or workspace is deleted.</td></tr>
+        <tr><th>Copies</th><td>Cloning copies the images that are still referenced and charges the person cloning.</td></tr>
+        <tr><th>Signed-out links</th><td>Shared quiz pages serve their images. The site currently answers 404 for any image on a shared flashcards page.</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <span class="label">Round 2 questions</span>
+    <ol>
+      <li>Preview: P1 dialog or P2 in place.</li>
+      <li>Edit: E1 hover toolbar or E2 click to edit.</li>
+      <li>Study page: drop the Edit and Delete links under the card as in the mock, or keep them.</li>
+      <li>Card images use the quiz image rules above (20 MiB, PNG/JPEG/GIF/WebP/AVIF, owner pays). Should both pickers also check the size before uploading and stop offering SVG? That changes the quiz picker too.</li>
+      <li>One image per card, on the front only.</li>
+      <li>Changing a card's image keeps its review progress. Only front and back text reset it, as with quiz images today.</li>
+      <li>Shared flashcards links show card images, which needs a public image route like the quiz one.</li>
+      <li>The back is limited to 4,000 characters (today's card limit) and keeps line breaks everywhere it is shown.</li>
+      <li>Flashcards embedded in a note: keep today's whole-set dialog, or open the new grid and card dialog instead.</li>
+    </ol>
+  </section>
+
+    </details>
+
+  <details>
+    <summary>How flashcards work today (round 1 screenshots)</summary>
+    <h2>Workspace file</h2>
+    <div class="grid">
+      <figure>
+        <img src="page/before-flashcards-view.jpg" alt="Flashcards file in view mode: six card rows with front and back" loading="lazy">
+        <figcaption><h3>View mode</h3><span>Static Plate render of the card rows. Study opens the study page.</span></figcaption>
+      </figure>
+      <figure class="problem">
+        <img src="page/today-03-workspace-edit-stray-text.jpg" alt="Edit mode with the note toolbar and an extra paragraph typed inside the last card" loading="lazy">
+        <figcaption><h3>Edit mode: free text</h3><span>The full note toolbar shows, and Enter inside a card adds a paragraph to its back. The save cloud turned red here.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/today-01-workspace-edit-block-toolbar.jpg" alt="Clicking a card shows a floating toolbar with edit, duplicate and delete" loading="lazy">
+        <figcaption><h3>Edit mode: block toolbar</h3><span>Clicking any card selects the whole set. Edit, Duplicate and Delete act on the set.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/today-02-workspace-edit-bulk-dialog.jpg" alt="Flashcards dialog listing every card as two inputs with a delete icon" loading="lazy">
+        <figcaption><h3>Edit mode: whole-set dialog</h3><span>Edit opens every card in one dialog and saves them through the editor.</span></figcaption>
+      </figure>
+    </div>
+
+    <h2>Study page and note embeds</h2>
+    <div class="grid">
+      <figure>
+        <img src="page/today-04-study-front.jpg" alt="Study page showing one card's term" loading="lazy">
+        <figcaption><h3>Study page</h3><span><code>/flashcards/dk_1</code>: one card at a time, + adds a card.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/today-05-study-flipped.jpg" alt="Study page with the answer and four rating buttons" loading="lazy">
+        <figcaption><h3>Study page, flipped</h3><span>Edit and Delete for the current card, then the four ratings.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/today-06-study-edit-card.jpg" alt="Edit card dialog with Front and Back fields" loading="lazy">
+        <figcaption><h3>Edit card dialog</h3><span>One card through the card endpoints, with the revision check. Delete has no confirm.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/today-07-note-embed-view.jpg" alt="Note with an embedded flashcards card showing Study" loading="lazy">
+        <figcaption><h3>Embed in a note, view</h3><span>Compact card with Study. In edit mode the same card shows Edit.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="page/today-09-note-embed-edit-dialog.jpg" alt="Whole-set flashcards dialog opened from a note embed" loading="lazy">
+        <figcaption><h3>Embed in a note, Edit</h3><span>Opens the same whole-set dialog as the workspace file.</span></figcaption>
+      </figure>
+    </div>
+  </details>
+</main>

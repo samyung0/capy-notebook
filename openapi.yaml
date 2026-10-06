@@ -704,6 +704,8 @@ components:
           type: string
         id:
           type: string
+        image:
+          $ref: "#/components/schemas/CardImage"
       required:
         - id
         - front
@@ -719,6 +721,14 @@ components:
       required:
         - front
         - back
+      type: object
+    CardImage:
+      additionalProperties: false
+      properties:
+        assetId:
+          type: string
+      required:
+        - assetId
       type: object
     Chapter:
       additionalProperties: false
@@ -1021,32 +1031,6 @@ components:
         name:
           maxLength: 120
           type: string
-      type: object
-    CreateCardReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/CreateCardReq.json
-          format: uri
-          readOnly: true
-          type: string
-        back:
-          maxLength: 4000
-          minLength: 1
-          type: string
-        expectedRevision:
-          format: int64
-          minimum: 1
-          type: integer
-        front:
-          maxLength: 4000
-          minLength: 1
-          type: string
-      required:
-        - expectedRevision
-        - front
-        - back
       type: object
     CreateCommentReq:
       additionalProperties: false
@@ -1775,18 +1759,14 @@ components:
     Flashcard:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/Flashcard.json
-          format: uri
-          readOnly: true
-          type: string
         back:
           type: string
         front:
           type: string
         id:
           type: string
+        image:
+          $ref: "#/components/schemas/CardImage"
         materialId:
           type: string
         revision:
@@ -1803,7 +1783,7 @@ components:
       additionalProperties: false
       properties:
         back:
-          maxLength: 4000
+          maxLength: 2000
           minLength: 1
           type: string
         front:
@@ -1812,9 +1792,21 @@ components:
           type: string
         id:
           type: string
+        image:
+          $ref: "#/components/schemas/FlashcardImage"
       required:
         - front
         - back
+      type: object
+    FlashcardImage:
+      additionalProperties: false
+      properties:
+        assetId:
+          maxLength: 128
+          minLength: 1
+          type: string
+      required:
+        - assetId
       type: object
     FlashcardSet:
       additionalProperties: false
@@ -4943,30 +4935,6 @@ components:
         - operationId
         - status
       type: object
-    UpdateCardReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/UpdateCardReq.json
-          format: uri
-          readOnly: true
-          type: string
-        back:
-          maxLength: 4000
-          minLength: 1
-          type: string
-        expectedRevision:
-          format: int64
-          minimum: 1
-          type: integer
-        front:
-          maxLength: 4000
-          minLength: 1
-          type: string
-      required:
-        - expectedRevision
-      type: object
     UpdateChapterReq:
       additionalProperties: false
       properties:
@@ -7060,66 +7028,6 @@ paths:
       summary: Create flashcards
       tags:
         - Flashcards
-  /api/flashcards/cards/{id}:
-    delete:
-      operationId: deleteCard
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-        - explode: false
-          in: query
-          name: expectedRevision
-          required: true
-          schema:
-            format: int64
-            minimum: 1
-            type: integer
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Delete a card
-      tags:
-        - Flashcards
-  /api/flashcards/cards/{id}/content:
-    patch:
-      operationId: updateCard
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateCardReq"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Flashcard"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Update card content
-      tags:
-        - Flashcards
   /api/flashcards/{id}:
     get:
       operationId: getFlashcardSet
@@ -7170,36 +7078,6 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: List cards
-      tags:
-        - Flashcards
-    post:
-      operationId: createCard
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateCardReq"
-        required: true
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Flashcard"
-          description: Created
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Create a card
       tags:
         - Flashcards
   /api/flashcards/{id}/clone:
@@ -8277,6 +8155,40 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Get a shared flashcard set for signed-out visitors
+      tags:
+        - Sharing
+  /api/public/flashcards/{token}/assets/{assetId}:
+    get:
+      operationId: getAnonymousFlashcardAsset
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: assetId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnonymousAsset"
+          description: OK
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get a shared flashcard image URL
       tags:
         - Sharing
   /api/public/quizzes/{token}:

@@ -463,9 +463,11 @@ func TestStudyToolMutationPathsSeparateContentMetadataAndSharing(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("workspace flashcard sharing update = %d body=%s", rec.Code, rec.Body.String())
 	}
-	rec = doReq(t, h, http.MethodPatch, "/api/flashcards/cards/c_e2e_priv_1/content", "u_editor", map[string]any{
+	rec = doReq(t, h, http.MethodPatch, "/api/flashcards/dk_e2e_private/content", "u_editor", map[string]any{
 		"expectedRevision": revision("dk_e2e_private"),
-		"front":            "Updated front", "back": "Updated back", "known": true,
+		"cards": []map[string]any{{
+			"id": "c_e2e_priv_1", "front": "Updated front", "back": "Updated back", "known": true,
+		}},
 	})
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("unknown field on card authoring path = %d body=%s", rec.Code, rec.Body.String())

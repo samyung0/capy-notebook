@@ -27,7 +27,6 @@ import type {
   AttemptDetail as GenAttemptDetail,
   Citation as GenCitation,
   Comment as GenComment,
-  CreateCardReq as GenCreateCardReq,
   CreateCommentReq as GenCreateCommentReq,
   CreateDiscussionReq as GenCreateDiscussionReq,
   CreateEmbeddedMaterialReq as GenCreateEmbeddedMaterialReq,
@@ -135,7 +134,6 @@ export type {
   TagInput,
   Task,
   TransferWorkspaceReq,
-  UpdateCardReq,
   UpdateChapterReq,
   UpdateEventReq,
   UpdateFileReq,
@@ -288,9 +286,6 @@ export type UpdateQuizContentReq = Omit<
   questions?: Question[];
 };
 export type { CreateAttemptReq } from './gen/model';
-
-/** Both faces are optional on the wire; nothing in the UI creates a blank card. */
-export type CreateCardReq = Required<Pick<GenCreateCardReq, 'back' | 'front'>>;
 
 export type CreateMaterialReq = Omit<GenCreateMaterialReq, 'content'> & {
   content?: import('@/features/materials/document').MaterialDocument;

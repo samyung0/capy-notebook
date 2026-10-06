@@ -1,18 +1,15 @@
 import { lazyRouteComponent, Outlet } from '@tanstack/react-router';
 import { AnalyticsRoot } from './AnalyticsRoot';
 import { AppShell } from './AppShell';
-import { AuthGate, SessionSwitch } from './AuthProvider';
+import { AuthGate } from './AuthProvider';
 
 const SharedQuiz = lazyRouteComponent(
   () => import('@/routes/QuizAttempt'),
   'SharedQuizAttempt'
 );
 const SharedFlashcards = lazyRouteComponent(
-  () => import('@/routes/FlashcardStudy')
-);
-const AnonymousFlashcards = lazyRouteComponent(
-  () => import('@/routes/AnonymousFlashcardStudy'),
-  'AnonymousFlashcardStudyRoute'
+  () => import('@/routes/FlashcardStudy'),
+  'SharedFlashcardStudy'
 );
 export function RootRoute() {
   return (
@@ -38,10 +35,5 @@ export function SharedQuizRoute() {
 }
 
 export function SharedFlashcardsRoute() {
-  return (
-    <SessionSwitch
-      anonymous={<AnonymousFlashcards />}
-      signedIn={<SharedFlashcards />}
-    />
-  );
+  return <SharedFlashcards />;
 }

@@ -61,7 +61,13 @@ test('quiz tabs retain both drafts and reveal name validation before saving', as
     exact: true,
     name: 'Questions',
   });
-  const save = page.getByRole('button', { exact: true, name: 'Save' });
+  // The page's Save; its confirm dialog, portalled after the page, has another.
+  const save = page.getByRole('button', { exact: true, name: 'Save' }).first();
+  const confirmSave = () =>
+    page
+      .getByRole('dialog', { name: 'Save your changes?' })
+      .getByRole('button', { name: 'Save' })
+      .click();
 
   await expect(questions).toHaveCount(10, { timeout: 30_000 });
   await expect(name).toHaveCount(0);
@@ -74,6 +80,7 @@ test('quiz tabs retain both drafts and reveal name validation before saving', as
   await name.fill('');
   await questionsTab.click();
   await save.click();
+  await confirmSave();
   await expect(name).toBeVisible();
   await expect(page.getByRole('alert')).toBeVisible();
 
@@ -84,6 +91,7 @@ test('quiz tabs retain both drafts and reveal name validation before saving', as
   await expect(name).toHaveValue('Genetics revision');
   await questionsTab.click();
   await save.click();
+  await confirmSave();
 
   await expect(page).toHaveURL('/materials/qz_2');
   await expect(

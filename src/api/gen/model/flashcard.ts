@@ -4,13 +4,13 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { CardImage } from './cardImage.ts';
 
 export interface Flashcard {
-  /** A URL to the JSON Schema for this object. */
-  readonly $schema?: string;
   back: string;
   front: string;
   id: string;
+  image?: CardImage;
   materialId: string;
   revision: number;
 }

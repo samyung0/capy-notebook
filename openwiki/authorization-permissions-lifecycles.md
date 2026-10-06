@@ -140,7 +140,8 @@ embedded ones follow a note visitors cannot open, so neither is reachable.
 The SPA reads through the site Worker's `/p/` routes, which verify the token
 before any API call and cache reads at the edge for five minutes, as summaries
 do: `GET /p/quizzes/{token}`, `GET /p/quizzes/{token}/assets/{assetId}` and
-`GET /p/flashcards/{token}`. Grading posts straight to
+`GET /p/flashcards/{token}` with `GET /p/flashcards/{token}/assets/{assetId}`
+for the image of a card visitors study. Grading posts straight to
 `/api/public/quizzes/{token}/grade`, because a Worker subrequest reaches the
 API without the visitor's IP, which the per-IP caps need. Go verifies the
 token again on `/api/public/...` because the API hostname is public, and reads
@@ -459,8 +460,8 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
 - Mutation contracts keep authorities separate. Material title/filing/scope use
   `/metadata`. Quiz questions/time limit use `/content`, quiz name/scope use
   `/metadata`, and standalone visibility uses `/sharing`. Flashcard-set
-  metadata uses `/metadata`, card authored text uses
-  `/flashcards/cards/{id}/content`, and standalone sharing uses `/sharing`;
+  metadata uses `/metadata`, the whole card list (text and images) uses
+  `/flashcards/{id}/content`, and standalone sharing uses `/sharing`;
   ratings go to `POST /api/review/ratings` with read access only. Content/metadata paths do not accept
   privacy, and sharing rejects workspace-contained materials before writing
   anything.

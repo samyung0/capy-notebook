@@ -16,6 +16,7 @@ import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TabContent, TabHeader } from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 import { Skeleton, Spinner } from '@/components/ui/feedback';
 import { Input, InputField } from '@/components/ui/Input';
 import { Tabs } from '@/components/ui/Tabs';
@@ -108,6 +109,7 @@ function QuizEditor({ quizId }: { quizId: string }) {
   });
   const name = useWatch({ control, name: 'name' });
   const [tab, setTab] = useState('questions');
+  const [confirm, setConfirm] = useState<'reset' | 'save' | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const seeded = useRef(false);
   const revision = useRef<number | null>(null);
@@ -147,8 +149,22 @@ function QuizEditor({ quizId }: { quizId: string }) {
         // The global mutation handler shows the normalized failure.
       }
     },
-    () => setTab('general')
+    () => {
+      setConfirm(null);
+      setTab('general');
+    }
   );
+
+  // Back to what the editor loaded; picked images not yet saved are dropped.
+  function resetEdits() {
+    if (!quiz) return;
+    reset({ name: quiz.name });
+    setQuestions(structuredClone(quiz.questions));
+  }
+  const dirty =
+    !!quiz &&
+    (name !== quiz.name ||
+      JSON.stringify(questions) !== JSON.stringify(quiz.questions));
 
   const saveDisabled =
     updateIsPending || !seeded.current || !quiz?.canEditContent;
@@ -222,17 +238,44 @@ function QuizEditor({ quizId }: { quizId: string }) {
                 </AssetUrlContext.Provider>
               </>
             )}
-            <div className="mt-8 flex justify-end">
+            <div className="mt-8 flex justify-end gap-2">
+              <Button
+                disabled={saveDisabled || !dirty}
+                onClick={() => setConfirm('reset')}
+                size="lg"
+                variant="danger-light"
+              >
+                {m.action_reset()}
+              </Button>
               <Button
                 aria-label={m.action_save()}
                 disabled={saveDisabled}
-                onClick={() => void save()}
+                onClick={() => setConfirm('save')}
                 size="lg"
                 variant="accent"
               >
                 {updateIsPending ? <Spinner /> : m.action_save()}
               </Button>
             </div>
+            <ConfirmDialog
+              body={m.edit_reset_confirm_body()}
+              confirmLabel={m.action_reset()}
+              onClose={() => setConfirm(null)}
+              onConfirm={resetEdits}
+              open={confirm === 'reset'}
+              title={m.edit_reset_confirm_title()}
+            />
+            <ConfirmDialog
+              body={m.edit_save_confirm_body()}
+              closeOnConfirm={false}
+              confirmLabel={m.action_save()}
+              danger={false}
+              isSubmitting={updateIsPending}
+              onClose={() => setConfirm(null)}
+              onConfirm={() => void save()}
+              open={confirm === 'save'}
+              title={m.edit_save_confirm_title()}
+            />
             <MaterialAttributionFooter provenance={quiz.provenance} />
           </>
         ) : (

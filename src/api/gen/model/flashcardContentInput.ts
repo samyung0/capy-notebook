@@ -4,11 +4,12 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { FlashcardImage } from './flashcardImage.ts';
 
 export interface FlashcardContentInput {
   /**
      * @minLength 1
-     * @maxLength 4000
+     * @maxLength 2000
      */
   back: string;
   /**
@@ -17,4 +18,5 @@ export interface FlashcardContentInput {
      */
   front: string;
   id?: string;
+  image?: FlashcardImage;
 }

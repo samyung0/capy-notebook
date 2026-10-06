@@ -45,6 +45,17 @@ export function QuizForm({
           <div className="flex justify-end">
             <Button
               className="h-7 gap-1 rounded-input px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
+              iconLeft="pencil"
+              iconLeftClassName="size-3.5 sm:size-3.75"
+              onClick={() => setEditing(question)}
+              size="sm"
+              type="button"
+              variant="ghost-hover"
+            >
+              {m.action_edit()}
+            </Button>
+            <Button
+              className="h-7 gap-1 rounded-input px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
               iconLeft="trash"
               iconLeftClassName="size-3.5 sm:size-3.75"
               onClick={() =>
@@ -55,17 +66,6 @@ export function QuizForm({
               variant="danger-light"
             >
               {m.action_remove()}
-            </Button>
-            <Button
-              className="h-7 gap-1 rounded-input px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
-              iconLeft="pencil"
-              iconLeftClassName="size-3.5 sm:size-3.75"
-              onClick={() => setEditing(question)}
-              size="sm"
-              type="button"
-              variant="ghost-hover"
-            >
-              {m.action_edit()}
             </Button>
           </div>
         )}

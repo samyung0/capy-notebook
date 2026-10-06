@@ -489,9 +489,13 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     },
     run: (editor, dialogs) => {
       if (insideContainer(editor)) return;
-      dialogs?.openFlashcards(undefined, (code) => {
-        void dialogs.insertEmbedded(editor, 'flashcards', code);
-      });
+      // A set holds at least one card; the edit page drops a blank one on save.
+      if (dialogs)
+        void dialogs.insertEmbedded(
+          editor,
+          'flashcards',
+          'cards:\n  - front: ""\n    back: ""\n'
+        );
     },
     widget: 'flashcards',
   },

@@ -48,6 +48,10 @@ export const anonymousFlashcardsQuery = (token: string) =>
 export const anonymousAssetUrl = (token: string, assetId: string) =>
   `/p/quizzes/${token}/assets/${assetId}`;
 
+/** The same for a shared flashcard set's card images. */
+export const anonymousFlashcardAssetUrl = (token: string, assetId: string) =>
+  `/p/flashcards/${token}/assets/${assetId}`;
+
 /** Grades every part of a signed-out attempt; the result carries each
  * question's key, so the page shows it and keeps it in this browser. */
 export async function gradeAnonymousQuiz(

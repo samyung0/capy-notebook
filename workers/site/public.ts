@@ -2,7 +2,7 @@ import { verifiedShareToken } from '../../src/lib/shareLink';
 
 /**
  * Data routes for signed-out visitors of shared standalone quizzes and
- * flashcard sets. Every route verifies the share token first, so forged links
+ * flashcard sets, and their images. Every route verifies the share token first, so forged links
  * never reach the API. Reads are cached at the edge for five minutes, like
  * workspace summaries; Go verifies the token again and reads privacy live.
  * Grading posts go straight to `/api/public/quizzes/{token}/grade`: a Worker
@@ -12,6 +12,7 @@ import { verifiedShareToken } from '../../src/lib/shareLink';
  *   GET /p/quizzes/{token}                    → /api/public/quizzes/{token}
  *   GET /p/quizzes/{token}/assets/{assetId}   → the image bytes
  *   GET /p/flashcards/{token}                 → /api/public/flashcards/{token}
+ *   GET /p/flashcards/{token}/assets/{assetId} → a card image's bytes
  */
 
 const ROUTE =
@@ -102,7 +103,7 @@ export async function handlePublicRequest(
   if (!match) return error(404);
   const [, kind, token, assetId] = match;
   const id = await verifiedShareToken(secret, token);
-  if (!id || (kind === 'flashcards' && assetId)) return error(404);
+  if (!id) return error(404);
   const upstreamPath = `/api/public/${kind}/${token}`;
 
   if (request.method !== 'GET' && request.method !== 'HEAD')

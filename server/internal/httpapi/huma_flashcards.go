@@ -36,21 +36,6 @@ type updateFlashcardSetSharingInput struct {
 type cardsOutput struct {
 	Body []apimodel.Flashcard `nullable:"false"`
 }
-type cardOutput struct {
-	Body apimodel.Flashcard
-}
-type cardIDInput struct {
-	ID               string `path:"id"`
-	ExpectedRevision int64  `query:"expectedRevision" required:"true" minimum:"1"`
-}
-type createCardInput struct {
-	ID   string `path:"id"`
-	Body apimodel.CreateCardReq
-}
-type updateCardInput struct {
-	ID   string `path:"id"`
-	Body apimodel.UpdateCardReq
-}
 
 func (a *api) registerFlashcards(api huma.API) {
 	const tag = "Flashcards"
@@ -60,9 +45,6 @@ func (a *api) registerFlashcards(api huma.API) {
 	regWithMaxBody(api, http.MethodPatch, "/api/flashcards/{id}/content", "updateFlashcardContent", tag, "Update flashcard content", http.StatusOK, materialRequestMaxBytes, a.updateFlashcardContent)
 	reg(api, http.MethodPatch, "/api/flashcards/{id}/sharing", "updateFlashcardSetSharing", tag, "Update standalone flashcard sharing", http.StatusOK, a.updateFlashcardSetSharing)
 	reg(api, http.MethodGet, "/api/flashcards/{id}/cards", "listCards", tag, "List cards", http.StatusOK, a.listCards)
-	reg(api, http.MethodPost, "/api/flashcards/{id}/cards", "createCard", tag, "Create a card", http.StatusCreated, a.createCard)
-	reg(api, http.MethodPatch, "/api/flashcards/cards/{id}/content", "updateCard", tag, "Update card content", http.StatusOK, a.updateCard)
-	reg(api, http.MethodDelete, "/api/flashcards/cards/{id}", "deleteCard", tag, "Delete a card", http.StatusNoContent, a.deleteCard)
 }
 
 func (a *api) createFlashcardSet(ctx context.Context, in *createFlashcardSetInput) (*flashcardSetOutput, error) {
@@ -152,29 +134,6 @@ func (a *api) listCards(ctx context.Context, in *flashcardSetIDInput) (*cardsOut
 	return &cardsOutput{Body: res}, nil
 }
 
-func (a *api) createCard(ctx context.Context, in *createCardInput) (*cardOutput, error) {
-	if err := a.assertMaterialOwner(ctx, in.ID); err != nil {
-		return nil, hErr(err)
-	}
-	res, err := a.s.CreateCard(ctx, userID(ctx), in.ID, in.Body.Front, in.Body.Back, in.Body.ExpectedRevision)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	return &cardOutput{Body: res}, nil
-}
-
-func (a *api) updateCard(ctx context.Context, in *updateCardInput) (*cardOutput, error) {
-	if err := a.assertCardEditor(ctx, in.ID); err != nil {
-		return nil, hErr(err)
-	}
-	p := store.CardContentPatch{Front: in.Body.Front, Back: in.Body.Back, UpdatedBy: userID(ctx), ExpectedRevision: in.Body.ExpectedRevision}
-	res, err := a.s.UpdateCardContent(ctx, in.ID, p)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	return &cardOutput{Body: res}, nil
-}
-
 func (a *api) updateFlashcardContent(ctx context.Context, in *updateFlashcardContentInput) (*cardsOutput, error) {
 	if err := a.assertMaterialOwner(ctx, in.ID); err != nil {
 		return nil, hErr(err)
@@ -182,20 +141,13 @@ func (a *api) updateFlashcardContent(ctx context.Context, in *updateFlashcardCon
 	cards := make([]materialdoc.Card, len(in.Body.Cards))
 	for i, card := range in.Body.Cards {
 		cards[i] = materialdoc.Card{ID: card.ID, Front: card.Front, Back: card.Back}
+		if card.Image != nil {
+			cards[i].Image = &materialdoc.CardImage{AssetID: card.Image.AssetID}
+		}
 	}
 	res, err := a.s.UpdateFlashcardContent(ctx, userID(ctx), in.ID, in.Body.ExpectedRevision, cards)
 	if err != nil {
 		return nil, hErr(err)
 	}
 	return &cardsOutput{Body: res}, nil
-}
-
-func (a *api) deleteCard(ctx context.Context, in *cardIDInput) (*Empty, error) {
-	if err := a.assertCardEditor(ctx, in.ID); err != nil {
-		return nil, hErr(err)
-	}
-	if err := a.s.DeleteCard(ctx, userID(ctx), in.ID, in.ExpectedRevision); err != nil {
-		return nil, hErr(err)
-	}
-	return &Empty{}, nil
 }

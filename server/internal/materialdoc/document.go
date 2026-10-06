@@ -13,6 +13,7 @@ import (
 	"io"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/samyung0/capy-notebook/server/internal/questions"
 )
@@ -78,10 +79,21 @@ func (m DocumentMetrics) LimitError() error {
 // Card is the plain-text API projection of one authored flashcard. Scheduling
 // state remains relational and is intentionally not part of the document.
 type Card struct {
-	ID    string `json:"id"`
-	Front string `json:"front"`
-	Back  string `json:"back"`
+	ID    string     `json:"id"`
+	Front string     `json:"front"`
+	Back  string     `json:"back"`
+	Image *CardImage `json:"image,omitempty"`
 }
+
+// CardImage is a card's one image, shown on its front under the text. It
+// names an editor asset of the set, like a quiz image block.
+type CardImage struct {
+	AssetID string `json:"assetId"`
+}
+
+// MaxCardBackRunes caps a card's back (human/frontend/plate-editor.md); the
+// card save API carries the same limit.
+const MaxCardBackRunes = 2000
 
 func Empty() Envelope {
 	return Envelope{
@@ -700,6 +712,16 @@ func validateFlashcard(node map[string]any) error {
 		children[1].(map[string]any)["type"] != "flashcard_back" {
 		return errors.New("flashcard children must be front then back")
 	}
+	if utf8.RuneCountInString(nodeText(children[1].(map[string]any))) > MaxCardBackRunes {
+		return fmt.Errorf("a flashcard back holds at most %d characters", MaxCardBackRunes)
+	}
+	if raw, ok := node["image"]; ok {
+		image, ok := raw.(map[string]any)
+		assetID, _ := image["assetId"].(string)
+		if !ok || len(image) != 1 || strings.TrimSpace(assetID) == "" || len(assetID) > 128 {
+			return errors.New("flashcard image must be {assetId}")
+		}
+	}
 	return nil
 }
 
@@ -920,6 +942,7 @@ func ExtractFlashcards(raw string) ([]Card, error) {
 			ID:    card["id"].(string),
 			Front: nodeText(firstChild(card, "flashcard_front")),
 			Back:  nodeText(firstChild(card, "flashcard_back")),
+			Image: cardImage(card),
 		}
 	}
 	return cards, nil
@@ -1134,6 +1157,11 @@ func EditorAssetIDs(raw string) ([]string, error) {
 				seen[assetID] = struct{}{}
 			}
 		}
+		if node["type"] == "flashcard" {
+			if image := cardImage(node); image != nil {
+				seen[image.AssetID] = struct{}{}
+			}
+		}
 		for _, child := range children(node) {
 			collect(child)
 		}
@@ -1149,8 +1177,8 @@ func EditorAssetIDs(raw string) ([]string, error) {
 }
 
 // RewriteClonedEditorAssetIDs rewrites references to ready editor assets and
-// removes media nodes and quiz images whose source asset was not copied (and a
-// question whose part loses all content). A clone never carries pending or
+// removes media nodes, quiz images and card images whose source asset was not
+// copied (and a question whose part loses all content; a card keeps its text). A clone never carries pending or
 // failed asset rows, so preserving those references would create a document
 // that can never render successfully.
 func RewriteClonedEditorAssetIDs(raw string, idMap map[string]string) (string, error) {
@@ -1169,6 +1197,15 @@ func RewriteClonedEditorAssetIDs(raw string, idMap map[string]string) (string, e
 				return nil, false
 			}
 			node["assetId"] = replacement
+		}
+		if node["type"] == "flashcard" {
+			if image := cardImage(node); image != nil {
+				if replacement := idMap[image.AssetID]; replacement != "" {
+					node["image"] = map[string]any{"assetId": replacement}
+				} else {
+					delete(node, "image")
+				}
+			}
 		}
 		rawChildren, ok := node["children"].([]any)
 		if !ok {
@@ -1382,7 +1419,7 @@ func textElement(typ, text string) map[string]any {
 }
 
 func cardNode(card Card) map[string]any {
-	return map[string]any{
+	node := map[string]any{
 		"type": "flashcard",
 		"id":   card.ID,
 		"children": []any{
@@ -1390,6 +1427,20 @@ func cardNode(card Card) map[string]any {
 			textElement("flashcard_back", card.Back),
 		},
 	}
+	if card.Image != nil {
+		node["image"] = map[string]any{"assetId": card.Image.AssetID}
+	}
+	return node
+}
+
+// cardImage reads a flashcard node's image; validation has checked its shape.
+func cardImage(card map[string]any) *CardImage {
+	image, ok := card["image"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	assetID, _ := image["assetId"].(string)
+	return &CardImage{AssetID: assetID}
 }
 
 func nodeText(node map[string]any) string {

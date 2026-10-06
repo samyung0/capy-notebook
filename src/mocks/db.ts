@@ -1315,7 +1315,15 @@ const seedCards: Flashcard[] = [
     'Mitochondria',
     'Powerhouse of the cell — produces ATP.'
   ),
-  seedCard('c_2', 'dk_1', 'Nucleus', 'Stores DNA and controls cell activity.'),
+  {
+    ...seedCard(
+      'c_2',
+      'dk_1',
+      'Nucleus',
+      'Stores DNA and controls cell activity.'
+    ),
+    image: { assetId: 'asset_mock_cell_diagram' },
+  },
   seedCard('c_3', 'dk_1', 'Ribosome', 'Site of protein synthesis.'),
   seedCard('c_4', 'dk_1', 'Golgi apparatus', 'Packages and ships proteins.'),
   seedCard('c_7', 'dk_1', 'Lysosome', 'Digests waste with hydrolytic enzymes.'),
@@ -1947,6 +1955,7 @@ seedFlashcardSets.forEach((d, i) => {
             back: c.back,
             front: c.front,
             id: c.id,
+            ...(c.image ? { image: c.image } : {}),
           })),
           d.id
         ),
@@ -2171,6 +2180,7 @@ export function cardsFromMaterial(mt: Material): Flashcard[] {
     back: c.back,
     front: c.front,
     id: c.id,
+    ...(c.image ? { image: c.image } : {}),
     materialId: mt.id,
     revision: mt.revision,
   }));
