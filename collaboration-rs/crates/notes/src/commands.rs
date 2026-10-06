@@ -66,10 +66,10 @@ fn find(nodes: &[Value], id: &str, path: &mut Path) -> Option<(Value, Path)> {
         if is_element(node) && node.get("id").and_then(Value::as_str) == Some(id) {
             return Some((node.clone(), path.clone()));
         }
-        if !is_text(node) {
-            if let Some(found) = find(children(node), id, path) {
-                return Some(found);
-            }
+        if !is_text(node)
+            && let Some(found) = find(children(node), id, path)
+        {
+            return Some(found);
         }
         path.pop();
     }

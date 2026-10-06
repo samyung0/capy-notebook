@@ -152,14 +152,14 @@ pub fn plan(root: &Branch, writes: &ChildWrites) -> ChildPlan {
         let material = attribute(&branch, MATERIAL_KEY);
         if let (Some(Any::String(kind)), Some(Any::String(id)), Some(Any::String(material))) =
             (kind, id, material)
+            && &*kind == MATERIAL_REF_TYPE
+            && !material.is_empty()
         {
-            if &*kind == MATERIAL_REF_TYPE && !material.is_empty() {
-                refs.push(Ref {
-                    block: branch.id(),
-                    block_id: id.to_string(),
-                    material_id: material.to_string(),
-                });
-            }
+            refs.push(Ref {
+                block: branch.id(),
+                block_id: id.to_string(),
+                material_id: material.to_string(),
+            });
         }
     }
     let mut kept: Vec<(String, BranchID)> = Vec::new();

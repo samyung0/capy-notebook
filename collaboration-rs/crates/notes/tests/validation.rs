@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)] // Tests panic on a broken corpus.
 //! Material document and question validation against the Node server on the
 //! corpus: the shared Go/TS question fixtures, every fixture note, quiz and
 //! flashcard set under each material kind, random structural damage to them,

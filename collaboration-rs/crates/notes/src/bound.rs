@@ -495,15 +495,14 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
         };
         while let Some(current) = item {
             let ID { client, clock } = *current.id();
-            if let Some(right) = right {
-                if right.client == client
-                    && right.clock >= clock
-                    && right.clock < clock + current.len()
-                {
-                    return right.clock == clock
-                        || current.is_deleted()
-                        || self.decoded.deletes(&client, clock, right.clock);
-                }
+            if let Some(right) = right
+                && right.client == client
+                && right.clock >= clock
+                && right.clock < clock + current.len()
+            {
+                return right.clock == clock
+                    || current.is_deleted()
+                    || self.decoded.deletes(&client, clock, right.clock);
             }
             if !self.hidden(current) {
                 return false;

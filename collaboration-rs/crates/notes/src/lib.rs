@@ -16,6 +16,7 @@ pub mod commands;
 pub mod edit;
 pub mod json;
 pub mod limits;
+pub mod markdown;
 pub mod material;
 pub mod plate;
 pub mod questions;

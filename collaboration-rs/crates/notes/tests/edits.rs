@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)] // Tests panic on a broken corpus.
 //! Agent edit commands, guards, Undo, inspect, text-source commands, the
 //! replace-block command and the children pass, replayed on the states the
 //! Node server saw (tests/corpus/{edits,children,commands,inspect}.json.gz):

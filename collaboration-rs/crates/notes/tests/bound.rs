@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)] // Tests panic on a broken corpus.
 //! The growth bound and the room validator beyond the single-writer
 //! sequences: three writers on stale copies delivering merged or queued
 //! updates (plate REVIEW1 M3).

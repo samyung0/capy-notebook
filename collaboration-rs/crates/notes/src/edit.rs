@@ -594,9 +594,9 @@ fn run_commands(
             }
             Ok(())
         })
-        .or_else(|error| match failure.take() {
-            Some(failure) => Err(failure),
-            None => Err(error.into()),
+        .map_err(|error| match failure.take() {
+            Some(failure) => failure,
+            None => error.into(),
         })
 }
 
@@ -1067,15 +1067,15 @@ pub fn inspect_material<T: ReadTxn>(txn: &T) -> Result<Vec<InspectedBlock>, Edit
                     .unwrap_or_default();
                 out.properties = props(vec![("block", printed)]);
             }
-            if kind == "mermaid" {
-                if let Some(source) = block.get("source").and_then(Value::as_str) {
-                    out.properties = props(vec![("source", source.to_owned())]);
-                }
+            if kind == "mermaid"
+                && let Some(source) = block.get("source").and_then(Value::as_str)
+            {
+                out.properties = props(vec![("source", source.to_owned())]);
             }
-            if kind == "html_embed" {
-                if let Some(title) = block.get("title").and_then(Value::as_str) {
-                    out.properties = props(vec![("title", title.to_owned())]);
-                }
+            if kind == "html_embed"
+                && let Some(title) = block.get("title").and_then(Value::as_str)
+            {
+                out.properties = props(vec![("title", title.to_owned())]);
             }
             if kind == MATERIAL_REF_TYPE {
                 out.properties = props(vec![

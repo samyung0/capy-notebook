@@ -29,15 +29,15 @@ pub fn assert_roots<T: ReadTxn>(txn: &T) -> Result<(), RootError> {
     {
         return Err(RootError::Unsupported(name.clone()));
     }
-    if let Some(content) = BranchID::get_root(txn, CONTENT_ROOT) {
-        if content.map_items().next().is_some() {
-            return Err(RootError::Content);
-        }
+    if let Some(content) = BranchID::get_root(txn, CONTENT_ROOT)
+        && content.map_items().next().is_some()
+    {
+        return Err(RootError::Content);
     }
-    if let Some(contributors) = BranchID::get_root(txn, CONTRIBUTORS_ROOT) {
-        if contributors.start().is_some() {
-            return Err(RootError::Contributors);
-        }
+    if let Some(contributors) = BranchID::get_root(txn, CONTRIBUTORS_ROOT)
+        && contributors.start().is_some()
+    {
+        return Err(RootError::Contributors);
     }
     Ok(())
 }

@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)] // Tests panic on a broken corpus.
 //! The bound's cost on a select-all delete of a heavily corrected, formatted
 //! note (plate REVIEW1 M1, the reviewer's probe-delete-all): one delete range
 //! per surviving character, every text re-priced in the JS bound. Here the
@@ -16,7 +17,7 @@ use yrs::{Any, Doc, ReadTxn, StateVector, Text, Transact, Update, Xml, XmlTextPr
 /// client deleting everything.
 fn corrected_note(paragraphs: u32) -> (Doc, Vec<u8>) {
     let writer = Doc::with_options(doc_options(7));
-    let content = writer.get_or_insert_text(plate::CONTENT_ROOT);
+    writer.get_or_insert_text(plate::CONTENT_ROOT);
     {
         let mut txn = writer.transact_mut();
         let root = yrs::XmlTextRef::from(plate::content_root(&txn).unwrap());
@@ -57,7 +58,7 @@ fn corrected_note(paragraphs: u32) -> (Doc, Vec<u8>) {
             block.remove_range(&mut txn, at + 1, 1);
         }
     }
-    drop(content);
+
     let state = writer
         .transact()
         .encode_state_as_update_v1(&StateVector::default());

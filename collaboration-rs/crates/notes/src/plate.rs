@@ -59,7 +59,7 @@ pub struct DeltaOp {
 
 impl DeltaOp {
     /// Its length in the parent: UTF-16 units for a string, 1 for an element.
-    pub fn len(&self) -> u32 {
+    pub fn y_len(&self) -> u32 {
         match &self.insert {
             Insert::Text(text) => utf16_len(text),
             Insert::Element(_) => 1,
@@ -162,11 +162,10 @@ fn normalize(delta: Vec<DeltaOp>) -> Vec<DeltaOp> {
                 insert: Insert::Text(prev),
                 attributes,
             }) = out.last_mut()
+                && attributes_equal(attributes, &op.attributes)
             {
-                if attributes_equal(attributes, &op.attributes) {
-                    prev.push_str(text);
-                    continue;
-                }
+                prev.push_str(text);
+                continue;
             }
         }
         out.push(op);
@@ -318,4 +317,44 @@ pub fn value<T: ReadTxn>(txn: &T) -> Result<Vec<Value>, ProjectionError> {
 /// `materials.content` and the compaction rebuild), by a random client.
 pub fn state_from_value(value: &[Value]) -> Vec<u8> {
     crate::slate_yjs::bootstrap_state(value, 0)
+}
+
+/// `materials.content`: `{"schemaVersion":1,"value":[...]}`.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Content {
+    #[serde(rename = "schemaVersion")]
+    pub schema_version: u8,
+    pub value: Vec<Value>,
+}
+
+/// The projection (decision 3: written when a note room goes idle or
+/// unloads, and on demand for readers): the content of the document as the
+/// store's `contentFromState` gives it. Pure; the server decides when.
+pub fn project<T: ReadTxn>(txn: &T) -> Result<Content, ProjectionError> {
+    Ok(Content {
+        schema_version: 1,
+        value: value(txn)?,
+    })
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ProjectStateError {
+    #[error("malformed yjs update: {0}")]
+    Update(String),
+    #[error(transparent)]
+    Projection(#[from] ProjectionError),
+}
+
+/// [project] of a stored state (a v1 update), on a scratch document.
+pub fn project_state(state: &[u8]) -> Result<Content, ProjectStateError> {
+    use yrs::Transact;
+    let doc = yrs::Doc::with_options(ydoc::doc_options(0));
+    {
+        let update = ydoc::decode(state).map_err(|e| ProjectStateError::Update(e.to_string()))?;
+        doc.transact_mut()
+            .apply_update(update)
+            .map_err(|e| ProjectStateError::Update(e.to_string()))?;
+    }
+    let txn = doc.transact();
+    Ok(project(&txn)?)
 }

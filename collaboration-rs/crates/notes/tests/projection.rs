@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)] // Tests panic on a broken corpus.
 //! Plate projection and exact metrics against slate-yjs on the corpus.
 mod common;
 
@@ -15,6 +16,13 @@ fn projection_and_metrics_match_slate_yjs() {
         let doc = common::doc(&common::bytes(&case["state"]), 99);
         let txn = doc.transact();
         let value = Value::Array(plate::value(&txn).unwrap());
+        let projected = plate::project_state(&common::bytes(&case["state"])).unwrap();
+        assert_eq!(projected.schema_version, 1);
+        assert_eq!(
+            Value::Array(projected.value),
+            value,
+            "{name}: project_state"
+        );
         if common::hash(&value) != case["hash"].as_str().unwrap() {
             failures.push(format!("{name}: value differs"));
             if !case["value"].is_null() {

@@ -406,10 +406,10 @@ pub fn assert_canonical_with(value: &[Value], kind: &str, policy: &Policy) -> Ch
 
     let mut found: Vec<&Map<String, Value>> = Vec::new();
     fn collect<'a>(node: &'a Node, out: &mut Vec<&'a Map<String, Value>>) {
-        if node.get("type").and_then(Value::as_str) == Some("quiz_question") {
-            if let Some(question) = node.get("question").and_then(Value::as_object) {
-                out.push(question);
-            }
+        if node.get("type").and_then(Value::as_str) == Some("quiz_question")
+            && let Some(question) = node.get("question").and_then(Value::as_object)
+        {
+            out.push(question);
         }
         for child in children(node) {
             collect(child, out);

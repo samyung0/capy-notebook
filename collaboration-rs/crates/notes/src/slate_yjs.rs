@@ -112,7 +112,7 @@ fn slice_delta(delta: Vec<DeltaOp>, start: u32, length: u32) -> Vec<DeltaOp> {
         if offset >= end {
             break;
         }
-        let len = op.len();
+        let len = op.y_len();
         if offset + len <= start {
             offset += len;
             continue;

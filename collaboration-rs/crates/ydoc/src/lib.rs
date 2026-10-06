@@ -452,17 +452,16 @@ pub mod guards {
     fn normalize(runs: Vec<GuardRun>) -> Vec<GuardRun> {
         let mut out: Vec<GuardRun> = Vec::with_capacity(runs.len());
         for run in runs {
-            if let Some(last) = out.last_mut() {
-                if last.nested.is_none()
-                    && run.nested.is_none()
-                    && last.client == run.client
-                    && last.clock + last.len == run.clock
-                    && last.deleted == run.deleted
-                    && last.format == run.format
-                {
-                    last.len += run.len;
-                    continue;
-                }
+            if let Some(last) = out.last_mut()
+                && last.nested.is_none()
+                && run.nested.is_none()
+                && last.client == run.client
+                && last.clock + last.len == run.clock
+                && last.deleted == run.deleted
+                && last.format == run.format
+            {
+                last.len += run.len;
+                continue;
             }
             out.push(run);
         }

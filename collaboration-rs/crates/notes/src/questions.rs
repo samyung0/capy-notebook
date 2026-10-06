@@ -398,18 +398,16 @@ pub struct Block {
 }
 
 /// `graphElement`.
-fn graph_element(
-    value: &Value,
-) -> Result<
-    (
-        String,
-        &'static str,
-        Vec<String>,
-        Option<String>,
-        Option<(f64, f64)>,
-    ),
-    String,
-> {
+/// A graph element as the schema leaves it, for the board checks.
+struct GraphElement {
+    id: String,
+    kind: &'static str,
+    points: Vec<String>,
+    center: Option<String>,
+    domain: Option<(f64, f64)>,
+}
+
+fn graph_element(value: &Value) -> Result<GraphElement, String> {
     let what = "graph element";
     let map = object(value, what)?;
     let kind = map.get("type").and_then(Value::as_str).unwrap_or("");
@@ -534,7 +532,13 @@ fn graph_element(
         _ => return fail(format!("{what}: invalid type")),
     };
     let id = identifier(&map["id"], what)?;
-    Ok((id, kind, points, center, domain))
+    Ok(GraphElement {
+        id,
+        kind,
+        points,
+        center,
+        domain,
+    })
 }
 
 /// `questionBlockSchema`.
@@ -685,11 +689,18 @@ pub fn block(value: &Value) -> Result<Block, String> {
             }
             let point_ids: HashSet<&str> = elements
                 .iter()
-                .filter(|e| e.1 == "point")
-                .map(|e| e.0.as_str())
+                .filter(|e| e.kind == "point")
+                .map(|e| e.id.as_str())
                 .collect();
             let mut ids = HashSet::new();
-            for (id, kind, points, center, domain) in &elements {
+            for GraphElement {
+                id,
+                kind,
+                points,
+                center,
+                domain,
+            } in &elements
+            {
                 if !ids.insert(id.as_str()) {
                     return fail("Graph element IDs must be unique.");
                 }
@@ -702,17 +713,16 @@ pub fn block(value: &Value) -> Result<Block, String> {
                         return fail("Lines must refer to existing points.");
                     }
                 }
-                if let Some(center) = center {
-                    if !point_ids.contains(center.as_str())
-                        || (has_points && points.contains(center))
-                    {
-                        return fail("Circle centers must refer to existing points.");
-                    }
+                if let Some(center) = center
+                    && (!point_ids.contains(center.as_str())
+                        || (has_points && points.contains(center)))
+                {
+                    return fail("Circle centers must refer to existing points.");
                 }
-                if let Some((from, to)) = domain {
-                    if from >= to {
-                        return fail("Function domain must be increasing.");
-                    }
+                if let Some((from, to)) = domain
+                    && from >= to
+                {
+                    return fail("Function domain must be increasing.");
                 }
             }
             Ok(Block {
@@ -1014,10 +1024,10 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
         if part.markscheme.is_some() && marks.iter().sum::<f64>() != part.marks {
             return fail("The marking items must add up to the part's marks.");
         }
-        if let Some(awarded) = part.awarded {
-            if awarded > part.marks || (awarded * 2.0) % 1.0 != 0.0 {
-                return fail("Awarded marks exceed the part or are not half marks.");
-            }
+        if let Some(awarded) = part.awarded
+            && (awarded > part.marks || (awarded * 2.0) % 1.0 != 0.0)
+        {
+            return fail("Awarded marks exceed the part or are not half marks.");
         }
         if let Some(awards) = &part.item_awards {
             let valid = part.markscheme.is_some()

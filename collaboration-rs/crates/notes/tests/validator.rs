@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)] // Tests panic on a broken corpus.
 //! The room validator's focused cases, ported from limits.test.ts
 //! (capy-side/plate): roots, limits, recovery, unplaceable updates, and when
 //! the bound spares the room copy.

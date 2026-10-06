@@ -48,6 +48,7 @@ import {
   materialUpdateGrowth,
   measureMaterialValue,
 } from './limits.js';
+import { convertAgentMarkdown } from './markdown.js';
 import { assertCanonicalMaterialValue } from './materialDocument.js';
 import { UPDATE_UNHELD } from './officeRoots.js';
 import { YjsDocumentStore } from './persistence.js';
@@ -1902,6 +1903,70 @@ function inspectFamily() {
   );
 }
 
+/* --------------------------------------------------------------- markdown */
+
+/** Agent markdown through the Node server's converter (the editor's import,
+ * bundled): synthetic samples of each construct, then the repository's own
+ * markdown pages as long real-world input. */
+async function markdownFamily() {
+  const samples: [string, string][] = [
+    ['quiz and mermaid', '## Mini check\n\n```quiz\nquestions:\n  - {id: q1}\n```\n\n```mermaid\nflowchart LR\n  A --> B\n```'],
+    ['headings and marks', '# H1\n\n## H2 *em* **strong** ~~del~~ `code`\n\n### H3\n\n#### H4\n\n##### H5\n\n###### H6\n\nPlain with **bold _nested italic_** and ***both***.'],
+    ['lists', '- one\n- two\n  - nested\n    - deeper\n- three\n\n1. first\n2. second\n   1. inner\n\n- [ ] todo\n- [x] done'],
+    ['code fences', '```ts\nconst x: number = 1;\n```\n\n```\nplain\n```\n\n    indented code\n\n```python\ndef f():\n    return 1\n```'],
+    ['table', '| a | b |\n|---|:-:|\n| 1 | **2** |\n| `x` | [l](https://x.test) |'],
+    ['quote and rule', '> quoted\n> **line**\n\n---\n\n> nested\n>> deeper'],
+    ['links and images', '[text](https://example.com "title") and <https://auto.link> and ![alt](https://example.com/a.png)'],
+    ['math', 'Inline $x^2 + y_1$ and display:\n\n$$\n\\int_0^1 x\\,dx\n$$\n'],
+    ['html', '<div>raw <b>html</b></div>\n\ntext <sub>sub</sub> <sup>sup</sup> <kbd>k</kbd>'],
+    ['emoji and escapes', 'Smile :smile: and \\*not em\\* and &amp; &copy; &#169;'],
+    ['flashcards', '```flashcards\ncards:\n  - front: Q1\n    back: A1\n  - front: Q2\n    back: A2\n```'],
+    ['bad quiz yaml', '```quiz\nquestions: [unclosed\n```'],
+    ['empty quiz', '```quiz\nquestions: []\n```'],
+    ['bad cards', '```flashcards\ncards:\n  - front: only\n```'],
+    ['html embed', '```html-embed\n<p>Hello</p>\n```'],
+    ['too many embeds', Array.from({ length: 11 }, () => '```html-embed\n<p>x</p>\n```').join('\n\n')],
+    ['footnotes', 'Text with a note[^1].\n\n[^1]: The note.'],
+    ['empty', ''],
+    ['whitespace', '   \n\n  \n'],
+    ['unicode', 'é 中文 😀 ​ zero-width and RTL שלום'],
+    ['mixed', '# Notes\n\nSome **bold** text.\n\n- item with `code` and $m$\n- [link](https://x.test)\n\n```mermaid\ngraph TD\n  A-->B\n```\n\n| k | v |\n|---|---|\n| a | 1 |\n\n> tip: quote\n\n```quiz\nquestions:\n  - id: q1\n    labels: letters\n```'],
+    ['mdx-ish', '<Callout type="info">Hello</Callout>\n\n{1 + 1}\n\nimport x from "y"'],
+    ['long paragraph', 'word '.repeat(5000)],
+    ['deep list', Array.from({ length: 12 }, (_, i) => `${'  '.repeat(i)}- level ${i}`).join('\n')],
+  ];
+  const root = fileURLToPath(new URL('../../', import.meta.url));
+  const pages: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(join(root, dir), { withFileTypes: true })) {
+      const path = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) walk(path);
+      else if (entry.name.endsWith('.md')) pages.push(path);
+    }
+  };
+  for (const dir of ['openwiki', 'human']) walk(dir);
+  for (const file of ['README.md', 'collaboration/README.md', 'todo-office.md', 'todo-learning.md', 'bench/README.md'])
+    pages.push(file);
+  const cases: unknown[] = [];
+  const timings: number[] = [];
+  for (const [name, source] of [
+    ...samples,
+    ...pages.sort().map((page): [string, string] => [page, readFileSync(join(root, page), 'utf8')]),
+  ]) {
+    const start = performance.now();
+    let result: unknown;
+    try {
+      result = await convertAgentMarkdown(source);
+    } catch (error) {
+      result = { error: (error as Error).message };
+    }
+    timings.push(performance.now() - start);
+    cases.push({ name, result, source });
+  }
+  write('markdown', cases, true);
+  console.log(`markdown: ${cases.length} sources, Node convert total ${timings.reduce((a, b) => a + b, 0).toFixed(0)} ms (first ${timings[0].toFixed(0)} ms, including the bundle load)`);
+}
+
 /* ------------------------------------------------------------------- main */
 
 const finals: { name: string; state: Uint8Array }[] = [];
@@ -1955,6 +2020,7 @@ if (families.has('edits')) editsFamily();
 if (families.has('children')) childrenFamily();
 if (families.has('commands')) commandsFamily();
 if (families.has('inspect')) inspectFamily();
+if (families.has('markdown')) await markdownFamily();
 if (families.has('bootstrap')) {
   // `load`'s first open: materials.content into a fresh document.
   const values: [string, unknown[]][] = [

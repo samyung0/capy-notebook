@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)] // Tests panic on a broken corpus.
 //! Random Slate operation sequences recorded from slate-yjs clients writing
 //! to a room (tests/corpus/ops-*.json.gz). For every step:
 //! - the writer's operations replayed through `slate_yjs` on the same client
@@ -105,23 +106,21 @@ fn slate_operations_and_room_checks_match_the_node_server() {
                 } else {
                     if std::env::var("OPS_DEBUG")
                         .is_ok_and(|k| k == ops.iter().map(kind).collect::<Vec<_>>().join("+"))
+                        && let (Some(a), Some(b)) = (&ours, &update)
                     {
-                        if let (Some(a), Some(b)) = (&ours, &update) {
-                            let (x, y) = (common::update_form(a), common::update_form(b));
-                            eprintln!("{at} ops {}", step["ops"]);
-                            for (o, t) in x.0.iter().zip(y.0.iter()).filter(|(o, t)| o != t).take(2)
-                            {
-                                eprintln!(
-                                    "  rust: {o:?}
+                        let (x, y) = (common::update_form(a), common::update_form(b));
+                        eprintln!("{at} ops {}", step["ops"]);
+                        for (o, t) in x.0.iter().zip(y.0.iter()).filter(|(o, t)| o != t).take(2) {
+                            eprintln!(
+                                "  rust: {o:?}
   js:   {t:?}"
-                                );
-                            }
-                            if x.0.len() != y.0.len() {
-                                eprintln!("  struct counts {} vs {}", x.0.len(), y.0.len());
-                            }
-                            if x.1 != y.1 {
-                                eprintln!("  deletes {:?} vs {:?}", x.1, y.1);
-                            }
+                            );
+                        }
+                        if x.0.len() != y.0.len() {
+                            eprintln!("  struct counts {} vs {}", x.0.len(), y.0.len());
+                        }
+                        if x.1 != y.1 {
+                            eprintln!("  deletes {:?} vs {:?}", x.1, y.1);
                         }
                     }
                     let kinds: Vec<&str> = ops.iter().map(kind).collect();
@@ -160,7 +159,7 @@ fn slate_operations_and_room_checks_match_the_node_server() {
     }
     eprintln!("{}", report.join("\n"));
     let mut causes: Vec<_> = byte_mismatches.into_iter().collect();
-    causes.sort_by(|a, b| b.1.cmp(&a.1));
+    causes.sort_by_key(|cause| std::cmp::Reverse(cause.1));
     eprintln!("byte mismatches by operation kinds: {causes:?}");
     assert!(failures.is_empty(), "{failures:#?}");
 }

@@ -91,6 +91,9 @@ pub fn transform_point(point: &Point, op: &Operation, affinity: Affinity) -> Opt
     Some(Point { path, offset })
 }
 
+/// How existing dirty paths move through operations.
+type PathMap<'a> = dyn Fn(&Path) -> Option<Path> + 'a;
+
 /// A path or point that follows the operations applied after it was taken.
 #[derive(Debug, Clone, Copy)]
 pub struct RefId(usize);
@@ -280,15 +283,15 @@ impl<'t, 'doc> Editor<'t, 'doc> {
 
     /* --------------------------------------------------------------- apply */
 
-    fn update_dirty(&mut self, new: Vec<Path>, transform: Option<&dyn Fn(&Path) -> Option<Path>>) {
+    fn update_dirty(&mut self, new: Vec<Path>, transform: Option<&PathMap<'_>>) {
         if let Some(transform) = transform {
             let old = std::mem::take(&mut self.dirty);
             self.dirty_keys.clear();
             for path in old {
-                if let Some(path) = transform(&path) {
-                    if self.dirty_keys.insert(path.clone()) {
-                        self.dirty.push(path);
-                    }
+                if let Some(path) = transform(&path)
+                    && self.dirty_keys.insert(path.clone())
+                {
+                    self.dirty.push(path);
                 }
             }
         }
@@ -514,7 +517,7 @@ impl<'t, 'doc> Editor<'t, 'doc> {
                 return Ok(());
             }
             let parent_path = parent(&at);
-            let mut index = *at
+            let first = *at
                 .last()
                 .ok_or_else(|| SlateError("insert at the root".into()))?;
             // Batched dirty paths: the inserted subtrees and the parent's levels,
@@ -523,10 +526,9 @@ impl<'t, 'doc> Editor<'t, 'doc> {
             let mut batched = Vec::new();
             editor.batching = true;
             let mut result = Ok(());
-            for node in nodes {
+            for (index, node) in (first..).zip(nodes) {
                 let mut path = parent_path.clone();
                 path.push(index);
-                index += 1;
                 if is_text(&node) {
                     new_dirty.push(path.clone());
                 } else {
@@ -747,10 +749,10 @@ impl<'t, 'doc> Editor<'t, 'doc> {
         if !previous_sibling {
             self.move_node(path.clone(), new_path.clone())?;
         }
-        if let Some(id) = empty_ref {
-            if let Some(empty) = self.current_path(id) {
-                self.remove_node(empty)?;
-            }
+        if let Some(id) = empty_ref
+            && let Some(empty) = self.current_path(id)
+        {
+            self.remove_node(empty)?;
         }
         let remove_prev = (is_element(&prev)
             && (children(&prev).is_empty()
@@ -846,17 +848,15 @@ impl<'t, 'doc> Editor<'t, 'doc> {
             let refs: Vec<RefId> = matches.into_iter().map(|p| editor.path_ref(p)).collect();
             let start_ref = editor.point_ref(start.clone(), Affinity::Forward);
             let end_ref = editor.point_ref(end.clone(), Affinity::Forward);
-            if !single_text {
-                if let Some(point) = editor.current_point(start_ref) {
-                    let leaf = editor.leaf(&point.path)?;
-                    let removed = slice16(&leaf, start.offset, len16(&leaf)).to_owned();
-                    if !removed.is_empty() {
-                        editor.apply(Operation::RemoveText {
-                            path: point.path,
-                            offset: start.offset,
-                            text: removed,
-                        })?;
-                    }
+            if !single_text && let Some(point) = editor.current_point(start_ref) {
+                let leaf = editor.leaf(&point.path)?;
+                let removed = slice16(&leaf, start.offset, len16(&leaf)).to_owned();
+                if !removed.is_empty() {
+                    editor.apply(Operation::RemoveText {
+                        path: point.path,
+                        offset: start.offset,
+                        text: removed,
+                    })?;
                 }
             }
             let paths: Vec<Path> = refs
@@ -879,13 +879,14 @@ impl<'t, 'doc> Editor<'t, 'doc> {
                     })?;
                 }
             }
-            if !single_text && across_blocks {
-                if let (Some(point), Some(_)) = (
+            if !single_text
+                && across_blocks
+                && let (Some(point), Some(_)) = (
                     editor.current_point(end_ref),
                     editor.current_point(start_ref),
-                ) {
-                    editor.merge_blocks_at_point(point)?;
-                }
+                )
+            {
+                editor.merge_blocks_at_point(point)?;
             }
             editor.unref_point(start_ref);
             editor.unref_point(end_ref);

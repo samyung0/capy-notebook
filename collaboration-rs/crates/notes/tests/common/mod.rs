@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)] // Tests panic on a broken corpus.
 //! Corpus loading for the parity tests (tests/corpus, made by generate.sh).
 #![allow(dead_code)]
 
@@ -144,13 +145,13 @@ impl Room {
                     record["roomMetrics"]
                 ));
             }
-            if let Some(growth) = &growth {
-                if exceeds(growth, &self.previous, &metrics) {
-                    failures.push(format!(
-                        "{at}: bound {growth:?} below the exact growth {:?} -> {metrics:?}",
-                        self.previous
-                    ));
-                }
+            if let Some(growth) = &growth
+                && exceeds(growth, &self.previous, &metrics)
+            {
+                failures.push(format!(
+                    "{at}: bound {growth:?} below the exact growth {:?} -> {metrics:?}",
+                    self.previous
+                ));
             }
             let value = Value::Array(notes::plate::value(&txn).unwrap());
             if hash(&value) != record["roomHash"].as_str().unwrap() {
@@ -179,7 +180,10 @@ impl Room {
 /// (each as yrs prints it: id, length, origins, parent, content) and its
 /// deleted ranges. Two encoders that order clients differently give the same
 /// form for the same items.
-pub fn update_form(bytes: &[u8]) -> (Vec<(u64, u32, String)>, Vec<(u64, Vec<(u32, u32)>)>) {
+/// Structs as (client, clock, form) and deleted ranges per client.
+pub type UpdateForm = (Vec<(u64, u32, String)>, Vec<(u64, Vec<(u32, u32)>)>);
+
+pub fn update_form(bytes: &[u8]) -> UpdateForm {
     let update = yrs::Update::decode_v1(bytes).unwrap();
     let mut structs: Vec<(u64, u32, String)> = update
         .blocks()
