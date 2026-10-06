@@ -7,13 +7,15 @@ import {
   reportOnce,
   storageFailureReason,
 } from '@/lib/editIncidents';
-import type {
-  DeletedDraft,
-  DraftMessage,
-  DraftRef,
-  DraftReply,
-  DraftRequest,
-  StorageError,
+import {
+  type DeletedDraft,
+  type DraftMessage,
+  type DraftRef,
+  type DraftReply,
+  type DraftRequest,
+  MERGE_RUN,
+  mergeInRuns,
+  type StorageError,
 } from './draftStore';
 
 /**
@@ -348,7 +350,7 @@ export function applyDrafts(doc: Y.Doc, rows: EditDraft[], origin: unknown) {
     (a, b) =>
       Number(a.kind === 'update') - Number(b.kind === 'update') || a.seq - b.seq
   );
-  Y.applyUpdate(doc, Y.mergeUpdates(ordered.map((row) => row.data)), origin);
+  Y.applyUpdate(doc, mergeInRuns(ordered.map((row) => row.data)), origin);
 }
 
 /** A recovery group as one document, or null when it cannot be drawn: update
@@ -431,6 +433,8 @@ export function recordDrafts({
   let pendingAdopted = adopted;
   // This session's update rows no receipt covered yet, and their bytes.
   let updates: { seq: number; bytes: number }[] = [];
+  // Update rows written since the last merge of a run of them.
+  let unmerged: number[] = [];
   let updateBytes = 0;
   // The last whole state written, and the update bytes written after it.
   let state: { seq: number; bytes: number } | null = null;
@@ -534,6 +538,11 @@ export function recordDrafts({
     if (keep)
       try {
         post({ op: 'append', row: row('update', sequence, update) });
+        unmerged.push(sequence);
+        if (unmerged.length === MERGE_RUN) {
+          post({ op: 'merge', rows: unmerged.map(updateRow) });
+          unmerged = [];
+        }
       } catch (error) {
         failed(error);
       }

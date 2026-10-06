@@ -1,3 +1,4 @@
+import * as Y from 'yjs';
 import type { EditDraft } from './editDrafts';
 
 /**
@@ -23,8 +24,9 @@ export type DraftRequest =
   | { op: 'deleteDocument'; key: string }
   | { op: 'mark'; key: string; ids: string[] }
   | { op: 'keys'; prefix: string }
-  /** Answers once everything posted before it ran. */
-  | { op: 'barrier' };
+  /** A run of one session's update rows, merged into its last row (same id
+   * and `seq`), so a long session reads back as a row per run. */
+  | { op: 'merge'; rows: DraftRef[] };
 
 export type DraftMessage = DraftRequest & {
   /** `capy-edit-drafts`, or the MSW scenarios' own database. */
@@ -41,6 +43,22 @@ export type DraftReply =
   | { failed: string; error: StorageError };
 
 export type DeletedDraft = Omit<EditDraft, 'data'> & { bytes: number };
+
+/** Updates per merge: one `Y.mergeUpdates` over thousands of updates is
+ * quadratic (1.7 s for 10k typed updates), runs of 64 merged and then merged
+ * again stay linear (70 ms). */
+export const MERGE_RUN = 64;
+
+export function mergeInRuns(updates: Uint8Array[]): Uint8Array {
+  let merged = updates;
+  while (merged.length > 1) {
+    const next: Uint8Array[] = [];
+    for (let at = 0; at < merged.length; at += MERGE_RUN)
+      next.push(Y.mergeUpdates(merged.slice(at, at + MERGE_RUN)));
+    merged = next;
+  }
+  return merged[0] ?? Y.mergeUpdates([]);
+}
 
 function request<T>(work: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -290,8 +308,27 @@ function run(name: string, message: DraftRequest): Promise<unknown> {
         };
       }).then(() => [...found]);
     }
-    case 'barrier':
-      return Promise.resolve();
+    case 'merge':
+      return transact(name, 'readwrite', (stores) => {
+        const found: EditDraft[] = [];
+        let waiting = message.rows.length;
+        for (const ref of message.rows) {
+          const current = stores.drafts.get(ref.id);
+          current.onsuccess = () => {
+            const row = current.result as EditDraft | undefined;
+            // A receipt may have deleted some already.
+            if (row?.seq === ref.seq && row.kind === 'update') found.push(row);
+            if (--waiting || found.length < 2) return;
+            found.sort((a, b) => a.seq - b.seq);
+            const last = found.at(-1)!;
+            stores.drafts.put({
+              ...last,
+              data: Y.mergeUpdates(found.map((row) => row.data)),
+            });
+            for (const row of found.slice(0, -1)) stores.drafts.delete(row.id);
+          };
+        }
+      });
   }
 }
 

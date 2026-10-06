@@ -491,6 +491,39 @@ describe('recording a note session', () => {
     expect(reopened.getText('content').toString()).toBe(`base ${typed}`);
   });
 
+  it('merges a long session into a row per run, still exact after receipts', async () => {
+    const key = 'u_1:material:long';
+    const { client, recorder } = noteRecorder(key, 'base ');
+    const text = client.getText('content');
+    const type = (count: number) => {
+      for (let index = 0; index < count; index++)
+        text.insert(text.length, String.fromCharCode(97 + (index % 26)));
+    };
+    type(100);
+    // What the room holds when the receipt for edit 100 comes.
+    const saved = Y.encodeStateAsUpdate(client);
+    type(50);
+    // 64 + 64 merged, 22 still one row each.
+    let rows = await readDrafts(key);
+    expect(rows).toHaveLength(2 + 22);
+    expect(
+      rows.filter((row) => row.seq === 64 || row.seq === 128)
+    ).toHaveLength(2);
+    // A receipt in the middle of a run keeps the run's row (it holds newer
+    // edits too); one past it deletes it.
+    await recorder.covered(100);
+    rows = await readDrafts(key);
+    expect(rows.map((row) => row.seq).sort((a, b) => a - b)[0]).toBe(128);
+    type(10);
+    rows = await readDrafts(key);
+    const reopened = new Y.Doc();
+    applyDrafts(reopened, rows, 'restore');
+    Y.applyUpdate(reopened, saved, REMOTE);
+    expect(reopened.getText('content').toString()).toBe(text.toString());
+    await recorder.covered(recorder.sequence);
+    expect(await readDrafts(key)).toEqual([]);
+  });
+
   it('restores online edits without a base once the room sync brings it', async () => {
     const key = 'u_1:material:online';
     const { client, room } = noteRecorder(key, 'base ');
