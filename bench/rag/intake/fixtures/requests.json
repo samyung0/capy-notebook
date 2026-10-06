@@ -1,0 +1,623 @@
+{
+  "schema": 1,
+  "frozen": "2026-10-06",
+  "note": "Intake and retrieval comparison requests. Generic requests run as two scripted turns: the request, then the confirmation after the agent's proposal. Output is notes with embedded quizzes only; decks off; study preferences at the app defaults; Library on (knowledge base and question bank).",
+  "output": {
+    "formats": [
+      "note",
+      "quiz"
+    ],
+    "decks": false,
+    "study_preferences": {}
+  },
+  "books": {
+    "os4": {
+      "sha256_prefix": "e261e4aea0eb"
+    },
+    "ahss4": {
+      "sha256_prefix": "f3a19c74d914"
+    },
+    "lsj": {
+      "sha256_prefix": "90d44719e232"
+    },
+    "brief-calculus": {
+      "sha256_prefix": "af488abb028e"
+    },
+    "fundamentals-of-electrical-engineering-i": {
+      "sha256_prefix": "e53ed3d0c7dd"
+    }
+  },
+  "pilot_source": "bench/rag/fixtures/knowledge-base-pilot-questions.json",
+  "dev_repeat": "every request with split dev runs twice per arm",
+  "requests": [
+    {
+      "id": "gen-01",
+      "kind": "generic",
+      "split": "dev",
+      "turns": [
+        "I want to learn introductory statistics from the beginning, about six chapters. I'm in high school.",
+        "Yes, go ahead."
+      ],
+      "expected": {
+        "books": [
+          "ahss4",
+          "os4"
+        ],
+        "expect": "one book, six level-1 chapters proposed, six notes and six quizzes"
+      }
+    },
+    {
+      "id": "gen-02",
+      "kind": "generic",
+      "split": "dev",
+      "turns": [
+        "I'm in a first undergraduate statistics course. I want to learn statistics in two chapters: one on sampling distributions and the central limit theorem, one on confidence intervals for a mean.",
+        "Yes, go ahead."
+      ],
+      "expected": {
+        "books": [
+          "ahss4",
+          "os4",
+          "lsj"
+        ],
+        "sections": [
+          "ahss4: Sampling distributions and the central limit theorem p187",
+          "ahss4: Confidence intervals for a population mean p354",
+          "os4: Foundations for inference p188",
+          "os4: Inference for numerical data p280"
+        ]
+      }
+    },
+    {
+      "id": "gen-03",
+      "kind": "generic",
+      "split": "dev",
+      "turns": [
+        "Help me study for my stats midterm. It covers probability basics, conditional probability, binomial distributions and normal distributions.",
+        "Yes, but drop normal distributions and add sampling distributions."
+      ],
+      "expected": {
+        "books": [
+          "ahss4"
+        ],
+        "sections": [
+          "ahss4: Probability basics p111",
+          "ahss4: Conditional probability, intersections, and unions p124",
+          "ahss4: Binomial distributions p157",
+          "ahss4: Sampling distributions and the central limit theorem p187"
+        ],
+        "expect": "the edited plan drops the normal chapter"
+      }
+    },
+    {
+      "id": "gen-04",
+      "kind": "generic",
+      "split": "dev",
+      "turns": [
+        "Help me study statistics.",
+        "Just the basics, two chapters is enough."
+      ],
+      "expected": {
+        "books": [
+          "ahss4",
+          "os4",
+          "lsj"
+        ],
+        "expect": "asks what to study and proposes a default before building"
+      }
+    },
+    {
+      "id": "gen-05",
+      "kind": "generic",
+      "split": "heldout",
+      "turns": [
+        "I want to learn linear regression: fitting a line and reading residuals, then correlation versus causation.",
+        "Yes, go ahead."
+      ],
+      "expected": {
+        "books": [
+          "os4",
+          "ahss4"
+        ],
+        "sections": [
+          "os4: Introduction to linear regression p340",
+          "ahss4: Line fitting and residuals p447",
+          "ahss4: Summarizing bivariate numerical data p432"
+        ]
+      }
+    },
+    {
+      "id": "gen-06",
+      "kind": "generic",
+      "split": "heldout",
+      "turns": [
+        "I want to learn hypothesis testing and comparing two means using jamovi. Two chapters.",
+        "Yes, go ahead."
+      ],
+      "expected": {
+        "books": [
+          "lsj"
+        ],
+        "sections": [
+          "lsj: Hypothesis testing p182",
+          "lsj: Comparing two means p236"
+        ],
+        "expect": "picks the jamovi book"
+      }
+    },
+    {
+      "id": "gen-07",
+      "kind": "generic",
+      "split": "heldout",
+      "turns": [
+        "I want to learn how to differentiate: the product and chain rules first, then exponentials and logarithms, with practice.",
+        "Yes, go ahead."
+      ],
+      "expected": {
+        "books": [
+          "brief-calculus"
+        ],
+        "sections": [
+          "2.3 The product rule p48",
+          "2.4 The chain rule p50",
+          "2.5 Exponentials and logarithms p53"
+        ]
+      }
+    },
+    {
+      "id": "gen-08",
+      "kind": "generic",
+      "split": "heldout",
+      "turns": [
+        "I want to learn basic circuit analysis: ideal circuit elements, Kirchhoff's laws with series and parallel circuits, then equivalent circuits.",
+        "Yes, go ahead."
+      ],
+      "expected": {
+        "books": [
+          "fundamentals-of-electrical-engineering-i"
+        ],
+        "sections": [
+          "3.2 Ideal Circuit Elements p51",
+          "3.4 Electric Circuits and Interconnection Laws p55",
+          "3.6 Series and Parallel Circuits p60",
+          "3.7 Equivalent Circuits: Resistors and Sources p67"
+        ]
+      }
+    },
+    {
+      "id": "stat-01",
+      "kind": "pilot",
+      "split": "dev",
+      "turns": [
+        "I'm a high-school beginner. I want to learn why the median can describe skewed incomes better than the mean. Give a small worked example."
+      ],
+      "expected": {
+        "topics": [
+          "center"
+        ],
+        "roles": [
+          "worked_example"
+        ],
+        "unanswerable": false,
+        "figure_dependent": false,
+        "learner_level": "high-school"
+      }
+    },
+    {
+      "id": "stat-05",
+      "kind": "pilot",
+      "split": "dev",
+      "turns": [
+        "I'm a high-school beginner. I want to learn conditional probability with a two-way table and a worked calculation."
+      ],
+      "expected": {
+        "topics": [
+          "conditional"
+        ],
+        "roles": [
+          "worked_example"
+        ],
+        "unanswerable": false,
+        "figure_dependent": false,
+        "learner_level": "high-school"
+      }
+    },
+    {
+      "id": "stat-07",
+      "kind": "pilot",
+      "split": "dev",
+      "turns": [
+        "I'm a high-school beginner. I want to learn when a binomial model is appropriate and solve a short example."
+      ],
+      "expected": {
+        "topics": [
+          "binomial"
+        ],
+        "roles": [
+          "worked_example"
+        ],
+        "unanswerable": false,
+        "figure_dependent": false,
+        "learner_level": "high-school"
+      }
+    },
+    {
+      "id": "stat-08",
+      "kind": "pilot",
+      "split": "dev",
+      "turns": [
+        "I'm taking an introductory undergraduate statistics course. Explain the central limit theorem and why it does not make the raw data normally distributed."
+      ],
+      "expected": {
+        "topics": [
+          "sampling-distributions"
+        ],
+        "roles": [
+          "formal"
+        ],
+        "unanswerable": false,
+        "figure_dependent": false,
+        "learner_level": "undergraduate"
+      }
+    },
+    {
+      "id": "stat-09",
+      "kind": "pilot",
+      "split": "dev",
+      "turns": [
+        "I'm taking an introductory undergraduate statistics course. Teach me how to interpret a 95 percent confidence interval, including a common incorrect interpretation."
+      ],
+      "expected": {
+        "topics": [
+          "confidence-intervals"
+        ],
+        "roles": [
+          "introduction"
+        ],
+        "unanswerable": false,
+        "figure_dependent": false,
+        "learner_level": "undergraduate"
+      }
+    },
+    {
+      "id": "stat-10",
+      "kind": "pilot",
+      "split": "dev",
+      "turns": [
+        "I'm taking an introductory undergraduate statistics course. I want to understand a p-value. Does p = 0.03 mean the null hypothesis has a 3 percent chance of being true?"
+      ],
+      "expected": {
+        "topics": [
+          "hypothesis-tests"
+        ],
+        "roles": [
+          "introduction"
+        ],
+        "unanswerable": false,
+        "figure_dependent": false,
+        "learner_level": "undergraduate"
+      }
+    },
+    {
+      "id": "stat-11",
+      "kind": "pilot",
+      "split": "dev",
+      "turns": [
+        "I'm taking an introductory undergraduate statistics course. Teach me type I error, type II error and power using one consistent example."
+      ],
+      "expected": {
+        "topics": [
+          "errors-power"
+        ],
+        "roles": [
+          "worked_example"
+        ],
+        "unanswerable": false,
+        "figure_dependent": false,
+        "learner_level": "undergraduate"
+      }
+    },
+    {
+      "id": "stat-12",
+      "kind": "pilot",
+      "split": "dev",
+      "turns": [
+        "I'm taking an introductory undergraduate statistics course. I want to choose between a paired t-test and an independent samples t-test for before-and-after observations."
+      ],
+      "expected": {
+        "topics": [
+          "paired-data",
+          "t-tests"
+        ],
+        "roles": [
+          "worked_example"
+        ],
+        "unanswerable": false,
+        "figure_dependent": false,
+        "learner_level": "undergraduate"
+      }
+    },
+    {
+      "id": "stat-15",
+      "kind": "pilot",
+      "split": "dev",
+      "turns": [
+        "I'm taking an introductory undergraduate statistics course. I want a worked example interpreting a regression slope and intercept, and why extrapolation is dangerous."
+      ],
+      "expected": {
+        "topics": [
+          "linear-regression",
+          "regression-diagnostics"
+        ],
+        "roles": [
+          "worked_example"
+        ],
+        "unanswerable": false,
+        "figure_dependent": false,
+        "learner_level": "undergraduate"
+      }
+    },
+    {
+      "id": "stat-16",
+      "kind": "pilot",
+      "split": "dev",
+      "turns": [
+        "I'm taking an introductory undergraduate statistics course. Teach me the molecular steps of CRISPR gene editing from these books."
+      ],
+      "expected": {
+        "topics": [],
+        "roles": [
+          "introduction"
+        ],
+        "unanswerable": true,
+        "figure_dependent": false,
+        "learner_level": "undergraduate"
+      }
+    },
+    {
+      "id": "stat-17",
+      "kind": "pilot",
+      "split": "heldout",
+      "turns": [
+        "I'm taking an introductory undergraduate statistics course. I keep mixing up standard error and standard deviation. Build three exercises that reveal the difference."
+      ],
+      "expected": {
+        "topics": [
+          "sampling-distributions",
+          "spread"
+        ],
+        "roles": [
+          "exercise"
+        ],
+        "unanswerable": false,
+        "figure_dependent": false,
+        "learner_level": "undergraduate"
+      }
+    },
+    {
+      "id": "stat-18",
+      "kind": "pilot",
+      "split": "heldout",
+      "turns": [
+        "I'm a high-school beginner. I want to learn how to read a box plot using an actual textbook figure, including the whiskers and outliers."
+      ],
+      "expected": {
+        "topics": [
+          "graphs",
+          "spread"
+        ],
+        "roles": [
+          "introduction"
+        ],
+        "unanswerable": false,
+        "figure_dependent": true,
+        "learner_level": "high-school"
+      }
+    },
+    {
+      "id": "stat-19",
+      "kind": "pilot",
+      "split": "heldout",
+      "turns": [
+        "I'm taking an introductory undergraduate statistics course. Explain why a screening test with high sensitivity can still produce many false positives when prevalence is low."
+      ],
+      "expected": {
+        "topics": [
+          "conditional"
+        ],
+        "roles": [
+          "worked_example"
+        ],
+        "unanswerable": false,
+        "figure_dependent": false,
+        "learner_level": "undergraduate"
+      }
+    },
+    {
+      "id": "stat-20",
+      "kind": "pilot",
+      "split": "heldout",
+      "turns": [
+        "I'm taking an introductory undergraduate statistics course. Teach me how a residual plot can reveal that a straight-line model is inappropriate. Use a textbook plot."
+      ],
+      "expected": {
+        "topics": [
+          "regression-diagnostics"
+        ],
+        "roles": [
+          "introduction"
+        ],
+        "unanswerable": false,
+        "figure_dependent": true,
+        "learner_level": "undergraduate"
+      }
+    },
+    {
+      "id": "stat-23",
+      "kind": "pilot",
+      "split": "heldout",
+      "turns": [
+        "I'm a high-school beginner. Help me distinguish nominal, ordinal, interval and ratio measurements with examples and a self-check."
+      ],
+      "expected": {
+        "topics": [
+          "data-types"
+        ],
+        "roles": [
+          "exercise"
+        ],
+        "unanswerable": false,
+        "figure_dependent": false,
+        "learner_level": "high-school"
+      }
+    },
+    {
+      "id": "stat-24",
+      "kind": "pilot",
+      "split": "heldout",
+      "turns": [
+        "I'm studying advanced mathematics. I want a rigorous proof of the spectral theorem for unbounded self-adjoint operators from these textbooks."
+      ],
+      "expected": {
+        "topics": [],
+        "roles": [
+          "formal"
+        ],
+        "unanswerable": true,
+        "figure_dependent": false,
+        "learner_level": "advanced"
+      }
+    },
+    {
+      "id": "form-01",
+      "kind": "formula",
+      "split": "dev",
+      "turns": [
+        "Teach me the chain rule with a worked example and a few practice problems with answers."
+      ],
+      "expected": {
+        "books": [
+          "brief-calculus"
+        ],
+        "sections": [
+          "2.4 The chain rule p50"
+        ]
+      }
+    },
+    {
+      "id": "form-02",
+      "kind": "formula",
+      "split": "dev",
+      "turns": [
+        "Explain the product rule and the quotient rule for derivatives, with a worked example of each and practice."
+      ],
+      "expected": {
+        "books": [
+          "brief-calculus"
+        ],
+        "sections": [
+          "2.3 The product rule p48",
+          "2.6 Quotients p57"
+        ]
+      }
+    },
+    {
+      "id": "form-03",
+      "kind": "formula",
+      "split": "dev",
+      "turns": [
+        "Explain l'Hopital's rule and when it applies, with a worked example and practice."
+      ],
+      "expected": {
+        "books": [
+          "brief-calculus"
+        ],
+        "sections": [
+          "3.3 L'Hopital's rule p83"
+        ]
+      }
+    },
+    {
+      "id": "form-04",
+      "kind": "formula",
+      "split": "dev",
+      "turns": [
+        "Teach me the fundamental theorem of calculus with a worked example and practice problems."
+      ],
+      "expected": {
+        "books": [
+          "brief-calculus"
+        ],
+        "sections": [
+          "4.2 The fundamental theorem of calculus p98"
+        ]
+      }
+    },
+    {
+      "id": "form-05",
+      "kind": "formula",
+      "split": "heldout",
+      "turns": [
+        "Explain complex numbers in polar form and Euler's formula, with worked examples and practice."
+      ],
+      "expected": {
+        "books": [
+          "fundamentals-of-electrical-engineering-i"
+        ],
+        "sections": [
+          "2.1 Complex Numbers p21"
+        ]
+      }
+    },
+    {
+      "id": "form-06",
+      "kind": "formula",
+      "split": "heldout",
+      "turns": [
+        "Teach me Kirchhoff's laws and how to combine series and parallel resistors, with a worked circuit example and practice."
+      ],
+      "expected": {
+        "books": [
+          "fundamentals-of-electrical-engineering-i"
+        ],
+        "sections": [
+          "3.4 Electric Circuits and Interconnection Laws p55",
+          "3.6 Series and Parallel Circuits p60"
+        ]
+      }
+    },
+    {
+      "id": "form-07",
+      "kind": "formula",
+      "split": "heldout",
+      "turns": [
+        "Explain Thevenin and Norton equivalent circuits with a worked example and practice."
+      ],
+      "expected": {
+        "books": [
+          "fundamentals-of-electrical-engineering-i"
+        ],
+        "sections": [
+          "3.7 Equivalent Circuits: Resistors and Sources p67"
+        ]
+      }
+    },
+    {
+      "id": "form-08",
+      "kind": "formula",
+      "split": "heldout",
+      "turns": [
+        "Teach me how to find the Fourier series coefficients of a square wave, with the derivation and practice."
+      ],
+      "expected": {
+        "books": [
+          "fundamentals-of-electrical-engineering-i"
+        ],
+        "sections": [
+          "4.2 Complex Fourier Series p142",
+          "4.3 Classic Fourier Series p148"
+        ]
+      }
+    }
+  ]
+}
