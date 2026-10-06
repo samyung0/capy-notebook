@@ -7,9 +7,14 @@
 //! Documents must count text in UTF-16 units (`yrs::OffsetKind::Utf16`), as
 //! Yjs and Slate do: [`doc_options`].
 
+pub mod bound;
 pub mod json;
 pub mod limits;
 pub mod plate;
+pub mod slate;
+pub mod slate_yjs;
+pub mod update;
+pub mod validate;
 
 pub use plate::CONTENT_ROOT;
 

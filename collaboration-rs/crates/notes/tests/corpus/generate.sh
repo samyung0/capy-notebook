@@ -29,5 +29,5 @@ JSON
 trap 'rm -f "$src/zz-corpus.ts" "$checkout/collaboration/tsconfig.corpus.json"' EXIT
 register="$(cd "$here" && node -p "require('node:url').pathToFileURL(require('node:path').resolve('raw-register.mjs')).href")"
 cd "$checkout/collaboration"
-CORPUS_OUT="$here" CORPUS_FAMILIES="${2:-projection,ops,validation,edits,children,commands,markdown}" \
+CORPUS_OUT="$here" CORPUS_FAMILIES="${2:-projection,ops,multi,bootstrap,validation,edits,children,commands,markdown}" \
   NODE_OPTIONS="--max-old-space-size=8192 --import=$register" node_modules/.bin/tsx --tsconfig tsconfig.corpus.json src/zz-corpus.ts

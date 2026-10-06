@@ -710,6 +710,208 @@ function opsFamily(options: OpsOptions) {
   return { name: `ops-final-${options.name}`, state: Y.encodeStateAsUpdate(room) };
 }
 
+/* ------------------------------------------------------------ multi-writer */
+
+/**
+ * Three Slate clients on stale copies of one room (plate REVIEW1 M3, after
+ * the reviewer's twopeer probe): they edit, pull the room as remote events,
+ * and deliver their queued updates merged or one by one. Each delivered
+ * update is checked by the room's validator, as Hocuspocus would.
+ */
+function multiWriterFamily(seed: number, steps: number) {
+  const random = seeded(seed);
+  const pick = <T>(list: readonly T[]) =>
+    list[Math.floor(random() * list.length)];
+  const count = (max: number) => 1 + Math.floor(random() * max);
+  const characters = ['a', 'b', ' ', 'e', '😀', '"', '\\', '\u0001', '中'];
+  const word = (length: number) =>
+    Array.from({ length }, () => pick(characters)).join('');
+  const marks = [
+    { bold: true },
+    { italic: true },
+    { code: true },
+    { color: '#ff0000' },
+    { backgroundColor: 'rgb(1, 2, 3)' },
+  ];
+  const para = (text: string, mark = {}) => ({
+    children: [{ text, ...mark }],
+    type: 'p',
+  });
+  const initial = Array.from({ length: 12 }, () => ({
+    children: [
+      { text: word(10) },
+      { bold: true, text: word(8) },
+      { text: word(6) },
+      { color: '#00f', italic: true, text: word(5) },
+      { text: word(4) },
+    ],
+    type: 'p',
+  }));
+  const room = docWithValue(initial, ROOM_CLIENT);
+  const start = Y.encodeStateAsUpdate(room);
+  const store = new YjsDocumentStore({} as Pool);
+  const roomName = `material:multi-${seed}:schema:1`;
+  const roomUpdates: Uint8Array[] = [];
+  room.on('update', (update: Uint8Array) => roomUpdates.push(update));
+  let nextClient = 3_000;
+  const client = () => {
+    const doc = docFromState(Y.encodeStateAsUpdate(room), nextClient++);
+    const queue: Uint8Array[] = [];
+    doc.on('update', (update: Uint8Array, origin: unknown) => {
+      if (origin !== 'remote') queue.push(update);
+    });
+    const editor = withYjs(createEditor(), doc.get('content', Y.XmlText));
+    YjsEditor.connect(editor);
+    const texts = () =>
+      Array.from(
+        Editor.nodes(editor, { at: [], match: Text.isText }),
+        ([, path]) => path
+      );
+    const point = (path = pick(texts())) => ({
+      offset: Math.floor(
+        random() * ((Node.get(editor, path) as Text).text.length + 1)
+      ),
+      path,
+    });
+    const range = () => ({ anchor: point(), focus: point() });
+    const block = (): Path => [Math.floor(random() * editor.children.length)];
+    const isBlock = (node: Node) =>
+      Element.isElement(node) && Editor.isBlock(editor, node);
+    const operations = [
+      () => Transforms.insertText(editor, word(count(3)), { at: point() }),
+      () => Transforms.insertText(editor, word(count(3)), { at: point() }),
+      () =>
+        Transforms.delete(editor, {
+          at: point(),
+          distance: count(20),
+          unit: 'character',
+        }),
+      () => Transforms.delete(editor, { at: range() }),
+      () =>
+        Transforms.splitNodes(editor, {
+          always: true,
+          at: point(),
+          match: isBlock,
+        }),
+      () => {
+        const at = block();
+        if (at[0] > 0) Transforms.mergeNodes(editor, { at });
+      },
+      () =>
+        Transforms.setNodes(editor, pick(marks) as Partial<Node>, {
+          at: range(),
+          match: Text.isText,
+          split: true,
+        }),
+      () =>
+        Transforms.setNodes(editor, pick(marks) as Partial<Node>, {
+          at: range(),
+          match: Text.isText,
+          split: true,
+        }),
+      () =>
+        Transforms.unsetNodes(editor, Object.keys(pick(marks)), {
+          at: range(),
+          match: Text.isText,
+          split: true,
+        }),
+      () =>
+        Transforms.setNodes(
+          editor,
+          pick([
+            { type: 'h2' },
+            { align: 'center' },
+            { id: word(5) },
+          ]) as Partial<Node>,
+          { at: block() }
+        ),
+      () =>
+        Transforms.insertNodes(
+          editor,
+          [para(word(count(30)), pick(marks))] as never,
+          { at: block() }
+        ),
+      () =>
+        Transforms.wrapNodes(
+          editor,
+          { children: [], type: 'blockquote' } as never,
+          { at: block() }
+        ),
+      () => Transforms.moveNodes(editor, { at: block(), to: block() }),
+      () => Transforms.removeNodes(editor, { at: block() }),
+    ];
+    return {
+      pull() {
+        try {
+          Y.applyUpdate(
+            doc,
+            Y.encodeStateAsUpdate(room, Y.encodeStateVector(doc)),
+            'remote'
+          );
+        } catch {
+          // A remote event slate-yjs cannot map; the client keeps its document.
+        }
+      },
+      queue,
+      step() {
+        try {
+          pick(operations)();
+          YjsEditor.flushLocalChanges(editor);
+        } catch {
+          // Refused by Slate at that spot.
+        }
+      },
+    };
+  };
+  const peers = [client(), client(), client()];
+  const deliveries: unknown[] = [];
+  for (let index = 0; index < steps; index += 1) {
+    const peer = pick(peers);
+    const roll = random();
+    if (roll < 0.55) peer.step();
+    else if (roll < 0.85 && peer.queue.length) {
+      const updates =
+        random() < 0.5 ? [Y.mergeUpdates(peer.queue)] : [...peer.queue];
+      peer.queue.length = 0;
+      for (const update of updates) {
+        const content = room.get('content', Y.XmlText);
+        const record: Record<string, unknown> = {
+          growth: materialUpdateGrowth(content, update),
+          update: b64(update),
+        };
+        const destroysBefore = scratchDestroys;
+        let outcome: Record<string, unknown>;
+        try {
+          const result = store.validateUpdate(roomName, room, update);
+          outcome =
+            result === UPDATE_UNHELD ? { unheld: true } : { accepted: true };
+        } catch (error) {
+          outcome =
+            error instanceof MaterialDocumentLimitError
+              ? { code: error.code, metrics: error.metrics, refused: true }
+              : { error: (error as Error).message, refused: true };
+        }
+        outcome.exact = scratchDestroys > destroysBefore;
+        record.outcome = outcome;
+        if (outcome.accepted) {
+          roomUpdates.length = 0;
+          Y.applyUpdate(room, update, connection);
+          record.roomCleanup = roomUpdates.slice(1).map(b64);
+          const value = plate(room);
+          record.roomMetrics = metricsOf(value);
+          record.roomHash = hash(value);
+        }
+        deliveries.push(record);
+      }
+    } else peer.pull();
+  }
+  write(
+    `multi-${seed}`,
+    { deliveries, initial: b64(start), roomClient: ROOM_CLIENT },
+    true
+  );
+}
+
 /* ------------------------------------------------------------------- main */
 
 const finals: { name: string; state: Uint8Array }[] = [];
@@ -755,7 +957,26 @@ if (families.has('ops')) {
     })
   );
 }
+if (families.has('multi'))
+  for (const seed of [1, 2, 3, 4, 5, 6]) multiWriterFamily(seed, 600);
 if (families.has('projection')) projectionFamily(finals);
+if (families.has('bootstrap')) {
+  // `load`'s first open: materials.content into a fresh document.
+  const values: [string, unknown[]][] = [
+    ['load-note', loadNote],
+    ...seedNotes.map((note): [string, unknown[]] => [note.id, note.value]),
+    ...Object.entries(smallNotes),
+  ];
+  write(
+    'bootstrap',
+    values.map(([name, value]) => ({
+      name,
+      state: b64(Y.encodeStateAsUpdate(docWithValue(value, 5))),
+      value,
+    })),
+    true
+  );
+}
 
 export {
   applyChildren,

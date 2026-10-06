@@ -222,3 +222,114 @@ fn element_len(
     }
     Ok(len + entries - 1)
 }
+
+/// A writer's update the room may take (`validateUpdate`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Admission {
+    Accepted,
+    /// The room cannot place it yet: the server drops it and resyncs.
+    Unheld,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Refusal {
+    /// Sent to the writer as `document-rejected` with `code` and `metrics`.
+    #[error("invalid material document: {}", code.as_str())]
+    Limit { code: LimitCode, metrics: Metrics },
+    #[error(transparent)]
+    Roots(#[from] crate::validate::RootError),
+    #[error("malformed yjs update: {0}")]
+    Update(String),
+    #[error(transparent)]
+    Projection(#[from] ProjectionError),
+}
+
+/// One note room's limit state between exact measurements (`RoomValidator`):
+/// the last exact metrics (the shrink baseline) and an upper bound of the
+/// metrics now, the exact ones plus each later update's growth bound. The
+/// bound holds only while every content change is an update `admit` checked
+/// against the room as it was; the server calls `invalidate` for any other
+/// (a service edit, a children pass, a reload).
+#[derive(Debug, Default)]
+pub struct Validator {
+    pub bound: Option<Metrics>,
+    pub metrics: Option<Metrics>,
+    /// Exact measurements taken (a copy of the room each).
+    pub exact_checks: u64,
+}
+
+impl Validator {
+    /// Checks a writer's update against `doc` before the server applies it:
+    /// the bound when it fits, else an exact measure of a candidate copy.
+    /// Rejecting after the fact is not an option: yrs cannot undo a peer's
+    /// update, so the only remedy left would be discarding the whole room.
+    pub fn admit(&mut self, doc: &yrs::Doc, update: &[u8]) -> Result<Admission, Refusal> {
+        use yrs::Transact;
+        use yrs::updates::decoder::Decode;
+        let txn = doc.transact();
+        crate::validate::assert_roots(&txn)?;
+        let decoded =
+            crate::update::Decoded::decode(update).map_err(|e| Refusal::Update(e.to_string()))?;
+        let inspection = crate::update::inspect(&txn, &decoded);
+        if inspection.unheld {
+            return Ok(Admission::Unheld);
+        }
+        // The common case: the room's bound plus this update's growth bound
+        // stays within every limit, so the room is not copied per keystroke.
+        if let Some(bound) = self.bound {
+            if plate::content_root(&txn).is_some()
+                && crate::validate::keeps_roots(&inspection.containers)
+            {
+                if let Some(growth) = crate::bound::growth(&txn, &decoded) {
+                    let next = Metrics {
+                        content_bytes: bound.content_bytes + growth.content_bytes,
+                        max_depth: bound.max_depth.max(growth.max_depth),
+                        node_count: bound.node_count + growth.node_count,
+                    };
+                    if limit_code(&next).is_none() {
+                        self.bound = Some(next);
+                        return Ok(Admission::Accepted);
+                    }
+                }
+            }
+        }
+        self.exact_checks += 1;
+        let candidate = yrs::Doc::with_options(crate::doc_options(doc.client_id().get()));
+        {
+            let mut copy = candidate.transact_mut();
+            let state = txn.encode_state_as_update_v1(&yrs::StateVector::default());
+            for bytes in [state.as_slice(), update] {
+                let decoded =
+                    yrs::Update::decode_v1(bytes).map_err(|e| Refusal::Update(e.to_string()))?;
+                copy.apply_update(decoded)
+                    .map_err(|e| Refusal::Update(e.to_string()))?;
+            }
+        }
+        let candidate_txn = candidate.transact();
+        crate::validate::assert_roots(&candidate_txn)?;
+        // A document that loaded already over a limit still needs a baseline,
+        // or the edits that bring it back under are the ones refused. Between
+        // exact measurements the baseline may be older than the room, but then
+        // the bound kept the room within every limit, and against a baseline
+        // within the limits an over-limit candidate never recovers.
+        if self.metrics.is_none() {
+            self.metrics = Some(measure(&txn)?);
+        }
+        let metrics = measure(&candidate_txn)?;
+        if let Some(code) = limit_code(&metrics) {
+            if !recovers(&metrics, self.metrics.as_ref()) {
+                return Err(Refusal::Limit { code, metrics });
+            }
+        }
+        self.bound = Some(metrics);
+        self.metrics = Some(metrics);
+        Ok(Admission::Accepted)
+    }
+
+    /// A content change `admit` did not check entered the room: the next
+    /// update measures exactly.
+    pub fn invalidate(&mut self) {
+        self.bound = None;
+        self.metrics = None;
+    }
+}

@@ -5,8 +5,11 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use base64::Engine;
-use serde_json::Value;
+use notes::limits::{Admission, Metrics, Refusal, Validator};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use yrs::updates::decoder::Decode;
+use yrs::{ReadTxn, Transact};
 
 pub fn corpus_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -47,15 +50,137 @@ pub fn hash(value: &Value) -> String {
 
 /// A document holding `state`, as the room or a client.
 pub fn doc(state: &[u8], client: u64) -> yrs::Doc {
-    use yrs::Transact;
-    use yrs::updates::decoder::Decode;
     let doc = yrs::Doc::with_options(notes::doc_options(client));
-    doc.transact_mut()
-        .apply_update(yrs::Update::decode_v1(state).unwrap())
-        .unwrap();
+    apply(&doc, state);
     doc
 }
 
-pub fn metrics_json(metrics: &notes::limits::Metrics) -> Value {
+pub fn apply(doc: &yrs::Doc, bytes: &[u8]) {
+    doc.transact_mut()
+        .apply_update(yrs::Update::decode_v1(bytes).unwrap())
+        .unwrap();
+}
+
+pub fn state(doc: &yrs::Doc) -> Vec<u8> {
+    doc.transact()
+        .encode_state_as_update_v1(&yrs::StateVector::default())
+}
+
+pub fn metrics_json(metrics: &Metrics) -> Value {
     serde_json::to_value(metrics).unwrap()
+}
+
+fn exceeds(growth: &Metrics, previous: &Metrics, next: &Metrics) -> bool {
+    next.content_bytes > previous.content_bytes + growth.content_bytes
+        || next.node_count > previous.node_count + growth.node_count
+        || next.max_depth > previous.max_depth.max(growth.max_depth)
+}
+
+/// A room fed recorded updates, checked as the Node server checked them.
+pub struct Room {
+    pub doc: yrs::Doc,
+    pub validator: Validator,
+    previous: Metrics,
+    pub checked: usize,
+    pub same_growth: usize,
+    pub smaller_growth: usize,
+    pub exact_differs: usize,
+}
+
+impl Room {
+    pub fn new(initial: &[u8], client: u64) -> Self {
+        let doc = doc(initial, client);
+        let previous = notes::limits::measure(&doc.transact()).unwrap();
+        Room {
+            doc,
+            validator: Validator::default(),
+            previous,
+            checked: 0,
+            same_growth: 0,
+            smaller_growth: 0,
+            exact_differs: 0,
+        }
+    }
+
+    /// One recorded update: the growth bound against the JS bound and the
+    /// exact growth, `admit` against the outcome of `validateUpdate`, then
+    /// the room after it.
+    pub fn deliver(&mut self, record: &Value, update: &[u8], at: &str, failures: &mut Vec<String>) {
+        self.checked += 1;
+        let growth = notes::bound::update_growth(&self.doc.transact(), update);
+        let js_growth: Option<Metrics> = serde_json::from_value(record["growth"].clone()).unwrap();
+        match (&growth, &js_growth) {
+            (None, None) => self.same_growth += 1,
+            (Some(ours), Some(theirs)) if ours == theirs => self.same_growth += 1,
+            // Rust skips texts whose block is deleted (plate REVIEW1 M1).
+            (Some(ours), Some(theirs))
+                if ours.content_bytes <= theirs.content_bytes
+                    && ours.node_count <= theirs.node_count
+                    && ours.max_depth <= theirs.max_depth =>
+            {
+                self.smaller_growth += 1
+            }
+            _ => failures.push(format!("{at}: growth {growth:?}, JS {js_growth:?}")),
+        }
+        let exact_before = self.validator.exact_checks;
+        let admitted = self.validator.admit(&self.doc, update);
+        let outcome = &record["outcome"];
+        if (self.validator.exact_checks > exact_before) != outcome["exact"].as_bool().unwrap() {
+            self.exact_differs += 1;
+        }
+        let ours = match &admitted {
+            Ok(Admission::Accepted) => json!({ "accepted": true }),
+            Ok(Admission::Unheld) => json!({ "unheld": true }),
+            Err(Refusal::Limit { code, metrics }) => {
+                json!({ "code": code.as_str(), "metrics": metrics, "refused": true })
+            }
+            Err(other) => json!({ "error": other.to_string(), "refused": true }),
+        };
+        let mut theirs = outcome.clone();
+        theirs.as_object_mut().unwrap().remove("exact");
+        if ours != theirs {
+            failures.push(format!("{at}: outcome {ours} != JS {theirs}"));
+        }
+        if let (Some(true), Ok(Admission::Accepted)) = (outcome["accepted"].as_bool(), &admitted) {
+            apply(&self.doc, update);
+            for cleanup in record["roomCleanup"].as_array().unwrap() {
+                apply(&self.doc, &bytes(cleanup));
+            }
+            let txn = self.doc.transact();
+            let metrics = notes::limits::measure(&txn).unwrap();
+            if metrics_json(&metrics) != record["roomMetrics"] {
+                failures.push(format!(
+                    "{at}: room metrics {metrics:?} != {}",
+                    record["roomMetrics"]
+                ));
+            }
+            if let Some(growth) = &growth {
+                if exceeds(growth, &self.previous, &metrics) {
+                    failures.push(format!(
+                        "{at}: bound {growth:?} below the exact growth {:?} -> {metrics:?}",
+                        self.previous
+                    ));
+                }
+            }
+            let value = Value::Array(notes::plate::value(&txn).unwrap());
+            if hash(&value) != record["roomHash"].as_str().unwrap() {
+                failures.push(format!("{at}: room value differs"));
+            }
+            self.previous = metrics;
+        } else if let (Some(growth), Some(code)) = (&growth, outcome["code"].as_str()) {
+            let candidate: Metrics = serde_json::from_value(outcome["metrics"].clone()).unwrap();
+            if exceeds(growth, &self.previous, &candidate) {
+                failures.push(format!(
+                    "{at}: bound {growth:?} below the refused growth ({code})"
+                ));
+            }
+        }
+    }
+
+    pub fn summary(&self) -> String {
+        format!(
+            "{} room checks, growth equal to JS {} / below JS {}, exact path differs {}",
+            self.checked, self.same_growth, self.smaller_growth, self.exact_differs
+        )
+    }
 }

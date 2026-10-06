@@ -43,3 +43,36 @@ fn projection_and_metrics_match_slate_yjs() {
     }
     assert!(failures.is_empty(), "{failures:#?}");
 }
+
+/// `load`'s bootstrap from `materials.content`: the same document as
+/// `applyDelta(slateNodesToInsertDelta(value))`, byte for byte where a leaf
+/// has at most one mark (yrs orders a leaf's format items by hash).
+#[test]
+fn bootstrap_matches_slate_nodes_to_insert_delta() {
+    let corpus = common::load("bootstrap");
+    let mut failures = Vec::new();
+    let mut identical = 0;
+    for case in corpus.as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let value = case["value"].as_array().unwrap();
+        let ours = notes::slate_yjs::state_from_value(value, 5);
+        let theirs = common::bytes(&case["state"]);
+        identical += usize::from(ours == theirs);
+        let project = |state: &[u8]| {
+            let doc = common::doc(state, 99);
+            let txn = doc.transact();
+            (
+                common::hash(&Value::Array(plate::value(&txn).unwrap())),
+                limits::measure(&txn).unwrap(),
+            )
+        };
+        if project(&ours) != project(&theirs) {
+            failures.push(format!("{name}: bootstrap differs"));
+        }
+    }
+    eprintln!(
+        "bootstrap: {identical} of {} states byte-identical",
+        corpus.as_array().unwrap().len()
+    );
+    assert!(failures.is_empty(), "{failures:#?}");
+}
