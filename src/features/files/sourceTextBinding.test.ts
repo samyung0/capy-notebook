@@ -215,8 +215,27 @@ describe('IME composition', () => {
     const { doc, text } = sourceDoc('one two three');
     const composition = beginTextComposition(text, 4, 7, sourceLines('x'));
     text.insert(5, 'X', 'remote');
-    composition.commit('二');
+    expect(composition.commit('二')).toBe(5);
     expect(text.toString()).toBe('one 二 three');
+    doc.destroy();
+  });
+
+  it('merges an IME that rewrote text off the caret around a peer edit made meanwhile', () => {
+    const { doc, text } = sourceDoc('one two three');
+    const lines = sourceLines('x');
+    // No peer edit: the whole value's difference from the live text.
+    const quiet = beginTextComposition(text, 7, 7, lines);
+    expect(quiet.rewrite('one 2 three')).toBeNull();
+    expect(quiet.missed).toBe(false);
+    expect(text.toString()).toBe('one 2 three');
+    // A peer appends while composing (the editor calls `peerEdit` before
+    // each transaction not its own); the textarea never saw it.
+    const busy = beginTextComposition(text, 5, 5, lines);
+    busy.peerEdit();
+    text.insert(11, '!', 'remote');
+    expect(busy.missed).toBe(true);
+    expect(busy.rewrite('one two three')).toBeNull();
+    expect(text.toString()).toBe('one two three!');
     doc.destroy();
   });
 

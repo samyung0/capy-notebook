@@ -38,12 +38,7 @@ export function SourceTextEditor({
     const undo = new Y.UndoManager(text, {
       trackedOrigins: new Set([SOURCE_TEXT_INPUT]),
     });
-    let composition: {
-      commit: (composed: string) => void;
-      start: number;
-    } | null = null;
-    // A peer edited while composing: the textarea catches up at the end.
-    let missed = false;
+    let composition: ReturnType<typeof beginTextComposition> | null = null;
     // The textarea when the input being handled began (beforeinput).
     let started: InputStart | null = null;
     const waiting: (() => void)[] = [];
@@ -58,7 +53,11 @@ export function SourceTextEditor({
     const toSource = (offset: number) =>
       lines.cr ? sourceTextOffset(text.toString(), offset) : offset;
     const before = (transaction: Y.Transaction) => {
-      if (composition || transaction.origin === SOURCE_TEXT_INPUT) return;
+      if (transaction.origin === SOURCE_TEXT_INPUT) return;
+      if (composition) {
+        composition.peerEdit();
+        return;
+      }
       selection = {
         direction: input.selectionDirection,
         end: Y.createRelativePositionFromTypeIndex(
@@ -72,10 +71,7 @@ export function SourceTextEditor({
       };
     };
     const render = () => {
-      if (composition) {
-        missed = true;
-        return;
-      }
+      if (composition) return;
       const value = text.toString();
       lines = sourceLines(value);
       input.value = value;
@@ -119,16 +115,12 @@ export function SourceTextEditor({
     };
     const compositionStart = () => {
       undo.stopCapturing();
-      missed = false;
-      composition = {
-        ...beginTextComposition(
-          text,
-          input.selectionStart,
-          input.selectionEnd,
-          lines
-        ),
-        start: input.selectionStart,
-      };
+      composition = beginTextComposition(
+        text,
+        input.selectionStart,
+        input.selectionEnd,
+        lines
+      );
       onPendingChange?.(true);
     };
     const compositionEnd = (event?: CompositionEvent) => {
@@ -138,13 +130,21 @@ export function SourceTextEditor({
       const composed =
         event?.data ?? input.value.slice(active.start, input.selectionEnd);
       // The IME committed at the caret: only the composed text goes in. An
-      // IME that rewrote other text leaves it to the whole value's
-      // difference.
-      if (input.selectionStart === active.start + displayText(composed).length)
-        active.commit(composed);
-      else applyTextInput(text, input.value, lines);
+      // IME that rewrote other text gives the whole value instead.
+      const caret =
+        input.selectionStart === active.start + displayText(composed).length
+          ? active.commit(composed)
+          : active.rewrite(input.value);
       onPendingChange?.(false);
-      if (missed) render();
+      if (active.missed) {
+        // The textarea lacks the peers' edits: refill it, the caret after
+        // the composed text.
+        if (caret !== null) {
+          const at = Y.createRelativePositionFromTypeIndex(text, caret);
+          selection = { direction: 'none', end: at, start: at };
+        }
+        render();
+      }
       undo.stopCapturing();
       for (const resolve of waiting.splice(0)) resolve();
     };

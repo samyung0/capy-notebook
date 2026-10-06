@@ -201,7 +201,9 @@ export function textareaEdit(
  * An IME composition over the live document: the textarea holds the composed
  * text meanwhile, and `commit` puts it in place of the range the composition
  * started on, held as relative positions so peers' edits made while composing
- * stay where they landed.
+ * stay where they landed. Only when a peer edits mid-composition is the
+ * document kept as it was (`peerEdit`), for an IME that rewrote text off the
+ * caret (`rewrite`).
  */
 export function beginTextComposition(
   text: Y.Text,
@@ -220,7 +222,9 @@ export function beginTextComposition(
   // Ends after the last replaced character: text a peer adds after it stays.
   const endAt =
     to > from ? Y.createRelativePositionFromTypeIndex(text, to, -1) : startAt;
+  let before: Uint8Array | undefined;
   return {
+    /** Put the composed text in place; returns the source offset after it. */
     commit(composed: string) {
       const doc = text.doc!;
       // A root text is never deleted, so its positions always resolve.
@@ -232,17 +236,44 @@ export function beginTextComposition(
         endAt,
         doc
       )!.index;
-      const insert = displayText(composed);
+      const display = displayText(composed);
+      const insert =
+        lines.newline === '\n'
+          ? display
+          : display.replaceAll('\n', lines.newline);
       doc.transact(() => {
         if (last > first) text.delete(first, last - first);
-        if (insert)
-          text.insert(
-            first,
-            lines.newline === '\n'
-              ? insert
-              : insert.replaceAll('\n', lines.newline)
-          );
+        if (insert) text.insert(first, insert);
       }, SOURCE_TEXT_INPUT);
+      return first + insert.length;
     },
+    get missed() {
+      return before !== undefined;
+    },
+    /** A peer's transaction is about to apply. */
+    peerEdit() {
+      before ??= Y.encodeStateAsUpdate(text.doc!);
+    },
+    /** The textarea's whole value as its difference from the document as
+     * composing began, merged around peers' edits. No caret to restore. */
+    rewrite(value: string): null {
+      if (!before) {
+        applyTextInput(text, value, lines);
+        return null;
+      }
+      const draft = new Y.Doc();
+      Y.applyUpdate(draft, before);
+      const vector = Y.encodeStateVector(draft);
+      applyTextInput(draft.getText('source'), value, lines);
+      Y.applyUpdate(
+        text.doc!,
+        Y.encodeStateAsUpdate(draft, vector),
+        SOURCE_TEXT_INPUT
+      );
+      draft.destroy();
+      return null;
+    },
+    /** The composition's `start` in the textarea. */
+    start,
   };
 }
