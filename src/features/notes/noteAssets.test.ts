@@ -14,6 +14,7 @@ import {
   mediaPurpose,
   noteAssetsPlugin,
   swapAssetId,
+  swapMaterialRef,
 } from './noteAssets';
 
 const image = (assetId: string) => ({
@@ -21,6 +22,13 @@ const image = (assetId: string) => ({
   children: [{ text: '' }],
   id: `block-${assetId}`,
   type: 'img',
+});
+const quizRef = (materialId: string) => ({
+  children: [{ text: '' }],
+  id: `ref-${materialId}`,
+  materialId,
+  refKind: 'quiz',
+  type: 'material_ref',
 });
 const paragraph = (text: string) => ({
   children: [{ text }],
@@ -52,6 +60,20 @@ describe('assetChanges', () => {
     });
     // The removed node carries what a re-upload needs.
     expect(nodes.get('b')).toEqual(image('b'));
+  });
+
+  it('nets inserted quiz references, skipping pending ones', () => {
+    const { refs } = assetChanges([
+      {
+        node: { children: [quizRef('pasted'), quizRef('')], type: 'column' },
+        type: 'insert_node',
+      },
+      // Cut and pasted within the note: not new.
+      { node: quizRef('moved'), type: 'remove_node' },
+      { node: quizRef('moved'), type: 'insert_node' },
+      { node: quizRef('deleted'), type: 'remove_node' },
+    ]);
+    expect(refs).toEqual(['pasted']);
   });
 });
 
@@ -130,6 +152,32 @@ describe('noteAssetsPlugin', () => {
     expect(heard).toEqual([]);
 
     // Undo takes back the paste itself, not the swap.
+    editor.undo();
+    expect(editor.children).toHaveLength(1);
+  });
+});
+
+describe('swapMaterialRef', () => {
+  it('re-points or removes pasted references outside the undo history', () => {
+    const { editor, heard } = yjsEditor();
+    editor.tf.insertNodes([quizRef('copied'), quizRef('unreadable')] as never, {
+      at: [1],
+    });
+    YjsEditor.flushLocalChanges(editor);
+    expect(assetChanges(heard).refs).toEqual(['copied', 'unreadable']);
+    editor.undoManager.stopCapturing();
+    const undoSteps = editor.undoManager.undoStack.length;
+    heard.length = 0;
+
+    swapMaterialRef(editor, 'copied', 'copy');
+    swapMaterialRef(editor, 'unreadable');
+    YjsEditor.flushLocalChanges(editor);
+    expect(editor.children).toHaveLength(2);
+    expect(editor.children[1]).toMatchObject({ materialId: 'copy' });
+    expect(editor.undoManager.undoStack).toHaveLength(undoSteps);
+    expect(heard).toEqual([]);
+
+    // Undo takes back the paste itself.
     editor.undo();
     expect(editor.children).toHaveLength(1);
   });

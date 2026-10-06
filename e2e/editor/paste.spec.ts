@@ -79,4 +79,34 @@ test.describe('paste', () => {
       editor.locator('.slate-mermaid', { hasText: 'Alpha' })
     ).toBeVisible();
   });
+
+  test("makes a quiz block pasted from another note this note's copy", async ({
+    page,
+  }) => {
+    const editor = await openEmptyLine(page);
+    // A quiz block copied out of another note, plus one whose quiz is gone.
+    const ref = (materialId: string) => ({
+      children: [{ text: '' }],
+      id: `block-${materialId}`,
+      materialId,
+      refKind: 'quiz',
+      type: 'material_ref',
+    });
+    const fragment = await page.evaluate(
+      (json) => btoa(encodeURIComponent(json)),
+      JSON.stringify([ref('mat_embed_bio_note_quiz'), ref('mat_gone')])
+    );
+    // What Slate puts on the clipboard when copying blocks.
+    await paste(editor, {
+      'application/x-slate-fragment': fragment,
+      'text/html': `<div data-slate-fragment="${fragment}">Quiz</div>`,
+      'text/plain': 'Quiz',
+    });
+
+    // The copy takes this note's title; the unreadable block is removed.
+    await expect(
+      editor.getByText(`${EDITOR_NOTE.title} · Quiz`, { exact: true })
+    ).toBeVisible();
+    await expect(editor.locator('.slate-material_ref')).toHaveCount(1);
+  });
 });

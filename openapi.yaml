@@ -158,6 +158,51 @@ components:
       required:
         - name
       type: object
+    AdoptEmbeddedMaterialsReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/AdoptEmbeddedMaterialsReq.json
+          format: uri
+          readOnly: true
+          type: string
+        materialIds:
+          items:
+            type: string
+          maxItems: 20
+          minItems: 1
+          type: array
+          uniqueItems: true
+      required:
+        - materialIds
+      type: object
+    AdoptEmbeddedMaterialsResp:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/AdoptEmbeddedMaterialsResp.json
+          format: uri
+          readOnly: true
+          type: string
+        materials:
+          items:
+            $ref: "#/components/schemas/AdoptedEmbeddedMaterial"
+          type: array
+      required:
+        - materials
+      type: object
+    AdoptedEmbeddedMaterial:
+      additionalProperties: false
+      properties:
+        materialId:
+          type: string
+        sourceId:
+          type: string
+      required:
+        - sourceId
+      type: object
     AgentOperation:
       additionalProperties: false
       properties:
@@ -7718,6 +7763,37 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Create a quiz or flashcard set embedded in a note
+      tags:
+        - Materials
+  /api/materials/{id}/embedded/adopt:
+    post:
+      operationId: adoptEmbeddedMaterials
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdoptEmbeddedMaterialsReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdoptEmbeddedMaterialsResp"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Make quiz and flashcard blocks pasted into a note the note's own
       tags:
         - Materials
   /api/materials/{id}/metadata:

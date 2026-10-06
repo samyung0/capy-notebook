@@ -474,6 +474,18 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   along (clones rewrite the reference ids). Removing the reference block
   trashes the row on the next projection once a projection has referenced it
   (`reference_seen_at`), and a projection that references it again restores it.
+- A quiz or flashcard block pasted into a note becomes that note's own through
+  `POST /api/materials/{id}/embedded/adopt` (an editor of the note, 1–20
+  distinct ids, one answer per id in order). The note's own row answers its
+  id, trashed or not. Another note's embedded quiz or set, live or trashed
+  (a cut's save may have trashed it), whose note the caller can read is
+  copied under this note in one transaction: questions or cards (fresh card
+  ids), title as a new embedded row gets, its images as new editor assets
+  sharing the stored objects, all charged to the note's payer; attempts,
+  progress and review state stay with the original. Anything else answers no
+  id and the editor drops the block. Over quota fails the whole call. A copy
+  starts unseen like a created row, so one whose block never lands (the tab
+  closes first) stays hidden until the note is purged.
 - Cloning a readable standalone quiz, flashcards, or material creates a new
   owner-controlled copy charged to the signed-in cloner. Cloning a workspace
   additionally requires membership of any role or an effective editor grant.

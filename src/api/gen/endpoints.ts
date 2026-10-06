@@ -8,6 +8,8 @@ import type {
   AccessTokenResp,
   AccountStatus,
   AddChapterReq,
+  AdoptEmbeddedMaterialsReq,
+  AdoptEmbeddedMaterialsResp,
   AgentOperation,
   AnonymousAsset,
   AnonymousFlashcards,
@@ -4097,6 +4099,57 @@ export const createEmbeddedMaterial = async (id: string,
 
   const data: createEmbeddedMaterialResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createEmbeddedMaterialResponse
+}
+
+
+
+export type adoptEmbeddedMaterialsResponse200 = {
+  data: AdoptEmbeddedMaterialsResp
+  status: 200
+}
+
+export type adoptEmbeddedMaterialsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adoptEmbeddedMaterialsResponseSuccess = (adoptEmbeddedMaterialsResponse200) & {
+  headers: Headers;
+};
+export type adoptEmbeddedMaterialsResponseError = (adoptEmbeddedMaterialsResponseDefault) & {
+  headers: Headers;
+};
+
+export type adoptEmbeddedMaterialsResponse = (adoptEmbeddedMaterialsResponseSuccess | adoptEmbeddedMaterialsResponseError)
+
+export const getAdoptEmbeddedMaterialsUrl = (id: string,) => {
+
+
+
+
+  return `/api/materials/${id}/embedded/adopt`
+}
+
+/**
+ * @summary Make quiz and flashcard blocks pasted into a note the note's own
+ */
+export const adoptEmbeddedMaterials = async (id: string,
+    adoptEmbeddedMaterialsReq: NonReadonly<AdoptEmbeddedMaterialsReq>, options?: RequestInit): Promise<adoptEmbeddedMaterialsResponse> => {
+
+  const res = await fetch(getAdoptEmbeddedMaterialsUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adoptEmbeddedMaterialsReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adoptEmbeddedMaterialsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adoptEmbeddedMaterialsResponse
 }
 
 

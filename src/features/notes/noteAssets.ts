@@ -1,11 +1,14 @@
 import { YHistoryEditor, YjsEditor } from '@slate-yjs/core';
 import { createSlatePlugin, type SlateEditor } from 'platejs';
+import { api, qk } from '@/api/client';
 import {
   adoptEditorAssets,
   resolveEditorAsset,
   uploadEditorAsset,
 } from '@/api/editorAssets';
-import { showErrorToast } from '@/api/queryClient';
+import { queryClient, showErrorToast } from '@/api/queryClient';
+import type { AdoptEmbeddedMaterialsResp } from '@/api/types';
+import { isMaterialRefElement } from '@/features/materials/document';
 import { shownAssetUrl } from '@/features/materials/MediaAssetView';
 import { deferStorageRefusal } from '@/lib/errors';
 import { dropKeptAssets, keepAsset, keptAsset } from '@/lib/localDb';
@@ -20,6 +23,9 @@ import { dropKeptAssets, keepAsset, keptAsset } from '@/lib/localDb';
  * - an asset a change inserts is adopted, and its node swapped to the id the
  *   server answers (a copy, or a re-upload of kept bytes). The swap stays out
  *   of the undo history.
+ * Quiz and flashcard reference blocks follow the same rule: one a change
+ * inserts is adopted too, and points at the note's own copy, or is removed
+ * when its original cannot be read.
  */
 
 /** The parts of a Slate operation that can carry media nodes. */
@@ -44,9 +50,12 @@ export interface RemovedMedia {
 
 /** Asset ids a run of operations adds to and removes from the document, net:
  * one removed and inserted again (a move, cut and paste) is in neither.
- * `nodes` holds the media node last seen for each id. */
+ * `nodes` holds the media node last seen for each id. `refs` are the material
+ * ids of reference blocks it adds, netted the same way; a pending reference
+ * has no id yet. */
 export function assetChanges(operations: readonly AssetOperation[]) {
   const counts = new Map<string, number>();
+  const refCounts = new Map<string, number>();
   const nodes = new Map<string, RemovedMedia>();
   const count = (id: string | undefined, by: number) => {
     if (id) counts.set(id, (counts.get(id) ?? 0) + by);
@@ -55,6 +64,11 @@ export function assetChanges(operations: readonly AssetOperation[]) {
     const id = assetIdOf(node);
     if (id) nodes.set(id, node as RemovedMedia);
     count(id, by);
+    if (isMaterialRefElement(node) && node.materialId)
+      refCounts.set(
+        node.materialId,
+        (refCounts.get(node.materialId) ?? 0) + by
+      );
     const children = (node as { children?: unknown } | null)?.children;
     if (Array.isArray(children)) for (const child of children) visit(child, by);
   };
@@ -72,7 +86,8 @@ export function assetChanges(operations: readonly AssetOperation[]) {
     if (net > 0) added.push(id);
     else if (net < 0) removed.push(id);
   }
-  return { added, nodes, removed };
+  const refs = [...refCounts].filter(([, net]) => net > 0).map(([id]) => id);
+  return { added, nodes, refs, removed };
 }
 
 /** The upload purpose a media node's asset was stored under. */
@@ -87,8 +102,9 @@ export function mediaPurpose({ contentType, type }: RemovedMedia) {
 const listeners = new WeakMap<object, (operation: AssetOperation) => void>();
 
 /** Hear the operations of this tab's own edits, undo and redo that may carry
- * assets. Remote ones (applied through slate-yjs under the provider's origin)
- * and those made without saving to history (an asset swap) are left out. */
+ * assets or quiz and flashcard references. Remote ones (applied through
+ * slate-yjs under the provider's origin) and those made without saving to
+ * history (a swap) are left out. */
 export function listenAssetOperations(
   editor: SlateEditor,
   listener: (operation: AssetOperation) => void
@@ -150,6 +166,33 @@ export function swapAssetId(editor: SlateEditor, from: string, to: string) {
   else swap();
 }
 
+/** Point every reference block using `from` at `to`, or remove those blocks
+ * when there is no `to`, outside the undo history. */
+export function swapMaterialRef(
+  editor: SlateEditor,
+  from: string,
+  to?: string
+) {
+  const paths = [
+    ...editor.api.nodes({
+      at: [],
+      match: (node) => isMaterialRefElement(node) && node.materialId === from,
+    }),
+  ].map(([, path]) => path);
+  if (!paths.length) return;
+  const swap = () =>
+    editor.tf.withoutNormalizing(() => {
+      // Last first, so removing one does not shift the paths still to go.
+      for (const path of paths.reverse()) {
+        if (to) editor.tf.setNodes({ materialId: to }, { at: path });
+        else editor.tf.removeNodes({ at: path });
+      }
+    });
+  if (YHistoryEditor.isYHistoryEditor(editor))
+    YHistoryEditor.withoutSaving(editor, swap);
+  else swap();
+}
+
 const LOCK_PREFIX = 'capy-kept-assets:';
 let swept = false;
 
@@ -201,6 +244,7 @@ function openSession() {
 
 const FLUSH_MS = 150;
 const ADOPT_BATCH = 50;
+const ADOPT_REFS_BATCH = 20;
 
 /** Run for an editable note editor's lifetime; returns its cleanup. */
 export function watchNoteAssets(editor: SlateEditor, materialId: string) {
@@ -271,18 +315,40 @@ export function watchNoteAssets(editor: SlateEditor, materialId: string) {
     }
   };
 
+  // The note's own quiz keeps its id (a cut and paste in this note); another
+  // note's becomes this note's copy, images included, and one this user
+  // cannot read is removed from the paste.
+  const adoptRefs = async (ids: string[]) => {
+    const { materials } = await api.post<AdoptEmbeddedMaterialsResp>(
+      `/materials/${encodeURIComponent(materialId)}/embedded/adopt`,
+      { materialIds: ids }
+    );
+    if (disposed) return;
+    let copied = false;
+    for (const { materialId: adopted, sourceId } of materials) {
+      if (adopted === sourceId) continue;
+      copied ||= Boolean(adopted);
+      swapMaterialRef(editor, sourceId, adopted);
+    }
+    if (copied)
+      void queryClient.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
+  };
+
+  // Offline, the banner already says so. No retry: the node stays and pasting
+  // again tries again.
+  const report = (error: unknown) => {
+    if (disposed || !navigator.onLine || deferStorageRefusal(error)) return;
+    showErrorToast(error);
+  };
+
   const flush = () => {
     timer = undefined;
-    const { added, nodes, removed } = assetChanges(operations);
+    const { added, nodes, refs, removed } = assetChanges(operations);
     operations = [];
     for (const id of removed) keep(id, nodes.get(id));
-    if (!added.length) return;
-    adopt(added).catch((error) => {
-      // Offline, the banner already says so. No retry: the node stays and
-      // renders as missing, and pasting again tries again.
-      if (disposed || !navigator.onLine || deferStorageRefusal(error)) return;
-      showErrorToast(error);
-    });
+    if (added.length) adopt(added).catch(report);
+    for (let start = 0; start < refs.length; start += ADOPT_REFS_BATCH)
+      adoptRefs(refs.slice(start, start + ADOPT_REFS_BATCH)).catch(report);
   };
 
   const stop = listenAssetOperations(editor, (operation) => {

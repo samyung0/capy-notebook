@@ -1857,6 +1857,52 @@ export const handlers = [
     db.materials.unshift(mt);
     return HttpResponse.json(mt, { status: 201 });
   }),
+  // Pasted quiz and flashcard blocks: the note's own row keeps its id, another
+  // note's becomes a copy under this note (fresh card ids), anything else is
+  // left out so the editor removes the block.
+  http.post(
+    '/api/materials/:id/embedded/adopt',
+    async ({ params, request }) => {
+      const note = db.materials.find(
+        (x) => x.id === params.id && x.kind === 'note' && !x.parentMaterialId
+      );
+      if (!note) return new HttpResponse(null, { status: 404 });
+      const { materialIds = [] } = (await request.json().catch(() => ({}))) as {
+        materialIds?: string[];
+      };
+      const rekey = (node: unknown): unknown => {
+        if (Array.isArray(node)) return node.map(rekey);
+        if (!node || typeof node !== 'object') return node;
+        const copy = Object.fromEntries(
+          Object.entries(node).map(([key, value]) => [key, rekey(value)])
+        );
+        return copy.type === 'flashcard' ? { ...copy, id: uid('card') } : copy;
+      };
+      const materials = materialIds.map((sourceId) => {
+        const source = db.materials.find((x) => x.id === sourceId);
+        if (source?.parentMaterialId === note.id)
+          return { materialId: sourceId, sourceId };
+        if (
+          !source?.parentMaterialId ||
+          (source.kind !== 'quiz' && source.kind !== 'flashcards')
+        )
+          return { sourceId };
+        const mt = db.makeMaterial({
+          ...source,
+          content: rekey(source.content) as typeof source.content,
+          createdAt: new Date().toISOString(),
+          id: uid('mat'),
+          parentMaterialId: note.id,
+          title: `${note.title} · ${source.kind === 'quiz' ? 'Quiz' : 'Flashcards'}`,
+          workspaceId: note.workspaceId,
+          workspaceName: note.workspaceName,
+        });
+        db.materials.unshift(mt);
+        return { materialId: mt.id, sourceId };
+      });
+      return HttpResponse.json({ materials });
+    }
+  ),
   http.get('/api/materials/:id', async ({ params }) => {
     const fixture = errorMaterials.find((item) => item.id === params.id);
     if (fixture?.failure) {

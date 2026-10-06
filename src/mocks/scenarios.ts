@@ -941,9 +941,10 @@ function viewOnlyContent(scope: 'own' | 'member'): RequestHandler[] {
         /^POST \/api\/workspaces\/([^/]+)\/(materials|sources|sources\/import|generate)$/.exec(
           route
         )?.[1];
-      const embedded = /^POST \/api\/materials\/([^/]+)\/embedded$/.exec(
-        route
-      )?.[1];
+      const embedded =
+        /^POST \/api\/materials\/([^/]+)\/embedded(?:\/adopt)?$/.exec(
+          route
+        )?.[1];
       const standalone = /^POST \/api\/(materials|quizzes|flashcards)$/.test(
         route
       );

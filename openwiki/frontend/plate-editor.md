@@ -294,7 +294,17 @@ imports as a pending reference (`materialId: ''` plus the fence body in
 `pending`); the mounted editor claims it in the shared document
 (`resolvingBy`) and the client whose claim survives the merge creates the
 row; readable Markdown and DOCX exports resolve references into study handouts
-and fail explicitly if a required reference cannot be read. Removing the reference
+and fail explicitly if a required reference cannot be read. A reference
+belongs to its note: a local change that inserts references with a
+`materialId` (paste, drop, undo, redo; pending ones are skipped) is heard by
+the same `noteAssets.ts` listener and batch as media, and 150 ms later
+`POST /api/materials/{noteId}/embedded/adopt` answers per id. The note's own
+row keeps its id, so a cut and paste within the note changes nothing; another
+note's quiz or set comes back as this note's copy and the block is re-pointed;
+no id back (the original is unreadable or purged) removes the block. Both
+happen through `swapMaterialRef` under `YHistoryEditor.withoutSaving`, so Undo
+takes back the paste and never the swap. Errors show the error toast, with no
+retry. The copy's images are copied on the server. Removing the reference
 trashes the row at the next projection and undo restores it (see
 [authorization](../authorization-permissions-lifecycles.md)). Mermaid blocks
 stay inline. Mermaid, chart and graph embeds render view-only in every editor

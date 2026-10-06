@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
@@ -259,5 +260,145 @@ func TestEmbeddedMaterialAccessAndCloneFollowTheNote(t *testing.T) {
 	}
 	if clonedQuiz.ParentMaterialID != clonedNote.ID || clonedQuiz.WorkspaceID != wsClone.ID {
 		t.Fatalf("cloned embedded quiz = %+v", clonedQuiz)
+	}
+}
+
+// A pasted quiz or flashcard block becomes the target note's own: its own row
+// keeps its id, another readable note's row (live or trashed) is copied with
+// its images and fresh card ids and charged to the target's payer, and an
+// unreadable or purged one is left out.
+func TestAdoptEmbeddedMaterials(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	f := editorAssetFixture{t: t, s: s, ctx: ctx}
+	ownerID := newBlobTestUser(t, s, "u_adopt_embed_owner")
+	editorID := newBlobTestUser(t, s, "u_adopt_embed_editor")
+	viewerID := newBlobTestUser(t, s, "u_adopt_embed_viewer")
+	strangerID := newBlobTestUser(t, s, "u_adopt_embed_stranger")
+	ws, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Target ws", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id,user_id,role)
+		VALUES ($1,$2,'editor'),($1,$3,'viewer')`, ws.ID, editorID, viewerID); err != nil {
+		t.Fatal(err)
+	}
+	sourceWS, err := s.CreateWorkspace(ctx, editorID, WorkspaceCreate{Name: "Source ws", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newNote := func(createdBy string, workspace Workspace, title string) Material {
+		note, err := s.CreateMaterial(ctx, Material{
+			CreatedBy: createdBy, WorkspaceID: workspace.ID, WorkspaceName: workspace.Name,
+			Kind: "note", Title: title, Content: "# " + title + "\n\nbody",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return note
+	}
+	embed := func(actorID, noteID string, draft EmbeddedDraft) Material {
+		mt, err := s.CreateEmbeddedMaterial(ctx, actorID, noteID, draft)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return mt
+	}
+	// What a save that dropped the reference does (trashEmbeddedRowTx).
+	trash := func(id string) {
+		if _, err := s.pool.Exec(ctx, `UPDATE materials SET trashed_at=now(), trash_episode_id=$2,
+			purge_after=now() + interval '30 days' WHERE id=$1`, id, uid("trash")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	questions := json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]`)
+	target := newNote(ownerID, ws, "Target")
+	source := newNote(editorID, sourceWS, "Source")
+	own := embed(ownerID, target.ID, EmbeddedDraft{Kind: "quiz", Questions: questions})
+	quiz := embed(editorID, source.ID, EmbeddedDraft{Kind: "quiz", Questions: questions})
+	image := f.ready(editorID, sourceWS.ID, quiz.ID)
+	quizContent := quizWithImages(t, image.ID)
+	if _, err := s.UpdateMaterial(ctx, quiz.ID, MaterialPatch{Content: &quizContent, UpdatedBy: editorID}); err != nil {
+		t.Fatal(err)
+	}
+	cards := embed(editorID, source.ID, EmbeddedDraft{Kind: "flashcards", Cards: [][2]string{{"front", "back"}}})
+	cut := embed(editorID, source.ID, EmbeddedDraft{Kind: "quiz", Questions: questions})
+	trash(cut.ID)
+	foreignNote, err := s.CreateMaterial(ctx, Material{CreatedBy: strangerID, Kind: "note", Title: "Foreign", Content: "# Foreign\n\nbody"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign := embed(strangerID, foreignNote.ID, EmbeddedDraft{Kind: "quiz", Questions: questions})
+
+	usedBefore, editorBefore := f.used(ownerID), f.used(editorID)
+	adopted, err := s.AdoptEmbeddedMaterials(ctx, editorID, target.ID,
+		[]string{own.ID, quiz.ID, cards.ID, cut.ID, foreign.ID, "mat_purged"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(adopted) != 4 || adopted[own.ID] != own.ID || adopted[foreign.ID] != "" {
+		t.Fatalf("adopted = %v, want the own row, three copies and no foreign row", adopted)
+	}
+	for _, id := range []string{quiz.ID, cards.ID, cut.ID} {
+		copied, err := s.GetMaterial(ctx, adopted[id])
+		if err != nil || adopted[id] == id {
+			t.Fatalf("copy of %s = %q, %v", id, adopted[id], err)
+		}
+		if copied.ParentMaterialID != target.ID || copied.WorkspaceID != ws.ID || copied.OwnerUserID != ownerID {
+			t.Fatalf("copy = %+v", copied)
+		}
+	}
+	quizCopy, err := s.GetMaterial(ctx, adopted[quiz.ID])
+	if err != nil {
+		t.Fatal(err)
+	}
+	// "Target · Quiz" is the note's own quiz, so the copy gets a number.
+	if !strings.HasPrefix(quizCopy.Title, "Target · Quiz ") {
+		t.Fatalf("copy title = %q", quizCopy.Title)
+	}
+	assetIDs, err := materialdoc.EditorAssetIDs(quizCopy.Content)
+	if err != nil || len(assetIDs) != 1 || assetIDs[0] == image.ID {
+		t.Fatalf("copy image ids = %v, %v; want one rewritten id", assetIDs, err)
+	}
+	copiedImage, err := s.GetEditorAsset(ctx, assetIDs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if copiedImage.MaterialID != quizCopy.ID || copiedImage.WorkspaceID != ws.ID ||
+		copiedImage.UserID != ownerID || copiedImage.ObjectPath != image.ObjectPath || copiedImage.Status != "ready" {
+		t.Fatalf("copied image = %+v", copiedImage)
+	}
+	sourceCards, err := s.ListCards(ctx, cards.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	copiedCards, err := s.ListCards(ctx, adopted[cards.ID])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(copiedCards) != 1 || copiedCards[0].ID == sourceCards[0].ID {
+		t.Fatalf("copied cards = %+v, want one card under a new id", copiedCards)
+	}
+	if f.used(ownerID) <= usedBefore+100 || f.used(editorID) != editorBefore {
+		t.Fatalf("charged owner %d, editor %d; want the target's payer charged",
+			f.used(ownerID)-usedBefore, f.used(editorID)-editorBefore)
+	}
+
+	// The note's own trashed row keeps its id: the next projection restores it.
+	trash(own.ID)
+	if adopted, err := s.AdoptEmbeddedMaterials(ctx, editorID, target.ID, []string{own.ID}); err != nil || adopted[own.ID] != own.ID {
+		t.Fatalf("trashed own row = %v, %v", adopted, err)
+	}
+
+	if _, err := s.AdoptEmbeddedMaterials(ctx, viewerID, target.ID, []string{quiz.ID}); err == nil {
+		t.Fatal("a viewer adopted into the note")
+	}
+	limit := mustPlanLimits(t, s, PlanFree).StorageBytes
+	if _, err := s.pool.Exec(ctx, `UPDATE user_storage SET used_bytes=$2 WHERE user_id=$1`, ownerID, limit); err != nil {
+		t.Fatal(err)
+	}
+	var quota *QuotaExceededError
+	if _, err := s.AdoptEmbeddedMaterials(ctx, editorID, target.ID, []string{quiz.ID}); !errors.As(err, &quota) {
+		t.Fatalf("adopt over quota err = %v, want quota exceeded", err)
 	}
 }

@@ -3014,6 +3014,30 @@ export const CreateEmbeddedMaterialResponse = zod.object({
 
 
 /**
+ * @summary Make quiz and flashcard blocks pasted into a note the note's own
+ */
+export const AdoptEmbeddedMaterialsParams = zod.object({
+  "id": zod.string()
+})
+
+export const adoptEmbeddedMaterialsBodyMaterialIdsMax = 20;
+
+
+
+export const AdoptEmbeddedMaterialsBody = zod.object({
+  "materialIds": zod.array(zod.string()).min(1).max(adoptEmbeddedMaterialsBodyMaterialIdsMax)
+})
+
+export const AdoptEmbeddedMaterialsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "materials": zod.array(zod.object({
+  "materialId": zod.string().optional(),
+  "sourceId": zod.string()
+}))
+})
+
+
+/**
  * @summary Update material metadata
  */
 export const UpdateMaterialParams = zod.object({
