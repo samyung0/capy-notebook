@@ -83,7 +83,6 @@ pub struct Room {
     previous: Metrics,
     pub checked: usize,
     pub same_growth: usize,
-    pub smaller_growth: usize,
     pub exact_differs: usize,
 }
 
@@ -97,7 +96,6 @@ impl Room {
             previous,
             checked: 0,
             same_growth: 0,
-            smaller_growth: 0,
             exact_differs: 0,
         }
     }
@@ -112,14 +110,6 @@ impl Room {
         match (&growth, &js_growth) {
             (None, None) => self.same_growth += 1,
             (Some(ours), Some(theirs)) if ours == theirs => self.same_growth += 1,
-            // Rust skips texts whose block is deleted (plate REVIEW1 M1).
-            (Some(ours), Some(theirs))
-                if ours.content_bytes <= theirs.content_bytes
-                    && ours.node_count <= theirs.node_count
-                    && ours.max_depth <= theirs.max_depth =>
-            {
-                self.smaller_growth += 1
-            }
             _ => failures.push(format!("{at}: growth {growth:?}, JS {js_growth:?}")),
         }
         let exact_before = self.validator.exact_checks;
@@ -179,8 +169,8 @@ impl Room {
 
     pub fn summary(&self) -> String {
         format!(
-            "{} room checks, growth equal to JS {} / below JS {}, exact path differs {}",
-            self.checked, self.same_growth, self.smaller_growth, self.exact_differs
+            "{} room checks, growth equal to JS {}, exact path differs {}",
+            self.checked, self.same_growth, self.exact_differs
         )
     }
 }

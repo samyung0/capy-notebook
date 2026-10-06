@@ -166,6 +166,9 @@ impl Decoded {
 
     /// Whether the update deletes every unit of `[from, to)` of a client.
     pub fn deletes(&self, client: &ClientID, from: u32, to: u32) -> bool {
+        if from >= to {
+            return true;
+        }
         let Some(ranges) = self.deletes.get(client) else {
             return false;
         };

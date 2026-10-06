@@ -14,7 +14,8 @@
 //! Cost: O(update) plus one walk of each text it re-prices. The delete set is
 //! indexed once (sorted, merged ranges, binary search), and a text whose own
 //! block or an ancestor is deleted (already, or by this update) is skipped: it
-//! leaves the value, whatever the update writes into it (plate REVIEW1 M1).
+//! leaves the value, whatever the update writes into it (plate REVIEW1 M1, as
+//! capy-side/plate 3ed9e16a fixed the JS bound).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -145,21 +146,21 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
     }
 
     /// Where a held type sits: its depth (the content root is -1, a
-    /// top-level block 0), whether it is under content, and whether it or an
-    /// ancestor is deleted, already or by this update.
-    fn ancestry(&self, branch: BranchPtr) -> (i64, bool, bool) {
+    /// top-level block 0), and whether it is in the value: under content, no
+    /// block on the way deleted, before or by this update.
+    fn ancestry(&self, branch: BranchPtr) -> (i64, bool) {
         let mut level = -1;
         let mut top = branch;
-        let mut hidden = false;
+        let mut visible = true;
         while let Some(item) = top.item() {
             level += 1;
-            hidden |= self.hidden(item);
+            visible &= !self.hidden(item);
             match item.parent_branch() {
                 Some(parent) => top = parent,
-                None => return (level, false, hidden),
+                None => return (level, false),
             }
         }
-        (level, top == self.content, hidden)
+        (level, visible && top == self.content)
     }
 
     /// Where each new item lands. An item without a parent takes its
@@ -194,8 +195,12 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
                 }
                 Parent::Item(parent) => {
                     if self.held(parent) {
+                        // Yjs also drops an item whose parent block was deleted
+                        // and collected, as after a writer deletes a block
+                        // another one is still editing.
                         break match self.held_item(parent) {
                             Some(holder) => match holder.content() {
+                                ItemContent::Deleted(_) => Place::Gone,
                                 ItemContent::Type(branch) => Place::At {
                                     key: item.parent_sub.clone(),
                                     parent: Target::Held(BranchPtr::from(branch.as_ref())),
@@ -353,10 +358,7 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
         }
 
         for (text, Children { items, .. }) in &texts {
-            let (level, _, hidden) = self.ancestry(*text);
-            if hidden {
-                continue;
-            }
+            let (level, _) = self.ancestry(*text);
             let mut retext = reformatted.contains(&text.id())
                 || items.iter().any(|(_, k)| *k == Kind::Format)
                 || (items.iter().any(|(_, k)| *k == Kind::String)
