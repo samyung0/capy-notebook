@@ -294,20 +294,24 @@ export function PptxViewer({
           first
         ) {
           scrolledHighlightRef.current = highlight;
+          // The first rect's place in the scroller's visible box; a rect
+          // already in view (always at Fit) leaves the scroll alone.
           const canvasBox = visibleCanvas.getBoundingClientRect();
           const hostBox = host.getBoundingClientRect();
-          host.scrollTo(
-            host.scrollLeft +
-              canvasBox.left -
-              hostBox.left +
-              (first.x + first.w / 2) * scale -
-              host.clientWidth / 2,
-            host.scrollTop +
-              canvasBox.top -
-              hostBox.top +
-              (first.y + first.h / 2) * scale -
-              host.clientHeight / 2
-          );
+          const left = canvasBox.left - hostBox.left + first.x * scale;
+          const top = canvasBox.top - hostBox.top + first.y * scale;
+          const width = first.w * scale;
+          const height = first.h * scale;
+          if (
+            left < 0 ||
+            top < 0 ||
+            left + width > host.clientWidth ||
+            top + height > host.clientHeight
+          )
+            host.scrollTo(
+              host.scrollLeft + left + width / 2 - host.clientWidth / 2,
+              host.scrollTop + top + height / 2 - host.clientHeight / 2
+            );
         }
         const analysis = pendingAnalysisRef.current;
         pendingAnalysisRef.current = null;
