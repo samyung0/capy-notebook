@@ -142,14 +142,19 @@ for (const failure of ['reservation', 'put'] as const) {
       await chooseSources(ownerPage, workspace.id, [name]);
       await submit.click();
       await expect.poll(() => requests.completed).toEqual(['up_failure_2']);
+      // Adding it again is a new submission, so a new batch of one.
       expect(requests.reservations).toEqual([
         expect.objectContaining({
+          batchTotal: 1,
           name,
           parseMode: 'none',
           sizeBytes: bytes.length,
         }),
-        requests.reservations[0],
+        { ...requests.reservations[0], batchId: expect.any(String) },
       ]);
+      expect(requests.reservations[1].batchId).not.toBe(
+        requests.reservations[0].batchId
+      );
       expect(requests.puts.at(-1)).toEqual(bytes);
       expect(requests.files[0].status).toBe('ready');
       const persisted = await ownerApi.get(

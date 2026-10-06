@@ -4,6 +4,8 @@ import type { AppNotification } from '@/api/types';
 import { m } from '@/i18n';
 import { NotificationItem } from './NotificationItem';
 
+const NON_EMPTY_BODY = /text-fg-secondary">[^<]+</;
+
 // Every code the server sends renders its own title and body.
 const sent: Pick<AppNotification, 'data' | 'kind'>[] = [
   {
@@ -41,5 +43,5 @@ it.each(sent)('renders copy for $kind $data.code', (item) => {
     />
   );
   expect(html).not.toContain(m.notifications_title());
-  expect(html).toMatch(/text-fg-secondary">[^<]+</);
+  expect(html).toMatch(NON_EMPTY_BODY);
 });
