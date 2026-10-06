@@ -1582,6 +1582,8 @@
   "question_ui_select_a_center_point": "请选择不属于该元素各点的圆心。",
   "question_ui_select_a_center_and_a_positive_radius": "请选择圆心并输入正的半径。",
   "question_ui_the_graph_could_not_be_exported": "无法导出图形。",
+  "question_ui_bank_hint": "用 AI 编写的考试题目练习，按考试和主题分类。",
+  "question_ui_finished": "已完成",
   "question_ui_question_bank": "题库",
   "question_ui_view": "查看",
   "question_ui_topics": "主题",

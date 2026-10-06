@@ -1582,6 +1582,8 @@
   "question_ui_select_a_center_point": "Select a center that is not one of the element's points.",
   "question_ui_select_a_center_and_a_positive_radius": "Select a center and a positive radius.",
   "question_ui_the_graph_could_not_be_exported": "The graph could not be exported.",
+  "question_ui_bank_hint": "Practise exam questions written with AI, sorted by exam and topic.",
+  "question_ui_finished": "Finished",
   "question_ui_question_bank": "Question bank",
   "question_ui_view": "View",
   "question_ui_topics": "Topics",

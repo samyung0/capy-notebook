@@ -26,7 +26,7 @@ import {
   type FilterSection,
   toggleValue,
 } from '@/components/app/ListToolbar';
-import { Panel } from '@/components/app/layout';
+import { PageHeader, Panel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { FloatingToolbar } from '@/components/ui/BlockToolbar';
@@ -405,62 +405,104 @@ export default function QuestionBank() {
           scrollRef={scrollRef}
           sectionClassName="h-full gap-0"
         >
-          <QuizPageHeader
-            actions={
-              syllabus?.editor && (
-                <Button
-                  className="rounded-input"
-                  iconLeft={mode === 'edit' ? 'view' : 'pencil'}
-                  onClick={() => setMode(mode === 'edit' ? 'view' : 'edit')}
-                  size="sm"
-                >
-                  {mode === 'edit'
-                    ? m.question_ui_view_mode()
-                    : m.question_ui_edit_mode()}
-                </Button>
-              )
-            }
-            meta={
-              topicId &&
-              list &&
-              [
-                list.questions.length === 1
-                  ? m.question_ui_one_question()
-                  : m.question_ui_question_count({
-                      count: list.questions.length,
-                    }),
-                mode === 'edit' &&
-                  m.question_ui_reviewed_count({
-                    count: list.questions.filter((row) => row.reviewedAt)
-                      .length,
-                  }),
-              ]
-                .filter(Boolean)
-                .join(' · ')
-            }
-            onBack={() =>
-              void navigate({ search: { tab: 'blocks' }, to: '/files' })
-            }
-            title={place?.item.label ?? m.question_ui_question_bank()}
-            topBar={false}
-            trail={
-              place
-                ? [
-                    m.question_ui_question_bank(),
-                    place.exam.label,
-                    place.subject.label,
+          {topicId ? (
+            <>
+              <QuizPageHeader
+                actions={
+                  syllabus?.editor && (
+                    <Button
+                      className="rounded-input"
+                      iconLeft={mode === 'edit' ? 'view' : 'pencil'}
+                      onClick={() => setMode(mode === 'edit' ? 'view' : 'edit')}
+                      size="sm"
+                    >
+                      {mode === 'edit'
+                        ? m.question_ui_view_mode()
+                        : m.question_ui_edit_mode()}
+                    </Button>
+                  )
+                }
+                meta={
+                  topicId &&
+                  list &&
+                  [
+                    list.questions.length === 1
+                      ? m.question_ui_one_question()
+                      : m.question_ui_question_count({
+                          count: list.questions.length,
+                        }),
+                    mode === 'edit' &&
+                      m.question_ui_reviewed_count({
+                        count: list.questions.filter((row) => row.reviewedAt)
+                          .length,
+                      }),
                   ]
-                : []
-            }
-          />
-          <div
-            className={cn(
-              'px-4 pt-8 pb-28 sm:px-6 lg:px-10 lg:pb-10 xl:px-16',
-              selected.length > 0 && 'lg:pb-28'
-            )}
-          >
-            <div className="max-w-3xl">{body}</div>
-          </div>
+                    .filter(Boolean)
+                    .join(' · ')
+                }
+                onBack={() =>
+                  void navigate({ search: { tab: 'blocks' }, to: '/files' })
+                }
+                title={place?.item.label ?? m.question_ui_question_bank()}
+                topBar={false}
+                trail={
+                  place
+                    ? [
+                        m.question_ui_question_bank(),
+                        place.exam.label,
+                        place.subject.label,
+                      ]
+                    : []
+                }
+              />
+              <div
+                className={cn(
+                  'px-4 pt-8 pb-28 sm:px-6 lg:px-10 lg:pb-10 xl:px-16',
+                  selected.length > 0 && 'lg:pb-28'
+                )}
+              >
+                <div className="max-w-3xl">{body}</div>
+              </div>
+            </>
+          ) : (
+            <>
+              <PageHeader
+                actions={
+                  syllabus?.editor && (
+                    <Button
+                      className="rounded-input"
+                      iconLeft={mode === 'edit' ? 'view' : 'pencil'}
+                      onClick={() => setMode(mode === 'edit' ? 'view' : 'edit')}
+                      size="sm"
+                    >
+                      {mode === 'edit'
+                        ? m.question_ui_view_mode()
+                        : m.question_ui_edit_mode()}
+                    </Button>
+                  )
+                }
+                showTopBar={false}
+                title={
+                  <div>
+                    <h1 className="t-page-title">
+                      {m.question_ui_question_bank()}
+                    </h1>
+                    <p className="t-subtitle mt-1 text-fg-muted">
+                      {m.question_ui_bank_hint()}
+                    </p>
+                  </div>
+                }
+              />
+              <div
+                className={cn(
+                  'px-6 pt-6 pb-28 lg:pb-10',
+                  selected.length > 0 && 'lg:pb-28'
+                )}
+              >
+                <div className="max-w-3xl">{body}</div>
+              </div>
+            </>
+          )}
         </Panel>
         {/* Phones: the side panel becomes a floating bar and a bottom sheet,
             as in WorkspaceOpen's single-column layout. */}
@@ -1288,8 +1330,26 @@ function BankLanding({
   if (view && isPending) progress = <SkeletonList count={3} rowHeight={52} />;
   else if (view && error)
     progress = <BankError error={error} onRetry={() => void refetch()} />;
-  else if (view && data?.topics.length)
-    progress = <ProgressTable onOpen={onOpen} topics={data.topics} />;
+  else if (view && data?.topics.length) {
+    const going = data.topics.filter((topic) => topic.nextQuestionId);
+    const finished = data.topics.filter((topic) => !topic.nextQuestionId);
+    progress = (
+      <div className="grid gap-8">
+        {going.length > 0 && (
+          <section className="grid gap-3">
+            <h2 className="t-card-title">{m.question_ui_continue()}</h2>
+            <ProgressTable onOpen={onOpen} topics={going} />
+          </section>
+        )}
+        {finished.length > 0 && (
+          <section className="grid gap-3">
+            <h2 className="t-card-title">{m.question_ui_finished()}</h2>
+            <ProgressTable onOpen={onOpen} topics={finished} />
+          </section>
+        )}
+      </div>
+    );
+  }
   return (
     <div className="grid gap-8">
       {progress}
