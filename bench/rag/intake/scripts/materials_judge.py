@@ -44,7 +44,7 @@ MODEL, EFFORT = "claude-opus-5-5", "medium"
 ARMS = ("A", "B", "C")
 PAIRS = (("A", "B"), ("A", "C"))
 SCRATCH = "postgresql://postgres:intake@127.0.0.1:15445/capy_library"
-PAGE_CAP = 10
+PAGE_CAP = 32
 TEXT_CAP = 40_000
 
 FIDELITY_SCHEMA = {
@@ -94,6 +94,11 @@ def outputs(arm: str) -> list[Path]:
     return sorted((EVAL / arm).glob("*.json")) if (EVAL / arm).exists() else []
 
 
+def complete(output: dict) -> bool:
+    """A run whose turn failed (provider error, flagged response) is rerun, not judged."""
+    return not any(t.get("error") for t in output["turns"])
+
+
 def materials_of(output: dict) -> list[dict]:
     return [m for turn in output["turns"] for m in (turn.get("materials") or [])]
 
@@ -141,13 +146,24 @@ def fidelity(arm: str | None, limit: int | None) -> None:
     for a in [arm] if arm else ARMS:
         for path in outputs(a):
             output = json.loads(path.read_text(encoding="utf-8"))
+            if not complete(output):
+                continue
             for i, material in enumerate(materials_of(output)):
                 verdict_path = JUDGE / "fidelity" / a / f"{path.stem}-{i}.json"
-                if verdict_path.exists() and json.loads(verdict_path.read_text(encoding="utf-8")).get("value"):
+                if verdict_path.exists():
+                    existing = json.loads(verdict_path.read_text(encoding="utf-8"))
+                    if existing.get("value") or existing.get("skipped"):
+                        continue
+                if not material.get("excerpt_ids"):
+                    # Built from workspace files, not the library: the page check does not apply.
+                    verdict_path.parent.mkdir(parents=True, exist_ok=True)
+                    record = {"skipped": "no library excerpts cited", "value": None, "arm": a, "output": path.name, "material": material["id"], "kind": material["kind"], "title": material["title"]}
+                    verdict_path.write_text(json.dumps(record, ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n")
+                    print(json.dumps({"arm": a, "output": path.name, "material": i, "skipped": record["skipped"]}), flush=True)
                     continue
                 if a not in conns:
                     conns[a] = psycopg.connect(SCRATCH if a == "B" else live_url())
-                pages_by_book = excerpt_pages(conns[a], material.get("excerpt_ids") or []) if material.get("excerpt_ids") else {}
+                pages_by_book = excerpt_pages(conns[a], material["excerpt_ids"])
                 content: list[dict] = []
                 shown = []
                 for book, pages in pages_by_book.items():
@@ -165,7 +181,7 @@ def fidelity(arm: str | None, limit: int | None) -> None:
                 if material.get("cards"):
                     text += "\n\nFlashcards (structured):\n" + json.dumps(material["cards"], ensure_ascii=False)[:4000]
                 if not shown:
-                    text += "\n\n[No cited pages could be resolved for this material; every claim is unsupported unless it is self-evident arithmetic.]"
+                    text += "\n\n[The cited excerpts resolved to no pages in the library; every claim is unsupported unless it is self-evident arithmetic.]"
                 content.insert(0, {"type": "text", "text": text[:TEXT_CAP]})
                 outcome = claude_headless.call(system, content, FIDELITY_SCHEMA, model=MODEL, effort=EFFORT)
                 outcome.update(arm=a, output=path.name, material=material["id"], kind=material["kind"], title=material["title"], pages_shown=shown, pages_cited={b: len(p) for b, p in pages_by_book.items()})
@@ -194,6 +210,8 @@ def pairwise(limit: int | None, seed: int, model: str = MODEL, sample: float | N
             if verdict_path.exists() and json.loads(verdict_path.read_text(encoding="utf-8")).get("value"):
                 continue
             left, right = json.loads(path.read_text(encoding="utf-8")), json.loads(other.read_text(encoding="utf-8"))
+            if not (complete(left) and complete(right)):
+                continue
             mats = {first_arm: materials_of(left), second_arm: materials_of(right)}
             order = [first_arm, second_arm]
             random.Random(f"{seed}:{path.stem}:{first_arm}{second_arm}").shuffle(order)
@@ -275,6 +293,8 @@ def locator(arm: str | None, limit: int | None) -> None:
             if verdict_path.exists() and json.loads(verdict_path.read_text(encoding="utf-8")).get("value"):
                 continue
             output = json.loads(path.read_text(encoding="utf-8"))
+            if not complete(output):
+                continue
             if a not in conns:
                 conns[a] = psycopg.connect(SCRATCH if a == "B" else live_url())
             read = first_read(output, conns[a])
@@ -334,7 +354,7 @@ def chapters(arm: str | None, limit: int | None) -> None:
     for a in [arm] if arm else ARMS:
         for path in outputs(a):
             output = json.loads(path.read_text(encoding="utf-8"))
-            if output.get("kind") != "generic":
+            if output.get("kind") != "generic" or not complete(output):
                 continue
             verdict_path = JUDGE / "chapters" / a / f"{path.stem}.json"
             if verdict_path.exists() and json.loads(verdict_path.read_text(encoding="utf-8")).get("value"):
@@ -402,21 +422,28 @@ def second_rater(primary: Path, second: Path) -> dict:
 
 
 def summary() -> None:
-    fid = {a: {"materials": 0, "claims": 0, "supported": 0, "wrong": 0, "unsupported": 0, "by_kind_wrong": {}} for a in ARMS}
+    fid = {a: {"materials": 0, "workspace_sourced": 0, "pages_cited": 0, "pages_shown": 0, "claims": 0, "supported": 0, "wrong": 0, "unsupported": 0, "by_kind_wrong": {}} for a in ARMS}
     for d in verdicts(JUDGE / "fidelity"):
         v = d.get("value")
+        if d.get("skipped"):
+            fid[d["arm"]]["workspace_sourced"] += 1
         if not v:
             continue
         t = fid[d["arm"]]
         t["materials"] += 1
+        t["pages_cited"] += sum((d.get("pages_cited") or {}).values())
+        t["pages_shown"] += len(d.get("pages_shown") or [])
         for c in v["claims"]:
             t["claims"] += 1
             t[c["verdict"]] += 1
             if c["verdict"] == "wrong":
                 t["by_kind_wrong"][c["kind"]] = t["by_kind_wrong"].get(c["kind"], 0) + 1
     for t in fid.values():
+        decided = t["supported"] + t["wrong"]
+        t["wrong_share_of_decided"] = round(t["wrong"] / decided, 3) if decided else None
         t["wrong_share"] = round(t["wrong"] / t["claims"], 3) if t["claims"] else None
         t["unsupported_share"] = round(t["unsupported"] / t["claims"], 3) if t["claims"] else None
+        t["page_coverage"] = round(t["pages_shown"] / t["pages_cited"], 3) if t["pages_cited"] else None
     raters = [second_rater(JUDGE / "pairwise", p) for p in sorted(JUDGE.glob("pairwise-*")) if p.is_dir()]
     loc = {a: {} for a in ARMS}
     for d in verdicts(JUDGE / "locator"):
