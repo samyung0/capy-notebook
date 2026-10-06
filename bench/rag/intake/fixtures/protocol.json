@@ -12,7 +12,7 @@
     "B": {
       "parser": "MinerU 4.0, tier confirmed at smoke (standard expected); no transcription review, no tags; 3% audit measured only",
       "reading": "section reading: book outline, ordered section reads, tag-free search as locator",
-      "database": "scratch pgvector intake-eval-scratch on 55443"
+      "database": "scratch pgvector intake-eval-scratch on 127.0.0.1:15445 (55443 is inside a Windows reserved port range)"
     },
     "C": {
       "parser": "same data as A",

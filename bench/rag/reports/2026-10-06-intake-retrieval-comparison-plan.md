@@ -125,6 +125,13 @@ pipeline's agent loop directly, so no Go deploy is needed for the experiment.
   `parse_books` sibling in the pilot script that takes a content list file
   instead of calling `parse_to_bundle` (`knowledge_base_pilot.py:550-602`) is
   the smallest insertion; the production chunker then runs unchanged.
+  `page_chunks` (pilot:520-549) reads `refinement.json` for the frozen
+  furniture list and optional page evidence, and falls back to the source
+  PDF for heading retention and confidence scoring, so the MinerU path writes
+  `refinement.json` with an empty furniture list (MinerU drops running
+  headers and footers itself) and no page evidence, and records a MinerU
+  identity in `release_sha`, `artifact_key` and `parser_fingerprint` so the
+  corpus can never be mistaken for an ODL parse.
 - Stages kept: parse, chunk, excerpts by section path, embed (same model pin
   as the live library, DeepInfra), publish. Stages skipped: transcription,
   figure description, review and tagging, topics, scope review. Publish needs
@@ -140,8 +147,10 @@ pipeline's agent loop directly, so no Go deploy is needed for the experiment.
   error rate the arm's materials were built on and a direct ODL+review versus
   MinerU number.
 - Scratch database: `pgvector/pgvector:pg16` as `intake-eval-scratch` on
-  55443, `knowledge_base_library.py schema`, publish with the shell
-  `LIBRARY_DATABASE_URL` pointed at it (the shell wins over `.env.local`).
+  127.0.0.1:15445 (55443 sits in a Windows reserved port range), schema
+  created 2026-10-06 with `knowledge_base_library.py schema`; publish with
+  the shell `LIBRARY_DATABASE_URL` pointed at it (the shell wins over
+  `.env.local`).
 
 ## Part 4: corpus and requests
 
