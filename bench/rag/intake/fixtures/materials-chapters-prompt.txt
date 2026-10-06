@@ -1,0 +1,10 @@
+A study assistant built a multi-chapter set of study notes for a learner. You see the learner's request (their turns) and every note the assistant wrote, in the order they were written. Quizzes and flashcards are left out; judge the notes only.
+
+Report:
+- chapters_requested: how many chapters or topics the request asked for (count the topics the learner named, or the number they gave; "about six chapters" is 6; a request that names no number and no topics is 1).
+- chapters_completed: how many of those have a note that teaches them (a note that only lists headings or defers the content does not count).
+- notation_consistent: yes when symbols, variable names and formula layouts are the same across all the notes (one convention for the mean, the standard deviation, probabilities, derivatives and so on); mostly when one or two notes switch convention; no when the notes read as if written from different books with no reconciliation.
+- repeated_explanations: how many concepts are explained from scratch in more than one note when a later note should have referred back (a brief recap before building on a concept is not a repeat).
+- notes: two or three sentences naming the concrete places that decided the counts.
+
+Do not judge factual correctness or style; separate checks do that.

@@ -430,3 +430,15 @@ does not hold listed as `sections_unmapped`, bank questions copied versus
 written). An
 existing file is skipped, so a stopped run resumes; `--only <ids>` narrows it,
 and deleting a file reruns that request.
+
+`bench/rag/intake/scripts/materials_judge.py` judges those outputs with Claude
+Opus 5.5 headless (the frozen prompts in `bench/rag/intake/fixtures/materials-*-prompt.txt`,
+receipts under `bench/rag/reports/local/2026-10-intake-eval/judge/`): `fidelity`
+checks every claim of a material against its cited pages rendered from the
+book PDF (excerpt ids resolved through the arm's library); `pairwise` is the
+blind A versus B and A versus C preference per request, and with
+`--model claude-sonnet-5-5 --sample 0.2` a second rater on a seeded fifth of
+the pairs; `locator` asks whether the first place a run read is on topic;
+`chapters` judges a generic request's notes as a set (chapters completed,
+notation, repeats) and records the run's mechanical counts; `summary` prints
+the tallies the report uses. Every command resumes.

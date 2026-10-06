@@ -1,0 +1,3 @@
+A study assistant answered a learner's request by reading from a library of open textbooks. You see the request and the first place in the library the assistant read: the book, the section or excerpt path, and the opening lines of what it read. You do not know how the assistant found that place.
+
+Decide whether that first reading is on topic for the request: yes (it is where the request's first topic or chapter is taught, at a depth a learner at the stated level would use), partly (the right subject or chapter but the wrong section, or a section much narrower or wider than the request), or no (another topic, another subject, or front matter such as a preface or table of contents). Give one sentence of reason that names the request's topic and what the reading covers.

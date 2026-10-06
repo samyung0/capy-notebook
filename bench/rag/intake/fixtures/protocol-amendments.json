@@ -15,6 +15,21 @@
       "before_first_run": true,
       "change": "The dev repeat covers every dev-split request: 18 (4 generic, 10 pilot including the control stat-16, 4 formula), not the 16 named in chat.",
       "reason": "The recorded decision says every dev-split request runs twice; the frozen file has 18 such requests. Clarification only, no change to the requests."
+    },
+    {
+      "number": 3,
+      "date": "2026-10-06",
+      "before_first_run": false,
+      "before_first_verdict_of_its_kind": true,
+      "change": "Three judge checks the protocol lists but the first judge script did not implement are added before their first verdict: (1) the second rater is Claude Sonnet 5.5 at medium effort through the same CLI, on a seeded 20% sample of the pairs (materials_judge.py pairwise --model claude-sonnet-5-5 --sample 0.2); (2) 'first section read on topic' is judged from the run record with the frozen prompt materials-locator-prompt.txt (first read_knowledge section call, or for excerpt search the top hit of the first search); (3) the multi-chapter checks use the frozen prompt materials-chapters-prompt.txt over the notes of each generic request, plus mechanical counts from the run record (materials before the confirmation turn, input tokens per material in creation order, compactions, ledger todos open). Fidelity and pairwise verdicts already taken are unchanged.",
+      "reason": "The protocol's judge.measures names these checks; they were specified in the plan (Part 6) but the script shipped with fidelity and pairwise only. Adding them before any verdict of their kind keeps the judging frozen in the same sense as the first two."
+    },
+    {
+      "number": 4,
+      "date": "2026-10-06",
+      "before_first_run": false,
+      "change": "Fidelity judging: (1) the judge sees up to 32 cited pages per material instead of 10 (no material so far cites more than 32; above the cap pages are still sampled evenly and the coverage is recorded); the 38 verdicts taken with sampled pages are discarded and re-judged, verdicts whose pages were all shown stand; (2) a material that cites no library excerpt (built from workspace files) is recorded as skipped and left out of the fidelity tallies, counted per arm as workspace_sourced; (3) the primary fidelity measure is the wrong share of decided claims (wrong / (supported + wrong)); the unsupported share and page coverage are reported beside it.",
+      "reason": "With 10 of 20 to 30 cited pages shown, claims from the pages left out came back 'unsupported', which penalised the section-reading arms (B 18%, C 20% unsupported on sampled materials against 2% to 4% when every page was shown) for a judge artefact, not for their text; and four arm C materials for 'Help me study statistics' were built from a workspace PDF, so their 60 'unsupported' claims measured the judge's missing pages, not the library."
     }
   ]
 }
