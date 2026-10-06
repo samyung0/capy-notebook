@@ -469,7 +469,11 @@ def summary() -> None:
         rows = [json.loads(p.read_text(encoding="utf-8")) for p in outputs(a)]
         if not rows:
             continue
+        failed = [json.loads(p.read_text(encoding="utf-8")) for p in sorted((EVAL / a / "failed").glob("*.json"))] if (EVAL / a / "failed").exists() else []
         c = counters[a] = {"runs": len(rows), "with_material": sum(1 for r in rows if materials_of(r)), "errors": sum(1 for r in rows for t in r["turns"] if t.get("error"))}
+        # Guard-flagged turns, first attempts kept under <arm>/failed/ when a run is rerun (amendment 5).
+        c["flagged_turns"] = sum(1 for r in rows + failed for t in r["turns"] if (t.get("error") or {}).get("code") == "response_flagged" if isinstance(t.get("error"), dict))
+        c["reruns"] = len(failed)
         c["materials"] = sum(len(materials_of(r)) for r in rows)
         c["materials_by_kind"] = {}
         for r in rows:
@@ -488,6 +492,17 @@ def summary() -> None:
                 c["writes"]["refused_by_class"][k] = c["writes"]["refused_by_class"].get(k, 0) + 1
         c["controls"] = {r["request_id"] + ("-r2" if r.get("repeat") == 2 else ""): {"materials": len(materials_of(r)), "tool_calls": r["counters"].get("tool_calls")} for r in rows if r["request_id"] in CONTROLS}
         c["generic_materials_before_confirmation"] = sum(len(r["turns"][0].get("materials") or []) for r in rows if r.get("kind") == "generic" and len(r["turns"]) > 1)
+        # Turns without a ledger that used all 8 planning responses (limits.PLANNING_RESPONSES) and wrote nothing.
+        c["planning_cap_hits"] = 0
+        c["inspect_failures"] = 0
+        for r in rows:
+            for t in r["turns"]:
+                if t.get("error") or not t.get("run_id"):
+                    continue
+                run = run_record(t)
+                c["inspect_failures"] += sum(1 for x in run["calls"] if x["name"] == "inspect_document" and x.get("outcome") != "succeeded")
+                if (run.get("telemetry") or {}).get("planningRounds") == 8 and not (run["ledger"].get("todos") or []) and not run.get("materials"):
+                    c["planning_cap_hits"] += 1
     print(json.dumps({"fidelity": fid, "pairwise": pairwise_tallies(JUDGE / "pairwise"), "second_rater": raters, "locator": loc, "chapters": chap, "counters": counters}, indent=1))
 
 

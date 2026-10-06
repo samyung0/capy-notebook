@@ -30,6 +30,13 @@
       "before_first_run": false,
       "change": "Fidelity judging: (1) the judge sees up to 32 cited pages per material instead of 10 (no material so far cites more than 32; above the cap pages are still sampled evenly and the coverage is recorded); the 38 verdicts taken with sampled pages are discarded and re-judged, verdicts whose pages were all shown stand; (2) a material that cites no library excerpt (built from workspace files) is recorded as skipped and left out of the fidelity tallies, counted per arm as workspace_sourced; (3) the primary fidelity measure is the wrong share of decided claims (wrong / (supported + wrong)); the unsupported share and page coverage are reported beside it.",
       "reason": "With 10 of 20 to 30 cited pages shown, claims from the pages left out came back 'unsupported', which penalised the section-reading arms (B 18%, C 20% unsupported on sampled materials against 2% to 4% when every page was shown) for a judge artefact, not for their text; and four arm C materials for 'Help me study statistics' were built from a workspace PDF, so their 60 'unsupported' claims measured the judge's missing pages, not the library."
+    },
+    {
+      "number": 5,
+      "date": "2026-10-06",
+      "before_first_run": false,
+      "change": "A run whose turn ends in the app's response guard error ('Response flagged due to safety concern', code response_flagged: the model wrote a tool-call envelope into its answer text) is rerun once after its arm's driver finishes (delete the output, run_requests.py --only <id>); the rerun's outcome is what the judges see, and every flagged turn, first attempt or rerun, is counted per arm in the report.",
+      "reason": "Four such turns by 20:30 on 2026-10-06, all in the section-reading arms (B gen-05, B gen-06, C gen-06, C stat-05) and none in A; the guard fires on GLM-5.3-Flash writing its tool-call syntax as text, which a user would retry. One rerun keeps the comparison on built materials while the tally keeps the failure rate visible as a cost of the reading mode with this model."
     }
   ]
 }
