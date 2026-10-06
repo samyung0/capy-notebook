@@ -16,21 +16,19 @@ test = false
 doc = false
 
 [dependencies]
-base64 = "0.22"
+base64.workspace = true
 cpu-time = "1"
-deadpool-postgres = "0.14"
+deadpool-postgres.workspace = true
 indexmap = "2"
 memory-stats = "1"
-notes.workspace = true
-redis = { version = "1", default-features = false, features = ["connection-manager", "script", "tokio-comp"] }
 office-service = { package = "betteroffice-office-service", path = "../../../vendor/betteroffice/crates/office-service" }
-reqwest = { version = "0.13", default-features = false, features = ["http2", "json", "rustls"] }
+redis.workspace = true
+reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tokio = { version = "1", features = ["io-util", "macros", "process", "rt", "sync", "time"] }
-tokio-postgres = "0.7"
-tracing = "0.1"
+tokio.workspace = true
+tokio-postgres.workspace = true
 unicode-script = "0.5"
 ydoc.workspace = true
 yrs.workspace = true
@@ -39,9 +37,7 @@ yrs.workspace = true
 rlimit = "0.10"
 
 [dev-dependencies]
-axum = "0.8"
-tokio = { version = "1", features = ["net", "rt-multi-thread", "test-util"] }
-tokio-postgres = { version = "0.7", features = ["with-serde_json-1"] }
+axum.workspace = true
 
 [lints]
 workspace = true

@@ -487,7 +487,10 @@ impl Handoff {
         let file_id = file_id.to_owned();
         tokio::spawn(async move {
             if let Err(error) = this.rebuild(&file_id).await {
-                tracing::warn!(%error, file_id, stage = "source_rebuild", "source rebuild failed");
+                crate::observe::capture(
+                    &error.to_string(),
+                    &[("stage", "source_rebuild"), ("file_id", &file_id)],
+                );
             }
         });
     }

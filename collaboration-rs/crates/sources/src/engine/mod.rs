@@ -475,14 +475,18 @@ impl Supervisor {
             }
         }
         if ran >= SLOW_OFFICE_CALL {
-            tracing::warn!(
-                bytes = job.request.blobs.iter().map(Vec::len).sum::<usize>(),
-                lane = self.lane,
-                method = method.as_str(),
-                ms = ran.as_millis() as u64,
-                room = job.room.as_deref(),
-                wait_ms = (started - job.queued_at).as_millis() as u64,
-                "slow_office_call"
+            crate::observe::log(
+                "warn",
+                "slow_office_call",
+                serde_json::json!({
+                    // The byte arguments: the base, states, the exported file.
+                    "bytes": job.request.blobs.iter().map(Vec::len).sum::<usize>(),
+                    "lane": self.lane,
+                    "method": method,
+                    "ms": ran.as_millis() as u64,
+                    "room": job.room,
+                    "wait_ms": (started - job.queued_at).as_millis() as u64,
+                }),
             );
         }
         match outcome {

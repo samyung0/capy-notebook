@@ -13,6 +13,7 @@ pub mod engine;
 pub mod failure;
 pub mod gateway;
 pub mod handoff;
+pub mod observe;
 pub mod refresh;
 pub mod schedule;
 pub mod seed_check;

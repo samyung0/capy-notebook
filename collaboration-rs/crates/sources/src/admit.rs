@@ -6,14 +6,13 @@
 
 use std::collections::HashMap;
 use std::ops::Range;
-use std::sync::Arc;
 
 use office_service::Format;
-use ydoc::{Container, Inspection};
-use yrs::block::{ItemContent, ItemPtr, UpdateParent};
+use ydoc::Inspection;
+use yrs::block::{ItemContent, ItemPtr};
 use yrs::branch::{BranchID, BranchPtr};
 use yrs::updates::decoder::Decode;
-use yrs::{ClientID, Doc, ID, ReadTxn, StateVector, Transact, Update, UpdateBlock};
+use yrs::{ClientID, Doc, ReadTxn, StateVector, Transact, Update};
 
 use crate::{MAX_SOURCE_STATE_BYTES, SourceFormat};
 
@@ -82,7 +81,7 @@ pub fn admit_update(
             Err(message) => return Admission::Refuse(Refusal::OfficeUpdate(message)),
             Ok(unheld) => unheld,
         },
-        None => inspect_update(&txn, &decoded).unheld,
+        None => ydoc::inspect_update(&txn, &decoded).unheld,
     };
     if unheld {
         Admission::Unheld
@@ -122,7 +121,7 @@ pub fn office_update_violation<T: ReadTxn>(
     update: &Update,
     format: Format,
 ) -> Result<bool, String> {
-    let Inspection { containers, unheld } = inspect_update(txn, update);
+    let Inspection { containers, unheld } = ydoc::inspect_update(txn, update);
     let roots = office_service::document_roots(format);
     for found in &containers {
         if !roots.contains(&&*found.root) {
@@ -187,135 +186,6 @@ fn touches(branch: BranchPtr, deletes: &HashMap<ClientID, Vec<Range<u32>>>) -> b
         next = item.right();
     }
     false
-}
-
-#[derive(Clone, Debug)]
-enum Found {
-    Container(Container),
-    /// A reference the room garbage-collected: the struct drops on integration.
-    Gone,
-    /// A reference neither the room nor the update holds.
-    Unknown,
-}
-
-/// `inspectUpdate`: what a client update holds that the room does not, read
-/// against the room, never a copy of it. Belongs in `ydoc` once rust-core
-/// takes it (notes use it too); kept here until then.
-pub fn inspect_update<T: ReadTxn>(txn: &T, update: &Update) -> Inspection {
-    let held_sv = txn.state_vector();
-    let held = |client: &ClientID| held_sv.get(client);
-    let store = txn.store();
-    let mut incoming: HashMap<ClientID, Vec<&yrs::block::Item>> = HashMap::new();
-    for block in update.blocks() {
-        if let UpdateBlock::Item(item) = block {
-            incoming.entry(item.id().client).or_default().push(item);
-        }
-    }
-    for items in incoming.values_mut() {
-        items.sort_by_key(|item| item.id().clock);
-    }
-    let incoming_at = |id: &ID| -> Option<&yrs::block::Item> {
-        let items = incoming.get(&id.client)?;
-        let at = items.partition_point(|item| item.id().clock + item.len() <= id.clock);
-        items
-            .get(at)
-            .copied()
-            .filter(|item| item.id().clock <= id.clock)
-    };
-    let held_at = |id: &ID| -> Found {
-        let Some(mut top) = store.get_item(id) else {
-            return Found::Gone;
-        };
-        while let Some(holder) = top.parent_branch().and_then(|branch| branch.item()) {
-            top = holder;
-        }
-        match top.parent_branch().map(|branch| branch.id()) {
-            Some(BranchID::Root(root)) => Found::Container(Container {
-                root,
-                key: top.parent_sub().cloned(),
-            }),
-            _ => Found::Unknown,
-        }
-    };
-    let mut resolved: HashMap<ID, Found> = HashMap::new();
-    let mut container_of = |start: &yrs::block::Item| -> Found {
-        let mut chain: Vec<ID> = Vec::new();
-        let mut item = start;
-        let found = loop {
-            if let Some(known) = resolved.get(item.id()) {
-                break known.clone();
-            }
-            // A reference cycle stays unknown.
-            resolved.insert(*item.id(), Found::Unknown);
-            chain.push(*item.id());
-            let reference = match item.update_parent() {
-                UpdateParent::Root(root) => {
-                    break Found::Container(Container {
-                        root: Arc::clone(root),
-                        key: item.parent_sub().cloned(),
-                    });
-                }
-                UpdateParent::Item(holder) => Some(*holder),
-                UpdateParent::Branch(_) | UpdateParent::Unknown => {
-                    item.origin().or(item.right_origin()).copied()
-                }
-            };
-            let Some(reference) = reference else {
-                break Found::Unknown;
-            };
-            if reference.clock < held(&reference.client) {
-                break held_at(&reference);
-            }
-            match incoming_at(&reference) {
-                Some(next) => item = next,
-                None => break Found::Unknown,
-            }
-        };
-        for id in chain {
-            resolved.insert(id, found.clone());
-        }
-        found
-    };
-
-    // Yjs integrates each client's structs in clock order only, and applies a
-    // deletion only once it holds the deleted range: an update that starts
-    // past what the room holds of a client, skips a range, or deletes what
-    // neither side holds would stay pending, and a room with pending content
-    // cannot be saved.
-    let mut unheld = false;
-    let mut reach: HashMap<ClientID, u32> = HashMap::new();
-    for block in update.blocks() {
-        let (id, len, skip) = match block {
-            UpdateBlock::Item(item) => (*item.id(), item.len(), false),
-            UpdateBlock::Gc(range) => (ID::new(range.client, range.clock), range.len, false),
-            UpdateBlock::Skip(range) => (ID::new(range.client, range.clock), range.len, true),
-        };
-        let from = *reach.entry(id.client).or_insert_with(|| held(&id.client));
-        if skip || id.clock > from {
-            unheld = true;
-        }
-        reach.insert(id.client, from.max(id.clock + len));
-    }
-    for (client, ranges) in update.delete_set().iter() {
-        let until = reach.get(client).copied().unwrap_or_else(|| held(client));
-        if ranges.iter().any(|range| range.end > until) {
-            unheld = true;
-        }
-    }
-    let mut containers = Vec::new();
-    for items in incoming.values() {
-        for item in items {
-            if item.id().clock + item.len() <= held(&item.id().client) {
-                continue;
-            }
-            match container_of(item) {
-                Found::Gone => {}
-                Found::Unknown => unheld = true,
-                Found::Container(container) => containers.push(container),
-            }
-        }
-    }
-    Inspection { containers, unheld }
 }
 
 #[cfg(test)]

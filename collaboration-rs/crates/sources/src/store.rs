@@ -1350,11 +1350,19 @@ impl Sources {
                 .await
                 && error.status() != Some(409)
             {
-                tracing::warn!(%error, file_id, "source refresh failed");
+                crate::observe::log(
+                    "warn",
+                    "source refresh failed",
+                    json!({ "error": error.to_string(), "file_id": file_id }),
+                );
             }
         }
         if let Err(error) = self.schedule_note_indexes().await {
-            tracing::warn!(%error, "note index scheduling failed");
+            crate::observe::log(
+                "warn",
+                "note index scheduling failed",
+                json!({ "error": error.to_string() }),
+            );
         }
         Ok(())
     }

@@ -52,7 +52,15 @@ impl Probe {
     }
 
     /// An engine call, `reps` times: the engine process's CPU, the call's wall.
-    async fn engine(&mut self, pool: &EnginePool, name: &str, reps: usize, lane: Lane, room: &str, request: impl Fn() -> Frame) -> Reply {
+    async fn engine(
+        &mut self,
+        pool: &EnginePool,
+        name: &str,
+        reps: usize,
+        lane: Lane,
+        room: &str,
+        request: impl Fn() -> Frame,
+    ) -> Reply {
         let (mut cpu, mut wall, mut run) = (Vec::new(), Vec::new(), Vec::new());
         let mut last = None;
         for _ in 0..reps {
@@ -89,7 +97,8 @@ fn encode(doc: &Doc, since: &StateVector) -> Vec<u8> {
 fn replay(doc: &Doc, updates: &[&[u8]]) {
     let mut txn = doc.transact_mut();
     for update in updates {
-        txn.apply_update(Update::decode_v1(update).unwrap()).unwrap();
+        txn.apply_update(Update::decode_v1(update).unwrap())
+            .unwrap();
     }
     assert!(txn.store().pending_update().is_none());
 }
@@ -113,10 +122,19 @@ async fn main() {
         replica_budget_bytes: 1 << 30,
         memory_limit_bytes: None,
     });
-    let mut probe = Probe { out: Map::new(), reps };
+    let mut probe = Probe {
+        out: Map::new(),
+        reps,
+    };
     probe.out.insert("format".into(), json!(format));
-    probe.out.insert("file".into(), json!(PathBuf::from(file).file_name().unwrap().to_string_lossy()));
-    probe.out.insert("zipMiB".into(), json!((base.len() as f64 / 1048576.0 * 10.0).round() / 10.0));
+    probe.out.insert(
+        "file".into(),
+        json!(PathBuf::from(file).file_name().unwrap().to_string_lossy()),
+    );
+    probe.out.insert(
+        "zipMiB".into(),
+        json!((base.len() as f64 / 1048576.0 * 10.0).round() / 10.0),
+    );
     let args = || Args {
         format: Some(format),
         base_sha256: Some(sha.clone()),
@@ -126,14 +144,33 @@ async fn main() {
     // Load: seed(base) in the engine (the first call also starts the process),
     // then the room replays it.
     let spawn = Instant::now();
-    pool.call(Lane::Save, Some(room), frame("test.echo", Args::default(), Vec::new())).await.unwrap();
-    pool.call(Lane::Background, Some(room), frame("test.echo", Args::default(), Vec::new())).await.unwrap();
-    probe.out.insert("spawnMs".into(), json!(spawn.elapsed().as_millis()));
+    pool.call(
+        Lane::Save,
+        Some(room),
+        frame("test.echo", Args::default(), Vec::new()),
+    )
+    .await
+    .unwrap();
+    pool.call(
+        Lane::Background,
+        Some(room),
+        frame("test.echo", Args::default(), Vec::new()),
+    )
+    .await
+    .unwrap();
+    probe
+        .out
+        .insert("spawnMs".into(), json!(spawn.elapsed().as_millis()));
     let mut seeded = probe
-        .engine(&pool, "seed", 1, Lane::Save, room, || frame("seedOffice", args(), vec![base.clone()]))
+        .engine(&pool, "seed", 1, Lane::Save, room, || {
+            frame("seedOffice", args(), vec![base.clone()])
+        })
         .await;
     let seed = seeded.blobs.swap_remove(0);
-    probe.out.insert("seedStateMiB".into(), json!((seed.len() as f64 / 1048576.0 * 100.0).round() / 100.0));
+    probe.out.insert(
+        "seedStateMiB".into(),
+        json!((seed.len() as f64 / 1048576.0 * 100.0).round() / 100.0),
+    );
     let seed_vector = Update::decode_v1(&seed).unwrap().state_vector();
     let doc = Doc::with_client_id(1);
     probe.local("roomLoad", 1, || replay(&doc, &[&seed]));
@@ -148,7 +185,10 @@ async fn main() {
     let entries: Vec<Entry> = serde_json::from_value(inspected.value).unwrap();
     let command = match format {
         Format::Xlsx => {
-            let cell = entries.iter().find(|entry| entry.value.parse::<f64>().is_ok()).unwrap();
+            let cell = entries
+                .iter()
+                .find(|entry| entry.value.parse::<f64>().is_ok())
+                .unwrap();
             let (sheet, at) = cell.position.rsplit_once(':').unwrap();
             Command::SetCell {
                 sheet: sheet.into(),
@@ -158,7 +198,10 @@ async fn main() {
             }
         }
         _ => {
-            let paragraph = entries.iter().find(|entry| entry.value.chars().count() > 20).unwrap();
+            let paragraph = entries
+                .iter()
+                .find(|entry| entry.value.chars().count() > 20)
+                .unwrap();
             Command::ReplaceText {
                 target_id: paragraph.id.clone(),
                 expected_text: paragraph.value.clone(),
@@ -170,7 +213,11 @@ async fn main() {
         .engine(&pool, "applyCommand", 1, Lane::Background, room, || {
             let mut request = args();
             request.commands = Some(vec![command.clone()]);
-            frame("applyOfficeCommands", request, vec![base.clone(), seed.clone()])
+            frame(
+                "applyOfficeCommands",
+                request,
+                vec![base.clone(), seed.clone()],
+            )
         })
         .await;
     let edited = applied.blobs.swap_remove(0);
@@ -181,7 +228,9 @@ async fn main() {
     probe.out.insert("updateBytes".into(), json!(update.len()));
     let source_format: SourceFormat = serde_json::from_value(json!(format)).unwrap();
     let mut estimate = seed.len() as u64;
-    let admitted = probe.local("admitUpdate", reps, || admit_update(&doc, source_format, &update, &mut estimate));
+    let admitted = probe.local("admitUpdate", reps, || {
+        admit_update(&doc, source_format, &update, &mut estimate)
+    });
     assert_eq!(admitted, sources::Admission::Accept);
     probe.local("applyUpdate", 1, || replay(&doc, &[&update]));
 
@@ -189,19 +238,35 @@ async fn main() {
     // reads effects from, the body.
     let row = probe.local("row", reps, || encode(&doc, &durable));
     let state = probe.local("wholeState", reps, || encode(&doc, &StateVector::default()));
-    let row64 = probe.local("base64Row", reps, || base64::engine::general_purpose::STANDARD.encode(&row));
+    let row64 = probe.local("base64Row", reps, || {
+        base64::engine::general_purpose::STANDARD.encode(&row)
+    });
     probe.out.insert("rowBytes".into(), json!(row.len()));
-    probe.out.insert("stateMiB".into(), json!((state.len() as f64 / 1048576.0 * 100.0).round() / 100.0));
+    probe.out.insert(
+        "stateMiB".into(),
+        json!((state.len() as f64 / 1048576.0 * 100.0).round() / 100.0),
+    );
     let effects: Vec<NetEffect> = match format {
         Format::Xlsx => {
             let request = || {
                 let mut request = args();
                 request.room = Some(room.into());
-                frame("xlsxPendingEffects", request, vec![base.clone(), state.clone()])
+                frame(
+                    "xlsxPendingEffects",
+                    request,
+                    vec![base.clone(), state.clone()],
+                )
             };
-            probe.engine(&pool, "effectsReplicaMiss", 1, Lane::Save, room, request).await;
-            let hit = probe.engine(&pool, "effectsReplicaHit", reps, Lane::Save, room, request).await;
-            probe.out.insert("replica".into(), json!(hit.usage.replicas.replica_bytes >> 20));
+            probe
+                .engine(&pool, "effectsReplicaMiss", 1, Lane::Save, room, request)
+                .await;
+            let hit = probe
+                .engine(&pool, "effectsReplicaHit", reps, Lane::Save, room, request)
+                .await;
+            probe.out.insert(
+                "replica".into(),
+                json!(hit.usage.replicas.replica_bytes >> 20),
+            );
             serde_json::from_value(hit.value).unwrap()
         }
         _ => {
@@ -217,17 +282,24 @@ async fn main() {
                 })
                 .await;
             let current: Vec<BaselineEntry> = serde_json::from_value(current.value).unwrap();
-            probe.local("compareBaselines", reps, || office_service::compare_baselines(&indexed, &current))
+            probe.local("compareBaselines", reps, || {
+                office_service::compare_baselines(&indexed, &current)
+            })
         }
     };
-    let effects: Vec<NetEffect> = effects.into_iter().map(sources::effects::trim_effect).collect();
+    let effects: Vec<NetEffect> = effects
+        .into_iter()
+        .map(sources::effects::trim_effect)
+        .collect();
     probe.out.insert("effects".into(), json!(effects.len()));
     let body = json!({
         "actorIds": ["u_1"], "baseRevision": 1, "epoch": 1, "expectedCheckpoint": 0,
         "netTokens": sources::effects::effect_tokens(&effects), "pendingEffects": effects,
         "stateSeedSHA256": sha, "update": row64,
     });
-    probe.out.insert("bodyBytes".into(), json!(body.to_string().len()));
+    probe
+        .out
+        .insert("bodyBytes".into(), json!(body.to_string().len()));
 
     // The load check of base + rows and the fold into a change over the seed.
     probe.local("loadCheck", reps, || replay(&Doc::new(), &[&seed, &row]));
@@ -236,7 +308,10 @@ async fn main() {
         replay(&folded, &[&seed, &row]);
         encode(&folded, &seed_vector)
     });
-    probe.out.insert("foldedChangeKiB".into(), json!((change.len() as f64 / 1024.0 * 10.0).round() / 10.0));
+    probe.out.insert(
+        "foldedChangeKiB".into(),
+        json!((change.len() as f64 / 1024.0 * 10.0).round() / 10.0),
+    );
     probe
         .engine(&pool, "export", 1, Lane::Background, room, || {
             let mut request = args();
@@ -246,19 +321,38 @@ async fn main() {
         })
         .await;
     let (save, background) = pool.take_stats();
-    probe.out.insert("saveLaneRssMiB".into(), json!(save.rss_mib));
-    probe.out.insert("backgroundLaneRssMiB".into(), json!(background.rss_mib));
+    probe
+        .out
+        .insert("saveLaneRssMiB".into(), json!(save.rss_mib));
+    probe
+        .out
+        .insert("backgroundLaneRssMiB".into(), json!(background.rss_mib));
     // Peak resident memory of this process and both engine processes
     // (Windows: the working set high-water; Linux reports VmHWM per call).
     let mut pids = vec![std::process::id() as u64];
     for lane in [Lane::Save, Lane::Background] {
-        let echo = pool.call(lane, Some(room), frame("test.echo", Args::default(), Vec::new())).await.unwrap();
+        let echo = pool
+            .call(
+                lane,
+                Some(room),
+                frame("test.echo", Args::default(), Vec::new()),
+            )
+            .await
+            .unwrap();
         pids.push(echo.value["pid"].as_u64().unwrap());
     }
     if cfg!(windows) {
-        let ids = pids.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
+        let ids = pids
+            .iter()
+            .map(u64::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
         let peaks = std::process::Command::new("powershell")
-            .args(["-NoProfile", "-Command", &format!("(Get-Process -Id {ids}).PeakWorkingSet64 -join ','")])
+            .args([
+                "-NoProfile",
+                "-Command",
+                &format!("(Get-Process -Id {ids}).PeakWorkingSet64 -join ','"),
+            ])
             .output()
             .unwrap();
         let peaks: Vec<u64> = String::from_utf8_lossy(&peaks.stdout)
@@ -267,7 +361,10 @@ async fn main() {
             .filter_map(|peak| peak.parse().ok())
             .map(|peak: u64| peak >> 20)
             .collect();
-        probe.out.insert("peakMiB".into(), json!({ "server": peaks.first(), "save": peaks.get(1), "background": peaks.get(2) }));
+        probe.out.insert(
+            "peakMiB".into(),
+            json!({ "server": peaks.first(), "save": peaks.get(1), "background": peaks.get(2) }),
+        );
     }
     probe.out.insert("reps".into(), json!(probe.reps));
     println!("{}", Value::Object(probe.out));

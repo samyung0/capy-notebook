@@ -47,7 +47,11 @@ impl SeedCheck {
 
 /// Seeds each (format, base) once and reports every manifest line. `read`
 /// downloads a base (verified against its SHA here).
-pub async fn check_seeds<F, Fut>(lines: &[SeedManifestLine], engines: &EnginePool, read: F) -> Result<Vec<SeedCheck>, SourceError>
+pub async fn check_seeds<F, Fut>(
+    lines: &[SeedManifestLine],
+    engines: &EnginePool,
+    read: F,
+) -> Result<Vec<SeedCheck>, SourceError>
 where
     F: Fn(&str) -> Fut,
     Fut: Future<Output = Result<Vec<u8>, SourceError>>,
@@ -111,7 +115,10 @@ pub fn report(checks: &[SeedCheck]) -> (String, bool) {
         }
     }
     if changed.is_empty() {
-        out.push_str(&format!("{} seeds unchanged: this pin can deploy without a window\n", checks.len()));
+        out.push_str(&format!(
+            "{} seeds unchanged: this pin can deploy without a window\n",
+            checks.len()
+        ));
     } else {
         out.push_str(&format!(
             "{} of {} seeds changed ({}): run the Office maintenance window before deploying this pin\n",

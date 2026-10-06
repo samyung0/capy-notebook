@@ -128,11 +128,19 @@ fn apply_limits() {
             .and_then(|value| value.parse::<u64>().ok())
         {
             if let Err(error) = rlimit::setrlimit(rlimit::Resource::DATA, limit, limit) {
-                tracing::warn!(%error, "engine memory limit not applied");
+                crate::observe::log(
+                    "warn",
+                    "engine memory limit not applied",
+                    serde_json::json!({ "error": error.to_string() }),
+                );
             }
         }
         if let Err(error) = std::fs::write("/proc/self/oom_score_adj", "1000") {
-            tracing::warn!(%error, "engine oom_score_adj not applied");
+            crate::observe::log(
+                "warn",
+                "engine oom_score_adj not applied",
+                serde_json::json!({ "error": error.to_string() }),
+            );
         }
     }
 }

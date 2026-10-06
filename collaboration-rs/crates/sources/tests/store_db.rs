@@ -137,7 +137,9 @@ async fn route_post(
         }
         "refresh-candidate" => {
             let client = fake.db.get().await.unwrap();
-            let state = body["state"].as_str().map(|state| STANDARD.decode(state).unwrap());
+            let state = body["state"]
+                .as_str()
+                .map(|state| STANDARD.decode(state).unwrap());
             client
                 .execute(
                     "UPDATE source_refresh_candidates SET state=$2,state_seed_sha256=$3,source_sha256=$4,size_bytes=$5 WHERE file_id=$1",
@@ -190,7 +192,11 @@ async fn checkpoint(fake: Fake, id: String, body: Value) -> Response {
         return refuse(422, "invalid_checkpoint");
     }
     let seed = body["stateSeedSHA256"].as_str();
-    if text == seed.is_some() || stored_seed.as_deref().is_some_and(|stored| Some(stored) != seed) {
+    if text == seed.is_some()
+        || stored_seed
+            .as_deref()
+            .is_some_and(|stored| Some(stored) != seed)
+    {
         return refuse(422, "invalid_checkpoint");
     }
     let update = STANDARD.decode(body["update"].as_str().unwrap()).unwrap();
@@ -254,7 +260,10 @@ async fn harness() -> Harness {
     let mut config = deadpool_postgres::Config::new();
     config.url = Some(url);
     let db = config
-        .create_pool(Some(deadpool_postgres::Runtime::Tokio1), tokio_postgres::NoTls)
+        .create_pool(
+            Some(deadpool_postgres::Runtime::Tokio1),
+            tokio_postgres::NoTls,
+        )
         .unwrap();
     let fake = Fake {
         db: db.clone(),
@@ -264,7 +273,10 @@ async fn harness() -> Harness {
         failures: Arc::default(),
     };
     let app = Router::new()
-        .route("/internal/collaboration/files/{id}/{endpoint}", get(route_get).post(route_post))
+        .route(
+            "/internal/collaboration/files/{id}/{endpoint}",
+            get(route_get).post(route_post),
+        )
         .route("/blob/{id}", get(blob))
         .route("/upload/{id}", put(upload))
         .with_state(fake.clone());
@@ -331,8 +343,15 @@ impl Harness {
             )
             .await
             .unwrap();
-        self.fake.blobs.lock().unwrap().insert(id.clone(), bytes.to_vec());
-        SourceRoom { file_id: id, epoch: 1 }
+        self.fake
+            .blobs
+            .lock()
+            .unwrap()
+            .insert(id.clone(), bytes.to_vec());
+        SourceRoom {
+            file_id: id,
+            epoch: 1,
+        }
     }
 
     async fn row(&self, room: &SourceRoom) -> tokio_postgres::Row {
@@ -359,7 +378,9 @@ fn apply(doc: &Doc, update: &[u8]) {
 
 fn text(doc: &Doc) -> String {
     let txn = doc.transact();
-    txn.get_text(TEXT_ROOT).map(|text| text.get_string(&txn)).unwrap_or_default()
+    txn.get_text(TEXT_ROOT)
+        .map(|text| text.get_string(&txn))
+        .unwrap_or_default()
 }
 
 /// A writer's edit reaching the room, as a client update would.
@@ -367,11 +388,18 @@ fn type_into(room: &Doc, client: u64, at: u32, inserted: &str) {
     let writer = text_doc(client);
     apply(&writer, &encode(room, &StateVector::default()));
     let before = writer.transact().state_vector();
-    writer.get_or_insert_text(TEXT_ROOT).insert(&mut writer.transact_mut(), at, inserted);
+    writer
+        .get_or_insert_text(TEXT_ROOT)
+        .insert(&mut writer.transact_mut(), at, inserted);
     apply(room, &encode(&writer, &before));
 }
 
-async fn save_text(h: &Harness, room: &SourceRoom, doc: &Doc, durable: &mut StateVector) -> Result<u64, SourceError> {
+async fn save_text(
+    h: &Harness,
+    room: &SourceRoom,
+    doc: &Doc,
+    durable: &mut StateVector,
+) -> Result<u64, SourceError> {
     let row = encode(doc, durable);
     let effects = h.sources.text_effects(room, &doc.transact(), &row)?;
     let saved = h
@@ -398,13 +426,23 @@ async fn a_text_room_appends_rows_reloads_and_folds() {
     let room = h.file("text", "notes.md", b"hello\nworld\n").await;
     let doc = text_doc(100);
     let loaded = h.sources.load(&room, &h.user, &doc).await.unwrap();
-    assert_eq!((loaded.checkpoint, text(&doc).as_str()), (0, "hello\nworld\n"));
+    assert_eq!(
+        (loaded.checkpoint, text(&doc).as_str()),
+        (0, "hello\nworld\n")
+    );
     let mut durable = doc.transact().state_vector();
 
     type_into(&doc, 7, 0, "X");
     assert_eq!(save_text(&h, &room, &doc, &mut durable).await.unwrap(), 1);
     let row = h.row(&room).await;
-    assert_eq!((row.get::<_, i64>(0), row.get::<_, i32>(1), row.get::<_, i64>(9)), (1, 1, 1));
+    assert_eq!(
+        (
+            row.get::<_, i64>(0),
+            row.get::<_, i32>(1),
+            row.get::<_, i64>(9)
+        ),
+        (1, 1, 1)
+    );
     let effects: Value = row.get(5);
     assert_eq!(effects[0]["after"], "X");
     assert_eq!(effects[0]["label"], "Text at UTF-16 offset 0");
@@ -427,13 +465,23 @@ async fn a_text_room_appends_rows_reloads_and_folds() {
     let before_fold: i64 = h.row(&room).await.get(8);
     assert_eq!(h.sources.fold(&room).await.unwrap(), 2);
     let row = h.row(&room).await;
-    assert_eq!((row.get::<_, i32>(1), row.get::<_, i64>(2), row.get::<_, i64>(9)), (0, 0, 0));
+    assert_eq!(
+        (
+            row.get::<_, i32>(1),
+            row.get::<_, i64>(2),
+            row.get::<_, i64>(9)
+        ),
+        (0, 0, 0)
+    );
     let base = row.get::<_, Option<Vec<u8>>>(3).unwrap();
     assert!(log_bytes > 0);
     // Charged bytes follow what is stored: the fold's base for base + rows.
     let seed_bytes: i64 = row.get(7);
     let effects_bytes: i64 = row.get(10);
-    assert_eq!(row.get::<_, i64>(8), effects_bytes + (base.len() as i64 - seed_bytes).max(0));
+    assert_eq!(
+        row.get::<_, i64>(8),
+        effects_bytes + (base.len() as i64 - seed_bytes).max(0)
+    );
     assert!(before_fold > 0);
     let folded = text_doc(102);
     h.sources.load(&room, &h.user, &folded).await.unwrap();
@@ -452,7 +500,9 @@ async fn a_moved_checkpoint_measures_again_over_the_rows_saved_meanwhile() {
     let agent = text_doc(9);
     apply(&agent, &encode(&doc, &StateVector::default()));
     let before = agent.transact().state_vector();
-    agent.get_or_insert_text(TEXT_ROOT).insert(&mut agent.transact_mut(), 3, "!");
+    agent
+        .get_or_insert_text(TEXT_ROOT)
+        .insert(&mut agent.transact_mut(), 3, "!");
     let agent_row = encode(&agent, &before);
     let landed: Value = h
         .sources
@@ -498,7 +548,10 @@ async fn an_ended_epoch_refuses_the_save_for_good() {
     type_into(&doc, 7, 0, ">");
     let error = save_text(&h, &room, &doc, &mut durable).await.unwrap_err();
     assert!(error.refused(), "{error:?}");
-    assert_eq!(error.discard_cause(false).reason.as_deref(), Some("epoch_changed"));
+    assert_eq!(
+        error.discard_cause(false).reason.as_deref(),
+        Some("epoch_changed")
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -535,17 +588,26 @@ async fn a_fold_keeps_the_rows_an_unexported_capture_needs_and_the_export_materi
     assert_eq!(h.sources.fold(&room).await.unwrap(), 2);
     assert_eq!(h.row(&room).await.get::<_, i64>(9), 1);
     // The export reads the capture as of checkpoint 2 and records it.
-    h.sources.export_candidate(&room.file_id, &job, None).await.unwrap();
+    h.sources
+        .export_candidate(&room.file_id, &job, None)
+        .await
+        .unwrap();
     assert_eq!(
         h.fake.uploads.lock().unwrap().get(&room.file_id).cloned(),
         Some(b"one two three".to_vec())
     );
     let captured: Option<Vec<u8>> = client
-        .query_one("SELECT state FROM source_refresh_candidates WHERE file_id=$1", &[&room.file_id])
+        .query_one(
+            "SELECT state FROM source_refresh_candidates WHERE file_id=$1",
+            &[&room.file_id],
+        )
         .await
         .unwrap()
         .get(0);
-    assert_eq!(sources::text::text_state(&captured.unwrap()).unwrap(), "one two three");
+    assert_eq!(
+        sources::text::text_state(&captured.unwrap()).unwrap(),
+        "one two three"
+    );
     // Exported: nothing holds the last row back any more.
     assert_eq!(h.sources.fold(&room).await.unwrap(), 1);
     let folded = text_doc(101);
@@ -573,7 +635,10 @@ async fn an_office_room_appends_rows_with_engine_effects_and_checks_its_seed_on_
     };
     let seed = encode(&doc, &StateVector::default());
     let entries = office_service::inspect(&bytes, checkpoint(&seed)).unwrap();
-    let entry = entries.iter().find(|entry| !entry.value.is_empty()).unwrap();
+    let entry = entries
+        .iter()
+        .find(|entry| !entry.value.is_empty())
+        .unwrap();
     let (sheet, cell) = entry.position.rsplit_once(':').unwrap();
     let edited = office_service::apply_commands(
         &bytes,
@@ -607,13 +672,26 @@ async fn an_office_room_appends_rows_with_engine_effects_and_checks_its_seed_on_
     assert_eq!(saved.checkpoint, 1);
     let stored = h.row(&room).await;
     let effects: Value = stored.get(5);
-    assert!(effects.as_array().is_some_and(|effects| !effects.is_empty()), "{effects}");
+    assert!(
+        effects
+            .as_array()
+            .is_some_and(|effects| !effects.is_empty()),
+        "{effects}"
+    );
     assert_eq!(stored.get::<_, i64>(2), row.len() as i64);
     let seed_sha: String = stored.get(4);
-    assert_eq!(seed_sha, office_service::sha256_hex(office_service::seed(office_service::Format::Xlsx, &bytes).unwrap()));
+    assert_eq!(
+        seed_sha,
+        office_service::sha256_hex(
+            office_service::seed(office_service::Format::Xlsx, &bytes).unwrap()
+        )
+    );
     let again = Doc::with_client_id(101);
     h.sources.load(&room, &h.user, &again).await.unwrap();
-    assert_eq!(encode(&again, &StateVector::default()).len(), encode(&doc, &StateVector::default()).len());
+    assert_eq!(
+        encode(&again, &StateVector::default()).len(),
+        encode(&doc, &StateVector::default()).len()
+    );
     // A change taken over another seed never loads.
     h.fake
         .db
@@ -626,7 +704,11 @@ async fn an_office_room_appends_rows_with_engine_effects_and_checks_its_seed_on_
         )
         .await
         .unwrap();
-    let error = h.sources.load(&room, &h.user, &Doc::new()).await.unwrap_err();
+    let error = h
+        .sources
+        .load(&room, &h.user, &Doc::new())
+        .await
+        .unwrap_err();
     assert_eq!(error, SourceError::SeedChanged);
     assert!(error.refused());
 }
