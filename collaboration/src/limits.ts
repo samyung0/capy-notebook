@@ -209,17 +209,22 @@ function updateGrowth(
       else return item;
     }
   };
+  // The update's deletes, sorted and merged once: per client, disjoint ranges
+  // in clock order, so one range holds any span the update deletes whole.
+  const deleted = Y.mergeDeleteSets([ds]).clients;
   // Whether the update deletes every unit of [from, to) of a client.
   const deletes = (client: number, from: number, to: number) => {
-    const ranges = (ds.clients.get(client) ?? [])
-      .filter(({ clock, len }) => clock < to && clock + len > from)
-      .sort((a, b) => a.clock - b.clock);
-    let reached = from;
-    for (const { clock, len } of ranges) {
-      if (clock > reached) return false;
-      reached = Math.max(reached, clock + len);
+    if (from >= to) return true;
+    const ranges = deleted.get(client) ?? [];
+    // The last range starting at or before `from`.
+    let low = 0;
+    let high = ranges.length - 1;
+    while (low <= high) {
+      const middle = (low + high) >> 1;
+      if (ranges[middle].clock <= from) low = middle + 1;
+      else high = middle - 1;
     }
-    return reached >= to;
+    return high >= 0 && ranges[high].clock + ranges[high].len >= to;
   };
   const hidden = (item: Y.Item) =>
     item.deleted ||
@@ -262,11 +267,15 @@ function updateGrowth(
       if (parent) {
         if (held(parent)) {
           const holder = heldItem(parent);
-          found = holder
-            ? holder.content instanceof Y.ContentType
-              ? { key: item.parentSub, parent: holder.content.type }
-              : 'unknown'
-            : 'gone';
+          // Yjs also drops an item whose parent block was deleted and
+          // collected (its content is ContentDeleted), as after a writer
+          // deletes a block another one is still editing.
+          found =
+            !holder || holder.content instanceof Y.ContentDeleted
+              ? 'gone'
+              : holder.content instanceof Y.ContentType
+                ? { key: item.parentSub, parent: holder.content.type }
+                : 'unknown';
         } else {
           const holder = incomingAt(parent);
           found = holder ? { key: item.parentSub, parent: holder } : 'unknown';
@@ -308,16 +317,19 @@ function updateGrowth(
     }
     return children;
   };
-  // Where a held type sits: under content or not, and its depth (the
-  // content root is -1, a top-level block 0, as measureMaterialValue counts).
+  // Where a held type sits: in the value or not (under content, with no block
+  // on the way deleted, before or by the update), and its depth (the content
+  // root is -1, a top-level block 0, as measureMaterialValue counts).
   const ancestry = (type: Shared) => {
     let level = -1;
     let top = type;
+    let visible = true;
     while (top._item) {
       level += 1;
+      if (hidden(top._item)) visible = false;
       top = top._item.parent as Shared;
     }
-    return { level, underContent: top === content };
+    return { level, visible: visible && top === content };
   };
 
   for (const items of incoming.values()) {
@@ -338,8 +350,8 @@ function updateGrowth(
           childrenOf(blocks, place.parent).attributes += added;
           continue;
         }
-        const { underContent } = ancestry(place.parent);
-        if (!underContent) continue;
+        const { visible } = ancestry(place.parent);
+        if (!visible) continue;
         // The content root takes no attributes; the exact check refuses it.
         if (place.parent === content) return null;
         bytes += added;
@@ -352,7 +364,7 @@ function updateGrowth(
         childrenOf(blocks, place.parent).items.push({ item, kind });
         continue;
       }
-      if (!ancestry(place.parent).underContent) continue;
+      if (!ancestry(place.parent).visible) continue;
       if (!(place.parent instanceof Y.XmlText)) return null;
       childrenOf(texts, place.parent).items.push({ item, kind });
     }
@@ -361,7 +373,7 @@ function updateGrowth(
   // Deleting a visible format item can widen another one's reach: such a
   // text is re-priced below.
   const reformatted = new Set<Y.XmlText>();
-  for (const [client, ranges] of ds.clients) {
+  for (const [client, ranges] of deleted) {
     const clientStructs = store.clients.get(client);
     if (!clientStructs) continue;
     const end = Y.getState(store, client);
@@ -379,7 +391,7 @@ function updateGrowth(
           !struct.deleted &&
           struct.content instanceof Y.ContentFormat &&
           struct.parent instanceof Y.XmlText &&
-          ancestry(struct.parent).underContent
+          ancestry(struct.parent).visible
         )
           reformatted.add(struct.parent);
       }

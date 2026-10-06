@@ -350,9 +350,10 @@ describe('inbound update validation', () => {
   });
 });
 
-// The near-limit note the editor bench opens (src/mocks/noteContent). Imported
-// by path at run time: the collaboration build does not compile frontend code.
-const LOAD_TEST_NOTE = '../../src/mocks/noteContent/loadTest.ts';
+// The near-limit note the editor bench opens (src/mocks/noteContent), through
+// the frontend's `@` alias that both Vitest configs define. Imported at run
+// time: the collaboration build does not compile frontend code.
+const LOAD_TEST_NOTE = '@/mocks/noteContent/loadTest.ts';
 async function loadTestNote() {
   const { buildBiologyLoadTestValue } = (await import(LOAD_TEST_NOTE)) as {
     buildBiologyLoadTestValue: () => unknown[];
@@ -387,13 +388,16 @@ const INLINE_TYPES = new Set(['a', 'inline_equation', 'mention']);
 
 /**
  * A Slate editor on its own copy of the room, as a browser holds one. Each
- * step runs one random Slate operation (with Slate's normalization) and
- * returns the Yjs update it produced.
+ * step runs one random Slate operation (with Slate's normalization); `take`
+ * hands over the Yjs updates the steps wrote, and `pull` catches up with the
+ * room as a provider's sync does.
  */
 function slateClient(room: Y.Doc, random: () => number) {
   const document = copyOf(room);
   const pending: Uint8Array[] = [];
-  document.on('update', (update: Uint8Array) => pending.push(update));
+  document.on('update', (update: Uint8Array, origin: unknown) => {
+    if (origin !== room) pending.push(update);
+  });
   const editor = withYjs(createEditor(), document.get('content', Y.XmlText));
   editor.isInline = (element) =>
     INLINE_TYPES.has((element as { type?: string }).type ?? '');
@@ -496,6 +500,9 @@ function slateClient(room: Y.Doc, random: () => number) {
         distance: count(40),
         unit: 'character',
       }),
+    // A selection across blocks: the blocks between go, the ends merge.
+    () =>
+      Transforms.delete(editor, { at: { anchor: point(), focus: point() } }),
     () =>
       Transforms.splitNodes(editor, {
         always: true,
@@ -570,7 +577,13 @@ function slateClient(room: Y.Doc, random: () => number) {
     close() {
       YjsEditor.disconnect(editor);
     },
-    document,
+    pull() {
+      Y.applyUpdate(
+        document,
+        Y.encodeStateAsUpdate(room, Y.encodeStateVector(document)),
+        room
+      );
+    },
     step() {
       try {
         pick(operations)();
@@ -578,9 +591,9 @@ function slateClient(room: Y.Doc, random: () => number) {
         // An operation Slate refuses at that spot; whatever it applied stays.
       }
       YjsEditor.flushLocalChanges(editor);
-      const update = pending.length > 0 ? Y.mergeUpdates(pending) : null;
-      pending.length = 0;
-      return update;
+    },
+    take() {
+      return pending.splice(0);
     },
   };
 }
@@ -590,20 +603,25 @@ function slateClient(room: Y.Doc, random: () => number) {
  * against an exact measurement of the room after it: the growth bound never
  * under-estimates, and validateUpdate refuses exactly when the candidate
  * breaks a limit without recovering towards the room's exact metrics.
+ *
+ * One writer sends each edit at once. Several writers hold their edits on
+ * stale copies, send them merged or one by one, and catch up with the room at
+ * random, so their updates land concurrently.
  */
-function fuzzRoom(document: Y.Doc, steps: number, seed: number) {
+function fuzzRoom(document: Y.Doc, steps: number, seed: number, writers = 1) {
   const random = seeded(seed);
   const store = validator();
   const content = document.get('content', Y.XmlText);
-  let client = slateClient(document, random);
+  const clients = Array.from({ length: writers }, () =>
+    slateClient(document, random)
+  );
   let shadow = copyOf(document);
   let previous = exactMetrics(document);
   const seen = { accepted: 0, exact: 0, refused: 0, unbounded: 0 };
   // Each step that breaks a property, with what it saw.
   const failures: string[] = [];
-  for (let index = 0; index < steps; index += 1) {
-    const update = client.step();
-    if (!update) continue;
+  // Whether the room takes the update.
+  const receive = (update: Uint8Array, index: number) => {
     const growth = materialUpdateGrowth(content, update);
     Y.applyUpdate(shadow, update);
     const candidate = exactMetrics(shadow);
@@ -624,7 +642,8 @@ function fuzzRoom(document: Y.Doc, steps: number, seed: number) {
     const copiesBefore = copies.mock.calls.length;
     let refusal: unknown = null;
     try {
-      store.validateUpdate(room, document, update);
+      if (store.validateUpdate(room, document, update) === UPDATE_UNHELD)
+        refusal = UPDATE_UNHELD;
     } catch (error) {
       refusal = error;
     }
@@ -634,7 +653,7 @@ function fuzzRoom(document: Y.Doc, steps: number, seed: number) {
       Y.applyUpdate(document, update, connection);
       previous = candidate;
       seen.accepted += 1;
-      continue;
+      return true;
     }
     if (
       !(refusal instanceof MaterialDocumentLimitError) ||
@@ -643,13 +662,43 @@ function fuzzRoom(document: Y.Doc, steps: number, seed: number) {
     )
       fail(`not refused as ${code} (${String(refusal)})`);
     seen.refused += 1;
-    // The client drops its forked document and reopens on the room.
-    client.close();
-    client = slateClient(document, random);
     shadow.destroy();
     shadow = copyOf(document);
+    return false;
+  };
+  for (let index = 0; index < steps; index += 1) {
+    const at = writers > 1 ? Math.floor(random() * writers) : 0;
+    const client = clients[at];
+    if (writers === 1) client.step();
+    else {
+      // Several writers step, send what they hold or catch up. An editor
+      // that cannot map a concurrent change (slate-yjs throws) reopens on
+      // the room, as a remounted editor does.
+      const action = random();
+      if (action < 0.55 || action >= 0.85) {
+        try {
+          if (action < 0.55) client.step();
+          else client.pull();
+        } catch {
+          client.close();
+          clients[at] = slateClient(document, random);
+        }
+        continue;
+      }
+    }
+    const pending = client.take();
+    if (pending.length === 0) continue;
+    const updates =
+      writers > 1 && random() < 0.5 ? pending : [Y.mergeUpdates(pending)];
+    for (const update of updates) {
+      if (receive(update, index)) continue;
+      // The client drops its forked document and reopens on the room.
+      client.close();
+      clients[at] = slateClient(document, random);
+      break;
+    }
   }
-  client.close();
+  for (const client of clients) client.close();
   shadow.destroy();
   return { failures, seen };
 }
@@ -657,7 +706,7 @@ function fuzzRoom(document: Y.Doc, steps: number, seed: number) {
 describe('update growth bound', () => {
   it('bounds random Slate edits of the near-limit note and refuses exactly what an exact check refuses', async () => {
     const document = documentWithValue(await loadTestNote());
-    const { failures, seen } = fuzzRoom(document, 120, 1);
+    const { failures, seen } = fuzzRoom(document, 120, 4);
     expect(failures).toEqual([]);
     // Every Slate edit is modelled, and the run reaches both outcomes.
     expect(seen.unbounded).toBe(0);
@@ -679,6 +728,89 @@ describe('update growth bound', () => {
     expect(seen.accepted).toBeGreaterThan(0);
     document.destroy();
   }, 240_000);
+
+  // Where YATA places concurrent items decides whether a string joins a leaf
+  // and whether a text needs re-pricing, so three writers edit formatted
+  // paragraphs below one large one that leaves a paste or two of headroom.
+  it('bounds three concurrent writers and refuses exactly what an exact check refuses', () => {
+    const total = { accepted: 0, exact: 0, refused: 0, unbounded: 0 };
+    for (let seed = 1; seed <= 6; seed += 1) {
+      const document = documentWithValue([
+        paragraph(
+          'a'.repeat(MATERIAL_DOCUMENT_LIMITS.maxContentBytes - 60_000)
+        ),
+        ...Array.from({ length: 12 }, () => ({
+          children: [
+            { text: 'plain words ' },
+            { bold: true, text: 'bold words' },
+            { text: ' between ' },
+            { color: '#00f', italic: true, text: 'coloured' },
+            { text: ' end' },
+          ],
+          type: 'p',
+        })),
+      ]);
+      const { failures, seen } = fuzzRoom(document, 400, seed, 3);
+      expect(failures).toEqual([]);
+      for (const key of Object.keys(total) as (keyof typeof total)[])
+        total[key] += seen[key];
+      document.destroy();
+    }
+    expect(total.unbounded).toBe(0);
+    expect(total.refused).toBeGreaterThan(0);
+    expect(total.accepted).toBeGreaterThan(total.exact);
+  }, 120_000);
+
+  // Select all and delete in a long, heavily corrected note: the update holds
+  // one delete range per remaining character and takes every formatted text
+  // with it. The bound must stay cheaper than the exact check's room copy.
+  it('bounds a fragmented delete of every formatted block faster than copying the room', () => {
+    const run = (text: string) => ({ text: text.repeat(5) });
+    const document = documentWithValue(
+      Array.from({ length: 1000 }, () => ({
+        children: [
+          run('ab'),
+          { ...run('ab'), bold: true },
+          run('abab'),
+          { ...run('ab'), italic: true },
+          run('ababab'),
+        ],
+        type: 'p',
+      }))
+    );
+    // Every other character deleted earlier.
+    for (const { insert } of document.get('content', Y.XmlText).toDelta()) {
+      const block = insert as Y.XmlText;
+      for (let at = block.length - 1; at >= 0; at -= 2) block.delete(at, 1);
+    }
+    const client = copyOf(document);
+    let update: Uint8Array = new Uint8Array();
+    client.on('update', (sent: Uint8Array) => {
+      update = sent;
+    });
+    const content = client.get('content', Y.XmlText);
+    content.delete(0, content.length);
+    const ranges = [...Y.decodeUpdate(update).ds.clients.values()].flat();
+    expect(ranges.length).toBeGreaterThanOrEqual(40_000);
+
+    let started = performance.now();
+    const growth = materialUpdateGrowth(
+      document.get('content', Y.XmlText),
+      update
+    );
+    const bounded = performance.now() - started;
+    started = performance.now();
+    const copy = copyOf(document);
+    Y.applyUpdate(copy, update);
+    const copied = performance.now() - started;
+
+    // Deleted blocks add nothing, and their formats are not re-priced.
+    expect(growth).toEqual({ contentBytes: 0, maxDepth: 0, nodeCount: 0 });
+    expect(bounded).toBeLessThan(copied);
+    copy.destroy();
+    client.destroy();
+    document.destroy();
+  });
 });
 
 describe('checking updates against the bound', () => {
