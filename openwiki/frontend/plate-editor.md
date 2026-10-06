@@ -592,6 +592,12 @@ The lineage moves whenever the server throws away room state a client may
 hold (see below), so stored or in-memory edits from another lineage are never
 merged into a live note.
 
+A group of another lineage entering recovery, a group dropped as
+unrestorable, a failing draft write, the save-delay warning and each offline
+episode (after the reconnect) are reported as editing incidents; the
+service records its discards, refusals and lineage moves itself (see
+[observability](../observability-metering.md#editing-incidents)).
+
 ## Document limits and rejection
 
 The collaboration service owns limit enforcement; the browser never measures the
@@ -619,7 +625,8 @@ dropped and that connection gets the room's sync step 1, as in source rooms
 lacks, the dropped update included, with no disconnect, and the room never
 holds pending content. Copying the room to check such updates was the cliff of
 the 2026-10-05 capacity run (`bench/collaboration/reports/`). Two unplaceable
-step 2 replies in a row close the connection (logged as `note_step2_unplaced`).
+step 2 replies in a row close the connection (logged as `note_step2_unplaced`,
+recorded as a `step2_unplaced` editing incident).
 There is no exception for a room stored with pending structs before this rule:
 its clients' step 2 replies carry those structs, so their connections hit that
 close, which is accepted because no such room holds data worth keeping.

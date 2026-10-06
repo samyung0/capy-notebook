@@ -44,6 +44,7 @@ import {
   type EditDraft,
   recordDrafts,
 } from '@/lib/editDrafts';
+import { editIncidentReporter } from '@/lib/editIncidents';
 import { editorAiEnabled } from '@/lib/features';
 import { AiMenu } from './ai/AiMenu';
 import { NoteBlockDialogsProvider } from './blocks/dialogContext';
@@ -473,11 +474,23 @@ export function NoteEditorCore({
   const resendCheckpoints = useRef(() => {});
   const reportRejection = useRef(onDocumentRejected);
   const reportSaveDelayed = useRef(onSaveDelayed);
+  // edit_incidents; the unconfirmed-edit warning once until saving works.
+  const [reportIncident] = useState(() =>
+    editIncidentReporter('material', material.id)
+  );
+  const unconfirmedReported = useRef(false);
   const [saveDelay] = useState(
     () =>
-      new SaveDelayClock(NOTE_SAVE_DELAY_MS, () =>
-        reportSaveDelayed.current?.(true)
-      )
+      new SaveDelayClock(NOTE_SAVE_DELAY_MS, () => {
+        reportSaveDelayed.current?.(true);
+        if (unconfirmedReported.current) return;
+        unconfirmedReported.current = true;
+        reportIncident(
+          'unconfirmed_edit',
+          undefined,
+          recorder.current?.unsavedBytes
+        );
+      })
   );
   useEffect(() => () => saveDelay.dispose(), [saveDelay]);
   const reportUnavailable = useRef(onUnavailable);
@@ -549,7 +562,10 @@ export function NoteEditorCore({
         saveDelay.retain(pendingCheckpoints.current.keys());
         // Saving works again: the banner goes, and comes back only if the
         // oldest request still unanswered crosses the threshold.
-        if (acknowledged) reportSaveDelayed.current?.(false);
+        if (acknowledged) {
+          reportSaveDelayed.current?.(false);
+          unconfirmedReported.current = false;
+        }
         if (
           acknowledged &&
           pendingCheckpoints.current.size === 0 &&
@@ -852,6 +868,7 @@ export function NoteEditorCore({
         storageOk.current = ok;
         showOffline();
       },
+      report: reportIncident,
     });
     recorder.current = current;
     return () => {

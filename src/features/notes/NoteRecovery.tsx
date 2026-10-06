@@ -10,11 +10,13 @@ import type {
 import { MaterialPreview } from '@/features/materials/MaterialPreview';
 import {
   deleteDrafts,
+  draftBytes,
   draftGroups,
   type EditDraft,
   readDrafts,
   recoveryDocument,
 } from '@/lib/editDrafts';
+import { editIncidentReporter, reportOnce } from '@/lib/editIncidents';
 import type { NoteEditorStatus } from './editorMode';
 import { toastDraftsLost } from './saveFailure';
 
@@ -30,9 +32,11 @@ export interface NoteDrafts {
 /**
  * Reads a note's stored edits for the room it opens (`for`: room and mount
  * generation, so a remount reads what the old mount wrote). A recovery group
- * nothing can draw is dropped with a toast and the next one is read.
+ * nothing can draw is dropped with a toast and the next one is read. Both
+ * are reported (edit_incidents), a group of another lineage once per load.
  */
 export function useNoteDrafts(
+  materialId: string,
   key: string | null,
   room: string | undefined,
   generation: number
@@ -41,6 +45,7 @@ export function useNoteDrafts(
   useEffect(() => {
     if (!(key && room)) return;
     let active = true;
+    const report = editIncidentReporter('material', materialId);
     void (async () => {
       let rows = await readDrafts(key).catch((error) => {
         console.warn('Draft storage failed:', error);
@@ -59,6 +64,11 @@ export function useNoteDrafts(
         }
         const doc = recoveryDocument(recovery);
         if (doc) {
+          // Refused rows were recorded when the service refused them.
+          if (!recovery[0].refused)
+            reportOnce(recovery[0].id, () =>
+              report('other_epoch_draft', 'reopen', draftBytes(recovery))
+            );
           if (active)
             setDrafts({
               current,
@@ -68,6 +78,7 @@ export function useNoteDrafts(
           return;
         }
         toastDraftsLost();
+        report('draft_unrestorable', 'base_missing', draftBytes(recovery));
         await deleteDrafts(recovery).catch(() => undefined);
         rows = rows.filter((row) => !recovery.includes(row));
       }
@@ -75,7 +86,7 @@ export function useNoteDrafts(
     return () => {
       active = false;
     };
-  }, [key, room, generation]);
+  }, [materialId, key, room, generation]);
   return drafts;
 }
 

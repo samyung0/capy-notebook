@@ -117,6 +117,7 @@ import type {
   ReadSourceRefreshParams,
   ReorderChaptersReq,
   ReorderContentReq,
+  ReportEditIncidentReq,
   RequestAccountDeletionReq,
   RetryProcessingInputBody,
   ReviewSession,
@@ -1731,6 +1732,56 @@ export const createMaterialComment = async (id: string,
 
   const data: createMaterialCommentResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createMaterialCommentResponse
+}
+
+
+
+export type reportEditIncidentResponse204 = {
+  data: void
+  status: 204
+}
+
+export type reportEditIncidentResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type reportEditIncidentResponseSuccess = (reportEditIncidentResponse204) & {
+  headers: Headers;
+};
+export type reportEditIncidentResponseError = (reportEditIncidentResponseDefault) & {
+  headers: Headers;
+};
+
+export type reportEditIncidentResponse = (reportEditIncidentResponseSuccess | reportEditIncidentResponseError)
+
+export const getReportEditIncidentUrl = () => {
+
+
+
+
+  return `/api/edit-incidents`
+}
+
+/**
+ * @summary Report an editing incident
+ */
+export const reportEditIncident = async (reportEditIncidentReq: NonReadonly<ReportEditIncidentReq>, options?: RequestInit): Promise<reportEditIncidentResponse> => {
+
+  const res = await fetch(getReportEditIncidentUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(reportEditIncidentReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: reportEditIncidentResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as reportEditIncidentResponse
 }
 
 

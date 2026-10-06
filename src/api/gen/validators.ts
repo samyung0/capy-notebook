@@ -1055,6 +1055,32 @@ export const CreateMaterialCommentResponse = zod.object({
 
 
 /**
+ * @summary Report an editing incident
+ */
+export const reportEditIncidentBodyFileIdMax = 64;
+
+
+export const reportEditIncidentBodyFileIdRegExp = new RegExp('^[A-Za-z0-9_-]+$');
+export const reportEditIncidentBodyReasonMax = 64;
+
+
+export const reportEditIncidentBodyReasonRegExp = new RegExp('^[a-z0-9_-]+$');
+export const reportEditIncidentBodySizeBytesMin = 0;
+
+
+
+export const ReportEditIncidentBody = zod.object({
+  "fileId": zod.string().min(1).max(reportEditIncidentBodyFileIdMax).regex(reportEditIncidentBodyFileIdRegExp).describe('The note (material) or source file'),
+  "fileKind": zod.enum(['material', 'source_file']),
+  "kind": zod.enum(['other_epoch_draft', 'draft_unrestorable', 'draft_storage_failed', 'unconfirmed_edit', 'offline_episode']),
+  "reason": zod.string().max(reportEditIncidentBodyReasonMax).regex(reportEditIncidentBodyReasonRegExp).optional().describe('A short token, such as quota or unreachable'),
+  "sizeBytes": zod.int().min(reportEditIncidentBodySizeBytesMin).optional()
+})
+
+export const ReportEditIncidentResponse = zod.void()
+
+
+/**
  * @summary List events
  */
 export const ListEventsResponseItem = zod.object({

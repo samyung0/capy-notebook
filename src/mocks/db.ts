@@ -23,6 +23,7 @@ import type {
   PublicQuiz,
   PublicWorkspace,
   Question,
+  ReportEditIncidentReq,
   SourceFile,
   Task,
   ThinkingCanvas,
@@ -1958,6 +1959,9 @@ export const publicFlashcardSets: PublicFlashcardSet[] = [
 
 /** Comment discussions on materials; the handlers own their writes. */
 export const discussions: MaterialDiscussion[] = [];
+
+/** Editing incidents the browser reported (edit_incidents), for specs. */
+export const editIncidents: ReportEditIncidentReq[] = [];
 
 /** card id -> its flashcard set, like flashcard_cards on the server. */
 export const flashcardCards: Record<string, { materialId: string }> = {};

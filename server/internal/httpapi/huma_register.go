@@ -416,6 +416,7 @@ func registerRoutes(api huma.API, a *api) {
 	a.registerWorkspaceSummary(api)
 	a.registerAnonymousMaterials(api)
 	a.registerBillingIntegrations(api)
+	a.registerEditIncidents(api)
 }
 
 func quotaError(detail map[string]any) *huma.ErrorModel {

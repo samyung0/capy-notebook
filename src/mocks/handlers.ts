@@ -3,6 +3,7 @@ import { delay, HttpResponse, http } from 'msw';
 import {
   createMaterialBodyTitleMax,
   createSourceUploadBodyNameMax,
+  ReportEditIncidentBody,
 } from '@/api/gen/validators';
 import type {
   Chapter,
@@ -707,6 +708,13 @@ export const handlers = [
     const body = (await request.json()) as { locale?: string };
     if (body.locale === 'en' || body.locale === 'zh')
       db.user.locale = body.locale;
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.post('/api/edit-incidents', async ({ request }) => {
+    const incident = ReportEditIncidentBody.safeParse(await request.json());
+    if (!incident.success)
+      return HttpResponse.json({ detail: 'invalid incident' }, { status: 422 });
+    db.editIncidents.push(incident.data);
     return new HttpResponse(null, { status: 204 });
   }),
   http.patch('/api/me/study-preferences', async ({ request }) => {

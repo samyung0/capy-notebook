@@ -24,6 +24,7 @@ func TestClassifySplitsEditorFromChat(t *testing.T) {
 		"/api/workspaces/ws_1/sources/import-inspect": classUpload,
 		"/api/workspaces/ws_1/sources/import-content": classUpload,
 		"/api/workspaces":                             classDefault,
+		"/api/edit-incidents":                         classDefault,
 	}
 	for path, want := range cases {
 		if got := classify(path); got != want {

@@ -464,3 +464,15 @@ type RateReviewItemReq struct {
 	ItemID     string `json:"itemId" minLength:"1"`
 	Rating     int    `json:"rating" minimum:"1" maximum:"4" doc:"A flashcard's button: 1 Again .. 4 Easy; questions are rated by POST /api/review/check"`
 }
+
+// ReportEditIncidentReq is one editing incident only the browser sees, where
+// a user lost or could lose work (human/observability-metering.md,
+// 2026-10-05). The collaboration service records the room incidents itself.
+type ReportEditIncidentReq struct {
+	FileID   string `json:"fileId" minLength:"1" maxLength:"64" pattern:"^[A-Za-z0-9_-]+$" doc:"The note (material) or source file"`
+	FileKind string `json:"fileKind" enum:"material,source_file"`
+	Kind     string `json:"kind" enum:"other_epoch_draft,draft_unrestorable,draft_storage_failed,unconfirmed_edit,offline_episode"`
+	Reason   string `json:"reason,omitempty" maxLength:"64" pattern:"^[a-z0-9_-]+$" doc:"A short token, such as quota or unreachable"`
+	// The bytes at risk: the drafts involved, or what the device held unsaved.
+	SizeBytes *int64 `json:"sizeBytes,omitempty" minimum:"0"`
+}

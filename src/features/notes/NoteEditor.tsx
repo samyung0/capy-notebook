@@ -211,6 +211,7 @@ function CollaborativeNoteEditor({
   const canEdit =
     material.capabilities.canEditContent && offline !== 'offline-limit';
   const drafts = useNoteDrafts(
+    material.id,
     storedKey,
     collaborationTokenData?.room,
     editorGeneration

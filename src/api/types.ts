@@ -121,6 +121,7 @@ export type {
   Region,
   ReorderChaptersReq,
   ReorderContentReq,
+  ReportEditIncidentReq,
   RequestAccountDeletionReq,
   RetryProcessingInputBody as RetryProcessingReq,
   SaveCanvasReq,
