@@ -51,10 +51,24 @@ pub fn serve() -> io::Result<()> {
     serve_with(office::dispatch)
 }
 
-/// Serves frames with `call` until stdin closes. A panic outside the engines'
-/// own guard (in the glue) answers as an engine panic and keeps serving.
-pub fn serve_with(mut call: impl FnMut(&Frame) -> Answer) -> io::Result<()> {
+/// The engine thread's stack: a deep DOCX overflows the main thread's while
+/// it replays (office-native runs its CLI on the same size).
+pub const ENGINE_STACK_BYTES: usize = 256 << 20;
+
+/// Serves frames with `call` until stdin closes, on a thread with
+/// [`ENGINE_STACK_BYTES`] of stack. A panic outside the engines' own guard
+/// (in the glue) answers as an engine panic and keeps serving.
+pub fn serve_with(call: impl FnMut(&Frame) -> Answer + Send + 'static) -> io::Result<()> {
     apply_limits();
+    std::thread::Builder::new()
+        .name("engine".into())
+        .stack_size(ENGINE_STACK_BYTES)
+        .spawn(move || serve_on_this_thread(call))?
+        .join()
+        .unwrap_or_else(|_| Err(io::Error::other("engine thread panicked")))
+}
+
+fn serve_on_this_thread(mut call: impl FnMut(&Frame) -> Answer) -> io::Result<()> {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut input = BufReader::with_capacity(1 << 16, stdin.lock());
