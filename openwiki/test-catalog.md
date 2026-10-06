@@ -162,6 +162,7 @@ The opt-in [`alibaba_decision.py`](../bench/grading/scripts/alibaba_decision.py)
 | [`src/features/notes/richBlockConfig.test.ts`](../src/features/notes/richBlockConfig.test.ts)     | Callout variant fallbacks, column layouts, and code-language toolbar labels.                                                   |
 | [`src/features/notes/stableElementIds.test.ts`](../src/features/notes/stableElementIds.test.ts)   | Plugin assigns recursive element IDs before inserted nodes enter the editor.                                                   |
 | [`src/features/notes/tocHeadings.test.ts`](../src/features/notes/tocHeadings.test.ts)             | Incremental heading scan: nested paths, stable array identity for unrelated edits, and path recomputation after insert/remove. |
+| [`src/features/notes/navigationFeedback.test.tsx`](../src/features/notes/navigationFeedback.test.tsx) | The navigation flash override renders the same `data-nav-*` attributes as Plate for an element target, a text target and no flash. |
 | [`src/features/notes/youtube.test.ts`](../src/features/notes/youtube.test.ts)                     | Accepts watch/short/embed YouTube URLs and rejects malformed non-YouTube ones.                                                 |
 
 ### Performance snapshots
