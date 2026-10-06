@@ -272,6 +272,17 @@ check); it applies at the first promotion.
   whole story (about 0.75 ms more a keystroke with a stored caret font on a
   4000-paragraph story). Probes in
   `capy-docx-review-harnesses/2026-10-05-office-batch/docx-fidelity/`.
+- **DOCX Enter leftovers** (docx-enter-copy, 2026-10-06; pre-existing):
+  Enter at the end of a paragraph that ends a section, then Backspace, loses
+  the section break (the join adopts the text mark's properties, which never
+  carry `sectPr`; probe `docx-enter-copy/probes/section-enter-backspace.test.ts`).
+  A peer's paragraph property change made while another peer presses Enter at
+  that paragraph's end lands on the new empty paragraph, which ends with the
+  source's mark, and not on the text (needs a decision: the end-of-paragraph
+  split could insert the new mark after the source's). A mid-paragraph split
+  and Enter before a block still drop borders from the new half (2026-09-29),
+  where Word copies them on any split (needs a decision). In edit mode two
+  breaks in a row after text copy two newlines; view mode copies one.
 - **DOCX run formatting written as direct on every save** (pre-existing, found
   by the docx-fidelity review 2026-10-06): every save writes the style's run
   formatting as direct formatting on every run of a saved story (long-handbook
