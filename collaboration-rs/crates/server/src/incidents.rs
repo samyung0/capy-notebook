@@ -131,7 +131,7 @@ pub fn client_payload(notification: &str) -> String {
     }
     match serde_json::from_str::<Value>(notification) {
         Ok(Value::Object(mut map)) => {
-            map.remove("incident");
+            map.shift_remove("incident");
             Value::Object(map).to_string()
         }
         _ => notification.to_owned(),
