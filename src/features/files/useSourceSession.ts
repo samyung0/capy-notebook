@@ -402,7 +402,9 @@ export function useSourceSession(
       if (draft) {
         await bestEffort(() => deleteDrafts(found));
         toastDraftsLost();
-        report('draft_unrestorable', 'base_missing', draftBytes(found));
+        reportOnce(draft.id, () =>
+          report('draft_unrestorable', 'base_missing', draftBytes(found))
+        );
       }
       recoveryDrafts = null;
       for (const restored of restoredDrafts)

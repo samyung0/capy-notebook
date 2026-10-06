@@ -33,7 +33,8 @@ export interface NoteDrafts {
  * Reads a note's stored edits for the room it opens (`for`: room and mount
  * generation, so a remount reads what the old mount wrote). A recovery group
  * nothing can draw is dropped with a toast and the next one is read. Both
- * are reported (edit_incidents), a group of another lineage once per load.
+ * are reported once per page load (edit_incidents), except a refused group
+ * entering recovery: the service recorded its refusal.
  */
 export function useNoteDrafts(
   materialId: string,
@@ -78,7 +79,9 @@ export function useNoteDrafts(
           return;
         }
         toastDraftsLost();
-        report('draft_unrestorable', 'base_missing', draftBytes(recovery));
+        reportOnce(recovery[0].id, () =>
+          report('draft_unrestorable', 'base_missing', draftBytes(recovery))
+        );
         await deleteDrafts(recovery).catch(() => undefined);
         rows = rows.filter((row) => !recovery.includes(row));
       }

@@ -37,8 +37,9 @@ export function editIncidentReporter(
 }
 
 const reported = new Set<string>();
-/** Reports an incident at most once per page load for `id` (a recovery
- * group shown again on a later open is the same incident). */
+/** Reports an incident at most once per page load for `id`, a draft group's
+ * first row: a group shown again on a later open, or read twice by a
+ * remount, is the same incident. */
 export function reportOnce(id: string, report: () => void) {
   if (reported.has(id)) return;
   reported.add(id);
