@@ -1,18 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { keepsFocus } from './useOfficeRuntime';
 
-/** An element as `keepsFocus` reads it: its tag, editability, shadow focus and enclosing role. */
+// Capy's vitest has no DOM, so these elements are outside any dialog or menu
+// (`closest` finds nothing); the e2e checks an open menu.
 function element(
   tagName: string,
   {
-    role,
     editable = false,
     shadowFocus,
-  }: { role?: string; editable?: boolean; shadowFocus?: Element } = {}
+  }: { editable?: boolean; shadowFocus?: Element } = {}
 ): Element {
   return {
-    closest: (selectors: string) =>
-      role && selectors.split(',').includes(`[role=${role}]`) ? {} : null,
+    closest: () => null,
     isContentEditable: editable,
     shadowRoot: shadowFocus ? { activeElement: shadowFocus } : null,
     tagName,
@@ -28,14 +27,11 @@ describe('the focus a newly opened DOCX leaves alone', () => {
     expect(keepsFocus(element('MATH-FIELD', { shadowFocus: sink }))).toBe(true);
   });
 
-  it('is anything in an open dialog, alert dialog or menu', () => {
-    for (const role of ['dialog', 'alertdialog', 'menu'])
-      expect(keepsFocus(element('BUTTON', { role }))).toBe(true);
-  });
-
-  it('is not a button elsewhere, such as the Edit toggle, nor the page', () => {
+  it('is not a button, a shadow host without a typing field, nor the page', () => {
     expect(keepsFocus(element('BUTTON'))).toBe(false);
-    expect(keepsFocus(element('A', { role: 'navigation' }))).toBe(false);
+    expect(
+      keepsFocus(element('MATH-FIELD', { shadowFocus: element('BUTTON') }))
+    ).toBe(false);
     expect(keepsFocus(element('BODY'))).toBe(false);
     expect(keepsFocus(null)).toBe(false);
   });

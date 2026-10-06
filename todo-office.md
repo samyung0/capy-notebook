@@ -253,8 +253,12 @@ check); it applies at the first promotion.
   (alignment, indents, the unmodeled children): needs a decision. Cells whose
   row or column position changes (a row inserted above the header, a column
   after the last) keep their old table-style look in the editor until the
-  file reopens; the save already compares them against that look, so the
-  file follows Word (office-small, 2026-10-06). A style list paragraph with
+  file reopens; the save and the editor's style values already use that look,
+  so the file follows Word (office-small, 2026-10-06). Paragraphs a merge
+  brings into a cell whose look the merge changes (it reaches the last column
+  with a lastCol look) save their old cell's look as direct formatting (probe:
+  lastCol `ind left 300`, merge H0+H1, H1's paragraph saves `w:ind`). A style
+  list paragraph with
   an ilvl-only `numPr` shows no bullet in the editor. A font pick diffs the
   whole story (about 0.75 ms more a keystroke with a stored caret font on a
   4000-paragraph story). Probes in

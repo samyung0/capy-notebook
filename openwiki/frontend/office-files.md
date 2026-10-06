@@ -1554,18 +1554,22 @@ leaves out is written as an explicit null, so two peers applying different
 styles converge on one style's values (about twice the Yjs growth of removing
 it, accepted). Run formatting stays the host's to apply. In a table cell the
 values, and the save's comparison, take the table-style paragraph formatting of
-the cell's current table and position (`cellParagraphFormatting`, read from the
-session's table, so a row or table made in the session, by a peer too, gets its
-own and a reused cell id never a deleted cell's). It reads only the parent
-story's table payloads (`storyTables`), once per style per toolbar or ruler
-command, and Enter's next style passes the current paragraph's style values
-without listing the story. A cell whose row or column moved keeps
-the look it seeded with in the editor until the file reopens. The save compares
-a cell the table had at open (its story still holds one of its source
-paragraphs, by paraId from the materialized base) against that seed-time look
-and a cell made in the session against its current position (`cellContext` in
-`yrsToDocument.ts`), so an untouched cell writes no stale header, last-row or
-last-column look as direct formatting and Word shows its new place's. Ops store tab stops in the seed's shape (`position`, `alignment`,
+the cell (`cellParagraphFormatting` in the editor, `cellContext` in
+`yrsToDocument.ts`, one helper behind both). A cell the table had at open (its
+story still holds one of its source paragraphs, by paraId from the materialized
+source, which the editor keeps as `sourceDocument` after save projections) keeps
+the look the seed gave it, also after its row or column moves; the editor shows
+that look until the file reopens. Any other cell, a row or table made in the
+session (by a peer too) and a reused cell id included, takes its current table
+and position. So an untouched moved cell writes no stale header, last-row or
+last-column look as direct formatting, a style picked in it writes only the
+style, and Word shows its new place's look. Paragraphs a merge brings into a
+cell compare against that cell's seeded look, so when the merge changes it (it
+reaches the last column with that look on) they save their old cell's look as
+direct formatting. Current positions read only the parent story's table
+payloads (`storyTables`), once per style per toolbar or ruler command, and
+Enter's next style passes the current paragraph's style values without listing
+the story. Ops store tab stops in the seed's shape (`position`, `alignment`,
 reading the older `pos`/`val` too) and the hanging first-line flag as a boolean.
 Enter at the end of a paragraph starts a clean one that keeps only its style,
 spacing and the font, size and colour carry (`INHERITED_PARA_ATTRS`), plus its
