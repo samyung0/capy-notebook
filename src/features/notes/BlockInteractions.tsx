@@ -111,9 +111,44 @@ export function firstLineMiddle(
   return block.getBoundingClientRect().top - containerTop + middle;
 }
 
-// One observer per note scroll area for every block's near-viewport latch.
-const nearObservers = new WeakMap<Element, IntersectionObserver>();
+// Per note scroll area: one observer for every block's near-viewport latch,
+// and one for blocks it saw without a size (see below).
+const nearObservers = new WeakMap<
+  Element,
+  { near: IntersectionObserver; sized: ResizeObserver }
+>();
 const nearCallbacks = new WeakMap<Element, () => void>();
+
+function observersFor(root: Element) {
+  let observers = nearObservers.get(root);
+  if (observers) return observers;
+  const near = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        if (entry.boundingClientRect.height > 0)
+          nearCallbacks.get(entry.target)?.();
+        // In a chunk the browser skips (content-visibility: auto) a block has
+        // no size and sits at the chunk's edge, and once laid out it may stay
+        // "intersecting" without a new notification: look again when it gets
+        // a size.
+        else sized.observe(entry.target);
+      }
+    },
+    { root, rootMargin: '100% 0px' }
+  );
+  const sized = new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      if (entry.contentRect.height === 0) continue;
+      sized.unobserve(entry.target);
+      near.unobserve(entry.target);
+      near.observe(entry.target);
+    }
+  });
+  observers = { near, sized };
+  nearObservers.set(root, observers);
+  return observers;
+}
 
 /**
  * Whether a block has come within a screen of the note's viewport, or the
@@ -126,21 +161,12 @@ function useNearViewport(ref: React.RefObject<HTMLElement | null>) {
   React.useEffect(() => {
     const element = ref.current;
     if (near || !(root && element)) return;
-    let observer = nearObservers.get(root);
-    if (!observer) {
-      observer = new IntersectionObserver(
-        (entries) => {
-          for (const entry of entries)
-            if (entry.isIntersecting) nearCallbacks.get(entry.target)?.();
-        },
-        { root, rootMargin: '100% 0px' }
-      );
-      nearObservers.set(root, observer);
-    }
+    const observers = observersFor(root);
     nearCallbacks.set(element, () => setNear(true));
-    observer.observe(element);
+    observers.near.observe(element);
     return () => {
-      observer.unobserve(element);
+      observers.near.unobserve(element);
+      observers.sized.unobserve(element);
       nearCallbacks.delete(element);
     };
   }, [near, ref, root]);
@@ -162,6 +188,7 @@ const IDLE: DragState = { isAboutToDrag: false, isDragging: false };
 function BlockDnd({
   element,
   handleRef,
+  hasHandle,
   nodeRef,
   onDrag,
   onDropHandler,
@@ -169,6 +196,8 @@ function BlockDnd({
 }: {
   element: TElement;
   handleRef: React.RefObject<HTMLButtonElement | null>;
+  /** The gutter shows a handle (not in a table cell); reconnects when it changes. */
+  hasHandle: boolean;
   nodeRef: React.RefObject<HTMLDivElement | null>;
   onDrag: (state: DragState) => void;
   onDropHandler: NonNullable<Parameters<typeof useDndNode>[0]['onDropHandler']>;
@@ -183,9 +212,10 @@ function BlockDnd({
     type: DRAG_ITEM_BLOCK,
   });
   // Rendered after the handle, so its ref is attached here (null in a table).
+  // hasHandle swaps the element behind handleRef.
   React.useLayoutEffect(() => {
     dragRef(handleRef.current);
-  }, [dragRef, handleRef]);
+  }, [dragRef, handleRef, hasHandle]);
   React.useLayoutEffect(() => {
     onDrag({ isAboutToDrag: !!isAboutToDrag, isDragging: !!isDragging });
   }, [isAboutToDrag, isDragging, onDrag]);
@@ -201,6 +231,17 @@ function DraggableBlock(props: PlateElementProps) {
   const handleRef = React.useRef<HTMLButtonElement>(null);
   const [near, approach] = useNearViewport(wrapperRef);
   const [{ isAboutToDrag, isDragging }, setDrag] = React.useState(IDLE);
+  // Same state, same object: arming a block does not re-render it.
+  const onDrag = React.useCallback(
+    (next: DragState) =>
+      setDrag((previous) =>
+        previous.isAboutToDrag === next.isAboutToDrag &&
+        previous.isDragging === next.isDragging
+          ? previous
+          : next
+      ),
+    []
+  );
 
   const isInColumn = path.length === 3;
   const isInTable = path.length === 4;
@@ -283,12 +324,14 @@ function DraggableBlock(props: PlateElementProps) {
         </Gutter>
       )}
 
-      <div
-        className="absolute left-0 hidden w-full"
-        contentEditable={false}
-        ref={previewRef}
-        style={{ top: `${-previewTop}px` }}
-      />
+      {near && (
+        <div
+          className="absolute left-0 hidden w-full"
+          contentEditable={false}
+          ref={previewRef}
+          style={{ top: `${-previewTop}px` }}
+        />
+      )}
 
       <div
         className="slate-blockWrapper flow-root"
@@ -306,8 +349,9 @@ function DraggableBlock(props: PlateElementProps) {
         <BlockDnd
           element={element}
           handleRef={handleRef}
+          hasHandle={!isInTable}
           nodeRef={nodeRef}
-          onDrag={setDrag}
+          onDrag={onDrag}
           onDropHandler={(_, { dragItem }) => {
             const id = (dragItem as { id: string[] | string }).id;
             if (blockSelectionApi) blockSelectionApi.add(id);
