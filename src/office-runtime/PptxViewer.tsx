@@ -370,52 +370,54 @@ export function PptxViewer({
             </div>
           </aside>
         )}
-        <div className="pptx-viewer-stage" ref={stageRef}>
-          {frame ? (
-            <>
-              <div aria-hidden="true" className="pptx-viewer-canvas">
-                <canvas ref={canvasRef} />
-              </div>
-              <div
-                aria-label={m.files_office_slide_content({
-                  current: slideIndex + 1,
-                  total: slideCount,
-                })}
-                className="office-a11y-only"
-                role="region"
-              >
-                {accessibleItems.length > 0 ? (
-                  accessibleItems.map((item, index) => {
-                    const key = `${item.kind}:${index}:${item.text}`;
-                    if (item.kind === 'chart') {
-                      return (
-                        <div
-                          aria-label={m.files_office_slide_chart({
-                            label: item.text,
-                          })}
-                          key={key}
-                          role="img"
-                        />
-                      );
-                    }
-                    return (
-                      <p key={key}>
-                        {item.kind === 'placeholder'
-                          ? m.files_office_slide_placeholder({
+        <div className="pptx-viewer-stage">
+          <div className="pptx-viewer-scroll" ref={stageRef}>
+            {frame ? (
+              <>
+                <div aria-hidden="true" className="pptx-viewer-canvas">
+                  <canvas ref={canvasRef} />
+                </div>
+                <div
+                  aria-label={m.files_office_slide_content({
+                    current: slideIndex + 1,
+                    total: slideCount,
+                  })}
+                  className="office-a11y-only"
+                  role="region"
+                >
+                  {accessibleItems.length > 0 ? (
+                    accessibleItems.map((item, index) => {
+                      const key = `${item.kind}:${index}:${item.text}`;
+                      if (item.kind === 'chart') {
+                        return (
+                          <div
+                            aria-label={m.files_office_slide_chart({
                               label: item.text,
-                            })
-                          : item.text}
-                      </p>
-                    );
-                  })
-                ) : (
-                  <p>{m.files_office_slide_no_accessible_content()}</p>
-                )}
-              </div>
-            </>
-          ) : (
-            slides && <p>{m.files_office_no_slides()}</p>
-          )}
+                            })}
+                            key={key}
+                            role="img"
+                          />
+                        );
+                      }
+                      return (
+                        <p key={key}>
+                          {item.kind === 'placeholder'
+                            ? m.files_office_slide_placeholder({
+                                label: item.text,
+                              })
+                            : item.text}
+                        </p>
+                      );
+                    })
+                  ) : (
+                    <p>{m.files_office_slide_no_accessible_content()}</p>
+                  )}
+                </div>
+              </>
+            ) : (
+              slides && <p>{m.files_office_no_slides()}</p>
+            )}
+          </div>
           {slides && slideCount > 0 && (
             // As the editor's Notes button (pptx-react's pptx-notes-toggle).
             <button

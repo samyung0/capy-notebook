@@ -714,7 +714,8 @@ too.
 Zoom is kept while a file stays open and carried across View and Edit in all
 three formats, with nothing stored (as decided 2026-10-06). Every viewer and
 editor reports its zoom as it opens and when it changes (protocol `zoom`
-{zoom}: 1 = 100%, or PPTX's `'fit'`), from the toolbar's control or View ›
+{zoom}: 1 = 100%, or PPTX's `'fit'`; the protocol takes 25–400%, the widest
+any editor takes), from the toolbar's control or View ›
 Zoom; the host keeps the last one in memory (`useOfficeRuntime`'s `zoomRef`)
 and the next frame's `load` carries it (`zoom`), whether that frame is the
 other mode or the same one after a runtime reload. The runtime hands it to the
@@ -1157,7 +1158,9 @@ its command's value after a colon (`view.zoom:1.5`, `insert.shape:ellipse`,
 picker hands the file to `PptxEditorApi.insertImage`. View mode offers File ›
 Download and Print and View › Present ▸, Zoom ▸ (the same Fit and levels as
 edit mode, `zoomMenu`) and Show speaker notes (`pptxMenus.ts`); a level above
-the fit scrolls the slide in its stage. Present is a header
+the fit scrolls the slide from its edges in an inner scroller
+(`.pptx-viewer-scroll`, as the editor's canvas host), so the Notes button
+keeps its corner. Present is a header
 split button in both modes; the viewer presents through pptx-react's
 `PresentationOverlay`, exported alone (with the notes window store and
 `PRESENT_ITEMS`) as `@betteroffice/pptx-react/presentation` so the viewer loads

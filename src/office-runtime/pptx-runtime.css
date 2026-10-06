@@ -137,19 +137,29 @@
   opacity: 0.45;
 }
 
-/* pptx-react's canvasHost: the slide fits with 20px around it, centred. */
+/* pptx-react's stage: only the slide scrolls, so the Notes button keeps its
+   corner. */
 .pptx-viewer-stage {
   position: relative;
   display: flex;
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+}
+
+/* pptx-react's canvasHost: the slide fits with 20px around it, centred. */
+.pptx-viewer-scroll {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   overflow: auto;
 }
 
 /* Auto margins centre the slide (or the no-slides line), and a slide zoomed
    past the stage scrolls from its edges, as the editor's does. */
 .pptx-viewer-canvas,
-.pptx-viewer-stage > p {
+.pptx-viewer-scroll > p {
   margin: auto;
 }
 

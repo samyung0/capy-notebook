@@ -686,8 +686,8 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
   test(`${format} zoom carries across View and Edit while the file is open, and stays usable while paused`, async ({
     page,
   }) => {
-    // Four frame loads, DOCX editors among them: slow on a busy machine.
-    test.setTimeout(600_000);
+    // Four frame loads, two of them editors.
+    test.setTimeout(format === 'docx' ? 300_000 : 180_000);
     await page.setViewportSize({ height: 800, width: 1280 });
     const fileId = `bio-office-${format}`;
     await page.goto(`/workspaces/ws_bio?file=${fileId}`);
@@ -747,6 +747,18 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
             );
           })
       ).toBeGreaterThanOrEqual(0);
+    // While a zoomed slide scrolls, the viewer's Notes button keeps its corner.
+    const notesStay = async () => {
+      const notes = frame.getByTestId('pptx-notes-toggle');
+      const before = await notes.boundingBox();
+      expect(
+        await frame.locator('.pptx-viewer-scroll').evaluate((node) => {
+          node.scrollTo(node.scrollWidth, node.scrollHeight);
+          return node.scrollLeft > 0 && node.scrollTop > 0;
+        })
+      ).toBe(true);
+      expect(await notes.boundingBox()).toEqual(before);
+    };
     const scaled = async (editing: boolean, factor: number) =>
       expect
         .poll(async () => Math.abs((await size(editing)) - base * factor), {
@@ -784,7 +796,10 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
     });
     await scaled(false, 1.5);
     await ticked('150%');
-    if (format === 'pptx') await scrollsFromEdge(false);
+    if (format === 'pptx') {
+      await scrollsFromEdge(false);
+      await notesStay();
+    }
 
     // Paused (a newer version replaced the session): zoom edits nothing, so
     // the toolbar's control still works.
