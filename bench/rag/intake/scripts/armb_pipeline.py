@@ -31,13 +31,21 @@ BOOKS = ["ahss4", "os4", "lsj", "brief-calculus", "fundamentals-of-electrical-en
 PY = [sys.executable]
 
 
-def run(cmd: list[str], log: Path, env: dict[str, str] | None = None) -> None:
+def run(cmd: list[str], log: Path, env: dict[str, str] | None = None, retries: int = 0) -> None:
+    """Run one step, appending to the log. DeepInfra embedding timeouts are
+    transient and the index stage resumes from its cache, so the index step
+    retries on a TimeoutError up to `retries` times."""
     log.parent.mkdir(parents=True, exist_ok=True)
-    with log.open("a", encoding="utf-8") as handle:
-        handle.write("$ " + " ".join(cmd) + "\n")
-        handle.flush()
-        result = subprocess.run(cmd, stdout=handle, stderr=subprocess.STDOUT, env=env, cwd=ROOT, check=False)
-    if result.returncode != 0:
+    for attempt in range(retries + 1):
+        with log.open("a", encoding="utf-8") as handle:
+            handle.write("$ " + " ".join(cmd) + "\n")
+            handle.flush()
+            result = subprocess.run(cmd, stdout=handle, stderr=subprocess.STDOUT, env=env, cwd=ROOT, check=False)
+        if result.returncode == 0:
+            return
+        tail = log.read_text(encoding="utf-8", errors="replace")[-2000:]
+        if attempt < retries and "TimeoutError" in tail:
+            continue
         raise SystemExit(f"{cmd[1:3]} failed ({result.returncode}); see {log}")
 
 
@@ -72,6 +80,7 @@ def build(book: str, only: str | None) -> dict:
                 "--run", str(run_dir), "--secrets", str(ROOT / ".env.local"),
             ],
             log,
+            retries=8,
         )
         report["indexed"] = True
     receipt = run_dir / "library-publish.json"

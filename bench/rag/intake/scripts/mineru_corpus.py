@@ -43,21 +43,43 @@ PAGE_FURNITURE_TITLE = {"doc_title"}
 
 
 def span_text(content) -> str:
-    """Flatten MinerU spans: inline equations become $...$, styles are dropped."""
+    """Flatten MinerU spans: inline equations become $...$; hyperlinks keep
+    their text and drop the url; nested span groups flatten; styles are dropped."""
+    if content is None:
+        return ""
     if isinstance(content, str):
         return content
     parts = []
-    for span in content or []:
+    for span in content:
         kind = span.get("type")
+        inner = span.get("content")
         if kind == "equation_inline":
-            parts.append(f"${span.get('content', '')}$")
-        elif kind == "text":
-            parts.append(span.get("content", ""))
-        elif isinstance(span.get("content"), list):
-            parts.append(span_text(span["content"]))
+            parts.append(f"${inner or ''}$")
+        elif isinstance(inner, list):
+            parts.append(span_text(inner))
+        elif kind in {"text", "hyperlink"}:
+            parts.append(inner or "")
         else:
             raise pilot.PilotError(f"Unknown MinerU span type {kind!r}")
     return "".join(parts)
+
+
+CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def clean(text: str, counts: dict[str, int]) -> str:
+    """Glyphs MinerU could not map come out as C0 control characters, and
+    Postgres refuses NUL. Each becomes U+FFFD so the loss stays visible and
+    countable instead of vanishing."""
+    text, n = CONTROL.subn("�", text)
+    if n:
+        counts["control_chars_replaced"] = counts.get("control_chars_replaced", 0) + n
+    return text
+
+
+def lines_text(block: dict) -> str:
+    """Blocks whose parts are lines (a contents list, a code or algorithm body)."""
+    return "\n".join(span_text(part.get("content")) for part in block.get("content", []))
 
 
 def norm_title(title: str) -> str:
@@ -67,22 +89,43 @@ def norm_title(title: str) -> str:
 
 
 class Outline:
-    """PDF outline entries for heading levels: (level, normalised title, 1-based page)."""
+    """PDF outline entries for heading levels: (level, title, 1-based page).
+
+    A MinerU heading that matches an entry (title and page within one) takes
+    the entry's level. An entry no heading matched on its page is synthesised
+    as a heading at the top of that page, so the hierarchy follows the outline
+    even where MinerU typed a chapter opener as a document title or body text.
+    """
 
     def __init__(self, pdf: Path):
         import fitz
 
         with fitz.open(pdf) as doc:
-            self.entries = [(lvl, norm_title(t), p) for lvl, t, p in doc.get_toc()]
+            self.entries = [(lvl, t.strip(), p) for lvl, t, p in doc.get_toc()]
+        self.keys = [norm_title(t) for _, t, _ in self.entries]
+        self.matched: set[int] = set()
         self.current = 0
 
-    def level(self, title: str, page: int) -> int:
+    def match(self, title: str, page: int) -> int | None:
         key = norm_title(title)
-        for lvl, entry, entry_page in self.entries:
-            if entry == key and abs(entry_page - page) <= 1:
+        for i, (lvl, _, entry_page) in enumerate(self.entries):
+            if self.keys[i] == key and abs(entry_page - page) <= 1 and i not in self.matched:
+                self.matched.add(i)
                 self.current = lvl
                 return lvl
+        return None
+
+    def nested(self) -> int:
         return (self.current or 0) + 1
+
+    def unmatched_on(self, page: int) -> list[tuple[int, str]]:
+        found = [(lvl, t) for i, (lvl, t, p) in enumerate(self.entries) if p == page and i not in self.matched]
+        for i, (_, _, p) in enumerate(self.entries):
+            if p == page:
+                self.matched.add(i)
+        if found:
+            self.current = found[-1][0]
+        return found
 
 
 def scaled(bbox) -> list[float]:
@@ -96,17 +139,26 @@ def convert(middle: dict, outline: Outline) -> tuple[list[dict], dict]:
     counts: dict[str, int] = {}
     for page in middle["pages"]:
         page_idx = int(page["page_idx"])
+        page_start = len(blocks)
         for block in sorted(page["blocks"], key=lambda b: b.get("index", 0)):
             kind = block["type"]
             counts[kind] = counts.get(kind, 0) + 1
             if kind in SKIP:
                 continue
             common = {"_native_type": kind, "page_idx": page_idx, "bbox": scaled(block.get("bbox"))}
-            if kind == "paragraph_title":
+            if kind in {"paragraph_title", "doc_title"}:
                 text = span_text(block.get("content"))
-                blocks.append({**common, "type": "text", "text": text, "text_level": outline.level(text, page_idx + 1)})
-            elif kind in PAGE_FURNITURE_TITLE or kind in {"text", "page_footnote", "aside_text", "ref_text"}:
-                text = span_text(block.get("content"))
+                level = outline.match(text, page_idx + 1)
+                if level is None and kind == "paragraph_title":
+                    level = outline.nested()
+                if level is not None:
+                    blocks.append({**common, "type": "text", "text": text, "text_level": level})
+                elif text.strip():
+                    # A document title the outline does not know (book title, "Chapter 2") is body text.
+                    blocks.append({**common, "type": "text", "text": text})
+            elif kind in {"text", "page_footnote", "aside_text", "ref_text", "index", "code"}:
+                # Contents lines, code and algorithm bodies are body text, not headings.
+                text = lines_text(block) if kind in {"index", "code"} else span_text(block.get("content"))
                 if text.strip():
                     blocks.append({**common, "type": "text", "text": text})
             elif kind == "equation":
@@ -136,6 +188,20 @@ def convert(middle: dict, outline: Outline) -> tuple[list[dict], dict]:
                 blocks.append(out)
             else:
                 raise pilot.PilotError(f"Unknown MinerU block type {kind!r} on page {page_idx + 1}")
+        # Outline entries for this page that no heading matched open the page.
+        for offset, (level, title) in enumerate(outline.unmatched_on(page_idx + 1)):
+            counts["outline_heading"] = counts.get("outline_heading", 0) + 1
+            blocks.insert(
+                page_start + offset,
+                {"_native_type": "outline", "page_idx": page_idx, "bbox": [0, 0, 1000, 10], "type": "text", "text": title, "text_level": level},
+            )
+    for block in blocks:
+        for key in ("text", "table_body"):
+            if isinstance(block.get(key), str):
+                block[key] = clean(block[key], counts)
+        for key in ("table_caption", "table_footnote", "image_caption", "image_footnote"):
+            if isinstance(block.get(key), list):
+                block[key] = [clean(item, counts) for item in block[key]]
     return blocks, counts
 
 

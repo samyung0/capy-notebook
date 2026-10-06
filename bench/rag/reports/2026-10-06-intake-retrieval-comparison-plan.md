@@ -163,7 +163,15 @@ pipeline's agent loop directly, so no Go deploy is needed for the experiment.
   pilot rows. The converter's text-layer confidence runs low on formula-heavy
   chunks because the LaTeX differs from the PDF text (17 of 56 smoke chunks
   under 0.9); it is the same scorer for every arm and is reported, not used
-  to filter.
+  to filter. Two rules came out of the first full books: MinerU types chapter
+  openers as document titles and every other heading as level 2, so an
+  outline entry no heading matched on its page is synthesised as a heading
+  at the top of that page (AHSS: 33 such headings, and the chapter titles
+  then head the section paths); and glyphs MinerU cannot map (OpenIntro's
+  binomial-coefficient font) come out as C0 control characters, which
+  Postgres refuses, so each becomes U+FFFD and is counted in the corpus
+  metrics. Full AHSS: 514 pages in 635 s wall, 1,371 chunks, 889 excerpts,
+  424 figure records, published to the scratch library as v1.
 - Audit (measurement, not repair): 3% of pages per book, fixed seed, each
   block judged faithful or not against the page image, for both the MinerU
   text and the live reviewed text of the same pages. This gives the parser
