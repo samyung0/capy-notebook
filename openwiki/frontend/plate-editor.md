@@ -1058,6 +1058,16 @@ validation and are not rendered.
   a save-cycle blocking budget, and `saveCycleProfile.perf.ts` attributes a
   regression to functions. How to run those specs and the manual GitHub Actions
   checkpoint is in [editor-perf.md](../editor-perf.md).
+- Nothing per element may subscribe to every editor change. Plate's
+  `useEditorSelector` is a jotai atom derived from the editor version, and
+  each keystroke and selection change recomputes every mounted one. Plate's
+  navigation feedback (the flash on the heading a table-of-contents entry
+  scrolls to) injects one into every element, which on a near-limit note was
+  about a third of each keystroke. `navigationFeedback.ts` overrides that
+  inject: an element reads the plugin's `activeTarget` option, which changes
+  only when a flash starts or ends, and renders the same `data-nav-*`
+  attributes Plate would. No stylesheet styles those attributes today, so the
+  flash itself is invisible.
 - Remote cursor decorations must match Slate paths structurally (not
   dot-joined path strings). Shared-link editors may be absent from the
   workspace member directory, so cursor labels fall back to the authenticated
