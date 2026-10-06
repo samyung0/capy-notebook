@@ -6,17 +6,12 @@
 # https://*.backblazeb2.com endpoints, so the fake answers under such a name
 # inside the network, with a throwaway certificate stress.ts creates
 # (STRESS_TLS_DIR) that the server and the collaboration service trust.
-# Uploads are presigned PUTs the stress client sends from the host, so the
-# fake's plain HTTP port is published too (STRESS_S3_PORT; it checks no
-# signatures, so the URL's path and query are all it needs).
 services:
   s3:
     image: capy-e2e-collaboration:local
     # Built by the collaboration service (or loaded by CI); never pulled.
     pull_policy: never
     command: ["node", "/stress/fake-s3.mjs"]
-    ports:
-      - "127.0.0.1:${STRESS_S3_PORT:?set by stress.ts}:9000"
     volumes:
       - ${STRESS_FAKE_S3:?set by stress.ts}:/stress/fake-s3.mjs:ro
       - ${STRESS_TLS_DIR:?set by stress.ts}:/stress/tls:ro
@@ -46,15 +41,8 @@ services:
       s3:
         condition: service_healthy
 
-  # STRESS_COLLABORATION_IMAGE runs the same scenarios against another
-  # server implementation (with E2E_PREBUILT_IMAGES=true, so compose does not
-  # build the Node one under its name). It gets the same environment and must
-  # trust the certificate: Node through NODE_EXTRA_CA_CERTS, OpenSSL and
-  # native-roots clients through SSL_CERT_FILE.
   collaboration:
-    image: ${STRESS_COLLABORATION_IMAGE:-capy-e2e-collaboration:local}
     environment:
       NODE_EXTRA_CA_CERTS: /stress/tls/cert.pem
-      SSL_CERT_FILE: /stress/tls/cert.pem
     volumes:
       - ${STRESS_TLS_DIR:?set by stress.ts}:/stress/tls:ro

@@ -14,6 +14,7 @@ fixtures for comparison. Writes the files and sizes.json to <out-dir>
 usage: gen_office_ladder.py [out-dir] [--only docx|xlsx|pptx]
 """
 
+import argparse
 import json
 import os
 import subprocess
@@ -23,9 +24,12 @@ from office_sizes import sizes
 
 scripts = os.path.dirname(os.path.abspath(__file__))
 root = os.path.abspath(os.path.join(scripts, "..", "..", ".."))
-args = [arg for arg in sys.argv[1:] if not arg.startswith("--")]
-out = os.path.abspath(args[0] if args else os.path.join(root, "bench", "editor", ".results", "ladder"))
-only = sys.argv[sys.argv.index("--only") + 1] if "--only" in sys.argv else None
+parser = argparse.ArgumentParser(description="Generate the Office size ladder.")
+parser.add_argument("out", nargs="?", default=os.path.join(root, "bench", "editor", ".results", "ladder"))
+parser.add_argument("--only", choices=["docx", "xlsx", "pptx"])
+options = parser.parse_args()
+out = os.path.abspath(options.out)
+only = options.only
 exchange_plan = os.path.join(root, "e2e", "fixtures", "files", "rich-content", "exchange-plan.docx")
 
 LADDER = [

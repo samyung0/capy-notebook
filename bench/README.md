@@ -53,7 +53,7 @@ the time to the painted result. It also reports the heap over two full
 view-mode passes and over five view-mode opens and closes, and records the
 runner's CPU model in every result. It
 fails on unpainted keys, typing that reaches no edit, a remote edit that never
-paints or errors, a fallback to the main-thread engine, or a missed budget
+reaches its frame or errors, a fallback to the main-thread engine, or a missed budget
 (from three CI runs per format); the end-of-file keys, the co-editor timings
 and the heap figures are report-only until a ceiling is defined. It runs as
 the `office` job of the same `Performance` workflow, on dispatch only.
@@ -88,10 +88,13 @@ markers into an Office room (`exchange-plan.docx`) and a Plate note for
 STRESS_MINUTES (3), each dropping offline for 1-5 s now and then and typing on.
 A second phase then puts STRESS_LIMIT_PEERS peers (5) in the near-limit rooms:
 the ~2 MB load-test note and a 4 MiB text source, report-only. The server is
-measured from outside (container CPU and memory through the Docker Engine API,
-`/healthz` answer time under load), and cost windows take one room kind at a
-time for memory per room, CPU per update and CPU per save, so the same
-scenarios can judge another server implementation (`STRESS_COLLABORATION_IMAGE`).
+measured from outside (CPU and memory of the collaboration, API and database
+containers through the Docker Engine API, and outside the budgeted phase the
+answer time of an event-loop-only endpoint), and cost windows take one room
+kind at a time for memory per room, CPU per update and CPU per save, so the
+same scenarios can judge another server implementation
+(`STRESS_COLLABORATION_IMAGE`). Report-only steps that cannot finish are
+listed apart and fail nothing; `stress.json` is rewritten after each phase.
 It fails when the peers and a late joiner do not converge, a typed marker is
 missing or duplicated, or the collaboration service logs an error (exit 1),
 and reports a missed p95 latency budget (first phase, from three CI runs)
