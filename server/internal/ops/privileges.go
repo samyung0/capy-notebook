@@ -625,7 +625,9 @@ func validateRequiredTables(
 			if err := pool.QueryRow(ctx,
 				`SELECT to_regclass($1) IS NOT NULL`, requirement.table,
 			).Scan(&exists); err == nil && !exists {
-				log.Printf("ops role check: %s is not in this secondary database yet; its grant is checked once it is migrated", requirement.table)
+				conn := pool.Config().ConnConfig
+				log.Printf("ops role check: %s is not in secondary database %s on %s:%d yet; its grant is checked once it is migrated",
+					requirement.table, conn.Database, conn.Host, conn.Port)
 				continue
 			}
 		}
