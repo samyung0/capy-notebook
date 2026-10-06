@@ -123,3 +123,20 @@ export function resolveEditorAsset(assetId: string, signal?: AbortSignal) {
     }
   );
 }
+
+/** One entry per requested id, in order: `assetId` equal to `sourceId` means
+ * the note already owns it, another id is the note's own copy, none means it
+ * is gone or unreadable. */
+export interface AdoptedEditorAsset {
+  assetId?: string;
+  sourceId: string;
+}
+
+/** Make assets (1–50 distinct ids) the note's own, copying another note's.
+ * The whole call fails when the copies do not fit the quota. */
+export function adoptEditorAssets(materialId: string, assetIds: string[]) {
+  return api.post<{ assets: AdoptedEditorAsset[] }>(
+    `/materials/${encodeURIComponent(materialId)}/editor-assets/adopt`,
+    { assetIds }
+  );
+}

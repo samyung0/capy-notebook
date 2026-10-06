@@ -127,18 +127,18 @@ func validateEditorAssetMetadata(
 // larger ones first. Bank figures have their own limit (bank/assets.go).
 const quizImageMaxBytes = 2 << 20
 
-// editorAssetScope is where a material's editor assets live: a workspace, a
-// standalone material, or for a workspace quiz both, so the quiz's purge and
-// saves can delete its images.
+// editorAssetScope is where a material's editor assets live: always the
+// material, so its saves and purge delete them, and its workspace when it has
+// one, which pays.
 type editorAssetScope struct {
 	workspaceID, materialID string
 	quiz                    bool
 }
 
 // editorAssetScopeFor admits an editor of the route's material and resolves the
-// scope: its workspace (charged to the workspace owner) or, for a standalone
-// material, the material itself (charged to its owner). A quiz is always named.
-// The store transaction rechecks both.
+// scope: the material plus its workspace (charged to the workspace owner), or
+// for a standalone material the material alone (charged to its owner). The
+// store transaction rechecks both.
 func (a *api) editorAssetScopeFor(w http.ResponseWriter, r *http.Request) (editorAssetScope, bool) {
 	materialID := id(r)
 	err := a.s.AssertMaterialEditor(r.Context(), uid(r), materialID)
@@ -154,9 +154,6 @@ func (a *api) editorAssetScopeFor(w http.ResponseWriter, r *http.Request) (edito
 	if err != nil {
 		a.fail(w, err)
 		return editorAssetScope{}, false
-	}
-	if workspaceID != "" && !quiz {
-		return editorAssetScope{workspaceID: workspaceID}, true
 	}
 	return editorAssetScope{workspaceID: workspaceID, materialID: materialID, quiz: quiz}, true
 }
@@ -305,6 +302,55 @@ func (a *api) completeEditorAssetUpload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusCreated, asset)
+}
+
+type adoptEditorAssetsRequest struct {
+	AssetIDs []string `json:"assetIds"`
+}
+
+type adoptedEditorAsset struct {
+	SourceID string `json:"sourceId"`
+	AssetID  string `json:"assetId,omitempty"`
+}
+
+// adoptEditorAssetsMax bounds one paste's images.
+const adoptEditorAssetsMax = 50
+
+// adoptEditorAssets makes the route's material its own copy of each pasted
+// asset (store.AdoptEditorAssets). One entry per requested id in request
+// order; assetId is omitted for a source that cannot be adopted.
+func (a *api) adoptEditorAssets(w http.ResponseWriter, r *http.Request) {
+	scope, ok := a.editorAssetScopeFor(w, r)
+	if !ok {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, editorAssetMetadataMaxBytes)
+	var in adoptEditorAssetsRequest
+	err := decode(r, &in)
+	valid := err == nil && len(in.AssetIDs) > 0 && len(in.AssetIDs) <= adoptEditorAssetsMax
+	seen := make(map[string]bool, len(in.AssetIDs))
+	for _, assetID := range in.AssetIDs {
+		valid = valid && assetID != "" && !seen[assetID]
+		seen[assetID] = true
+	}
+	if !valid {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "assetIds must list 1 to 50 distinct asset ids"})
+		return
+	}
+	var imageMaxBytes int64
+	if scope.quiz {
+		imageMaxBytes = quizImageMaxBytes
+	}
+	adopted, err := a.s.AdoptEditorAssets(r.Context(), uid(r), scope.workspaceID, scope.materialID, in.AssetIDs, imageMaxBytes)
+	if err != nil {
+		a.failFor(w, r, err)
+		return
+	}
+	out := make([]adoptedEditorAsset, len(in.AssetIDs))
+	for i, sourceID := range in.AssetIDs {
+		out[i] = adoptedEditorAsset{SourceID: sourceID, AssetID: adopted[sourceID]}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"assets": out})
 }
 
 func (a *api) resolveEditorAsset(w http.ResponseWriter, r *http.Request) {

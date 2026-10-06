@@ -48,6 +48,7 @@ var uploadSuffixes = []string{
 	"/sources/import-inspect",
 	"/sources/import-content",
 	"/editor-assets/uploads",
+	"/editor-assets/adopt",
 }
 
 // exemptPrefixes must never be limited.

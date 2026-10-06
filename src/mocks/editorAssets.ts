@@ -70,6 +70,15 @@ export const editorAssetHandlers = [
       });
     }
   ),
+  // Every known asset already belongs to the note; unknown ones are gone.
+  http.post('/api/materials/:id/editor-assets/adopt', async ({ request }) => {
+    const { assetIds } = (await request.json()) as { assetIds: string[] };
+    return HttpResponse.json({
+      assets: assetIds.map((id) =>
+        assets[id] ? { assetId: id, sourceId: id } : { sourceId: id }
+      ),
+    });
+  }),
   http.get('/api/editor-assets/:id/resolve', ({ params }) => {
     const id = String(params.id);
     const asset = assets[id];

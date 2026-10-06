@@ -314,7 +314,7 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
 
 Sources: [chapter and file handlers](../server/internal/httpapi/huma_content.go#L54),
 [source upload guard](../server/internal/httpapi/uploads.go#L40),
-[editor asset guard](../server/internal/httpapi/editor_assets.go#L164), and
+[editor asset guard](../server/internal/httpapi/editor_assets.go#L142), and
 [owner storage gate](../server/internal/httpapi/server.go#L234).
 
 ### Notes and other material documents
@@ -837,7 +837,7 @@ Source uploads and editor assets share the `upload_sessions` table but use
 different targets. Reserving an upload immediately reserves its declared bytes
 against the workspace owner, or for a standalone material's editor asset
 against the material owner. Editor assets upload through their material, so
-only that material's editors can reserve them. A successful finalize promotes the object from a
+only that material's editors can reserve them, and every asset names it. A successful finalize promotes the object from a
 temporary incoming key, creates the durable resource row, and marks the upload
 session completed. Finalization is idempotent, so retrying a completed source
 upload returns the already-created file. Concurrent duplicate completions may
@@ -925,12 +925,20 @@ source epoch or the material `room_schema` so stale clients cannot resume.
 `DELETE /api/trash/{kind}/{id}` are owner-only; a background sweep purges rows
 past `purge_after`, which then reaches the blob outbox like any deletion.
 
-A quiz's images follow the quiz (their `editor_assets.material_id` names it,
-in a workspace too): trashing keeps them, still charged, and restore brings
-them back with it; purging deletes them through the cascade. An image a quiz
-save stops referencing is deleted in that save's transaction, so the owner
-stops paying at once and the object reaches the blob outbox. A note's
-workspace images have no such link and stay until the workspace goes.
+A note's or quiz's images follow it (their `editor_assets.material_id` names
+it, in a workspace too; an embedded quiz's images name the quiz, not its
+note): trashing keeps them, still charged, and restore brings them back with
+it; purging deletes them through the cascade. An image a save stops
+referencing is deleted in that save's transaction once it completed more than
+60 seconds ago, so the payer stops paying at once and the object reaches the
+blob outbox; the minute lets a just-uploaded image's id reach a shared note
+before a collaborator's save. Chat Undo of an AI edit that removed an image
+brings the text back without it. Pasting an image from another note or quiz
+makes the target its own copy through
+`POST /api/materials/{id}/editor-assets/adopt` (any editor of the target; the
+source must be ready and readable under the resolve rule); the stored object
+is shared and each copy is charged (see
+[backend-storage-quota.md](backend-storage-quota.md)).
 
 Trash covers `source_file` and `material` only: there is no workspace trash.
 Deleting a workspace is `DELETE FROM workspaces`, so its files and materials go

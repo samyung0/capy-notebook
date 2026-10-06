@@ -449,18 +449,25 @@ func snapshotStandaloneCloneAssets(
 	embeddedIDs []string,
 	contents []string,
 ) ([]workspaceCloneAsset, map[string]string, int64, error) {
-	referenced := map[string]struct{}{}
-	for _, content := range contents {
+	// contents[0] is the source's, the rest follow embeddedIDs. Each copied
+	// asset belongs to the clone of the material whose content uses it, so a
+	// note's save never deletes its embedded quiz's images.
+	materialIDs := []string{source.ID}
+	materialIDs = append(materialIDs, embeddedIDs...)
+	referencedBy := map[string]string{}
+	for i, content := range contents {
 		ids, err := materialdoc.EditorAssetIDs(content)
 		if err != nil {
 			return nil, nil, 0, err
 		}
 		for _, id := range ids {
-			referenced[id] = struct{}{}
+			if _, seen := referencedBy[id]; !seen {
+				referencedBy[id] = materialIDs[i]
+			}
 		}
 	}
-	ids := make([]string, 0, len(referenced))
-	for id := range referenced {
+	ids := make([]string, 0, len(referencedBy))
+	for id := range referencedBy {
 		ids = append(ids, id)
 	}
 	assetMap := make(map[string]string, len(ids))
@@ -469,8 +476,6 @@ func snapshotStandaloneCloneAssets(
 	}
 	// A standalone note's assets may hang off its embedded rows, so every
 	// material whose content was scanned is an acceptable home.
-	materialIDs := []string{source.ID}
-	materialIDs = append(materialIDs, embeddedIDs...)
 	rows, err := tx.Query(ctx, `SELECT id, name, purpose, object_path, content_type,
 		size_bytes, status, COALESCE(etag,''), created_at, completed_at
 		FROM editor_assets
@@ -494,6 +499,7 @@ func snapshotStandaloneCloneAssets(
 			return nil, nil, 0, err
 		}
 		asset.newID = uid("asset")
+		asset.materialID = referencedBy[asset.oldID]
 		assetMap[asset.oldID] = asset.newID
 		bytes += asset.sizeBytes
 		assets = append(assets, asset)
@@ -524,7 +530,7 @@ type workspaceCloneFile struct {
 
 type workspaceCloneAsset struct {
 	oldID, newID                           string
-	materialID                             string // a quiz's image; '' otherwise
+	materialID                             string // the source material that uses it
 	name, purpose, objectPath, contentType string
 	status                                 string
 	sizeBytes                              int64
@@ -631,7 +637,7 @@ func (s *Store) snapshotWorkspaceForClone(
 	}
 	rows.Close()
 
-	// A trashed quiz is not cloned, so neither are its images.
+	// A trashed material is not cloned, so neither are its assets.
 	rows, err = tx.Query(ctx,
 		`SELECT id, COALESCE(material_id,''), name, purpose, object_path, content_type, size_bytes,
 			status, COALESCE(etag,''), created_at, completed_at
@@ -1071,7 +1077,7 @@ func (s *Store) cloneWorkspaceOnce(
 
 	// Ready editor assets are logical resources too. Their blob paths remain
 	// shared, but each clone receives a new asset row and therefore its own
-	// quota charge, and a quiz's image names the cloned quiz. Material content
+	// quota charge, and each names the clone of its material. Material content
 	// was rewritten to these IDs in the snapshot phase.
 	for _, asset := range snapshot.assets {
 		if _, err := tx.Exec(ctx, `INSERT INTO editor_assets
@@ -1467,11 +1473,15 @@ func (s *Store) cloneMaterialKindOnce(
 		}
 	}
 	for _, asset := range assets {
+		home := nid
+		if asset.materialID != src.ID {
+			home = embeddedIDs[asset.materialID]
+		}
 		if _, err := tx.Exec(ctx, `INSERT INTO editor_assets
 			(id, workspace_id, material_id, user_id, created_by, name, purpose,
 			 object_path, content_type, size_bytes, status, etag, created_at, completed_at)
 			VALUES ($1,NULL,$2,$3,$3,$4,$5,$6,$7,$8,'ready',$9,$10,$11)`,
-			asset.newID, nid, userID, asset.name, asset.purpose, asset.objectPath,
+			asset.newID, home, userID, asset.name, asset.purpose, asset.objectPath,
 			asset.contentType, asset.sizeBytes, asset.etag, asset.createdAt,
 			asset.completedAt); err != nil {
 			return Material{}, err

@@ -69,6 +69,7 @@ import type { NoteEditorStatus } from './editorMode';
 import { EditorScrollAreaContext } from './editorScrollArea';
 import { FloatingToolbar } from './FloatingToolbar';
 import { noteComponents } from './nodeComponents';
+import { noteAssetsPlugin, watchNoteAssets } from './noteAssets';
 import { useNoteEditorPrefs } from './noteEditorPrefs';
 import { buildPlugins } from './plugins';
 import {
@@ -766,6 +767,7 @@ export function NoteEditorCore({
           ydoc,
         },
       }),
+      noteAssetsPlugin,
       ...buildPlugins({
         allowExternalAssets,
         currentUserId,
@@ -840,6 +842,10 @@ export function NoteEditorCore({
       if (recorder.current === current) recorder.current = null;
     };
   }, [ydoc]);
+
+  // This tab's own edits keep the bytes of assets they remove and adopt the
+  // assets they insert (noteAssets.ts).
+  useEffect(() => watchNoteAssets(editor, material.id), [editor, material.id]);
 
   useEffect(() => {
     const current = roomReconnector({

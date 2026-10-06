@@ -299,12 +299,11 @@ own references and exclude unpublished captions. A failed candidate cannot remov
 the currently published source/index.
 
 Editor assets upload through the material that uses them
-(`/api/materials/{id}/editor-assets/uploads`, any editor of the material). A
-workspace material's asset belongs to the workspace and is charged to its
-owner; a standalone note or quiz's asset belongs to that material and is
-charged to the material owner, the only account that can edit it. A workspace
-quiz's asset records both the workspace (which pays) and the quiz
-(`material_id`, migration `0063`). Images uploaded through a quiz are capped at
+(`/api/materials/{id}/editor-assets/uploads`, any editor of the material).
+Every asset names that material (`editor_assets.material_id`). A workspace
+material's asset also names the workspace and is charged to its owner; a
+standalone note or quiz's asset is charged to the material owner, the only
+account that can edit it. Images uploaded through a quiz are capped at
 2 MB before any bytes are reserved (`quizImageMaxBytes`); the quiz editor
 shrinks a larger image first (`src/features/quizzes/quizImage.ts`: long side
 to 2000 px, WebP at falling quality, animated GIFs refused) and holds it in
@@ -312,21 +311,41 @@ the browser under a local id, previewed from an object URL, until Save
 uploads the referenced ones and swaps in their asset ids
 (`src/routes/QuizEdit.tsx`); a picked image the user abandons never reaches
 storage, and a failed upload fails the save. Notes keep the
-20 MB image limit and bank figures keep their own. Every quiz content write
-(the quiz PATCH and the collaboration projection behind agent and bank-copy
-edits) deletes, in its transaction, the quiz's assets the new content no
-longer references, ready or pending (`pruneQuizAssetsTx`), so the row
-triggers release used and reserved bytes at once. Purging the quiz deletes
-the rest through the `material_id` cascade; there is no periodic sweep. Both write to an `editor-assets/incoming/…` key and are promoted to
+20 MB image limit and bank figures keep their own. Every material content
+write (the PATCH and the collaboration projection behind live editing, agent
+and bank-copy edits) deletes, in its transaction, the material's `ready`
+assets the new content no longer references and that completed more than 60
+seconds ago (`pruneMaterialAssetsTx`), so the row triggers release the bytes at
+once. The minute covers a shared note: the image node's asset id reaches the
+server a moment after the upload completes, and a collaborator's save in that
+window must not delete it; an image removed within the minute goes at a later
+save. Pending reservations are left to the upload expiry. Purging the material
+deletes the rest through the `material_id` cascade; there is no periodic
+sweep. Both write to an `editor-assets/incoming/…` key and are promoted to
 an unpresigned stable `editor-assets/{id}/…` key before finalization, so the
 still-valid upload URL cannot overwrite a ready object. If creating the
 durable DB row fails after a source object was written, handlers delete the
 orphan object.
 
+Pasting an image that belongs to another note or quiz calls
+`POST /api/materials/{id}/editor-assets/adopt` with `{"assetIds": [...]}`
+(1–50 distinct ids, any editor of the target, upload rate class). The response
+`{"assets": [{"sourceId", "assetId"}]}` has one entry per requested id in
+request order: the same id when the asset already belongs to the target, a new
+ready row for the target when the source is ready and readable by the caller
+(the resolve rule), and no `assetId` otherwise (deleted, unreadable, pending,
+unknown). A copy shares the stored object under blob refcounting and is
+charged to the target's payer like an upload, and counts as just completed,
+so the 60-second rule keeps it until the pasted node is saved. A bad body is
+400, a non-editor 403 (404 without read access), and the whole call fails with
+`storage_quota_exceeded` (403) when the copies do not fit. One transaction
+locks the target scope, share-locks the source rows, locks their blob paths in
+order and gates the quota (`AdoptEditorAssets`).
+
 Workspace clones snapshot the source, gate the total file + material + ready
 editor-asset payload against the **cloner's** quota, copy ready asset rows
-with new logical IDs (rewriting embedded references; a quiz's image names the
-cloned quiz, and a trashed quiz's images are left out), and reuse physical blob
+with new logical IDs (rewriting embedded references; each asset names the
+clone of its material, and a trashed material's assets are left out), and reuse physical blob
 paths under reference counting. Only `ready` source files are copied; pending,
 processing, and failed files are omitted. Material nodes (and quiz image blocks) referring to a pending,
 failed, missing, or otherwise uncopied editor asset are removed from the cloned
@@ -340,7 +359,8 @@ transaction retry instead of a clone that points at missing bytes.
 
 A single-material clone is always a new **private standalone** material. It
 copies only ready editor assets referenced by the current SQL projection, gives
-each asset a fresh logical ID owned by the clone, rewrites the document, and
+each asset a fresh logical ID owned by the copy of the material whose content
+uses it (a note's embedded quiz keeps its own images), rewrites the document, and
 charges the asset bytes to the cloner. Physical object paths remain shared through blob
 refcounting. Source workspace asset IDs never survive in standalone content.
 Contended clones poll the per-source advisory hierarchy without retaining a

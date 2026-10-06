@@ -85,14 +85,13 @@ at about a graph's width with a centred title and never show a values table. Use
 SVG, at most 256 KiB, in their document. Bank graphs store the recipe in the
 database and the SVG in the public bucket. Image and graph blocks both keep
 their source under `image`: bank images use `{ url }`, a public content-hashed
-URL, and quiz images use `{ assetId }`, a private workspace editor asset
+URL, and quiz images use `{ assetId }`, a private editor asset of the quiz
 (see [backend-storage-quota.md](backend-storage-quota.md)). Quiz images are
 resolved to signed URLs at render and export time and follow editor-asset
 cloning: a clone copies the asset rows, rewrites the ids, drops images whose
 asset was not copied, and drops a question whose part loses all content. Uploads
-go through the quiz's material route: a workspace quiz's images belong to its
-workspace (workspace owner pays), a standalone quiz's to the quiz (its owner
-pays). A question the chat copied from the bank (`copy_questions`) keeps its
+go through the quiz's material route and name the quiz; the workspace owner
+pays for a workspace quiz's images, the quiz owner for a standalone quiz's. A question the chat copied from the bank (`copy_questions`) keeps its
 bank `{ url }` figures in the quiz: they are immutable, so the quiz links to
 them rather than copying them, and the Go validator accepts a quiz image or
 graph URL only under `BANK_ASSETS_URL` (`questions.QuizBankAssetsURL`). Each

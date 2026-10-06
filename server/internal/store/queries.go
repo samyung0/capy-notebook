@@ -1768,8 +1768,8 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 			return Material{}, err
 		}
 	}
-	if p.Content != nil && contentKind == "quiz" {
-		if err := pruneQuizAssetsTx(ctx, tx, id, *p.Content); err != nil {
+	if p.Content != nil {
+		if err := pruneMaterialAssetsTx(ctx, tx, id, *p.Content); err != nil {
 			return Material{}, err
 		}
 	}

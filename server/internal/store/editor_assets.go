@@ -49,9 +49,10 @@ type EditorAssetUpload struct {
 	ExpiresAt    time.Time
 }
 
-// NewEditorAssetReservation is scoped to a workspace, a standalone material
-// (charged to its owner), or for a workspace quiz both: the workspace pays and
-// the quiz's purge or saves delete it.
+// NewEditorAssetReservation names the material that uploads it. A workspace
+// material's asset also names the workspace, which pays; a standalone
+// material's asset is charged to the material owner. The material's saves and
+// purge delete it.
 type NewEditorAssetReservation struct {
 	AssetID      string
 	UploadID     string
@@ -278,7 +279,7 @@ func (s *Store) MarkEditorAssetUploadExpired(ctx context.Context, uploadID strin
 }
 
 // EditorAssetMaterial returns the live material's workspace (empty when
-// standalone) and whether it is a quiz, which picks the asset scope and limit.
+// standalone) and whether it is a quiz, which caps its images.
 func (s *Store) EditorAssetMaterial(ctx context.Context, id string) (workspaceID string, quiz bool, err error) {
 	err = s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id,''), kind='quiz'
 		FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&workspaceID, &quiz)
@@ -288,18 +289,142 @@ func (s *Store) EditorAssetMaterial(ctx context.Context, id string) (workspaceID
 	return workspaceID, quiz, err
 }
 
-// pruneQuizAssetsTx deletes the quiz's own editor assets (ready or pending)
-// that its new content no longer references, so the owner stops paying at
-// once: the row triggers release the bytes, cancel a pending reservation and
-// queue the object for the reaper.
-func pruneQuizAssetsTx(ctx context.Context, tx pgx.Tx, quizID, content string) error {
+// pruneMaterialAssetsTx deletes the material's own ready editor assets that its
+// new content no longer references, so the payer stops paying at once: the row
+// triggers release the bytes and queue the object for the reaper. Pending
+// reservations are left to the upload expiry. Every content write calls it;
+// materialdoc.EditorAssetIDs is the one definition of a reference.
+//
+// An asset completed in the last 60 seconds is kept. In a shared note the
+// image node's assetId reaches the server a moment after the upload completes
+// (or after an adopted copy is made), and a collaborator's save in that window
+// must not delete it. An image removed within that minute is deleted by a
+// later save. Quizzes follow the same rule.
+func pruneMaterialAssetsTx(ctx context.Context, tx pgx.Tx, materialID, content string) error {
 	kept, err := materialdoc.EditorAssetIDs(content)
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `DELETE FROM editor_assets WHERE material_id=$1 AND id <> ALL($2::text[])`,
-		quizID, append([]string{}, kept...))
+	_, err = tx.Exec(ctx, `DELETE FROM editor_assets
+		WHERE material_id=$1 AND status='ready' AND id <> ALL($2::text[])
+		  AND completed_at < now() - interval '60 seconds'`,
+		materialID, append([]string{}, kept...))
 	return err
+}
+
+// AdoptEditorAssets gives the target material its own copy of each source
+// asset, for an image pasted from another note or quiz. It returns the target's
+// asset id per adoptable source: the same id when the asset is already the
+// target's, else a new ready row sharing the stored object under blob
+// refcounting and charged to the target's payer. A source that is unknown, not
+// ready, or unreadable by the actor (the resolve rule) is left out, as is an
+// image over imageMaxBytes when that is positive (a quiz's 2 MB cap). The
+// whole call fails when the copies do not fit the payer's quota.
+func (s *Store) AdoptEditorAssets(
+	ctx context.Context,
+	actorID, workspaceID, materialID string,
+	sourceIDs []string,
+	imageMaxBytes int64,
+) (map[string]string, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	ownerID, err := s.lockEditorAssetScopeTx(ctx, tx, workspaceID, materialID, actorID)
+	if err != nil {
+		return nil, err
+	}
+	// Share-locking the sources holds off their deletion, so each copied path
+	// still has a blob reference when the copies add theirs.
+	rows, err := tx.Query(ctx, `SELECT `+editorAssetCols+` FROM editor_assets
+		WHERE id=ANY($1::text[]) ORDER BY id FOR SHARE`, sourceIDs)
+	if err != nil {
+		return nil, err
+	}
+	var sources []EditorAsset
+	for rows.Next() {
+		asset, err := scanEditorAsset(rows)
+		if err != nil {
+			rows.Close()
+			return nil, err
+		}
+		sources = append(sources, asset)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	adopted := make(map[string]string, len(sources))
+	var copies []EditorAsset
+	var paths []string
+	var bytes int64
+	for _, asset := range sources {
+		if asset.MaterialID == materialID {
+			adopted[asset.ID] = asset.ID
+			continue
+		}
+		if asset.Status != "ready" ||
+			(imageMaxBytes > 0 && asset.Purpose == "image" && asset.SizeBytes > imageMaxBytes) {
+			continue
+		}
+		readable, err := editorAssetReadableTx(ctx, tx, actorID, asset)
+		if err != nil {
+			return nil, err
+		}
+		if !readable {
+			continue
+		}
+		copies = append(copies, asset)
+		paths = append(paths, asset.ObjectPath)
+		bytes += asset.SizeBytes
+	}
+	if len(copies) == 0 {
+		return adopted, nil
+	}
+	if err := lockCloneBlobPathsTx(ctx, tx, paths); err != nil {
+		return nil, err
+	}
+	if err := s.gateStorageTx(ctx, tx, ownerID, bytes); err != nil {
+		return nil, err
+	}
+	for _, asset := range copies {
+		newID := uid("asset")
+		if _, err := tx.Exec(ctx, `INSERT INTO editor_assets
+			(id, workspace_id, material_id, user_id, created_by, name, purpose, object_path,
+			 content_type, size_bytes, status, etag, completed_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'ready',$11,now())`,
+			newID, nullStr(workspaceID), materialID, ownerID, actorID, asset.Name, asset.Purpose,
+			asset.ObjectPath, asset.ContentType, asset.SizeBytes, nullStr(asset.ETag)); err != nil {
+			return nil, err
+		}
+		adopted[asset.ID] = newID
+	}
+	return adopted, tx.Commit(ctx)
+}
+
+// editorAssetReadableTx is resolve's read rule: workspace access for a
+// workspace asset, material access for a standalone one.
+func editorAssetReadableTx(ctx context.Context, tx pgx.Tx, actorID string, asset EditorAsset) (bool, error) {
+	var err error
+	switch {
+	case asset.WorkspaceID != "":
+		var effective WorkspaceRole
+		_, effective, err = workspaceRoles(ctx, tx, actorID, asset.WorkspaceID)
+		if err == nil && effective == "" {
+			return false, nil
+		}
+	case asset.MaterialID != "":
+		_, err = materialEffectiveAccess(ctx, tx, actorID, asset.MaterialID)
+	default:
+		return false, nil
+	}
+	if errors.Is(err, ErrNotFound) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // lockEditorAssetScopeTx admits an editor-asset write for the actor and returns
@@ -312,7 +437,7 @@ func (s *Store) lockEditorAssetScopeTx(ctx context.Context, tx pgx.Tx, workspace
 		if err != nil || materialID == "" {
 			return ownerID, err
 		}
-		// A workspace quiz's asset also names the quiz, which must be live there.
+		// The asset also names the material, which must be live there.
 		var live bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM materials
 			WHERE id=$1 AND workspace_id=$2 AND trashed_at IS NULL)`, materialID, workspaceID).Scan(&live); err != nil {

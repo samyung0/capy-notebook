@@ -2,6 +2,11 @@ import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
 import {
   anonymousId,
+  dropKeptAssets,
+  KEPT_ASSET_BYTES,
+  type KeptAsset,
+  keepAsset,
+  keptAsset,
   localCardStates,
   localQuizAttempts,
   recordLocalCardReview,
@@ -51,5 +56,43 @@ describe('browser-local study data', () => {
   it('creates one stable anonymous id', async () => {
     const id = await anonymousId();
     expect(await anonymousId()).toBe(id);
+  });
+});
+
+describe('kept editor assets', () => {
+  // Stand-ins: the store only reads `size`, so no real bytes are needed.
+  const row = (
+    session: string,
+    assetId: string,
+    savedAt: number,
+    size: number
+  ) =>
+    ({
+      assetId,
+      blob: { size, type: 'image/png' } as unknown as Blob,
+      name: `${assetId}.png`,
+      purpose: 'image',
+      savedAt,
+      session,
+    }) satisfies KeptAsset;
+  const third = Math.floor(KEPT_ASSET_BYTES / 3) + 1;
+
+  it('drops the oldest rows past the cap and skips one over it', async () => {
+    await keepAsset(row('s1', 'old', 1, third));
+    await keepAsset(row('s1', 'mid', 2, third));
+    await keepAsset(row('s2', 'new', 3, third));
+    await keepAsset(row('s2', 'huge', 4, KEPT_ASSET_BYTES + 1));
+    expect(await keptAsset('s1', 'old')).toBeUndefined();
+    expect((await keptAsset('s1', 'mid'))?.name).toBe('mid.png');
+    expect(await keptAsset('s2', 'new')).toBeDefined();
+    expect(await keptAsset('s2', 'huge')).toBeUndefined();
+  });
+
+  it('deletes the rows of sessions no longer alive', async () => {
+    await keepAsset(row('live', 'a', 10, 1));
+    await keepAsset(row('dead', 'b', 11, 1));
+    await dropKeptAssets((session) => session === 'live');
+    expect(await keptAsset('live', 'a')).toBeDefined();
+    expect(await keptAsset('dead', 'b')).toBeUndefined();
   });
 });

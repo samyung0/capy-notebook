@@ -215,6 +215,30 @@ note's material route, so standalone notes upload too (see
 [backend-storage-quota.md](../backend-storage-quota.md)). Renderers resolve signed URLs
 at runtime.
 
+Each asset belongs to one note: a save that stops using one deletes it on the
+server (once it was completed more than 60 s ago), and a note never shows
+another note's asset. `noteAssets.ts` keeps both true for this tab's own edits;
+collaborators' changes, which slate-yjs applies under the provider's origin,
+are left to the tab that made them. A local change is one whose slate-yjs
+origin is the editor's `localOrigin`, or its `undoManager` (undo and redo reach
+Slate as Yjs events).
+
+- A local change that removes media nodes (delete, cut, undo of an insert,
+  replace) resolves each removed asset at once, fetches its bytes and keeps
+  them in IndexedDB (`keptAssets` in `src/lib/localDb.ts`, keyed by session and
+  asset id, with name, purpose and content type). A session is one editor
+  mount: its rows go when it unmounts, and each session holds a Web Lock named
+  by its id, so the first session of a page load deletes the rows of sessions
+  no tab holds (`navigator.locks.query()`). The store keeps at most 500 MB and
+  drops the oldest rows first.
+- A local change that inserts media nodes (paste, drop, undo, redo) calls
+  `POST /materials/{id}/editor-assets/adopt` 150 ms later with the net new ids.
+  A different id back is the note's own copy, and a missing one means the asset
+  is gone: the session's kept bytes are uploaded again, or, with none kept, the
+  node stays and renders as failed. The nodes are then re-pointed with
+  `YHistoryEditor.withoutSaving`, so Undo never reverses the swap. An adopt or
+  upload error (over quota included) shows the error toast and is not retried.
+
 Image, YouTube and mermaid blocks share `MediaFrame`: a toolbar docked top-right
 that shows on hover, and in edit mode two side handles that resize the block
 symmetrically and store `width` as a percentage string (`"62%"`). Frames stop at
