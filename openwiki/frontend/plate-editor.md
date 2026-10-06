@@ -574,18 +574,25 @@ mode never join a room and are unchanged; opening the app offline is not
 supported.
 
 Unsaved work lives in IndexedDB (`src/lib/editDrafts.ts`, database
-`capy-edit-drafts`, shared with Office and text sources). Each editor mount is
-a session; its local Yjs updates (origin neither the room provider nor a
-restore) are merged and written every 250 ms as `update` rows, and once per
-offline episode (and at unmount or `pagehide` with unsaved work) the whole
-document is written as a `state` row, the base later updates need when they
-open in recovery. Encoding a near-limit note takes 30–80 ms, too slow to write
-the whole state as often as sources do. Each row carries its lineage, the
-room name the token named (`material:<id>:schema:<n>`). Rows are deleted only
-by checkpoint receipts: each request records the session's edit count, and a
-receipt deletes the rows it covers (it also answers earlier requests it
-covers, such as one sent while offline). The room's sync alone never deletes
-them. Deletes match the exact row, so another tab's newer write survives.
+`capy-edit-drafts`, shared with Office and text sources), written by a
+dedicated drafts worker (`src/lib/draftStore.ts`, `draftStore.worker.ts`): the
+editor's main thread only posts rows, about 0.05 ms per local edit, and does
+no storage work. The worker runs requests in the order they were posted, so a
+read sees every write posted before it and a receipt's delete lands after the
+updates it covers. Each editor mount is a session; each of its local Yjs
+updates (origin neither the room provider nor a restore) is one `update` row,
+posted as it happens, and the whole document is one `state` row written once
+per offline episode, at unmount and at `pagehide` with unsaved work, and after
+a failed write: the base later updates need when they open in recovery
+(encoding a near-limit note takes 30–80 ms, too slow for every edit). A
+killed tab keeps every update it posted; one killed while online leaves no
+`state` row, so its rows draw only over their own room. Each row carries its
+lineage, the room name the token named (`material:<id>:schema:<n>`). Rows are
+deleted only by checkpoint receipts: each request records the session's edit
+count, and a receipt deletes the session's update rows it covers (it also
+answers earlier requests it covers, such as one sent while offline). The room's
+sync alone never deletes them. A receipt deletes only its own session's rows
+and the exact rows it adopted, so another tab's newer write survives.
 
 On reconnect the provider's normal sync sends the unsent updates. The server
 answers a client's step 1 with its own step 1 and handles a connection's

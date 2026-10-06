@@ -47,16 +47,22 @@ async function setReachable(page: Page, reachable: boolean) {
   }, reachable);
 }
 
-async function storedDrafts(page: Page) {
+/** The kinds of the note's stored rows. */
+async function draftKinds(page: Page) {
   return page.evaluate(async () => {
     const draftsPath = '/src/lib/editDrafts.ts';
     const dbPath = '/src/mocks/db.ts';
     const { draftKey, readDrafts } = await import(draftsPath);
     const { user } = await import(dbPath);
-    return (
-      await readDrafts(draftKey(user.id, 'material', 'mock-scenario-note'))
-    ).length;
+    const rows: { kind: string }[] = await readDrafts(
+      draftKey(user.id, 'material', 'mock-scenario-note')
+    );
+    return rows.map((row) => row.kind);
   });
+}
+
+async function storedDrafts(page: Page) {
+  return (await draftKinds(page)).length;
 }
 
 /** What the browser reported to POST /api/edit-incidents (the MSW store). */
@@ -84,7 +90,12 @@ test('offline edits outlive a reload and save once the room is back', async ({
     page.locator('[data-connection-status="offline"]')
   ).toBeVisible();
   await type(page, ' Written offline.');
-  await expect.poll(() => storedDrafts(page)).toBeGreaterThan(0);
+  // Each key is written as it is typed (the drafts worker answers this read
+  // after every write posted before it): one update row per key, and the
+  // whole note once for the episode.
+  const kinds = await draftKinds(page);
+  expect(kinds.filter((kind) => kind === 'state')).toHaveLength(1);
+  expect(kinds.filter((kind) => kind === 'update').length).toBeGreaterThan(1);
   await shot(page, 'offline');
   // The workspace's offline toast goes after its 7 s; the banner stays.
   const toast = page

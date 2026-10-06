@@ -412,8 +412,12 @@ drafts and reloads to the
 file-missing or no-access panel, with no download: the user may no longer see
 that content. A storage or frozen refusal at save drops every writer to view
 under the read-only strip. A trashed or deleted file, or lost access, replaces
-the editor with the file-missing or no-access panel. Draft storage failures
-(private mode, a full disk, a missing draft base) never block editing. Error
+the editor with the file-missing or no-access panel. Drafts are written as
+each local edit happens, by a dedicated drafts worker, with the whole document
+once per offline episode and at unmount (see
+[plate-editor.md](plate-editor.md#offline-editing-and-drafts)). Draft storage
+failures (private mode, a full disk, a missing draft base) never block
+editing. Error
 strips carry localized copy only. An epoch
 change reloads a fully acknowledged editor; unacknowledged edits instead enter
 recovery, as do drafts of another version found on open.

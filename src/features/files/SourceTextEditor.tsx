@@ -2,11 +2,17 @@ import { useEffect, useRef } from 'react';
 import * as Y from 'yjs';
 import { m } from '@/i18n';
 import {
+  applyTextEdit,
   applyTextInput,
   beginTextComposition,
+  displayText,
   displayTextOffset,
+  type InputStart,
+  inputStart,
   SOURCE_TEXT_INPUT,
+  sourceLines,
   sourceTextOffset,
+  textareaEdit,
 } from './sourceTextBinding';
 
 export function SourceTextEditor({
@@ -32,31 +38,47 @@ export function SourceTextEditor({
     const undo = new Y.UndoManager(text, {
       trackedOrigins: new Set([SOURCE_TEXT_INPUT]),
     });
-    let composition: ReturnType<typeof beginTextComposition> | null = null;
+    let composition: {
+      commit: (composed: string) => void;
+      start: number;
+    } | null = null;
+    // A peer edited while composing: the textarea catches up at the end.
+    let missed = false;
+    // The textarea when the input being handled began (beforeinput).
+    let started: InputStart | null = null;
     const waiting: (() => void)[] = [];
     let selection: {
       start: Y.RelativePosition;
       end: Y.RelativePosition;
       direction: 'forward' | 'backward' | 'none';
     } | null = null;
-    input.value = text.toString();
+    const raw = text.toString();
+    let lines = sourceLines(raw);
+    input.value = raw;
+    const toSource = (offset: number) =>
+      lines.cr ? sourceTextOffset(text.toString(), offset) : offset;
     const before = (transaction: Y.Transaction) => {
       if (composition || transaction.origin === SOURCE_TEXT_INPUT) return;
       selection = {
         direction: input.selectionDirection,
         end: Y.createRelativePositionFromTypeIndex(
           text,
-          sourceTextOffset(text.toString(), input.selectionEnd)
+          toSource(input.selectionEnd)
         ),
         start: Y.createRelativePositionFromTypeIndex(
           text,
-          sourceTextOffset(text.toString(), input.selectionStart)
+          toSource(input.selectionStart)
         ),
       };
     };
     const render = () => {
-      if (composition) return;
-      input.value = text.toString();
+      if (composition) {
+        missed = true;
+        return;
+      }
+      const value = text.toString();
+      lines = sourceLines(value);
+      input.value = value;
       if (selection) {
         const start = Y.createAbsolutePositionFromRelativePosition(
             selection.start,
@@ -66,10 +88,12 @@ export function SourceTextEditor({
             selection.end,
             doc
           );
+        const toDisplay = (offset: number) =>
+          lines.cr ? displayTextOffset(value, offset) : offset;
         if (start && end)
           input.setSelectionRange(
-            displayTextOffset(text.toString(), start.index),
-            displayTextOffset(text.toString(), end.index),
+            toDisplay(start.index),
+            toDisplay(end.index),
             selection.direction
           );
       }
@@ -77,31 +101,50 @@ export function SourceTextEditor({
     const observe = (_event: Y.YTextEvent, transaction: Y.Transaction) => {
       if (transaction.origin !== SOURCE_TEXT_INPUT) render();
     };
-    const change = () => applyTextInput(composition?.text ?? text, input.value);
+    const beforeInput = (event: InputEvent) => {
+      started = composition ? null : inputStart(event, input);
+    };
+    // Typing, paste, Enter and deletions apply in O(edit); anything else
+    // the whole value's difference does.
+    const change = (event: Event) => {
+      const begun = started;
+      started = null;
+      if (composition) return;
+      const edit =
+        begun &&
+        event instanceof InputEvent &&
+        textareaEdit(event, begun, input);
+      if (edit) applyTextEdit(text, edit, lines);
+      else applyTextInput(text, input.value, lines);
+    };
     const compositionStart = () => {
       undo.stopCapturing();
-      composition = beginTextComposition(doc);
+      missed = false;
+      composition = {
+        ...beginTextComposition(
+          text,
+          input.selectionStart,
+          input.selectionEnd,
+          lines
+        ),
+        start: input.selectionStart,
+      };
       onPendingChange?.(true);
     };
-    const compositionEnd = () => {
-      if (!composition) return;
-      applyTextInput(composition.text, input.value);
-      selection = {
-        direction: input.selectionDirection,
-        end: Y.createRelativePositionFromTypeIndex(
-          composition.text,
-          sourceTextOffset(composition.text.toString(), input.selectionEnd)
-        ),
-        start: Y.createRelativePositionFromTypeIndex(
-          composition.text,
-          sourceTextOffset(composition.text.toString(), input.selectionStart)
-        ),
-      };
-      composition.commit();
-      composition.destroy();
+    const compositionEnd = (event?: CompositionEvent) => {
+      const active = composition;
+      if (!active) return;
       composition = null;
+      const composed =
+        event?.data ?? input.value.slice(active.start, input.selectionEnd);
+      // The IME committed at the caret: only the composed text goes in. An
+      // IME that rewrote other text leaves it to the whole value's
+      // difference.
+      if (input.selectionStart === active.start + displayText(composed).length)
+        active.commit(composed);
+      else applyTextInput(text, input.value, lines);
       onPendingChange?.(false);
-      render();
+      if (missed) render();
       undo.stopCapturing();
       for (const resolve of waiting.splice(0)) resolve();
     };
@@ -125,6 +168,7 @@ export function SourceTextEditor({
         else undo.undo();
       }
     };
+    input.addEventListener('beforeinput', beforeInput);
     input.addEventListener('input', change);
     input.addEventListener('compositionstart', compositionStart);
     input.addEventListener('compositionend', compositionEnd);
@@ -135,6 +179,7 @@ export function SourceTextEditor({
       // Commit authored IME operations before detaching the binding.
       compositionEnd();
       registerFlush.current = null;
+      input.removeEventListener('beforeinput', beforeInput);
       input.removeEventListener('input', change);
       input.removeEventListener('compositionstart', compositionStart);
       input.removeEventListener('compositionend', compositionEnd);

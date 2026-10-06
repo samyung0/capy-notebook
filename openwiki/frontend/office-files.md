@@ -1654,9 +1654,18 @@ share (`src/lib/editDrafts.ts`, database `capy-edit-drafts`; the old
 `capy-source-drafts` rows are copied over once, with a `migrated` marker in
 the same transaction so a database an old tab recreates is never copied
 again, and that database is deleted best effort).
-A session (one editor mount) writes its whole state, latest only, at most
-every 250 ms, and not at all once a receipt covers it, so a saved draft never
-returns as a recovery prompt. Each row names its lineage, the room and base it
+A session (one editor mount) writes each local update as one row as it
+happens, through the same drafts worker as notes (see
+[plate-editor.md](plate-editor.md#offline-editing-and-drafts)), and its whole
+state only once per offline episode, at unmount and `pagehide`, and after a
+failed write: the host page holds the room's Y.Doc on the runtime frame's
+renderer thread, where a whole-state write took 48–65 ms of encoding at 62–248
+DOCX pages plus a copy of the 1.2–5 MiB state every 250 ms of typing. A
+receipt deletes the rows it covers, so a saved draft never returns as a
+recovery prompt. A group of update rows with no whole state (a tab closed or
+killed online before the file moved on) cannot be drawn in another lineage and
+is dropped with "Some unsaved edits from your last session couldn't be
+restored." Each row names its lineage, the room and base it
 grew from (`source:<id>:epoch:<n>@<baseSHA>`; text drafts stay compatible
 across the base hashes of one epoch). The source base is stored once per file
 and SHA beside the rows and removed with the last row that uses it. Reopening
@@ -1694,7 +1703,8 @@ A source editor keeps editing while its room cannot be reached, as a note
 does (see [plate-editor.md](plate-editor.md#offline-editing-and-drafts)): the
 `offline` banner, the header's Offline, and its rows written as it edits. Past
 the source state cap (`SOURCE_STATE_MAX_BYTES`, 100 MB, the service's
-`MAX_SOURCE_STATE_BYTES`) of unsaved state while offline the editor stops
+`MAX_SOURCE_STATE_BYTES`) of unsaved state while offline (the last whole state
+written plus the updates since) the editor stops
 taking edits (`offlineLimit`: Office `canEdit: false`, a paused textarea)
 until it reconnects. When the collaboration service discards a source room
 that held unsaved state (a save refused for good, the 5-minute slow-save

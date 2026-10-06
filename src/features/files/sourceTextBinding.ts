@@ -1,8 +1,27 @@
 import * as Y from 'yjs';
 
 export const SOURCE_TEXT_INPUT = Symbol('source-text-input');
-const NEWLINES = /\r\n|\r|\n/g;
 const CARRIAGE_RETURNS = /\r\n|\r/g;
+// The first newline only: without `g` the search stops there.
+const NEWLINE = /\r\n|\r|\n/;
+
+/**
+ * How a source's text maps to its textarea's, which folds CRLF and CR to LF:
+ * whether the source holds any `\r` (only then do offsets differ), and the
+ * newline new lines take (the source's first). Read whenever the textarea is
+ * filled from the source; local input never adds a `\r` of its own.
+ */
+export interface SourceLines {
+  cr: boolean;
+  newline: string;
+}
+
+export function sourceLines(raw: string): SourceLines {
+  return {
+    cr: raw.includes('\r'),
+    newline: NEWLINE.exec(raw)?.[0] ?? '\n',
+  };
+}
 
 export function displayText(value: string): string {
   return value.replace(CARRIAGE_RETURNS, '\n');
@@ -23,14 +42,49 @@ export function displayTextOffset(value: string, sourceOffset: number): number {
   return displayText(value.slice(0, sourceOffset)).length;
 }
 
-/** Apply one browser edit without replacing the shared string. */
+/** One textarea edit in its own (LF) offsets: `[start, end)` becomes `insert`. */
+export interface TextEdit {
+  end: number;
+  insert: string;
+  start: number;
+}
+
+/** Apply one textarea edit to the shared text, in O(edit) unless the source
+ * holds a `\r`. */
+export function applyTextEdit(
+  text: Y.Text,
+  edit: TextEdit,
+  lines: SourceLines,
+  origin: unknown = SOURCE_TEXT_INPUT
+) {
+  let { end, start } = edit;
+  if (lines.cr) {
+    const raw = text.toString();
+    start = sourceTextOffset(raw, start);
+    end = sourceTextOffset(raw, end);
+  }
+  // Existing line endings stay untouched; new lines follow the source's.
+  const insert =
+    lines.newline === '\n'
+      ? edit.insert
+      : edit.insert.replaceAll('\n', lines.newline);
+  if (end === start && !insert) return;
+  text.doc!.transact(() => {
+    if (end > start) text.delete(start, end - start);
+    if (insert) text.insert(start, insert);
+  }, origin);
+}
+
+/** Apply the textarea's whole value as its difference from the shared text:
+ * for input whose place `textareaEdit` cannot tell. */
 export function applyTextInput(
   text: Y.Text,
   value: string,
+  lines: SourceLines,
   origin: unknown = SOURCE_TEXT_INPUT
 ) {
   const raw = text.toString();
-  const before = displayText(raw);
+  const before = lines.cr ? displayText(raw) : raw;
   let start = 0;
   while (
     start < before.length &&
@@ -48,34 +102,147 @@ export function applyTextInput(
     oldEnd--;
     newEnd--;
   }
-  if (start === oldEnd && start === newEnd) return;
-  const rawStart = sourceTextOffset(raw, start),
-    rawEnd = sourceTextOffset(raw, oldEnd);
-  // Existing line endings stay untouched; new lines follow the source's first newline.
-  const newline = raw.match(NEWLINES)?.[0] ?? '\n';
-  const insert = value.slice(start, newEnd).replaceAll('\n', newline);
-  text.doc!.transact(() => {
-    if (rawEnd > rawStart) text.delete(rawStart, rawEnd - rawStart);
-    if (insert) text.insert(rawStart, insert);
-  }, origin);
+  applyTextEdit(
+    text,
+    { end: oldEnd, insert: value.slice(start, newEnd), start },
+    lines,
+    origin
+  );
 }
 
-/** Keep native IME input isolated until composition ends, then merge only its Yjs operations. */
-export function beginTextComposition(doc: Y.Doc) {
-  const baseVector = Y.encodeStateVector(doc);
-  const draft = new Y.Doc();
-  Y.applyUpdate(draft, Y.encodeStateAsUpdate(doc));
+const INSERTS = new Set([
+  'insertText',
+  'insertFromPaste',
+  'insertLineBreak',
+  'insertParagraph',
+]);
+const BACKWARD = new Set([
+  'deleteContentBackward',
+  'deleteWordBackward',
+  'deleteSoftLineBackward',
+  'deleteHardLineBackward',
+]);
+const FORWARD = new Set([
+  'deleteContentForward',
+  'deleteWordForward',
+  'deleteSoftLineForward',
+  'deleteHardLineForward',
+]);
+
+/** The textarea at a `beforeinput`: its selection, and its length for a
+ * collapsed delete forward, the one edit whose size only the length tells. */
+export interface InputStart {
+  end: number;
+  length: number | null;
+  start: number;
+}
+
+export function inputStart(
+  event: InputEvent,
+  textarea: Pick<
+    HTMLTextAreaElement,
+    'selectionEnd' | 'selectionStart' | 'textLength'
+  >
+): InputStart {
+  const { selectionEnd: end, selectionStart: start } = textarea;
   return {
-    commit() {
-      Y.applyUpdate(
-        doc,
-        Y.encodeStateAsUpdate(draft, baseVector),
-        SOURCE_TEXT_INPUT
-      );
+    end,
+    length:
+      start === end && FORWARD.has(event.inputType)
+        ? textarea.textLength
+        : null,
+    start,
+  };
+}
+
+/**
+ * The edit an `input` event made, from the textarea before it (`inputStart`)
+ * and its caret after: typing, paste, Enter and the deletions, in O(edit).
+ * Null for anything else (undo from a menu, a drop, IME, autocorrect) or an
+ * edit that did not land where expected: the caller diffs the whole text.
+ */
+export function textareaEdit(
+  event: Pick<InputEvent, 'data' | 'inputType'>,
+  before: InputStart,
+  textarea: Pick<HTMLTextAreaElement, 'selectionStart' | 'textLength' | 'value'>
+): TextEdit | null {
+  const { inputType } = event;
+  const caret = textarea.selectionStart;
+  if (INSERTS.has(inputType)) {
+    const insert =
+      inputType === 'insertLineBreak' || inputType === 'insertParagraph'
+        ? '\n'
+        : displayText(event.data ?? textarea.value.slice(before.start, caret));
+    return caret === before.start + insert.length
+      ? { end: before.end, insert, start: before.start }
+      : null;
+  }
+  const deletes =
+    BACKWARD.has(inputType) ||
+    FORWARD.has(inputType) ||
+    inputType === 'deleteByCut';
+  if (!deletes) return null;
+  if (before.start !== before.end)
+    return caret === before.start
+      ? { end: before.end, insert: '', start: before.start }
+      : null;
+  if (BACKWARD.has(inputType))
+    return caret <= before.start
+      ? { end: before.start, insert: '', start: caret }
+      : null;
+  if (before.length === null || caret !== before.start) return null;
+  const removed = before.length - textarea.textLength;
+  return removed >= 0
+    ? { end: before.start + removed, insert: '', start: before.start }
+    : null;
+}
+
+/**
+ * An IME composition over the live document: the textarea holds the composed
+ * text meanwhile, and `commit` puts it in place of the range the composition
+ * started on, held as relative positions so peers' edits made while composing
+ * stay where they landed.
+ */
+export function beginTextComposition(
+  text: Y.Text,
+  start: number,
+  end: number,
+  lines: SourceLines
+) {
+  let from = start,
+    to = end;
+  if (lines.cr) {
+    const raw = text.toString();
+    from = sourceTextOffset(raw, start);
+    to = sourceTextOffset(raw, end);
+  }
+  const startAt = Y.createRelativePositionFromTypeIndex(text, from);
+  // Ends after the last replaced character: text a peer adds after it stays.
+  const endAt =
+    to > from ? Y.createRelativePositionFromTypeIndex(text, to, -1) : startAt;
+  return {
+    commit(composed: string) {
+      const doc = text.doc!;
+      // A root text is never deleted, so its positions always resolve.
+      const first = Y.createAbsolutePositionFromRelativePosition(
+        startAt,
+        doc
+      )!.index;
+      const last = Y.createAbsolutePositionFromRelativePosition(
+        endAt,
+        doc
+      )!.index;
+      const insert = displayText(composed);
+      doc.transact(() => {
+        if (last > first) text.delete(first, last - first);
+        if (insert)
+          text.insert(
+            first,
+            lines.newline === '\n'
+              ? insert
+              : insert.replaceAll('\n', lines.newline)
+          );
+      }, SOURCE_TEXT_INPUT);
     },
-    destroy() {
-      draft.destroy();
-    },
-    text: draft.getText('source'),
   };
 }
