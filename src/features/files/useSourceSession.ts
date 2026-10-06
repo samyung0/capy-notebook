@@ -28,19 +28,18 @@ import {
   type DraftRecorder,
   deleteDrafts,
   draftKey as documentDraftKey,
-  draftBytes,
   draftGroups,
   dropLostDrafts,
   type EditDraft,
   markDraftsReported,
+  openRecoveryBase,
   readDrafts,
   recordDrafts,
-  recoveryBase,
   reportRecoveryGroup,
   sameSourceLineage,
   sourceLineage,
 } from '@/lib/editDrafts';
-import { editIncidentReporter, reportOnce } from '@/lib/editIncidents';
+import { editIncidentReporter } from '@/lib/editIncidents';
 import { CopyError, errorCopy } from '@/lib/errors';
 import {
   createSourceProvider,
@@ -367,7 +366,7 @@ export function useSourceSession(
         sameSourceLineage(session.format)
       );
       const draft = found[0];
-      const base = draft ? await recoveryBase(found) : null;
+      const base = draft ? await openRecoveryBase(found, report) : null;
       if (cancelled) return;
       if (draft && base instanceof Uint8Array) {
         reportRecoveryGroup(found, report);
@@ -395,15 +394,9 @@ export function useSourceSession(
         setBanner(draft.refused ? 'refused' : 'changed');
         return;
       }
-      // A draft whose base this device no longer holds cannot be opened. One
+      // A draft whose base this device no longer holds was dropped; one
       // whose base could not be read stays for the next open.
-      if (draft && base === 'missing') {
-        await bestEffort(() => deleteDrafts(found));
-        toastDraftsLost();
-        reportOnce(draft.id, () =>
-          report('draft_unrestorable', 'base_missing', draftBytes(found))
-        );
-      }
+      if (base === 'dropped') toastDraftsLost();
       recoveryDrafts = null;
       for (const restored of restoredDrafts)
         Y.applyUpdate(shared, restored.data, RESTORE_ORIGIN);
@@ -486,8 +479,10 @@ export function useSourceSession(
         rejectWaiters(new SourceSessionError(m.editor_save_failed_undone()));
         void (async () => {
           await recorder?.discard();
-          // Rows of this lineage reached this room (another tab's too):
-          // the service's row counts them; only other lineages are new.
+          // Rows of this lineage reached this room (another tab's too) and
+          // are in the service's row; only other lineages are counted. A
+          // same-lineage tab that was offline at the refusal (its edits never
+          // reached the room) goes uncounted: an accepted undercount.
           const same = sameSourceLineage(session.format);
           if (lostAccess)
             await bestEffort(() =>

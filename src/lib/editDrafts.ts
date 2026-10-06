@@ -265,22 +265,44 @@ export function readDraftBase(key: string, base: string) {
 }
 
 /**
- * The base a source recovery group opens over: its bytes, `missing` when this
- * device does not hold it (the group can never be drawn: drop it), or
- * `unreadable` when reading failed (storage trouble: keep the group for the
- * next open; dropping it would lose edits that are still stored).
+ * Opens the base a source recovery group grows from, or settles the group:
+ * - a base this device does not hold (or a row naming none): the group can
+ *   never be drawn, so it is deleted and reported `base_missing` (`dropped`);
+ * - a base that failed to read: the group is kept for the next open, since
+ *   dropping it would lose edits still stored, and the failure is reported
+ *   as `draft_storage_failed`, once per page load (`kept`).
+ * A group kept for good this way sorts ahead of later groups of the file,
+ * which then wait behind it (draftGroups shows one group per open).
  */
-export async function recoveryBase(
-  group: EditDraft[]
-): Promise<Uint8Array | 'missing' | 'unreadable'> {
+export async function openRecoveryBase(
+  group: EditDraft[],
+  report: EditIncidentReporter
+): Promise<Uint8Array | 'dropped' | 'kept'> {
   const [first] = group;
-  if (first?.base === undefined) return 'missing';
-  try {
-    return (await readDraftBase(first.key, first.base)) ?? 'missing';
-  } catch (error) {
-    console.warn('Draft storage failed:', error);
-    return 'unreadable';
+  if (!first) return 'dropped';
+  if (first.base !== undefined) {
+    try {
+      const base = await readDraftBase(first.key, first.base);
+      if (base) return base;
+    } catch (error) {
+      console.warn('Draft storage failed:', error);
+      reportOnce(first.id, () =>
+        report(
+          'draft_storage_failed',
+          storageFailureReason(error),
+          draftBytes(group)
+        )
+      );
+      return 'kept';
+    }
   }
+  await deleteDrafts(group).catch((error) =>
+    console.warn('Draft storage failed:', error)
+  );
+  reportOnce(first.id, () =>
+    report('draft_unrestorable', 'base_missing', draftBytes(group))
+  );
+  return 'dropped';
 }
 
 /** Write rows, and their source base when it is not stored yet. */

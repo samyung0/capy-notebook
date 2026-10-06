@@ -18,11 +18,11 @@ import {
   dropLostDrafts,
   type EditDraft,
   markDraftsReported,
+  openRecoveryBase,
   putDrafts,
   readDraftBase,
   readDrafts,
   recordDrafts,
-  recoveryBase,
   recoveryDocument,
   reportRecoveryGroup,
   sameSourceLineage,
@@ -125,24 +125,35 @@ describe('the draft store', () => {
       base
     );
     const group = await readDrafts(key);
-    // The read fails once (a storage hiccup) while a delete would succeed:
-    // the group is unreadable, not missing, and stays for the next open.
+    const report = vi.fn();
+    // The read fails (a storage hiccup) while a delete would succeed: the
+    // group stays for the next open, and the failure is reported once.
     const get = vi
       .spyOn(IDBObjectStore.prototype, 'get')
-      .mockImplementationOnce(() => {
+      .mockImplementation(() => {
         throw new DOMException('busy', 'UnknownError');
       });
-    expect(await recoveryBase(group)).toBe('unreadable');
+    expect(await openRecoveryBase(group, report)).toBe('kept');
+    expect(await openRecoveryBase(group, report)).toBe('kept');
     get.mockRestore();
-    expect(await readDrafts(key)).toHaveLength(1);
-    expect(await recoveryBase(group)).toEqual(base);
-    // A base this device never stored, or a row naming none, is missing.
-    expect(
-      await recoveryBase([draft('other', { base: 'sha_gone', key, lineage })])
-    ).toBe('missing');
-    expect(await recoveryBase([draft('bare', { key, lineage })])).toBe(
-      'missing'
+    expect(report).toHaveBeenCalledExactlyOnceWith(
+      'draft_storage_failed',
+      'write',
+      2
     );
+    expect(await readDrafts(key)).toHaveLength(1);
+    expect(await openRecoveryBase(group, report)).toEqual(base);
+    // A base this device never stored: the group is dropped and reported.
+    report.mockClear();
+    const gone = draft('gone', { base: 'sha_gone', key, lineage });
+    await putDrafts([gone]);
+    expect(await openRecoveryBase([gone], report)).toBe('dropped');
+    expect(report).toHaveBeenCalledExactlyOnceWith(
+      'draft_unrestorable',
+      'base_missing',
+      0
+    );
+    expect((await readDrafts(key)).map((row) => row.id)).toEqual(['based']);
   });
 
   it('counts only the lost rows another report does not have', async () => {

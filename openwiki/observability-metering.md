@@ -139,6 +139,11 @@ copy sent to the room's clients leaves it out (it may name another account's
 lock). A client that was away during the discard later reports its draft as
 `other_epoch_draft`.
 
+Counts can also fall short: a same-lineage tab offline when a save is refused
+for lost access goes uncounted (see `discard_unsaved` below), and a recovery
+group whose base never reads again is kept, reported once per page load, and
+holds back later recovery groups of the same file (one shows per open).
+
 The `users` a kind counts is an upper bound: a writer's sync leaves a
 contributor marker even when it brings nothing new, so a writer who only
 opened the file since the last save counts as one with unsaved work (the same
@@ -150,12 +155,12 @@ rule decides whether a discard moves the epoch).
 | `slow_save_limit` | collaboration | five minutes of failed saves discarded a source room | the last failure: `engine_transient`, `pending`, `backoff`, `http_503` | room state |
 | `over_limit` | collaboration | a note update or store past the document limits, a source update or save past the 100 MB state cap | the limit code, `source_state_bytes` | room state, or the update |
 | `discard_unsaved` | collaboration | a discard with unsaved state for any other cause: lost write access at a store (read-only for the storage limit or a frozen account, revoked, the file gone, a locked account) or an outbox eviction; and a writer's update refused for lost write access | `storage_quota_exceeded`, `account_over_quota`, `read_only`, `forbidden`, `not_found`, an account-lock code, the outbox event type | room state, or the update |
-| `discard_unsaved` | browser | a connect or reconnect refused read-only discarded this session's unsaved edits; drafts deleted because the account lost the file (at open, on a refused reconnect, by the once-per-load sweep, or, after a save refused for lost access, the drafts of other lineages: this lineage's edits, another tab's included, reached the room and are in the service's row) | `read_only`, `forbidden`, `not_found` | unsaved bytes, or the drafts deleted |
+| `discard_unsaved` | browser | a connect or reconnect refused read-only discarded this session's unsaved edits; drafts deleted because the account lost the file (at open, on a refused reconnect, by the once-per-load sweep, or, after a save refused for lost access, the drafts of other lineages: this lineage's edits, another tab's included, are taken to have reached the room and be in the service's row, so a same-lineage tab that was offline at the refusal goes uncounted) | `read_only`, `forbidden`, `not_found` | unsaved bytes, or the drafts deleted |
 | `epoch_reset` | collaboration | that discard's epoch (or room schema) move landed | the discard's kind | NULL, user NULL |
 | `step2_unplaced` | collaboration | the second unplaceable sync step 2 in a row closed a connection; once per user and room until that user's update in the room is placed, across room unloads (a stuck client reconnects about every 30 s, often into a reloaded room), per instance and process, at most 10,000 pairs held | NULL | the step 2 |
 | `other_epoch_draft` | browser | a draft group of another epoch or room entered copy-only recovery, once per group: found at open (`reopen`), or a live source session whose file moved on (`epoch_changed`) or paused (`paused`), which marks every row of its lineage, adopted ones included. The rows keep a `reported` mark until Reload deletes them; a group with an unmarked row (newer edits over rows a kept epoch left marked) is a new episode and is reported | as listed | the drafts |
 | `draft_unrestorable` | browser | a stored group nothing could draw was dropped ("Some unsaved edits from your last session couldn't be restored."): its source base is not on this device. A base that failed to read keeps the group for the next open, unreported | `base_missing` | the drafts |
-| `draft_storage_failed` | browser | a draft write failed (the `offline-unstored` banner offline); a failure while offline is sent after the reconnect | `quota`, `unavailable`, `write` | unsaved bytes |
+| `draft_storage_failed` | browser | a draft write failed (the `offline-unstored` banner offline; a failure while offline is sent after the reconnect), or a recovery group's base failed to read (the group is kept for the next open; reported once per page load) | `quota`, `unavailable`, `write` | unsaved bytes, or the kept group |
 | `unconfirmed_edit` | browser | the save-delay warning (25 s for notes, 45 s for sources), once until a receipt arrives | NULL | unsaved bytes |
 | `offline_episode` | browser | an editor's offline episode ended, reported after the reconnect | `browser_offline`, `unreachable` | unsaved bytes at the reconnect |
 
