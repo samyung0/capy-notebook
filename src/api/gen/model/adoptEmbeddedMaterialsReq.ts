@@ -4,6 +4,7 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { AdoptEmbeddedMaterial } from './adoptEmbeddedMaterial.ts';
 
 export interface AdoptEmbeddedMaterialsReq {
   /** A URL to the JSON Schema for this object. */
@@ -12,5 +13,5 @@ export interface AdoptEmbeddedMaterialsReq {
      * @minItems 1
      * @maxItems 20
      */
-  materialIds: string[];
+  materials: AdoptEmbeddedMaterial[];
 }

@@ -75,6 +75,7 @@ export type {
   AccessCapabilities,
   AccountStatus,
   AddChapterReq,
+  AdoptEmbeddedMaterialsReq,
   AdoptEmbeddedMaterialsResp,
   Attempt,
   BillingCheckoutReq,

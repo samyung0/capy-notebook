@@ -476,10 +476,14 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   (`reference_seen_at`), and a projection that references it again restores it.
 - A quiz or flashcard block pasted into a note becomes that note's own through
   `POST /api/materials/{id}/embedded/adopt` (an editor of the note, 1–20
-  distinct ids, one answer per id in order). The note's own row answers its
-  id, trashed or not. Another note's embedded quiz or set, live or trashed
-  (a cut's save may have trashed it), whose note the caller can read is
-  copied under this note in one transaction: questions or cards (fresh card
+  blocks as `{materialId, copy?}`, one answer per block in order). Every
+  block has its own quiz, so the editor sets `copy` on each block but one
+  when a quiz is in several blocks of the note. The note's own row answers
+  its id, trashed or not, unless the block asks for a copy. A copy of the
+  note's own row (trashed too), or another note's embedded quiz or set, live
+  or trashed (a cut's save may have trashed it), whose note the caller can
+  read, is copied under this note in one transaction, a separate row per
+  block: questions or cards (fresh card
   ids), title as a new embedded row gets, its images as new editor assets
   sharing the stored objects, all charged to the note's payer; attempts,
   progress and review state stay with the original. Anything else answers no

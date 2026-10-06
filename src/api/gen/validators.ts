@@ -3020,12 +3020,16 @@ export const AdoptEmbeddedMaterialsParams = zod.object({
   "id": zod.string()
 })
 
-export const adoptEmbeddedMaterialsBodyMaterialIdsMax = 20;
+
+export const adoptEmbeddedMaterialsBodyMaterialsMax = 20;
 
 
 
 export const AdoptEmbeddedMaterialsBody = zod.object({
-  "materialIds": zod.array(zod.string()).min(1).max(adoptEmbeddedMaterialsBodyMaterialIdsMax)
+  "materials": zod.array(zod.object({
+  "copy": zod.boolean().optional(),
+  "materialId": zod.string().min(1)
+})).min(1).max(adoptEmbeddedMaterialsBodyMaterialsMax)
 })
 
 export const AdoptEmbeddedMaterialsResponse = zod.object({

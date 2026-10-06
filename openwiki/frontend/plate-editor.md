@@ -298,12 +298,19 @@ and fail explicitly if a required reference cannot be read. A reference
 belongs to its note: a local change that inserts references with a
 `materialId` (paste, drop, undo, redo; pending ones are skipped) is heard by
 the same `noteAssets.ts` listener and batch as media, and 150 ms later
-`POST /api/materials/{noteId}/embedded/adopt` answers per id. The note's own
-row keeps its id, so a cut and paste within the note changes nothing; another
-note's quiz or set comes back as this note's copy and the block is re-pointed;
-no id back (the original is unreadable or purged) removes the block. Both
-happen through `swapMaterialRef` under `YHistoryEditor.withoutSaving`, so Undo
-takes back the paste and never the swap. Errors show the error toast, with no
+`POST /api/materials/{noteId}/embedded/adopt` answers per block. Every block
+has its own quiz: the listener looks at the whole document, and a quiz the
+batch inserted that is now in several blocks stays with one of them, the
+first that existed before the batch (the listener records the reference
+block ids before the batch's first inserted reference applies) or else the
+first in document order; every other block asks for a copy (`refAdoptions`).
+The note's own row keeps its id unless the block asks for a copy, so a cut
+and paste within the note (no net insert) changes nothing; another note's
+quiz or set comes back as this note's copy, one per block, even for the same
+quiz pasted twice; no id back (the original is unreadable or purged) removes
+the block. Blocks are re-pointed or removed one by one by block id through
+`repointMaterialRefs` under `YHistoryEditor.withoutSaving`, so Undo takes
+back the paste and never the swap. Errors show the error toast, with no
 retry. The copy's images are copied on the server. Removing the reference
 trashes the row at the next projection and undo restores it (see
 [authorization](../authorization-permissions-lifecycles.md)). Mermaid blocks

@@ -158,6 +158,17 @@ components:
       required:
         - name
       type: object
+    AdoptEmbeddedMaterial:
+      additionalProperties: false
+      properties:
+        copy:
+          type: boolean
+        materialId:
+          minLength: 1
+          type: string
+      required:
+        - materialId
+      type: object
     AdoptEmbeddedMaterialsReq:
       additionalProperties: false
       properties:
@@ -167,15 +178,14 @@ components:
           format: uri
           readOnly: true
           type: string
-        materialIds:
+        materials:
           items:
-            type: string
+            $ref: "#/components/schemas/AdoptEmbeddedMaterial"
           maxItems: 20
           minItems: 1
           type: array
-          uniqueItems: true
       required:
-        - materialIds
+        - materials
       type: object
     AdoptEmbeddedMaterialsResp:
       additionalProperties: false

@@ -83,27 +83,37 @@ func (s *Store) EnsureEmbeddedMaterial(ctx context.Context, actorID, noteID stri
 	return err
 }
 
+// EmbeddedAdoption is one quiz or flashcard block pasted into a note: the
+// material its reference names, and whether it needs a copy even of the
+// note's own row (the same quiz is in another block of the note).
+type EmbeddedAdoption struct {
+	SourceID string
+	Copy     bool
+}
+
 // AdoptEmbeddedMaterials makes each quiz or flashcard block pasted into noteID
-// the note's own. It returns the note's material id per adoptable source: the
-// same id for the note's own row (trashed too, since the next projection
-// restores a referenced row), else a new embedded row with the source's
-// questions or cards (fresh card ids) and copies of its images, without its
-// attempts or review state. A source that is not an embedded quiz or flashcard
-// set, or whose note the actor cannot read, is left out. A trashed source
-// whose note is readable is copied: a cut's save may already have trashed it.
-// Like CreateEmbeddedMaterial the caller has checked edit access on the note;
-// the whole call fails when the copies do not fit the note's payer's quota.
+// the note's own. It returns the note's material id per block, in order: the
+// same id for the note's own row unless the block asks for a copy (trashed
+// too, since the next projection restores a referenced row), else a new
+// embedded row with the source's questions or cards (fresh card ids) and
+// copies of its images, without its attempts or review state. Each block
+// asking gets its own copy. A source that is not an embedded quiz or
+// flashcard set, or whose note the actor cannot read, gets "". A trashed
+// source whose note is readable is copied: a cut's save may already have
+// trashed it. Like CreateEmbeddedMaterial the caller has checked edit access
+// on the note; the whole call fails when the copies do not fit the note's
+// payer's quota.
 func (s *Store) AdoptEmbeddedMaterials(
 	ctx context.Context,
 	actorID, noteID string,
-	sourceIDs []string,
-) (map[string]string, error) {
+	blocks []EmbeddedAdoption,
+) ([]string, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
-	var note Material
+	note := Material{ID: noteID}
 	var locale string
 	err = tx.QueryRow(ctx, `SELECT m.title, COALESCE(m.workspace_id,''), m.workspace_name,
 			COALESCE((SELECT locale FROM users WHERE id=$2),'')
@@ -120,91 +130,112 @@ func (s *Store) AdoptEmbeddedMaterials(
 	if err != nil {
 		return nil, err
 	}
-	rows, err := tx.Query(ctx, `SELECT `+materialCols+` FROM materials WHERE id=ANY($1::text[]) ORDER BY id`, sourceIDs)
+	sourceIDs := make([]string, len(blocks))
+	for i, block := range blocks {
+		sourceIDs[i] = block.SourceID
+	}
+	rows, err := tx.Query(ctx, `SELECT `+materialCols+` FROM materials WHERE id=ANY($1::text[])`, sourceIDs)
 	if err != nil {
 		return nil, err
 	}
-	var sources []Material
+	sources := map[string]Material{}
 	for rows.Next() {
 		src, err := scanMaterial(rows)
 		if err != nil {
 			rows.Close()
 			return nil, err
 		}
-		sources = append(sources, src)
+		sources[src.ID] = src
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
-	adopted := make(map[string]string, len(sources))
+	adopted := make([]string, len(blocks))
 	taken := map[string]bool{}
-	for _, src := range sources {
-		if src.ParentMaterialID == noteID {
-			adopted[src.ID] = src.ID
+	for i, block := range blocks {
+		src, ok := sources[block.SourceID]
+		if !ok || src.ParentMaterialID == "" || (src.Kind != "quiz" && src.Kind != "flashcards") {
 			continue
 		}
-		if src.ParentMaterialID == "" || (src.Kind != "quiz" && src.Kind != "flashcards") {
+		if src.ParentMaterialID == noteID && !block.Copy {
+			adopted[i] = src.ID
 			continue
 		}
 		// Through the parent: material access itself refuses a trashed row.
-		if _, err := materialEffectiveAccess(ctx, tx, actorID, src.ParentMaterialID); errors.Is(err, ErrNotFound) {
-			continue
-		} else if err != nil {
-			return nil, err
-		}
-		content := src.Content
-		if src.Kind == "flashcards" {
-			if content, _, err = rewriteCardIDs("", content); err != nil {
+		if src.ParentMaterialID != noteID {
+			if _, err := materialEffectiveAccess(ctx, tx, actorID, src.ParentMaterialID); errors.Is(err, ErrNotFound) {
+				continue
+			} else if err != nil {
 				return nil, err
 			}
 		}
-		// The clone path's asset copy: the source's images under fresh ids.
-		assets, assetIDs, assetBytes, err := snapshotStandaloneCloneAssets(ctx, tx, src, nil, []string{src.Content})
-		if err != nil {
+		if adopted[i], err = s.copyEmbeddedTx(ctx, tx, actorID, payerID, locale, note, src, taken); err != nil {
 			return nil, err
 		}
-		if content, err = materialdoc.RewriteClonedEditorAssetIDs(content, assetIDs); err != nil {
-			return nil, err
-		}
-		paths := make([]string, len(assets))
-		for i, asset := range assets {
-			paths[i] = asset.objectPath
-		}
-		if err := lockCloneBlobPathsTx(ctx, tx, paths); err != nil {
-			return nil, err
-		}
-		title, err := disambiguateTitleTx(ctx, tx, note.WorkspaceID,
-			EmbeddedDraft{Kind: src.Kind}.title(note.Title, locale), taken)
-		if err != nil {
-			return nil, err
-		}
-		taken[strings.ToLower(title)] = true
-		id, err := s.createMaterialTx(ctx, tx, Material{
-			CreatedBy: actorID, WorkspaceID: note.WorkspaceID, WorkspaceName: note.WorkspaceName,
-			Kind: src.Kind, Title: title, Content: content, Privacy: "private", Color: src.Color,
-			ParentMaterialID: noteID,
-		})
-		if err != nil {
-			return nil, err
-		}
-		if err := s.gateStorageTx(ctx, tx, payerID, assetBytes); err != nil {
-			return nil, err
-		}
-		for _, asset := range assets {
-			if _, err := tx.Exec(ctx, `INSERT INTO editor_assets
-				(id, workspace_id, material_id, user_id, created_by, name, purpose, object_path,
-				 content_type, size_bytes, status, etag, completed_at)
-				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'ready',$11,now())`,
-				asset.newID, nullStr(note.WorkspaceID), id, payerID, actorID, asset.name, asset.purpose,
-				asset.objectPath, asset.contentType, asset.sizeBytes, nullStr(asset.etag)); err != nil {
-				return nil, err
-			}
-		}
-		adopted[src.ID] = id
 	}
 	return adopted, tx.Commit(ctx)
+}
+
+// copyEmbeddedTx copies src under note through the clone path: content with
+// fresh card ids, its images under fresh ids charged to payerID.
+func (s *Store) copyEmbeddedTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	actorID, payerID, locale string,
+	note, src Material,
+	taken map[string]bool,
+) (string, error) {
+	content := src.Content
+	var err error
+	if src.Kind == "flashcards" {
+		if content, _, err = rewriteCardIDs("", content); err != nil {
+			return "", err
+		}
+	}
+	assets, assetIDs, assetBytes, err := snapshotStandaloneCloneAssets(ctx, tx, src, nil, []string{src.Content})
+	if err != nil {
+		return "", err
+	}
+	if content, err = materialdoc.RewriteClonedEditorAssetIDs(content, assetIDs); err != nil {
+		return "", err
+	}
+	paths := make([]string, len(assets))
+	for i, asset := range assets {
+		paths[i] = asset.objectPath
+	}
+	if err := lockCloneBlobPathsTx(ctx, tx, paths); err != nil {
+		return "", err
+	}
+	title, err := disambiguateTitleTx(ctx, tx, note.WorkspaceID,
+		EmbeddedDraft{Kind: src.Kind}.title(note.Title, locale), taken)
+	if err != nil {
+		return "", err
+	}
+	taken[strings.ToLower(title)] = true
+	id, err := s.createMaterialTx(ctx, tx, Material{
+		CreatedBy: actorID, WorkspaceID: note.WorkspaceID, WorkspaceName: note.WorkspaceName,
+		Kind: src.Kind, Title: title, Content: content, Privacy: "private", Color: src.Color,
+		ParentMaterialID: note.ID,
+	})
+	if err != nil {
+		return "", err
+	}
+	if err := s.gateStorageTx(ctx, tx, payerID, assetBytes); err != nil {
+		return "", err
+	}
+	for _, asset := range assets {
+		if _, err := tx.Exec(ctx, `INSERT INTO editor_assets
+			(id, workspace_id, material_id, user_id, created_by, name, purpose, object_path,
+			 content_type, size_bytes, status, etag, completed_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'ready',$11,now())`,
+			asset.newID, nullStr(note.WorkspaceID), id, payerID, actorID, asset.name, asset.purpose,
+			asset.objectPath, asset.contentType, asset.sizeBytes, nullStr(asset.etag)); err != nil {
+			return "", err
+		}
+	}
+	return id, nil
 }
 
 func (draft EmbeddedDraft) content() (string, error) {

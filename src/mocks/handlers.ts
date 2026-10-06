@@ -5,6 +5,7 @@ import {
   createSourceUploadBodyNameMax,
 } from '@/api/gen/validators';
 import type {
+  AdoptEmbeddedMaterialsReq,
   Chapter,
   EditableQuiz,
   Flashcard,
@@ -1857,9 +1858,10 @@ export const handlers = [
     db.materials.unshift(mt);
     return HttpResponse.json(mt, { status: 201 });
   }),
-  // Pasted quiz and flashcard blocks: the note's own row keeps its id, another
-  // note's becomes a copy under this note (fresh card ids), anything else is
-  // left out so the editor removes the block.
+  // Pasted quiz and flashcard blocks: the note's own row keeps its id unless
+  // the block asks for a copy, another note's becomes a copy under this note
+  // (fresh card ids), anything else is left out so the editor removes the
+  // block.
   http.post(
     '/api/materials/:id/embedded/adopt',
     async ({ params, request }) => {
@@ -1867,9 +1869,9 @@ export const handlers = [
         (x) => x.id === params.id && x.kind === 'note' && !x.parentMaterialId
       );
       if (!note) return new HttpResponse(null, { status: 404 });
-      const { materialIds = [] } = (await request.json().catch(() => ({}))) as {
-        materialIds?: string[];
-      };
+      const { materials: blocks = [] } = (await request
+        .json()
+        .catch(() => ({}))) as Partial<AdoptEmbeddedMaterialsReq>;
       const rekey = (node: unknown): unknown => {
         if (Array.isArray(node)) return node.map(rekey);
         if (!node || typeof node !== 'object') return node;
@@ -1878,22 +1880,33 @@ export const handlers = [
         );
         return copy.type === 'flashcard' ? { ...copy, id: uid('card') } : copy;
       };
-      const materials = materialIds.map((sourceId) => {
+      const materials = blocks.map(({ copy, materialId: sourceId }) => {
         const source = db.materials.find((x) => x.id === sourceId);
-        if (source?.parentMaterialId === note.id)
+        if (source?.parentMaterialId === note.id && !copy)
           return { materialId: sourceId, sourceId };
         if (
           !source?.parentMaterialId ||
           (source.kind !== 'quiz' && source.kind !== 'flashcards')
         )
           return { sourceId };
+        // Numbered like the server, so each copy is told apart.
+        const base = `${note.title} · ${source.kind === 'quiz' ? 'Quiz' : 'Flashcards'}`;
+        let title = base;
+        for (
+          let n = 2;
+          db.materials.some(
+            (x) => x.workspaceId === note.workspaceId && x.title === title
+          );
+          n++
+        )
+          title = `${base} ${n}`;
         const mt = db.makeMaterial({
           ...source,
           content: rekey(source.content) as typeof source.content,
           createdAt: new Date().toISOString(),
           id: uid('mat'),
           parentMaterialId: note.id,
-          title: `${note.title} · ${source.kind === 'quiz' ? 'Quiz' : 'Flashcards'}`,
+          title,
           workspaceId: note.workspaceId,
           workspaceName: note.workspaceName,
         });

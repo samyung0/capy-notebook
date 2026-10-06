@@ -1,4 +1,5 @@
 import { delay, HttpResponse, http, type RequestHandler } from 'msw';
+import type { AdoptEmbeddedMaterialsReq } from '@/api/types';
 import { PLAN_LIMITS } from '@/features/billing/planLimits';
 import { learnerView } from './answerKeys';
 import { chatFixtureOptions, chatFixtures } from './chatFixtures';
@@ -941,10 +942,11 @@ function viewOnlyContent(scope: 'own' | 'member'): RequestHandler[] {
         /^POST \/api\/workspaces\/([^/]+)\/(materials|sources|sources\/import|generate)$/.exec(
           route
         )?.[1];
-      const embedded =
-        /^POST \/api\/materials\/([^/]+)\/embedded(?:\/adopt)?$/.exec(
-          route
-        )?.[1];
+      const embedded = /^POST \/api\/materials\/([^/]+)\/embedded$/.exec(
+        route
+      )?.[1];
+      const adoptInto =
+        /^POST \/api\/materials\/([^/]+)\/embedded\/adopt$/.exec(route)?.[1];
       const standalone = /^POST \/api\/(materials|quizzes|flashcards)$/.test(
         route
       );
@@ -958,6 +960,19 @@ function viewOnlyContent(scope: 'own' | 'member'): RequestHandler[] {
         (!!content && paysFor(content.workspaceId)) ||
         (into !== undefined && paysFor(into)) ||
         (embedded !== undefined && paysFor(find(embedded)?.workspaceId)) ||
+        // Adopting fails only when it copies: a block asking for one, or
+        // another note's quiz.
+        (adoptInto !== undefined &&
+          paysFor(find(adoptInto)?.workspaceId) &&
+          !!(
+            (await request
+              .clone()
+              .json()
+              .catch(() => null)) as Partial<AdoptEmbeddedMaterialsReq> | null
+          )?.materials?.some(
+            ({ copy, materialId }) =>
+              copy || find(materialId)?.parentMaterialId !== adoptInto
+          )) ||
         (standalone &&
           paysFor(
             (

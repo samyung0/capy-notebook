@@ -15,6 +15,7 @@ export * from './activityBlockOutcome.ts';
 export * from './activityCapture.ts';
 export * from './addChapterReq.ts';
 export * from './adoptedEmbeddedMaterial.ts';
+export * from './adoptEmbeddedMaterial.ts';
 export * from './adoptEmbeddedMaterialsReq.ts';
 export * from './adoptEmbeddedMaterialsResp.ts';
 export * from './agentOperation.ts';

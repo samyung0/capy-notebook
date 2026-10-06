@@ -395,13 +395,17 @@ func (a *api) adoptEmbeddedMaterials(ctx context.Context, in *adoptEmbeddedMater
 	if err := a.assertMaterialOwner(ctx, in.ID); err != nil {
 		return nil, collaborationError(err)
 	}
-	adopted, err := a.s.AdoptEmbeddedMaterials(ctx, userID(ctx), in.ID, in.Body.MaterialIDs)
+	blocks := make([]store.EmbeddedAdoption, len(in.Body.Materials))
+	for i, block := range in.Body.Materials {
+		blocks[i] = store.EmbeddedAdoption{SourceID: block.MaterialID, Copy: block.Copy}
+	}
+	adopted, err := a.s.AdoptEmbeddedMaterials(ctx, userID(ctx), in.ID, blocks)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	out := make([]apimodel.AdoptedEmbeddedMaterial, len(in.Body.MaterialIDs))
-	for i, sourceID := range in.Body.MaterialIDs {
-		out[i] = apimodel.AdoptedEmbeddedMaterial{SourceID: sourceID, MaterialID: adopted[sourceID]}
+	out := make([]apimodel.AdoptedEmbeddedMaterial, len(blocks))
+	for i, block := range blocks {
+		out[i] = apimodel.AdoptedEmbeddedMaterial{SourceID: block.SourceID, MaterialID: adopted[i]}
 	}
 	return &adoptEmbeddedMaterialsOutput{Body: apimodel.AdoptEmbeddedMaterialsResp{Materials: out}}, nil
 }

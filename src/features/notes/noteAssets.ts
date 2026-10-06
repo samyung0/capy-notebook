@@ -7,8 +7,14 @@ import {
   uploadEditorAsset,
 } from '@/api/editorAssets';
 import { queryClient, showErrorToast } from '@/api/queryClient';
-import type { AdoptEmbeddedMaterialsResp } from '@/api/types';
-import { isMaterialRefElement } from '@/features/materials/document';
+import type {
+  AdoptEmbeddedMaterialsReq,
+  AdoptEmbeddedMaterialsResp,
+} from '@/api/types';
+import {
+  isMaterialRefElement,
+  type MaterialRefElement,
+} from '@/features/materials/document';
 import { shownAssetUrl } from '@/features/materials/MediaAssetView';
 import { deferStorageRefusal } from '@/lib/errors';
 import { dropKeptAssets, keepAsset, keptAsset } from '@/lib/localDb';
@@ -25,7 +31,8 @@ import { dropKeptAssets, keepAsset, keptAsset } from '@/lib/localDb';
  *   of the undo history.
  * Quiz and flashcard reference blocks follow the same rule: one a change
  * inserts is adopted too, and points at the note's own copy, or is removed
- * when its original cannot be read.
+ * when its original cannot be read. Every block has its own quiz, so when a
+ * change leaves one quiz in several blocks, all but one ask for a copy.
  */
 
 /** The parts of a Slate operation that can carry media nodes. */
@@ -166,24 +173,50 @@ export function swapAssetId(editor: SlateEditor, from: string, to: string) {
   else swap();
 }
 
-/** Point every reference block using `from` at `to`, or remove those blocks
- * when there is no `to`, outside the undo history. */
-export function swapMaterialRef(
+/** A quiz or flashcard reference block, by its block id. */
+export interface RefBlock {
+  blockId: string;
+  materialId: string;
+}
+
+/** One adopt request per block whose quiz a change inserted, in document
+ * order. A quiz now in several blocks stays with one of them, the first that
+ * existed before the change (it keeps its attempts and history) or else the
+ * first in the document; every other block asks for a copy. */
+export function refAdoptions(
+  blocks: readonly RefBlock[],
+  existed: ReadonlySet<string>
+) {
+  const kept = new Map<string, string>();
+  for (const { blockId, materialId } of blocks)
+    if (existed.has(blockId) && !kept.has(materialId))
+      kept.set(materialId, blockId);
+  for (const { blockId, materialId } of blocks)
+    if (!kept.has(materialId)) kept.set(materialId, blockId);
+  return blocks.map((block) => ({
+    ...block,
+    copy: kept.get(block.materialId) !== block.blockId,
+  }));
+}
+
+/** Point each reference block at its new material, or remove it when there
+ * is none, outside the undo history. Blocks are found by block id: several
+ * may share a material id. */
+export function repointMaterialRefs(
   editor: SlateEditor,
-  from: string,
-  to?: string
+  targets: ReadonlyMap<string, string | undefined>
 ) {
   const paths = [
-    ...editor.api.nodes({
+    ...editor.api.nodes<MaterialRefElement>({
       at: [],
-      match: (node) => isMaterialRefElement(node) && node.materialId === from,
+      match: (node) => isMaterialRefElement(node) && targets.has(node.id),
     }),
-  ].map(([, path]) => path);
+  ].map(([node, path]) => [targets.get(node.id), path] as const);
   if (!paths.length) return;
   const swap = () =>
     editor.tf.withoutNormalizing(() => {
       // Last first, so removing one does not shift the paths still to go.
-      for (const path of paths.reverse()) {
+      for (const [to, path] of paths.reverse()) {
         if (to) editor.tf.setNodes({ materialId: to }, { at: path });
         else editor.tf.removeNodes({ at: path });
       }
@@ -192,6 +225,17 @@ export function swapMaterialRef(
     YHistoryEditor.withoutSaving(editor, swap);
   else swap();
 }
+
+/** Block ids of the reference blocks in the document. */
+const refBlockIds = (editor: SlateEditor) =>
+  new Set(
+    [
+      ...editor.api.nodes<MaterialRefElement>({
+        at: [],
+        match: isMaterialRefElement,
+      }),
+    ].map(([node]) => node.id)
+  );
 
 const LOCK_PREFIX = 'capy-kept-assets:';
 let swept = false;
@@ -251,6 +295,8 @@ export function watchNoteAssets(editor: SlateEditor, materialId: string) {
   const session = openSession();
   const keeping = new Map<string, Promise<void>>();
   let operations: AssetOperation[] = [];
+  // Reference blocks before the batch's first inserted one.
+  let refsBefore: Set<string> | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
 
@@ -315,22 +361,25 @@ export function watchNoteAssets(editor: SlateEditor, materialId: string) {
     }
   };
 
-  // The note's own quiz keeps its id (a cut and paste in this note); another
-  // note's becomes this note's copy, images included, and one this user
-  // cannot read is removed from the paste.
-  const adoptRefs = async (ids: string[]) => {
+  // The note's own quiz keeps its id (a cut and paste in this note) unless
+  // the block asks for a copy; another note's becomes this note's copy,
+  // images included, and one this user cannot read is removed from the paste.
+  const adoptRefs = async (blocks: ReturnType<typeof refAdoptions>) => {
+    const body: AdoptEmbeddedMaterialsReq = {
+      materials: blocks.map(({ copy, materialId }) => ({ copy, materialId })),
+    };
     const { materials } = await api.post<AdoptEmbeddedMaterialsResp>(
       `/materials/${encodeURIComponent(materialId)}/embedded/adopt`,
-      { materialIds: ids }
+      body
     );
     if (disposed) return;
-    let copied = false;
-    for (const { materialId: adopted, sourceId } of materials) {
-      if (adopted === sourceId) continue;
-      copied ||= Boolean(adopted);
-      swapMaterialRef(editor, sourceId, adopted);
-    }
-    if (copied)
+    const targets = new Map<string, string | undefined>();
+    materials.forEach(({ materialId: adopted }, i) => {
+      if (adopted !== blocks[i].materialId)
+        targets.set(blocks[i].blockId, adopted);
+    });
+    repointMaterialRefs(editor, targets);
+    if ([...targets.values()].some(Boolean))
       void queryClient.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
   };
 
@@ -344,14 +393,35 @@ export function watchNoteAssets(editor: SlateEditor, materialId: string) {
   const flush = () => {
     timer = undefined;
     const { added, nodes, refs, removed } = assetChanges(operations);
+    const existed = refsBefore ?? new Set<string>();
     operations = [];
+    refsBefore = undefined;
     for (const id of removed) keep(id, nodes.get(id));
     if (added.length) adopt(added).catch(report);
-    for (let start = 0; start < refs.length; start += ADOPT_REFS_BATCH)
-      adoptRefs(refs.slice(start, start + ADOPT_REFS_BATCH)).catch(report);
+    if (!refs.length) return;
+    const inserted = new Set(refs);
+    const blocks = refAdoptions(
+      [
+        ...editor.api.nodes<MaterialRefElement>({
+          at: [],
+          match: (node) =>
+            isMaterialRefElement(node) && inserted.has(node.materialId),
+        }),
+      ].map(([node]) => ({ blockId: node.id, materialId: node.materialId })),
+      existed
+    );
+    for (let start = 0; start < blocks.length; start += ADOPT_REFS_BATCH)
+      adoptRefs(blocks.slice(start, start + ADOPT_REFS_BATCH)).catch(report);
   };
 
   const stop = listenAssetOperations(editor, (operation) => {
+    // Heard before it applies: the blocks a pasted quiz may share its id with.
+    if (
+      !refsBefore &&
+      operation.type === 'insert_node' &&
+      assetChanges([operation]).refs.length
+    )
+      refsBefore = refBlockIds(editor);
     operations.push(operation);
     timer ??= setTimeout(flush, FLUSH_MS);
   });

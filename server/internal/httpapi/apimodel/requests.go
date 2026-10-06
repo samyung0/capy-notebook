@@ -103,10 +103,17 @@ type CreateEmbeddedMaterialReq struct {
 }
 
 // AdoptEmbeddedMaterialsReq is the body for POST
-// /api/materials/{id}/embedded/adopt: the materialIds of quiz and flashcard
-// blocks just pasted into the note {id}.
+// /api/materials/{id}/embedded/adopt: one entry per quiz or flashcard block
+// just pasted into the note {id}.
 type AdoptEmbeddedMaterialsReq struct {
-	MaterialIDs []string `json:"materialIds" minItems:"1" maxItems:"20" uniqueItems:"true" nullable:"false"`
+	Materials []AdoptEmbeddedMaterial `json:"materials" minItems:"1" maxItems:"20" nullable:"false"`
+}
+
+// AdoptEmbeddedMaterial is one pasted block's reference. Copy asks for a copy
+// even of the note's own row, for a block whose quiz another block keeps.
+type AdoptEmbeddedMaterial struct {
+	MaterialID string `json:"materialId" minLength:"1"`
+	Copy       bool   `json:"copy,omitempty"`
 }
 
 // AdoptedEmbeddedMaterial is the note's own material for one pasted source;
@@ -116,7 +123,7 @@ type AdoptedEmbeddedMaterial struct {
 	MaterialID string `json:"materialId,omitempty"`
 }
 
-// AdoptEmbeddedMaterialsResp has one entry per requested id, in request order.
+// AdoptEmbeddedMaterialsResp has one entry per requested block, in request order.
 type AdoptEmbeddedMaterialsResp struct {
 	Materials []AdoptedEmbeddedMaterial `json:"materials" nullable:"false"`
 }

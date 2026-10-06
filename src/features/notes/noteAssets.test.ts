@@ -13,8 +13,9 @@ import {
   listenAssetOperations,
   mediaPurpose,
   noteAssetsPlugin,
+  refAdoptions,
+  repointMaterialRefs,
   swapAssetId,
-  swapMaterialRef,
 } from './noteAssets';
 
 const image = (assetId: string) => ({
@@ -23,9 +24,9 @@ const image = (assetId: string) => ({
   id: `block-${assetId}`,
   type: 'img',
 });
-const quizRef = (materialId: string) => ({
+const quizRef = (materialId: string, id = `ref-${materialId}`) => ({
   children: [{ text: '' }],
-  id: `ref-${materialId}`,
+  id,
   materialId,
   refKind: 'quiz',
   type: 'material_ref',
@@ -157,23 +158,66 @@ describe('noteAssetsPlugin', () => {
   });
 });
 
-describe('swapMaterialRef', () => {
-  it('re-points or removes pasted references outside the undo history', () => {
+describe('refAdoptions', () => {
+  const block = (blockId: string, materialId: string) => ({
+    blockId,
+    materialId,
+  });
+
+  it('keeps a quiz with the block that had it and copies it for the others', () => {
+    // Pasted above and below the block that already had quiz a.
+    const blocks = [block('p1', 'a'), block('old', 'a'), block('p2', 'a')];
+    expect(
+      refAdoptions(blocks, new Set(['old'])).map(({ copy }) => copy)
+    ).toEqual([true, false, true]);
+  });
+
+  it('keeps the first block when every one is new', () => {
+    // Another note's quiz pasted twice, next to a single new paste.
+    const blocks = [block('p1', 'f'), block('p2', 'g'), block('p3', 'f')];
+    expect(refAdoptions(blocks, new Set()).map(({ copy }) => copy)).toEqual([
+      false,
+      false,
+      true,
+    ]);
+  });
+});
+
+describe('repointMaterialRefs', () => {
+  it('re-points or removes pasted blocks one by one outside the undo history', () => {
     const { editor, heard } = yjsEditor();
-    editor.tf.insertNodes([quizRef('copied'), quizRef('unreadable')] as never, {
-      at: [1],
-    });
+    editor.tf.insertNodes(
+      [
+        quizRef('own', 'first'),
+        quizRef('own', 'second'),
+        quizRef('gone'),
+      ] as never,
+      { at: [1] }
+    );
     YjsEditor.flushLocalChanges(editor);
-    expect(assetChanges(heard).refs).toEqual(['copied', 'unreadable']);
+    expect(assetChanges(heard).refs).toEqual(['own', 'gone']);
     editor.undoManager.stopCapturing();
     const undoSteps = editor.undoManager.undoStack.length;
     heard.length = 0;
 
-    swapMaterialRef(editor, 'copied', 'copy');
-    swapMaterialRef(editor, 'unreadable');
+    // Two blocks share a quiz: only the second one moves to the copy.
+    repointMaterialRefs(
+      editor,
+      new Map([
+        ['second', 'copy'],
+        ['ref-gone', undefined],
+      ])
+    );
     YjsEditor.flushLocalChanges(editor);
-    expect(editor.children).toHaveLength(2);
-    expect(editor.children[1]).toMatchObject({ materialId: 'copy' });
+    expect(editor.children).toHaveLength(3);
+    expect(editor.children[1]).toMatchObject({
+      id: 'first',
+      materialId: 'own',
+    });
+    expect(editor.children[2]).toMatchObject({
+      id: 'second',
+      materialId: 'copy',
+    });
     expect(editor.undoManager.undoStack).toHaveLength(undoSteps);
     expect(heard).toEqual([]);
 

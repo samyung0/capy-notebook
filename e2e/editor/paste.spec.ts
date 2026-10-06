@@ -109,4 +109,34 @@ test.describe('paste', () => {
     ).toBeVisible();
     await expect(editor.locator('.slate-material_ref')).toHaveCount(1);
   });
+
+  test('gives each pasted block of the same quiz its own copy', async ({
+    page,
+  }) => {
+    const editor = await openEmptyLine(page);
+    const ref = (id: string) => ({
+      children: [{ text: '' }],
+      id,
+      materialId: 'mat_embed_bio_note_quiz',
+      refKind: 'quiz',
+      type: 'material_ref',
+    });
+    const fragment = await page.evaluate(
+      (json) => btoa(encodeURIComponent(json)),
+      JSON.stringify([ref('block-one'), ref('block-two')])
+    );
+    await paste(editor, {
+      'application/x-slate-fragment': fragment,
+      'text/html': `<div data-slate-fragment="${fragment}">Quiz</div>`,
+      'text/plain': 'Quiz',
+    });
+
+    // Two quizzes, so the second copy is numbered.
+    await expect(
+      editor.getByText(`${EDITOR_NOTE.title} · Quiz`, { exact: true })
+    ).toBeVisible();
+    await expect(
+      editor.getByText(`${EDITOR_NOTE.title} · Quiz 2`, { exact: true })
+    ).toBeVisible();
+  });
 });
