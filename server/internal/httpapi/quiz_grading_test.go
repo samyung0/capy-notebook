@@ -223,7 +223,12 @@ func TestGradeAnonymousQuizCapsPerIP(t *testing.T) {
 	if rec := grade("198.51.100.4", `{"answers":{"nope":1}}`); rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("unknown part → %d", rec.Code)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/public/quizzes/"+token[:len(token)-1]+"x/grade", strings.NewReader(`{"answers":{}}`))
+	// Swap the signature's last character; a token already ending in "x" gets "y" instead.
+	forged := token[:len(token)-1] + "x"
+	if forged == token {
+		forged = token[:len(token)-1] + "y"
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/public/quizzes/"+forged+"/grade", strings.NewReader(`{"answers":{}}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
