@@ -217,6 +217,9 @@ export function PptxViewer({
     slide: number;
     rects: ReturnType<typeof slideCitationItems>[number]['rects'];
   } | null>(null);
+  // The highlight last scrolled into view: a zoomed slide scrolls to each new
+  // one once, as the DOCX viewer does.
+  const scrolledHighlightRef = useRef<typeof highlight>(null);
   useEffect(() => {
     setHighlight(null);
     if (!citation || !slides?.length) return;
@@ -282,6 +285,30 @@ export function PptxViewer({
         sizeCanvasForSlide(visibleCanvas, frame, dpr, scale);
         const visibleContext = visibleCanvas.getContext('2d');
         if (visibleContext) visibleContext.drawImage(renderCanvas, 0, 0);
+        const host = stageRef.current;
+        const [first] = highlight?.rects ?? [];
+        if (
+          highlight?.slide === slideIndex &&
+          scrolledHighlightRef.current !== highlight &&
+          host &&
+          first
+        ) {
+          scrolledHighlightRef.current = highlight;
+          const canvasBox = visibleCanvas.getBoundingClientRect();
+          const hostBox = host.getBoundingClientRect();
+          host.scrollTo(
+            host.scrollLeft +
+              canvasBox.left -
+              hostBox.left +
+              (first.x + first.w / 2) * scale -
+              host.clientWidth / 2,
+            host.scrollTop +
+              canvasBox.top -
+              hostBox.top +
+              (first.y + first.h / 2) * scale -
+              host.clientHeight / 2
+          );
+        }
         const analysis = pendingAnalysisRef.current;
         pendingAnalysisRef.current = null;
         if (analysis) onAnalysis(analysis);

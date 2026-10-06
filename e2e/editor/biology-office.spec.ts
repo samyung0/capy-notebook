@@ -995,6 +995,51 @@ test('an Office citation highlights its passage again after the runtime reloads'
   await expect.poll(place).toEqual(cited);
 });
 
+test('a PPTX citation on a zoomed slide scrolls into view', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await page.goto('/workspaces/ws_bio?file=bio-office-pptx');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 120_000,
+  });
+  await officeMenu(page, 'View').click();
+  await page.getByRole('menuitem', { name: 'Zoom' }).click();
+  await page
+    .getByRole('menuitemcheckbox', { exact: true, name: '200%' })
+    .click();
+  const scroller = frame.locator('.pptx-viewer-scroll');
+  // Where the scroller's centre is on the slide, in 200% pixels.
+  const centre = () =>
+    scroller.evaluate((node) => ({
+      x: node.scrollLeft + node.clientWidth / 2,
+      y: node.scrollTop + node.clientHeight / 2,
+    }));
+  await scroller.evaluate((node) => node.scrollTo(0, 0));
+  // Slide 1's UAT_RUN_MARKER line, centred across the 960x540 slide in a box
+  // from y 333 to 485, is out of view at 200% from the top-left.
+  await page.evaluate(() => {
+    const iframe = document.querySelector<HTMLIFrameElement>(
+      'iframe[src*="office-runtime"]'
+    );
+    if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
+    iframe.contentWindow.postMessage(
+      {
+        citation: { quote: 'UAT_RUN_MARKER' },
+        type: 'set-citation',
+        version: 8,
+      },
+      new URL(iframe.src).origin
+    );
+  });
+  await expect.poll(async () => (await centre()).y).toBeGreaterThan(666);
+  const { x, y } = await centre();
+  expect(Math.abs(x - 960)).toBeLessThan(40);
+  expect(y).toBeLessThan(970);
+});
+
 // A paused editor is read-only in every pause state; a replaced session is
 // the one the mocks drive.
 for (const [format, text] of [
