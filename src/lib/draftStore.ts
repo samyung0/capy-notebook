@@ -19,14 +19,6 @@ export type DraftRequest =
   | { op: 'read'; key: string }
   | { op: 'readBase'; key: string; base: string }
   | { op: 'delete'; rows: DraftRef[] }
-  /** A session's update rows up to `upTo`, and its state row when `state`. */
-  | {
-      op: 'deleteSession';
-      key: string;
-      session: string;
-      upTo: number;
-      state: boolean;
-    }
   /** Every row of a document; answers what was deleted, without the data. */
   | { op: 'deleteDocument'; key: string }
   | { op: 'mark'; key: string; ids: string[] }
@@ -259,18 +251,6 @@ function run(name: string, message: DraftRequest): Promise<unknown> {
             if (found?.seq === row.seq) deleteRow(stores, found);
           };
         }
-      });
-    case 'deleteSession':
-      return transact(name, 'readwrite', (stores) => {
-        eachRow(stores, message.key, (rows) => {
-          for (const row of rows)
-            if (
-              row.session === message.session &&
-              row.seq <= message.upTo &&
-              (row.kind === 'update' || message.state)
-            )
-              deleteRow(stores, row);
-        });
       });
     case 'deleteDocument': {
       const deleted: DeletedDraft[] = [];

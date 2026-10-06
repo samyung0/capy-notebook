@@ -553,23 +553,22 @@ export function recordDrafts({
     if (typeof window !== 'undefined')
       window.removeEventListener('pagehide', onPageHide);
   };
-  // Every row this session wrote or adopted.
-  const deleteOwnRows = () => {
-    const adoptedRows = pendingAdopted;
-    pendingAdopted = [];
-    return keep
-      ? Promise.all([
-          call({
-            key,
-            op: 'deleteSession',
-            session,
-            state: true,
-            upTo: Number.POSITIVE_INFINITY,
-          }),
-          deleteDrafts(adoptedRows),
-        ])
-      : Promise.resolve();
-  };
+  const updateRow = (seq: number): DraftRef => ({
+    id: `${session}:${seq}`,
+    key,
+    seq,
+  });
+  const stateRow = (seq: number): DraftRef => ({
+    id: `${session}:state`,
+    key,
+    seq,
+  });
+  // Every row this session wrote or adopted, as written.
+  const ownRows = () => [
+    ...updates.map((item) => updateRow(item.seq)),
+    ...(state ? [stateRow(state.seq)] : []),
+    ...pendingAdopted,
+  ];
 
   return {
     connected() {
@@ -588,37 +587,27 @@ export function recordDrafts({
     covered(seq: number) {
       if (seq <= covered) return Promise.resolve();
       covered = Math.min(seq, sequence);
+      const done: DraftRef[] = [...pendingAdopted];
+      pendingAdopted = [];
       updates = updates.filter((item) => {
         if (item.seq > covered) return true;
         updateBytes -= item.bytes;
+        done.push(updateRow(item.seq));
         return false;
       });
-      const stateDone = !!state && sequence <= covered;
-      if (stateDone) {
+      if (state && sequence <= covered) {
+        done.push(stateRow(state.seq));
         state = null;
         sinceState = 0;
       }
-      const adoptedRows = pendingAdopted;
-      pendingAdopted = [];
-      if (!keep) return Promise.resolve();
-      return write(
-        Promise.all([
-          call({
-            key,
-            op: 'deleteSession',
-            session,
-            state: stateDone,
-            upTo: covered,
-          }),
-          deleteDrafts(adoptedRows),
-        ])
-      );
+      return write(deleteDrafts(done));
     },
     /** Unsaved work is discarded (the room turned read-only, or recovery was
      * left): delete what this session wrote or adopted, and stop. */
     discard() {
+      const previous = ownRows();
       stop();
-      return write(deleteOwnRows());
+      return write(deleteDrafts(previous));
     },
     /** The room is unreachable: edits from now on are what this device alone
      * holds, so the whole document is written once and the bound applies. */
@@ -641,11 +630,12 @@ export function recordDrafts({
      * (shown for copying, never merged) and stop recording. Returns that
      * row, which a later delete (queued after the write) removes. */
     refuse(): DraftRef {
+      const previous = ownRows();
       const data = Y.encodeStateAsUpdate(doc);
       stop();
       const refused = row('state', sequence, data, true);
       void write(
-        Promise.all([deleteOwnRows(), putDrafts([refused], base?.bytes)])
+        Promise.all([deleteDrafts(previous), putDrafts([refused], base?.bytes)])
       );
       return refused;
     },
