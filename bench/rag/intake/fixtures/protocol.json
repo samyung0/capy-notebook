@@ -63,7 +63,7 @@
   },
   "requests": {
     "path": "bench/rag/intake/fixtures/requests.json",
-    "sha256": "e6d85f945242b52dad75694fa8fbf6603423a33e57a7769361bc655a35680d71",
+    "sha256": "89e2b1a6da5dad74fa247913c59a91d15374b694ec52be7c5476c68c34624fc5",
     "dev_repeat": true
   },
   "runs": {
