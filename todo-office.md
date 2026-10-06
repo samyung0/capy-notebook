@@ -136,6 +136,8 @@ check); it applies at the first promotion.
   `capy-docx-review-harnesses/2026-10-05-office-batch/opt-survey/PLAN.md`;
   tracks plate, clients-bench (bench fixes land first, incl. the stress job's
   upload path broken by 8c7d7199), office-save, docx-editor, xlsx-editor.
+  Epo widened it the same day: any measure, client or server, extreme ones
+  included (the collaboration server is to be rewritten in Rust on yrs).
 - **Office size limit** (decided 2026-10-05): refuse oversized Office files at
   upload, per format on the unzipped size of the XML parts only (Epo
   2026-10-06; media stays under the upload cap); numbers come from the
