@@ -3,6 +3,7 @@ package ops
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -15,6 +16,10 @@ type DatabaseRole string
 const (
 	ReadDatabaseRole  DatabaseRole = "read_auth"
 	AdminDatabaseRole DatabaseRole = "admin_actions"
+	// SecondaryReadDatabaseRole is the read role in another environment's
+	// database (OPS_INGEST_*_DATABASE_URL), which may lag a release: a table
+	// marked ifPresent may be missing there.
+	SecondaryReadDatabaseRole DatabaseRole = "read_auth_secondary"
 )
 
 type columnPrivilege struct {
@@ -26,9 +31,9 @@ type columnPrivilege struct {
 type tablePrivilege struct {
 	table     string
 	privilege string
-	// ifPresent: required only where the table exists. Ops validates other
-	// environments' databases (OPS_INGEST_*_DATABASE_URL) with the same
-	// contract, and those may not have run the table's migration yet.
+	// ifPresent: on a secondary database (SecondaryReadDatabaseRole), required
+	// only where the table exists, since that database may not have run the
+	// table's migration yet. The primary always requires it.
 	ifPresent bool
 }
 
@@ -502,9 +507,9 @@ func ValidateDatabaseRole(
 	}
 
 	switch role {
-	case ReadDatabaseRole:
+	case ReadDatabaseRole, SecondaryReadDatabaseRole:
 		problems = append(problems, validateRequiredColumns(ctx, pool, readRequiredPrivileges)...)
-		problems = append(problems, validateRequiredTables(ctx, pool, []tablePrivilege{
+		problems = append(problems, validateRequiredTables(ctx, pool, role == SecondaryReadDatabaseRole, []tablePrivilege{
 			{table: "ops_assistant_turns", privilege: "SELECT"},
 			{table: "edit_incidents", privilege: "SELECT", ifPresent: true},
 		})...)
@@ -610,15 +615,17 @@ func ValidateDatabaseRole(
 func validateRequiredTables(
 	ctx context.Context,
 	pool *pgxpool.Pool,
+	secondary bool,
 	requirements []tablePrivilege,
 ) []string {
 	var problems []string
 	for _, requirement := range requirements {
-		if requirement.ifPresent {
+		if secondary && requirement.ifPresent {
 			var exists bool
 			if err := pool.QueryRow(ctx,
 				`SELECT to_regclass($1) IS NOT NULL`, requirement.table,
 			).Scan(&exists); err == nil && !exists {
+				log.Printf("ops role check: %s is not in this secondary database yet; its grant is checked once it is migrated", requirement.table)
 				continue
 			}
 		}

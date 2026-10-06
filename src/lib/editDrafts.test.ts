@@ -22,6 +22,7 @@ import {
   readDraftBase,
   readDrafts,
   recordDrafts,
+  recoveryBase,
   recoveryDocument,
   reportRecoveryGroup,
   sameSourceLineage,
@@ -106,6 +107,63 @@ describe('the draft store', () => {
     expect(await readDrafts('u_sweep:material:kept')).toHaveLength(1);
     // Another account's rows are never checked.
     expect(await readDrafts('u_other:file:gone')).toHaveLength(1);
+  });
+
+  it('keeps a recovery group whose base read failed, and drops one whose base is gone', async () => {
+    const key = 'u_1:file:base';
+    const base = new Uint8Array([1, 2, 3]);
+    const lineage = 'source:f_1:epoch:1@sha_1';
+    await putDrafts(
+      [
+        draft('based', {
+          base: 'sha_1',
+          data: new Uint8Array(2),
+          key,
+          lineage,
+        }),
+      ],
+      base
+    );
+    const group = await readDrafts(key);
+    // The read fails once (a storage hiccup) while a delete would succeed:
+    // the group is unreadable, not missing, and stays for the next open.
+    const get = vi
+      .spyOn(IDBObjectStore.prototype, 'get')
+      .mockImplementationOnce(() => {
+        throw new DOMException('busy', 'UnknownError');
+      });
+    expect(await recoveryBase(group)).toBe('unreadable');
+    get.mockRestore();
+    expect(await readDrafts(key)).toHaveLength(1);
+    expect(await recoveryBase(group)).toEqual(base);
+    // A base this device never stored, or a row naming none, is missing.
+    expect(
+      await recoveryBase([draft('other', { base: 'sha_gone', key, lineage })])
+    ).toBe('missing');
+    expect(await recoveryBase([draft('bare', { key, lineage })])).toBe(
+      'missing'
+    );
+  });
+
+  it('counts only the lost rows another report does not have', async () => {
+    const key = 'u_1:file:counted';
+    await putDrafts([
+      draft('same', { data: new Uint8Array(4), key, lineage: 'room:1' }),
+      draft('other', { data: new Uint8Array(6), key, lineage: 'room:0' }),
+    ]);
+    const report = vi.fn();
+    await dropLostDrafts(
+      key,
+      'forbidden',
+      report,
+      (row) => row.lineage !== 'room:1'
+    );
+    expect(report).toHaveBeenCalledExactlyOnceWith(
+      'discard_unsaved',
+      'forbidden',
+      6
+    );
+    expect(await readDrafts(key)).toEqual([]);
   });
 
   it('reports lost drafts with their bytes, and nothing when there were none', async () => {

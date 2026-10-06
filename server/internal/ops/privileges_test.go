@@ -705,24 +705,28 @@ func TestForbiddenColumnProbeReportsGrantsAndSkipsDroppedColumns(t *testing.T) {
 	}
 }
 
-// edit_incidents is required only where its migration ran: ops also checks
-// other environments' databases, which may lag a release.
-func TestRequiredTablesSkipOnlyAnAbsentOptionalTable(t *testing.T) {
+// edit_incidents may be missing only on a secondary database, which can lag
+// a release; the primary always requires it.
+func TestRequiredTablesSkipAnAbsentOptionalTableOnlyOnASecondary(t *testing.T) {
 	ctx := context.Background()
 	owner, err := pgxpool.New(ctx, integrationDSN(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(owner.Close)
-	if problems := validateRequiredTables(ctx, owner, []tablePrivilege{
+	optional := []tablePrivilege{
 		{table: "edit_incidents_not_migrated", privilege: "SELECT", ifPresent: true},
 		{table: "edit_incidents", privilege: "SELECT", ifPresent: true},
-	}); len(problems) != 0 {
-		t.Fatalf("optional tables: %v", problems)
 	}
-	if problems := validateRequiredTables(ctx, owner, []tablePrivilege{
+	if problems := validateRequiredTables(ctx, owner, true, optional); len(problems) != 0 {
+		t.Fatalf("secondary: %v", problems)
+	}
+	if problems := validateRequiredTables(ctx, owner, false, optional); len(problems) != 1 {
+		t.Fatalf("primary with an absent table gave %v", problems)
+	}
+	if problems := validateRequiredTables(ctx, owner, true, []tablePrivilege{
 		{table: "edit_incidents_not_migrated", privilege: "SELECT"},
 	}); len(problems) != 1 {
-		t.Fatalf("a missing required table gave %v", problems)
+		t.Fatalf("a missing required table on a secondary gave %v", problems)
 	}
 }
