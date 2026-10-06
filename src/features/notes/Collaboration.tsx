@@ -3,7 +3,7 @@ import {
   slateRangeToRelativeRange,
   type YjsEditor,
 } from '@slate-yjs/core';
-import { NodeApi, type Path, RangeApi, type TElement } from 'platejs';
+import { NodeApi, type Path, PathApi, RangeApi, type TElement } from 'platejs';
 import {
   createPlatePlugin,
   type PlateElementProps,
@@ -707,6 +707,8 @@ function CommentEntry({
   );
 }
 
+// The comment ranges a node's decorate returns: those from its start path to
+// its end path, compared as paths (a block above either end compares equal).
 export function commentDecorationRangesForEntry(
   entry: [unknown, Path],
   decorations: Array<Record<string, unknown>>
@@ -716,9 +718,9 @@ export function commentDecorationRangesForEntry(
     const anchor = range.anchor as { path: Path } | undefined;
     const focus = range.focus as { path: Path } | undefined;
     if (!(anchor && focus)) return false;
-    const start = anchor.path.join('.');
-    const end = focus.path.join('.');
-    const current = path.join('.');
-    return current >= start && current <= end;
+    return (
+      PathApi.compare(path, anchor.path) >= 0 &&
+      PathApi.compare(path, focus.path) <= 0
+    );
   });
 }

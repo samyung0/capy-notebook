@@ -1161,8 +1161,9 @@ validation and are not rendered.
   (`getSelectionInformation`). Drops land where the pointer is and dragging
   auto-scrolls blocks into range, so the handle shows on hover and drag and
   drop work as before (`e2e/editor/block-interactions.spec.ts`).
-- Remote cursor decorations must match Slate paths structurally (not
-  dot-joined path strings). Shared-link editors may be absent from the
+- Remote cursor and comment decorations must match Slate paths structurally
+  (`Path.compare`, not dot-joined path strings, which put block 10 before
+  block 3). Shared-link editors may be absent from the
   workspace member directory, so cursor labels fall back to the authenticated
   user's name. Because decorations split text leaves, editor end navigation
   should use the Plate document API.
