@@ -19,6 +19,8 @@ export type OfficeMenuEntry =
       shortcut?: string;
       /** A toggle: drawn with a tick, unticked when false. */
       checked?: boolean;
+      /** One of an exclusive set: a radio item, ticked by `checked`. */
+      radio?: boolean;
       disabled?: boolean;
       icon?: IconName;
       /**
@@ -167,6 +169,7 @@ function isEntry(value: unknown, depth: number): value is OfficeMenuEntry {
       isText(entry.label) &&
       isOptional(entry.shortcut, 'string') &&
       isOptional(entry.checked, 'boolean') &&
+      isOptional(entry.radio, 'boolean') &&
       isOptional(entry.disabled, 'boolean') &&
       isOptionalIcon(entry.icon) &&
       (entry.pick === undefined || entry.pick === 'image')

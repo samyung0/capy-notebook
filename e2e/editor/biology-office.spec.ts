@@ -1439,7 +1439,7 @@ test('DOCX View › Show ruler is remembered, edit mode only, and stays usable w
 // Format › Table runs the table items in the engine: Auto-fit shrinks a new
 // table to its text and Center then moves it right; the ticks follow the
 // caret's table and a paused editor disables them all.
-test('DOCX Format › Table fits, centres and pins a table, and pauses with the editor', async ({
+test('DOCX Format › Table fits, centres and pins a table, a drag keeps the fit, and it pauses with the editor', async ({
   page,
 }) => {
   test.setTimeout(240_000);
@@ -1457,7 +1457,7 @@ test('DOCX Format › Table fits, centres and pins a table, and pauses with the 
   const table = async (
     item: string,
     choice?: string,
-    role: 'menuitem' | 'menuitemcheckbox' = 'menuitemcheckbox'
+    role: 'menuitem' | 'menuitemcheckbox' | 'menuitemradio' = 'menuitemcheckbox'
   ) => {
     await officeMenu(page, 'Format').click();
     await page.getByRole('menuitem', { exact: true, name: 'Table' }).click();
@@ -1482,18 +1482,17 @@ test('DOCX Format › Table fits, centres and pins a table, and pauses with the 
   await table('Auto-fit to contents', undefined, 'menuitem').then((item) =>
     item.click()
   );
-  const center = await table('Table alignment', 'Center');
+  const center = await table('Table alignment', 'Center', 'menuitemradio');
   await expect(center).toHaveAttribute('aria-checked', 'false');
   await center.click();
-  // The first column shrinks to "Cell" (the empty one keeps its width),
-  // so the centred table starts over 100px further right.
+  // The columns shrink to "Cell" and to the empty cell's margins, so the
+  // centred table starts over 100px further right.
   await expect
     .poll(async () => ((await cell.boundingBox())?.x ?? left) - left)
     .toBeGreaterThan(100);
-  await expect(await table('Table alignment', 'Center')).toHaveAttribute(
-    'aria-checked',
-    'true'
-  );
+  await expect(
+    await table('Table alignment', 'Center', 'menuitemradio')
+  ).toHaveAttribute('aria-checked', 'true');
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
   await expect(await table('Pin header row')).toHaveAttribute(
@@ -1502,6 +1501,25 @@ test('DOCX Format › Table fits, centres and pins a table, and pauses with the 
   );
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
+
+  // A column drag starts from the drawn columns: widening the last one keeps
+  // the first at its fitted width instead of snapping back to the old grid.
+  const edge = frame.locator('.layout-table-edge-handle-right').first();
+  const span = async () =>
+    ((await edge.boundingBox())?.x ?? Number.NaN) -
+    ((await cell.boundingBox())?.x ?? Number.NaN);
+  await expect.poll(span).toBeLessThan(150);
+  const before = await span();
+  const handle = await edge.boundingBox();
+  if (!handle) throw new Error('Missing the table edge handle');
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + 4);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2 + 40, handle.y + 4, {
+    steps: 5,
+  });
+  await page.mouse.up();
+  await expect.poll(span).toBeGreaterThan(before + 20);
+  expect(await span()).toBeLessThan(before + 60);
 
   await page.evaluate(() => {
     const iframe = document.querySelector<HTMLIFrameElement>(
