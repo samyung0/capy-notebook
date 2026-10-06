@@ -504,7 +504,11 @@ On a value change, edit mode debounces a `checkpoint-request` stateless message
 carrying a random receipt ID. The sidecar keeps the room's outstanding IDs in
 memory, claims them before it reads the document, and after binary persistence
 commits broadcasts `checkpoint-persisted` with those IDs, the stored version, and
-the current document metrics. Only that receipt changes the browser status to
+the current document metrics. IDs that arrived while that store ran are
+answered with it too when no writer's update followed its snapshot (no
+contributor marker is left): their edits are in it, and nothing would schedule
+another store for them. Otherwise the store that update scheduled claims them.
+Only that receipt changes the browser status to
 Saved. Receipts stay out of the Y.Doc deliberately: a marker written into the
 document would be an edit, so acknowledging it would dirty the room and force a
 second store and projection for every save. A request that finds nothing
