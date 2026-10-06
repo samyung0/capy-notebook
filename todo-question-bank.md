@@ -83,6 +83,9 @@ one topic.
 
 ## Next
 
+Deferred (Epo, 2026-10-06): all four items below wait for the question edit
+UI redesign, which Epo is doing in its own session.
+
 - [ ] **Epo's UAT review** of the 32 live questions. Open point: Health and
       medicine item 10, where the Not given / False call is close.
 - [ ] **Full run.** Decide the per-topic totals (exam share from the analyses
