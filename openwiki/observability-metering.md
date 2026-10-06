@@ -175,7 +175,10 @@ the API's schema again. A report is sent once and never retried (a failure is
 only logged); the file is not access-checked, so drafts of a file the account
 lost are reported too. The draft store (`src/lib/editDrafts.ts`) reports
 storage failures, offline episodes, lost drafts and recovery groups; the note
-and source editors report the rest. A tab closed while offline never reports
+and source editors report the rest. A browser row's unsaved bytes are the
+session's local updates no receipt covered plus the stored rows it adopted,
+for notes and sources alike (a source counted its whole state before
+2026-10-07). A tab closed while offline never reports
 that episode; its drafts come back on the next open, except when storage
 failed: a storage failure held offline is lost with the tab or the editor,
 and so are the edits it could not store. Unsaved bytes are what the drafts
