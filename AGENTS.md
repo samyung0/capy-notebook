@@ -41,7 +41,7 @@ Understand the following terms so we can communicate on the same page:
 
 ## Coding Rules
 
-- Read `human` skill for coding tasks. Read `ponytail` skill for coding styles. Read `unslop` skill for user-facing response.
+- Read `human` skill for coding tasks.
 - Keep things simple. Do not preserve existing complexity just because it already exists.
 - Do not introduce machinery because it looks architectually impressive. Understand the real constraint and push for the smallest model that solves the issue.
 - Tests are good, but endless smoke tests, "regression tests" for feature deletion, etc are not good. Make tests focused.
