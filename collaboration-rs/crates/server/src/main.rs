@@ -102,12 +102,17 @@ async fn serve(config: Config) -> Result<(), String> {
         "collaboration service listening",
         json!({ "address": address }),
     );
+    let stopping = app.clone();
+    // Upgraded sockets are not waited for: every room stores first, then the
+    // listener stops and the process exits (clients reconnect elsewhere).
     axum::serve(listener, http::router(app.clone()))
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(async move {
+            shutdown_signal().await;
+            log(Level::Info, "flushing collaboration documents", json!({}));
+            shutdown(&stopping).await;
+        })
         .await
         .map_err(|error| error.to_string())?;
-    log(Level::Info, "flushing collaboration documents", json!({}));
-    shutdown(&app).await;
     Ok(())
 }
 

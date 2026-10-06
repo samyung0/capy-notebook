@@ -38,9 +38,11 @@ struct Server {
 impl Drop for Server {
     fn drop(&mut self) {
         let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
+#[allow(clippy::zombie_processes)]
 async fn start(env: &Env) -> Server {
     let port = 46_000 + (std::process::id() % 1000) as u16;
     let child = Command::new(env!("CARGO_BIN_EXE_capy-collaboration"))
@@ -116,7 +118,11 @@ fn token(room: &str, user: &str, access: &str) -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|elapsed| elapsed.as_secs() as i64)
         .unwrap_or(0);
-    let schema: i64 = room.rsplit(':').next().and_then(|n| n.parse().ok()).unwrap_or(1);
+    let schema: i64 = room
+        .rsplit(':')
+        .next()
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(1);
     let claims = serde_json::json!({
         "access": access, "aud": "capy-collaboration", "exp": now + 300, "iat": now,
         "iss": "capy-api", "jti": format!("t_{now}_{user}"), "room": room, "schema": schema, "sub": user,
@@ -190,9 +196,15 @@ struct Client {
 
 impl Client {
     async fn open(port: u16) -> Self {
-        let mut request = format!("ws://127.0.0.1:{port}/").into_client_request().expect("request");
-        request.headers_mut().insert("origin", ORIGIN.parse().expect("origin"));
-        let (ws, _) = tokio_tungstenite::connect_async(request).await.expect("connect");
+        let mut request = format!("ws://127.0.0.1:{port}/")
+            .into_client_request()
+            .expect("request");
+        request
+            .headers_mut()
+            .insert("origin", ORIGIN.parse().expect("origin"));
+        let (ws, _) = tokio_tungstenite::connect_async(request)
+            .await
+            .expect("connect");
         Client {
             ws,
             doc: Doc::with_options(ydoc::doc_options(0)),
@@ -201,7 +213,10 @@ impl Client {
     }
 
     async fn send(&mut self, kind: u8, payload: &[u8]) {
-        self.ws.send(Ws::Binary(frame(1, kind, payload).into())).await.expect("send");
+        self.ws
+            .send(Ws::Binary(frame(1, kind, payload).into()))
+            .await
+            .expect("send");
     }
 
     async fn join(&mut self, room: &str, token: &str) {
@@ -218,7 +233,10 @@ impl Client {
         }
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         loop {
-            let next = tokio::time::timeout_at(deadline, self.ws.next()).await.ok()??.ok()?;
+            let next = tokio::time::timeout_at(deadline, self.ws.next())
+                .await
+                .ok()??
+                .ok()?;
             let Ws::Binary(bytes) = next else { continue };
             let mut at = 0;
             let mut found = None;
@@ -257,7 +275,10 @@ impl Client {
             let diff = self.doc.transact().encode_state_as_update_v1(&sv);
             self.send(5, &sync(1, &diff)).await;
         } else {
-            self.doc.transact_mut().apply_update(Update::decode_v1(&body).expect("update")).expect("apply");
+            self.doc
+                .transact_mut()
+                .apply_update(Update::decode_v1(&body).expect("update"))
+                .expect("apply");
         }
     }
 
@@ -273,8 +294,7 @@ impl Client {
     fn text(&self) -> String {
         let root = self.doc.get_or_insert_text("content");
         let txn = self.doc.transact();
-        let out = root.get_string(&txn);
-        out
+        root.get_string(&txn)
     }
 
     /// Appends text to the first block (an XmlText inside `content`).
@@ -355,7 +375,10 @@ async fn two_clients_converge_without_echo_and_the_store_appends_a_row() {
     assert!(receipt.contains("\"r1\""), "{receipt}");
     let client = db(&env).await;
     let rows: i64 = client
-        .query_one("SELECT count(*) FROM material_yjs_updates WHERE material_id=$1", &[&material])
+        .query_one(
+            "SELECT count(*) FROM material_yjs_updates WHERE material_id=$1",
+            &[&material],
+        )
         .await
         .expect("rows")
         .get(0);
@@ -381,7 +404,10 @@ async fn a_reopened_room_replays_its_log_and_folds_it_once_empty() {
     tokio::time::sleep(Duration::from_millis(1500)).await;
     let client = db(&env).await;
     let rows: i64 = client
-        .query_one("SELECT log_rows FROM material_yjs_documents WHERE material_id=$1", &[&material])
+        .query_one(
+            "SELECT log_rows FROM material_yjs_documents WHERE material_id=$1",
+            &[&material],
+        )
         .await
         .expect("row")
         .get::<_, i32>(0)
@@ -433,7 +459,10 @@ async fn redis_comments_and_user_evictions_reach_the_room() {
     client.joined(&room, &token(&room, &user, "write")).await;
     client.until(6).await;
     let redis = redis::Client::open(env.redis.as_str()).expect("redis");
-    let mut connection = redis.get_multiplexed_async_connection().await.expect("redis connection");
+    let mut connection = redis
+        .get_multiplexed_async_connection()
+        .await
+        .expect("redis connection");
     let comments = serde_json::json!({ "room": room, "threadId": "t1" }).to_string();
     let _: i64 = redis::cmd("PUBLISH")
         .arg("capy:collaboration:comments")
