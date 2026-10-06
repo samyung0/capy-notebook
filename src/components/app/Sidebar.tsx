@@ -18,52 +18,70 @@ interface NavItem {
   to: string;
 }
 
-function items(): { general: NavItem[]; tools: NavItem[]; bottom: NavItem[] } {
+function items(): {
+  sections: { label: string; items: NavItem[] }[];
+  bottom: NavItem[];
+} {
   return {
     bottom: [
       { icon: 'settings', label: m.profile_menu_settings(), to: '/settings' },
       { icon: 'book', label: m.nav_help_legal(), to: '/help-and-legal' },
     ],
-    general: [
-      { exact: true, icon: 'dashboard', label: m.nav_dashboard(), to: '/' },
-      { icon: 'workspaces', label: m.nav_workspaces(), to: '/workspaces' },
-      ...(features.schedule
-        ? [
-            {
-              icon: 'schedule' as IconName,
-              label: m.nav_schedule(),
-              to: '/schedule',
-            },
-          ]
-        : []),
-      ...(features.explore
-        ? [
-            {
-              icon: 'globe' as IconName,
-              label: m.nav_explore(),
-              to: '/explore',
-            },
-          ]
-        : []),
-    ],
-    tools: [
-      { icon: 'circleCheck', label: m.nav_learning(), to: '/learning' },
-      { icon: 'quiz', label: m.question_ui_question_bank(), to: '/bank' },
-      { icon: 'files', label: m.nav_files(), to: '/files' },
-      ...(features.tasks
-        ? [{ icon: 'todo' as IconName, label: m.nav_tasks(), to: '/tasks' }]
-        : []),
-      ...(features.thinking
-        ? [
-            {
-              icon: 'notes' as IconName,
-              label: m.nav_thinking(),
-              to: '/thinking',
-            },
-          ]
-        : []),
+    sections: [
+      { items: general(), label: m.nav_section_general() },
+      { items: tools(), label: m.nav_section_tools() },
+      {
+        items: [
+          { icon: 'quiz', label: m.question_ui_question_bank(), to: '/bank' },
+        ],
+        label: m.nav_section_explore(),
+      },
     ],
   };
+}
+
+function general(): NavItem[] {
+  return [
+    { exact: true, icon: 'dashboard', label: m.nav_dashboard(), to: '/' },
+    { icon: 'workspaces', label: m.nav_workspaces(), to: '/workspaces' },
+    ...(features.schedule
+      ? [
+          {
+            icon: 'schedule' as IconName,
+            label: m.nav_schedule(),
+            to: '/schedule',
+          },
+        ]
+      : []),
+    ...(features.explore
+      ? [
+          {
+            icon: 'globe' as IconName,
+            label: m.nav_explore(),
+            to: '/explore',
+          },
+        ]
+      : []),
+  ];
+}
+
+function tools(): NavItem[] {
+  return [
+    { icon: 'circleCheck', label: m.nav_learning(), to: '/learning' },
+    { icon: 'files', label: m.nav_files(), to: '/files' },
+    ...(features.tasks
+      ? [{ icon: 'todo' as IconName, label: m.nav_tasks(), to: '/tasks' }]
+      : []),
+    ...(features.thinking
+      ? [
+          {
+            icon: 'notes' as IconName,
+            label: m.nav_thinking(),
+            to: '/thinking',
+          },
+        ]
+      : []),
+  ];
 }
 
 function isActive(pathname: string, item: NavItem): boolean {
@@ -86,7 +104,7 @@ function Row({
     <Link
       className={cn(
         BASE_BUTTON_STYLE,
-        'flex h-fit justify-start px-0 py-0 leading-(--body-line-height) transition-transform active:-rotate-1',
+        'flex h-fit justify-start px-0 py-0 leading-(--body-line-height) active:-rotate-1',
         collapsed ? 'h-10 w-10 justify-center' : 'w-full gap-3 px-3 py-2',
         active
           ? 'bg-action font-bold text-action-fg'
@@ -130,12 +148,18 @@ export function Sidebar({
         <nav>
           <LogoMark size={36} />
           <div className="h-2" />
-          {nav.general.map((i) => (
-            <Row active={isActive(pathname, i)} collapsed item={i} key={i.to} />
-          ))}
-          <div className="h-2" />
-          {nav.tools.map((i) => (
-            <Row active={isActive(pathname, i)} collapsed item={i} key={i.to} />
+          {nav.sections.map((section, index) => (
+            <div className="contents" key={section.label}>
+              {index > 0 && <div className="h-2" />}
+              {section.items.map((i) => (
+                <Row
+                  active={isActive(pathname, i)}
+                  collapsed
+                  item={i}
+                  key={i.to}
+                />
+              ))}
+            </div>
           ))}
           <div className="mt-auto" />
           {nav.bottom.map((i) => (
@@ -180,34 +204,29 @@ export function Sidebar({
           />
         </div>
 
-        <div className="t-label px-3 pt-0 pb-1.5 text-fg-muted">
-          {m.nav_section_general()}
-        </div>
-        <div className="flex flex-col gap-1">
-          {nav.general.map((i) => (
-            <Row
-              active={isActive(pathname, i)}
-              collapsed={false}
-              item={i}
-              key={i.to}
-              onNavigate={onNavigate}
-            />
-          ))}
-        </div>
-        <div className="t-label mt-4 px-3 pt-0 pb-1.5 text-fg-muted">
-          {m.nav_section_tools()}
-        </div>
-        <div className="flex flex-col gap-1">
-          {nav.tools.map((i) => (
-            <Row
-              active={isActive(pathname, i)}
-              collapsed={false}
-              item={i}
-              key={i.to}
-              onNavigate={onNavigate}
-            />
-          ))}
-        </div>
+        {nav.sections.map((section, index) => (
+          <div key={section.label}>
+            <div
+              className={cn(
+                't-label px-3 pt-0 pb-1.5 text-fg-muted',
+                index > 0 && 'mt-4'
+              )}
+            >
+              {section.label}
+            </div>
+            <div className="flex flex-col gap-1">
+              {section.items.map((i) => (
+                <Row
+                  active={isActive(pathname, i)}
+                  collapsed={false}
+                  item={i}
+                  key={i.to}
+                  onNavigate={onNavigate}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
 
         <div className="mt-auto" />
         <div className="mt-3 flex flex-col gap-1 border-divider border-t pt-2">

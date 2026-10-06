@@ -11,6 +11,11 @@ export interface BankCopyInputBody {
   /** Where a new quiz is filed; goes with quizName */
   chapterId?: string;
   /**
+     * Files a new quiz in the chapter of this name (any case), created when missing; goes with quizName, exclusive with chapterId
+     * @maxLength 60
+     */
+  chapterName?: string;
+  /**
      * Bank questions to copy, in this order
      * @minItems 1
      * @maxItems 20

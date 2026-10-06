@@ -26,7 +26,7 @@ import {
   type FilterSection,
   toggleValue,
 } from '@/components/app/ListToolbar';
-import { PageHeader, Panel } from '@/components/app/layout';
+import { PageHeader, Panel, PanelHeader } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { FloatingToolbar } from '@/components/ui/BlockToolbar';
@@ -76,6 +76,7 @@ import { QuizPageHeader } from '@/features/quizzes/QuizPage';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { CopyError, describeError } from '@/lib/errors';
+import { scrollIntoViewWithMotion } from '@/lib/scrollIntoViewWithMotion';
 
 const QuestionDialog = lazy(() =>
   import('@/features/questions/QuestionDialog').then((module) => ({
@@ -266,7 +267,7 @@ export default function QuestionBank() {
   function select(id: string) {
     setNavOpen(false);
     // The URL does not change for the current question, so scroll directly.
-    if (id === questionId) scrollToQuestion(scrollRef.current, id);
+    if (id === questionId) scrollToQuestion(id);
     void navigate({
       params: { questionId: id, topicId },
       replace: true,
@@ -393,7 +394,7 @@ export default function QuestionBank() {
         <TopInsetBar />
         <Panel
           className="hidden min-h-0 flex-1 lg:flex"
-          sectionClassName="h-full p-2.5"
+          sectionClassName="scroll-fade-y h-full px-2 py-5 [--scroll-fade-bottom-padding:--spacing(5)]"
         >
           {nav}
         </Panel>
@@ -655,19 +656,11 @@ export default function QuestionBank() {
 const questionElement = (id: string) =>
   document.querySelector(`[data-question-id="${CSS.escape(id)}"]`);
 
-/** Scrolls only the panel; scrollIntoView would also move the app shell when
- * the panel cannot scroll far enough. */
-function scrollToQuestion(container: HTMLElement | null, id: string) {
+/** Scrolls only the panel (scrollIntoView would also move the app shell when
+ * the panel cannot scroll far enough), with the editor TOC's motion. */
+function scrollToQuestion(id: string) {
   const element = questionElement(id);
-  if (!container || !element) return;
-  container.scrollTo({
-    behavior: 'smooth',
-    top:
-      container.scrollTop +
-      element.getBoundingClientRect().top -
-      container.getBoundingClientRect().top -
-      24,
-  });
+  if (element instanceof HTMLElement) scrollIntoViewWithMotion(element, 24);
 }
 
 /**
@@ -734,8 +727,8 @@ function BankQuestions({
     target < range.end &&
     details.slice(0, target - range.start + 1).every((query) => query.data);
   useEffect(() => {
-    if (targetReady) scrollToQuestion(scrollRef.current, questionId);
-  }, [questionId, targetReady, scrollRef]);
+    if (targetReady) scrollToQuestion(questionId);
+  }, [questionId, targetReady]);
 
   // Grow the window when its end comes within 800px of the viewport.
   const endRef = useRef<HTMLDivElement>(null);
@@ -990,35 +983,35 @@ function PanelHeading({
   searchLabel: string;
 }) {
   const [searching, setSearching] = useState(filter !== '');
-  return (
-    <div className="flex h-10 items-center gap-1 pl-1">
-      {searching ? (
-        <Input
-          actionCallback={() => {
-            onFilter('');
-            setSearching(false);
-          }}
-          actionIcon="x"
-          actionLabel={m.question_ui_close_search()}
-          aria-label={searchLabel}
-          autoFocus
-          leftIcon="search"
-          onChange={(event) => onFilter(event.target.value)}
-          placeholder={searchLabel}
-          size="sm"
-          value={filter}
-          wrapperClassName="w-full"
-        />
-      ) : (
-        <>
-          {leading}
-          <h2 className="t-subtitle mr-auto min-w-0 truncate pl-1">{title}</h2>
-          <ToolbarButton label={searchLabel} onClick={() => setSearching(true)}>
-            <Icon name="search" />
-          </ToolbarButton>
-        </>
-      )}
+  return searching ? (
+    <div className="px-2">
+      <Input
+        actionCallback={() => {
+          onFilter('');
+          setSearching(false);
+        }}
+        actionIcon="x"
+        actionLabel={m.question_ui_close_search()}
+        aria-label={searchLabel}
+        autoFocus
+        leftIcon="search"
+        onChange={(event) => onFilter(event.target.value)}
+        placeholder={searchLabel}
+        size="sm"
+        value={filter}
+        wrapperClassName="w-full"
+      />
     </div>
+  ) : (
+    <PanelHeader
+      actions={
+        <ToolbarButton label={searchLabel} onClick={() => setSearching(true)}>
+          <Icon name="search" />
+        </ToolbarButton>
+      }
+      leading={leading}
+      title={title}
+    />
   );
 }
 
@@ -1064,7 +1057,7 @@ function TopicTree({
       />
       {exams.map((exam) => (
         <div key={exam.id}>
-          <div className="t-label px-2 py-1.5 text-fg-muted">{exam.label}</div>
+          <div className="t-subtitle px-2 py-1.5">{exam.label}</div>
           {exam.subjects.map((subject) => (
             <details className="group" key={subject.id} open>
               <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-button px-2 py-1.5 hover:bg-surface-hover-bg [&::-webkit-details-marker]:hidden">
@@ -1147,7 +1140,6 @@ function TopicQuestions({
   onUnreviewed: (value: boolean) => void;
   onQuestion: (id: string) => void;
 }) {
-  const scores = Object.values(results ?? {});
   return (
     <nav aria-label={m.question_ui_questions()} className="flex flex-col gap-3">
       <PanelHeading
@@ -1157,7 +1149,7 @@ function TopicQuestions({
             label={m.question_ui_back_to_topics()}
             onClick={onBack}
           >
-            <Icon name="navigationBack" />
+            <Icon className="-translate-y-px" name="navigationBack" />
           </ToolbarButton>
         }
         onFilter={onFilter}
@@ -1190,14 +1182,6 @@ function TopicQuestions({
         )}
         <FilterPopover filters={filters} onResetFilters={onResetFilters} />
       </div>
-      {results && (
-        <p className="t-meta px-2 text-fg-muted">
-          {m.question_ui_correct_and_retry({
-            correct: scores.filter((score) => score >= 1).length,
-            retry: scores.filter((score) => score < 1).length,
-          })}
-        </p>
-      )}
       <ol className="grid gap-0.5">
         {rows.map((row) => (
           <li key={row.id}>

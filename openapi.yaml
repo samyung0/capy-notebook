@@ -423,6 +423,10 @@ components:
         chapterId:
           description: Where a new quiz is filed; goes with quizName
           type: string
+        chapterName:
+          description: Files a new quiz in the chapter of this name (any case), created when missing; goes with quizName, exclusive with chapterId
+          maxLength: 60
+          type: string
         questionIds:
           description: Bank questions to copy, in this order
           items:

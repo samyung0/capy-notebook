@@ -357,11 +357,14 @@ export const questionBankHandlers = [
   http.post('/api/bank/copy', async ({ request }) => {
     const body = (await request.json()) as BankCopyReq;
     const name = body.quizName?.trim() ?? '';
+    const chapterName = body.chapterName?.trim() ?? '';
     const found = body.questionIds.flatMap((id) => details.get(id) ?? []);
     if (
       !body.questionIds.length ||
       body.questionIds.length > 20 ||
-      !name === !body.quizId
+      !name === !body.quizId ||
+      ((body.chapterId || chapterName) && body.quizId) ||
+      (body.chapterId && chapterName)
     )
       return new HttpResponse(null, { status: 422 });
     if (found.length !== body.questionIds.length)
@@ -387,11 +390,33 @@ export const questionBankHandlers = [
       quiz.revision += 1;
       db.refreshMaterialContentBytes(quiz);
     } else {
+      // A typed chapter is reused in any case or created, as the server does.
+      let chapterId = body.chapterId ?? null;
+      if (chapterName) {
+        const existing = db.chapters.find(
+          (chapter) =>
+            chapter.workspaceId === ws.id &&
+            chapter.name.toLowerCase() === chapterName.toLowerCase()
+        );
+        chapterId = existing?.id ?? uid('ch');
+        if (!existing) {
+          db.chapters.push({
+            fileIds: [],
+            id: chapterId,
+            name: chapterName,
+            order: db.chapters.filter(
+              (chapter) => chapter.workspaceId === ws.id
+            ).length,
+            workspaceId: ws.id,
+          });
+          ws.chapterCount += 1;
+        }
+      }
       quizId = uid('qz');
       db.materials.unshift(
         db.makeMaterial({
           ...ownerAccess,
-          chapterId: body.chapterId ?? null,
+          chapterId,
           content: createMaterialDocument([
             quizNode({ questions: copies }, uid('quiz')),
           ]),

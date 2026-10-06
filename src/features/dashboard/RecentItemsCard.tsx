@@ -5,6 +5,7 @@ import {
   recentMaterialsQuery,
   useWorkspaces,
 } from '@/api/hooks';
+import { PanelHeader } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
@@ -74,7 +75,7 @@ export function RecentItemsCard() {
 
   return (
     <div className="flex h-full flex-col gap-3">
-      <h3 className="t-card-title px-4">{m.dashboard_recent()}</h3>
+      <PanelHeader title={m.dashboard_recent()} />
       {paused ? (
         <QueryPausedState className="h-full min-h-full flex-1" />
       ) : isLoading ? (

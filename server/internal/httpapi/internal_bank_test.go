@@ -185,6 +185,8 @@ func TestInternalBankListsReadsAndCopiesWithCredits(t *testing.T) {
 		{"questionIds": []string{"bq3"}, "workspaceId": "ws_e2e_private", "quizName": "T", "quizId": quizID},
 		{"questionIds": []string{"bq3"}, "workspaceId": "ws_e2e_private"},
 		{"questionIds": []string{"bq3"}, "workspaceId": "ws_e2e_private", "quizId": quizID, "chapterId": "ch_e2e_private"},
+		{"questionIds": []string{"bq3"}, "workspaceId": "ws_e2e_private", "quizId": quizID, "chapterName": "New"},
+		{"questionIds": []string{"bq3"}, "workspaceId": "ws_e2e_private", "quizName": "T", "chapterId": "ch_e2e_private", "chapterName": "New"},
 	} {
 		if code, _ := pageCopy("u_editor", refused); code != 422 {
 			t.Fatalf("page copy should refuse %v: %d", refused, code)
@@ -217,6 +219,29 @@ func TestInternalBankListsReadsAndCopiesWithCredits(t *testing.T) {
 	}
 	if merged := sent.Provenance.Questions; len(merged) != 2 || merged["bq1"].Web == nil || merged["bq3"].Web == nil {
 		t.Fatalf("page copy merged credits: %#v", sent.Provenance)
+	}
+	// A typed chapter is created with the new quiz, then reused in any case.
+	chapterOf := func(name, chapterName string) string {
+		t.Helper()
+		code, made := pageCopy("u_editor", map[string]any{"questionIds": []string{"bq2"}, "workspaceId": "ws_e2e_private",
+			"quizName": name, "chapterName": chapterName})
+		if code != 200 {
+			t.Fatalf("page copy with chapter %q: %d %v", chapterName, code, made)
+		}
+		quiz, err := st.GetMaterial(context.Background(), made["quizId"].(string))
+		if err != nil || quiz.ChapterID == nil {
+			t.Fatalf("quiz filed in %q: %v %+v", chapterName, err, quiz)
+		}
+		return *quiz.ChapterID
+	}
+	created := chapterOf("Named chapter", "  Bank picks ")
+	var chapterName string
+	if err := st.Pool().QueryRow(context.Background(), `SELECT name FROM chapters WHERE id=$1 AND workspace_id='ws_e2e_private'`, created).
+		Scan(&chapterName); err != nil || chapterName != "Bank picks" {
+		t.Fatalf("created chapter: %q %v", chapterName, err)
+	}
+	if reused := chapterOf("Same chapter", "BANK PICKS"); reused != created {
+		t.Fatalf("same-named chapter: %s, want %s", reused, created)
 	}
 
 	// The model's own writes still may not claim a question credit.

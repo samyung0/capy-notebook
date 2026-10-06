@@ -18,6 +18,7 @@ import { ButtonCard } from '../ui/ButtonCard';
 import { Card } from '../ui/Card';
 import { IconButton } from '../ui/IconButton';
 import { InputTitle } from '../ui/Input';
+import { PanelHeader } from './layout';
 
 const ThemeChooser = ({
   selected,
@@ -198,27 +199,30 @@ export function ThemeDrawer({
         <Card
           asChild
           className={cn(
-            'relative flex h-full min-w-62 shrink-0 items-stretch gap-0 overflow-y-auto bg-surface px-4 py-7.5 shadow-none',
+            'relative flex h-full min-w-62 shrink-0 items-stretch gap-0 overflow-y-auto bg-surface px-2 py-5 shadow-none',
             className
           )}
           radius="card-xl"
           theme="surface-dark"
         >
           <aside>
-            <DrawerClose
-              render={
-                <IconButton
-                  className="absolute top-5 right-4 z-10"
-                  icon="x"
-                  label={m.action_close()}
-                  size="md"
-                  variant="ghost-hover"
+            <PanelHeader
+              actions={
+                <DrawerClose
+                  render={
+                    <IconButton
+                      icon="x"
+                      label={m.action_close()}
+                      size="sm"
+                      variant="ghost-hover"
+                    />
+                  }
                 />
               }
+              title={m.settings_theme()}
             />
-            <div className="flex flex-col gap-6">
+            <div className="mt-8 flex flex-col gap-6 px-4">
               <div className="flex flex-col gap-8">
-                <p className="t-card-title">{m.settings_theme()}</p>
                 <div className="flex flex-col gap-3">
                   <InputTitle>{m.common_style()}</InputTitle>
                   <div className="grid w-full grid-cols-2 gap-3">

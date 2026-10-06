@@ -9,7 +9,7 @@ import (
 
 // resolveUploadChapterID validates an existing chapter or find-or-creates a
 // named chapter inside the caller's transaction. Locking the workspace row
-// serializes concurrent upload-created chapters with the same name.
+// serializes concurrent chapters created by name (uploads, bank copies).
 func resolveUploadChapterID(
 	ctx context.Context,
 	tx pgx.Tx,

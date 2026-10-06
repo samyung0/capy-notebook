@@ -1,11 +1,5 @@
 import { captureException } from '@sentry/react';
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { authHeaders, USE_MSW } from '@/api/auth';
 import { api } from '@/api/client';
@@ -20,7 +14,6 @@ import {
   useWorkspace,
 } from '@/api/hooks';
 import type {
-  Chapter,
   FileKind,
   InspectSourceImportsResponse,
   MicrosoftDriveHost,
@@ -37,7 +30,6 @@ import {
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
-import { Input } from '@/components/ui/Input';
 import {
   Popover,
   PopoverContent,
@@ -49,8 +41,6 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
-  SelectSeparator,
-  SelectTrigger,
   SelectValue,
 } from '@/components/ui/Select';
 import { Separator } from '@/components/ui/Separator';
@@ -83,6 +73,12 @@ import {
   useMicrosoftLoginHint,
   useProviderConnect,
 } from '@/lib/useProviderConnect';
+import {
+  ChapterSelect,
+  chapterByName,
+  NewChapterInput,
+  RowPickerTrigger,
+} from './ChapterSelect';
 import { CreateFilePanel } from './CreateFilePanel';
 import { GenerateFilePanel } from './GenerateFilePanel';
 import type { GenerateMode } from './GenerateForm';
@@ -241,85 +237,6 @@ function reportRejectedImports(rejected: { code: string; fileId: string }[]) {
     title: m.source_import_failed(),
     variant: 'error',
   });
-}
-
-const NO_CHAPTER = '__none__';
-const CREATE_CHAPTER = '__create__';
-
-// Row pickers copy the code block language trigger: ghost, muted, no chevron.
-function RowPickerTrigger({ children }: { children: ReactNode }) {
-  return (
-    <SelectTrigger
-      className="h-6.5 w-auto translate-y-px bg-transparent px-1.5 py-0 font-semibold text-fg-muted hover:text-fg"
-      showDownIcon={false}
-      size="sm"
-      variant="ghost"
-    >
-      {children}
-    </SelectTrigger>
-  );
-}
-
-function ChapterSelect({
-  chapters,
-  value,
-  chapterName,
-  onChange,
-  onCreateRequest,
-}: {
-  chapters: Chapter[];
-  value: string | null;
-  chapterName?: string | null;
-  onChange: (value: string | null) => void;
-  onCreateRequest?: () => void;
-}) {
-  return (
-    <Select
-      onValueChange={(value) => {
-        if (value === CREATE_CHAPTER) {
-          onCreateRequest?.();
-          return;
-        }
-        onChange(value === NO_CHAPTER ? null : value);
-      }}
-      value={value ?? NO_CHAPTER}
-    >
-      <RowPickerTrigger>
-        {/* Plain text for "No chapter": SelectValue would copy the option's
-            muted colour and cancel the trigger's hover colour. */}
-        <span className="line-clamp-1 max-w-36">
-          {chapterName ?? (value ? <SelectValue /> : m.source_no_chapter())}
-        </span>
-      </RowPickerTrigger>
-      <SelectContent align="end" className="max-w-47">
-        <SelectGroup>
-          <SelectItem size="sm" value={NO_CHAPTER}>
-            <span className="text-fg-muted">{m.source_no_chapter()}</span>
-          </SelectItem>
-          {chapters.map((chapter) => (
-            <SelectItem key={chapter.id} size="sm" value={chapter.id}>
-              <span className="line-clamp-1 translate-y-px">
-                {chapter.name}
-              </span>
-            </SelectItem>
-          ))}
-        </SelectGroup>
-        {onCreateRequest && (
-          <>
-            <SelectSeparator />
-            <SelectGroup className="scroll-my-0">
-              <SelectItem size="sm" value={CREATE_CHAPTER}>
-                <span className="flex items-center gap-1.5">
-                  <Icon name="plus" size={14} />
-                  {m.source_new_chapter()}
-                </span>
-              </SelectItem>
-            </SelectGroup>
-          </>
-        )}
-      </SelectContent>
-    </Select>
-  );
 }
 
 function hasParseModes(pending: PendingSource, policy: SourceUploadPolicy) {
@@ -637,13 +554,7 @@ function SourceList({
   function confirmCreateChapter(key: string) {
     const name = newChapterName.trim();
     if (!name) return;
-    const existing = chapters?.find(
-      (chapter) => chapter.name.toLowerCase() === name.toLowerCase()
-    );
-    batch.patchSource(key, {
-      chapterId: existing?.id ?? null,
-      chapterName: existing ? null : name,
-    });
+    batch.patchSource(key, chapterByName(chapters, name));
     setCreatingKey(null);
     setNewChapterName('');
   }
@@ -698,32 +609,12 @@ function SourceList({
               </span>
               <div className="ml-auto flex items-center">
                 {creatingKey === source.key ? (
-                  <div className="flex items-center">
-                    <Input
-                      autoFocus
-                      onChange={(event) =>
-                        setNewChapterName(event.target.value)
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          confirmCreateChapter(source.key);
-                        }
-                        if (event.key === 'Escape') setCreatingKey(null);
-                      }}
-                      placeholder={m.source_new_chapter_name()}
-                      size="sm"
-                      value={newChapterName}
-                      variant="underline"
-                    />
-                    <IconButton
-                      disabled={!newChapterName.trim()}
-                      icon="check"
-                      label={m.source_create_chapter()}
-                      onClick={() => confirmCreateChapter(source.key)}
-                      size="xs"
-                      variant="ghost-hover"
-                    />
-                  </div>
+                  <NewChapterInput
+                    onCancel={() => setCreatingKey(null)}
+                    onChange={setNewChapterName}
+                    onConfirm={() => confirmCreateChapter(source.key)}
+                    value={newChapterName}
+                  />
                 ) : (
                   <ChapterSelect
                     chapterName={source.chapterName}

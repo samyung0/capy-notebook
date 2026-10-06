@@ -177,6 +177,8 @@ export const UploadBankAssetResponse = zod.object({
 /**
  * @summary Copy bank questions into a workspace quiz
  */
+export const copyBankQuestionsBodyChapterNameMax = 60;
+
 export const copyBankQuestionsBodyQuestionIdsMax = 20;
 
 export const copyBankQuestionsBodyQuizNameMax = 120;
@@ -186,6 +188,7 @@ export const copyBankQuestionsBodyQuizNameMax = 120;
 
 export const CopyBankQuestionsBody = zod.object({
   "chapterId": zod.string().optional().describe('Where a new quiz is filed; goes with quizName'),
+  "chapterName": zod.string().max(copyBankQuestionsBodyChapterNameMax).optional().describe('Files a new quiz in the chapter of this name (any case), created when missing; goes with quizName, exclusive with chapterId'),
   "questionIds": zod.array(zod.string()).min(1).max(copyBankQuestionsBodyQuestionIdsMax).describe('Bank questions to copy, in this order'),
   "quizId": zod.string().optional().describe('An existing quiz in the workspace to append to; exclusive with quizName'),
   "quizName": zod.string().max(copyBankQuestionsBodyQuizNameMax).optional().describe('Name of a new quiz; exclusive with quizId'),

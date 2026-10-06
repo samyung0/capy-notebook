@@ -166,7 +166,8 @@ line says quiz results are still kept. Top to bottom:
   the list and restarts from the refreshed list when it runs out, so a card
   rated Good drops down.
 - **Done** per chapter ("4 of 5", unfiled as Others), counting tracked
-  (not removed) items.
+  (not removed) items. A finished chapter shows the green check, a started
+  one a solid circle and an unstarted one a dashed circle.
 - **Recent quizzes**, linking to each attempt's results.
 - The Track progress switch, with "N of M done" and started sets.
 

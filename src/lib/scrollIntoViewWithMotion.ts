@@ -1,7 +1,11 @@
 const activeScrolls = new WeakMap<Element, () => void>();
-const TOC_SCROLL_TOP_OFFSET = 36;
 
-export function scrollHeadingIntoView(element: HTMLElement) {
+/** Scrolls the element's nearest scrolling ancestor so the element sits
+ * `offset` px below its top, eased with the motion tokens (the editor TOC and
+ * the bank's question list). Each frame sets the position itself, re-aiming
+ * at the element, so content loading above it cannot cancel or misplace the
+ * scroll the way it does a native smooth scroll. */
+export function scrollIntoViewWithMotion(element: HTMLElement, offset = 36) {
   let ancestor = element.parentElement;
   while (ancestor) {
     const { overflowY } = getComputedStyle(ancestor);
@@ -18,20 +22,23 @@ export function scrollHeadingIntoView(element: HTMLElement) {
   activeScrolls.get(scroller)?.();
 
   const start = scroller.scrollTop;
-  const viewportTop =
-    scroller === document.scrollingElement
-      ? 0
-      : scroller.getBoundingClientRect().top + scroller.clientTop;
-  const top = Math.max(
-    0,
-    Math.min(
-      start +
-        element.getBoundingClientRect().top -
-        viewportTop -
-        TOC_SCROLL_TOP_OFFSET,
-      scroller.scrollHeight - scroller.clientHeight
-    )
-  );
+  const target = () => {
+    const viewportTop =
+      scroller === document.scrollingElement
+        ? 0
+        : scroller.getBoundingClientRect().top + scroller.clientTop;
+    return Math.max(
+      0,
+      Math.min(
+        scroller.scrollTop +
+          element.getBoundingClientRect().top -
+          viewportTop -
+          offset,
+        scroller.scrollHeight - scroller.clientHeight
+      )
+    );
+  };
+  const top = target();
   if (matchMedia('(prefers-reduced-motion: reduce)').matches || top === start) {
     scroller.scrollTo({ behavior: 'instant', top });
     return;
@@ -74,7 +81,7 @@ export function scrollHeadingIntoView(element: HTMLElement) {
     if (typeof progress === 'number') {
       scroller.scrollTo({
         behavior: 'instant',
-        top: start + (top - start) * progress,
+        top: start + (target() - start) * progress,
       });
     }
     if (progress === 1) stop();

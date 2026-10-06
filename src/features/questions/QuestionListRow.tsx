@@ -40,25 +40,33 @@ export function QuestionListRow({
       onClick={onClick}
       type="button"
     >
-      {marked && (
+      {marked &&
         // Screen readers hear the result after the row, so its name still
-        // starts with the question number.
-        <span
-          aria-hidden
-          className={cn(
-            'mt-0.5 grid size-4 place-items-center rounded-full text-surface',
-            status === 'notDone' && 'border-[1.5px] border-line-strong',
-            status === 'correct' && 'bg-tint-success-fg',
-            status === 'partial' && 'bg-tint-warning-fg',
-            status === 'wrong' && 'bg-tint-error-fg'
-          )}
-          title={statusLabels[status]()}
-        >
-          {status !== 'notDone' && (
-            <Icon name={statusIcons[status]} size={11} />
-          )}
-        </span>
-      )}
+        // starts with the question number. Correct uses the file panel's
+        // done mark.
+        (status === 'correct' ? (
+          <Icon
+            aria-hidden
+            className="mt-0.5 text-tint-success-fg"
+            name="circleCheck"
+            size={16}
+          />
+        ) : (
+          <span
+            aria-hidden
+            className={cn(
+              'mt-0.5 grid size-4 place-items-center rounded-full text-surface',
+              status === 'notDone' && 'border-[1.5px] border-line-strong',
+              status === 'partial' && 'bg-tint-warning-fg',
+              status === 'wrong' && 'bg-tint-error-fg'
+            )}
+            title={statusLabels[status]()}
+          >
+            {status !== 'notDone' && (
+              <Icon name={statusIcons[status]} size={11} />
+            )}
+          </span>
+        ))}
       <span className="font-bold">{row.position}.</span>
       <span className="line-clamp-2">
         {row.preview ? (
@@ -91,4 +99,4 @@ export const statusLabels: Record<BankStatus, () => string> = {
   partial: m.question_ui_status_partial,
   wrong: m.question_ui_status_wrong,
 };
-const statusIcons = { correct: 'check', partial: 'minus', wrong: 'x' } as const;
+const statusIcons = { partial: 'minus', wrong: 'x' } as const;

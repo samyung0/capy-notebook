@@ -100,6 +100,35 @@ export function Panel({
 }
 
 /**
+ * The title row of a side panel or drawer (Dashboard's Recent Files, the
+ * /bank topics panel, the theme drawer): card title, with optional controls
+ * before it and after it. Sits in a `px-2 py-5` panel section.
+ */
+export function PanelHeader({
+  title,
+  leading,
+  actions,
+}: {
+  title: ReactNode;
+  leading?: ReactNode;
+  actions?: ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-1 px-4',
+        leading && 'pl-2',
+        actions && 'pr-2'
+      )}
+    >
+      {leading}
+      <h2 className="t-card-title mr-auto min-w-0 truncate">{title}</h2>
+      {actions}
+    </div>
+  );
+}
+
+/**
  * General-page header: page title + actions on the left, the top-level inset
  * bar (search / notifications / profile) nested at the top-right.
  */

@@ -1272,6 +1272,9 @@ type MaterialDraft struct {
 	Content string
 	// The chapter the material is filed in; nil leaves it unfiled.
 	ChapterID *string
+	// Or the chapter's name: one of that name in any case is reused, else it
+	// is created in the material's transaction. Exclusive with ChapterID.
+	ChapterName string
 	// A note's embedded quizzes and flashcard sets, created with it; their
 	// references in Content already point at the draft ids.
 	Embedded       []EmbeddedDraft
@@ -1345,13 +1348,35 @@ func decodeQuestions(raw json.RawMessage) ([]json.RawMessage, error) {
 	return questions, nil
 }
 
-// CreateMaterialDraft persists a draft without a receipt (the Generate path).
+// CreateMaterialDraft persists a draft without a receipt (the Generate path
+// and the bank page's copy).
 func (s *Store) CreateMaterialDraft(ctx context.Context, draft MaterialDraft) (Material, error) {
 	mt, err := draft.material()
 	if err != nil {
 		return Material{}, err
 	}
-	return s.CreateMaterial(ctx, mt)
+	if draft.ChapterName == "" {
+		return s.CreateMaterial(ctx, mt)
+	}
+	if mt.ChapterID != nil {
+		return Material{}, fmt.Errorf("%w: chapter id and chapter name are exclusive", materialdoc.ErrInvalid)
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Material{}, err
+	}
+	defer tx.Rollback(ctx)
+	if mt.ChapterID, err = resolveUploadChapterID(ctx, tx, mt.WorkspaceID, nil, draft.ChapterName); err != nil {
+		return Material{}, err
+	}
+	id, err := s.createMaterialTx(ctx, tx, mt)
+	if err != nil {
+		return Material{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Material{}, err
+	}
+	return s.GetMaterial(ctx, id)
 }
 
 // CreateMaterialOperation persists a draft together with its durable receipt

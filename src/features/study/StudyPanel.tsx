@@ -208,8 +208,8 @@ export function StudyPanel({
                             ch.done === ch.total
                               ? 'circleCheck'
                               : ch.done
-                                ? 'circleDashed'
-                                : 'ellipse'
+                                ? 'ellipse'
+                                : 'circleDashed'
                           }
                           size={14}
                         />

@@ -62,6 +62,7 @@ export function QuizPageHeader({
               <IconButton
                 className="rounded-input"
                 icon="navigationBack"
+                iconClassName="-translate-y-px"
                 label={m.action_back()}
                 onClick={onBack}
                 size="sm"

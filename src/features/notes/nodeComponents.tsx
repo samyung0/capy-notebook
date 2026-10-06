@@ -31,6 +31,7 @@ import { EditorIcon } from '@/features/notes/EditorIcon';
 import { MathField } from '@/features/questions/MathField';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { scrollIntoViewWithMotion } from '@/lib/scrollIntoViewWithMotion';
 import { CalloutIcon } from './CalloutIcon';
 import { Column, ColumnGroup } from './ColumnNodes';
 import { MediaAssetElement, YouTubeEmbedElement } from './MediaNodes';
@@ -68,7 +69,6 @@ import {
   getCodeBlockLanguageLabel,
   normalizeCalloutVariant,
 } from './richBlockConfig';
-import { scrollHeadingIntoView } from './scrollHeadingIntoView';
 import {
   TableCellElement,
   TableCellHeaderElement,
@@ -429,7 +429,7 @@ const TocEntry = memo(
           const element = editor.api.toDOMNode(node);
           if (!element) return;
 
-          scrollHeadingIntoView(element);
+          scrollIntoViewWithMotion(element);
           editor.tf.navigation.flashTarget({
             target: { path, type: 'node' },
           });

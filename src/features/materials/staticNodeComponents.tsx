@@ -66,13 +66,13 @@ import {
   getCodeBlockLanguageLabel,
   normalizeCalloutVariant,
 } from '@/features/notes/richBlockConfig';
-import { scrollHeadingIntoView } from '@/features/notes/scrollHeadingIntoView';
 import {
   QuestionBlockView,
   QuestionView,
 } from '@/features/questions/QuestionView';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { scrollIntoViewWithMotion } from '@/lib/scrollIntoViewWithMotion';
 import type {
   FlashcardElement as FlashcardNode,
   HtmlEmbedElement as HtmlEmbedNode,
@@ -245,7 +245,7 @@ function scrollToHeading(event: MouseEvent, headingOrder: number) {
     ':scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6'
   );
   const heading = heads[headingOrder];
-  if (heading) scrollHeadingIntoView(heading);
+  if (heading) scrollIntoViewWithMotion(heading);
 }
 
 function Toc(props: SlateElementProps) {

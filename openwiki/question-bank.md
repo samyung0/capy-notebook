@@ -2,8 +2,10 @@
 
 The bank is a separate syllabus and question database. Signed-in learners read
 question content; granted bank editors can edit, mark reviewed, upload figures
-and send a comment. The bank page is unlisted at `/bank`, inside the app shell:
-the main panel shows the chosen topic's questions, and a dashboard-style right column holds exams and topics, swapping
+and send a comment. The bank page is at `/bank`, under Explore in the
+sidebar, inside the app shell: the main panel shows the chosen topic's
+questions, and a dashboard-style right column (`PanelHeader`, shared with
+Recent Files and the theme drawer) holds exams and topics, swapping
 to the topic's question list; on phones that column becomes a floating bar and
 bottom sheet. Editors switch between View mode and Edit mode; edit mode adds
 the answer key and a review bar (review status, Mark reviewed/Undo review,
@@ -20,7 +22,10 @@ batch with 404, so the page refetches the list. The page renders a window of
 the list that grows 10 questions at a time when its end comes within 800px of
 the view. A list click on a question outside the window restarts the window at
 that question's page plus the next (one request) and scrolls the panel so the
-question sits at the top; a page next to the window extends it instead.
+question sits at the top, with the editor TOC's motion
+(`src/lib/scrollIntoViewWithMotion.ts`, which sets the position each frame so
+content loading above cannot cancel it the way it cancelled a native smooth
+scroll); a page next to the window extends it instead.
 Earlier pages come back through a "Show questions x–y" button that fetches
 first, then inserts them and moves the scroll position by the added height.
 Content never loads above the viewport on its own because Safari has no CSS
@@ -331,7 +336,7 @@ storage.
 | `POST /api/bank/questions/{id}/check` | `{answers}`, the learner's answers by part id. Grades them on the server (open parts with Jev), upserts the question's topic, hash, score (`correct / total`, 0 to 1) and time, and returns `{correct, total, question}`, that one question with its key and awards; 404 when unknown or retracted. |
 | `GET /api/bank/topics/{topicId}/marks` | `{marks: {questionId: score}}` for the topic list: the latest score of each answered current question. |
 | `GET /api/bank/progress` | `{topics}`: every topic with at least one answered current question, most recent answer first. Each carries exam, subject and topic ids and labels, `total` (current questions), `answered`, `correct` (score 1), `lastAnsweredAt` and `nextQuestionId`: the first unanswered question after the most recently answered one in topic order, wrapping to the start, or null when every question is answered. |
-| `POST /api/bank/copy` | `{questionIds (1–20), workspaceId, quizId \| quizName, chapterId?}` returns `{workspaceId, quizId}`. Below. |
+| `POST /api/bank/copy` | `{questionIds (1–20), workspaceId, quizId \| quizName, chapterId? \| chapterName?}` returns `{workspaceId, quizId}`. Below. |
 
 A current question is one that is not retracted and whose stored hash equals
 its hash now; `bank.TopicHashes` and `Store.Progress` (`server/internal/bank/progress.go`)
@@ -347,7 +352,11 @@ questions unchanged with the chat's `copy_questions` logic (`bankCopies` and
 `bankAppendCommands` in `internal_bank.go`): each question's credit is resolved
 from its bank sources into the quiz's provenance under the question's id, and
 an unknown or retracted id fails the call with 404. Exactly one destination:
-`quizName` makes a new quiz in the workspace, filed in `chapterId` when given;
+`quizName` makes a new quiz in the workspace, filed in `chapterId` or
+`chapterName` when given (at most one, and neither with `quizId`; 422
+otherwise). `chapterName` reuses the workspace's chapter of that name in any
+case or creates it in the quiz's transaction (`Store.CreateMaterialDraft` with
+the upload path's `resolveUploadChapterID`, which locks the workspace row);
 `quizId` appends after an existing workspace quiz's last question through the
 document authority, which writes the merged credits with the content. The
 caller needs the bank's read access and edit access to the workspace (viewers
@@ -414,9 +423,16 @@ A checkbox in each question's left margin selects it for Copy to quiz (mocks
 survive filtering, cap at the route's 20, and a floating bar (count, Copy to
 quiz, clear) replaces the phone navigation bar. `CopyToQuizDialog`
 (`src/features/questions/CopyToQuizDialog.tsx`) has Workspace (workspaces with
-`capabilities.canEdit`) and Chapter dropdowns (No chapter included), then the
-chapter's quizzes as rows under New quiz, the default, which is a name field
-prefilled with the topic name. Copy posts the copy route in topic order;
+`capabilities.canEdit`, each with its icon) dropdown, then every top-level
+quiz in that workspace as rows under New quiz, newest edit first from the
+Create page's list (`GET /api/materials?kind=quiz&location=workspace&scope=member`,
+Load more past 100), each with its chapter name (nothing when unfiled) and
+question count. New quiz, the default, is a name field prefilled with the
+topic name and the Add source dialog's chapter picker
+(`src/features/workspace/ChapterSelect.tsx`): No chapter by default, an
+existing chapter, or New chapter…, whose typed name is matched to an existing
+chapter in any case or sent as `chapterName`; a name still being typed counts
+on Copy. Copy posts the copy route in topic order;
 success shows a toast whose Open quiz opens the quiz in its workspace, and a
 failure keeps the dialog open behind the global mutation toast. The MSW mock
 seeds answers in Area practice and Mensuration and makes copies in the mock

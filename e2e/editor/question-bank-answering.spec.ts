@@ -11,13 +11,17 @@ test('bank checks an answer and marks the topic list', async ({ page }) => {
   // A cold dev server compiles the bank route first.
   await expect(question).toContainText('width 2 cm', { timeout: 30_000 });
   const list = page.getByRole('navigation', { name: 'Questions' });
-  await expect(list).toContainText('1 correct · 2 to retry');
+  await expect(list.getByRole('button', { name: /^2\./ })).toContainText(
+    'Correct'
+  );
+  await expect(list.getByRole('button', { name: /^1\./ })).toContainText(
+    'Not done'
+  );
 
   await question.getByRole('textbox', { name: 'Your answer' }).fill('6');
   await question.getByRole('button', { name: 'Check answer' }).click();
   await expect(question).toContainText('1 / 1');
   await expect(question).toContainText('Accepted answers');
-  await expect(list).toContainText('2 correct · 2 to retry');
   await expect(list.getByRole('button', { name: /^1\./ })).toContainText(
     'Correct'
   );
@@ -58,6 +62,19 @@ test('bank continues, filters and copies to a quiz', async ({ page }) => {
   await expect(dialog.getByRole('textbox', { name: 'Quiz name' })).toHaveValue(
     'Area practice'
   );
+  // The new quiz goes into a chapter typed here, created with the copy.
+  // The row picker shows its value as text, not as an accessible name.
+  const chapter = dialog
+    .getByRole('combobox')
+    .filter({ hasText: 'No chapter' });
+  await chapter.click();
+  await page.getByRole('option', { name: 'New chapter…' }).click();
+  await dialog.getByPlaceholder('New chapter name').fill('Bank picks');
+  await dialog.getByRole('button', { name: 'Create chapter' }).click();
+  await expect(chapter).toHaveCount(0);
+  await expect(
+    dialog.getByRole('combobox').filter({ hasText: 'Bank picks' })
+  ).toBeVisible();
   await dialog.getByRole('button', { name: 'Copy' }).click();
   await expect(page.getByText('Questions copied')).toBeVisible();
   await expect(dialog).toHaveCount(0);
