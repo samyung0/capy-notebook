@@ -1,6 +1,6 @@
 # UAT critical paths
 
-Run these sixteen journeys deliberately through **Deterministic UAT quality**.
+Run these seventeen journeys deliberately through **Deterministic UAT quality**.
 Its `critical_paths` input defaults to true for manual dispatch and false for
 the lightweight deploy check. **Promote revision to production** requires it.
 Normal pull-request CI does not contact UAT or these providers.
@@ -29,7 +29,8 @@ asserted. The existing authorization suite remains separate.
 | Digital PDF | Upload/index and unchanged bytes; unavailable source collaboration room and API-based private annotation isolation. Pointer gestures and visual rendering are outside this assertion policy. |
 | Invalid CSV | Direct-ingest cell limit fails terminally with the exact persisted job error, no index/model spend publishes, exact expected error reaches Sentry. |
 | Study progress | One owner, progress on, store-only files and true/false quizzes (graded on the server, no Jev or other model call). Files panel Mark as read on one file, Mark as read then Mark as unread on another; a quiz answered in part and left records nothing, another submitted records one attempt (1 of 2) and rates both questions; a flashcard set studied to the end on its study page is done, another left after one card is started. `study_progress`, `attempts` and `review_states` match. Continue opens the unread file, then, once the header marks it read, the unanswered quiz. The Study tab's Review session takes all five rated items (cards rated, questions checked), each item then has two reps and ten ratings are logged, the started set stays started. Learning → Review shows 5 to review and 4 of 6 done, and its Review opens the session. |
-| Note and quiz images | Steps in `images.ts`, hooked into `richContent.spec.ts`. A 5.8 MB PNG picked in the quiz editor (a quiz embedded in a note) is shrunk to WebP under 2 MB in the browser and nothing reserves or uploads until Save; Save stores one ready `editor_assets` row naming the quiz, the quiz content names it, the B2 object is WebP of that size and the owner's charge grows by the asset plus the content. Pasting the quiz block into its own note keeps the quiz; into a second note makes that note's copy, and copying that block within the note makes a second quiz; each copy has its own asset row over the shared object. Removing the original's image (over a minute old) deletes its row and releases its bytes while the copies keep theirs. An editor's note image, over a minute old, deleted: the save deletes its row and blob reference; Undo gets no id back from adopt and re-uploads the tab's kept bytes under a new asset id with identical bytes, and the image survives a reload. A flashcard front-image case is written and marked fixme until card images land. |
+| Plate note | `note.spec.ts`, steps in `note.ts`; the workspace has Auto process edits off, so no note index, parser, embedding or LLM call (no provider session or model usage). The owner creates a note from Add file → New file; owner and an invited editor each type a marked line, both clients show both and the saved projection holds both. The editor's image, picked through the slash command's file picker, is one ready `editor_assets` row naming the note, charged to the owner, with the picked bytes in B2, and renders. The owner imports a Markdown `html-embed` fence (the editor has no insert command). A viewer's read view shows both lines, the image loaded and the snippet running in a `sandbox="allow-scripts"` frame from `https://uat.capy-embed.pages.dev/` (UAT's `VITE_EMBED_ORIGIN`) that resizes to the snippet's height. The Markdown export's ZIP links the block and holds the image with the stored pixels (exports redraw images as PNG, so bytes differ). Deleted after the grace minute, the image's save drops its row and blob reference and the charge falls by its size; Undo gets no id from adopt and re-uploads the tab's kept bytes under a new asset id with identical bytes, and the image survives a reload. |
+| Note embedded blocks | `note.spec.ts`. The slash command's Quiz and Flashcards create rows embedded in the note (`parent_material_id`) and open their edit pages; the note references both. A 5.8 MB PNG picked in the quiz editor (a quiz embedded in a note) is shrunk to WebP under 2 MB in the browser and nothing reserves or uploads until Save; Save stores one ready `editor_assets` row naming the quiz, the quiz content names it, the B2 object is WebP of that size and the owner's charge grows by the asset plus the content. Pasting the quiz block into its own note keeps the quiz; into a second note makes that note's copy, and copying that block within the note makes a second quiz; each copy has its own asset row over the shared object. The inserted quiz's block removed after its first minute trashes the quiz without listing it in the trash; Undo's adopt answers the note's own row and the save restores it. Removing the original's image (over a minute old) deletes its row and releases its bytes while the copies keep theirs. A flashcard front-image case is written and marked fixme until card images are deployed to UAT. |
 
 Each test registers a disposable primary account. Collaborators use real Clerk
 accounts and short-lived sign-in tickets. No test writes the database, bypasses
@@ -48,6 +49,9 @@ flag. The token alone does not prevent the browser from waiting for a challenge.
 The initial suite does not yet cover every feature or file type. Image/audio
 codecs, scans, legacy Office, structural Office edits, native citation paint,
 study tool generation, account restoration and actual OAuth consent remain gaps.
+The note journeys leave AI edits, offline drafts, toolbar formatting, comment
+anchors, note DOCX export, note indexing and flashcard card images (fixme) to
+the editor-feature and Docker suites; notes have no signed-out page.
 
 Google/OneDrive downloads are fixture-backed isolated tests in
 `pipeline/tests/test_import_stage.py` and `server/internal/integrations/oauth_test.go`.
@@ -68,7 +72,7 @@ committed originals are never changed by a run. `files.spec.ts` names the
 edits and checks live in `richContent.ts`. A new set needs cases with explicit
 content/edit expectations; merely putting files in a directory does not create
 coverage. `pnpm e2e:uat:journeys --grep rich-content` runs only the rich-content
-journeys. Never commit real documents, credentials,
+journeys, and `--grep note` only the note ones. Never commit real documents, credentials,
 user data, screenshots, signed URLs or generated run reports.
 
 ## One-time setup

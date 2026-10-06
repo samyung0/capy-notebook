@@ -10,7 +10,6 @@ import {
   upload,
   workspace,
 } from './files';
-import { cardImages, noteAndQuizImages } from './images';
 import {
   officeCharge,
   openEditor,
@@ -134,19 +133,3 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
     await noProviderCalls(run, workspaceId);
   });
 }
-
-// Note, quiz and card images: the steps live in images.ts until it is decided
-// whether they get a Plate journey of their own.
-test('note and quiz images: shrunk quiz image uploaded on Save and released on removal, pasted quiz blocks copied per block, a deleted note image back on Undo under a new id', async ({
-  run,
-}) => {
-  test.setTimeout(1_200_000);
-  await noteAndQuizImages(run);
-});
-// biome-ignore lint/suspicious/noSkippedTests: card images not on main yet.
-test.fixme('flashcard front images: shrunk, uploaded on Save and deleted on removal', {
-  annotation: { description: 'card images not on main yet', type: 'fixme' },
-}, async ({ run }) => {
-  test.setTimeout(900_000);
-  await cardImages(run);
-});
