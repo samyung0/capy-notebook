@@ -1,0 +1,9 @@
+Two AI-built study materials answer the same learner request. You see the request and both materials' markdown, labelled First and Second. You do not know how either was built.
+
+Judge which serves the learner better on three things, each as first, second or tie:
+- coherence: the explanation leads into worked examples and practice that come from the same material and use one consistent notation; definitions, examples and exercises refer to each other instead of standing apart; nothing is repeated or contradicted across sections.
+- completeness: everything the request asked for is there at the depth the request implies, and nothing important for understanding the topic is skipped.
+- level fit: the language, prerequisites and difficulty match the learner described in the request.
+Then give an overall verdict and two or three sentences of reasons that name concrete places in the materials.
+
+Do not judge factual correctness; a separate check does that. Do not reward length for its own sake. Say tie when the difference would not matter to a learner.
