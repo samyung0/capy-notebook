@@ -186,6 +186,24 @@ pipeline's agent loop directly, so no Go deploy is needed for the experiment.
   parser and book. The first page judged (AHSS p50) came out 4 of 4 blocks
   faithful for the reviewed text and 3 of 4 for MinerU, whose one defect was
   a garbled subscript line in a worked Z-score example.
+- Audit result (all 62 pages, 2026-10-06, `reports/local/2026-10-intake-eval/audit/summary.json`):
+
+  | Text | Blocks | Faithful | Wrong | Missing | Garbled | Extra |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | Reviewed (ODL v12 + review, live versions) | 180 | 134 (74%) | 13 | 5 | 19 | 29 |
+  | MinerU 4.0 standard, no review | 190 | 133 (70%) | 26 | 12 | 24 | 31 |
+
+  By book (faithful of blocks, reviewed vs MinerU): AHSS 40/53 vs 39/56,
+  OpenIntro 28/41 vs 29/39, jamovi 45/47 vs 36/44, Brief Calculus 10/19 vs
+  9/22, EE I 11/20 vs 20/29. The two are level on the statistics books, the
+  reviewed text wins on jamovi, MinerU wins on EE I (the book whose formula
+  pictures the parser catches 42% of), and both are poor on Brief Calculus.
+  The silent kinds, wrong and missing, are what matter for a learner: MinerU
+  carries twice as many (38 against 18, on 20 of the 62 pages against 14),
+  so by the decision rule it does not replace the reviewed path on fidelity
+  alone. "Extra" counts figure text and
+  axis labels the parsers lift into prose on both sides, and MinerU's
+  "[Figure]" placeholders.
 - Scratch database: `pgvector/pgvector:pg16` as `intake-eval-scratch` on
   127.0.0.1:15445 (55443 sits in a Windows reserved port range), schema
   created 2026-10-06 with `knowledge_base_library.py schema`; publish with

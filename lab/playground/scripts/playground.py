@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import subprocess
 import copy
 import hashlib
 import json
@@ -714,17 +715,17 @@ def material_size(kind: str, args: dict[str, Any]) -> str:
 
 
 async def check_quiz(questions: list[Any]) -> str:
-    """The app's quiz validation, or empty when the questions pass it."""
-    proc = await asyncio.create_subprocess_exec(
-        "go",
-        "run",
-        "./cmd/quizcheck",
+    """The app's quiz validation, or empty when the questions pass it. The
+    process runs in a thread: asyncio subprocesses are unavailable on the
+    Windows selector event loop that psycopg needs."""
+    proc = await asyncio.to_thread(
+        subprocess.run,
+        ["go", "run", "./cmd/quizcheck"],
         cwd=REPO / "server",
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
+        input=json.dumps(questions).encode(),
+        capture_output=True,
     )
-    out, _ = await proc.communicate(json.dumps(questions).encode())
+    out = proc.stdout + proc.stderr
     return "" if proc.returncode == 0 else out.decode().strip()[:600]
 
 
