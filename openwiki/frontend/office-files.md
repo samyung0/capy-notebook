@@ -1779,6 +1779,11 @@ differently now. PPTX decks with a run highlight or any strike attribute
 reseed too (`lecture.pptx` pins it). Migration
 `0058_docx_pptx_seed_reset.sql` applies the guarded reset to `'docx','pptx'`,
 so that pin deploys inside the maintenance window.
+Keeping paragraph properties the model doesn't hold (`w:kinsoku`,
+`w:cnfStyle` and the like), more `w:framePr` attributes and deleted text inside
+fields and links changes the seed of every DOCX holding them (the e2e sample
+`bo-corpus-1`; a golden test pins a file with unmodeled pPr children), so
+migration `0059_docx_kept_properties_seed_reset.sql` resets `'docx'` again.
 
 ## Private PDF annotations
 
