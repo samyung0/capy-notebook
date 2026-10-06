@@ -109,10 +109,6 @@ check); it applies at the first promotion.
   `REF=Qyy`). Not in the matrix.
 - **Enter before a nested field holding a link** after the split point keeps
   the old Enter (the half-link before the split leaves the field).
-- **Tracked-deleted note references and `w:fldSimple` results** (R2-8, separate
-  DOCX fidelity task): after any edit in their paragraph, a deleted footnote or
-  endnote reference saves live and a deleted simple field saves its result
-  empty; reproduces on capy-ci in a plain paragraph.
 - **Two peers on the nested shape** (one Backspaces while the other types in
   P2): editor `yy`, reopened `7yy`; the accepted concurrent-join class.
 - **Page numbers after a right or centre tab.** A PAGE or NUMPAGES field after
@@ -156,7 +152,7 @@ check); it applies at the first promotion.
   (`textLayer.ts`). Unchecked: Safari and Firefox
   (word/paragraph clicks use `caretPositionFromPoint`/`caretRangeFromPoint`,
   Firefox drags links instead of selecting from them).
-- **PPTX presenter view** (built 2026-10-06, branch `capy-side/pptx-presenter`;
+- **PPTX presenter view** (landed 2026-10-06, capy-ci 5409533d;
   Epo's visual checkpoint pending, including the presenter window's layout 2):
   check on UAT that Present goes full screen from the runtime's own origin
   (Capability Delegation) and that Presenter view's pop-up attaches; Firefox
@@ -287,23 +283,6 @@ check); it applies at the first promotion.
   paragraph. Split before the break instead (the shape the seed makes, and no
   text ahead of a break in its slot, as decided 2026-09-28); queue with the
   matrix's `break-paragraph` rows.
-- **Chat can't describe an image added to an Office file** (decided
-  2026-10-05): attach the image to the next model request as `capture_page`
-  does and remove the source-change caption path (`captioning_spec()` needs
-  ingest job pins the retrieval service never sets; the test mocks it).
-- **File descriptors cut mid-phrase** (retrieval): the prompt asks for one
-  ~50-word sentence and `_truncate_words` cuts at word 50, the only bound on
-  that call (no `max_tokens`). Decided 2026-10-05: bounded like compaction,
-  `max_tokens` 400 is the only cut, an empty reply fails explicitly.
-- **CJK refresh trigger:** `effectTokens` counts a CJK character as a token and
-  each effect carries 40 characters of context on each side in `before` and
-  `after`, so a small CJK edit counts ~160 tokens against ~41 in English (the
-  3,000 trigger after ~19 edited paragraphs instead of ~73). Decided
-  2026-10-05: context counts at the Latin rate in every script (TS and Go).
-- **Chat slot requires vision** (decided 2026-10-05): add `vision` to the chat
-  slot's required capabilities in `server/internal/models/slot.go` so the ops
-  dashboard refuses a text-only chat model; check every assigned chat row
-  carries `vision` first (migration if not).
 - **Recovery logging** (decided 2026-10-05): log each draft from another epoch
   entering copy-only recovery (no late merge), in the `edit_incidents` table.
 - **Editing incident log** (decided 2026-10-05, with the optimization round):
