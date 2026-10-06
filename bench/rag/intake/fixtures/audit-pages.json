@@ -1,0 +1,105 @@
+{
+  "schema": 1,
+  "share": 0.03,
+  "seed": 20261006,
+  "pages_are_1_based_pdf_pages": true,
+  "books": {
+    "ahss4": {
+      "sha256": "f3a19c74d914422ed5838478936abab11b87dafee0781b72cc7bf7cd2c46fda5",
+      "pages": 514,
+      "first_content_page": 9,
+      "sampled": [
+        50,
+        57,
+        144,
+        146,
+        168,
+        223,
+        274,
+        311,
+        356,
+        434,
+        450,
+        454,
+        473,
+        490,
+        496
+      ]
+    },
+    "brief-calculus": {
+      "sha256": "af488abb028e627030ecb2e13ab13f91fa229412fa0f561682cf84fd19a029c9",
+      "pages": 235,
+      "first_content_page": 12,
+      "sampled": [
+        45,
+        135,
+        140,
+        164,
+        215,
+        222,
+        227
+      ]
+    },
+    "fundamentals-of-electrical-engineering-i": {
+      "sha256": "e53ed3d0c7dd4add27d791d8d8d24f0e49ab87a40b99043b73a022a28446675a",
+      "pages": 364,
+      "first_content_page": 11,
+      "sampled": [
+        16,
+        19,
+        59,
+        122,
+        124,
+        154,
+        164,
+        172,
+        213,
+        311,
+        341
+      ]
+    },
+    "lsj": {
+      "sha256": "90d44719e232e643b1cb7d5b1fbf7884f495a9ec7488084c12459bf005d695aa",
+      "pages": 495,
+      "first_content_page": 20,
+      "sampled": [
+        31,
+        34,
+        114,
+        141,
+        157,
+        164,
+        218,
+        242,
+        296,
+        343,
+        362,
+        379,
+        444,
+        446,
+        473
+      ]
+    },
+    "os4": {
+      "sha256": "e261e4aea0eb4f0fd2b9d340604918ee7145e1a98e00313575c88977b671cb40",
+      "pages": 465,
+      "first_content_page": 9,
+      "sampled": [
+        52,
+        54,
+        78,
+        79,
+        208,
+        213,
+        272,
+        282,
+        302,
+        329,
+        339,
+        354,
+        426,
+        458
+      ]
+    }
+  }
+}

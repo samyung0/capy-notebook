@@ -1,0 +1,116 @@
+{
+  "schema": 1,
+  "frozen": "2026-10-06",
+  "plan": "bench/rag/reports/2026-10-06-intake-retrieval-comparison-plan.md",
+  "decisions": "human/agentic-retrieval.md, entries dated 2026-10-06",
+  "arms": {
+    "A": {
+      "parser": "ODL v12 + full review (live published versions)",
+      "reading": "excerpt search with the six Part 1 fixes",
+      "database": "live shared library via tunnel 15433"
+    },
+    "B": {
+      "parser": "MinerU 4.0, tier confirmed at smoke (standard expected); no transcription review, no tags; 3% audit measured only",
+      "reading": "section reading: book outline, ordered section reads, tag-free search as locator",
+      "database": "scratch pgvector intake-eval-scratch on 127.0.0.1:15445 (55443 is inside a Windows reserved port range)"
+    },
+    "C": {
+      "parser": "same data as A",
+      "reading": "section reading as B",
+      "database": "live shared library via tunnel 15433"
+    }
+  },
+  "books": {
+    "ahss4": {
+      "sha256": "f3a19c74d914422ed5838478936abab11b87dafee0781b72cc7bf7cd2c46fda5",
+      "pages": 514,
+      "live_version": 5,
+      "title": "Advanced High School Statistics"
+    },
+    "brief-calculus": {
+      "sha256": "af488abb028e627030ecb2e13ab13f91fa229412fa0f561682cf84fd19a029c9",
+      "pages": 235,
+      "live_version": 5,
+      "title": "Brief Calculus"
+    },
+    "fundamentals-of-electrical-engineering-i": {
+      "sha256": "e53ed3d0c7dd4add27d791d8d8d24f0e49ab87a40b99043b73a022a28446675a",
+      "pages": 364,
+      "live_version": 12,
+      "title": "Fundamentals of Electrical Engineering I"
+    },
+    "lsj": {
+      "sha256": "90d44719e232e643b1cb7d5b1fbf7884f495a9ec7488084c12459bf005d695aa",
+      "pages": 495,
+      "live_version": 5,
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis"
+    },
+    "os4": {
+      "sha256": "e261e4aea0eb4f0fd2b9d340604918ee7145e1a98e00313575c88977b671cb40",
+      "pages": 465,
+      "live_version": 4,
+      "title": "OpenIntro Statistics"
+    }
+  },
+  "model": {
+    "provider_slug": "zai",
+    "model_slug": "glm-5.3-flash",
+    "thinking": "high",
+    "base_config": "lab/playground/configs/chat.json",
+    "library": true,
+    "decks": false,
+    "study_preferences": {}
+  },
+  "requests": {
+    "path": "bench/rag/intake/fixtures/requests.json",
+    "sha256": "89e2b1a6da5dad74fa247913c59a91d15374b694ec52be7c5476c68c34624fc5",
+    "dev_repeat": true
+  },
+  "runs": {
+    "driver": "POST /api/turn sequentially per playground process; generic requests send the confirmation as a second turn with the first turn's history, checkpoint and ledger",
+    "counters": [
+      "tool calls",
+      "input tokens",
+      "cached tokens",
+      "wall time",
+      "captures",
+      "sections or excerpts read",
+      "distinct books cited",
+      "distinct sections cited",
+      "quiz questions copied from the bank vs written"
+    ]
+  },
+  "judge": {
+    "model": "claude-opus-5-5",
+    "effort": "medium",
+    "transport": "claude -p headless (Max subscription)",
+    "second_rater_share": 0.2,
+    "human_spot_checks": 6,
+    "blind": true,
+    "measures": [
+      "validators pass (check_note, quizcheck)",
+      "ledger completion",
+      "refusal on controls",
+      "per-claim fidelity against rendered cited pages",
+      "pairwise coherence and fit A vs B, A vs C",
+      "first section read on topic",
+      "multi-chapter: chapters completed, notation consistency, no repeated explanations, input tokens per chapter"
+    ]
+  },
+  "audit": {
+    "pages_share": 0.03,
+    "seed": 20261006,
+    "texts": [
+      "MinerU (arm B)",
+      "live reviewed (arms A and C)"
+    ],
+    "unit": "block judged faithful or not against the page image"
+  },
+  "decision_rule": [
+    "Part 1 fixes ship regardless.",
+    "If C beats A on coherence with no fidelity loss, section reading ships on current data regardless of parser.",
+    "B replaces intake for new books only if its audit error rate <= the reviewed text's on the same pages, fidelity not worse than A, cost per material <= 2x A.",
+    "If B's text is worse but C wins, keep ODL + page transcription and drop tagging."
+  ],
+  "amendments": "bench/rag/intake/fixtures/protocol-amendments.json (created only if something changes after the first run)"
+}
