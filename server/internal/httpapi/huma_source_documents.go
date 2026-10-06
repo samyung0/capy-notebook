@@ -73,12 +73,21 @@ type annotationIDInput struct {
 	AnnotationID string `path:"annotationId"`
 }
 
+// sourceBodyDeadline lets a large source body arrive for as long as the
+// collaboration service waits for the whole request (requestPath, 60 s),
+// instead of Huma's 5 s, which answered an 11 MB text checkpoint 408 on a
+// loaded host. A rebuild keeps Huma's 5 s: its swap must land within the
+// service's 15 s rebuild window, and the handler alone may take 10 s.
+func sourceBodyDeadline(operation *huma.Operation) {
+	operation.BodyReadTimeout = 60 * time.Second
+}
+
 func (a *api) registerSourceDocuments(api huma.API) {
 	const tag = "Source collaboration"
 	reg(api, http.MethodGet, "/internal/collaboration/files/{id}/refresh-candidate", "claimSourceRefresh", tag, "Claim a fixed source export", http.StatusOK, a.claimSourceRefresh)
 	reg(api, http.MethodGet, "/internal/collaboration/files/{id}/refresh-source", "readSourceRefresh", tag, "Read a leased source export", http.StatusOK, a.readSourceRefresh)
-	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/files/{id}/refresh-candidate", "finalizeSourceRefresh", tag, "Enqueue an uploaded candidate", http.StatusNoContent, 150<<20, a.finalizeSourceRefresh)
-	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/files/{id}/publish", "publishSourceRefresh", tag, "Publish a processed source checkpoint", http.StatusOK, 150<<20, a.publishSourceRefresh)
+	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/files/{id}/refresh-candidate", "finalizeSourceRefresh", tag, "Enqueue an uploaded candidate", http.StatusNoContent, 150<<20, a.finalizeSourceRefresh, sourceBodyDeadline)
+	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/files/{id}/publish", "publishSourceRefresh", tag, "Publish a processed source checkpoint", http.StatusOK, 150<<20, a.publishSourceRefresh, sourceBodyDeadline)
 	reg(api, http.MethodPost, "/internal/collaboration/files/{id}/refresh-failure", "failSourceRefresh", tag, "Discard an unsuccessful candidate", http.StatusNoContent, a.failSourceRefresh)
 	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/files/{id}/rebuild", "rebuildSource", tag, "Move editing onto the published file", http.StatusNoContent, 150<<20, a.rebuildSource)
 	reg(api, http.MethodPost, "/internal/collaboration/files/{id}/rebuild-refusal", "refuseSourceRebuild", tag, "Record a refused rebuild and leave the file due", http.StatusNoContent, a.refuseSourceRebuild)
@@ -90,7 +99,7 @@ func (a *api) registerSourceDocuments(api huma.API) {
 	reg(api, http.MethodPost, "/api/files/{id}/retry-processing", "retryFileProcessing", tag, "Process a failed file again", http.StatusAccepted, a.retryFileProcessing)
 	reg(api, http.MethodGet, "/internal/collaboration/files/{id}/bootstrap", "bootstrapSourceDocument", tag, "Bootstrap an authorized source room", http.StatusOK, a.bootstrapSourceDocument)
 	reg(api, http.MethodGet, "/internal/collaboration/files/{id}/access", "checkSourceAccess", tag, "Revalidate source room access", http.StatusNoContent, a.checkSourceAccess)
-	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/files/{id}/checkpoint", "checkpointSourceDocument", tag, "Persist an authorized source checkpoint", http.StatusOK, 150<<20, a.checkpointSourceDocument)
+	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/files/{id}/checkpoint", "checkpointSourceDocument", tag, "Persist an authorized source checkpoint", http.StatusOK, 150<<20, a.checkpointSourceDocument, sourceBodyDeadline)
 	reg(api, http.MethodPost, "/internal/collaboration/files/{id}/refresh", "requestSourceRefresh", tag, "Admit a saved source refresh", http.StatusAccepted, a.requestSourceRefresh)
 	reg(api, http.MethodGet, "/api/files/{id}/annotations", "listPDFAnnotations", tag, "Read private PDF annotations", http.StatusOK, a.listPDFAnnotations)
 	reg(api, http.MethodPost, "/api/files/{id}/annotations", "createPDFAnnotation", tag, "Create a private PDF annotation", http.StatusCreated, a.createPDFAnnotation)

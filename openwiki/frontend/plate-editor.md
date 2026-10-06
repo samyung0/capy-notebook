@@ -834,7 +834,20 @@ endpoint.
 
 Go validates the complete envelope, locks the material, ignores stale versions,
 updates `materials.content`, increments the material revision, reconciles
-flashcard stats, and advances `projected_version`.
+flashcard stats, and advances `projected_version`. The handler parses the
+body once: Huma decodes it without a schema pass (the operation skips body
+validation; `materialdoc.NewProjection` validates the whole document), and
+the kind check, metrics, embedded references and editor assets all read that
+one parse (`materialdoc.Projection`) instead of re-parsing the canonical JSON.
+Content equal to what is stored advances the watermark without a revision:
+it is compared by the sha256 of the canonical JSON against
+`material_yjs_documents.projected_sha256`, the hash of what the last
+projection wrote or found (once a material has a Yjs document only the
+projection writes `materials.content`), and as `jsonb` only on that row's
+first projection. The answer carries the row's revision, `size_bytes` and
+metrics without reading the content back. On the 2 MB load-test note the
+handler's CPU went from ~140 ms to ~30 ms. Its body read deadline is 15 s,
+the collaboration service's own timeout for the call, instead of Huma's 5 s.
 Rows where `projected_version < stored_version` are retried by the sidecar.
 Binary persistence and projection have separate failure boundaries. Once a Yjs
 version commits, a projection outage does not enqueue that snapshot as a failed

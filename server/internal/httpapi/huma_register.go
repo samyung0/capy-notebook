@@ -348,14 +348,17 @@ func reg[I, O any](api huma.API, method, path, id, tag, summary string, status i
 	regWithMaxBody(api, method, path, id, tag, summary, status, 0, h)
 }
 
+// regWithMaxBody is reg with a body size cap; options adjust the operation
+// further (a large internal route's body read deadline).
 func regWithMaxBody[I, O any](
 	api huma.API,
 	method, path, id, tag, summary string,
 	status int,
 	maxBodyBytes int64,
 	h func(context.Context, *I) (*O, error),
+	options ...func(*huma.Operation),
 ) {
-	huma.Register(api, huma.Operation{
+	operation := huma.Operation{
 		OperationID:   id,
 		Method:        method,
 		Path:          path,
@@ -363,7 +366,11 @@ func regWithMaxBody[I, O any](
 		Tags:          []string{tag},
 		DefaultStatus: status,
 		MaxBodyBytes:  maxBodyBytes,
-	}, func(ctx context.Context, input *I) (*O, error) {
+	}
+	for _, option := range options {
+		option(&operation)
+	}
+	huma.Register(api, operation, func(ctx context.Context, input *I) (*O, error) {
 		output, err := h(ctx, input)
 		err = reportHandlerError(ctx, err)
 		return output, err

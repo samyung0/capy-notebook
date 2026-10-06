@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-
-	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
 var (
@@ -296,26 +294,23 @@ func (s *Store) EditorAssetMaterial(ctx context.Context, id string) (workspaceID
 // new content no longer references and restores trashed ones it references
 // again (undo, cut and paste, a replayed draft). A trashed asset stays charged
 // and is purged a day later (PurgeTrashedEditorAssets). Pending reservations
-// are left to the upload expiry. Every content write calls it;
-// materialdoc.EditorAssetIDs is the one definition of a reference.
+// are left to the upload expiry. Every content write calls it with
+// materialdoc's EditorAssetIDs of the new content, the one definition of a
+// reference.
 //
 // An asset completed in the last 60 seconds is kept. In a shared note the
 // image node's assetId reaches the server a moment after the upload completes
 // (or after a pasted copy is made), and a collaborator's save in that window
 // must not trash it. An image removed within that minute is trashed by a
 // later save. Quizzes follow the same rule.
-func pruneMaterialAssetsTx(ctx context.Context, tx pgx.Tx, materialID, content string) error {
-	kept, err := materialdoc.EditorAssetIDs(content)
-	if err != nil {
-		return err
-	}
+func pruneMaterialAssetsTx(ctx context.Context, tx pgx.Tx, materialID string, kept []string) error {
 	kept = append([]string{}, kept...)
-	if _, err = tx.Exec(ctx, `UPDATE editor_assets SET trashed_at=NULL
+	if _, err := tx.Exec(ctx, `UPDATE editor_assets SET trashed_at=NULL
 		WHERE material_id=$1 AND trashed_at IS NOT NULL AND id = ANY($2::text[])`,
 		materialID, kept); err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `UPDATE editor_assets SET trashed_at=now()
+	_, err := tx.Exec(ctx, `UPDATE editor_assets SET trashed_at=now()
 		WHERE material_id=$1 AND status='ready' AND trashed_at IS NULL AND id <> ALL($2::text[])
 		  AND completed_at < now() - interval '60 seconds'`,
 		materialID, kept)

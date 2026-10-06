@@ -85,7 +85,13 @@ func (a *api) registerCollaboration(api huma.API) {
 	reg(api, http.MethodPatch, "/api/comments/{id}", "updateMaterialComment", tag, "Edit an authored comment", http.StatusOK, a.updateMaterialComment)
 	reg(api, http.MethodDelete, "/api/comments/{id}", "deleteMaterialComment", tag, "Soft-delete a comment", http.StatusNoContent, a.deleteMaterialComment)
 	reg(api, http.MethodPost, "/api/materials/{id}/collaboration-token", "createMaterialCollaborationToken", tag, "Create a short-lived material room token", http.StatusCreated, a.createMaterialCollaborationToken)
-	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/materials/{id}/projection", "projectMaterialYjsDocument", tag, "Project a durably stored Yjs document", http.StatusOK, materialRequestMaxBytes, a.projectMaterialYjsDocument)
+	// The handler validates the whole document itself (materialdoc.NewProjection),
+	// so Huma decodes the 2 MiB body once instead of also into a generic value
+	// for schema validation. The collaboration service gives up after 15 s.
+	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/materials/{id}/projection", "projectMaterialYjsDocument", tag, "Project a durably stored Yjs document", http.StatusOK, materialRequestMaxBytes, a.projectMaterialYjsDocument, func(op *huma.Operation) {
+		op.SkipValidateBody = true
+		op.BodyReadTimeout = 15 * time.Second
+	})
 	reg(api, http.MethodPost, "/internal/collaboration/materials/{id}/index", "requestMaterialIndex", tag, "Queue a dirty idle note for retrieval indexing", http.StatusAccepted, a.requestMaterialIndex)
 	reg(api, http.MethodPost, "/internal/collaboration/materials/{id}/children", "adoptMaterialChildren", tag, "Make the images and quiz or flashcard blocks an update brought in the material's own", http.StatusOK, a.adoptMaterialChildren)
 }
@@ -268,16 +274,16 @@ func (a *api) projectMaterialYjsDocument(
 		return nil, huma.Error401Unauthorized("invalid collaboration service secret")
 	}
 	obs.ContinueInternalRetry(ctx)
-	raw, err := materialdoc.MarshalProjection(in.Body.Content)
+	projection, err := materialdoc.NewProjection(in.Body.Content)
 	if err != nil {
 		return nil, collaborationError(err)
 	}
-	material, err := a.s.ProjectMaterialContent(ctx, in.ID, raw, in.Body.YjsVersion)
+	material, err := a.s.ProjectMaterialContent(ctx, in.ID, projection, in.Body.YjsVersion)
 	if err != nil {
 		return nil, collaborationError(err)
 	}
 	return &projectMaterialOutput{Body: apimodel.MaterialUpdateResult{
-		ID: material.ID, Revision: material.Revision, ContentBytes: len(material.Content),
+		ID: material.ID, Revision: material.Revision, ContentBytes: int(material.SizeBytes),
 		NodeCount: material.NodeCount, MaxDepth: material.MaxDepth,
 		UpdatedAt: material.UpdatedAt,
 	}}, nil

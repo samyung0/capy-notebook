@@ -1,10 +1,14 @@
 package store
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
@@ -45,20 +49,33 @@ func (s *Store) WorkspaceMaterialIDs(ctx context.Context, workspaceID string) ([
 	return ids, rows.Err()
 }
 
+// ProjectedMaterial is a material row's numbers after a projection.
+type ProjectedMaterial struct {
+	ID        string
+	Revision  int64
+	SizeBytes int64
+	NodeCount int
+	MaxDepth  int
+	UpdatedAt time.Time
+}
+
 // ProjectMaterialContent advances the validated JSON read model from a Y.Doc
-// version that the collaboration service has already durably stored.
+// version that the collaboration service has already durably stored. The
+// caller parsed the content once into the projection; everything here reads
+// it, and nothing reads the stored content back.
 func (s *Store) ProjectMaterialContent(
 	ctx context.Context,
-	materialID, content string,
+	materialID string,
+	projection materialdoc.Projection,
 	yjsVersion int64,
-) (Material, error) {
+) (ProjectedMaterial, error) {
 	if yjsVersion < 1 {
-		return Material{}, fmt.Errorf("%w: invalid Yjs version", materialdoc.ErrInvalid)
+		return ProjectedMaterial{}, fmt.Errorf("%w: invalid Yjs version", materialdoc.ErrInvalid)
 	}
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return Material{}, err
+		return ProjectedMaterial{}, err
 	}
 	defer tx.Rollback(ctx)
 
@@ -67,7 +84,7 @@ func (s *Store) ProjectMaterialContent(
 	// before touching the Y.Doc, which also keeps our row-lock order aligned.
 	if _, err := tx.Exec(ctx,
 		`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, materialID); err != nil {
-		return Material{}, err
+		return ProjectedMaterial{}, err
 	}
 	var workspaceID *string
 	var ownerID string
@@ -75,14 +92,14 @@ func (s *Store) ProjectMaterialContent(
 		FROM materials WHERE id=$1 AND trashed_at IS NULL`, materialID).
 		Scan(&workspaceID, &ownerID); err != nil {
 		if isNoRows(err) {
-			return Material{}, ErrNotFound
+			return ProjectedMaterial{}, ErrNotFound
 		}
-		return Material{}, err
+		return ProjectedMaterial{}, err
 	}
 	if workspaceID != nil {
 		ownerID, err = s.storageOwnerTx(ctx, tx, *workspaceID)
 		if err != nil {
-			return Material{}, err
+			return ProjectedMaterial{}, err
 		}
 	}
 	// A projection is still a material write even though it is authenticated by
@@ -90,61 +107,66 @@ func (s *Store) ProjectMaterialContent(
 	// admission with suspension and account deletion so queued projections
 	// cannot cross either boundary.
 	if err := s.lockAccountSessionsTx(ctx, tx, ownerID); err != nil {
-		return Material{}, err
+		return ProjectedMaterial{}, err
 	}
 
 	var storedVersion, projectedVersion int64
-	if err := tx.QueryRow(ctx, `SELECT stored_version, projected_version
+	var projectedSHA256 []byte
+	if err := tx.QueryRow(ctx, `SELECT stored_version, projected_version, projected_sha256
 		FROM material_yjs_documents WHERE material_id=$1 FOR UPDATE`, materialID).
-		Scan(&storedVersion, &projectedVersion); err != nil {
+		Scan(&storedVersion, &projectedVersion, &projectedSHA256); err != nil {
 		if isNoRows(err) {
-			return Material{}, ErrNotFound
+			return ProjectedMaterial{}, ErrNotFound
 		}
-		return Material{}, err
+		return ProjectedMaterial{}, err
 	}
 	if yjsVersion > storedVersion {
-		return Material{}, ErrConflict
+		return ProjectedMaterial{}, ErrConflict
 	}
 	if yjsVersion <= projectedVersion {
-		if err := tx.Commit(ctx); err != nil {
-			return Material{}, err
-		}
-		return s.GetMaterial(ctx, materialID)
+		return commitProjected(ctx, tx, materialID)
 	}
 
-	var kind, title, lockedOwnerID string
+	var kind, lockedOwnerID string
 	var revision int64
-	var unchanged bool
-	if err := tx.QueryRow(ctx, `SELECT kind, title, revision, content = $2::jsonb,
-		owner_user_id
-		FROM materials WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, materialID, content).
-		Scan(&kind, &title, &revision, &unchanged, &lockedOwnerID); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT kind, revision, owner_user_id
+		FROM materials WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, materialID).
+		Scan(&kind, &revision, &lockedOwnerID); err != nil {
 		if isNoRows(err) {
-			return Material{}, ErrNotFound
+			return ProjectedMaterial{}, ErrNotFound
 		}
-		return Material{}, err
+		return ProjectedMaterial{}, err
 	}
 	if lockedOwnerID != ownerID {
-		return Material{}, ErrConflict
+		return ProjectedMaterial{}, ErrConflict
+	}
+	// Once a material has a Yjs document only this projection writes
+	// materials.content (UpdateMaterial writes it only while there is none), so
+	// the hash of what the last projection wrote or found stands for the stored
+	// content. The row's first projection compares the jsonb instead.
+	digest := sha256.Sum256([]byte(projection.Raw))
+	unchanged := bytes.Equal(projectedSHA256, digest[:])
+	if projectedSHA256 == nil {
+		if err := tx.QueryRow(ctx, `SELECT content = $2::jsonb FROM materials WHERE id=$1`,
+			materialID, projection.Raw).Scan(&unchanged); err != nil {
+			return ProjectedMaterial{}, err
+		}
 	}
 	// Retries and repeated stores of a settled document project identical JSON.
 	// Advance the watermark without inventing a revision nobody authored.
 	if unchanged {
 		if _, err := tx.Exec(ctx, `UPDATE material_yjs_documents
-			SET projected_version=$2, projection_error=NULL, projected_at=now()
-			WHERE material_id=$1`, materialID, yjsVersion); err != nil {
-			return Material{}, err
+			SET projected_version=$2, projected_sha256=$3, projection_error=NULL, projected_at=now()
+			WHERE material_id=$1`, materialID, yjsVersion, digest[:]); err != nil {
+			return ProjectedMaterial{}, err
 		}
-		if err := tx.Commit(ctx); err != nil {
-			return Material{}, err
-		}
-		return s.GetMaterial(ctx, materialID)
+		return commitProjected(ctx, tx, materialID)
 	}
-	if err := materialdoc.ValidateKind(content, kind); err != nil {
+	if err := projection.ValidateKind(kind); err != nil {
 		_, _ = tx.Exec(ctx, `UPDATE material_yjs_documents
 			SET projection_error=$2, updated_at=now() WHERE material_id=$1`,
 			materialID, err.Error())
-		return Material{}, err
+		return ProjectedMaterial{}, err
 	}
 	// Deliberately no metrics.LimitError() here. The collaboration service is
 	// the write gate for room content and already refused every update that
@@ -152,49 +174,63 @@ func (s *Store) ProjectMaterialContent(
 	// within the caps or a shrink that recovers towards them. Re-rejecting it
 	// would strand materials.content behind the authoritative Y.Doc for exactly
 	// the documents that are trying to get back under the limit.
-	metrics, err := materialdoc.Metrics(content)
-	if err != nil {
-		_, _ = tx.Exec(ctx, `UPDATE material_yjs_documents
-			SET projection_error=$2, updated_at=now() WHERE material_id=$1`,
-			materialID, err.Error())
-		return Material{}, err
+	projected := ProjectedMaterial{
+		ID:        materialID,
+		Revision:  revision + 1,
+		NodeCount: projection.Metrics.NodeCount,
+		MaxDepth:  projection.Metrics.MaxDepth,
+		UpdatedAt: time.Now().UTC(),
 	}
-	now := time.Now().UTC()
-	nextRevision := revision + 1
-	if _, err := tx.Exec(ctx, `UPDATE materials
+	if err := tx.QueryRow(ctx, `UPDATE materials
 		SET content=$2, node_count=$3, max_depth=$4, revision=$5, updated_at=$6, `+noteIndexDirtySQL+`
-		WHERE id=$1 AND trashed_at IS NULL`, materialID, json.RawMessage(content), metrics.NodeCount,
-		metrics.MaxDepth, nextRevision, now); err != nil {
-		return Material{}, err
+		WHERE id=$1 AND trashed_at IS NULL RETURNING size_bytes`, materialID,
+		json.RawMessage(projection.Raw), projected.NodeCount, projected.MaxDepth,
+		projected.Revision, projected.UpdatedAt).Scan(&projected.SizeBytes); err != nil {
+		return ProjectedMaterial{}, err
 	}
 	if kind == "flashcards" {
-		cards, err := materialdoc.ExtractFlashcards(content)
+		cards, err := materialdoc.ExtractFlashcards(projection.Raw)
 		if err != nil {
-			return Material{}, err
+			return ProjectedMaterial{}, err
 		}
 		cardIDs := make([]string, len(cards))
 		for i, card := range cards {
 			cardIDs[i] = card.ID
 		}
 		if err := syncFlashcardCardsTx(ctx, tx, materialID, cardIDs); err != nil {
-			return Material{}, err
+			return ProjectedMaterial{}, err
 		}
 	}
 	if kind == "note" {
-		if err := reconcileEmbeddedTx(ctx, tx, materialID, content, ""); err != nil {
-			return Material{}, err
+		if err := reconcileEmbeddedTx(ctx, tx, materialID, projection.MaterialRefs(), ""); err != nil {
+			return ProjectedMaterial{}, err
 		}
 	}
-	if err := pruneMaterialAssetsTx(ctx, tx, materialID, content); err != nil {
-		return Material{}, err
+	if err := pruneMaterialAssetsTx(ctx, tx, materialID, projection.EditorAssetIDs()); err != nil {
+		return ProjectedMaterial{}, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE material_yjs_documents
-		SET projected_version=$2, projection_error=NULL, projected_at=$3
-		WHERE material_id=$1`, materialID, yjsVersion, now); err != nil {
-		return Material{}, err
+		SET projected_version=$2, projected_sha256=$3, projection_error=NULL, projected_at=$4
+		WHERE material_id=$1`, materialID, yjsVersion, digest[:], projected.UpdatedAt); err != nil {
+		return ProjectedMaterial{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return Material{}, err
+		return ProjectedMaterial{}, err
 	}
-	return s.GetMaterial(ctx, materialID)
+	return projected, nil
+}
+
+// commitProjected commits a projection that left the material row as it was
+// and answers the row's numbers, without its content.
+func commitProjected(ctx context.Context, tx pgx.Tx, materialID string) (ProjectedMaterial, error) {
+	projected := ProjectedMaterial{ID: materialID}
+	if err := tx.QueryRow(ctx, `SELECT revision, size_bytes, node_count, max_depth, updated_at
+		FROM materials WHERE id=$1`, materialID).Scan(&projected.Revision, &projected.SizeBytes,
+		&projected.NodeCount, &projected.MaxDepth, &projected.UpdatedAt); err != nil {
+		return ProjectedMaterial{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return ProjectedMaterial{}, err
+	}
+	return projected, nil
 }
