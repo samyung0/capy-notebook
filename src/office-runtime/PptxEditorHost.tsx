@@ -86,12 +86,12 @@ export function PptxEditorHost({
   const [speakerNotes] = useState(() => readViewToggle('speakerNotes'));
   // Each show starts at the size last picked, in this editor or before.
   const [notesSize, setNotesSize] = useState(readNotesSize);
-  // The header's menus and Present run the editor's commands; Insert › Image
-  // arrives with the file Capy's picker chose.
   const zoom = commandState?.zoom;
   useEffect(() => {
     if (zoom) onZoomChange(zoom === 'fit' ? 'fit' : Number(zoom));
   }, [onZoomChange, zoom]);
+  // The header's menus and Present run the editor's commands; Insert › Image
+  // arrives with the file Capy's picker chose.
   useEffect(() => {
     if (!commandState) return;
     const presentable = commandState.enabled['view.presenterView'];
