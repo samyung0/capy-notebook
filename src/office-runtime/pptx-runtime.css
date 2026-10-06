@@ -142,10 +142,15 @@
   position: relative;
   display: flex;
   flex: 1;
-  align-items: center;
-  justify-content: center;
   min-width: 0;
   overflow: auto;
+}
+
+/* Auto margins centre the slide (or the no-slides line), and a slide zoomed
+   past the stage scrolls from its edges, as the editor's does. */
+.pptx-viewer-canvas,
+.pptx-viewer-stage > p {
+  margin: auto;
 }
 
 .pptx-viewer-stage canvas {

@@ -656,7 +656,8 @@ the pages `render` {kind: 'print'} returns from a hidden frame on the app's own
 document, and `capy.png` saves the image `render` {kind: 'png'} returns; the
 runtime's sandbox stays without downloads, popups or modals. View mode offers
 only what works, never disabled items: DOCX has File › Download and Print and
-View › Zoom, XLSX File › Download, PNG and Print and View › Zoom. A print the
+View › Zoom, XLSX File › Download, PNG and Print and View › Zoom (PPTX's are
+under PPTX below). A print the
 runtime cannot draw answers `render-failed`, not
 `error`: the host shows a short toast instead of the "couldn't open" banner and
 pending flushes are untouched. Edit-mode rendering flushes pending input first,
@@ -704,10 +705,25 @@ and so is a new comment being written; neither takes the focus back); XLSX's
 Ctrl/Cmd+C copies the sheet (in the grid Tab moves between cells, as when
 editing). All three keep their toolbar row visible and disabled, and XLSX its
 formula bar visible and read-only (its text still selects and copies), so
-nothing moves when a pause starts or ends. Only an editor pauses: in view mode
+nothing moves when a pause starts or ends. The toolbar's zoom control is the
+exception and stays usable, as View › Zoom does: zoom edits nothing. Only an editor pauses: in view mode
 a `canEdit` of false (a view-only user's) changes nothing, and the viewer
 still selects and copies. The DOCX menu model refuses a disabled item's id
 too.
+
+Zoom is kept while a file stays open and carried across View and Edit in all
+three formats, with nothing stored (as decided 2026-10-06). Every viewer and
+editor reports its zoom as it opens and when it changes (protocol `zoom`
+{zoom}: 1 = 100%, or PPTX's `'fit'`), from the toolbar's control or View ›
+Zoom; the host keeps the last one in memory (`useOfficeRuntime`'s `zoomRef`)
+and the next frame's `load` carries it (`zoom`), whether that frame is the
+other mode or the same one after a runtime reload. The runtime hands it to the
+viewer or editor as its starting level: `DocxViewer`, `XlsxViewer` and
+`PptxViewer`, and the fork editors' `initialZoom`; the DOCX editor reports its
+zoom in its menu model (`DocxMenuModel.zoom`), XLSX and PPTX in their command
+state. Closing the file, opening another one or reloading the page starts at
+the format's default (100%, PPTX fitted to the window); the scroll position is
+not carried.
 
 In edit mode the DOCX editor shows one toolbar row under the header, in Google
 Docs' order (`singleRowToolbar` with the menus in the host, `DocxEditor`'s
@@ -926,16 +942,19 @@ the host shows "Printed the first 50 pages". View mode offers File with
 Download, PNG and Print, and View › Zoom.
 
 XLSX zoom follows Google Sheets: 50, 75, 90, 100, 125, 150 and 200% from the
-toolbar's zoom box (which also takes a typed 25–400%) and View › Zoom in edit
-mode, and from View › Zoom in view mode, which has no toolbar. The grid, its
+toolbar's zoom box and View › Zoom in edit mode, and from View › Zoom in view
+mode, which has no toolbar. The box also takes a typed zoom as Sheets does: a
+whole percent from 50 to 200 (120.6 is 121%), anything above as 200% and
+below as 50% (300 is 200%, 20 is 50%); text that is no number changes
+nothing. The grid, its
 frozen panes, the selection and the in-cell editor scale; the chrome does not.
 Both modes build the display list for the sheet area the scroll box shows at the
 zoom (`zoomedViewport` in `@betteroffice/xlsx`), paint it at
 `devicePixelRatio × zoom` and divide pointer positions by the zoom, and a change
 keeps the sheet point at the grid's top-left corner where it was, as Sheets
 does (`XlsxEditor`'s `changeZoom`, `XlsxViewer`). The level lasts while the
-editor or viewer is open, as DOCX's: switching between View and Edit or
-reopening the file starts at 100%. Both modes open a sheet at its saved scroll
+file stays open, across View and Edit, as in DOCX and PPTX (see Zoom below).
+Both modes open a sheet at its saved scroll
 (its frozen pane's top-left cell) once the scroll area has that sheet's size.
 Ctrl/Cmd with the wheel and a trackpad pinch
 are left to the browser, as in Sheets. Zoom edits nothing, so View › Zoom runs
@@ -1136,7 +1155,9 @@ messages for the rest). A menu id carries
 its command's value after a colon (`view.zoom:1.5`, `insert.shape:ellipse`,
 `slide.newWithLayout:<layout part>`). Insert › Image is a `pick` item: Capy's
 picker hands the file to `PptxEditorApi.insertImage`. View mode offers File ›
-Download and Print and View › Present ▸ and Show speaker notes (`pptxMenus.ts`). Present is a header
+Download and Print and View › Present ▸, Zoom ▸ (the same Fit and levels as
+edit mode, `zoomMenu`) and Show speaker notes (`pptxMenus.ts`); a level above
+the fit scrolls the slide in its stage. Present is a header
 split button in both modes; the viewer presents through pptx-react's
 `PresentationOverlay`, exported alone (with the notes window store and
 `PRESENT_ITEMS`) as `@betteroffice/pptx-react/presentation` so the viewer loads
