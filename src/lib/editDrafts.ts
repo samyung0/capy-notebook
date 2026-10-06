@@ -264,6 +264,25 @@ export function readDraftBase(key: string, base: string) {
   );
 }
 
+/**
+ * The base a source recovery group opens over: its bytes, `missing` when this
+ * device does not hold it (the group can never be drawn: drop it), or
+ * `unreadable` when reading failed (storage trouble: keep the group for the
+ * next open; dropping it would lose edits that are still stored).
+ */
+export async function recoveryBase(
+  group: EditDraft[]
+): Promise<Uint8Array | 'missing' | 'unreadable'> {
+  const [first] = group;
+  if (first?.base === undefined) return 'missing';
+  try {
+    return (await readDraftBase(first.key, first.base)) ?? 'missing';
+  } catch (error) {
+    console.warn('Draft storage failed:', error);
+    return 'unreadable';
+  }
+}
+
 /** Write rows, and their source base when it is not stored yet. */
 export function putDrafts(rows: EditDraft[], base?: Uint8Array): Promise<void> {
   const kept = rows.filter((row) => stored(row.key));
@@ -304,8 +323,12 @@ export function deleteDrafts(
 }
 
 /** Every row of a document, all sessions: its user lost access or it is
- * gone. Resolves to the bytes the deleted rows held. */
-export function deleteDocumentDrafts(key: string): Promise<number> {
+ * gone. Resolves to the bytes the deleted rows `counted` held (all of them by
+ * default). */
+export function deleteDocumentDrafts(
+  key: string,
+  counted: (row: EditDraft) => boolean = () => true
+): Promise<number> {
   if (!stored(key)) return Promise.resolve(0);
   return enqueue(async () => {
     let bytes = 0;
@@ -313,7 +336,7 @@ export function deleteDocumentDrafts(key: string): Promise<number> {
       const rows = stores.drafts.index('key').getAll(key);
       rows.onsuccess = () => {
         for (const row of rows.result as EditDraft[]) {
-          bytes += row.data.byteLength;
+          if (counted(row)) bytes += row.data.byteLength;
           deleteRow(stores, row);
         }
       };
@@ -329,9 +352,12 @@ export function deleteDocumentDrafts(key: string): Promise<number> {
 export async function dropLostDrafts(
   key: string,
   reason: 'forbidden' | 'not_found',
-  report: EditIncidentReporter
+  report: EditIncidentReporter,
+  /** Rows to count; the rest are deleted unreported (another report has
+   * them). */
+  counted?: (row: EditDraft) => boolean
 ) {
-  const bytes = await deleteDocumentDrafts(key);
+  const bytes = await deleteDocumentDrafts(key, counted);
   if (bytes) report('discard_unsaved', reason, bytes);
 }
 

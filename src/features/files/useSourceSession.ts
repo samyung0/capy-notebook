@@ -33,9 +33,9 @@ import {
   dropLostDrafts,
   type EditDraft,
   markDraftsReported,
-  readDraftBase,
   readDrafts,
   recordDrafts,
+  recoveryBase,
   reportRecoveryGroup,
   sameSourceLineage,
   sourceLineage,
@@ -367,12 +367,9 @@ export function useSourceSession(
         sameSourceLineage(session.format)
       );
       const draft = found[0];
-      const base =
-        draft?.base === undefined
-          ? null
-          : await bestEffort(() => readDraftBase(draftKey, draft.base!));
+      const base = draft ? await recoveryBase(found) : null;
       if (cancelled) return;
-      if (draft && base) {
+      if (draft && base instanceof Uint8Array) {
         reportRecoveryGroup(found, report);
         recoveryDrafts = found;
         shared.destroy();
@@ -398,8 +395,9 @@ export function useSourceSession(
         setBanner(draft.refused ? 'refused' : 'changed');
         return;
       }
-      // A draft whose base this device no longer holds cannot be opened.
-      if (draft) {
+      // A draft whose base this device no longer holds cannot be opened. One
+      // whose base could not be read stays for the next open.
+      if (draft && base === 'missing') {
         await bestEffort(() => deleteDrafts(found));
         toastDraftsLost();
         reportOnce(draft.id, () =>
@@ -488,9 +486,17 @@ export function useSourceSession(
         rejectWaiters(new SourceSessionError(m.editor_save_failed_undone()));
         void (async () => {
           await recorder?.discard();
+          // Rows of this lineage reached this room (another tab's too):
+          // the service's row counts them; only other lineages are new.
+          const same = sameSourceLineage(session.format);
           if (lostAccess)
             await bestEffort(() =>
-              dropLostDrafts(draftKey, lostAccess, report)
+              dropLostDrafts(
+                draftKey,
+                lostAccess,
+                report,
+                (row) => !same(row.lineage, lineage)
+              )
             );
           pendingInput(false);
           setGeneration((value) => value + 1);
@@ -583,8 +589,8 @@ export function useSourceSession(
           // Reported: a later open shows this lineage's rows (adopted ones
           // included) without a `reopen`. Queued after the flush.
           const same = sameSourceLineage(session.format);
-          void markDraftsReported(draftKey, (row) =>
-            same(row.lineage, lineage)
+          void bestEffort(() =>
+            markDraftsReported(draftKey, (row) => same(row.lineage, lineage))
           );
           setLoaded({ bytes, doc: shared, session });
           setStatus('recovery');

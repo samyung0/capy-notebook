@@ -109,7 +109,7 @@ func main() {
 		}
 		pool := openPool(ctx, source.dsn, source.name)
 		if !cfg.AllowOwnerDSN() {
-			if err := ops.ValidateDatabaseRole(ctx, pool, ops.ReadDatabaseRole); err != nil {
+			if err := ops.ValidateDatabaseRole(ctx, pool, ops.SecondaryReadDatabaseRole); err != nil {
 				pool.Close()
 				log.Fatalf("%s: %v", source.name, err)
 			}

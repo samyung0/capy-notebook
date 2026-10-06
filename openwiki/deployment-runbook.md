@@ -1697,9 +1697,11 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://example.com      # root on the
    `edit_incidents` holds ids, kinds, reason tokens and sizes, never content.
    Migration 0065 grants `capy_ops` `SELECT` on it where the role already
    exists, and this file grants it where the role is created later. Ops
-   requires the grant only where the table exists, so a secondary database
+   requires the grant on its own database. On a secondary database
    (`OPS_INGEST_UAT_DATABASE_URL`, `OPS_INGEST_LOCAL_DATABASE_URL`) that has not
-   run 0065 yet does not stop ops at boot.
+   run 0065 yet, it logs one line and boots; once the table exists there, the
+   grant is required too.
+
    `touch_operator_seen`, `request_reconciliation`, and
    `record_registry_audit` are `SECURITY DEFINER`.
    The read/auth role cannot update `operators` directly. The admin-actions
