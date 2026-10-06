@@ -558,3 +558,13 @@ def test_a_book_title_closes_the_path_without_entering_it() -> None:
             ("", "ReStorying Education\n\nEdited by the authors."),
             ("Chapter 1", "First chapter text."),
         ]
+
+
+def test_a_reader_drops_the_lead_a_chunk_carries_from_the_previous_tail():
+    """Whitespace may differ; a repeat under 40 characters stays."""
+    previous = "First block.\n\nThe carried block repeats   across two packed chunks."
+    text = "The carried block repeats across\ntwo packed chunks.\n\nNew material."
+
+    assert chunking.strip_carried(previous, text) == "New material."
+    assert chunking.strip_carried("A tail. Short.", "Short. Next.") == "Short. Next."
+    assert chunking.strip_carried(previous, "Nothing repeats.") == "Nothing repeats."

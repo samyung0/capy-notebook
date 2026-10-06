@@ -268,12 +268,13 @@ async def _run_turn(
 
     if ctx.library:
         # A library that is down or empty leaves the turn on the workspace
-        # alone rather than failing it.
+        # alone rather than failing it. With section tools a current book is
+        # enough: an untagged library has no subject to list.
         try:
             await tools.load_library_catalog(ctx)
         except Exception:  # any failure to reach the library
             log.warning("knowledge library unavailable for this turn", exc_info=True)
-        if not ctx.library_catalog:
+        if not ctx.library_catalog and not ctx.library_books:
             ctx.library = False
     if ctx.library:
         try:

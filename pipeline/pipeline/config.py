@@ -209,6 +209,12 @@ class Config:
     library_tag_min_confidence: float = float(
         _env("CAPY_LIBRARY_TAG_MIN_CONFIDENCE", "0.8")
     )
+    # Intake comparison flags (bench/rag/reports/2026-10-06-intake-retrieval-
+    # comparison-plan.md), 0 or 1. Section tools offer a book's outline and
+    # ordered section reads; without required tags untagged excerpts are
+    # searchable. Production keeps section tools off and tags required.
+    library_section_tools: bool = _env("CAPY_LIBRARY_SECTION_TOOLS", "0") == "1"
+    library_require_tags: bool = _env("CAPY_LIBRARY_REQUIRE_TAGS", "1") == "1"
     # The library's source PDFs live in their own private bucket with their own
     # restricted key, not a prefix of the app bucket. Unset leaves
     # capture_knowledge_page unoffered.
@@ -319,6 +325,10 @@ if not cfg.parser_timeout < cfg.parse_job_timeout:
 
 if not 0 < cfg.library_tag_min_confidence <= 1:
     raise ValueError("CAPY_LIBRARY_TAG_MIN_CONFIDENCE must be in (0, 1]")
+
+for _flag in ("CAPY_LIBRARY_SECTION_TOOLS", "CAPY_LIBRARY_REQUIRE_TAGS"):
+    if os.getenv(_flag, "") not in ("", "0", "1"):
+        raise ValueError(f"{_flag} must be 0 or 1")
 
 if not 0 < cfg.confidence_note_below <= 1:
     raise ValueError("CAPY_CONFIDENCE_NOTE_BELOW must be in (0, 1]")

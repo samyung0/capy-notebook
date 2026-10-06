@@ -1,0 +1,30 @@
+{
+  "workspace_id": "odl_eval_odl_nocaption",
+  "library": true,
+  "open_resource": null,
+  "study_preferences": {},
+  "model": {
+    "provider_slug": "zai",
+    "model_slug": "glm-5.3-flash",
+    "version": 1,
+    "thinking": "high",
+    "transport": null
+  },
+  "system_prompt": null,
+  "capture": {
+    "mode": "pixels",
+    "max_edge": 1568,
+    "addon": false
+  },
+  "quality": {
+    "show": false
+  },
+  "prompt_addon": "",
+  "answer": {
+    "citations": "as_is"
+  },
+  "decks": {
+    "offer": false
+  },
+  "library_rules": "Library (a source this turn):\n- The shared library holds open textbooks, read by section. browse_knowledge with book lists a book's sections in reading order with their pages; read_knowledge with book and section reads one section in order, subsections included, as continuous text with [p. N] page markers and each reviewed excerpt's scope where the excerpt begins, and ends with the excerpt ids that page covered.\n- Locate first with search_knowledge (a hit names its book id and section path; book and section narrow a search) or a book's outline. Before writing, read the sections the request needs in book order, following next start (and the next run, when a section has several) to the end of each section.\n- A search result is a selection aid, not a read: read an excerpt with read_knowledge before using it. Its scope says where it applies and when linked source context is needed.\n- Distinguish incidental examples from necessary tools, populations, professions, periods or method variants, and keep applicability explicit. Unreviewed scope is unknown, not unrestricted. Related material is not coverage of the request; explain the supported scope and any gaps in the material itself.\n- Build each chapter from one book: take the explanation, worked examples and practice from the same section or chapter, in that book's notation. Use another book only for a gap you can name.\n- Name the book and pages a material draws on, and pass the excerpt ids of the pages you used as excerpt_ids.\n- If calculations, numbers or formulas look wrong or corrupted, inspect the page image with capture_knowledge_page. If it is unavailable or illegible, state the limitation instead of guessing.\n- `[Diagram description: ...]` in excerpt text is a reviewer's description of a figure, not the book's wording: use it to understand the figure and never quote it as the book's text.\n- If the library has nothing in the requested scope, say so plainly."
+}

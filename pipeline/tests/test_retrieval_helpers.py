@@ -263,6 +263,7 @@ async def test_search_knowledge_renders_excerpts_and_refuses_unknown_topics(
         "scope": "One predictor; no software is required for the explanation.",
         "context_excerpt_ids": ["e_2"],
     }
+    excerpt.links = [{"id": "e_2", "section_path": "8.2 Residuals", "pages": [340]}]
     excerpt.synopsis = "Complete reviewed notes " * 1000
     excerpt.hit_text = "The least squares line minimises the sum of squared residuals."
     looked_up: list[list[str]] = []
@@ -292,12 +293,12 @@ async def test_search_knowledge_renders_excerpts_and_refuses_unknown_topics(
     text = result.text()
 
     assert (
-        "[e_1] Advanced High School Statistics — 8.1 Line fitting (pages 338, 339)"
-        in text
-    )
+        "[e_1] Advanced High School Statistics (book ahss) — 8.1 Line fitting "
+        "(pages 338, 339)" in text
+    ), "the book id is what search_knowledge.book takes"
     assert "roles: introduction" in text and "figures: fig_8_1" in text
     assert "least squares line" in text and "Fitting a line" in text
-    assert "One predictor" in text and "e_2" in text
+    assert "One predictor" in text and "- [e_2] 8.2 Residuals (pages 340)" in text
     assert "Complete reviewed notes" not in text
     assert looked_up == [], "a browsed topic id is known without a query"
 
@@ -481,6 +482,171 @@ async def test_read_knowledge_pages_in_chunk_units_and_records_the_read(monkeypa
     assert "(chunk 42) Residuals" in again.text()
     assert len(ctx.ledger.reads) == 1
     assert ctx.ledger.progress == 0, "reading is never progress"
+
+
+async def test_a_page_the_output_limit_cuts_continues_at_the_first_unshown_chunk(
+    monkeypatch,
+):
+    """The page stops before the clip would, so next start skips nothing."""
+    monkeypatch.setattr(tools, "TOOL_RESULT_MAX_TOKENS", 450)
+    ctx = ToolContext(workspace_id="ws", operations=_LIBRARY, library=True)
+
+    async def _read(excerpt_id, *, start=0, count=12):
+        assert count == 3
+        return _read_result(
+            start=start,
+            chunks=[{"chunk_idx": 40 + i, "text": f"w{i}xyz " * 100} for i in range(3)],
+            next_start=43,
+        )
+
+    monkeypatch.setattr(tools.library, "read_excerpt", _read)
+    text = (
+        await tools._read_knowledge({"excerpt_id": "e_1", "start": 40, "count": 3}, ctx)
+    ).text()
+
+    assert "(chunk 41)" in text and "(chunk 42)" not in text
+    assert text.endswith("(page cut at the tool output limit; next start = 42)")
+    assert tools.limit_tool_result(text) == text, "nothing left for the clip to drop"
+
+    # One chunk over the limit by itself: the next start goes ahead of the clip.
+    monkeypatch.setattr(tools, "TOOL_RESULT_MAX_TOKENS", 200)
+    shown = tools.limit_tool_result(
+        (await tools._read_knowledge({"excerpt_id": "e_1", "count": 3}, ctx)).text()
+    )
+    assert shown.startswith("(page cut at the tool output limit; next start = 41)")
+    assert shown.endswith(
+        "[Tool output truncated. Narrow the request or continue reading.]"
+    )
+
+
+def test_a_section_page_reads_as_text_with_page_markers_and_headings():
+    carried = "The carried paragraph repeats across the two chunks."
+    chunks = [
+        {
+            "chunk_idx": 4,
+            "excerpt_id": "x4",
+            "section_path": "Ch 2",
+            "page_start": 10,
+            "page_end": 10,
+            "text": "Probability measures chance.",
+        },
+        {
+            "chunk_idx": 5,
+            "excerpt_id": "x5",
+            "section_path": "Ch 2",
+            "page_start": 10,
+            "page_end": 11,
+            "text": f"A sample space lists outcomes.\n\n{carried}",
+        },
+        {
+            "chunk_idx": 6,
+            "excerpt_id": "x6",
+            "section_path": "Ch 2 › 2.1 Events",
+            "page_start": 11,
+            "page_end": 11,
+            "text": f"{carried}\n\nAn event is a subset.",
+        },
+        {
+            "chunk_idx": 8,
+            "excerpt_id": "x8",
+            "section_path": "Ch 2 › 2.1 Events",
+            "page_start": 12,
+            "page_end": None,
+            "text": f"{carried} Not consecutive, so kept.",
+        },
+    ]
+
+    assert tools._section_text("Ch 2", chunks, {}) == "\n\n".join(
+        [
+            "[p. 10]",
+            "Probability measures chance.",
+            "[p. 10-11]",
+            f"A sample space lists outcomes.\n\n{carried}",
+            "## Ch 2 › 2.1 Events",
+            "An event is a subset.",
+            "[p. 12]",
+            f"{carried} Not consecutive, so kept.",
+        ]
+    )
+
+
+async def test_a_section_read_counts_every_excerpt_it_shows_as_read(monkeypatch):
+    """Each excerpt on the page satisfies the write guard, as read_knowledge
+    of that excerpt would; with the flag off the arguments are refused."""
+    from unittest.mock import AsyncMock
+
+    ctx = _library_ctx()
+    calls = []
+
+    async def _read_section(book, section, *, start=None, count=24):
+        calls.append((book, section, start, count))
+        return library.SectionRead(
+            book_id=book,
+            title="Brief Calculus",
+            version=5,
+            section=section,
+            first=10,
+            last=13,
+            page_first=30,
+            page_last=32,
+            run=1,
+            runs=1,
+            next_run=None,
+            start=10,
+            chunks=[
+                {
+                    "chunk_idx": 10 + i,
+                    "excerpt_id": eid,
+                    "section_path": "3 Rules",
+                    "page_start": 30 + i // 2,
+                    "page_end": None,
+                    "text": f"Part {i}.",
+                }
+                for i, eid in enumerate(["x1", "x1", "x2", "x3"])
+            ],
+            next_start=None,
+            figures=[
+                {
+                    "id": "f_30",
+                    "label": "Figure 3.1",
+                    "description": "",
+                    "credit": "",
+                    "page": 30,
+                },
+                {
+                    "id": "f_40",
+                    "label": "Figure 4.1",
+                    "description": "",
+                    "credit": "",
+                    "page": 40,
+                },
+            ],
+        )
+
+    monkeypatch.setattr(tools.library, "read_section", _read_section)
+    monkeypatch.setattr(tools.library, "provenance", AsyncMock(return_value=[]))
+    args = {"book": "brief-calculus", "section": "3 Rules"}
+    off = await tools._read_knowledge(args, ctx)
+    assert off.refused and calls == [], "section reading is the experiment's"
+
+    monkeypatch.setattr(tools.cfg, "library_section_tools", True)
+    text = (await tools._read_knowledge(args, ctx)).text()
+
+    assert calls == [("brief-calculus", "3 Rules", None, 24)]
+    assert text.startswith(
+        'Brief Calculus (book brief-calculus, version 5), section "3 Rules": '
+        "run 1 of 1, pages 30-32, chunks 10-13, from 10"
+    )
+    assert "- f_30: Figure 3.1" in text and "f_40" not in text, "figures on its pages"
+    assert text.endswith("Excerpts on this page: x1, x2, x3\n\n(end of section)")
+    assert [(r.excerpt_id, r.start) for r in ctx.ledger.reads] == [
+        ("x1", 10),
+        ("x2", 12),
+        ("x3", 13),
+    ]
+    assert await tools.ledger_write(
+        ctx, "create_material", {"excerpt_ids": ["x1", "x3"]}
+    ) == ([], None)
 
 
 # --------------------------------------------------------------- the ledger

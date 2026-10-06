@@ -371,3 +371,62 @@ judged against the saved runs.
 | Give me HKDSE practice on circle tangents, past-paper style. | | Reuses question-bank questions before writing new ones |
 | Make a short lecture deck on the first chapter. | Decks on | Outlines, then fills a deck |
 | Write a note on the first chapter with a diagram, a mini check and an interactive where it helps. | Visuals more, mini checks on | Mermaid, quiz or flashcards and html-embed fences pass the note checker |
+
+## Intake comparison
+
+The 2026-10-06 intake and retrieval comparison
+(`bench/rag/reports/2026-10-06-intake-retrieval-comparison-plan.md`, protocol
+`bench/rag/intake/fixtures/protocol.json`) runs its arms through three
+configs. Each is `chat.json` with decks off; `intake-b.json` and
+`intake-c.json` replace the library rules (`library_rules`) with the
+section-reading variant: production's scope and applicability lines verbatim,
+with the search and read workflow lines replaced (locate by search or a book's
+outline, read the needed sections in book order, take examples and practice
+from the same section or chapter in one book's notation, name the book and
+pages; no topic or role filters). `intake-a.json` keeps production's rules.
+
+Everything else an arm changes is process environment, so each arm runs in
+its own playground process on its own port (the process runs one turn at a
+time). A variable set in the shell wins over `.env.local`.
+
+| Arm | Config | `CAPY_LIBRARY_SECTION_TOOLS` | `CAPY_LIBRARY_REQUIRE_TAGS` | `LIBRARY_DATABASE_URL` |
+| --- | --- | --- | --- | --- |
+| A | `intake-a` | `0` (default) | `1` (default) | the live library (`.env.local`, else the tunnel's 15433) |
+| B | `intake-b` | `1` | `0`: its excerpts are untagged | the scratch library `intake-eval-scratch` on 127.0.0.1:15445 |
+| C | `intake-c` | `1` | `1` (default) | the live library |
+
+With `CAPY_LIBRARY_SECTION_TOOLS=1`, `browse_knowledge(book, page)` lists a
+book's outline, 120 lines a page, and `read_knowledge(book, section)` reads one
+run of a section in order (a path that recurs through a chapter is several
+runs; the header names the next; "/" or ">" between levels reads as "›", a
+start between runs moves to the next run, and a path that matches nothing is
+refused with the three closest outline lines), with each reviewed excerpt's scope (printed
+errors included) where it begins and the figures on the shown pages
+(`openwiki/agentic-retrieval.md`, Knowledge library). When no subject holds a
+tagged excerpt, as in arm B's untagged scratch library, the turn keeps the
+library because it holds current books, and the `browse_knowledge`
+description lists them (id, title, pages); a library with subjects (arms A
+and C) lists no books. With `0` the offered schemas, description and
+admission are production's. Both flags take only `0` or `1`.
+
+```powershell
+$env:CAPY_LIBRARY_SECTION_TOOLS = "1"; $env:CAPY_LIBRARY_REQUIRE_TAGS = "0"; $env:LIBRARY_DATABASE_URL = "<scratch library URL>"
+& "$env:USERPROFILE\.local\bin\uv.exe" run --with pymupdf==1.28.2 python lab/playground/scripts/playground.py --target lab --port 8767
+# in another terminal
+& "$env:USERPROFILE\.local\bin\uv.exe" run python bench/rag/intake/scripts/run_requests.py --arm B --url http://127.0.0.1:8767 --library-url "<scratch library URL>"
+```
+
+`run_requests.py` posts every frozen request (refused if
+`requests.json` no longer matches the protocol's hash) to the arm's
+`/api/turn`, the confirmation of a generic flow with the first turn's history,
+checkpoint and stored ledger, and repeats each dev-split request once. It
+writes `bench/rag/reports/local/2026-10-intake-eval/<arm>/<id>[-r2].json`:
+run ids, answers, materials, write outcomes and the protocol's counters (tool
+calls, input and cached tokens, wall time, captures, excerpts and sections
+read (succeeded section reads), books cited, sections cited as (book id,
+full section path) looked up once per request in the arm's library
+(`--library-url`, the URL the arm's playground reads) with credited ids it
+does not hold listed as `sections_unmapped`, bank questions copied versus
+written). An
+existing file is skipped, so a stopped run resumes; `--only <ids>` narrows it,
+and deleting a file reruns that request.

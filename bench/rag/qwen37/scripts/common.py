@@ -420,7 +420,8 @@ def library_conn():
 
 
 # Eligibility of plain (no topic/role) production library search:
-# library._VERIFIED at the default CAPY_LIBRARY_TAG_MIN_CONFIDENCE of 0.8, on
+# library._verified() with tags required and the default
+# CAPY_LIBRARY_TAG_MIN_CONFIDENCE of 0.8, on
 # searchable chunks of each book's current content.
 ELIGIBLE_SQL = """
     FROM library_chunks c

@@ -1,5 +1,5 @@
 {
-  "version": 15,
+  "version": 16,
   "operations": [
     "source.read",
     "material.read",
@@ -204,6 +204,11 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "book": {
+            "description": "A book id from a result header: search only that book.",
+            "minLength": 1,
+            "type": "string"
+          },
           "query": {
             "minLength": 1,
             "type": "string"
@@ -223,6 +228,11 @@
             },
             "maxItems": 6,
             "type": "array"
+          },
+          "section": {
+            "description": "A section path from a result: search only that section and the ones under it.",
+            "minLength": 1,
+            "type": "string"
           },
           "topics": {
             "description": "topic_id values from a browse_knowledge subject; omit for a direct search.",
@@ -257,6 +267,11 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "book": {
+            "description": "A book id: its outline of section paths with pages.",
+            "minLength": 1,
+            "type": "string"
+          },
           "page": {
             "default": 1,
             "minimum": 1,
@@ -293,7 +308,23 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "book": {
+            "description": "With section, instead of excerpt_id: the book to read a section of.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "count": {
+            "description": "Chunks per page: at most and by default 12 of an excerpt, 24 of a section.",
+            "maximum": 24,
+            "minimum": 1,
+            "type": "integer"
+          },
           "excerpt_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "section": {
+            "description": "A section path from the book's outline: read it in order, subsections included.",
             "minLength": 1,
             "type": "string"
           },
@@ -303,9 +334,6 @@
             "type": "integer"
           }
         },
-        "required": [
-          "excerpt_id"
-        ],
         "type": "object"
       },
       "mutates": false,

@@ -32,7 +32,7 @@ from .. import obs
 from ..config import cfg
 from ..generated import MATERIAL_TITLE_MAX
 from . import bank, capture, contract, deck, library, pending, skills, store
-from .chunking import clip_to_tokens, estimate_tokens
+from .chunking import clip_to_tokens, estimate_tokens, strip_carried
 from .library_evidence import LibraryEvidence
 from .limits import TurnBudget
 from .search import Passage, SearchStats, search
@@ -247,6 +247,10 @@ class ToolContext:
     # browse_knowledge description, and the topics of each subject browsed
     # this turn, which is where search_knowledge topic ids come from.
     library_catalog: list[dict[str, Any]] | None = None
+    # With CAPY_LIBRARY_SECTION_TOOLS and no subject to list, the current
+    # books ({id, title, pages}), which keep the library on and give
+    # browse_knowledge.book its ids.
+    library_books: list[dict[str, Any]] | None = None
     bank_catalog: list[dict[str, Any]] | None = None
     subject_topics: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     # Resource operations the gateway granted this actor for the turn
@@ -714,6 +718,9 @@ async def load_library_catalog(ctx: ToolContext) -> None:
     db = await library.pool()
     async with db.connection() as conn:
         ctx.library_catalog = await library.catalog(conn)
+        # Only an untagged library (no subject to list) needs its books named.
+        if cfg.library_section_tools and not ctx.library_catalog:
+            ctx.library_books = await library.books(conn)
 
 
 async def load_bank_catalog(ctx: ToolContext) -> None:
@@ -760,10 +767,21 @@ def _facets(args: dict[str, Any]) -> tuple[list[str], list[str]]:
     return topics, roles
 
 
+def _excerpt_link(excerpt_id: str, section_path: str | None, pages: list[int]) -> str:
+    listed = ", ".join(str(p) for p in pages)
+    return (
+        f"[{excerpt_id}]"
+        + (f" {section_path}" if section_path else "")
+        + (f" (pages {listed})" if listed else "")
+    )
+
+
 def _excerpt_head(excerpt: library.Excerpt) -> str:
-    pages = ", ".join(str(p) for p in excerpt.pages)
-    return f"[{excerpt.id}] {excerpt.book_title} — {excerpt.section_path}" + (
-        f" (pages {pages})" if pages else ""
+    """The excerpt with its book's title and id, which search_knowledge.book takes."""
+    return _excerpt_link(
+        excerpt.id,
+        f"{excerpt.book_title} (book {excerpt.book_id}) — {excerpt.section_path}",
+        excerpt.pages,
     )
 
 
@@ -792,15 +810,19 @@ def _excerpt_scope(excerpt: library.Excerpt) -> str:
         return "Scope not reviewed. Check the source's applicability before using it."
     metadata = excerpt.retrieval
     text = f"teaches: {metadata['summary']}\nscope: {metadata['scope']}"
-    if metadata["context_excerpt_ids"]:
-        text += "\nSource context (scope explains when needed): " + ", ".join(
-            metadata["context_excerpt_ids"]
+    if excerpt.links:
+        text += "\nSource context (scope explains when needed):\n" + "\n".join(
+            "- " + _excerpt_link(link["id"], link["section_path"], link["pages"] or [])
+            for link in excerpt.links
         )
     return text
 
 
 def _no_excerpts(
-    topics: list[str], roles: list[str], available: dict[str, int] | None
+    topics: list[str],
+    roles: list[str],
+    available: dict[str, int] | None,
+    where: str = "",
 ) -> str:
     """What an empty search means. Counts only say something under topics.
 
@@ -810,7 +832,7 @@ def _no_excerpts(
     """
     head = (
         f"No verified excerpt matches roles {', '.join(roles) or 'any'} on topics "
-        f"{', '.join(topics) or 'any'}."
+        f"{', '.join(topics) or 'any'}{where}."
     )
     if not topics:
         return (
@@ -836,14 +858,27 @@ async def _search_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResul
             "browse_knowledge and pass the returned topic_id values, not the "
             "subject ID or label. Or omit topics for a direct search."
         )
+    book = str(args.get("book") or "").strip()
+    section = str(args.get("section") or "").strip()
     if ctx.budget is not None:
         ctx.budget.embedding_calls += 1
     try:
-        result = await library.search(query, topics=topics, roles=roles)
+        result = await library.search(
+            query,
+            topics=topics,
+            roles=roles,
+            book=book or None,
+            section=section or None,
+        )
     except ValueError as exc:
         return _refused(f"search_knowledge: {exc}")
     if not result.excerpts:
-        return _result(_no_excerpts(topics, roles, result.available_roles))
+        where = (f" in book {book}" if book else "") + (
+            f" under section {json.dumps(section, ensure_ascii=False)}"
+            if section
+            else ""
+        )
+        return _result(_no_excerpts(topics, roles, result.available_roles, where))
     blocks = []
     for excerpt in result.excerpts:
         blocks.append(
@@ -884,17 +919,51 @@ def _subject_browse(result: dict[str, Any]) -> str:
     )
 
 
+# Outline lines per browse_knowledge(book) page: a book whose parser made
+# every callout a heading has hundreds of two-level paths.
+OUTLINE_LINES = 120
+
+
+def _book_outline(outline: library.BookOutline, page: int) -> str:
+    """One line per section path (``library.outline_line``), ``OUTLINE_LINES``
+    to a page."""
+    lines = [library.outline_line(s) for s in outline.sections]
+    pages = max(1, -(-len(lines) // OUTLINE_LINES))
+    if not 1 <= page <= pages:
+        raise ValueError(
+            f"book {outline.book_id}'s outline has {pages} "
+            + ("page" if pages == 1 else "pages")
+        )
+    shown = lines[(page - 1) * OUTLINE_LINES : page * OUTLINE_LINES]
+    return (
+        f"Book {outline.book_id}: {outline.title}, version {outline.version}, "
+        f"{outline.pages} pages. Outline page {page} of {pages}: sections in "
+        "reading order, two heading levels (deeper ones count in their parent); "
+        "read one with read_knowledge book and section:\n"
+        + "\n".join(shown)
+        + (f"\n\n(next page = {page + 1})" if page < pages else "")
+    )
+
+
 async def _browse_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     subject = str(args.get("subject") or "").strip()
     topic = str(args.get("topic") or "").strip()
-    if bool(subject) == bool(topic):
+    book = str(args.get("book") or "").strip()
+    sections = cfg.library_section_tools
+    if [bool(subject), bool(topic), bool(book)].count(True) != 1 or (
+        book and not sections
+    ):
         return _refused(
             "browse_knowledge takes exactly one of subject (a subject id from "
-            "this tool's description) or topic (a topic id from a subject browse)."
+            "this tool's description) or topic (a topic id from a subject browse)"
+            + (" or book (a book id, for its outline)." if sections else ".")
         )
     # Dispatch on the argument given, never on which catalog holds the id: a
     # topic id may coincide with a subject id.
     try:
+        if book:
+            outline = await library.outline(book)
+            return _result(_book_outline(outline, int(args.get("page") or 1)))
         if subject:
             listing = await library.browse_subject(subject)
             ctx.subject_topics[subject] = listing["topics"]
@@ -933,27 +1002,75 @@ def _short_section(section_path: str) -> str:
     return " > ".join(parts[-2:])[:120] if parts else ""
 
 
+def _fitting(page: Callable[[int], tuple[str, str]], total: int) -> tuple[int, str]:
+    """How many leading chunks a page can show within the tool-output limit
+    (at least one), and its text: ``page(n)`` gives the body and the tail, so
+    the next start names the first chunk the model did not see rather than
+    one the output clip dropped. When one chunk still overflows, the tail
+    goes first, ahead of the clip."""
+    n = total
+    while n > 1 and estimate_tokens("".join(page(n))) > TOOL_RESULT_MAX_TOKENS:
+        n -= 1
+    body, tail = page(n)
+    if estimate_tokens(body + tail) > TOOL_RESULT_MAX_TOKENS:
+        return n, tail.lstrip("\n") + "\n\n" + body
+    return n, body + tail
+
+
+def _tail(
+    chunks: list[dict[str, Any]], n: int, next_start: int | None, end: str
+) -> str:
+    if n < len(chunks):
+        return (
+            "\n\n(page cut at the tool output limit; "
+            f"next start = {chunks[n]['chunk_idx']})"
+        )
+    if next_start is not None:
+        return f"\n\n(next start = {next_start})"
+    return f"\n\n{end}"
+
+
+def _without_repeats(chunks: list[dict[str, Any]]) -> list[str]:
+    """Each chunk's text less what it repeats from the chunk shown before it."""
+    texts = []
+    for i, chunk in enumerate(chunks):
+        before = chunks[i - 1] if i else None
+        consecutive = (
+            before is not None and before["chunk_idx"] + 1 == chunk["chunk_idx"]
+        )
+        texts.append(
+            strip_carried(before["text"], chunk["text"])
+            if consecutive
+            else chunk["text"]
+        )
+    return texts
+
+
 async def _read_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     excerpt_id = str(args.get("excerpt_id") or "").strip()
+    book = str(args.get("book") or "").strip()
+    section = str(args.get("section") or "").strip()
+    if cfg.library_section_tools and not excerpt_id and book and section:
+        return await _read_section(book, section, args, ctx)
+    if not excerpt_id or book or section:
+        return _refused(
+            "read_knowledge takes an excerpt_id"
+            + (
+                ", or a book and a section together."
+                if cfg.library_section_tools
+                else "."
+            )
+        )
     start = max(0, int(args.get("start") or 0))
     try:
-        read = await library.read_excerpt(excerpt_id, start=start)
+        read = await library.read_excerpt(
+            excerpt_id, start=start, count=int(args.get("count") or library.READ_CHUNKS)
+        )
     except ValueError as exc:
         return _refused(f"read_knowledge: {exc}")
     if not read.chunks:
         return _result(f"Excerpt {excerpt_id} has no text at chunk {start}.")
-    body = "\n\n".join(
-        f"(chunk {chunk['chunk_idx']}) {chunk['text']}" for chunk in read.chunks
-    )
-    tail = (
-        f"\n\n(next start = {read.next_start})"
-        if read.next_start is not None
-        else "\n\n(end of excerpt)"
-    )
-    ctx.ledger.note_read(
-        read.excerpt.id, start, _short_section(read.excerpt.section_path)
-    )
-    return _result(
+    head = (
         _excerpt_head(read.excerpt)
         + "\n"
         + _excerpt_facets(read.excerpt)
@@ -965,11 +1082,128 @@ async def _read_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
             if start <= read.first
             else ""
         )
-        + "\n\n"
-        + body
-        + _excerpt_figures(read.figures)
-        + tail
     )
+    texts = _without_repeats(read.chunks)
+    end = "(end of excerpt)" + "".join(
+        f"\n{label} in this book: "
+        + _excerpt_link(excerpt.id, excerpt.section_path, excerpt.pages)
+        for label, excerpt in (("Previous", read.previous), ("Next", read.following))
+        if excerpt is not None
+    )
+
+    def page(n: int) -> tuple[str, str]:
+        body = "\n\n".join(
+            f"(chunk {chunk['chunk_idx']}) {text}"
+            for chunk, text in zip(read.chunks[:n], texts, strict=False)
+        )
+        return (
+            f"{head}\n\n{body}" + _excerpt_figures(read.figures),
+            _tail(read.chunks, n, read.next_start, end),
+        )
+
+    _, text = _fitting(page, len(read.chunks))
+    ctx.ledger.note_read(
+        read.excerpt.id, start, _short_section(read.excerpt.section_path)
+    )
+    return _result(text)
+
+
+def _section_text(
+    section: str, chunks: list[dict[str, Any]], scopes: dict[str, str]
+) -> str:
+    """A section page as continuous text: the path where it moves to another
+    (sub)section, a [p. N] marker where the page changes, an excerpt's
+    reviewed scope (``scopes``, by excerpt id) where it begins on the page, and
+    no text a chunk repeats from the one before it."""
+    parts: list[str] = []
+    path, page = section, None
+    begun: set[str] = set()
+    for chunk, text in zip(chunks, _without_repeats(chunks), strict=True):
+        if chunk["section_path"] != path:
+            path = chunk["section_path"]
+            parts.append(f"## {path}")
+        first = chunk["page_start"]
+        if first is not None:
+            last = chunk["page_end"] or first
+            if not first == last == page:
+                parts.append(
+                    f"[p. {first}]" if first == last else f"[p. {first}-{last}]"
+                )
+                page = last
+        excerpt_id = chunk["excerpt_id"]
+        if excerpt_id not in begun:
+            begun.add(excerpt_id)
+            if excerpt_id in scopes:
+                parts.append(scopes[excerpt_id])
+        if text:
+            parts.append(text)
+    return "\n\n".join(parts)
+
+
+async def _read_section(
+    book: str, section: str, args: dict[str, Any], ctx: ToolContext
+) -> ToolResult:
+    """read_knowledge(book, section): one run of a section in order. Every
+    excerpt the page shows counts as read, so a write may name it in
+    excerpt_ids."""
+    start = args.get("start")
+    try:
+        read = await library.read_section(
+            book,
+            section,
+            start=None if start is None else int(start),
+            count=int(args.get("count") or library.SECTION_CHUNKS),
+        )
+    except ValueError as exc:
+        return _refused(f"read_knowledge: {exc}")
+    following = f"the next run starts at chunk {read.next_run}" if read.next_run else ""
+    head = (
+        f"{read.title} (book {read.book_id}, version {read.version}), section "
+        f"{json.dumps(section, ensure_ascii=False)}: run {read.run} of {read.runs}"
+        + (f" ({following})" if following else "")
+        + f", {library.page_span(read.page_first, read.page_last)}, "
+        f"chunks {read.first}-{read.last}, from {read.start}"
+    )
+    end = (
+        f"(end of run {read.run} of {read.runs}; {following})"
+        if following
+        else "(end of section)"
+    )
+    # Reviewed scope (printed errors included) in the excerpt read's form;
+    # an excerpt without reviewed metadata adds nothing.
+    scopes = {
+        excerpt_id: f"[{excerpt_id}] {_excerpt_scope(excerpt)}"
+        for excerpt_id, excerpt in read.excerpts.items()
+        if excerpt.retrieval is not None
+    }
+
+    def page(n: int) -> tuple[str, str]:
+        shown = read.chunks[:n]
+        pages = {
+            p
+            for c in shown
+            if c["page_start"] is not None
+            for p in range(c["page_start"], (c["page_end"] or c["page_start"]) + 1)
+        }
+        excerpts = dict.fromkeys(c["excerpt_id"] for c in shown)
+        return (
+            f"{head}\n\n{_section_text(section, shown, scopes)}"
+            + _excerpt_figures([f for f in read.figures if f["page"] in pages])
+            + "\n\nExcerpts on this page: "
+            + ", ".join(excerpts),
+            _tail(read.chunks, n, read.next_start, end),
+        )
+
+    n, text = _fitting(page, len(read.chunks))
+    # Each excerpt's read starts at its first chunk on this page.
+    firsts: dict[str, dict[str, Any]] = {}
+    for chunk in read.chunks[:n]:
+        firsts.setdefault(chunk["excerpt_id"], chunk)
+    for excerpt_id, chunk in firsts.items():
+        ctx.ledger.note_read(
+            excerpt_id, chunk["chunk_idx"], _short_section(chunk["section_path"])
+        )
+    return _result(text)
 
 
 async def _create_ledger(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
@@ -2137,6 +2371,15 @@ def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
             "\n\nSubjects this library holds (browse one for its topic ids):\n"
             + _catalog_lines(ctx.library_catalog)
         )
+    if ctx.library_books:
+        extra["browse_knowledge"] = extra.get("browse_knowledge", "") + (
+            "\n\nBooks this library holds (browse one for its section outline):\n"
+            + "\n".join(
+                f"- browse_knowledge({json.dumps({'book': b['id']})}): "
+                f"{b['title']} ({b['pages']} pages)"
+                for b in ctx.library_books
+            )
+        )
     if ctx.bank_catalog:
         extra["list_question_bank"] = (
             "\n\nExams and subjects this bank holds (list one for its topics):\n"
@@ -2150,7 +2393,40 @@ def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
         name = schema["function"]["name"]
         if name in extra:
             schema["function"]["description"] += extra[name]
+    if not cfg.library_section_tools:
+        schemas = [without_sections(s) for s in schemas]
     return schemas if ctx.library else [without_excerpts(s) for s in schemas]
+
+
+def without_sections(schema: dict[str, Any]) -> dict[str, Any]:
+    """browse_knowledge and read_knowledge as production offers them: the
+    contract's book and section arguments are the CAPY_LIBRARY_SECTION_TOOLS
+    experiment's, and an excerpt read pages at most 12 chunks."""
+    function = schema["function"]
+    if function["name"] not in ("browse_knowledge", "read_knowledge"):
+        return schema
+    parameters = function["parameters"]
+    properties = {
+        k: v
+        for k, v in parameters["properties"].items()
+        if k not in ("book", "section")
+    }
+    if function["name"] == "read_knowledge":
+        properties["count"] = {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": library.READ_CHUNKS,
+            "default": library.READ_CHUNKS,
+            "description": "Chunks per page, at most 12.",
+        }
+        parameters = {**parameters, "required": ["excerpt_id"]}
+    return {
+        **schema,
+        "function": {
+            **function,
+            "parameters": {**parameters, "properties": properties},
+        },
+    }
 
 
 def without_excerpts(schema: dict[str, Any]) -> dict[str, Any]:

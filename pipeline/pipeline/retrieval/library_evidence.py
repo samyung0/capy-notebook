@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any
 
+from .library import READ_CHUNKS
+
 if TYPE_CHECKING:
     from .tools import Ledger, ToolContext, ToolResult
 
@@ -13,6 +15,7 @@ if TYPE_CHECKING:
 class ExcerptRead:
     excerpt_id: str
     start: int
+    count: int
     section: str
     text: str
 
@@ -57,7 +60,12 @@ class LibraryEvidence:
                 if owner != i:
                     continue
                 result = await tools._read_knowledge(
-                    {"excerpt_id": read.excerpt_id, "start": read.start}, scratch
+                    {
+                        "excerpt_id": read.excerpt_id,
+                        "start": read.start,
+                        "count": read.count,
+                    },
+                    scratch,
                 )
                 if (
                     result.outcome == "succeeded"
@@ -106,6 +114,8 @@ class LibraryEvidence:
         shown: str,
         ledger: Ledger,
     ) -> None:
+        # A section read (book and section, no excerpt_id) is not retained: a
+        # later turn reads its excerpts again before writing from them.
         if name != "read_knowledge" or result.outcome != "succeeded":
             return
         key = (
@@ -114,7 +124,8 @@ class LibraryEvidence:
         )
         read = next((r for r in ledger.reads if (r.excerpt_id, r.start) == key), None)
         if read is not None:
-            self.fresh[key] = ExcerptRead(*key, read.section, shown)
+            count = int(args.get("count") or READ_CHUNKS)
+            self.fresh[key] = ExcerptRead(*key, count, read.section, shown)
 
     def wrote(self, name: str, args: dict[str, Any], result: ToolResult) -> None:
         if (

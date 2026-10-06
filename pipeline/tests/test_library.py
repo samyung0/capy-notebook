@@ -45,6 +45,15 @@ def _unit_vector(axis: int) -> list[float]:
     return vector
 
 
+# Each excerpt is its own section of chapter 8; search folds hits by section.
+SECTIONS = {
+    "e_intro": "Ch 8 › 8.1 Fitting",
+    "e_worked": "Ch 8 › 8.2 Prediction",
+    "e_shaky": "Ch 8 › 8.3 Unverified",
+    "e_old": "Ch 8",
+}
+
+
 def _seed(dsn: str) -> None:
     chunks = [
         # id, content, excerpt, text, axis
@@ -147,12 +156,13 @@ def _seed(dsn: str) -> None:
         )
         for i, (content_id, chunk_id, excerpt_id, text, axis) in enumerate(chunks):
             conn.execute(
-                "INSERT INTO library_chunks VALUES(%s,%s,%s,%s,'Ch 8',%s,%s,%s,%s,'[]','en',0.9,'{}',to_tsvector('english',%s),true,'ahss',%s,false)",
+                "INSERT INTO library_chunks VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,'[]','en',0.9,'{}',to_tsvector('english',%s),true,'ahss',%s,false)",
                 (
                     chunk_id,
                     library.WORKSPACE,
                     content_id,
                     i,
+                    SECTIONS[excerpt_id],
                     text,
                     text,
                     i + 1,
@@ -175,10 +185,11 @@ def _seed(dsn: str) -> None:
             figure_ids,
         ) in excerpts.items():
             conn.execute(
-                "INSERT INTO library_excerpts VALUES(%s,%s,'ahss','Ch 8',%s,'{1}','[]',%s,'text','tagged',%s,%s,%s,'quote',%s,'synopsis',NULL,'{}')",
+                "INSERT INTO library_excerpts VALUES(%s,%s,'ahss',%s,%s,'{1}','[]',%s,'text','tagged',%s,%s,%s,'quote',%s,'synopsis',NULL,'{}')",
                 (
                     content_id,
                     excerpt_id,
+                    SECTIONS[excerpt_id],
                     chunk_ids,
                     figure_ids,
                     roles,
@@ -296,6 +307,442 @@ async def test_duplicate_hit_does_not_hide_a_later_distinct_hit_of_its_excerpt(
         ("e_worked", "c_worked_b"),
     ]
     assert (await library.browse("linear-regression")).by_role["worked_example"] == 1
+
+
+async def test_search_keeps_one_book_and_a_section_with_the_paths_under_it(
+    library_db, monkeypatch
+):
+    """section matches its own path or one under it, never a partial heading or
+    a LIKE wildcard. Both arguments are in the contract; the section reading
+    ones on browse and read are offered only behind the flag."""
+    from pipeline.retrieval import contract, tools
+
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE library_chunks SET section_path='Ch 8 › 8.1 Fitting › Residuals' "
+            "WHERE id='c_worked_b'"
+        )
+
+    async def ids(**filters):
+        found = await library.search("regression", vector=_unit_vector(0), **filters)
+        return [(e.id, e.hit_chunk_id) for e in found.excerpts]
+
+    assert await ids(section="Ch 8 › 8.1 Fitting") == [
+        ("e_intro", "c_intro"),
+        ("e_worked", "c_worked_b"),
+    ]
+    assert await ids(section="Ch 8 › 8.1") == []
+    assert await ids(section="Ch_8") == []
+    assert [e for e, _ in await ids(book="ahss")] == ["e_intro", "e_worked"]
+    assert await ids(book="os4") == []
+
+    properties = contract.DEFINITIONS["search_knowledge"]["inputSchema"]["properties"]
+    assert {"book", "section"} <= set(properties)
+    ctx = tools.ToolContext(
+        workspace_id="ws", operations=frozenset({"library.read"}), library=True
+    )
+    offered = {
+        s["function"]["name"]: s["function"]["parameters"]
+        for s in tools.schemas_for(ctx)
+    }
+    assert "book" not in offered["browse_knowledge"]["properties"]
+    assert offered["read_knowledge"]["required"] == ["excerpt_id"]
+    assert offered["read_knowledge"]["properties"]["count"]["maximum"] == 12
+    monkeypatch.setattr(cfg, "library_section_tools", True)
+    offered = {
+        s["function"]["name"]: s["function"]["parameters"]
+        for s in tools.schemas_for(ctx)
+    }
+    assert {"book", "section"} <= set(offered["read_knowledge"]["properties"])
+
+
+async def test_hits_of_one_book_section_fold_into_its_best_ranked_chunk(library_db):
+    """Sibling excerpts of one section would otherwise fill every slot."""
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE library_chunks SET section_path='Ch 8 › 8.1 Fitting' "
+            "WHERE excerpt_id='e_worked'"
+        )
+    result = await library.search("worked example", vector=_unit_vector(1))
+    assert [(e.id, e.hit_chunk_id) for e in result.excerpts] == [
+        ("e_worked", "c_worked_a")
+    ]
+
+
+async def test_the_last_page_of_an_excerpt_names_its_neighbours_in_the_book(
+    library_db,
+):
+    """By chunk order in the current version; the retained one never counts."""
+    from pipeline.retrieval import tools
+
+    read = await library.read_excerpt("e_worked")
+    assert (read.previous.id, read.following.id) == ("e_intro", "e_shaky")
+    assert (await library.read_excerpt("e_worked", count=1)).following is None, (
+        "only the last page"
+    )
+    ctx = tools.ToolContext(workspace_id="ws", library=True)
+    text = (
+        await tools._read_knowledge(
+            {"excerpt_id": "e_worked", "start": 2, "count": 1}, ctx
+        )
+    ).text()
+    assert text.endswith(
+        "(chunk 2) Worked example continued: extrapolation warning\n\n"
+        "(end of excerpt)\n"
+        "Previous in this book: [e_intro] Ch 8 › 8.1 Fitting (pages 1)\n"
+        "Next in this book: [e_shaky] Ch 8 › 8.3 Unverified (pages 1)"
+    )
+
+
+async def test_context_links_come_with_section_paths_and_pages(library_db):
+    """Fetched with the excerpt; a link the current version lacks stays an id."""
+    from psycopg.types.json import Jsonb
+
+    from pipeline.retrieval import tools
+
+    metadata = {
+        "summary": "A fitted line",
+        "scope": "One predictor.",
+        "context_excerpt_ids": ["e_worked", "e_gone"],
+    }
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE library_excerpts SET retrieval=%s WHERE id='e_intro'",
+            (Jsonb(metadata),),
+        )
+    excerpt = (await library.read_excerpt("e_intro")).excerpt
+    assert excerpt.links == [
+        {"id": "e_worked", "section_path": "Ch 8 › 8.2 Prediction", "pages": [1]},
+        {"id": "e_gone", "section_path": None, "pages": None},
+    ]
+    assert tools._excerpt_scope(excerpt).endswith(
+        "Source context (scope explains when needed):\n"
+        "- [e_worked] Ch 8 › 8.2 Prediction (pages 1)\n"
+        "- [e_gone]"
+    )
+
+
+async def test_without_required_tags_untagged_excerpts_are_searched_not_non_teaching(
+    library_db, monkeypatch
+):
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE library_excerpts SET tag_status='failed', roles='{}', "
+            "topic_ids='{}', confidence=NULL WHERE id='e_shaky'"
+        )
+
+    async def found():
+        result = await library.search("worked example", vector=_unit_vector(1))
+        return {e.id for e in result.excerpts}
+
+    assert "e_shaky" not in await found()
+    monkeypatch.setattr(cfg, "library_require_tags", False)
+    assert "e_shaky" in await found()
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE library_excerpts SET roles='{non_teaching}' WHERE id='e_shaky'"
+        )
+    assert "e_shaky" not in await found()
+
+
+def _seed_book(dsn: str, book: str, paths: list[str], prefix: str = "") -> None:
+    """A book of one chunk per path, on pages 10 onward, each chunk its own
+    untagged excerpt with no reviewed scope (chunk ``k<i>``, excerpt ``x<i>``)."""
+    content = f"{book}_v1"
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        conn.execute("INSERT INTO files(id,name) VALUES(%s,%s)", (book, book.title()))
+        conn.execute("INSERT INTO rag_contents VALUES(%s,'ready')", (content,))
+        conn.execute(
+            "INSERT INTO rag_file_contents VALUES(%s,%s,%s)",
+            (book, library.WORKSPACE, content),
+        )
+        conn.execute(
+            "INSERT INTO library_books VALUES(%s,%s,'[]','1e','https://x','https://x','CC BY','https://x','attr','sha2',1,40,1,%s,1,'[]','[]')",
+            (book, book.title(), content),
+        )
+        for i, path in enumerate(paths):
+            conn.execute(
+                "INSERT INTO library_excerpts VALUES(%s,%s,%s,%s,%s,%s,'[]','{}','t','failed','{}','{}',NULL,'',false,'',NULL,'{}')",
+                (content, f"{prefix}x{i}", book, path, [f"{prefix}k{i}"], [10 + i]),
+            )
+            conn.execute(
+                "INSERT INTO library_chunks VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,'[]','en',0.9,'{}',to_tsvector('english',''),true,%s,%s,false)",
+                (
+                    f"{prefix}k{i}",
+                    library.WORKSPACE,
+                    content,
+                    i,
+                    path,
+                    f"text {i}",
+                    f"text {i}",
+                    10 + i,
+                    10 + i,
+                    book,
+                    f"{prefix}x{i}",
+                ),
+            )
+
+
+def _seed_sections(dsn: str) -> None:
+    """A second book whose chapter 2 holds a captioned table, whose path is
+    its caption, between its two subsections."""
+    _seed_book(
+        dsn,
+        "calc",
+        [
+            "Ch 1 › 1.1 Data",
+            "Ch 2 Probability",
+            "Ch 2 Probability › 2.1 Events",
+            "Table 2.1 Outcomes",
+            "Ch 2 Probability › 2.2 Rules",
+            "Ch 3 Inference",
+        ],
+    )
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO library_figures (content_id,id,book_id,page,bbox,space,"
+            "geometry_kind,block_index,original_caption,original_footnote,section_path,"
+            "excluded,exclusion_evidence) VALUES "
+            "('calc_v1','fig_t','calc',13,'{0,0,1,1}','page-1000-topleft','parser_image',0,'[]','[]','x',false,'[]'),"
+            "('calc_v1','fig_x','calc',13,'{0,0,1,1}','page-1000-topleft','parser_image',1,'[]','[]','x',true,'[]'),"
+            "('calc_v1','fig_3','calc',15,'{0,0,1,1}','page-1000-topleft','parser_image',0,'[]','[]','x',false,'[]')"
+        )
+
+
+async def test_a_section_read_runs_from_its_first_to_its_last_matching_chunk(
+    library_db,
+):
+    _seed_sections(library_db)
+
+    chapter = await library.read_section("calc", "Ch 2 Probability")
+    assert [c["id"] for c in chapter.chunks] == ["k1", "k2", "k3", "k4"], (
+        "the captioned table stays in its chapter"
+    )
+    assert (chapter.first, chapter.last, chapter.next_start) == (1, 4, None)
+    assert (chapter.page_first, chapter.page_last) == (11, 14)
+    paged = await library.read_section("calc", "Ch 2 Probability", start=2, count=2)
+    assert [c["excerpt_id"] for c in paged.chunks] == ["x2", "x3"]
+    assert paged.next_start == 4
+    assert [f["id"] for f in paged.figures] == ["fig_t"], "its pages, never excluded"
+    events = await library.read_section("calc", "Ch 2 Probability › 2.1 Events")
+    assert [c["id"] for c in events.chunks] == ["k2"]
+    with pytest.raises(ValueError, match="no section"):
+        await library.read_section("calc", "Ch 2")
+    with pytest.raises(ValueError, match="unknown book"):
+        await library.read_section("nope", "Ch 2 Probability")
+    outline = await library.outline("calc")
+    assert (outline.title, outline.version, outline.pages) == ("Calc", 1, 40)
+    assert [s["path"] for s in outline.sections] == [
+        "Ch 1 › 1.1 Data",
+        "Ch 2 Probability",
+        "Ch 2 Probability › 2.1 Events",
+        "Table 2.1 Outcomes",
+        "Ch 2 Probability › 2.2 Rules",
+        "Ch 3 Inference",
+    ]
+
+
+async def test_a_section_read_prints_a_reviewed_scope_where_its_excerpt_begins(
+    library_db, monkeypatch
+):
+    """In the excerpt read's form, once; an unreviewed excerpt adds nothing."""
+    from psycopg.types.json import Jsonb
+
+    from pipeline.retrieval import tools
+
+    _seed_sections(library_db)
+    metadata = {
+        "summary": "Events as sets",
+        "scope": "Finite sample spaces. Printed error: p. 12 gives P(A) = 1.2; 0.2 is meant.",
+        "context_excerpt_ids": [],
+    }
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE library_excerpts SET retrieval=%s WHERE id='x2'", (Jsonb(metadata),)
+        )
+    monkeypatch.setattr(cfg, "library_section_tools", True)
+    ctx = tools.ToolContext(workspace_id="ws", library=True)
+    text = (
+        await tools._read_knowledge(
+            {"book": "calc", "section": "Ch 2 Probability"}, ctx
+        )
+    ).text()
+
+    assert text.count("teaches:") == 1 and "Scope not reviewed" not in text
+    assert (
+        "## Ch 2 Probability › 2.1 Events\n\n[p. 12]\n\n"
+        "[x2] teaches: Events as sets\n"
+        "scope: Finite sample spaces. Printed error: p. 12 gives P(A) = 1.2; 0.2 is meant."
+        "\n\ntext 2"
+    ) in text
+
+
+def _seed_recurring(dsn: str) -> None:
+    """Chapter 1's exercises recur: chunk 1, then 5 and 7 around a table."""
+    _seed_book(
+        dsn,
+        "rec",
+        [
+            "Ch 1 Intro",
+            "Ch 1 Intro › Exercises",
+            "Ch 1 Intro › 1.1 Mean",
+            "Ch 1 Intro › 1.1 Mean",
+            "Ch 1 Intro › 1.1 Mean",
+            "Ch 1 Intro › Exercises",
+            "Table 1.1 Counts",
+            "Ch 1 Intro › Exercises",
+            "Ch 2 Next",
+        ],
+        prefix="r",
+    )
+
+
+async def test_a_recurring_path_reads_one_run_at_a_time(library_db, monkeypatch):
+    """A path that recurs through a chapter is several runs: a gap of more
+    than two other chunks splits them, a captioned table does not. The
+    outline counts every run; a read serves the run holding start and names
+    the next one."""
+    from pipeline.retrieval import tools
+
+    _seed_recurring(library_db)
+    first = await library.read_section("rec", "Ch 1 Intro › Exercises")
+    assert [c["chunk_idx"] for c in first.chunks] == [1]
+    assert (first.run, first.runs, first.next_run) == (1, 2, 5)
+    second = await library.read_section("rec", "Ch 1 Intro › Exercises", start=6)
+    assert [c["chunk_idx"] for c in second.chunks] == [6, 7]
+    assert (second.first, second.last, second.next_run) == (5, 7, None)
+    lines = {
+        s["path"]: (s["runs"], s["chunks"])
+        for s in (await library.outline("rec")).sections
+    }
+    assert lines["Ch 1 Intro"] == ([(0, 7)], 8)
+    assert lines["Ch 1 Intro › Exercises"] == ([(1, 1), (5, 7)], 4)
+
+    monkeypatch.setattr(cfg, "library_section_tools", True)
+    ctx = tools.ToolContext(workspace_id="ws", library=True)
+    text = (
+        await tools._read_knowledge(
+            {"book": "rec", "section": "Ch 1 Intro › Exercises"}, ctx
+        )
+    ).text()
+    assert ": run 1 of 2 (the next run starts at chunk 5), page 11, chunks 1-1" in text
+    assert text.endswith("(end of run 1 of 2; the next run starts at chunk 5)")
+
+
+async def test_a_start_outside_every_run_snaps_forward_to_the_next_run(library_db):
+    """Start 0 and a start between runs read the next run; only a start past
+    the last run is refused, naming the runs."""
+    _seed_recurring(library_db)
+    exercises = "Ch 1 Intro › Exercises"
+
+    async def read(section, start):
+        found = await library.read_section("rec", section, start=start)
+        return found.run, found.start, [c["chunk_idx"] for c in found.chunks]
+
+    assert await read(exercises, 0) == (1, 1, [1])
+    assert await read(exercises, 3) == (2, 5, [5, 6, 7])
+    assert await read("Ch 1 Intro › 1.1 Mean", 0) == (1, 2, [2, 3, 4])
+    with pytest.raises(ValueError, match="past section .* whose runs are 1-1, 5-7"):
+        await library.read_section("rec", exercises, start=8)
+
+
+async def test_a_section_path_matches_whatever_separates_its_levels(library_db):
+    """A "/" or ">" between levels and stray spaces read the same section; a
+    path that still matches nothing names the book's three closest outline
+    lines."""
+    _seed_sections(library_db)
+    for spelled in (
+        "Ch 2 Probability/2.1 Events",
+        "  Ch 2 Probability  >  2.1   Events ",
+    ):
+        read = await library.read_section("calc", spelled)
+        assert [c["id"] for c in read.chunks] == ["k2"], spelled
+    chapter = await library.read_section("calc", "Ch 2 Probability")
+    assert [c["id"] for c in chapter.chunks] == ["k1", "k2", "k3", "k4"]
+
+    with pytest.raises(ValueError) as refused:
+        await library.read_section("calc", "Ch 2 Probability/2.3 Odds")
+    assert str(refused.value).endswith(
+        "its closest outline lines:\n"
+        '- section="Ch 2 Probability › 2.1 Events": page 12, 1 chunks\n'
+        '- section="Ch 2 Probability › 2.2 Rules": page 14, 1 chunks\n'
+        '- section="Ch 2 Probability": pages 11-14, 4 chunks'
+    )
+
+
+async def test_books_lists_the_books_with_a_current_version(library_db):
+    """A book whose pointer is gone is not listed."""
+    _seed_book(library_db, "calc", ["Ch 1"])
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        conn.execute("INSERT INTO files(id,name) VALUES('gone','Gone')")
+        conn.execute("INSERT INTO rag_contents VALUES('gone_v1','ready')")
+        conn.execute(
+            "INSERT INTO library_books VALUES('gone','Gone','[]','1e','https://x','https://x','CC BY','https://x','attr','sha3',1,9,1,'gone_v1',1,'[]','[]')"
+        )
+    db = await library.pool()
+    async with db.connection() as conn:
+        listed = await library.books(conn)
+    assert listed == [
+        {"id": "ahss", "title": "Advanced High School Statistics", "pages": 10},
+        {"id": "calc", "title": "Calc", "pages": 40},
+    ]
+
+
+def test_the_outline_counts_what_a_read_of_each_path_covers(monkeypatch):
+    """Paths fold to two levels; each line covers its path and those under it,
+    in runs (a gap over two chunks splits a run), and pages to 120 lines."""
+    from pipeline.retrieval import tools
+
+    assert library._runs([1, 4, 6, 10]) == [(1, 6), (10, 10)]
+
+    def chunk(i, path, page):
+        return {
+            "chunk_idx": i,
+            "section_path": path,
+            "page_start": page,
+            "page_end": None,
+        }
+
+    folded = library._fold_sections(
+        [
+            chunk(0, "", 1),
+            chunk(1, "Ch 1", 2),
+            chunk(2, "Ch 1 › 1.1 Mean", 3),
+            chunk(3, "Ch 1 › 1.1 Mean", 4),
+            chunk(4, "Ch 1 › 1.1 Mean › Example", None),
+            chunk(5, "Ch 1 › 1.1 Mean › Example", None),
+            chunk(6, "Ch 1 › 1.2 Spread", 5),
+            chunk(7, "Ch 1 › 1.2 Spread", 6),
+            chunk(8, "Ch 1 › 1.2 Spread", 7),
+            chunk(9, "Ch 1 › 1.1 Mean › Exercises", 8),
+        ]
+    )
+    assert [
+        (s["path"], s["runs"], s["page_first"], s["page_last"], s["chunks"])
+        for s in folded
+    ] == [
+        ("Ch 1", [(1, 9)], 2, 8, 9),
+        ("Ch 1 › 1.1 Mean", [(2, 5), (9, 9)], 3, 8, 5),
+        ("Ch 1 › 1.2 Spread", [(6, 8)], 5, 7, 3),
+    ], "text before the first heading has no path to read"
+    outline = library.BookOutline("os4", "OpenIntro Statistics", 4, 465, folded)
+    monkeypatch.setattr(tools, "OUTLINE_LINES", 2)
+    first = tools._book_outline(outline, 1)
+    last = tools._book_outline(outline, 2)
+    with pytest.raises(ValueError, match="2 pages"):
+        tools._book_outline(outline, 3)
+    monkeypatch.setattr(tools, "OUTLINE_LINES", 120)
+    with pytest.raises(ValueError, match="outline has 1 page$"):
+        tools._book_outline(outline, 2)
+    assert first.startswith(
+        "Book os4: OpenIntro Statistics, version 4, 465 pages. Outline page 1 of 2:"
+    )
+    assert first.endswith(
+        '- section="Ch 1": pages 2-8, 9 chunks\n'
+        '- section="Ch 1 › 1.1 Mean": pages 3-8, 5 chunks\n\n'
+        "(next page = 2)"
+    )
+    assert last.endswith('- section="Ch 1 › 1.2 Spread": pages 5-7, 3 chunks')
 
 
 async def test_a_role_filter_without_topics_counts_nothing(library_db):
@@ -428,7 +875,7 @@ async def test_read_excerpt_pages_by_chunk_index(library_db):
     assert [c["id"] for c in first.chunks] == ["c_worked_a"]
     assert (first.first, first.last) == (1, 2), "the excerpt's own chunk range"
     assert first.next_start == 2, "the last chunk shown plus one"
-    assert first.excerpt.section_path == "Ch 8"
+    assert first.excerpt.section_path == "Ch 8 › 8.2 Prediction"
 
     rest = await library.read_excerpt("e_worked", start=first.next_start, count=1)
     assert [c["id"] for c in rest.chunks] == ["c_worked_b"]

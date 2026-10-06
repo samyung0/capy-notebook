@@ -58,7 +58,12 @@ const questionExample = `{"id": "q1", "stem": [{"type": "text", "text": "A red b
 // v15: create_deck and write_slide write a slide deck the ppt-master way; the
 // exported PPTX is stored as a workspace file. list_question_bank filters a
 // topic by answer_type instead of question_type.
-const ContractVersion = 15
+// v16: search_knowledge filters by book and section; read_knowledge takes a
+// count. Section reading for the intake comparison: browse_knowledge with book
+// lists its outline and read_knowledge with book and section reads a section in
+// order; the pipeline offers those two arguments only behind
+// CAPY_LIBRARY_SECTION_TOOLS.
+const ContractVersion = 16
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -529,8 +534,10 @@ func Definitions() []Definition {
 			Description: "Search the shared library of verified textbook excerpts, one section " +
 				"of one book each. A hit is a selection aid; read_knowledge reads the excerpt.",
 			InputSchema: obj(map[string]any{
-				"query":  str(""),
-				"topics": idList("topic_id values from a browse_knowledge subject; omit for a direct search.", 0, 8),
+				"query":   str(""),
+				"topics":  idList("topic_id values from a browse_knowledge subject; omit for a direct search.", 0, 8),
+				"book":    str("A book id from a result header: search only that book."),
+				"section": str("A section path from a result: search only that section and the ones under it."),
 				"roles": map[string]any{
 					"type":        "array",
 					"maxItems":    6,
@@ -552,6 +559,7 @@ func Definitions() []Definition {
 			InputSchema: obj(map[string]any{
 				"subject": str("A subject id listed below."),
 				"topic":   str("A topic_id from a subject browse."),
+				"book":    str("A book id: its outline of section paths with pages."),
 				"page":    map[string]any{"type": "integer", "minimum": 1, "default": 1},
 			}),
 			Concurrency:        "read",
@@ -564,8 +572,14 @@ func Definitions() []Definition {
 				"chunk index; the notes and scope come on its first page.",
 			InputSchema: obj(map[string]any{
 				"excerpt_id": str(""),
+				"book":       str("With section, instead of excerpt_id: the book to read a section of."),
+				"section":    str("A section path from the book's outline: read it in order, subsections included."),
 				"start":      map[string]any{"type": "integer", "minimum": 0, "default": 0},
-			}, "excerpt_id"),
+				"count": map[string]any{
+					"type": "integer", "minimum": 1, "maximum": 24,
+					"description": "Chunks per page: at most and by default 12 of an excerpt, 24 of a section.",
+				},
+			}),
 			Concurrency:        "read",
 			RequiredOperations: []Operation{OpLibraryRead},
 		}),

@@ -2442,6 +2442,103 @@ async def test_a_library_that_is_down_or_empty_leaves_the_turn_on_the_workspace(
     assert "pool timeout" in caplog.text
 
 
+async def test_with_section_tools_a_library_of_untagged_books_stays_on(
+    monkeypatch, library_on
+):
+    """No subject lists untagged books; with section tools the books keep the
+    library and name the ids browse_knowledge.book takes. Without the flag the
+    same library leaves the turn on the workspace."""
+    import contextlib
+
+    class _Pool:
+        @contextlib.asynccontextmanager
+        async def connection(self):
+            yield None
+
+    async def _pool():
+        return _Pool()
+
+    subjects: list[dict] = []
+    looked_up = []
+
+    async def _subjects(_conn):
+        return subjects
+
+    async def _books(_conn):
+        looked_up.append("books")
+        return [{"id": "os4", "title": "OpenIntro Statistics", "pages": 465}]
+
+    monkeypatch.setattr(agent.tools.library, "pool", _pool)
+    monkeypatch.setattr(agent.tools.library, "catalog", _subjects)
+    monkeypatch.setattr(agent.tools.library, "books", _books)
+
+    async def turn(sections):
+        monkeypatch.setattr(agent.tools.cfg, "library_section_tools", sections)
+        stream, seen = _script_stream([_assembled(_answer(("From the library.", [])))])
+        monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+        ctx = _build_ctx(library_catalog=None)
+        await _collect("teach me statistics", ctx)
+        described = {
+            tool["function"]["name"]: tool["function"]["description"]
+            for tool in seen[0]["tools"]
+        }
+        return ctx, described.get("browse_knowledge")
+
+    off, browse = await turn(False)
+    assert not off.library and browse is None and looked_up == []
+    on, browse = await turn(True)
+    assert on.library and looked_up == ["books"]
+    assert (
+        '- browse_knowledge({"book": "os4"}): OpenIntro Statistics (465 pages)'
+        in browse
+    )
+    assert "Subjects this library holds" not in browse
+    # A library with subjects names no books: hits carry book ids.
+    subjects.append(
+        {"id": "statistics", "label": "Statistics", "aliases": [], "excerpts": 3}
+    )
+    _, browse = await turn(True)
+    assert looked_up == ["books"] and "Books this library holds" not in browse
+
+
+async def test_a_retained_read_replays_with_its_own_count(monkeypatch):
+    """A page read with count 4 matches only when it is read again with 4."""
+    from pipeline.retrieval.library_evidence import LibraryEvidence
+
+    calls = []
+
+    async def read(args, ctx):
+        calls.append(dict(args))
+        ctx.ledger.note_read(args["excerpt_id"], args.get("start", 0), "8.1")
+        return tools._result(f"{args.get('count')} chunks")
+
+    monkeypatch.setattr(tools, "_read_knowledge", read)
+    first = LibraryEvidence()
+    ledger = tools.Ledger()
+    ledger.note_read("e_1", 0, "8.1")
+    args = {"excerpt_id": "e_1", "count": 4}
+    first.observe("read_knowledge", args, tools._result("4 chunks"), "4 chunks", ledger)
+    first.used.add("e_1")
+    packed = first.pack()
+    assert packed == [
+        {
+            "excerpt_id": "e_1",
+            "start": 0,
+            "count": 4,
+            "section": "8.1",
+            "text": "4 chunks",
+        }
+    ]
+
+    later = LibraryEvidence()
+    parts = await later.history_parts(
+        [{"role": "assistant", "toolEvidence": {"libraryExcerpts": packed}}],
+        ToolContext(workspace_id="ws_1"),
+    )
+    assert calls == [{"excerpt_id": "e_1", "start": 0, "count": 4}]
+    assert ("e_1", 0) in later.inherited and "4 chunks" in parts[0][0]
+
+
 async def test_turn_context_comes_last_and_tracks_the_todos(monkeypatch, library_on):
     stream, seen = _script_stream(
         [

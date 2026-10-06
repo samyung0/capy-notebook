@@ -674,6 +674,27 @@ def _normalized(text: str) -> str:
     return " ".join(text.split())
 
 
+def strip_carried(previous: str, text: str, min_chars: int = 40) -> str:
+    """``text`` without the leading words it repeats from ``previous``'s tail.
+
+    ``_pack`` carries a chunk's trailing blocks into the next one; a reader
+    showing both chunks drops the repeat. It is the longest run of words that
+    ends ``previous`` and starts ``text``, compared with whitespace collapsed,
+    and at least ``min_chars`` long. Stored chunks keep it for search.
+    """
+    tail, head = previous.split(), text.split()
+    if not tail or not head:
+        return text
+    for i, word in enumerate(tail):
+        n = len(tail) - i
+        if word == head[0] and tail[i:] == head[:n]:
+            if len(" ".join(head[:n])) < min_chars:
+                return text
+            words = list(re.finditer(r"\S+", text))
+            return text[words[n - 1].end() :].lstrip()
+    return text
+
+
 def _is_furniture(block: dict, furniture: set[str] | frozenset[str]) -> bool:
     """A frozen repeated key cannot erase a supported interior occurrence."""
     box = block.get("bbox")
