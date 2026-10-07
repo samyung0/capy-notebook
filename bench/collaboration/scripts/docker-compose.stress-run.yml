@@ -9,12 +9,11 @@ services:
     ports:
       - "127.0.0.1:${STRESS_S3_PORT:?set by stress.ts}:9000"
 
-  # STRESS_COLLABORATION_IMAGE runs the same scenarios against another server
-  # implementation; stress.ts refuses it without E2E_PREBUILT_IMAGES=true, so
-  # compose never builds the Node service under that name. It gets the same
-  # environment and must trust the fake S3's certificate: Node through
-  # NODE_EXTRA_CA_CERTS (docker-compose.stress.yml), OpenSSL and
-  # native-roots clients through SSL_CERT_FILE.
+  # STRESS_COLLABORATION_IMAGE runs the same scenarios against another build
+  # of the server (it must speak capy-sync, as the driver does); stress.ts
+  # refuses it without E2E_PREBUILT_IMAGES=true, so compose never builds the
+  # service under that name. It gets the same environment and trusts the fake
+  # S3's certificate through SSL_CERT_FILE.
   collaboration:
     image: ${STRESS_COLLABORATION_IMAGE:-capy-e2e-collaboration:local}
     environment:

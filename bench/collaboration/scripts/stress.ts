@@ -47,7 +47,7 @@
  *   http://s3:9000; the local target does the same from STRESS_S3_PORT).
  *
  * The collaboration server is measured from outside, so the same scenarios
- * judge any implementation that speaks the protocol (Hocuspocus/Yjs sync,
+ * judge any implementation that speaks the protocol (capy-sync with Yjs sync,
  * the `checkpoint-request` stateless message and its `checkpoint-persisted`
  * receipt, an endpoint that only touches its event loop): the CPU time and
  * working set of the server's containers through the Docker Engine API
@@ -875,6 +875,8 @@ globalThis.WebSocket = OriginWebSocket;
 interface Peer {
   doc: Y.Doc;
   provider: RoomProvider;
+  /** Listeners of the room's stateless messages (checkpoint receipts). */
+  stateless: Set<(payload: string) => void>;
 }
 
 // Joins at most this many peers at once on UAT, so a step ramps up instead of
@@ -905,11 +907,15 @@ async function join(room: Room, name: string): Promise<Peer> {
   let token: string | null = first.token;
   let synced: () => void = () => undefined;
   let failed: (error: Error) => void = () => undefined;
+  const stateless = new Set<(payload: string) => void>();
   const provider = new RoomProvider({
     document: doc,
     name: first.room,
     onAuthenticationFailed: ({ reason }) =>
       failed(new Error(`${name}: authentication failed: ${reason}`)),
+    onStateless: ({ payload }) => {
+      for (const listener of stateless) listener(payload);
+    },
     onSynced: ({ state }) => {
       if (state) synced();
     },
@@ -937,7 +943,7 @@ async function join(room: Room, name: string): Promise<Peer> {
     failed = reject;
     provider.connect();
   });
-  return { doc, provider };
+  return { doc, provider, stateless };
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1148,7 +1154,7 @@ function checkpoint(room: Room, peer: Peer) {
   const id = `stress-${randomBytes(6).toString('hex')}`;
   return new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => finish(new Error(`${room.kind}: no receipt for ${id} in 30 s`)), 30_000);
-    const onStateless = ({ payload }: { payload: string }) => {
+    const onStateless = (payload: string) => {
       let event: { checkpointIds?: unknown; type?: unknown };
       try {
         event = JSON.parse(payload);
@@ -1160,11 +1166,11 @@ function checkpoint(room: Room, peer: Peer) {
     };
     const finish = (error?: Error) => {
       clearTimeout(timer);
-      peer.provider.off('stateless', onStateless);
+      peer.stateless.delete(onStateless);
       if (error) reject(error);
       else resolve();
     };
-    peer.provider.on('stateless', onStateless);
+    peer.stateless.add(onStateless);
     // Source rooms save at once only when asked to flush, as the app's Save does.
     peer.provider.sendStateless(
       JSON.stringify({ id, type: 'checkpoint-request', ...(room.format === 'plate' ? {} : { flush: true }) })

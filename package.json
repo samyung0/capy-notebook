@@ -204,6 +204,7 @@
     "env:push": "python3 scripts/env/config.py push",
     "test:site": "vitest run --dir workers/site",
     "typecheck:site": "tsc --noEmit -p workers/site/tsconfig.json",
+    "typecheck:stress": "tsc --noEmit -p bench/collaboration/tsconfig.json",
     "worker:types": "wrangler types workers/site/worker-configuration.d.ts --env uat --strict-vars=false",
     "test:office": "vitest run --dir workers/office --maxWorkers=1",
     "typecheck:office": "tsc --noEmit -p workers/office/tsconfig.json",

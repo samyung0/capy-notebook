@@ -321,8 +321,8 @@ the bound lands, with the same count before and after. The report records
 the runner's CPU (`runner`).
 
 The collaboration server is measured from outside, so the same scenarios can
-judge another implementation of it (the planned Rust server on yrs): the
-driver only speaks the protocol (Hocuspocus/Yjs sync, the app's
+judge another build of it: the driver only speaks the protocol (capy-sync
+with Yjs sync, the app's
 `checkpoint-request` stateless message and its `checkpoint-persisted`
 receipt) and reads the server's containers through the Docker Engine API
 (`DOCKER_HOST` when it is a `unix://` socket, else `/var/run/docker.sock`; a
