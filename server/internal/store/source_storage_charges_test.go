@@ -40,10 +40,11 @@ func chargeTestCharged(t *testing.T, s *Store, owner string) int64 {
 }
 
 // chargeTestPublish runs the refresh jobID of fileID to its publication: an
-// export of size bytes from the captured checkpoint, then (when later is set)
-// a save of the state later after the capture, then the publication with
-// effects remaining.
-func chargeTestPublish(t *testing.T, s *Store, owner, workspaceID, fileID, jobID string, size int64, later string, effects json.RawMessage, deferred bool) SourceSession {
+// export of size bytes from the captured checkpoint, whose document the
+// collaboration service materialized as capture, then (when later is set) a
+// save of the row later after the capture, then the publication with effects
+// remaining.
+func chargeTestPublish(t *testing.T, s *Store, owner, workspaceID, fileID, jobID string, size int64, capture, later string, effects json.RawMessage, deferred bool) SourceSession {
 	t.Helper()
 	ctx := context.Background()
 	candidate, err := s.ClaimSourceRefresh(ctx, fileID, jobID)
@@ -51,7 +52,11 @@ func chargeTestPublish(t *testing.T, s *Store, owner, workspaceID, fileID, jobID
 		t.Fatal(err)
 	}
 	sha := strings.Repeat(uid("e")[2:3], 64)
-	if err = s.FinalizeSourceRefresh(ctx, fileID, SourceRefreshFinalize{JobID: jobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: sha, SizeBytes: size, SourceETag: "etag-" + jobID}); err != nil {
+	finalize := SourceRefreshFinalize{JobID: jobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: sha, SizeBytes: size, SourceETag: "etag-" + jobID, State: []byte(capture)}
+	if candidate.Format != "text" {
+		finalize.StateSeedSHA256 = &sourceTestStateSeed
+	}
+	if err = s.FinalizeSourceRefresh(ctx, fileID, finalize); err != nil {
 		t.Fatal(err)
 	}
 	latest := candidate.Checkpoint
@@ -121,7 +126,7 @@ func TestDeferredPublicationChargesCapturedEditsOnce(t *testing.T) {
 	}
 	// The 1,100-byte export holds the image; "+later" lands after the capture.
 	none := json.RawMessage(`[]`)
-	published := chargeTestPublish(t, s, owner, ws.ID, file.ID, job.JobID, 1100, captured+"+later", none, true)
+	published := chargeTestPublish(t, s, owner, ws.ID, file.ID, job.JobID, 1100, captured, "+later", none, true)
 	if !published.RebuildPending || string(published.PublishedState) != captured {
 		t.Fatalf("deferred publication: %+v", published)
 	}
@@ -139,7 +144,7 @@ func TestDeferredPublicationChargesCapturedEditsOnce(t *testing.T) {
 	if job, err = s.RequestSourceRefresh(ctx, owner, file.ID, false); err != nil {
 		t.Fatal(err)
 	}
-	republished := chargeTestPublish(t, s, owner, ws.ID, file.ID, job.JobID, 1106, captured+"+later+again", none, true)
+	republished := chargeTestPublish(t, s, owner, ws.ID, file.ID, job.JobID, 1106, captured+"+later", "+again", none, true)
 	if got := chargeTestCharged(t, s, owner) - start; got != 1106-100+int64(len("+again")) {
 		t.Fatalf("charge after the republication = %d, want the export's growth plus 6", got)
 	}
@@ -177,7 +182,7 @@ func TestTextPublicationChargesPublishedTextOnce(t *testing.T) {
 	if got, want := chargeTestCharged(t, s, owner)-start, 53+chargeTestEffectBytes(t, s); got != want {
 		t.Fatalf("saved text charged %d, want %d", got, want)
 	}
-	publish := func(size int64, later string) {
+	publish := func(size int64, capture, later string) {
 		t.Helper()
 		if _, err := s.pool.Exec(ctx, `UPDATE source_documents SET last_refresh_requested_at=now()-interval '16 seconds' WHERE file_id=$1`, file.ID); err != nil {
 			t.Fatal(err)
@@ -186,7 +191,7 @@ func TestTextPublicationChargesPublishedTextOnce(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		chargeTestPublish(t, s, owner, ws.ID, file.ID, job.JobID, size, later, json.RawMessage(`[]`), false)
+		chargeTestPublish(t, s, owner, ws.ID, file.ID, job.JobID, size, capture, later, json.RawMessage(`[]`), false)
 	}
 	check := func(round string, seed, charge int64) {
 		t.Helper()
@@ -199,12 +204,12 @@ func TestTextPublicationChargesPublishedTextOnce(t *testing.T) {
 		}
 	}
 	// The 150-byte text publishes; the 3 bytes of history stay charged.
-	publish(150, "")
+	publish(150, state(115+50+3), "")
 	check("first publication", 165, 150-100+3)
-	// 40 more bytes of text and 2 of history publish as 190 bytes, and 7
-	// bytes land after the capture.
-	sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), state(115+50+3+40+2))
-	publish(190, state(115+50+3+40+2+7))
+	// 40 more bytes of text and 2 of history (a 42-byte row) publish as 190
+	// bytes, and a 7-byte row lands after the capture.
+	sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), state(40+2))
+	publish(190, state(115+50+3+40+2), state(7))
 	check("second publication", 205, 190-100+3+2+7)
 }
 
