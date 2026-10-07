@@ -105,7 +105,7 @@ before first paint), and the ⋮ is a native popover anchored to its button with
 (`PublicActionMenu.tsx`). The page's script (`src/summary/main.ts`) only wires those, points the file icons at
 the sprite and loads analytics after the page (public pages carry no Sentry). Every public page's head comes
 from `src/lib/seoHead.ts`: title, description (the workspace description, or for an item a generated line such as
-"A quiz by {author}: N questions · M marks", or a note's first 160 characters), canonical, robots (`index` only for
+"A quiz by {author}: N questions · M marks", or the first 160 characters of a note's paragraphs), canonical, robots (`index` only for
 public items), Open Graph with `og:locale` and `article:modified_time` when the item has one, a Twitter summary
 card and schema.org JSON-LD (`CreativeWork`, `Quiz`, `LearningResource` for flashcards, `Article` for notes); no
 `og:image` until file thumbnails exist. The workspace uses its stored icon and

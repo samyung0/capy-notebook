@@ -72,6 +72,13 @@ export function renderSharePage({
       author: note.author.name,
       canonical,
       description:
+        // Paragraphs read as a description; headings only when there are none.
+        snippet(
+          document.value
+            .filter((node) => node.type === 'p')
+            .map(plainText)
+            .join(' ')
+        ) ||
         snippet(document.value.map(plainText).join(' ')) ||
         m.share_seo_note({ author: note.author.name }),
       indexable: note.privacy === 'public',
