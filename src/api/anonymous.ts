@@ -88,3 +88,25 @@ export async function gradeAnonymousQuiz(
 /** The daily anonymous grading cap; the visitor can sign in to keep going. */
 export const isAnonymousGradingLimit = (err: unknown) =>
   err instanceof ApiError && err.code === 'anonymous_grading_limit';
+
+/** Grades an attempt at a quiz embedded in a shared note, through the note's
+ * link (the quiz has none of its own); it stores nothing. */
+export async function gradeAnonymousNoteQuiz(
+  token: string,
+  quizId: string,
+  body: GradeAnonymousQuizReq
+): Promise<{ questions: Question[]; awarded: number; max: number }> {
+  const graded = await publicJson<GradedQuiz>(
+    `/api/public/notes/${token}/quizzes/${quizId}/grade`,
+    {
+      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+    }
+  );
+  return {
+    awarded: graded.correct,
+    max: graded.total,
+    questions: graded.questions,
+  };
+}

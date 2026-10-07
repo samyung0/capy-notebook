@@ -88,16 +88,6 @@ test('New quiz opens an editable draft', async ({ ownerApi, ownerPage }) => {
 
 for (const kind of kinds) {
   test.describe(`${kind.kind} sharing`, () => {
-    test('the owner opens a private one', async ({ ownerPage }) => {
-      const response = waitForApi(
-        ownerPage,
-        apiEndsWith(`${kind.api}/${kind.private.id}`)
-      );
-      await ownerPage.goto(`${kind.share}/${kind.private.id}`);
-      expect((await response).status()).toBe(200);
-      await expect(ownerPage.getByText(kind.private.text)).toBeVisible();
-    });
-
     test('signed-out visitors open link and public ones only through signed links', async ({
       anonymousPage,
       ownerApi,
@@ -133,7 +123,9 @@ for (const kind of kinds) {
         ]) {
           await anonymousPage.goto(path);
           await expect(
-            anonymousPage.getByTestId('private-or-unavailable')
+            anonymousPage.getByRole('heading', {
+              name: m.error_not_found_page_title(),
+            })
           ).toBeVisible();
           await expect(anonymousPage.getByText(kind.link.text)).toHaveCount(0);
         }
@@ -144,34 +136,32 @@ for (const kind of kinds) {
       }
     });
 
-    test('a signed-in non-member sees a private one as unavailable', async ({
+    test('a signed-in visitor sees an unsigned link as not found', async ({
       otherPage,
     }) => {
-      const response = waitForApi(
-        otherPage,
-        apiEndsWith(`${kind.api}/${kind.private.id}`)
-      );
+      // The Worker answers unsigned links with the 404 page, whoever is signed in.
       await otherPage.goto(`${kind.share}/${kind.private.id}`);
-      expect((await response).status()).toBe(404);
       await expect(
-        otherPage.getByTestId('private-or-unavailable')
+        otherPage.getByRole('heading', { name: m.error_not_found_page_title() })
       ).toBeVisible();
       await expect(otherPage.getByText(kind.private.text)).toHaveCount(0);
     });
 
-    test('signed-in visitors read link and public ones without owner controls', async ({
+    test('signed-in visitors read link and public ones from the shared data and save to their account', async ({
       otherPage,
+      ownerApi,
     }) => {
       for (const item of [kind.link, kind.public]) {
+        const path = await sharePath(ownerApi, kind.api, item);
         const response = waitForApi(
           otherPage,
-          apiEndsWith(`${kind.api}/${item.id}`)
+          apiEndsWith(path.replace('/share/', '/p/'))
         );
-        await otherPage.goto(`${kind.share}/${item.id}`);
+        await otherPage.goto(path);
         const read = await response;
         expect(read.status()).toBe(200);
         if (kind.kind === 'quiz') {
-          // Viewing and taking read no answer key.
+          // Taking reads no answer key.
           const { questions } = await read.json();
           expect(questions.length).toBeGreaterThan(0);
           expect(JSON.stringify(questions)).not.toMatch(
@@ -184,6 +174,27 @@ for (const kind of kinds) {
         await expect(
           otherPage.getByRole('link', { name: m.summary_sign_up() })
         ).toBeVisible();
+      }
+      // The session is read only when saving: signed in, it goes to the account.
+      if (kind.kind === 'quiz') {
+        const saved = waitForApi(
+          otherPage,
+          apiEndsWith(`/api/quizzes/${kind.public.id}/attempts`, 'POST')
+        );
+        await otherPage
+          .getByRole('button', { exact: true, name: m.quiz_submit() })
+          .click();
+        expect((await saved).status()).toBe(201);
+      } else {
+        const saved = waitForApi(
+          otherPage,
+          apiEndsWith('/api/review/ratings', 'POST')
+        );
+        await otherPage
+          .getByRole('button', { name: m.flashcards_show_answer() })
+          .click();
+        await otherPage.getByRole('button', { name: m.srs_good() }).click();
+        expect((await saved).ok()).toBe(true);
       }
     });
 
@@ -200,13 +211,14 @@ for (const kind of kinds) {
     test('signed-in visitors clone link and public ones to private copies', async ({
       otherApi,
       otherPage,
+      ownerApi,
     }) => {
       for (const item of [kind.link, kind.public]) {
         const cloned = waitForApi(
           otherPage,
           apiEndsWith(`${kind.api}/${item.id}/clone`, 'POST')
         );
-        await otherPage.goto(`${kind.share}/${item.id}`);
+        await otherPage.goto(await sharePath(ownerApi, kind.api, item));
         await cloneThroughDashboard(otherPage, kind.clone);
         const response = await cloned;
         expect(response.status()).toBe(201);

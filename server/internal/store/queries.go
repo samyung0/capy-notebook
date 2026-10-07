@@ -126,27 +126,22 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 	}
 	rows.Close()
 
-	rows, err = s.pool.Query(ctx, `SELECT m.id, m.title, m.workspace_name, COALESCE(m.workspace_id,''), COALESCE(m.parent_material_id,'')
+	rows, err = s.pool.Query(ctx, `SELECT m.id, m.title, m.workspace_name
 		FROM materials m
 		JOIN users owner ON owner.id=m.owner_user_id
 		WHERE m.trashed_at IS NULL AND (m.owner_user_id=$2 OR EXISTS (
 			SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=m.workspace_id AND wm.user_id=$2
 		)) AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
-			AND m.kind='flashcards' AND lower(m.title) LIKE $1`, like, userID)
+			AND m.kind='flashcards' AND m.parent_material_id IS NULL AND lower(m.title) LIKE $1`, like, userID)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
-		var id, name, wsName, wsID, parentID string
-		if err := rows.Scan(&id, &name, &wsName, &wsID, &parentID); err != nil {
+		var id, name, wsName string
+		if err := rows.Scan(&id, &name, &wsName); err != nil {
 			return nil, err
 		}
-		// An embedded set opens as the note that embeds it.
-		href := "/flashcards/" + id
-		if parentID != "" && wsID != "" {
-			href = "/workspaces/" + wsID + "?material=" + parentID
-		}
-		out = append(out, SearchResult{ID: id, Kind: "flashcards", Title: name, Subtitle: wsName, Href: href})
+		out = append(out, SearchResult{ID: id, Kind: "flashcards", Title: name, Subtitle: wsName, Href: "/flashcards/" + id})
 	}
 	rows.Close()
 
@@ -296,7 +291,7 @@ func (s *Store) WorkspaceStats(ctx context.Context, userID, id string) (Workspac
 	err := s.pool.QueryRow(ctx, `SELECT
 		(SELECT count(*) FROM chapters WHERE workspace_id=$1),
 		(SELECT count(*) FROM files WHERE workspace_id=$1 AND trashed_at IS NULL),
-		(SELECT count(*) FROM materials WHERE workspace_id=$1 AND kind='quiz' AND trashed_at IS NULL),
+		(SELECT count(*) FROM materials WHERE workspace_id=$1 AND kind='quiz' AND parent_material_id IS NULL AND trashed_at IS NULL),
 		(SELECT count(*) FROM attempts a JOIN materials m ON m.id=a.material_id WHERE m.workspace_id=$1 AND m.trashed_at IS NULL),
 		COALESCE((SELECT round(avg(a.pct))::int FROM attempts a JOIN materials m ON m.id=a.material_id WHERE m.workspace_id=$1 AND m.trashed_at IS NULL),0)`,
 		id).Scan(&st.Chapters, &st.Files, &st.Quizzes, &st.Attempts, &st.AvgScore)
@@ -1463,31 +1458,6 @@ func (s *Store) MaterialTitleTaken(ctx context.Context, workspaceID, title strin
 			WHERE workspace_id=$1 AND lower(btrim(title)) = lower(btrim($2::text))
 		)`, workspaceID, title).Scan(&taken)
 	return taken, err
-}
-
-// disambiguateTitleTx is DisambiguateMaterialTitle inside a transaction, also
-// avoiding titles the transaction has already used (lower-cased in taken).
-func disambiguateTitleTx(ctx context.Context, q rowQueryer, workspaceID, desired string, taken map[string]bool) (string, error) {
-	desired = fieldlimits.Clamp(strings.TrimSpace(desired), fieldlimits.MaterialTitle)
-	for n := 1; n < 10000; n++ {
-		candidate := desired
-		if n > 1 {
-			suffix := fmt.Sprintf(" %d", n)
-			candidate = fieldlimits.Clamp(desired, fieldlimits.MaterialTitle-utf8.RuneCountInString(suffix)) + suffix
-		}
-		if taken[strings.ToLower(candidate)] {
-			continue
-		}
-		var used bool
-		if err := q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM materials
-			WHERE workspace_id=$1 AND lower(btrim(title)) = lower(btrim($2::text)))`, workspaceID, candidate).Scan(&used); err != nil {
-			return "", err
-		}
-		if !used {
-			return candidate, nil
-		}
-	}
-	return "", ErrTitleTaken
 }
 
 // DisambiguateMaterialTitle returns desired if it is free, otherwise

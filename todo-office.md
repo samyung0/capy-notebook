@@ -413,3 +413,22 @@ slow editor (no handoff outside maintenance since the deferred rebuild).
   `t()` labels) but PPTX's menus are Capy's `m.files_office_pptx_menu_*`; make
   the helpers take the format and use `m.*` for PPTX. Left out of the e2e
   conversion so it does not collide with the open Office work.
+
+## Embedded quiz and flashcard freshness (2026-10-07)
+
+- Note-embedded quizzes and flashcard sets now render and edit inside the note
+  (decisions in `human/frontend/plate-editor.md`, 2026-10-07), each change
+  saved at once through the API. The note document holds only the item's id;
+  its content comes from the API with React Query's 5-minute cache and no
+  refetch on focus. The tab that saved is current, but another open editor of
+  the same note (a collaborator, another tab, or an agent edit) keeps a stale
+  copy for up to 5 minutes. Note View and the public note page are fresh when
+  they open.
+- Suggestion: after any embedded quiz or set write (including agent and API
+  edits), Go asks the collaboration service to broadcast a stateless
+  "embed {id} changed" message to the parent note's room (the Node server
+  already relays stateless messages, `collaboration/src/server.ts`; the Rust
+  server needs the same relay); open editors invalidate and refetch that one
+  item. Keeping the content in the Yjs document instead would put quiz answer
+  keys in the note, so every viewer projection and the public note read would
+  have to strip them.

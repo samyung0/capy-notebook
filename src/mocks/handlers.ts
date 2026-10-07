@@ -916,12 +916,53 @@ export const handlers = [
     return HttpResponse.json({
       author: db.mockAuthor,
       content: mt.content,
+      embeds: noteEmbeds(mt).map((child) =>
+        child.kind === 'quiz'
+          ? {
+              id: child.id,
+              kind: 'quiz',
+              questions: db.quizFromMaterial(child).questions.map(learnerView),
+            }
+          : {
+              cards: db
+                .cardsFromMaterial(child)
+                .filter(({ back, front }) => front.trim() || back.trim())
+                .map(({ back, front, id, image }) => ({
+                  back,
+                  front,
+                  id,
+                  image,
+                })),
+              id: child.id,
+              kind: 'flashcards',
+            }
+      ),
       id: mt.id,
       name: mt.title,
       privacy: mt.privacy,
       updatedAt: mt.updatedAt,
     });
   }),
+  http.post(
+    '/api/public/notes/:token/quizzes/:quizId/grade',
+    async ({ params, request }) => {
+      const note = anonymousMaterial(String(params.token), 'note');
+      const quiz =
+        note && noteEmbeds(note).find((child) => child.id === params.quizId);
+      if (quiz?.kind !== 'quiz')
+        return HttpResponse.json({ message: 'not found' }, { status: 404 });
+      const { answers } = (await request.json()) as { answers: Answers };
+      const graded = gradeQuestions(
+        db.quizFromMaterial(quiz).questions,
+        answers
+      );
+      return HttpResponse.json({
+        correct: graded.awarded,
+        questions: graded.questions,
+        total: graded.max,
+      });
+    }
+  ),
 
   /* ---------------- global search ---------------- */
   http.get('/api/search', async ({ request }) => {
@@ -965,14 +1006,12 @@ export const handlers = [
           subtitle: e.location,
           title: e.title,
         });
+    // Embedded sets live only inside their note, as on the server.
     for (const mt of db.flashcardSetMaterials())
-      if (mt.title.toLowerCase().includes(q))
+      if (!mt.parentMaterialId && mt.title.toLowerCase().includes(q))
         results.push({
           color: mt.color,
-          href:
-            mt.parentMaterialId && mt.workspaceId
-              ? `/workspaces/${mt.workspaceId}?material=${mt.parentMaterialId}`
-              : `/flashcards/${mt.id}`,
+          href: `/flashcards/${mt.id}`,
           id: mt.id,
           kind: 'flashcards',
           subtitle: mt.workspaceName,
@@ -1744,11 +1783,9 @@ export const handlers = [
       .filter((mt) => {
         if (!allowed.includes(mt.kind)) return false;
         if (wsIds.length && !wsIds.includes(mt.workspaceId)) return false;
-        const location = mt.parentMaterialId
-          ? 'embedded'
-          : mt.workspaceId
-            ? 'workspace'
-            : 'standalone';
+        // Embedded items live only inside their note.
+        if (mt.parentMaterialId) return false;
+        const location = mt.workspaceId ? 'workspace' : 'standalone';
         return !locations.length || locations.includes(location);
       })
       .sort(
@@ -1874,7 +1911,6 @@ export const handlers = [
         : flashcardsNode(
             (body.cards ?? []).map((card) => ({ ...card, id: uid('c') }))
           );
-    const suffix = body.kind === 'quiz' ? 'Quiz' : 'Flashcards';
     const mt = db.makeMaterial({
       ...ownerMaterialAccess,
       chapterId: null,
@@ -1886,7 +1922,7 @@ export const handlers = [
       privacy: 'private',
       scopeChapters: [],
       scopeFileNames: [],
-      title: `${note.title} · ${suffix}`,
+      title: crypto.randomUUID(),
       workspaceId: note.workspaceId,
       workspaceName: note.workspaceName,
     });
@@ -3172,6 +3208,21 @@ export const handlers = [
 type SourceKindFix = 'pdf' | 'doc' | 'md' | 'image' | 'txt';
 
 /** Signed-out reads reach standalone, non-embedded link/public materials. */
+/** The quizzes and sets a note embeds and references, in reference order. */
+function noteEmbeds(note: Material) {
+  const ids = note.content.value.flatMap((node) =>
+    node.type === 'material_ref' && typeof node.materialId === 'string'
+      ? [node.materialId]
+      : []
+  );
+  return [...new Set(ids)].flatMap((id) => {
+    const child = db.materials.find(
+      (x) => x.id === id && x.parentMaterialId === note.id
+    );
+    return child ? [child] : [];
+  });
+}
+
 function anonymousMaterial(
   token: string,
   kind: 'quiz' | 'flashcards' | 'note'

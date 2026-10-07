@@ -149,3 +149,87 @@ func TestAnonymousNoteAuthorAndAssets(t *testing.T) {
 		t.Fatalf("unshown image err = %v, want not found", err)
 	}
 }
+
+// A visible note carries the quizzes and flashcard sets its content references
+// and owns, in reference order; its link reaches their images and grades only
+// those quizzes. An unreferenced or trashed row is left out.
+func TestAnonymousNoteEmbeds(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	f := editorAssetFixture{t: t, s: s, ctx: ctx}
+	ownerID := newBlobTestUser(t, s, "u_anon_embed_owner")
+	note, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "Embeds", Content: "# Embeds\n\nbody"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	embed := func(draft EmbeddedDraft) Material {
+		mt, err := s.CreateEmbeddedMaterial(ctx, ownerID, note.ID, draft)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return mt
+	}
+	quiz := embed(EmbeddedDraft{Kind: "quiz", Questions: json.RawMessage(`[]`)})
+	quizImage := f.ready(ownerID, "", quiz.ID)
+	quizContent := quizWithImages(t, quizImage.ID)
+	if _, err := s.UpdateMaterial(ctx, quiz.ID, MaterialPatch{Content: &quizContent, UpdatedBy: ownerID}); err != nil {
+		t.Fatal(err)
+	}
+	cards := embed(EmbeddedDraft{Kind: "flashcards", Cards: [][2]string{{"front", "back"}, {"", ""}}})
+	cardImage := f.ready(ownerID, "", cards.ID)
+	setCards(t, s, ownerID, cards.ID, func(c []materialdoc.Card) []materialdoc.Card {
+		c[0].Image = &materialdoc.CardImage{AssetID: cardImage.ID}
+		return c
+	})
+	trashed := embed(EmbeddedDraft{Kind: "flashcards", Cards: [][2]string{{"gone", "gone"}}})
+	unreferenced := embed(EmbeddedDraft{Kind: "quiz", Questions: json.RawMessage(`[]`)})
+	strayImage := f.ready(ownerID, "", unreferenced.ID)
+	strayContent := quizWithImages(t, strayImage.ID)
+	if _, err := s.UpdateMaterial(ctx, unreferenced.ID, MaterialPatch{Content: &strayContent, UpdatedBy: ownerID}); err != nil {
+		t.Fatal(err)
+	}
+	content := noteWithRefs(t, cards, quiz, trashed, cards)
+	if _, err := s.UpdateMaterial(ctx, note.ID, MaterialPatch{Content: &content, UpdatedBy: ownerID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET trashed_at=now(), trash_episode_id=$2,
+		purge_after=now() + interval '1 day' WHERE id=$1`, trashed.ID, uid("trash")); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.AnonymousNote(ctx, note.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("private note err = %v, want not found", err)
+	}
+	if _, _, err := s.AnonymousNoteAssetPath(ctx, note.ID, quizImage.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("private note's quiz image err = %v, want not found", err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET privacy='link' WHERE id=$1`, note.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.AnonymousNote(ctx, note.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Embeds) != 2 || got.Embeds[0].ID != cards.ID || got.Embeds[1].ID != quiz.ID ||
+		len(got.Embeds[0].Cards) != 1 || got.Embeds[0].Cards[0].Front != "front" || got.Embeds[0].Questions != nil ||
+		got.Embeds[1].Kind != "quiz" || got.Embeds[1].Cards != nil {
+		t.Fatalf("embeds = %+v", got.Embeds)
+	}
+
+	for _, asset := range []EditorAsset{quizImage, cardImage} {
+		if path, _, err := s.AnonymousNoteAssetPath(ctx, note.ID, asset.ID); err != nil || path != asset.ObjectPath {
+			t.Fatalf("embedded image %s = %q, %v", asset.ID, path, err)
+		}
+	}
+	if _, _, err := s.AnonymousNoteAssetPath(ctx, note.ID, strayImage.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unreferenced quiz's image err = %v, want not found", err)
+	}
+	if qs, err := s.AnonymousNoteQuiz(ctx, note.ID, quiz.ID); err != nil || !json.Valid(qs) {
+		t.Fatalf("note quiz = %s, %v", qs, err)
+	}
+	for _, id := range []string{unreferenced.ID, cards.ID} {
+		if _, err := s.AnonymousNoteQuiz(ctx, note.ID, id); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("note quiz %s err = %v, want not found", id, err)
+		}
+	}
+}

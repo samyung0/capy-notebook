@@ -364,7 +364,7 @@ func (s *Store) ListPublicQuizzes(ctx context.Context) ([]PublicQuiz, error) {
 			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0)
 		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=m.owner_user_id
 		LEFT JOIN material_clone_counts cc ON cc.material_id=m.id
-		WHERE m.kind='quiz' AND m.trashed_at IS NULL
+		WHERE m.kind='quiz' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
 		  AND ((m.workspace_id IS NULL AND m.privacy='public') OR w.privacy='public')
 		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL
 		ORDER BY COALESCE(cc.clone_count,0) DESC, m.created_at DESC`)
@@ -398,7 +398,7 @@ func (s *Store) ListPublicFlashcardSets(ctx context.Context) ([]PublicFlashcardS
 			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0)
 		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=m.owner_user_id
 		LEFT JOIN material_clone_counts cc ON cc.material_id=m.id
-		WHERE m.kind='flashcards' AND m.trashed_at IS NULL
+		WHERE m.kind='flashcards' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
 		  AND ((m.workspace_id IS NULL AND m.privacy='public') OR w.privacy='public')
 		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL
 		ORDER BY COALESCE(cc.clone_count,0) DESC, m.created_at DESC`)
@@ -1021,7 +1021,9 @@ func (s *Store) cloneWorkspaceOnce(
 			mt := materialSnapshot.material
 			nid := materialSnapshot.newID
 			var parentID *string
+			title := mt.Title
 			if mt.ParentMaterialID != "" {
+				title = embeddedName()
 				for _, candidate := range snapshot.materials {
 					if candidate.material.ID == mt.ParentMaterialID {
 						parentID = &candidate.newID
@@ -1051,7 +1053,7 @@ func (s *Store) cloneWorkspaceOnce(
 					 chapter_id, position, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by, provenance,
 					 parent_material_id)
 				VALUES ($1,$2,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$16,$2,$17,$18)`,
-				nid, userID, newID, name, mt.Kind, mt.Title, json.RawMessage(content), chapterID,
+				nid, userID, newID, name, mt.Kind, title, json.RawMessage(content), chapterID,
 				mt.Position, mt.ScopeChapters, mt.ScopeFileNames, mt.Color, metrics.NodeCount,
 				metrics.MaxDepth, createdAt, mt.Revision, provenance, parentID); err != nil {
 				return Workspace{}, err
@@ -1450,7 +1452,7 @@ func (s *Store) cloneMaterialKindOnce(
 			 scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by,
 			 parent_material_id)
 			VALUES ($1,$2,$2,NULL,'',$3,$4,$5,'{}','{}','private',$6,$7,$8,$9,$10,$2,$11)`,
-			clone.newID, userID, clone.src.Kind, clone.src.Title, json.RawMessage(clone.content),
+			clone.newID, userID, clone.src.Kind, embeddedName(), json.RawMessage(clone.content),
 			clone.src.Color, clone.metrics.NodeCount, clone.metrics.MaxDepth, clone.src.UpdatedAt,
 			clone.src.Revision, nid); err != nil {
 			return Material{}, err

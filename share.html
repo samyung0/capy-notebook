@@ -1,0 +1,43 @@
+<!doctype html>
+<html data-style="classroom" data-theme="latte" lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta content="%VITE_RELEASE_SHA%" name="capy-release">
+    <link href="/favicon.svg" rel="icon" type="image/svg+xml">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <meta content="light dark" name="color-scheme">
+    <title>Capy Notebook</title>
+    <script blocking="render" type="module">
+    (() => {
+      try {
+        const STYLES = ['classroom', 'notion'];
+        const THEMES = ['latte', 'frappe', 'mocha'];
+        const DARKTHEMES = ['frappe', 'mocha'];
+        const root = document.documentElement;
+        const style = localStorage.getItem('capy.style');
+        let theme = localStorage.getItem('capy.theme');
+        if (theme === 'macchiato') {
+          theme = 'frappe';
+          localStorage.setItem('capy.theme', theme);
+        }
+
+        root.dataset.style = STYLES.includes(style) ? style : 'classroom';
+        root.dataset.theme = THEMES.includes(theme)
+          ? theme
+          : matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'mocha'
+            : 'latte';
+        if (DARKTHEMES.includes(root.dataset.theme)) {
+          root.classList.add('dark');
+        }
+      } catch {
+        // ignore
+      }
+    })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script src="/src/share/main.tsx" type="module"></script>
+  </body>
+</html>

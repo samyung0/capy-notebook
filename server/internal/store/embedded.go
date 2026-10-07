@@ -4,19 +4,23 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
-	"github.com/samyung0/capy-notebook/server/internal/copytext"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
 // Embedded materials are quiz and flashcards rows referenced from a note by a
 // material_ref block. The note owns their lifecycle: they share its workspace,
 // stay private and unfiled, follow it through trash, restore, purge and clone,
-// and are trashed when their reference leaves the note.
+// and are trashed when their reference leaves the note. Their stored name is
+// a random UUID that is never displayed (embeddedName), so it never collides
+// with the workspace's unique titles.
+
+// embeddedName is the stored name of a new or copied embedded row.
+func embeddedName() string { return uuid.NewString() }
 
 // EmbeddedDraft is the authored content of a quiz or flashcard set inserted
 // into a note; card ids are minted here. ID is set only when the note and its
@@ -29,8 +33,7 @@ type EmbeddedDraft struct {
 	Cards        [][2]string
 }
 
-// CreateEmbeddedMaterial creates a quiz or flashcard set under noteID with a
-// default "<note title> · Quiz" title. The caller has checked edit access on
+// CreateEmbeddedMaterial creates a quiz or flashcard set under noteID. The caller has checked edit access on
 // the note; ownership and quota resolve exactly like any material in the same
 // place.
 func (s *Store) CreateEmbeddedMaterial(
@@ -42,25 +45,20 @@ func (s *Store) CreateEmbeddedMaterial(
 	if err != nil {
 		return Material{}, err
 	}
-	var parentTitle, workspaceID, workspaceName, locale string
-	err = s.pool.QueryRow(ctx, `SELECT m.title, COALESCE(m.workspace_id,''), m.workspace_name,
-			COALESCE((SELECT locale FROM users WHERE id=$2),'')
+	var workspaceID, workspaceName string
+	err = s.pool.QueryRow(ctx, `SELECT COALESCE(m.workspace_id,''), m.workspace_name
 		FROM materials m
 		WHERE m.id=$1 AND m.kind='note' AND m.parent_material_id IS NULL AND m.trashed_at IS NULL`,
-		noteID, actorID).Scan(&parentTitle, &workspaceID, &workspaceName, &locale)
+		noteID).Scan(&workspaceID, &workspaceName)
 	if isNoRows(err) {
 		return Material{}, ErrNotFound
 	}
 	if err != nil {
 		return Material{}, err
 	}
-	title, err := s.DisambiguateMaterialTitle(ctx, workspaceID, draft.title(parentTitle, locale))
-	if err != nil {
-		return Material{}, err
-	}
 	return s.CreateMaterial(ctx, Material{
 		ID: draft.ID, CreatedBy: actorID, WorkspaceID: workspaceID, WorkspaceName: workspaceName,
-		Kind: draft.Kind, Title: title, Content: content, Privacy: "private",
+		Kind: draft.Kind, Title: embeddedName(), Content: content, Privacy: "private",
 		ParentMaterialID: noteID,
 	})
 }
@@ -114,12 +112,10 @@ func (s *Store) AdoptEmbeddedMaterials(
 	}
 	defer tx.Rollback(ctx)
 	note := Material{ID: noteID}
-	var locale string
-	err = tx.QueryRow(ctx, `SELECT m.title, COALESCE(m.workspace_id,''), m.workspace_name,
-			COALESCE((SELECT locale FROM users WHERE id=$2),'')
+	err = tx.QueryRow(ctx, `SELECT COALESCE(m.workspace_id,''), m.workspace_name
 		FROM materials m
 		WHERE m.id=$1 AND m.kind='note' AND m.parent_material_id IS NULL AND m.trashed_at IS NULL`,
-		noteID, actorID).Scan(&note.Title, &note.WorkspaceID, &note.WorkspaceName, &locale)
+		noteID).Scan(&note.WorkspaceID, &note.WorkspaceName)
 	if isNoRows(err) {
 		return nil, false, ErrNotFound
 	}
@@ -153,7 +149,6 @@ func (s *Store) AdoptEmbeddedMaterials(
 	}
 
 	adopted = make([]string, len(blocks))
-	taken := map[string]bool{}
 	for i, block := range blocks {
 		src, ok := sources[block.SourceID]
 		if !ok || src.ParentMaterialID == "" || (src.Kind != "quiz" && src.Kind != "flashcards") {
@@ -182,7 +177,7 @@ func (s *Store) AdoptEmbeddedMaterials(
 		if err != nil {
 			return nil, false, err
 		}
-		id, err := s.copyEmbeddedTx(ctx, copyTx, actorID, payerID, locale, note, src, taken)
+		id, err := s.copyEmbeddedTx(ctx, copyTx, actorID, payerID, note, src)
 		var quota *QuotaExceededError
 		if errors.As(err, &quota) {
 			refused = true
@@ -207,9 +202,8 @@ func (s *Store) AdoptEmbeddedMaterials(
 func (s *Store) copyEmbeddedTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	actorID, payerID, locale string,
+	actorID, payerID string,
 	note, src Material,
-	taken map[string]bool,
 ) (string, error) {
 	content := src.Content
 	var err error
@@ -232,15 +226,9 @@ func (s *Store) copyEmbeddedTx(
 	if err := lockCloneBlobPathsTx(ctx, tx, paths); err != nil {
 		return "", err
 	}
-	title, err := disambiguateTitleTx(ctx, tx, note.WorkspaceID,
-		EmbeddedDraft{Kind: src.Kind}.title(note.Title, locale), taken)
-	if err != nil {
-		return "", err
-	}
-	taken[strings.ToLower(title)] = true
 	id, err := s.createMaterialTx(ctx, tx, Material{
 		CreatedBy: actorID, WorkspaceID: note.WorkspaceID, WorkspaceName: note.WorkspaceName,
-		Kind: src.Kind, Title: title, Content: content, Privacy: "private", Color: src.Color,
+		Kind: src.Kind, Title: embeddedName(), Content: content, Privacy: "private", Color: src.Color,
 		ParentMaterialID: note.ID,
 	})
 	if err != nil {
@@ -276,37 +264,17 @@ func (draft EmbeddedDraft) content() (string, error) {
 	return "", ErrNotFound
 }
 
-// title is the default "<note title> · Quiz", before disambiguation.
-func (draft EmbeddedDraft) title(noteTitle, locale string) string {
-	suffix := copytext.EmbeddedQuiz
-	if draft.Kind == "flashcards" {
-		suffix = copytext.EmbeddedFlashcards
-	}
-	return noteTitle + " · " + copytext.T(locale, suffix)
-}
-
 // createEmbeddedTx creates a new note's embedded rows in the note's own
-// transaction. Titles are disambiguated against the workspace and against
-// each other, since none of them is visible to the pool yet.
+// transaction.
 func (s *Store) createEmbeddedTx(ctx context.Context, tx pgx.Tx, note Material, drafts []EmbeddedDraft) error {
-	var locale string
-	if err := tx.QueryRow(ctx, `SELECT COALESCE(locale,'') FROM users WHERE id=$1`, note.CreatedBy).Scan(&locale); err != nil && !isNoRows(err) {
-		return err
-	}
-	taken := map[string]bool{}
 	for _, draft := range drafts {
 		content, err := draft.content()
 		if err != nil {
 			return err
 		}
-		title, err := disambiguateTitleTx(ctx, tx, note.WorkspaceID, draft.title(note.Title, locale), taken)
-		if err != nil {
-			return err
-		}
-		taken[strings.ToLower(title)] = true
 		if _, err := s.createMaterialTx(ctx, tx, Material{
 			ID: draft.ID, CreatedBy: note.CreatedBy, WorkspaceID: note.WorkspaceID,
-			WorkspaceName: note.WorkspaceName, Kind: draft.Kind, Title: title, Content: content,
+			WorkspaceName: note.WorkspaceName, Kind: draft.Kind, Title: embeddedName(), Content: content,
 			Privacy: "private", ParentMaterialID: note.ID,
 		}); err != nil {
 			return err

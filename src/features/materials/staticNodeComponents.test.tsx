@@ -10,6 +10,7 @@ import {
   mermaidNode,
   quizNode,
 } from './document';
+import { EmbedViewContext } from './embeds/EmbedView';
 import { MaterialPreview } from './MaterialPreview';
 
 function renderMaterial(
@@ -236,10 +237,18 @@ describe('static study-block renderers', () => {
     expect(html).toContain('grid-cols-[minmax(0,1fr)_minmax(0,1fr)]');
   });
 
-  it('renders an embedded material reference as a card without a query client', () => {
-    const html = renderMaterial([materialRefNode('mat_child', 'quiz')]);
-    expect(html).toContain('Quiz');
-    expect(html).toContain('This item is no longer available');
-    expect(html).not.toContain('Start quiz');
+  it("renders an embedded quiz or set with the page's embed renderer", () => {
+    const html = renderToStaticMarkup(
+      <EmbedViewContext.Provider
+        value={({ materialId, refKind }) => <p>{`${refKind}:${materialId}`}</p>}
+      >
+        <MaterialPreview
+          content={createMaterialDocument([
+            materialRefNode('mat_child', 'quiz'),
+          ])}
+        />
+      </EmbedViewContext.Provider>
+    );
+    expect(html).toContain('quiz:mat_child');
   });
 });

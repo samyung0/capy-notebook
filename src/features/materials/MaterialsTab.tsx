@@ -50,18 +50,12 @@ import { trackItemCloned } from '@/lib/observability';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 const KINDS: MaterialListKind[] = ['note', 'quiz', 'flashcards'];
-const LOCATIONS: MaterialListLocation[] = [
-  'workspace',
-  'embedded',
-  'standalone',
-];
+const LOCATIONS: MaterialListLocation[] = ['workspace', 'standalone'];
 
 function locationLabel(location: MaterialListLocation): string {
   switch (location) {
     case 'workspace':
       return m.create_location_workspace();
-    case 'embedded':
-      return m.create_location_embedded();
     default:
       return m.create_location_standalone();
   }
@@ -291,8 +285,7 @@ export function MaterialsTab({
   }
 
   function menuFor(item: MaterialListItem): MenuItem[] {
-    const embedded = !!item.parentMaterialId;
-    const standalone = !item.workspaceId && !embedded;
+    const standalone = !item.workspaceId;
     const items: MenuItem[] = [];
     if (item.kind === 'quiz') {
       items.push(
@@ -350,14 +343,12 @@ export function MaterialsTab({
       label: m.action_clone(),
       onClick: () => clone(item),
     });
-    if (!embedded) {
-      items.push({
-        danger: true,
-        icon: 'trash',
-        label: m.action_delete(),
-        onClick: () => setDeleting(item),
-      });
-    }
+    items.push({
+      danger: true,
+      icon: 'trash',
+      label: m.action_delete(),
+      onClick: () => setDeleting(item),
+    });
     return items;
   }
 

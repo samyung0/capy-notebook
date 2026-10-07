@@ -3,7 +3,7 @@ import { type ErrorComponentProps, Link } from '@tanstack/react-router';
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { ErrorAction } from '@/components/ui/Button';
 import { m } from '@/i18n';
-import { describeError, privateErrorDescription } from '@/lib/errors';
+import { describeError } from '@/lib/errors';
 import { ErrorState } from './ErrorState';
 import { Panel } from './layout';
 
@@ -128,38 +128,6 @@ export function RouteErrorComponent({ error, reset }: ErrorComponentProps) {
           }
           description={description.description}
           icon={description.icon}
-          title={description.title}
-          variant="page"
-        />
-      </Panel>
-    </main>
-  );
-}
-
-export function ShareRouteErrorComponent({ reset }: ErrorComponentProps) {
-  const { reset: resetQueries } = useQueryErrorResetBoundary();
-  const description = privateErrorDescription();
-
-  return (
-    <main className="h-full overflow-hidden p-1.5 sm:p-2.5">
-      <Panel
-        className="h-full w-full"
-        sectionClassName="h-full w-full min-h-full flex flex-row"
-      >
-        <ErrorState
-          action={
-            <ErrorAction
-              iconLeftClassName="me-1"
-              onClick={() => {
-                resetQueries();
-                reset();
-              }}
-            >
-              {m.error_action_funny()}
-            </ErrorAction>
-          }
-          description={description.description}
-          testId="private-or-unavailable"
           title={description.title}
           variant="page"
         />

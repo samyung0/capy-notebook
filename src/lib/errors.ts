@@ -370,13 +370,6 @@ export function errorCopy(error: unknown, fallback: string): string {
     : describeError(error).description;
 }
 
-export function privateErrorDescription(): ErrorDescription {
-  return {
-    description: m.error_private_body(),
-    title: m.error_private_title(),
-  };
-}
-
 /** A frozen account refused the write (the requester's or the owner's). */
 export function isAccountRefusal(error: unknown): boolean {
   return isApiError(error) && error.code === 'account_over_quota';

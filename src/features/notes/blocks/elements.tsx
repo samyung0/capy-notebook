@@ -6,7 +6,6 @@ import {
   shift,
   useVirtualFloating,
 } from '@platejs/floating';
-import { useNavigate, useRouter } from '@tanstack/react-router';
 import { NodeApi, type TElement } from 'platejs';
 import {
   type PlateEditor,
@@ -38,8 +37,12 @@ import {
   type QuizQuestionElement as QuizQuestionNode,
   quizQuestionElementToQuestion,
 } from '@/features/materials/document';
+import {
+  AppEmbedEdit,
+  AppEmbedView,
+} from '@/features/materials/embeds/AppEmbed';
+import { EmbedLoading } from '@/features/materials/embeds/EmbedView';
 import { HtmlEmbed } from '@/features/materials/HtmlEmbed';
-import { MaterialRefCard } from '@/features/materials/MaterialRefCard';
 import { StandaloneMaterialTitle } from '@/features/materials/MaterialRenderContext';
 import { MediaFrame } from '@/features/materials/MediaFrame';
 import { MermaidPreview } from '@/features/materials/MediaPreview';
@@ -55,7 +58,6 @@ import {
   QuestionBlockView,
   QuestionView,
 } from '@/features/questions/QuestionView';
-import { quizEditSearch } from '@/features/quizzes/quizNavigation';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { uid } from '@/lib/id';
@@ -364,8 +366,9 @@ export function FlashcardsElement(props: PlateElementProps) {
 }
 
 /** A note's embedded quiz or flashcard set: a void block holding the material
- * id, rendered as a compact card. Edits go through the authoring dialogs and
- * the material's own content endpoints, never through this document. */
+ * id. Edit mode edits the item in place and View studies it (AppEmbed); edits
+ * go through the material's own content endpoints, never through this
+ * document. */
 export function MaterialRefElement(props: PlateElementProps) {
   const editor = useEditorRef();
   const readOnly = useReadOnly();
@@ -373,8 +376,6 @@ export function MaterialRefElement(props: PlateElementProps) {
   const dialogs = useOptionalNoteBlockDialogs();
   const element = props.element as unknown as MaterialRefNode;
   const { materialId, refKind, pending } = element;
-  const navigate = useNavigate();
-  const router = useRouter();
   const resolving = useRef(false);
 
   // A fence imported as markdown lands here without a row. Every client with
@@ -419,37 +420,28 @@ export function MaterialRefElement(props: PlateElementProps) {
     refKind,
   ]);
 
-  function editQuiz() {
-    void navigate({
-      params: { quizId: materialId },
-      search: quizEditSearch(router.state.location.href),
-      to: '/quizzes/$quizId/edit',
-    });
-  }
-
-  function editFlashcards() {
-    void navigate({
-      params: { flashcardSetId: materialId },
-      search: quizEditSearch(router.state.location.href),
-      to: '/flashcards/$flashcardSetId/edit',
-    });
-  }
-
-  const canEdit = !readOnly && !!dialogs && !!materialId;
+  const canEdit = !readOnly && !!dialogs;
   return (
     <PlateElement {...props} className="my-4">
-      <MaterialRefCard
-        materialId={materialId}
-        onEdit={
-          canEdit
-            ? refKind === 'quiz'
-              ? () => void editQuiz()
-              : editFlashcards
-            : undefined
-        }
-        ownerId={readOnly ? undefined : owner}
-        refKind={refKind}
-      />
+      <div contentEditable={false}>
+        {materialId && canEdit ? (
+          <AppEmbedEdit
+            materialId={materialId}
+            // The last question or card removed takes the block with it;
+            // removing the block trashes the item, and Undo restores both.
+            onEmpty={() => {
+              const at = editor.api.findPath(props.element);
+              if (at) editor.tf.removeNodes({ at });
+            }}
+            ownerId={owner}
+            refKind={refKind}
+          />
+        ) : materialId ? (
+          <AppEmbedView materialId={materialId} refKind={refKind} />
+        ) : (
+          <EmbedLoading />
+        )}
+      </div>
       {props.children}
     </PlateElement>
   );

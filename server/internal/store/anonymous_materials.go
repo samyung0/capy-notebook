@@ -12,10 +12,10 @@ import (
 )
 
 // Signed-out visitors read standalone link/public quizzes, flashcard sets and
-// notes.
-// Workspace materials have no sharing of their own, and embedded ones follow a
-// note visitors cannot open, so neither is reachable here. Visibility and the
-// owner's lifecycle are read in the same statement as the content.
+// notes. Workspace materials have no sharing of their own, so they are not
+// reachable here; a visible note's embedded quizzes and flashcard sets are
+// reached only through the note (AnonymousNote). Visibility and the owner's
+// lifecycle are read in the same statement as the content.
 const anonymousMaterialFrom = `
  FROM materials m JOIN users owner ON owner.id=m.owner_user_id
  WHERE m.id=$1 AND m.kind=$2 AND m.workspace_id IS NULL AND m.parent_material_id IS NULL
@@ -85,17 +85,32 @@ func (s *Store) anonymousMaterial(ctx context.Context, id, kind string) (anonymo
 	return row, err
 }
 
+// quizQuestions is a quiz's full questions, keys included, "[]" when empty.
+func quizQuestions(content string) (json.RawMessage, error) {
+	qs, _, err := materialdoc.ExtractQuiz(content)
+	if len(qs) == 0 && err == nil {
+		qs = json.RawMessage("[]")
+	}
+	return qs, err
+}
+
+// writtenCards is a set's cards without blank ones: a new set starts with one
+// empty card, and visitors only study written ones.
+func writtenCards(content string) ([]materialdoc.Card, error) {
+	cards, err := materialdoc.ExtractFlashcards(content)
+	return slices.DeleteFunc(cards, func(c materialdoc.Card) bool {
+		return strings.TrimSpace(c.Front) == "" && strings.TrimSpace(c.Back) == ""
+	}), err
+}
+
 func (s *Store) AnonymousQuiz(ctx context.Context, id string) (AnonymousQuiz, error) {
 	mt, err := s.anonymousMaterial(ctx, id, "quiz")
 	if err != nil {
 		return AnonymousQuiz{}, err
 	}
-	qs, _, err := materialdoc.ExtractQuiz(mt.Content)
+	qs, err := quizQuestions(mt.Content)
 	if err != nil {
 		return AnonymousQuiz{}, err
-	}
-	if len(qs) == 0 {
-		qs = json.RawMessage("[]")
 	}
 	return AnonymousQuiz{ID: mt.ID, Name: mt.Title, Privacy: mt.Privacy, Questions: qs, Provenance: mt.Provenance, Author: mt.Author}, nil
 }
@@ -105,27 +120,36 @@ func (s *Store) AnonymousFlashcards(ctx context.Context, id string) (AnonymousFl
 	if err != nil {
 		return AnonymousFlashcards{}, err
 	}
-	cards, err := materialdoc.ExtractFlashcards(mt.Content)
+	cards, err := writtenCards(mt.Content)
 	if err != nil {
 		return AnonymousFlashcards{}, err
 	}
-	// A new set starts with one empty card; visitors only study written ones.
-	cards = slices.DeleteFunc(cards, func(c materialdoc.Card) bool {
-		return strings.TrimSpace(c.Front) == "" && strings.TrimSpace(c.Back) == ""
-	})
 	return AnonymousFlashcards{ID: mt.ID, Name: mt.Title, Privacy: mt.Privacy, Color: mt.Color, Cards: cards, Provenance: mt.Provenance, Author: mt.Author}, nil
 }
 
 // AnonymousNote is a standalone note's read projection (Plate JSON), which the
-// page renders with the static renderer.
+// page renders with the static renderer, and the quizzes and flashcard sets
+// embedded in it.
 type AnonymousNote struct {
-	ID         string          `json:"id"`
-	Name       string          `json:"name"`
-	Privacy    Privacy         `json:"privacy"`
-	Content    json.RawMessage `json:"content"`
-	UpdatedAt  time.Time       `json:"updatedAt"`
-	Author     MaterialAuthor  `json:"author"`
-	Provenance *Provenance     `json:"provenance,omitempty"`
+	ID         string           `json:"id"`
+	Name       string           `json:"name"`
+	Privacy    Privacy          `json:"privacy"`
+	Content    json.RawMessage  `json:"content"`
+	UpdatedAt  time.Time        `json:"updatedAt"`
+	Author     MaterialAuthor   `json:"author"`
+	Provenance *Provenance      `json:"provenance,omitempty"`
+	Embeds     []AnonymousEmbed `json:"embeds" nullable:"false"`
+}
+
+// AnonymousEmbed is a quiz or flashcard set embedded in a visible note, in the
+// order the note references it. Questions hold the keys here, like
+// AnonymousQuiz; the share handler sends learner views. Cards are written
+// cards only.
+type AnonymousEmbed struct {
+	ID        string             `json:"id"`
+	Kind      string             `json:"kind" enum:"quiz,flashcards"`
+	Questions json.RawMessage    `json:"questions,omitempty"`
+	Cards     []materialdoc.Card `json:"cards,omitempty" nullable:"false"`
 }
 
 func (s *Store) AnonymousNote(ctx context.Context, id string) (AnonymousNote, error) {
@@ -133,11 +157,84 @@ func (s *Store) AnonymousNote(ctx context.Context, id string) (AnonymousNote, er
 	if err != nil {
 		return AnonymousNote{}, err
 	}
-	return AnonymousNote{ID: mt.ID, Name: mt.Title, Privacy: mt.Privacy, Content: json.RawMessage(mt.Content), UpdatedAt: mt.UpdatedAt, Author: mt.Author, Provenance: mt.Provenance}, nil
+	embeds, err := s.anonymousEmbeds(ctx, mt.ID, mt.Content)
+	if err != nil {
+		return AnonymousNote{}, err
+	}
+	return AnonymousNote{ID: mt.ID, Name: mt.Title, Privacy: mt.Privacy, Content: json.RawMessage(mt.Content), UpdatedAt: mt.UpdatedAt, Author: mt.Author, Provenance: mt.Provenance, Embeds: embeds}, nil
+}
+
+// anonymousEmbeds reads the note's own live embedded rows that its current
+// content references. A reference to another note's row, or to a trashed
+// one, is left out.
+func (s *Store) anonymousEmbeds(ctx context.Context, noteID, content string) ([]AnonymousEmbed, error) {
+	refs, err := materialdoc.ExtractMaterialRefs(content)
+	if err != nil {
+		return nil, err
+	}
+	embeds := []AnonymousEmbed{}
+	if len(refs) == 0 {
+		return embeds, nil
+	}
+	ids := make([]string, len(refs))
+	for i, ref := range refs {
+		ids[i] = ref.MaterialID
+	}
+	rows, err := s.pool.Query(ctx, `SELECT id, kind, content FROM materials
+		WHERE parent_material_id=$1 AND id = ANY($2) AND trashed_at IS NULL AND kind IN ('quiz','flashcards')`, noteID, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	found := map[string]AnonymousEmbed{}
+	for rows.Next() {
+		var embed AnonymousEmbed
+		var content string
+		if err := rows.Scan(&embed.ID, &embed.Kind, &content); err != nil {
+			return nil, err
+		}
+		if embed.Kind == "quiz" {
+			embed.Questions, err = quizQuestions(content)
+		} else {
+			embed.Cards, err = writtenCards(content)
+		}
+		if err != nil {
+			return nil, err
+		}
+		found[embed.ID] = embed
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		if embed, ok := found[id]; ok {
+			embeds = append(embeds, embed)
+			delete(found, id) // a row referenced twice is sent once
+		}
+	}
+	return embeds, nil
+}
+
+// AnonymousNoteQuiz returns the full questions of quizID, a quiz embedded in
+// the visible note noteID and referenced by its current content, for grading
+// through the note's link.
+func (s *Store) AnonymousNoteQuiz(ctx context.Context, noteID, quizID string) (json.RawMessage, error) {
+	note, err := s.AnonymousNote(ctx, noteID)
+	if err != nil {
+		return nil, err
+	}
+	for _, embed := range note.Embeds {
+		if embed.ID == quizID && embed.Kind == "quiz" {
+			return embed.Questions, nil
+		}
+	}
+	return nil, ErrNotFound
 }
 
 // AnonymousNoteAssetPath is AnonymousQuizAssetPath for a visible note: only an
-// image the note's current content shows can be read through its link.
+// image the note's current content shows, or one an embedded quiz or written
+// card of the note shows (owned by that quiz or set), can be read through its
+// link.
 func (s *Store) AnonymousNoteAssetPath(ctx context.Context, noteID, assetID string) (objectPath, contentType string, err error) {
 	mt, err := s.anonymousMaterial(ctx, noteID, "note")
 	if err != nil {
@@ -147,10 +244,42 @@ func (s *Store) AnonymousNoteAssetPath(ctx context.Context, noteID, assetID stri
 	if err != nil {
 		return "", "", err
 	}
-	if !slices.Contains(ids, assetID) {
-		return "", "", ErrNotFound
+	if slices.Contains(ids, assetID) {
+		return s.anonymousAssetPath(ctx, noteID, assetID)
 	}
-	return s.anonymousAssetPath(ctx, noteID, assetID)
+	embeds, err := s.anonymousEmbeds(ctx, mt.ID, mt.Content)
+	if err != nil {
+		return "", "", err
+	}
+	for _, embed := range embeds {
+		shown := slices.ContainsFunc(embed.Cards, func(c materialdoc.Card) bool {
+			return c.Image != nil && c.Image.AssetID == assetID
+		})
+		if embed.Kind == "quiz" {
+			if shown, err = questionsShowAsset(embed.Questions, assetID); err != nil {
+				return "", "", err
+			}
+		}
+		if shown {
+			return s.anonymousAssetPath(ctx, embed.ID, assetID)
+		}
+	}
+	return "", "", ErrNotFound
+}
+
+// questionsShowAsset reports whether any of the full questions shows assetID,
+// worked solutions included, so their images resolve after grading.
+func questionsShowAsset(raw json.RawMessage, assetID string) (bool, error) {
+	var list []map[string]any
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return false, err
+	}
+	for _, q := range list {
+		if slices.Contains(questions.AssetIDs(q), assetID) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // AnonymousQuizAssetPath returns the object behind one of a visible quiz's
@@ -161,15 +290,11 @@ func (s *Store) AnonymousQuizAssetPath(ctx context.Context, quizID, assetID stri
 	if err != nil {
 		return "", "", err
 	}
-	var list []map[string]any
-	if err := json.Unmarshal(quiz.Questions, &list); err != nil {
+	shown, err := questionsShowAsset(quiz.Questions, assetID)
+	if err != nil {
 		return "", "", err
 	}
-	referenced := false
-	for _, q := range list {
-		referenced = referenced || slices.Contains(questions.AssetIDs(q), assetID)
-	}
-	if !referenced {
+	if !shown {
 		return "", "", ErrNotFound
 	}
 	return s.anonymousAssetPath(ctx, quizID, assetID)

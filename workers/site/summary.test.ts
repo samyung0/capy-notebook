@@ -269,6 +269,35 @@ describe('summary edge caching', () => {
 });
 
 describe('site routing and isolation', () => {
+  it('serves signed /share pages from the share entry and 404s forged ones before any API call', async () => {
+    const token = (await sharePath(DEV_SHARE_LINK_SECRET, 'qz_1')).slice(3);
+    const assets = vi.fn(async (asset: Request) =>
+      asset.url.endsWith('/share.html')
+        ? new Response('share entry')
+        : new Response(template)
+    );
+    const fetcher = upstream();
+    const page = await handleSiteRequest(
+      request(`/share/quizzes/${token}?anonymous`),
+      { ...env, ASSETS: { fetch: assets } },
+      fetcher
+    );
+    expect(await page.text()).toBe('share entry');
+    for (const path of [
+      // Another item's signature.
+      `/share/quizzes/qz_2.${token.split('.')[1]}`,
+      `/share/workspaces/${token}`,
+    ]) {
+      const refused = await handleSiteRequest(
+        request(path),
+        { ...env, ASSETS: { fetch: assets } },
+        fetcher
+      );
+      expect(refused.status).toBe(404);
+      expect(await refused.text()).not.toContain('share entry');
+    }
+    expect(fetcher).not.toHaveBeenCalled();
+  });
   it('streams authenticated API requests and responses without following file redirects', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       new Response('data: ready\n\n', {

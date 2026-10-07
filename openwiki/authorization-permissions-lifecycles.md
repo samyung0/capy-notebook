@@ -157,9 +157,17 @@ blank starter card is left out), never the owner's study state. An image is serv
 in its current content, checked against the full content so a worked
 solution's images resolve after grading. Unsharing takes up to five minutes to clear the edge.
 
-These pages use the workspace summary's public layout and header
-(`src/components/app/PublicHeader.tsx`): the same header for every visitor (no session read). Signed-in visitors of a shared quiz or flashcard set get
-the public layout too, while their attempts and ratings still go to their account. The pages drop the label
+These pages have their own entry (`share.html`, `src/share/main.tsx`), outside the app's router and shell:
+the Worker serves it for `/share/{quizzes|flashcards|notes}/{token}` after verifying the token, and each page's
+code loads on demand. They use the workspace summary's public layout and header
+(`src/components/app/PublicHeader.tsx`): the same header and body for every visitor, all read from the edge-cached
+`/p/` data. Clerk loads after first paint and is asked only when an attempt is submitted or a card rated
+(`src/share/session.ts`): signed in, the attempt or rating goes to the account (`POST /api/quizzes/{id}/attempts`,
+`POST /api/review/ratings`); signed out, the share route grades and the browser keeps it. Without a Clerk key (MSW,
+e2e) `?anonymous` selects the signed-out path. A forged link or unknown kind gets the summary's 404 page from the
+Worker; a private, unshared or missing item shows the same not-found panel (`SummaryFailure`) in the page, and any
+other failure its unavailable variant. Owners preview their items in the app; unsigned `/share/` links work for
+nobody. The pages drop the label
 above the title; the owner (`author`: name and avatar, on the public reads and on the single quiz and
 flashcard reads) sits under the title, then the question count, or for flashcards Card N of M just above
 the card. A ⋮ beside the title offers Clone.
@@ -169,8 +177,14 @@ returns the note's read projection (Plate JSON) with its owner and update time, 
 `GET /p/notes/{token}/assets/{assetId}` serves an image only when the note's current content shows it
 (`materialdoc.EditorAssetIDs`). Every visitor reads that edge-cached copy and the page renders it with the
 static renderer (`MaterialPreview`), leaving out a first heading that repeats the title. Mentions render the
-name stored in the note. Only images load through the share route; embedded quizzes and flashcard sets
-show as unavailable to signed-out visitors for now.
+name stored in the note. `GET /p/notes/{token}` also returns `embeds`: each quiz and flashcard set the note owns, references in its
+current content and has not trashed, in reference order (quizzes answer-free, flashcards written cards only); the
+page renders them in place (`src/share/PublicEmbed.tsx`). The note's asset route also serves an image one of those
+embeds shows, owned by that embed. Visitors grade an embedded quiz at
+`POST /api/public/notes/{token}/quizzes/{quizId}/grade`, which has the same caps as the quiz grade, stores nothing,
+and returns 404 for any quiz the note does not embed and reference. Embedded quizzes and flashcard sets are named
+by a random UUID that is never displayed, and they are left out of every materials listing, Explore, search and
+the workspace quiz count.
 
 #### Clone from a public page
 

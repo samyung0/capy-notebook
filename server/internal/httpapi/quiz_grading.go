@@ -183,24 +183,39 @@ type gradeAnonymousQuizInput struct {
 	Token string `path:"token"`
 	Body  apimodel.GradeAnonymousQuizReq
 }
+type gradeAnonymousNoteQuizInput struct {
+	Token  string `path:"token"`
+	QuizID string `path:"quizId"`
+	Body   apimodel.GradeAnonymousQuizReq
+}
 type gradedQuizOutput struct {
 	Body apimodel.GradedQuiz
 }
 
-// registerAnonymousGrading serves POST /api/public/quizzes/{token}/grade,
-// reached directly, not through the site Worker. Nothing is stored; the daily
-// caps key on the client IP and count only the open parts Jev grades.
+// registerAnonymousGrading serves POST /api/public/quizzes/{token}/grade and,
+// for a quiz embedded in a shared note, POST
+// /api/public/notes/{token}/quizzes/{quizId}/grade, reached directly, not
+// through the site Worker. Nothing is stored; the daily caps key on the client
+// IP and count only the open parts Jev grades.
 func (a *api) registerAnonymousGrading(api huma.API) {
+	clientIP := huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
+		r, _ := humachi.Unwrap(ctx)
+		next(huma.WithValue(ctx, clientIPKey{}, obs.ClientIP(r)))
+	}}
 	huma.Register(api, huma.Operation{
 		OperationID: "gradeAnonymousQuiz", Method: http.MethodPost, Path: "/api/public/quizzes/{token}/grade",
 		Summary: "Grade a signed-out attempt at a shared quiz", Tags: []string{"Sharing"},
-		DefaultStatus: http.StatusOK, MaxBodyBytes: answersMaxBytes,
-		Middlewares: huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
-			r, _ := humachi.Unwrap(ctx)
-			next(huma.WithValue(ctx, clientIPKey{}, obs.ClientIP(r)))
-		}},
+		DefaultStatus: http.StatusOK, MaxBodyBytes: answersMaxBytes, Middlewares: clientIP,
 	}, func(ctx context.Context, in *gradeAnonymousQuizInput) (*gradedQuizOutput, error) {
 		out, err := a.gradeAnonymousQuiz(ctx, in)
+		return out, reportHandlerError(ctx, err)
+	})
+	huma.Register(api, huma.Operation{
+		OperationID: "gradeAnonymousNoteQuiz", Method: http.MethodPost, Path: "/api/public/notes/{token}/quizzes/{quizId}/grade",
+		Summary: "Grade an attempt at a quiz embedded in a shared note", Tags: []string{"Sharing"},
+		DefaultStatus: http.StatusOK, MaxBodyBytes: answersMaxBytes, Middlewares: clientIP,
+	}, func(ctx context.Context, in *gradeAnonymousNoteQuizInput) (*gradedQuizOutput, error) {
+		out, err := a.gradeAnonymousNoteQuiz(ctx, in)
 		return out, reportHandlerError(ctx, err)
 	})
 }
@@ -214,11 +229,31 @@ func (a *api) gradeAnonymousQuiz(ctx context.Context, in *gradeAnonymousQuizInpu
 	if err != nil {
 		return nil, hErr(err)
 	}
-	qs, err := decodeStoredQuestions(quiz.Questions)
+	return a.gradeAnonymous(ctx, quiz.Questions, in.Body)
+}
+
+// gradeAnonymousNoteQuiz grades a quiz the shared note embeds and references;
+// any other quiz is 404.
+func (a *api) gradeAnonymousNoteQuiz(ctx context.Context, in *gradeAnonymousNoteQuizInput) (*gradedQuizOutput, error) {
+	id, err := a.sharedMaterialID(in.Token)
+	if err != nil {
+		return nil, err
+	}
+	stored, err := a.s.AnonymousNoteQuiz(ctx, id, in.QuizID)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	plan, err := planGrading(qs, in.Body.Answers)
+	return a.gradeAnonymous(ctx, stored, in.Body)
+}
+
+// gradeAnonymous grades a signed-out attempt against the stored questions
+// under the anonymous daily caps.
+func (a *api) gradeAnonymous(ctx context.Context, stored json.RawMessage, body apimodel.GradeAnonymousQuizReq) (*gradedQuizOutput, error) {
+	qs, err := decodeStoredQuestions(stored)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	plan, err := planGrading(qs, body.Answers)
 	if err != nil {
 		return nil, gradeRequestError(err)
 	}
@@ -229,7 +264,7 @@ func (a *api) gradeAnonymousQuiz(ctx context.Context, in *gradeAnonymousQuizInpu
 		}
 		ip, _ := ctx.Value(clientIPKey{}).(string)
 		ipHash = a.s.AnonymousIPHash(ip)
-		if err := a.s.ReserveAnonymousGrading(ctx, ipHash, in.Body.LocalID, len(plan.open)); errors.Is(err, store.ErrAnonymousGradingLimit) {
+		if err := a.s.ReserveAnonymousGrading(ctx, ipHash, body.LocalID, len(plan.open)); errors.Is(err, store.ErrAnonymousGradingLimit) {
 			return nil, &huma.ErrorModel{
 				Status: http.StatusTooManyRequests, Title: http.StatusText(http.StatusTooManyRequests),
 				Detail: "sign in to keep grading open answers today", Errors: []*huma.ErrorDetail{{Message: "anonymous_grading_limit"}},
@@ -247,7 +282,7 @@ func (a *api) gradeAnonymousQuiz(ctx context.Context, in *gradeAnonymousQuizInpu
 		return nil, huma.Error422UnprocessableEntity("there are no questions to grade")
 	}
 	if len(plan.open) > 0 {
-		if err := a.s.RecordAnonymousGradingUsage(ctx, ipHash, in.Body.LocalID, usage.InputTokens, jev.CostMicroUSD(usage.InputTokens)); err != nil {
+		if err := a.s.RecordAnonymousGradingUsage(ctx, ipHash, body.LocalID, usage.InputTokens, jev.CostMicroUSD(usage.InputTokens)); err != nil {
 			obs.CaptureErr(ctx, err, map[string]string{"surface": "anonymous_quiz"})
 		}
 	}

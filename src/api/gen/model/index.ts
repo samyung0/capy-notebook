@@ -17,6 +17,8 @@ export * from './addChapterReq.ts';
 export * from './adoptedMaterialChild.ts';
 export * from './agentOperation.ts';
 export * from './anonymousAsset.ts';
+export * from './anonymousEmbed.ts';
+export * from './anonymousEmbedKind.ts';
 export * from './anonymousFlashcards.ts';
 export * from './anonymousNote.ts';
 export * from './anonymousQuiz.ts';

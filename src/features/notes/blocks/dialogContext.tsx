@@ -1,4 +1,3 @@
-import { useNavigate, useRouter } from '@tanstack/react-router';
 import {
   createContext,
   lazy,
@@ -20,7 +19,6 @@ import {
   type MaterialRefKind,
   materialRefNode,
 } from '@/features/materials/document';
-import { quizEditSearch } from '@/features/quizzes/quizNavigation';
 import { insertEditorNode, type NoteEditorInstance } from '../insertEditorNode';
 import { YouTubeDialog } from '../YouTubeDialog';
 import type { NoteVisualBlock } from './VisualBlockDialog';
@@ -86,8 +84,6 @@ export function NoteBlockDialogsProvider({
   noteId: string;
 }) {
   const { mutateAsync: createEmbeddedMaterial } = useCreateEmbeddedMaterial();
-  const navigate = useNavigate();
-  const router = useRouter();
   const [visual, setVisual] = useState<{
     block: NoteVisualBlock;
     onSave: (block: NoteVisualBlock) => void | Promise<void>;
@@ -115,25 +111,13 @@ export function NoteBlockDialogsProvider({
       createEmbeddedMaterial({ noteId, ...embeddedDraftFromFence(kind, code) }),
     [createEmbeddedMaterial, noteId]
   );
+  // The new block is authored in place: Edit mode shows its editor.
   const insertEmbedded = useCallback(
     async (editor: NoteEditorInstance, kind: MaterialRefKind, code: string) => {
       const material = await createEmbedded(kind, code);
       insertEditorNode(editor, materialRefNode(material.id, kind));
-      // A new quiz or set is authored on its edit page.
-      const search = quizEditSearch(router.state.location.href);
-      await (kind === 'quiz'
-        ? navigate({
-            params: { quizId: material.id },
-            search,
-            to: '/quizzes/$quizId/edit',
-          })
-        : navigate({
-            params: { flashcardSetId: material.id },
-            search,
-            to: '/flashcards/$flashcardSetId/edit',
-          }));
     },
-    [createEmbedded, navigate, router]
+    [createEmbedded]
   );
 
   const api = useMemo<NoteBlockDialogsApi>(

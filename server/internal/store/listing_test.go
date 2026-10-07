@@ -65,15 +65,9 @@ func TestOwnedMaterialListingScopesFiltersAndPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(all.Items) != 3 || all.NextCursor != "" {
-		t.Fatalf("expected the note, its quiz and the standalone note, got %+v", all.Items)
-	}
-	for _, item := range all.Items {
-		if item.ID == embedded.ID {
-			if item.ParentMaterialID != note.ID || item.ParentTitle != "Alpha note" || item.QuestionCount == nil || *item.QuestionCount != 1 {
-				t.Fatalf("embedded row = %+v", item)
-			}
-		}
+	// The note's embedded quiz opens only inside the note.
+	if len(all.Items) != 2 || all.NextCursor != "" || all.Items[0].ID == embedded.ID || all.Items[1].ID == embedded.ID {
+		t.Fatalf("expected the note and the standalone note, got %+v", all.Items)
 	}
 	memberView, err := s.ListOwnedMaterials(ctx, memberID, MaterialListFilter{})
 	if err != nil {
@@ -83,12 +77,12 @@ func TestOwnedMaterialListingScopesFiltersAndPages(t *testing.T) {
 		t.Fatalf("membership does not surface another owner's materials: %+v", memberView.Items)
 	}
 
-	embeddedOnly, err := s.ListOwnedMaterials(ctx, ownerID, MaterialListFilter{Locations: []string{"embedded"}})
+	quizzes, err := s.ListOwnedMaterials(ctx, ownerID, MaterialListFilter{Locations: []string{"workspace"}, Kinds: []string{"quiz"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(embeddedOnly.Items) != 1 || embeddedOnly.Items[0].ID != embedded.ID {
-		t.Fatalf("embedded filter = %+v", embeddedOnly.Items)
+	if len(quizzes.Items) != 0 {
+		t.Fatalf("workspace quizzes = %+v, want no embedded quiz", quizzes.Items)
 	}
 	standaloneOnly, err := s.ListOwnedMaterials(ctx, ownerID, MaterialListFilter{Locations: []string{"standalone"}, Kinds: []string{"note"}})
 	if err != nil {
@@ -110,15 +104,8 @@ func TestOwnedMaterialListingScopesFiltersAndPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(second.Items) != 1 || second.Items[0].ID != embedded.ID {
-		t.Fatalf("second page = %+v", second.Items)
-	}
-	third, err := s.ListOwnedMaterials(ctx, ownerID, MaterialListFilter{Sort: "title", Ascending: true, Limit: 1, Cursor: second.NextCursor})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(third.Items) != 1 || third.Items[0].ID != standalone.ID || third.NextCursor != "" {
-		t.Fatalf("third page = %+v", third)
+	if len(second.Items) != 1 || second.Items[0].ID != standalone.ID || second.NextCursor != "" {
+		t.Fatalf("second page = %+v", second)
 	}
 
 	file, err := s.createReadyFile(ctx, ws.ID, ownerID, "notes.md", "md", nil, "", 4096, "sources/"+uid("blob")+"/notes.md")

@@ -15,6 +15,7 @@ import {
   lazy,
   type MouseEvent,
   Suspense,
+  useContext,
   useState,
 } from 'react';
 import { Button } from '@/components/ui/Button';
@@ -82,8 +83,8 @@ import type {
   QuizQuestionElement as QuizQuestionNode,
 } from './document';
 import { quizQuestionElementToQuestion } from './document';
+import { EmbedLoading, EmbedViewContext } from './embeds/EmbedView';
 import { HtmlEmbed } from './HtmlEmbed';
-import { MaterialRefCard } from './MaterialRefCard';
 import { StandaloneMaterialTitle } from './MaterialRenderContext';
 import { MathPreview } from './MathPreview';
 import {
@@ -418,14 +419,22 @@ function FlashcardsElement(props: SlateElementProps) {
   );
 }
 
+/** An embedded quiz or flashcard set, studied in place with the page's own
+ * embed renderer (EmbedViewContext). */
 function MaterialRefElement(props: SlateElementProps) {
   const element = props.element as unknown as MaterialRefNode;
+  const Embed = useContext(EmbedViewContext);
   return (
     <SlateElement {...props} className="my-4">
-      <MaterialRefCard
-        materialId={element.materialId}
-        refKind={element.refKind}
-      />
+      <div contentEditable={false}>
+        {element.materialId ? (
+          <Suspense fallback={<EmbedLoading />}>
+            <Embed materialId={element.materialId} refKind={element.refKind} />
+          </Suspense>
+        ) : (
+          <EmbedLoading />
+        )}
+      </div>
       {props.children}
     </SlateElement>
   );

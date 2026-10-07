@@ -2474,7 +2474,7 @@ export const listOwnedMaterialsQueryLimitMax = 100;
 export const ListOwnedMaterialsQueryParams = zod.object({
   "kind": zod.string().optional().describe('Comma-separated kinds: note, quiz, flashcards, mindmap, diagram; empty means note, quiz, flashcards'),
   "workspaceId": zod.string().optional().describe('Comma-separated workspace ids'),
-  "location": zod.string().optional().describe('Comma-separated places the material lives: workspace, embedded, standalone; empty means anywhere'),
+  "location": zod.string().optional().describe('Comma-separated places the material lives: workspace, standalone; empty means anywhere. Note-embedded quizzes and flashcard sets are never listed'),
   "scope": zod.enum(['owned', 'member']).default(listOwnedMaterialsQueryScopeDefault).describe('owned: the caller\'s workspaces and standalone materials; member: also every workspace they are a member of'),
   "sort": zod.enum(['updated', 'created', 'title', 'kind']).default(listOwnedMaterialsQuerySortDefault),
   "dir": zod.enum(['asc', 'desc']).default(listOwnedMaterialsQueryDirDefault),
@@ -2491,8 +2491,6 @@ export const ListOwnedMaterialsResponse = zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
   "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
-  "parentMaterialId": zod.string(),
-  "parentTitle": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "questionCount": zod.int().optional(),
   "sharePath": zod.string().optional(),
@@ -3587,6 +3585,19 @@ export const GetAnonymousNoteResponse = zod.object({
   "name": zod.string()
 }),
   "content": zod.unknown(),
+  "embeds": zod.array(zod.object({
+  "cards": zod.array(zod.object({
+  "back": zod.string(),
+  "front": zod.string(),
+  "id": zod.string(),
+  "image": zod.object({
+  "assetId": zod.string()
+}).optional()
+})).optional(),
+  "id": zod.string(),
+  "kind": zod.enum(['quiz', 'flashcards']),
+  "questions": zod.unknown().optional()
+})),
   "id": zod.string(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
@@ -3653,6 +3664,31 @@ export const GetAnonymousNoteAssetResponse = zod.object({
   "contentType": zod.string(),
   "expiresAt": zod.iso.datetime({"offset":true}),
   "url": zod.string()
+})
+
+
+/**
+ * @summary Grade an attempt at a quiz embedded in a shared note
+ */
+export const GradeAnonymousNoteQuizParams = zod.object({
+  "token": zod.string(),
+  "quizId": zod.string()
+})
+
+export const gradeAnonymousNoteQuizBodyLocalIdMax = 64;
+
+
+
+export const GradeAnonymousNoteQuizBody = zod.object({
+  "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers by part id'),
+  "localId": zod.string().max(gradeAnonymousNoteQuizBodyLocalIdMax).optional()
+})
+
+export const GradeAnonymousNoteQuizResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "correct": zod.number(),
+  "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "total": zod.number()
 })
 
 

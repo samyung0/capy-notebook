@@ -444,7 +444,6 @@ export default function QuestionBank() {
                   void navigate({ search: { tab: 'blocks' }, to: '/files' })
                 }
                 title={place?.item.label ?? m.question_ui_question_bank()}
-                topBar={false}
                 trail={
                   place
                     ? [

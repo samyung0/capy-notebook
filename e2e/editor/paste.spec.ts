@@ -1,6 +1,10 @@
 import { expect, type Locator, type Page, test } from '@playwright/test';
 import { EDITOR_NOTE } from '../../src/mocks/editorSeed';
+import { m } from '../i18n';
 import { clickTextEnd, openEditorNote } from './helpers';
+
+/** The embedded quiz editor's read of a quiz it edits. */
+const QUIZ_EDIT_READ = /^\/api\/quizzes\/([^/]+)\/edit$/;
 
 /**
  * Paste through the same events a real clipboard fires. Slate handles a
@@ -103,9 +107,11 @@ test.describe('paste', () => {
       'text/plain': 'Quiz',
     });
 
-    // The copy takes this note's title; the unreadable block is removed.
+    // The copy opens in the block's quiz editor; the unreadable block is removed.
     await expect(
-      editor.getByText(`${EDITOR_NOTE.title} · Quiz`, { exact: true })
+      editor
+        .locator('.slate-material_ref')
+        .getByRole('button', { name: m.quiz_add_question() })
     ).toBeVisible();
     await expect(editor.locator('.slate-material_ref')).toHaveCount(1);
   });
@@ -113,6 +119,11 @@ test.describe('paste', () => {
   test('gives each pasted block of the same quiz its own copy', async ({
     page,
   }) => {
+    const edited = new Set<string>();
+    page.on('request', (request) => {
+      const id = new URL(request.url()).pathname.match(QUIZ_EDIT_READ)?.[1];
+      if (id) edited.add(id);
+    });
     const editor = await openEmptyLine(page);
     const ref = (id: string) => ({
       children: [{ text: '' }],
@@ -131,12 +142,16 @@ test.describe('paste', () => {
       'text/plain': 'Quiz',
     });
 
-    // Two quizzes, so the second copy is numbered.
+    // Each block edits its own copy: the editor reads a quiz only once the
+    // block points at this note's copy, so two distinct reads, neither the
+    // original.
     await expect(
-      editor.getByText(`${EDITOR_NOTE.title} · Quiz`, { exact: true })
-    ).toBeVisible();
-    await expect(
-      editor.getByText(`${EDITOR_NOTE.title} · Quiz 2`, { exact: true })
-    ).toBeVisible();
+      editor
+        .locator('.slate-material_ref')
+        .getByRole('button', { name: m.quiz_add_question() })
+    ).toHaveCount(2);
+    expect(
+      [...edited].filter((id) => id !== 'mat_embed_bio_note_quiz')
+    ).toHaveLength(2);
   });
 });

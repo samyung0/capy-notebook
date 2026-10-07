@@ -4,6 +4,7 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { AnonymousEmbed } from './anonymousEmbed.ts';
 import type { MaterialAuthor } from './materialAuthor.ts';
 import type { Privacy } from './privacy.ts';
 import type { Provenance } from './provenance.ts';
@@ -13,6 +14,7 @@ export interface AnonymousNote {
   readonly $schema?: string;
   author: MaterialAuthor;
   content: unknown;
+  embeds: AnonymousEmbed[];
   id: string;
   name: string;
   privacy: Privacy;

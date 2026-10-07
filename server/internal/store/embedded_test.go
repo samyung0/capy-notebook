@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
@@ -23,6 +23,20 @@ func noteWithRefs(t *testing.T, refs ...Material) string {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+// isEmbeddedName reports whether title is an embedded row's stored name: a
+// random UUID, never the source's.
+func isEmbeddedName(title string, not ...Material) bool {
+	if _, err := uuid.Parse(title); err != nil {
+		return false
+	}
+	for _, mt := range not {
+		if mt.Title == title {
+			return false
+		}
+	}
+	return true
 }
 
 func TestEmbeddedMaterialFollowsItsNote(t *testing.T) {
@@ -46,7 +60,7 @@ func TestEmbeddedMaterialFollowsItsNote(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if quiz.ParentMaterialID != note.ID || quiz.WorkspaceID != ws.ID || quiz.Title != "Lecture 4 · Quiz" {
+	if quiz.ParentMaterialID != note.ID || quiz.WorkspaceID != ws.ID || !isEmbeddedName(quiz.Title) {
 		t.Fatalf("embedded quiz = %+v", quiz)
 	}
 	cards, err := s.CreateEmbeddedMaterial(ctx, ownerID, note.ID, EmbeddedDraft{
@@ -55,7 +69,7 @@ func TestEmbeddedMaterialFollowsItsNote(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cards.Title != "Lecture 4 · Flashcards" {
+	if !isEmbeddedName(cards.Title, quiz) {
 		t.Fatalf("embedded flashcards title = %q", cards.Title)
 	}
 	if _, err := s.CreateEmbeddedMaterial(ctx, ownerID, quiz.ID, EmbeddedDraft{Kind: "quiz", Questions: json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]`)}); !errors.Is(err, ErrNotFound) {
@@ -73,8 +87,8 @@ func TestEmbeddedMaterialFollowsItsNote(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(owned.Items) != 1 || owned.Items[0].ID != quiz.ID {
-		t.Fatalf("the Create list should include the embedded quiz: %+v", owned.Items)
+	if len(owned.Items) != 0 {
+		t.Fatalf("the Create list leaves embedded rows out: %+v", owned.Items)
 	}
 	if _, err := s.TrashMaterial(ctx, ownerID, quiz.ID, "", AgentOperation{}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("an embedded row cannot be trashed directly, got %v", err)
@@ -212,7 +226,8 @@ func TestEmbeddedMaterialAccessAndCloneFollowTheNote(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cloned embedded row %s: %v", ref.MaterialID, err)
 		}
-		if copied.ParentMaterialID != clone.ID || copied.OwnerUserID != readerID || copied.WorkspaceID != "" {
+		if copied.ParentMaterialID != clone.ID || copied.OwnerUserID != readerID || copied.WorkspaceID != "" ||
+			!isEmbeddedName(copied.Title, quiz, cards) {
 			t.Fatalf("cloned embedded row = %+v", copied)
 		}
 	}
@@ -275,7 +290,8 @@ func TestEmbeddedMaterialAccessAndCloneFollowTheNote(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if clonedQuiz.ParentMaterialID != clonedNote.ID || clonedQuiz.WorkspaceID != wsClone.ID {
+	if clonedQuiz.ParentMaterialID != clonedNote.ID || clonedQuiz.WorkspaceID != wsClone.ID ||
+		!isEmbeddedName(clonedQuiz.Title, wsQuiz) {
 		t.Fatalf("cloned embedded quiz = %+v", clonedQuiz)
 	}
 }
@@ -386,8 +402,7 @@ func TestAdoptEmbeddedMaterials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// "Target · Quiz" is the note's own quiz, so the copy gets a number.
-	if !strings.HasPrefix(quizCopy.Title, "Target · Quiz ") {
+	if !isEmbeddedName(quizCopy.Title, quiz, own) {
 		t.Fatalf("copy title = %q", quizCopy.Title)
 	}
 	assetIDs, err := materialdoc.EditorAssetIDs(quizCopy.Content)

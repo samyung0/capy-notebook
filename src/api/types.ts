@@ -23,6 +23,8 @@ import type {
   ActivityBlockOutcome,
   ActivityCapture,
   FileKind,
+  AnonymousEmbed as GenAnonymousEmbed,
+  AnonymousNote as GenAnonymousNote,
   AnonymousQuiz as GenAnonymousQuiz,
   AttemptDetail as GenAttemptDetail,
   Citation as GenCitation,
@@ -235,9 +237,17 @@ export type EditableQuiz = Omit<GenQuiz, 'questions'> & {
 export type AnonymousQuiz = Omit<GenAnonymousQuiz, 'questions'> & {
   questions: LearnerQuestion[];
 };
+/** A quiz or flashcard set embedded in a shared note, as its visitors read
+ * it: quizzes answer-free, sets with written cards only. */
+export type AnonymousEmbed = Omit<GenAnonymousEmbed, 'questions'> & {
+  questions?: LearnerQuestion[];
+};
+/** A shared standalone note, with the quizzes and sets it embeds. */
+export type AnonymousNote = Omit<GenAnonymousNote, 'embeds'> & {
+  embeds: AnonymousEmbed[];
+};
 export type {
   AnonymousFlashcards,
-  AnonymousNote,
   CheckBankQuestionReq,
   CheckReviewItemReq,
   ComputationCheckResp,
@@ -472,7 +482,7 @@ export type {
   MaterialPage,
 } from './gen/model';
 export type MaterialListKind = 'note' | 'quiz' | 'flashcards';
-export type MaterialListLocation = 'workspace' | 'embedded' | 'standalone';
+export type MaterialListLocation = 'workspace' | 'standalone';
 export type MaterialListSort = 'updated' | 'created' | 'title' | 'kind';
 /** owned: the caller's workspaces (and standalone materials); member: also
  * every workspace they are a member of. */

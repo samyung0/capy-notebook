@@ -1,21 +1,21 @@
 import { useQuery } from '@tanstack/react-query';
-import { useParams } from '@tanstack/react-router';
 import { useMemo } from 'react';
 import { anonymousNoteAssetUrl, anonymousNoteQuery } from '@/api/anonymous';
-import { isApiError } from '@/api/client';
 import { PublicActionMenu } from '@/components/app/PublicActionMenu';
 import { PublicByline, PublicPage } from '@/components/app/PublicHeader';
-import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Skeleton } from '@/components/ui/feedback';
 import {
   type MaterialDocument,
   parseMaterialDocument,
 } from '@/features/materials/document';
+import { EmbedViewContext } from '@/features/materials/embeds/EmbedView';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { MaterialPreview } from '@/features/materials/MaterialPreview';
 import { AssetUrlContext } from '@/features/materials/MediaAssetView';
 import { QuizPageHeader } from '@/features/quizzes/QuizPage';
 import { getLocale, m } from '@/i18n';
+import { PublicEmbed, PublicEmbedsContext } from './PublicEmbed';
+import { failureStatus, ShareError } from './ShareError';
 
 const plainText = (node: unknown): string =>
   typeof node === 'object' && node
@@ -40,21 +40,30 @@ function withoutRepeatedTitle(
     : document;
 }
 
-/** `/share/notes/$noteId`: the param is the signed share token
- * `{id}.{signature}`. Everyone reads the same edge-cached projection through
- * the site Worker and renders it with the static renderer. */
-export default function SharedNote() {
-  const params = useParams({ strict: false });
-  const token = (params as { noteId: string }).noteId;
+/** `/share/notes/{token}`: everyone reads the same edge-cached projection
+ * through the site Worker and renders it with the static renderer. */
+export function SharedNote({ token }: { token: string }) {
   const {
     data: note,
     error,
     isError,
     isLoading,
-  } = useQuery({ ...anonymousNoteQuery(token), retry: false });
+  } = useQuery({
+    ...anonymousNoteQuery(token),
+    // Failures render the summary's failure panel here, not the boundary.
+    meta: { errorBoundary: false },
+    retry: false,
+  });
   const document = useMemo(
     () => note && withoutRepeatedTitle(note.content, note.name),
     [note]
+  );
+  const embeds = useMemo(
+    () => ({
+      embeds: new Map(note?.embeds.map((embed) => [embed.id, embed])),
+      token,
+    }),
+    [note, token]
   );
 
   if (isLoading)
@@ -64,17 +73,7 @@ export default function SharedNote() {
       </PublicPage>
     );
   if (isError || !note || !document)
-    return (
-      <PublicPage>
-        <WorkspaceError
-          title={
-            isApiError(error) && error.status === 404
-              ? m.error_private_title()
-              : m.note_unable_load()
-          }
-        />
-      </PublicPage>
-    );
+    return <ShareError status={failureStatus(error)} />;
 
   return (
     <PublicPage>
@@ -88,20 +87,23 @@ export default function SharedNote() {
           }).format(new Date(note.updatedAt)),
         })}
         title={note.name}
-        topBar={false}
         trail={[]}
       />
       <div className="px-4 pt-2 pb-8 sm:px-6 lg:px-10 xl:px-16">
         <AssetUrlContext.Provider
           value={(assetId) => anonymousNoteAssetUrl(token, assetId)}
         >
-          <MaterialPreview
-            className="mx-0 min-h-0 px-0 pt-0 pb-8 sm:px-0 md:max-w-none"
-            content={document}
-            isStandalone
-            kind="note"
-            title={note.name}
-          />
+          <PublicEmbedsContext.Provider value={embeds}>
+            <EmbedViewContext.Provider value={PublicEmbed}>
+              <MaterialPreview
+                className="mx-0 min-h-0 px-0 pt-0 pb-8 sm:px-0 md:max-w-none"
+                content={document}
+                isStandalone
+                kind="note"
+                title={note.name}
+              />
+            </EmbedViewContext.Provider>
+          </PublicEmbedsContext.Provider>
         </AssetUrlContext.Provider>
         <MaterialAttributionFooter provenance={note.provenance} />
       </div>

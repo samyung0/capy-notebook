@@ -1552,23 +1552,14 @@ export function copyEmbeddedInto(note: Material, sourceId: string): string {
     );
     return copy.type === 'flashcard' ? { ...copy, id: uid('card') } : copy;
   };
-  const base = `${note.title} · ${source.kind === 'quiz' ? 'Quiz' : 'Flashcards'}`;
-  let title = base;
-  for (
-    let n = 2;
-    materials.some(
-      (x) => x.workspaceId === note.workspaceId && x.title === title
-    );
-    n++
-  )
-    title = `${base} ${n}`;
   const mt = makeMaterial({
     ...source,
     content: rekey(source.content) as typeof source.content,
     createdAt: new Date().toISOString(),
     id: uid('mat'),
     parentMaterialId: note.id,
-    title,
+    // Embedded items carry a random, never displayed name.
+    title: crypto.randomUUID(),
     workspaceId: note.workspaceId,
     workspaceName: note.workspaceName,
   });
@@ -2158,12 +2149,24 @@ for (const seed of embeddedSeeds) {
       role: 'owner',
       scopeChapters: [],
       scopeFileNames: [],
-      title: `${note.title} · ${seed.kind === 'quiz' ? 'Quiz' : 'Flashcards'}`,
+      title: crypto.randomUUID(),
       workspaceId: note.workspaceId,
       workspaceName: note.workspaceName,
     })
   );
 }
+
+// The shared copy of the lecture note embeds copies of its own, as a clone does.
+const sharedNote = materials.find((mt) => mt.id === 'nt_shared');
+if (sharedNote)
+  sharedNote.content = {
+    ...sharedNote.content,
+    value: sharedNote.content.value.map((node) =>
+      node.type === 'material_ref' && typeof node.materialId === 'string'
+        ? { ...node, materialId: copyEmbeddedInto(sharedNote, node.materialId) }
+        : node
+    ),
+  };
 
 /** Standalone quizzes, flashcard sets and notes share through a signed link.
  * MSW has no Worker to verify it, so the signature is a fixed placeholder. */
@@ -2278,9 +2281,6 @@ export function flashcardSetFromMaterial(mt: Material): FlashcardSet {
 
 /** One Create page row for a material, with the per-kind counts the card shows. */
 export function materialListItem(mt: Material): MaterialListItem {
-  const parent = mt.parentMaterialId
-    ? materials.find((p) => p.id === mt.parentMaterialId)
-    : undefined;
   const quiz = mt.kind === 'quiz' ? quizFromMaterial(mt) : undefined;
   const set =
     mt.kind === 'flashcards' ? flashcardSetFromMaterial(mt) : undefined;
@@ -2290,8 +2290,6 @@ export function materialListItem(mt: Material): MaterialListItem {
     createdAt: mt.createdAt,
     id: mt.id,
     kind: mt.kind,
-    parentMaterialId: mt.parentMaterialId ?? '',
-    parentTitle: parent?.title ?? '',
     privacy: mt.privacy,
     sharePath: mockSharePath(mt),
     sizeBytes: mt.contentBytes,

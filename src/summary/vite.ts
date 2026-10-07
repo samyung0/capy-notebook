@@ -2,7 +2,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Plugin } from 'vite';
 
-/** Use the deployed renderer for local full-stack and tunnel sessions too. */
+/** Use the deployed renderer and routing for local full-stack and tunnel
+ * sessions too. */
 export function summaryVitePlugin(
   apiOrigin: string,
   appOrigin: string,
@@ -13,8 +14,16 @@ export function summaryVitePlugin(
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         const pathname = req.url?.split('?')[0] ?? '';
+        // MSW signs share links with a placeholder the Worker would reject,
+        // so there /share/* only swaps in the share entry.
+        if (pathname.startsWith('/share/') && useMsw) {
+          req.url = `/share.html${req.url?.slice(pathname.length) ?? ''}`;
+          return next();
+        }
         // Under MSW the browser worker answers /p/ routes itself.
-        const isPublic = pathname.startsWith('/p/') && !useMsw;
+        const isPublic =
+          (pathname.startsWith('/p/') || pathname.startsWith('/share/')) &&
+          !useMsw;
         if (!pathname.startsWith('/w/') && !isPublic) return next();
         try {
           const { handleSiteRequest } = await server.ssrLoadModule(
@@ -47,16 +56,23 @@ export function summaryVitePlugin(
               API_ORIGIN: apiOrigin,
               APP_ORIGIN: appOrigin,
               ASSETS: {
-                fetch: async () =>
-                  new Response(
+                // The Worker asks for summary.html or share.html.
+                fetch: async (asset: Request) => {
+                  const file =
+                    new URL(asset.url).pathname === '/share.html'
+                      ? 'share.html'
+                      : 'summary.html';
+                  return new Response(
                     await server.transformIndexHtml(
-                      '/summary.html',
+                      `/${file}`,
                       await fs.readFile(
-                        path.resolve(server.config.root, 'summary.html'),
+                        path.resolve(server.config.root, file),
                         'utf8'
                       )
-                    )
-                  ),
+                    ),
+                    { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+                  );
+                },
               },
               SHARE_LINK_SECRET: shareLinkSecret,
             },

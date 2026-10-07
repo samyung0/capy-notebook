@@ -5264,6 +5264,59 @@ export const getAnonymousNoteAsset = async (token: string,
 
 
 
+export type gradeAnonymousNoteQuizResponse200 = {
+  data: GradedQuiz
+  status: 200
+}
+
+export type gradeAnonymousNoteQuizResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type gradeAnonymousNoteQuizResponseSuccess = (gradeAnonymousNoteQuizResponse200) & {
+  headers: Headers;
+};
+export type gradeAnonymousNoteQuizResponseError = (gradeAnonymousNoteQuizResponseDefault) & {
+  headers: Headers;
+};
+
+export type gradeAnonymousNoteQuizResponse = (gradeAnonymousNoteQuizResponseSuccess | gradeAnonymousNoteQuizResponseError)
+
+export const getGradeAnonymousNoteQuizUrl = (token: string,
+    quizId: string,) => {
+
+
+
+
+  return `/api/public/notes/${token}/quizzes/${quizId}/grade`
+}
+
+/**
+ * @summary Grade an attempt at a quiz embedded in a shared note
+ */
+export const gradeAnonymousNoteQuiz = async (token: string,
+    quizId: string,
+    gradeAnonymousQuizReq: NonReadonly<GradeAnonymousQuizReq>, options?: RequestInit): Promise<gradeAnonymousNoteQuizResponse> => {
+
+  const res = await fetch(getGradeAnonymousNoteQuizUrl(token,quizId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(gradeAnonymousQuizReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: gradeAnonymousNoteQuizResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as gradeAnonymousNoteQuizResponse
+}
+
+
+
 export type getAnonymousQuizResponse200 = {
   data: AnonymousQuiz
   status: 200

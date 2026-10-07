@@ -18,7 +18,7 @@ kind?: string;
  */
 workspaceId?: string;
 /**
- * Comma-separated places the material lives: workspace, embedded, standalone; empty means anywhere
+ * Comma-separated places the material lives: workspace, standalone; empty means anywhere. Note-embedded quizzes and flashcard sets are never listed
  */
 location?: string;
 /**

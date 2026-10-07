@@ -35,8 +35,6 @@ function material(
     createdAt,
     id,
     kind: 'note',
-    parentMaterialId: '',
-    parentTitle: '',
     privacy: 'private',
     sizeBytes: 1,
     title: id,

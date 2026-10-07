@@ -111,13 +111,12 @@ var materialListSorts = map[string]listSort{
 	"kind":    {column: "m.kind", kind: "text"},
 }
 
-// materialLocations are the Locations values. An embedded material has a
-// parent note; workspace and standalone mean top-level rows in or outside a
-// workspace.
+// materialLocations are the Locations values: rows in or outside a
+// workspace. Embedded rows (parent_material_id set) are never listed; they
+// open only inside their note.
 var materialLocations = map[string]string{
-	"workspace":  `(m.workspace_id IS NOT NULL AND m.parent_material_id IS NULL)`,
-	"embedded":   `m.parent_material_id IS NOT NULL`,
-	"standalone": `(m.workspace_id IS NULL AND m.parent_material_id IS NULL)`,
+	"workspace":  `m.workspace_id IS NOT NULL`,
+	"standalone": `m.workspace_id IS NULL`,
 }
 
 // MaterialListFilter narrows the owner's materials. Empty slices mean no
@@ -136,16 +135,14 @@ type MaterialListFilter struct {
 // MaterialListItem is one Create page row: enough to render the card without
 // loading the document, plus the per-kind counts the card shows.
 type MaterialListItem struct {
-	ID               string       `json:"id"`
-	Kind             MaterialKind `json:"kind"`
-	Title            string       `json:"title"`
-	WorkspaceID      string       `json:"workspaceId"`
-	WorkspaceName    string       `json:"workspaceName"`
-	ChapterID        *string      `json:"chapterId"`
-	ChapterName      string       `json:"chapterName"`
-	ParentMaterialID string       `json:"parentMaterialId"`
-	ParentTitle      string       `json:"parentTitle"`
-	Privacy          Privacy      `json:"privacy"`
+	ID            string       `json:"id"`
+	Kind          MaterialKind `json:"kind"`
+	Title         string       `json:"title"`
+	WorkspaceID   string       `json:"workspaceId"`
+	WorkspaceName string       `json:"workspaceName"`
+	ChapterID     *string      `json:"chapterId"`
+	ChapterName   string       `json:"chapterName"`
+	Privacy       Privacy      `json:"privacy"`
 	// SharePath is the signed share link of a standalone quiz or flashcard set.
 	SharePath     string    `json:"sharePath,omitempty"`
 	CreatedAt     time.Time `json:"createdAt"`
@@ -162,7 +159,8 @@ type MaterialPage struct {
 
 // ListOwnedMaterials pages through the caller's notes, quizzes and flashcard
 // sets: rows they own in their own workspaces plus their standalone rows, and
-// with Member the rows of every workspace they belong to.
+// with Member the rows of every workspace they belong to. Embedded rows are
+// left out.
 func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f MaterialListFilter) (MaterialPage, error) {
 	sort, ok := materialListSorts[f.Sort]
 	if !ok {
@@ -176,11 +174,11 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 		kinds = []string{"note", "quiz", "flashcards"}
 	}
 	args := []any{ownerID, kinds}
-	where := ` WHERE m.owner_user_id=$1 AND m.trashed_at IS NULL AND m.kind = ANY($2)`
+	where := ` WHERE m.owner_user_id=$1`
 	if f.Member {
-		where = ` WHERE (m.owner_user_id=$1 OR (` + memberWorkspace("m.workspace_id") + `))
-			AND m.trashed_at IS NULL AND m.kind = ANY($2)`
+		where = ` WHERE (m.owner_user_id=$1 OR (` + memberWorkspace("m.workspace_id") + `))`
 	}
+	where += ` AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND m.kind = ANY($2)`
 	if len(f.WorkspaceIDs) > 0 {
 		args = append(args, f.WorkspaceIDs)
 		where += fmt.Sprintf(` AND m.workspace_id = ANY($%d)`, len(args))
@@ -204,15 +202,14 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 	args = append(args, cursorArgs...)
 	args = append(args, f.Limit+1)
 	rows, err := s.pool.Query(ctx, `SELECT m.id, m.kind, m.title, COALESCE(m.workspace_id,''), m.workspace_name,
-			m.chapter_id, COALESCE(c.name,''), COALESCE(m.parent_material_id,''), COALESCE(p.title,''),
+			m.chapter_id, COALESCE(c.name,''),
 			m.privacy, m.created_at, m.updated_at, m.size_bytes,
 			CASE WHEN m.kind='quiz' THEN (SELECT (SELECT count(*) FROM jsonb_array_elements(elem->'children') child WHERE child->>'type'='quiz_question')
 				FROM jsonb_array_elements(m.content->'value') elem WHERE elem->>'type'='quiz' LIMIT 1) END,
 			CASE WHEN m.kind='flashcards' THEN (SELECT count(*) FROM flashcard_cards fc WHERE fc.material_id=m.id) END
 		FROM materials m
 		JOIN users owner ON owner.id=m.owner_user_id
-		LEFT JOIN chapters c ON c.id=m.chapter_id
-		LEFT JOIN materials p ON p.id=m.parent_material_id`+where+
+		LEFT JOIN chapters c ON c.id=m.chapter_id`+where+
 		orderClause(sort, "m.id", f.Ascending)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
 	if err != nil {
 		return MaterialPage{}, err
@@ -222,12 +219,12 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 	for rows.Next() {
 		var item MaterialListItem
 		if err := rows.Scan(&item.ID, &item.Kind, &item.Title, &item.WorkspaceID, &item.WorkspaceName,
-			&item.ChapterID, &item.ChapterName, &item.ParentMaterialID, &item.ParentTitle,
+			&item.ChapterID, &item.ChapterName,
 			&item.Privacy, &item.CreatedAt, &item.UpdatedAt, &item.SizeBytes,
 			&item.QuestionCount, &item.CardCount); err != nil {
 			return MaterialPage{}, err
 		}
-		item.SharePath = materialSharePath(s.shareLinkSecret, string(item.Kind), item.ID, item.WorkspaceID, item.ParentMaterialID)
+		item.SharePath = materialSharePath(s.shareLinkSecret, string(item.Kind), item.ID, item.WorkspaceID, "")
 		page.Items = append(page.Items, item)
 	}
 	if err := rows.Err(); err != nil {

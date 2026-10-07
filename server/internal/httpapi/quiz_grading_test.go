@@ -13,6 +13,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
 	"github.com/samyung0/capy-notebook/server/internal/jev"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 	"github.com/samyung0/capy-notebook/server/internal/testdb"
@@ -234,5 +235,82 @@ func TestGradeAnonymousQuizCapsPerIP(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("forged token → %d", rec.Code)
+	}
+}
+
+// A shared note sends its embedded quizzes answer-free, and its link grades
+// only a quiz the note embeds and references, storing nothing.
+func TestAnonymousNoteEmbedsAndGrading(t *testing.T) {
+	h, st, _ := openGradingAPI(t, "full")
+	ctx := context.Background()
+	standalone := gradingQuiz(t, h, "link")
+	note, err := st.CreateMaterial(ctx, store.Material{CreatedBy: "u_owner", Kind: "note", Title: "Embeds", Content: "# Embeds\n\nbody"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	questions := json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1-a","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]`)
+	embed := func() store.Material {
+		mt, err := st.CreateEmbeddedMaterial(ctx, "u_owner", note.ID, store.EmbeddedDraft{Kind: "quiz", Questions: questions})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return mt
+	}
+	quiz, unreferenced := embed(), embed()
+	content, err := materialdoc.Marshal(materialdoc.Envelope{SchemaVersion: materialdoc.SchemaVersion, Value: []map[string]any{
+		materialdoc.ParagraphNode("intro"), materialdoc.MaterialRefNode(quiz.ID, "quiz"),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpdateMaterial(ctx, note.ID, store.MaterialPatch{Content: &content, UpdatedBy: "u_owner"}); err != nil {
+		t.Fatal(err)
+	}
+	token := store.ShareToken(nil, note.ID)
+	grade := func(quizID string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/public/notes/"+token+"/quizzes/"+quizID+"/grade",
+			strings.NewReader(`{"answers":{"q1-a":true}}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	if rec := doReq(t, h, http.MethodGet, "/api/public/notes/"+token, "", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("private note → %d", rec.Code)
+	}
+	if rec := grade(quiz.ID); rec.Code != http.StatusNotFound {
+		t.Fatalf("private note's quiz grade → %d", rec.Code)
+	}
+	if _, err := st.UpdateStandaloneMaterialPrivacy(ctx, "u_owner", note.ID, "", store.PrivacyLink); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := doReq(t, h, http.MethodGet, "/api/public/notes/"+token, "", nil)
+	var read struct {
+		Embeds []struct {
+			ID, Kind  string
+			Questions []map[string]any
+		}
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &read)
+	if rec.Code != http.StatusOK || len(read.Embeds) != 1 || read.Embeds[0].ID != quiz.ID || read.Embeds[0].Kind != "quiz" ||
+		len(read.Embeds[0].Questions) != 1 || strings.Contains(rec.Body.String(), `"correct"`) {
+		t.Fatalf("note read → %d %s", rec.Code, rec.Body.String())
+	}
+
+	if rec := grade(quiz.ID); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"correct":1`) {
+		t.Fatalf("embedded quiz grade → %d %s", rec.Code, rec.Body.String())
+	}
+	for _, id := range []string{unreferenced.ID, standalone} {
+		if rec := grade(id); rec.Code != http.StatusNotFound {
+			t.Fatalf("grade %s through the note → %d", id, rec.Code)
+		}
+	}
+	var attempts int
+	if err := st.Pool().QueryRow(ctx, `SELECT count(*) FROM attempts WHERE material_id=$1`, quiz.ID).Scan(&attempts); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 0 {
+		t.Fatalf("grading through the note stored %d attempts", attempts)
 	}
 }

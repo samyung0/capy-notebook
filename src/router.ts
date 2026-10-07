@@ -45,14 +45,8 @@ import { queryClient } from '@/api/queryClient';
 import {
   RouteErrorComponent,
   RouteNotFoundComponent,
-  ShareRouteErrorComponent,
 } from '@/components/app/AppErrorBoundary';
-import {
-  AuthShellRoute,
-  RootRoute,
-  SharedFlashcardsRoute,
-  SharedQuizRoute,
-} from '@/components/app/RouteComponents';
+import { AuthShellRoute, RootRoute } from '@/components/app/RouteComponents';
 import {
   parseDocumentModeSearch,
   parseWorkspaceOpenSearch,
@@ -126,25 +120,6 @@ const publicRoutes = [
     ),
     getParentRoute: () => rootRoute,
     path: '/workspace-invites/$token',
-  }),
-  createRoute({
-    component: SharedQuizRoute,
-    errorComponent: ShareRouteErrorComponent,
-    getParentRoute: () => rootRoute,
-    // The param is a signed share token; the page loads signed in or out.
-    path: '/share/quizzes/$quizId',
-  }),
-  createRoute({
-    component: SharedFlashcardsRoute,
-    errorComponent: ShareRouteErrorComponent,
-    getParentRoute: () => rootRoute,
-    path: '/share/flashcards/$flashcardSetId',
-  }),
-  createRoute({
-    component: lazyRouteComponent(() => import('@/routes/SharedNote')),
-    errorComponent: ShareRouteErrorComponent,
-    getParentRoute: () => rootRoute,
-    path: '/share/notes/$noteId',
   }),
   createRoute({
     component: lazyRouteComponent(() => import('@/routes/SignIn')),

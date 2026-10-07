@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
@@ -644,11 +645,15 @@ func TestInternalCreateNoteCreatesItsMiniChecks(t *testing.T) {
 	if len(got) != 3 {
 		t.Fatalf("embedded rows = %+v", got)
 	}
+	// Each row is named by a random UUID that is never displayed.
 	titles := map[string]bool{}
 	for _, c := range got {
+		if _, err := uuid.Parse(c.Title); err != nil {
+			t.Fatalf("embedded title %q is not a UUID", c.Title)
+		}
 		titles[c.Title] = true
 	}
-	if len(titles) != 3 || !titles[title+" · Quiz"] || !titles[title+" · Quiz 2"] {
+	if len(titles) != 3 {
 		t.Fatalf("embedded titles = %+v", got)
 	}
 	note, err := st.GetMaterial(t.Context(), noteID)

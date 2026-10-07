@@ -276,17 +276,29 @@ flashcard block inside a note does not render the note title.
 
 A note never inlines a quiz or flashcard set. Both are material rows of their
 own with `parent_material_id` set, sharing the note's workspace, private and
-unfiled, and the note stores a void `material_ref` block
-(`{materialId, refKind}`) rendered as a borderless row by `MaterialRefCard`:
-Start quiz / Study in view mode, only an outline Edit in edit mode. Inserting through the slash command or toolbar
+unfiled, with a random UUID as a name that is never displayed (they are not in
+any materials list), and the note stores a void `material_ref` block
+(`{materialId, refKind}`) that renders the item itself, with no title row
+(`src/features/materials/embeds/`): View (note View and the public note page)
+shows the study component in the note's flow (`AttemptBody` / `StudyBody` in
+embedded mode: Submit grades in place, a flashcard flips when clicked with no
+Show answer button), Edit shows the editors in place (`QuizForm`'s Edit and
+Remove per question and Add question; the `FlashcardsEditor` grid with its hover
+toolbar and Add card), each change saved at once through the item's content
+endpoint, one save at a time. Removing the last question or card removes the
+block itself (the item follows the removed-block trash rule; Undo restores both). The static renderer takes the page's embed renderer from
+`EmbedViewContext` (the app's reads through the account and loads on demand; the
+share page feeds the note's public data). Inserting through the slash command or toolbar
 creates the row through `POST /api/materials/{noteId}/embedded` (a set with one
 blank card), inserts the reference at the top level and opens the row's edit
 page (`/quizzes/$id/edit` or `/flashcards/$id/edit`); nothing is inserted when
 creation fails, and with the caret inside a callout, column, table or other container
 the quiz, flashcards and mermaid commands do nothing. A reference that lands
-nested (a paste) is lifted to the top level by the plugin's normalizer. Edit opens the same edit page, which saves through the quiz or
-flashcard content endpoint, so note undo covers only inserting and removing the
-reference. Go and the sidecar reject inline `quiz`/`flashcards`
+nested (a paste) is lifted to the top level by the plugin's normalizer. Edits
+save through the quiz or flashcard content endpoint, so note undo covers only
+inserting and removing the reference. Another open editor of the note sees an
+embed's change when its query refetches (see the freshness item in
+`todo-office.md`). Go and the sidecar reject inline `quiz`/`flashcards`
 nodes in a note and references anywhere but the top level. A markdown fence
 imports as a pending reference (`materialId: ''` plus the fence body in
 `pending`); the mounted editor claims it in the shared document
@@ -301,9 +313,9 @@ not write or else the first in document order, and every other block asks for
 a copy (`planChildren`). The note's own row keeps its id (leaving the trash
 when it was in it), another note's quiz or set becomes this note's copy, one
 per block, its images copied on the server, and a block whose original is
-unreadable or purged (over a day in the trash) is dropped. `MaterialRefCard`
-shows a skeleton, without Edit, while the block names another note's material
-or one that does not load yet, and reloads when `children-ready` names it.
+unreadable or purged (over a day in the trash) is dropped. In Edit the block
+shows a skeleton while it names another note's material or one that does not
+load yet, and reloads when `children-ready` names it.
 Removing the reference trashes the row at the next save, hidden for a day (see
 [authorization](../authorization-permissions-lifecycles.md)). Embedded quizzes
 and sets are quick checks that record nothing (attempts, ratings; see
@@ -1026,7 +1038,10 @@ leases, and credit rates.
 ## Static rendering
 
 `MaterialPreview` uses `PlateStatic` and the checkpointed Plate envelope. Static
-components must not use editor hooks. Interactive and static component
+components must not use editor hooks. `StaticMaterialKit` has no markdown
+parser: uploaded `.md` files convert first (`files/MarkdownPreview.tsx` through
+`markdownToDocument`), and the markdown converters add `noteMarkdownPlugin` on
+top of the kit themselves. Interactive and static component
 registries share node vocabulary but have different behavior.
 
 Obsolete `suggestion` and `suggestion_*` properties are rejected by server

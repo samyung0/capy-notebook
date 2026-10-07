@@ -189,9 +189,11 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		Store:      s,
 		PublicPrefix: []string{
 			"/api/email/unsubscribe",
-			// Signed-out grading of a shared quiz; the handler verifies the
-			// share token and applies the anonymous daily caps.
+			// Signed-out grading of a shared quiz or of a quiz embedded in a
+			// shared note; the handler verifies the share token and applies
+			// the anonymous daily caps.
 			"/api/public/quizzes/",
+			"/api/public/notes/",
 			// Service-to-service, authenticated by X-Pipeline-Secret inside the
 			// handler; there is no Clerk session to verify.
 			"/api/internal/",

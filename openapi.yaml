@@ -222,6 +222,25 @@ components:
         - contentType
         - expiresAt
       type: object
+    AnonymousEmbed:
+      additionalProperties: false
+      properties:
+        cards:
+          items:
+            $ref: "#/components/schemas/Card"
+          type: array
+        id:
+          type: string
+        kind:
+          enum:
+            - quiz
+            - flashcards
+          type: string
+        questions: {}
+      required:
+        - id
+        - kind
+      type: object
     AnonymousFlashcards:
       additionalProperties: false
       properties:
@@ -267,6 +286,10 @@ components:
         author:
           $ref: "#/components/schemas/MaterialAuthor"
         content: {}
+        embeds:
+          items:
+            $ref: "#/components/schemas/AnonymousEmbed"
+          type: array
         id:
           type: string
         name:
@@ -285,6 +308,7 @@ components:
         - content
         - updatedAt
         - author
+        - embeds
       type: object
     AnonymousQuiz:
       additionalProperties: false
@@ -2550,10 +2574,6 @@ components:
           type: string
         kind:
           $ref: "#/components/schemas/MaterialKind"
-        parentMaterialId:
-          type: string
-        parentTitle:
-          type: string
         privacy:
           $ref: "#/components/schemas/Privacy"
         questionCount:
@@ -2581,8 +2601,6 @@ components:
         - workspaceName
         - chapterId
         - chapterName
-        - parentMaterialId
-        - parentTitle
         - privacy
         - createdAt
         - updatedAt
@@ -7580,12 +7598,12 @@ paths:
           schema:
             description: Comma-separated workspace ids
             type: string
-        - description: "Comma-separated places the material lives: workspace, embedded, standalone; empty means anywhere"
+        - description: "Comma-separated places the material lives: workspace, standalone; empty means anywhere. Note-embedded quizzes and flashcard sets are never listed"
           explode: false
           in: query
           name: location
           schema:
-            description: "Comma-separated places the material lives: workspace, embedded, standalone; empty means anywhere"
+            description: "Comma-separated places the material lives: workspace, standalone; empty means anywhere. Note-embedded quizzes and flashcard sets are never listed"
             type: string
         - description: "owned: the caller's workspaces and standalone materials; member: also every workspace they are a member of"
           explode: false
@@ -8433,6 +8451,42 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Get a shared note image URL
+      tags:
+        - Sharing
+  /api/public/notes/{token}/quizzes/{quizId}/grade:
+    post:
+      operationId: gradeAnonymousNoteQuiz
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: quizId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GradeAnonymousQuizReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GradedQuiz"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Grade an attempt at a quiz embedded in a shared note
       tags:
         - Sharing
   /api/public/quizzes/{token}:

@@ -1,6 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
 import type { Question, QuestionCredit } from '@/api/types';
-import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { QuestionCreditNote } from '@/features/materials/MaterialAttributionFooter';
@@ -36,7 +35,7 @@ export function QuizPageHeader({
   meta,
   byline,
   actions,
-  topBar = true,
+  topBar,
 }: {
   className?: string;
   onBack?: () => void;
@@ -46,8 +45,9 @@ export function QuizPageHeader({
   /** The owner on public pages, between the title and the meta line. */
   byline?: ReactNode;
   actions?: ReactNode;
-  /** From lg the top bar sits in PanelWithInvertedRadius's notch, beside this header. */
-  topBar?: boolean;
+  /** The app's top bar, which from lg sits in PanelWithInvertedRadius's notch
+   * beside this header; public pages have their own header and pass none. */
+  topBar?: ReactNode;
 }) {
   return (
     <header className="flex items-start">
@@ -101,7 +101,7 @@ export function QuizPageHeader({
         {byline}
         {meta && <p className="t-meta -mt-1 text-fg-muted">{meta}</p>}
       </div>
-      {topBar && <TopInsetBar className="hidden shrink-0 lg:flex" />}
+      {topBar}
     </header>
   );
 }

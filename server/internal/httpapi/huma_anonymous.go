@@ -78,17 +78,21 @@ func (a *api) getAnonymousQuiz(ctx context.Context, in *shareTokenInput) (*anony
 	if err != nil {
 		return nil, hErr(err)
 	}
-	// Visitors take the quiz, so it is answer-free; the image route below
-	// still checks against the full content, so solution images resolve once
-	// an answer is checked.
-	qs, err := decodeStoredQuestions(quiz.Questions)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	if quiz.Questions, err = json.Marshal(questions.LearnerViews(qs)); err != nil {
+	if quiz.Questions, err = learnerQuestions(quiz.Questions); err != nil {
 		return nil, hErr(err)
 	}
 	return &anonymousQuizOutput{CacheControl: "no-store", Body: quiz}, nil
+}
+
+// learnerQuestions makes stored questions answer-free: visitors take the quiz.
+// The image routes still check against the full content, so solution images
+// resolve once an answer is checked.
+func learnerQuestions(raw json.RawMessage) (json.RawMessage, error) {
+	qs, err := decodeStoredQuestions(raw)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(questions.LearnerViews(qs))
 }
 
 func (a *api) getAnonymousFlashcards(ctx context.Context, in *shareTokenInput) (*anonymousFlashcardsOutput, error) {
@@ -111,6 +115,14 @@ func (a *api) getAnonymousNote(ctx context.Context, in *shareTokenInput) (*anony
 	note, err := a.s.AnonymousNote(ctx, id)
 	if err != nil {
 		return nil, hErr(err)
+	}
+	for i, embed := range note.Embeds {
+		if embed.Kind != "quiz" {
+			continue
+		}
+		if note.Embeds[i].Questions, err = learnerQuestions(embed.Questions); err != nil {
+			return nil, hErr(err)
+		}
 	}
 	return &anonymousNoteOutput{CacheControl: "no-store", Body: note}, nil
 }

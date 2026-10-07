@@ -9,7 +9,14 @@
     "binding": "ASSETS",
     "html_handling": "none",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/w/*", "/p/*", "/summary", "/summary.html"]
+    "run_worker_first": [
+      "/api/*",
+      "/w/*",
+      "/p/*",
+      "/share/*",
+      "/summary",
+      "/summary.html"
+    ]
   },
   "observability": {
     "enabled": true
@@ -38,6 +45,7 @@
           "/api/*",
           "/w/*",
           "/p/*",
+          "/share/*",
           "/summary",
           "/summary.html"
         ]
@@ -83,6 +91,7 @@
           "/api/*",
           "/w/*",
           "/p/*",
+          "/share/*",
           "/summary",
           "/summary.html"
         ]

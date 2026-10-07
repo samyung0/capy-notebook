@@ -1,4 +1,4 @@
-import { verifiedShareID } from '../../src/lib/shareLink';
+import { verifiedShareID, verifiedShareToken } from '../../src/lib/shareLink';
 import { fromEdgeCache, handlePublicRequest, SHARED_CACHE } from './public';
 import {
   localeFor,
@@ -14,6 +14,7 @@ type SiteBindings = Pick<
   ASSETS: Pick<Cloudflare.Env['ASSETS'], 'fetch'>;
 };
 type SummaryCache = Pick<Cache, 'match' | 'put'>;
+const SHARE_PAGE = /^\/share\/(quizzes|flashcards|notes)\/([^/]+)$/;
 
 export function trustedOrigin(value: string): string {
   const url = new URL(value);
@@ -136,6 +137,16 @@ export async function handleSiteRequest(
         fetcher,
         cache
       );
+    // Public share pages have their own entry. Like /w/, an unknown kind or
+    // a forged link gets the 404 page before any script or API call.
+    if (url.pathname.startsWith('/share/')) {
+      const [, kind, token] = url.pathname.match(SHARE_PAGE) ?? [];
+      if (!(kind && (await verifiedShareToken(env.SHARE_LINK_SECRET, token))))
+        return failure(404);
+      return await env.ASSETS.fetch(
+        new Request(new URL('/share.html', url), request)
+      );
+    }
     if (!isSummary) return await env.ASSETS.fetch(request);
     if (request.method !== 'GET' && request.method !== 'HEAD')
       return new Response(null, {
@@ -208,7 +219,13 @@ export async function handleSiteRequest(
       JSON.stringify({
         error: error instanceof Error ? error.name : 'Error',
         event: 'site_request_failed',
-        path: isSummary ? '/w/:id' : isPublic ? '/p/*' : '/api/*',
+        path: isSummary
+          ? '/w/:id'
+          : isPublic
+            ? '/p/*'
+            : url.pathname.startsWith('/share/')
+              ? '/share/*'
+              : '/api/*',
       })
     );
     if (isPublic)

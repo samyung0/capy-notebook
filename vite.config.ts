@@ -59,6 +59,7 @@ export default defineConfig(({ mode }) => {
             import.meta.dirname,
             'office-runtime.html'
           ),
+          share: path.resolve(import.meta.dirname, 'share.html'),
           summary: path.resolve(import.meta.dirname, 'summary.html'),
         },
       },

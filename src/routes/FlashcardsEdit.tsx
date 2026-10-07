@@ -1,6 +1,7 @@
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useMaterial } from '@/api/hooks';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
+import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { TabContent } from '@/components/app/tabPanel';
 import { Skeleton } from '@/components/ui/feedback';
 import { FlashcardsEditor } from '@/features/flashcards/FlashcardsEditor';
@@ -34,6 +35,7 @@ export default function FlashcardsEdit() {
         className="px-6 pt-6 pb-2 sm:px-6 sm:pt-6 lg:px-6 xl:px-6"
         onBack={() => void navigate({ href: returnTo ?? '/files?tab=blocks' })}
         title={m.flashcards_edit()}
+        topBar={<TopInsetBar className="hidden shrink-0 lg:flex" />}
         trail={
           material
             ? [material.workspaceName || m.files_tab_blocks(), material.title]

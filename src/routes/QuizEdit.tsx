@@ -1,10 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
-import { uploadEditorAsset } from '@/api/editorAssets';
 import { UpdateQuizMetadataBody } from '@/api/gen/validators';
 import {
   useQuizEdit,
@@ -14,6 +12,7 @@ import {
 import type { Question } from '@/api/types';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
+import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { TabContent, TabHeader } from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Dialog';
@@ -22,10 +21,9 @@ import { Input, InputField } from '@/components/ui/Input';
 import { Tabs } from '@/components/ui/Tabs';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { AssetUrlContext } from '@/features/materials/MediaAssetView';
-import { questionAssetIds, replaceAssetIds } from '@/features/questions/types';
 import { QuizForm } from '@/features/quizzes/QuizForm';
 import { QuizPageHeader } from '@/features/quizzes/QuizPage';
-import { fitQuizImage } from '@/features/quizzes/quizImage';
+import { usePickedImages } from '@/features/quizzes/usePickedImages';
 import { m } from '@/i18n';
 
 const detailsSchema = z.object({
@@ -52,48 +50,12 @@ function QuizEditor({ quizId }: { quizId: string }) {
     useUpdateQuizContent();
   const { isPending: metadataIsPending, mutateAsync: updateMetadata } =
     useUpdateQuizMetadata();
-  // Picked images wait here (local id -> file) until Save uploads them, so an
-  // abandoned pick never reaches storage; previews cover both until unmount.
-  const picked = useRef(new Map<string, File>());
-  const previews = useRef(new Map<string, string>());
-  const { isPending: uploadIsPending, mutateAsync: uploadPicked } = useMutation(
-    {
-      mutationFn: async (current: Question[]) => {
-        const uploaded = new Map<string, string>();
-        const ids = new Set(current.flatMap(questionAssetIds));
-        const results = await Promise.allSettled(
-          [...picked.current].flatMap(([id, file]) =>
-            ids.has(id)
-              ? [
-                  uploadEditorAsset(quizId, file, 'image').then(
-                    ({ assetId }) => {
-                      uploaded.set(id, assetId);
-                      picked.current.delete(id);
-                      const url = previews.current.get(id);
-                      if (url) previews.current.set(assetId, url);
-                    }
-                  ),
-                ]
-              : []
-          )
-        );
-        // Keep what did upload so retrying the save sends only the rest.
-        const next = current.map((question) =>
-          replaceAssetIds(question, uploaded)
-        );
-        setQuestions(next);
-        const failed = results.find((result) => result.status === 'rejected');
-        if (failed) throw failed.reason;
-        return next;
-      },
-    }
-  );
-  useEffect(() => {
-    const urls = previews.current;
-    return () => {
-      for (const url of urls.values()) URL.revokeObjectURL(url);
-    };
-  }, []);
+  const {
+    isPending: uploadIsPending,
+    pick,
+    previewUrl,
+    uploadPicked,
+  } = usePickedImages(quizId, (next) => setQuestions(next));
   const updateIsPending =
     uploadIsPending || contentIsPending || metadataIsPending;
 
@@ -174,6 +136,7 @@ function QuizEditor({ quizId }: { quizId: string }) {
         className="px-6 pt-6 pb-2 sm:px-6 sm:pt-6 lg:px-6 xl:px-6"
         onBack={updateIsPending ? undefined : back}
         title={m.quiz_edit()}
+        topBar={<TopInsetBar className="hidden shrink-0 lg:flex" />}
         trail={
           quiz
             ? [quiz.workspaceName || m.files_tab_blocks(), name || quiz.name]
@@ -217,23 +180,12 @@ function QuizEditor({ quizId }: { quizId: string }) {
             ) : (
               <>
                 <h2 className="t-card-title mb-7">{m.quiz_questions()}</h2>
-                <AssetUrlContext.Provider
-                  value={(assetId) => previews.current.get(assetId)}
-                >
+                <AssetUrlContext.Provider value={previewUrl}>
                   <QuizForm
                     name={name}
                     onQuestionsChange={setQuestions}
                     questions={questions}
-                    uploadAsset={async (file) => {
-                      const fitted = await fitQuizImage(file);
-                      const assetId = crypto.randomUUID();
-                      picked.current.set(assetId, fitted);
-                      previews.current.set(
-                        assetId,
-                        URL.createObjectURL(fitted)
-                      );
-                      return { assetId };
-                    }}
+                    uploadAsset={pick}
                   />
                 </AssetUrlContext.Provider>
               </>

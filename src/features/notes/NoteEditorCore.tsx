@@ -624,6 +624,8 @@ export function NoteEditorCore({
         for (const id of event.materialIds) {
           void qc.invalidateQueries({ queryKey: qk.quiz(id) });
           void qc.invalidateQueries({ queryKey: qk.flashcardSet(id) });
+          // The embedded set's block reads the material itself.
+          void qc.invalidateQueries({ queryKey: qk.material(id) });
         }
         return;
       }

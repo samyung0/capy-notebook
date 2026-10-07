@@ -54,13 +54,20 @@ export function FlashcardsEditor({
   setId,
   title,
   cards,
+  onEmpty,
   revision,
+  saveEachChange,
   showTitle = true,
 }: {
   setId: string;
   title: string;
   cards: FlashcardContent[];
   revision: number;
+  /** Removing the last card calls this instead of saving, since a set keeps
+   * at least one card; inside a note it removes the embed block. */
+  onEmpty?: () => void;
+  /** Inside a note: every change saves at once (no Reset or Save). */
+  saveEachChange?: boolean;
   /** Off where the page header already names the set. */
   showTitle?: boolean;
 }) {
@@ -69,6 +76,8 @@ export function FlashcardsEditor({
     revision,
   }));
   const [draft, setDraft] = useState(base.cards);
+  const revisionRef = useRef(revision);
+  const saving = useRef(Promise.resolve());
   const [editing, setEditing] = useState<number | 'new' | null>(null);
   const [confirm, setConfirm] = useState<'reset' | 'save' | null>(null);
   const { isPending: savePending, mutateAsync: saveCards } =
@@ -124,14 +133,15 @@ export function FlashcardsEditor({
     return localId;
   }
 
-  async function save() {
+  async function save(cards = draft) {
     try {
       const saved = await saveCards({
-        cards: cardsForSave(await uploadPicked(draft)),
-        expectedRevision: base.revision,
+        cards: cardsForSave(await uploadPicked(cards)),
+        expectedRevision: revisionRef.current,
       });
       const next = saved.map(toDraft);
-      setBase({ cards: next, revision: saved[0]?.revision ?? 0 });
+      revisionRef.current = saved[0]?.revision ?? 0;
+      setBase({ cards: next, revision: revisionRef.current });
       setDraft(next);
       setConfirm(null);
     } catch {
@@ -139,6 +149,13 @@ export function FlashcardsEditor({
     }
   }
 
+  // Staged, a change waits for Save; saved each change, it goes out at once.
+  function change(next: DraftCard[]) {
+    if (saveEachChange && onEmpty && !next.some(written)) return onEmpty();
+    setDraft(next);
+    // One save at a time, each with the revision the previous one returned.
+    if (saveEachChange) saving.current = saving.current.then(() => save(next));
+  }
   const editedCard = typeof editing === 'number' ? draft[editing] : null;
 
   return (
@@ -162,10 +179,9 @@ export function FlashcardsEditor({
                   <Icon name="pencil" />
                 </ToolbarButton>
                 <ToolbarButton
+                  disabled={isPending}
                   label={m.editor_remove_card()}
-                  onClick={() =>
-                    setDraft((current) => current.filter((_, i) => i !== index))
-                  }
+                  onClick={() => change(draft.filter((_, i) => i !== index))}
                   tooltipSide="top"
                   variant="danger-light"
                 >
@@ -194,24 +210,26 @@ export function FlashcardsEditor({
             </span>
           </Card>
         </CardGrid>
-        <div className="mt-2 flex justify-end gap-2">
-          <Button
-            disabled={!dirty || isPending}
-            onClick={() => setConfirm('reset')}
-            size="lg"
-            variant="danger-light"
-          >
-            {m.action_reset()}
-          </Button>
-          <Button
-            disabled={!dirty || kept.length === 0 || isPending}
-            onClick={() => setConfirm('save')}
-            size="lg"
-            variant="accent"
-          >
-            {m.action_save()}
-          </Button>
-        </div>
+        {!saveEachChange && (
+          <div className="mt-2 flex justify-end gap-2">
+            <Button
+              disabled={!dirty || isPending}
+              onClick={() => setConfirm('reset')}
+              size="lg"
+              variant="danger-light"
+            >
+              {m.action_reset()}
+            </Button>
+            <Button
+              disabled={!dirty || kept.length === 0 || isPending}
+              onClick={() => setConfirm('save')}
+              size="lg"
+              variant="accent"
+            >
+              {m.action_save()}
+            </Button>
+          </div>
+        )}
 
         {editing !== null && (
           <CardDialog
@@ -220,20 +238,18 @@ export function FlashcardsEditor({
             onRemove={
               typeof editing === 'number'
                 ? () => {
-                    setDraft((current) =>
-                      current.filter((_, i) => i !== editing)
-                    );
+                    change(draft.filter((_, i) => i !== editing));
                     setEditing(null);
                   }
                 : undefined
             }
             onSave={(faces) => {
-              setDraft((current) =>
+              change(
                 typeof editing === 'number'
-                  ? current.map((card, i) =>
+                  ? draft.map((card, i) =>
                       i === editing ? { ...card, ...faces } : card
                     )
-                  : [...current, { ...faces, key: uid('card') }]
+                  : [...draft, { ...faces, key: uid('card') }]
               );
               setEditing(null);
             }}

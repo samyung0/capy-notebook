@@ -3,6 +3,7 @@ import { useAttempt, useQuiz } from '@/api/hooks';
 import { ErrorState } from '@/components/app/ErrorState';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
+import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { TabContent } from '@/components/app/tabPanel';
 import { Button, ErrorAction } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
@@ -93,6 +94,7 @@ export default function AttemptResult() {
           .join(' · ')}
         onBack={() => void navigate({ to: '/learning' })}
         title={attempt.quizName}
+        topBar={<TopInsetBar className="hidden shrink-0 lg:flex" />}
         trail={[m.nav_learning(), m.learning_tab_results()]}
       />
       <TabContent>
