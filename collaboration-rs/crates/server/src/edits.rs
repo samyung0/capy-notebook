@@ -605,7 +605,6 @@ pub async fn edit_material(
             if inverse_bytes > MAX_EDIT_INVERSE_BYTES {
                 return Err(DocumentError::Quota("undo_payload_exceeded".into()));
             }
-            let room_schema = schema as i32;
             tx.execute(
                 "INSERT INTO agent_edit_inverses
                  (operation_id, resource_kind, resource_id, actor_user_id, owner_user_id, workspace_id,
@@ -617,11 +616,11 @@ pub async fn edit_material(
                     &actor,
                     &boundary.owner_user_id,
                     &workspace_id,
-                    &room_schema,
+                    &schema,
                     &version,
                     &inverse,
                     &guards,
-                    &(inverse_bytes as i32),
+                    &(inverse_bytes as i64),
                 ],
             )
             .await?;

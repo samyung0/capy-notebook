@@ -2,6 +2,8 @@
 //! and Redis: the server binary runs as a child process and two clients speak
 //! capy-sync 1 to it. Set CAPY_IT_DATABASE_URL and CAPY_IT_REDIS_URL (the
 //! docker e2e stack's, see DESIGN.md 11); without them every test skips.
+//! CAPY_IT_API_URL names that stack's Go API (with this file's secret) for
+//! the projections a command waits for.
 
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
@@ -21,12 +23,14 @@ const ORIGIN: &str = "http://it.test";
 struct Env {
     database: String,
     redis: String,
+    api: Option<String>,
 }
 
 fn env() -> Option<Env> {
     Some(Env {
         database: std::env::var("CAPY_IT_DATABASE_URL").ok()?,
         redis: std::env::var("CAPY_IT_REDIS_URL").ok()?,
+        api: std::env::var("CAPY_IT_API_URL").ok(),
     })
 }
 
@@ -56,12 +60,19 @@ async fn start(env: &Env) -> Server {
         .env("HOST", "127.0.0.1")
         .env("COLLABORATION_SECRET", SECRET)
         .env("COLLABORATION_ALLOWED_ORIGINS", ORIGIN)
-        // Nothing answers projections here; they fail and are recorded.
-        .env("API_URL", "http://127.0.0.1:9")
+        // Without the API, projections fail and are recorded.
+        .env(
+            "API_URL",
+            env.api.as_deref().unwrap_or("http://127.0.0.1:9"),
+        )
         .env("COLLABORATION_DEBOUNCE_MS", "200")
         .env("COLLABORATION_MAX_DEBOUNCE_MS", "1000")
         .env("COLLABORATION_PROJECTION_IDLE_MS", "60000")
         .env("APP_ENV", "test")
+        // UAT's engine pool (no default in the server).
+        .env("COLLABORATION_ENGINE_SAVE_PROCESSES", "1")
+        .env("COLLABORATION_ENGINE_BACKGROUND_PROCESSES", "1")
+        .env("COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES", "3221225472")
         .stdout(if std::env::var_os("CAPY_IT_LOGS").is_some() {
             Stdio::inherit()
         } else {
@@ -554,4 +565,105 @@ async fn redis_comments_embeds_and_user_evictions_reach_the_room() {
     let closed = client.until(4).await.expect("closed");
     let mut at = 0;
     assert_eq!(read_var(&closed, &mut at), 4403);
+}
+
+/// POSTs an internal route with the service secret.
+async fn internal(port: u16, path: &str, body: &serde_json::Value) -> (u16, serde_json::Value) {
+    let response = reqwest::Client::new()
+        .post(format!("http://127.0.0.1:{port}{path}"))
+        .header("x-collaboration-secret", SECRET)
+        .json(body)
+        .send()
+        .await
+        .expect("internal request");
+    let status = response.status().as_u16();
+    (
+        status,
+        response.json().await.unwrap_or(serde_json::Value::Null),
+    )
+}
+
+#[tokio::test]
+async fn an_agent_edit_commits_its_row_reaches_the_live_room_and_replays_by_operation() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "hello world").await;
+    let room = format!("material:{material}:schema:1");
+    let mut client = Client::open(server.port).await;
+    client.joined(&room, &token(&room, &user, "write")).await;
+    assert!(client.settle(|c| c.block_text() == "hello world").await);
+    // The writer types first: the edit merges the live room, not the stale row.
+    client.type_text("!").await;
+    client.until(6).await.expect("ack");
+
+    let edit = serde_json::json!({
+        "actorUserId": user,
+        "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "world", "text": "there" }],
+        "operation": { "id": format!("op_{material}"), "requestHash": "h1", "toolVersion": 1 },
+        "room": room,
+        "target": { "id": material, "kind": "material" },
+    });
+    let (status, receipt) = internal(server.port, "/internal/documents/edit", &edit).await;
+    assert_eq!(status, 200, "{receipt}");
+    assert_eq!(receipt["kind"], "edit_document");
+    assert_eq!(receipt["effect"]["undo"]["status"], "available");
+    assert!(
+        client.settle(|c| c.block_text() == "hello there!").await,
+        "{}",
+        client.block_text()
+    );
+    // The same operation answers its receipt again without a second change.
+    let (status, again) = internal(server.port, "/internal/documents/edit", &edit).await;
+    assert_eq!(status, 200);
+    assert_eq!(again["operationId"], receipt["operationId"]);
+    let client_db = db(&env).await;
+    let inverses: i64 = client_db
+        .query_one(
+            "SELECT count(*) FROM agent_edit_inverses WHERE resource_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("inverses")
+        .get(0);
+    assert_eq!(inverses, 1);
+    // A stale target refuses with its code.
+    let stale = serde_json::json!({
+        "actorUserId": user,
+        "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "world", "text": "x" }],
+        "operation": { "id": format!("op2_{material}"), "requestHash": "h2" },
+        "room": room,
+        "target": { "id": material, "kind": "material" },
+    });
+    let (status, refusal) = internal(server.port, "/internal/documents/edit", &stale).await;
+    assert_eq!(status, 409, "{refusal}");
+
+    // replace-block replaces the block in the live room the same way; it
+    // answers once the projection landed, so it needs the API.
+    if env.api.is_none() {
+        return;
+    }
+    let command = serde_json::json!({
+        "actorUserId": user,
+        "expectedBlock": { "type": "p", "id": "b1", "children": [{ "text": "hello there!" }] },
+        "materialId": material,
+        "replacementBlock": { "type": "p", "id": "b1", "children": [{ "text": "replaced" }] },
+        "room": room,
+        "type": "replace-block",
+    });
+    let (status, answer) = internal(server.port, "/internal/commands", &command).await;
+    assert_eq!(status, 200, "{answer}");
+    assert!(
+        client.settle(|c| c.block_text() == "replaced").await,
+        "{}",
+        client.block_text()
+    );
+    // The inspect view reads the stored rows.
+    let inspect = serde_json::json!({
+        "actorUserId": user,
+        "room": room,
+        "target": { "id": material, "kind": "material" },
+    });
+    let (status, view) = internal(server.port, "/internal/documents/inspect", &inspect).await;
+    assert_eq!(status, 200, "{view}");
+    assert_eq!(view["blocks"][0]["text"], "replaced", "{view}");
 }

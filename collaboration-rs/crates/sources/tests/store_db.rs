@@ -496,14 +496,14 @@ async fn a_moved_checkpoint_measures_again_over_the_rows_saved_meanwhile() {
     let doc = text_doc(100);
     h.sources.load(&room, &h.user, &doc).await.unwrap();
     let mut durable = doc.transact().state_vector();
-    // An agent edit lands first through the gateway (the room never sees it).
+    // An agent edit lands first through the gateway (the room never sees it):
+    // a text source's first row is whole, its seed included.
     let agent = text_doc(9);
     apply(&agent, &encode(&doc, &StateVector::default()));
-    let before = agent.transact().state_vector();
     agent
         .get_or_insert_text(TEXT_ROOT)
         .insert(&mut agent.transact_mut(), 3, "!");
-    let agent_row = encode(&agent, &before);
+    let agent_row = encode(&agent, &StateVector::default());
     let landed: Value = h
         .sources
         .gateway()
