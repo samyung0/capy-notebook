@@ -542,7 +542,7 @@ export async function samePixels(page: Page, a: Uint8Array, b: Uint8Array) {
 
 /**
  * Inserts a quiz or flashcard set through the slash command under `body`:
- * the row is created embedded in the note and its edit page opens. Returns
+ * the row is created embedded in the note and its editor opens in place. Returns
  * the row's id.
  */
 export async function insertEmbedded(
@@ -570,9 +570,16 @@ export async function insertEmbedded(
   const response = await created;
   assert.equal(response.status(), 201, await response.text());
   const id = string(object(await response.json()).id);
-  await page.waitForURL(
-    `**/${kind === 'quiz' ? 'quizzes' : 'flashcards'}/${id}/edit**`
-  );
+  // The new block is authored in place: its editor opens inside the note.
+  await expect(
+    page
+      .locator('.slate-material_ref')
+      .getByText(
+        kind === 'quiz' ? m.quiz_add_question() : m.flashcards_add_card(),
+        { exact: true }
+      )
+      .first()
+  ).toBeVisible();
   const row = await materialRow(run, id);
   assert.equal(row.kind, kind);
   assert.equal(row.parent_material_id, noteId);

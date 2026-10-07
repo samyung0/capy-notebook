@@ -432,3 +432,13 @@ slow editor (no handoff outside maintenance since the deferred rebuild).
   item. Keeping the content in the Yjs document instead would put quiz answer
   keys in the note, so every viewer projection and the public note read would
   have to strip them.
+
+## Typing lost after inserting an embed on UAT (2026-10-07, check later)
+
+- On UAT (`6d358c6c`), scripted as the synthetic owner in a standalone note:
+  after the slash command inserted an embedded quiz (its editor opened in
+  place), clicking the end of another paragraph and pressing Enter added a line,
+  but the typed `/` and text never reached the editor and the slash menu did not
+  open. The same steps against the local MSW editor type normally. Reloading
+  the note before the next insert worked around it. Epo suspects the ongoing
+  Plate editor work; recheck once that lands.
