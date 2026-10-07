@@ -742,6 +742,20 @@ export function NoteEditorCore({
         });
         return;
       }
+      if (event.type === 'embed-changed') {
+        // Another editor, the agent or the API wrote an embedded quiz or
+        // set: refetch that one item (Epo 2026-10-07).
+        const keys =
+          event.kind === 'quiz'
+            ? [qk.quiz(event.id)]
+            : [
+                qk.material(event.id),
+                qk.cards(event.id),
+                qk.flashcardSet(event.id),
+              ];
+        for (const queryKey of keys) void qc.invalidateQueries({ queryKey });
+        return;
+      }
       if (
         event.type === 'comments-invalidated' &&
         event.materialId === material.id

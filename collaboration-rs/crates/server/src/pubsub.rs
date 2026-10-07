@@ -23,6 +23,8 @@ pub const EVICT_ACK: &str = "capy:collaboration:evict-ack";
 pub const USER_EVICT: &str = "capy:collaboration:user-evict";
 pub const DELIVERED: &str = "capy:collaboration:eviction-delivered";
 pub const COMMENTS: &str = "capy:collaboration:comments";
+/// The API's "an embedded quiz or flashcard set changed" (Epo 2026-10-07).
+pub const EMBEDS: &str = "capy:collaboration:embeds";
 pub const INSTANCES: &str = "capy:collaboration:instances";
 const EVICTING_PREFIX: &str = "capy:collaboration:evicting:";
 /// An instance whose heartbeat is older than this is gone.
@@ -107,6 +109,7 @@ async fn listen(app: &Shared) -> Result<(), String> {
         EVICT_ACK,
         USER_EVICT,
         COMMENTS,
+        EMBEDS,
         sources::handoff::SOURCE_HANDOFF_CHANNEL,
     ] {
         pubsub
@@ -211,11 +214,16 @@ async fn handle(app: &Shared, channel: &str, raw: String) {
             }
             delivered(app, text("evictionId").as_deref(), true).await;
         }
-        COMMENTS => {
+        // Relayed to the named note room's editors as the API sent them.
+        COMMENTS | EMBEDS => {
             let Some(room) = text("room") else { return };
             if let Some(handle) = app.rooms.get(&room) {
                 let mut payload = event.clone();
-                payload["type"] = json!("comments-invalidated");
+                payload["type"] = json!(if channel == COMMENTS {
+                    "comments-invalidated"
+                } else {
+                    "embed-changed"
+                });
                 let _ = handle
                     .tx
                     .send(RoomCmd::Broadcast(payload.to_string()))

@@ -308,6 +308,8 @@ func (a *api) projectMaterialYjsDocument(
 	if err != nil {
 		return nil, collaborationError(err)
 	}
+	// An agent's edit of an embedded quiz or set lands here.
+	a.publishEmbedChanged(ctx, material.ID, material.Kind, material.ParentMaterialID)
 	return &projectMaterialOutput{Body: apimodel.MaterialUpdateResult{
 		ID: material.ID, Revision: material.Revision, ContentBytes: int(material.SizeBytes),
 		NodeCount: material.NodeCount, MaxDepth: material.MaxDepth,
@@ -491,6 +493,29 @@ func (a *api) deleteMaterialComment(ctx context.Context, in *discussionIDInput) 
 	}
 	a.publishCommentInvalidation(ctx, resource.MaterialID)
 	return &Empty{}, nil
+}
+
+// embedChangedChannel carries "an embedded quiz or flashcard set changed" to
+// the collaboration service, which tells the open editors of its note.
+const embedChangedChannel = "capy:collaboration:embeds"
+
+// publishEmbedChanged tells the open editors of the note an embedded quiz or
+// flashcard set sits in that it changed, after any write to it (Epo
+// 2026-10-07); they refetch that one item. Best effort, as comment
+// invalidations: a lost message leaves an editor on its cached copy until it
+// refetches. A standalone item (no parent) sends nothing.
+func (a *api) publishEmbedChanged(ctx context.Context, id string, kind store.MaterialKind, parentID string) {
+	if a.rdb == nil || parentID == "" {
+		return
+	}
+	room, err := a.s.MaterialRoom(ctx, parentID)
+	if err != nil {
+		return
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"id": id, "kind": kind, "materialId": parentID, "room": room, "type": "embed-changed",
+	})
+	_ = a.rdb.Publish(ctx, embedChangedChannel, payload).Err()
 }
 
 func (a *api) publishCommentInvalidation(ctx context.Context, materialID string) {

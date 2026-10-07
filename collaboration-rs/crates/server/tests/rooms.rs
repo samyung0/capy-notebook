@@ -495,7 +495,7 @@ async fn a_read_only_channel_that_writes_is_closed() {
 }
 
 #[tokio::test]
-async fn redis_comments_and_user_evictions_reach_the_room() {
+async fn redis_comments_embeds_and_user_evictions_reach_the_room() {
     let Some(env) = env() else { return };
     let server = start(&env).await;
     let (user, material) = note(&env, "c").await;
@@ -522,6 +522,28 @@ async fn redis_comments_and_user_evictions_reach_the_room() {
         }
     };
     assert!(message.contains("t1"));
+    // The API's embed-changed reaches the parent note's room as sent.
+    let embed = serde_json::json!({
+        "id": "m_quiz",
+        "kind": "quiz",
+        "materialId": material,
+        "room": room,
+        "type": "embed-changed",
+    })
+    .to_string();
+    let _: i64 = redis::cmd("PUBLISH")
+        .arg("capy:collaboration:embeds")
+        .arg(&embed)
+        .query_async(&mut connection)
+        .await
+        .expect("publish");
+    let message = loop {
+        let message = text_payload(&client.until(9).await.expect("stateless"));
+        if message.contains("embed-changed") {
+            break message;
+        }
+    };
+    assert!(message.contains("m_quiz"));
     let evict = serde_json::json!({ "mode": "discard", "userId": user }).to_string();
     let _: i64 = redis::cmd("PUBLISH")
         .arg("capy:collaboration:user-evict")

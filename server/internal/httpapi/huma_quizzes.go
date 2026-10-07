@@ -161,6 +161,7 @@ func (a *api) updateQuizContent(ctx context.Context, in *updateQuizContentInput)
 	if err != nil {
 		return nil, hErr(err)
 	}
+	a.publishEmbedChanged(ctx, in.ID, store.MaterialQuiz, res.ParentMaterialID)
 	return a.quizOutputWithAccess(ctx, in.ID, res)
 }
 
@@ -174,6 +175,7 @@ func (a *api) updateQuizMetadata(ctx context.Context, in *updateQuizMetadataInpu
 	if err != nil {
 		return nil, hErr(err)
 	}
+	a.publishEmbedChanged(ctx, in.ID, store.MaterialQuiz, res.ParentMaterialID)
 	return a.quizOutputWithAccess(ctx, in.ID, res)
 }
 

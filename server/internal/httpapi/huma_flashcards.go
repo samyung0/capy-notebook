@@ -94,6 +94,7 @@ func (a *api) updateFlashcardSet(ctx context.Context, in *updateFlashcardSetInpu
 	if err != nil {
 		return nil, hErr(err)
 	}
+	a.publishEmbedChanged(ctx, in.ID, store.MaterialFlashcards, set.ParentMaterialID)
 	return a.flashcardSetOutputWithAccess(ctx, in.ID, set)
 }
 
@@ -153,6 +154,9 @@ func (a *api) updateFlashcardContent(ctx context.Context, in *updateFlashcardCon
 	res, err := a.s.UpdateFlashcardContent(ctx, userID(ctx), in.ID, in.Body.ExpectedRevision, cards)
 	if err != nil {
 		return nil, hErr(err)
+	}
+	if parent, err := a.s.EmbedParent(ctx, in.ID); err == nil {
+		a.publishEmbedChanged(ctx, in.ID, store.MaterialFlashcards, parent)
 	}
 	return &cardsOutput{Body: res}, nil
 }

@@ -343,6 +343,7 @@ func (a *api) updateMaterial(
 		}
 		return nil, hErr(err)
 	}
+	a.publishEmbedChanged(ctx, res.ID, res.Kind, res.ParentMaterialID)
 	return &materialUpdateOutput{Body: apimodel.MaterialUpdateResult{
 		ID:           res.ID,
 		Revision:     res.Revision,
