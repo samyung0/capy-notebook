@@ -25,13 +25,17 @@ import {
   Editor,
   Element,
   Node,
-  type Operation,
   type Path,
   Text,
   Transforms,
 } from 'slate';
 import * as Y from 'yjs';
-import { applyChildren, childWrites, keptIds, planChildren } from './children.js';
+import {
+  applyChildren,
+  childWrites,
+  keptIds,
+  planChildren,
+} from './children.js';
 import { applyCollaborationCommand } from './commands.js';
 import {
   applyMaterialCommands,
@@ -60,12 +64,17 @@ mkdirSync(OUT, { recursive: true });
 
 /* ---------------------------------------------------------------- helpers */
 
+const ZOD_MESSAGE = /^(invalid material document: )*\[/;
+const LOW_SURROGATE = /[\uDC00-\uDFFF]/;
+const HIGH_SURROGATE = /[\uD800-\uDBFF]/;
+
 const b64 = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64');
 
 function write(name: string, data: unknown, gzip = false) {
   const json = JSON.stringify(data);
   const path = join(OUT as string, gzip ? `${name}.json.gz` : `${name}.json`);
   writeFileSync(path, gzip ? gzipSync(json, { level: 9 }) : `${json}\n`);
+  // biome-ignore lint/suspicious/noConsole: the generator reports what it wrote.
   console.log(`${path}: ${(json.length / 1024).toFixed(0)} KiB json`);
 }
 
@@ -153,7 +162,9 @@ function withIds(value: unknown[], prefix = 'b'): unknown[] {
 const { buildBiologyLoadTestValue } = (await import(
   '../../src/mocks/noteContent/loadTest.ts'
 )) as { buildBiologyLoadTestValue: () => unknown[] };
-const { seedNotes } = (await import('../../src/mocks/noteContent/index.ts')) as {
+const { seedNotes } = (await import(
+  '../../src/mocks/noteContent/index.ts'
+)) as {
   seedNotes: { id: string; value: unknown[] }[];
 };
 const { embeddedSeeds } = (await import(
@@ -191,11 +202,37 @@ const smallNotes: Record<string, unknown[]> = {
         { text: 'see ' },
         { children: [{ text: 'link' }], type: 'a', url: 'https://x.test' },
         { text: ' and ' },
-        { children: [{ text: '' }], texExpression: 'x^2', type: 'inline_equation' },
+        {
+          children: [{ text: '' }],
+          texExpression: 'x^2',
+          type: 'inline_equation',
+        },
         { text: '' },
       ],
       id: 'm2',
       type: 'p',
+    },
+  ],
+  nested: [
+    {
+      children: [
+        {
+          children: [{ ...paragraph('deep quote'), id: 'n3' }],
+          id: 'n2',
+          type: 'blockquote',
+        },
+      ],
+      id: 'n1',
+      type: 'blockquote',
+    },
+    {
+      children: [
+        { children: [{ text: 'const x = 1;' }], type: 'code_line' },
+        { children: [{ text: '' }], type: 'code_line' },
+      ],
+      id: 'n4',
+      lang: 'ts',
+      type: 'code_block',
     },
   ],
   table: [
@@ -221,28 +258,6 @@ const smallNotes: Record<string, unknown[]> = {
     },
     { ...paragraph('after the table'), id: 't2' },
   ],
-  nested: [
-    {
-      children: [
-        {
-          children: [{ ...paragraph('deep quote'), id: 'n3' }],
-          id: 'n2',
-          type: 'blockquote',
-        },
-      ],
-      id: 'n1',
-      type: 'blockquote',
-    },
-    {
-      children: [
-        { children: [{ text: 'const x = 1;' }], type: 'code_line' },
-        { children: [{ text: '' }], type: 'code_line' },
-      ],
-      id: 'n4',
-      lang: 'ts',
-      type: 'code_block',
-    },
-  ],
   voids: [
     {
       children: [{ text: '' }],
@@ -251,7 +266,13 @@ const smallNotes: Record<string, unknown[]> = {
       refKind: 'quiz',
       type: 'material_ref',
     },
-    { children: [{ text: '' }], id: 'v2', provider: 'youtube', type: 'video', videoId: 'dQw4w9WgXcQ' },
+    {
+      children: [{ text: '' }],
+      id: 'v2',
+      provider: 'youtube',
+      type: 'video',
+      videoId: 'dQw4w9WgXcQ',
+    },
     {
       children: [{ text: '' }],
       html: '<p>"quoted" \\ back</p>',
@@ -282,7 +303,7 @@ function edgeStates(): { name: string; state: Uint8Array }[] {
     root.insertEmbed(0, block);
     block.setAttribute('children', 'shadowed');
     block.setAttribute('type', 'p');
-    block.insert(0, 'abc', { text: 'shadowed', bold: true });
+    block.insert(0, 'abc', { bold: true, text: 'shadowed' });
   });
   add('numbers-and-odd-values', (root) => {
     const block = new Y.XmlText();
@@ -299,7 +320,7 @@ function edgeStates(): { name: string; state: Uint8Array }[] {
     block.setAttribute('undef', undefined);
     block.setAttribute('bool', false);
     block.setAttribute('arr', [1, 'two', null, { k: [3] }]);
-    block.setAttribute('obj', { z: 1, a: { nested: 'x' } });
+    block.setAttribute('obj', { a: { nested: 'x' }, z: 1 });
     block.insert(0, 'ctl \u0001\u001f\b\f\n\r\t "q" \\ é 中 😀  ', {
       size: 12.5,
     });
@@ -408,7 +429,18 @@ function slateClient(
   const pick = <T>(list: readonly T[]) =>
     list[Math.floor(random() * list.length)];
   const count = (max: number) => 1 + Math.floor(random() * max);
-  const characters = ['a', 'b', ' ', 'é', '中', '😀', '"', '\\', '\n', '\u0001'];
+  const characters = [
+    'a',
+    'b',
+    ' ',
+    'é',
+    '中',
+    '😀',
+    '"',
+    '\\',
+    '\n',
+    '\u0001',
+  ];
   const word = (length: number) =>
     Array.from({ length }, () => pick(characters)).join('');
   const texts = () =>
@@ -487,7 +519,13 @@ function slateClient(
       () => Array.from({ length: count(20) }, () => para(word(count(40)))),
       () => [
         {
-          block: { kind: 'bar', labels: ['A'], series: [{ name: 'S', values: [1.5] }], title: 'T', type: 'chart' },
+          block: {
+            kind: 'bar',
+            labels: ['A'],
+            series: [{ name: 'S', values: [1.5] }],
+            title: 'T',
+            type: 'chart',
+          },
           children: [{ text: '' }],
           id: word(4),
           type: 'chart',
@@ -552,9 +590,13 @@ function slateClient(
     () => Transforms.insertNodes(editor, blocks(), { at: block() }),
     () => Transforms.insertNodes(editor, blocks(), { at: block() }),
     () =>
-      Transforms.insertNodes(editor, [para('y'.repeat(count(big ? 60_000 : 600)))], {
-        at: block(),
-      }),
+      Transforms.insertNodes(
+        editor,
+        [para('y'.repeat(count(big ? 60_000 : 600)))],
+        {
+          at: block(),
+        }
+      ),
     () => Transforms.removeNodes(editor, { at: block() }),
     () =>
       Transforms.wrapNodes(
@@ -604,7 +646,7 @@ function slateClient(
 
 // Hocuspocus applies a client's update under this origin.
 const connection = { source: 'connection' };
-const ROOM_CLIENT = 1_000;
+const ROOM_CLIENT = 1000;
 
 /** Counts the exact path of validateUpdate: it destroys its candidate copy. */
 let scratchDestroys = 0;
@@ -616,13 +658,13 @@ Y.Doc.prototype.destroy = function (this: Y.Doc) {
 
 interface OpsOptions {
   name: string;
-  value: unknown[];
-  steps: number;
-  seed: number;
   /** A second writer whose updates the Rust side applies as bytes. */
   peer?: boolean;
+  seed: number;
+  steps: number;
   /** Steps between peers reopening on the room. */
   syncEvery?: number;
+  value: unknown[];
   /** Keep full values in the record (small documents). */
   values?: boolean;
 }
@@ -635,7 +677,7 @@ function opsFamily(options: OpsOptions) {
   const roomName = `material:${options.name}:schema:1`;
   const roomUpdates: Uint8Array[] = [];
   room.on('update', (update: Uint8Array) => roomUpdates.push(update));
-  let nextClient = 2_000;
+  let nextClient = 2000;
   const big = !options.values;
   const open = () => slateClient(room, nextClient++, random, big);
   let writer = open();
@@ -717,7 +759,10 @@ function opsFamily(options: OpsOptions) {
     },
     true
   );
-  return { name: `ops-final-${options.name}`, state: Y.encodeStateAsUpdate(room) };
+  return {
+    name: `ops-final-${options.name}`,
+    state: Y.encodeStateAsUpdate(room),
+  };
 }
 
 /* ------------------------------------------------------------ multi-writer */
@@ -763,7 +808,7 @@ function multiWriterFamily(seed: number, steps: number) {
   const roomName = `material:multi-${seed}:schema:1`;
   const roomUpdates: Uint8Array[] = [];
   room.on('update', (update: Uint8Array) => roomUpdates.push(update));
-  let nextClient = 3_000;
+  let nextClient = 3000;
   const client = () => {
     const doc = docFromState(Y.encodeStateAsUpdate(room), nextClient++);
     const queue: Uint8Array[] = [];
@@ -940,7 +985,7 @@ function outcome(run: () => unknown): Record<string, unknown> {
     return {
       message,
       ok: false,
-      zod: /^(invalid material document: )*\[/.test(message),
+      zod: ZOD_MESSAGE.test(message),
     };
   }
 }
@@ -1174,7 +1219,11 @@ function validationFamily() {
     for (const kind of small ? [base.kind, ...kinds] : [base.kind])
       record(base.name, kind, base.value);
     for (let index = 0; small && index < 40; index += 1)
-      record(`${base.name} mutation ${index}`, base.kind, mutate(base.value, random));
+      record(
+        `${base.name} mutation ${index}`,
+        base.kind,
+        mutate(base.value, random)
+      );
   }
   for (const url of [
     'https://bank.example/assets/f.png',
@@ -1207,7 +1256,7 @@ function validationFamily() {
 
 /* ------------------------------------------------------------------ edits */
 
-const EDIT_CLIENT = 4_000;
+const EDIT_CLIENT = 4000;
 
 /** One call of a document function on a copy of `state`, by a fixed client:
  * its result or EditError, the update it made, and the value after. */
@@ -1338,32 +1387,58 @@ function editScenarios() {
     paragraphOf('b4', 'delta'),
   ];
   return [
-    script('void question', material([{ children: [quizQuestion(question)], id: 'quiz1', type: 'quiz' }]), [
-      inspect(),
-      apply([
-        {
-          node: quizQuestion({ ...question, stem: [{ text: 'Changed context', type: 'text' }] }),
-          nodeId: 'q1',
-          parentType: 'quiz',
-          type: 'replace_child',
-        },
+    script(
+      'void question',
+      material([
+        { children: [quizQuestion(question)], id: 'quiz1', type: 'quiz' },
       ]),
-      verify(1),
-      undo(1),
-      inspect(),
-    ]),
-    script('replace text and undo', material([paragraphOf('b1', 'alpha beta'), paragraphOf('b2', 'gamma')]), [
-      apply([{ blockId: 'b1', expectedText: 'beta', text: 'delta', type: 'replace_text' }]),
-      inspect(),
-      verify(0),
-      undo(0),
-      inspect(),
-    ]),
+      [
+        inspect(),
+        apply([
+          {
+            node: quizQuestion({
+              ...question,
+              stem: [{ text: 'Changed context', type: 'text' }],
+            }),
+            nodeId: 'q1',
+            parentType: 'quiz',
+            type: 'replace_child',
+          },
+        ]),
+        verify(1),
+        undo(1),
+        inspect(),
+      ]
+    ),
+    script(
+      'replace text and undo',
+      material([paragraphOf('b1', 'alpha beta'), paragraphOf('b2', 'gamma')]),
+      [
+        apply([
+          {
+            blockId: 'b1',
+            expectedText: 'beta',
+            text: 'delta',
+            type: 'replace_text',
+          },
+        ]),
+        inspect(),
+        verify(0),
+        undo(0),
+        inspect(),
+      ]
+    ),
     script(
       'material reference',
       material([
         paragraphOf('b1', 'intro'),
-        { children: [{ text: '' }], id: 'r1', materialId: 'mat_q', refKind: 'quiz', type: 'material_ref' },
+        {
+          children: [{ text: '' }],
+          id: 'r1',
+          materialId: 'mat_q',
+          refKind: 'quiz',
+          type: 'material_ref',
+        },
       ]),
       [inspect()]
     ),
@@ -1371,7 +1446,13 @@ function editScenarios() {
       apply([{ blockId: 'b2', expectedText: 'beta', type: 'remove_block' }]),
       verify(0),
       undo(0),
-      apply([{ afterBlockId: 'b1', blocks: [paragraphOf('bx', 'x')], type: 'insert_block' }]),
+      apply([
+        {
+          afterBlockId: 'b1',
+          blocks: [paragraphOf('bx', 'x')],
+          type: 'insert_block',
+        },
+      ]),
       apply([{ blockId: 'bx', expectedText: 'x', type: 'remove_block' }]),
       verify(0),
     ]),
@@ -1380,25 +1461,74 @@ function editScenarios() {
       material([
         paragraphOf('b1', 'alpha'),
         paragraphOf('b2', 'beta'),
-        { children: [card('c1', 'one'), card('c2', 'two')], id: 'deck', type: 'flashcards' },
+        {
+          children: [card('c1', 'one'), card('c2', 'two')],
+          id: 'deck',
+          type: 'flashcards',
+        },
       ]),
       [
         apply([
-          { blockId: 'b2', expectedText: 'beta', text: 'BETA', type: 'replace_text' },
-          { node: card('c1', 'uno'), nodeId: 'c1', parentType: 'flashcards', type: 'replace_child' },
+          {
+            blockId: 'b2',
+            expectedText: 'beta',
+            text: 'BETA',
+            type: 'replace_text',
+          },
+          {
+            node: card('c1', 'uno'),
+            nodeId: 'c1',
+            parentType: 'flashcards',
+            type: 'replace_child',
+          },
         ]),
         apply([
-          { blockId: 'b1', expectedText: 'alpha', text: 'ALPHA', type: 'replace_text' },
-          { node: card('c2', 'dos'), nodeId: 'c2', parentType: 'flashcards', type: 'replace_child' },
+          {
+            blockId: 'b1',
+            expectedText: 'alpha',
+            text: 'ALPHA',
+            type: 'replace_text',
+          },
+          {
+            node: card('c2', 'dos'),
+            nodeId: 'c2',
+            parentType: 'flashcards',
+            type: 'replace_child',
+          },
         ]),
         verify(0),
-        apply([{ node: card('c1', 'ein'), nodeId: 'c1', parentType: 'flashcards', type: 'replace_child' }]),
+        apply([
+          {
+            node: card('c1', 'ein'),
+            nodeId: 'c1',
+            parentType: 'flashcards',
+            type: 'replace_child',
+          },
+        ]),
         verify(0),
-        apply([{ afterNodeId: 'c1', node: card('c3', 'three'), parentType: 'flashcards', type: 'insert_child' }]),
-        apply([{ nodeId: 'c2', parentType: 'flashcards', type: 'remove_child' }]),
+        apply([
+          {
+            afterNodeId: 'c1',
+            node: card('c3', 'three'),
+            parentType: 'flashcards',
+            type: 'insert_child',
+          },
+        ]),
+        apply([
+          { nodeId: 'c2', parentType: 'flashcards', type: 'remove_child' },
+        ]),
         undo(6),
-        apply([{ nodeId: 'c9', parentType: 'flashcards', type: 'remove_child' }]),
-        apply([{ afterNodeId: 'c9', node: card('c4', 'x'), parentType: 'flashcards', type: 'insert_child' }]),
+        apply([
+          { nodeId: 'c9', parentType: 'flashcards', type: 'remove_child' },
+        ]),
+        apply([
+          {
+            afterNodeId: 'c9',
+            node: card('c4', 'x'),
+            parentType: 'flashcards',
+            type: 'insert_child',
+          },
+        ]),
       ]
     ),
     script('adjacent removals', material(four), [
@@ -1411,7 +1541,11 @@ function editScenarios() {
     ]),
     script('insert then remove in one call', material(four.slice(0, 2)), [
       apply([
-        { afterBlockId: 'b1', blocks: [paragraphOf('b9', 'nine')], type: 'insert_block' },
+        {
+          afterBlockId: 'b1',
+          blocks: [paragraphOf('b9', 'nine')],
+          type: 'insert_block',
+        },
         { blockId: 'b9', expectedText: 'nine', type: 'remove_block' },
       ]),
       verify(0),
@@ -1423,45 +1557,177 @@ function editScenarios() {
     ]),
     script('gap beside an edit', material(four.slice(0, 2)), [
       apply([{ blockId: 'b2', expectedText: 'beta', type: 'remove_block' }]),
-      apply([{ blockId: 'b1', expectedText: 'alpha', text: 'alpha!', type: 'replace_text' }]),
+      apply([
+        {
+          blockId: 'b1',
+          expectedText: 'alpha',
+          text: 'alpha!',
+          type: 'replace_text',
+        },
+      ]),
       verify(0),
     ]),
     script('stale expectation', material(four.slice(0, 1)), [
       apply([
-        { blockId: 'b1', expectedText: 'nope', text: 'x', type: 'replace_text' },
-        { afterBlockId: 'b1', blocks: [paragraphOf('b9', 'new')], type: 'insert_block' },
+        {
+          blockId: 'b1',
+          expectedText: 'nope',
+          text: 'x',
+          type: 'replace_text',
+        },
+        {
+          afterBlockId: 'b1',
+          blocks: [paragraphOf('b9', 'new')],
+          type: 'insert_block',
+        },
       ]),
     ]),
     script('changed after the edit', material(four.slice(0, 2)), [
-      apply([{ afterBlockId: 'b1', blocks: [paragraphOf('b3', 'inserted')], type: 'insert_block' }]),
+      apply([
+        {
+          afterBlockId: 'b1',
+          blocks: [paragraphOf('b3', 'inserted')],
+          type: 'insert_block',
+        },
+      ]),
       verify(0),
-      apply([{ blockId: 'b3', expectedText: 'inserted', text: 'changed', type: 'replace_text' }]),
+      apply([
+        {
+          blockId: 'b3',
+          expectedText: 'inserted',
+          text: 'changed',
+          type: 'replace_text',
+        },
+      ]),
       verify(0),
       apply([{ blockId: 'b3', expectedText: 'changed', type: 'remove_block' }]),
       verify(0),
     ]),
-    script('refusals', material([paragraphOf('b1', 'aa aa'), { children: [{ text: '' }], id: 'm1', assetId: 'a1', type: 'img' }]), [
-      apply([]),
-      apply([{ expectedText: 'aa', text: 'b', type: 'replace_text' }]),
-      apply([{ blockId: 'b1', expectedText: 'aa', text: 'b', type: 'replace_text' }]),
-      apply([{ blockId: 'b1', expectedText: '', text: 'b', type: 'replace_text' }]),
-      apply([{ blockId: 'zz', expectedText: 'aa', text: 'b', type: 'replace_text' }]),
-      apply([{ blockId: 'm1', expectedText: 'x', text: 'b', type: 'replace_text' }]),
-      apply([{ blockId: 'm1', expectedText: '', type: 'remove_block' }]),
-      apply([{ afterBlockId: null, blocks: [], type: 'insert_block' }]),
-      apply([{ afterBlockId: null, blocks: [{ children: [], type: 'p' }], type: 'insert_block' }]),
-      apply([{ afterBlockId: null, blocks: [{ id: 'x', type: 'p' }], type: 'insert_block' }]),
-      apply([{ afterBlockId: null, blocks: [{ children: [{ text: '' }], id: 'x', type: 'video' }], type: 'insert_block' }]),
-      apply([{ afterBlockId: null, blocks: [paragraphOf('b1', 'dup')], type: 'insert_block' }]),
-      apply([{ blockId: 'b1', expectedText: 'aa aa', type: 'remove_block' }]),
-      apply([{ expectedValue: '', nodeType: 'p', property: 'align', type: 'set_property', value: 'center' }]),
-      apply([{ expectedValue: 'x', nodeType: 'p', property: 'align', type: 'set_property', value: 'left' }]),
-      apply([{ expectedValue: '', nodeType: 'quiz', property: 'title', type: 'set_property', value: 'x' }]),
-      apply([{ node: paragraphOf('b1', 'x'), nodeId: 'b1', parentType: 'quiz', type: 'replace_child' }]),
-      apply([{ blockId: 'b1', expectedText: 'a'.repeat(200_001), text: 'x', type: 'replace_text' }]),
-      apply([{ blockId: 'b1', expectedText: 'aa', offset: 3, text: 'XY', type: 'replace_text' }]),
-      apply([{ blockId: 'b1', expectedText: 'aa', offset: 1, text: 'XY', type: 'replace_text' }]),
-    ]),
+    script(
+      'refusals',
+      material([
+        paragraphOf('b1', 'aa aa'),
+        { assetId: 'a1', children: [{ text: '' }], id: 'm1', type: 'img' },
+      ]),
+      [
+        apply([]),
+        apply([{ expectedText: 'aa', text: 'b', type: 'replace_text' }]),
+        apply([
+          {
+            blockId: 'b1',
+            expectedText: 'aa',
+            text: 'b',
+            type: 'replace_text',
+          },
+        ]),
+        apply([
+          { blockId: 'b1', expectedText: '', text: 'b', type: 'replace_text' },
+        ]),
+        apply([
+          {
+            blockId: 'zz',
+            expectedText: 'aa',
+            text: 'b',
+            type: 'replace_text',
+          },
+        ]),
+        apply([
+          { blockId: 'm1', expectedText: 'x', text: 'b', type: 'replace_text' },
+        ]),
+        apply([{ blockId: 'm1', expectedText: '', type: 'remove_block' }]),
+        apply([{ afterBlockId: null, blocks: [], type: 'insert_block' }]),
+        apply([
+          {
+            afterBlockId: null,
+            blocks: [{ children: [], type: 'p' }],
+            type: 'insert_block',
+          },
+        ]),
+        apply([
+          {
+            afterBlockId: null,
+            blocks: [{ id: 'x', type: 'p' }],
+            type: 'insert_block',
+          },
+        ]),
+        apply([
+          {
+            afterBlockId: null,
+            blocks: [{ children: [{ text: '' }], id: 'x', type: 'video' }],
+            type: 'insert_block',
+          },
+        ]),
+        apply([
+          {
+            afterBlockId: null,
+            blocks: [paragraphOf('b1', 'dup')],
+            type: 'insert_block',
+          },
+        ]),
+        apply([{ blockId: 'b1', expectedText: 'aa aa', type: 'remove_block' }]),
+        apply([
+          {
+            expectedValue: '',
+            nodeType: 'p',
+            property: 'align',
+            type: 'set_property',
+            value: 'center',
+          },
+        ]),
+        apply([
+          {
+            expectedValue: 'x',
+            nodeType: 'p',
+            property: 'align',
+            type: 'set_property',
+            value: 'left',
+          },
+        ]),
+        apply([
+          {
+            expectedValue: '',
+            nodeType: 'quiz',
+            property: 'title',
+            type: 'set_property',
+            value: 'x',
+          },
+        ]),
+        apply([
+          {
+            node: paragraphOf('b1', 'x'),
+            nodeId: 'b1',
+            parentType: 'quiz',
+            type: 'replace_child',
+          },
+        ]),
+        apply([
+          {
+            blockId: 'b1',
+            expectedText: 'a'.repeat(200_001),
+            text: 'x',
+            type: 'replace_text',
+          },
+        ]),
+        apply([
+          {
+            blockId: 'b1',
+            expectedText: 'aa',
+            offset: 3,
+            text: 'XY',
+            type: 'replace_text',
+          },
+        ]),
+        apply([
+          {
+            blockId: 'b1',
+            expectedText: 'aa',
+            offset: 1,
+            text: 'XY',
+            type: 'replace_text',
+          },
+        ]),
+      ]
+    ),
   ];
 }
 
@@ -1483,7 +1749,10 @@ function textScenarios() {
     (index: number): Step =>
     (document, records, action) => {
       Object.assign(action, { kind: 'verify', of: index });
-      return verifyTextGuards(document, (records[index].ok as { guards: GuardTarget[] }).guards);
+      return verifyTextGuards(
+        document,
+        (records[index].ok as { guards: GuardTarget[] }).guards
+      );
     };
   const edit =
     (change: (text: Y.Text) => void): Step =>
@@ -1523,9 +1792,18 @@ function textScenarios() {
         { expectedText: 'aX', text: 'y', type: 'replace_text' },
       ]),
       apply([{ expectedText: 'aa', text: 'b', type: 'replace_text' }]),
-      apply([{ blockId: 'x', expectedText: 'cde', text: 'é😀', type: 'replace_text' }]),
+      apply([
+        {
+          blockId: 'x',
+          expectedText: 'cde',
+          text: 'é😀',
+          type: 'replace_text',
+        },
+      ]),
       apply([{ afterBlockId: null, blocks: [], type: 'insert_block' }]),
-      apply([{ expectedText: 'f', text: 'x'.repeat(200_001), type: 'replace_text' }]),
+      apply([
+        { expectedText: 'f', text: 'x'.repeat(200_001), type: 'replace_text' },
+      ]),
     ]),
   ];
 }
@@ -1538,18 +1816,31 @@ function randomEditScripts(seed: number) {
     list[Math.floor(random() * list.length)];
   const words = ['alpha', 'β', 'é', '😀', ' ', 'x', '"q"', '\\', '\n', 'cell'];
   const word = () =>
-    Array.from({ length: 1 + Math.floor(random() * 4) }, () => pick(words)).join('');
+    Array.from({ length: 1 + Math.floor(random() * 4) }, () =>
+      pick(words)
+    ).join('');
   const bases: { name: string; value: unknown[] }[] = [
-    ...seedNotes.slice(0, 4).map((note) => ({ name: note.id, value: withIds(note.value) })),
-    ...Object.entries(smallNotes).map(([name, value]) => ({ name, value: withIds(value) })),
-    ...embeddedSeeds.slice(0, 3).map((seed) => ({ name: seed.id, value: withIds([seed.block]) })),
+    ...seedNotes
+      .slice(0, 4)
+      .map((note) => ({ name: note.id, value: withIds(note.value) })),
+    ...Object.entries(smallNotes).map(([name, value]) => ({
+      name,
+      value: withIds(value),
+    })),
+    ...embeddedSeeds
+      .slice(0, 3)
+      .map((seed) => ({ name: seed.id, value: withIds([seed.block]) })),
   ];
-  const scripts = [];
+  const scripts: ReturnType<typeof script>[] = [];
   for (const base of bases) {
     const steps: Step[] = [];
     for (let round = 0; round < 12; round += 1) {
       steps.push((document, _records, action) => {
-        const value = (yTextToSlateElement(document.get('content', Y.XmlText)) as { children: Record<string, unknown>[] }).children;
+        const value = (
+          yTextToSlateElement(document.get('content', Y.XmlText)) as {
+            children: Record<string, unknown>[];
+          }
+        ).children;
         const block = pick(value);
         const id = typeof block.id === 'string' ? block.id : '';
         const text = Node.string(block as never);
@@ -1558,38 +1849,88 @@ function randomEditScripts(seed: number) {
         if (roll < 0.5 && text.length > 0) {
           // A unique span: grow from a random point until it occurs once.
           let from = Math.floor(random() * text.length);
-          if (/[\uDC00-\uDFFF]/.test(text[from] ?? '')) from -= 1;
+          if (LOW_SURROGATE.test(text[from] ?? '')) from -= 1;
           let to = from + 1;
-          while (to < text.length && text.split(text.slice(from, to)).length > 2) to += 1;
-          if (/[\uD800-\uDBFF]/.test(text[to - 1] ?? '')) to += 1;
-          commands = [{ blockId: id, expectedText: text.slice(from, to), text: random() < 0.2 ? '' : word(), type: 'replace_text' }];
+          while (
+            to < text.length &&
+            text.split(text.slice(from, to)).length > 2
+          )
+            to += 1;
+          if (HIGH_SURROGATE.test(text[to - 1] ?? '')) to += 1;
+          commands = [
+            {
+              blockId: id,
+              expectedText: text.slice(from, to),
+              text: random() < 0.2 ? '' : word(),
+              type: 'replace_text',
+            },
+          ];
         } else if (roll < 0.7) {
-          commands = [{ afterBlockId: random() < 0.2 ? null : id, blocks: [{ children: [{ text: word() }, { bold: true, text: word() }], id: `n${round}${Math.floor(random() * 1e6)}`, type: 'p' }], type: 'insert_block' }];
+          commands = [
+            {
+              afterBlockId: random() < 0.2 ? null : id,
+              blocks: [
+                {
+                  children: [{ text: word() }, { bold: true, text: word() }],
+                  id: `n${round}${Math.floor(random() * 1e6)}`,
+                  type: 'p',
+                },
+              ],
+              type: 'insert_block',
+            },
+          ];
         } else if (roll < 0.85) {
-          commands = [{ blockId: id, expectedText: text, type: 'remove_block' }];
+          commands = [
+            { blockId: id, expectedText: text, type: 'remove_block' },
+          ];
         } else if (roll < 0.95) {
-          commands = [{ expectedValue: typeof block.align === 'string' ? block.align : '', nodeType: String(block.type), property: 'align', type: 'set_property', value: pick(['center', 'right', '']) }];
+          commands = [
+            {
+              expectedValue: typeof block.align === 'string' ? block.align : '',
+              nodeType: String(block.type),
+              property: 'align',
+              type: 'set_property',
+              value: pick(['center', 'right', '']),
+            },
+          ];
         } else {
-          commands = [{ blockId: id, expectedText: 'not there', text: 'x', type: 'replace_text' }];
+          commands = [
+            {
+              blockId: id,
+              expectedText: 'not there',
+              text: 'x',
+              type: 'replace_text',
+            },
+          ];
         }
         Object.assign(action, { commands, kind: 'apply' });
         return applyMaterialCommands(document, commands);
       });
       const index = steps.length - 1;
       steps.push((document, records, action) => {
-        const done = records[index]?.ok as { guards: GuardTarget[] } | undefined;
+        const done = records[index]?.ok as
+          | { guards: GuardTarget[] }
+          | undefined;
         if (!done) return 'skipped';
         Object.assign(action, { kind: 'verify', of: index });
         return verifyMaterialGuards(document, done.guards);
       });
       steps.push((document, records, action) => {
-        const done = records[index]?.ok as { inverse: DocumentCommand[] } | undefined;
+        const done = records[index]?.ok as
+          | { inverse: DocumentCommand[] }
+          | undefined;
         if (!done || random() < 0.5) return 'kept';
         Object.assign(action, { kind: 'undo', of: index });
         return applyMaterialCommands(document, done.inverse);
       });
     }
-    scripts.push(script(`random ${base.name}`, Y.encodeStateAsUpdate(docWithValue(base.value, 1)), steps));
+    scripts.push(
+      script(
+        `random ${base.name}`,
+        Y.encodeStateAsUpdate(docWithValue(base.value, 1)),
+        steps
+      )
+    );
   }
   return scripts;
 }
@@ -1643,10 +1984,7 @@ function childrenFamily() {
     const state = Y.encodeStateAsUpdate(document);
     const writer = docFromState(state, 2);
     edit(writer.get('content', Y.XmlText), writer);
-    const update = Y.encodeStateAsUpdate(
-      writer,
-      Y.encodeStateVector(document)
-    );
+    const update = Y.encodeStateAsUpdate(writer, Y.encodeStateVector(document));
     Y.applyUpdate(document, update);
     const writes = childWrites(document, update);
     const plan = writes ? planChildren(document, writes) : null;
@@ -1707,7 +2045,10 @@ function childrenFamily() {
     ]),
     (plan) => ({
       assets: [],
-      blocks: plan.blocks.map((b, i) => [b.blockId, i === 0 ? '' : `mat_c${i}`]),
+      blocks: plan.blocks.map((b, i) => [
+        b.blockId,
+        i === 0 ? '' : `mat_c${i}`,
+      ]),
     })
   );
   record(
@@ -1750,10 +2091,12 @@ function childrenFamily() {
   );
   for (let round = 0; round < 30; round += 1) {
     const base = withIds(pick(seedNotes).value);
-    const extra = Array.from({ length: 1 + Math.floor(random() * 4) }, (_, i) =>
-      random() < 0.5
-        ? quizBlock(`r${round}-${i}`, pick(['mat_a', 'mat_b', 'mat_c']))
-        : image(`i${round}-${i}`, pick(['asset_a', 'asset_b']))
+    const extra = Array.from(
+      { length: 1 + Math.floor(random() * 4) },
+      (_, i) =>
+        random() < 0.5
+          ? quizBlock(`r${round}-${i}`, pick(['mat_a', 'mat_b', 'mat_c']))
+          : image(`i${round}-${i}`, pick(['asset_a', 'asset_b']))
     );
     record(`random ${round}`, base, append(extra), (plan) => ({
       assets: plan.assetIds.map((id) => [id, pick(['', id, `${id}_copy`])]),
@@ -1910,30 +2253,74 @@ function inspectFamily() {
  * markdown pages as long real-world input. */
 async function markdownFamily() {
   const samples: [string, string][] = [
-    ['quiz and mermaid', '## Mini check\n\n```quiz\nquestions:\n  - {id: q1}\n```\n\n```mermaid\nflowchart LR\n  A --> B\n```'],
-    ['headings and marks', '# H1\n\n## H2 *em* **strong** ~~del~~ `code`\n\n### H3\n\n#### H4\n\n##### H5\n\n###### H6\n\nPlain with **bold _nested italic_** and ***both***.'],
-    ['lists', '- one\n- two\n  - nested\n    - deeper\n- three\n\n1. first\n2. second\n   1. inner\n\n- [ ] todo\n- [x] done'],
-    ['code fences', '```ts\nconst x: number = 1;\n```\n\n```\nplain\n```\n\n    indented code\n\n```python\ndef f():\n    return 1\n```'],
-    ['table', '| a | b |\n|---|:-:|\n| 1 | **2** |\n| `x` | [l](https://x.test) |'],
+    [
+      'quiz and mermaid',
+      '## Mini check\n\n```quiz\nquestions:\n  - {id: q1}\n```\n\n```mermaid\nflowchart LR\n  A --> B\n```',
+    ],
+    [
+      'headings and marks',
+      '# H1\n\n## H2 *em* **strong** ~~del~~ `code`\n\n### H3\n\n#### H4\n\n##### H5\n\n###### H6\n\nPlain with **bold _nested italic_** and ***both***.',
+    ],
+    [
+      'lists',
+      '- one\n- two\n  - nested\n    - deeper\n- three\n\n1. first\n2. second\n   1. inner\n\n- [ ] todo\n- [x] done',
+    ],
+    [
+      'code fences',
+      '```ts\nconst x: number = 1;\n```\n\n```\nplain\n```\n\n    indented code\n\n```python\ndef f():\n    return 1\n```',
+    ],
+    [
+      'table',
+      '| a | b |\n|---|:-:|\n| 1 | **2** |\n| `x` | [l](https://x.test) |',
+    ],
     ['quote and rule', '> quoted\n> **line**\n\n---\n\n> nested\n>> deeper'],
-    ['links and images', '[text](https://example.com "title") and <https://auto.link> and ![alt](https://example.com/a.png)'],
+    [
+      'links and images',
+      '[text](https://example.com "title") and <https://auto.link> and ![alt](https://example.com/a.png)',
+    ],
     ['math', 'Inline $x^2 + y_1$ and display:\n\n$$\n\\int_0^1 x\\,dx\n$$\n'],
-    ['html', '<div>raw <b>html</b></div>\n\ntext <sub>sub</sub> <sup>sup</sup> <kbd>k</kbd>'],
-    ['emoji and escapes', 'Smile :smile: and \\*not em\\* and &amp; &copy; &#169;'],
-    ['flashcards', '```flashcards\ncards:\n  - front: Q1\n    back: A1\n  - front: Q2\n    back: A2\n```'],
+    [
+      'html',
+      '<div>raw <b>html</b></div>\n\ntext <sub>sub</sub> <sup>sup</sup> <kbd>k</kbd>',
+    ],
+    [
+      'emoji and escapes',
+      'Smile :smile: and \\*not em\\* and &amp; &copy; &#169;',
+    ],
+    [
+      'flashcards',
+      '```flashcards\ncards:\n  - front: Q1\n    back: A1\n  - front: Q2\n    back: A2\n```',
+    ],
     ['bad quiz yaml', '```quiz\nquestions: [unclosed\n```'],
     ['empty quiz', '```quiz\nquestions: []\n```'],
     ['bad cards', '```flashcards\ncards:\n  - front: only\n```'],
     ['html embed', '```html-embed\n<p>Hello</p>\n```'],
-    ['too many embeds', Array.from({ length: 11 }, () => '```html-embed\n<p>x</p>\n```').join('\n\n')],
+    [
+      'too many embeds',
+      Array.from({ length: 11 }, () => '```html-embed\n<p>x</p>\n```').join(
+        '\n\n'
+      ),
+    ],
     ['footnotes', 'Text with a note[^1].\n\n[^1]: The note.'],
     ['empty', ''],
     ['whitespace', '   \n\n  \n'],
     ['unicode', 'é 中文 😀 ​ zero-width and RTL שלום'],
-    ['mixed', '# Notes\n\nSome **bold** text.\n\n- item with `code` and $m$\n- [link](https://x.test)\n\n```mermaid\ngraph TD\n  A-->B\n```\n\n| k | v |\n|---|---|\n| a | 1 |\n\n> tip: quote\n\n```quiz\nquestions:\n  - id: q1\n    labels: letters\n```'],
-    ['mdx-ish', '<Callout type="info">Hello</Callout>\n\n{1 + 1}\n\nimport x from "y"'],
+    [
+      'mixed',
+      '# Notes\n\nSome **bold** text.\n\n- item with `code` and $m$\n- [link](https://x.test)\n\n```mermaid\ngraph TD\n  A-->B\n```\n\n| k | v |\n|---|---|\n| a | 1 |\n\n> tip: quote\n\n```quiz\nquestions:\n  - id: q1\n    labels: letters\n```',
+    ],
+    [
+      'mdx-ish',
+      '<Callout type="info">Hello</Callout>\n\n{1 + 1}\n\nimport x from "y"',
+    ],
     ['long paragraph', 'word '.repeat(5000)],
-    ['deep list', Array.from({ length: 12 }, (_, i) => `${'  '.repeat(i)}- level ${i}`).join('\n')],
+    [
+      'deep list',
+      Array.from(
+        { length: 12 },
+        (_, i) => `${'  '.repeat(i)}- level ${i}`
+      ).join('\n'),
+    ],
   ];
   const root = fileURLToPath(new URL('../../', import.meta.url));
   const pages: string[] = [];
@@ -1945,13 +2332,24 @@ async function markdownFamily() {
     }
   };
   for (const dir of ['openwiki', 'human']) walk(dir);
-  for (const file of ['README.md', 'collaboration/README.md', 'todo-office.md', 'todo-learning.md', 'bench/README.md'])
+  for (const file of [
+    'README.md',
+    'collaboration/README.md',
+    'todo-office.md',
+    'todo-learning.md',
+    'bench/README.md',
+  ])
     pages.push(file);
   const cases: unknown[] = [];
   const timings: number[] = [];
   for (const [name, source] of [
     ...samples,
-    ...pages.sort().map((page): [string, string] => [page, readFileSync(join(root, page), 'utf8')]),
+    ...pages
+      .sort()
+      .map((page): [string, string] => [
+        page,
+        readFileSync(join(root, page), 'utf8'),
+      ]),
   ]) {
     const start = performance.now();
     let result: unknown;
@@ -1964,7 +2362,10 @@ async function markdownFamily() {
     cases.push({ name, result, source });
   }
   write('markdown', cases, true);
-  console.log(`markdown: ${cases.length} sources, Node convert total ${timings.reduce((a, b) => a + b, 0).toFixed(0)} ms (first ${timings[0].toFixed(0)} ms, including the bundle load)`);
+  // biome-ignore lint/suspicious/noConsole: the Node timing for the report.
+  console.log(
+    `markdown: ${cases.length} sources, Node convert total ${timings.reduce((a, b) => a + b, 0).toFixed(0)} ms (first ${timings[0].toFixed(0)} ms, including the bundle load)`
+  );
 }
 
 /* ------------------------------------------------------------------- main */

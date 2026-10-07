@@ -11,7 +11,9 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const [checkout, out] = process.argv.slice(2).map((p) => resolve(p));
-const require = createRequire(pathToFileURL(`${checkout}/collaboration/package.json`));
+const require = createRequire(
+  pathToFileURL(`${checkout}/collaboration/package.json`)
+);
 const { build } = require('esbuild');
 
 await build({
