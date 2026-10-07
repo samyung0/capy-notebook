@@ -1,6 +1,7 @@
 import { expect, test } from '../fixtures/actors';
 import { apiEndsWith, waitForApi } from '../helpers/api';
 import { openWorkspaceSharing, summaryPath } from '../helpers/workspace';
+import { m } from '../i18n';
 
 test.describe('workspace sharing', () => {
   test('owner can open and edit a private workspace', async ({
@@ -22,7 +23,7 @@ test.describe('workspace sharing', () => {
       ownerPage.getByRole('heading', { name: seed.privateWorkspace.name })
     ).toBeVisible();
     await expect(
-      ownerPage.getByRole('button', { name: 'Clone workspace' })
+      ownerPage.getByRole('button', { name: m.action_clone_workspace() })
     ).toHaveCount(0);
   });
 
@@ -43,15 +44,15 @@ test.describe('workspace sharing', () => {
 
     await openWorkspaceSharing(editorPage);
     await expect(
-      editorPage.getByRole('combobox', { name: 'Visibility' })
+      editorPage.getByRole('combobox', { name: m.share_visibility() })
     ).toBeVisible();
     // Membership management stays with the owner.
     await expect(
-      editorPage.getByRole('button', { exact: true, name: 'Invite' })
+      editorPage.getByRole('button', { exact: true, name: m.members_invite() })
     ).toHaveCount(0);
     await editorPage.keyboard.press('Escape');
     await expect(
-      editorPage.getByRole('button', { name: 'Clone workspace' })
+      editorPage.getByRole('button', { name: m.action_clone_workspace() })
     ).toHaveCount(0);
   });
 
@@ -66,7 +67,7 @@ test.describe('workspace sharing', () => {
       );
       expect(response?.status()).toBe(404);
       await expect(
-        page.getByRole('heading', { name: 'Page not found' })
+        page.getByRole('heading', { name: m.error_not_found_page_title() })
       ).toBeVisible();
       await expect(page.getByText(seed.privateWorkspace.name)).toHaveCount(0);
       await expect(
@@ -96,12 +97,16 @@ test.describe('workspace sharing', () => {
           'PATCH'
         )
       );
-      await ownerPage.getByRole('combobox', { name: 'Visibility' }).click();
-      await ownerPage.getByRole('option', { name: /Shared link/i }).click();
+      await ownerPage
+        .getByRole('combobox', { name: m.share_visibility() })
+        .click();
+      await ownerPage.getByRole('option', { name: m.share_link() }).click();
       expect((await patchPromise).status()).toBe(200);
       await expect(
-        ownerPage.getByRole('combobox', { name: 'Anyone with access' })
-      ).toContainText('Can view');
+        ownerPage.getByRole('combobox', {
+          name: m.share_anyone_with_access(),
+        })
+      ).toHaveAttribute('data-share-role', 'viewer');
 
       for (const page of [anonymousPage, otherPage]) {
         const response = await page.goto(
@@ -112,13 +117,13 @@ test.describe('workspace sharing', () => {
           page.getByRole('heading', { name: seed.mutateWorkspace.name })
         ).toBeVisible();
         await expect(
-          page.getByRole('link', { name: 'Open workspace' })
+          page.getByRole('link', { name: m.summary_open() })
         ).toBeVisible();
         await expect(
-          page.getByRole('button', { name: 'Clone workspace' })
+          page.getByRole('button', { name: m.action_clone_workspace() })
         ).toHaveCount(0);
         await expect(
-          page.getByRole('button', { name: /Add file/i })
+          page.getByRole('button', { name: m.action_add_file() })
         ).toHaveCount(0);
         expect(
           await page.locator('meta[name="robots"]').getAttribute('content')
@@ -128,7 +133,7 @@ test.describe('workspace sharing', () => {
         otherPage,
         apiEndsWith(`/api/workspaces/${seed.mutateWorkspace.id}`)
       );
-      await otherPage.getByRole('link', { name: 'Open workspace' }).click();
+      await otherPage.getByRole('link', { name: m.summary_open() }).click();
       expect((await open).status()).toBe(200);
     } finally {
       // Always restore private so other workers/tests stay isolated.
@@ -184,7 +189,7 @@ test.describe('workspace sharing', () => {
       otherPage.getByRole('heading', { name: seed.linkWorkspace.name })
     ).toBeVisible();
     await expect(
-      otherPage.getByRole('button', { name: 'Clone workspace' })
+      otherPage.getByRole('button', { name: m.action_clone_workspace() })
     ).toHaveCount(0);
     const linkClone = await otherApi.post(
       `/api/workspaces/${seed.linkWorkspace.id}/clone`
@@ -199,7 +204,9 @@ test.describe('workspace sharing', () => {
     await viewerPage
       .getByRole('button', { exact: true, name: seed.privateWorkspace.name })
       .click();
-    await viewerPage.getByRole('menuitem', { name: 'Clone workspace' }).click();
+    await viewerPage
+      .getByRole('menuitem', { name: m.action_clone_workspace() })
+      .click();
     const cloneRes = await clonePromise;
     expect(cloneRes.status()).toBe(201);
     const cloned = await cloneRes.json();

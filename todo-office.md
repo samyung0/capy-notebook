@@ -401,3 +401,15 @@ slow editor (no handoff outside maintenance since the deferred rebuild).
 - **Shell traps:** no `timeout` (use `perl -e 'alarm N; exec @ARGV' …`); in zsh
   write `${C}:refs/…`; stop processes by PID only; watch the disk (each fork
   worktree's `target` grows to several GB).
+
+## Office test copy (2026-10-07)
+
+- Playwright locates app copy through paraglide `m.*` now (`e2e/i18n`, decision
+  in `human/test-catalog.md`). The shared Office menu helpers (`officeMenu`,
+  `officeEditMenu`, `saveOffice` in `e2e/helpers/office.ts` and
+  `e2e/uat/journeys/office.ts`) and the format loops in
+  `e2e/editor/biology-office.spec.ts` still pass `'File'`, `'Edit'`, `'View'`
+  and `'Save'` as literals. That is right for DOCX and XLSX (BetterOffice
+  `t()` labels) but PPTX's menus are Capy's `m.files_office_pptx_menu_*`; make
+  the helpers take the format and use `m.*` for PPTX. Left out of the e2e
+  conversion so it does not collide with the open Office work.

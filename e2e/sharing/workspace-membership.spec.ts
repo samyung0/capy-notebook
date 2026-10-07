@@ -2,6 +2,7 @@ import { expect, test } from '../fixtures/actors';
 import { apiEndsWith, waitForApi } from '../helpers/api';
 import { waitForEmail } from '../helpers/mail';
 import { openWorkspaceSharing } from '../helpers/workspace';
+import { m } from '../i18n';
 
 test.describe('workspace invitations', () => {
   test('private exact-identifier invite is visible only to its recipient', async ({
@@ -18,26 +19,32 @@ test.describe('workspace invitations', () => {
     await ownerPage.goto(`/workspaces/${workspace.id}`);
     await openWorkspaceSharing(ownerPage);
     await expect(
-      ownerPage.getByRole('combobox', { name: 'Visibility' })
-    ).toContainText('Invite only');
+      ownerPage.getByRole('combobox', { name: m.share_visibility() })
+    ).toHaveAttribute('data-privacy', 'private');
 
     await ownerPage
-      .getByPlaceholder('Email or user ID')
+      .getByPlaceholder(m.members_invite_placeholder())
       .fill('viewer@capynotebook.test');
-    await ownerPage.getByRole('combobox', { name: 'Invite role' }).click();
-    await ownerPage.getByRole('option', { name: 'View' }).click();
+    await ownerPage
+      .getByRole('combobox', { name: m.members_invite_role() })
+      .click();
+    await ownerPage
+      .getByRole('option', { name: m.members_role_view() })
+      .click();
 
     const createResponse = waitForApi(
       ownerPage,
       apiEndsWith(`/api/workspaces/${workspace.id}/invites`, 'POST')
     );
     await ownerPage
-      .getByRole('button', { exact: true, name: 'Invite' })
+      .getByRole('button', { exact: true, name: m.members_invite() })
       .click();
     const created = await createResponse;
     expect(created.status()).toBe(202);
     expect(await created.text()).toBe('');
-    await expect(ownerPage.getByText('Invitation submitted')).toBeVisible();
+    await expect(
+      ownerPage.getByText(m.members_invite_sent_title())
+    ).toBeVisible();
     await expect(
       ownerPage.getByText('viewer@capynotebook.test')
     ).not.toBeVisible();
@@ -81,9 +88,9 @@ test.describe('workspace invitations', () => {
     expect(wrongAccount.status()).toBe(403);
 
     await viewerPage.goto('/workspaces');
-    await viewerPage.getByRole('button', { name: /notifications/i }).click();
+    await viewerPage.locator('[data-unread-count]').click();
     await viewerPage
-      .getByRole('button', { name: /Workspace invitation/ })
+      .getByRole('button', { name: m.notification_workspace_invite_title() })
       .click();
     await expect(viewerPage).toHaveURL(notification!.href!);
 
@@ -91,9 +98,9 @@ test.describe('workspace invitations', () => {
       viewerPage,
       apiEndsWith(`/api/workspace-invites/${reference}/accept`, 'POST')
     );
-    await viewerPage.getByRole('button', { name: 'Accept invitation' }).click();
+    await viewerPage.getByRole('button', { name: m.invite_accept() }).click();
     expect((await acceptResponse).status()).toBe(200);
-    await viewerPage.getByRole('button', { name: 'Open workspace' }).click();
+    await viewerPage.getByRole('button', { name: m.invite_open() }).click();
     await expect(
       viewerPage.getByRole('heading', { name: workspace.name })
     ).toBeVisible();

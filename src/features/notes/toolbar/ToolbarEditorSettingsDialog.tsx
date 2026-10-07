@@ -100,6 +100,7 @@ export function EditorSettingsDialog() {
                       >
                         <SelectTrigger
                           className="w-44"
+                          data-width={field.value}
                           id="note-display-width"
                           onBlur={field.onBlur}
                           ref={field.ref}

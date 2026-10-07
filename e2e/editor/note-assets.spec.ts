@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { m } from '../i18n';
 import { openEditorNote } from './helpers';
 
 // The server keeps a removed image in its trash for a day, so undo brings the
@@ -14,7 +15,7 @@ test('a deleted image comes back on undo', async ({ page }) => {
 
   await image.click({ button: 'right' });
   const menu = page.locator('[data-slot="context-menu-content"]');
-  await menu.getByRole('menuitem', { name: 'Delete' }).click();
+  await menu.getByRole('menuitem', { name: m.action_delete() }).click();
   await expect(image).toHaveCount(0);
 
   await page.keyboard.press('ControlOrMeta+z');

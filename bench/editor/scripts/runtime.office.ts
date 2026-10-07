@@ -5,6 +5,7 @@ import type {
   OfficeReadyTimings,
 } from '../../../src/features/files/officeProtocol';
 import { PERF_WORKSPACE_ID } from '../../../src/mocks/perfSeed';
+import { m } from '../../../e2e/i18n';
 import { cdpSession, percentile, reportMetrics } from './metrics';
 
 /**
@@ -359,7 +360,9 @@ async function openWorkspace(page: Page) {
   await installHostProbe(page);
   await installWasmProbe(page);
   await page.goto(`/workspaces/${PERF_WORKSPACE_ID}`);
-  await page.getByRole('button', { exact: true, name: 'Files' }).click();
+  await page
+    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .click();
 }
 
 /** Click a file in the tree; for an Office file, wait for its `ready`. */
@@ -585,7 +588,7 @@ for (const fixture of FIXTURES) {
     await page.waitForTimeout(2000);
     const openHeap = await heap(page);
 
-    const mode = page.getByRole('button', { name: 'Material mode' });
+    const mode = page.getByRole('button', { name: m.material_mode() });
     await expect(mode).toBeEnabled({ timeout: 60_000 });
     // `ready` is the edit frame's first paint; XLSX/PPTX budgets stay on
     // `collaboration-ready` until recalibrated.

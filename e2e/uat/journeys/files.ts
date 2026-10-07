@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { Locator, Page } from '@playwright/test';
 import { strFromU8, unzipSync, zipSync } from 'fflate';
+import { m } from '../../i18n';
 import { verify } from './evidence';
 import type { Actor, UatRun } from './runtime';
 
@@ -219,16 +220,20 @@ export async function upload(
 ) {
   const page = run.owner.page;
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
-  await page.getByRole('button', { exact: true, name: 'Files' }).click();
+  await page
+    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .click();
   await page
     .locator('[data-workspace-add-menu]')
-    .getByRole('button', { exact: true, name: 'Add file' })
+    .getByRole('button', { exact: true, name: m.action_add_file() })
     .click();
-  await page.getByRole('menuitem', { name: 'Upload or import' }).click();
+  await page
+    .getByRole('menuitem', { name: m.action_upload_or_import() })
+    .click();
   // The picker stays disabled until the workspace upload policy is ready.
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),
-    page.getByRole('button', { name: /^Upload from your computer/ }).click(),
+    page.getByRole('button', { name: m.source_upload_computer() }).click(),
   ]);
   await chooser.setFiles({
     buffer: bytes,
@@ -239,9 +244,11 @@ export async function upload(
     // Office files default to parsing; "No parsing" stores the file only.
     await page
       .getByRole('combobox')
-      .filter({ hasText: 'Fast parsing' })
+      .filter({ hasText: m.source_fast_parsing() })
       .click();
-    await page.getByRole('option', { exact: true, name: 'No parsing' }).click();
+    await page
+      .getByRole('option', { exact: true, name: m.source_no_parsing() })
+      .click();
   }
   const path = `/api/workspaces/${workspaceId}/sources/uploads`;
   const reservation = page
@@ -271,7 +278,7 @@ export async function upload(
   );
   // Consume both response promises even when submission fails.
   const clicked = page
-    .getByRole('button', { exact: true, name: 'Upload' })
+    .getByRole('button', { exact: true, name: m.action_upload() })
     .click();
   const [uploadId, completed] = await Promise.all([
     reservation,

@@ -33,7 +33,11 @@ export function BlockTypeMenu({
   return (
     <Popover modal={false} onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
-        <ToolbarButton className="w-23" label={m.editor_block_type()}>
+        <ToolbarButton
+          className="w-23"
+          data-block-type={selectedType?.type ?? KEYS.p}
+          label={m.editor_block_type()}
+        >
           <span className="translate-y-px">
             {selectedType?.label ?? m.editor_block_paragraph()}
           </span>

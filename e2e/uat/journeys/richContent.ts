@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { expect, type FrameLocator, type Page } from '@playwright/test';
 import { strFromU8, type Unzipped, unzipSync } from 'fflate';
 import { type Range, read as readWorkbook, utils } from 'xlsx';
+import { m } from '../../i18n';
 import { type OfficeFormat, replaceSlideText, saveOffice } from './office';
 
 export const richFiles = {
@@ -262,12 +263,15 @@ export async function expectRichContent(
     ] as const) {
       for (; current < slide; current++) {
         await frame.getByTestId('pptx-next-slide').click();
-        await expect(frame.getByRole('status')).toHaveText(
-          `Slide ${current + 1} of 20`
+        await expect(frame.getByRole('status')).toHaveAttribute(
+          'data-slide',
+          String(current + 1)
         );
       }
       await expect(
-        frame.getByRole('region', { name: `Slide ${slide} of 20 content` })
+        frame.getByRole('region', {
+          name: m.files_office_slide_content({ current: slide, total: 20 }),
+        })
       ).toContainText(text, { timeout });
     }
   }

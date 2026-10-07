@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { m } from '../../i18n';
 import { signOut } from '../support';
 import { api, object, string, workspace } from './files';
 import { expect, test } from './runtime';
@@ -39,7 +40,9 @@ test('signed-out invitation returns after sign-in and persists accepted membersh
   try {
     await page.locator('input[autocomplete="email"]').fill(recipient.email);
     await page.locator('input[autocomplete="current-password"]').fill(password);
-    await page.getByRole('button', { exact: true, name: 'Sign in' }).click();
+    await page
+      .getByRole('button', { exact: true, name: m.action_sign_in() })
+      .click();
   } catch {
     // biome-ignore lint/style/useErrorCause: Playwright input errors can include the password.
     throw new Error(
@@ -62,9 +65,7 @@ test('signed-out invitation returns after sign-in and persists accepted membersh
   );
   const [response] = await Promise.all([
     accepted,
-    page
-      .getByRole('button', { exact: true, name: 'Accept invitation' })
-      .click(),
+    page.getByRole('button', { exact: true, name: m.invite_accept() }).click(),
   ]);
   expect(response.status()).toBe(200);
   expect(object(await response.json()).workspaceId).toBe(workspaceId);
@@ -81,7 +82,7 @@ test('signed-out invitation returns after sign-in and persists accepted membersh
   expect(invitation.accepted_by).toBe(recipient.id);
   expect(invitation.accepted_at).not.toBeNull();
   await page
-    .getByRole('button', { exact: true, name: 'Open workspace' })
+    .getByRole('button', { exact: true, name: m.invite_open() })
     .click();
   await expect(page).toHaveURL(
     (url) => url.pathname === `/workspaces/${workspaceId}`

@@ -50,9 +50,13 @@ test(`save cycle profile — near-limit document (cpu x${CPU_RATE})`, async ({
   await expect(editor.getByText(PERF_LARGE_NOTE.readyText).first()).toBeVisible(
     { timeout: 120_000 }
   );
-  await expect(saveState).toHaveText(/^(Synced|Syncing…|Saved)$/, {
-    timeout: 120_000,
-  });
+  await expect(saveState).toHaveAttribute(
+    'data-save-state',
+    /^(synced|syncing|saved)$/,
+    {
+      timeout: 120_000,
+    }
+  );
   await page.waitForTimeout(2500);
 
   const blocks = await page.evaluate(
@@ -81,7 +85,9 @@ test(`save cycle profile — near-limit document (cpu x${CPU_RATE})`, async ({
   // Phase 2: debounce expiry -> checkpoint request -> the mock provider's
   // synchronous acknowledgement -> the React work that acknowledgement causes.
   await client.send('Profiler.start');
-  await expect(saveState).toHaveText('Saved', { timeout: 300_000 });
+  await expect(saveState).toHaveAttribute('data-save-state', 'saved', {
+    timeout: 300_000,
+  });
   const ackProfile = (await client.send('Profiler.stop')) as unknown as {
     profile: CpuProfile;
   };

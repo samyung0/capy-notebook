@@ -492,6 +492,10 @@ The opt-in [`alibaba_decision.py`](../bench/grading/scripts/alibaba_decision.py)
 
 ---
 
+## Playwright app copy (`e2e/i18n/`)
+
+Every Playwright config (e2e, UAT, editor, bench/editor) imports `e2e/i18n/compile.ts`, which compiles `messages/` into the ignored `e2e/.paraglide` when it is older than `messages/` (built in a temporary folder and swapped in, so parallel runs never read a half-written folder); `pnpm test:uat:verifier` runs it first too. Specs import `m` from `e2e/i18n` and locate app copy with `m.*`; state assertions read component data attributes (`data-save-state`, `data-sort`/`data-order`, `data-resend`, `data-result`, `data-block-type`, `data-block-style`, `data-privacy`, `data-share-role`, `data-unread-count`, `data-width`, `data-slide`, the save banner's `data-kind`, `ErrorState`'s `data-error-kind` read by `expectErrorSurface`) instead of displayed text. Seed data, typed text, MathLive and BetterOffice labels stay literal.
+
 ## Playwright e2e — real stack (`e2e/errors/`, `e2e/sharing/`, `e2e/study/`)
 
 Real stack via Docker (`pnpm e2e`). Editor specs are ignored by the root Playwright config. CI runs it as

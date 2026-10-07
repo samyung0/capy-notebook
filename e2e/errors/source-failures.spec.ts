@@ -1,5 +1,6 @@
 import type { Page, Route } from '@playwright/test';
 import { expect, test } from '../fixtures/actors';
+import { m } from '../i18n';
 
 // Upload/worker responses are mocked; workspace access and cleanup use the
 // disposable local API. These cases do not claim to exercise a real worker.
@@ -80,15 +81,19 @@ async function sourceResponses(
 
 async function chooseSources(page: Page, workspaceId: string, names: string[]) {
   await page.goto('/workspaces/' + workspaceId);
-  await page.getByRole('button', { exact: true, name: 'Files' }).click();
+  await page
+    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .click();
   await page
     .locator('[data-workspace-add-menu]')
-    .getByRole('button', { exact: true, name: 'Add file' })
+    .getByRole('button', { exact: true, name: m.action_add_file() })
     .click();
-  await page.getByRole('menuitem', { name: 'Upload or import' }).click();
+  await page
+    .getByRole('menuitem', { name: m.action_upload_or_import() })
+    .click();
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),
-    page.getByRole('button', { name: /^Upload from your computer/ }).click(),
+    page.getByRole('button', { name: m.source_upload_computer() }).click(),
   ]);
   await chooser.setFiles(
     names.map((name) => ({
@@ -114,7 +119,7 @@ for (const failure of ['reservation', 'put'] as const) {
       await chooseSources(ownerPage, workspace.id, [name]);
       const submit = ownerPage.getByRole('button', {
         exact: true,
-        name: 'Upload',
+        name: m.action_upload(),
       });
       const failedPath =
         failure === 'reservation'
@@ -130,8 +135,9 @@ for (const failure of ['reservation', 'put'] as const) {
       // The dialog hands the source to the transfer panel and closes.
       await expect(ownerPage.getByRole('dialog')).toHaveCount(0);
       const panel = ownerPage.getByTestId('source-transfer-panel');
-      await expect(panel).toContainText(name);
-      await expect(panel).toContainText('Not added');
+      await expect(
+        panel.locator('[data-transfer-status="error"]', { hasText: name })
+      ).toBeVisible();
       await expect(ownerPage.locator('[data-sonner-toast]')).toContainText(
         name
       );
@@ -199,7 +205,9 @@ test('a terminal ingest failure releases the next queued source', async ({
     'failed-ingest.txt',
     'next-source.txt',
   ]);
-  await ownerPage.getByRole('button', { exact: true, name: 'Upload' }).click();
+  await ownerPage
+    .getByRole('button', { exact: true, name: m.action_upload() })
+    .click();
   await expect.poll(() => requests.completed).toEqual(['up_failure_1']);
   const processing = await readAfterReconnect();
   expect(processing[0].status).toBe('processing');

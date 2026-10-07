@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { EDITOR_NOTE } from '../../src/mocks/editorSeed';
 import { chooseAllBlocksEntry } from '../helpers/editor';
+import { m } from '../i18n';
 import { clickTextEnd, openEditorNote } from './helpers';
 
 test.describe('inline and block insertions', () => {
@@ -66,20 +67,26 @@ test.describe('inline and block insertions', () => {
     expect(groupHeading.trim()).not.toBe('');
     await expect(firstGroup).toHaveAccessibleName(groupHeading);
     await expect(
-      listbox.getByRole('option', { exact: true, name: 'Image' })
+      listbox.getByRole('option', { exact: true, name: m.editor_image() })
     ).toHaveAttribute('aria-selected', 'true');
     await page.keyboard.press('ArrowDown');
     await expect(
-      listbox.getByRole('option', { exact: true, name: 'YouTube embed' })
+      listbox.getByRole('option', {
+        exact: true,
+        name: m.editor_youtube_embed(),
+      })
     ).toHaveAttribute('aria-selected', 'true');
     await page.keyboard.press('ArrowUp');
     await page.keyboard.press('ArrowUp');
     const lastOption = listbox.getByRole('option').last();
     await expect(lastOption).toHaveAttribute('aria-selected', 'true');
     await expect(lastOption).toBeInViewport();
-    await page.keyboard.type('table');
+    await page.keyboard.type(m.editor_table().toLowerCase());
 
-    const option = listbox.getByRole('option', { exact: true, name: 'Table' });
+    const option = listbox.getByRole('option', {
+      exact: true,
+      name: m.editor_table(),
+    });
     await expect(option).toBeVisible();
     await option.click();
 
@@ -99,10 +106,15 @@ test.describe('inline and block insertions', () => {
     await editor.getByText(EDITOR_NOTE.thirdParagraph, { exact: true }).click();
     await page.keyboard.press('End');
 
-    const trigger = page.getByRole('button', { name: 'Table controls' });
+    const trigger = page.getByRole('button', {
+      name: m.editor_table_controls(),
+    });
     await trigger.focus();
     await page.keyboard.press('Enter');
-    const table = page.getByRole('button', { exact: true, name: 'Table' });
+    const table = page.getByRole('button', {
+      exact: true,
+      name: m.editor_table(),
+    });
     await expect(table).toBeFocused();
     await page.keyboard.press('Enter');
     const grid = page.getByRole('grid');
@@ -126,7 +138,7 @@ test.describe('inline and block insertions', () => {
 
     await editor.getByText(EDITOR_NOTE.firstParagraph, { exact: true }).click();
     await page.keyboard.press('End');
-    await chooseAllBlocksEntry(page, 'Table of contents');
+    await chooseAllBlocksEntry(page, m.toc_title());
 
     const contents = editor.getByRole('navigation');
     await expect(
@@ -140,9 +152,9 @@ test.describe('inline and block insertions', () => {
       editor.locator('h1').getByText(EDITOR_NOTE.headingText, { exact: true })
     );
     // Wait for Slate to take the click's selection before typing.
-    await expect(page.getByRole('button', { name: 'Block type' })).toHaveText(
-      'Heading 1'
-    );
+    await expect(
+      page.getByRole('button', { name: m.editor_block_type() })
+    ).toHaveAttribute('data-block-type', 'h1');
     await page.keyboard.type(' updated');
 
     await expect(

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
+import '../../../e2e/i18n/compile';
 
 /**
  * Editor performance harness. Run with: pnpm bench:editor

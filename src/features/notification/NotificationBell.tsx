@@ -79,6 +79,7 @@ export function NotificationsBell() {
           // The top bar is the hover color in Frappe/Mocha, so lift past it.
           className="shrink-0 [[data-style=classroom][data-theme=frappe]_&]:hover:bg-surface-dark-hover-bg [[data-style=classroom][data-theme=mocha]_&]:hover:bg-surface-dark-hover-bg"
           // NOTE: dont include unread notification numbers in ui display, labelling is OK for accessibility
+          data-unread-count={unreadCountValue}
           dot={unread}
           icon="bell"
           label={bellLabel}

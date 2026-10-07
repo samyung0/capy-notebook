@@ -123,7 +123,6 @@ paraglide is used for internationalization. use paraglide functions to support i
 ## Pull Request
 
 - Do not make a PR unless requested.
-- Always use `file-pr` when available.
 - Capy Notebook current stage dont make new branches, work on main directly.
 - BetterOffice PRs follow the workflow below.
 

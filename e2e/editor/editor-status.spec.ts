@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { m } from '../i18n';
 
 test('header distinguishes initial sync, pending edits and durable saves', async ({
   page,
@@ -9,14 +10,18 @@ test('header distinguishes initial sync, pending edits and durable saves', async
   );
   const status = page.getByTestId('editor-save-state');
   await expect(editor).toBeVisible({ timeout: 30_000 });
-  await expect(status).toHaveText('Synced');
+  await expect(status).toHaveAttribute('data-save-state', 'synced');
   await expect(status.locator('svg')).toBeVisible();
   const syncedIcon = await status.locator('svg').innerHTML();
-  await page.getByRole('button', { name: 'Material mode' }).press('Shift+Tab');
+  await page
+    .getByRole('button', { name: m.material_mode() })
+    .press('Shift+Tab');
   await expect(status).toBeFocused();
   const tooltip = page.locator('[data-slot="tooltip-content"][data-open]');
   await expect(tooltip).toBeVisible();
-  await expect(tooltip).toHaveText('Synced');
+  await expect(
+    tooltip.getByText(m.editor_status_synced(), { exact: true })
+  ).toBeVisible();
   await status.press('Tab');
 
   // Hold real mock receipts to exercise a late acknowledgment after a new edit.
@@ -63,17 +68,17 @@ test('header distinguishes initial sync, pending edits and durable saves', async
   await page.clock.pauseAt(now);
   await editor.press('ControlOrMeta+End');
   await page.keyboard.insertText(' first pending edit');
-  await expect(status).toHaveText('Syncing…');
+  await expect(status).toHaveAttribute('data-save-state', 'syncing');
   expect(await status.locator('svg').innerHTML()).not.toBe(syncedIcon);
   await page.clock.runFor(1000);
-  await expect(status).toHaveText('Syncing…');
+  await expect(status).toHaveAttribute('data-save-state', 'syncing');
 
   await page.keyboard.insertText(' newer pending edit');
   await releaseCheckpoint();
-  await expect(status).toHaveText('Syncing…');
+  await expect(status).toHaveAttribute('data-save-state', 'syncing');
   await page.clock.runFor(1000);
   await releaseCheckpoint();
-  await expect(status).toHaveText('Saved');
+  await expect(status).toHaveAttribute('data-save-state', 'saved');
 
   await page.keyboard.insertText(' awaiting acknowledgment');
   await page.clock.runFor(1000);
@@ -81,19 +86,19 @@ test('header distinguishes initial sync, pending edits and durable saves', async
     (window as unknown as { disconnectEditor: () => void }).disconnectEditor();
   });
   // The browser is online, so a dropped room reads as reconnecting.
-  await expect(status).toHaveText('Reconnecting…');
+  await expect(status).toHaveAttribute('data-save-state', 'reconnecting');
   await releaseCheckpoint();
-  await expect(status).toHaveText('Reconnecting…');
+  await expect(status).toHaveAttribute('data-save-state', 'reconnecting');
   await page.keyboard.insertText(' offline edit');
   await page.clock.runFor(1000);
-  await expect(status).toHaveText('Reconnecting…');
+  await expect(status).toHaveAttribute('data-save-state', 'reconnecting');
   await page.evaluate(() => {
     (window as unknown as { connectEditor: () => void }).connectEditor();
   });
-  await expect(status).toHaveText('Syncing…');
+  await expect(status).toHaveAttribute('data-save-state', 'syncing');
   await releaseCheckpoint();
-  await expect(status).toHaveText('Saved');
+  await expect(status).toHaveAttribute('data-save-state', 'saved');
 
-  await page.getByRole('button', { name: 'Material mode' }).click();
+  await page.getByRole('button', { name: m.material_mode() }).click();
   await expect(status).toHaveCount(0);
 });

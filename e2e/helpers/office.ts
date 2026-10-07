@@ -1,11 +1,15 @@
 import type { Page } from '@playwright/test';
+import { m } from '../i18n';
 
 /** The Office file header's menu bar (a Radix Menubar). */
 export function officeMenuBar(page: Page) {
-  return page.getByRole('menubar', { name: 'Menu bar' });
+  return page.getByRole('menubar', { name: m.files_office_menu_bar() });
 }
 
-/** One of the menu bar's menus, by its label. */
+/**
+ * One of the menu bar's menus, by its label. DOCX and XLSX menus carry
+ * BetterOffice's labels, so callers pass those literally.
+ */
 export function officeMenu(page: Page, name: string) {
   return officeMenuBar(page).getByRole('menuitem', { exact: true, name });
 }

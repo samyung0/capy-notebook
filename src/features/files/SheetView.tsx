@@ -54,7 +54,11 @@ export default function SheetView({
 
   if (runtime.error && !runtime.analysis && runtime.mode === 'view') {
     return (
-      <FileError onRetry={runtime.retryView} title={m.files_sheet_failed()} />
+      <FileError
+        kind="sheet"
+        onRetry={runtime.retryView}
+        title={m.files_sheet_failed()}
+      />
     );
   }
   return (

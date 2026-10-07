@@ -382,7 +382,12 @@ export function PptxViewer({
               >
                 <HugeIcon icon={ArrowLeft04Icon} size={16} />
               </button>
-              <span aria-atomic="true" aria-live="polite" role="status">
+              <span
+                aria-atomic="true"
+                aria-live="polite"
+                data-slide={slideIndex + 1}
+                role="status"
+              >
                 {m.files_office_slide_position({
                   current: slideIndex + 1,
                   total: slideCount,

@@ -45,7 +45,8 @@ export function BannerStack({ children }: { children: ReactNode }) {
  * message changes or the page remounts it; nothing is remembered. `inline`
  * keeps it one row high: the message scrolls sideways and the actions take
  * the close button's place. `closeable={false}` leaves the button out.
- * Inside a `BannerStack` only the newest strip shows.
+ * Inside a `BannerStack` only the newest strip shows. `kind` names the
+ * strip's state for tests (`data-kind`).
  */
 export function FileBanner({
   message,
@@ -53,6 +54,7 @@ export function FileBanner({
   actions = [],
   closeable = true,
   inline = false,
+  kind,
   testId,
 }: {
   message: string;
@@ -60,6 +62,7 @@ export function FileBanner({
   actions?: FileBannerAction[];
   closeable?: boolean;
   inline?: boolean;
+  kind?: string;
   testId?: string;
 }) {
   const [closed, setClosed] = useState<string | null>(null);
@@ -105,6 +108,7 @@ export function FileBanner({
           ? 'border-solid-error/40 bg-tint-error'
           : 'border-divider bg-surface-hover-bg'
       )}
+      data-kind={kind}
       data-testid={testId}
       role={tone === 'error' ? 'alert' : 'status'}
     >

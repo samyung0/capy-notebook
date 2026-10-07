@@ -421,7 +421,7 @@
   "color_choose_custom": "Choose a custom color",
   "tag_search_placeholder": "Search or create a tag…",
   "tag_remove": "Remove {name}",
-  "workspace_create_title": "Create one",
+  "workspace_create_title": "Create workspace",
   "workspace_edit_title": "Edit workspace",
   "workspace_name_placeholder": "Workspace name",
   "workspace_card_meta": "{chapters} chapters · {files} files",

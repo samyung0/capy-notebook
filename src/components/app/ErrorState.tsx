@@ -7,6 +7,7 @@ export function ErrorState({
   className,
   description,
   icon = 'error',
+  kind,
   testId,
   title,
   variant,
@@ -15,6 +16,8 @@ export function ErrorState({
   className?: string;
   description?: ReactNode;
   icon?: IconName;
+  /** What failed, for tests (`data-error-kind`). */
+  kind?: string;
   testId?: string;
   title: ReactNode;
   variant: 'page' | 'panel';
@@ -26,6 +29,7 @@ export function ErrorState({
         variant === 'page' ? 'max-w-2xl gap-4 px-6' : 'gap-3 px-4',
         className
       )}
+      data-error-kind={kind}
       data-error-surface={variant}
       data-testid={testId}
       role="alert"

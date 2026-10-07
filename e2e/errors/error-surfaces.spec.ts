@@ -1,6 +1,7 @@
 import { expect, test } from '../fixtures/actors';
 import { expectErrorSurface } from '../helpers/errors';
 import { summaryPath } from '../helpers/workspace';
+import { m } from '../i18n';
 
 const apiError = (status: number, detail: string) => ({
   detail,
@@ -26,12 +27,9 @@ test.describe('standardized error surfaces', () => {
 
     await ownerPage.goto(`/workspaces/${workspace.id}`);
 
-    const surface = await expectErrorSurface(
-      ownerPage,
-      'page',
-      'Unable to load workspace.'
-    );
+    const surface = await expectErrorSurface(ownerPage, 'page');
     await expect(surface).toHaveCount(1);
+    await expect(surface.getByText(m.workspace_unable_load())).toBeVisible();
   });
 
   test('private and missing workspace summaries stay non-disclosing', async ({
@@ -46,7 +44,9 @@ test.describe('standardized error surfaces', () => {
       expect(response?.headers()['cache-control']).toBe('no-store');
       expect(response?.headers()['x-robots-tag']).toBe('noindex, nofollow');
       await expect(
-        anonymousPage.getByRole('heading', { name: 'Page not found' })
+        anonymousPage.getByRole('heading', {
+          name: m.error_not_found_page_title(),
+        })
       ).toBeVisible();
       await expect(
         anonymousPage.getByText(seed.privateWorkspace.name)

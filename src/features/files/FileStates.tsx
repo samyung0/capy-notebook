@@ -32,12 +32,14 @@ export function FileLoading({
 
 export function FileError({
   icon = 'fileError',
+  kind,
   title = m.error_file_title(),
   message = m.error_file_body(),
   onRetry,
   retryLabel = m.error_action_retry(),
 }: {
   icon?: IconName;
+  kind?: 'sheet' | 'text';
   title?: string;
   message?: string;
   onRetry?: () => void;
@@ -54,6 +56,7 @@ export function FileError({
       }
       description={message}
       icon={icon}
+      kind={kind}
       title={title}
       variant="panel"
     />

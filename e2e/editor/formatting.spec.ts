@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { EDITOR_NOTE } from '../../src/mocks/editorSeed';
 import { chooseAllBlocksEntry } from '../helpers/editor';
+import { m } from '../i18n';
 import { openEditorNote } from './helpers';
 
 test.describe('formatting', () => {
@@ -16,20 +17,24 @@ test.describe('formatting', () => {
     await page.keyboard.press('End');
     await page.keyboard.type(' history probe');
     const outside = page.getByRole('textbox', {
-      name: 'Ask about your sources…',
+      name: m.chat_placeholder(),
     });
     await outside.click();
     await expect(editor).not.toBeFocused();
     await expect(
-      page.getByRole('button', { exact: true, name: 'Undo' })
+      page.getByRole('button', { exact: true, name: m.editor_undo() })
     ).toBeEnabled();
-    await page.getByRole('button', { exact: true, name: 'Undo' }).click();
+    await page
+      .getByRole('button', { exact: true, name: m.editor_undo() })
+      .click();
     await expect(editor).not.toContainText('history probe');
     await outside.click();
     await expect(
-      page.getByRole('button', { exact: true, name: 'Redo' })
+      page.getByRole('button', { exact: true, name: m.editor_redo() })
     ).toBeEnabled();
-    await page.getByRole('button', { exact: true, name: 'Redo' }).click();
+    await page
+      .getByRole('button', { exact: true, name: m.editor_redo() })
+      .click();
     await expect(editor).toContainText('history probe');
   });
   test('block type popover applies a keyboard choice and returns focus to the editor', async ({
@@ -43,19 +48,22 @@ test.describe('formatting', () => {
     await editor.getByText(EDITOR_NOTE.firstParagraph, { exact: true }).click();
     const trigger = page.getByRole('button', {
       exact: true,
-      name: 'Block type',
+      name: m.editor_block_type(),
     });
     await trigger.click();
     const popup = page.locator(
       '[data-slot="popover-content"][data-state="open"]'
     );
     await expect(
-      popup.getByRole('button', { exact: true, name: 'Paragraph' })
+      popup.getByRole('button', {
+        exact: true,
+        name: m.editor_block_paragraph(),
+      })
     ).toBeFocused();
     await page.keyboard.press('Tab');
     await page.keyboard.press('Tab');
     await expect(
-      popup.getByRole('button', { exact: true, name: 'Heading 2' })
+      popup.getByRole('button', { exact: true, name: m.editor_heading_2() })
     ).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(
@@ -67,7 +75,7 @@ test.describe('formatting', () => {
     await expect(editor).toBeFocused();
     await trigger.click();
     await expect(
-      popup.getByRole('button', { exact: true, name: 'Heading 2' })
+      popup.getByRole('button', { exact: true, name: m.editor_heading_2() })
     ).toHaveAttribute('aria-pressed', 'true');
     await page.keyboard.press('Escape');
     await expect(editor).toBeFocused();
@@ -78,7 +86,9 @@ test.describe('formatting', () => {
   }) => {
     await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.firstParagraph);
     await page.setViewportSize({ height: 900, width: 900 });
-    const toolbar = page.getByRole('toolbar', { name: 'Document formatting' });
+    const toolbar = page.getByRole('toolbar', {
+      name: m.editor_doc_formatting(),
+    });
     const scroller = toolbar.locator('.scroll-fade-x');
     const groups = scroller.locator('[data-toolbar-group]');
     await expect(groups).toHaveCount(8);
@@ -93,7 +103,7 @@ test.describe('formatting', () => {
       )
       .toBe(true);
     const settings = toolbar.getByRole('button', {
-      name: 'Editor settings',
+      name: m.editor_prefs_settings(),
     });
     await expect(settings).toBeInViewport();
 
@@ -117,13 +127,17 @@ test.describe('formatting', () => {
       .toBeLessThanOrEqual(1);
     const table = toolbar.getByRole('button', {
       exact: true,
-      name: 'Table controls',
+      name: m.editor_table_controls(),
     });
     await expect(table).toBeInViewport();
     await table.click();
-    await page.getByRole('button', { exact: true, name: 'Table' }).click();
+    await page
+      .getByRole('button', { exact: true, name: m.editor_table() })
+      .click();
     await expect(
-      page.getByRole('gridcell', { name: 'Insert 2 by 2 table' })
+      page.getByRole('gridcell', {
+        name: m.editor_insert_table_size({ cols: '2', rows: '2' }),
+      })
     ).toBeInViewport();
     await page.keyboard.press('Escape');
     await page.keyboard.press('Escape');
@@ -133,7 +147,7 @@ test.describe('formatting', () => {
     await expect(
       page
         .locator('[data-slot="tooltip-content"]')
-        .filter({ hasText: 'Table controls' })
+        .filter({ hasText: m.editor_table_controls() })
     ).toBeVisible();
     const overflowDuringScroll = page.evaluate(async () => {
       let maxOverflow = 0;
@@ -163,18 +177,24 @@ test.describe('formatting', () => {
       .toBe(0);
 
     await settings.click();
-    const dialog = page.getByRole('dialog', { name: 'Editor settings' });
-    await dialog.getByRole('button', { exact: true, name: 'Commands' }).click();
-    await dialog.getByRole('switch', { name: /Text decorations/ }).click();
-    await dialog.getByRole('button', { exact: true, name: 'Apply' }).click();
+    const dialog = page.getByRole('dialog', { name: m.editor_prefs_title() });
+    await dialog
+      .getByRole('button', { exact: true, name: m.editor_prefs_commands() })
+      .click();
+    await dialog
+      .getByRole('switch', { name: m.editor_prefs_decorations() })
+      .click();
+    await dialog
+      .getByRole('button', { exact: true, name: m.action_apply() })
+      .click();
     await expect(groups).toHaveCount(7);
     await expect(
-      toolbar.getByRole('button', { exact: true, name: 'Bold' })
+      toolbar.getByRole('button', { exact: true, name: m.editor_bold() })
     ).toHaveCount(0);
     await page.setViewportSize({ height: 1000, width: 2560 });
     await expect(groups).toHaveCount(7);
     await expect(
-      toolbar.getByRole('button', { exact: true, name: 'Bold' })
+      toolbar.getByRole('button', { exact: true, name: m.editor_bold() })
     ).toHaveCount(0);
   });
 
@@ -192,12 +212,19 @@ test.describe('formatting', () => {
     await editor
       .getByText(EDITOR_NOTE.firstParagraph, { exact: true })
       .dblclick();
-    const toolbar = page.getByRole('toolbar', { name: 'Document formatting' });
-    const floating = page.getByRole('toolbar', { name: 'Selection actions' });
-    const bold = toolbar.getByRole('button', { exact: true, name: 'Bold' });
+    const toolbar = page.getByRole('toolbar', {
+      name: m.editor_doc_formatting(),
+    });
+    const floating = page.getByRole('toolbar', {
+      name: m.editor_selection_actions(),
+    });
+    const bold = toolbar.getByRole('button', {
+      exact: true,
+      name: m.editor_bold(),
+    });
     const floatingBold = floating.getByRole('button', {
       exact: true,
-      name: 'Bold',
+      name: m.editor_bold(),
     });
     await expect(bold).toHaveAttribute('aria-pressed', 'false');
     await page.keyboard.press('ControlOrMeta+b');
@@ -214,7 +241,7 @@ test.describe('formatting', () => {
 
     // Regression: removeMarks() without keys cleared nothing for an expanded
     // selection, so this button used to be a no-op.
-    await chooseAllBlocksEntry(page, 'Clear formatting');
+    await chooseAllBlocksEntry(page, m.editor_clear_formatting());
     await expect(editor.locator('strong')).toHaveCount(0);
     await expect(bold).toHaveAttribute('aria-pressed', 'false');
     await expect(
@@ -239,7 +266,9 @@ test.describe('formatting', () => {
     await expect(editor.locator('strong')).toHaveCount(1);
     await expect(editor.locator('em')).toHaveCount(1);
     await expect(editor.locator('u')).toHaveCount(1);
-    const toolbar = page.getByRole('toolbar', { name: 'Document formatting' });
+    const toolbar = page.getByRole('toolbar', {
+      name: m.editor_doc_formatting(),
+    });
     for (const name of ['Bold', 'Italic', 'Underline']) {
       await expect(
         toolbar.getByRole('button', { exact: true, name })
@@ -255,7 +284,7 @@ test.describe('formatting', () => {
     }
     await editor.locator('strong').dblclick();
 
-    await chooseAllBlocksEntry(page, 'Clear formatting');
+    await chooseAllBlocksEntry(page, m.editor_clear_formatting());
     await expect(editor.locator('strong')).toHaveCount(0);
     await expect(editor.locator('em')).toHaveCount(0);
     await expect(editor.locator('u')).toHaveCount(0);
@@ -270,10 +299,12 @@ test.describe('formatting', () => {
       EDITOR_NOTE.id,
       EDITOR_NOTE.firstParagraph
     );
-    const toolbar = page.getByRole('toolbar', { name: 'Document formatting' });
+    const toolbar = page.getByRole('toolbar', {
+      name: m.editor_doc_formatting(),
+    });
     const linkButton = toolbar.getByRole('button', {
       exact: true,
-      name: 'Link',
+      name: m.editor_link(),
     });
     await editor
       .getByText(EDITOR_NOTE.firstParagraph, { exact: true })
@@ -281,23 +312,27 @@ test.describe('formatting', () => {
     await linkButton.click();
     const dialog = page.getByRole('dialog');
     await dialog
-      .getByRole('textbox', { name: 'Link URL' })
+      .getByRole('textbox', { name: m.editor_link_url() })
       .fill('https://example.com/');
-    await dialog.getByRole('button', { exact: true, name: 'Apply' }).click();
+    await dialog
+      .getByRole('button', { exact: true, name: m.action_apply() })
+      .click();
     const link = editor.getByRole('link', { name: /./ });
     await link.click();
     await expect(linkButton).toHaveAttribute('aria-pressed', 'true');
-    const actions = page.getByRole('toolbar', { name: 'Link actions' });
+    const actions = page.getByRole('toolbar', {
+      name: m.editor_link_actions(),
+    });
     await expect(
-      actions.getByRole('link', { name: 'Open link in a new tab' })
+      actions.getByRole('link', { name: m.editor_link_open() })
     ).toHaveAttribute('href', 'https://example.com/');
-    await actions.getByRole('button', { name: 'Edit link' }).click();
+    await actions.getByRole('button', { name: m.editor_link_edit() }).click();
     await page
-      .getByRole('textbox', { name: 'Link URL' })
+      .getByRole('textbox', { name: m.editor_link_url() })
       .fill('https://example.org/');
-    await page.getByRole('button', { name: 'Save link' }).click();
+    await page.getByRole('button', { name: m.editor_link_save() }).click();
     await expect(link).toHaveAttribute('href', 'https://example.org/');
-    await actions.getByRole('button', { name: 'Remove link' }).click();
+    await actions.getByRole('button', { name: m.editor_link_remove() }).click();
     await expect(linkButton).toHaveAttribute('aria-pressed', 'false');
     await expect(editor.getByRole('link')).toHaveCount(0);
   });
@@ -311,7 +346,9 @@ test.describe('formatting', () => {
       EDITOR_NOTE.id,
       EDITOR_NOTE.firstParagraph
     );
-    const toolbar = page.getByRole('toolbar', { name: 'Document formatting' });
+    const toolbar = page.getByRole('toolbar', {
+      name: m.editor_doc_formatting(),
+    });
     const first = editor.getByText(EDITOR_NOTE.firstParagraph, { exact: true });
     await first.click();
     for (const name of ['Numbered list', 'Bulleted list', 'Task list']) {
@@ -328,23 +365,26 @@ test.describe('formatting', () => {
       await expect(button).toHaveAttribute('aria-pressed', 'false');
     }
     await toolbar
-      .getByRole('button', { exact: true, name: 'Text alignment' })
+      .getByRole('button', { exact: true, name: m.editor_text_alignment() })
       .click();
-    const center = page.getByRole('button', { exact: true, name: 'Center' });
+    const center = page.getByRole('button', {
+      exact: true,
+      name: m.editor_align_center(),
+    });
     await center.click();
     await expect(center).toHaveAttribute('aria-pressed', 'true');
     await expect(
-      page.getByRole('button', { exact: true, name: 'Left' })
+      page.getByRole('button', { exact: true, name: m.editor_align_left() })
     ).toHaveAttribute('aria-pressed', 'false');
     await page.keyboard.press('Escape');
 
     const twoColumns = toolbar.getByRole('button', {
       exact: true,
-      name: 'Two columns',
+      name: m.editor_two_columns(),
     });
     const threeColumns = toolbar.getByRole('button', {
       exact: true,
-      name: 'Three equal columns',
+      name: m.editor_columns_equal_3(),
     });
     await twoColumns.click();
     await editor.locator('[data-slot="column"]').first().click();
@@ -353,14 +393,17 @@ test.describe('formatting', () => {
     const columnMenu = page.locator('[data-slot="popover-content"]').filter({
       has: page.getByRole('button', {
         exact: true,
-        name: 'Two equal columns',
+        name: m.editor_columns_equal_2(),
       }),
     });
     await expect(
-      columnMenu.getByRole('button', { exact: true, name: 'Two equal columns' })
+      columnMenu.getByRole('button', {
+        exact: true,
+        name: m.editor_columns_equal_2(),
+      })
     ).toHaveAttribute('aria-pressed', 'true');
     await columnMenu
-      .getByRole('button', { exact: true, name: 'Three equal columns' })
+      .getByRole('button', { exact: true, name: m.editor_columns_equal_3() })
       .click();
     await expect(threeColumns).toHaveAttribute('aria-pressed', 'true');
     await expect(twoColumns).toHaveAttribute('aria-pressed', 'false');
@@ -368,11 +411,11 @@ test.describe('formatting', () => {
     const columnGroup = editor.locator('.slate-column_group').first();
     for (let cycle = 0; cycle < 3; cycle++) {
       await columnMenu
-        .getByRole('button', { exact: true, name: 'Two equal columns' })
+        .getByRole('button', { exact: true, name: m.editor_columns_equal_2() })
         .click();
       await expect(columnGroup.locator('.slate-p')).toHaveCount(2);
       await columnMenu
-        .getByRole('button', { exact: true, name: 'Three equal columns' })
+        .getByRole('button', { exact: true, name: m.editor_columns_equal_3() })
         .click();
       await expect(columnGroup.locator('.slate-p')).toHaveCount(3);
     }
@@ -381,12 +424,18 @@ test.describe('formatting', () => {
     await expect(threeColumns).toHaveAttribute('aria-pressed', 'false');
     const table = toolbar.getByRole('button', {
       exact: true,
-      name: 'Table controls',
+      name: m.editor_table_controls(),
     });
     await table.click();
     await expect(table).toHaveAttribute('aria-pressed', 'false');
-    await page.getByRole('button', { exact: true, name: 'Table' }).click();
-    await page.getByRole('gridcell', { name: 'Insert 2 by 2 table' }).click();
+    await page
+      .getByRole('button', { exact: true, name: m.editor_table() })
+      .click();
+    await page
+      .getByRole('gridcell', {
+        name: m.editor_insert_table_size({ cols: '2', rows: '2' }),
+      })
+      .click();
     await editor.locator('td').first().click();
     await expect(table).toHaveAttribute('aria-pressed', 'true');
     await editor

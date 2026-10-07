@@ -9,6 +9,7 @@ import { readFile } from 'node:fs/promises';
 import { crc32, deflateSync } from 'node:zlib';
 import type { Locator, Page } from '@playwright/test';
 import { unzipSync } from 'fflate';
+import { m } from '../../i18n';
 import {
   api,
   noProviderCalls,
@@ -198,14 +199,18 @@ export async function apiNote(run: UatRun, workspaceId: string, body: string) {
 export async function createNote(run: UatRun, workspaceId: string) {
   const page = run.owner.page;
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
-  await page.getByRole('button', { exact: true, name: 'Files' }).click();
+  await page
+    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .click();
   await page
     .locator('[data-workspace-add-menu]')
-    .getByRole('button', { exact: true, name: 'Add file' })
+    .getByRole('button', { exact: true, name: m.action_add_file() })
     .click();
-  await page.getByRole('menuitem', { name: 'New file' }).click();
+  await page.getByRole('menuitem', { name: m.action_new_file() }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { exact: true, name: 'Note' }).click();
+  await dialog
+    .getByRole('button', { exact: true, name: m.create_kind_note() })
+    .click();
   const created = page.waitForResponse(
     (response) =>
       new URL(response.url()).pathname ===
@@ -214,7 +219,7 @@ export async function createNote(run: UatRun, workspaceId: string) {
   );
   // The dialog's Create tab shares the name; the submit button comes last.
   await dialog
-    .getByRole('button', { exact: true, name: 'Create' })
+    .getByRole('button', { exact: true, name: m.action_create() })
     .last()
     .click();
   const response = await created;
@@ -286,7 +291,9 @@ export async function insertNoteImage(
   const { page } = actor;
   const editor = await emptyLine(run, actor, workspaceId, noteId, after);
   await page.keyboard.type('/');
-  await page.getByRole('option', { exact: true, name: 'Image' }).click();
+  await page
+    .getByRole('option', { exact: true, name: m.editor_image() })
+    .click();
   const uploaded = page.waitForResponse(
     (response) =>
       new URL(response.url()).pathname.startsWith(
@@ -295,7 +302,7 @@ export async function insertNoteImage(
   );
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),
-    editor.getByRole('button', { name: /^Add an image/ }).click(),
+    editor.getByRole('button', { name: m.editor_add_image() }).click(),
   ]);
   await chooser.setFiles({ buffer: png, mimeType: 'image/png', name });
   const completed = await uploaded;
@@ -351,7 +358,7 @@ export async function deleteAndUndoNoteImage(
   await image.click({ button: 'right' });
   await page
     .locator('[data-slot="context-menu-content"]')
-    .getByRole('menuitem', { name: 'Delete' })
+    .getByRole('menuitem', { name: m.action_delete() })
     .click();
   await expect(image).toHaveCount(0);
   await run.poll(
@@ -422,11 +429,13 @@ export async function importHtmlEmbed(
 ) {
   await lineAfter(page, editor, after);
   await page
-    .getByRole('button', { exact: true, name: 'Import document' })
+    .getByRole('button', { exact: true, name: m.editor_import() })
     .click();
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),
-    page.getByRole('button', { exact: true, name: 'Import Markdown' }).click(),
+    page
+      .getByRole('button', { exact: true, name: m.editor_import_md() })
+      .click(),
   ]);
   await chooser.setFiles({
     buffer: Buffer.from(embedMarkdown(marker)),
@@ -490,11 +499,11 @@ export async function readView(
 /** Toolbar Export document → Export Markdown (.md); the unzipped download. */
 export async function exportMarkdown(page: Page) {
   await page
-    .getByRole('button', { exact: true, name: 'Export document' })
+    .getByRole('button', { exact: true, name: m.editor_export() })
     .click();
   const downloaded = page.waitForEvent('download');
   await page
-    .getByRole('button', { exact: true, name: 'Export Markdown (.md)' })
+    .getByRole('button', { exact: true, name: m.editor_export_md() })
     .click();
   const download = await downloaded;
   assert.equal(download.suggestedFilename(), 'document.zip');
@@ -555,7 +564,7 @@ export async function insertEmbedded(
   await page
     .getByRole('option', {
       exact: true,
-      name: kind === 'quiz' ? 'Quiz' : 'Flashcards',
+      name: kind === 'quiz' ? m.editor_quiz() : m.editor_flashcards(),
     })
     .click();
   const response = await created;
@@ -605,7 +614,7 @@ export async function removeAndUndoQuizBlock(
   await card.click({ button: 'right', position: { x: 12, y: 12 } });
   await page
     .locator('[data-slot="context-menu-content"]')
-    .getByRole('menuitem', { name: 'Delete' })
+    .getByRole('menuitem', { name: m.action_delete() })
     .click();
   await expect(cards).toHaveCount(blocks.length - 1);
   await run.poll(
@@ -734,10 +743,12 @@ async function saveQuiz(page: Page, quizId: string) {
  * (the confirmation is in flight on 2026-10-06; without it Save saves at once).
  */
 async function pageSave(page: Page) {
-  await page.getByRole('button', { exact: true, name: 'Save' }).click();
+  await page
+    .getByRole('button', { exact: true, name: m.action_save() })
+    .click();
   const confirm = page
-    .getByRole('dialog', { name: 'Save your changes?' })
-    .getByRole('button', { exact: true, name: 'Save' });
+    .getByRole('dialog', { name: m.edit_save_confirm_title() })
+    .getByRole('button', { exact: true, name: m.action_save() });
   if (
     await confirm.waitFor({ timeout: 5000 }).then(
       () => true,
@@ -771,10 +782,16 @@ export async function quizImageOnSave(run: UatRun, quizId: string) {
   page.on('request', watch);
   try {
     await page.goto(`${run.env.appUrl}/quizzes/${quizId}/edit`);
-    await page.getByRole('button', { exact: true, name: 'Edit' }).click();
+    await page
+      .getByRole('button', { exact: true, name: m.action_edit() })
+      .click();
     const dialog = page.getByRole('dialog');
-    await dialog.getByRole('button', { name: 'Add block or part' }).click();
-    await page.getByRole('button', { exact: true, name: 'Image' }).click();
+    await dialog
+      .getByRole('button', { name: m.question_ui_add_block_or_part() })
+      .click();
+    await page
+      .getByRole('button', { exact: true, name: m.question_ui_image() })
+      .click();
     await dialog.locator('input[type="file"]').setInputFiles({
       buffer: png,
       mimeType: 'image/png',
@@ -785,12 +802,16 @@ export async function quizImageOnSave(run: UatRun, quizId: string) {
       timeout: 60_000,
     });
     await dialog
-      .getByRole('textbox', { name: 'Description' })
+      .getByRole('textbox', { name: m.question_ui_description() })
       .fill('Field photo');
     // The block's Save, then, back in the question, the question's Save.
-    await dialog.getByRole('button', { exact: true, name: 'Save' }).click();
+    await dialog
+      .getByRole('button', { exact: true, name: m.question_ui_save() })
+      .click();
     await expect(dialog.locator('input[type="file"]')).toHaveCount(0);
-    await dialog.getByRole('button', { exact: true, name: 'Save' }).click();
+    await dialog
+      .getByRole('button', { exact: true, name: m.question_ui_save() })
+      .click();
     await expect(dialog).toBeHidden();
     // Picked and placed, yet nothing reserved or uploaded.
     assert.deepEqual(uploads, []);
@@ -934,17 +955,27 @@ export async function pastedQuizCopies(
 async function removeQuizImage(run: UatRun, quizId: string) {
   const page = run.owner.page;
   await page.goto(`${run.env.appUrl}/quizzes/${quizId}/edit`);
-  await page.getByRole('button', { exact: true, name: 'Edit' }).click();
+  await page
+    .getByRole('button', { exact: true, name: m.action_edit() })
+    .click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: 'Select Image block' }).click();
   await dialog
-    .getByRole('toolbar', { name: 'Block actions' })
-    .getByRole('button', { exact: true, name: 'Delete' })
+    .getByRole('button', {
+      name: m.question_ui_select_block({ type: m.question_ui_image() }),
+    })
+    .click();
+  await dialog
+    .getByRole('toolbar', { name: m.question_ui_block_actions() })
+    .getByRole('button', { exact: true, name: m.question_ui_delete() })
     .click();
   await expect(
-    dialog.getByRole('button', { name: 'Select Image block' })
+    dialog.getByRole('button', {
+      name: m.question_ui_select_block({ type: m.question_ui_image() }),
+    })
   ).toHaveCount(0);
-  await dialog.getByRole('button', { exact: true, name: 'Save' }).click();
+  await dialog
+    .getByRole('button', { exact: true, name: m.question_ui_save() })
+    .click();
   await expect(dialog).toBeHidden();
   await saveQuiz(page, quizId);
 }
@@ -1007,11 +1038,15 @@ export async function cardImages(run: UatRun) {
   // The edit page is a grid of front tiles plus a dashed "Add card" tile,
   // which opens "New card"; a front tile opens "Edit card N/M". Dialogs only
   // stage changes until the page's Save.
-  await page.getByRole('button', { exact: true, name: 'Add card' }).click();
-  let dialog = page.getByRole('dialog', { name: 'New card' });
-  await dialog.getByRole('textbox', { name: 'Front' }).fill('Salt marsh');
+  await page
+    .getByRole('button', { exact: true, name: m.flashcards_add_card() })
+    .click();
+  let dialog = page.getByRole('dialog', { name: m.flashcards_new_card() });
   await dialog
-    .getByRole('textbox', { name: 'Back' })
+    .getByRole('textbox', { name: m.editor_card_front() })
+    .fill('Salt marsh');
+  await dialog
+    .getByRole('textbox', { name: m.editor_card_back() })
     .fill('Coastal grassland flooded by tides');
   await dialog.locator('input[type="file"]').setInputFiles({
     buffer: noisePng(2400, 1600),
@@ -1021,7 +1056,9 @@ export async function cardImages(run: UatRun) {
   await expect(dialog.locator('img[src^="blob:"]').first()).toBeVisible({
     timeout: 60_000,
   });
-  await dialog.getByRole('button', { exact: true, name: 'Add card' }).click();
+  await dialog
+    .getByRole('button', { exact: true, name: m.flashcards_add_card() })
+    .click();
   assert.deepEqual(uploads, []);
   await pageSave(page);
   const [asset] = await run.poll(
@@ -1034,9 +1071,13 @@ export async function cardImages(run: UatRun) {
   await run.record('blob', asset.object_path, { assetId: asset.id, setId });
   await aged(run, setId, [asset.id]);
   await page.getByRole('button', { exact: true, name: 'Salt marsh' }).click();
-  dialog = page.getByRole('dialog', { name: /^Edit card/ });
-  await dialog.getByRole('button', { exact: true, name: 'Remove' }).click();
-  await dialog.getByRole('button', { exact: true, name: 'Save' }).click();
+  dialog = page.getByRole('dialog', { name: m.flashcards_edit_card() });
+  await dialog
+    .getByRole('button', { exact: true, name: m.action_remove() })
+    .click();
+  await dialog
+    .getByRole('button', { exact: true, name: m.action_save() })
+    .click();
   await pageSave(page);
   await run.poll(
     'card image trashed',

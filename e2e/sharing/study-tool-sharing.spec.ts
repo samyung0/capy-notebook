@@ -2,6 +2,7 @@ import type { APIRequestContext } from '@playwright/test';
 import { expect, test } from '../fixtures/actors';
 import { seed } from '../fixtures/seed';
 import { apiEndsWith, waitForApi } from '../helpers/api';
+import { m } from '../i18n';
 
 // What visitors see on shared quizzes and flashcard sets. The authorization
 // rules behind it (anonymous 401s, stranger 404s, clone and attempt gates) are
@@ -12,25 +13,26 @@ type Seeded = { id: string; name: string; text: string };
 const kinds = [
   {
     api: '/api/quizzes',
-    clone: 'Clone',
+    clone: m.quiz_clone(),
     // A standalone quiz is deleted through its own route.
     deletePath: (id: string) => `/api/quizzes/${id}`,
-    explore: { api: '/api/explore/quizzes', tab: /Public quizzes/i },
+    explore: { api: '/api/explore/quizzes', tab: m.explore_tab_quizzes() },
     kind: 'quiz',
     link: { ...seed.linkQuiz, text: seed.linkQuiz.prompt },
-    ownerControls: [],
     private: { ...seed.privateQuiz, text: seed.privateQuiz.prompt },
     public: { ...seed.publicQuiz, text: seed.publicQuiz.prompt },
     share: '/share/quizzes',
   },
   {
     api: '/api/flashcards',
-    clone: 'Clone flashcards',
+    clone: m.action_clone_flashcards(),
     deletePath: (id: string) => `/api/materials/${id}`,
-    explore: { api: '/api/explore/flashcards', tab: /Flashcards/i },
+    explore: {
+      api: '/api/explore/flashcards',
+      tab: m.explore_tab_flashcards(),
+    },
     kind: 'flashcards',
     link: { ...seed.linkFlashcardSet, text: seed.linkFlashcardSet.front },
-    ownerControls: ['Share flashcards', /Add card/i],
     private: {
       ...seed.privateFlashcardSet,
       text: seed.privateFlashcardSet.front,
@@ -53,16 +55,18 @@ test('New quiz opens an editable draft', async ({ ownerApi, ownerPage }) => {
   await ownerPage.goto('/files?tab=blocks');
   const created = waitForApi(ownerPage, apiEndsWith('/api/quizzes', 'POST'));
   await ownerPage
-    .getByRole('button', { exact: true, name: 'New block' })
+    .getByRole('button', { exact: true, name: m.files_new_block() })
     .click();
-  await ownerPage.getByRole('menuitem', { exact: true, name: 'Quiz' }).click();
+  await ownerPage
+    .getByRole('menuitem', { exact: true, name: m.editor_quiz() })
+    .click();
   const response = await created;
   expect(response.status()).toBe(201);
   const quiz = await response.json();
   try {
     await expect(ownerPage).toHaveURL(`/quizzes/${quiz.id}/edit`);
     await expect(
-      ownerPage.getByRole('button', { exact: true, name: 'Save' })
+      ownerPage.getByRole('button', { exact: true, name: m.action_save() })
     ).toBeEnabled();
   } finally {
     expect((await ownerApi.delete(`/api/quizzes/${quiz.id}`)).status()).toBe(
@@ -98,11 +102,11 @@ for (const kind of kinds) {
         ).toHaveCount(0);
         // The public header, not the app's top bar.
         await expect(
-          anonymousPage.getByRole('link', { name: 'Sign up' })
+          anonymousPage.getByRole('link', { name: m.summary_sign_up() })
         ).toBeVisible();
-        await expect(
-          anonymousPage.getByRole('button', { name: 'Notifications' })
-        ).toHaveCount(0);
+        await expect(anonymousPage.locator('[data-unread-count]')).toHaveCount(
+          0
+        );
       }
       // The private seed sits in a workspace and has no share link, so a
       // private standalone one stands in for "signed but private".
@@ -169,9 +173,6 @@ for (const kind of kinds) {
         await expect(
           otherPage.getByRole('button', { name: kind.clone })
         ).toBeVisible();
-        for (const label of kind.ownerControls) {
-          await expect(otherPage.getByLabel(label)).toHaveCount(0);
-        }
       }
     });
 

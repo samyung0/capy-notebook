@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page, test } from '@playwright/test';
+import { m } from '../i18n';
 
 /**
  * Inner expect budget for a lazy editor/preview mount. Must stay below the
@@ -19,8 +20,9 @@ function mountTimeout(): number {
  * do not block editing; tests of durability must wait specifically for Saved.
  */
 export async function expectEditorLive(page: Page): Promise<void> {
-  await expect(page.getByTestId('editor-save-state')).toHaveText(
-    /^(Synced|Syncing…|Saved)$/,
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    /^(synced|syncing|saved)$/,
     { timeout: mountTimeout() }
   );
 }
@@ -44,7 +46,9 @@ export function allBlocksMenu(page: Page): Locator {
 }
 
 export async function openAllBlocks(page: Page): Promise<Locator> {
-  await page.getByRole('button', { exact: true, name: 'All blocks' }).click();
+  await page
+    .getByRole('button', { exact: true, name: m.editor_all_blocks() })
+    .click();
   const menu = allBlocksMenu(page);
   await menu.waitFor({ state: 'visible' });
   return menu;

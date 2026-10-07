@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import { EDITOR_WORKSPACE_ID } from '../../src/mocks/editorSeed';
+import { m } from '../i18n';
 
 export async function openEditorNote(
   page: Page,
@@ -53,7 +54,7 @@ export async function selectEditorLine(page: Page, line: Locator) {
     .toBe(text);
   await page.mouse.up();
   await expect(
-    page.getByRole('toolbar', { name: 'Selection actions' })
+    page.getByRole('toolbar', { name: m.editor_selection_actions() })
   ).toBeVisible();
 }
 
@@ -70,7 +71,7 @@ export async function hoverBlockHandle(
     .locator('[data-slot="block-wrapper"]')
     .filter({ hasText: blockText })
     .last()
-    .getByRole('button', { exact: true, name: 'Drag block' });
+    .getByRole('button', { exact: true, name: m.editor_drag_block() });
   await expect(handle).toBeVisible();
   return handle;
 }

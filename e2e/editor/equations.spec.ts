@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { MathfieldElement } from 'mathlive';
+import { m } from '../i18n';
 import { openEditorNote } from './helpers';
 
 test('formula menus reopen after outside dismissal and replacing the editor', async ({
@@ -13,10 +14,12 @@ test('formula menus reopen after outside dismissal and replacing the editor', as
     'Editor feature matrix'
   );
   const preview = editor
-    .getByRole('button', { exact: true, name: 'Equation' })
+    .getByRole('button', { exact: true, name: m.editor_equation() })
     .last();
   const field = editor.locator('math-field:not([read-only])');
-  const toggle = editor.getByRole('button', { name: 'Formula menu' });
+  const toggle = editor.getByRole('button', {
+    name: m.question_ui_formula_menu(),
+  });
   for (let round = 0; round < 3; round++) {
     await preview.click();
     await expect(field).toBeVisible();
@@ -61,14 +64,16 @@ test('formula menu inserts matrices and templates, switches modes, and copies an
     'Editor feature matrix'
   );
   await editor
-    .getByRole('button', { exact: true, name: 'Equation' })
+    .getByRole('button', { exact: true, name: m.editor_equation() })
     .last()
     .click();
   const field = editor.locator('math-field:not([read-only])');
   await expect(field).toBeVisible();
   await field.press('ControlOrMeta+A');
   await field.press('Backspace');
-  const toggle = editor.getByRole('button', { name: 'Formula menu' });
+  const toggle = editor.getByRole('button', {
+    name: m.question_ui_formula_menu(),
+  });
   await toggle.click();
   const menu = field.getByRole('menu').first();
   await expect(menu.getByRole('menuitem')).toHaveText([
@@ -92,7 +97,7 @@ test('formula menu inserts matrices and templates, switches modes, and copies an
   expect(matrix.match(/\\placeholder/g)).toHaveLength(6);
   await field.press('Enter');
   const preview = editor
-    .getByRole('button', { exact: true, name: 'Equation' })
+    .getByRole('button', { exact: true, name: m.editor_equation() })
     .last();
   await expect(preview.locator('.ML__base')).toHaveText(/▢.*▢.*▢.*▢.*▢.*▢/);
   await expect(preview.locator('.ML__base')).not.toContainText('\\placeholder');
@@ -148,7 +153,7 @@ test('formula menu inserts matrices and templates, switches modes, and copies an
   await field.press('Enter');
   await expect(field).toHaveCount(0);
   await editor
-    .getByRole('button', { exact: true, name: 'Equation' })
+    .getByRole('button', { exact: true, name: m.editor_equation() })
     .last()
     .click();
   await expect(field).toHaveJSProperty('value', '\\text{ATP}\\to');
@@ -163,7 +168,7 @@ test('text caret stays on the math baseline and physical arrow shortcuts survive
     'Editor feature matrix'
   );
   await editor
-    .getByRole('button', { exact: true, name: 'Equation' })
+    .getByRole('button', { exact: true, name: m.editor_equation() })
     .last()
     .click();
   const field = editor.locator('math-field:not([read-only])');
@@ -214,7 +219,9 @@ test('text caret stays on the math baseline and physical arrow shortcuts survive
   await field.press('Enter');
   await expect(field).toHaveCount(0);
   await expect(
-    editor.getByRole('button', { exact: true, name: 'Equation' }).last()
+    editor
+      .getByRole('button', { exact: true, name: m.editor_equation() })
+      .last()
   ).toContainText('→');
 });
 
@@ -231,7 +238,7 @@ for (const kind of ['block', 'inline'] as const) {
     );
     const buttons = editor.getByRole('button', {
       exact: true,
-      name: 'Equation',
+      name: m.editor_equation(),
     });
     const button = kind === 'block' ? buttons.last() : buttons.first();
     await button.scrollIntoViewIfNeeded();
@@ -245,10 +252,12 @@ for (const kind of ['block', 'inline'] as const) {
     await expect(field).toHaveJSProperty('selectionIsCollapsed', true);
     const original = await field.elementHandle();
     const wrapper = field.locator('..').locator('..');
-    const keyboard = wrapper.getByRole('button', { name: 'Formula keyboard' });
+    const keyboard = wrapper.getByRole('button', {
+      name: m.question_ui_formula_keyboard(),
+    });
     const wrapperBox = await wrapper.boundingBox();
     const menuBox = await wrapper
-      .getByRole('button', { name: 'Formula menu' })
+      .getByRole('button', { name: m.question_ui_formula_menu() })
       .boundingBox();
     expect(
       wrapperBox!.x + wrapperBox!.width - menuBox!.x - menuBox!.width

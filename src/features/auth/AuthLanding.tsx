@@ -367,13 +367,14 @@ function SignUpCard() {
       ? 0
       : Math.max(0, Math.ceil((sentAt + 61_500 - now) / 1000));
   const justSent = sentAt !== null && now - sentAt < 1500;
-  const resendLabel = justSent
-    ? m.auth_code_sent()
-    : remaining > 0
-      ? m.auth_code_resend_cooldown({
-          seconds: String(Math.min(60, remaining)),
-        })
-      : m.auth_code_resend();
+  const resendState = justSent ? 'sent' : remaining > 0 ? 'cooldown' : 'resend';
+  const resendSeconds = Math.min(60, remaining);
+  const resendLabel =
+    resendState === 'sent'
+      ? m.auth_code_sent()
+      : resendState === 'cooldown'
+        ? m.auth_code_resend_cooldown({ seconds: String(resendSeconds) })
+        : m.auth_code_resend();
   const coolingDown = remaining > 0;
   useEffect(() => {
     if (!coolingDown) return;
@@ -471,6 +472,10 @@ function SignUpCard() {
                 BASE_BUTTON_STYLE,
                 'font-semibold text-link hover:text-link-hover disabled:cursor-default disabled:text-fg-muted'
               )}
+              data-resend={resendState}
+              data-seconds={
+                resendState === 'cooldown' ? resendSeconds : undefined
+              }
               disabled={remaining > 0 || resending}
               onClick={async () => {
                 if (
@@ -493,12 +498,7 @@ function SignUpCard() {
               }}
               type="button"
             >
-              <ContentSwap
-                contentKey={
-                  justSent ? 'sent' : remaining > 0 ? 'cooldown' : 'resend'
-                }
-                kind="text-state"
-              >
+              <ContentSwap contentKey={resendState} kind="text-state">
                 {resendLabel}
               </ContentSwap>
             </button>

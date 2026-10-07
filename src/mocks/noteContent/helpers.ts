@@ -6,6 +6,7 @@ import {
   type MaterialText,
   type MaterialValue,
   materialRefNode,
+  type QuestionFigureElement,
   type QuizElement,
   quizNode,
 } from '@/features/materials/document';
@@ -151,6 +152,14 @@ export function youtube(videoId: string) {
     type: 'video' as const,
     videoId,
   };
+}
+
+/** Chart or graph figure block; a graph carries its pre-rendered SVG. */
+export function figure(
+  id: string,
+  block: QuestionFigureElement['block']
+): QuestionFigureElement {
+  return { block, children: [text('')], id, type: block.type };
 }
 
 export function columns(

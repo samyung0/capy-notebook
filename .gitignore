@@ -33,6 +33,7 @@ dist-ssr/
 
 # Paraglide generated output
 src/i18n/paraglide/
+e2e/.paraglide/
 
 # --- Logs ---
 logs/

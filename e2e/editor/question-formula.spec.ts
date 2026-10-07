@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { MathfieldElement } from 'mathlive';
+import { m } from '../i18n';
 import { openEditorNote } from './helpers';
 
 test('block formula preserves its height and dismisses the virtual keyboard', async ({
@@ -11,7 +12,7 @@ test('block formula preserves its height and dismisses the virtual keyboard', as
     'Editor feature matrix'
   );
   const preview = editor
-    .getByRole('button', { exact: true, name: 'Equation' })
+    .getByRole('button', { exact: true, name: m.editor_equation() })
     .last();
   await expect(preview.locator('.ML__base')).toBeVisible();
   await preview
@@ -22,7 +23,7 @@ test('block formula preserves its height and dismisses the virtual keyboard', as
     (element) => element.getBoundingClientRect().height
   );
   await paragraph
-    .getByRole('button', { exact: true, name: 'Equation' })
+    .getByRole('button', { exact: true, name: m.editor_equation() })
     .click();
   const field = paragraph.locator('math-field:not([read-only])');
   await expect(field).toBeVisible();
@@ -30,7 +31,9 @@ test('block formula preserves its height and dismisses the virtual keyboard', as
     (element) => element.getBoundingClientRect().height
   );
   expect(after).toBeLessThanOrEqual(before + 1);
-  const toggle = paragraph.getByRole('button', { name: 'Formula keyboard' });
+  const toggle = paragraph.getByRole('button', {
+    name: m.question_ui_formula_keyboard(),
+  });
   await expect(toggle).toHaveAttribute('data-variant', 'ghost');
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -43,14 +46,14 @@ test('block formula preserves its height and dismisses the virtual keyboard', as
   await expect(field).toBeVisible();
   await toggle.click();
   await page
-    .getByRole('toolbar', { name: 'Document formatting' })
-    .getByRole('button', { exact: true, name: 'Bold' })
+    .getByRole('toolbar', { name: m.editor_doc_formatting() })
+    .getByRole('button', { exact: true, name: m.editor_bold() })
     .click();
   await expect
     .poll(() => page.evaluate(() => window.mathVirtualKeyboard.visible))
     .toBe(false);
   await paragraph
-    .getByRole('button', { exact: true, name: 'Equation' })
+    .getByRole('button', { exact: true, name: m.editor_equation() })
     .click();
   await toggle.click();
   await field.press('ControlOrMeta+A');
@@ -78,22 +81,24 @@ test('question formula accepts physical digits and retains them after commit', a
   ).toBeVisible({ timeout: 30_000 });
   // The MSW User scenarios panel floats over the footer's bottom-right Edit.
   await page
-    .getByRole('button', { exact: true, name: 'Edit question' })
+    .getByRole('button', { exact: true, name: m.question_ui_edit_question() })
     .press('Enter');
   const dialog = page.getByRole('dialog');
   await dialog
     .getByRole('button', { name: /^A rectangle has area/ })
     .and(dialog.locator('button:not([aria-haspopup])'))
     .click();
-  const editor = dialog.getByRole('textbox', { name: 'Text and formulas' });
+  const editor = dialog.getByRole('textbox', {
+    name: m.question_ui_text_and_formulas(),
+  });
   await editor
-    .getByRole('button', { exact: true, name: 'Formula' })
+    .getByRole('button', { exact: true, name: m.question_ui_formula() })
     .first()
     .click();
   const formula = editor.locator('math-field:not([read-only])');
   await expect(formula).toBeVisible();
   await expect(
-    dialog.getByRole('button', { name: 'Formula keyboard' })
+    dialog.getByRole('button', { name: m.question_ui_formula_keyboard() })
   ).toHaveCount(0);
   await formula.press('ControlOrMeta+A');
   await formula.press('5');
@@ -109,7 +114,7 @@ test('question formula accepts physical digits and retains them after commit', a
   const editing = await formula.locator('.ML__base').boundingBox();
   await formula.press('Enter');
   const preview = editor
-    .getByRole('button', { exact: true, name: 'Formula' })
+    .getByRole('button', { exact: true, name: m.question_ui_formula() })
     .first();
   const rendered = preview.locator('math-field');
   await expect(rendered).toHaveJSProperty('readOnly', true);
@@ -123,7 +128,9 @@ test('question formula accepts physical digits and retains them after commit', a
   await expect(formula).toHaveJSProperty('value', tex);
   await formula.press('ControlOrMeta+A');
   await formula.press('5');
-  await dialog.getByRole('button', { name: 'Formula menu' }).click();
+  await dialog
+    .getByRole('button', { name: m.question_ui_formula_menu() })
+    .click();
   await formula.getByRole('menuitem', { exact: true, name: 'Insert' }).hover();
   await formula.getByRole('menuitem', { name: /Absolute Value/ }).click();
   await expect(formula).toHaveJSProperty('value', '5|\\placeholder{}|');
@@ -132,7 +139,7 @@ test('question formula accepts physical digits and retains them after commit', a
   await formula.press('Enter');
   await expect(formula).toHaveCount(0);
   await editor
-    .getByRole('button', { exact: true, name: 'Formula' })
+    .getByRole('button', { exact: true, name: m.question_ui_formula() })
     .first()
     .click();
   await expect(formula).toHaveJSProperty('value', '5');

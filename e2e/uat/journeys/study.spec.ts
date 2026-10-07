@@ -8,6 +8,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
+import { m } from '../../i18n';
 import {
   api,
   fixture,
@@ -155,71 +156,96 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
 
   // The file read from its Files panel row.
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
-  await page.getByRole('button', { exact: true, name: 'Files' }).click();
+  await page
+    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .click();
   const row = page
     .locator('[data-workspace-file-tree]')
     .getByRole('link', { name: /^lesson\.docx/ });
   await row.locator('xpath=..').hover();
   await row
     .locator('xpath=..')
-    .getByRole('button', { name: 'Open menu' })
+    .getByRole('button', { name: m.a11y_open_menu() })
     .click();
   const marked = page.waitForResponse(
     (r) => r.url().endsWith('/study/items') && r.request().method() === 'PUT'
   );
   await page
-    .getByRole('menuitem', { exact: true, name: 'Mark as read' })
+    .getByRole('menuitem', { exact: true, name: m.study_mark_read() })
     .click();
   assert.equal((await marked).status(), 204);
-  await expect(row.getByLabel('Done', { exact: true })).toBeVisible();
+  await expect(
+    row.getByLabel(m.study_state_done(), { exact: true })
+  ).toBeVisible();
 
   // The quiz finished, the set studied to its end.
   await page.goto(`${run.env.appUrl}/quizzes/${finishedQuiz}/attempt`);
-  await page.getByRole('button', { exact: true, name: 'True' }).click();
+  await page
+    .getByRole('button', { exact: true, name: m.question_ui_true() })
+    .click();
   assert.equal(
     await clicked(
       page,
       `/api/quizzes/${finishedQuiz}/attempts`,
-      'Submit answers'
+      m.quiz_submit()
     ),
     201
   );
-  await expect(page.getByRole('button', { name: 'Redo quiz' })).toBeVisible();
+  await expect(page.getByRole('button', { name: m.quiz_redo() })).toBeVisible();
   await page.goto(`${run.env.appUrl}/flashcards/${set}`);
-  await page.getByRole('button', { name: 'Show answer' }).click();
-  assert.equal(await clicked(page, '/api/review/ratings', 'Good'), 204);
+  await page.getByRole('button', { name: m.flashcards_show_answer() }).click();
+  assert.equal(await clicked(page, '/api/review/ratings', m.srs_good()), 204);
   await expect(
-    page.getByRole('heading', { name: 'Done for now' })
+    page.getByRole('heading', { name: m.flashcards_session_done() })
   ).toBeVisible();
 
   // Continue opens the first item that is not done: the quiz not yet taken.
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
-  await page.getByRole('button', { exact: true, name: 'Continue' }).click();
+  await page
+    .getByRole('button', { exact: true, name: m.study_continue() })
+    .click();
   await expect(page).toHaveURL(new RegExp(`[?&]material=${nextQuiz}(&|$)`));
 
   // A review session from the Study tab over the card and the question.
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
-  await page.getByRole('button', { exact: true, name: 'Review' }).click();
+  await page
+    .getByRole('button', { exact: true, name: m.study_review_button() })
+    .click();
   await expect(page).toHaveURL(
     new RegExp(`/learning/review/${workspaceId}\\?from=workspace$`)
   );
-  await expect(page.getByText('2 left')).toBeVisible();
-  const showAnswer = page.getByRole('button', { name: 'Show answer' });
-  const check = page.getByRole('button', { exact: true, name: 'Check' });
+  await expect(page.getByText(m.review_left({ count: 2 }))).toBeVisible();
+  const showAnswer = page.getByRole('button', {
+    name: m.flashcards_show_answer(),
+  });
+  const check = page.getByRole('button', {
+    exact: true,
+    name: m.review_check(),
+  });
   for (let left = 2; left > 0; left--) {
-    await expect(page.getByText(`${left} left`)).toBeVisible();
+    await expect(page.getByText(m.review_left({ count: left }))).toBeVisible();
     await expect(showAnswer.or(check)).toBeVisible();
     if (await showAnswer.isVisible()) {
       await showAnswer.click();
-      assert.equal(await clicked(page, '/api/review/ratings', 'Good'), 204);
+      assert.equal(
+        await clicked(page, '/api/review/ratings', m.srs_good()),
+        204
+      );
       continue;
     }
-    await page.getByRole('button', { exact: true, name: 'True' }).click();
-    assert.equal(await clicked(page, '/api/review/check', 'Check'), 200);
-    await expect(page.getByText('Your answer')).toBeVisible();
-    await page.getByRole('button', { exact: true, name: 'Next' }).click();
+    await page
+      .getByRole('button', { exact: true, name: m.question_ui_true() })
+      .click();
+    assert.equal(
+      await clicked(page, '/api/review/check', m.review_check()),
+      200
+    );
+    await expect(page.getByText(m.question_ui_your_answer())).toBeVisible();
+    await page
+      .getByRole('button', { exact: true, name: m.review_next() })
+      .click();
   }
-  await expect(page.getByText('2 reviewed')).toBeVisible();
+  await expect(page.getByText(m.review_done({ count: 2 }))).toBeVisible();
 
   // The deployed database holds each record.
   const materials = [finishedQuiz, set, nextQuiz];

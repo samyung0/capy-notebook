@@ -63,6 +63,7 @@ export function SaveBanner({
       }
       closeable={!isRecoveryBanner(state)}
       inline
+      kind={state}
       message={MESSAGES[state]()}
       testId="save-banner"
       tone={

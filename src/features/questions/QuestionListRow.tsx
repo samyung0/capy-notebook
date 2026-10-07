@@ -37,6 +37,7 @@ export function QuestionListRow({
         marked && 'grid-cols-[1.5rem_1.5rem_minmax(0,1fr)]',
         current && 'bg-surface-hover-bg'
       )}
+      data-result={marked ? status : undefined}
       onClick={onClick}
       type="button"
     >

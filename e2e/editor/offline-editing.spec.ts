@@ -1,11 +1,10 @@
 import { expect, type Page, test } from '@playwright/test';
+import { m } from '../i18n';
 
 // The scenario note keeps its room and drafts across reloads (MSW stores
 // mock-scenario fixtures for the tab).
 const note = '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit';
 const seed = 'A note for trying application errors.';
-const offlineCopy =
-  "Can't connect to Capy. Your edits are saved on this device and will sync when you reconnect. They may be rejected or lost.";
 // Set to a folder to keep a screenshot of each banner state.
 const shots = process.env.OFFLINE_SCREENSHOTS;
 
@@ -17,8 +16,9 @@ async function openNote(page: Page) {
   await page.goto(note);
   const editor = page.locator('[contenteditable="true"]').first();
   await expect(editor).toContainText(seed, { timeout: 30_000 });
-  await expect(page.getByTestId('editor-save-state')).toHaveText(
-    /Synced|Saved/
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    /^(synced|saved)$/
   );
   return editor;
 }
@@ -75,7 +75,10 @@ test('offline edits outlive a reload and save once the room is back', async ({
   await openNote(page);
   await setOnline(page, false);
   const banner = page.getByTestId('save-banner');
-  await expect(banner).toHaveText(offlineCopy);
+  const offline = page.locator(
+    '[data-testid="save-banner"][data-kind="offline"]'
+  );
+  await expect(offline).toBeVisible();
   // The header's connection status takes the save state's place.
   await expect(
     page.locator('[data-connection-status="offline"]')
@@ -86,23 +89,26 @@ test('offline edits outlive a reload and save once the room is back', async ({
   // The workspace's offline toast goes after its 7 s; the banner stays.
   const toast = page
     .locator('[data-sonner-toast]')
-    .filter({ hasText: 'Changes will resume when you reconnect.' });
+    .filter({ hasText: m.connection_offline_body() });
   await expect(toast).toBeVisible();
   await expect(toast).toHaveCount(0, { timeout: 9000 });
-  await expect(banner).toHaveText(offlineCopy);
+  await expect(offline).toBeVisible();
 
   // Back online while the service stays unreachable, then reload: the
   // edits come back from this device, not from the room.
   await setReachable(page, false);
   await setOnline(page, true);
   await page.reload();
-  await expect(page.getByText('Connecting…').first()).toBeVisible({
+  await expect(page.getByText(m.editor_connecting()).first()).toBeVisible({
     timeout: 30_000,
   });
   await setReachable(page, true);
   const editor = page.locator('[contenteditable="true"]').first();
   await expect(editor).toContainText('Written offline.', { timeout: 30_000 });
-  await expect(page.getByTestId('editor-save-state')).toHaveText('Saved');
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'saved'
+  );
   await expect(banner).toHaveCount(0);
   // The receipt deleted what it covered.
   await expect.poll(() => storedDrafts(page)).toBe(0);
@@ -136,14 +142,16 @@ test('edits from a room that moved on open read-only for copying until Reload', 
     await setOnline(page, true);
   };
   const shown = async (text: string) => {
-    await expect(banner).toContainText(
-      'This file changed while your edits were waiting to sync. Copy anything you need, then reload.',
-      { timeout: 30_000 }
-    );
+    await expect(banner).toHaveAttribute('data-kind', 'changed', {
+      timeout: 30_000,
+    });
     await expect(recovery).toContainText(text);
     await expect(recovery.locator('[contenteditable="true"]')).toHaveCount(0);
     // Reload is the only way out.
-    await expect(banner.getByRole('button')).toHaveText(['Reload']);
+    await expect(banner.getByRole('button')).toHaveCount(1);
+    await expect(
+      banner.getByRole('button', { name: m.error_action_reload() })
+    ).toBeVisible();
   };
 
   // Reload straight from recovery opens the live note with no stale offline
@@ -161,7 +169,7 @@ test('edits from a room that moved on open read-only for copying until Reload', 
         reason: 'reopen',
       })
     );
-  await banner.getByRole('button', { name: 'Reload' }).click();
+  await banner.getByRole('button', { name: m.error_action_reload() }).click();
   await expect(editor).toContainText(seed, { timeout: 30_000 });
   await expect(editor).not.toContainText('Copied first.');
   await expect(banner).toHaveCount(0);
@@ -177,7 +185,7 @@ test('edits from a room that moved on open read-only for copying until Reload', 
   await shot(page, 'recovery-dark');
   await page.evaluate(() => localStorage.setItem('capy.theme', 'latte'));
 
-  await banner.getByRole('button', { name: 'Reload' }).click();
+  await banner.getByRole('button', { name: m.error_action_reload() }).click();
   await expect(editor).toContainText(seed, { timeout: 30_000 });
   await expect(editor).not.toContainText('Kept for copying.');
   await expect(banner).toHaveCount(0);

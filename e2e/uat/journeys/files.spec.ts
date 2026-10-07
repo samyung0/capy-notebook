@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { read as readWorkbook } from 'xlsx';
+import { m } from '../../i18n';
 import {
   api,
   fact,
@@ -166,14 +167,14 @@ test('text: browser edit automatically publishes durable UTF-8 source', async ({
   await openFile(run, run.owner, workspaceId, fileId, 'edit');
   const edited = `${fact}\nThe launch code is CEDAR-42.\n${marker}\n`;
   const editor = run.owner.page.getByRole('textbox', {
-    name: 'Edit source text',
+    name: m.source_edit_raw(),
   });
   await whenReady(run, run.owner, 'text-editor', () =>
     expect(editor).toBeVisible({ timeout: 30_000 })
   );
   await editor.fill(edited);
   await run.owner.page
-    .getByRole('button', { exact: true, name: 'Save' })
+    .getByRole('button', { exact: true, name: m.action_save() })
     .click();
   const saved = await savedFacts(run, fileId, ['CEDAR-42', marker]);
   assert.equal(saved.text, edited);

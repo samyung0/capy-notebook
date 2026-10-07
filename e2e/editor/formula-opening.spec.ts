@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { MathfieldElement } from 'mathlive';
+import { m } from '../i18n';
 import { openEditorNote } from './helpers';
 
 test('inline editing overlays its control without moving a formula near the line end', async ({
@@ -11,7 +12,7 @@ test('inline editing overlays its control without moving a formula near the line
     'Editor feature matrix'
   );
   const preview = editor
-    .getByRole('button', { exact: true, name: 'Equation' })
+    .getByRole('button', { exact: true, name: m.editor_equation() })
     .first();
   await expect(preview.locator('.ML__base')).toBeVisible();
   await preview.scrollIntoViewIfNeeded();
@@ -60,7 +61,9 @@ test('inline editing overlays its control without moving a formula near the line
     }
   }
   expect(after.height).toBe(before.height);
-  const menu = editor.getByRole('button', { name: 'Formula menu' });
+  const menu = editor.getByRole('button', {
+    name: m.question_ui_formula_menu(),
+  });
   await menu.click();
   await expect(
     field.getByRole('menuitem', { exact: true, name: 'Insert' })
@@ -76,7 +79,7 @@ test('a wrapped inline formula stays painted when opening and finishing editing'
     'Editor feature matrix'
   );
   const preview = editor
-    .getByRole('button', { exact: true, name: 'Equation' })
+    .getByRole('button', { exact: true, name: m.editor_equation() })
     .first();
   await preview.click();
   const field = editor.locator('math-field:not([read-only])');

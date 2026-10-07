@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
+import './e2e/i18n/compile';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 

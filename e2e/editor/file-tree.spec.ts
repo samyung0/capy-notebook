@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page, test } from '@playwright/test';
 import { EDITOR_NOTE, EDITOR_WORKSPACE_ID } from '../../src/mocks/editorSeed';
+import { m } from '../i18n';
 import { editorApi, openEditorNote } from './helpers';
 
 // Use real pointer drags: synthetic DragEvents miss the editor backend
@@ -24,7 +25,9 @@ async function dragOver(
 test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ height: 1100, width: 1440 });
   await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.firstParagraph);
-  await page.getByRole('button', { exact: true, name: 'Files' }).click();
+  await page
+    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .click();
 });
 
 test('floating add menu shares the header actions and dismisses without click-through', async ({
@@ -33,11 +36,11 @@ test('floating add menu shares the header actions and dismisses without click-th
   const tree = page.locator('[data-workspace-file-tree]');
   const trigger = page
     .locator('[data-workspace-add-menu]')
-    .getByRole('button', { name: 'Add file' });
+    .getByRole('button', { name: m.action_add_file() });
   const menu = page.getByRole('menu');
   await tree
     .locator('..')
-    .getByRole('button', { exact: true, name: 'Add file' })
+    .getByRole('button', { exact: true, name: m.action_add_file() })
     .first()
     .click();
   const headerItems = await menu.getByRole('menuitem').allTextContents();
@@ -63,10 +66,14 @@ test('floating add menu shares the header actions and dismisses without click-th
   await trigger.click();
   await expect(menu).toBeVisible();
   await menu
-    .getByRole('menuitem', { exact: true, name: 'Add chapter' })
+    .getByRole('menuitem', { exact: true, name: m.action_add_chapter() })
     .click();
-  await expect(page.getByRole('dialog', { name: 'New chapter' })).toBeVisible();
-  await page.getByRole('button', { exact: true, name: 'Cancel' }).click();
+  await expect(
+    page.getByRole('dialog', { name: m.chapter_new() })
+  ).toBeVisible();
+  await page
+    .getByRole('button', { exact: true, name: m.action_cancel() })
+    .click();
 
   await trigger.press('Enter');
   await expect(menu).toBeVisible();
@@ -163,7 +170,7 @@ test('chapters reorder in both directions while a note editor is open', async ({
   const tree = page.locator('[data-workspace-file-tree]');
   const chapters = tree.locator('[data-workspace-chapter]');
   await page
-    .getByRole('button', { exact: true, name: 'Collapse all chapters' })
+    .getByRole('button', { exact: true, name: m.workspace_collapse_chapters() })
     .click();
   const first = tree.locator('[data-workspace-chapter="ch_1"]');
   const last = tree.locator('[data-workspace-chapter="ch_3"]');
@@ -208,7 +215,10 @@ test('tree drags hide row actions until Escape cancels them', async ({
     await dragOver(page, source, destination, { x: 45, y: 12 });
     await expect(panel).toHaveAttribute('data-dragging', 'true');
     await expect(
-      source.getByRole('button', { includeHidden: true, name: 'Open menu' })
+      source.getByRole('button', {
+        includeHidden: true,
+        name: m.a11y_open_menu(),
+      })
     ).toBeHidden();
     if (selector.includes('content-row'))
       await expect(destination).toHaveClass(/bg-tint-accent-1/);
@@ -219,7 +229,7 @@ test('tree drags hide row actions until Escape cancels them', async ({
     await expect(panel).not.toHaveAttribute('data-dragging');
     await source.hover({ position: { x: 45, y: 12 } });
     await expect(
-      source.getByRole('button', { name: 'Open menu' })
+      source.getByRole('button', { name: m.a11y_open_menu() })
     ).toBeVisible();
   }
 });

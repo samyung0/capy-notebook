@@ -1,32 +1,43 @@
 import { expect, test } from '@playwright/test';
+import { m } from '../i18n';
 
 test('workspace creation and editing share icon and description fields', async ({
   page,
 }) => {
   await page.goto('/workspaces');
   await page
-    .getByRole('button', { exact: true, name: 'New workspace' })
+    .getByRole('button', { exact: true, name: m.action_new_workspace() })
     .click();
   const create = page.getByRole('dialog', {
     exact: true,
-    name: 'Create one',
+    name: m.workspace_create_title(),
   });
-  await expect(create.getByPlaceholder('Workspace name')).toBeFocused();
-  await create.getByPlaceholder('Workspace name').fill('Metadata workspace');
+  await expect(
+    create.getByPlaceholder(m.workspace_name_placeholder())
+  ).toBeFocused();
   await create
-    .getByRole('textbox', { exact: true, name: 'Description' })
+    .getByPlaceholder(m.workspace_name_placeholder())
+    .fill('Metadata workspace');
+  await create
+    .getByRole('textbox', { exact: true, name: m.summary_description_label() })
     .fill('Study with a chosen icon');
   await expect(
-    create.getByRole('textbox', { exact: true, name: 'Description' })
+    create.getByRole('textbox', {
+      exact: true,
+      name: m.summary_description_label(),
+    })
   ).toHaveAttribute('maxlength', '500');
   await create
-    .getByRole('button', { exact: true, name: 'Choose icon' })
+    .getByRole('button', { exact: true, name: m.icon_choose() })
     .click();
-  const picker = page.getByRole('dialog', { exact: true, name: 'Choose icon' });
+  const picker = page.getByRole('dialog', {
+    exact: true,
+    name: m.icon_choose(),
+  });
   // The section link also shows the icon count.
   await picker.getByRole('button', { name: /^Waves/ }).click();
   await picker.getByRole('button', { exact: true, name: 'waves-03' }).click();
-  await picker.getByRole('button', { exact: true, name: 'Use icon' }).click();
+  await picker.getByRole('button', { exact: true, name: m.icon_use() }).click();
   await expect(create.locator('img').first()).toHaveAttribute(
     'src',
     '/icons/waves-03.svg'
@@ -35,33 +46,43 @@ test('workspace creation and editing share icon and description fields', async (
   await page.screenshot({
     path: test.info().outputPath('workspace-create-mobile.png'),
   });
-  await create.getByRole('button', { exact: true, name: 'Create' }).click();
+  await create
+    .getByRole('button', { exact: true, name: m.action_create() })
+    .click();
   await expect(create).toHaveCount(0);
   const card = page
     .getByRole('link', { name: /Metadata workspace/ })
     .locator('..');
-  await card.getByRole('button', { name: 'Open menu' }).click();
-  await page.getByRole('menuitem', { name: 'Workspace settings' }).click();
+  await card.getByRole('button', { name: m.a11y_open_menu() }).click();
+  await page.getByRole('menuitem', { name: m.workspace_settings() }).click();
   const edit = page.getByRole('dialog', {
     exact: true,
-    name: 'Workspace settings',
+    name: m.workspace_settings(),
   });
   await expect(
-    edit.getByRole('textbox', { exact: true, name: 'Description' })
+    edit.getByRole('textbox', {
+      exact: true,
+      name: m.summary_description_label(),
+    })
   ).toHaveValue('Study with a chosen icon');
   await expect(edit.locator('img').first()).toHaveAttribute(
     'src',
     '/icons/waves-03.svg'
   );
   await edit
-    .getByRole('textbox', { exact: true, name: 'Description' })
+    .getByRole('textbox', { exact: true, name: m.summary_description_label() })
     .fill('Updated study description');
-  await edit.getByRole('button', { exact: true, name: 'Save' }).click();
+  await edit
+    .getByRole('button', { exact: true, name: m.action_save() })
+    .click();
   await expect(edit).toHaveCount(0);
-  await card.getByRole('button', { name: 'Open menu' }).click();
-  await page.getByRole('menuitem', { name: 'Workspace settings' }).click();
+  await card.getByRole('button', { name: m.a11y_open_menu() }).click();
+  await page.getByRole('menuitem', { name: m.workspace_settings() }).click();
   await expect(
-    edit.getByRole('textbox', { exact: true, name: 'Description' })
+    edit.getByRole('textbox', {
+      exact: true,
+      name: m.summary_description_label(),
+    })
   ).toHaveValue('Updated study description');
 });
 
@@ -69,25 +90,29 @@ test('signup resend has a cooldown and a failed resend remains retryable', async
   page,
 }) => {
   await page.goto('/sign-up');
-  await page.getByLabel('Email', { exact: true }).fill('student@example.com');
-  await page.getByLabel(/Password$/).fill('BiologyStudy!123');
   await page
-    .getByRole('button', { exact: true, name: 'Create account' })
+    .getByLabel(m.auth_email(), { exact: true })
+    .fill('student@example.com');
+  await page.getByLabel(m.auth_password()).fill('BiologyStudy!123');
+  await page
+    .getByRole('button', { exact: true, name: m.auth_signup_submit() })
     .click();
   await expect(
-    page.getByRole('heading', { name: 'Check your inbox' })
+    page.getByRole('heading', { name: m.auth_code_title() })
   ).toBeVisible();
-  const resend = page.getByRole('button', { name: /Code sent|Resend code/ });
+  const resend = page.locator('button[data-resend]');
+  await expect(resend).toHaveAttribute('data-resend', /^(sent|cooldown)$/);
   await expect(resend).toBeDisabled();
   await page.clock.install();
   await page.clock.fastForward(62_000);
-  await expect(resend).toHaveAccessibleName('Resend code');
+  await expect(resend).toHaveAttribute('data-resend', 'resend');
   await expect(resend).toBeEnabled();
   await resend.click();
-  await expect(resend).toHaveAccessibleName('Code sent');
+  await expect(resend).toHaveAttribute('data-resend', 'sent');
   await expect(resend).toBeDisabled();
   await page.clock.runFor(1600);
-  await expect(resend).toHaveAccessibleName('Resend code (60s)');
+  await expect(resend).toHaveAttribute('data-resend', 'cooldown');
+  await expect(resend).toHaveAttribute('data-seconds', '60');
   await page.clock.fastForward(60_000);
   await expect(resend).toBeEnabled();
 
@@ -103,7 +128,7 @@ test('signup resend has a cooldown and a failed resend remains retryable', async
     'Unable to send a verification code'
   );
   await expect(resend).toBeEnabled();
-  await expect(resend).toHaveAccessibleName('Resend code');
+  await expect(resend).toHaveAttribute('data-resend', 'resend');
 });
 
 test('workspace cards open settings and statistics without entering the workspace', async ({
@@ -111,20 +136,24 @@ test('workspace cards open settings and statistics without entering the workspac
 }) => {
   await page.goto('/workspaces');
   const card = page.getByRole('link', { name: /Biology 101/ }).locator('..');
-  await card.getByRole('button', { name: 'Open menu' }).click();
-  await page.getByRole('menuitem', { name: 'Workspace settings' }).click();
-  const settings = page.getByRole('dialog', { name: 'Workspace settings' });
+  await card.getByRole('button', { name: m.a11y_open_menu() }).click();
+  await page.getByRole('menuitem', { name: m.workspace_settings() }).click();
+  const settings = page.getByRole('dialog', { name: m.workspace_settings() });
   await expect(settings).toBeVisible();
   await expect(page).toHaveURL(/\/workspaces$/);
   await settings
-    .getByRole('button', { exact: true, name: 'Statistics' })
+    .getByRole('button', { exact: true, name: m.workspace_stats_title() })
     .click();
   await expect(
-    settings.getByText('Average score', { exact: true })
+    settings.getByText(m.stats_average_score(), { exact: true })
   ).toBeVisible();
   await expect(settings.locator('.tabular-nums')).toHaveCount(5);
-  await settings.getByRole('button', { exact: true, name: 'General' }).click();
-  await expect(settings.getByText('Color', { exact: true })).toHaveCount(0);
+  await settings
+    .getByRole('button', { exact: true, name: m.workspace_general() })
+    .click();
+  await expect(
+    settings.getByText(m.common_color(), { exact: true })
+  ).toHaveCount(0);
 });
 
 test('Biology file fixtures reach the shared PDF error and empty preview', async ({
@@ -132,20 +161,20 @@ test('Biology file fixtures reach the shared PDF error and empty preview', async
 }) => {
   await page.goto('/workspaces/ws_bio?file=mock-preview-pdf');
   await expect(
-    page.getByRole('alert').getByText('Something went wrong', { exact: true })
+    page.getByRole('alert').getByText(m.error_file_title(), { exact: true })
   ).toBeVisible({ timeout: 30_000 });
   await expect(
-    page.getByRole('button', { exact: true, name: 'Retry' })
+    page.getByRole('button', { exact: true, name: m.error_action_retry() })
   ).toBeVisible();
   await expect(
-    page.getByText('Private annotations could not be loaded.', { exact: true })
+    page.getByText(m.pdf_annotations_failed(), { exact: true })
   ).toHaveCount(0);
   // A second full workspace load, with the same allowance as the first.
   await page.goto('/workspaces/ws_bio?file=mock-preview-empty');
   await expect(
     page
       .getByRole('alert')
-      .getByText("This file can't be previewed", { exact: true })
+      .getByText(m.error_file_empty_title(), { exact: true })
   ).toBeVisible({ timeout: 30_000 });
 });
 
@@ -154,11 +183,11 @@ test('invitations are standalone and transfer previews open only one dialog', as
 }) => {
   await page.goto('/workspace-invites/mock-token');
   await expect(
-    page.getByRole('heading', { exact: true, name: 'Workspace invitation' })
+    page.getByRole('heading', { exact: true, name: m.invite_title() })
   ).toBeVisible();
   await expect(page.locator('main')).toHaveCount(1);
   await expect(
-    page.getByRole('link', { exact: true, name: 'Workspaces' })
+    page.getByRole('link', { exact: true, name: m.nav_workspaces() })
   ).toHaveCount(0);
   await page.getByText('User scenarios', { exact: true }).click();
   await page
@@ -166,10 +195,12 @@ test('invitations are standalone and transfer previews open only one dialog', as
     .click();
   await expect(page.getByRole('dialog')).toHaveCount(1);
   const transfer = page.getByRole('dialog', {
-    name: 'Transfer workspace ownership?',
+    name: m.workspace_transfer_title(),
   });
   await expect(transfer).toBeVisible();
-  await transfer.getByRole('button', { exact: true, name: 'Cancel' }).click();
+  await transfer
+    .getByRole('button', { exact: true, name: m.action_cancel() })
+    .click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
@@ -177,27 +208,38 @@ test('workspace sorting shows direction and stays open while reversing order', a
   page,
 }) => {
   await page.goto('/workspaces');
-  const trigger = page.getByRole('button', { name: /^Sort:/ });
-  await expect(trigger).toContainText('Newest first', { timeout: 30_000 });
+  const trigger = page.locator('button[data-sort]');
+  await expect(trigger).toHaveAttribute('data-sort', 'created', {
+    timeout: 30_000,
+  });
+  await expect(trigger).toHaveAttribute('data-order', 'descending');
   const cards = page.locator('a[href^="/workspaces/"]');
   await expect(cards.first()).toBeVisible();
   await trigger.click();
   const menu = page.getByRole('menu');
+  const byTime = [
+    m.workspaces_sort_newest_first(),
+    m.workspaces_sort_oldest_first(),
+  ];
+  const byCount = [
+    m.workspaces_sort_most_first(),
+    m.workspaces_sort_fewest_first(),
+  ];
   // Created is the default (2026-09-21), so it needs no click first.
-  for (const [label, descending, ascending] of [
-    ['Created', 'Newest first', 'Oldest first'],
-    ['Last accessed', 'Newest first', 'Oldest first'],
-    ['Chapters', 'Most first', 'Fewest first'],
-    ['Files', 'Most first', 'Fewest first'],
-  ]) {
-    if (label !== 'Created') {
+  for (const [sort, label, [descending, ascending]] of [
+    ['created', m.workspaces_sort_created(), byTime],
+    ['accessed', m.workspaces_sort_accessed(), byTime],
+    ['chapters', m.workspaces_sort_chapters(), byCount],
+    ['files', m.workspaces_sort_files(), byCount],
+  ] as const) {
+    if (sort !== 'created') {
       await menu
         .getByRole('menuitem', { name: `${label} ${descending}` })
         .click();
     }
     await expect(menu).toBeVisible();
-    await expect(trigger).toContainText(`${label}`);
-    await expect(trigger).toContainText(descending);
+    await expect(trigger).toHaveAttribute('data-sort', sort);
+    await expect(trigger).toHaveAttribute('data-order', 'descending');
     await expect(cards.first()).toBeVisible();
     const original = await cards.evaluateAll((links) =>
       links.map((link) => link.getAttribute('href'))
@@ -207,7 +249,7 @@ test('workspace sorting shows direction and stays open while reversing order', a
       .getByRole('menuitem', { name: `${label} ${descending}` })
       .click();
     await expect(menu).toBeVisible();
-    await expect(trigger).toContainText(ascending);
+    await expect(trigger).toHaveAttribute('data-order', 'ascending');
     await expect
       .poll(() =>
         cards.evaluateAll((links) =>
@@ -221,7 +263,7 @@ test('workspace sorting shows direction and stays open while reversing order', a
     await selected.focus();
     await page.keyboard.press('Enter');
     await expect(menu).toBeVisible();
-    await expect(trigger).toContainText(descending);
+    await expect(trigger).toHaveAttribute('data-order', 'descending');
     await expect
       .poll(() =>
         cards.evaluateAll((links) =>

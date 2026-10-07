@@ -107,6 +107,8 @@ export function ListToolbar<V extends string>({
               trigger={
                 <Button
                   className="flex h-fit flex-row items-start px-1 py-1.5"
+                  data-order={ascending ? 'ascending' : 'descending'}
+                  data-sort={current.value}
                   iconRight="chevronDown"
                   size="md"
                   variant="ghost"

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
+import '../../i18n/compile';
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 // Set once before workers start; manifests stay outside Playwright's cleared output.

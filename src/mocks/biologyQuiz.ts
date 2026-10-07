@@ -5,7 +5,7 @@ import type {
 } from '@/features/questions/types';
 import surfaceAreaSvg from './fixtures/biology-surface-area.svg?raw';
 
-const surfaceAreaGraph: GraphBlock = {
+export const surfaceAreaGraph: GraphBlock = {
   board: { axis: true, bbox: [-0.8, 7.5, 7, -1.5], grid: true },
   description:
     'Surface-area-to-volume ratio, y = 6/x, for a cube-shaped cell. A is (1, 6), B is (2, 3), and C is (3, 2).',

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { m } from '../i18n';
 
 // The mock "Area practice" topic has 34 questions, loaded 10 at a time.
 test('bank jumps to an unloaded question and restores earlier ones in place', async ({
@@ -19,7 +20,7 @@ test('bank jumps to an unloaded question and restores earlier ones in place', as
   await expect(question(11)).toHaveCount(0);
 
   await page
-    .getByRole('navigation', { name: 'Questions' })
+    .getByRole('navigation', { name: m.question_ui_questions() })
     .getByRole('button', { name: /^30\./ })
     .click();
   // Question 30's page and the next load in one request.
@@ -40,7 +41,9 @@ test('bank jumps to an unloaded question and restores earlier ones in place', as
     )
     .toBe(24);
 
-  const earlier = page.getByRole('button', { name: 'Show questions 11–20' });
+  const earlier = page.getByRole('button', {
+    name: m.question_ui_show_questions({ from: 11, to: 20 }),
+  });
   await earlier.scrollIntoViewIfNeeded();
   const before = (await question(21).boundingBox())?.y ?? 0;
   await earlier.click();

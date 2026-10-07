@@ -43,7 +43,9 @@ export default function TextView({
   }, [url]);
 
   if (error) {
-    return <FileError onRetry={onRetry} title={m.files_text_failed()} />;
+    return (
+      <FileError kind="text" onRetry={onRetry} title={m.files_text_failed()} />
+    );
   }
   if (text == null) {
     return <Skeleton className="h-[60vh] w-full" />;

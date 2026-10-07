@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { expect, type FrameLocator, type Page } from '@playwright/test';
 import { strFromU8, unzipSync } from 'fflate';
 import * as Y from 'yjs';
+import { m } from '../../i18n';
 import { sanitize } from './evidence';
 import {
   api,
@@ -18,7 +19,7 @@ import type { Actor, UatRun } from './runtime';
 /** File › Save in the Office file header (the Save button is gone). */
 export async function saveOffice(page: Page) {
   await page
-    .getByRole('menubar', { name: 'Menu bar' })
+    .getByRole('menubar', { name: m.files_office_menu_bar() })
     .getByRole('menuitem', { exact: true, name: 'File' })
     .click();
   await page.getByRole('menuitem', { name: /^Save/ }).click();
@@ -199,9 +200,9 @@ export async function officeCharge(
 
 /** Waits for the edit header's durable save status. */
 export async function saved(page: Page) {
-  await expect(
-    page.getByRole('status').filter({ hasText: /^Saved$/ })
-  ).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('[data-save-state="saved"]')).toBeVisible({
+    timeout: 60_000,
+  });
 }
 
 /**
@@ -236,9 +237,7 @@ export async function publishWhileEditing(
   assert.equal(row.epoch, before.epoch);
   // A reload banner would follow the publication at once; none comes.
   await page.waitForTimeout(5000);
-  await expect(
-    page.getByText('A newer version of this file is available.')
-  ).toHaveCount(0);
+  await expect(page.getByText(m.source_edit_replaced())).toHaveCount(0);
   await saved(page);
   assert(await mounted.evaluate((node) => node.isConnected));
   assert(await runtime.evaluate(() => 'uatMounted' in window));
@@ -301,7 +300,7 @@ export async function openEditor(
   // The editor's Edit menu arrives once the replica is ready; large workbooks
   // take longer than the action timeout to open.
   const edit = actor.page
-    .getByRole('menubar', { name: 'Menu bar' })
+    .getByRole('menubar', { name: m.files_office_menu_bar() })
     .getByRole('menuitem', { exact: true, name: 'Edit' });
   await whenReady(run, actor, 'office-editor', () =>
     expect(edit).toBeVisible({ timeout: 120_000 })

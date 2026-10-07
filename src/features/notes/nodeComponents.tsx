@@ -168,6 +168,7 @@ function BlockStyleMenu({
         <Button
           aria-label={label}
           className="h-7 w-auto rounded-lg px-2 py-0 font-medium text-xs"
+          data-block-style={value}
           data-plate-prevent-deselect
           size="sm"
           variant="ghost-muted"

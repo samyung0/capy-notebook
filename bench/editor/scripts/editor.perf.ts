@@ -143,9 +143,13 @@ const saveState = (page: Page) => page.getByTestId('editor-save-state');
 /** The editor is live while Synced, Syncing or Saved; pending checkpoints
  * must not add persistence latency to the interactive-open measurement. */
 async function expectLive(page: Page): Promise<void> {
-  await expect(saveState(page)).toHaveText(/^(Synced|Syncing…|Saved)$/, {
-    timeout: 120_000,
-  });
+  await expect(saveState(page)).toHaveAttribute(
+    'data-save-state',
+    /^(synced|syncing|saved)$/,
+    {
+      timeout: 120_000,
+    }
+  );
 }
 
 interface OpenResult {
@@ -214,7 +218,9 @@ async function openNote(
  * inside the measured typing window. */
 async function warmUpTyping(page: Page): Promise<void> {
   await page.keyboard.type(' warm up words first', { delay: KEY_DELAY_MS });
-  await expect(saveState(page)).toHaveText('Saved', { timeout: 120_000 });
+  await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved', {
+    timeout: 120_000,
+  });
   // The acknowledgement also triggers a projection refetch (~1s of mock
   // latency) whose response re-renders the editor.
   await page.waitForTimeout(4000);
@@ -346,7 +352,9 @@ test.describe('editor performance', () => {
     // the main thread. This number is therefore an upper bound that includes
     // work a real deployment does server-side.
     await resetMetrics(page);
-    await expect(saveState(page)).toHaveText('Saved', { timeout: 120_000 });
+    await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved', {
+      timeout: 120_000,
+    });
     await page.waitForTimeout(5000);
     const saveCycle = blockingStats(await collectMetrics(page));
 

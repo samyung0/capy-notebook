@@ -3,6 +3,7 @@ import type { APIRequestContext, Page } from '@playwright/test';
 import type { Chapter, SourceFile, StudySummary } from '../../src/api/types';
 import { expect, test } from '../fixtures/actors';
 import { apiEndsWith, waitForApi } from '../helpers/api';
+import { m } from '../i18n';
 
 // Study progress is per user, so each test either works in its own workspace
 // or acts as a user no other spec records progress for.
@@ -123,7 +124,7 @@ function stateOf(study: StudySummary, id: string) {
 }
 
 /** Clicks a rating tile and waits for the rating it posts. */
-async function rate(page: Page, rating: 'Again' | 'Hard' | 'Good' | 'Easy') {
+async function rate(page: Page, rating: string) {
   const rated = waitForApi(page, apiEndsWith('/api/review/ratings', 'POST'));
   await page.getByRole('button', { exact: true, name: rating }).click();
   expect((await rated).status()).toBe(204);
@@ -136,7 +137,7 @@ async function openRowMenu(page: Page, name: string) {
     .getByRole('link', { name })
     .locator('xpath=..');
   await row.hover();
-  await row.getByRole('button', { name: 'Open menu' }).click();
+  await row.getByRole('button', { name: m.a11y_open_menu() }).click();
 }
 
 test.describe('study progress', () => {
@@ -159,10 +160,10 @@ test.describe('study progress', () => {
     const doneMark = editorPage
       .locator('[data-workspace-file-tree]')
       .getByRole('link', { name: fileName })
-      .getByLabel('Done', { exact: true });
+      .getByLabel(m.study_state_done(), { exact: true });
     const filesTab = editorPage.getByRole('button', {
       exact: true,
-      name: 'Files',
+      name: m.workspace_tab_files(),
     });
     try {
       await editorPage.goto(`/workspaces/${workspaceId}`);
@@ -180,7 +181,7 @@ test.describe('study progress', () => {
       );
       await openRowMenu(editorPage, fileName);
       await editorPage
-        .getByRole('menuitem', { exact: true, name: 'Mark as read' })
+        .getByRole('menuitem', { exact: true, name: m.study_mark_read() })
         .click();
       const response = await marked;
       expect(response.status()).toBe(204);
@@ -197,7 +198,7 @@ test.describe('study progress', () => {
 
       await openRowMenu(editorPage, fileName);
       await editorPage
-        .getByRole('menuitem', { exact: true, name: 'Mark as unread' })
+        .getByRole('menuitem', { exact: true, name: m.study_mark_unread() })
         .click();
       await expect(doneMark).toHaveCount(0);
 
@@ -214,10 +215,10 @@ test.describe('study progress', () => {
         editorPage,
         apiEndsWith(`/api/workspaces/${workspaceId}/study/items`, 'PUT')
       );
-      await header.getByRole('button', { name: 'Mark as read' }).click();
+      await header.getByRole('button', { name: m.study_mark_read() }).click();
       expect((await put).status()).toBe(204);
       await expect(
-        header.getByRole('button', { name: 'Mark as unread' })
+        header.getByRole('button', { name: m.study_mark_unread() })
       ).toBeVisible();
       await expect(doneMark).toBeVisible();
       expect(stateOf(await readStudy(editorApi, workspaceId), file.id)).toBe(
@@ -227,10 +228,10 @@ test.describe('study progress', () => {
         editorPage,
         apiEndsWith(`/api/workspaces/${workspaceId}/study/items`, 'PUT')
       );
-      await header.getByRole('button', { name: 'Mark as unread' }).click();
+      await header.getByRole('button', { name: m.study_mark_unread() }).click();
       expect((await put).status()).toBe(204);
       await expect(
-        header.getByRole('button', { name: 'Mark as read' })
+        header.getByRole('button', { name: m.study_mark_read() })
       ).toBeVisible();
       await expect(doneMark).toHaveCount(0);
       expect(
@@ -274,7 +275,7 @@ test.describe('study progress', () => {
     // titles, so match inside that row only.
     const continueButton = ownerPage.getByRole('button', {
       exact: true,
-      name: 'Continue',
+      name: m.study_continue(),
     });
     const upNext = continueButton.locator('xpath=..');
     await expect(upNext.getByText(next.title, { exact: true })).toBeVisible();
@@ -287,10 +288,10 @@ test.describe('study progress', () => {
     ).toBeVisible();
 
     // Reading it moves Continue on to the item after it.
-    await ownerPage.getByRole('button', { name: 'Mark as read' }).click();
+    await ownerPage.getByRole('button', { name: m.study_mark_read() }).click();
     await expect(upNext.getByText(later.title, { exact: true })).toBeVisible();
     await expect(
-      ownerPage.getByRole('button', { name: 'Mark as unread' })
+      ownerPage.getByRole('button', { name: m.study_mark_unread() })
     ).toBeVisible();
   });
 
@@ -334,53 +335,64 @@ test.describe('study progress', () => {
     // A quiz answered in part and left: nothing reaches the server.
     await ownerPage.goto(`/quizzes/${startedQuiz.id}/attempt`);
     await ownerPage
-      .getByRole('button', { exact: true, name: 'True' })
+      .getByRole('button', { exact: true, name: m.question_ui_true() })
       .first()
       .click();
-    await expect(ownerPage.getByText('1 of 2 answered')).toBeVisible();
+    await expect(
+      ownerPage.getByText(m.quiz_answered_count({ answered: 1, total: 2 }))
+    ).toBeVisible();
     // Another submitted: one right, one wrong.
     await ownerPage.goto(`/quizzes/${finishedQuiz.id}/attempt`);
     const trueButtons = ownerPage.getByRole('button', {
       exact: true,
-      name: 'True',
+      name: m.question_ui_true(),
     });
     await trueButtons.nth(0).click();
     await trueButtons.nth(1).click();
-    await expect(ownerPage.getByText('2 of 2 answered')).toBeVisible();
+    await expect(
+      ownerPage.getByText(m.quiz_answered_count({ answered: 2, total: 2 }))
+    ).toBeVisible();
     const submitted = waitForApi(
       ownerPage,
       apiEndsWith(`/api/quizzes/${finishedQuiz.id}/attempts`, 'POST')
     );
     await ownerPage
-      .getByRole('button', { exact: true, name: 'Submit answers' })
+      .getByRole('button', { exact: true, name: m.quiz_submit() })
       .click();
     expect((await submitted).status()).toBe(201);
     await expect(
-      ownerPage.getByRole('button', { name: 'Redo quiz' })
+      ownerPage.getByRole('button', { name: m.quiz_redo() })
     ).toBeVisible();
 
     // A set studied to the end: Again sends the first card to the back.
     await ownerPage.goto(`/flashcards/${finishedSet.id}`);
-    const showAnswer = ownerPage.getByRole('button', { name: 'Show answer' });
+    const showAnswer = ownerPage.getByRole('button', {
+      name: m.flashcards_show_answer(),
+    });
     await showAnswer.click();
-    for (const tile of ['Again', 'Hard', 'Good', 'Easy']) {
+    for (const tile of [
+      m.srs_again(),
+      m.srs_hard(),
+      m.srs_good(),
+      m.srs_easy(),
+    ]) {
       await expect(
         ownerPage.getByRole('button', { exact: true, name: tile })
       ).toBeVisible();
     }
-    await rate(ownerPage, 'Again');
+    await rate(ownerPage, m.srs_again());
     await showAnswer.click();
-    await rate(ownerPage, 'Good');
+    await rate(ownerPage, m.srs_good());
     await expect(ownerPage.getByText(faces[0][0])).toBeVisible();
     await showAnswer.click();
-    await rate(ownerPage, 'Good');
+    await rate(ownerPage, m.srs_good());
     await expect(
-      ownerPage.getByRole('heading', { name: 'Done for now' })
+      ownerPage.getByRole('heading', { name: m.flashcards_session_done() })
     ).toBeVisible();
     // Another left after its first card.
     await ownerPage.goto(`/flashcards/${startedSet.id}`);
     await showAnswer.click();
-    await rate(ownerPage, 'Easy');
+    await rate(ownerPage, m.srs_easy());
 
     const study = await readStudy(ownerApi, ws.id);
     expect(stateOf(study, finishedQuiz.id)).toBe('done');
@@ -401,7 +413,7 @@ test.describe('study progress', () => {
     await ownerPage.goto(`/workspaces/${ws.id}`);
     const continueButton = ownerPage.getByRole('button', {
       exact: true,
-      name: 'Continue',
+      name: m.study_continue(),
     });
     await expect(
       continueButton.locator('xpath=..').getByText(startedQuiz.title)
@@ -416,14 +428,22 @@ test.describe('study progress', () => {
     await ownerPage.goto('/learning');
     const row = ownerPage
       .getByText(ws.name, { exact: true })
-      .locator('xpath=ancestor::div[.//button[normalize-space()="Review"]][1]');
+      .locator(
+        `xpath=ancestor::div[.//button[normalize-space()="${m.study_review_button()}"]][1]`
+      );
     await expect(row.getByText('5', { exact: true })).toBeVisible();
-    await expect(row.getByText('2 of 4', { exact: true })).toBeVisible();
-    await row.getByRole('button', { exact: true, name: 'Review' }).click();
+    await expect(
+      row.getByText(m.study_of({ done: 2, total: 4 }), { exact: true })
+    ).toBeVisible();
+    await row
+      .getByRole('button', { exact: true, name: m.study_review_button() })
+      .click();
     await expect(ownerPage).toHaveURL(
       `/learning/review/${ws.id}?from=learning`
     );
-    await expect(ownerPage.getByText('5 left')).toBeVisible();
+    await expect(
+      ownerPage.getByText(m.review_left({ count: 5 }))
+    ).toBeVisible();
   });
 
   test('a mixed review session rates a flashcard and checks a question, then ends', async ({
@@ -510,12 +530,14 @@ test.describe('study progress', () => {
 
     await ownerPage.goto(`/workspaces/${ws.id}`);
     await ownerPage
-      .getByRole('button', { exact: true, name: 'Review' })
+      .getByRole('button', { exact: true, name: m.study_review_button() })
       .click();
     await expect(ownerPage).toHaveURL(
       `/learning/review/${ws.id}?from=workspace`
     );
-    await expect(ownerPage.getByText('2 left')).toBeVisible();
+    await expect(
+      ownerPage.getByText(m.review_left({ count: 2 }))
+    ).toBeVisible();
 
     const ratings: Record<string, unknown>[] = [];
     ownerPage.on('request', (req) => {
@@ -524,24 +546,34 @@ test.describe('study progress', () => {
     });
 
     await expect(ownerPage.getByText('Review front')).toBeVisible();
-    await ownerPage.getByRole('button', { name: 'Show answer' }).click();
+    await ownerPage
+      .getByRole('button', { name: m.flashcards_show_answer() })
+      .click();
     await expect(ownerPage.getByText('Review back')).toBeVisible();
     const cardRated = waitForApi(
       ownerPage,
       apiEndsWith('/api/review/ratings', 'POST')
     );
-    await ownerPage.getByRole('button', { exact: true, name: 'Good' }).click();
+    await ownerPage
+      .getByRole('button', { exact: true, name: m.srs_good() })
+      .click();
     expect((await cardRated).status()).toBe(204);
 
     await expect(ownerPage.getByText(prompt)).toBeVisible();
-    await expect(ownerPage.getByText('1 left')).toBeVisible();
+    await expect(
+      ownerPage.getByText(m.review_left({ count: 1 }))
+    ).toBeVisible();
     // The question arrives answer-free; Check returns its key and rates it.
-    await ownerPage.getByRole('button', { exact: true, name: 'True' }).click();
+    await ownerPage
+      .getByRole('button', { exact: true, name: m.question_ui_true() })
+      .click();
     const questionChecked = waitForApi(
       ownerPage,
       apiEndsWith('/api/review/check', 'POST')
     );
-    await ownerPage.getByRole('button', { exact: true, name: 'Check' }).click();
+    await ownerPage
+      .getByRole('button', { exact: true, name: m.review_check() })
+      .click();
     const checked = await questionChecked;
     expect(checked.status()).toBe(200);
     expect(checked.request().postDataJSON()).toEqual({
@@ -549,19 +581,27 @@ test.describe('study progress', () => {
       itemId: questionId,
       materialId: quiz.id,
     });
-    await expect(ownerPage.getByText('Your answer')).toBeVisible();
-    await ownerPage.getByRole('button', { exact: true, name: 'Next' }).click();
-
-    await expect(ownerPage.getByText('2 reviewed')).toBeVisible();
     await expect(
-      ownerPage.getByRole('button', { name: 'Review 20 more' })
+      ownerPage.getByText(m.question_ui_your_answer())
+    ).toBeVisible();
+    await ownerPage
+      .getByRole('button', { exact: true, name: m.review_next() })
+      .click();
+
+    await expect(
+      ownerPage.getByText(m.review_done({ count: 2 }))
+    ).toBeVisible();
+    await expect(
+      ownerPage.getByRole('button', { name: m.review_more() })
     ).toBeVisible();
     expect(ratings).toEqual([
       { itemId: cardId, materialId: cards.id, rating: 3 },
     ]);
 
     // Done returns to where the session started.
-    await ownerPage.getByRole('button', { exact: true, name: 'Done' }).click();
+    await ownerPage
+      .getByRole('button', { exact: true, name: m.review_finish() })
+      .click();
     await expect(ownerPage).toHaveURL(new RegExp(`/workspaces/${ws.id}$`));
   });
 });

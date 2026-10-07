@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { m } from '../i18n';
 
 // The bank mock seeds Area practice with questions 2–4 answered (right,
 // wrong, half right) and Mensuration fully answered.
@@ -10,25 +11,38 @@ test('bank checks an answer and marks the topic list', async ({ page }) => {
   const question = page.locator('[data-question-id="bank-practice-1"]');
   // A cold dev server compiles the bank route first.
   await expect(question).toContainText('width 2 cm', { timeout: 30_000 });
-  const list = page.getByRole('navigation', { name: 'Questions' });
-  await expect(list.getByRole('button', { name: /^2\./ })).toContainText(
-    'Correct'
+  const list = page.getByRole('navigation', {
+    name: m.question_ui_questions(),
+  });
+  await expect(list.getByRole('button', { name: /^2\./ })).toHaveAttribute(
+    'data-result',
+    'correct'
   );
-  await expect(list.getByRole('button', { name: /^1\./ })).toContainText(
-    'Not done'
+  await expect(list.getByRole('button', { name: /^1\./ })).toHaveAttribute(
+    'data-result',
+    'notDone'
   );
 
-  await question.getByRole('textbox', { name: 'Your answer' }).fill('6');
-  await question.getByRole('button', { name: 'Check answer' }).click();
+  await question
+    .getByRole('textbox', { name: m.question_ui_your_answer() })
+    .fill('6');
+  await question
+    .getByRole('button', { name: m.question_ui_check_answer() })
+    .click();
   await expect(question).toContainText('1 / 1');
-  await expect(question).toContainText('Accepted answers');
-  await expect(list.getByRole('button', { name: /^1\./ })).toContainText(
-    'Correct'
+  await expect(
+    question.getByText(m.question_ui_accepted_answers())
+  ).toBeVisible();
+  await expect(list.getByRole('button', { name: /^1\./ })).toHaveAttribute(
+    'data-result',
+    'correct'
   );
 
-  await question.getByRole('button', { name: 'Try again' }).click();
+  await question
+    .getByRole('button', { name: m.question_ui_answer_again() })
+    .click();
   await expect(
-    question.getByRole('textbox', { name: 'Your answer' })
+    question.getByRole('textbox', { name: m.question_ui_your_answer() })
   ).toHaveValue('');
 });
 
@@ -36,46 +50,56 @@ test('bank checks an answer and marks the topic list', async ({ page }) => {
 // copy into a new quiz.
 test('bank continues, filters and copies to a quiz', async ({ page }) => {
   await page.goto('/bank');
-  await expect(page.getByText('3 of 34')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(m.study_of({ done: 3, total: 34 }))).toBeVisible({
+    timeout: 30_000,
+  });
   await expect(
-    page.getByRole('button', { name: 'Summary' }),
+    page.getByRole('button', { name: m.question_ui_summary() }),
     'Mensuration is fully answered'
   ).toBeVisible();
-  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('button', { name: m.question_ui_continue() }).click();
   await expect(page).toHaveURL(/\/bank\/practice\/bank-practice-5$/);
 
-  await page.getByRole('button', { name: 'Filter' }).click();
+  await page.getByRole('button', { name: m.workspaces_filter() }).click();
   await page
-    .getByRole('button', { exact: true, name: 'Partially wrong' })
+    .getByRole('button', { exact: true, name: m.question_ui_status_partial() })
     .click();
   await page.keyboard.press('Escape');
-  const list = page.getByRole('navigation', { name: 'Questions' });
+  const list = page.getByRole('navigation', {
+    name: m.question_ui_questions(),
+  });
   await expect(list.getByRole('button', { name: /^\d+\./ })).toHaveText([
     /^4\./,
   ]);
 
-  await page.getByRole('checkbox', { name: 'Select question 4' }).click();
-  await page.getByRole('button', { name: 'Copy to quiz' }).click();
+  await page
+    .getByRole('checkbox', {
+      name: m.question_ui_select_question({ number: 4 }),
+    })
+    .click();
+  await page
+    .getByRole('button', { name: m.question_ui_copy_to_quiz() })
+    .click();
   const dialog = page.getByRole('dialog', {
-    name: 'Copy 1 question to a quiz',
+    name: m.question_ui_copy_one_title(),
   });
-  await expect(dialog.getByRole('textbox', { name: 'Quiz name' })).toHaveValue(
-    'Area practice'
-  );
+  await expect(
+    dialog.getByRole('textbox', { name: m.question_ui_quiz_name() })
+  ).toHaveValue('Area practice');
   // The new quiz goes into a chapter typed here, created with the copy.
   // The row picker shows its value as text, not as an accessible name.
   const chapter = dialog
     .getByRole('combobox')
-    .filter({ hasText: 'No chapter' });
+    .filter({ hasText: m.source_no_chapter() });
   await chapter.click();
-  await page.getByRole('option', { name: 'New chapter…' }).click();
-  await dialog.getByPlaceholder('New chapter name').fill('Bank picks');
-  await dialog.getByRole('button', { name: 'Create chapter' }).click();
+  await page.getByRole('option', { name: m.source_new_chapter() }).click();
+  await dialog.getByPlaceholder(m.source_new_chapter_name()).fill('Bank picks');
+  await dialog.getByRole('button', { name: m.source_create_chapter() }).click();
   await expect(chapter).toHaveCount(0);
   await expect(
     dialog.getByRole('combobox').filter({ hasText: 'Bank picks' })
   ).toBeVisible();
-  await dialog.getByRole('button', { name: 'Copy' }).click();
-  await expect(page.getByText('Questions copied')).toBeVisible();
+  await dialog.getByRole('button', { name: m.action_copy() }).click();
+  await expect(page.getByText(m.question_ui_copied())).toBeVisible();
   await expect(dialog).toHaveCount(0);
 });

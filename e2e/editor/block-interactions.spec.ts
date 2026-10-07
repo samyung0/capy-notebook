@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { EDITOR_NOTE } from '../../src/mocks/editorSeed';
+import { m } from '../i18n';
 import {
   hoverBlockHandle,
   openBlockContextMenu,
@@ -25,7 +26,7 @@ test.describe('block editing', () => {
     const columns = group.locator('[data-slot="column"]');
     const handle = columns
       .first()
-      .getByRole('button', { name: 'Drag to reorder column' });
+      .getByRole('button', { name: m.editor_drag_column() });
     await columns.first().hover();
     const source = (await handle.boundingBox())!;
     const middle = (await columns.nth(1).boundingBox())!;
@@ -46,10 +47,10 @@ test.describe('block editing', () => {
       .poll(() => columns.allTextContents())
       .toEqual(['Eukaryote animal', 'Prokaryote', 'Eukaryote plant']);
     await page
-      .getByRole('button', { exact: true, name: 'Material mode' })
+      .getByRole('button', { exact: true, name: m.material_mode() })
       .click();
     await expect(
-      page.getByRole('button', { name: 'Drag to reorder column' })
+      page.getByRole('button', { name: m.editor_drag_column() })
     ).toHaveCount(0);
   });
   test('callout and code style popovers switch the style and keep editor focus', async ({
@@ -63,23 +64,32 @@ test.describe('block editing', () => {
     const callout = editor
       .locator('.slate-callout')
       .filter({ hasText: 'Info callout' });
-    await callout.getByRole('button', { name: 'Callout style' }).click();
-    const variants = page.getByRole('dialog', { name: 'Callout style' });
+    await callout
+      .getByRole('button', { name: m.editor_callout_style() })
+      .click();
+    const variants = page.getByRole('dialog', {
+      name: m.editor_callout_style(),
+    });
     await expect(
-      variants.getByRole('button', { exact: true, name: 'Info' })
+      variants.getByRole('button', {
+        exact: true,
+        name: m.editor_callout_info(),
+      })
     ).toHaveAttribute('aria-pressed', 'true');
     await variants
-      .getByRole('button', { exact: true, name: 'Success' })
+      .getByRole('button', { exact: true, name: m.editor_callout_success() })
       .click();
     await expect(variants).toBeHidden();
     await expect(
-      callout.getByRole('button', { name: 'Callout style' })
-    ).toHaveText('Success');
+      callout.getByRole('button', { name: m.editor_callout_style() })
+    ).toHaveAttribute('data-block-style', 'success');
     await expect(editor).toBeFocused();
 
     const code = editor.locator('pre');
-    await code.getByRole('button', { name: 'Code language' }).click();
-    const languages = page.getByRole('dialog', { name: 'Code language' });
+    await code.getByRole('button', { name: m.editor_code_language() }).click();
+    const languages = page.getByRole('dialog', {
+      name: m.editor_code_language(),
+    });
     const python = languages.getByRole('button', {
       exact: true,
       name: 'Python',
@@ -90,7 +100,7 @@ test.describe('block editing', () => {
       .click();
     await expect(languages).toBeHidden();
     await expect(
-      code.getByRole('button', { name: 'Code language' })
+      code.getByRole('button', { name: m.editor_code_language() })
     ).toHaveText('JavaScript');
     await expect(editor).toBeFocused();
   });
@@ -144,9 +154,11 @@ test.describe('block editing', () => {
       'mat_note_bio_feature_matrix',
       'Editor feature matrix'
     );
-    await editor.getByRole('checkbox', { name: 'Mark task complete' }).check();
+    await editor
+      .getByRole('checkbox', { name: m.editor_task_complete() })
+      .check();
     await expect(
-      editor.getByRole('checkbox', { name: 'Mark task incomplete' })
+      editor.getByRole('checkbox', { name: m.editor_task_incomplete() })
     ).toHaveCount(2);
   });
 
@@ -158,7 +170,7 @@ test.describe('block editing', () => {
     );
 
     const menu = await openBlockContextMenu(page, EDITOR_NOTE.secondParagraph);
-    await menu.getByRole('menuitem', { name: 'Duplicate' }).click();
+    await menu.getByRole('menuitem', { name: m.editor_duplicate() }).click();
 
     await expect(
       editor.getByText(EDITOR_NOTE.secondParagraph, { exact: true })
@@ -173,7 +185,7 @@ test.describe('block editing', () => {
     );
 
     const menu = await openBlockContextMenu(page, EDITOR_NOTE.thirdParagraph);
-    await menu.getByRole('menuitem', { name: 'Delete' }).click();
+    await menu.getByRole('menuitem', { name: m.action_delete() }).click();
 
     await expect(
       editor.getByText(EDITOR_NOTE.thirdParagraph, { exact: true })
@@ -192,8 +204,8 @@ test.describe('block editing', () => {
     );
 
     const menu = await openBlockContextMenu(page, EDITOR_NOTE.firstParagraph);
-    await menu.getByRole('menuitem', { name: 'Turn into' }).hover();
-    await page.getByRole('menuitem', { name: 'Heading 2' }).click();
+    await menu.getByRole('menuitem', { name: m.editor_turn_into() }).hover();
+    await page.getByRole('menuitem', { name: m.editor_heading_2() }).click();
 
     await expect(
       editor

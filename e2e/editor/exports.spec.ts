@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { strFromU8, unzipSync } from 'fflate';
+import { m } from '../i18n';
 import { openEditorNote } from './helpers';
 
 test('feature-matrix downloads retain study content and Word video objects', async ({
@@ -29,11 +30,11 @@ test('feature-matrix downloads retain study content and Word video objects', asy
   );
   // The seeded image turns the Markdown export into a zip with its assets.
   for (const [label, extension] of [
-    ['Export Markdown (.md)', 'zip'],
-    ['Export Word (.docx)', 'docx'],
+    [m.editor_export_md(), 'zip'],
+    [m.editor_export_docx(), 'docx'],
   ]) {
     await page
-      .getByRole('button', { exact: true, name: 'Export document' })
+      .getByRole('button', { exact: true, name: m.editor_export() })
       .click();
     const downloaded = page.waitForEvent('download');
     await page.getByRole('button', { exact: true, name: label }).click();
@@ -46,8 +47,8 @@ test('feature-matrix downloads retain study content and Word video objects', asy
         true
       );
       const source = strFromU8(zip['document.md']);
-      expect(source).toContain('Quiz answer key');
-      expect(source).toContain('Card 2');
+      expect(source).toContain(m.editor_export_answer_key());
+      expect(source).toContain(`${m.editor_export_card()} 2`);
       expect(source).toContain('https://www.youtube.com/watch?v=URUJD5NEXC8');
       expect(source).not.toContain('```quiz');
     } else {
@@ -62,9 +63,9 @@ test('feature-matrix downloads retain study content and Word video objects', asy
       expect(xml).toContain('PAGEREF _CapyHeading');
       expect(xml).toContain('w:pStyle w:val="TOC6"');
       expect(xml).not.toContain('w:name="_CapyToc');
-      const label = xml.match(
-        /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*Worked solution[\s\S]*?<\/w:p>/
-      )?.[0];
+      const label = xml
+        .match(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g)
+        ?.find((paragraph) => paragraph.includes(m.editor_export_solution()));
       expect(label).toContain('<w:keepNext/>');
       expect(label).not.toContain('w:pStyle w:val="Heading');
       expect(strFromU8(zip['word/styles.xml'])).toContain('w:leader="dot"');
@@ -72,8 +73,8 @@ test('feature-matrix downloads retain study content and Word video objects', asy
         '<w:updateFields w:val="true"/>'
       );
       expect(strFromU8(zip['word/settings.xml'])).toContain('w:val="15"');
-      expect(xml).toContain('Quiz answer key');
-      expect(xml).toContain('Card 2');
+      expect(xml).toContain(m.editor_export_answer_key());
+      expect(xml).toContain(`${m.editor_export_card()} 2`);
       expect(xml.toLowerCase()).toContain('w:fill="eff6ff"');
       expect(xml.toLowerCase()).toContain('w:color="3b82f6"');
       expect(xml).toContain('w:color="BBBBBB"');

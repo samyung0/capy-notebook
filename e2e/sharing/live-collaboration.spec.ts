@@ -1,6 +1,7 @@
 import { expect, test } from '../fixtures/actors';
 import { expectEditorLive } from '../helpers/editor';
 import { openWorkspaceMaterial } from '../helpers/workspace';
+import { m } from '../i18n';
 
 test.describe('live Yjs collaboration', () => {
   test('two editors converge, expose remote selections, and project to static view', async ({
@@ -62,11 +63,10 @@ test.describe('live Yjs collaboration', () => {
     // Durability is the client's 1s checkpoint debounce plus the sidecar's store
     // debounce, which stretches to COLLABORATION_MAX_DEBOUNCE_MS (10s) under
     // continuous updates. The default 10s expect budget cannot cover that.
-    await expect(editorPage.getByTestId('editor-save-state')).toHaveText(
-      'Saved',
-      {
-        timeout: 20_000,
-      }
+    await expect(editorPage.getByTestId('editor-save-state')).toHaveAttribute(
+      'data-save-state',
+      'saved',
+      { timeout: 20_000 }
     );
 
     // Projection completion invalidates the material query before static mode.
@@ -77,7 +77,7 @@ test.describe('live Yjs collaboration', () => {
       })
       .toContain(`${body}${suffix}`);
 
-    const modes = ownerPage.getByRole('button', { name: 'Material mode' });
+    const modes = ownerPage.getByRole('button', { name: m.material_mode() });
     await modes.click();
 
     await expect(

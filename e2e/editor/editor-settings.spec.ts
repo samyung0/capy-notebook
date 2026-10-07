@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { EDITOR_NOTE } from '../../src/mocks/editorSeed';
 import { expectEditorLive } from '../helpers/editor';
+import { m } from '../i18n';
 import { openEditorNote } from './helpers';
 
 test('editor settings keep drafts until Apply, persist the width and keep margin clicks editable', async ({
@@ -15,10 +16,12 @@ test('editor settings keep drafts until Apply, persist the width and keep margin
   );
   const settings = page.getByRole('button', {
     exact: true,
-    name: 'Editor settings',
+    name: m.editor_prefs_settings(),
   });
-  const dialog = page.getByRole('dialog', { name: 'Editor settings' });
-  const displaySize = dialog.getByRole('combobox', { name: 'Display size' });
+  const dialog = page.getByRole('dialog', { name: m.editor_prefs_title() });
+  const displaySize = dialog.getByRole('combobox', {
+    name: m.editor_prefs_display_size(),
+  });
   const chooseWidth = async (width: string) => {
     await displaySize.click();
     await page.getByRole('option', { exact: true, name: width }).click();
@@ -37,21 +40,29 @@ test('editor settings keep drafts until Apply, persist the width and keep margin
   await expect(editor).not.toContainText('margin undo probe');
 
   await settings.click();
-  await chooseWidth('Full width');
-  await dialog.getByRole('button', { exact: true, name: 'Cancel' }).click();
+  await chooseWidth(m.editor_prefs_full_width());
+  await dialog
+    .getByRole('button', { exact: true, name: m.action_cancel() })
+    .click();
   await settings.click();
-  await expect(displaySize).toHaveText('Half width');
-  await chooseWidth('Full width');
-  await dialog.getByRole('button', { exact: true, name: 'Commands' }).click();
+  await expect(displaySize).toHaveAttribute('data-width', 'half');
+  await chooseWidth(m.editor_prefs_full_width());
+  await dialog
+    .getByRole('button', { exact: true, name: m.editor_prefs_commands() })
+    .click();
   await expect(
-    dialog.getByRole('switch', { name: /Text decorations/ })
+    dialog.getByRole('switch', { name: m.editor_prefs_decorations() })
   ).toBeVisible();
-  await dialog.getByRole('button', { exact: true, name: 'General' }).click();
-  await expect(displaySize).toHaveText('Full width');
-  await dialog.getByRole('button', { exact: true, name: 'Apply' }).click();
+  await dialog
+    .getByRole('button', { exact: true, name: m.settings_tab_general() })
+    .click();
+  await expect(displaySize).toHaveAttribute('data-width', 'full');
+  await dialog
+    .getByRole('button', { exact: true, name: m.action_apply() })
+    .click();
   await expect(dialog).toHaveCount(0);
   await page.reload();
   await expectEditorLive(page);
   await settings.click();
-  await expect(displaySize).toHaveText('Full width');
+  await expect(displaySize).toHaveAttribute('data-width', 'full');
 });

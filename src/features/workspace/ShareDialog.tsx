@@ -240,6 +240,7 @@ export function ShareDialog({
             >
               <SelectTrigger
                 aria-label={m.share_visibility()}
+                data-privacy={privacy}
                 loading={savingField === 'privacy'}
               >
                 <SelectValue />
@@ -282,6 +283,7 @@ export function ShareDialog({
                 >
                   <SelectTrigger
                     aria-label={m.share_anyone_with_access()}
+                    data-share-role={shareRole}
                     loading={savingField === 'shareRole'}
                   >
                     <SelectValue />

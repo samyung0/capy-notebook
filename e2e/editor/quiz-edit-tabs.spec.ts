@@ -1,27 +1,36 @@
 import { expect, test } from '@playwright/test';
+import { m } from '../i18n';
 
 test('quiz tabs retain both drafts and reveal name validation before saving', async ({
   page,
 }) => {
   await page.goto('/quizzes/qz_2/edit?returnTo=%2Fmaterials%2Fqz_2');
   const questions = page.locator('[data-question-id]');
-  const name = page.getByRole('textbox', { name: /^Quiz name/ });
-  const generalTab = page.getByRole('button', { exact: true, name: 'General' });
+  const name = page.getByRole('textbox', { name: m.quiz_name() });
+  const generalTab = page.getByRole('button', {
+    exact: true,
+    name: m.settings_tab_general(),
+  });
   const questionsTab = page.getByRole('button', {
     exact: true,
-    name: 'Questions',
+    name: m.quiz_questions(),
   });
   // The page's Save; its confirm dialog, portalled after the page, has another.
-  const save = page.getByRole('button', { exact: true, name: 'Save' }).first();
+  const save = page
+    .getByRole('button', { exact: true, name: m.action_save() })
+    .first();
   const confirmSave = () =>
     page
-      .getByRole('dialog', { name: 'Save your changes?' })
-      .getByRole('button', { name: 'Save' })
+      .getByRole('dialog', { name: m.edit_save_confirm_title() })
+      .getByRole('button', { name: m.action_save() })
       .click();
 
   await expect(questions).toHaveCount(10, { timeout: 30_000 });
   await expect(name).toHaveCount(0);
-  await questions.first().getByRole('button', { name: 'Remove' }).click();
+  await questions
+    .first()
+    .getByRole('button', { name: m.action_remove() })
+    .click();
   await expect(questions).toHaveCount(9);
 
   await generalTab.click();

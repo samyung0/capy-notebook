@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { m } from '../i18n';
 import { openEditorNote } from './helpers';
 
 test('top-toolbar formatting keeps the selection toolbar open', async ({
@@ -10,20 +11,28 @@ test('top-toolbar formatting keeps the selection toolbar open', async ({
     'Prokaryotes vs eukaryotes'
   );
   await editor.getByText('cell', { exact: true }).dblclick();
-  const floating = page.getByRole('toolbar', { name: 'Selection actions' });
+  const floating = page.getByRole('toolbar', {
+    name: m.editor_selection_actions(),
+  });
   await expect(floating).toBeVisible();
   await floating.evaluate(async (element) => {
     await Promise.all(
       element.getAnimations().map((animation) => animation.finished)
     );
   });
-  const top = page.getByRole('toolbar', { name: 'Document formatting' });
+  const top = page.getByRole('toolbar', { name: m.editor_doc_formatting() });
   const actions = [
-    ...['Bold', 'Italic', 'Underline'].map((name) => ({
-      control: top.getByRole('button', { exact: true, name }),
-      mark: name,
-    })),
-    { control: top.getByRole('button', { name: /^Font size:/ }) },
+    ...[m.editor_bold(), m.editor_italic(), m.editor_underline()].map(
+      (name) => ({
+        control: top.getByRole('button', { exact: true, name }),
+        mark: name,
+      })
+    ),
+    {
+      control: top.getByRole('button', {
+        name: m.editor_font_size_value({ size: '' }),
+      }),
+    },
     { control: page.getByRole('option', { exact: true, name: '24' }) },
   ];
   for (const { control, mark } of actions) {
@@ -69,7 +78,10 @@ test('top-toolbar formatting keeps the selection toolbar open', async ({
     }
   }
   await expect(
-    top.getByRole('button', { exact: true, name: 'Font size: 24' })
+    top.getByRole('button', {
+      exact: true,
+      name: m.editor_font_size_value({ size: '24' }),
+    })
   ).toBeVisible();
   await editor
     .getByRole('heading', { exact: true, name: 'Prokaryotes vs eukaryotes' })
@@ -77,7 +89,7 @@ test('top-toolbar formatting keeps the selection toolbar open', async ({
   await expect(floating).toHaveCount(0);
 });
 
-for (const name of ['Selection actions', 'Link actions']) {
+for (const name of [m.editor_selection_actions(), m.editor_link_actions()]) {
   test(`${name} scrolls with its text before position updates run`, async ({
     page,
   }) => {
@@ -87,7 +99,7 @@ for (const name of ['Selection actions', 'Link actions']) {
       'mat_note_1',
       'Prokaryotes vs eukaryotes'
     );
-    if (name === 'Selection actions') {
+    if (name === m.editor_selection_actions()) {
       await editor.getByText('cell', { exact: true }).dblclick();
     } else {
       await editor.getByRole('link', { name: 'Khan Academy: cells' }).click();

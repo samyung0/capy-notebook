@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { EDITOR_NOTE } from '../../src/mocks/editorSeed';
+import { m } from '../i18n';
 import { openEditorNote } from './helpers';
 
 test.beforeEach(async ({ page }) => {
@@ -34,19 +35,19 @@ for (const mode of ['create', 'edit'] as const) {
     await page.goto('/workspaces');
     if (mode === 'create') {
       await page
-        .getByRole('button', { exact: true, name: 'New workspace' })
+        .getByRole('button', { exact: true, name: m.action_new_workspace() })
         .click();
     } else {
       await page
-        .getByRole('button', { exact: true, name: 'Open menu' })
+        .getByRole('button', { exact: true, name: m.a11y_open_menu() })
         .first()
         .click();
       await page
-        .getByRole('menuitem', { exact: true, name: 'Workspace settings' })
+        .getByRole('menuitem', { exact: true, name: m.workspace_settings() })
         .click();
     }
     const dialog = page.getByRole('dialog');
-    const input = dialog.getByRole('combobox', { name: 'Tags' });
+    const input = dialog.getByRole('combobox', { name: m.common_tags() });
     await input.click();
     const popup = page.locator('[data-slot="popover-content"]');
     await expect(input).toBeFocused();
@@ -64,13 +65,15 @@ for (const mode of ['create', 'edit'] as const) {
     await expect(input).toBeFocused();
     await page.getByRole('option', { exact: true, name: '# Essays' }).click();
     await expect(
-      dialog.getByRole('button', { name: 'Remove Essays' })
+      dialog.getByRole('button', { name: m.tag_remove({ name: 'Essays' }) })
     ).toBeVisible();
     await expect(input).toBeFocused();
     await input.fill('New study tag');
     await input.press('Enter');
     await expect(
-      dialog.getByRole('button', { name: 'Remove New study tag' })
+      dialog.getByRole('button', {
+        name: m.tag_remove({ name: 'New study tag' }),
+      })
     ).toBeVisible();
     await expect(input).toHaveValue('');
     await input.press('ArrowDown');
@@ -90,11 +93,16 @@ for (const mode of ['create', 'edit'] as const) {
     await input.click();
     await expect(popup).toHaveAttribute('data-state', 'open');
     await dialog
-      .getByRole('textbox', { exact: true, name: 'Description' })
+      .getByRole('textbox', {
+        exact: true,
+        name: m.summary_description_label(),
+      })
       .click();
     await expect(popup).toHaveCount(0);
     if (mode === 'edit') {
-      await dialog.getByRole('button', { exact: true, name: 'Save' }).click();
+      await dialog
+        .getByRole('button', { exact: true, name: m.action_save() })
+        .click();
       await expect(dialog).toHaveCount(0);
     }
   });
@@ -219,14 +227,16 @@ test('All blocks toggles closed with a second click and keyboard activation', as
 }) => {
   await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.firstParagraph);
   await page.setViewportSize({ height: 1000, width: 2560 });
-  const toolbar = page.getByRole('toolbar', { name: 'Document formatting' });
+  const toolbar = page.getByRole('toolbar', {
+    name: m.editor_doc_formatting(),
+  });
   for (const name of [
-    'All blocks',
-    'Upload media',
-    'Import document',
-    'Export document',
-    'Table controls',
-    'Block type',
+    m.editor_all_blocks(),
+    m.editor_media_upload(),
+    m.editor_import(),
+    m.editor_export(),
+    m.editor_table_controls(),
+    m.editor_block_type(),
   ]) {
     const control = toolbar.getByRole('button', { exact: true, name });
     await expect(control).toHaveAttribute('aria-haspopup', 'dialog');
@@ -235,7 +245,10 @@ test('All blocks toggles closed with a second click and keyboard activation', as
     await page.keyboard.press('Escape');
     await expect(control).toHaveAttribute('data-state', 'closed');
   }
-  const trigger = page.getByRole('button', { exact: true, name: 'All blocks' });
+  const trigger = page.getByRole('button', {
+    exact: true,
+    name: m.editor_all_blocks(),
+  });
   await trigger.click();
   await expect(trigger).toHaveAttribute('data-state', 'open');
   await trigger.click();
@@ -260,7 +273,7 @@ test('AI input regains focus on a rapid reopen', async ({ page }) => {
   );
   await editor.getByText(EDITOR_NOTE.firstParagraph, { exact: true }).click();
   await page.keyboard.press('ControlOrMeta+j');
-  const input = page.getByPlaceholder('Ask AI anything');
+  const input = page.getByPlaceholder(m.editor_ai_placeholder());
   await expect(input).toBeFocused();
   await page.keyboard.press('Escape');
   await page.keyboard.press('ControlOrMeta+j');
@@ -280,7 +293,7 @@ test('command palette rapid reopen keeps typing in its search field', async ({
   });
   await paragraph.click();
   await page.keyboard.press('ControlOrMeta+k');
-  const input = page.getByPlaceholder('Search commands');
+  const input = page.getByPlaceholder(m.editor_search_commands());
   await expect(input).toBeFocused();
   await page.keyboard.press('ControlOrMeta+k');
   await page.keyboard.press('ControlOrMeta+k');
@@ -295,20 +308,26 @@ test('icon chooser tracks browsing and confirms only the current draft', async (
 }) => {
   await page.goto('/workspaces');
   await page
-    .getByRole('button', { exact: true, name: 'New workspace' })
+    .getByRole('button', { exact: true, name: m.action_new_workspace() })
     .click();
-  const workspace = page.getByRole('dialog', { name: 'Create one' });
+  const workspace = page.getByRole('dialog', {
+    exact: true,
+    name: m.workspace_create_title(),
+  });
   const preview = workspace.locator('img').first();
   const initialIcon = await preview.getAttribute('src');
   const choose = workspace.getByRole('button', {
     exact: true,
-    name: 'Choose icon',
+    name: m.icon_choose(),
   });
-  const picker = page.getByRole('dialog', { exact: true, name: 'Choose icon' });
-  const styles = picker.getByRole('navigation', { name: 'Icon style' });
+  const picker = page.getByRole('dialog', {
+    exact: true,
+    name: m.icon_choose(),
+  });
+  const styles = picker.getByRole('navigation', { name: m.icon_style() });
   const gallery = picker.getByRole('region', {
     exact: true,
-    name: 'Icon style',
+    name: m.icon_style(),
   });
   await choose.click();
   await expect(styles.getByRole('button', { name: /^Waves/ })).toHaveAttribute(
@@ -332,7 +351,9 @@ test('icon chooser tracks browsing and confirms only the current draft', async (
     styles.getByRole('button', { name: /^Sprouts/ })
   ).toHaveAttribute('aria-current', 'location');
   await picker.getByRole('button', { exact: true, name: 'sprouts-04' }).click();
-  await picker.getByRole('button', { exact: true, name: 'Cancel' }).click();
+  await picker
+    .getByRole('button', { exact: true, name: m.action_cancel() })
+    .click();
   await expect(picker).toHaveCount(0);
   await expect(preview).toHaveAttribute('src', initialIcon!);
 
@@ -344,7 +365,7 @@ test('icon chooser tracks browsing and confirms only the current draft', async (
   );
   await gallery.press('Home');
   await picker.getByRole('button', { exact: true, name: 'sprouts-04' }).click();
-  await picker.getByRole('button', { exact: true, name: 'Use icon' }).click();
+  await picker.getByRole('button', { exact: true, name: m.icon_use() }).click();
   await expect(picker).toHaveCount(0);
   await expect(preview).toHaveAttribute('src', '/icons/sprouts-04.svg');
   await choose.click();
@@ -362,36 +383,46 @@ test('workspace creation resets cancelled drafts and saves the previewed default
   await page.goto('/workspaces');
   const create = page.getByRole('button', {
     exact: true,
-    name: 'New workspace',
+    name: m.action_new_workspace(),
   });
   await create.click();
-  const dialog = page.getByRole('dialog', { name: 'Create one' });
+  const dialog = page.getByRole('dialog', {
+    exact: true,
+    name: m.workspace_create_title(),
+  });
   const icon = dialog.locator('img').first();
   await expect(icon).toHaveAttribute('src', /\/icons\/waves-\d{2}\.svg$/);
   const initialIcon = await icon.getAttribute('src');
-  const name = dialog.getByPlaceholder('Workspace name');
+  const name = dialog.getByPlaceholder(m.workspace_name_placeholder());
   await name.fill('Cancelled draft');
   await dialog
-    .getByRole('textbox', { exact: true, name: 'Description' })
+    .getByRole('textbox', { exact: true, name: m.summary_description_label() })
     .fill('Cancelled description');
   await expect(icon).toHaveAttribute('src', initialIcon!);
   await expect(
-    dialog.getByRole('button', { exact: true, name: 'Create' })
+    dialog.getByRole('button', { exact: true, name: m.action_create() })
   ).toBeEnabled();
-  await dialog.getByRole('button', { exact: true, name: 'Cancel' }).click();
+  await dialog
+    .getByRole('button', { exact: true, name: m.action_cancel() })
+    .click();
   await expect(dialog).toHaveCount(0);
   await create.click();
   await expect(name).toHaveValue('');
   await expect(
-    dialog.getByRole('textbox', { exact: true, name: 'Description' })
+    dialog.getByRole('textbox', {
+      exact: true,
+      name: m.summary_description_label(),
+    })
   ).toHaveValue('');
   await expect(
-    dialog.getByRole('button', { exact: true, name: 'Create' })
+    dialog.getByRole('button', { exact: true, name: m.action_create() })
   ).toBeDisabled();
   await expect(icon).toHaveAttribute('src', /\/icons\/waves-\d{2}\.svg$/);
   const savedIcon = await icon.getAttribute('src');
   await name.fill('Default icon workspace');
-  await dialog.getByRole('button', { exact: true, name: 'Create' }).click();
+  await dialog
+    .getByRole('button', { exact: true, name: m.action_create() })
+    .click();
   await expect(dialog).toHaveCount(0);
   await expect(
     page.getByRole('link', { name: /Default icon workspace/ }).locator('img')

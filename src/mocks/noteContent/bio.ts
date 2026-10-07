@@ -1,5 +1,5 @@
-import { mermaidNode } from '@/features/materials/document';
-import { biologyQuizQuestions } from '../biologyQuiz';
+import { htmlEmbedNode, mermaidNode } from '@/features/materials/document';
+import { biologyQuizQuestions, surfaceAreaGraph } from '../biologyQuiz';
 import {
   bullet,
   callout,
@@ -8,6 +8,7 @@ import {
   embeddedFlashcards,
   embeddedQuiz,
   equation,
+  figure,
   heading,
   hr,
   image,
@@ -344,6 +345,42 @@ export const bioNotes: SeedNote[] = [
         'flowchart TB\n  Glucose --> Glycolysis\n  Glycolysis --> Pyruvate\n  Pyruvate --> Krebs\n  Krebs --> ETC\n  ETC --> ATP',
         'Respiration overview',
         'mermaid_bio_feature_matrix'
+      ),
+
+      heading(2, 'Chart'),
+      figure('chart_bio_feature_matrix', {
+        kind: 'bar',
+        labels: ['Glycolysis', 'Krebs cycle', 'Oxidative phosphorylation'],
+        series: [{ name: 'Net ATP', values: [2, 2, 28] }],
+        title: 'ATP yield per glucose by stage',
+        type: 'chart',
+        unit: 'ATP',
+        yTitle: 'ATP per glucose',
+      }),
+
+      heading(2, 'Graph'),
+      figure('graph_bio_feature_matrix', structuredClone(surfaceAreaGraph)),
+
+      heading(2, 'Interactive HTML embed'),
+      htmlEmbedNode(
+        [
+          '<label for="c">Outside solute concentration (mM): <output id="v">300</output></label>',
+          '<input id="c" type="range" min="100" max="500" step="10" value="300" style="width:100%">',
+          '<p id="r">Isotonic: no net water movement.</p>',
+          '<script>',
+          "const c = document.getElementById('c');",
+          'c.oninput = () => {',
+          '  const x = Number(c.value);',
+          "  document.getElementById('v').textContent = x;",
+          "  document.getElementById('r').textContent =",
+          "    x < 290 ? 'Hypotonic: water enters, the cell swells and may lyse.'",
+          "    : x > 310 ? 'Hypertonic: water leaves, the cell shrinks (crenation).'",
+          "    : 'Isotonic: no net water movement.';",
+          '};',
+          '</script>',
+        ].join('\n'),
+        'Osmosis slider',
+        'html_bio_feature_matrix'
       ),
 
       heading(2, 'Quiz block'),

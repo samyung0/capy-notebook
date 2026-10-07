@@ -1,6 +1,7 @@
 import { expect, test } from '../fixtures/actors';
 import { expectEditorLive } from '../helpers/editor';
 import { openWorkspaceMaterial, summaryPath } from '../helpers/workspace';
+import { m } from '../i18n';
 
 test.describe('shared material modes', () => {
   test('anonymous visitors see only the summary and cannot read materials', async ({
@@ -37,10 +38,10 @@ test.describe('shared material modes', () => {
     );
     await expect(otherPage.getByText(seed.publicNote.body)).toBeVisible();
     await expect(
-      otherPage.getByRole('button', { name: 'Material mode' })
+      otherPage.getByRole('button', { name: m.material_mode() })
     ).toHaveCount(0);
     await expect(
-      otherPage.getByRole('button', { exact: true, name: 'Comment' })
+      otherPage.getByRole('button', { exact: true, name: m.editor_comment() })
     ).toHaveCount(0);
     await expect(otherPage.locator('[contenteditable="true"]')).toHaveCount(0);
   });
@@ -65,7 +66,7 @@ test.describe('shared material modes', () => {
     );
     await expectEditorLive(otherPage);
     await expect(
-      otherPage.getByRole('toolbar', { name: 'Document formatting' })
+      otherPage.getByRole('toolbar', { name: m.editor_doc_formatting() })
     ).toBeVisible();
     const editor = otherPage
       .locator('[data-slate-editor="true"][contenteditable="true"]')
@@ -73,23 +74,25 @@ test.describe('shared material modes', () => {
     await expect(editor).toHaveAttribute('contenteditable', 'true');
     await editor.getByText(body, { exact: true }).dblclick();
     await otherPage
-      .getByRole('toolbar', { name: 'Document formatting' })
-      .getByRole('button', { exact: true, name: 'Comment' })
+      .getByRole('toolbar', { name: m.editor_doc_formatting() })
+      .getByRole('button', { exact: true, name: m.editor_comment() })
       .click();
-    const dialog = otherPage.getByRole('dialog', { name: 'Add comment' });
+    const dialog = otherPage.getByRole('dialog', {
+      name: m.editor_add_comment(),
+    });
     await expect(dialog).toBeVisible();
     await dialog
-      .getByRole('textbox', { name: 'Comment' })
+      .getByRole('textbox', { name: m.editor_comment() })
       .fill('E2E relative comment');
     await dialog
-      .getByRole('button', { exact: true, name: 'Add comment' })
+      .getByRole('button', { exact: true, name: m.editor_add_comment() })
       .click();
 
     await expect(editor.locator('[data-comment-decoration]')).toContainText(
       'selected'
     );
     await otherPage
-      .getByRole('button', { name: 'Show 1 comment thread' })
+      .getByRole('button', { name: m.editor_show_threads({ count: 1 }) })
       .click();
     await expect(
       otherPage.getByText('E2E relative comment', { exact: true })
@@ -106,7 +109,7 @@ test.describe('shared material modes', () => {
       seed.editableNote.id,
       true
     );
-    const mode = otherPage.getByRole('button', { name: 'Material mode' });
+    const mode = otherPage.getByRole('button', { name: m.material_mode() });
     await expect(mode).toHaveAttribute('aria-pressed', 'true');
     await mode.click();
     await expect(mode).toHaveAttribute('aria-pressed', 'false');
@@ -114,7 +117,7 @@ test.describe('shared material modes', () => {
       otherPage.locator('[data-slate-editor="true"][contenteditable="true"]')
     ).toHaveCount(0);
     await expect(
-      otherPage.getByRole('button', { exact: true, name: 'Comment' })
+      otherPage.getByRole('button', { exact: true, name: m.editor_comment() })
     ).toHaveCount(0);
     await mode.click();
     await expect(mode).toHaveAttribute('aria-pressed', 'true');

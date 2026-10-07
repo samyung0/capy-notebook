@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { MathfieldElement } from 'mathlive';
+import { m } from '../i18n';
 import { openEditorNote } from './helpers';
 
 test('plain text keeps its font and width, and conjugates use one arrow step per character', async ({
@@ -11,7 +12,7 @@ test('plain text keeps its font and width, and conjugates use one arrow step per
     'Editor feature matrix'
   );
   const preview = editor
-    .getByRole('button', { exact: true, name: 'Equation' })
+    .getByRole('button', { exact: true, name: m.editor_equation() })
     .last();
   await preview.click();
   const field = editor.locator('math-field:not([read-only])');

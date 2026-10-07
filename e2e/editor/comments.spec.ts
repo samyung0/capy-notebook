@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { MaterialDiscussion } from '../../src/api/types';
 import { EDITOR_NOTE } from '../../src/mocks/editorSeed';
+import { m } from '../i18n';
 import { editorApi, openEditorNote, selectEditorLine } from './helpers';
 
 for (const target of [
@@ -33,12 +34,12 @@ for (const target of [
     }
     if (target !== 'selected text' && target !== 'palette selection') {
       await expect(
-        page.getByRole('toolbar', { name: 'Selection actions' })
+        page.getByRole('toolbar', { name: m.editor_selection_actions() })
       ).toBeHidden();
     }
     const commentButton = page
-      .getByRole('toolbar', { name: 'Document formatting' })
-      .getByRole('button', { exact: true, name: 'Comment' });
+      .getByRole('toolbar', { name: m.editor_doc_formatting() })
+      .getByRole('button', { exact: true, name: m.editor_comment() });
     if (target === 'immediate selection') {
       // Open in the same task, before Slate's throttled selectionchange handler.
       await commentButton.evaluate(
@@ -56,20 +57,22 @@ for (const target of [
     } else if (target === 'palette selection') {
       await page.keyboard.press('ControlOrMeta+k');
       const palette = page.getByRole('dialog', {
-        name: 'Editor command palette',
+        name: m.editor_command_palette(),
       });
-      await palette.getByPlaceholder('Search commands').fill('Comment');
+      await palette
+        .getByPlaceholder(m.editor_search_commands())
+        .fill(m.editor_comment());
       await palette
         .getByRole('button')
-        .filter({ has: page.getByText('Comment', { exact: true }) })
+        .filter({ has: page.getByText(m.editor_comment(), { exact: true }) })
         .click();
     } else {
       await commentButton.click();
     }
-    const dialog = page.getByRole('dialog', { name: 'Add comment' });
+    const dialog = page.getByRole('dialog', { name: m.editor_add_comment() });
     await dialog.getByRole('textbox').fill(`Review ${target}`);
     await dialog
-      .getByRole('button', { exact: true, name: 'Add comment' })
+      .getByRole('button', { exact: true, name: m.editor_add_comment() })
       .click();
     await expect(dialog).toHaveCount(0);
 
@@ -93,7 +96,9 @@ for (const target of [
       expect(discussions[0].anchorQuote).toBe('');
       await expect(editor.locator('[data-comment-decoration]')).toHaveCount(0);
     }
-    await editor.getByRole('button', { name: 'Show 1 comment thread' }).click();
+    await editor
+      .getByRole('button', { name: m.editor_show_threads({ count: '1' }) })
+      .click();
     await expect(
       page.getByText(`Review ${target}`, { exact: true })
     ).toBeVisible();

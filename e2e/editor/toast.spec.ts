@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { m } from '../i18n';
 
 for (const inDialog of [false, true]) {
   test(`toast close button dismisses with${inDialog ? '' : 'out'} a dialog open`, async ({
@@ -10,7 +11,7 @@ for (const inDialog of [false, true]) {
     ).toBeVisible({ timeout: 30_000 });
     if (inDialog) {
       await page
-        .getByRole('button', { exact: true, name: 'Workspace settings' })
+        .getByRole('button', { exact: true, name: m.workspace_settings() })
         .click();
       await expect(page.getByRole('dialog')).toBeVisible();
     }
@@ -24,7 +25,9 @@ for (const inDialog of [false, true]) {
       const toast = page.locator('[data-sonner-toast]').filter({
         hasText: 'Dismiss this toast',
       });
-      await toast.getByRole('button', { exact: true, name: 'Close' }).click();
+      await toast
+        .getByRole('button', { exact: true, name: m.action_close() })
+        .click();
       await expect(toast).toHaveCount(0, { timeout: 1500 });
     }
 

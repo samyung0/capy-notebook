@@ -2,6 +2,7 @@ import { writeFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import type { MathfieldElement } from 'mathlive';
 import { openEditorNote } from '../../../e2e/editor/helpers';
+import { m } from '../../../e2e/i18n';
 
 // MathLive upgrade audit (pnpm bench:formula): every Insert and matrix
 // template, empty and filled, inline and block, must render the same in View
@@ -39,7 +40,7 @@ for (const mode of ['inline', 'block'] as const) {
     );
     const previews = editor.getByRole('button', {
       exact: true,
-      name: 'Equation',
+      name: m.editor_equation(),
     });
     const preview = mode === 'block' ? previews.last() : previews.first();
     await preview.click();

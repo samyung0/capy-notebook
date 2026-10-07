@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, type Page, test } from '@playwright/test';
 import { expectErrorSurface } from '../helpers/errors';
+import { m } from '../i18n';
 
 async function openWorkspace(page: Page) {
   await page.goto('/workspaces/ws_bio');
@@ -10,7 +11,9 @@ async function openWorkspace(page: Page) {
 }
 
 async function openFile(page: Page, name: string) {
-  await page.getByRole('button', { exact: true, name: 'Files' }).click();
+  await page
+    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .click();
   await page.getByRole('link', { exact: true, name }).click();
 }
 
@@ -65,7 +68,9 @@ for (const kind of ['text', 'csv', 'image'] as const) {
     await page.evaluate(() =>
       window.dispatchEvent(new Event('preview-retry-enable'))
     );
-    await error.getByRole('button', { exact: true, name: 'Retry' }).click();
+    await error
+      .getByRole('button', { exact: true, name: m.error_action_retry() })
+      .click();
     await expect(error).toHaveCount(0);
     if (kind === 'image') {
       await expect(
@@ -129,16 +134,13 @@ test('Office retry recovers from both session and parser failures', async ({
     { url, workbook: [...readFileSync('e2e/fixtures/files/basic/grades.xlsx')] }
   );
   await openFile(page, 'Office session error.xlsx');
-  const error = await expectErrorSurface(
-    page,
-    'panel',
-    'Failed to load spreadsheet',
-    30_000
-  );
+  const error = await expectErrorSurface(page, 'panel', 'sheet', 30_000);
   await page.evaluate(() =>
     window.dispatchEvent(new CustomEvent('office-retry-stage', { detail: 1 }))
   );
-  await error.getByRole('button', { exact: true, name: 'Retry' }).click();
+  await error
+    .getByRole('button', { exact: true, name: m.error_action_retry() })
+    .click();
   await expect
     .poll(() =>
       page.evaluate(
@@ -150,7 +152,9 @@ test('Office retry recovers from both session and parser failures', async ({
   await page.evaluate(() =>
     window.dispatchEvent(new CustomEvent('office-retry-stage', { detail: 2 }))
   );
-  await error.getByRole('button', { exact: true, name: 'Retry' }).click();
+  await error
+    .getByRole('button', { exact: true, name: m.error_action_retry() })
+    .click();
   // The workbook opened: its sheet tabs and the drawn sheet.
   const frame = page.frameLocator('iframe[src*="office-runtime"]');
   await expect(frame.getByRole('tab').first()).toBeVisible({ timeout: 30_000 });
@@ -179,31 +183,35 @@ test('workspace statistics and indexing share a recoverable panel error', async 
     );
   });
   await page
-    .getByRole('button', { exact: true, name: 'Workspace settings' })
+    .getByRole('button', { exact: true, name: m.workspace_settings() })
     .click();
-  const settings = page.getByRole('dialog', { name: 'Workspace settings' });
+  const settings = page.getByRole('dialog', { name: m.workspace_settings() });
   await settings
-    .getByRole('button', { exact: true, name: 'Statistics' })
+    .getByRole('button', { exact: true, name: m.workspace_stats_title() })
     .click();
   const error = await expectErrorSurface(page, 'panel', undefined, 30_000);
-  await settings.getByRole('button', { exact: true, name: 'Indexing' }).click();
+  await settings
+    .getByRole('button', { exact: true, name: m.workspace_indexing() })
+    .click();
   await expect(error).toBeVisible();
   // The error replaces the whole tab, as on Statistics.
   await expect(
-    settings.getByRole('switch', { name: 'Auto process edits' })
+    settings.getByRole('switch', { name: m.workspace_auto_process() })
   ).toHaveCount(0);
   await page.evaluate(async () => {
     const browserPath = '/src/mocks/browser.ts';
     const { worker } = await import(browserPath);
     worker.resetHandlers();
   });
-  await error.getByRole('button', { exact: true, name: 'Retry' }).click();
+  await error
+    .getByRole('button', { exact: true, name: m.error_action_retry() })
+    .click();
   await expect(error).toHaveCount(0);
   await settings
-    .getByRole('button', { exact: true, name: 'Statistics' })
+    .getByRole('button', { exact: true, name: m.workspace_stats_title() })
     .click();
   await expect(
-    settings.getByText('Average score', { exact: true })
+    settings.getByText(m.stats_average_score(), { exact: true })
   ).toBeVisible();
 });
 
@@ -220,13 +228,11 @@ test('User scenarios opens errors in the actual workspace', async ({
     /\/workspaces\/ws_bio\?file=mock-preview-text-load$/
   );
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  const error = await expectErrorSurface(
-    page,
-    'panel',
-    "Couldn't load this file.",
-    30_000
-  );
-  const retry = error.getByRole('button', { exact: true, name: 'Retry' });
+  const error = await expectErrorSurface(page, 'panel', 'text', 30_000);
+  const retry = error.getByRole('button', {
+    exact: true,
+    name: m.error_action_retry(),
+  });
   await expect(retry).toHaveAttribute('data-variant', 'ghost-hover');
   await expect(retry.locator(':scope > svg')).toBeVisible();
 });
@@ -237,13 +243,13 @@ test('User scenarios opens seeded material errors in the workspace and survives 
   await openWorkspace(page);
   const panel = page.getByTestId('mock-scenario-panel');
   for (const [label, id, message] of [
-    ['Material load error', 'mock-material-load', 'Something went wrong'],
+    ['Material load error', 'mock-material-load', m.error_file_title()],
     [
       'Unreadable material',
       'mock-material-unreadable',
-      'This note could not be loaded',
+      m.material_decode_title(),
     ],
-    ['Broken diagram', 'mock-material-diagram', 'Failed to render diagram'],
+    ['Broken diagram', 'mock-material-diagram', m.mermaid_failed()],
   ]) {
     await panel.locator('summary').click();
     await panel.getByRole('button', { exact: true, name: label }).click();
@@ -257,7 +263,7 @@ test('User scenarios opens seeded material errors in the workspace and survives 
   }
   await page.reload();
   await expect(
-    page.getByText('Failed to render diagram', { exact: false })
+    page.getByText(m.mermaid_failed(), { exact: false })
   ).toBeVisible({ timeout: 30_000 });
 });
 
@@ -304,7 +310,7 @@ test('PDF annotation load toast retries failures and recovers without reloading 
   });
   const canvas = page.locator('[data-page="1"] canvas');
   const toast = page.locator('[data-sonner-toast]').filter({
-    hasText: 'Private annotations could not be loaded.',
+    hasText: m.pdf_annotations_failed(),
   });
   await expect(toast).toHaveCount(1, { timeout: 15_000 });
   await expect(canvas).toHaveCount(0);
@@ -313,24 +319,28 @@ test('PDF annotation load toast retries failures and recovers without reloading 
   const originalCanvas = await canvas.elementHandle();
   await expect(
     page.getByRole('alert').filter({
-      hasText: 'Private annotations could not be loaded.',
+      hasText: m.pdf_annotations_failed(),
     })
   ).toHaveCount(0);
-  await page.getByRole('button', { name: 'Material mode' }).click();
+  await page.getByRole('button', { name: m.material_mode() }).click();
 
   await expect(
-    page.getByRole('button', { exact: true, name: 'Draw' })
+    page.getByRole('button', { exact: true, name: m.pdf_draw() })
   ).toBeDisabled();
-  await toast.getByRole('button', { exact: true, name: 'Retry' }).click();
+  await toast
+    .getByRole('button', { exact: true, name: m.error_action_retry() })
+    .click();
   await expect(toast).toHaveCount(0);
   await expect(toast).toHaveCount(1, { timeout: 15_000 });
   await page.evaluate(() =>
     window.dispatchEvent(new Event('annotations-retry-enable'))
   );
-  await toast.getByRole('button', { exact: true, name: 'Retry' }).click();
+  await toast
+    .getByRole('button', { exact: true, name: m.error_action_retry() })
+    .click();
   await expect(toast).toHaveCount(0);
   await expect(
-    page.getByRole('button', { exact: true, name: 'Draw' })
+    page.getByRole('button', { exact: true, name: m.pdf_draw() })
   ).toBeEnabled();
   expect(await originalCanvas?.evaluate((element) => element.isConnected)).toBe(
     true

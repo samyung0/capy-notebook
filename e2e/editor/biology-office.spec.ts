@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { officeEditMenu, officeMenu, saveOffice } from '../helpers/office';
+import { m } from '../i18n';
 
 declare global {
   interface Window {
@@ -46,7 +47,9 @@ for (const [format, name] of [
       });
     }
     await page.goto('/workspaces/ws_bio');
-    await page.getByRole('button', { exact: true, name: 'Files' }).click();
+    await page
+      .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+      .click();
     await page
       .locator(`[data-workspace-file-tree] a[href*="file=${fileId}"]`)
       .click();
@@ -64,15 +67,13 @@ for (const [format, name] of [
         'Rich deck fixture'
       );
 
-    const mode = page.getByRole('button', { name: 'Material mode' });
+    const mode = page.getByRole('button', { name: m.material_mode() });
     await mode.click();
     await expect(mode).toHaveAttribute('aria-pressed', 'true');
     await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
     // File › Save is a menuitem, a ticked row a menuitemcheckbox.
     await saveOffice(page);
-    await expect(
-      page.getByRole('status').filter({ hasText: /^Saved$/ })
-    ).toBeVisible();
+    await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
     if (format === 'docx') {
       await officeMenu(page, 'View').click();
       await expect(
@@ -107,9 +108,7 @@ for (const [format, name] of [
       await cdp.send('Input.insertText', { text: '日本語' });
       await cdp.detach();
       await saveOffice(page);
-      await expect(
-        page.getByRole('status').filter({ hasText: /^Saved$/ })
-      ).toBeVisible();
+      await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
     }
     await mode.click();
     await expect(mode).toHaveAttribute('aria-pressed', 'false');
@@ -177,9 +176,7 @@ for (const [format, name] of [
         });
       }).toPass({ timeout: 30_000 });
       await input.press('End');
-      await expect(
-        page.getByRole('status').filter({ hasText: /^Saved$/ })
-      ).toBeVisible();
+      await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
       const runtime = page
         .frames()
         .find((candidate) => candidate.url().includes('office-runtime'));
@@ -195,9 +192,7 @@ for (const [format, name] of [
             runtime.evaluate(() => window.officeInputProbe.held.length)
           )
           .toBeGreaterThan(0);
-        await expect(
-          page.getByRole('status').filter({ hasText: /^Syncing/ })
-        ).toBeVisible();
+        await expect(page.locator('[data-save-state="syncing"]')).toBeVisible();
         const blocksUnload = () =>
           page.evaluate(() => {
             const event = new Event('beforeunload', { cancelable: true });
@@ -209,9 +204,7 @@ for (const [format, name] of [
         await expect
           .poll(() => runtime.evaluate(() => window.officeInputProbe.flushed))
           .toBe(true);
-        await expect(
-          page.getByRole('status').filter({ hasText: /^Saved$/ })
-        ).toHaveCount(0);
+        await expect(page.locator('[data-save-state="saved"]')).toHaveCount(0);
         expect(await blocksUnload()).toBe(true);
       } finally {
         await runtime.evaluate(() => {
@@ -220,9 +213,7 @@ for (const [format, name] of [
             release();
         });
       }
-      await expect(
-        page.getByRole('status').filter({ hasText: /^Saved$/ })
-      ).toBeVisible();
+      await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
     }
   });
 }
@@ -237,7 +228,7 @@ test('DOCX Insert table of contents lists the headings, and Update follows a ren
   await expect(frame.locator('canvas').first()).toBeVisible({
     timeout: 60_000,
   });
-  await page.getByRole('button', { name: 'Material mode' }).click();
+  await page.getByRole('button', { name: m.material_mode() }).click();
   await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
   const input = frame.getByTestId('yrs-input');
   // The caret goes into a paragraph through one of its positioned glyphs, as
@@ -304,9 +295,7 @@ test('DOCX Insert table of contents lists the headings, and Update follows a ren
   await expect(entry('1\\. 引言X')).toHaveCount(1);
   await expect(entry('1\\. 引言')).toHaveCount(0);
   await saveOffice(page);
-  await expect(
-    page.getByRole('status').filter({ hasText: /^Saved$/ })
-  ).toBeVisible();
+  await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
 });
 
 test('DOCX view mode selects and copies text from its text layer', async ({
@@ -413,8 +402,8 @@ test('Office viewer keeps its iframe when the workspace layout changes', async (
   // One column below lg, two columns at lg: both switch the surrounding layout.
   // Below lg an open Office file folds the workspace tools into one button.
   for (const [width, tools] of [
-    [900, 'Workspace tools'],
-    [1280, 'Files'],
+    [900, m.workspace_tools()],
+    [1280, m.workspace_tab_files()],
   ] as const) {
     await page.setViewportSize({ height: 800, width });
     await expect(
@@ -431,7 +420,9 @@ test('XLSX keyboard selection scrolls into view and takes typing', async ({
   test.setTimeout(120_000);
   await page.setViewportSize({ height: 800, width: 1280 });
   await page.goto('/workspaces/ws_bio');
-  await page.getByRole('button', { exact: true, name: 'Files' }).click();
+  await page
+    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .click();
   await page
     .locator('[data-workspace-file-tree] a[href*="file=bio-office-xlsx"]')
     .click();
@@ -439,7 +430,7 @@ test('XLSX keyboard selection scrolls into view and takes typing', async ({
   await expect(frame.locator('canvas').first()).toBeVisible({
     timeout: 60_000,
   });
-  await page.getByRole('button', { name: 'Material mode' }).click();
+  await page.getByRole('button', { name: m.material_mode() }).click();
   await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
 
   // CC info freezes columns A:B and rows 1:2; H is past the window's right edge.
@@ -553,7 +544,9 @@ test('XLSX zooms from View › Zoom in both modes, keeping the top-left cell, hi
   test.setTimeout(120_000);
   await page.setViewportSize({ height: 800, width: 1280 });
   await page.goto('/workspaces/ws_bio');
-  await page.getByRole('button', { exact: true, name: 'Files' }).click();
+  await page
+    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .click();
   await page
     .locator('[data-workspace-file-tree] a[href*="file=bio-office-xlsx"]')
     .click();
@@ -562,8 +555,12 @@ test('XLSX zooms from View › Zoom in both modes, keeping the top-left cell, hi
     timeout: 60_000,
   });
   const grid = frame.getByRole('tabpanel');
-  const nameBox = frame.getByRole('textbox', { name: 'Name box' });
-  const contents = frame.getByRole('textbox', { name: 'Cell contents' });
+  const nameBox = frame.getByRole('textbox', {
+    name: m.files_office_spreadsheet_name_box(),
+  });
+  const contents = frame.getByRole('textbox', {
+    name: m.files_office_spreadsheet_cell_contents(),
+  });
   const box = await grid.boundingBox();
   if (!box) throw new Error('Grid is not laid out');
   const zoomTo = async (percent: string) => {
@@ -607,7 +604,7 @@ test('XLSX zooms from View › Zoom in both modes, keeping the top-left cell, hi
     .toBe('Course Name');
 
   // Edit mode keeps the top-left cell too, in a real browser's layout.
-  await page.getByRole('button', { name: 'Material mode' }).click();
+  await page.getByRole('button', { name: m.material_mode() }).click();
   await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
   const editGrid = frame.getByTestId('xlsx-scroll');
   const editBox = await editGrid.boundingBox();
@@ -695,7 +692,7 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
     await expect(frame.locator('canvas').first()).toBeVisible({
       timeout: 120_000,
     });
-    const mode = page.getByRole('button', { name: 'Material mode' });
+    const mode = page.getByRole('button', { name: m.material_mode() });
     const zoomMenu = async () => {
       await officeMenu(page, 'View').click();
       await page.getByRole('menuitem', { name: 'Zoom' }).click();
@@ -806,9 +803,7 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
     await mode.click();
     await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });
     await saveOffice(page);
-    await expect(
-      page.getByRole('status').filter({ hasText: /^Saved$/ })
-    ).toBeVisible();
+    await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
     await page.evaluate(async (id) => {
       const modulePath = '/src/mocks/collaboration.ts';
       const { announceSourceEpoch } = (await import(
@@ -816,7 +811,7 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
       )) as typeof import('../../src/mocks/collaboration');
       announceSourceEpoch(id, 2);
     }, fileId);
-    await expect(page.getByText('A newer version of this file')).toBeVisible();
+    await expect(page.getByText(m.source_edit_replaced())).toBeVisible();
     await expect(toolbarZoom).toBeEnabled();
     if (format === 'xlsx') {
       // A typed zoom takes 50–200% as Google Sheets does: 300 is 200%.
@@ -842,7 +837,9 @@ test('XLSX cell edit ends when focus moves into Capy, not on a window switch', a
   test.setTimeout(120_000);
   await page.setViewportSize({ height: 800, width: 1280 });
   await page.goto('/workspaces/ws_bio');
-  await page.getByRole('button', { exact: true, name: 'Files' }).click();
+  await page
+    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .click();
   await page
     .locator('[data-workspace-file-tree] a[href*="file=bio-office-xlsx"]')
     .click();
@@ -850,16 +847,18 @@ test('XLSX cell edit ends when focus moves into Capy, not on a window switch', a
   await expect(frame.locator('canvas').first()).toBeVisible({
     timeout: 60_000,
   });
-  await page.getByRole('button', { name: 'Material mode' }).click();
+  await page.getByRole('button', { name: m.material_mode() }).click();
   await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
-  await page.getByRole('button', { exact: true, name: 'Chat' }).click();
-  const chat = page.getByRole('textbox', { name: 'Ask about your sources…' });
+  await page
+    .getByRole('button', { exact: true, name: m.workspace_tab_chat() })
+    .click();
+  const chat = page.getByRole('textbox', { name: m.chat_placeholder() });
   await expect(chat).toBeVisible();
 
   const grid = frame.getByTestId('xlsx-scroll');
   const formula = frame.getByTestId('xlsx-formula-input');
   const editor = frame.getByTestId('xlsx-cell-editor');
-  const saved = page.getByRole('status').filter({ hasText: /^Saved$/ });
+  const saved = page.locator('[data-save-state="saved"]');
   const box = await grid.boundingBox();
   if (!box) throw new Error('Grid is not laid out');
 
@@ -924,7 +923,7 @@ test('XLSX cell edit ends when focus moves into Capy, not on a window switch', a
   await frameFocus(false);
   await chat.click();
   await expect(frame.getByTestId('xlsx-error')).toBeVisible();
-  await expect(page.getByText("We couldn't load this file.")).toHaveCount(0);
+  await expect(page.getByText(m.error_file_body())).toHaveCount(0);
 });
 
 test("Office runtime keeps Capy's theme after reloading and asks for a page reload on a protocol mismatch", async ({
@@ -959,8 +958,10 @@ test("Office runtime keeps Capy's theme after reloading and asks for a page relo
   await runtime.evaluate(() =>
     parent.postMessage({ type: 'initialized', version: 0 }, '*')
   );
-  await expect(page.getByText('An update is ready')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Reload' })).toBeVisible();
+  await expect(page.getByText(m.error_chunk_title())).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: m.error_action_reload() })
+  ).toBeVisible();
 });
 
 test('an Office citation highlights its passage again after the runtime reloads', async ({
@@ -968,10 +969,12 @@ test('an Office citation highlights its passage again after the runtime reloads'
 }) => {
   test.setTimeout(180_000);
   await page.goto('/workspaces/ws_bio');
-  await page.getByRole('button', { exact: true, name: 'Chat' }).click();
-  await page.getByRole('button', { name: 'Chat history' }).click();
+  await page
+    .getByRole('button', { exact: true, name: m.workspace_tab_chat() })
+    .click();
+  await page.getByRole('button', { name: m.chat_history() }).click();
   await page.getByRole('button', { name: 'OpenUI: Office citation' }).click();
-  await page.getByTitle('Source 1').click();
+  await page.getByTitle(m.chat_source_number({ n: 1 })).click();
   const frame = page.frameLocator('iframe[src*="office-runtime"]');
   const highlight = frame.locator('[data-citation-highlight]').first();
   await expect(highlight).toBeVisible({ timeout: 60_000 });
@@ -1005,7 +1008,7 @@ test('a PPTX citation on a zoomed slide scrolls into view', async ({
   await expect(frame.locator('canvas').first()).toBeVisible({
     timeout: 120_000,
   });
-  await officeMenu(page, 'View').click();
+  await officeMenu(page, m.files_office_pptx_menu_view()).click();
   await page.getByRole('menuitem', { name: 'Zoom' }).click();
   await page
     .getByRole('menuitemcheckbox', { exact: true, name: '200%' })
@@ -1101,9 +1104,7 @@ for (const [format, text] of [
     });
     await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
     await saveOffice(page);
-    await expect(
-      page.getByRole('status').filter({ hasText: /^Saved$/ })
-    ).toBeVisible();
+    await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
 
     // A newer version is published while the saved editor is open: the
     // session is replaced and the editor pauses under the reload banner.
@@ -1114,7 +1115,7 @@ for (const [format, text] of [
       )) as typeof import('../../src/mocks/collaboration');
       announceSourceEpoch(id, 2);
     }, fileId);
-    await expect(page.getByText('A newer version of this file')).toBeVisible();
+    await expect(page.getByText(m.source_edit_replaced())).toBeVisible();
 
     const updates = await page.evaluateHandle(() => {
       const seen = { count: 0 };
@@ -1280,8 +1281,8 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
     }) as typeof window.addEventListener;
   });
   const frame = page.frameLocator('iframe[src*="office-runtime"]');
-  const chat = page.getByRole('textbox', { name: 'Ask about your sources…' });
-  const mode = page.getByRole('button', { name: 'Material mode' });
+  const chat = page.getByRole('textbox', { name: m.chat_placeholder() });
+  const mode = page.getByRole('button', { name: m.material_mode() });
   const documentInput = frame.getByLabel('Document input');
 
   await test.step('a newly opened editor leaves the focus in the chat box', async () => {
@@ -1328,7 +1329,10 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
     await expect(officeEditMenu(page)).toBeVisible({ timeout: 60_000 });
     await expect(documentInput).toBeFocused();
     // Connecting ends at the first sync, before the receipt.
-    await expect(page.getByTestId('editor-save-state')).toHaveText('Saved');
+    await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+      'data-save-state',
+      'saved'
+    );
     await page.keyboard.type('Hello');
     await expect
       .poll(() => updates.evaluate((seen) => seen.count))
@@ -1449,11 +1453,13 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
       return seen;
     });
     await mode.click();
-    await page.getByRole('button', { exact: true, name: 'Files' }).click();
+    await page
+      .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+      .click();
     await page
       .locator('[data-workspace-file-tree]')
       .locator('..')
-      .getByRole('button', { exact: true, name: 'Add file' })
+      .getByRole('button', { exact: true, name: m.action_add_file() })
       .first()
       .click();
     const menu = page.getByRole('menu');
@@ -1538,7 +1544,7 @@ test('a view-only XLSX viewer still selects and copies a cell after canEdit:fals
   });
   // CCHU8003, the first course code under the headers.
   await grid.click({ position: { x: 60, y: 60 } });
-  const contents = frame.getByLabel('Cell contents');
+  const contents = frame.getByLabel(m.files_office_spreadsheet_cell_contents());
   await expect(contents).not.toHaveValue('');
   const value = await contents.inputValue();
   await contents.click();
@@ -1565,7 +1571,7 @@ test('PPTX speaker notes start hidden, and one remembered toggle serves view and
     name: 'Show speaker notes',
   });
   const openView = async () => {
-    await officeMenu(page, 'View').click();
+    await officeMenu(page, m.files_office_pptx_menu_view()).click();
     await expect(showNotes).toBeVisible();
   };
 
@@ -1586,7 +1592,7 @@ test('PPTX speaker notes start hidden, and one remembered toggle serves view and
 
   // Below lg the floating tools button sits above the open notes box.
   await page.setViewportSize({ height: 800, width: 390 });
-  const tools = page.getByRole('button', { name: 'Workspace tools' });
+  const tools = page.getByRole('button', { name: m.workspace_tools() });
   await expect(tools).toBeVisible();
   await expect(async () => {
     const toolsBox = await tools.boundingBox();
@@ -1598,7 +1604,7 @@ test('PPTX speaker notes start hidden, and one remembered toggle serves view and
   await page.setViewportSize({ height: 800, width: 1280 });
 
   // Edit mode opens with the same choice, and hiding it there carries back.
-  const mode = page.getByRole('button', { name: 'Material mode' });
+  const mode = page.getByRole('button', { name: m.material_mode() });
   await mode.click();
   await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
   const editNotes = frame.getByTestId('pptx-notes-textarea');
@@ -1636,7 +1642,9 @@ test('PPTX Present fills the screen, and Presenter view drives the show from a s
   await expect.poll(fullscreen).toBeNull();
 
   // Presenter view: the notes window opens beside the tab's show.
-  await page.getByRole('button', { name: 'More ways to present' }).click();
+  await page
+    .getByRole('button', { name: m.files_office_present_options() })
+    .click();
   const opened = page.waitForEvent('popup');
   await page.getByRole('menuitem', { name: 'Presenter view' }).click();
   const notes = await opened;
@@ -1660,12 +1668,16 @@ test('PPTX Present fills the screen, and Presenter view drives the show from a s
   await notes.getByRole('button', { exact: true, name: 'End' }).click();
   await closed;
   await expect(show).toHaveCount(0);
-  await expect(frame.getByText('Slide 2 of 20')).toBeVisible();
+  await expect(
+    frame.getByText(m.files_office_slide_position({ current: 2, total: 20 }))
+  ).toBeVisible();
 
   // The runtime reloading by itself takes the notes window with it, and the
   // next Presenter view gets a fresh one that shows its notes.
   const presenterView = async () => {
-    await page.getByRole('button', { name: 'More ways to present' }).click();
+    await page
+      .getByRole('button', { name: m.files_office_present_options() })
+      .click();
     const popup = page.waitForEvent('popup');
     await page.getByRole('menuitem', { name: 'Presenter view' }).click();
     return popup;
@@ -1720,7 +1732,7 @@ test('DOCX View › Show ruler is remembered, edit mode only, and stays usable w
   expect(vertical?.y).toBeCloseTo(firstPage?.y ?? -1, 0);
 
   // View mode draws no ruler and offers no toggle; edit opens with the choice.
-  const mode = page.getByRole('button', { name: 'Material mode' });
+  const mode = page.getByRole('button', { name: m.material_mode() });
   await mode.click();
   await expect(mode).toHaveAttribute('aria-pressed', 'false');
   await expect(frame.locator('canvas').first()).toBeVisible({

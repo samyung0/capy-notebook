@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
+import '../i18n/compile';
 
 /**
  * Editor feature matrix. Run with: pnpm e2e:msw:editor
@@ -25,6 +26,10 @@ const port = Number(process.env.EDITOR_E2E_PORT ?? 4518);
 const baseURL = `http://127.0.0.1:${port}`;
 // Vite serves the interactive block frame on another site (vite-embed.ts).
 const embedOrigin = `http://localhost:${port + 1}`;
+// The preset's Windows UA makes MathLive drop its macOS-only Cmd+A binding
+// while Playwright sends Meta+A on a Mac host; keep the host's real platform.
+const { userAgent: _windowsUserAgent, ...desktopChrome } =
+  devices['Desktop Chrome'];
 
 export default defineConfig({
   fullyParallel: true,
@@ -32,7 +37,7 @@ export default defineConfig({
     {
       name: 'chromium-editor',
       // The headless shell can strand modified-click tabs (Playwright #42142).
-      use: { ...devices['Desktop Chrome'], channel: 'chromium' },
+      use: { ...desktopChrome, channel: 'chromium' },
     },
   ],
   reporter: [

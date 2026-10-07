@@ -105,6 +105,7 @@ function EditorSaveStatus({
           'ml-2 inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[0.8125rem] text-fg-muted',
           failed && 'text-solid-error'
         )}
+        data-save-state={editorStatus.saveState}
         data-testid="editor-save-state"
         role="status"
       >
@@ -122,6 +123,7 @@ function EditorSaveStatus({
           'ml-1 inline-flex shrink-0 items-center rounded-sm px-1 outline-none focus-visible:ring-2 focus-visible:ring-focus',
           failed && 'text-solid-error'
         )}
+        data-save-state={editorStatus.saveState}
         data-testid="editor-save-state"
         render={<span role="status" />}
         tabIndex={0}

@@ -45,7 +45,13 @@ export default function CsvView({
   }, [url]);
 
   if (error) {
-    return <FileError onRetry={onRetry} title={m.files_sheet_failed()} />;
+    return (
+      <FileError
+        kind="sheet"
+        onRetry={onRetry}
+        title={m.files_sheet_failed()}
+      />
+    );
   }
   if (!result) return <Skeleton className="h-[60vh] w-full" />;
   if (result.rows.length === 0) {
