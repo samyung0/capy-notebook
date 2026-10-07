@@ -3,6 +3,8 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterContextProvider, RouterProvider } from '@tanstack/react-router';
 import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
+import { z } from 'zod';
+import { en, zhCN } from 'zod/locales';
 import { queryClient } from './api/queryClient';
 import { AppErrorBoundary } from './components/app/AppErrorBoundary';
 import { AppToaster } from './components/app/AppToaster';
@@ -23,6 +25,9 @@ initErrorReporting();
 // Chinese UI could mix Japanese and Chinese faces (and their weights) in one
 // row. Changing the locale reloads the page.
 document.documentElement.lang = getLocale();
+// Zod's own messages (form and question validation) follow the UI locale.
+// Set here, not in @/i18n, so public pages that use copy load no zod.
+z.config(getLocale() === 'zh' ? zhCN() : en());
 
 // Mocks are on by default; set VITE_USE_MSW=false to hit the real Go gateway
 // (Vite proxies /api → http://localhost:8080).

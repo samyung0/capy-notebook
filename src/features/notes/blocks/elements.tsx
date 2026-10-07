@@ -40,10 +40,7 @@ import { EmbedLoading } from '@/features/materials/embeds/EmbedView';
 import { HtmlEmbed } from '@/features/materials/HtmlEmbed';
 import { StandaloneMaterialTitle } from '@/features/materials/MaterialRenderContext';
 import { MediaFrame } from '@/features/materials/MediaFrame';
-import {
-  MediaPreview,
-  MermaidPreview,
-} from '@/features/materials/MediaPreview';
+import { MermaidPreview } from '@/features/materials/MediaPreview';
 import { Mermaid, MermaidSwatch } from '@/features/materials/Mermaid';
 import {
   MERMAID_THEME_LABEL,
@@ -51,11 +48,9 @@ import {
   type MermaidTheme,
   mermaidTheme,
 } from '@/features/materials/mermaidThemes';
+import { FigureView } from '@/features/materials/staticViews';
 import { EditorIcon } from '@/features/notes/EditorIcon';
-import {
-  QuestionBlockView,
-  QuestionView,
-} from '@/features/questions/QuestionView';
+import { QuestionView } from '@/features/questions/QuestionView';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { uid } from '@/lib/id';
@@ -543,16 +538,12 @@ function MediaBlockActions({
   );
 }
 
-/** Unresized charts open at their question-figure width (max-w-md). */
-const CHART_WIDTH = '28rem';
-
 export function VisualBlockElement(props: PlateElementProps) {
   const editor = useEditorRef();
   const readOnly = useReadOnly();
   const dialogs = useOptionalNoteBlockDialogs();
   const element = props.element as unknown as QuestionFigureNode;
   const { block } = element;
-  const [previewing, setPreviewing] = useState(false);
   const onMouseDown = useSelectOnMouseDown(props.element);
   const update = (patch: Partial<QuestionFigureNode>) => {
     const at = editor.api.findPath(props.element);
@@ -561,11 +552,8 @@ export function VisualBlockElement(props: PlateElementProps) {
   return (
     <PlateElement {...props} className="relative my-3">
       <div contentEditable={false} onMouseDown={onMouseDown}>
-        <MediaFrame
-          aspectRatio={
-            block.type === 'graph' ? block.width / block.height : undefined
-          }
-          onOpen={() => setPreviewing(true)}
+        <FigureView
+          block={block}
           onWidthChange={readOnly ? undefined : (width) => update({ width })}
           toolbar={
             readOnly ? undefined : (
@@ -577,36 +565,12 @@ export function VisualBlockElement(props: PlateElementProps) {
               />
             )
           }
-          width={
-            element.width ??
-            (block.type === 'chart' ? CHART_WIDTH : block.width)
-          }
-        >
-          {/* The figure fills the frame so the handles scale it. */}
-          <div className="[&_figure]:my-0 [&_figure]:w-full [&_figure]:max-w-none [&_img]:w-full">
-            <QuestionBlockView block={block} />
-          </div>
-        </MediaFrame>
+          width={element.width}
+        />
       </div>
       {/* Slate's void spacer is already invisible; display:none would leave
        * the caret without a position, so focusing scrolled the page away. */}
       <span className="absolute top-0 left-0">{props.children}</span>
-      <MediaPreview
-        onOpenChange={setPreviewing}
-        open={previewing}
-        title={block.type === 'chart' ? m.editor_chart() : m.editor_graph()}
-      >
-        {block.type === 'chart' ? (
-          // Chart text uses the page colours, so it keeps a page-coloured panel.
-          <div className="w-[min(100%,56rem)] rounded-card bg-surface p-6 text-fg [&_figure]:my-0 [&_figure]:max-w-none">
-            <QuestionBlockView block={block} />
-          </div>
-        ) : (
-          <div className="max-h-full max-w-full [&_img]:h-[calc(100dvh-10rem)] [&_img]:w-auto [&_img]:max-w-full">
-            <QuestionBlockView block={block} />
-          </div>
-        )}
-      </MediaPreview>
     </PlateElement>
   );
 }

@@ -51,6 +51,29 @@ const note: AnonymousNote = {
         refKind: 'flashcards',
         type: 'material_ref',
       },
+      {
+        block: {
+          board: { axis: true, bbox: [-5, 5, 5, -5], grid: true },
+          description: 'A line',
+          elements: [],
+          height: 300,
+          image: {
+            svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 3"></svg>',
+          },
+          type: 'graph',
+          width: 400,
+        },
+        children: [text('')],
+        id: 'graph',
+        type: 'graph',
+      },
+      {
+        caption: 'Osmosis',
+        children: [text('')],
+        html: '<p>hi</p>',
+        id: 'html',
+        type: 'html_embed',
+      },
     ],
   },
   embeds: [
@@ -90,6 +113,11 @@ describe('renderSharePage', () => {
     // Embeds render on the server too, then hydrate from the state.
     expect(html).toContain('data-island="embed"');
     expect(html).toContain('Mitochondria');
+    // Charts and graphs hydrate for their click-to-preview.
+    expect(html).toContain('data-island="figure"');
+    expect(html).toContain('data-island="html"');
+    // View source needs the app's router, so shared pages leave it out.
+    expect(html).not.toContain('View source');
   });
 
   it('describes the note for search and link previews, without an image', () => {

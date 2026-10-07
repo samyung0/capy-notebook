@@ -7,11 +7,6 @@
  */
 
 // @ts-expect-error generated at build time by the Paraglide Vite plugin
-import { getLocale } from '@paraglide/runtime';
-import { z } from 'zod';
-import { en, zhCN } from 'zod/locales';
-
-// @ts-expect-error generated at build time by the Paraglide Vite plugin
 export * as m from '@paraglide/messages';
 export {
   baseLocale,
@@ -25,6 +20,3 @@ export const LOCALE_LABELS: Record<string, string> = {
   en: 'English',
   zh: '中文',
 };
-
-// Zod's own messages (form and question validation) follow the UI locale.
-z.config(getLocale() === 'zh' ? zhCN() : en());

@@ -52,6 +52,8 @@ if (state.kind === 'notes') {
       poster.replaceWith(player);
     }
   });
+  // Every island hydrates at load, so none changes size while the reader
+  // scrolls past it.
   const islands = [...document.querySelectorAll<HTMLElement>('[data-island]')];
   if (islands.length)
     void import('./islands').then(({ hydrateIslands }) =>

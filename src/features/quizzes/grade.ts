@@ -1,6 +1,6 @@
 import type { QuestionPart } from '@/api/types';
+import { quantityValuePattern } from '@/features/questions/quantity';
 import type { LearnerPart } from '@/features/questions/types';
-import { quantityValuePattern } from '@/features/questions/validation';
 
 /**
  * A learner's answer per part, as the server takes it: option indices for

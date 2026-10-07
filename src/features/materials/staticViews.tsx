@@ -1,15 +1,18 @@
-import { lazy, Suspense, useContext, useState } from 'react';
+import { lazy, type ReactNode, Suspense, useContext, useState } from 'react';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { MEDIA_CAPTION_CLASS } from '@/features/notes/nodeStyles';
+import { QuestionBlockView } from '@/features/questions/QuestionView';
 import { m } from '@/i18n';
 import type {
   HtmlEmbedElement,
   MaterialRefElement,
   MermaidElement,
+  QuestionFigureElement,
 } from './document';
 import { EmbedLoading, EmbedViewContext } from './embeds/EmbedView';
 import { HtmlEmbed } from './HtmlEmbed';
+import { PublicPageContext } from './Island';
 import {
   AssetUrlContext,
   type MediaAssetNode,
@@ -17,7 +20,7 @@ import {
   openEditorAsset,
 } from './MediaAssetView';
 import { MediaFrame } from './MediaFrame';
-import { MermaidPreview } from './MediaPreview';
+import { MediaPreview, MermaidPreview } from './MediaPreview';
 import { Mermaid } from './Mermaid';
 
 /* The read-only blocks that need the browser, apart from their Slate
@@ -110,17 +113,70 @@ export function MermaidView({
   );
 }
 
+/** Unresized charts open at their question-figure width (max-w-md). */
+const CHART_WIDTH = '28rem';
+
+/** A chart or graph with its click-to-preview. The editor adds its toolbar
+ * and resize handles. */
+export function FigureView({
+  block,
+  onWidthChange,
+  toolbar,
+  width,
+}: Pick<QuestionFigureElement, 'block' | 'width'> & {
+  onWidthChange?: (width: string) => void;
+  toolbar?: ReactNode;
+}) {
+  const [previewing, setPreviewing] = useState(false);
+  return (
+    <>
+      <MediaFrame
+        aspectRatio={
+          block.type === 'graph' ? block.width / block.height : undefined
+        }
+        onOpen={() => setPreviewing(true)}
+        onWidthChange={onWidthChange}
+        toolbar={toolbar}
+        width={width ?? (block.type === 'chart' ? CHART_WIDTH : block.width)}
+      >
+        {/* The figure fills the frame so the handles scale it. */}
+        <div className="[&_figure]:my-0 [&_figure]:w-full [&_figure]:max-w-none [&_img]:w-full">
+          <QuestionBlockView block={block} />
+        </div>
+      </MediaFrame>
+      <MediaPreview
+        onOpenChange={setPreviewing}
+        open={previewing}
+        title={block.type === 'chart' ? m.editor_chart() : m.editor_graph()}
+      >
+        {block.type === 'chart' ? (
+          // Chart text uses the page colours, so it keeps a page-coloured panel.
+          <div className="w-[min(100%,56rem)] rounded-card bg-surface p-6 text-fg [&_figure]:my-0 [&_figure]:max-w-none">
+            <QuestionBlockView block={block} />
+          </div>
+        ) : (
+          <div className="max-h-full max-w-full [&_img]:h-[calc(100dvh-10rem)] [&_img]:w-auto [&_img]:max-w-full">
+            <QuestionBlockView block={block} />
+          </div>
+        )}
+      </MediaPreview>
+    </>
+  );
+}
+
 const HtmlEmbedSourceDialog = lazy(
   () => import('@/features/notes/blocks/HtmlEmbedSourceDialog')
 );
 
-/** An interactive HTML block in its sandboxed frame, with View source. */
+/** An interactive HTML block in its sandboxed frame, with View source in the
+ * app. */
 export function HtmlEmbedView({
   caption,
   html,
   id,
 }: Pick<HtmlEmbedElement, 'caption' | 'html' | 'id'>) {
   const [viewing, setViewing] = useState(false);
+  const publicPage = useContext(PublicPageContext);
   return (
     <>
       <HtmlEmbed
@@ -128,13 +184,15 @@ export function HtmlEmbedView({
         html={html}
         id={id}
         toolbar={
-          <ToolbarButton
-            label={m.html_embed_view_source()}
-            onClick={() => setViewing(true)}
-            tooltipSide="top"
-          >
-            <EditorIcon name="code" />
-          </ToolbarButton>
+          !publicPage && (
+            <ToolbarButton
+              label={m.html_embed_view_source()}
+              onClick={() => setViewing(true)}
+              tooltipSide="top"
+            >
+              <EditorIcon name="code" />
+            </ToolbarButton>
+          )
         }
       />
       {viewing && (

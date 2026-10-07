@@ -2,6 +2,7 @@ import { z } from 'zod';
 import * as limits from '@/api/limits.generated';
 import { m } from '@/i18n';
 import { CopyError } from '@/lib/copyError';
+import { quantityValuePattern } from './quantity';
 import { gapNumbers, type Question } from './types';
 
 const letterStart = /^[A-Za-z]/;
@@ -52,10 +53,6 @@ const imageSize = {
   width: z.number().int().min(1).max(limits.QUESTION_IMAGE_DIMENSION_MAX),
 };
 const style = { dash: z.boolean().optional(), hidden: z.boolean().optional() };
-
-/** Values only. A quantity's unit belongs to the question, never to its answer. */
-export const quantityValuePattern =
-  /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?(?:\s*\/\s*[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)?$/;
 
 const nonzeroDigit = /[1-9]/;
 const scientificSeparator = /[eE]/;

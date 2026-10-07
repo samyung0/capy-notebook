@@ -1,13 +1,14 @@
 import { createContext, type ReactNode } from 'react';
 
 /* Server-rendered shared notes are plain HTML; only the parts that need the
-   browser (images' preview, embedded quizzes and sets, diagrams, interactive
+   browser (images', charts' and graphs' preview, embedded quizzes and sets,
+   diagrams, interactive
    blocks) take React there. An island marks such a part: the share page
    hydrates `children` again from `name` and `props` (src/share/islands.tsx),
    so `children` must be exactly what that island renders from them. In the
    app the wrapper is inert. */
 
-export type IslandName = 'embed' | 'html' | 'media' | 'mermaid';
+export type IslandName = 'embed' | 'figure' | 'html' | 'media' | 'mermaid';
 
 export function Island({
   children,
@@ -34,3 +35,8 @@ export function Island({
 export const StaticMathContext = createContext<
   ((tex: string, displayMode: boolean) => string) | null
 >(null);
+
+/** Set on shared pages, on the server and in their islands: they leave out
+ * the app's own actions, such as an interactive block's View source (its
+ * dialog needs the app's router). */
+export const PublicPageContext = createContext(false);

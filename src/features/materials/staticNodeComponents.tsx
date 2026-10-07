@@ -35,7 +35,6 @@ import {
   KBD_MARK_CLASS,
   LI_CLASS,
   LINK_CLASS,
-  MEDIA_MAX_WIDTH_CLASS,
   MENTION_AT_CLASS,
   MENTION_CLASS,
   MERMAID_CAPTION_CLASS,
@@ -59,10 +58,7 @@ import {
   getCodeBlockLanguageLabel,
   normalizeCalloutVariant,
 } from '@/features/notes/richBlockConfig';
-import {
-  QuestionBlockView,
-  QuestionView,
-} from '@/features/questions/QuestionView';
+import { QuestionView } from '@/features/questions/QuestionView';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import type {
@@ -83,6 +79,7 @@ import { MediaFrame } from './MediaFrame';
 import { scrollToTocHeading } from './scrollToTocHeading';
 import {
   EmbedSlot,
+  FigureView,
   HtmlEmbedView,
   MermaidView,
   StaticMediaAsset,
@@ -443,13 +440,15 @@ function HtmlEmbedElement(props: SlateElementProps) {
 }
 
 function QuestionFigure(props: SlateElementProps) {
-  const element = props.element as unknown as QuestionFigureElement;
+  const { block, width } = props.element as unknown as QuestionFigureElement;
   return (
-    <SlateElement
-      {...props}
-      className={cn('my-3 border border-transparent', MEDIA_MAX_WIDTH_CLASS)}
-    >
-      <QuestionBlockView block={element.block} />
+    <SlateElement {...props} className="my-3">
+      <div contentEditable={false}>
+        <Island name="figure" props={{ block, width }}>
+          <FigureView block={block} width={width} />
+        </Island>
+      </div>
+      {props.children}
     </SlateElement>
   );
 }

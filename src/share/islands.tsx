@@ -5,10 +5,14 @@ import { USE_MSW } from '@/api/auth';
 import { AppToaster } from '@/components/app/AppToaster';
 import { TooltipProvider } from '@/components/ui/Tooltip';
 import { EmbedViewContext } from '@/features/materials/embeds/EmbedView';
-import type { IslandName } from '@/features/materials/Island';
+import {
+  type IslandName,
+  PublicPageContext,
+} from '@/features/materials/Island';
 import { AssetUrlContext } from '@/features/materials/MediaAssetView';
 import {
   EmbedSlot,
+  FigureView,
   HtmlEmbedView,
   MermaidView,
   StaticMediaAsset,
@@ -26,6 +30,7 @@ const PublicEmbed = lazy(() =>
 
 const VIEWS = {
   embed: EmbedSlot,
+  figure: FigureView,
   html: HtmlEmbedView,
   media: StaticMediaAsset,
   mermaid: MermaidView,
@@ -52,15 +57,17 @@ export async function hydrateIslands(
       island,
       <StrictMode>
         <TooltipProvider>
-          <AssetUrlContext.Provider
-            value={(assetId) => anonymousNoteAssetUrl(state.token, assetId)}
-          >
-            <PublicEmbedsContext.Provider value={embeds}>
-              <EmbedViewContext.Provider value={PublicEmbed}>
-                <View {...JSON.parse(island.dataset.islandProps ?? '{}')} />
-              </EmbedViewContext.Provider>
-            </PublicEmbedsContext.Provider>
-          </AssetUrlContext.Provider>
+          <PublicPageContext.Provider value>
+            <AssetUrlContext.Provider
+              value={(assetId) => anonymousNoteAssetUrl(state.token, assetId)}
+            >
+              <PublicEmbedsContext.Provider value={embeds}>
+                <EmbedViewContext.Provider value={PublicEmbed}>
+                  <View {...JSON.parse(island.dataset.islandProps ?? '{}')} />
+                </EmbedViewContext.Provider>
+              </PublicEmbedsContext.Provider>
+            </AssetUrlContext.Provider>
+          </PublicPageContext.Provider>
         </TooltipProvider>
       </StrictMode>
     );

@@ -189,9 +189,12 @@ renderer (`MaterialPreview`) to HTML for good, leaving out a first heading that 
 browser loads no renderer: equations are MathLive's static markup (the page links MathLive's static and font
 stylesheets only when the note has math), code is highlighted on the server, a YouTube block is its poster
 until clicked, and the contents block scrolls with plain script. Only islands take React
-(`src/features/materials/Island.tsx`, `src/share/islands.tsx`): images (click-to-preview), diagrams (Mermaid
-draws in the browser), interactive HTML blocks and embedded quizzes and sets, each hydrated from the props the
-server wrote beside it; a note without them loads no React. Mentions render the name stored in the note.
+(`src/features/materials/Island.tsx`, `src/share/islands.tsx`): images, charts and graphs (click-to-preview),
+diagrams (Mermaid draws in the browser), interactive HTML blocks (no View source: its dialog needs the app
+router; `PublicPageContext`) and embedded quizzes and sets, each hydrated from the props the server wrote
+beside it, all at load so nothing changes size mid-scroll; a note without them loads no React. Public pages
+load no zod: `@/i18n` leaves zod's message locale to the app entry (`src/main.tsx`), and grading's number
+pattern lives in `src/features/questions/quantity.ts`. Mentions render the name stored in the note.
 `GET /p/notes/{token}/assets/{assetId}` serves an image only when the note's current content shows it
 (`materialdoc.EditorAssetIDs`). The read also returns `embeds`: each quiz and flashcard set the note owns,
 references in its current content and has not trashed, in reference order (quizzes answer-free, flashcards

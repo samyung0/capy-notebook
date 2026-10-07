@@ -7,7 +7,10 @@ import {
   parseMaterialDocument,
 } from '@/features/materials/document';
 import { EmbedViewContext } from '@/features/materials/embeds/EmbedView';
-import { StaticMathContext } from '@/features/materials/Island';
+import {
+  PublicPageContext,
+  StaticMathContext,
+} from '@/features/materials/Island';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { MaterialPreview } from '@/features/materials/MaterialPreview';
 import { AssetUrlContext } from '@/features/materials/MediaAssetView';
@@ -63,28 +66,30 @@ export function SharedNote({
         trail={[]}
       />
       <div className="px-4 pt-2 pb-8 sm:px-6 lg:px-10 xl:px-16">
-        <AssetUrlContext.Provider
-          value={(assetId) => anonymousNoteAssetUrl(token, assetId)}
-        >
-          <PublicEmbedsContext.Provider
-            value={{
-              embeds: new Map(note.embeds.map((embed) => [embed.id, embed])),
-              token,
-            }}
+        <PublicPageContext.Provider value>
+          <AssetUrlContext.Provider
+            value={(assetId) => anonymousNoteAssetUrl(token, assetId)}
           >
-            <EmbedViewContext.Provider value={PublicEmbed}>
-              <StaticMathContext.Provider value={mathMarkup}>
-                <MaterialPreview
-                  className="mx-0 min-h-0 px-0 pt-0 pb-8 sm:px-0 md:max-w-none"
-                  content={document}
-                  isStandalone
-                  kind="note"
-                  title={note.name}
-                />
-              </StaticMathContext.Provider>
-            </EmbedViewContext.Provider>
-          </PublicEmbedsContext.Provider>
-        </AssetUrlContext.Provider>
+            <PublicEmbedsContext.Provider
+              value={{
+                embeds: new Map(note.embeds.map((embed) => [embed.id, embed])),
+                token,
+              }}
+            >
+              <EmbedViewContext.Provider value={PublicEmbed}>
+                <StaticMathContext.Provider value={mathMarkup}>
+                  <MaterialPreview
+                    className="mx-0 min-h-0 px-0 pt-0 pb-8 sm:px-0 md:max-w-none"
+                    content={document}
+                    isStandalone
+                    kind="note"
+                    title={note.name}
+                  />
+                </StaticMathContext.Provider>
+              </EmbedViewContext.Provider>
+            </PublicEmbedsContext.Provider>
+          </AssetUrlContext.Provider>
+        </PublicPageContext.Provider>
         <MaterialAttributionFooter provenance={note.provenance} />
       </div>
     </PublicPage>
