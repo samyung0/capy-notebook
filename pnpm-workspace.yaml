@@ -1,6 +1,7 @@
 packages:
   - .
   - collaboration
+  - collaboration-rs/crates/notes/markdown
   - emails/editor
   - ops
 

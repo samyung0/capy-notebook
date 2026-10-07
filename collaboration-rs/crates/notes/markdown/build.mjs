@@ -1,25 +1,20 @@
 // Bundles the editor's markdown import (src/features/notes/markdownConvert.ts)
-// for the notes crate's embedded JS engine (QuickJS), as
-// collaboration/scripts/build-markdown.mjs bundles it for Node: same entry,
-// same aliases and defines, but for a plain ES runtime (no Node builtins).
-// The Rust side (markdown.rs) gives it `crypto.getRandomValues` and
-// `console`.
-//   node build.mjs <checkout> <out.mjs>
-// <checkout>: a Capy checkout with node_modules and collaboration/node_modules.
-import { createRequire } from 'node:module';
-import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+// for the notes crate's embedded V8 (src/markdown.rs): one script that sets
+// `globalThis.__markdown` to the module's exports, for a plain JS runtime
+// (no DOM, no Node builtins; markdown.rs gives it `console`,
+// `crypto.getRandomValues` and `URL`). Same entry, aliases and defines as the
+// Node server's bundle. Its dependencies are this package's own, so an image
+// installs only them (pnpm --filter @capy-notebook/notes-markdown...).
+//   node build.mjs [out]   (default: markdown.bundle.js beside this script)
+import { fileURLToPath } from 'node:url';
+import { build } from 'esbuild';
 
-const [checkout, out] = process.argv.slice(2).map((p) => resolve(p));
-const require = createRequire(
-  pathToFileURL(`${checkout}/collaboration/package.json`)
-);
-const { build } = require('esbuild');
-
+const here = (path) => fileURLToPath(new URL(path, import.meta.url));
+const root = here('../../../../');
 await build({
   alias: {
-    '@': `${checkout}/src`,
-    '@/i18n': `${checkout}/collaboration/scripts/i18n-stub.mjs`,
+    '@': `${root}src`,
+    '@/i18n': here('./i18n-stub.mjs'),
   },
   bundle: true,
   // A worker has no DOM: packages pick their DOM-free builds.
@@ -28,12 +23,13 @@ await build({
     'import.meta.env': '{}',
     'process.env.NODE_ENV': '"production"',
   },
-  entryPoints: [`${checkout}/src/features/notes/markdownConvert.ts`],
-  format: 'esm',
+  entryPoints: [`${root}src/features/notes/markdownConvert.ts`],
+  format: 'iife',
+  globalName: '__markdown',
   logLevel: 'warning',
   minify: true,
-  nodePaths: [`${checkout}/collaboration/node_modules`],
-  outfile: out,
+  nodePaths: [here('./node_modules')],
+  outfile: process.argv[2] ?? here('./markdown.bundle.js'),
   platform: 'browser',
   target: 'es2023',
 });

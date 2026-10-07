@@ -4,23 +4,19 @@
 //! own markdown pages): the same document and drafts, or the same error.
 //! Generated ids are random on both sides and compared by first occurrence.
 //!
-//! Needs the bundle: `node markdown/build.mjs <checkout> markdown/markdown.bundle.mjs`
-//! (or NOTES_MARKDOWN_BUNDLE pointing at one).
+//! Needs the bundle: `node markdown/build.mjs` (or NOTES_MARKDOWN_BUNDLE
+//! pointing at one). The limits run on a small stand-in bundle.
 mod common;
 
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use notes::markdown::Converter;
+use notes::markdown::{Converter, MAX_INPUT_BYTES, MarkdownError, TIME_LIMIT};
 use serde_json::Value;
 
 fn bundle() -> String {
-    let path = std::env::var("NOTES_MARKDOWN_BUNDLE").unwrap_or_else(|_| {
-        format!(
-            "{}/markdown/markdown.bundle.mjs",
-            env!("CARGO_MANIFEST_DIR")
-        )
-    });
+    let path = std::env::var("NOTES_MARKDOWN_BUNDLE")
+        .unwrap_or_else(|_| format!("{}/markdown/markdown.bundle.js", env!("CARGO_MANIFEST_DIR")));
     std::fs::read_to_string(&path).unwrap_or_else(|error| {
         panic!("markdown bundle {path}: {error}; build it with markdown/build.mjs")
     })
@@ -54,17 +50,9 @@ fn markdown_matches_the_node_server() {
     let corpus = common::load("markdown");
     let mut failures = Vec::new();
     let started = Instant::now();
-    // The long pages take seconds each in QuickJS: run them with
-    // MARKDOWN_ALL=1 (the timing comparison does).
-    let all = std::env::var("MARKDOWN_ALL").is_ok();
-    let mut converted_count = 0;
     for case in corpus.as_array().unwrap() {
         let name = case["name"].as_str().unwrap();
         let source = case["source"].as_str().unwrap();
-        if !all && source.len() > 30_000 {
-            continue;
-        }
-        converted_count += 1;
         let mut expected = case["result"].clone();
         let one = Instant::now();
         let converted = converter.convert(source);
@@ -73,7 +61,8 @@ fn markdown_matches_the_node_server() {
         }
         let ours = match converted {
             Ok(converted) => serde_json::to_value(converted).unwrap(),
-            Err(error) => serde_json::json!({ "error": error.0 }),
+            Err(MarkdownError::Invalid(message)) => serde_json::json!({ "error": message }),
+            Err(error) => panic!("{name}: {error}"),
         };
         let mut ours = ours;
         normalize(&mut ours, &mut HashMap::new());
@@ -83,7 +72,7 @@ fn markdown_matches_the_node_server() {
         }
     }
     eprintln!(
-        "markdown: {converted_count} of {} sources, bundle loaded in {loaded:?}, converted in {:?}",
+        "markdown: {} sources, bundle loaded in {loaded:?}, converted in {:?}",
         corpus.as_array().unwrap().len(),
         started.elapsed()
     );
@@ -96,4 +85,48 @@ fn markdown_matches_the_node_server() {
             .map(|f| &f[..f.len().min(600)])
             .collect::<Vec<_>>()
     );
+}
+
+/// A stand-in import: `loop` runs forever, `grow` allocates without end,
+/// `throw` throws, anything else converts to an empty document.
+const LIMITS_BUNDLE: &str = r#"
+globalThis.__markdown = {
+  convertAgentMarkdown(source) {
+    if (source === 'loop') for (;;) {}
+    if (source === 'grow') { const kept = []; for (;;) kept.push(new Array(1e5).fill(source)); }
+    if (source === 'throw') throw new Error('Invalid quiz fence');
+    return { document: { schemaVersion: 1, value: [] }, embedded: [] };
+  },
+};
+"#;
+
+#[test]
+fn conversions_stop_at_the_limits_and_the_next_one_runs() {
+    let converter = Converter::new(LIMITS_BUNDLE).unwrap();
+    let too_large = "a".repeat(MAX_INPUT_BYTES + 1);
+    assert!(matches!(
+        converter.convert(&too_large),
+        Err(MarkdownError::TooLarge { bytes }) if bytes == MAX_INPUT_BYTES + 1
+    ));
+    converter.convert(&"a".repeat(MAX_INPUT_BYTES)).unwrap();
+    assert!(matches!(
+        converter.convert("throw"),
+        Err(MarkdownError::Invalid(message)) if message == "Invalid quiz fence"
+    ));
+    assert!(matches!(
+        converter.convert("grow"),
+        Err(MarkdownError::OutOfMemory)
+    ));
+    converter.convert("ok").unwrap();
+    let started = Instant::now();
+    assert!(matches!(
+        converter.convert("loop"),
+        Err(MarkdownError::TimedOut)
+    ));
+    let took = started.elapsed();
+    assert!(
+        took >= TIME_LIMIT && took < TIME_LIMIT + Duration::from_secs(2),
+        "{took:?}"
+    );
+    converter.convert("ok").unwrap();
 }

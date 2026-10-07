@@ -7,13 +7,14 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+deno_core_icudata = "0.78"
 regex = "1"
-rquickjs = { version = "0.10", features = ["loader", "parallel"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 ydoc.workspace = true
 url = "2"
+v8 = "152.2"
 yrs.workspace = true
 
 [dev-dependencies]
