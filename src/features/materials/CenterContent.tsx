@@ -61,8 +61,14 @@ const NoteEditor = lazy(() =>
 );
 
 /* Static Plate preview is still heavy — keep it out of the PDF / media path. */
-const MaterialPreview = lazy(() =>
-  import('./MaterialPreview').then((m) => ({ default: m.MaterialPreview }))
+let previewModule: typeof import('./MaterialPreview') | undefined;
+const loadPreview = () =>
+  import('./MaterialPreview').then((module) => {
+    previewModule = module;
+    return module;
+  });
+const LazyMaterialPreview = lazy(() =>
+  loadPreview().then((m) => ({ default: m.MaterialPreview }))
 );
 
 /** The center pane. Dispatches on the currently-open item — a source file or a
@@ -302,6 +308,9 @@ export function MaterialContent({
   // The open room turned read-only (a frozen account or an owner at its storage
   // limit): view mode under a grey strip; unsaved edits are discarded.
   const [readOnly, setReadOnly] = useState(false);
+  useEffect(() => {
+    if (mode === 'edit') void loadPreview();
+  }, [mode]);
   if (isLoading) {
     return <FileLoading />;
   }
@@ -318,6 +327,10 @@ export function MaterialContent({
   const policy = materialModePolicy(material.capabilities);
   const activeMode =
     forceReadOnly || readOnly ? 'view' : resolveMaterialMode(mode, policy);
+  // Edit to View shows the note at once (NoteEditorCore hands over its live
+  // value), so View must not suspend on loading its renderer: Edit loads it,
+  // and View then renders it directly.
+  const MaterialPreview = previewModule?.MaterialPreview ?? LazyMaterialPreview;
 
   if (material.kind === 'quiz' && activeMode === 'edit') {
     return <OpenQuizEditor quizId={materialId} />;

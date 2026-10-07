@@ -909,6 +909,19 @@ The room is the content authority while the editor is open, so refetching there
 only re-downloads and re-parses a document nobody is reading — on a near-limit
 note that is seconds of main-thread time per save.
 
+Switching a note from Edit to View in the same tab shows that tab's live
+document at once: as the editor unmounts it puts its value (co-editors'
+changes included, normalized as the projection would be) into the cached
+material (`handOverLiveValue` in `NoteEditorCore.tsx`), and the projection
+that unmount refetches replaces it when it lands, with no loader in between.
+It skips a value the room refused or discarded (a rejected document, a room
+turned read-only) and one that never synced. `MaterialPreview` is memoized,
+so a projected copy equal to the live one (React Query keeps the same
+content object) re-renders nothing, and Edit loads its module so View does
+not suspend on it (`CenterContent.tsx`). Until the room projects on demand,
+a refetch that lands before the room's last store is projected can show a
+copy a few seconds older than the live one.
+
 Server-origin content mutations use the sidecar command endpoint. Commands load
 the current Y.Doc and replace one stable custom block through headless
 Slate-Yjs transforms with a stale-block precondition. They do not replace the

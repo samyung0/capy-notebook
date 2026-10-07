@@ -1,6 +1,6 @@
 import { createSlateEditor } from 'platejs';
 import { PlateStatic } from 'platejs/static';
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import type { MaterialKind } from '@/api/types';
 import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import { cn } from '@/lib/cn';
@@ -15,8 +15,10 @@ import { StaticMaterialKit } from './staticPlugins';
 
 /** Universal read-only renderer for the checkpointed material projection.
  * Markdown files convert first (files/MarkdownPreview.tsx); the renderer
- * itself carries no markdown parser. */
-export function MaterialPreview({
+ * itself carries no markdown parser. Memoized: a material refetch that brings
+ * equal content (structurally shared, so the same object) must not re-render
+ * the document. */
+export const MaterialPreview = memo(function MaterialPreview({
   content,
   isStandalone,
   kind,
@@ -64,4 +66,4 @@ export function MaterialPreview({
       </MaterialRenderProvider>
     </div>
   );
-}
+});

@@ -32,6 +32,8 @@ import type { Material, MaterialCollaborationToken } from '@/api/types';
 import { userToast } from '@/components/ui/userToast';
 import { FileLoading } from '@/features/files/FileStates';
 import {
+  createMaterialDocument,
+  type MaterialDocument,
   type MaterialValue,
   parseMaterialDocument,
 } from '@/features/materials/document';
@@ -215,6 +217,25 @@ function NoteEditorSurface({ children, ...props }: ComponentProps<'div'>) {
         {children}
       </div>
     </div>
+  );
+}
+
+/** Puts the editor's value into the cached material, as the projection will
+ * hold it; a value the document format refuses leaves the cache alone. */
+function handOverLiveValue(
+  qc: ReturnType<typeof useQueryClient>,
+  materialId: string,
+  value: MaterialValue
+) {
+  let content: MaterialDocument;
+  try {
+    content = createMaterialDocument(value);
+  } catch {
+    return;
+  }
+  qc.setQueryData<Material>(
+    qk.material(materialId),
+    (cached) => cached && { ...cached, content }
   );
 }
 
@@ -550,6 +571,8 @@ export function NoteEditorCore({
   // client sees; the service records the refusals it sends itself.
   const readOnlyNow = useRef((_refusedConnect?: boolean) => {});
   const projectionStale = useRef(false);
+  // The room turned read-only and the unsaved edits were discarded.
+  const discarded = useRef(false);
 
   useEffect(
     () => () => {
@@ -962,13 +985,26 @@ export function NoteEditorCore({
       active = false;
       clearTimeout(initializeTimer);
       if (checkpointTimer.current) clearTimeout(checkpointTimer.current);
+      // Edit to View in this tab shows the live document at once: the
+      // material query takes the editor's value (co-editors' changes
+      // included) until the projection refetched after unmount lands. Not
+      // edits the room refused or discarded, nor a value never synced.
+      if (hasSynced.current && !rejected.current && !discarded.current)
+        handOverLiveValue(qc, material.id, editor.children as MaterialValue);
       if (initialized) editor.getApi(YjsPlugin).yjs.destroy();
       onEditorStatusChange?.(null);
       // The next mount (a moved room, recovery, Reload) starts clean.
       reportOffline.current?.(null);
       reportSaveDelayed.current?.(false);
     };
-  }, [collaborationToken.room, editor, onEditorStatusChange, setStatus]);
+  }, [
+    collaborationToken.room,
+    editor,
+    material.id,
+    onEditorStatusChange,
+    qc,
+    setStatus,
+  ]);
 
   // Cursor awareness goes to every peer through the server: at most one per
   // 50 ms (withCursors installs sendCursorPosition when the editor is made).
@@ -1048,6 +1084,7 @@ export function NoteEditorCore({
     readOnlyNow.current = (refusedConnect = false) => {
       if (reported) return;
       reported = true;
+      discarded.current = true;
       // The room refused the unsaved edits: they are discarded.
       const unsaved = recorder.current;
       if (refusedConnect && unsaved?.unsaved)
