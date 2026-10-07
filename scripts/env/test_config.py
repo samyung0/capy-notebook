@@ -162,6 +162,35 @@ class ConfigTest(unittest.TestCase):
                 coolify = json.loads(Path(temp, "coolify.json").read_text())
                 self.assertEqual(coolify["COLLABORATION_CPUSET"], cpuset)
 
+    def test_render_sizes_the_office_engine_pool_per_environment(self):
+        values = {
+            key: "explicit"
+            for key, rule in config.MANIFEST.items()
+            if rule.get("required_for")
+        }
+        values.update(
+            POSTGRES_PASSWORD="secret",
+            CAPY_PRIVATE_BIND_ADDRESS="10.77.0.3",
+            CLERK_PUBLISHABLE_KEY="pk_public",
+            DEPLOYMENT_APP_URL="https://app.example.com",
+        )
+        for environment, pool in (
+            ("production", ("2", "1", str(4 << 30))),
+            ("uat", ("1", "1", str(3 << 30))),
+        ):
+            with tempfile.TemporaryDirectory() as temp:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    config.render(values, environment, temp, "a" * 40)
+                coolify = json.loads(Path(temp, "coolify.json").read_text())
+                self.assertEqual(
+                    (
+                        coolify["COLLABORATION_ENGINE_SAVE_PROCESSES"],
+                        coolify["COLLABORATION_ENGINE_BACKGROUND_PROCESSES"],
+                        coolify["COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES"],
+                    ),
+                    pool,
+                )
+
     def test_render_requires_the_embed_frame_origin_for_the_build(self):
         values = {
             key: "explicit"

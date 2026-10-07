@@ -162,6 +162,15 @@ def render(values, environment, output, revision):
     # (cpuset in docker-compose.prod.yml), mainly so the Office engine worker
     # has its own core; UAT's 2 vCPU stay unpinned. Runbook §1.1.
     coolify["COLLABORATION_CPUSET"] = "2,3" if environment == "production" else ""
+    # Office engine child processes (save lane, background lane) and each
+    # one's memory cap: production 2 + 1 at 4 GiB (the box has swap), UAT 1 + 1
+    # at 3 GiB (Epo 2026-10-07).
+    production = environment == "production"
+    coolify["COLLABORATION_ENGINE_SAVE_PROCESSES"] = "2" if production else "1"
+    coolify["COLLABORATION_ENGINE_BACKGROUND_PROCESSES"] = "1"
+    coolify["COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES"] = str(
+        (4 if production else 3) << 30
+    )
     private_write(output / "coolify.json", json.dumps(coolify))
     build = target_values(values, "build")
     build.update(
