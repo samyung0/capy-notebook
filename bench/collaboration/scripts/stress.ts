@@ -372,6 +372,9 @@ async function localTarget(): Promise<Target> {
       'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '2',
       '-subj', '/CN=s3.stress.backblazeb2.com',
       '-addext', 'subjectAltName=DNS:s3.stress.backblazeb2.com',
+      // Not a CA: rustls (the collaboration service) refuses a CA certificate
+      // as the server's own, where Go accepts it.
+      '-addext', 'basicConstraints=critical,CA:FALSE',
       '-keyout', path.join(tlsDir, 'key.pem'), '-out', path.join(tlsDir, 'cert.pem'),
     ],
     { encoding: 'utf8' }
@@ -381,13 +384,15 @@ async function localTarget(): Promise<Target> {
   for (const file of ['key.pem', 'cert.pem']) chmodSync(path.join(tlsDir, file), 0o644);
   chmodSync(tlsDir, 0o755);
   process.env.STRESS_TLS_DIR = tlsDir;
+  // Overrides already named (another build's images, say) layer on top.
   process.env.E2E_COMPOSE_OVERRIDES = [
-    'bench/collaboration/scripts/docker-compose.stress.yml',
-    // Stress only: the published fake S3 port and the server image swap.
-    'bench/collaboration/scripts/docker-compose.stress-run.yml',
-  ]
-    .map((file) => path.join(root, file))
-    .join(',');
+    ...[
+      'bench/collaboration/scripts/docker-compose.stress.yml',
+      // Stress only: the published fake S3 port and the server image swap.
+      'bench/collaboration/scripts/docker-compose.stress-run.yml',
+    ].map((file) => path.join(root, file)),
+    ...(process.env.E2E_COMPOSE_OVERRIDES?.split(',').filter(Boolean) ?? []),
+  ].join(',');
   const compose = (args: string[], maxBuffer?: number) =>
     spawnSync(
       'docker',
