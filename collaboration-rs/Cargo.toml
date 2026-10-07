@@ -15,7 +15,7 @@ notes = { path = "crates/notes" }
 sources = { path = "crates/sources" }
 ydoc = { path = "crates/ydoc" }
 # One yrs for the server and the Office engines: the fork's patched copy.
-yrs = { path = "../vendor/betteroffice/third_party/yrs", features = ["sync"] }
+yrs = { path = "../vendor/betteroffice/third_party/yrs" }
 serde = { version = "1", features = ["derive"] }
 # Plate nodes keep their key order, as JS objects do (slate-yjs attribute order).
 serde_json = { version = "1", features = ["preserve_order"] }

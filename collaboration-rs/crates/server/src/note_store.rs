@@ -100,7 +100,7 @@ async fn bootstrap(tx: &Transaction<'_>, material_id: &str, schema: i64) -> Resu
         return Err(StoreError::Other("material not found".into()));
     };
     let content: Value = row.get("content");
-    let state = notes::plate::state_from_value(envelope_value(&content)?);
+    let state = notes::slate_yjs::state_from_value(envelope_value(&content)?, 0);
     let schema = i32::try_from(schema)
         .map_err(|_| StoreError::Other("invalid collaboration room schema".into()))?;
     tx.execute(
@@ -471,7 +471,7 @@ pub async fn compact(
         return Err(StoreError::Other("material not found".into()));
     };
     let content: Value = content.get("content");
-    let state = notes::plate::state_from_value(envelope_value(&content)?);
+    let state = notes::slate_yjs::state_from_value(envelope_value(&content)?, 0);
     let next_schema = i32::try_from(schema + 1)
         .map_err(|_| StoreError::Other("invalid collaboration room schema".into()))?;
     tx.execute(

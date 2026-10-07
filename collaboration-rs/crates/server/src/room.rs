@@ -7,7 +7,6 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use bytes::BytesMut;
@@ -146,8 +145,6 @@ pub struct Room {
     id: u64,
     name: String,
     doc: Doc,
-    captured: Arc<Mutex<Vec<u8>>>,
-    _subscription: yrs::Subscription,
     members: HashMap<MemberKey, Member>,
     awareness: HashMap<u64, AwarenessEntry>,
     changed_awareness: BTreeSet<u64>,
@@ -273,15 +270,6 @@ async fn run(app: Shared, name: RoomName, id: u64, mut rx: mpsc::Receiver<RoomCm
             return;
         }
     };
-    let captured: Arc<Mutex<Vec<u8>>> = Arc::default();
-    let sink = captured.clone();
-    #[allow(clippy::expect_used)]
-    let subscription = doc
-        .observe_update_v1(move |_, event| {
-            #[allow(clippy::unwrap_used)]
-            sink.lock().unwrap().extend_from_slice(&event.update);
-        })
-        .expect("a fresh document takes an observer");
     let bytes = doc
         .transact()
         .encode_state_as_update_v1(&StateVector::default())
@@ -297,8 +285,6 @@ async fn run(app: Shared, name: RoomName, id: u64, mut rx: mpsc::Receiver<RoomCm
         id,
         name: room_name,
         doc,
-        captured,
-        _subscription: subscription,
         members: HashMap::new(),
         awareness: HashMap::new(),
         changed_awareness: BTreeSet::new(),
@@ -768,12 +754,6 @@ impl Room {
             .retain(|_, state| !(state.entry.removed() && state.owner.is_none()));
     }
 
-    /// The bytes a transaction produced (the observer's capture).
-    fn take_captured(&self) -> Vec<u8> {
-        #[allow(clippy::unwrap_used)]
-        std::mem::take(&mut *self.captured.lock().unwrap())
-    }
-
     fn broadcast_update(&mut self, sender: Option<MemberKey>, update: Vec<u8>) {
         if update.is_empty() {
             return;
@@ -880,16 +860,16 @@ impl Room {
             self.acked(key);
             return;
         }
-        if self.markers.write(&self.doc, &context) {
-            let marker = self.take_captured();
+        if let Some(marker) = self.markers.write(&self.doc, &context) {
             self.broadcast_update(None, marker);
         }
-        let applied = self.doc.transact_mut().apply_update(update);
-        let content = self.take_captured();
-        if let Err(error) = applied {
-            self.refuse(key, &[], &format!("update cannot be applied: {error}"));
-            return;
-        }
+        let content = match ydoc::apply(&self.doc, update) {
+            Ok(content) => content,
+            Err(error) => {
+                self.refuse(key, &[], &format!("update cannot be applied: {error}"));
+                return;
+            }
+        };
         self.acked(key);
         if !content.is_empty() {
             self.content_changed();
@@ -1196,8 +1176,7 @@ impl Room {
                     self.app.stats.failed_stores.fetch_sub(1, Ordering::Relaxed);
                 }
                 self.store.retry_delay = RETRY_FIRST / 2;
-                if self.markers.clear(&self.doc, &contributors) {
-                    let cleared = self.take_captured();
+                if let Some(cleared) = self.markers.clear(&self.doc, &contributors) {
                     self.broadcast_update(None, cleared);
                 }
                 let Kindly::Note(note) = &mut self.kind;

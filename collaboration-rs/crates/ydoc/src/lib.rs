@@ -320,6 +320,27 @@ pub fn replay(doc: &Doc, base: &[u8], rows: &[impl AsRef<[u8]>]) -> Result<(), R
     Ok(())
 }
 
+/// Commits `txn` and returns its update as an `observe_update_v1` observer
+/// would see it (after garbage collection and squashing; empty when nothing
+/// changed). Rooms broadcast from this instead of an observer: the Office
+/// engines register observers that are not `Send`, so yrs runs without its
+/// `sync` feature.
+pub fn committed_update(mut txn: yrs::TransactionMut<'_>) -> Vec<u8> {
+    txn.commit();
+    if txn.delete_set().is_empty() && txn.after_state() == txn.before_state() {
+        return Vec::new();
+    }
+    txn.encode_update_v1()
+}
+
+/// Applies `update` in one transaction and returns what it changed (empty
+/// when nothing did).
+pub fn apply(doc: &Doc, update: Update) -> Result<Vec<u8>, yrs::error::UpdateError> {
+    let mut txn = doc.transact_mut();
+    txn.apply_update(update)?;
+    Ok(committed_update(txn))
+}
+
 /// Whether a document holds content waiting on structs it never received.
 pub fn has_pending<T: ReadTxn>(txn: &T) -> bool {
     txn.store().pending_update().is_some() || txn.store().pending_ds().is_some()

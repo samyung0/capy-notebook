@@ -208,8 +208,8 @@ impl Markers {
     }
 
     /// Writes `context`'s marker in its own transaction when the writer has
-    /// none or only a claimed one. Returns whether it wrote one.
-    pub fn write(&mut self, doc: &Doc, context: &Context) -> bool {
+    /// none or only a claimed one. Returns that transaction's update.
+    pub fn write(&mut self, doc: &Doc, context: &Context) -> Option<Vec<u8>> {
         let key = self.key(context);
         let map = root(doc);
         let mut txn = doc.transact_mut();
@@ -221,7 +221,7 @@ impl Markers {
             _ => None,
         };
         if live.is_some_and(|nonce| !self.claimed.contains(&nonce)) {
-            return false;
+            return None;
         }
         let value = Any::from(HashMap::from([
             ("access".to_owned(), Any::from("write")),
@@ -232,7 +232,7 @@ impl Markers {
             ("userId".to_owned(), Any::from(context.user_id.as_str())),
         ]));
         map.insert(&mut txn, key, value);
-        true
+        Some(ydoc::committed_update(txn))
     }
 
     /// A store snapshot takes every live marker: their nonces are claimed.
@@ -252,11 +252,11 @@ impl Markers {
     }
 
     /// `clearDocumentContributors`: removes exactly the generations the
-    /// committed snapshot held. Returns whether the room changed.
-    pub fn clear(&mut self, doc: &Doc, committed: &[Contributor]) -> bool {
+    /// committed snapshot held. Returns the update when the room changed.
+    pub fn clear(&mut self, doc: &Doc, committed: &[Contributor]) -> Option<Vec<u8>> {
         self.unclaim(committed);
         if committed.is_empty() {
-            return false;
+            return None;
         }
         let map = root(doc);
         let mut txn = doc.transact_mut();
@@ -272,7 +272,7 @@ impl Markers {
                 changed = true;
             }
         }
-        changed
+        changed.then(|| ydoc::committed_update(txn))
     }
 }
 
@@ -318,16 +318,16 @@ mod tests {
     fn markers_are_written_once_per_store_window() {
         let doc = room();
         let mut markers = Markers::new("inst");
-        assert!(markers.write(&doc, &writer("u1")));
-        assert!(!markers.write(&doc, &writer("u1")));
-        assert!(markers.write(&doc, &writer("u2")));
+        assert!(markers.write(&doc, &writer("u1")).is_some());
+        assert!(markers.write(&doc, &writer("u1")).is_none());
+        assert!(markers.write(&doc, &writer("u2")).is_some());
         let snapshot = markers.claim(&doc).unwrap();
         assert_eq!(snapshot.len(), 2);
         // After the snapshot a writer's update gets a fresh generation...
-        assert!(markers.write(&doc, &writer("u1")));
-        assert!(!markers.write(&doc, &writer("u1")));
+        assert!(markers.write(&doc, &writer("u1")).is_some());
+        assert!(markers.write(&doc, &writer("u1")).is_none());
         // ...which the snapshot's clear leaves alone.
-        assert!(markers.clear(&doc, &snapshot));
+        assert!(markers.clear(&doc, &snapshot).is_some());
         let left = contributors(&doc).unwrap();
         assert_eq!(left.len(), 1);
         assert_eq!(left[0].user_id, "u1");
@@ -341,10 +341,10 @@ mod tests {
         markers.write(&doc, &writer("u1"));
         let snapshot = markers.claim(&doc).unwrap();
         markers.unclaim(&snapshot);
-        assert!(!markers.write(&doc, &writer("u1")));
+        assert!(markers.write(&doc, &writer("u1")).is_none());
         let again = markers.claim(&doc).unwrap();
         assert_eq!(again, snapshot);
-        assert!(markers.clear(&doc, &again));
+        assert!(markers.clear(&doc, &again).is_some());
         assert!(!pending(&doc));
     }
 
