@@ -22,6 +22,25 @@ function mtime(file: string) {
   }
 }
 
+// Windows briefly locks freshly written folders (virus scanning), failing a
+// rename with EPERM/EACCES/EBUSY; retry for up to 5s as graceful-fs does.
+function rename(from: string, to: string) {
+  const deadline = Date.now() + 5000;
+  for (;;) {
+    try {
+      renameSync(from, to);
+      return;
+    } catch (error) {
+      const { code } = error as NodeJS.ErrnoException;
+      const locked = code === 'EPERM' || code === 'EACCES' || code === 'EBUSY';
+      if (!locked || Date.now() > deadline) {
+        throw error;
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+    }
+  }
+}
+
 function stale() {
   const sources = [
     path.join(root, 'project.inlang/settings.json'),
@@ -55,10 +74,13 @@ if (process.env.TEST_WORKER_INDEX === undefined && stale()) {
   const previous = `${temporary}-old`;
   rmSync(previous, { force: true, recursive: true });
   try {
-    renameSync(outdir, previous);
-  } catch {
+    rename(outdir, previous);
+  } catch (error) {
     // First compile: nothing to move aside.
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error;
+    }
   }
-  renameSync(temporary, outdir);
+  rename(temporary, outdir);
   rmSync(previous, { force: true, recursive: true });
 }
