@@ -7,8 +7,9 @@
 //!
 //! Unlike the Node editor, which has no Plate plugins and answers `isInline`
 //! with `false` for every element (so normalization unwraps links into their
-//! text), links, mentions and inline equations are inline here
-//! ([INLINE_TYPES]), as in the browser. `isVoid` stays `false`, as in Node.
+//! text), links, mentions, inline equations and Plate's combobox inputs are
+//! inline here ([INLINE_TYPES]), as in the browser. `isVoid` stays `false`, as
+//! in Node.
 
 use std::collections::HashSet;
 
@@ -205,8 +206,16 @@ pub struct Editor<'t, 'doc> {
 }
 
 /// The inline element types the headless editor keeps inline: links,
-/// mentions and inline equations (Plate's `a`, `mention`, `inline_equation`).
-pub const INLINE_TYPES: [&str; 3] = ["a", "mention", "inline_equation"];
+/// mentions, inline equations and the in-progress mention and slash-command
+/// inputs (Plate's `a`, `mention`, `inline_equation`, `mention_input`,
+/// `slash_input`).
+pub const INLINE_TYPES: [&str; 5] = [
+    "a",
+    "mention",
+    "inline_equation",
+    "mention_input",
+    "slash_input",
+];
 
 /// Whether `node` is an element of one of the [INLINE_TYPES].
 pub fn is_inline_type(node: &Value) -> bool {

@@ -1,6 +1,7 @@
-// The Rust headless editor keeps links, mentions and inline equations inline
-// (Epo, 2026-10-07); the Node server's flattens them until the cutover. For
-// the corpus, the oracle's headless editors answer isInline the same way:
+// The Rust headless editor keeps links, mentions, inline equations and the
+// combobox inputs inline (Epo, 2026-10-07); the Node server's flattens them
+// until the cutover. For the corpus, the oracle's headless editors answer
+// isInline the same way:
 //   node inline-oracle.mjs <collaboration/src> patch|restore
 import {
   copyFileSync,
@@ -15,7 +16,7 @@ const [src, action] = process.argv.slice(2);
 const FILES = ['children.ts', 'commands.ts', 'editCommands.ts'];
 const ANCHOR = '  const baseEditor = createEditor();\n';
 const INLINE =
-  "  baseEditor.isInline = (element) =>\n    ['a', 'mention', 'inline_equation'].includes(\n      (element as { type?: string }).type ?? ''\n    );\n";
+  "  baseEditor.isInline = (element) =>\n    ['a', 'mention', 'inline_equation', 'mention_input', 'slash_input'].includes(\n      (element as { type?: string }).type ?? ''\n    );\n";
 
 for (const name of FILES) {
   const path = join(src, name);
