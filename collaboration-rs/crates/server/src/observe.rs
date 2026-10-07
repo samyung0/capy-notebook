@@ -3,6 +3,7 @@
 //! failures nobody would otherwise see. Every capture also logs its cause.
 
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value, json};
@@ -16,6 +17,29 @@ struct Settings {
 }
 
 static SETTINGS: OnceLock<Settings> = OnceLock::new();
+/// The engine subcommand logs to stderr: its stdout carries answer frames.
+static TO_STDERR: AtomicBool = AtomicBool::new(false);
+
+pub fn log_to_stderr() {
+    TO_STDERR.store(true, Ordering::Relaxed);
+}
+
+/// The sources crate's lines and reports, through this logger and Sentry.
+pub fn install_for_sources() {
+    sources::observe::install(sources::observe::Observer {
+        log: |level, message, fields| {
+            let level = match level {
+                "error" => Level::Error,
+                "warn" => Level::Warn,
+                _ => Level::Info,
+            };
+            log(level, message, fields);
+        },
+        capture: |message, tags| {
+            capture(message, None, tags);
+        },
+    });
+}
 
 fn settings() -> &'static Settings {
     SETTINGS.get_or_init(|| {
@@ -107,6 +131,10 @@ pub fn log(level: Level, msg: &str, fields: Value) {
     line.insert("service".into(), json!("collaboration"));
     line.insert("time".into(), json!(iso_now()));
     line.extend(fields);
+    if TO_STDERR.load(Ordering::Relaxed) {
+        eprintln!("{}", Value::Object(line));
+        return;
+    }
     // stdout, as the Node service's console.info.
     #[allow(clippy::print_stdout)]
     {

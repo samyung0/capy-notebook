@@ -21,6 +21,14 @@ pub fn router(app: Shared) -> Router {
         .route("/readyz", get(healthz))
         .route("/metrics", get(metrics))
         .route("/internal/materials/{id}/project", post(project))
+        .route(
+            "/internal/source-changes/resolve",
+            post(resolve_source_change),
+        )
+        .route(
+            "/internal/source-refresh/publish",
+            post(publish_source_refresh),
+        )
         .fallback(any(fallback))
         .with_state(app)
 }
@@ -101,6 +109,120 @@ fn authorized(app: &Shared, headers: &HeaderMap) -> bool {
         .get("x-collaboration-secret")
         .and_then(|value| value.to_str().ok());
     auth::secret_matches(provided, &app.config.secret)
+}
+
+/// The largest internal command body (two documents and their envelope).
+pub const MAX_INTERNAL_BODY: usize = 2 * 2 * 1024 * 1024 + 1024 * 1024;
+
+/// An internal route's JSON object body, or the 400 that answers it.
+fn json_object(body: &[u8], invalid: &str) -> Result<Value, Box<Response>> {
+    let refused = || {
+        Box::new(json_response(
+            StatusCode::BAD_REQUEST,
+            json!({ "message": invalid }),
+        ))
+    };
+    if body.len() > MAX_INTERNAL_BODY {
+        return Err(refused());
+    }
+    match serde_json::from_slice::<Value>(body) {
+        Ok(value) if value.is_object() => Ok(value),
+        _ => Err(refused()),
+    }
+}
+
+/// A source operation's answer: its value, or the gateway's status (5xx
+/// reported) with the message.
+fn source_answer(stage: &str, result: Result<Value, sources::SourceError>) -> Response {
+    match result {
+        Ok(value) => json_response(StatusCode::OK, value),
+        Err(error) => {
+            let status = error
+                .status()
+                .and_then(|status| StatusCode::from_u16(status).ok())
+                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            if status.is_server_error() {
+                crate::observe::capture(&error.to_string(), None, &[("stage", stage)]);
+            }
+            json_response(status, json!({ "message": error.to_string() }))
+        }
+    }
+}
+
+/// `fileId`, `epoch` and `checkpoint` every source route names.
+fn source_checkpoint(input: &Value) -> bool {
+    input["fileId"].is_string() && input["epoch"].is_u64() && input["checkpoint"].is_u64()
+}
+
+/// The image of a pending effect, for the API's change review.
+async fn resolve_source_change(
+    State(app): State<Shared>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if !authorized(&app, &headers) {
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            json!({ "message": "Unauthorized" }),
+        );
+    }
+    let input = match json_object(&body, "Invalid source request") {
+        Ok(input) => input,
+        Err(response) => return *response,
+    };
+    if !source_checkpoint(&input) {
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            json!({ "message": "Invalid source checkpoint" }),
+        );
+    }
+    let Ok(input) = serde_json::from_value::<sources::store::ResolveInput>(input) else {
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            json!({ "message": "Invalid source image request" }),
+        );
+    };
+    let result = app
+        .sources
+        .resolve(&input)
+        .await
+        .map(|asset| serde_json::to_value(asset).unwrap_or(Value::Null));
+    source_answer("source_resolve", result)
+}
+
+/// A finalized candidate's publication (the handoff).
+async fn publish_source_refresh(
+    State(app): State<Shared>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if !authorized(&app, &headers) {
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            json!({ "message": "Unauthorized" }),
+        );
+    }
+    let input = match json_object(&body, "Invalid source request") {
+        Ok(input) => input,
+        Err(response) => return *response,
+    };
+    if !source_checkpoint(&input) {
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            json!({ "message": "Invalid source checkpoint" }),
+        );
+    }
+    if !(input["jobId"].is_string()
+        && input["leaseToken"].is_string()
+        && input["attemptId"].is_i64())
+    {
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            json!({ "message": "Invalid source publication" }),
+        );
+    }
+    let result = crate::source_rooms::publish(&app, input).await;
+    source_answer("source_publish", result)
 }
 
 /// On-demand projection (DESIGN.md 5): a room loaded here persists and

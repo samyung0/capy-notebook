@@ -73,7 +73,7 @@ impl Waiters {
 
     /// Whether `id` already ran (and remembers it now if not).
     #[allow(clippy::unwrap_used)]
-    fn seen(&self, id: &str) -> bool {
+    pub fn seen(&self, id: &str) -> bool {
         let mut completed = self.completed.lock().unwrap();
         let now = Instant::now();
         completed.retain(|_, at| now.duration_since(*at) < COMPLETED_TTL);
@@ -101,7 +101,14 @@ async fn listen(app: &Shared) -> Result<(), String> {
         .get_async_pubsub()
         .await
         .map_err(|error| error.to_string())?;
-    for channel in [EVICT, EVICT_REQUEST, EVICT_ACK, USER_EVICT, COMMENTS] {
+    for channel in [
+        EVICT,
+        EVICT_REQUEST,
+        EVICT_ACK,
+        USER_EVICT,
+        COMMENTS,
+        sources::handoff::SOURCE_HANDOFF_CHANNEL,
+    ] {
         pubsub
             .subscribe(channel)
             .await
@@ -117,6 +124,19 @@ async fn listen(app: &Shared) -> Result<(), String> {
         tokio::spawn(async move { handle(&app, &channel, payload).await });
     }
     Err("subscription ended".into())
+}
+
+/// A discard this instance started, for every other instance's copy of the
+/// room (`publishRoomEviction`).
+pub async fn publish_eviction(app: &Shared, payload: &str) -> Result<(), String> {
+    let mut redis = app.redis.clone();
+    redis::cmd("PUBLISH")
+        .arg(EVICT)
+        .arg(payload)
+        .query_async::<i64>(&mut redis)
+        .await
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 async fn publish(app: &Shared, channel: &str, payload: &Value) -> Result<(), String> {
@@ -139,6 +159,12 @@ async fn delivered(app: &Shared, eviction: Option<&str>, ok: bool) {
 }
 
 async fn handle(app: &Shared, channel: &str, raw: String) {
+    if channel == sources::handoff::SOURCE_HANDOFF_CHANNEL {
+        if let Err(error) = app.handoff().handle(&raw).await {
+            observe::capture(&error.to_string(), None, &[("stage", "source_handoff")]);
+        }
+        return;
+    }
     let Ok(event) = serde_json::from_str::<Value>(&raw) else {
         return;
     };

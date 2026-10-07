@@ -22,7 +22,7 @@ pub mod text;
 
 pub use admit::{Admission, Refusal, admit_update};
 pub use failure::SourceError;
-pub use store::{Loaded, Save, Saved, Sources, SourcesConfig};
+pub use store::{Folded, Loaded, Save, Saved, Sources, SourcesConfig};
 
 use std::future::Future;
 use std::pin::Pin;

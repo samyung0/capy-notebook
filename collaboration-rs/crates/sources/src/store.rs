@@ -69,6 +69,10 @@ pub struct Loaded {
     pub checkpoint: u64,
     /// The bytes applied (seed, base and rows), the room's first size estimate.
     pub bytes: u64,
+    /// The stored base's size and the rows over it (the room's fold sizes).
+    pub base_bytes: u64,
+    pub rows: u64,
+    pub row_bytes: u64,
     pub session: SourceSession,
 }
 
@@ -89,6 +93,16 @@ pub struct Save {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Saved {
     pub checkpoint: u64,
+    /// The row appended (0: nothing to save, no writer in it).
+    pub row_bytes: u64,
+}
+
+/// What a fold merged: the rows and their bytes, and the new base's size.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Folded {
+    pub rows: u64,
+    pub row_bytes: u64,
+    pub base_bytes: u64,
 }
 
 /// The rows and base a room's durable state is made of, read in one snapshot.
@@ -468,6 +482,9 @@ impl Sources {
             format: session.format,
             checkpoint: stored.checkpoint,
             bytes: layers.iter().map(|layer| layer.len() as u64).sum(),
+            base_bytes: stored.state.as_ref().map_or(0, |state| state.len() as u64),
+            rows: stored.rows.len() as u64,
+            row_bytes: stored.rows.iter().map(|(_, row)| row.len() as u64).sum(),
             session,
         })
     }
@@ -648,10 +665,10 @@ impl Sources {
         let name = room.name();
         if save.actors.is_empty() {
             // A receipt for an unchanged document is still a durability receipt.
-            return self
-                .current_checkpoint(room)
-                .await
-                .map(|checkpoint| Saved { checkpoint });
+            return self.current_checkpoint(room).await.map(|checkpoint| Saved {
+                checkpoint,
+                row_bytes: 0,
+            });
         }
         if let Some(state) = &save.state
             && state.len() > MAX_SOURCE_STATE_BYTES
@@ -742,6 +759,7 @@ impl Sources {
             } else {
                 (None, None)
             };
+            let row_bytes = row.len();
             let body = CheckpointBody {
                 actor_ids: save.actors.clone(),
                 epoch: room.epoch,
@@ -789,6 +807,7 @@ impl Sources {
                     }
                     return Ok(Saved {
                         checkpoint: saved.checkpoint,
+                        row_bytes: row_bytes as u64,
                     });
                 }
                 Err(error) => {
@@ -880,8 +899,8 @@ impl Sources {
     /// Merges the log of `room`'s epoch into its base (DESIGN 3.5): replays
     /// base + rows, runs the load check, writes the base and deletes the rows
     /// it covers, in one transaction holding the document row. Rows a refresh
-    /// candidate that is not exported yet still needs stay. The rows folded.
-    pub async fn fold(&self, room: &SourceRoom) -> Result<u64, SourceError> {
+    /// candidate that is not exported yet still needs stay.
+    pub async fn fold(&self, room: &SourceRoom) -> Result<Folded, SourceError> {
         let mut client = self.db.get().await.map_err(db_error)?;
         let txn = client.transaction().await.map_err(db_error)?;
         let Some(row) = txn
@@ -892,13 +911,13 @@ impl Sources {
             .await
             .map_err(db_error)?
         else {
-            return Ok(0);
+            return Ok(Folded::default());
         };
         let format: SourceFormat = serde_json::from_value(Value::String(row.get(0)))
             .map_err(|error| SourceError::Other(format!("source format: {error}")))?;
         let epoch: i64 = row.get(4);
         if epoch as u64 != room.epoch {
-            return Ok(0);
+            return Ok(Folded::default());
         }
         let checkpoint: i64 = row.get(3);
         let captured: Option<i64> = row.get(6);
@@ -911,7 +930,7 @@ impl Sources {
             .await
             .map_err(db_error)?;
         if rows.is_empty() {
-            return Ok(0);
+            return Ok(Folded::default());
         }
         let stored = Stored {
             state: row.get(1),
@@ -959,7 +978,11 @@ impl Sources {
         .await
         .map_err(db_error)?;
         txn.commit().await.map_err(db_error)?;
-        Ok(folded_rows as u64)
+        Ok(Folded {
+            rows: folded_rows as u64,
+            row_bytes: folded_bytes as u64,
+            base_bytes: state.len() as u64,
+        })
     }
 
     /// The base of a file by its bound SHA (the cache, else the file's

@@ -463,7 +463,7 @@ async fn a_text_room_appends_rows_reloads_and_folds() {
 
     let log_bytes: i64 = h.row(&room).await.get(2);
     let before_fold: i64 = h.row(&room).await.get(8);
-    assert_eq!(h.sources.fold(&room).await.unwrap(), 2);
+    assert_eq!(h.sources.fold(&room).await.unwrap().rows, 2);
     let row = h.row(&room).await;
     assert_eq!(
         (
@@ -585,7 +585,7 @@ async fn a_fold_keeps_the_rows_an_unexported_capture_needs_and_the_export_materi
         .unwrap();
     type_into(&doc, 7, 13, " four");
     save_text(&h, &room, &doc, &mut durable).await.unwrap();
-    assert_eq!(h.sources.fold(&room).await.unwrap(), 2);
+    assert_eq!(h.sources.fold(&room).await.unwrap().rows, 2);
     assert_eq!(h.row(&room).await.get::<_, i64>(9), 1);
     // The export reads the capture as of checkpoint 2 and records it.
     h.sources
@@ -609,7 +609,7 @@ async fn a_fold_keeps_the_rows_an_unexported_capture_needs_and_the_export_materi
         "one two three"
     );
     // Exported: nothing holds the last row back any more.
-    assert_eq!(h.sources.fold(&room).await.unwrap(), 1);
+    assert_eq!(h.sources.fold(&room).await.unwrap().rows, 1);
     let folded = text_doc(101);
     h.sources.load(&room, &h.user, &folded).await.unwrap();
     assert_eq!(text(&folded), "one two three four");

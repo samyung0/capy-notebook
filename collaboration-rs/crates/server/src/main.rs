@@ -17,6 +17,7 @@ mod protocol;
 mod pubsub;
 mod room;
 mod socket;
+mod source_rooms;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -31,8 +32,33 @@ const INSTANCE_REGISTRY: &str = "capy:collaboration:instances";
 const INSTANCE_HEARTBEAT: Duration = Duration::from_secs(15);
 
 fn main() {
+    let mut args = std::env::args().skip(1);
+    match args.next().as_deref() {
+        None => {}
+        // An Office engine process of the server's pool (DESIGN.md 6.3):
+        // frames on stdin and stdout, so every line goes to stderr.
+        Some("engine") => {
+            observe::log_to_stderr();
+            let _sentry = observe::init();
+            observe::install_for_sources();
+            if let Err(error) = sources::engine::serve() {
+                observe::capture(&error.to_string(), None, &[("stage", "engine")]);
+                std::process::exit(1);
+            }
+            return;
+        }
+        // The pin bump's seed check (openwiki/deployment-runbook.md).
+        Some("seed-check") => std::process::exit(seed_check(args.next())),
+        Some(other) => {
+            eprintln!(
+                "unknown command {other:?}; usage: capy-collaboration [engine | seed-check [manifest]]"
+            );
+            std::process::exit(2);
+        }
+    }
     // Before any connection is accepted, so a startup failure is reported.
     let _sentry = observe::init();
+    observe::install_for_sources();
     let config = match Config::from_env() {
         Ok(config) => config,
         Err(error) => {
@@ -73,6 +99,31 @@ async fn serve(config: Config) -> Result<(), String> {
         .build()
         .map_err(|error| error.to_string())?;
     let address = format!("{}:{}", config.host, config.port);
+    let sources = Arc::new(sources::Sources::new(
+        sources::SourcesConfig {
+            api_url: config.api_url.clone(),
+            secret: config.secret.clone(),
+            engine: engine_pool(
+                config.engine_save_processes as usize,
+                config.engine_background_processes as usize,
+                Some(config.engine_memory_limit_bytes),
+            )?,
+        },
+        db.clone(),
+        http.clone(),
+    ));
+    let markdown = match &config.markdown_bundle {
+        None => None,
+        Some(path) => {
+            let bundle = std::fs::read_to_string(path)
+                .map_err(|error| format!("markdown bundle {path}: {error}"))?;
+            Some(
+                notes::markdown::Converter::new(&bundle)
+                    .map_err(|error| format!("markdown bundle {path}: {error}"))?,
+            )
+        }
+    };
+    let publication_hold = config.uat_publication_hold;
     let app = Arc::new(App {
         instance_id: format!("{}-{}", std::process::id(), uuid::Uuid::new_v4()),
         config,
@@ -88,8 +139,29 @@ async fn serve(config: Config) -> Result<(), String> {
         projection_failures: Default::default(),
         pubsub: Default::default(),
         next_connection: Default::default(),
+        next_channel: Default::default(),
+        sources: sources.clone(),
+        handoff: Default::default(),
+        source_joins: Default::default(),
+        markdown,
     });
+    let rooms: Arc<dyn sources::Rooms> = Arc::new(source_rooms::ServerRooms {
+        app: Arc::downgrade(&app),
+    });
+    let handoff = sources::handoff::Handoff::new(
+        app.instance_id.clone(),
+        app.redis.clone(),
+        sources,
+        rooms,
+        publication_hold,
+    );
+    if app.handoff.set(handoff).is_err() {
+        return Err("the source handoff was set twice".into());
+    }
     tokio::spawn(health::run(app.clone()));
+    tokio::spawn(source_rooms::run_refreshes(app.clone()));
+    tokio::spawn(source_rooms::run_rebuilds(app.clone()));
+    tokio::spawn(source_rooms::run_pause_poll(app.clone()));
     tokio::spawn(projection::run_pending(app.clone()));
     tokio::spawn(heartbeat(app.clone()));
     tokio::spawn(pubsub::run(app.clone()));
@@ -114,6 +186,78 @@ async fn serve(config: Config) -> Result<(), String> {
         .await
         .map_err(|error| error.to_string())?;
     Ok(())
+}
+
+/// The Office engine pool: child processes of this binary (`engine`).
+fn engine_pool(
+    save: usize,
+    background: usize,
+    memory_limit_bytes: Option<u64>,
+) -> Result<sources::engine::PoolConfig, String> {
+    let program = std::env::current_exe().map_err(|error| error.to_string())?;
+    Ok(sources::engine::PoolConfig {
+        program,
+        args: vec!["engine".into()],
+        save_processes: save,
+        background_processes: background,
+        call_timeout: sources::engine::CALL_TIMEOUT,
+        replica_budget_bytes: sources::engine::OFFICE_REPLICA_BUDGET_BYTES,
+        memory_limit_bytes,
+    })
+}
+
+/// `seed-check [manifest]`: re-seeds every base the manifest (JSON lines of
+/// `office-maintenance seed-manifest`, from the file or stdin) names with this
+/// build's engines and prints the report. Exits 1 when a seed changed (the
+/// maintenance window comes first), 2 when the check could not run.
+fn seed_check(manifest: Option<String>) -> i32 {
+    let text = match manifest {
+        Some(path) => std::fs::read_to_string(&path).map_err(|error| format!("{path}: {error}")),
+        None => std::io::read_to_string(std::io::stdin()).map_err(|error| error.to_string()),
+    };
+    let lines: Result<Vec<sources::seed_check::SeedManifestLine>, String> = text.and_then(|text| {
+        text.lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| serde_json::from_str(line).map_err(|error| error.to_string()))
+            .collect()
+    });
+    let lines = match lines {
+        Ok(lines) => lines,
+        Err(error) => {
+            eprintln!("seed-check: {error}");
+            return 2;
+        }
+    };
+    #[allow(clippy::expect_used)]
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("the tokio runtime starts");
+    let checked = runtime.block_on(async {
+        // A developer machine's run: one process per lane, no memory cap.
+        let pool = sources::engine::EnginePool::new(engine_pool(1, 1, None)?);
+        let http = reqwest::Client::new();
+        sources::seed_check::check_seeds(&lines, &pool, |url| {
+            let (http, url) = (http.clone(), url.to_owned());
+            async move { sources::store::read_source_bytes(&http, &url).await }
+        })
+        .await
+        .map_err(|error| error.to_string())
+    });
+    match checked {
+        Ok(checks) => {
+            let (report, changed) = sources::seed_check::report(&checks);
+            #[allow(clippy::print_stdout)]
+            {
+                print!("{report}");
+            }
+            i32::from(changed)
+        }
+        Err(error) => {
+            eprintln!("seed-check: {error}");
+            2
+        }
+    }
 }
 
 /// Keeps this instance in the registry other instances and the gateway read.

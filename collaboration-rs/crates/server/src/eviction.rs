@@ -21,15 +21,22 @@ const DISCARD_RETRY: Duration = Duration::from_secs(5);
 /// accepts the room again. `epoch_reset` is recorded when this instance moved it.
 pub async fn move_lineage(app: &Shared, room: &str, cause: Cause) {
     loop {
-        let moved = match RoomName::parse(room) {
-            Some(RoomName::Material {
-                material_id,
-                schema,
-            }) => note_store::reset_lineage(&app.db, &material_id, schema)
+        let parsed = RoomName::parse(room);
+        let moved = match parsed.as_ref().and_then(RoomName::source_room) {
+            Some(source) => app
+                .sources
+                .reset_epoch(&source)
                 .await
                 .map_err(|error| error.to_string()),
-            Some(RoomName::Source { .. }) => Err("source rooms are not served yet".to_owned()),
-            None => Ok(false),
+            None => match parsed {
+                Some(RoomName::Material {
+                    material_id,
+                    schema,
+                }) => note_store::reset_lineage(&app.db, &material_id, schema)
+                    .await
+                    .map_err(|error| error.to_string()),
+                _ => Ok(false),
+            },
         };
         match moved {
             Ok(moved) => {

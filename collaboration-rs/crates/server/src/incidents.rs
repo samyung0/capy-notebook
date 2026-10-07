@@ -60,6 +60,18 @@ impl Cause {
             reason: Some(token(reason)),
         }
     }
+
+    /// A source save's discard cause (`sources::failure`), same kinds.
+    pub fn from_source(cause: &sources::failure::IncidentCause) -> Self {
+        let kind = serde_json::to_value(cause.kind)
+            .ok()
+            .and_then(|kind| kind.as_str().and_then(Kind::parse))
+            .unwrap_or(Kind::DiscardUnsaved);
+        Cause {
+            kind,
+            reason: cause.reason.as_deref().map(token),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

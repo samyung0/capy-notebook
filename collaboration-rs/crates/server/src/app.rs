@@ -3,7 +3,8 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Instant;
 
 use bytes::Bytes;
 use tokio::sync::mpsc;
@@ -72,6 +73,33 @@ impl Outbox {
 pub struct RoomHandle {
     pub id: u64,
     pub tx: mpsc::Sender<RoomCmd>,
+    pub view: Arc<RoomView>,
+}
+
+/// What other tasks read of a room without waiting for it (the source
+/// handoff's `Rooms` calls); the room task keeps it current.
+#[derive(Default)]
+pub struct RoomView(Mutex<ViewState>);
+
+#[derive(Clone, Debug, Default)]
+pub struct ViewState {
+    /// Its document is loaded (false while it loads).
+    pub loaded: bool,
+    pub channels: Vec<sources::Channel>,
+    /// A store running or waiting out its retry.
+    pub storing: bool,
+}
+
+impl RoomView {
+    #[allow(clippy::unwrap_used)]
+    pub fn get(&self) -> ViewState {
+        self.0.lock().unwrap().clone()
+    }
+
+    #[allow(clippy::unwrap_used)]
+    pub fn set(&self, state: ViewState) {
+        *self.0.lock().unwrap() = state;
+    }
 }
 
 /// Loaded rooms by name. A room removes itself once empty and clean, under
@@ -215,6 +243,24 @@ pub struct App {
     pub projection_failures: crate::projection::Failures,
     pub pubsub: crate::pubsub::Waiters,
     pub next_connection: AtomicU64,
+    /// Channel ids the source handoff names (one per room join).
+    pub next_channel: AtomicU64,
+    pub sources: Arc<sources::Sources>,
+    /// Set once at start: it holds the room layer, which holds the app.
+    pub handoff: OnceLock<Arc<sources::handoff::Handoff>>,
+    /// Channels authenticating for a source room, by (connection, channel):
+    /// a rebuild counts them as in the room.
+    pub source_joins: Mutex<HashMap<(u64, u64), (String, Instant)>>,
+    /// The agent markdown converter, when its bundle is configured.
+    pub markdown: Option<notes::markdown::Converter>,
+}
+
+impl App {
+    /// The source handoff (set before any connection is accepted).
+    #[allow(clippy::expect_used)]
+    pub fn handoff(&self) -> &Arc<sources::handoff::Handoff> {
+        self.handoff.get().expect("the handoff is set at start")
+    }
 }
 
 pub type Shared = Arc<App>;

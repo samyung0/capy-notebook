@@ -1,6 +1,8 @@
 //! Environment configuration (`collaboration/src/config.ts`): the same names
 //! and local-dev values, plus the Rust server's own (projection idle, folds,
-//! engine processes).
+//! the Office engine pool, the markdown bundle). The engine pool has no
+//! default: each environment sets it (scripts/env/config.py, the compose
+//! files), as Epo decided its sizes per environment.
 
 use std::collections::{BTreeSet, HashMap};
 use std::time::Duration;
@@ -24,15 +26,9 @@ pub struct Config {
     pub redis_url: String,
     pub secret: String,
     /// Source rooms' store debounce and its cap.
-    #[expect(dead_code, reason = "source rooms come with rust-sources")]
     pub source_debounce: Duration,
-    #[expect(dead_code, reason = "source rooms come with rust-sources")]
     pub source_max_debounce: Duration,
     /// UAT only: holds a publication while its file's name has the marker.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "source rooms come with rust-sources")
-    )]
     pub uat_publication_hold: bool,
     /// A note projects after this long without a content change (Epo 2026-10-07).
     pub projection_idle: Duration,
@@ -40,9 +36,14 @@ pub struct Config {
     /// `fold_max_rows` rows (DESIGN.md 3.5); an unloaded one always.
     pub fold_min_bytes: u64,
     pub fold_max_rows: u64,
-    /// Office engine child processes (rust-sources' pool).
-    #[expect(dead_code, reason = "the engine pool comes with rust-sources")]
-    pub engine_processes: u64,
+    /// Office engine child processes per lane and each one's memory cap
+    /// (Epo 2026-10-07: production 2 + 1 at 4 GiB, UAT 1 + 1 at 3 GiB).
+    pub engine_save_processes: u64,
+    pub engine_background_processes: u64,
+    pub engine_memory_limit_bytes: u64,
+    /// The agent markdown import bundle (`crates/notes/markdown`, built into
+    /// the image). Unset: markdown conversion answers 503.
+    pub markdown_bundle: Option<String>,
     /// The `collab_health` interval (capacity runs log more often).
     pub health_interval: Duration,
 }
@@ -83,6 +84,13 @@ fn millis(
     fallback: u64,
 ) -> Result<Duration, ConfigError> {
     positive(env, name, fallback).map(Duration::from_millis)
+}
+
+fn required(env: &HashMap<String, String>, name: &str) -> Result<u64, ConfigError> {
+    match env.get(name) {
+        None => Err(ConfigError(format!("{name} is required"))),
+        Some(_) => positive(env, name, 0),
+    }
 }
 
 fn flag(env: &HashMap<String, String>, name: &str) -> Result<bool, ConfigError> {
@@ -144,7 +152,16 @@ impl Config {
             projection_idle: millis(env, "COLLABORATION_PROJECTION_IDLE_MS", 30_000)?,
             fold_min_bytes: positive(env, "COLLABORATION_FOLD_MIN_BYTES", 256 * 1024)?,
             fold_max_rows: positive(env, "COLLABORATION_FOLD_MAX_ROWS", 1000)?,
-            engine_processes: positive(env, "COLLABORATION_ENGINE_PROCESSES", 2)?,
+            engine_save_processes: required(env, "COLLABORATION_ENGINE_SAVE_PROCESSES")?,
+            engine_background_processes: required(
+                env,
+                "COLLABORATION_ENGINE_BACKGROUND_PROCESSES",
+            )?,
+            engine_memory_limit_bytes: required(env, "COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES")?,
+            markdown_bundle: env
+                .get("COLLABORATION_MARKDOWN_BUNDLE")
+                .map(|path| path.trim().to_owned())
+                .filter(|path| !path.is_empty()),
             health_interval: millis(env, "COLLAB_HEALTH_INTERVAL_MS", 60_000)?,
         })
     }
@@ -160,11 +177,17 @@ impl Config {
 mod tests {
     use super::*;
 
+    /// `pairs` plus the engine pool every environment sets.
     fn env(pairs: &[(&str, &str)]) -> HashMap<String, String> {
-        pairs
-            .iter()
-            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
-            .collect()
+        [
+            ("COLLABORATION_ENGINE_SAVE_PROCESSES", "1"),
+            ("COLLABORATION_ENGINE_BACKGROUND_PROCESSES", "1"),
+            ("COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES", "3221225472"),
+        ]
+        .iter()
+        .chain(pairs)
+        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+        .collect()
     }
 
     #[test]
@@ -219,6 +242,25 @@ mod tests {
                 .unwrap_err()
                 .to_string(),
             "COLLABORATION_UAT_PUBLICATION_HOLD must be true or unset"
+        );
+    }
+
+    #[test]
+    fn the_engine_pool_has_no_default() {
+        let mut values = env(&[]);
+        values.remove("COLLABORATION_ENGINE_SAVE_PROCESSES");
+        assert_eq!(
+            Config::load(&values).unwrap_err().to_string(),
+            "COLLABORATION_ENGINE_SAVE_PROCESSES is required"
+        );
+        let config = Config::load(&env(&[])).unwrap();
+        assert_eq!(
+            (
+                config.engine_save_processes,
+                config.engine_background_processes,
+                config.engine_memory_limit_bytes
+            ),
+            (1, 1, 3 << 30)
         );
     }
 

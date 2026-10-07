@@ -3,9 +3,11 @@
 //! 30 ms flush window with no echo to the sender, acknowledges each writer's
 //! messages once per window, keeps awareness as bytes, writes contributor
 //! markers once per store window, stores with delta rows, projects notes on
-//! idle and unloads once empty and clean.
+//! idle and unloads once empty and clean. Note rooms validate Plate content
+//! (`notes`); source rooms admit and store through `sources`.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
@@ -14,7 +16,7 @@ use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};
 use yrs::{Doc, ReadTxn, StateVector, Transact};
 
-use crate::app::{Outbox, RoomHandle, Shared};
+use crate::app::{Outbox, RoomHandle, RoomView, Shared, ViewState};
 use crate::auth::{Access, Context, RoomName};
 use crate::incidents::{self, Cause, Incident, Kind as IncidentKind};
 use crate::markers::{self, Contributor, Markers};
@@ -72,10 +74,25 @@ pub enum RoomCmd {
     CloseUser(String, u16, String),
     /// A fold of the log finished: rows and bytes it removed, the new base size.
     Folded(Option<(i64, i64, i64)>),
+    /// The source handoff: a channel goes read-only, every channel back to
+    /// its token's access, channels close (none named: all of them).
+    SetReadOnly(u64),
+    RestoreAccess,
+    CloseChannels {
+        channel: Option<u64>,
+        code: Option<u16>,
+        reason: String,
+    },
+    /// A source epoch ended: unload without storing once every channel left.
+    Unload(oneshot::Sender<()>),
+    /// The Office maintenance pause flushed this room (true) or ended.
+    SetPaused(bool),
 }
 
 struct Member {
     context: Context,
+    /// The handoff's name for this channel.
+    channel_id: u64,
     read_only: bool,
     out: Outbox,
     socket: String,
@@ -109,9 +126,43 @@ struct Note {
     folding: bool,
 }
 
+/// A source room's own state.
+struct Source {
+    room: sources::SourceRoom,
+    format: sources::SourceFormat,
+    /// The room's state size by applied bytes, for the cap check.
+    estimate: u64,
+    checkpoint: u64,
+    log_bytes: i64,
+    log_rows: i64,
+    base_bytes: i64,
+    folding: bool,
+    /// Pending content found by a store, reported once per load.
+    pending_reported: bool,
+    /// The maintenance pause flushed the room: writer updates are refused.
+    paused: bool,
+    /// When this room's saves started failing without a success.
+    failing_since: Option<Instant>,
+}
+
+/// Why a store failed.
+pub enum StoreFailure {
+    Note(StoreError),
+    Source(sources::SourceError),
+}
+
+impl std::fmt::Display for StoreFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StoreFailure::Note(error) => error.fmt(f),
+            StoreFailure::Source(error) => error.fmt(f),
+        }
+    }
+}
+
 /// What a store carried, back from its I/O.
 pub struct StoreDone {
-    result: Result<i64, StoreError>,
+    result: Result<i64, StoreFailure>,
     started: Instant,
     row_bytes: usize,
     contributors: Vec<Contributor>,
@@ -123,6 +174,7 @@ pub struct StoreDone {
 
 enum Kindly {
     Note(Box<Note>),
+    Source(Box<Source>),
 }
 
 struct Store {
@@ -160,17 +212,23 @@ pub struct Room {
     /// A refusal for good threw the unsaved state away: the room unloads and
     /// moves its lineage before it is accepted again.
     discard_pending: Option<Cause>,
+    view: Arc<RoomView>,
+    /// Membership, access or store state changed since the view was set.
+    view_dirty: bool,
+    /// A source epoch ended: the room unloads without storing, then answers.
+    forced_unload: Vec<oneshot::Sender<()>>,
 }
 
-/// Spawns a room task; its handle goes into the registry.
-pub fn spawn(app: &Shared, name: &RoomName, id: u64) -> RoomHandle {
+/// Spawns a room task; its handle goes into the registry. `actor` is the
+/// first joiner (a source room loads its session as that user).
+pub fn spawn(app: &Shared, name: &RoomName, id: u64, actor: &str) -> RoomHandle {
     let (tx, rx) = mpsc::channel(4096);
-    let app = app.clone();
-    let name = name.clone();
+    let view = Arc::new(RoomView::default());
+    let (app, name, actor, room_view) = (app.clone(), name.clone(), actor.to_owned(), view.clone());
     tokio::spawn(async move {
-        run(app, name, id, rx).await;
+        run(app, name, id, actor, room_view, rx).await;
     });
-    RoomHandle { id, tx }
+    RoomHandle { id, tx, view }
 }
 
 /// Picks a client id the loaded state does not hold (markers and server
@@ -184,7 +242,11 @@ fn fresh_doc(held: &StateVector) -> Doc {
     }
 }
 
-async fn load(app: &Shared, name: &RoomName) -> Result<(Doc, Kindly, ydoc::Durable), String> {
+async fn load(
+    app: &Shared,
+    name: &RoomName,
+    actor: &str,
+) -> Result<(Doc, Kindly, ydoc::Durable), String> {
     match name {
         RoomName::Material {
             material_id,
@@ -243,14 +305,54 @@ async fn load(app: &Shared, name: &RoomName) -> Result<(Doc, Kindly, ydoc::Durab
             };
             Ok((doc, Kindly::Note(Box::new(note)), durable))
         }
-        RoomName::Source { .. } => Err("source rooms are not served yet".into()),
+        RoomName::Source { .. } => {
+            let room = name
+                .source_room()
+                .ok_or_else(|| "invalid source room".to_owned())?;
+            let doc = Doc::with_options(ydoc::doc_options(0));
+            let loaded = app
+                .sources
+                .load(&room, actor, &doc)
+                .await
+                .map_err(|error| error.to_string())?;
+            let durable = {
+                let txn = doc.transact();
+                // Markers and server edits go under the room's own client.
+                if txn.state_vector().get(&doc.client_id()) > 0 {
+                    return Err("source room client collided with its state".into());
+                }
+                markers::contributors_in(&txn).map_err(|error| error.to_string())?;
+                ydoc::Durable::of(&txn)
+            };
+            let source = Source {
+                room,
+                format: loaded.format,
+                estimate: loaded.bytes,
+                checkpoint: loaded.checkpoint,
+                log_bytes: loaded.row_bytes as i64,
+                log_rows: loaded.rows as i64,
+                base_bytes: loaded.base_bytes as i64,
+                folding: false,
+                pending_reported: false,
+                paused: false,
+                failing_since: None,
+            };
+            Ok((doc, Kindly::Source(Box::new(source)), durable))
+        }
     }
 }
 
-async fn run(app: Shared, name: RoomName, id: u64, mut rx: mpsc::Receiver<RoomCmd>) {
+async fn run(
+    app: Shared,
+    name: RoomName,
+    id: u64,
+    actor: String,
+    view: Arc<RoomView>,
+    mut rx: mpsc::Receiver<RoomCmd>,
+) {
     let room_name = name.to_string();
     let started = Instant::now();
-    let loaded = load(&app, &name).await;
+    let loaded = load(&app, &name, &actor).await;
     let (doc, kind, durable) = match loaded {
         Ok(loaded) => loaded,
         Err(error) => {
@@ -306,12 +408,18 @@ async fn run(app: Shared, name: RoomName, id: u64, mut rx: mpsc::Receiver<RoomCm
         idle_at: None,
         kind,
         discard_pending: None,
+        view,
+        view_dirty: true,
+        forced_unload: Vec::new(),
     };
-    let Kindly::Note(note) = &room.kind;
+    let log_bytes = match &room.kind {
+        Kindly::Note(note) => note.log_bytes,
+        Kindly::Source(source) => source.log_bytes,
+    };
     room.app
         .stats
         .log_bytes
-        .fetch_add(note.log_bytes.max(0) as u64, Ordering::Relaxed);
+        .fetch_add(log_bytes.max(0) as u64, Ordering::Relaxed);
     room.serve(&mut rx).await;
 }
 
@@ -326,6 +434,7 @@ impl Room {
                 },
                 () = sleep_until(deadline) => self.on_timers().await,
             }
+            self.publish_view();
             if self.unloadable() {
                 let id = self.id;
                 let removed = self.app.rooms.remove_if(&self.name, id, || rx.is_empty());
@@ -361,7 +470,11 @@ impl Room {
         if !self.store.dirty {
             return None;
         }
-        let (debounce, max) = (self.app.config.debounce, self.app.config.max_debounce);
+        let config = &self.app.config;
+        let (debounce, max) = match self.kind {
+            Kindly::Note(_) => (config.debounce, config.max_debounce),
+            Kindly::Source(_) => (config.source_debounce, config.source_max_debounce),
+        };
         let last = self.store.last_change? + debounce;
         let first = self.store.first_change? + max;
         Some(last.min(first))
@@ -382,8 +495,28 @@ impl Room {
         }
     }
 
+    /// The handoff's view of the room, when something it reads changed.
+    fn publish_view(&mut self) {
+        if !std::mem::take(&mut self.view_dirty) {
+            return;
+        }
+        self.view.set(ViewState {
+            loaded: true,
+            channels: self
+                .members
+                .values()
+                .map(|member| sources::Channel {
+                    id: member.channel_id,
+                    write: member.context.access == Access::Write,
+                    read_only: member.read_only,
+                })
+                .collect(),
+            storing: self.store.running || self.store.retry_at.is_some(),
+        });
+    }
+
     fn unloadable(&self) -> bool {
-        if self.discard_pending.is_some() {
+        if self.discard_pending.is_some() || !self.forced_unload.is_empty() {
             return self.members.is_empty() && !self.store.running;
         }
         self.members.is_empty()
@@ -414,6 +547,7 @@ impl Room {
                 if let Some(member) = self.members.get_mut(&key) {
                     member.read_only = context.access == Access::Read;
                     member.context = context;
+                    self.view_dirty = true;
                 }
             }
             RoomCmd::Stored(done) => self.stored(*done),
@@ -431,7 +565,10 @@ impl Room {
                 }
             }
             RoomCmd::Project(reply) => {
-                let Kindly::Note(note) = &mut self.kind;
+                let Kindly::Note(note) = &mut self.kind else {
+                    let _ = reply.send(Err("not a note room".into()));
+                    return;
+                };
                 note.project_waiters.push(reply);
                 if self.store.dirty || markers::pending(&self.doc) {
                     self.start_store().await;
@@ -457,16 +594,66 @@ impl Room {
                 }
             }
             RoomCmd::Folded(folded) => {
-                let Kindly::Note(note) = &mut self.kind;
-                note.folding = false;
+                let (folding, log_rows, log_bytes, base_bytes) = match &mut self.kind {
+                    Kindly::Note(note) => (
+                        &mut note.folding,
+                        &mut note.log_rows,
+                        &mut note.log_bytes,
+                        &mut note.base_bytes,
+                    ),
+                    Kindly::Source(source) => (
+                        &mut source.folding,
+                        &mut source.log_rows,
+                        &mut source.log_bytes,
+                        &mut source.base_bytes,
+                    ),
+                };
+                *folding = false;
                 if let Some((rows, bytes, base)) = folded {
-                    note.log_rows -= rows;
-                    note.log_bytes -= bytes;
-                    note.base_bytes = base;
+                    *log_rows -= rows;
+                    *log_bytes -= bytes;
+                    *base_bytes = base;
                     self.app
                         .stats
                         .log_bytes
                         .fetch_sub(bytes.max(0) as u64, Ordering::Relaxed);
+                }
+            }
+            RoomCmd::SetReadOnly(channel) => {
+                if let Some(member) = self
+                    .members
+                    .values_mut()
+                    .find(|member| member.channel_id == channel)
+                {
+                    member.read_only = true;
+                    self.view_dirty = true;
+                }
+            }
+            RoomCmd::RestoreAccess => {
+                for member in self.members.values_mut() {
+                    member.read_only = member.context.access == Access::Read;
+                }
+                self.view_dirty = true;
+            }
+            RoomCmd::CloseChannels {
+                channel,
+                code,
+                reason,
+            } => {
+                let keys: Vec<MemberKey> = self
+                    .members
+                    .iter()
+                    .filter(|(_, member)| channel.is_none_or(|id| member.channel_id == id))
+                    .map(|(key, _)| *key)
+                    .collect();
+                for key in keys {
+                    self.close_channel(key, None, code.unwrap_or(0), &reason);
+                }
+            }
+            RoomCmd::Unload(reply) => self.forced_unload.push(reply),
+            RoomCmd::SetPaused(paused) => {
+                if let Kindly::Source(source) = &mut self.kind {
+                    source.paused = paused;
                 }
             }
         }
@@ -572,12 +759,6 @@ impl Room {
             self.app.config.fold_min_bytes as i64,
             self.app.config.fold_max_rows as i64,
         );
-        let Kindly::Note(note) = &mut self.kind;
-        if note.folding
-            || (note.log_bytes < min_bytes.max(note.base_bytes) && note.log_rows < max_rows)
-        {
-            return;
-        }
         let Some(handle) = self
             .app
             .rooms
@@ -586,6 +767,43 @@ impl Room {
         else {
             return;
         };
+        let note = match &mut self.kind {
+            Kindly::Note(note) => note,
+            Kindly::Source(source) => {
+                if source.folding
+                    || (source.log_bytes < min_bytes.max(source.base_bytes)
+                        && source.log_rows < max_rows)
+                {
+                    return;
+                }
+                source.folding = true;
+                let (app, room) = (self.app.clone(), source.room.clone());
+                tokio::spawn(async move {
+                    let folded = match app.sources.fold(&room).await {
+                        Ok(folded) => (folded.rows > 0).then_some((
+                            folded.rows as i64,
+                            folded.row_bytes as i64,
+                            folded.base_bytes as i64,
+                        )),
+                        Err(error) => {
+                            observe::capture(
+                                &error.to_string(),
+                                None,
+                                &[("room", &room.name()), ("stage", "fold")],
+                            );
+                            None
+                        }
+                    };
+                    let _ = handle.tx.send(RoomCmd::Folded(folded)).await;
+                });
+                return;
+            }
+        };
+        if note.folding
+            || (note.log_bytes < min_bytes.max(note.base_bytes) && note.log_rows < max_rows)
+        {
+            return;
+        }
         note.folding = true;
         let (app, material_id, schema, through) = (
             self.app.clone(),
@@ -629,15 +847,23 @@ impl Room {
             return Err("collaboration room is being reset".into());
         }
         let read_only = context.access == Access::Read;
+        // A writer joining after the maintenance pause ended takes edits again.
+        if let Kindly::Source(source) = &mut self.kind
+            && !read_only
+        {
+            source.paused = false;
+        }
         out.frame(protocol::message(
             key.1,
             Kind::Joined,
             &[u8::from(!read_only)],
         ));
+        self.view_dirty = true;
         self.members.insert(
             key,
             Member {
                 context,
+                channel_id: self.app.next_channel.fetch_add(1, Ordering::Relaxed),
                 read_only,
                 out,
                 socket,
@@ -659,6 +885,10 @@ impl Room {
         let Some(member) = self.members.remove(&key) else {
             return;
         };
+        self.view_dirty = true;
+        if let Kindly::Source(_) = &self.kind {
+            self.app.handoff().closed(&self.name, member.channel_id);
+        }
         // Its awareness states go, as Hocuspocus removes a closed connection's.
         for client in member.clients {
             if let Some(state) = self.awareness.get_mut(&client) {
@@ -820,20 +1050,53 @@ impl Room {
             self.acked(key);
             return;
         }
+        // A writer that slipped past the maintenance pause: it goes read-only
+        // (or to recovery with unsent changes) and its update is refused.
+        if let Kindly::Source(source) = &self.kind
+            && source.paused
+        {
+            let payload = json!({
+                "epoch": source.room.epoch,
+                "fileId": source.room.file_id,
+                "type": "source-editing-paused",
+            })
+            .to_string();
+            self.refuse(key, &[payload], "Office editing is paused");
+            return;
+        }
         if markers::check(&self.doc.transact(), &update, self.doc.client_id()).is_err() {
             self.refuse(key, &[], "client update changed collaboration metadata");
             return;
         }
-        let admission = match &mut self.kind {
-            Kindly::Note(note) => note.validator.admit(&self.doc, bytes),
+        let verdict = match &mut self.kind {
+            Kindly::Note(note) => match note.validator.admit(&self.doc, bytes) {
+                Ok(notes::limits::Admission::Accepted) => Verdict::Accept,
+                Ok(notes::limits::Admission::Unheld) => Verdict::Unheld,
+                Err(refusal) => Verdict::Note(refusal),
+            },
+            Kindly::Source(source) => {
+                match sources::admit_update(&self.doc, source.format, bytes, &mut source.estimate) {
+                    sources::Admission::Accept => Verdict::Accept,
+                    sources::Admission::Unheld => Verdict::Unheld,
+                    sources::Admission::Refuse(refusal) => Verdict::Source(refusal),
+                }
+            }
         };
-        match admission {
-            Ok(notes::limits::Admission::Unheld) => {
+        match verdict {
+            Verdict::Unheld => {
                 self.resync(key, step2, &context);
                 return;
             }
-            Ok(notes::limits::Admission::Accepted) => {}
-            Err(notes::limits::Refusal::Limit { code, metrics }) => {
+            Verdict::Accept => {}
+            Verdict::Source(sources::Refusal::Malformed(message)) => {
+                self.refuse(key, &[], &message);
+                return;
+            }
+            Verdict::Source(refusal) => {
+                self.source_update_refused(key, &context, &refusal, bytes.len());
+                return;
+            }
+            Verdict::Note(notes::limits::Refusal::Limit { code, metrics }) => {
                 let payload = self.rejection_payload(code, metrics, None);
                 incidents::record(
                     &self.app,
@@ -847,7 +1110,7 @@ impl Room {
                 self.refuse(key, &[payload], "invalid material document");
                 return;
             }
-            Err(error) => {
+            Verdict::Note(error) => {
                 self.refuse(key, &[], &error.to_string());
                 return;
             }
@@ -860,7 +1123,9 @@ impl Room {
             self.acked(key);
             return;
         }
+        let mut applied = 0;
         if let Some(marker) = self.markers.write(&self.doc, &context) {
+            applied += marker.len();
             self.broadcast_update(None, marker);
         }
         let content = match ydoc::apply(&self.doc, update) {
@@ -870,11 +1135,58 @@ impl Room {
                 return;
             }
         };
+        applied += content.len();
+        if let Kindly::Source(source) = &mut self.kind {
+            source.estimate += applied as u64;
+        }
         self.acked(key);
         if !content.is_empty() {
             self.content_changed();
             self.broadcast_update(Some(key), content);
         }
+    }
+
+    /// A source update past the state cap or outside the Office roots: the
+    /// sender hears it is unrecoverable (it stops resending), one incident,
+    /// and the channel closes.
+    fn source_update_refused(
+        &mut self,
+        key: MemberKey,
+        context: &Context,
+        refusal: &sources::Refusal,
+        bytes: usize,
+    ) {
+        if let Some(member) = self.members.get_mut(&key) {
+            member.unplaced = 0;
+        }
+        self.app.unplaced.placed(&self.name, &context.user_id);
+        let Kindly::Source(source) = &self.kind else {
+            return;
+        };
+        let payload = json!({
+            "checkpointIds": [],
+            "epoch": source.room.epoch,
+            "fileId": source.room.file_id,
+            "recoverable": false,
+            "type": "source-checkpoint-failed",
+        })
+        .to_string();
+        let cause = match refusal {
+            sources::Refusal::StateBytes => {
+                Cause::new(IncidentKind::OverLimit, "source_state_bytes")
+            }
+            _ => Cause::new(IncidentKind::SaveRefused, "office_update"),
+        };
+        incidents::record(
+            &self.app,
+            vec![Incident {
+                cause,
+                room: self.name.clone(),
+                size_bytes: Some(bytes as u64),
+                user_id: Some(context.user_id.clone()),
+            }],
+        );
+        self.refuse(key, &[payload], refusal.message());
     }
 
     fn acked(&mut self, key: MemberKey) {
@@ -902,7 +1214,10 @@ impl Room {
         member.unplaced = if step2 { member.unplaced + 1 } else { 0 };
         if member.unplaced >= MAX_UNPLACED_STEPS {
             let socket = member.socket.clone();
-            let kind = "note";
+            let kind = match self.kind {
+                Kindly::Note(_) => "note",
+                Kindly::Source(_) => "source",
+            };
             let stage = format!("{kind}_step2_unplaced");
             observe::capture(
                 &format!("{kind} sync step 2 cannot be placed in the room"),
@@ -944,7 +1259,6 @@ impl Room {
         metrics: notes::limits::Metrics,
         eviction: Option<&str>,
     ) -> String {
-        let Kindly::Note(note) = &self.kind;
         let mut payload = json!({
             "code": code.as_str(),
             "limits": {
@@ -952,7 +1266,7 @@ impl Room {
                 "maxDepth": notes::limits::MAX_DEPTH,
                 "maxNodes": notes::limits::MAX_NODES,
             },
-            "materialId": note.material_id,
+            "materialId": self.material_id(),
             "metrics": metrics,
             "room": self.name,
             "type": "document-rejected",
@@ -1037,6 +1351,18 @@ impl Room {
         let Ok(event) = serde_json::from_str::<Value>(payload) else {
             return;
         };
+        let channel = member.channel_id;
+        if event["type"] == "source-handoff-ready" {
+            // The handoff counts a clean writer's answer; it goes read-only.
+            if matches!(self.kind, Kindly::Source(_))
+                && self.app.handoff().ready(&self.name, channel, &event)
+                && let Some(member) = self.members.get_mut(&key)
+            {
+                member.read_only = true;
+                self.view_dirty = true;
+            }
+            return;
+        }
         if event["type"] != "checkpoint-request" || member.read_only {
             return;
         }
@@ -1046,10 +1372,27 @@ impl Room {
         else {
             return;
         };
+        if let Kindly::Source(_) = &self.kind {
+            // A full set is drained by storing now rather than dropping this
+            // request; an explicit save stores now, and an idle request waits
+            // for the debounced store unless none is waiting
+            // (sourceDebounce.ts persistsNow).
+            if self.receipts.len() >= MAX_PENDING_CHECKPOINTS {
+                self.start_store().await;
+            }
+            if self.receipts.len() < 2 * MAX_PENDING_CHECKPOINTS
+                && !self.receipts.iter().any(|known| known == id)
+            {
+                self.receipts.push(id.to_owned());
+            }
+            if event["flush"] == true || !self.store.dirty {
+                self.start_store().await;
+            }
+            return;
+        }
         // A note room with nothing waiting to be saved answers at once.
         if self.nothing_to_store() {
-            let Kindly::Note(note) = &self.kind;
-            let receipt = json!({ "checkpointIds": [id], "materialId": note.material_id, "type": "checkpoint-persisted" });
+            let receipt = json!({ "checkpointIds": [id], "materialId": self.material_id(), "type": "checkpoint-persisted" });
             self.send(key, Kind::Stateless, &protocol::text(&receipt.to_string()));
             return;
         }
@@ -1059,6 +1402,39 @@ impl Room {
         if !self.receipts.iter().any(|known| known == id) {
             self.receipts.push(id.to_owned());
         }
+    }
+
+    /// A note room's material id ("" in a source room).
+    fn material_id(&self) -> &str {
+        match &self.kind {
+            Kindly::Note(note) => &note.material_id,
+            Kindly::Source(_) => "",
+        }
+    }
+
+    /// `sourceReceipt`: the source room's receipt for `ids` at `checkpoint`.
+    fn source_receipt(&mut self, ids: &[String], checkpoint: u64) {
+        let Kindly::Source(source) = &self.kind else {
+            return;
+        };
+        let mut answered = Vec::new();
+        self.receipts.retain(|id| {
+            if ids.contains(id) {
+                answered.push(id.clone());
+                false
+            } else {
+                true
+            }
+        });
+        let receipt = json!({
+            "checkpoint": checkpoint,
+            "checkpointIds": answered,
+            "epoch": source.room.epoch,
+            "fileId": source.room.file_id,
+            "type": "checkpoint-persisted",
+            "yjsVersion": checkpoint,
+        });
+        self.broadcast_stateless(&receipt.to_string());
     }
 
     /// `nothingToStore`: no store due or running, no failed snapshot, and no
@@ -1084,15 +1460,15 @@ impl Room {
             self.answer_store_waiters(Ok(()));
             return;
         }
+        if matches!(self.kind, Kindly::Source(_)) {
+            self.start_source_store();
+            return;
+        }
         let contributors = match self.markers.claim(&self.doc) {
             Ok(contributors) => contributors,
             Err(error) => {
-                self.store_failed(
-                    StoreError::Other(error.to_string()),
-                    Instant::now(),
-                    0,
-                    Vec::new(),
-                );
+                let error = StoreFailure::Note(StoreError::Other(error.to_string()));
+                self.store_failed(error, Instant::now(), 0, Vec::new());
                 return;
             }
         };
@@ -1102,7 +1478,9 @@ impl Room {
         let hidden = markers::live_items(&self.doc);
         let (row, durable) = ydoc::delta_update(&self.doc.transact(), &self.durable, &hidden);
         let started = Instant::now();
-        let Kindly::Note(note) = &self.kind;
+        let Kindly::Note(note) = &self.kind else {
+            return;
+        };
         let doc = self.doc.clone();
         let kind = note.kind.clone();
         let previous = note.durable_metrics;
@@ -1115,13 +1493,13 @@ impl Room {
                 self.markers.unclaim(&contributors);
                 self.store.dirty = true;
                 self.store.first_change.get_or_insert(started);
-                self.store_failed(error, started, row.len(), claimed);
+                self.store_failed(StoreFailure::Note(error), started, row.len(), claimed);
                 return;
             }
         };
-        self.store.running = true;
-        let app = self.app.clone();
-        let Kindly::Note(note) = &self.kind;
+        let Kindly::Note(note) = &self.kind else {
+            return;
+        };
         let (material_id, schema) = (note.material_id.clone(), note.schema);
         let actors: Vec<String> = {
             let mut actors: Vec<String> = contributors.iter().map(|c| c.user_id.clone()).collect();
@@ -1129,16 +1507,16 @@ impl Room {
             actors.dedup();
             actors
         };
-        let Some(handle) = self
-            .app
-            .rooms
-            .get(&self.name)
-            .filter(|handle| handle.id == self.id)
-        else {
+        let Some(handle) = self.own_handle() else {
             return;
         };
+        self.store.running = true;
+        self.view_dirty = true;
+        let app = self.app.clone();
         tokio::spawn(async move {
-            let result = note_store::append(&app.db, &material_id, schema, &row, &actors).await;
+            let result = note_store::append(&app.db, &material_id, schema, &row, &actors)
+                .await
+                .map_err(StoreFailure::Note);
             let done = StoreDone {
                 result,
                 started,
@@ -1153,8 +1531,128 @@ impl Room {
         });
     }
 
+    /// This room's registry handle (none once it unloaded).
+    fn own_handle(&self) -> Option<RoomHandle> {
+        self.app
+            .rooms
+            .get(&self.name)
+            .filter(|handle| handle.id == self.id)
+    }
+
+    /// `storeSource`: the room's update since its durable state goes to the
+    /// gateway's checkpoint with its effects (an Office room's whole state for
+    /// the engine, a text room's effects from the change).
+    fn start_source_store(&mut self) {
+        let started = Instant::now();
+        // A failed store waits out its backoff; only its retry calls the engine.
+        if self.store.retry_at.is_some() {
+            self.answer_store_waiters(Err(sources::SourceError::Backoff.to_string()));
+            return;
+        }
+        let pending = sources::failure::pending_source_save(&self.doc.transact());
+        if pending == sources::failure::PendingSave::Wait {
+            let Kindly::Source(source) = &mut self.kind else {
+                return;
+            };
+            if std::mem::replace(&mut source.pending_reported, true) {
+                log(
+                    Level::Warn,
+                    "source store found pending content",
+                    json!({ "room": self.name }),
+                );
+            } else {
+                observe::capture(
+                    &sources::SourceError::Pending.to_string(),
+                    None,
+                    &[("room", &self.name), ("stage", "source_store_pending")],
+                );
+            }
+            self.source_store_failed(sources::SourceError::Pending, started, 0, Vec::new());
+            return;
+        }
+        let contributors = match self.markers.claim(&self.doc) {
+            Ok(contributors) => contributors,
+            Err(error) => {
+                let error = sources::SourceError::Other(error.to_string());
+                self.source_store_failed(error, started, 0, Vec::new());
+                return;
+            }
+        };
+        let claimed = self.receipts.clone();
+        let hidden = markers::live_items(&self.doc);
+        let Kindly::Source(source) = &self.kind else {
+            return;
+        };
+        let (room, format) = (source.room.clone(), source.format);
+        let (row, durable, state, text) = {
+            let txn = self.doc.transact();
+            let (row, durable) = ydoc::delta_update(&txn, &self.durable, &hidden);
+            let (state, text) = match format {
+                sources::SourceFormat::Text => {
+                    (None, Some(self.app.sources.text_effects(&room, &txn, &row)))
+                }
+                _ => (
+                    Some(txn.encode_state_as_update_v1(&StateVector::default())),
+                    None,
+                ),
+            };
+            (row, durable, state, text)
+        };
+        let text = match text.transpose() {
+            Ok(text) => text,
+            Err(error) => {
+                self.markers.unclaim(&contributors);
+                self.source_store_failed(error, started, row.len(), claimed);
+                return;
+            }
+        };
+        self.store.dirty = false;
+        self.store.first_change = None;
+        let mut actors: Vec<String> = Vec::new();
+        for contributor in &contributors {
+            if !actors.contains(&contributor.user_id) {
+                actors.push(contributor.user_id.clone());
+            }
+        }
+        let bytes = state.as_ref().map_or(row.len(), Vec::len);
+        let save = sources::Save {
+            row,
+            state,
+            text,
+            actors,
+            retry_event: self.store.failed_event.clone(),
+        };
+        let Some(handle) = self.own_handle() else {
+            return;
+        };
+        self.store.running = true;
+        self.view_dirty = true;
+        let app = self.app.clone();
+        tokio::spawn(async move {
+            let result = app
+                .sources
+                .store(&room, save)
+                .await
+                .map(|saved| (saved.checkpoint as i64, saved.row_bytes))
+                .map_err(StoreFailure::Source);
+            let row_bytes = result.as_ref().map_or(bytes, |(_, row)| *row as usize);
+            let done = StoreDone {
+                result: result.map(|(checkpoint, _)| checkpoint),
+                started,
+                row_bytes,
+                contributors,
+                claimed,
+                durable,
+                metrics: None,
+                limit_code: None,
+            };
+            let _ = handle.tx.send(RoomCmd::Stored(Box::new(done))).await;
+        });
+    }
+
     fn stored(&mut self, done: StoreDone) {
         self.store.running = false;
+        self.view_dirty = true;
         let StoreDone {
             result,
             started,
@@ -1165,29 +1663,42 @@ impl Room {
             metrics,
             limit_code,
         } = done;
-        match result {
-            Ok(version) => {
-                self.app
-                    .health
-                    .material
-                    .record(started.elapsed(), true, row_bytes, &self.name);
-                self.durable = durable;
-                if self.store.failed_event.take().is_some() {
-                    self.app.stats.failed_stores.fetch_sub(1, Ordering::Relaxed);
-                }
-                self.store.retry_delay = RETRY_FIRST / 2;
-                if let Some(cleared) = self.markers.clear(&self.doc, &contributors) {
-                    self.broadcast_update(None, cleared);
-                }
-                let Kindly::Note(note) = &mut self.kind;
+        let version = match result {
+            Ok(version) => version,
+            Err(error) => {
+                self.markers.unclaim(&contributors);
+                self.store.dirty = true;
+                self.store.first_change.get_or_insert(started);
+                self.store_failed(error, started, row_bytes, claimed);
+                return;
+            }
+        };
+        let timings = match self.kind {
+            Kindly::Note(_) => &self.app.health.material,
+            Kindly::Source(_) => &self.app.health.source,
+        };
+        timings.record(started.elapsed(), true, row_bytes, &self.name);
+        // A source save with no writer in it appends nothing (row_bytes 0).
+        if row_bytes > 0 || matches!(self.kind, Kindly::Note(_)) {
+            self.durable = durable;
+            self.app
+                .stats
+                .log_bytes
+                .fetch_add(row_bytes as u64, Ordering::Relaxed);
+        }
+        if self.store.failed_event.take().is_some() {
+            self.app.stats.failed_stores.fetch_sub(1, Ordering::Relaxed);
+        }
+        self.store.retry_delay = RETRY_FIRST / 2;
+        if let Some(cleared) = self.markers.clear(&self.doc, &contributors) {
+            self.broadcast_update(None, cleared);
+        }
+        match &mut self.kind {
+            Kindly::Note(note) => {
                 note.stored_version = version;
                 note.durable_metrics = metrics;
                 note.log_bytes += row_bytes as i64;
                 note.log_rows += 1;
-                self.app
-                    .stats
-                    .log_bytes
-                    .fetch_add(row_bytes as u64, Ordering::Relaxed);
                 let material_id = note.material_id.clone();
                 // Claimed receipts, and every waiting one when no writer's
                 // update reached the room after the snapshot.
@@ -1210,38 +1721,49 @@ impl Room {
                     "yjsVersion": version,
                 });
                 self.broadcast_stateless(&receipt.to_string());
-                if self.store.dirty || markers::pending(&self.doc) {
-                    if self.store.again {
-                        self.store.again = false;
-                        self.store.retry_at = Some(Instant::now());
-                    }
-                } else {
-                    self.answer_store_waiters(Ok(()));
-                    let Kindly::Note(note) = &self.kind;
-                    if note.project_waiters.is_empty() {
-                        self.arm_idle();
-                    } else {
-                        self.idle_at = Some(Instant::now());
-                    }
-                }
-                self.maybe_fold();
             }
-            Err(error) => {
-                self.markers.unclaim(&contributors);
-                self.store.dirty = true;
-                self.store.first_change.get_or_insert(started);
-                self.store_failed(error, started, row_bytes, claimed);
+            Kindly::Source(source) => {
+                source.checkpoint = version as u64;
+                source.failing_since = None;
+                if row_bytes > 0 {
+                    source.log_bytes += row_bytes as i64;
+                    source.log_rows += 1;
+                }
+                self.source_receipt(&claimed, version as u64);
             }
         }
+        if self.store.dirty || markers::pending(&self.doc) {
+            if self.store.again {
+                self.store.again = false;
+                self.store.retry_at = Some(Instant::now());
+            }
+        } else {
+            self.answer_store_waiters(Ok(()));
+            if let Kindly::Note(note) = &self.kind {
+                if note.project_waiters.is_empty() {
+                    self.arm_idle();
+                } else {
+                    self.idle_at = Some(Instant::now());
+                }
+            }
+        }
+        self.maybe_fold();
     }
 
     fn store_failed(
         &mut self,
-        error: StoreError,
+        error: StoreFailure,
         started: Instant,
         bytes: usize,
-        _claimed: Vec<String>,
+        claimed: Vec<String>,
     ) {
+        let error = match error {
+            StoreFailure::Note(error) => error,
+            StoreFailure::Source(error) => {
+                self.source_store_failed(error, started, bytes, claimed);
+                return;
+            }
+        };
         self.app
             .health
             .material
@@ -1255,33 +1777,135 @@ impl Room {
             self.reject_after_store(&error, bytes);
             return;
         }
-        let Kindly::Note(note) = &self.kind;
-        let material_id = note.material_id.clone();
         self.broadcast_stateless(
-            &json!({ "materialId": material_id, "type": "checkpoint-failed" }).to_string(),
+            &json!({ "materialId": self.material_id(), "type": "checkpoint-failed" }).to_string(),
         );
-        // Reported once per run of failures; each one still logs its cause.
+        self.retry_later(&error.to_string(), "document_store");
+    }
+
+    /// A failed store's retry: reported once per run of failures (each one
+    /// still logs its cause), then after 5 s, doubling to 60 s.
+    fn retry_later(&mut self, error: &str, stage: &str) {
         match &self.store.failed_event {
             Some(event) => log(
                 Level::Warn,
                 "store failed again",
-                json!({ "error": error.to_string(), "event_id": event, "room": self.name }),
+                json!({ "error": error, "event_id": event, "room": self.name }),
             ),
             None => {
                 self.app.stats.failed_stores.fetch_add(1, Ordering::Relaxed);
-                let event = observe::capture(
-                    &error.to_string(),
-                    None,
-                    &[("room", &self.name), ("stage", "document_store")],
-                );
+                let event =
+                    observe::capture(error, None, &[("room", &self.name), ("stage", stage)]);
                 self.store.failed_event = Some(event.unwrap_or_default());
             }
         }
+        self.schedule_retry();
+        self.answer_store_waiters(Err(error.to_owned()));
+    }
+
+    fn schedule_retry(&mut self) {
         self.store.retry_delay = (self.store.retry_delay * 2).clamp(RETRY_FIRST, RETRY_MAX);
         self.store.retry_at = Some(Instant::now() + self.store.retry_delay);
-        if self.store.waiters.iter().any(|_| true) {
-            self.answer_store_waiters(Err(error.to_string()));
+        self.view_dirty = true;
+    }
+
+    /// `storeSource`'s failure paths: a storage or frozen refusal drops every
+    /// writer to view, a save that will always fail (or failed for 5 min
+    /// without a success) discards the room and its editors go to recovery,
+    /// anything else retries with backoff while editing goes on.
+    fn source_store_failed(
+        &mut self,
+        error: sources::SourceError,
+        started: Instant,
+        bytes: usize,
+        claimed: Vec<String>,
+    ) {
+        self.app
+            .health
+            .source
+            .record(started.elapsed(), false, bytes, &self.name);
+        self.app
+            .stats
+            .store_failures
+            .fetch_add(1, Ordering::Relaxed);
+        if error.service_secret() {
+            log(
+                Level::Error,
+                "collaboration service secret rejected by the gateway; source saves fail until it matches",
+                json!({ "room": self.name }),
+            );
+            observe::capture(
+                &error.to_string(),
+                None,
+                &[("room", &self.name), ("stage", "service_secret_rejected")],
+            );
         }
+        let Kindly::Source(source) = &mut self.kind else {
+            return;
+        };
+        let now = Instant::now();
+        let since = *source.failing_since.get_or_insert(now);
+        let (epoch, file_id) = (source.room.epoch, source.room.file_id.clone());
+        let read_only = error.read_only();
+        let permanent = !read_only && error.refused();
+        let slow_limit = !(read_only || permanent)
+            && now.duration_since(since) >= sources::failure::SLOW_SAVE_LIMIT;
+        let recoverable = !(read_only || permanent || slow_limit);
+        let payload = if read_only {
+            log(
+                Level::Warn,
+                "source store refused read-only",
+                json!({ "error": error.to_string(), "room": self.name }),
+            );
+            json!({ "room": self.name, "type": "room-read-only" })
+        } else {
+            let mut payload = json!({
+                "checkpointIds": claimed,
+                "epoch": epoch,
+                "fileId": file_id,
+                "recoverable": recoverable,
+                "type": "source-checkpoint-failed",
+            });
+            if let Some(lost) = error.lost_access_field() {
+                payload["lostAccess"] = json!(lost);
+            }
+            payload
+        };
+        self.broadcast_stateless(&payload.to_string());
+        if recoverable {
+            if matches!(error, sources::SourceError::Pending) {
+                // Reported when found; the live room saves once it integrates.
+                self.schedule_retry();
+                self.answer_store_waiters(Err(error.to_string()));
+            } else {
+                self.retry_later(&error.to_string(), "document_store");
+            }
+            return;
+        }
+        if !read_only {
+            observe::capture(
+                &error.to_string(),
+                None,
+                &[("room", &self.name), ("stage", "document_store")],
+            );
+        }
+        if self.store.failed_event.take().is_some() {
+            self.app.stats.failed_stores.fetch_sub(1, Ordering::Relaxed);
+        }
+        if let Kindly::Source(source) = &mut self.kind {
+            source.failing_since = None;
+        }
+        let cause = incidents::Cause::from_source(&error.discard_cause(slow_limit));
+        self.answer_store_waiters(Err(error.to_string()));
+        let eviction = uuid::Uuid::new_v4().to_string();
+        let payload = json!({
+            "evictionId": eviction,
+            "incident": { "kind": cause.kind.as_str(), "reason": cause.reason },
+            "room": self.name,
+            "type": "authorization-revoked",
+        })
+        .to_string();
+        self.reject_room(cause, bytes, &eviction, payload);
     }
 
     fn answer_store_waiters(&mut self, result: Result<(), String>) {
@@ -1292,30 +1916,42 @@ impl Room {
 
     /// A store refused for good discards the room: every editor drops back to
     /// the last durable state (`rejectRoom`, `rejectInvalidDocumentRoom`,
-    /// `rejectAuthorizationRoom`). The discard and lineage move come with the
-    /// eviction module.
+    /// `rejectAuthorizationRoom`).
     fn reject_after_store(&mut self, error: &StoreError, bytes: usize) {
         let eviction = uuid::Uuid::new_v4().to_string();
-        let payload = match error {
-            StoreError::Limit { code, metrics } => self.rejection_payload(*code, *metrics, Some(&eviction)),
-            StoreError::Invalid(_) => {
-                let Kindly::Note(note) = &self.kind;
-                json!({
-                    "code": "invalid_document",
-                    "evictionId": eviction,
-                    "materialId": note.material_id,
-                    "room": self.name,
-                    "type": "document-rejected",
-                })
-                .to_string()
-            }
-            _ => json!({ "evictionId": eviction, "room": self.name, "type": "authorization-revoked" }).to_string(),
-        };
         let cause = match error {
             StoreError::Limit { code, .. } => Cause::new(IncidentKind::OverLimit, code.as_str()),
             StoreError::Invalid(_) => Cause::new(IncidentKind::SaveRefused, "invalid_document"),
             other => Cause::new(IncidentKind::DiscardUnsaved, &other.incident_reason()),
         };
+        let mut payload: Value = match error {
+            StoreError::Limit { code, metrics } => {
+                serde_json::from_str(&self.rejection_payload(*code, *metrics, Some(&eviction)))
+                    .unwrap_or(Value::Null)
+            }
+            StoreError::Invalid(_) => json!({
+                "code": "invalid_document",
+                "evictionId": eviction,
+                "materialId": self.material_id(),
+                "room": self.name,
+                "type": "document-rejected",
+            }),
+            _ => {
+                json!({ "evictionId": eviction, "room": self.name, "type": "authorization-revoked" })
+            }
+        };
+        payload["incident"] = json!({ "kind": cause.kind.as_str(), "reason": cause.reason });
+        self.reject_room(cause, bytes, &eviction, payload.to_string());
+    }
+
+    /// Discards the room here and on every other instance (the eviction
+    /// channel, as `publishRoomEviction`): its editors hear `payload` (without
+    /// the incident) and close, and the unsaved state goes with the room,
+    /// whose lineage moves once it unloads.
+    fn reject_room(&mut self, cause: Cause, bytes: usize, eviction: &str, payload: String) {
+        if self.discard_pending.is_some() {
+            return;
+        }
         self.app.evictions.reject(&self.name);
         self.record_room_incidents(&cause, Some(bytes as u64));
         self.broadcast_stateless(&incidents::client_payload(&payload));
@@ -1323,16 +1959,33 @@ impl Room {
         for key in keys {
             self.refuse(key, &[], "collaboration room is being reset");
         }
-        // The unsaved state is thrown away with the room.
+        // This instance runs it now; the echo from the channel is a repeat
+        // (a material eviction runs per room of its epochs).
+        self.app.pubsub.seen(eviction);
+        self.app.pubsub.seen(&format!("{eviction}:{}", self.name));
+        let app = self.app.clone();
+        let room = self.name.clone();
+        tokio::spawn(async move {
+            if let Err(error) = crate::pubsub::publish_eviction(&app, &payload).await {
+                observe::capture(
+                    &error,
+                    None,
+                    &[("room", &room), ("stage", "authorization_eviction_publish")],
+                );
+            }
+        });
         self.store.dirty = false;
         self.store.retry_at = None;
         self.discard_pending = Some(cause);
+        self.view_dirty = true;
     }
 
     // ---------------------------------------------------------------- projection
 
     fn arm_idle(&mut self) {
-        let Kindly::Note(note) = &self.kind;
+        let Kindly::Note(note) = &self.kind else {
+            return;
+        };
         if note.stored_version <= note.projected_version {
             return;
         }
@@ -1341,7 +1994,9 @@ impl Room {
     }
 
     async fn start_projection(&mut self) {
-        let Kindly::Note(note) = &mut self.kind;
+        let Kindly::Note(note) = &mut self.kind else {
+            return;
+        };
         if note.projecting {
             return;
         }
@@ -1377,7 +2032,9 @@ impl Room {
     }
 
     fn projected(&mut self, version: i64, result: Result<(), String>) {
-        let Kindly::Note(note) = &mut self.kind;
+        let Kindly::Note(note) = &mut self.kind else {
+            return;
+        };
         note.projecting = false;
         match &result {
             Ok(()) => {
@@ -1409,7 +2066,38 @@ impl Room {
             "room_unload",
             json!({ "bytes": bytes, "room": self.name }),
         );
-        let Kindly::Note(note) = &self.kind;
+        for reply in self.forced_unload.drain(..) {
+            let _ = reply.send(());
+        }
+        let note = match &self.kind {
+            Kindly::Note(note) => note,
+            Kindly::Source(source) => {
+                self.app
+                    .stats
+                    .log_bytes
+                    .fetch_sub(source.log_bytes.max(0) as u64, Ordering::Relaxed);
+                let (app, room) = (self.app.clone(), source.room.clone());
+                let discarded = self.discard_pending.take();
+                tokio::spawn(async move {
+                    app.sources.forget(&room).await;
+                    if let Some(cause) = discarded {
+                        crate::eviction::move_lineage(&app, &room.name(), cause).await;
+                        return;
+                    }
+                    // Compaction while the room is empty (DESIGN.md 3.5); a
+                    // deferred publication's rebuild may follow now.
+                    if let Err(error) = app.sources.fold(&room).await {
+                        observe::capture(
+                            &error.to_string(),
+                            None,
+                            &[("room", &room.name()), ("stage", "fold")],
+                        );
+                    }
+                    app.handoff().schedule_rebuild(&room.file_id);
+                });
+                return;
+            }
+        };
         self.app
             .stats
             .log_bytes
@@ -1456,6 +2144,14 @@ impl Room {
             tokio::join!(projecting, folding);
         });
     }
+}
+
+/// What admission decided about a writer's update.
+enum Verdict {
+    Accept,
+    Unheld,
+    Note(notes::limits::Refusal),
+    Source(sources::Refusal),
 }
 
 /// Merges the window's updates; `None` when there are none.

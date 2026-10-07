@@ -111,7 +111,28 @@ async fn authenticate(
                 .await
                 .map_err(|error| Refusal::access(&error))?;
         }
-        RoomName::Source { .. } => return Err(Refusal::plain("source rooms are not served yet")),
+        RoomName::Source { .. } => {
+            let source = name
+                .source_room()
+                .ok_or_else(|| Refusal::plain("invalid collaboration room"))?;
+            // The maintenance pause refuses writers; viewing keeps working.
+            if claims.access == Access::Write
+                && app
+                    .sources
+                    .editing_paused(&source)
+                    .await
+                    .map_err(|error| Refusal::plain(error.to_string()))?
+            {
+                return Err(Refusal {
+                    reason: sources::handoff::OFFICE_EDITING_PAUSED_REASON.into(),
+                    message: "Office editing is paused".into(),
+                });
+            }
+            app.sources
+                .assert_access(&source, &claims.sub, claims.access == Access::Write)
+                .await
+                .map_err(|error| Refusal::access(&AccessError::from_source(&error)))?;
+        }
     }
     // A reset that began during the checks admits no one.
     if app.evictions.blocks(&room, false) {
@@ -131,7 +152,41 @@ async fn recheck(app: &Shared, name: &RoomName, context: &Context) -> Result<(),
                 .map_err(|error| AccessError::Database(error.to_string()))?;
             access::assert_access(&client, material_id, &context.user_id, Access::Write).await
         }
-        RoomName::Source { .. } => Ok(()),
+        RoomName::Source { .. } => {
+            let Some(source) = name.source_room() else {
+                return Err(AccessError::NotFound("invalid source room".into()));
+            };
+            app.sources
+                .assert_access(&source, &context.user_id, true)
+                .await
+                .map_err(|error| AccessError::from_source(&error))
+        }
+    }
+}
+
+/// `assertConnectionAccess` for a token refresh.
+async fn token_access(
+    app: &Shared,
+    name: &RoomName,
+    user: &str,
+    access: Access,
+) -> Result<(), String> {
+    match name {
+        RoomName::Material { material_id, .. } => {
+            let client = app.db.get().await.map_err(|error| error.to_string())?;
+            access::assert_access(&client, material_id, user, access)
+                .await
+                .map_err(|error| error.to_string())
+        }
+        RoomName::Source { .. } => {
+            let source = name
+                .source_room()
+                .ok_or_else(|| "invalid source room".to_owned())?;
+            app.sources
+                .assert_access(&source, user, access == Access::Write)
+                .await
+                .map_err(|error| error.to_string())
+        }
     }
 }
 
@@ -230,6 +285,7 @@ impl Connection {
     }
 
     fn forget(&mut self, channel: u64) {
+        crate::source_rooms::end_join(&self.app, (self.id, channel));
         if let Some(Channel::Authenticating(queue)) = self.channels.remove(&channel) {
             self.queued.0 -= queue.len();
             self.queued.1 -= queue
@@ -279,6 +335,10 @@ impl Connection {
             }
             self.channels
                 .insert(channel, Channel::Authenticating(VecDeque::new()));
+            // A source join counts as in the room until it joins or fails.
+            if room.starts_with("source:") {
+                crate::source_rooms::start_join(&self.app, (self.id, channel), &room);
+            }
             let (app, tx) = (self.app.clone(), self.auth_tx.clone());
             tokio::spawn(async move {
                 let result = authenticate(app, room, token).await;
@@ -423,10 +483,9 @@ impl Connection {
         let mut joined = None;
         for _ in 0..2 {
             let room_name = name.to_string();
-            let handle = self
-                .app
-                .rooms
-                .get_or_spawn(&room_name, |id| room::spawn(&self.app, &name, id));
+            let handle = self.app.rooms.get_or_spawn(&room_name, |id| {
+                room::spawn(&self.app, &name, id, &context.user_id)
+            });
             let (reply, answer) = oneshot::channel();
             let join = RoomCmd::Join {
                 key: (self.id, channel),
@@ -455,6 +514,7 @@ impl Connection {
             self.refuse(channel, &Refusal::plain("collaboration room unavailable"));
             return;
         };
+        crate::source_rooms::end_join(&self.app, (self.id, channel));
         let Some(Channel::Authenticating(queue)) = self.channels.remove(&channel) else {
             return;
         };
@@ -530,21 +590,9 @@ impl Connection {
             auth::now_seconds(),
         );
         let result = match verified {
-            Ok(claims) => {
-                let checked = match &name {
-                    RoomName::Material { material_id, .. } => match self.app.db.get().await {
-                        Ok(client) => {
-                            access::assert_access(&client, material_id, &claims.sub, claims.access)
-                                .await
-                        }
-                        Err(error) => Err(AccessError::Database(error.to_string())),
-                    },
-                    RoomName::Source { .. } => Ok(()),
-                };
-                checked
-                    .map(|()| Context::from(&claims))
-                    .map_err(|error| error.to_string())
-            }
+            Ok(claims) => token_access(&self.app, &name, &claims.sub, claims.access)
+                .await
+                .map(|()| Context::from(&claims)),
             Err(error) => Err(error.to_string()),
         };
         match result {

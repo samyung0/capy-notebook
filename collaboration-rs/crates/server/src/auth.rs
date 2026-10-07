@@ -77,6 +77,17 @@ fn id_ok(id: &str) -> bool {
 }
 
 impl RoomName {
+    /// A source room as the sources crate names it.
+    pub fn source_room(&self) -> Option<sources::SourceRoom> {
+        match self {
+            RoomName::Source { file_id, epoch } => Some(sources::SourceRoom {
+                file_id: file_id.clone(),
+                epoch: u64::try_from(*epoch).ok()?,
+            }),
+            RoomName::Material { .. } => None,
+        }
+    }
+
     pub fn parse(name: &str) -> Option<Self> {
         let parts: Vec<&str> = name.split(':').collect();
         let [kind, id, label, number] = parts.as_slice() else {

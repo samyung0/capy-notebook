@@ -122,6 +122,7 @@ pub async fn run(app: Shared) {
         let mut lags = std::mem::take(&mut *app.health.lags.lock().unwrap());
         let max = lags.iter().copied().fold(0.0, f64::max);
         let rate = |count: u64| (count as f64 / seconds * 10.0).round() / 10.0;
+        let (save, background) = app.sources.engines().take_stats();
         log(
             Level::Info,
             "collab_health",
@@ -132,6 +133,7 @@ pub async fn run(app: Shared) {
                 "lag_max_ms": max.round(),
                 "lag_p99_ms": percentile(&mut lags, 0.99).round(),
                 "material_stores": app.health.material.take(),
+                "office": { "background": background, "save": save },
                 "source_stores": app.health.source.take(),
                 "updates_per_s": rate(app.stats.updates.swap(0, Ordering::Relaxed)),
                 "log_bytes": app.stats.log_bytes.load(Ordering::Relaxed),

@@ -54,6 +54,22 @@ impl AccessError {
     }
 }
 
+impl AccessError {
+    /// A source room's access answer from the gateway: the read-only
+    /// refusal, a missing file or lost access get their reasons; anything
+    /// else retries (`onAuthenticate`'s source mapping).
+    pub fn from_source(error: &sources::SourceError) -> Self {
+        if error.read_only() {
+            return AccessError::ReadOnly(error.to_string());
+        }
+        match error.status() {
+            Some(404) => AccessError::NotFound(error.to_string()),
+            Some(403) => AccessError::Forbidden(error.to_string()),
+            _ => AccessError::Database(error.to_string()),
+        }
+    }
+}
+
 impl From<tokio_postgres::Error> for AccessError {
     fn from(error: tokio_postgres::Error) -> Self {
         AccessError::Database(error.to_string())
