@@ -51,7 +51,7 @@
  * the `checkpoint-request` stateless message and its `checkpoint-persisted`
  * receipt, an endpoint that only touches its event loop): the CPU time and
  * working set of the server's containers through the Docker Engine API
- * (DOCKER_HOST as unix:// or /var/run/docker.sock; the local stack's
+ * (DOCKER_HOST as unix:// or npipe://, else /var/run/docker.sock; the local stack's
  * `collaboration`, `server` and `db` services, STRESS_SERVER_CONTAINER,
  * STRESS_API_CONTAINER and STRESS_DB_CONTAINER otherwise) and their images,
  * and the answer time to STRESS_PROBE_PATH (/metrics) every 250 ms outside
@@ -966,9 +966,12 @@ const online = (peer: Peer) => status(peer) === 'connected';
 const settledPeer = (peer: Peer) =>
   online(peer) && peer.provider.isSynced && !peer.provider.hasUnsyncedChanges;
 
+// A Windows engine's named pipe (npipe:////./pipe/<name>) is a socket path too.
 const DOCKER_SOCKET = process.env.DOCKER_HOST?.startsWith('unix://')
   ? process.env.DOCKER_HOST.slice('unix://'.length)
-  : '/var/run/docker.sock';
+  : process.env.DOCKER_HOST?.startsWith('npipe://')
+    ? process.env.DOCKER_HOST.slice('npipe://'.length).replaceAll('/', '\\')
+    : '/var/run/docker.sock';
 const round = (value: number, places = 1) => Math.round(value * 10 ** places) / 10 ** places;
 
 /** CPU time and working set of a container, whatever runs in it. */
