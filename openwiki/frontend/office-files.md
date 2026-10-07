@@ -1657,15 +1657,18 @@ again, and that database is deleted best effort).
 A session (one editor mount) writes each local update as one row as it
 happens, through the same drafts worker as notes (see
 [plate-editor.md](plate-editor.md#offline-editing-and-drafts)), and its whole
-state only once per offline episode, at unmount and `pagehide`, and after a
-failed write: the host page holds the room's Y.Doc on the runtime frame's
+state only once per offline episode, at unmount and `pagehide`, on entering
+newer-version recovery, and after a failed write (retried at most every 5 s
+while storage keeps failing; text sources follow the same rule): the host
+page holds the room's Y.Doc on the runtime frame's
 renderer thread, where a whole-state write took 48–65 ms of encoding at 62–248
 DOCX pages plus a copy of the 1.2–5 MiB state every 250 ms of typing. A
 receipt deletes the rows it covers, so a saved draft never returns as a
-recovery prompt. A group of update rows with no whole state (a tab closed or
-killed online before the file moved on) cannot be drawn in another lineage and
-is dropped with "Some unsaved edits from your last session couldn't be
-restored." Each row names its lineage, the room and base it
+recovery prompt. A group of update rows with no whole state (a tab killed or
+crashed online before the file moved on; a closed tab writes its state at
+`pagehide`) cannot be drawn in another lineage and is dropped with "Some
+unsaved edits from your last session couldn't be restored." (accepted
+2026-10-07) Each row names its lineage, the room and base it
 grew from (`source:<id>:epoch:<n>@<baseSHA>`; text drafts stay compatible
 across the base hashes of one epoch). The source base is stored once per file
 and SHA beside the rows and removed with the last row that uses it. Reopening
@@ -1699,12 +1702,29 @@ the current file. A client whose changes were all saved when it learns about a
 completed handoff (from the room or on reconnect) shows the newer-version
 banner instead; a client with unsaved changes enters recovery.
 
+A text source edits its `source` Y.Text through a plain textarea
+(`bindSourceTextarea` in `src/features/files/sourceTextBinding.ts`). Typing,
+paste, Enter and deletions go in as one edit placed from the selection at
+`beforeinput` and the caret after `input`, so the JavaScript per key does not
+rebuild or rescan the text (0.6–0.9 ms per key at 1 MiB, 7–9 ms at 10 MiB, 26
+ms at 30 MiB, where it was 15, 160 and 554 ms; the textarea itself then takes
+about 0.45 s per key at 10 MiB and 1.9 s at 30 MiB, and decides how large an
+editable text can be). Offsets are mapped only when the source holds a `\r`;
+anything the binding cannot place (undo from a menu, a drop, autocorrect) is
+diffed against the whole text. An input-method composition is applied at its
+end: without a co-editor's edit meanwhile it replaces the range it started on;
+after one it is made on the document as the composition began and merged, so
+it replaces only the characters that existed then and keeps what the co-editor
+typed inside the range (2026-10-07), and the caret lands after the composed
+text.
+
 A source editor keeps editing while its room cannot be reached, as a note
 does (see [plate-editor.md](plate-editor.md#offline-editing-and-drafts)): the
 `offline` banner, the header's Offline, and its rows written as it edits. Past
 the source state cap (`SOURCE_STATE_MAX_BYTES`, 100 MB, the service's
 `MAX_SOURCE_STATE_BYTES`) of unsaved state while offline (the last whole state
-written plus the updates since) the editor stops
+written plus the update rows after it that no receipt covered, so saved edits
+never count) the editor stops
 taking edits (`offlineLimit`: Office `canEdit: false`, a paused textarea)
 until it reconnects. When the collaboration service discards a source room
 that held unsaved state (a save refused for good, the 5-minute slow-save

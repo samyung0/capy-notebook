@@ -590,8 +590,15 @@ merges in runs of 64). The whole document is one `state` row written once
 per offline episode, at unmount and at `pagehide` with unsaved work, and after
 a failed write: the base later updates need when they open in recovery
 (encoding a near-limit note takes 30–80 ms, too slow for every edit). A
-killed tab keeps every update it posted; one killed while online leaves no
-`state` row, so its rows draw only over their own room. Each row carries its
+killed tab keeps every update it posted; one killed or crashed while online
+leaves no `state` row, so its rows draw only over their own room. While
+storage keeps failing (a full disk, a database another tab blocks) the whole
+document is retried at once and then at most every 5 s (2026-10-07), not on
+every key. A worker that throws loses what it had not answered: every
+session is told (the next write holds the whole document) and the next request
+starts a new worker; one that never started fails every request for the page
+load. A database open another tab blocks fails the requests behind it at once
+(the editor shows it cannot save on this device) until it goes through. Each row carries its
 lineage, the room name the token named (`material:<id>:schema:<n>`). Rows are
 deleted only by checkpoint receipts: each request records the session's edit
 count, and a receipt deletes the session's update rows it covers (it also
