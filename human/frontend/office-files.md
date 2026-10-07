@@ -185,3 +185,4 @@
 - Developer Epo decided (2026-10-07) the pre-schema-8 XLSX collaboration paths are removed; UAT rooms still on them are reset. vendor/betteroffice/crates/betteroffice-xlsx
 - Developer Epo accepted (2026-10-07) the XLSX collaborative seed skips the replica's strict projection check, so a workbook that parses but fails it fails when an editor opens it instead of at seeding. vendor/betteroffice/crates/betteroffice-xlsx
 - Developer Epo accepted (2026-10-07) a text source room holding content it cannot place yet delays its save until the resync fills the gap, instead of saving the whole text. collaboration-rs/crates/sources
+- Developer Epo decided (2026-10-07) an input-method commit in a text source replaces only the characters that existed when the composition started, keeping text a co-editor typed inside that range meanwhile. src/features/files/sourceTextBinding.ts src/features/files/SourceTextEditor.tsx
