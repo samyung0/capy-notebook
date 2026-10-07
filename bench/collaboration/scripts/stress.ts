@@ -2,26 +2,35 @@
  * Collaboration stress test: STRESS_PEERS peers type into one Office room
  * (exchange-plan.docx) and one Plate room for STRESS_MINUTES, some of them
  * dropping offline and rejoining while they keep typing, against the e2e
- * Docker stack (deploy/docker-compose.e2e.yml plus docker-compose.stress.yml,
- * started and torn down through e2e/global-setup.ts).
+ * Docker stack (deploy/docker-compose.e2e.yml plus docker-compose.stress.yml
+ * and docker-compose.stress-run.yml, started and torn down through
+ * e2e/global-setup.ts). A second phase then does
+ * the same with STRESS_LIMIT_PEERS peers in the near-limit rooms
+ * (STRESS_LIMIT_ROOMS): the ~2 MB load-test note and a STRESS_TEXT_MIB text
+ * source, reported but not budgeted, and run apart so their cost does not
+ * move the first phase's latency.
  *
- * Checks (a failed one exits 1, a missed budget alone exits 2):
+ * Checks (a failed one exits 1, a missed budget alone exits 2; a report-only
+ * step that cannot finish is listed in reportOnlyFailures and fails nothing):
  * - every peer of a room ends with the same document, and so does a fresh
  *   peer that joins afterwards (the room converged on the server);
  * - every marker a peer typed is in that final document exactly once;
  * - the collaboration service logged no errors;
  * - p95 of marker latency (typed by one peer, seen by a watching peer that
- *   never drops) is within the provisional budget.
+ *   never drops) is within the provisional budget (first phase only).
  *
  * Run: pnpm bench:stress (Docker required; E2E_PREBUILT_IMAGES=true reuses the
  * capy-e2e-* images, E2E_SKIP_COMPOSE=true with the E2E_* variables a running
- * stack). Results: bench/collaboration/.results/stress.json.
+ * stack, which also needs STRESS_S3_PORT set to its published fake S3 port and
+ * names its containers like an external stack). Results:
+ * bench/collaboration/.results/stress.json, rewritten after each phase.
  *
  * STRESS_TARGET=uat runs against the UAT deployment instead (see uatTarget),
  * with the UAT journeys' variables (deploy/.env.uat):
  *   node --env-file=deploy/.env.uat --import tsx bench/collaboration/scripts/stress.ts
  * STRESS_ROOMS rooms (2), alternately Office and Plate, get STRESS_PEERS peers
- * each.
+ * each. UAT and external stacks skip the near-limit phase unless
+ * STRESS_LIMIT_ROOMS names it (a text source is indexed even when stored only).
  *
  * Capacity runs (bench/collaboration/reports/2026-10-05-prod-capacity.md):
  * - STRESS_STACK=external uses a stack someone else started and tears down
@@ -31,13 +40,36 @@
  *   repository, Office rooms cycle through: DOCX and PPTX peers type into
  *   story text, XLSX peers write their own cells of the first sheet;
  * - STRESS_JOIN_CONCURRENCY caps peers joining at once (16 on UAT);
- * - STRESS_IDLE=true keeps the peers connected without typing.
+ * - STRESS_IDLE=true keeps the peers connected without typing;
+ * - STRESS_UPLOAD_ORIGIN replaces the origin of presigned upload URLs, which
+ *   name the fake S3 as s3.stress.backblazeb2.com:9443 with the throwaway
+ *   certificate (a generator in the stack's network can use
+ *   http://s3:9000; the local target does the same from STRESS_S3_PORT).
+ *
+ * The collaboration server is measured from outside, so the same scenarios
+ * judge any implementation that speaks the protocol (Hocuspocus/Yjs sync,
+ * the `checkpoint-request` stateless message and its `checkpoint-persisted`
+ * receipt, an endpoint that only touches its event loop): the CPU time and
+ * working set of the server's containers through the Docker Engine API
+ * (DOCKER_HOST as unix:// or /var/run/docker.sock; the local stack's
+ * `collaboration`, `server` and `db` services, STRESS_SERVER_CONTAINER,
+ * STRESS_API_CONTAINER and STRESS_DB_CONTAINER otherwise) and their images,
+ * and the answer time to STRESS_PROBE_PATH (/metrics) every 250 ms outside
+ * the budgeted phase. Per phase that gives CPU per typed marker and memory;
+ * the cost windows (STRESS_COST_ROOMS, local default every room kind, no new
+ * kind after STRESS_COST_MAX_MINUTES) then take one room kind at a time with
+ * STRESS_COST_PEERS peers (5): CPU and memory to load the room, CPU per
+ * update over STRESS_COST_SECONDS (30) of typing (its debounced saves
+ * included) and CPU per explicit save, idle CPU (probe included) taken out.
+ * On the local stack STRESS_COLLABORATION_IMAGE swaps the server image
+ * (docker-compose.stress-run.yml; it needs E2E_PREBUILT_IMAGES=true).
  */
 import { randomBytes, randomInt } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { get as httpGet } from 'node:http';
+import { cpus, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
@@ -47,6 +79,7 @@ import {
   type HocuspocusProviderConfiguration,
 } from '@hocuspocus/provider';
 import * as Y from 'yjs';
+import { buildBiologyLoadTestValue } from '../../../src/mocks/noteContent/loadTest';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const REMOTE = process.env.STRESS_TARGET === 'uat';
@@ -55,6 +88,34 @@ if (process.env.STRESS_STACK && !EXTERNAL) throw new Error('STRESS_STACK must be
 const KINDS = (process.env.STRESS_KINDS ?? 'office,plate').split(',') as Kind[];
 if (!KINDS.length || KINDS.some((kind) => kind !== 'office' && kind !== 'plate'))
   throw new Error('STRESS_KINDS must list office and plate');
+// The second phase's rooms, one each: the near-limit note and a text source.
+const LIMIT_KINDS = (
+  process.env.STRESS_LIMIT_ROOMS ?? (REMOTE || EXTERNAL ? '' : 'note-limit,text')
+)
+  .split(',')
+  .filter(Boolean) as Kind[];
+if (LIMIT_KINDS.some((kind) => kind !== 'note-limit' && kind !== 'text'))
+  throw new Error('STRESS_LIMIT_ROOMS must list note-limit and text');
+// Fewer peers than the first phase: before the per-update bound, the service
+// measures the whole near-limit note on every update (~50-90 ms CPU each).
+const LIMIT_PEERS = Number(process.env.STRESS_LIMIT_PEERS ?? 5);
+// Two of these (the near-limit phase and its cost window) with their saved
+// states stay well inside the e2e owner's 100 MB Free storage quota.
+const TEXT_MIB = Number(process.env.STRESS_TEXT_MIB ?? 4);
+// The cost windows: one room kind at a time, measured on the server.
+const COST_KINDS = (
+  process.env.STRESS_COST_ROOMS ?? (REMOTE || EXTERNAL ? '' : 'office,plate,note-limit,text')
+)
+  .split(',')
+  .filter(Boolean) as Kind[];
+if (COST_KINDS.some((kind) => !['office', 'plate', 'note-limit', 'text'].includes(kind)))
+  throw new Error('STRESS_COST_ROOMS must list office, plate, note-limit and text');
+const COST_PEERS = Number(process.env.STRESS_COST_PEERS ?? 5);
+const COST_SECONDS = Number(process.env.STRESS_COST_SECONDS ?? 30);
+// The cost windows start no new kind after this long, so the job (40 min)
+// keeps the earlier results; a skipped kind is a report-only failure.
+const COST_MAX_MINUTES = Number(process.env.STRESS_COST_MAX_MINUTES ?? 8);
+const COST_SAVES = 3;
 const OFFICE_FILES = (
   process.env.STRESS_OFFICE_FILES ?? 'e2e/fixtures/files/rich-content/exchange-plan.docx'
 ).split(',');
@@ -79,10 +140,10 @@ const IDLE = process.env.STRESS_IDLE === 'true';
  */
 const P95_BUDGET_MS = Number(process.env.STRESS_P95_BUDGET_MS ?? (REMOTE ? 1000 : 45));
 const OUT = process.env.STRESS_OUT ?? path.join(root, 'bench/collaboration/.results');
-const MARKER = /\[[op]\d{2,3}-\d{4}\]/g;
+const MARKER = /\[[opnt]\d{2,3}-\d{4}\]/g;
 
-type Kind = 'office' | 'plate';
-type Format = 'docx' | 'xlsx' | 'pptx' | 'plate';
+type Kind = 'office' | 'plate' | 'note-limit' | 'text';
+type Format = 'docx' | 'xlsx' | 'pptx' | 'plate' | 'text';
 interface RoomToken {
   token: string;
   url: string;
@@ -91,6 +152,9 @@ interface RoomToken {
 interface Room {
   kind: Kind;
   format: Format;
+  /** Text sources: where markers go, set once the peers joined (see
+   * insertMarker). */
+  anchors?: Y.RelativePosition[];
   /** A fresh room token, as the app asks for one on every (re)connect. */
   token: () => Promise<RoomToken>;
   /** Markers typed into this room: when, and whether the peer was online. */
@@ -102,10 +166,16 @@ interface Room {
 interface Target {
   /** The app origin the collaboration service admits. */
   origin: string;
+  /** Replaces the origin of presigned upload URLs, when they are not
+   * reachable from here as given. */
+  uploadOrigin?: string;
   setup(): Promise<void>;
-  createRooms(count: number): Promise<Room[]>;
+  createRooms(kinds: Kind[]): Promise<Room[]>;
   /** Collaboration error lines logged since setup. */
   collaborationErrors(): string[];
+  /** The server's containers this host can see: the collaboration service
+   * and the API (gateway), which does the database side of every save. */
+  serverContainers(): Containers;
   cleanUp(): Promise<void>;
 }
 type Call = (
@@ -139,7 +209,71 @@ async function request(
     : (response.json() as Promise<Record<string, unknown>>);
 }
 
-/** The note and the uploaded DOCX of one workspace, kinds alternating. */
+interface Reservation {
+  headers: Record<string, string>;
+  uploadId: string;
+  url: string;
+}
+
+/**
+ * The app's direct upload: reserve, PUT the bytes to the presigned URL, then
+ * complete. The target's `uploadOrigin` replaces the URL's origin (the local
+ * fake S3 answers inside the Docker network under a B2 name, and on a
+ * published port here).
+ */
+async function uploadSource(
+  call: Call,
+  workspace: string,
+  name: string,
+  bytes: Uint8Array<ArrayBuffer>,
+  fields: Record<string, string>
+) {
+  const route = `/api/workspaces/${workspace}/sources/uploads`;
+  const contentType = name.endsWith('.txt') ? 'text/plain' : 'application/octet-stream';
+  const reservation = (await call('POST', route, undefined, {
+    batchId: `stress_${randomBytes(6).toString('hex')}`,
+    batchTotal: 1,
+    contentType,
+    name,
+    sizeBytes: bytes.byteLength,
+    ...fields,
+  })) as unknown as Reservation;
+  const url = new URL(reservation.url);
+  const putUrl = target.uploadOrigin
+    ? `${target.uploadOrigin}${url.pathname}${url.search}`
+    : reservation.url;
+  const put = await fetch(putUrl, {
+    body: bytes,
+    headers: reservation.headers,
+    method: 'PUT',
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!put.ok) throw new Error(`PUT ${name}: ${put.status} ${await put.text()}`);
+  return call('POST', `${route}/${reservation.uploadId}/complete`);
+}
+
+/** Lines of plain text up to `bytes`, the same on every run. */
+function textSource(bytes: number) {
+  const lines: string[] = [];
+  let size = 0;
+  for (let line = 1; size < bytes; line += 1) {
+    const text = `Line ${line}: the field notes record the sample, the site and the weather before the next reading.\n`;
+    lines.push(text);
+    size += text.length;
+  }
+  return lines.join('').slice(0, bytes);
+}
+
+const plateNote = (paragraphs: number) => ({
+  schemaVersion: 1,
+  value: Array.from({ length: paragraphs }, (_, index) => ({
+    children: [{ text: `Stress paragraph ${index + 1} has some text to type into.` }],
+    id: `stress_p${index}`,
+    type: 'p',
+  })),
+});
+
+/** One workspace's rooms, a note or an uploaded source per kind. */
 async function createWorkspaceRooms(
   call: Call,
   workspace: string,
@@ -151,29 +285,36 @@ async function createWorkspaceRooms(
   for (const kind of kinds) {
     let tokenPath: string;
     let format: Format = 'plate';
-    if (kind === 'plate') {
+    if (kind === 'plate' || kind === 'note-limit') {
       const material = await call('POST', `/api/workspaces/${workspace}/materials`, undefined, {
-        content: {
-          schemaVersion: 1,
-          value: Array.from({ length: 5 }, (_, index) => ({
-            children: [{ text: `Stress paragraph ${index + 1} has some text to type into.` }],
-            id: `stress_p${index}`,
-            type: 'p',
-          })),
-        },
+        // The near-limit note is the app's load-test note (~2 MB, ~7,400 nodes).
+        content:
+          kind === 'plate' ? plateNote(5) : { schemaVersion: 1, value: buildBiologyLoadTestValue() },
         kind: 'note',
         title: `Stress ${randomBytes(3).toString('hex')}`,
       });
       tokenPath = `/api/materials/${material.id}/collaboration-token`;
+    } else if (kind === 'text') {
+      format = 'text';
+      const uploaded = await uploadSource(
+        call,
+        workspace,
+        `stress-${randomBytes(3).toString('hex')}.txt`,
+        new TextEncoder().encode(textSource(TEXT_MIB * 1024 * 1024)),
+        uploadFields
+      );
+      tokenPath = `/api/files/${uploaded.id}/collaboration-token`;
     } else {
       const file = OFFICE_FILES[offices++ % OFFICE_FILES.length];
       format = path.extname(file).slice(1) as Format;
       if (!['docx', 'xlsx', 'pptx'].includes(format)) throw new Error(`${file}: not an Office file`);
-      const form = new FormData();
-      form.append('file', new Blob([await readFile(path.join(root, file))]), path.basename(file));
-      form.append('name', `stress-${randomBytes(3).toString('hex')}.${format}`);
-      for (const [name, value] of Object.entries(uploadFields)) form.append(name, value);
-      const uploaded = await call('POST', `/api/workspaces/${workspace}/sources`, form);
+      const uploaded = await uploadSource(
+        call,
+        workspace,
+        `stress-${randomBytes(3).toString('hex')}.${format}`,
+        await readFile(path.join(root, file)),
+        uploadFields
+      );
       tokenPath = `/api/files/${uploaded.id}/collaboration-token`;
     }
     rooms.push({
@@ -208,10 +349,16 @@ function errorLines(logs: string) {
  * seeded editable workspace and every peer is its owner.
  */
 async function localTarget(): Promise<Target> {
+  // Compose builds services that have a build: under their image names, so a
+  // swapped image would be the Node service under the other name.
+  if (process.env.STRESS_COLLABORATION_IMAGE && process.env.E2E_PREBUILT_IMAGES !== 'true')
+    throw new Error('STRESS_COLLABORATION_IMAGE needs E2E_PREBUILT_IMAGES=true');
   const randomPort = () => randomInt(20_000, 45_000);
   process.env.E2E_API_PORT ??= String(randomPort());
   process.env.E2E_COLLABORATION_PORT ??= String(randomPort());
   process.env.E2E_DB_PORT ??= String(randomPort());
+  // The fake S3's plain HTTP port on the host, for the presigned upload PUTs.
+  process.env.STRESS_S3_PORT ??= String(randomPort());
   process.env.E2E_API_URL ??= `http://127.0.0.1:${process.env.E2E_API_PORT}`;
   // The collaboration service only admits this origin (COLLABORATION_ALLOWED_ORIGINS).
   process.env.E2E_BASE_URL ??= 'http://127.0.0.1:5174';
@@ -236,10 +383,27 @@ async function localTarget(): Promise<Target> {
   for (const file of ['key.pem', 'cert.pem']) chmodSync(path.join(tlsDir, file), 0o644);
   chmodSync(tlsDir, 0o755);
   process.env.STRESS_TLS_DIR = tlsDir;
-  process.env.E2E_COMPOSE_OVERRIDES = path.join(
-    root,
-    'bench/collaboration/scripts/docker-compose.stress.yml'
-  );
+  process.env.E2E_COMPOSE_OVERRIDES = [
+    'bench/collaboration/scripts/docker-compose.stress.yml',
+    // Stress only: the published fake S3 port and the server image swap.
+    'bench/collaboration/scripts/docker-compose.stress-run.yml',
+  ]
+    .map((file) => path.join(root, file))
+    .join(',');
+  const compose = (args: string[], maxBuffer?: number) =>
+    spawnSync(
+      'docker',
+      [
+        'compose',
+        '-f',
+        path.join(root, 'deploy/docker-compose.e2e.yml'),
+        ...process.env.E2E_COMPOSE_OVERRIDES!.split(',').flatMap((file) => ['-f', file]),
+        '-p',
+        process.env.E2E_COMPOSE_PROJECT!,
+        ...args,
+      ],
+      { cwd: root, encoding: 'utf8', maxBuffer }
+    );
   const headers = {
     'X-E2E-Secret': process.env.E2E_AUTH_SECRET,
     'X-E2E-User-Id': 'u_owner',
@@ -250,25 +414,22 @@ async function localTarget(): Promise<Target> {
   return {
     origin: process.env.E2E_BASE_URL,
     setup,
-    createRooms: (count) => createWorkspaceRooms(call, 'ws_e2e_edit', kindsFor(count)),
+    uploadOrigin: `http://127.0.0.1:${process.env.STRESS_S3_PORT}`,
+    createRooms: (kinds) => createWorkspaceRooms(call, 'ws_e2e_edit', kinds),
+    serverContainers() {
+      // A stack started elsewhere (E2E_SKIP_COMPOSE) is named like an
+      // external one's.
+      if (process.env.E2E_SKIP_COMPOSE === 'true') return namedContainers();
+      const id = (service: string) => {
+        const result = compose(['ps', '-q', service]);
+        if (result.status !== 0 || !result.stdout.trim())
+          throw new Error(`docker compose ps ${service} failed: ${result.stderr}`);
+        return result.stdout.trim();
+      };
+      return { api: id('server'), collaboration: id('collaboration'), db: id('db') };
+    },
     collaborationErrors() {
-      const result = spawnSync(
-        'docker',
-        [
-          'compose',
-          '-f',
-          path.join(root, 'deploy/docker-compose.e2e.yml'),
-          '-f',
-          process.env.E2E_COMPOSE_OVERRIDES!,
-          '-p',
-          process.env.E2E_COMPOSE_PROJECT!,
-          'logs',
-          '--no-color',
-          '--no-log-prefix',
-          'collaboration',
-        ],
-        { cwd: root, encoding: 'utf8', maxBuffer: 256 << 20 }
-      );
+      const result = compose(['logs', '--no-color', '--no-log-prefix', 'collaboration'], 256 << 20);
       if (result.status !== 0) throw new Error(`docker compose logs failed: ${result.stderr}`);
       return errorLines(result.stdout);
     },
@@ -281,6 +442,13 @@ async function localTarget(): Promise<Target> {
     },
   };
 }
+
+/** Server containers named by the operator, for stacks this run did not start. */
+const namedContainers = (): Containers => ({
+  api: process.env.STRESS_API_CONTAINER || undefined,
+  collaboration: process.env.STRESS_SERVER_CONTAINER || undefined,
+  db: process.env.STRESS_DB_CONTAINER || undefined,
+});
 
 /**
  * A seeded e2e-style stack another harness runs (capacity runs on one box):
@@ -298,12 +466,14 @@ function externalTarget(): Target {
       if (!health.ok) throw new Error(`API unhealthy: ${health.status}`);
     },
     // One seeded owner workspace per generator keeps each under 100 files.
-    createRooms: (count) =>
+    uploadOrigin: process.env.STRESS_UPLOAD_ORIGIN,
+    createRooms: (kinds) =>
       // Store-only uploads, as on UAT: no ingest job, so no per-user ingest lease cap.
-      createWorkspaceRooms(call, process.env.STRESS_WORKSPACE ?? 'ws_e2e_edit', kindsFor(count), {
+      createWorkspaceRooms(call, process.env.STRESS_WORKSPACE ?? 'ws_e2e_edit', kinds, {
         parseMode: 'none',
       }),
     collaborationErrors: () => [],
+    serverContainers: namedContainers,
     cleanUp: async () => {},
   };
 }
@@ -491,9 +661,8 @@ async function uatTarget(): Promise<Target> {
       since = new Date().toISOString();
       countersBefore = failureCounters();
     },
-    async createRooms(count) {
-      const kinds = kindsFor(count);
-      const pairs = Array.from({ length: Math.ceil(count / 2) }, (_, index) =>
+    async createRooms(kinds) {
+      const pairs = Array.from({ length: Math.ceil(kinds.length / 2) }, (_, index) =>
         kinds.slice(index * 2, index * 2 + 2)
       );
       // One sign-in at a time, under Clerk's per-IP limit.
@@ -529,6 +698,8 @@ async function uatTarget(): Promise<Target> {
       );
       return [...errorLines(`${logs.stdout}\n${logs.stderr}`), ...counters];
     },
+    // Behind SSH and Cloudflare: only the probe (STRESS_PROBE_PATH) reaches it.
+    serverContainers: () => ({}),
     async cleanUp() {
       const failures: string[] = [];
       for (const user of users) {
@@ -563,7 +734,8 @@ const target = REMOTE ? await uatTarget() : EXTERNAL ? externalTarget() : await 
 
 /**
  * What a room's peers type into: the DOCX body story, the PPTX stories, the
- * XLSX sheets (each peer writes cells of the first sheet) or the Plate tree.
+ * XLSX sheets (each peer writes cells of the first sheet), the text source or
+ * the Plate tree.
  */
 function typingTarget(room: Room, doc: Y.Doc): Y.Text | Y.Map<unknown> | null {
   if (room.format === 'docx') {
@@ -572,6 +744,7 @@ function typingTarget(room: Room, doc: Y.Doc): Y.Text | Y.Map<unknown> | null {
   }
   if (room.format === 'pptx') return doc.getMap('pptx:stories');
   if (room.format === 'xlsx') return doc.getMap('xlsx:sheets');
+  if (room.format === 'text') return doc.getText('source');
   return doc.get('content', Y.XmlText);
 }
 
@@ -622,7 +795,7 @@ function runs(room: Room, doc: Y.Doc) {
         out.push({ start: at, text, value: op.insert });
         at += op.insert.length;
       } else {
-        if (room.kind === 'plate' && op.insert instanceof Y.XmlText) collect(op.insert);
+        if (room.format === 'plate' && op.insert instanceof Y.XmlText) collect(op.insert);
         at += 1;
       }
     }
@@ -643,8 +816,30 @@ function runs(room: Room, doc: Y.Doc) {
 const XLSX_COLUMN_BASE = 40;
 const XLSX_ROWS_PER_PEER = 2000;
 
+/** A line start every ~4 KiB of the seeded text: anchors for text markers. */
+function textAnchors(doc: Y.Doc) {
+  const text = doc.getText('source');
+  const value = text.toString();
+  const anchors: Y.RelativePosition[] = [];
+  for (let at = value.indexOf('\n', 4096); at >= 0 && at + 1 < value.length; at = value.indexOf('\n', at + 4096))
+    anchors.push(Y.createRelativePositionFromTypeIndex(text, at + 1));
+  return anchors;
+}
+
 /** Inside a run, never inside a marker already there, so markers stay whole. */
 function insertMarker(room: Room, doc: Y.Doc, marker: string, peer: number, sequence: number) {
+  if (room.format === 'text') {
+    // Right before a seeded character: after every marker already there, so
+    // never inside one, and no scan of a text of several MiB per marker.
+    if (!room.anchors?.length) return false;
+    const at = Y.createAbsolutePositionFromRelativePosition(
+      room.anchors[randomInt(room.anchors.length)],
+      doc
+    );
+    if (!at) return false;
+    doc.getText('source').insert(at.index, marker);
+    return true;
+  }
   if (room.format === 'xlsx') {
     const contents = xlsxContents(doc);
     if (!contents || sequence >= XLSX_ROWS_PER_PEER) return false;
@@ -757,8 +952,324 @@ const online = (peer: Peer) => status(peer) === 'connected';
 const settledPeer = (peer: Peer) =>
   online(peer) && peer.provider.isSynced && !peer.provider.hasUnsyncedChanges;
 
-async function stressRoom(room: Room) {
+const DOCKER_SOCKET = process.env.DOCKER_HOST?.startsWith('unix://')
+  ? process.env.DOCKER_HOST.slice('unix://'.length)
+  : '/var/run/docker.sock';
+const round = (value: number, places = 1) => Math.round(value * 10 ** places) / 10 ** places;
+
+/** CPU time and working set of a container, whatever runs in it. */
+interface Usage {
+  cpuMs: number;
+  memoryMB: number;
+}
+type Server = 'api' | 'collaboration' | 'db';
+type Containers = Partial<Record<Server, string>>;
+type Usages = Partial<Record<Server, Usage>>;
+
+/** A Docker Engine API GET, parsed. */
+function dockerGet<T>(route: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    httpGet({ path: route, socketPath: DOCKER_SOCKET, timeout: 10_000 }, (response) => {
+      let body = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk: string) => {
+        body += chunk;
+      });
+      response.on('end', () =>
+        response.statusCode === 200
+          ? resolve(JSON.parse(body) as T)
+          : reject(new Error(`docker ${route}: ${response.statusCode} ${body}`))
+      );
+    })
+      .on('timeout', function (this: { destroy(error: Error): void }) {
+        this.destroy(new Error(`docker ${route}: no answer in 10 s`));
+      })
+      .on('error', reject);
+  });
+}
+
+/** A container's usage, as `docker stats` reads it (memory without the
+ * inactive page cache). */
+async function containerUsage(container: string): Promise<Usage> {
+  const stats = await dockerGet<{
+    cpu_stats: { cpu_usage: { total_usage: number } };
+    memory_stats: { usage: number; stats?: Record<string, number> };
+  }>(`/containers/${container}/stats?stream=false&one-shot=true`);
+  const cache = stats.memory_stats.stats?.inactive_file ?? stats.memory_stats.stats?.total_inactive_file ?? 0;
+  return {
+    cpuMs: stats.cpu_stats.cpu_usage.total_usage / 1e6,
+    memoryMB: round((stats.memory_stats.usage - cache) / 1024 / 1024),
+  };
+}
+
+/** What each measured container runs: its image's name and ID (a digest). */
+async function containerImages(containers: Containers) {
+  const out: Partial<Record<Server, { id: string; image: string }>> = {};
+  for (const [name, id] of Object.entries(containers) as [Server, string | undefined][]) {
+    if (!id) continue;
+    const inspect = await dockerGet<{ Config: { Image: string }; Image: string }>(`/containers/${id}/json`);
+    out[name] = { id: inspect.Image, image: inspect.Config.Image };
+  }
+  return out;
+}
+
+async function usageOf(containers: Containers) {
+  const out: Usages = {};
+  for (const [name, id] of Object.entries(containers) as [Server, string | undefined][])
+    if (id) out[name] = await containerUsage(id);
+  return out;
+}
+
+/** A report-only Docker read around a phase: a failure is listed in
+ * `failures` and reads as empty, so it never costs the phase's results. */
+function orEmpty<T>(read: Promise<Partial<T>>, label: string, failures: string[]) {
+  return read.catch((error: unknown): Partial<T> => {
+    failures.push(`${label}: ${String(error).slice(0, 300)}`);
+    return {};
+  });
+}
+
+/** Per container: CPU ms between two samples, less `idle` ms per second. */
+function cpuBetween(from: Usages, to: Usages, idle: Partial<Record<Server, number>> = {}, ms = 0) {
+  const out: Partial<Record<Server, number>> = {};
+  for (const name of Object.keys(to) as Server[])
+    if (from[name]) out[name] = to[name]!.cpuMs - from[name]!.cpuMs - (idle[name] ?? 0) * (ms / 1000);
+  return out;
+}
+
+/** Per container: memory MB from one sample to another. */
+function memoryBetween(from: Usages, to: Usages) {
+  const out: Partial<Record<Server, number>> = {};
+  for (const name of Object.keys(to) as Server[])
+    if (from[name]) out[name] = round(to[name]!.memoryMB - from[name]!.memoryMB);
+  return out;
+}
+
+const QUIET_MAX_MS = 30_000;
+
+/**
+ * Until every container's CPU stays under max(50, 2x `idle`) ms per second
+ * for three ~2 s windows in a row (QUIET_MAX_MS at most): a room's load, a
+ * store or an unload finished. Rates use the measured interval between
+ * samples. Returns when the quiet run began (null if it never came), the last
+ * sample and each container's quietest window as its idle rate.
+ */
+async function quiet(containers: Containers, idle: Partial<Record<Server, number>> = {}) {
+  const started = Date.now();
+  let run: { at: number; usage: Usages }[] = [{ at: started, usage: await usageOf(containers) }];
+  const rate = (from: { at: number; usage: Usages }, to: { at: number; usage: Usages }) =>
+    perContainer(cpuBetween(from.usage, to.usage), (ms) => ms / ((to.at - from.at) / 1000));
+  const idleOf = () =>
+    perContainer(rate(run[0], run[1]), (_, name) =>
+      Math.min(...run.slice(1).map((sample, index) => rate(run[index], sample)[name]!))
+    );
+  if (!Object.keys(run[0].usage).length) return { idle: {}, ms: 0, usage: run[0].usage };
+  while (Date.now() - started < QUIET_MAX_MS) {
+    await sleep(2000);
+    const sample = { at: Date.now(), usage: await usageOf(containers) };
+    const busy = Object.entries(rate(run.at(-1)!, sample)).some(
+      ([name, perS]) => perS > Math.max(50, 2 * (idle[name as Server] ?? 0))
+    );
+    run = busy ? [sample] : [...run, sample];
+    if (run.length > 3) return { idle: idleOf(), ms: run[0].at - started, usage: sample.usage };
+  }
+  return { idle: run.length > 1 ? idleOf() : {}, ms: null, usage: run.at(-1)!.usage };
+}
+
+// An endpoint that touches only the server's event loop: the Node service's
+// /metrics reads in-memory counters (its /healthz pings Postgres and Redis).
+// Another implementation names its own with STRESS_PROBE_PATH.
+const PROBE_PATH = process.env.STRESS_PROBE_PATH ?? '/metrics';
+const PROBE_EVERY_MS = 250;
+
+/** The probe endpoint beside a room token's WebSocket URL. */
+function probeUrl(socketUrl: string) {
+  const url = new URL(socketUrl);
+  url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
+  url.pathname = PROBE_PATH;
+  url.search = '';
+  return url.toString();
+}
+
+/**
+ * The server's answer time to PROBE_PATH every 250 ms until stopped: under
+ * load it grows with whatever holds the server's event loop or scheduler.
+ * `stats(from, to)` summarizes the answers sent in a time range. The
+ * client's own loop delay bounds what it can see.
+ */
+function probeServer(url: string) {
+  const answers: { at: number; ms: number | null }[] = [];
+  let stopped = false;
+  const done = (async () => {
+    while (!stopped) {
+      const at = Date.now();
+      const started = performance.now();
+      try {
+        const response = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+        await response.arrayBuffer();
+        answers.push({ at, ms: response.ok ? performance.now() - started : null });
+      } catch {
+        answers.push({ at, ms: null });
+      }
+      await sleep(PROBE_EVERY_MS);
+    }
+  })();
+  const stats = (from = 0, to = Number.POSITIVE_INFINITY) => {
+    const range = answers.filter(({ at }) => at >= from && at < to);
+    const ok = range.flatMap(({ ms }) => (ms === null ? [] : [ms]));
+    return {
+      failures: range.length - ok.length,
+      maxMs: percentile(ok, 100),
+      p50Ms: percentile(ok, 50),
+      p99Ms: percentile(ok, 99),
+      samples: ok.length,
+    };
+  };
+  return {
+    stats,
+    async stop() {
+      stopped = true;
+      await done;
+    },
+  };
+}
+
+/** The app's explicit save: a `checkpoint-request`, resolved by the server's
+ * `checkpoint-persisted` receipt naming it (rejected by any other answer). */
+function checkpoint(room: Room, peer: Peer) {
+  const id = `stress-${randomBytes(6).toString('hex')}`;
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => finish(new Error(`${room.kind}: no receipt for ${id} in 30 s`)), 30_000);
+    const onStateless = ({ payload }: { payload: string }) => {
+      let event: { checkpointIds?: unknown; type?: unknown };
+      try {
+        event = JSON.parse(payload);
+      } catch {
+        return;
+      }
+      if (!Array.isArray(event.checkpointIds) || !event.checkpointIds.includes(id)) return;
+      finish(event.type === 'checkpoint-persisted' ? undefined : new Error(`${room.kind}: ${payload.slice(0, 200)}`));
+    };
+    const finish = (error?: Error) => {
+      clearTimeout(timer);
+      peer.provider.off('stateless', onStateless);
+      if (error) reject(error);
+      else resolve();
+    };
+    peer.provider.on('stateless', onStateless);
+    // Source rooms save at once only when asked to flush, as the app's Save does.
+    peer.provider.sendStateless(
+      JSON.stringify({ id, type: 'checkpoint-request', ...(room.format === 'plate' ? {} : { flush: true }) })
+    );
+  });
+}
+
+const median = (values: number[]) => (values.length ? percentile(values, 50) : null);
+const perContainer = <T>(values: Partial<Record<Server, number>>, map: (value: number, name: Server) => T) =>
+  Object.fromEntries(Object.entries(values).map(([name, value]) => [name, map(value, name as Server)])) as Partial<
+    Record<Server, T>
+  >;
+
+/**
+ * One room kind alone on the server, per container (collaboration, API):
+ * - `idleCpuMsPerS`: the quiet server before the room, taken out below;
+ * - `loadCpuMs`, `loadS`, `memoryMBPerRoom`: loading the room for its peers
+ *   until the server goes quiet, and the working set it added;
+ * - `cpuMsPerUpdate`: COST_SECONDS of typing by COST_PEERS peers, the
+ *   debounced saves and projections it causes included (until quiet);
+ * - `cpuMsPerSave` and `saveMs`: the median of COST_SAVES explicit saves of a
+ *   one-marker edit, each from a quiet server until it is quiet again (CPU)
+ *   or until the receipt (time).
+ */
+async function costOf(kind: Kind, containers: Containers, probe: ReturnType<typeof probeServer>) {
+  // The previous window's room may still be storing or unloading; the quiet
+  // windows give the idle rate taken out below (the responsiveness probe,
+  // which runs through every window, included).
+  const { idle, ms: quietMs } = await quiet(containers);
+  const [room] = await target.createRooms([kind]);
+  const before = await usageOf(containers);
+  const joined = Date.now();
+  const peers: Peer[] = [];
+  try {
+    peers.push(
+      ...(await Promise.all(
+        Array.from({ length: COST_PEERS }, (_, index) => connect(room, `${kind} cost ${index}`))
+      ))
+    );
+    if (room.format === 'text') room.anchors = textAnchors(peers[0].doc);
+    const settling = Date.now();
+    const loaded = await quiet(containers, idle);
+    const loadMs = Date.now() - joined;
+    // Until the server went quiet, not the quiet windows after it.
+    const loadS = loaded.ms === null ? null : round((settling - joined + loaded.ms) / 1000);
+    const started = Date.now();
+    let updates = 0;
+    await Promise.all(
+      peers.map(async (peer, index) => {
+        for (let sequence = 0; Date.now() - started < COST_SECONDS * 1000; ) {
+          await sleep(randomInt(EDIT_MS / 2, (EDIT_MS * 3) / 2));
+          const marker = `[${kind[0]}${String(index).padStart(2, '0')}-${String(sequence).padStart(4, '0')}]`;
+          if (insertMarker(room, peer.doc, marker, index, sequence)) {
+            sequence += 1;
+            updates += 1;
+          }
+        }
+      })
+    );
+    const typingEnd = Date.now();
+    await until(() => peers.every(settledPeer), 30_000);
+    // Until the stores and projections the typing caused are done: quiet,
+    // since a save's receipt does not wait for a note's projection.
+    const typed = (await quiet(containers, idle)).usage;
+    const typingMs = Date.now() - started;
+    const saves: { cpu: Partial<Record<Server, number>>; ms: number }[] = [];
+    for (let save = 0; save < COST_SAVES; save += 1) {
+      const from = await usageOf(containers);
+      const at = Date.now();
+      // The edit schedules a store and the request waits for it, both from a
+      // quiet room, so the store claims the request's receipt.
+      insertMarker(room, peers[0].doc, `[${kind[0]}99-${String(save).padStart(4, '0')}]`, 99, save);
+      await checkpoint(room, peers[0]);
+      const ms = Date.now() - at;
+      // The save's whole cost: the store and what follows it (a note's projection).
+      const after = await quiet(containers, idle);
+      saves.push({ cpu: cpuBetween(from, after.usage, idle, Date.now() - at), ms });
+    }
+    const server = perContainer(idle, (idleCpuMsPerS, name) => ({
+      cpuMsPerSave: round(median(saves.map(({ cpu }) => cpu[name]!))!),
+      cpuMsPerUpdate: round(cpuBetween(loaded.usage, typed, idle, typingMs)[name]! / Math.max(1, updates), 2),
+      idleCpuMsPerS: round(idleCpuMsPerS),
+      loadCpuMs: Math.round(cpuBetween(before, loaded.usage, idle, loadMs)[name]!),
+      memoryMBAfterTyping: memoryBetween(before, typed)[name]!,
+      // The loaded room with its peers connected, over the server before it.
+      memoryMBPerRoom: memoryBetween(before, loaded.usage)[name]!,
+    }));
+    return {
+      // Null: the server was never quiet before the room, so no idle rate was
+      // taken out (and `server` is empty).
+      idleMeasured: quietMs !== null,
+      // Null when the server never went quiet after the load (QUIET_MAX_MS).
+      loadS,
+      peers: COST_PEERS,
+      // Answer times to the probe endpoint while the peers typed.
+      probe: probe.stats(started, typingEnd),
+      saveMs: median(saves.map(({ ms }) => ms)),
+      server,
+      typingS: round(typingMs / 1000),
+      updates,
+    };
+  } finally {
+    for (const { doc, provider } of peers) {
+      provider.destroy();
+      doc.destroy();
+    }
+  }
+}
+
+async function stressRoom(room: Room, peerCount: number) {
   const watcher = await connect(room, `${room.kind} watcher`);
+  // Before anyone types: the anchors name characters of the seeded text.
+  if (room.format === 'text') room.anchors = textAnchors(watcher.doc);
   // Only the inserted text of each change is scanned, so the watcher's cost
   // stays flat as the room grows and the latency is the server's.
   const target = typingTarget(room, watcher.doc);
@@ -779,7 +1290,7 @@ async function stressRoom(room: Room) {
     }
   });
   const peers = await Promise.all(
-    Array.from({ length: PEERS }, (_, index) => connect(room, `${room.kind} peer ${index}`))
+    Array.from({ length: peerCount }, (_, index) => connect(room, `${room.kind} peer ${index}`))
   );
   const deadline = Date.now() + MINUTES * 60_000;
   let drops = 0;
@@ -883,16 +1394,77 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const)
     void cleanUp().finally(() => process.exit(130));
   });
 
-// The client's own event-loop delay: high values mean this process, not the
-// server, delayed the markers it timed.
-const loopDelay = monitorEventLoopDelay({ resolution: 20 });
-let exitCode = 1;
-try {
-  await target.setup();
-  const rooms = await target.createRooms(ROOMS);
+/**
+ * One phase: its rooms, created when it starts, typed into together; with
+ * the server's CPU and memory over the phase and, given a probe URL, its
+ * answer times to the probe endpoint (never in the budgeted phase, whose
+ * budget was calibrated without it). A failed Docker read leaves the
+ * server's figures out and is listed in `reportOnlyFailures`.
+ */
+async function runPhase(
+  kinds: Kind[],
+  peerCount: number,
+  containers: Containers,
+  probeAt: string | null,
+  reportOnlyFailures: string[]
+) {
+  const rooms = await target.createRooms(kinds);
+  // The client's own event-loop delay: high values mean this process, not
+  // the server, delayed the markers it timed.
+  const loopDelay = monitorEventLoopDelay({ resolution: 20 });
+  const usage = (when: string) =>
+    orEmpty(usageOf(containers), `server usage ${when} ${kinds.join(',')}`, reportOnlyFailures);
+  const before = await usage('before');
+  // Stopped below: nothing in between throws (the rooms settle).
+  const probe = probeAt ? probeServer(probeAt) : null;
   loopDelay.enable();
-  const settledRooms = await Promise.allSettled(rooms.map(stressRoom));
+  const settled = await Promise.allSettled(rooms.map((room) => stressRoom(room, peerCount)));
   loopDelay.disable();
+  await probe?.stop();
+  const after = await usage('after');
+  const typed = settled.reduce((sum, room) => sum + (room.status === 'fulfilled' ? room.value.typed : 0), 0);
+  const memory = memoryBetween(before, after);
+  return {
+    loopDelayMs: {
+      max: Math.round(loopDelay.max / 1e6),
+      p50: Math.round(loopDelay.percentile(50) / 1e6),
+      p99: Math.round(loopDelay.percentile(99) / 1e6),
+    },
+    rooms,
+    // Joins, typing, settling and late joiners alike, per typed marker.
+    server: {
+      probe: probe?.stats() ?? null,
+      ...perContainer(cpuBetween(before, after), (cpuMs, name) => ({
+        cpuMs: Math.round(cpuMs),
+        cpuMsPerMarker: round(cpuMs / Math.max(1, typed), 2),
+        memoryMB: { after: after[name]!.memoryMB, before: before[name]!.memoryMB, growth: memory[name]! },
+      })),
+    },
+    settled,
+  };
+}
+
+type Phase = Awaited<ReturnType<typeof runPhase>>;
+type Cost = Awaited<ReturnType<typeof costOf>>;
+
+/**
+ * stress.json from the phases run so far. Written after each phase, so a
+ * later phase that breaks (or a job killed at its timeout) keeps the earlier
+ * results. `failures` are correctness failures (exit 1); `reportOnlyFailures`
+ * are report-only steps that could not finish (near-limit setup, cost
+ * windows, a phase's Docker reads) and fail nothing.
+ */
+async function writeReport(state: {
+  containers: Containers;
+  cost: Record<string, Cost>;
+  images: Awaited<ReturnType<typeof containerImages>>;
+  limit: Phase | null;
+  main: Phase;
+  reportOnlyFailures: string[];
+}) {
+  const { containers, cost, images, limit, main, reportOnlyFailures } = state;
+  const rooms = [...main.rooms, ...(limit?.rooms ?? [])];
+  const settledRooms = [...main.settled, ...(limit?.settled ?? [])];
   const results = settledRooms.flatMap((room) => (room.status === 'fulfilled' ? [room.value] : []));
   // An unreadable log is a failure of its own; the room results still count.
   let errors: string[];
@@ -929,12 +1501,14 @@ try {
           latencyP99Ms: percentile(latencies, 99),
           rooms: results.filter(({ room }) => room === kind).length,
           timed: latencies.length,
+          // The near-limit rooms are report-only.
+          budgeted: KINDS.includes(kind),
         },
       ];
     })
   );
-  const budgetMisses = Object.entries(byKind).flatMap(([kind, { latencyP95Ms }]) =>
-    (latencyP95Ms ?? Number.POSITIVE_INFINITY) > P95_BUDGET_MS
+  const budgetMisses = Object.entries(byKind).flatMap(([kind, { budgeted, latencyP95Ms }]) =>
+    budgeted && (latencyP95Ms ?? Number.POSITIVE_INFINITY) > P95_BUDGET_MS
       ? [`${kind}: p95 ${latencyP95Ms} ms over the ${P95_BUDGET_MS} ms budget`]
       : []
   );
@@ -942,19 +1516,33 @@ try {
     budgetMisses,
     budgetP95Ms: P95_BUDGET_MS,
     byKind,
-    clientLoopDelayMs: {
-      max: Math.round(loopDelay.max / 1e6),
-      p50: Math.round(loopDelay.percentile(50) / 1e6),
-      p99: Math.round(loopDelay.percentile(99) / 1e6),
-    },
+    clientLoopDelayMs: main.loopDelayMs,
+    // Per room kind, alone on the server (costOf).
+    cost,
+    costPeers: COST_KINDS.length ? COST_PEERS : null,
+    costSeconds: COST_KINDS.length ? COST_SECONDS : null,
     collaborationErrors: errors.length,
     collaborationErrorSample: errors.slice(0, 10),
     editMs: EDIT_MS,
     failures,
+    limitClientLoopDelayMs: limit?.loopDelayMs ?? null,
+    limitPeers: limit ? LIMIT_PEERS : null,
     minutes: MINUTES,
     peers: PEERS,
+    reportOnlyFailures,
     rooms: results.map(({ latencies: _, ...room }) => room),
-    target: REMOTE ? 'uat' : 'local',
+    runner: { cpuModel: cpus()[0]?.model ?? 'unknown', cpus: cpus().length },
+    // The server over each phase, measured from outside: its containers'
+    // images (name and ID), CPU and memory, and the probe's answer times.
+    server: {
+      containers: Object.keys(containers).filter((name) => containers[name as Server]),
+      images,
+      limit: limit?.server ?? null,
+      main: main.server,
+      probePath: PROBE_PATH,
+    },
+    target: REMOTE ? 'uat' : EXTERNAL ? 'external' : 'local',
+    textMiB: LIMIT_KINDS.includes('text') ? TEXT_MIB : null,
     tokenFailures: tokenFailures.length,
     tokenFailureSample: tokenFailures.slice(0, 5),
   };
@@ -973,9 +1561,57 @@ try {
         )
       )
     );
+  return report;
+}
+
+let exitCode = 1;
+try {
+  await target.setup();
+  const containers = target.serverContainers();
+  const reportOnlyFailures: string[] = [];
+  const state = {
+    containers,
+    cost: {} as Record<string, Cost>,
+    images: await orEmpty(containerImages(containers), 'server images', reportOnlyFailures),
+    limit: null as Phase | null,
+    main: await runPhase(kindsFor(ROOMS), PEERS, containers, null, reportOnlyFailures),
+    reportOnlyFailures,
+  };
+  await writeReport(state);
+  const probeAt = probeUrl((await state.main.rooms[0].token()).url);
+  // After the budgeted rooms, so their latency stays comparable run to run.
+  if (LIMIT_KINDS.length) {
+    try {
+      state.limit = await runPhase(LIMIT_KINDS, LIMIT_PEERS, containers, probeAt, reportOnlyFailures);
+    } catch (error) {
+      state.reportOnlyFailures.push(`near-limit phase: ${String(error).slice(0, 300)}`);
+    }
+    await writeReport(state);
+  }
+  // One room kind at a time, last: what each costs the server. Bounded, so
+  // the job keeps its earlier results inside its timeout.
+  if (COST_KINDS.length) {
+    const deadline = Date.now() + COST_MAX_MINUTES * 60_000;
+    const probe = probeServer(probeAt);
+    for (const kind of COST_KINDS) {
+      if (Date.now() > deadline) {
+        state.reportOnlyFailures.push(`cost ${kind}: skipped, past STRESS_COST_MAX_MINUTES (${COST_MAX_MINUTES})`);
+        continue;
+      }
+      try {
+        state.cost[kind] = await costOf(kind, containers, probe);
+      } catch (error) {
+        state.reportOnlyFailures.push(`cost ${kind}: ${String(error).slice(0, 300)}`);
+      }
+      await writeReport(state);
+    }
+    await probe.stop();
+  }
+  const report = await writeReport(state);
   console.log(JSON.stringify(report, null, 2));
-  for (const problem of [...failures, ...budgetMisses]) console.error(`FAIL ${problem}`);
-  exitCode = failures.length ? 1 : budgetMisses.length ? 2 : 0;
+  for (const problem of [...report.failures, ...report.budgetMisses]) console.error(`FAIL ${problem}`);
+  for (const problem of report.reportOnlyFailures) console.error(`REPORT-ONLY ${problem}`);
+  exitCode = report.failures.length ? 1 : report.budgetMisses.length ? 2 : 0;
 } catch (error) {
   // Logged here, since a failing cleanUp would replace it.
   console.error(error);

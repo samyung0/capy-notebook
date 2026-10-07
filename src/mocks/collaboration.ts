@@ -429,6 +429,11 @@ const UNREACHABLE = 'capy.mock.collaboration.unreachable';
 const REACHABILITY = 'capy:mock-collaboration-reachability';
 // Unit tests run without a window: always reachable there.
 const browser = typeof window !== 'undefined';
+// The Office bench's co-editor case edits a source room as a second peer
+// (bench/editor/scripts/runtime.office.ts); only in its load-test build.
+if (browser && import.meta.env.VITE_LOAD_TEST_SEED === 'true')
+  (window as Window & { __capyMockRooms?: typeof rooms }).__capyMockRooms =
+    rooms;
 function reachable() {
   return (
     !browser ||

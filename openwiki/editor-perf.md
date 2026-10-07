@@ -52,7 +52,31 @@ minutes. It covers one small and one large file per format:
 
 The small files are the e2e rich-content fixtures. The large files are seeded
 only under `VITE_LOAD_TEST_SEED`; their checkpoints come from
-`scripts/dev/seed-scenario-office.ts`. Per file it reports:
+`scripts/dev/seed-scenario-office.ts`.
+
+The size ladder for the Office limits (opt-survey PLAN.md section 4) comes
+from the same generators: `python3 bench/editor/scripts/gen_office_ladder.py`
+writes DOCX text, table and picture-heavy files (`gen_long_docx.py`
+`[sections] [text|table|picture]`, 24 to 192 text sections = 62 to 496 pages),
+XLSX formula, values and style-heavy files (`gen_large_xlsx.py`
+`[sheets] [rows] [formula|values|style]`, 8 sheets of 2,000 to 8,000 rows =
+6 to 33 MiB unzipped) and PPTX text and picture-heavy decks
+([`gen_large_pptx.py`](../bench/editor/scripts/gen_large_pptx.py)
+`[slides] [text|picture]`) to the gitignored `bench/editor/.results/ladder/`,
+with `sizes.json`: per file (the six bench fixtures included) the zipped
+bytes and the unzipped bytes of XML parts, media and other parts
+([`office_sizes.py`](../bench/editor/scripts/office_sizes.py), which also
+runs on any Office file; `--only docx|xlsx|pptx` limits the ladder). Its
+rule, which the size limit (XML parts only) can reuse: a picture, audio or
+video extension is media (SVG too); otherwise `.xml`, `.rels` and `.vml`
+parts, and parts whose `[Content_Types].xml` type ends in `+xml` or `/xml`,
+are XML; the rest (embedded fonts, `.bin` parts, embedded packages) is other. Pictures are noise PNGs, which do not compress, like
+photos. The generators' default output stays the committed
+`long-handbook.docx` and `large-gradebook.xlsx` byte for byte, so their
+checkpoints stay valid. The ladder files are not committed: they are 150 MB
+together and regenerate in about 20 s.
+
+Per file it reports:
 
 - open to first paint: the file click to the runtime's `ready`, on the host's
   clock. Every viewer sends it once its first pages, grid or slide (pictures
@@ -72,15 +96,43 @@ only under `VITE_LOAD_TEST_SEED`; their checkpoints come from
   end of its text; both apply input on the frame's main thread, so a
   key's frame is the first task after the next animation frame following its
   last event (keydown, keypress, input);
-- heap after open, after View to Edit and after typing: CDP
+- the same 40 keys at the end of the file (`typingEnd`, report-only, with
+  `at` saying where): DOCX after Ctrl/Cmd+End (the body's end, where no later
+  page is laid out again), XLSX after Enter and Ctrl/Cmd+ArrowDown (the
+  column's last used row), PPTX at the end of a text box on the last slide
+  with text (`end` per fixture). Unpainted keys and typing that sends no edit
+  fail here too;
+- heap after open, after View to Edit, after typing and after the end typing
+  (`afterTypingEnd`); the workers are read only from `afterTyping` on (and in
+  the report-only cases), since their forced GC and object queries before
+  View to Edit or typing would change what the budgets were calibrated
+  under, so `afterOpen` and `afterEdit` have `workers: null`: CDP
   `Runtime.getHeapUsage` after a forced GC (`jsMB` V8 heap, `backingMB` array
   buffers and external strings) for the page's isolate, which holds the
   runtime frame (same site, same process), plus `wasmMB`, the linear memory of
   the WASM instances still alive in any frame (an init script keeps a weak
-  handle on each instance's exported memory; CDP does not count WASM memory).
-  Workers, such as the DOCX engine and its lowering worker, are not counted.
-  `performance.measureUserAgentSpecificMemory` would need cross-origin
-  isolation, which the app does not have;
+  handle on each instance's exported memory; CDP does not count WASM memory),
+  split per module in `wasmModules`. A module is named by its wasm-bindgen
+  classes (`editsession` for DOCX editing, `xlsxdocument+xlsxeffectsreader`,
+  `pptxdocument+pptxrenderer`, the viewers' `*viewdocument`), or by its first
+  export when it has none (`rezip_docx` for OPC, `build_display_list_json`
+  for layout, `decode` for parsing), since workers give no URL to name it by.
+  `unattributedWasmMB` is memory no module exports (created in JS and
+  imported; negative when several instances export one memory).
+  `workers` lists each dedicated worker of the page (`name`, script `url`,
+  `jsMB` after a GC, `wasmMB`, `wasmModules`, `unattributedMB`), with
+  `workersJsMB` and `workersWasmMB` summed: the DOCX engine worker holds the
+  largest single item (~0.8 GB at 62 pages in the 2026-10-06 survey).
+  Playwright gives workers no CDP session, so a browser CDP session attaches
+  to each one unflattened (`Target.sendMessageToTarget`), forces a GC and
+  finds the live `WebAssembly.Memory` and `WebAssembly.Instance` objects with
+  `Runtime.queryObjects`. Every call is bounded (5 s) and a worker's detach
+  fails what is pending, so a worker that ends or stops answering is listed
+  with `missing` (and counted in `workersMissing`), never waited on. Linear memory never shrinks, so `wasmMB` is also
+  the high-water mark. `performance.measureUserAgentSpecificMemory` would
+  need cross-origin isolation, which the app does not have;
+- `runner`: the CPU model and core count of the machine that ran it, in every
+  Office result (the shared runner pool mixes EPYC models);
 - view-mode heap over full passes (a second case per file, for the view-mode
   creep item in `todo-office.md`): open in View, then two full passes (every
   page, every sheet's rows and columns, or every slide, then back to the
@@ -106,6 +158,31 @@ only under `VITE_LOAD_TEST_SEED`; their checkpoints come from
   also leaves a transferred stream's `MessagePort` among Blink's pending
   activities. That is native memory outside `jsMB`, and the app has no MSW
   in production. So the five-close growth shows JIT warm-up, not a creep.
+
+A fourth case per file (`co-editor`, report-only) opens the file in Edit,
+reads the heap with the workers (`heap.afterEdit`), then applies ten remote
+edits from a second peer: the mock room's own Yjs client (exposed as
+`window.__capyMockRooms` in the load-test build only) inserts `peer ` after
+the first character of the first text run of two or more characters, in the
+DOCX body or in the first PPTX slide's first story with one, or writes a
+number into the fixture's XLSX cell (a base cell override, the form the
+editor stores), so the host forwards each as a remote `update` to the
+runtime frame. In the frame it times, per edit, with p50, p90 and max:
+`queue` (the host's postMessage, the event's timestamp, to the frame
+starting to handle it: the rest of the host's task on the shared main thread
+and the wait), `apply` (receipt to the end of the runtime's synchronous
+handler: the receipt comes from a listener the init script registers before
+any page script, the end from one added after the runtime's, since a
+window's message listeners run in registration order, capturing or not,
+as measured on 2026-10-06; the XLSX and PPTX editors apply there, the DOCX editor only hands
+the update to its engine worker, `applyScope: "handoff only"`), `toFrame`
+(receipt to the next `docx-pages-presented`, a real paint, or for XLSX and
+PPTX to the first task after the next animation frame, which an
+asynchronous render could miss, `frameSignal: "next frame"`) and the long
+tasks from the post to that frame (`longTask`). It fails when an edit never
+arrives or never reaches its frame, or the runtime reports an error; XLSX
+also checks the cell reads the peer's last value. It runs on its own page,
+so the typing figures stay comparable with earlier runs.
 
 It runs unthrottled: CDP's CPU throttle reaches neither the runtime frame nor
 the engine workers. Every file fails on unpainted keys, typing that sends no
@@ -133,8 +210,10 @@ all on 2026-10-04:
   medians are unchanged.
 
 Heap figures stay report-only: they go to the results JSON (`budget.heap`,
-and `budget: "report-only"` in the heap cases), the job summary and the
-artifact, and fail nothing. TODO: decide what a heap ceiling means (retained
+and `budget: "report-only"` in the heap and co-editor cases), the job summary
+and the artifact, and fail nothing. Fields are only ever added to these
+files, so a result compares with an older run's field by field.
+TODO: decide what a heap ceiling means (retained
 after GC or peak, which of JS, array buffers and WASM, per format or per
 file), then gate it from three CI runs.
 
@@ -158,12 +237,24 @@ and writes each case's captures and the geometry JSON to the gitignored
 [`bench/collaboration/scripts/stress.ts`](../bench/collaboration/scripts/stress.ts)
 starts the e2e Docker stack through `e2e/global-setup.ts` with
 [`docker-compose.stress.yml`](../bench/collaboration/scripts/docker-compose.stress.yml)
-layered on (`E2E_COMPOSE_OVERRIDES`). That overlay replaces the memory blob
+and [`docker-compose.stress-run.yml`](../bench/collaboration/scripts/docker-compose.stress-run.yml)
+layered on (`E2E_COMPOSE_OVERRIDES`). The first, which the Office
+storage-charging bench and the capacity harness also use, replaces the memory blob
 store, whose `memory://` URLs the collaboration service cannot fetch, with
 [`fake-s3.mjs`](../bench/collaboration/scripts/fake-s3.mjs) in the collaboration
 image, served over TLS under a `*.backblazeb2.com` name the server accepts with
-a throwaway certificate. The owner uploads `exchange-plan.docx` and creates a
-Plate note, then `STRESS_PEERS` peers (20) per room, with API tokens, type
+a throwaway certificate. The owner uploads `exchange-plan.docx` as the app
+does: it reserves the upload (`POST .../sources/uploads`), PUTs the bytes to
+the presigned URL and completes it (`.../complete`). The presigned URL names
+the fake inside the Docker network, so the client sends it to the fake's
+plain HTTP port, which only the stress-only overlay publishes, on
+`STRESS_S3_PORT` (the fake checks no signatures). For a stack started
+elsewhere, `STRESS_UPLOAD_ORIGIN` names the fake's plain HTTP origin
+(`http://s3:9000` for a generator inside the stack's network, as in the
+capacity harness); with `E2E_SKIP_COMPOSE=true`, set `STRESS_S3_PORT` to the
+running stack's published port. It
+also creates a Plate note, then `STRESS_PEERS` peers (20) per room, with API
+tokens, type
 unique markers for `STRESS_MINUTES` (3), about one per `STRESS_EDIT_MS`
 (1500); each drops offline for 1 to 5 s at `STRESS_DROP_PER_SECOND` (0.02) and
 keeps typing, sending on reconnect. A watching peer that never drops times
@@ -173,12 +264,93 @@ text each change inserts, so the client's own cost stays flat. Then:
 - every peer and a late joiner hold the same text (convergence);
 - every typed marker is there exactly once (no lost or doubled update);
 - the collaboration service logged no error;
-- p95 marker latency within `STRESS_P95_BUDGET_MS`, 45 ms (~1.3x the slower
+- p95 marker latency within `STRESS_P95_BUDGET_MS`, 45 ms, in the first
+  phase (~1.3x the slower
   room's median of three CI runs on 2026-10-04: Office 34/33/34, Plate
   35/34/35 ms). The service's 30 ms broadcast batching (`flushDelay` in
   `collaboration/src/server.ts`) put most of that there: before it the runs
   gave Office 5/5/3 and Plate 8/9/5 ms against a 10 ms budget. A loaded laptop
   measures more, so set the variable for local runs.
+
+A second phase follows on the local stack (`STRESS_LIMIT_ROOMS`, default
+`note-limit,text`; empty on UAT and external stacks, where a text source would
+be indexed): `STRESS_LIMIT_PEERS` peers (5) per room for another
+`STRESS_MINUTES` in the near-limit note (the app's load-test note,
+`buildBiologyLoadTestValue`, ~2.0 MB and ~7,400 nodes, 96% of the size limit,
+so the service measures the whole room on every update) and a text source of
+`STRESS_TEXT_MIB` (4: with its saved state each text source holds about twice
+its size, and two of them, here and in the cost window, have to stay inside
+the e2e owner's 100 MB Free storage quota; at 8 MiB three local runs in one
+stack exhausted it). Text markers go just
+before characters of the seeded text, through relative positions taken
+before anyone types, so they never land inside another marker and no peer
+scans several MiB per marker. The same convergence, marker and error checks
+apply (a failed one fails the run); a setup error of this phase (an upload,
+the note's creation) is listed in `reportOnlyFailures` and fails nothing,
+and the budgeted phase's results are already written: `stress.json` is
+rewritten after each phase and cost window. Their latency is report-only (`byKind[kind].budgeted: false`,
+`limitClientLoopDelayMs`). It runs after the first phase, not beside it, so
+its cost (~50-90 ms of service CPU per near-limit note update before the
+per-update bound) does not move the budgeted rooms' latency. Fewer peers
+than the first phase keep the service from saturating on that note before
+the bound lands, with the same count before and after. The report records
+the runner's CPU (`runner`).
+
+The collaboration server is measured from outside, so the same scenarios can
+judge another implementation of it (the planned Rust server on yrs): the
+driver only speaks the protocol (Hocuspocus/Yjs sync, the app's
+`checkpoint-request` stateless message and its `checkpoint-persisted`
+receipt) and reads the server's containers through the Docker Engine API
+(`DOCKER_HOST` when it is a `unix://` socket, else `/var/run/docker.sock`; a
+Docker context without either, Colima for one, needs `DOCKER_HOST` set).
+It times the probe endpoint below and ignores its answer, and reads the
+service's logs only for the error check. It measures three containers,
+since a save's cost is split between them: `collaboration`, `api` (the Go
+gateway, which does the database side of every checkpoint and projection)
+and `db` (Postgres), and records what they run (`server.images`: image name
+and ID). Per phase, `server.main` and `server.limit` give each container's
+CPU time over the phase and per typed marker (joins, settling and late
+joiners included) and its working set before and after. A Docker read that
+fails around a phase (or for `server.images`) leaves those figures empty and
+is a `reportOnlyFailures` entry; the phase's rooms are still judged and
+written. Outside the
+budgeted phase (calibrated without it), `probe` gives the answer time to an
+endpoint that touches only the server's event loop, every 250 ms
+(`STRESS_PROBE_PATH`, the Node service's in-memory `/metrics`; its
+`/healthz` pings Postgres and Redis, so it is not used), p50, p99, max and
+failures: it grows with whatever holds the event loop or scheduler. Read it
+beside `clientLoopDelayMs`, which bounds what the client can see. Then the
+cost windows (`STRESS_COST_ROOMS`, local default
+`office,plate,note-limit,text`, empty elsewhere) take one room kind at a time
+with `STRESS_COST_PEERS` peers (5), report-only, in `cost[kind]`: per
+container in `server`, `idleCpuMsPerS` (the quietest window before the room,
+the probe's own cost included, taken out of everything below; `idleMeasured`
+false and `server` empty when the server never went quiet), `loadCpuMs` and
+`memoryMBPerRoom` (loading the room for its peers until the server is quiet
+again, `loadS`), `cpuMsPerUpdate` over `STRESS_COST_SECONDS` (30) of typing
+(the debounced saves and projections it causes included, until the server
+is quiet), `memoryMBAfterTyping`, and `cpuMsPerSave` with `saveMs`, the
+median of three explicit saves of a one-marker edit from a quiet server
+(`flush` in source rooms, as the app's Save sends it; the note's save waits
+for its debounce), CPU until quiet again and time until the receipt; plus
+`probe` while typing. Quiet means three ~2 s windows in a row (rates over
+the measured interval) under max(50, 2x idle) ms of CPU per second (30 s at
+most). A cost window that breaks (a receipt not back in 30 s, a Docker read)
+is a `reportOnlyFailures` entry, as is a kind skipped because the windows
+passed `STRESS_COST_MAX_MINUTES` (8); the CI summary prints them apart from
+correctness failures. The memory figures carry the server's
+garbage-collection timing, so read them over several runs.
+
+To point the scenarios at another server: on the local stack set
+`STRESS_COLLABORATION_IMAGE` with `E2E_PREBUILT_IMAGES=true` (the stress-only
+overlay swaps the `collaboration` service's image; it gets the same
+environment, and `SSL_CERT_FILE` and `NODE_EXTRA_CA_CERTS` name the fake S3's
+certificate). Without `E2E_PREBUILT_IMAGES=true` the run refuses to start,
+since compose would build the Node service under the other image's name.
+On another stack use `STRESS_STACK=external` with `STRESS_SERVER_CONTAINER`,
+`STRESS_API_CONTAINER` and `STRESS_DB_CONTAINER` naming its containers (the
+same for `E2E_SKIP_COMPOSE=true`), `STRESS_PROBE_PATH` its cheap endpoint,
+and `STRESS_COST_ROOMS` and `STRESS_LIMIT_ROOMS` set as wanted.
 
 A failed check exits 1, a missed budget alone exits 2. SIGINT and SIGTERM tear
 the stack down and remove the throwaway key. Under heavy load

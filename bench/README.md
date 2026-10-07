@@ -20,8 +20,8 @@ Raw run artifacts sit in a sibling `YYYY-MM-DD-<machine>/` directory.
 
 | Family                     | Measures                                                                                        | Run with                                    |
 | -------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| [`collaboration/`](collaboration/) | Collaboration stress: many peers typing with reconnects in one Office and one Plate room; convergence, lost updates, latency | `pnpm bench:stress` (Docker)     |
-| [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle; DOCX, XLSX and PPTX open, View to Edit, typing and heap in the Office runtime; formula View/Edit parity | `pnpm bench:editor`, `pnpm bench:office`, `pnpm bench:formula` |
+| [`collaboration/`](collaboration/) | Collaboration stress: many peers typing with reconnects in one Office and one Plate room, then in a near-limit note and a text source; convergence, lost updates, latency | `pnpm bench:stress` (Docker)     |
+| [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle; DOCX, XLSX and PPTX open, View to Edit, typing at both ends, co-editor update timings and heap (workers from the typing on) in the Office runtime; Office size-ladder fixtures; formula View/Edit parity | `pnpm bench:editor`, `pnpm bench:office`, `pnpm bench:formula` |
 | [`parsers/`](parsers/)     | Ingest-host parser accuracy and capacity: OCR modes, concurrency, worker memory, OOM behavior    | `python bench/parsers/scripts/…` (needs VM) |
 | [`grading/`](grading/)     | Small local models against the production quiz-grading rubric, native and in-browser             | `python bench/grading/scripts/benchmark.py` |
 | [`rag/`](rag/scripts/)     | Retrieval and chat-agent quality: live diagnostic plus six frozen experiments                    | see below                                   |
@@ -44,13 +44,32 @@ XLSX `course-guide.xlsx` and the generated 8-sheet, 16,000-row
 `editor/fixtures/office/large-gradebook.xlsx` (`editor/scripts/gen_large_xlsx.py`),
 PPTX `lecture.pptx` and the 84-slide `parsers/fixtures/docs/jp_llm2.pptx`. The
 large files' checkpoints come from `scripts/dev/seed-scenario-office.ts`. It
-reports open to first paint, View to Edit ready, keystroke to painted frame and
-the JS and WASM heap at each step, plus the heap over two full view-mode passes
-and over five view-mode opens and closes. It
-fails on unpainted keys, typing that reaches no edit, a fallback to the
-main-thread engine, or a missed budget (from three CI runs per format); the
-heap figures are report-only until a ceiling is defined. It runs as
+reports open to first paint, View to Edit ready, keystroke to painted frame at
+the start and at the end of the file, and the heap at each step: JS and the
+frames' WASM per module, plus each worker's JS and WASM from the typing on
+(the DOCX engine worker is the largest item; the budgeted open and View to
+Edit steps skip the workers, whose read forces a GC). A co-editor case
+applies ten remote edits from a second peer in the open editor and reports,
+per edit, the wait before the frame handles it, the frame's synchronous apply
+(DOCX: only the hand-off to its engine worker) and the time to the next
+frame (a painted DOCX page; the next animation frame for XLSX and PPTX). It
+also reports the heap over two full
+view-mode passes and over five view-mode opens and closes, and records the
+runner's CPU model in every result. It
+fails on unpainted keys, typing that reaches no edit, a remote edit that never
+reaches its frame or errors, a fallback to the main-thread engine, or a missed budget
+(from three CI runs per format); the end-of-file keys, the co-editor timings
+and the heap figures are report-only until a ceiling is defined. It runs as
 the `office` job of the same `Performance` workflow, on dispatch only.
+
+The Office size ladder (`editor/scripts/gen_office_ladder.py`) generates
+fixtures of growing size per format and content shape into the gitignored
+`editor/.results/ladder/`, with each file's size split into XML parts, media
+and other parts (`editor/scripts/office_sizes.py`, `sizes.json`): DOCX text,
+table and picture-heavy (`gen_long_docx.py`), XLSX formula, values and
+style-heavy (`gen_large_xlsx.py`), PPTX text and picture-heavy
+(`gen_large_pptx.py`). The generators' default output is the committed
+fixture, byte for byte; the ladder's files are not committed.
 
 `pnpm bench:formula` is an audit for MathLive upgrades, not a budget
 (`editor/scripts/formula-parity.audit.ts`, no workflow runs it): every formula
@@ -66,12 +85,24 @@ editor e2e seed and writes captures and geometry JSON to
 `docker-compose.stress.yml` layered on: the e2e stack's memory blob store gives
 the collaboration service `memory://` URLs it cannot fetch, so a fake S3
 (`fake-s3.mjs`, run in the collaboration image, TLS under a `*.backblazeb2.com`
-name the server accepts) holds the uploaded DOCX. STRESS_PEERS peers (20) type
+name the server accepts) holds the uploaded DOCX; the client uploads as the app
+does (reserve, PUT to the presigned URL on the fake's published port,
+complete). STRESS_PEERS peers (20) type
 markers into an Office room (`exchange-plan.docx`) and a Plate note for
 STRESS_MINUTES (3), each dropping offline for 1-5 s now and then and typing on.
+A second phase then puts STRESS_LIMIT_PEERS peers (5) in the near-limit rooms:
+the ~2 MB load-test note and a 4 MiB text source, report-only. The server is
+measured from outside (CPU and memory of the collaboration, API and database
+containers through the Docker Engine API, and outside the budgeted phase the
+answer time of an event-loop-only endpoint), and cost windows take one room
+kind at a time for memory per room, CPU per update and CPU per save, so the
+same scenarios can judge another server implementation
+(`STRESS_COLLABORATION_IMAGE`). Report-only steps that cannot finish are
+listed apart and fail nothing; `stress.json` is rewritten after each phase.
 It fails when the peers and a late joiner do not converge, a typed marker is
 missing or duplicated, or the collaboration service logs an error (exit 1),
-and reports a missed p95 latency budget (from three CI runs) with exit 2. The
+and reports a missed p95 latency budget (first phase, from three CI runs)
+with exit 2. The
 `Performance` workflow's `stress` job runs it on dispatch only. Results land in
 the gitignored `collaboration/.results/`. `STRESS_TARGET=uat` runs it against UAT with disposable
 journey-style users and store-only, unindexed rooms (see

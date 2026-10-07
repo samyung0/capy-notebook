@@ -411,6 +411,12 @@ Smaller items:
 
 ## Reproduce
 
+Since 2026-10-06 `stress.ts` uploads through presigned URLs, which name the
+fake S3 as `s3.stress.backblazeb2.com:9443` with the throwaway certificate:
+give each generator `STRESS_UPLOAD_ORIGIN=http://s3:9000` (the fake's plain
+HTTP port inside the stack's network). The shared overlay
+(`docker-compose.stress.yml`) is unchanged.
+
 Upload the harness's `box/` directory to the box, build the two images there
 (`build.log`), then run the plan files with `ladder.sh`:
 

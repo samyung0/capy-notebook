@@ -186,7 +186,11 @@ jobs:
   stress:
     if: inputs.stress
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # Three typing phases after the stack starts (budgeted rooms, near-limit
+    # rooms, cost windows starting no new room kind after 8 minutes): about
+    # 20 minutes. stress.json is rewritten after each phase and cost window,
+    # so a timeout keeps the earlier ones.
+    timeout-minutes: 40
     # The p95 budget (45 ms) holds with the 30 ms broadcast batching: four
     # runs at 33 to 35 ms, so a miss fails the run.
     permissions:
@@ -237,6 +241,7 @@ jobs:
                 const r = require("./" + process.argv[1]);
                 for (const f of r.failures) console.log(`- **FAILED (correctness):** ${f}`);
                 for (const b of r.budgetMisses) console.log(`- Over the budget: ${b}`);
+                for (const o of r.reportOnlyFailures ?? []) console.log(`- Report-only step did not finish (fails nothing): ${o}`);
                 if (!r.failures.length && !r.budgetMisses.length) console.log("All checks passed.");
               ' "$file"
               echo '```json'; cat "$file"; echo '```'

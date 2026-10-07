@@ -1,4 +1,13 @@
-import { expect, type Frame, type Page, test } from '@playwright/test';
+import { cpus } from 'node:os';
+import {
+  type Browser,
+  type CDPSession,
+  expect,
+  type Frame,
+  type Page,
+  test,
+} from '@playwright/test';
+import type * as Y from 'yjs';
 import type {
   OfficeAnalysis,
   OfficeFormat,
@@ -11,9 +20,10 @@ import { cdpSession, percentile, reportMetrics } from './metrics';
 /**
  * DOCX, XLSX and PPTX in the Office runtime, on a production build (see
  * playwright.office.config.ts), one small and one large file each: open to
- * first paint, View to Edit ready, keystroke to painted frame and the JS heap
- * at each step, plus two view-mode memory probes: two full passes through the
- * file, and closing and reopening it.
+ * first paint, View to Edit ready, keystroke to painted frame at the start and
+ * at the end of the file and the heap at each step, a co-editor's remote edits
+ * applied in the open editor, plus two view-mode memory probes: two full
+ * passes through the file, and closing and reopening it.
  *
  * Timings are on the host's clock, from the click to a runtime message:
  * - open, every format: `ready`, sent once the first pages, grid or slide are
@@ -33,9 +43,11 @@ import { cdpSession, percentile, reportMetrics } from './metrics';
  *
  * Heap: CDP Runtime.getHeapUsage after a forced GC, for the page's isolate,
  * which holds the runtime frame too (same site, so same process), plus the
- * WASM memories the frames instantiated (CDP counts neither those nor
- * workers, such as the DOCX engine). `performance.measureUserAgentSpecificMemory`
- * needs cross-origin isolation, which the app does not have.
+ * WASM memories the frames instantiated (CDP does not count those), per
+ * module; and each dedicated worker's JS heap and WASM memories (the DOCX
+ * engine), through a browser CDP session attached to it.
+ * `performance.measureUserAgentSpecificMemory` needs cross-origin isolation,
+ * which the app does not have.
  */
 
 interface Timings {
@@ -125,10 +137,11 @@ function budgetOf(median: Timings): Timings {
 type Fixture = (typeof FIXTURES)[number];
 
 /**
- * `cell`: the XLSX cell typing starts in, reached with the arrow keys. The
- * large file's E3 feeds its formulas.
+ * `cell`: the XLSX cell typing starts in, reached with the arrow keys, and
+ * the cell a co-editor writes. The large file's E3 feeds its formulas.
  * `text`: a point in a text box on the first PPTX slide, as fractions of the
- * slide (the small deck's title, the large deck's body text).
+ * slide (the small deck's title, the large deck's body text); `end`: the same
+ * on the last slide with text (the small deck's title, the references).
  */
 const FIXTURES = [
   { format: 'docx', id: 'bio-office-docx', name: 'exchange-plan.docx' },
@@ -146,12 +159,14 @@ const FIXTURES = [
     name: 'large-gradebook.xlsx',
   },
   {
+    end: { slide: 20, x: 0.5, y: 0.5 },
     format: 'pptx',
     id: 'bio-office-pptx',
     name: 'lecture.pptx',
     text: { x: 0.5, y: 0.456 },
   },
   {
+    end: { slide: 83, x: 0.5, y: 0.5 },
     format: 'pptx',
     id: 'bio-office-pptx-long',
     name: 'jp_llm2.pptx',
@@ -173,30 +188,92 @@ const TYPED = {
 interface RuntimeMessage {
   analysis?: OfficeAnalysis;
   at: number;
+  /** An `error`'s text. */
+  message?: string;
   timings?: OfficeReadyTimings;
   type: string;
 }
 
+/** The mock collaboration rooms (src/mocks/collaboration.ts), as the
+ * load-test build exposes them to the co-editor case. */
+interface MockRoom {
+  document: Y.Doc;
+  target: { id: string; kind: 'material' | 'source' };
+}
+
 declare global {
   interface Window {
+    __capyMockRooms?: Map<string, MockRoom>;
     __officeBench: { clicks: number[]; messages: RuntimeMessage[] };
     __officeKeys: { keys: number[]; presents: number[] };
+    __officeKeysInstalled?: boolean;
+    __officeUpdateReceipts: number[];
+    __officeRemote: {
+      ends: number[];
+      frames: number[];
+      longTasks: { duration: number; start: number }[];
+      posted: number[];
+      presents: number[];
+      /** Receipts before this probe (installHostProbe's array). */
+      receivedFrom: number;
+    };
     __officeWasm: WeakRef<WebAssembly.Memory>[];
+    __officeWasmModules: {
+      memory: WeakRef<WebAssembly.Memory>;
+      names: string[];
+    }[];
   }
 }
 
 /**
+ * A WASM module's name from its export names: its wasm-bindgen classes
+ * (`__wbg_<class>_free`), else its first own export. The same in the page and
+ * in workers, where no URL is at hand.
+ */
+function moduleLabel(names: string[]) {
+  const classes = [
+    ...new Set(
+      names.flatMap((name) => /^__wbg_(\w+?)_free$/.exec(name)?.[1] ?? [])
+    ),
+  ].sort();
+  if (classes.length) return classes.join('+');
+  return (
+    names.find((name) => !name.startsWith('__') && name !== 'memory') ??
+    'unknown'
+  );
+}
+
+/** MB per module label. */
+function byModule(memories: { bytes: number; names: string[] }[]) {
+  const bytes: Record<string, number> = {};
+  for (const memory of memories) {
+    const label = moduleLabel(memory.names);
+    bytes[label] = (bytes[label] ?? 0) + memory.bytes;
+  }
+  return Object.fromEntries(
+    Object.entries(bytes).map(([label, total]) => [label, mb(total)])
+  );
+}
+
+/**
  * Every frame: keep a weak handle on each WASM instance's exported memory,
- * which CDP's heap figures leave out.
+ * which CDP's heap figures leave out, with the instance's export names.
  */
 async function installWasmProbe(page: Page) {
   await page.addInitScript(() => {
     const memories: WeakRef<WebAssembly.Memory>[] = [];
+    const modules: Window['__officeWasmModules'] = [];
     window.__officeWasm = memories;
+    window.__officeWasmModules = modules;
     const keep = (instance: WebAssembly.Instance) => {
       for (const value of Object.values(instance.exports))
-        if (value instanceof WebAssembly.Memory)
+        if (value instanceof WebAssembly.Memory) {
           memories.push(new WeakRef(value));
+          modules.push({
+            memory: new WeakRef(value),
+            names: Object.keys(instance.exports),
+          });
+        }
     };
     const instantiate = WebAssembly.instantiate.bind(WebAssembly);
     const streaming = WebAssembly.instantiateStreaming.bind(WebAssembly);
@@ -236,16 +313,32 @@ async function installHostProbe(page: Page) {
       () => probe.clicks.push(performance.now()),
       true
     );
+    // In the runtime frame: when each host `update` reaches it. Registered
+    // here, before any page script, this listener runs before the runtime's
+    // own (a window's message listeners run in registration order, capturing
+    // or not: measured on 2026-10-06), so it marks the receipt.
+    const receipts: number[] = [];
+    window.__officeUpdateReceipts = receipts;
+    window.addEventListener('message', (event) => {
+      if (
+        window.parent !== window &&
+        event.source === window.parent &&
+        (event.data as { type?: unknown })?.type === 'update'
+      )
+        receipts.push(performance.now());
+    });
     window.addEventListener('message', (event) => {
       const data = event.data as Partial<RuntimeMessage>;
       if (
         data?.type === 'ready' ||
         data?.type === 'collaboration-ready' ||
-        data?.type === 'update'
+        data?.type === 'update' ||
+        data?.type === 'error'
       )
         probe.messages.push({
           analysis: data.analysis,
           at: performance.now(),
+          message: data.message,
           timings: data.timings,
           type: data.type,
         });
@@ -316,44 +409,255 @@ function runtimeFrame(page: Page): Frame {
 
 const mb = (bytes: number) => Math.round((bytes / 1024 / 1024) * 10) / 10;
 
+// The runner the numbers come from: CI's ubuntu-24.04 pool mixes CPU models.
+const RUNNER = { cpuModel: cpus()[0]?.model ?? 'unknown', cpus: cpus().length };
+
+const browserSessions = new WeakMap<Browser, Promise<CDPSession>>();
+
+/** Per CDP call to a worker; one that does not answer is reported missing. */
+const WORKER_CALL_MS = 5000;
+
 /**
- * The page isolate's retained heap after a GC (runtime frame included) and the
- * WASM linear memory still alive in any frame.
+ * Each dedicated worker of the page's context (the DOCX engine and its
+ * helpers): JS heap after a GC and its WASM memories, overall and per module.
+ * Playwright gives workers no CDP session, so a browser session attaches to
+ * each one unflattened and talks through Target.sendMessageToTarget. A
+ * worker that ends or stops answering on the way is listed as missing, never
+ * waited on (every call is bounded, a detach fails what is pending).
  */
-async function heap(page: Page) {
+async function workerHeaps(page: Page) {
+  const browser = page.context().browser();
+  if (!browser) throw new Error('No browser to attach to workers');
+  let pending = browserSessions.get(browser);
+  if (!pending) {
+    pending = browser.newBrowserCDPSession();
+    browserSessions.set(browser, pending);
+  }
+  const session = await pending;
+  const { targetInfo: own } = await (await cdpSession(page)).send(
+    'Target.getTargetInfo'
+  );
+  const { targetInfos } = await session.send('Target.getTargets');
+  const workers = targetInfos.filter(
+    (target) =>
+      target.type === 'worker' &&
+      target.browserContextId === own.browserContextId
+  );
+  const out = [];
+  for (const worker of workers) {
+    const named = {
+      name: worker.title,
+      url: worker.url.split('/').at(-1) ?? worker.url,
+    };
+    let sessionId: string;
+    try {
+      ({ sessionId } = await session.send('Target.attachToTarget', {
+        flatten: false,
+        targetId: worker.targetId,
+      }));
+    } catch (error) {
+      // Ended since the listing.
+      out.push({ ...named, missing: String(error).slice(0, 200) });
+      continue;
+    }
+    const replies = new Map<
+      number,
+      (reply: { error?: { message: string }; result?: unknown }) => void
+    >();
+    let nextId = 0;
+    let detached = false;
+    const onMessage = (event: { message: string; sessionId?: string }) => {
+      if (event.sessionId !== sessionId) return;
+      const reply = JSON.parse(event.message) as {
+        error?: { message: string };
+        id?: number;
+        result?: unknown;
+      };
+      if (reply.id !== undefined) replies.get(reply.id)?.(reply);
+    };
+    const onDetached = (event: { sessionId: string }) => {
+      if (event.sessionId !== sessionId) return;
+      detached = true;
+      for (const reply of [...replies.values()])
+        reply({ error: { message: 'worker ended' } });
+    };
+    session.on('Target.receivedMessageFromTarget', onMessage);
+    session.on('Target.detachedFromTarget', onDetached);
+    const send = <T>(method: string, params: object = {}) =>
+      new Promise<T>((resolve, reject) => {
+        if (detached) return reject(new Error(`${method}: worker ended`));
+        const id = ++nextId;
+        const timer = setTimeout(
+          () =>
+            settle({ error: { message: `no answer in ${WORKER_CALL_MS} ms` } }),
+          WORKER_CALL_MS
+        );
+        const settle = (reply: {
+          error?: { message: string };
+          result?: unknown;
+        }) => {
+          clearTimeout(timer);
+          replies.delete(id);
+          if (reply.error)
+            reject(new Error(`${method}: ${reply.error.message}`));
+          else resolve(reply.result as T);
+        };
+        replies.set(id, settle);
+        session
+          .send('Target.sendMessageToTarget', {
+            message: JSON.stringify({ id, method, params }),
+            sessionId,
+          })
+          .catch((error: unknown) =>
+            settle({ error: { message: String(error) } })
+          );
+      });
+    // Every live object with the prototype `expression`, mapped in the worker.
+    const query = async <T>(expression: string, map: string) => {
+      const prototype = await send<{ result: { objectId: string } }>(
+        'Runtime.evaluate',
+        { expression, objectGroup: 'office-bench' }
+      );
+      const { objects } = await send<{ objects: { objectId: string } }>(
+        'Runtime.queryObjects',
+        {
+          objectGroup: 'office-bench',
+          prototypeObjectId: prototype.result.objectId,
+        }
+      );
+      const mapped = await send<{ result: { value: T } }>(
+        'Runtime.callFunctionOn',
+        {
+          functionDeclaration: `function () { return this.map(${map}); }`,
+          objectId: objects.objectId,
+          returnByValue: true,
+        }
+      );
+      return mapped.result.value;
+    };
+    try {
+      await send('HeapProfiler.collectGarbage');
+      const usage = await send<{ usedSize: number }>('Runtime.getHeapUsage');
+      const memories = await query<number[]>(
+        'WebAssembly.Memory.prototype',
+        '(memory) => memory.buffer.byteLength'
+      );
+      const instances = await query<{ bytes: number; names: string[] }[]>(
+        'WebAssembly.Instance.prototype',
+        `(instance) => ({
+          bytes: Object.values(instance.exports)
+            .filter((value) => value instanceof WebAssembly.Memory)
+            .reduce((sum, memory) => sum + memory.buffer.byteLength, 0),
+          names: Object.keys(instance.exports),
+        })`
+      );
+      const wasmMB = mb(memories.reduce((sum, bytes) => sum + bytes, 0));
+      const wasmModules = byModule(instances);
+      out.push({
+        ...named,
+        jsMB: mb(usage.usedSize),
+        // Memories no module exports (created in JS and imported), or, when
+        // negative, one memory exported by several instances.
+        unattributedMB: unattributed(wasmMB, wasmModules),
+        wasmMB,
+        wasmModules,
+      });
+    } catch (error) {
+      out.push({ ...named, missing: String(error).slice(0, 200) });
+    } finally {
+      session.off('Target.receivedMessageFromTarget', onMessage);
+      session.off('Target.detachedFromTarget', onDetached);
+      // Already gone when the worker ended.
+      if (!detached)
+        await session
+          .send('Target.detachFromTarget', { sessionId })
+          .catch(() => undefined);
+    }
+  }
+  return out;
+}
+
+const unattributed = (total: number, modules: Record<string, number>) =>
+  Math.round(
+    (total - Object.values(modules).reduce((sum, value) => sum + value, 0)) *
+      10
+  ) / 10;
+
+/**
+ * The page isolate's retained heap after a GC (runtime frame included), the
+ * WASM linear memory still alive in any frame, and the workers' (above).
+ */
+async function heap(page: Page, { workers: withWorkers = true } = {}) {
   const session = await cdpSession(page);
   await session.send('HeapProfiler.collectGarbage');
   const usage = await session.send('Runtime.getHeapUsage');
   const { documents } = await session.send('Memory.getDOMCounters');
   let wasm = 0;
-  for (const frame of page.frames())
-    wasm += await frame.evaluate(() => {
-      const live = new Set(
+  const modules: { bytes: number; names: string[] }[] = [];
+  for (const frame of page.frames()) {
+    const live = await frame.evaluate(() => {
+      const memories = new Set(
         (window.__officeWasm ?? []).map((ref) => ref.deref()).filter(Boolean)
       );
-      return [...live].reduce(
-        (sum, memory) => sum + memory!.buffer.byteLength,
-        0
-      );
+      const seen = new Set<WebAssembly.Memory>();
+      const modules = [];
+      for (const { memory: ref, names } of window.__officeWasmModules ?? []) {
+        const memory = ref.deref();
+        if (!memory || seen.has(memory)) continue;
+        seen.add(memory);
+        modules.push({ bytes: memory.buffer.byteLength, names });
+      }
+      return {
+        bytes: [...memories].reduce(
+          (sum, memory) => sum + memory!.buffer.byteLength,
+          0
+        ),
+        modules,
+      };
     });
+    wasm += live.bytes;
+    modules.push(...live.modules);
+  }
+  // Not before a budgeted step: a forced GC and object queries in the
+  // engine worker would change what the budgets were calibrated under.
+  const workers = withWorkers ? await workerHeaps(page) : null;
+  const wasmModules = byModule(modules);
   return {
     // ArrayBuffers and external strings; WASM memory is not among them.
     backingMB: mb(usage.backingStorageSize),
     // Live documents in the renderer: a closed frame that stays counted leaks.
     documents,
     jsMB: mb(usage.usedSize),
+    // The frames' WASM (the page's main thread), in all and per module.
     wasmMB: mb(wasm),
+    wasmModules,
+    unattributedWasmMB: unattributed(mb(wasm), wasmModules),
+    // null: not read at this step (see above).
+    workers,
+    workersJsMB: workers &&
+      sum(workers.map((worker) => ('jsMB' in worker ? worker.jsMB : 0))),
+    workersMissing:
+      workers && workers.filter((worker) => 'missing' in worker).length,
+    workersWasmMB:
+      workers &&
+      sum(workers.map((worker) => ('wasmMB' in worker ? worker.wasmMB : 0))),
   };
 }
 
 type Heap = Awaited<ReturnType<typeof heap>>;
 
+const sum = (values: number[]) =>
+  Math.round(values.reduce((total, value) => total + value, 0) * 10) / 10;
 const delta = (a: number, b: number) => Math.round((a - b) * 10) / 10;
+const deltaOf = (a: number | null, b: number | null) =>
+  a === null || b === null ? null : delta(a, b);
 const growth = (to: Heap, from: Heap) => ({
   backingMB: delta(to.backingMB, from.backingMB),
   documents: to.documents - from.documents,
   jsMB: delta(to.jsMB, from.jsMB),
   wasmMB: delta(to.wasmMB, from.wasmMB),
+  workersJsMB: deltaOf(to.workersJsMB, from.workersJsMB),
+  workersWasmMB: deltaOf(to.workersWasmMB, from.workersWasmMB),
 });
 
 async function openWorkspace(page: Page) {
@@ -404,24 +708,28 @@ async function placeCaret(page: Page, frame: Frame, fixture: Fixture) {
       for (let step = 0; step < Math.abs(delta); step += 1)
         await page.keyboard.press(delta < 0 ? back : forward);
     await expect(nameBox).toHaveValue(fixture.cell);
-  } else {
-    const canvas = frame.getByTestId('pptx-slide-canvas');
-    const box = await canvas.boundingBox();
-    if (!box) throw new Error('Slide is not laid out');
-    // A first click selects the shape; a double click selects a word in it.
-    await canvas.click({
-      clickCount: 2,
-      position: {
-        x: box.width * fixture.text.x,
-        y: box.height * fixture.text.y,
-      },
-    });
-    // The hidden input takes text only with a caret in a text story.
-    const input = frame.getByTestId('pptx-text-input');
-    await expect(input).toBeFocused();
-    await expect(input).not.toHaveAttribute('readonly');
-    await page.keyboard.press('ControlOrMeta+End');
-  }
+  } else await placeInText(page, frame, fixture.text);
+}
+
+/** PPTX: a caret at the end of the text box at `point` on the current slide. */
+async function placeInText(
+  page: Page,
+  frame: Frame,
+  point: { x: number; y: number }
+) {
+  const canvas = frame.getByTestId('pptx-slide-canvas');
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error('Slide is not laid out');
+  // A first click selects the shape; a double click selects a word in it.
+  await canvas.click({
+    clickCount: 2,
+    position: { x: box.width * point.x, y: box.height * point.y },
+  });
+  // The hidden input takes text only with a caret in a text story.
+  const input = frame.getByTestId('pptx-text-input');
+  await expect(input).toBeFocused();
+  await expect(input).not.toHaveAttribute('readonly');
+  await page.keyboard.press('ControlOrMeta+End');
 }
 
 function cellAt(a1: string) {
@@ -431,33 +739,68 @@ function cellAt(a1: string) {
   return { col, row: Number(match[2]) };
 }
 
-/** Keys at a fixed cadence; each key's delay to its painted frame. */
-async function typeAndTime(page: Page, fixture: Fixture) {
-  const frame = runtimeFrame(page);
-  await placeCaret(page, frame, fixture);
+/**
+ * From where the start typing left off, to the end of the file: the end of
+ * the DOCX body, the last used row of the XLSX column, the end of a text box
+ * on the last PPTX slide with text. Returns where typing goes.
+ */
+async function placeCaretAtEnd(page: Page, frame: Frame, fixture: Fixture) {
+  if (fixture.format === 'docx') {
+    await page.keyboard.press('ControlOrMeta+End');
+    return 'body end';
+  }
+  if (fixture.format === 'xlsx') {
+    // Commit the open cell edit, then jump to the column's last used row.
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('ControlOrMeta+ArrowDown');
+    const nameBox = frame.getByTestId('xlsx-name-box');
+    await expect
+      .poll(async () => cellAt(await nameBox.inputValue()).row)
+      .toBeGreaterThan(cellAt(fixture.cell).row + 1);
+    return nameBox.inputValue();
+  }
+  const slide = frame
+    .locator('aside')
+    .getByRole('button')
+    .nth(fixture.end.slide - 1);
+  await slide.click();
+  await expect(slide).toHaveAttribute('aria-current', 'page');
+  await placeInText(page, frame, fixture.end);
+  return `slide ${fixture.end.slide}`;
+}
+
+/**
+ * Keys at a fixed cadence from the caret where it is; each key's delay to
+ * its painted frame.
+ */
+async function timeKeys(page: Page, frame: Frame, fixture: Fixture) {
   await page.waitForTimeout(1000);
   await frame.evaluate((format) => {
-    const probe = { keys: [] as number[], presents: [] as number[] };
-    window.__officeKeys = probe;
+    window.__officeKeys = { keys: [], presents: [] };
+    // Once per frame: a second pass reuses the listeners with fresh arrays.
+    if (window.__officeKeysInstalled) return;
+    window.__officeKeysInstalled = true;
+    const probe = () => window.__officeKeys;
     if (format === 'docx') {
       window.addEventListener(
         'keydown',
-        () => probe.keys.push(performance.now()),
+        () => probe().keys.push(performance.now()),
         true
       );
       document.addEventListener('docx-pages-presented', () =>
-        probe.presents.push(performance.now())
+        probe().presents.push(performance.now())
       );
       return;
     }
     // The first task after the next frame, rescheduled by each of the key's
     // events, so the latest wins: presents[i] belongs to keys[i].
     const afterFrame = () => {
-      const key = probe.keys.length - 1;
+      const keys = probe();
+      const key = keys.keys.length - 1;
       requestAnimationFrame(() => {
         const channel = new MessageChannel();
         channel.port1.onmessage = () => {
-          probe.presents[key] = performance.now();
+          keys.presents[key] = performance.now();
         };
         channel.port2.postMessage(null);
       });
@@ -465,7 +808,7 @@ async function typeAndTime(page: Page, fixture: Fixture) {
     window.addEventListener(
       'keydown',
       () => {
-        probe.keys.push(performance.now());
+        probe().keys.push(performance.now());
         afterFrame();
       },
       true
@@ -509,6 +852,217 @@ async function typeAndTime(page: Page, fixture: Fixture) {
     keyToFrameP50Ms: Math.round(percentile(painted, 50)),
     keyToFrameP90Ms: Math.round(percentile(painted, 90)),
     unpaintedKeys: lags.length - painted.length,
+  };
+}
+
+/** Keys at a fixed cadence from the start of the file (placeCaret). */
+async function typeAndTime(page: Page, fixture: Fixture) {
+  const frame = runtimeFrame(page);
+  await placeCaret(page, frame, fixture);
+  return timeKeys(page, frame, fixture);
+}
+
+const REMOTE_EDITS = 10;
+
+/**
+ * A co-editor's edit, as the mock room itself (its own Yjs client) authors
+ * it: every participant, the host's source document among them, receives it
+ * as remote, and the host forwards it to the runtime frame. Near the start of
+ * the file, so it lands on the visible page, grid or slide: `peer ` inside the
+ * first text run of the DOCX body or of the first PPTX slide's first text, or
+ * a number in the fixture's XLSX cell (a base cell override, as the editor
+ * stores one).
+ */
+async function remoteEdit(page: Page, fixture: Fixture, edit: number) {
+  const a1 = fixture.format === 'xlsx' ? cellAt(fixture.cell) : null;
+  return page.evaluate(
+    ({ a1, edit, format, id }) => {
+      const room = [...(window.__capyMockRooms?.values() ?? [])].find(
+        (candidate) =>
+          candidate.target.kind === 'source' && candidate.target.id === id
+      );
+      if (!room) throw new Error(`No source room for ${id}`);
+      const doc = room.document;
+      let bytes = 0;
+      const count = (update: Uint8Array) => {
+        bytes += update.byteLength;
+      };
+      doc.on('update', count);
+      // Inside a story's first text run of two characters or more, which
+      // keeps the text's own formatting and stays clear of the paragraph
+      // marks (a DOCX or PPTX story ends with one).
+      const insertInRun = (text: Y.Text) => {
+        let at = 0;
+        for (const op of text.toDelta() as { insert: unknown }[]) {
+          if (typeof op.insert === 'string' && op.insert.length >= 2) {
+            text.insert(at + 1, 'peer ');
+            return true;
+          }
+          at += typeof op.insert === 'string' ? op.insert.length : 1;
+        }
+        return false;
+      };
+      doc.transact(() => {
+        if (format === 'docx') {
+          if (!insertInRun(doc.getMap('stories').get('body') as Y.Text))
+            throw new Error('No DOCX text run to edit');
+          return;
+        }
+        if (format === 'pptx') {
+          const first = doc.getArray<string>('pptx:slide-order').get(0);
+          const stories = doc.getMap<Y.Text>('pptx:stories');
+          const edited = [...stories.keys()]
+            .sort()
+            .filter((key) => key.startsWith(`story:${first}:`))
+            .some((key) => insertInRun(stories.get(key)!));
+          if (!edited) throw new Error('No PPTX text on the first slide');
+          return;
+        }
+        const sheet = doc.getArray<string>('xlsx:sheet-order').get(0);
+        const contents = (
+          doc.getMap<Y.Map<unknown>>('xlsx:sheets').get(sheet) as Y.Map<unknown>
+        ).get('contents') as Y.Map<string>;
+        // The engine's stable cell key: base row and column points, 0-based,
+        // in this key order (the key is compared as text).
+        contents.set(
+          JSON.stringify([
+            { run: 'base', offset: a1!.row - 1 },
+            { run: 'base', offset: a1!.col - 1 },
+          ]),
+          JSON.stringify({
+            formula: null,
+            value: { kind: 'number', value: 60 + edit },
+          })
+        );
+      }, 'office-bench-peer');
+      doc.off('update', count);
+      return bytes;
+    },
+    { a1, edit, format: fixture.format, id: fixture.id }
+  );
+}
+
+/**
+ * Remote edits one at a time, each to its frame in the open editor. In the
+ * runtime frame, per edit:
+ * - `queue`: from the host's postMessage (the event's timestamp) to the
+ *   frame starting to handle it: the rest of the host's task, which shares
+ *   the renderer's main thread, and the wait for the frame's turn;
+ * - `apply`: from that receipt to the end of the runtime's synchronous
+ *   handler: the receipt is taken by a listener the init script registered
+ *   before the runtime's (installHostProbe), the end by one registered after
+ *   it. For XLSX and PPTX that is the editor's apply; for DOCX only the
+ *   hand-off to the engine worker (`applyScope`);
+ * - `toFrame`: from receipt to the next `docx-pages-presented` (DOCX, a real
+ *   paint) or to the first task after the next animation frame (XLSX, PPTX:
+ *   the next frame, which an asynchronous render could miss; `frameSignal`);
+ * - `longTask`: main-thread long tasks from the postMessage to that frame.
+ */
+async function timeRemoteEdits(page: Page, fixture: Fixture) {
+  const frame = runtimeFrame(page);
+  await frame.evaluate((format) => {
+    const probe: Window['__officeRemote'] = {
+      ends: [],
+      frames: [],
+      longTasks: [],
+      posted: [],
+      presents: [],
+      receivedFrom: window.__officeUpdateReceipts.length,
+    };
+    window.__officeRemote = probe;
+    const nextTask = (then: () => void) => {
+      const channel = new MessageChannel();
+      channel.port1.onmessage = then;
+      channel.port2.postMessage(null);
+    };
+    const isUpdate = (event: MessageEvent) =>
+      (event.data as { type?: unknown })?.type === 'update';
+    // After the runtime's listener: the end of its synchronous handling.
+    window.addEventListener('message', (event) => {
+      if (!isUpdate(event)) return;
+      probe.posted.push(event.timeStamp);
+      const index = probe.ends.push(performance.now()) - 1;
+      if (format !== 'docx')
+        requestAnimationFrame(() =>
+          nextTask(() => {
+            probe.frames[index] = performance.now();
+          })
+        );
+    });
+    document.addEventListener('docx-pages-presented', () =>
+      probe.presents.push(performance.now())
+    );
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries())
+        probe.longTasks.push({
+          duration: entry.duration,
+          start: entry.startTime,
+        });
+    }).observe({ type: 'longtask' });
+  }, fixture.format);
+  const updateBytes: number[] = [];
+  for (let edit = 0; edit < REMOTE_EDITS; edit += 1) {
+    updateBytes.push(await remoteEdit(page, fixture, edit));
+    await frame
+      .waitForFunction(
+        ({ edit, format }) => {
+          const { frames, presents, receivedFrom } = window.__officeRemote;
+          const at = window.__officeUpdateReceipts[receivedFrom + edit];
+          if (at === undefined) return false;
+          return format === 'docx'
+            ? presents.some((present) => present > at)
+            : frames[edit] !== undefined;
+        },
+        { edit, format: fixture.format },
+        { polling: 50, timeout: 30_000 }
+      )
+      .catch(() => undefined);
+    await page.waitForTimeout(500);
+  }
+  const edits = await frame.evaluate((format) => {
+    const { ends, frames, longTasks, posted, presents, receivedFrom } =
+      window.__officeRemote;
+    const received = window.__officeUpdateReceipts.slice(receivedFrom);
+    return received.map((at, index) => {
+      const framed =
+        format === 'docx'
+          ? presents.find((present) => present > at)
+          : frames[index];
+      const until = framed ?? ends[index] ?? at;
+      return {
+        applyMs: ends[index] === undefined ? null : ends[index] - at,
+        longTaskMs: longTasks
+          .filter(
+            ({ start }) => start >= posted[index] - 1 && start < until
+          )
+          .reduce((sum, { duration }) => sum + duration, 0),
+        queueMs: at - posted[index],
+        toFrameMs: framed === undefined ? null : framed - at,
+      };
+    });
+  }, fixture.format);
+  const stats = (values: (number | null)[]) => {
+    const known = values.filter((value): value is number => value !== null);
+    return {
+      maxMs: Math.round(Math.max(0, ...known)),
+      p50Ms: Math.round(percentile(known, 50)),
+      p90Ms: Math.round(percentile(known, 90)),
+    };
+  };
+  return {
+    apply: stats(edits.map((edit) => edit.applyMs)),
+    applyScope:
+      fixture.format === 'docx' ? 'handoff only' : 'synchronous apply',
+    // Remote updates the runtime received (one per edit).
+    arrived: edits.length,
+    edits: REMOTE_EDITS,
+    frameSignal:
+      fixture.format === 'docx' ? 'docx-pages-presented' : 'next frame',
+    longTask: stats(edits.map((edit) => edit.longTaskMs)),
+    queue: stats(edits.map((edit) => edit.queueMs)),
+    toFrame: stats(edits.map((edit) => edit.toFrameMs)),
+    unframed: edits.filter((edit) => edit.toFrameMs === null).length,
+    updateBytes: Math.max(0, ...updateBytes),
   };
 }
 
@@ -586,7 +1140,8 @@ for (const fixture of FIXTURES) {
 
     const open = await openInView(page, fixture);
     await page.waitForTimeout(2000);
-    const openHeap = await heap(page);
+    // Page only until the budgeted steps are done (heap(), workers).
+    const openHeap = await heap(page, { workers: false });
 
     const mode = page.getByRole('button', { name: m.material_mode() });
     await expect(mode).toBeEnabled({ timeout: 60_000 });
@@ -600,10 +1155,17 @@ for (const fixture of FIXTURES) {
     const edit = { ...replica, firstPaintMs: painted.ms };
     // Let the edit frame's idle work (mirror, glyph cache) settle first.
     await page.waitForTimeout(5000);
-    const editHeap = await heap(page);
+    const editHeap = await heap(page, { workers: false });
     const typing = await typeAndTime(page, fixture);
     await page.waitForTimeout(2000);
     const typingHeap = await heap(page);
+    // Report-only: the same keys at the end of the file, where the DOCX
+    // engine has no later pages to lay out again.
+    const frame = runtimeFrame(page);
+    const endAt = await placeCaretAtEnd(page, frame, fixture);
+    const typingEnd = await timeKeys(page, frame, fixture);
+    await page.waitForTimeout(2000);
+    const typingEndHeap = await heap(page);
 
     const budget = budgetOf(MEDIANS[fixture.id]);
     await reportMetrics(
@@ -627,9 +1189,12 @@ for (const fixture of FIXTURES) {
           afterEdit: editHeap,
           afterOpen: openHeap,
           afterTyping: typingHeap,
+          afterTypingEnd: typingEndHeap,
         },
         open: { firstPaintMs: open.ms, runtime: open.runtime },
+        runner: RUNNER,
         typing: { ...typing, cadenceMs: KEY_CADENCE_MS },
+        typingEnd: { ...typingEnd, at: endAt, cadenceMs: KEY_CADENCE_MS },
         units: open.units,
         workerFallbacks: fallbacks.length,
       },
@@ -640,6 +1205,8 @@ for (const fixture of FIXTURES) {
     expect(painted.runtime).not.toBeNull();
     expect(typing.unpaintedKeys).toBe(0);
     expect(typing.edits).toBeGreaterThan(0);
+    expect(typingEnd.unpaintedKeys).toBe(0);
+    expect(typingEnd.edits).toBeGreaterThan(0);
     expect(fallbacks).toEqual([]);
     expect.soft(open.ms).toBeLessThanOrEqual(budget.openFirstPaintMs);
     expect.soft(edit.ms).toBeLessThanOrEqual(budget.editReadyMs);
@@ -649,6 +1216,59 @@ for (const fixture of FIXTURES) {
     expect
       .soft(typing.keyToFrameP90Ms)
       .toBeLessThanOrEqual(budget.keyToFrameP90Ms);
+  });
+
+  // A second peer's edits while the measured editor is open: what applying a
+  // remote update costs the editor's main thread (the XLSX editor rebuilds
+  // the workbook for one), on its own page so typing stays comparable.
+  test(`${fixture.format} ${fixture.name}: co-editor remote edits`, async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(600_000);
+    await openInView(page, fixture);
+    const mode = page.getByRole('button', { name: m.material_mode() });
+    await expect(mode).toBeEnabled({ timeout: 60_000 });
+    await clickUntil(
+      page,
+      fixture.format === 'docx' ? ['ready'] : ['ready', 'collaboration-ready'],
+      () => mode.click()
+    );
+    await page.waitForTimeout(5000);
+    // Report-only case: the workers' memory after View to Edit is read here,
+    // where no budget follows.
+    const editHeap = await heap(page);
+    await page.waitForTimeout(2000);
+    const remote = await timeRemoteEdits(page, fixture);
+    await page.waitForTimeout(2000);
+    const errors = await page.evaluate(() =>
+      window.__officeBench.messages
+        .filter((message) => message.type === 'error')
+        .map((message) => message.message)
+    );
+    await reportMetrics(
+      testInfo,
+      `office-${fixture.format}-${fixture.id}-co-editor`,
+      {
+        budget: 'report-only',
+        errors,
+        fixture: fixture.name,
+        heap: { afterEdit: editHeap, afterRemoteEdits: await heap(page) },
+        remote,
+        runner: RUNNER,
+      },
+      'unthrottled'
+    );
+    expect(errors).toEqual([]);
+    expect(remote.arrived).toBe(REMOTE_EDITS);
+    expect(remote.unframed).toBe(0);
+    // The sheet's own reading of the peer's last value.
+    if (fixture.format === 'xlsx') {
+      const frame = runtimeFrame(page);
+      await placeCaret(page, frame, fixture);
+      await expect(frame.getByTestId('xlsx-formula-input')).toHaveValue(
+        String(60 + REMOTE_EDITS - 1)
+      );
+    }
   });
 
   // The view-mode creep item (todo-office.md): heap growth over two full
@@ -682,6 +1302,7 @@ for (const fixture of FIXTURES) {
           afterSecondPass: second,
         },
         passMs,
+        runner: RUNNER,
         secondPassGrowth: growth(second, first),
       },
       'unthrottled'
@@ -737,6 +1358,7 @@ for (const fixture of CYCLED)
         // each for about ten cycles while V8 optimizes host code, then level
         // off (openwiki/editor-perf.md).
         growthAfterFirstClose: growth(afterClose.at(-1)!, afterClose[0]),
+        runner: RUNNER,
       },
       'unthrottled'
     );
