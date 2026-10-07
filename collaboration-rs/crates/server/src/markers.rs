@@ -100,16 +100,7 @@ pub fn pending(doc: &Doc) -> bool {
 
 /// The items of the live markers, which a stored row carries deleted.
 pub fn live_items(doc: &Doc) -> Vec<ID> {
-    let txn = doc.transact();
-    let Some(branch) = txn.get_map(ydoc::CONTRIBUTORS_ROOT) else {
-        return Vec::new();
-    };
-    let branch: &yrs::branch::Branch = branch.as_ref();
-    branch
-        .map_items()
-        .filter(|(_, item)| !item.is_deleted())
-        .map(|(_, item)| *item.id())
-        .collect()
+    ydoc::live_markers(&doc.transact())
 }
 
 /// `assertUpdatePreservesContributors`: a client update may not add, replace

@@ -2972,6 +2972,7 @@ dependencies = [
  "deadpool-postgres",
  "indexmap",
  "memory-stats",
+ "notes",
  "redis",
  "reqwest",
  "rlimit",

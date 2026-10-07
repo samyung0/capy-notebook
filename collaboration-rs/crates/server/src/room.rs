@@ -87,6 +87,36 @@ pub enum RoomCmd {
     Unload(oneshot::Sender<()>),
     /// The Office maintenance pause flushed this room (true) or ended.
     SetPaused(bool),
+    /// The room's whole state (a server edit merges the live room).
+    Snapshot(oneshot::Sender<Vec<u8>>),
+    /// A server edit committed beside the room's stores.
+    ServiceEdit(Box<ServiceEdit>),
+    /// A children pass for an update this room holds (`children.rs`).
+    ChildPass(Box<ChildPass>),
+    /// The API's answer to the running pass.
+    ChildAnswer {
+        pass: Box<ChildPass>,
+        plan: notes::children::ChildPlan,
+        answer: Result<(notes::children::ChildAnswer, bool), String>,
+    },
+}
+
+/// An update that wrote child ids, the writer it is attributed to, and the
+/// channel to tell when storage refused a copy.
+pub struct ChildPass {
+    pub actor: String,
+    pub update: Vec<u8>,
+    pub notify: Option<MemberKey>,
+}
+
+/// A server edit (an agent edit or Undo, a command) committed as its own row:
+/// what the live room lacks of it, the stored cover it makes, and the
+/// note's stored version or the source's checkpoint it reached.
+pub struct ServiceEdit {
+    pub update: Vec<u8>,
+    pub durable: ydoc::Durable,
+    pub version: u64,
+    pub row_bytes: usize,
 }
 
 struct Member {
@@ -217,6 +247,9 @@ pub struct Room {
     view_dirty: bool,
     /// A source epoch ended: the room unloads without storing, then answers.
     forced_unload: Vec<oneshot::Sender<()>>,
+    /// Children passes waiting, and whether one waits on the API.
+    child_passes: std::collections::VecDeque<ChildPass>,
+    child_running: bool,
 }
 
 /// Spawns a room task; its handle goes into the registry. `actor` is the
@@ -411,6 +444,8 @@ async fn run(
         view,
         view_dirty: true,
         forced_unload: Vec::new(),
+        child_passes: std::collections::VecDeque::new(),
+        child_running: false,
     };
     let log_bytes = match &room.kind {
         Kindly::Note(note) => note.log_bytes,
@@ -520,6 +555,8 @@ impl Room {
             return self.members.is_empty() && !self.store.running;
         }
         self.members.is_empty()
+            && self.child_passes.is_empty()
+            && !self.child_running
             && !self.store.dirty
             && !self.store.running
             && self.store.retry_at.is_none()
@@ -656,7 +693,180 @@ impl Room {
                     source.paused = paused;
                 }
             }
+            RoomCmd::Snapshot(reply) => {
+                let state = self
+                    .doc
+                    .transact()
+                    .encode_state_as_update_v1(&StateVector::default());
+                let _ = reply.send(state);
+            }
+            RoomCmd::ServiceEdit(edit) => self.service_edit(*edit),
+            RoomCmd::ChildPass(pass) => {
+                self.child_passes.push_back(*pass);
+                self.next_child_pass();
+            }
+            RoomCmd::ChildAnswer { pass, plan, answer } => self.child_answer(*pass, plan, answer),
         }
+    }
+
+    /// Starts the next waiting children pass: the update's child writes as
+    /// this room reads them, then the API call (one at a time, in order). A
+    /// pass with nothing to ask still tells editors which ids stayed.
+    fn next_child_pass(&mut self) {
+        if self.child_running {
+            return;
+        }
+        let Kindly::Note(note) = &self.kind else {
+            self.child_passes.clear();
+            return;
+        };
+        let material_id = note.material_id.clone();
+        while let Some(pass) = self.child_passes.pop_front() {
+            let plan = {
+                let txn = self.doc.transact();
+                let Ok(update) = ydoc::decode(&pass.update) else {
+                    continue;
+                };
+                let Some(writes) = notes::children::child_writes(&txn, &update) else {
+                    continue;
+                };
+                let Some(root) = txn.get_text(notes::plate::CONTENT_ROOT) else {
+                    continue;
+                };
+                notes::children::plan(root.as_ref(), &writes)
+            };
+            if plan.asset_ids.is_empty() && plan.blocks.is_empty() {
+                let kept = notes::children::kept_ids(&plan, &Default::default());
+                self.broadcast_children_ready(&kept);
+                continue;
+            }
+            let Some(handle) = self.own_handle() else {
+                return;
+            };
+            self.child_running = true;
+            let (app, material_id) = (self.app.clone(), material_id.clone());
+            tokio::spawn(async move {
+                let answer = crate::children::adopt(&app, &material_id, &pass.actor, &plan).await;
+                let _ = handle
+                    .tx
+                    .send(RoomCmd::ChildAnswer {
+                        pass: Box::new(pass),
+                        plan,
+                        answer,
+                    })
+                    .await;
+            });
+            return;
+        }
+    }
+
+    /// The API answered a pass: the sender hears a storage refusal, nodes
+    /// that moved are repointed or dropped as the writer's own change, and
+    /// every editor learns which ids stayed.
+    fn child_answer(
+        &mut self,
+        pass: ChildPass,
+        plan: notes::children::ChildPlan,
+        answer: Result<(notes::children::ChildAnswer, bool), String>,
+    ) {
+        self.child_running = false;
+        match answer {
+            Err(error) => {
+                observe::capture(
+                    &error,
+                    None,
+                    &[("room", &self.name), ("stage", "children_pass")],
+                );
+            }
+            Ok((answer, refused)) => {
+                if refused && let Some(key) = pass.notify {
+                    let payload = json!({ "reason": "storage", "type": "children-refused" });
+                    self.send(key, Kind::Stateless, &protocol::text(&payload.to_string()));
+                }
+                let moved = answer.assets.iter().any(|(from, to)| from != to)
+                    || plan.blocks.iter().any(|block| {
+                        answer.blocks.get(&block.block_id) != Some(&block.material_id)
+                    });
+                if moved {
+                    self.apply_children(&pass.actor, &answer);
+                }
+                let kept = notes::children::kept_ids(&plan, &answer);
+                self.broadcast_children_ready(&kept);
+            }
+        }
+        self.next_child_pass();
+    }
+
+    /// Repoints or drops the moved children as the writer's change, stored
+    /// with the room's next store.
+    fn apply_children(&mut self, actor: &str, answer: &notes::children::ChildAnswer) {
+        let context = Context {
+            access: Access::Write,
+            expires_at: i64::MAX,
+            token_id: "children-pass".into(),
+            user_id: actor.to_owned(),
+        };
+        if let Some(marker) = self.markers.write(&self.doc, &context) {
+            self.broadcast_update(None, marker);
+        }
+        let root = self.doc.get_or_insert_text(notes::plate::CONTENT_ROOT);
+        let mut txn = self.doc.transact_mut();
+        let applied = notes::children::apply(&mut txn, &root, answer);
+        let update = ydoc::committed_update(txn);
+        if let Err(error) = applied {
+            observe::capture(
+                &error.to_string(),
+                None,
+                &[("room", &self.name), ("stage", "children_pass")],
+            );
+        }
+        if !update.is_empty() {
+            self.content_changed();
+            self.broadcast_update(None, update);
+        }
+    }
+
+    fn broadcast_children_ready(&self, kept: &notes::children::KeptIds) {
+        let mut payload = serde_json::to_value(kept).unwrap_or_else(|_| json!({}));
+        payload["type"] = json!("children-ready");
+        self.broadcast_stateless(&payload.to_string());
+    }
+
+    /// A server edit reaches the editors; it is durable already, so the room
+    /// stays clean and its cover takes the edit's row in.
+    fn service_edit(&mut self, edit: ServiceEdit) {
+        let applied = ydoc::decode(&edit.update)
+            .map_err(|error| error.to_string())
+            .and_then(|update| ydoc::apply(&self.doc, update).map_err(|error| error.to_string()));
+        match applied {
+            Ok(update) => self.broadcast_update(None, update),
+            Err(error) => {
+                observe::capture(
+                    &error,
+                    None,
+                    &[("room", &self.name), ("stage", "service_edit")],
+                );
+                return;
+            }
+        }
+        self.durable.union(&edit.durable);
+        self.app
+            .stats
+            .log_bytes
+            .fetch_add(edit.row_bytes as u64, Ordering::Relaxed);
+        match &mut self.kind {
+            Kindly::Note(note) => {
+                note.stored_version = note.stored_version.max(edit.version as i64);
+                note.log_rows += 1;
+                note.log_bytes += edit.row_bytes as i64;
+            }
+            Kindly::Source(source) => {
+                source.checkpoint = source.checkpoint.max(edit.version);
+                source.log_rows += 1;
+                source.log_bytes += edit.row_bytes as i64;
+            }
+        }
+        self.maybe_fold();
     }
 
     /// Sends `notification` (if any) and CLOSED, and forgets the channel.
@@ -1143,6 +1353,19 @@ impl Room {
         if !content.is_empty() {
             self.content_changed();
             self.broadcast_update(Some(key), content);
+            // A paste, undo or replayed draft that wrote child ids gets a
+            // children pass; typing writes none and costs a decode.
+            if matches!(self.kind, Kindly::Note(_))
+                && let Ok(update) = ydoc::decode(bytes)
+                && notes::children::child_writes(&self.doc.transact(), &update).is_some()
+            {
+                self.child_passes.push_back(ChildPass {
+                    actor: context.user_id.clone(),
+                    update: bytes.to_vec(),
+                    notify: Some(key),
+                });
+                self.next_child_pass();
+            }
         }
     }
 

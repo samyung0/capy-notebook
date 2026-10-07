@@ -29,6 +29,13 @@ pub fn router(app: Shared) -> Router {
             "/internal/source-refresh/publish",
             post(publish_source_refresh),
         )
+        .route("/internal/documents/inspect", post(document))
+        .route("/internal/documents/edit", post(document))
+        .route("/internal/documents/undo", post(document))
+        .route("/internal/commands", post(command))
+        .route("/internal/markdown/convert", post(markdown))
+        // Internal bodies reach MAX_INTERNAL_BODY; each handler refuses past it.
+        .layer(axum::extract::DefaultBodyLimit::max(MAX_INTERNAL_BODY + 1))
         .fallback(any(fallback))
         .with_state(app)
 }
@@ -223,6 +230,120 @@ async fn publish_source_refresh(
     }
     let result = crate::source_rooms::publish(&app, input).await;
     source_answer("source_publish", result)
+}
+
+/// `/internal/documents/{inspect,edit,undo}`: direct AI edits (`edits.rs`).
+async fn document(
+    State(app): State<Shared>,
+    uri: axum::http::Uri,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if !authorized(&app, &headers) {
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            json!({ "message": "invalid service secret" }),
+        );
+    }
+    if body.len() > MAX_INTERNAL_BODY {
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            json!({ "code": "invalid_input", "message": "command body is too large" }),
+        );
+    }
+    match crate::edits::document(&app, uri.path(), &body).await {
+        Ok(value) => json_response(StatusCode::OK, value),
+        Err(error) => {
+            let (status, body) = error.status_and_body();
+            if status >= 500 {
+                crate::observe::capture(error.message(), None, &[("stage", "document_request")]);
+            }
+            let status = StatusCode::from_u16(status).unwrap_or(StatusCode::SERVICE_UNAVAILABLE);
+            json_response(status, body)
+        }
+    }
+}
+
+/// `/internal/commands`: the replace-block command.
+async fn command(State(app): State<Shared>, headers: HeaderMap, body: Bytes) -> Response {
+    if !authorized(&app, &headers) {
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            json!({ "message": "invalid service secret" }),
+        );
+    }
+    let command = match json_object(&body, "invalid collaboration command") {
+        Ok(command) => command,
+        Err(response) => return *response,
+    };
+    match crate::edits::replace_block(&app, command).await {
+        Ok(()) => json_response(StatusCode::OK, json!({ "status": "applied" })),
+        Err(message) if message.starts_with("invalid collaboration command") => {
+            json_response(StatusCode::BAD_REQUEST, json!({ "message": message }))
+        }
+        Err(message) => {
+            let conflict = message.contains("concurrently") || message.contains("no longer exists");
+            if !conflict {
+                crate::observe::capture(&message, None, &[("stage", "service_command")]);
+            }
+            let status = if conflict {
+                StatusCode::CONFLICT
+            } else {
+                StatusCode::SERVICE_UNAVAILABLE
+            };
+            json_response(status, json!({ "message": message }))
+        }
+    }
+}
+
+/// `/internal/markdown/convert`: agent markdown through the editor's own
+/// import in V8. A refusal (a fence that does not parse, a limit) fails the
+/// agent's edit as is, never retried (Epo 2026-10-07).
+async fn markdown(State(app): State<Shared>, headers: HeaderMap, body: Bytes) -> Response {
+    if !authorized(&app, &headers) {
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            json!({ "message": "invalid service secret" }),
+        );
+    }
+    let invalid = |message: &str| {
+        json_response(
+            StatusCode::BAD_REQUEST,
+            json!({ "code": "invalid_input", "message": message }),
+        )
+    };
+    let Ok(request) = serde_json::from_slice::<Value>(&body) else {
+        return invalid("invalid JSON");
+    };
+    let Some(source) = request["markdown"].as_str().map(str::to_owned) else {
+        return invalid("markdown is required");
+    };
+    let converting = app.clone();
+    let converted = tokio::task::spawn_blocking(move || {
+        converting
+            .markdown
+            .as_ref()
+            .map(|converter| converter.convert(&source))
+    })
+    .await;
+    match converted {
+        Ok(Some(Ok(converted))) => json_response(
+            StatusCode::OK,
+            serde_json::to_value(converted).unwrap_or(Value::Null),
+        ),
+        Ok(Some(Err(error))) => invalid(&error.to_string()),
+        Ok(None) => json_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            json!({ "message": "markdown conversion is not configured" }),
+        ),
+        Err(error) => {
+            crate::observe::capture(&error.to_string(), None, &[("stage", "markdown_convert")]);
+            json_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                json!({ "message": "markdown conversion failed" }),
+            )
+        }
+    }
 }
 
 /// On-demand projection (DESIGN.md 5): a room loaded here persists and

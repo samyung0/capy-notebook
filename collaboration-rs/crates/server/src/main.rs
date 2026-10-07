@@ -4,7 +4,9 @@
 mod access;
 mod app;
 mod auth;
+mod children;
 mod config;
+mod edits;
 mod eviction;
 mod health;
 mod http;

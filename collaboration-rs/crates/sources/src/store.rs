@@ -44,9 +44,9 @@ pub struct SourcesConfig {
 }
 
 /// seed(base) and what is derived from it once.
-struct Seed {
-    state: Vec<u8>,
-    sha256: String,
+pub(crate) struct Seed {
+    pub(crate) state: Vec<u8>,
+    pub(crate) sha256: String,
     vector: StateVector,
 }
 
@@ -106,13 +106,13 @@ pub struct Folded {
 }
 
 /// The rows and base a room's durable state is made of, read in one snapshot.
-struct Stored {
-    state: Option<Vec<u8>>,
-    state_seed_sha256: Option<String>,
-    checkpoint: u64,
-    epoch: u64,
-    base_revision: i64,
-    rows: Vec<(u64, Vec<u8>)>,
+pub(crate) struct Stored {
+    pub(crate) state: Option<Vec<u8>>,
+    pub(crate) state_seed_sha256: Option<String>,
+    pub(crate) checkpoint: u64,
+    pub(crate) epoch: u64,
+    pub(crate) base_revision: i64,
+    pub(crate) rows: Vec<(u64, Vec<u8>)>,
 }
 
 /// A rebase onto new bytes; none (no save after the capture) leaves the
@@ -200,7 +200,10 @@ fn decode(bytes: &[u8]) -> Result<Update, SourceError> {
 /// Applies `updates` in one transaction (seed plus change, as a fresh
 /// document applies a whole state) and refuses a result with pending
 /// content: every item a change refers to must be in what precedes it.
-fn replay<'a>(doc: &Doc, updates: impl IntoIterator<Item = &'a [u8]>) -> Result<(), SourceError> {
+pub(crate) fn replay<'a>(
+    doc: &Doc,
+    updates: impl IntoIterator<Item = &'a [u8]>,
+) -> Result<(), SourceError> {
     let mut txn = doc.transact_mut();
     for bytes in updates {
         txn.apply_update(decode(bytes)?).map_err(|error| {
@@ -274,7 +277,7 @@ impl Sources {
     }
 
     /// seed(base) (what a NULL state stands for), cached per format and base.
-    async fn seed(
+    pub(crate) async fn seed(
         &self,
         format: SourceFormat,
         base: &[u8],
@@ -311,7 +314,7 @@ impl Sources {
     }
 
     /// The base of `session` with its SHA bound (hashed when the file has none yet).
-    async fn bound_base(
+    pub(crate) async fn bound_base(
         &self,
         session: &SourceSession,
     ) -> Result<(Arc<Vec<u8>>, String), SourceError> {
@@ -346,7 +349,11 @@ impl Sources {
 
     /// The base and rows of `file_id`'s editing epoch in one snapshot (rows
     /// after `after` only, when given).
-    async fn stored(&self, file_id: &str, after: Option<u64>) -> Result<Stored, SourceError> {
+    pub(crate) async fn stored(
+        &self,
+        file_id: &str,
+        after: Option<u64>,
+    ) -> Result<Stored, SourceError> {
         let mut client = self.db.get().await.map_err(db_error)?;
         let txn = client
             .build_transaction()
@@ -389,7 +396,7 @@ impl Sources {
     /// stored change for Office (refused when the change names no seed or
     /// another one: the load check), the text state (its seed only while
     /// nothing is saved: a text room's first row holds the seed), then rows.
-    async fn layers(
+    pub(crate) async fn layers(
         &self,
         format: SourceFormat,
         base: &[u8],
@@ -1548,7 +1555,7 @@ pub fn rebase_refused(error: &SourceError) -> bool {
     matches!(error, SourceError::Request { status: 422, message, .. } if message.starts_with("Office rebase:"))
 }
 
-fn text_of(bytes: &[u8]) -> Result<&str, SourceError> {
+pub(crate) fn text_of(bytes: &[u8]) -> Result<&str, SourceError> {
     crate::text::decode_text(bytes)
         .map_err(|error| SourceError::State(format!("text source is not UTF-8: {error}")))
 }

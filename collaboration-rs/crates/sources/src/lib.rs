@@ -8,6 +8,7 @@
 
 pub mod admit;
 mod cache;
+pub mod edit;
 pub mod effects;
 pub mod engine;
 pub mod failure;

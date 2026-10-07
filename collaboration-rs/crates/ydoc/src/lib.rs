@@ -253,6 +253,14 @@ pub struct Durable {
 }
 
 impl Durable {
+    /// Both covers at once: stored structs are per-client clock prefixes, so
+    /// the larger clock of each client and both delete sets are stored too.
+    /// A server edit committed beside the room's own stores joins its cover.
+    pub fn union(&mut self, other: &Durable) {
+        self.state_vector.merge(other.state_vector.clone());
+        self.delete_set.merge_with(other.delete_set.clone());
+    }
+
     /// The room as it is now (after a load or a committed store).
     pub fn of<T: ReadTxn>(txn: &T) -> Self {
         let snapshot = txn.snapshot();
@@ -339,6 +347,19 @@ pub fn apply(doc: &Doc, update: Update) -> Result<Vec<u8>, yrs::error::UpdateErr
     let mut txn = doc.transact_mut();
     txn.apply_update(update)?;
     Ok(committed_update(txn))
+}
+
+/// The live contributor marker items, which a stored row carries deleted.
+pub fn live_markers<T: ReadTxn>(txn: &T) -> Vec<ID> {
+    let Some(map) = txn.get_map(CONTRIBUTORS_ROOT) else {
+        return Vec::new();
+    };
+    let branch: &yrs::branch::Branch = map.as_ref();
+    branch
+        .map_items()
+        .filter(|(_, item)| !item.is_deleted())
+        .map(|(_, item)| *item.id())
+        .collect()
 }
 
 /// Whether a document holds content waiting on structs it never received.

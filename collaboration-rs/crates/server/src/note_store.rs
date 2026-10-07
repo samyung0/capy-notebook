@@ -77,7 +77,7 @@ pub struct Loaded {
 }
 
 /// The Plate envelope of `materials.content`, refused unless canonical in shape.
-fn envelope_value(content: &Value) -> Result<&Vec<Value>, StoreError> {
+pub(crate) fn envelope_value(content: &Value) -> Result<&Vec<Value>, StoreError> {
     match (content.get("schemaVersion"), content.get("value")) {
         (Some(version), Some(Value::Array(value))) if version.as_i64() == Some(1) => Ok(value),
         _ => Err(StoreError::Other(
@@ -88,7 +88,11 @@ fn envelope_value(content: &Value) -> Result<&Vec<Value>, StoreError> {
 
 /// First open, agent edit or command on a material without a Yjs row: seed
 /// the document from its projection under the lock the caller holds.
-async fn bootstrap(tx: &Transaction<'_>, material_id: &str, schema: i64) -> Result<(), StoreError> {
+pub(crate) async fn bootstrap(
+    tx: &Transaction<'_>,
+    material_id: &str,
+    schema: i64,
+) -> Result<(), StoreError> {
     let rows = tx
         .query(
             "SELECT content FROM materials WHERE id=$1 AND trashed_at IS NULL FOR UPDATE",
@@ -114,7 +118,7 @@ async fn bootstrap(tx: &Transaction<'_>, material_id: &str, schema: i64) -> Resu
     Ok(())
 }
 
-async fn rows(
+pub(crate) async fn rows(
     tx: &Transaction<'_>,
     material_id: &str,
     through: Option<i64>,

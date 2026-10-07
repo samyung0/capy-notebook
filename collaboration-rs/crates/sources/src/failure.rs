@@ -48,6 +48,10 @@ pub enum SourceError {
     /// The room waits out a failed save's backoff (SourceBackoffError).
     #[error("source room is waiting out a failed save; saved on its next retry")]
     Backoff,
+    /// An agent edit refused (`EditError`): the gateway answers 409 with its
+    /// code (`stale_target`, `invalid_input`, ...).
+    #[error("{message}")]
+    Edit { code: String, message: String },
     /// Anything else (network, timeouts, the database): slow.
     #[error("{0}")]
     Other(String),
@@ -160,6 +164,7 @@ impl SourceError {
                     .unwrap_or_else(|| format!("http_{status}"))
                     .as_str(),
             ),
+            SourceError::Edit { code, .. } => token(code),
             SourceError::Other(_) => "error".into(),
         }
     }
