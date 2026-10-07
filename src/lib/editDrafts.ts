@@ -516,9 +516,11 @@ export function recordDrafts({
     if (offline) heldStorageReport = send;
     else send();
   };
+  // Only a whole document that lands says storage works again: deletes go
+  // through on a full disk too.
   const write = (work: Promise<unknown>, whole = false) =>
     work.then(() => {
-      if (gap && !whole) return;
+      if (!whole) return;
       gap = false;
       if (storageOk) return;
       storageOk = true;

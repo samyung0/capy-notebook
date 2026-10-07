@@ -799,7 +799,9 @@ describe('recording a note session', () => {
   it('retries nothing while storage fails if receipts covered every edit', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     const key = 'u_1:material:saved-failing';
-    const { client, recorder } = noteRecorder(key, 'a');
+    const onStorage = vi.fn();
+    const report = vi.fn();
+    const { client, recorder } = noteRecorder(key, 'a', { onStorage, report });
     const put = vi
       .spyOn(IDBObjectStore.prototype, 'put')
       .mockImplementation(() => {
@@ -809,14 +811,28 @@ describe('recording a note session', () => {
       put.mock.calls.filter(([row]) => (row as EditDraft).kind === 'state')
         .length;
     try {
-      client.getText('content').insert(1, 'b');
-      await recorder.covered(recorder.sequence);
+      // Three typing pauses, each saved; the receipts' deletes go through.
+      for (const typed of ['b', 'c', 'd']) {
+        client.getText('content').insert(1, typed);
+        // The failed append is answered before the receipt comes.
+        await readDrafts(key);
+        await recorder.covered(recorder.sequence);
+        await readDrafts(key);
+        await vi.advanceTimersByTimeAsync(5000);
+      }
       // Idle for 30 s with the store failing: nothing is unsaved.
       for (let second = 0; second < 30; second += 5) {
         await vi.advanceTimersByTimeAsync(5000);
         await readDrafts(key);
       }
       expect(wholeTries()).toBe(0);
+      // The store still fails: one report, and it never reads as working.
+      expect(onStorage).toHaveBeenCalledExactlyOnceWith(false);
+      expect(report).toHaveBeenCalledExactlyOnceWith(
+        'draft_storage_failed',
+        'quota',
+        expect.any(Number)
+      );
       // Storage works again: no row of saved content is left behind.
       put.mockRestore();
       await vi.advanceTimersByTimeAsync(10_000);
