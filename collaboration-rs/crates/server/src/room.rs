@@ -250,6 +250,8 @@ pub struct Room {
     /// Children passes waiting, and whether one waits on the API.
     child_passes: std::collections::VecDeque<ChildPass>,
     child_running: bool,
+    /// An update is going into the document (see `update_panicked`).
+    applying: bool,
 }
 
 /// Spawns a room task; its handle goes into the registry. `actor` is the
@@ -446,6 +448,7 @@ async fn run(
         forced_unload: Vec::new(),
         child_passes: std::collections::VecDeque::new(),
         child_running: false,
+        applying: false,
     };
     let log_bytes = match &room.kind {
         Kindly::Note(note) => note.log_bytes,
@@ -821,6 +824,10 @@ impl Room {
             );
         }
         if !update.is_empty() {
+            // Content the validator did not admit: its growth bound is stale.
+            if let Kindly::Note(note) = &mut self.kind {
+                note.validator.invalidate();
+            }
             self.content_changed();
             self.broadcast_update(None, update);
         }
@@ -856,6 +863,8 @@ impl Room {
             .fetch_add(edit.row_bytes as u64, Ordering::Relaxed);
         match &mut self.kind {
             Kindly::Note(note) => {
+                // Content the validator did not admit: its growth bound is stale.
+                note.validator.invalidate();
                 note.stored_version = note.stored_version.max(edit.version as i64);
                 note.log_rows += 1;
                 note.log_bytes += edit.row_bytes as i64;
@@ -1212,6 +1221,46 @@ impl Room {
     // ------------------------------------------------------------- sync and updates
 
     fn on_sync(&mut self, key: MemberKey, payload: &[u8]) {
+        let checked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.sync_message(key, payload)
+        }));
+        if checked.is_err() {
+            self.update_panicked(key, payload.len());
+        }
+    }
+
+    /// A panic in yrs on a crafted message (the Sentry panic hook reported
+    /// it). Before an update went in, only its sender is refused; while it
+    /// went in, the document may hold part of it, so the room is discarded
+    /// as one whose store was refused for good.
+    fn update_panicked(&mut self, key: MemberKey, bytes: usize) {
+        let applying = std::mem::take(&mut self.applying);
+        if let Kindly::Note(note) = &mut self.kind {
+            note.validator.invalidate();
+        }
+        if !applying {
+            self.refuse(key, &[], "update cannot be checked");
+            return;
+        }
+        let eviction = uuid::Uuid::new_v4().to_string();
+        let cause = Cause::new(IncidentKind::SaveRefused, "update_panicked");
+        let mut payload = match self.kind {
+            Kindly::Note(_) => json!({
+                "code": "invalid_document",
+                "evictionId": eviction,
+                "materialId": self.material_id(),
+                "room": self.name,
+                "type": "document-rejected",
+            }),
+            Kindly::Source(_) => {
+                json!({ "evictionId": eviction, "room": self.name, "type": "authorization-revoked" })
+            }
+        };
+        payload["incident"] = json!({ "kind": cause.kind.as_str(), "reason": cause.reason });
+        self.reject_room(cause, bytes, &eviction, payload.to_string());
+    }
+
+    fn sync_message(&mut self, key: MemberKey, payload: &[u8]) {
         if !self.members.contains_key(&key) {
             return;
         }
@@ -1334,11 +1383,14 @@ impl Room {
             return;
         }
         let mut applied = 0;
+        self.applying = true;
         if let Some(marker) = self.markers.write(&self.doc, &context) {
             applied += marker.len();
             self.broadcast_update(None, marker);
         }
-        let content = match ydoc::apply(&self.doc, update) {
+        let content = ydoc::apply(&self.doc, update);
+        self.applying = false;
+        let content = match content {
             Ok(content) => content,
             Err(error) => {
                 self.refuse(key, &[], &format!("update cannot be applied: {error}"));

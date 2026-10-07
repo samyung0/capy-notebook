@@ -506,6 +506,82 @@ async fn a_read_only_channel_that_writes_is_closed() {
 }
 
 #[tokio::test]
+async fn an_update_that_panics_yrs_costs_neither_the_process_nor_the_room() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "kept").await;
+    let room = format!("material:{material}:schema:1");
+    let mut a = Client::open(server.port).await;
+    a.join(&room, &token(&room, &user, "write")).await;
+    // The room bootstraps the note as it loads.
+    let client = db(&env).await;
+    let mut held = None;
+    for _ in 0..50 {
+        let rows = client
+            .query(
+                "SELECT state FROM material_yjs_documents WHERE material_id=$1",
+                &[&material],
+            )
+            .await
+            .expect("state");
+        if let Some(row) = rows.first() {
+            let state: Vec<u8> = row.get(0);
+            held = Some(Update::decode_v1(&state).expect("state").state_vector());
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let held = held.expect("the room bootstrapped the note");
+    let (&held_client, _) = held
+        .iter()
+        .find(|(_, clock)| **clock > 0)
+        .expect("a client the room holds");
+    // One entry with no structs for a client the room holds: yrs
+    // `BlockSet::exclude` unwraps its first struct (rust-notes REVIEW1 M3).
+    // As the room's first update it is measured on a copy, where it panics.
+    let mut crash = vec![1, 0];
+    var(&mut crash, held_client.get());
+    crash.extend([1, 0]);
+    a.send(5, &sync(2, &crash)).await;
+    let closed = a.until(4).await.expect("the sender's channel closes");
+    assert!(
+        String::from_utf8_lossy(&closed).contains("update cannot be checked"),
+        "{}",
+        String::from_utf8_lossy(&closed)
+    );
+    // The room stays usable: a fresh client joins (once a discard, if the
+    // panic came in the apply, has unloaded it) and its typing is acknowledged.
+    let mut b = Client::open(server.port).await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        b.join(&room, &token(&room, &user, "write")).await;
+        let answered = b
+            .settle(|c| c.inbox.iter().any(|m| m.kind == 1 || m.kind == 2))
+            .await;
+        assert!(answered, "no answer to the join");
+        let joined = b.inbox.iter().any(|m| m.kind == 1);
+        b.inbox.clear();
+        if joined {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the room never reopened"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let sv = b.doc.transact().state_vector().encode_v1();
+    b.send(5, &sync(0, &sv)).await;
+    assert!(
+        b.settle(|c| c.block_text() == "kept").await,
+        "{}",
+        b.block_text()
+    );
+    b.type_text(" still").await;
+    assert!(b.until(6).await.is_some());
+}
+
+#[tokio::test]
 async fn redis_comments_embeds_and_user_evictions_reach_the_room() {
     let Some(env) = env() else { return };
     let server = start(&env).await;
