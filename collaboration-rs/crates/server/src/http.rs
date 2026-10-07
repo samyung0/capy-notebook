@@ -12,8 +12,8 @@ use serde_json::{Value, json};
 
 use crate::app::Shared;
 use crate::auth::{self, RoomName};
+use crate::health;
 use crate::room::RoomCmd;
-use crate::{health, projection};
 
 pub fn router(app: Shared) -> Router {
     Router::new()
@@ -130,19 +130,21 @@ async fn project(
         .names()
         .into_iter()
         .find(|room| room.starts_with(&prefix));
-    let result = match loaded.and_then(|room| app.rooms.get(&room)) {
-        Some(handle) => {
-            let (reply, answer) = tokio::sync::oneshot::channel();
-            if handle.tx.send(RoomCmd::Project(reply)).await.is_err() {
-                projection::project_durable(&app, &id).await
-            } else {
-                answer.await.unwrap_or_else(|_| Err("room unloaded".into()))
-            }
-        }
-        None => projection::project_durable(&app, &id).await,
+    // A room no instance has loaded here projected when it unloaded (or the
+    // pending scan does): nothing to do.
+    let Some(handle) = loaded.and_then(|room| app.rooms.get(&room)) else {
+        return json_response(StatusCode::OK, json!({ "projected": false }));
     };
+    let (reply, answer) = tokio::sync::oneshot::channel();
+    if handle.tx.send(RoomCmd::Project(reply)).await.is_err() {
+        return json_response(StatusCode::OK, json!({ "projected": false }));
+    }
+    let result = answer.await.unwrap_or_else(|_| Err("room unloaded".into()));
     match result {
-        Ok(version) => json_response(StatusCode::OK, json!({ "yjsVersion": version })),
+        Ok(version) => json_response(
+            StatusCode::OK,
+            json!({ "projected": true, "yjsVersion": version }),
+        ),
         Err(message) => json_response(
             StatusCode::SERVICE_UNAVAILABLE,
             json!({ "message": message }),
