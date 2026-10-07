@@ -566,8 +566,10 @@ func (s *Store) requestSourceRefresh(ctx context.Context, actor, fileID string, 
 		if refreshError != nil || (status == string(FileFailed) && !manual) {
 			return result, ErrConflict
 		}
-		// An Office list of moves only is worth 0 tokens and still publishes
-		// through the stale rule; an empty list never does. A refused rebuild
+		// An Office list of moves only (reordered entries) is worth 0 tokens
+		// and still publishes through the stale rule; an empty list never
+		// does, which is what a save whose edits only shifted entries stores
+		// (Epo 2026-10-07: shifted moves are not effects). A refused rebuild
 		// (RefuseSourceRebuild) makes the file due whatever its edits weigh.
 		refused := rebuildRefusal != nil
 		if doc.Checkpoint <= doc.IndexedCheckpoint || (!refused && doc.NetTokens == 0 && (doc.Format == "text" || string(doc.PendingEffects) == "[]")) {

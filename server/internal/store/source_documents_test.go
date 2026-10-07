@@ -225,7 +225,9 @@ func TestOfficeAutomaticRefreshAdmission(t *testing.T) {
 		{3000, "30 seconds", false, ""},
 		{2999, "6 days", false, ""},
 		{1, "7 days 1 minute", true, ""},
-		// Moves only weigh 0 tokens and publish through the stale rule.
+		// Moves only (reordered entries) weigh 0 tokens and publish through
+		// the stale rule; a save whose edits only shifted entries stores no
+		// effects and never does.
 		{0, "7 days 1 minute", true, `[{"id":"p","kind":"text","label":"Paragraph","operation":"move"}]`},
 		{0, "6 days", false, `[{"id":"p","kind":"text","label":"Paragraph","operation":"move"}]`},
 		{0, "8 days", false, `[]`},
@@ -318,8 +320,9 @@ func TestRefreshSchedulerQuery(t *testing.T) {
 		return file.ID
 	}
 	due := edited(3000, "2 minutes", "")
-	worthless := edited(0, "8 days", `[]`) // an empty change list: Go refuses it
-	// Moves only: 0 tokens, published by the stale rule.
+	// An empty change list (edits that only shifted entries): Go refuses it.
+	worthless := edited(0, "8 days", `[]`)
+	// Moves only (reordered entries): 0 tokens, published by the stale rule.
 	reordered := edited(0, "9 days", `[{"id":"p","kind":"text","label":"Paragraph","operation":"move"}]`)
 	unedited := edited(5, "8 days", "")
 	// Due by its edits, but failed: only the owner's Retry processing runs it.
