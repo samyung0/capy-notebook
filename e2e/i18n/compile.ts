@@ -36,9 +36,12 @@ function stale() {
 
 if (process.env.TEST_WORKER_INDEX === undefined && stale()) {
   const temporary = `${outdir}-${process.pid}`;
+  // Runs the CLI script with this node: on Windows .bin/paraglide-js is a
+  // .CMD shim that execFileSync cannot start.
   execFileSync(
-    path.join(root, 'node_modules/.bin/paraglide-js'),
+    process.execPath,
     [
+      path.join(root, 'node_modules/@inlang/paraglide-js/bin/run.js'),
       'compile',
       '--project',
       path.join(root, 'project.inlang'),
