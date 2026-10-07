@@ -142,6 +142,7 @@ function SignedInStudy({ setId, shared }: { setId: string; shared: boolean }) {
         ) : (
           !set.canEdit && (
             <Button
+              className="rounded-input"
               disabled={frozen || cloneIsPending}
               iconLeft="plus"
               onClick={() =>
@@ -155,7 +156,6 @@ function SignedInStudy({ setId, shared }: { setId: string; shared: boolean }) {
                   },
                 })
               }
-              rounded="large"
               size="sm"
               variant="outline"
             >
@@ -414,10 +414,10 @@ function StudyBody({
                 <RatingTiles onRate={rate} />
               ) : (
                 <Button
+                  className="rounded-input"
                   fullWidth
                   iconLeft="view"
                   onClick={() => setFlipped(true)}
-                  rounded="large"
                 >
                   {m.flashcards_show_answer()}
                 </Button>
@@ -435,9 +435,9 @@ function StudyBody({
               </h2>
               {total > 0 && (
                 <Button
+                  className="rounded-input"
                   iconLeft="flashcards"
                   onClick={studyAgain}
-                  rounded="large"
                   variant="accent"
                 >
                   {m.flashcards_study_again()}

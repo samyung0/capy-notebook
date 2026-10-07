@@ -145,6 +145,7 @@ function Attempt({ quizId, shared }: { quizId: string; shared: boolean }) {
         ) : (
           !quiz.canEdit && (
             <Button
+              className="rounded-input"
               disabled={frozen || cloneQuizIsPending}
               iconLeft="plus"
               onClick={() =>
@@ -158,7 +159,6 @@ function Attempt({ quizId, shared }: { quizId: string; shared: boolean }) {
                   },
                 })
               }
-              rounded="large"
               size="sm"
               variant="outline"
             >
@@ -372,7 +372,7 @@ function AttemptBody({
             search={{ tab: 'blocks' }}
             to="/files"
           >
-            <Button iconLeft="navigationBack" rounded="large">
+            <Button className="rounded-input" iconLeft="navigationBack">
               {m.quiz_back()}
             </Button>
           </Link>
@@ -428,13 +428,12 @@ function AttemptBody({
             />
           </div>
           <Button
-            className="mt-12"
+            className="mt-12 rounded-input"
             iconLeft="refresh"
             onClick={() => {
               setAnswers({});
               setGraded(null);
             }}
-            rounded="large"
             size="lg"
             variant="outline"
           >
@@ -465,10 +464,10 @@ function AttemptBody({
             {m.quiz_answered_count({ answered, total: parts.length })}
           </p>
           <Button
+            className="rounded-input"
             disabled={grading}
             fullWidth
             onClick={() => void finish()}
-            rounded="large"
             size="lg"
           >
             {grading ? m.quiz_grading() : m.quiz_submit()}

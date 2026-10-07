@@ -88,7 +88,8 @@ test.describe('workspace invitations', () => {
     expect(wrongAccount.status()).toBe(403);
 
     await viewerPage.goto('/workspaces');
-    await viewerPage.locator('[data-unread-count]').click();
+    // Phone and desktop bars both carry a bell; click the one on screen.
+    await viewerPage.locator('[data-unread-count]:visible').click();
     await viewerPage
       .getByRole('button', { name: m.notification_workspace_invite_title() })
       .click();
