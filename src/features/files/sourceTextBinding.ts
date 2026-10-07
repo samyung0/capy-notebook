@@ -200,10 +200,14 @@ export function textareaEdit(
 /**
  * An IME composition over the live document: the textarea holds the composed
  * text meanwhile, and `commit` puts it in place of the range the composition
- * started on, held as relative positions so peers' edits made while composing
- * stay where they landed. Only when a peer edits mid-composition is the
- * document kept as it was (`peerEdit`), for an IME that rewrote text off the
- * caret (`rewrite`).
+ * started on. Without a peer's edit meanwhile that is a direct replace. A
+ * peer's transaction first keeps the document as composing began
+ * (`peerEdit`): the commit, or the whole value of an IME that rewrote text
+ * off the caret (`rewrite`), is then made against that copy and merged, so it
+ * replaces only the characters that existed when the composition started and
+ * keeps what the peer typed inside the range (2026-10-07). Both return the
+ * source offset of the caret after it, or null when the textarea already
+ * shows the document.
  */
 export function beginTextComposition(
   text: Y.Text,
@@ -218,15 +222,54 @@ export function beginTextComposition(
     from = sourceTextOffset(raw, start);
     to = sourceTextOffset(raw, end);
   }
+  const doc = text.doc!;
   const startAt = Y.createRelativePositionFromTypeIndex(text, from);
   // Ends after the last replaced character: text a peer adds after it stays.
   const endAt =
     to > from ? Y.createRelativePositionFromTypeIndex(text, to, -1) : startAt;
   let before: Uint8Array | undefined;
+  const sourceInsert = (composed: string) => {
+    const display = displayText(composed);
+    return lines.newline === '\n'
+      ? display
+      : display.replaceAll('\n', lines.newline);
+  };
+  // `edit` on a copy of the document as composing began, merged back; the
+  // caret is held in the copy at `caret` (a source offset there) and read
+  // back in the document.
+  const merged = (
+    edit: (draft: Y.Text) => void,
+    caret: (draft: Y.Text) => number
+  ) => {
+    const draft = new Y.Doc();
+    Y.applyUpdate(draft, before!);
+    const vector = Y.encodeStateVector(draft);
+    const drafted = draft.getText('source');
+    edit(drafted);
+    const at = caret(drafted);
+    const position = Y.createRelativePositionFromTypeIndex(
+      drafted,
+      at,
+      at > 0 ? -1 : 0
+    );
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(draft, vector), SOURCE_TEXT_INPUT);
+    draft.destroy();
+    // A root text is never deleted, so its positions always resolve.
+    return Y.createAbsolutePositionFromRelativePosition(position, doc)!.index;
+  };
   return {
-    /** Put the composed text in place; returns the source offset after it. */
-    commit(composed: string) {
-      const doc = text.doc!;
+    commit(composed: string): number {
+      const insert = sourceInsert(composed);
+      if (before)
+        return merged(
+          // Inserted ahead of the replaced characters, so it lands before
+          // anything a peer typed among them.
+          (draft) => {
+            if (insert) draft.insert(from, insert);
+            if (to > from) draft.delete(from + insert.length, to - from);
+          },
+          () => from + insert.length
+        );
       // A root text is never deleted, so its positions always resolve.
       const first = Y.createAbsolutePositionFromRelativePosition(
         startAt,
@@ -236,11 +279,6 @@ export function beginTextComposition(
         endAt,
         doc
       )!.index;
-      const display = displayText(composed);
-      const insert =
-        lines.newline === '\n'
-          ? display
-          : display.replaceAll('\n', lines.newline);
       doc.transact(() => {
         if (last > first) text.delete(first, last - first);
         if (insert) text.insert(first, insert);
@@ -252,28 +290,209 @@ export function beginTextComposition(
     },
     /** A peer's transaction is about to apply. */
     peerEdit() {
-      before ??= Y.encodeStateAsUpdate(text.doc!);
+      before ??= Y.encodeStateAsUpdate(doc);
     },
     /** The textarea's whole value as its difference from the document as
-     * composing began, merged around peers' edits. No caret to restore. */
-    rewrite(value: string): null {
+     * composing began; `caret` is the textarea's after it. */
+    rewrite(value: string, caret: number): number | null {
       if (!before) {
         applyTextInput(text, value, lines);
         return null;
       }
-      const draft = new Y.Doc();
-      Y.applyUpdate(draft, before);
-      const vector = Y.encodeStateVector(draft);
-      applyTextInput(draft.getText('source'), value, lines);
-      Y.applyUpdate(
-        text.doc!,
-        Y.encodeStateAsUpdate(draft, vector),
-        SOURCE_TEXT_INPUT
+      return merged(
+        (draft) => applyTextInput(draft, value, lines),
+        (draft) =>
+          lines.cr ? sourceTextOffset(draft.toString(), caret) : caret
       );
-      draft.destroy();
-      return null;
     },
     /** The composition's `start` in the textarea. */
     start,
+  };
+}
+
+/** What the binding uses of a textarea (tests drive a stand-in). */
+export interface SourceTextarea extends EventTarget {
+  selectionDirection: 'forward' | 'backward' | 'none';
+  selectionEnd: number;
+  selectionStart: number;
+  setSelectionRange(
+    start: number,
+    end: number,
+    direction?: 'forward' | 'backward' | 'none'
+  ): void;
+  readonly textLength: number;
+  value: string;
+}
+
+/**
+ * Binds a textarea to a source's shared text: local input goes in as edits
+ * (in O(edit) where `textareaEdit` can place it), peers' edits refill the
+ * textarea keeping its selection, IME compositions commit at their end, and
+ * ⌘Z/⌘Y undo only this textarea's edits. Returns the unbinding.
+ */
+export function bindSourceTextarea(
+  input: SourceTextarea,
+  doc: Y.Doc,
+  {
+    onPendingChange,
+    onSave,
+    registerFlush,
+  }: {
+    onPendingChange?: (pending: boolean) => void;
+    onSave: () => Promise<void>;
+    registerFlush: { current: (() => Promise<void>) | null };
+  }
+) {
+  const text = doc.getText('source');
+  const undo = new Y.UndoManager(text, {
+    trackedOrigins: new Set([SOURCE_TEXT_INPUT]),
+  });
+  let composition: ReturnType<typeof beginTextComposition> | null = null;
+  // The textarea when the input being handled began (beforeinput).
+  let started: InputStart | null = null;
+  const waiting: (() => void)[] = [];
+  let selection: {
+    start: Y.RelativePosition;
+    end: Y.RelativePosition;
+    direction: 'forward' | 'backward' | 'none';
+  } | null = null;
+  const raw = text.toString();
+  let lines = sourceLines(raw);
+  input.value = raw;
+  const toSource = (offset: number) =>
+    lines.cr ? sourceTextOffset(text.toString(), offset) : offset;
+  const before = (transaction: Y.Transaction) => {
+    if (transaction.origin === SOURCE_TEXT_INPUT) return;
+    if (composition) {
+      composition.peerEdit();
+      return;
+    }
+    selection = {
+      direction: input.selectionDirection,
+      end: Y.createRelativePositionFromTypeIndex(
+        text,
+        toSource(input.selectionEnd)
+      ),
+      start: Y.createRelativePositionFromTypeIndex(
+        text,
+        toSource(input.selectionStart)
+      ),
+    };
+  };
+  const render = () => {
+    if (composition) return;
+    const value = text.toString();
+    lines = sourceLines(value);
+    input.value = value;
+    if (!selection) return;
+    const start = Y.createAbsolutePositionFromRelativePosition(
+        selection.start,
+        doc
+      ),
+      end = Y.createAbsolutePositionFromRelativePosition(selection.end, doc);
+    const toDisplay = (offset: number) =>
+      lines.cr ? displayTextOffset(value, offset) : offset;
+    if (start && end)
+      input.setSelectionRange(
+        toDisplay(start.index),
+        toDisplay(end.index),
+        selection.direction
+      );
+  };
+  const observe = (_event: Y.YTextEvent, transaction: Y.Transaction) => {
+    if (transaction.origin !== SOURCE_TEXT_INPUT) render();
+  };
+  const beforeInput = (event: Event) => {
+    started = composition ? null : inputStart(event as InputEvent, input);
+  };
+  // Typing, paste, Enter and deletions apply in O(edit); anything else the
+  // whole value's difference does.
+  const change = (event: Event) => {
+    const begun = started;
+    started = null;
+    if (composition) return;
+    const edit =
+      begun &&
+      'inputType' in event &&
+      textareaEdit(event as InputEvent, begun, input);
+    if (edit) applyTextEdit(text, edit, lines);
+    else applyTextInput(text, input.value, lines);
+  };
+  const compositionStart = () => {
+    undo.stopCapturing();
+    composition = beginTextComposition(
+      text,
+      input.selectionStart,
+      input.selectionEnd,
+      lines
+    );
+    onPendingChange?.(true);
+  };
+  const compositionEnd = (event?: Event) => {
+    const active = composition;
+    if (!active) return;
+    composition = null;
+    const composed =
+      (event as CompositionEvent | undefined)?.data ??
+      input.value.slice(active.start, input.selectionEnd);
+    // The IME committed at the caret: only the composed text goes in. An
+    // IME that rewrote other text gives the whole value instead.
+    const caret =
+      input.selectionStart === active.start + displayText(composed).length
+        ? active.commit(composed)
+        : active.rewrite(input.value, input.selectionStart);
+    onPendingChange?.(false);
+    if (active.missed) {
+      // The textarea lacks the peers' edits: refill it, the caret after the
+      // composed text.
+      if (caret !== null) {
+        const at = Y.createRelativePositionFromTypeIndex(text, caret);
+        selection = { direction: 'none', end: at, start: at };
+      }
+      render();
+    }
+    undo.stopCapturing();
+    for (const resolve of waiting.splice(0)) resolve();
+  };
+  registerFlush.current = () =>
+    composition
+      ? new Promise<void>((resolve) => waiting.push(resolve))
+      : Promise.resolve();
+  const key = (event: Event) => {
+    const { ctrlKey, metaKey, shiftKey } = event as KeyboardEvent;
+    if (!(metaKey || ctrlKey)) return;
+    const key = (event as KeyboardEvent).key.toLowerCase();
+    if (key === 's') {
+      event.preventDefault();
+      void registerFlush
+        .current?.()
+        .then(onSave)
+        .catch(() => {});
+    }
+    if (!composition && (key === 'z' || key === 'y')) {
+      event.preventDefault();
+      if (shiftKey || key === 'y') undo.redo();
+      else undo.undo();
+    }
+  };
+  input.addEventListener('beforeinput', beforeInput);
+  input.addEventListener('input', change);
+  input.addEventListener('compositionstart', compositionStart);
+  input.addEventListener('compositionend', compositionEnd);
+  input.addEventListener('keydown', key);
+  doc.on('beforeTransaction', before);
+  text.observe(observe);
+  return () => {
+    // Commit authored IME operations before detaching the binding.
+    compositionEnd();
+    registerFlush.current = null;
+    input.removeEventListener('beforeinput', beforeInput);
+    input.removeEventListener('input', change);
+    input.removeEventListener('compositionstart', compositionStart);
+    input.removeEventListener('compositionend', compositionEnd);
+    input.removeEventListener('keydown', key);
+    doc.off('beforeTransaction', before);
+    text.unobserve(observe);
+    undo.destroy();
   };
 }

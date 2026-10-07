@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import {
   applyTextEdit,
   applyTextInput,
   beginTextComposition,
+  bindSourceTextarea,
   type InputStart,
   SOURCE_TEXT_INPUT,
   sourceLines,
@@ -201,6 +202,7 @@ describe('IME composition', () => {
     // Peers edit before and after the composition while it runs.
     remote.getText('source').insert(10, '!');
     remote.getText('source').insert(0, '> ');
+    composition.peerEdit();
     Y.applyUpdate(doc, Y.encodeStateAsUpdate(remote), 'remote');
     composition.commit('日本語 ');
     expect(text.toString()).toBe('> alpha 日本語 beta!');
@@ -211,12 +213,14 @@ describe('IME composition', () => {
     remote.destroy();
   });
 
-  it('replaces the selection it started on, even after a peer edited inside it', () => {
+  it('replaces only the characters that were there, keeping what a peer typed inside the range', () => {
     const { doc, text } = sourceDoc('one two three');
     const composition = beginTextComposition(text, 4, 7, sourceLines('x'));
+    composition.peerEdit();
     text.insert(5, 'X', 'remote');
+    // The caret goes after the composed text.
     expect(composition.commit('二')).toBe(5);
-    expect(text.toString()).toBe('one 二 three');
+    expect(text.toString()).toBe('one 二X three');
     doc.destroy();
   });
 
@@ -225,17 +229,19 @@ describe('IME composition', () => {
     const lines = sourceLines('x');
     // No peer edit: the whole value's difference from the live text.
     const quiet = beginTextComposition(text, 7, 7, lines);
-    expect(quiet.rewrite('one 2 three')).toBeNull();
+    expect(quiet.rewrite('one 2 three', 5)).toBeNull();
     expect(quiet.missed).toBe(false);
     expect(text.toString()).toBe('one 2 three');
     // A peer appends while composing (the editor calls `peerEdit` before
     // each transaction not its own); the textarea never saw it.
     const busy = beginTextComposition(text, 5, 5, lines);
     busy.peerEdit();
-    text.insert(11, '!', 'remote');
+    text.insert(0, '> ', 'remote');
     expect(busy.missed).toBe(true);
-    expect(busy.rewrite('one two three')).toBeNull();
-    expect(text.toString()).toBe('one two three!');
+    // The IME rewrote "2" as "two"; the caret after it moves with the
+    // peer's text before it.
+    expect(busy.rewrite('one two three', 7)).toBe(9);
+    expect(text.toString()).toBe('> one two three');
     doc.destroy();
   });
 
@@ -249,6 +255,131 @@ describe('IME composition', () => {
     );
     composition.commit('漢\n字');
     expect(text.toString()).toBe('a\r\n漢\r\n字b');
+    doc.destroy();
+  });
+});
+
+/** A textarea as the binding sees it: its value folds CR and CRLF to LF,
+ * setting it puts the caret at the end, and `type` does what the browser does
+ * for one input (beforeinput, the change and caret, input). */
+class Textarea extends EventTarget {
+  #value = '';
+  selectionDirection: 'forward' | 'backward' | 'none' = 'none';
+  selectionEnd = 0;
+  selectionStart = 0;
+  get textLength() {
+    return this.#value.length;
+  }
+  get value() {
+    return this.#value;
+  }
+  set value(next: string) {
+    this.#value = next.replace(/\r\n|\r/g, '\n');
+    this.setSelectionRange(this.#value.length, this.#value.length);
+  }
+  setSelectionRange(
+    start: number,
+    end: number,
+    direction: 'forward' | 'backward' | 'none' = 'none'
+  ) {
+    this.selectionStart = start;
+    this.selectionEnd = end;
+    this.selectionDirection = direction;
+  }
+  fire(type: string, fields: Record<string, unknown> = {}) {
+    this.dispatchEvent(Object.assign(new Event(type), fields));
+  }
+  /** Replace [start, end) with `insert` as one input of `inputType`. */
+  type(
+    inputType: string,
+    start: number,
+    end: number,
+    insert: string,
+    data: string | null = insert || null
+  ) {
+    this.fire('beforeinput', { data, inputType });
+    this.#value = this.#value.slice(0, start) + insert + this.#value.slice(end);
+    this.setSelectionRange(start + insert.length, start + insert.length);
+    this.fire('input', { data, inputType });
+  }
+}
+
+describe('the textarea binding', () => {
+  function bound(value: string) {
+    const doc = new Y.Doc();
+    const text = doc.getText('source');
+    text.insert(0, value);
+    const input = new Textarea();
+    const registerFlush = { current: null as (() => Promise<void>) | null };
+    const onPendingChange = vi.fn();
+    const unbind = bindSourceTextarea(input, doc, {
+      onPendingChange,
+      onSave: async () => {},
+      registerFlush,
+    });
+    return { doc, input, onPendingChange, registerFlush, text, unbind };
+  }
+
+  it('applies typing, paste, Enter and deletions, and undoes only its own edits', () => {
+    const { doc, input, text, unbind } = bound('alpha\r\nbeta');
+    expect(input.value).toBe('alpha\nbeta');
+    input.setSelectionRange(5, 5);
+    input.type('insertText', 5, 5, '!');
+    input.type('insertFromPaste', 6, 6, ' one\ntwo');
+    input.type('insertLineBreak', 14, 14, '\n', null);
+    input.setSelectionRange(1, 1);
+    input.type('deleteContentBackward', 0, 1, '', null);
+    input.setSelectionRange(0, 0);
+    input.type('deleteContentForward', 0, 1, '', null);
+    expect(text.toString()).toBe('pha! one\r\ntwo\r\n\r\nbeta');
+    expect(text.toString().replace(/\r\n/g, '\n')).toBe(input.value);
+    // A peer's edit refills the textarea and keeps the caret in place.
+    input.setSelectionRange(3, 3);
+    text.insert(text.length, '!', 'remote');
+    expect(input.value.endsWith('beta!')).toBe(true);
+    expect(input.selectionStart).toBe(3);
+    input.fire('keydown', { ctrlKey: true, key: 'z', preventDefault() {} });
+    expect(text.toString()).toBe('alpha\r\nbeta!');
+    unbind();
+    doc.destroy();
+  });
+
+  it('commits a composition around a peer edit and puts the caret after it', async () => {
+    const { doc, input, onPendingChange, registerFlush, text, unbind } =
+      bound('one two three');
+    input.setSelectionRange(4, 7);
+    input.fire('compositionstart');
+    expect(onPendingChange).toHaveBeenLastCalledWith(true);
+    const flushed = registerFlush.current!();
+    // The IME types into the textarea, which ignores it until the end.
+    input.type('insertCompositionText', 4, 7, '二', '二');
+    expect(text.toString()).toBe('one two three');
+    // A peer types inside the replaced word and at the start meanwhile.
+    text.insert(5, 'X', 'remote');
+    text.insert(0, '> ', 'remote');
+    expect(input.value).toBe('one 二 three');
+    input.fire('compositionend', { data: '二' });
+    await flushed;
+    expect(onPendingChange).toHaveBeenLastCalledWith(false);
+    expect(text.toString()).toBe('> one 二X three');
+    expect(input.value).toBe('> one 二X three');
+    expect(input.selectionStart).toBe(7);
+    unbind();
+    doc.destroy();
+  });
+
+  it('puts the caret after an IME rewrite made while a peer edited', () => {
+    const { doc, input, text, unbind } = bound('one 2 three');
+    input.setSelectionRange(5, 5);
+    input.fire('compositionstart');
+    // The IME recomposes the word before the caret ("2" becomes "two").
+    input.type('insertCompositionText', 4, 5, 'two', 'two');
+    text.insert(0, '> ', 'remote');
+    input.fire('compositionend', { data: 'two' });
+    expect(text.toString()).toBe('> one two three');
+    expect(input.value).toBe('> one two three');
+    expect(input.selectionStart).toBe(9);
+    unbind();
     doc.destroy();
   });
 });
