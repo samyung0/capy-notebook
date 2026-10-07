@@ -76,7 +76,7 @@ func TestSourceAccountCancellationAllowsManualRetry(t *testing.T) {
 	var running *string
 	var candidates int
 	var state string
-	if err := s.pool.QueryRow(ctx, `SELECT running_job_id,convert_from(state,'UTF8'),(SELECT count(*) FROM source_refresh_candidates WHERE file_id=$1) FROM source_documents WHERE file_id=$1`, file.ID).Scan(&running, &state, &candidates); err != nil {
+	if err := s.pool.QueryRow(ctx, `SELECT d.running_job_id,`+sourceTestDocumentSQL+`,(SELECT count(*) FROM source_refresh_candidates WHERE file_id=$1) FROM source_documents d WHERE d.file_id=$1`, file.ID).Scan(&running, &state, &candidates); err != nil {
 		t.Fatal(err)
 	}
 	if running != nil || candidates != 0 || state != "new-state" {

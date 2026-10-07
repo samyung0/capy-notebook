@@ -13,7 +13,7 @@ import {
 } from './FileStates';
 import { useReportEditorStatus } from './fileModeContext';
 import { SourceTextEditor } from './SourceTextEditor';
-import { fetchSourceBytes, savedSourceUpdate } from './sourceState';
+import { savedSourceUpdate } from './sourceState';
 import { sourceHeaderStatus, useSourceSession } from './useSourceSession';
 
 export function SourceTextView({
@@ -81,14 +81,9 @@ export function SourceTextView({
     setSaved(null);
     api
       .get<SourceSession>(`/files/${file.id}/source-session?view=true`)
-      .then(async (session) => {
-        // Rows saved over a state that is still seed(base) need the base.
-        const base =
-          !session.state && session.stateRows?.length
-            ? await fetchSourceBytes(session.sourceURL)
-            : undefined;
+      .then((session) => {
         if (cancelled) return;
-        const update = savedSourceUpdate(session, base);
+        const update = savedSourceUpdate(session);
         if (update) {
           const doc = new Y.Doc();
           Y.applyUpdate(doc, update);

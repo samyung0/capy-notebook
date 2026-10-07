@@ -373,7 +373,8 @@ impl Sources {
 
     /// The updates that make the durable state, in order: seed(base) and the
     /// stored change for Office (refused when the change names no seed or
-    /// another one: the load check), the text state (or its seed), then rows.
+    /// another one: the load check), the text state (its seed only while
+    /// nothing is saved: a text room's first row holds the seed), then rows.
     async fn layers(
         &self,
         format: SourceFormat,
@@ -401,7 +402,11 @@ impl Sources {
             layers.push(seed.state.clone());
             layers.extend(stored.state.clone());
         } else {
-            layers.push(stored.state.clone().unwrap_or_else(|| seed.state.clone()));
+            match &stored.state {
+                Some(state) => layers.push(state.clone()),
+                None if stored.rows.is_empty() => layers.push(seed.state.clone()),
+                None => {}
+            }
         }
         layers.extend(stored.rows.iter().map(|(_, row)| row.clone()));
         Ok((seed, layers))
@@ -714,6 +719,15 @@ impl Sources {
                     (effects, None)
                 }
             };
+            // A text room's first row is whole, seed included: a text
+            // publication moves the base while the rows stay, and seed(base)
+            // would then name the new bytes.
+            let row = if seeded && office(session.format).is_none() {
+                let seed = self.seed(session.format, &base, &sha, None).await?;
+                whole(session.format, vec![seed.state.clone(), save.row.clone()]).await?
+            } else {
+                save.row.clone()
+            };
             let seed_report = if seeded {
                 let seed_bytes = match office(session.format) {
                     None => Some(
@@ -733,7 +747,7 @@ impl Sources {
                 epoch: room.epoch,
                 expected_checkpoint: expected,
                 base_revision: session.base_revision,
-                update: Some(save.row.clone()),
+                update: Some(row),
                 net_tokens: effect_tokens(&effects),
                 pending_effects: effects.clone(),
                 state_seed_sha256,

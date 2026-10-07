@@ -63,7 +63,7 @@ func TestSourceExportFailureSerializesAccountCancellation(t *testing.T) {
 	var running *string
 	var candidates int
 	var state, status string
-	if err = s.pool.QueryRow(ctx, `SELECT d.running_job_id,convert_from(d.state,'UTF8'),f.status,(SELECT count(*) FROM source_refresh_candidates WHERE file_id=f.id) FROM source_documents d JOIN files f ON f.id=d.file_id WHERE f.id=$1`, file.ID).Scan(&running, &state, &status, &candidates); err != nil {
+	if err = s.pool.QueryRow(ctx, `SELECT d.running_job_id,`+sourceTestDocumentSQL+`,f.status,(SELECT count(*) FROM source_refresh_candidates WHERE file_id=f.id) FROM source_documents d JOIN files f ON f.id=d.file_id WHERE f.id=$1`, file.ID).Scan(&running, &state, &status, &candidates); err != nil {
 		t.Fatal(err)
 	}
 	if running != nil || candidates != 0 || state != "new-state" || status != "ready" {

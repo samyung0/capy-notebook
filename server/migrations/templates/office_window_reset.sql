@@ -8,7 +8,9 @@
 --                golden seeds), e.g. 'docx','xlsx','pptx'
 -- Written for the NULL-state model the window ships with: a NULL state is
 -- seed(base), the indexed baseline is derived from the base, and
--- storage_bytes counts a NULL column as 0. Checked once against that schema.
+-- storage_bytes counts a NULL column as 0; the rows saved over a state
+-- (source_document_updates, migration 0067) go with it. Checked once against
+-- that schema.
 --
 -- The deploy runs it only after `office-maintenance status` prints zero:
 -- editing paused, no Office source with unpublished edits, and no Office
@@ -33,9 +35,9 @@ DO $$ BEGIN
 END $$;
 
 -- One statement: release AI edit Undo tied to the old engine's identities,
--- delete refresh candidates, then bump the epoch (old rooms and tabs can no
--- longer write), drop the state (rooms reseed on the new engine) and empty
--- pending effects.
+-- delete refresh candidates and saved rows, then bump the epoch (old rooms and
+-- tabs can no longer write), drop the state (rooms reseed on the new engine)
+-- and empty pending effects.
 WITH dropped AS (
   SELECT file_id FROM source_documents WHERE format IN ({{FORMATS}})
 ), released AS (
@@ -47,9 +49,12 @@ WITH dropped AS (
     AND i.undo_status = 'available'
 ), candidates AS (
   DELETE FROM source_refresh_candidates c USING dropped WHERE c.file_id = dropped.file_id
+), saved_rows AS (
+  DELETE FROM source_document_updates u USING dropped WHERE u.file_id = dropped.file_id
 )
 UPDATE source_documents d
-SET epoch = d.epoch + 1, state = NULL, state_seed_sha256 = NULL, seed_bytes = 0, pending_effects = '[]'::jsonb,
+SET epoch = d.epoch + 1, state = NULL, state_seed_sha256 = NULL, seed_bytes = 0, log_bytes = 0, log_rows = 0,
+    pending_effects = '[]'::jsonb,
     net_tokens = 0, running_job_id = NULL, desired_checkpoint = NULL, desired_manual = false,
     refresh_error = NULL, updated_at = now()
 FROM dropped

@@ -22,8 +22,8 @@ func TestSourceEditCheckpointReceiptAndUndo(t *testing.T) {
 	doc := sourceTestSeed(t, s, owner, file.ID)
 	usedBefore := userUsedBytes(t, s, owner)
 
-	// The first save reports a seed as long as its state, so used-bytes deltas
-	// isolate the inverse charge.
+	// The first save reports a seed as long as its row; the rows saved after
+	// it are charged with the source, so the check below takes them out.
 	inverse := json.RawMessage(`{"commands":[{"type":"replace_text","expectedText":"new","text":"old","offset":0}]}`)
 	guards := json.RawMessage(`[{"kind":"text","offset":0,"length":3,"runs":[{"client":1,"clock":0,"len":3}]}]`)
 	edit := SourceCheckpointOperation{
@@ -80,8 +80,12 @@ func TestSourceEditCheckpointReceiptAndUndo(t *testing.T) {
 	if err != nil || statuses[edit.Receipt.ID].Status != agenttools.UndoUndone {
 		t.Fatalf("statuses = %+v err = %v", statuses, err)
 	}
-	if got := userUsedBytes(t, s, owner); got != usedBefore {
-		t.Fatalf("inverse bytes not released: used %d want %d", got, usedBefore)
+	var sourceBytes int64
+	if err = s.pool.QueryRow(ctx, `SELECT storage_bytes FROM source_documents WHERE file_id=$1`, file.ID).Scan(&sourceBytes); err != nil {
+		t.Fatal(err)
+	}
+	if got := userUsedBytes(t, s, owner); got != usedBefore+sourceBytes {
+		t.Fatalf("inverse bytes not released: used %d want %d", got, usedBefore+sourceBytes)
 	}
 	// A second Undo of the same edit is refused.
 	_, err = s.SaveSourceCheckpoint(ctx, file.ID, SourceCheckpoint{

@@ -65,6 +65,7 @@ func sourceTestSave(doc SourceSession, actor, state string) SourceCheckpoint {
 
 // sourceTestDocument is a saved document as these tests write it: the state,
 // then the rows saved over it, joined by "+" ("" is seed(base)).
+// sourceTestDocumentSQL reads the same from source_documents d.
 func sourceTestDocument(doc SourceSession) string {
 	parts := []string{}
 	if doc.State != nil {
@@ -75,6 +76,8 @@ func sourceTestDocument(doc SourceSession) string {
 	}
 	return strings.Join(parts, "+")
 }
+
+const sourceTestDocumentSQL = `concat_ws('+',convert_from(d.state,'UTF8'),(SELECT string_agg(convert_from(u.update,'UTF8'),'+' ORDER BY u.checkpoint) FROM source_document_updates u WHERE u.file_id=d.file_id AND u.epoch=d.epoch))`
 
 func sourceTestEdit(t *testing.T, s *Store, actor string, doc SourceSession, state string) SourceSession {
 	t.Helper()
@@ -610,7 +613,7 @@ func TestDeferredOfficePublicationAndRebuild(t *testing.T) {
 		t.Fatal(err)
 	}
 	export := strings.Repeat("b", 64)
-	if err = s.FinalizeSourceRefresh(ctx, file.ID, SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: export, SizeBytes: 120, SourceETag: "etag-b"}); err != nil {
+	if err = s.FinalizeSourceRefresh(ctx, file.ID, SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: export, SizeBytes: 120, SourceETag: "etag-b", State: []byte("captured-state"), StateSeedSHA256: &sourceTestStateSeed}); err != nil {
 		t.Fatal(err)
 	}
 	captured := doc.Checkpoint
@@ -646,7 +649,7 @@ func TestDeferredOfficePublicationAndRebuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if published.Epoch != 1 || string(published.State) != "later-state" || published.BaseBlobPath != oldBase || published.IndexedCheckpoint != captured || published.BaseRevision != 2 || !published.RebuildPending || string(published.PublishedState) != "captured-state" || published.PublishedSourceSHA256 != export || published.PublishedBlobPath != newBase || published.NetTokens != 2 {
+	if published.Epoch != 1 || sourceTestDocument(published) != "captured-state+later-state" || published.BaseBlobPath != oldBase || published.IndexedCheckpoint != captured || published.BaseRevision != 2 || !published.RebuildPending || string(published.PublishedState) != "captured-state" || published.PublishedSourceSHA256 != export || published.PublishedBlobPath != newBase || published.NetTokens != 2 {
 		t.Fatalf("deferred publication: %+v", published)
 	}
 	// The file names the export; the source row still names the old base.
@@ -713,7 +716,7 @@ func TestDeferredOfficePublicationAndRebuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rebuilt.Epoch != 2 || rebuilt.BaseBlobPath != newBase || rebuilt.BaseSourceSHA256 != export || string(rebuilt.State) != "rebased-newest" || rebuilt.StateSeedSHA256 == nil || *rebuilt.StateSeedSHA256 != sourceTestStateSeed || rebuilt.RebuildPending || rebuilt.PublishedState != nil || string(rebuilt.PendingEffects) != "[]" {
+	if rebuilt.Epoch != 2 || rebuilt.BaseBlobPath != newBase || rebuilt.BaseSourceSHA256 != export || sourceTestDocument(rebuilt) != "rebased-newest" || rebuilt.StateSeedSHA256 == nil || *rebuilt.StateSeedSHA256 != sourceTestStateSeed || rebuilt.RebuildPending || rebuilt.PublishedState != nil || string(rebuilt.PendingEffects) != "[]" {
 		t.Fatalf("rebuild: %+v", rebuilt)
 	}
 	if got := blobRefCount(t, s, oldBase); got != oldRefs-2 {
@@ -783,7 +786,7 @@ func TestDeferredPublicationWithoutLaterEditsRebuildsToTheExport(t *testing.T) {
 	ctx := context.Background()
 	fileID, checkpoint, export := sourceTestDeferredPublication(t, s, newBlobTestUser(t, s, "deferred_clean_owner"))
 	view, err := s.ViewSourceSession(ctx, fileID)
-	if err != nil || string(view.State) != "captured-state" || view.Checkpoint != view.IndexedCheckpoint {
+	if err != nil || sourceTestDocument(view) != "captured-state" || view.Checkpoint != view.IndexedCheckpoint {
 		t.Fatalf("view while the rebuild is pending: %+v %v", view, err)
 	}
 	if err = s.RebuildSource(ctx, fileID, SourceRebuild{Epoch: 1, ExpectedCheckpoint: checkpoint, PublishedSourceSHA256: export, State: []byte("x"), StateSeedSHA256: sourceTestStateSeed, PendingEffects: json.RawMessage(`[]`)}); !errors.Is(err, ErrConflict) {
@@ -793,7 +796,7 @@ func TestDeferredPublicationWithoutLaterEditsRebuildsToTheExport(t *testing.T) {
 		t.Fatal(err)
 	}
 	view, err = s.ViewSourceSession(ctx, fileID)
-	if err != nil || view.State != nil || view.Epoch != 2 || view.BaseSourceSHA256 != export {
+	if err != nil || sourceTestDocument(view) != "" || view.Epoch != 2 || view.BaseSourceSHA256 != export {
 		t.Fatalf("view after the rebuild: %+v %v", view, err)
 	}
 }
@@ -906,8 +909,8 @@ func TestSourceEpochResetKeepsTheSaveAndRetiresTheOldEpoch(t *testing.T) {
 		t.Fatalf("second reset moved=%v err=%v", moved, err)
 	}
 	after := sourceTestSeed(t, s, owner, file.ID)
-	if after.Epoch != doc.Epoch+1 || after.Checkpoint != doc.Checkpoint || string(after.State) != "saved" {
-		t.Fatalf("after the reset: epoch %d checkpoint %d state %q", after.Epoch, after.Checkpoint, after.State)
+	if after.Epoch != doc.Epoch+1 || after.Checkpoint != doc.Checkpoint || sourceTestDocument(after) != "saved" {
+		t.Fatalf("after the reset: epoch %d checkpoint %d document %q", after.Epoch, after.Checkpoint, sourceTestDocument(after))
 	}
 	// A save measured in the old epoch never lands.
 	if _, err := s.SaveSourceCheckpoint(ctx, file.ID, sourceTestSave(doc, owner, "stale")); err == nil {
@@ -987,7 +990,7 @@ func TestSourceTextPublishesCapturedStateWithExactRemainingEffects(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = s.FinalizeSourceRefresh(ctx, file.ID, SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-text"}); err != nil {
+	if err = s.FinalizeSourceRefresh(ctx, file.ID, SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-text", State: []byte("state-b")}); err != nil {
 		t.Fatal(err)
 	}
 	latest := sourceTestEdit(t, s, owner, doc, "state-a-again")
@@ -1006,7 +1009,7 @@ func TestSourceTextPublishesCapturedStateWithExactRemainingEffects(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if published.Epoch != 1 || published.Checkpoint != 2 || published.IndexedCheckpoint != 1 || string(published.State) != "state-a-again" || published.NetTokens != 2 {
+	if published.Epoch != 1 || published.Checkpoint != 2 || published.IndexedCheckpoint != 1 || sourceTestDocument(published) != "state-b+state-a-again" || published.NetTokens != 2 {
 		t.Fatalf("text residual or lineage lost: %+v", published)
 	}
 }
@@ -1209,7 +1212,7 @@ func TestSourceExportLeaseExhaustionPreservesEdits(t *testing.T) {
 	}
 	var status, state string
 	var count int
-	if err = s.pool.QueryRow(ctx, `SELECT j.status,convert_from(d.state,'UTF8'),(SELECT count(*) FROM source_refresh_candidates WHERE file_id=$1) FROM jobs j JOIN source_documents d ON d.file_id=$1 WHERE j.id=$2`, file.ID, job.JobID).Scan(&status, &state, &count); err != nil {
+	if err = s.pool.QueryRow(ctx, `SELECT j.status,`+sourceTestDocumentSQL+`,(SELECT count(*) FROM source_refresh_candidates WHERE file_id=$1) FROM jobs j JOIN source_documents d ON d.file_id=$1 WHERE j.id=$2`, file.ID, job.JobID).Scan(&status, &state, &count); err != nil {
 		t.Fatal(err)
 	}
 	if status != "failed" || state != "pending-state" || count != 0 {

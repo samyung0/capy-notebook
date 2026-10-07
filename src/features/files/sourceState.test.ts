@@ -1,22 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 
-import { savedSourceUpdate, textSeed } from './sourceState';
+import { savedSourceUpdate } from './sourceState';
 
 const base64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
 
-/** A room over the text seed that saved two rows (delta saves). */
-function savedRows(base: Uint8Array) {
+/** A text room's saves: the first row whole, then the edits after it. */
+function savedRows() {
   const room = new Y.Doc();
-  Y.applyUpdate(room, textSeed(base));
-  const rows: Uint8Array[] = [];
+  const text = room.getText('source');
+  text.insert(0, 'hello');
+  const rows = [Y.encodeStateAsUpdate(room)];
   for (const edit of [' world', '!']) {
     const before = Y.encodeStateVector(room);
-    const text = room.getText('source');
     text.insert(text.length, edit);
     rows.push(Y.encodeStateAsUpdate(room, before));
   }
-  return { room, rows: rows.map(base64) };
+  return rows.map(base64);
 }
 
 function textOf(update: Uint8Array | null) {
@@ -26,23 +26,17 @@ function textOf(update: Uint8Array | null) {
 }
 
 describe('savedSourceUpdate', () => {
-  const base = new TextEncoder().encode('hello');
-
-  it('replays rows over a text seed it rebuilds from the base', () => {
-    const { rows } = savedRows(base);
-    const update = savedSourceUpdate(
-      { format: 'text', state: null, stateRows: rows },
-      base
+  it('replays the rows saved over a state, or alone', () => {
+    const [first, ...later] = savedRows();
+    expect(
+      textOf(savedSourceUpdate({ state: null, stateRows: [first, ...later] }))
+    ).toBe('hello world!');
+    expect(textOf(savedSourceUpdate({ state: first, stateRows: later }))).toBe(
+      'hello world!'
     );
-    expect(textOf(update)).toBe('hello world!');
   });
 
-  it('replays rows over a stored state, and nothing saved is null', () => {
-    const { room, rows } = savedRows(base);
-    const state = base64(Y.encodeStateAsUpdate(room));
-    expect(
-      textOf(savedSourceUpdate({ format: 'text', state, stateRows: rows }))
-    ).toBe('hello world!');
-    expect(savedSourceUpdate({ format: 'docx', state: null })).toBeNull();
+  it('is null when nothing is saved', () => {
+    expect(savedSourceUpdate({ state: null })).toBeNull();
   });
 });

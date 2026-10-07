@@ -59,7 +59,7 @@ func TestSourceCheckpointSerializesEditorCancellation(t *testing.T) {
 	}
 	var state string
 	var running *string
-	if err = s.pool.QueryRow(ctx, `SELECT convert_from(state,'UTF8'),running_job_id FROM source_documents WHERE file_id=$1`, file.ID).Scan(&state, &running); err != nil {
+	if err = s.pool.QueryRow(ctx, `SELECT `+sourceTestDocumentSQL+`,d.running_job_id FROM source_documents d WHERE d.file_id=$1`, file.ID).Scan(&state, &running); err != nil {
 		t.Fatal(err)
 	}
 	// The refresh belongs to the owner, so an editor's deletion leaves it running.
