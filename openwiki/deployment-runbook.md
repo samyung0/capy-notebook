@@ -124,7 +124,7 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    KV/R2 cache. Only the `run_worker_first` paths reach the Worker; every other
    request, SPA fallbacks included, is served by the asset layer without an
    invocation. `public/_headers` marks the content-hashed `/assets/*` bundles
-   `immutable` and the avatar/workspace `/icons/*` `max-age=86400`; the rest
+   `immutable` and the avatar/workspace `/icons/*` `max-age=31536000, immutable` (stable artwork, kept names); the rest
    keep the Workers Assets default of `public, max-age=0, must-revalidate`
    with an `ETag`.
    The Office viewer/editor needs its own cookie-less hostname in production,
