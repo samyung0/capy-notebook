@@ -1,7 +1,7 @@
 import { ClerkFailed, ClerkProvider, useAuth, useUser } from '@clerk/react';
 import { useEffect } from 'react';
 import { setAuthTokenGetter } from '@/api/auth';
-import { identifyUser } from '@/lib/observability';
+import { identifyAnalytics } from '@/lib/analytics';
 import { settleSession } from './session';
 
 function SessionBridge() {
@@ -16,7 +16,7 @@ function SessionBridge() {
   }, [getToken, isLoaded, isSignedIn]);
 
   useEffect(() => {
-    if (isLoaded && userLoaded) identifyUser(userId ?? null, email);
+    if (isLoaded && userLoaded) identifyAnalytics(userId ?? null, email);
   }, [email, isLoaded, userId, userLoaded]);
 
   return null;

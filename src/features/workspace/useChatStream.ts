@@ -16,8 +16,8 @@ import type {
   WireMessage,
 } from '@/api/types';
 import { m } from '@/i18n';
+import { track } from '@/lib/analytics';
 import { errorCopy } from '@/lib/errors';
-import { track } from '@/lib/observability';
 
 /** Map a persisted wire message onto the UI turn shape (narrowing role/status). */
 export function toChatMessage(row: WireMessage): ChatMessage {

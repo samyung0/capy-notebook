@@ -10,8 +10,8 @@ import { ErrorState } from '@/components/app/ErrorState';
 import { TabHeader } from '@/components/app/tabPanel';
 import { Button, ErrorAction } from '@/components/ui/Button';
 import { getLocale, m } from '@/i18n';
+import { track } from '@/lib/analytics';
 import { describeError } from '@/lib/errors';
-import { track } from '@/lib/observability';
 import {
   type BillingColumn,
   BillingTable,

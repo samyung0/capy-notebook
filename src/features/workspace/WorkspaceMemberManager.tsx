@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/Select';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
-import { track } from '@/lib/observability';
+import { track } from '@/lib/analytics';
 
 function roleOptions(): Array<{ value: AssignableRole; label: string }> {
   return [

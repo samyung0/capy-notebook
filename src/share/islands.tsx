@@ -13,7 +13,6 @@ import {
   MermaidView,
   StaticMediaAsset,
 } from '@/features/materials/staticViews';
-import { reportReactError } from '@/lib/observability';
 import { PublicEmbedsContext } from './PublicEmbed';
 import type { ShareState } from './state';
 
@@ -63,12 +62,7 @@ export async function hydrateIslands(
             </PublicEmbedsContext.Provider>
           </AssetUrlContext.Provider>
         </TooltipProvider>
-      </StrictMode>,
-      {
-        onCaughtError: reportReactError,
-        onRecoverableError: reportReactError,
-        onUncaughtError: reportReactError,
-      }
+      </StrictMode>
     );
   }
   // Grading failures in embedded quizzes toast.

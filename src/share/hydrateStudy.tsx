@@ -14,24 +14,13 @@ const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as
   | undefined;
 const ShareAuth = lazy(() => import('./ShareAuth'));
 
-export async function hydrateStudy(
-  state: StudyState,
-  observability: Promise<typeof import('@/lib/observability')>
-) {
+export async function hydrateStudy(state: StudyState) {
   if (USE_MSW) {
     const { startMockServer } = await import('@/mocks/browser');
     await startMockServer();
   }
-  // Hydrate at once: a click before then is lost. Errors wait for reporting.
-  const report = (error: unknown, info: { componentStack?: string }) =>
-    void observability.then(({ reportReactError }) =>
-      reportReactError(error, info)
-    );
-  hydrateRoot(document.getElementById('root')!, <StudyPage state={state} />, {
-    onCaughtError: report,
-    onRecoverableError: report,
-    onUncaughtError: report,
-  });
+  // Hydrate at once: a click before then is lost.
+  hydrateRoot(document.getElementById('root')!, <StudyPage state={state} />);
 
   const extras = document.body.appendChild(document.createElement('div'));
   // MSW and key-less local runs have no session: `?anonymous` picks the

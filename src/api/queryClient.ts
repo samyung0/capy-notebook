@@ -1,13 +1,13 @@
 import { MutationCache, QueryClient } from '@tanstack/react-query';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
+import { trackQuotaBlocked } from '@/lib/analytics';
 import {
   deferStorageRefusal,
   describeError,
   isAbortError,
   toastKeyFor,
 } from '@/lib/errors';
-import { trackQuotaBlocked } from '@/lib/observability';
 import {
   isAccountBlockingError,
   isAccountForbiddenError,

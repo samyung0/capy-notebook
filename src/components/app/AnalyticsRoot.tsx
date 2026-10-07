@@ -3,7 +3,8 @@ import { useRouterState } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { USE_MSW } from '@/api/auth';
 import { useMe } from '@/api/hooks';
-import { identifyUser, trackPageView } from '@/lib/observability';
+import { trackPageView } from '@/lib/analytics';
+import { identifyUser } from '@/lib/observability';
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as
   | string

@@ -2,8 +2,8 @@ import { isApiError, isStorageQuotaError } from '@/api/client';
 import { userToast } from '@/components/ui/userToast';
 import { signInHref } from '@/features/auth/clerk';
 import { m } from '@/i18n';
+import { trackQuotaBlocked } from '@/lib/analytics';
 import { deferStorageRefusal, errorCopy } from '@/lib/errors';
-import { trackQuotaBlocked } from '@/lib/observability';
 
 export function toastCloneError(
   err: unknown,

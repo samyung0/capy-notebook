@@ -11,8 +11,8 @@ import type {
 } from '@/api/types';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
+import { trackQuotaBlocked } from '@/lib/analytics';
 import { deferStorageRefusal, describeError } from '@/lib/errors';
-import { trackQuotaBlocked } from '@/lib/observability';
 import {
   parseSourceImportAcceptedResponse,
   SourceImportFailedError,

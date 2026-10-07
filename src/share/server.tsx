@@ -2,10 +2,13 @@ import { convertLatexToMarkup } from 'mathlive/ssr';
 import { renderToString } from 'react-dom/server';
 import type { AnonymousNote } from '@/api/types';
 import { TooltipProvider } from '@/components/ui/Tooltip';
+import { quizMeta } from '@/features/quizzes/QuizPage';
+import { m } from '@/i18n';
 // @ts-expect-error generated at build time by the Paraglide Vite plugin
 import { overwriteGetLocale } from '@/i18n/paraglide/runtime';
-import { escapeHTML, jsonForHTML } from '@/lib/html';
-import { SharedNote, withoutRepeatedTitle } from './SharedNote';
+import { jsonForHTML } from '@/lib/html';
+import { seoHead, snippet } from '@/lib/seoHead';
+import { plainText, SharedNote, withoutRepeatedTitle } from './SharedNote';
 import { StudyPage, type StudyState } from './StudyPage';
 import { SHARE_STATE_ID, type ShareState } from './state';
 
@@ -58,14 +61,25 @@ export function renderSharePage({
   renderLocale = locale;
   let body: string;
   let state: ShareState;
-  let item: { name: string; privacy: string };
+  let head: string;
   let extraHead = '';
   if (page.kind === 'notes') {
     const { note, token } = page;
     const document = withoutRepeatedTitle(note.content, note.name);
     if (!document) throw new Error('Shared note is not a material document');
-    item = note;
     state = { embeds: note.embeds, kind: 'notes', token };
+    head = seoHead({
+      author: note.author.name,
+      canonical,
+      description:
+        snippet(document.value.map(plainText).join(' ')) ||
+        m.share_seo_note({ author: note.author.name }),
+      indexable: note.privacy === 'public',
+      jsonLd: { '@type': 'Article', headline: note.name },
+      locale,
+      modified: note.updatedAt,
+      name: note.name,
+    });
     body = renderToString(
       <TooltipProvider>
         <SharedNote
@@ -81,14 +95,31 @@ export function renderSharePage({
         '<link rel="stylesheet" href="/mathlive/mathlive-static.css"><link rel="stylesheet" href="/mathlive/mathlive-fonts.css">';
   } else {
     state = page;
-    item = page.kind === 'quizzes' ? page.quiz : page.set;
+    const item = page.kind === 'quizzes' ? page.quiz : page.set;
+    const author = item.author.name;
+    head = seoHead({
+      author,
+      canonical,
+      description:
+        page.kind === 'quizzes'
+          ? m.share_seo_quiz({ author, meta: quizMeta(page.quiz.questions) })
+          : page.set.cards.length === 1
+            ? m.share_seo_flashcards_one({ author })
+            : m.share_seo_flashcards({ author, count: page.set.cards.length }),
+      indexable: item.privacy === 'public',
+      jsonLd:
+        page.kind === 'quizzes'
+          ? { '@type': 'Quiz' }
+          : { '@type': 'LearningResource', learningResourceType: 'Flashcards' },
+      locale,
+      modified: item.updatedAt,
+      name: item.name,
+    });
     body = renderToString(<StudyPage state={page} />);
   }
-  const title = `${escapeHTML(item.name)} | Capy Notebook`;
-  const head = `<title>${title}</title><link rel="canonical" href="${escapeHTML(canonical)}"><meta property="og:type" content="article"><meta property="og:title" content="${escapeHTML(item.name)}"><meta property="og:url" content="${escapeHTML(canonical)}"><meta property="og:site_name" content="Capy Notebook"><meta name="robots" content="${item.privacy === 'link' ? 'noindex, nofollow' : 'index, follow'}">${extraHead}`;
   return template
     .replace('lang="en"', `lang="${locale}"`)
-    .replace('<!--capy-share-head-->', () => head)
+    .replace('<!--capy-share-head-->', () => head + extraHead)
     .replace(
       '<!--capy-share-body-->',
       () =>

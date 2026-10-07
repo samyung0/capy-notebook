@@ -16,9 +16,10 @@ import {
   ingestStageCode,
   ingestTracker,
   sizeBucket,
+  track,
+  trackItemCloned,
 } from '@/lib/analytics';
 import { NOTIFICATION_PAGE_SIZE } from '@/lib/const';
-import { track, trackItemCloned } from '@/lib/observability';
 import { USE_MSW } from './auth';
 import { api, qk } from './client';
 import {

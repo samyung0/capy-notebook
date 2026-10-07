@@ -18,7 +18,7 @@ import {
   useAccountFrozen,
 } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
-import { track } from '@/lib/observability';
+import { track } from '@/lib/analytics';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 type WorkspaceSort = 'accessed' | 'created' | 'chapters' | 'files';

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '@/api/client';
-import type { AnalyticsEvent } from '@/lib/observability';
+import type { AnalyticsEvent } from '@/lib/analytics';
 import {
   cardCountBucket,
   cloneSourceFromPath,

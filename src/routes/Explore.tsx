@@ -21,8 +21,8 @@ import {
   useAccountFrozen,
 } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
+import { trackItemCloned } from '@/lib/analytics';
 import { iconUrl } from '@/lib/icon-catalog';
-import { trackItemCloned } from '@/lib/observability';
 import { userColorPair } from '@/lib/userColor';
 
 export default function Explore() {

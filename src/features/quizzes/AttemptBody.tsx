@@ -7,10 +7,9 @@ import { userToast } from '@/components/ui/userToast';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import type { LearnerQuestion } from '@/features/questions/types';
 import { m } from '@/i18n';
-import { scoreBucket } from '@/lib/analytics';
+import { scoreBucket, track } from '@/lib/analytics';
 import { toastSignInRequired } from '@/lib/authToasts';
 import { errorCopy } from '@/lib/errors';
-import { track } from '@/lib/observability';
 import type { Answer } from './grade';
 import { isAnswered } from './QuestionRunner';
 import {

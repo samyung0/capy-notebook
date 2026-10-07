@@ -14,7 +14,8 @@ import { AssetUrlContext } from '@/features/materials/MediaAssetView';
 import { QuizPageHeader } from '@/features/quizzes/QuizPage';
 import { PublicEmbed, PublicEmbedsContext } from './PublicEmbed';
 
-const plainText = (node: unknown): string =>
+/** A node's text, as search snippets and the repeated-title check read it. */
+export const plainText = (node: unknown): string =>
   typeof node === 'object' && node
     ? 'text' in node && typeof node.text === 'string'
       ? node.text

@@ -8,6 +8,7 @@ const TEMPLATE =
   '<html lang="en"><head><!--capy-share-head--></head><body><!--capy-share-body--></body></html>';
 const text = (value: string) => ({ text: value });
 const STATE = /id="share-state">(.*?)<\/script>/;
+const JSON_LD = /<script type="application\/ld\+json">(.*?)<\/script>/;
 
 const note: AnonymousNote = {
   author: { name: 'Mia' },
@@ -90,6 +91,23 @@ describe('renderSharePage', () => {
     // Embeds render on the server too, then hydrate from the state.
     expect(html).toContain('data-island="embed"');
     expect(html).toContain('Mitochondria');
+  });
+
+  it('describes the note for search and link previews, without an image', () => {
+    expect(html).toContain('<meta name="description" content="Energy');
+    expect(html).toContain('<meta name="robots" content="index, follow">');
+    expect(html).toContain(
+      '<meta property="article:modified_time" content="2026-10-04T10:00:00Z">'
+    );
+    expect(html).toContain('<meta name="twitter:card" content="summary">');
+    expect(html).not.toContain('og:image');
+    const jsonLd = JSON.parse(html.match(JSON_LD)?.[1] ?? 'null');
+    expect(jsonLd).toMatchObject({
+      '@type': 'Article',
+      author: { name: 'Mia' },
+      dateModified: '2026-10-04T10:00:00Z',
+      name: 'Cells',
+    });
   });
 
   it('hands the browser only what its islands need', () => {

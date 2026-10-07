@@ -45,8 +45,8 @@ import {
 import { ShareDialog } from '@/features/workspace/ShareDialog';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
+import { trackItemCloned } from '@/lib/analytics';
 import { toastCloneError } from '@/lib/authToasts';
-import { trackItemCloned } from '@/lib/observability';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 const KINDS: MaterialListKind[] = ['note', 'quiz', 'flashcards'];

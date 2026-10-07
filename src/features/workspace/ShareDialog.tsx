@@ -17,9 +17,9 @@ import {
 import { Separator } from '@/components/ui/Separator';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
+import { track } from '@/lib/analytics';
 import { cn } from '@/lib/cn';
 import { deferStorageRefusal, describeError } from '@/lib/errors';
-import { track } from '@/lib/observability';
 import { Input, InputTitle } from '../../components/ui/Input';
 import { MATERIALMODE_ICON } from '../materials/materialIconMappings';
 import { WorkspaceMemberManager } from './WorkspaceMemberManager';

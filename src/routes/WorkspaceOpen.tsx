@@ -55,8 +55,8 @@ import { WorkspaceHealth } from '@/features/workspace/WorkspaceHealth';
 import { WorkspacePicker } from '@/features/workspace/WorkspacePicker';
 import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
 import { m } from '@/i18n';
+import { trackItemCloned } from '@/lib/analytics';
 import { toastCloneError } from '@/lib/authToasts';
-import { trackItemCloned } from '@/lib/observability';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
 type PanelTab = 'study' | 'files' | 'chat';

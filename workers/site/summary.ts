@@ -7,8 +7,9 @@ import { PublicNav } from '../../src/components/app/PublicHeader';
 import { Button } from '../../src/components/ui/Button';
 import { m } from '../../src/i18n';
 import { fileIconName } from '../../src/lib/fileIcons';
-import { escapeHTML, jsonForHTML } from '../../src/lib/html';
+import { escapeHTML } from '../../src/lib/html';
 import { iconUrl } from '../../src/lib/icon-catalog';
+import { seoHead } from '../../src/lib/seoHead';
 import { SummaryFailure } from '../../src/summary/SummaryFailure';
 
 export type SummaryLocale = 'en' | 'zh';
@@ -80,7 +81,24 @@ export function renderSummary(
     `<ul class="summary-files">${entries.map((entry) => `<li>${fileIcon(fileIconName({ kind: 'unknown', name: entry.name }))}<span>${escapeHTML(entry.name)}</span><small>${escapeHTML(fileMeta(entry))}</small></li>`).join('')}</ul>`;
   const section = (name: string, entries: WorkspaceSummary['files']) =>
     `<section class="summary-chapter"><h2>${fileIcon('_folder_open')}<span>${escapeHTML(name)}</span></h2>${files(entries)}</section>`;
-  const header = `<title>${escapeHTML(summary.name)} | Capy Notebook</title><meta name="description" content="${escapeHTML(summary.description || summary.name)}"><link rel="canonical" href="${escapeHTML(canonical)}"><meta property="og:type" content="website"><meta property="og:title" content="${escapeHTML(summary.name)}"><meta property="og:description" content="${escapeHTML(summary.description || summary.name)}"><meta property="og:url" content="${escapeHTML(canonical)}"><meta property="og:site_name" content="Capy Notebook"><meta name="robots" content="${summary.privacy === 'link' ? 'noindex, nofollow' : 'index, follow'}"><script type="application/ld+json">${jsonForHTML({ '@context': 'https://schema.org', '@type': 'CreativeWork', description: summary.description, name: summary.name, url: canonical, ...(summary.author ? { author: { '@type': 'Person', name: summary.author } } : {}) })}</script>`;
+  const counts = m.workspace_card_meta(
+    {
+      chapters: String(summary.chapters.length),
+      files: String(fileCount),
+    },
+    options
+  );
+  const header = seoHead({
+    author: summary.author || undefined,
+    canonical,
+    description:
+      summary.description ||
+      m.share_seo_workspace({ author: summary.author, meta: counts }, options),
+    indexable: summary.privacy === 'public',
+    jsonLd: { '@type': 'CreativeWork' },
+    locale,
+    name: summary.name,
+  });
   const openButton = renderToString(
     createElement(
       Button,
@@ -96,7 +114,7 @@ export function renderSummary(
   const actionMenu = renderToString(
     createElement(PublicActionMenu, { id, kind: 'workspace', locale })
   );
-  const body = `<div class="summary-shell"><header class="summary-header"><a class="summary-brand" href="/">Capy Notebook</a>${publicNav(locale)}</header><main class="summary-panel"><div class="summary-meta"><img class="summary-icon" src="${escapeHTML(iconUrl(summary.iconId))}" alt="" width="60" height="60"><div class="summary-title"><h1>${escapeHTML(summary.name)}</h1><div id="summary-actions" data-workspace-id="${escapeHTML(id)}">${actionMenu}</div></div>${summary.author ? `<p class="summary-byline">${summary.authorAvatarUrl ? `<img class="summary-avatar" src="${escapeHTML(summary.authorAvatarUrl)}" alt="" width="24" height="24">` : ''}${escapeHTML(summary.author)}</p>` : ''}${summary.description ? `<p class="summary-description">${escapeHTML(summary.description)}</p>` : ''}<ul class="summary-tags">${summary.tags.map((tag) => `<li># ${escapeHTML(tag)}</li>`).join('')}</ul>${openButton}</div><p class="summary-counts">${escapeHTML(m.workspace_card_meta({ chapters: String(summary.chapters.length), files: String(fileCount) }, options))}</p><div class="summary-outline">${summary.chapters.map((chapter) => section(chapter.name, chapter.files)).join('')}${summary.files.length ? `<div class="summary-chapter">${files(summary.files)}</div>` : ''}${!summary.chapters.length && !fileCount ? `<p class="summary-empty">${escapeHTML(m.summary_empty({}, options))}</p>` : ''}</div></main><footer class="summary-footer">Capy Notebook</footer></div>`;
+  const body = `<div class="summary-shell"><header class="summary-header"><a class="summary-brand" href="/">Capy Notebook</a>${publicNav(locale)}</header><main class="summary-panel"><div class="summary-meta"><img class="summary-icon" src="${escapeHTML(iconUrl(summary.iconId))}" alt="" width="60" height="60"><div class="summary-title"><h1>${escapeHTML(summary.name)}</h1><div id="summary-actions" data-workspace-id="${escapeHTML(id)}">${actionMenu}</div></div>${summary.author ? `<p class="summary-byline">${summary.authorAvatarUrl ? `<img class="summary-avatar" src="${escapeHTML(summary.authorAvatarUrl)}" alt="" width="24" height="24">` : ''}${escapeHTML(summary.author)}</p>` : ''}${summary.description ? `<p class="summary-description">${escapeHTML(summary.description)}</p>` : ''}<ul class="summary-tags">${summary.tags.map((tag) => `<li># ${escapeHTML(tag)}</li>`).join('')}</ul>${openButton}</div><p class="summary-counts">${escapeHTML(counts)}</p><div class="summary-outline">${summary.chapters.map((chapter) => section(chapter.name, chapter.files)).join('')}${summary.files.length ? `<div class="summary-chapter">${files(summary.files)}</div>` : ''}${!summary.chapters.length && !fileCount ? `<p class="summary-empty">${escapeHTML(m.summary_empty({}, options))}</p>` : ''}</div></main><footer class="summary-footer">Capy Notebook</footer></div>`;
   return template
     .replace('lang="en"', `lang="${locale}"`)
     .replace('<!--capy-summary-head-->', () => header)

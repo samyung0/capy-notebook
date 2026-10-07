@@ -21,9 +21,8 @@ import { userToast } from '@/components/ui/userToast';
 import { StudyBody } from '@/features/flashcards/StudyBody';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
-import { cardCountBucket, flashcardsStudySource } from '@/lib/analytics';
+import { cardCountBucket, flashcardsStudySource, track } from '@/lib/analytics';
 import { toastCloneError } from '@/lib/authToasts';
-import { track } from '@/lib/observability';
 import { SRS_RATINGS } from '@/lib/srs';
 
 /** `/flashcards/$flashcardSetId`, inside the app. Shared links open the public

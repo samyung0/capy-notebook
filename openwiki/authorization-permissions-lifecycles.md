@@ -103,7 +103,12 @@ dashboard. The Worker renders the whole page, header and ⋮ included, and neith
 button shows the moon or sun by CSS and `publicChrome.ts` switches the stored theme (a head script applies it
 before first paint), and the ⋮ is a native popover anchored to its button with Clone as a plain link
 (`PublicActionMenu.tsx`). The page's script (`src/summary/main.ts`) only wires those, points the file icons at
-the sprite and loads analytics after the page. The workspace uses its stored icon and
+the sprite and loads analytics after the page (public pages carry no Sentry). Every public page's head comes
+from `src/lib/seoHead.ts`: title, description (the workspace description, or for an item a generated line such as
+"A quiz by {author}: N questions · M marks", or a note's first 160 characters), canonical, robots (`index` only for
+public items), Open Graph with `og:locale` and `article:modified_time` when the item has one, a Twitter summary
+card and schema.org JSON-LD (`CreativeWork`, `Quiz`, `LearningResource` for flashcards, `Article` for notes); no
+`og:image` until file thumbnails exist. The workspace uses its stored icon and
 shows the owner's avatar (`authorAvatarUrl`, 1px high) beside their name in its byline, and a ⋮ beside the
 name offers Clone workspace (see Clone from a public page below). Chapter and file rows use the file panel's
 Catppuccin sprite and filename icon mapping, with file icons shifted up 1px;

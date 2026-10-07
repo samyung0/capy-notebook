@@ -24,18 +24,17 @@ overwriteGetLocale(() => locale);
 
 bindPublicChrome();
 
-// Analytics and error reporting load after the page, never ahead of it.
-const observability = import('@/lib/observability').then((mod) => {
-  mod.initErrorReporting();
-  mod.trackPageView(
+// Analytics loads after the page, never ahead of it. Public pages carry no
+// error reporting (Sentry stays in the app).
+void import('@/lib/analytics').then(({ trackPageView }) =>
+  trackPageView(
     `/share/${state.kind}/${
       { flashcards: '$flashcardSetId', notes: '$noteId', quizzes: '$quizId' }[
         state.kind
       ]
     }`
-  );
-  return mod;
-});
+  )
+);
 
 if (state.kind === 'notes') {
   document.addEventListener('click', (event) => {
@@ -60,7 +59,5 @@ if (state.kind === 'notes') {
       hydrateIslands(state, islands)
     );
 } else {
-  void import('./hydrateStudy').then(({ hydrateStudy }) =>
-    hydrateStudy(state, observability)
-  );
+  void import('./hydrateStudy').then(({ hydrateStudy }) => hydrateStudy(state));
 }

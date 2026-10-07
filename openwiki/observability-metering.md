@@ -279,7 +279,11 @@ The ops bundle is built inside its Docker image and uploads nothing.
 
 ## 4. Product analytics (PostHog)
 
-`src/lib/observability.ts` loads PostHog lazily and lets it fail silently.
+`src/lib/analytics.ts` loads PostHog lazily and lets it fail silently; it
+does not import Sentry, which lives in `src/lib/observability.ts` with the
+app's error reporting and `identifyUser` (both). Public pages (workspace
+summaries and `/share/*`) use only `analytics.ts`, after the page loads: they
+carry no Sentry, and React errors there go to the console.
 PostHog is never the source of truth for anything a user is charged for. A
 meaningful share of users block it. Billing lives in `usage_events`.
 
@@ -303,8 +307,9 @@ flat low-cardinality properties usable as breakdowns. Adding an event means
 adding a variant to `AnalyticsEvent` and a `track` call site. Never put titles,
 prompts, or note content in properties. Workspace and material ids are fine.
 
-`src/lib/analytics.ts` holds the pure helpers (buckets, path, ingest once-per
-file, quota gate) so unit tests do not import Sentry or PostHog.
+`src/lib/analytics.ts` also holds the pure helpers (buckets, path, ingest
+once-per file, quota gate); PostHog is imported only on first use, so unit
+tests load neither SDK.
 
 ### Identify and pageviews
 
@@ -359,8 +364,8 @@ Retention is weekly first-time `$pageview`, returning on `$pageview`.
 Paywall is `quota_blocked` → `subscription_checkout_started`. That chart is
 not created in PostHog. Read it from the event stream when you need it.
 
-`featureEnabled` / PostHog flags stay unused. Compile-time `src/lib/features.ts`
-remains the gate.
+PostHog feature flags stay unused (there is no flag helper). Compile-time
+`src/lib/features.ts` remains the gate.
 
 ---
 

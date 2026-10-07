@@ -22,9 +22,9 @@ import type { IconName } from '@/components/ui/Icon';
 import { PopupMotion } from '@/components/ui/PopupMotion';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
+import { track } from '@/lib/analytics';
 import { cn } from '@/lib/cn';
 import { llmKeyUserMessage } from '@/lib/errors';
-import { track } from '@/lib/observability';
 import { applyAiPreview, setAiPreview, useAiPreview } from './aiPreviewState';
 
 interface AiAction {

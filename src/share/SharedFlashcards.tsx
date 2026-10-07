@@ -8,9 +8,8 @@ import { userToast } from '@/components/ui/userToast';
 import { StudyBody } from '@/features/flashcards/StudyBody';
 import { AssetUrlContext } from '@/features/materials/MediaAssetView';
 import { m } from '@/i18n';
-import { cardCountBucket } from '@/lib/analytics';
+import { cardCountBucket, track } from '@/lib/analytics';
 import { localCardStates, recordLocalCardReview } from '@/lib/localDb';
-import { track } from '@/lib/observability';
 import {
   newSrsState,
   reviewSrs,

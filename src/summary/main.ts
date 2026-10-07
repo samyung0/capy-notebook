@@ -18,6 +18,6 @@ const workspaceId =
   document.getElementById('summary-actions')?.dataset.workspaceId;
 // Analytics loads after the page, never ahead of it.
 if (workspaceId)
-  void import('@/lib/observability').then(({ track }) =>
+  void import('@/lib/analytics').then(({ track }) =>
     track('summary_viewed', { workspaceId })
   );
