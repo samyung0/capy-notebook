@@ -302,14 +302,18 @@ driver only speaks the protocol (Hocuspocus/Yjs sync, the app's
 `checkpoint-request` stateless message and its `checkpoint-persisted`
 receipt) and reads the server's containers through the Docker Engine API
 (`DOCKER_HOST` when it is a `unix://` socket, else `/var/run/docker.sock`; a
-Docker context without either, Colima for one, needs `DOCKER_HOST` set),
-never the Node service's own logs or metrics. It reads three containers,
+Docker context without either, Colima for one, needs `DOCKER_HOST` set).
+It times the probe endpoint below and ignores its answer, and reads the
+service's logs only for the error check. It measures three containers,
 since a save's cost is split between them: `collaboration`, `api` (the Go
 gateway, which does the database side of every checkpoint and projection)
 and `db` (Postgres), and records what they run (`server.images`: image name
 and ID). Per phase, `server.main` and `server.limit` give each container's
 CPU time over the phase and per typed marker (joins, settling and late
-joiners included) and its working set before and after. Outside the
+joiners included) and its working set before and after. A Docker read that
+fails around a phase (or for `server.images`) leaves those figures empty and
+is a `reportOnlyFailures` entry; the phase's rooms are still judged and
+written. Outside the
 budgeted phase (calibrated without it), `probe` gives the answer time to an
 endpoint that touches only the server's event loop, every 250 ms
 (`STRESS_PROBE_PATH`, the Node service's in-memory `/metrics`; its

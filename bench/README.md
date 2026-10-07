@@ -21,7 +21,7 @@ Raw run artifacts sit in a sibling `YYYY-MM-DD-<machine>/` directory.
 | Family                     | Measures                                                                                        | Run with                                    |
 | -------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------- |
 | [`collaboration/`](collaboration/) | Collaboration stress: many peers typing with reconnects in one Office and one Plate room, then in a near-limit note and a text source; convergence, lost updates, latency | `pnpm bench:stress` (Docker)     |
-| [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle; DOCX, XLSX and PPTX open, View to Edit, typing at both ends, co-editor updates and heap (workers included) in the Office runtime; Office size-ladder fixtures; formula View/Edit parity | `pnpm bench:editor`, `pnpm bench:office`, `pnpm bench:formula` |
+| [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle; DOCX, XLSX and PPTX open, View to Edit, typing at both ends, co-editor update timings and heap (workers from the typing on) in the Office runtime; Office size-ladder fixtures; formula View/Edit parity | `pnpm bench:editor`, `pnpm bench:office`, `pnpm bench:formula` |
 | [`parsers/`](parsers/)     | Ingest-host parser accuracy and capacity: OCR modes, concurrency, worker memory, OOM behavior    | `python bench/parsers/scripts/…` (needs VM) |
 | [`grading/`](grading/)     | Small local models against the production quiz-grading rubric, native and in-browser             | `python bench/grading/scripts/benchmark.py` |
 | [`rag/`](rag/scripts/)     | Retrieval and chat-agent quality: live diagnostic plus six frozen experiments                    | see below                                   |
@@ -45,11 +45,15 @@ XLSX `course-guide.xlsx` and the generated 8-sheet, 16,000-row
 PPTX `lecture.pptx` and the 84-slide `parsers/fixtures/docs/jp_llm2.pptx`. The
 large files' checkpoints come from `scripts/dev/seed-scenario-office.ts`. It
 reports open to first paint, View to Edit ready, keystroke to painted frame at
-the start and at the end of the file, and the heap at each step: JS, the
-frames' WASM per module, and each worker's JS and WASM (the DOCX engine
-worker is the largest item). A co-editor case applies ten remote edits from a
-second peer in the open editor and reports the main thread's apply task and
-the time to the painted result. It also reports the heap over two full
+the start and at the end of the file, and the heap at each step: JS and the
+frames' WASM per module, plus each worker's JS and WASM from the typing on
+(the DOCX engine worker is the largest item; the budgeted open and View to
+Edit steps skip the workers, whose read forces a GC). A co-editor case
+applies ten remote edits from a second peer in the open editor and reports,
+per edit, the wait before the frame handles it, the frame's synchronous apply
+(DOCX: only the hand-off to its engine worker) and the time to the next
+frame (a painted DOCX page; the next animation frame for XLSX and PPTX). It
+also reports the heap over two full
 view-mode passes and over five view-mode opens and closes, and records the
 runner's CPU model in every result. It
 fails on unpainted keys, typing that reaches no edit, a remote edit that never

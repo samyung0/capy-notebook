@@ -187,8 +187,9 @@ jobs:
     if: inputs.stress
     runs-on: ubuntu-24.04
     # Three typing phases after the stack starts (budgeted rooms, near-limit
-    # rooms, cost windows capped at 8 minutes): about 20 minutes. stress.json
-    # is rewritten after each phase, so a timeout keeps the earlier ones.
+    # rooms, cost windows starting no new room kind after 8 minutes): about
+    # 20 minutes. stress.json is rewritten after each phase and cost window,
+    # so a timeout keeps the earlier ones.
     timeout-minutes: 40
     # The p95 budget (45 ms) holds with the 30 ms broadcast batching: four
     # runs at 33 to 35 ms, so a miss fails the run.

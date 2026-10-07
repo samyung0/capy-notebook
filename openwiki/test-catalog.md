@@ -47,6 +47,7 @@ conversation, reopen to check its active marker, and dismiss with Escape.
 | Deployment and dev tunnel        | `pnpm test:deployment` |
 | Local grading comparison         | `python -m unittest discover -s bench/grading/scripts -p test_benchmark.py` |
 | Paired Laya/Jev grading scores    | `python -m unittest discover -s bench/grading/scripts -p test_laya_cpu.py` |
+| Office size split (XML/media/other) | `python -m unittest discover -s bench/editor/scripts -p test_office_sizes.py` |
 | Jev question-context comparison | `python bench/grading/scripts/jev_context.py --check` |
 | Jev partial credit and context | `python bench/grading/scripts/jev_partial_credit.py --check` |
 | Jev production contract | `python bench/grading/scripts/jev_contract.py --check` |
@@ -668,7 +669,7 @@ Collaboration stress (`pnpm bench:stress`, Docker, [editor-perf.md](editor-perf.
 | [`bench/collaboration/scripts/stress.ts`](../bench/collaboration/scripts/stress.ts) | 20 peers per room type markers into one Office (`exchange-plan.docx`, uploaded through the reserve, presigned PUT and complete flow) and one Plate room for 3 minutes with offline drops and rejoins, against the e2e stack plus a fake S3; then 5 peers per room in the ~2 MB load-test note and a 4 MiB text source (report-only latency); then one room kind at a time for the server's memory per room, CPU per update and CPU per explicit save (report-only), with the server's container CPU and memory (collaboration, API, database) and, outside the budgeted phase, an event-loop-only endpoint's answer time measured from outside per phase; report-only steps that cannot finish are listed apart and fail nothing. Fails on non-convergence, a missing or doubled marker or a collaboration error in any room, exit 2 on a missed first-phase p95 budget (calibrated on CI). Runs in the `Performance` workflow's `stress` job (dispatch only). |
 
 Supporting (not tests): [`bench/editor/scripts/metrics.ts`](../bench/editor/scripts/metrics.ts) instrumentation and per-case snapshot output,
-[`bench/editor/scripts/gen_office_ladder.py`](../bench/editor/scripts/gen_office_ladder.py) the Office size ladder (DOCX, XLSX and PPTX by content shape, with [`office_sizes.py`](../bench/editor/scripts/office_sizes.py)'s XML/media split and the new [`gen_large_pptx.py`](../bench/editor/scripts/gen_large_pptx.py)),
+[`bench/editor/scripts/gen_office_ladder.py`](../bench/editor/scripts/gen_office_ladder.py) the Office size ladder (DOCX, XLSX and PPTX by content shape, with [`office_sizes.py`](../bench/editor/scripts/office_sizes.py)'s XML/media split, which [`test_office_sizes.py`](../bench/editor/scripts/test_office_sizes.py) checks on the committed gradebook (every part XML, the root `_rels/.rels` included), and the new [`gen_large_pptx.py`](../bench/editor/scripts/gen_large_pptx.py)),
 [`bench/editor/scripts/snapshot.ts`](../bench/editor/scripts/snapshot.ts) typed assembly/comparison,
 [`bench/editor/scripts/compare-cli.ts`](../bench/editor/scripts/compare-cli.ts) workflow adapter, and
 [`bench/editor/scripts/cpuProfile.ts`](../bench/editor/scripts/cpuProfile.ts) profile capture/attribution shared by the two diagnostics.

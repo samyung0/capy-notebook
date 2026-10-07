@@ -47,7 +47,9 @@ def content_types(z):
 
 
 def kind(name, overrides, defaults):
-    extension = os.path.splitext(name)[1].lower()
+    # From the basename's last dot: splitext gives the root "_rels/.rels" none.
+    base = name.rpartition("/")[2]
+    extension = base[base.rfind(".") :].lower() if "." in base else ""
     if extension in MEDIA:
         return "media"
     if extension in XML:

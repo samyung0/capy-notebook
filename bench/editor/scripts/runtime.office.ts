@@ -1226,7 +1226,7 @@ for (const fixture of FIXTURES) {
   }, testInfo) => {
     test.setTimeout(600_000);
     await openInView(page, fixture);
-    const mode = page.getByRole('button', { name: 'Material mode' });
+    const mode = page.getByRole('button', { name: m.material_mode() });
     await expect(mode).toBeEnabled({ timeout: 60_000 });
     await clickUntil(
       page,

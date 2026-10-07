@@ -698,7 +698,7 @@ async function uatTarget(): Promise<Target> {
       );
       return [...errorLines(`${logs.stdout}\n${logs.stderr}`), ...counters];
     },
-    // Behind SSH and Cloudflare: only the /healthz probe reaches it.
+    // Behind SSH and Cloudflare: only the probe (STRESS_PROBE_PATH) reaches it.
     serverContainers: () => ({}),
     async cleanUp() {
       const failures: string[] = [];
@@ -1020,6 +1020,15 @@ async function usageOf(containers: Containers) {
   return out;
 }
 
+/** A report-only Docker read around a phase: a failure is listed in
+ * `failures` and reads as empty, so it never costs the phase's results. */
+function orEmpty<T>(read: Promise<Partial<T>>, label: string, failures: string[]) {
+  return read.catch((error: unknown): Partial<T> => {
+    failures.push(`${label}: ${String(error).slice(0, 300)}`);
+    return {};
+  });
+}
+
 /** Per container: CPU ms between two samples, less `idle` ms per second. */
 function cpuBetween(from: Usages, to: Usages, idle: Partial<Record<Server, number>> = {}, ms = 0) {
   const out: Partial<Record<Server, number>> = {};
@@ -1209,10 +1218,8 @@ async function costOf(kind: Kind, containers: Containers, probe: ReturnType<type
     );
     const typingEnd = Date.now();
     await until(() => peers.every(settledPeer), 30_000);
-    // Until the stores and projections the typing caused are done. Not an
-    // explicit save: a note's checkpoint request that lands while its store
-    // runs, with no edit after, is never answered (the store claimed its
-    // receipts when it began), so it would hang here.
+    // Until the stores and projections the typing caused are done: quiet,
+    // since a save's receipt does not wait for a note's projection.
     const typed = (await quiet(containers, idle)).usage;
     const typingMs = Date.now() - started;
     const saves: { cpu: Partial<Record<Server, number>>; ms: number }[] = [];
@@ -1391,20 +1398,30 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const)
  * One phase: its rooms, created when it starts, typed into together; with
  * the server's CPU and memory over the phase and, given a probe URL, its
  * answer times to the probe endpoint (never in the budgeted phase, whose
- * budget was calibrated without it).
+ * budget was calibrated without it). A failed Docker read leaves the
+ * server's figures out and is listed in `reportOnlyFailures`.
  */
-async function runPhase(kinds: Kind[], peerCount: number, containers: Containers, probeAt: string | null) {
+async function runPhase(
+  kinds: Kind[],
+  peerCount: number,
+  containers: Containers,
+  probeAt: string | null,
+  reportOnlyFailures: string[]
+) {
   const rooms = await target.createRooms(kinds);
   // The client's own event-loop delay: high values mean this process, not
   // the server, delayed the markers it timed.
   const loopDelay = monitorEventLoopDelay({ resolution: 20 });
-  const before = await usageOf(containers);
+  const usage = (when: string) =>
+    orEmpty(usageOf(containers), `server usage ${when} ${kinds.join(',')}`, reportOnlyFailures);
+  const before = await usage('before');
+  // Stopped below: nothing in between throws (the rooms settle).
   const probe = probeAt ? probeServer(probeAt) : null;
   loopDelay.enable();
   const settled = await Promise.allSettled(rooms.map((room) => stressRoom(room, peerCount)));
   loopDelay.disable();
   await probe?.stop();
-  const after = await usageOf(containers);
+  const after = await usage('after');
   const typed = settled.reduce((sum, room) => sum + (room.status === 'fulfilled' ? room.value.typed : 0), 0);
   const memory = memoryBetween(before, after);
   return {
@@ -1435,7 +1452,7 @@ type Cost = Awaited<ReturnType<typeof costOf>>;
  * later phase that breaks (or a job killed at its timeout) keeps the earlier
  * results. `failures` are correctness failures (exit 1); `reportOnlyFailures`
  * are report-only steps that could not finish (near-limit setup, cost
- * windows) and fail nothing.
+ * windows, a phase's Docker reads) and fail nothing.
  */
 async function writeReport(state: {
   containers: Containers;
@@ -1551,20 +1568,21 @@ let exitCode = 1;
 try {
   await target.setup();
   const containers = target.serverContainers();
+  const reportOnlyFailures: string[] = [];
   const state = {
     containers,
     cost: {} as Record<string, Cost>,
-    images: await containerImages(containers),
+    images: await orEmpty(containerImages(containers), 'server images', reportOnlyFailures),
     limit: null as Phase | null,
-    main: await runPhase(kindsFor(ROOMS), PEERS, containers, null),
-    reportOnlyFailures: [] as string[],
+    main: await runPhase(kindsFor(ROOMS), PEERS, containers, null, reportOnlyFailures),
+    reportOnlyFailures,
   };
   await writeReport(state);
   const probeAt = probeUrl((await state.main.rooms[0].token()).url);
   // After the budgeted rooms, so their latency stays comparable run to run.
   if (LIMIT_KINDS.length) {
     try {
-      state.limit = await runPhase(LIMIT_KINDS, LIMIT_PEERS, containers, probeAt);
+      state.limit = await runPhase(LIMIT_KINDS, LIMIT_PEERS, containers, probeAt, reportOnlyFailures);
     } catch (error) {
       state.reportOnlyFailures.push(`near-limit phase: ${String(error).slice(0, 300)}`);
     }
