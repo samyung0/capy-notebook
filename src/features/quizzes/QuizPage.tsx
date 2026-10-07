@@ -34,6 +34,7 @@ export function QuizPageHeader({
   trail,
   title,
   meta,
+  byline,
   actions,
   topBar = true,
 }: {
@@ -42,6 +43,8 @@ export function QuizPageHeader({
   trail: string[];
   title: ReactNode;
   meta?: ReactNode;
+  /** The owner on public pages, between the title and the meta line. */
+  byline?: ReactNode;
   actions?: ReactNode;
   /** From lg the top bar sits in PanelWithInvertedRadius's notch, beside this header. */
   topBar?: boolean;
@@ -95,6 +98,7 @@ export function QuizPageHeader({
             <div className="flex shrink-0 items-center gap-2">{actions}</div>
           )}
         </div>
+        {byline}
         {meta && <p className="t-meta -mt-1 text-fg-muted">{meta}</p>}
       </div>
       {topBar && <TopInsetBar className="hidden shrink-0 lg:flex" />}

@@ -4,6 +4,7 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { MaterialAuthor } from './materialAuthor.ts';
 import type { Privacy } from './privacy.ts';
 import type { Provenance } from './provenance.ts';
 import type { QuizQuestionsItem } from './quizQuestionsItem.ts';
@@ -11,6 +12,7 @@ import type { QuizQuestionsItem } from './quizQuestionsItem.ts';
 export interface Quiz {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  author?: MaterialAuthor;
   canEdit: boolean;
   canEditContent: boolean;
   chapters: string[];

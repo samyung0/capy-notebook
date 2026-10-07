@@ -42,8 +42,8 @@ func SharePath(secret []byte, workspaceID string) string {
 	return "/w/" + ShareToken(secret, workspaceID)
 }
 
-// materialSharePath is the signed link of a standalone quiz or flashcard set;
-// workspace and embedded materials have no sharing of their own.
+// materialSharePath is the signed link of a standalone quiz, flashcard set or
+// note; workspace and embedded materials have no sharing of their own.
 func materialSharePath(secret []byte, kind, id, workspaceID, parentID string) string {
 	if workspaceID != "" || parentID != "" {
 		return ""
@@ -53,6 +53,8 @@ func materialSharePath(secret []byte, kind, id, workspaceID, parentID string) st
 		return "/share/quizzes/" + ShareToken(secret, id)
 	case "flashcards":
 		return "/share/flashcards/" + ShareToken(secret, id)
+	case "note":
+		return "/share/notes/" + ShareToken(secret, id)
 	}
 	return ""
 }

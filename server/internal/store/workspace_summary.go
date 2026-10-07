@@ -10,14 +10,15 @@ import (
 // WorkspaceSummary contains only metadata intended for anonymous readers.
 // It deliberately does not embed Workspace or any content-bearing model.
 type WorkspaceSummary struct {
-	Name        string                    `json:"name"`
-	IconID      string                    `json:"iconId"`
-	Author      string                    `json:"author"`
-	Description string                    `json:"description"`
-	Privacy     Privacy                   `json:"privacy"`
-	Tags        []string                  `json:"tags" nullable:"false"`
-	Chapters    []WorkspaceSummaryChapter `json:"chapters" nullable:"false"`
-	Files       []WorkspaceSummaryFile    `json:"files" nullable:"false" doc:"Unfiled files"`
+	Name            string                    `json:"name"`
+	IconID          string                    `json:"iconId"`
+	Author          string                    `json:"author"`
+	AuthorAvatarURL string                    `json:"authorAvatarUrl,omitempty"`
+	Description     string                    `json:"description"`
+	Privacy         Privacy                   `json:"privacy"`
+	Tags            []string                  `json:"tags" nullable:"false"`
+	Chapters        []WorkspaceSummaryChapter `json:"chapters" nullable:"false"`
+	Files           []WorkspaceSummaryFile    `json:"files" nullable:"false" doc:"Unfiled files"`
 }
 
 type WorkspaceSummaryChapter struct {
@@ -41,7 +42,7 @@ func (s *Store) PublicWorkspaceSummary(ctx context.Context, id string) (Workspac
 	var body []byte
 	err := s.pool.QueryRow(ctx, `
  SELECT jsonb_build_object(
-   'name', w.name, 'iconId', w.icon_id, 'author', COALESCE(owner.name, ''), 'description', w.description, 'privacy', w.privacy,
+   'name', w.name, 'iconId', w.icon_id, 'author', COALESCE(owner.name, ''), 'authorAvatarUrl', COALESCE('/icons/' || NULLIF(owner.avatar_icon_id,'') || '.svg', owner.avatar_url, ''), 'description', w.description, 'privacy', w.privacy,
    'tags', COALESCE((SELECT jsonb_agg(t.name ORDER BY t.name)
      FROM entity_tags et JOIN tags t ON t.id=et.tag_id WHERE et.workspace_id=w.id), '[]'::jsonb),
    'chapters', COALESCE((SELECT jsonb_agg(jsonb_build_object('name', c.name,

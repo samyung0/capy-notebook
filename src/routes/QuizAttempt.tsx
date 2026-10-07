@@ -18,7 +18,8 @@ import { useCloneQuiz, useQuiz, useSubmitAttempt } from '@/api/hooks';
 import type { Provenance, Question } from '@/api/types';
 import { SessionSwitch } from '@/components/app/AuthProvider';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
-import { PublicPage } from '@/components/app/PublicHeader';
+import { PublicActionMenu } from '@/components/app/PublicActionMenu';
+import { PublicByline, PublicPage } from '@/components/app/PublicHeader';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TabContent } from '@/components/app/tabPanel';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
@@ -26,7 +27,7 @@ import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
-import { AssetUrlContext } from '@/features/questions/QuestionView';
+import { AssetUrlContext } from '@/features/materials/MediaAssetView';
 import type { LearnerQuestion } from '@/features/questions/types';
 import type { Answer } from '@/features/quizzes/grade';
 import { isAnswered } from '@/features/quizzes/QuestionRunner';
@@ -50,6 +51,7 @@ import {
 import { track } from '@/lib/observability';
 
 type Answers = Record<string, Answer>;
+type Frame = (props: { children: ReactNode }) => ReactNode;
 /** An attempt graded on the server: its questions with their keys and each
  * part's award, and the marks over the quiz's total. */
 type Graded = { questions: Question[]; awarded: number; max: number };
@@ -70,22 +72,18 @@ export function SharedQuizAttempt() {
   return (
     <SessionSwitch
       anonymous={<AnonymousAttempt key={token} token={token} />}
-      signedIn={
-        <div className="t-body h-dvh bg-page p-1.5 text-fg sm:p-2.5">
-          <Attempt key={quizId} quizId={quizId} shared />
-        </div>
-      }
+      signedIn={<Attempt key={quizId} quizId={quizId} shared />}
     />
   );
 }
 
-function LoadingPanel() {
+function LoadingPanel({ frame: Frame }: { frame: Frame }) {
   return (
-    <PanelWithInvertedRadius>
+    <Frame>
       <div className="h-full p-6">
         <Skeleton className="h-full w-full" />
       </div>
-    </PanelWithInvertedRadius>
+    </Frame>
   );
 }
 
@@ -109,23 +107,32 @@ function Attempt({ quizId, shared }: { quizId: string; shared: boolean }) {
   const navigate = useNavigate();
   const router = useRouter();
   const canGoBack = useCanGoBack();
+  // A shared link opens in the public layout, signed in or out.
+  const frame = shared ? PublicQuizFrame : PanelWithInvertedRadius;
+  const Frame = frame;
 
   if (fetchStatus === 'paused') {
     return (
-      <PanelWithInvertedRadius>
+      <Frame>
         <QueryPausedState className="h-full" />
-      </PanelWithInvertedRadius>
+      </Frame>
     );
   }
-  if (isLoading || (!isFetchedAfterMount && !isError)) return <LoadingPanel />;
+  if (isLoading || (!isFetchedAfterMount && !isError))
+    return <LoadingPanel frame={frame} />;
   if (isError || !quiz) {
     const denied =
       isApiError(error) && (error.status === 404 || error.status === 401);
-    return (
+    const title = denied ? m.error_private_title() : m.quiz_unable_load();
+    return shared ? (
+      <PublicQuizFrame>
+        <WorkspaceError title={title} />
+      </PublicQuizFrame>
+    ) : (
       <WorkspaceError
         backLabel={m.quiz_back()}
         backTo="/quizzes"
-        title={denied ? m.error_private_title() : m.quiz_unable_load()}
+        title={title}
       />
     );
   }
@@ -133,29 +140,35 @@ function Attempt({ quizId, shared }: { quizId: string; shared: boolean }) {
   return (
     <AttemptBody
       actions={
-        !quiz.canEdit && (
-          <Button
-            className="rounded-input"
-            disabled={frozen || cloneQuizIsPending}
-            iconLeft="plus"
-            onClick={() =>
-              cloneQuiz(quizId, {
-                onError: (err) => toastCloneError(err, 'quiz'),
-                onSuccess: (copy) => {
-                  navigate({
-                    params: { quizId: copy.id },
-                    to: '/quizzes/$quizId/attempt',
-                  });
-                },
-              })
-            }
-            size="sm"
-            variant="outline"
-          >
-            {cloneQuizIsPending ? m.action_cloning() : m.quiz_clone()}
-          </Button>
+        shared ? (
+          <PublicActionMenu id={quizId} kind="quiz" />
+        ) : (
+          !quiz.canEdit && (
+            <Button
+              disabled={frozen || cloneQuizIsPending}
+              iconLeft="plus"
+              onClick={() =>
+                cloneQuiz(quizId, {
+                  onError: (err) => toastCloneError(err, 'quiz'),
+                  onSuccess: (copy) => {
+                    navigate({
+                      params: { quizId: copy.id },
+                      to: '/quizzes/$quizId/attempt',
+                    });
+                  },
+                })
+              }
+              rounded="large"
+              size="sm"
+              variant="outline"
+            >
+              {cloneQuizIsPending ? m.action_cloning() : m.quiz_clone()}
+            </Button>
+          )
         )
       }
+      byline={shared && quiz.author && <PublicByline author={quiz.author} />}
+      frame={frame}
       grade={async (answers) => {
         const attempt = await submit({ answers, quizId });
         return {
@@ -177,7 +190,7 @@ function Attempt({ quizId, shared }: { quizId: string; shared: boolean }) {
       questions={quiz.questions}
       trail={
         shared
-          ? [m.quiz_shared()]
+          ? []
           : [quiz.workspaceName || m.files_tab_blocks(), m.quiz_quizzes()]
       }
     />
@@ -228,6 +241,8 @@ function AnonymousAttempt({ token }: { token: string }) {
       value={(assetId) => anonymousAssetUrl(token, assetId)}
     >
       <AttemptBody
+        actions={<PublicActionMenu id={quiz.id} kind="quiz" />}
+        byline={<PublicByline author={quiz.author} />}
         footer={
           <div className="mt-6 grid gap-2 text-fg-muted">
             <p className="t-meta">{m.quiz_saved_in_browser()}</p>
@@ -276,21 +291,20 @@ function AnonymousAttempt({ token }: { token: string }) {
         }}
         provenance={quiz.provenance}
         questions={quiz.questions}
-        trail={[m.quiz_shared()]}
+        trail={[]}
       />
     </AssetUrlContext.Provider>
   );
 }
 
-/** Signed-out pages use the summary page's public layout and header. */
+/** Shared links use the summary page's public layout and header. */
 function PublicQuizFrame({ children }: { children: ReactNode }) {
-  return (
-    <PublicPage returnTo={window.location.pathname}>{children}</PublicPage>
-  );
+  return <PublicPage>{children}</PublicPage>;
 }
 
 function AttemptBody({
   actions,
+  byline,
   footer,
   frame: Frame = PanelWithInvertedRadius,
   grade,
@@ -302,9 +316,11 @@ function AttemptBody({
   trail,
 }: {
   actions?: ReactNode;
+  /** The owner, on shared links. */
+  byline?: ReactNode;
   footer?: ReactNode;
   /** The surrounding panel; the result view remounts it to open at the top. */
-  frame?: (props: { children: ReactNode }) => ReactNode;
+  frame?: Frame;
   /** Grades every part on the server; signed in, this also records the attempt. */
   grade: (answers: Answers) => Promise<Graded>;
   name: string;
@@ -325,9 +341,16 @@ function AttemptBody({
     []
   );
 
-  const header = (headerActions?: ReactNode) => (
+  // Public pages keep their ⋮ on every state; the app page shows Clone only
+  // while taking the quiz.
+  const header = (
+    headerActions = Frame === PanelWithInvertedRadius ? undefined : actions
+  ) => (
     <QuizPageHeader
       actions={headerActions}
+      byline={byline}
+      // Public pages have no label row, so the title sits higher.
+      className={Frame === PanelWithInvertedRadius ? undefined : 'pt-2 sm:pt-2'}
       meta={quizMeta(questions)}
       onBack={onBack}
       title={name}
@@ -349,7 +372,7 @@ function AttemptBody({
             search={{ tab: 'blocks' }}
             to="/files"
           >
-            <Button className="rounded-input" iconLeft="navigationBack">
+            <Button iconLeft="navigationBack" rounded="large">
               {m.quiz_back()}
             </Button>
           </Link>
@@ -405,12 +428,13 @@ function AttemptBody({
             />
           </div>
           <Button
-            className="mt-12 rounded-input"
+            className="mt-12"
             iconLeft="refresh"
             onClick={() => {
               setAnswers({});
               setGraded(null);
             }}
+            rounded="large"
             size="lg"
             variant="outline"
           >
@@ -441,10 +465,10 @@ function AttemptBody({
             {m.quiz_answered_count({ answered, total: parts.length })}
           </p>
           <Button
-            className="rounded-input"
             disabled={grading}
             fullWidth
             onClick={() => void finish()}
+            rounded="large"
             size="lg"
           >
             {grading ? m.quiz_grading() : m.quiz_submit()}

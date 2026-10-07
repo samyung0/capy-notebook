@@ -110,3 +110,42 @@ func TestAnonymousMaterialsVisibilityAndAssets(t *testing.T) {
 		t.Fatalf("suspended owner's quiz err = %v, want not found", err)
 	}
 }
+
+// A link note reads with its owner's name and avatar, and its link reaches only
+// the images the note shows.
+func TestAnonymousNoteAuthorAndAssets(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "u_anon_note_owner")
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET name='Mrs Lee', avatar_icon_id='avataaars-05' WHERE id=$1`, ownerID); err != nil {
+		t.Fatal(err)
+	}
+	note, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "Shared note", Content: noteWithImages(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := editorAssetFixture{t: t, s: s, ctx: ctx}
+	shown, hidden := f.ready(ownerID, "", note.ID), f.ready(ownerID, "", note.ID)
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET content=$2::jsonb WHERE id=$1`, note.ID, noteWithImages(t, shown.ID)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AnonymousNote(ctx, note.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("private note err = %v, want not found", err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET privacy='link' WHERE id=$1`, note.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.AnonymousNote(ctx, note.ID)
+	if err != nil || got.Name != "Shared note" || !json.Valid(got.Content) {
+		t.Fatalf("link note = %+v, %v", got, err)
+	}
+	if got.Author != (MaterialAuthor{Name: "Mrs Lee", AvatarURL: "/icons/avataaars-05.svg"}) {
+		t.Fatalf("author = %+v", got.Author)
+	}
+	if path, _, err := s.AnonymousNoteAssetPath(ctx, note.ID, shown.ID); err != nil || path != shown.ObjectPath {
+		t.Fatalf("shown image = %q, %v", path, err)
+	}
+	if _, _, err := s.AnonymousNoteAssetPath(ctx, note.ID, hidden.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unshown image err = %v, want not found", err)
+	}
+}

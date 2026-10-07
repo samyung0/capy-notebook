@@ -62,9 +62,14 @@ describe('public workspace SSR', () => {
     expect(html).toContain('<h1>Biology</h1>');
     expect(html).toContain('src="/icons/waves-03.svg"');
     expect(html).toContain('<p class="summary-byline">Mia</p>');
-    // The island fills in sign-in or the profile pill after reading the session.
-    expect(html).toContain('role="status"');
-    expect(html).not.toContain('href="/sign-in');
+    // One header for every visitor, rendered here: no session is read, so
+    // nothing shifts and the edge copy stays shared.
+    expect(html).toContain('href="/sign-in"');
+    expect(html).toContain('href="/sign-up"');
+    expect(html).not.toContain('redirect_url');
+    expect(html).toContain(
+      'id="summary-actions" data-workspace-id="ws_0123456789"'
+    );
     expect(html).not.toContain('href="/explore"');
     expect(html).toContain('Cells.pdf');
     expect(html).toContain('Reading.pdf');
@@ -88,6 +93,7 @@ describe('public workspace SSR', () => {
       upstream({
         ...summary,
         author: attack,
+        authorAvatarUrl: '/icons/a.svg" onerror="alert(1)',
         description: attack,
         files: [file(attack)],
         name: attack + '$&',
@@ -96,6 +102,9 @@ describe('public workspace SSR', () => {
     );
     const html = await response.text();
     expect(html).not.toContain(attack);
+    expect(html).toContain(
+      '<img class="summary-avatar" src="/icons/a.svg&quot; onerror=&quot;alert(1)"'
+    );
     expect(html).toContain('&lt;/script&gt;');
     expect(html).toContain('\\u003c/script\\u003e');
     expect(html).toContain('$&');

@@ -96,9 +96,13 @@ larger than 256 KiB returns `422` rather than a truncated outline.
 The summary uses one full-width panel with a centered reading column, including
 its 404 and loading-error states. The header sits inside the panel with text-only branding on the left and a sun/moon theme
 toggle, large ghost-hover sign-in button and equally large sign-up button on the right. The toggle switches
-between Light (Latte) and Dark (Mocha), and is also used on authentication pages. Signed-in summary visitors retain their
-profile menu and theme drawer. The workspace uses its stored icon and displays
-only the owner's name in its byline. Chapter and file rows use the file panel's
+between Light (Latte) and Dark (Mocha), and is also used on authentication pages. Every visitor gets this
+header, signed in or not: it never reads the session, so nothing shifts or flashes and the edge copy stays
+shared. Its Sign in and Sign up carry no `redirect_url`; a signed-in visitor who presses them lands on the
+dashboard. The Worker renders the header (with a static theme toggle) and the ⋮ trigger, and a small island
+(`src/summary/main.tsx`, no Clerk) renders the live ones over them. The workspace uses its stored icon and
+shows the owner's avatar (`authorAvatarUrl`, 1px high) beside their name in its byline, and a ⋮ beside the
+name offers Clone workspace (see Clone from a public page below). Chapter and file rows use the file panel's
 Catppuccin sprite and filename icon mapping, with file icons shifted up 1px;
 the client supplies the hashed sprite URL. Files outside chapters remain visible
 without an “Unfiled files” heading. Workspace Share and Settings → Sharing put
@@ -128,7 +132,7 @@ Sources: [public handler](../server/internal/httpapi/huma_workspace_summary.go),
 [live projection](../server/internal/store/workspace_summary.go), and
 [authentication boundary](../server/internal/httpapi/server.go).
 
-### Anonymous quizzes and flashcards
+### Anonymous quizzes, flashcards and notes
 
 Standalone quizzes and flashcard sets that are link-shared or public open for
 signed-out visitors at `/share/quizzes/{id}.{signature}` and
@@ -154,8 +158,27 @@ in its current content, checked against the full content so a worked
 solution's images resolve after grading. Unsharing takes up to five minutes to clear the edge.
 
 These pages use the workspace summary's public layout and header
-(`src/components/app/PublicHeader.tsx`), which reads the session client side:
-a skeleton while Clerk loads, then sign-in and sign-up or the profile pill.
+(`src/components/app/PublicHeader.tsx`): the same header for every visitor (no session read). Signed-in visitors of a shared quiz or flashcard set get
+the public layout too, while their attempts and ratings still go to their account. The pages drop the label
+above the title; the owner (`author`: name and avatar, on the public reads and on the single quiz and
+flashcard reads) sits under the title, then the question count, or for flashcards Card N of M just above
+the card. A ⋮ beside the title offers Clone.
+
+Link and public standalone notes open at `/share/notes/{id}.{signature}` the same way: `GET /p/notes/{token}`
+returns the note's read projection (Plate JSON) with its owner and update time, and
+`GET /p/notes/{token}/assets/{assetId}` serves an image only when the note's current content shows it
+(`materialdoc.EditorAssetIDs`). Every visitor reads that edge-cached copy and the page renders it with the
+static renderer (`MaterialPreview`), leaving out a first heading that repeats the title. Mentions render the
+name stored in the note. Only images load through the share route; embedded quizzes and flashcard sets
+show as unavailable to signed-out visitors for now.
+
+#### Clone from a public page
+
+Clone opens the dashboard with `?clone=<kind>:<id>` (`src/lib/cloneLink.ts`); the app's sign-in check sends a
+signed-out visitor through sign-in and back with the query. The dashboard asks first (`CloneLinkDialog`), shows a
+refused clone's reason in the dialog (a link viewer cloning a workspace gets the non-disclosing 404 copy, a full
+plan the storage message), and opens the copy. The ⋮ is the same for every visitor and could read auth client
+side for future items, since a dropdown cannot shift the layout.
 
 Visitors' attempts and flashcard reviews live only in that browser's IndexedDB
 (`src/lib/localDb.ts`) and are never imported into an account on sign-in. Every
@@ -439,7 +462,7 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   study progress and review state belong to the user taking the quiz (see
   Study progress below). Signed-out visitors can take standalone link/public
   quizzes and study flashcards; their progress stays in the browser (see
-  Anonymous quizzes and flashcards).
+  Anonymous quizzes, flashcards and notes).
 - Answer keys follow one rule (Epo, 2026-10-06; details in
   [question-bank.md](question-bank.md#answer-keys-and-server-grading)):
   reading to view or study never sends them, owners and editors included

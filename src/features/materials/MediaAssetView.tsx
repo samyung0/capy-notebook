@@ -1,6 +1,8 @@
 import {
+  createContext,
   type ReactNode,
   useCallback,
+  useContext,
   useEffect,
   useRef,
   useState,
@@ -34,12 +36,22 @@ type AssetState =
     }
   | { status: 'error'; kind: 'missing' | 'failed' };
 
+/** Overrides where an editor asset loads from: shared pages use the site
+ * Worker's share route, and the quiz editor shows images picked but not yet
+ * uploaded. Undefined falls back to the authenticated resolve endpoint. */
+export const AssetUrlContext = createContext<
+  ((assetId: string) => string | undefined) | null
+>(null);
+
 export function useResolvedAsset(assetId: string | undefined) {
   const [state, setState] = useState<AssetState>({ status: 'loading' });
   const [generation, setGeneration] = useState(0);
+  const resolveUrl = useContext(AssetUrlContext);
+  const override = assetId ? resolveUrl?.(assetId) : undefined;
 
   useEffect(() => {
     const controller = new AbortController();
+    if (override) return;
     if (!assetId) {
       setState({ kind: 'missing', status: 'error' });
       return () => controller.abort();
@@ -64,10 +76,13 @@ export function useResolvedAsset(assetId: string | undefined) {
         }
       });
     return () => controller.abort();
-  }, [assetId, generation]);
+  }, [assetId, generation, override]);
 
   const reload = useCallback(() => setGeneration((value) => value + 1), []);
-  return [state, reload] as const;
+  const ready: AssetState | undefined = override
+    ? { contentType: '', name: '', status: 'ready', url: override }
+    : undefined;
+  return [ready ?? state, reload] as const;
 }
 
 /** Signed when clicked, not when rendered: open the tab first so the

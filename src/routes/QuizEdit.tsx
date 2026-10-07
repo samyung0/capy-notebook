@@ -21,7 +21,7 @@ import { Skeleton, Spinner } from '@/components/ui/feedback';
 import { Input, InputField } from '@/components/ui/Input';
 import { Tabs } from '@/components/ui/Tabs';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
-import { AssetUrlContext } from '@/features/questions/QuestionView';
+import { AssetUrlContext } from '@/features/materials/MediaAssetView';
 import { questionAssetIds, replaceAssetIds } from '@/features/questions/types';
 import { QuizForm } from '@/features/quizzes/QuizForm';
 import { QuizPageHeader } from '@/features/quizzes/QuizPage';

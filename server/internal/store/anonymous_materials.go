@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
 )
 
-// Signed-out visitors read standalone link/public quizzes and flashcard sets.
+// Signed-out visitors read standalone link/public quizzes, flashcard sets and
+// notes.
 // Workspace materials have no sharing of their own, and embedded ones follow a
 // note visitors cannot open, so neither is reachable here. Visibility and the
 // owner's lifecycle are read in the same statement as the content.
@@ -29,6 +31,7 @@ type AnonymousQuiz struct {
 	Privacy    Privacy         `json:"privacy"`
 	Questions  json.RawMessage `json:"questions"`
 	Provenance *Provenance     `json:"provenance,omitempty"`
+	Author     MaterialAuthor  `json:"author"`
 }
 
 // AnonymousFlashcards carries card text only, never the owner's study state.
@@ -39,21 +42,47 @@ type AnonymousFlashcards struct {
 	Color      UserColor          `json:"color"`
 	Cards      []materialdoc.Card `json:"cards" nullable:"false"`
 	Provenance *Provenance        `json:"provenance,omitempty"`
+	Author     MaterialAuthor     `json:"author"`
 }
 
-func (s *Store) anonymousMaterial(ctx context.Context, id, kind string) (Material, error) {
-	var mt Material
-	var provenance []byte
-	err := s.pool.QueryRow(ctx, `SELECT m.id, m.title, m.privacy, m.color, m.content, m.provenance`+anonymousMaterialFrom, id, kind).
-		Scan(&mt.ID, &mt.Title, &mt.Privacy, &mt.Color, &mt.Content, &provenance)
+// MaterialAuthor is the owner public pages show next to a shared item.
+type MaterialAuthor struct {
+	Name      string `json:"name"`
+	AvatarURL string `json:"avatarUrl,omitempty"`
+}
+
+// The owner's display name and avatar, resolved like the collaborator list.
+const authorCols = `COALESCE(owner.name,''), COALESCE('/icons/' || NULLIF(owner.avatar_icon_id,'') || '.svg', owner.avatar_url,'')`
+
+// MaterialAuthorOf reads the owner of a material for its shared page.
+func (s *Store) MaterialAuthorOf(ctx context.Context, materialID string) (MaterialAuthor, error) {
+	var author MaterialAuthor
+	err := s.pool.QueryRow(ctx, `SELECT `+authorCols+` FROM materials m JOIN users owner ON owner.id=m.owner_user_id WHERE m.id=$1`, materialID).
+		Scan(&author.Name, &author.AvatarURL)
 	if isNoRows(err) {
-		return mt, ErrNotFound
+		return author, ErrNotFound
+	}
+	return author, err
+}
+
+type anonymousRow struct {
+	Material
+	Author MaterialAuthor
+}
+
+func (s *Store) anonymousMaterial(ctx context.Context, id, kind string) (anonymousRow, error) {
+	var row anonymousRow
+	var provenance []byte
+	err := s.pool.QueryRow(ctx, `SELECT m.id, m.title, m.privacy, m.color, m.content, m.provenance, m.updated_at, `+authorCols+anonymousMaterialFrom, id, kind).
+		Scan(&row.ID, &row.Title, &row.Privacy, &row.Color, &row.Content, &provenance, &row.UpdatedAt, &row.Author.Name, &row.Author.AvatarURL)
+	if isNoRows(err) {
+		return row, ErrNotFound
 	}
 	if err != nil {
-		return mt, err
+		return row, err
 	}
-	mt.Provenance, err = decodeProvenance(provenance)
-	return mt, err
+	row.Provenance, err = decodeProvenance(provenance)
+	return row, err
 }
 
 func (s *Store) AnonymousQuiz(ctx context.Context, id string) (AnonymousQuiz, error) {
@@ -68,7 +97,7 @@ func (s *Store) AnonymousQuiz(ctx context.Context, id string) (AnonymousQuiz, er
 	if len(qs) == 0 {
 		qs = json.RawMessage("[]")
 	}
-	return AnonymousQuiz{ID: mt.ID, Name: mt.Title, Privacy: mt.Privacy, Questions: qs, Provenance: mt.Provenance}, nil
+	return AnonymousQuiz{ID: mt.ID, Name: mt.Title, Privacy: mt.Privacy, Questions: qs, Provenance: mt.Provenance, Author: mt.Author}, nil
 }
 
 func (s *Store) AnonymousFlashcards(ctx context.Context, id string) (AnonymousFlashcards, error) {
@@ -84,7 +113,44 @@ func (s *Store) AnonymousFlashcards(ctx context.Context, id string) (AnonymousFl
 	cards = slices.DeleteFunc(cards, func(c materialdoc.Card) bool {
 		return strings.TrimSpace(c.Front) == "" && strings.TrimSpace(c.Back) == ""
 	})
-	return AnonymousFlashcards{ID: mt.ID, Name: mt.Title, Privacy: mt.Privacy, Color: mt.Color, Cards: cards, Provenance: mt.Provenance}, nil
+	return AnonymousFlashcards{ID: mt.ID, Name: mt.Title, Privacy: mt.Privacy, Color: mt.Color, Cards: cards, Provenance: mt.Provenance, Author: mt.Author}, nil
+}
+
+// AnonymousNote is a standalone note's read projection (Plate JSON), which the
+// page renders with the static renderer.
+type AnonymousNote struct {
+	ID         string          `json:"id"`
+	Name       string          `json:"name"`
+	Privacy    Privacy         `json:"privacy"`
+	Content    json.RawMessage `json:"content"`
+	UpdatedAt  time.Time       `json:"updatedAt"`
+	Author     MaterialAuthor  `json:"author"`
+	Provenance *Provenance     `json:"provenance,omitempty"`
+}
+
+func (s *Store) AnonymousNote(ctx context.Context, id string) (AnonymousNote, error) {
+	mt, err := s.anonymousMaterial(ctx, id, "note")
+	if err != nil {
+		return AnonymousNote{}, err
+	}
+	return AnonymousNote{ID: mt.ID, Name: mt.Title, Privacy: mt.Privacy, Content: json.RawMessage(mt.Content), UpdatedAt: mt.UpdatedAt, Author: mt.Author, Provenance: mt.Provenance}, nil
+}
+
+// AnonymousNoteAssetPath is AnonymousQuizAssetPath for a visible note: only an
+// image the note's current content shows can be read through its link.
+func (s *Store) AnonymousNoteAssetPath(ctx context.Context, noteID, assetID string) (objectPath, contentType string, err error) {
+	mt, err := s.anonymousMaterial(ctx, noteID, "note")
+	if err != nil {
+		return "", "", err
+	}
+	ids, err := materialdoc.EditorAssetIDs(mt.Content)
+	if err != nil {
+		return "", "", err
+	}
+	if !slices.Contains(ids, assetID) {
+		return "", "", ErrNotFound
+	}
+	return s.anonymousAssetPath(ctx, noteID, assetID)
 }
 
 // AnonymousQuizAssetPath returns the object behind one of a visible quiz's

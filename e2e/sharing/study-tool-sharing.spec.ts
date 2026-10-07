@@ -1,4 +1,4 @@
-import type { APIRequestContext } from '@playwright/test';
+import type { APIRequestContext, Page } from '@playwright/test';
 import { expect, test } from '../fixtures/actors';
 import { seed } from '../fixtures/seed';
 import { apiEndsWith, waitForApi } from '../helpers/api';
@@ -13,7 +13,7 @@ type Seeded = { id: string; name: string; text: string };
 const kinds = [
   {
     api: '/api/quizzes',
-    clone: m.quiz_clone(),
+    clone: m.action_clone_quiz(),
     // A standalone quiz is deleted through its own route.
     deletePath: (id: string) => `/api/quizzes/${id}`,
     explore: { api: '/api/explore/quizzes', tab: m.explore_tab_quizzes() },
@@ -41,6 +41,17 @@ const kinds = [
     share: '/share/flashcards',
   },
 ] as const;
+
+/** ⋮ → Clone opens the dashboard's dialog, which clones on confirm. */
+async function cloneThroughDashboard(page: Page, label: string) {
+  await page.getByRole('button', { name: m.a11y_open_menu() }).click();
+  await page.getByRole('menuitem', { name: label }).click();
+  await page.waitForURL((url) => url.searchParams.has('clone'));
+  await page
+    .getByRole('dialog', { name: label })
+    .getByRole('button', { exact: true, name: m.action_clone() })
+    .click();
+}
 
 async function sharePath(
   ownerApi: APIRequestContext,
@@ -97,13 +108,13 @@ for (const kind of kinds) {
           `${await sharePath(ownerApi, kind.api, item)}?anonymous`
         );
         await expect(anonymousPage.getByText(item.text)).toBeVisible();
+        // The same ⋮ and header for every visitor; neither reads the session.
         await expect(
-          anonymousPage.getByRole('button', { name: kind.clone })
-        ).toHaveCount(0);
-        // The public header, not the app's top bar.
+          anonymousPage.getByRole('button', { name: m.a11y_open_menu() })
+        ).toBeVisible();
         await expect(
           anonymousPage.getByRole('link', { name: m.summary_sign_up() })
-        ).toBeVisible();
+        ).toHaveAttribute('href', '/sign-up');
         await expect(anonymousPage.locator('[data-unread-count]')).toHaveCount(
           0
         );
@@ -171,7 +182,7 @@ for (const kind of kinds) {
         if (kind.kind === 'flashcards')
           await expect(otherPage.getByText(item.name)).toBeVisible();
         await expect(
-          otherPage.getByRole('button', { name: kind.clone })
+          otherPage.getByRole('link', { name: m.summary_sign_up() })
         ).toBeVisible();
       }
     });
@@ -196,7 +207,7 @@ for (const kind of kinds) {
           apiEndsWith(`${kind.api}/${item.id}/clone`, 'POST')
         );
         await otherPage.goto(`${kind.share}/${item.id}`);
-        await otherPage.getByRole('button', { name: kind.clone }).click();
+        await cloneThroughDashboard(otherPage, kind.clone);
         const response = await cloned;
         expect(response.status()).toBe(201);
         const body = await response.json();
@@ -212,3 +223,54 @@ for (const kind of kinds) {
     });
   });
 }
+
+test('a link note opens for signed-out visitors and clones for signed-in ones', async ({
+  anonymousPage,
+  otherApi,
+  otherPage,
+  ownerApi,
+}) => {
+  const body = `E2E shared note ${Date.now()}`;
+  const created = await ownerApi.post('/api/materials', {
+    data: {
+      content: {
+        schemaVersion: 1,
+        value: [{ children: [{ text: body }], id: 'body', type: 'p' }],
+      },
+      kind: 'note',
+      title: body,
+    },
+  });
+  expect(created.status()).toBe(201);
+  const note = (await created.json()) as { id: string };
+  try {
+    const shared = await ownerApi.patch(`/api/materials/${note.id}/sharing`, {
+      data: { privacy: 'link' },
+    });
+    expect(shared.status()).toBe(200);
+    const list = (await (await ownerApi.get('/api/materials')).json()) as {
+      items: { id: string; sharePath?: string }[];
+    };
+    const path = list.items.find((item) => item.id === note.id)?.sharePath;
+    expect(path).toMatch(/^\/share\/notes\//);
+
+    await anonymousPage.goto(`${path}?anonymous`);
+    await expect(anonymousPage.getByText(body).first()).toBeVisible();
+
+    const cloned = waitForApi(
+      otherPage,
+      apiEndsWith(`/api/materials/${note.id}/clone`, 'POST')
+    );
+    await otherPage.goto(path as string);
+    await cloneThroughDashboard(otherPage, m.action_clone_note());
+    const response = await cloned;
+    expect(response.status()).toBe(201);
+    const copy = (await response.json()) as { id: string };
+    await expect(otherPage).toHaveURL(`/materials/${copy.id}`);
+    expect((await otherApi.delete(`/api/materials/${copy.id}`)).status()).toBe(
+      204
+    );
+  } finally {
+    await ownerApi.delete(`/api/materials/${note.id}`);
+  }
+});

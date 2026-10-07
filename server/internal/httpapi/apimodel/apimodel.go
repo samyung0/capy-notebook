@@ -403,6 +403,8 @@ type Quiz struct {
 	CreatedAt     time.Time        `json:"createdAt"`
 	Privacy       store.Privacy    `json:"privacy"`
 	SharePath     string           `json:"sharePath,omitempty"`
+	// Author is the owner a shared page shows; only the single-quiz read fills it.
+	Author *store.MaterialAuthor `json:"author,omitempty"`
 	// ParentMaterialID is the note a quiz is embedded in (a quick check).
 	ParentMaterialID string `json:"parentMaterialId,omitempty"`
 	// Provenance credits the library books the quiz was written from.

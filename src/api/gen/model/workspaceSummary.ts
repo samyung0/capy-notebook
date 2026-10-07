@@ -12,6 +12,7 @@ export interface WorkspaceSummary {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   author: string;
+  authorAvatarUrl?: string;
   chapters: WorkspaceSummaryChapter[];
   description: string;
   /** Unfiled files */

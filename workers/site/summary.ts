@@ -2,8 +2,9 @@ import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
 import { z } from 'zod';
 import type { WorkspaceSummary } from '../../src/api/types';
+import { PublicNav } from '../../src/components/app/PublicHeader';
 import { Button } from '../../src/components/ui/Button';
-import { Skeleton } from '../../src/components/ui/feedback';
+import { IconButton } from '../../src/components/ui/IconButton';
 import { m } from '../../src/i18n';
 import { fileIconName } from '../../src/lib/fileIcons';
 import { iconUrl } from '../../src/lib/icon-catalog';
@@ -17,6 +18,7 @@ const file = z.object({
 });
 export const summarySchema = z.object({
   author: z.string(),
+  authorAvatarUrl: z.string().optional(),
   chapters: z.array(z.object({ files: z.array(file), name: z.string() })),
   description: z.string(),
   files: z.array(file),
@@ -64,11 +66,16 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** Pre-hydration copy of `PublicNavigation`; the island replaces it on mount. */
-// The island reads the session client side and replaces this with sign-in
-// and sign-up or the profile pill; until then it holds the pill's space.
-function accountPlaceholder(locale: SummaryLocale): string {
-  return `<div class="flex h-11.5 items-center" role="status" aria-label="${escapeHTML(m.a11y_loading({}, { locale }))}">${renderToString(createElement(Skeleton, { className: 'h-11.5 w-[176px] rounded-full' }))}</div>`;
+/** The header's sign-in and sign-up, the same for every visitor. The theme
+ * toggle needs the browser, so this holds a static one of the same size until
+ * the island renders the live nav. */
+function publicNav(locale: SummaryLocale): string {
+  const themeToggle = createElement(IconButton, {
+    icon: 'moon',
+    label: m.public_theme_dark({}, { locale }),
+    variant: 'ghost-hover',
+  });
+  return `<div id="summary-nav" data-locale="${locale}">${renderToString(createElement(PublicNav, { locale, themeToggle }))}</div>`;
 }
 
 export function renderSummary(
@@ -108,7 +115,17 @@ export function renderSummary(
       createElement('a', { href: openURL }, m.summary_open({}, options))
     )
   );
-  const body = `<div class="summary-shell"><header class="summary-header"><a class="summary-brand" href="/">Capy Notebook</a><div id="summary-auth" data-workspace-id="${id}" data-locale="${locale}">${accountPlaceholder(locale)}</div></header><main class="summary-panel"><div class="summary-meta"><img class="summary-icon" src="${escapeHTML(iconUrl(summary.iconId))}" alt="" width="60" height="60"><h1>${escapeHTML(summary.name)}</h1>${summary.author ? `<p class="summary-byline">${escapeHTML(summary.author)}</p>` : ''}${summary.description ? `<p class="summary-description">${escapeHTML(summary.description)}</p>` : ''}<ul class="summary-tags">${summary.tags.map((tag) => `<li># ${escapeHTML(tag)}</li>`).join('')}</ul>${openButton}</div><p class="summary-counts">${escapeHTML(m.workspace_card_meta({ chapters: String(summary.chapters.length), files: String(fileCount) }, options))}</p><div class="summary-outline">${summary.chapters.map((chapter) => section(chapter.name, chapter.files)).join('')}${summary.files.length ? `<div class="summary-chapter">${files(summary.files)}</div>` : ''}${!summary.chapters.length && !fileCount ? `<p class="summary-empty">${escapeHTML(m.summary_empty({}, options))}</p>` : ''}</div></main><footer class="summary-footer">Capy Notebook</footer></div>`;
+  // Menu's default ⋮ trigger; the island renders the live menu over it.
+  const actionMenu = renderToString(
+    createElement(IconButton, {
+      className: 'p-2',
+      icon: 'moreVertical',
+      label: m.a11y_open_menu({}, { locale }),
+      size: 'md',
+      variant: 'ghost-hover',
+    })
+  );
+  const body = `<div class="summary-shell"><header class="summary-header"><a class="summary-brand" href="/">Capy Notebook</a>${publicNav(locale)}</header><main class="summary-panel"><div class="summary-meta"><img class="summary-icon" src="${escapeHTML(iconUrl(summary.iconId))}" alt="" width="60" height="60"><div class="summary-title"><h1>${escapeHTML(summary.name)}</h1><div id="summary-actions" data-workspace-id="${escapeHTML(id)}" data-locale="${locale}">${actionMenu}</div></div>${summary.author ? `<p class="summary-byline">${summary.authorAvatarUrl ? `<img class="summary-avatar" src="${escapeHTML(summary.authorAvatarUrl)}" alt="" width="24" height="24">` : ''}${escapeHTML(summary.author)}</p>` : ''}${summary.description ? `<p class="summary-description">${escapeHTML(summary.description)}</p>` : ''}<ul class="summary-tags">${summary.tags.map((tag) => `<li># ${escapeHTML(tag)}</li>`).join('')}</ul>${openButton}</div><p class="summary-counts">${escapeHTML(m.workspace_card_meta({ chapters: String(summary.chapters.length), files: String(fileCount) }, options))}</p><div class="summary-outline">${summary.chapters.map((chapter) => section(chapter.name, chapter.files)).join('')}${summary.files.length ? `<div class="summary-chapter">${files(summary.files)}</div>` : ''}${!summary.chapters.length && !fileCount ? `<p class="summary-empty">${escapeHTML(m.summary_empty({}, options))}</p>` : ''}</div></main><footer class="summary-footer">Capy Notebook</footer></div>`;
   return template
     .replace('lang="en"', `lang="${locale}"`)
     .replace('<!--capy-summary-head-->', () => header)
@@ -134,7 +151,7 @@ export function renderFailure(
       )
       .replace(
         '<!--capy-summary-body-->',
-        `<div class="summary-shell">${unavailable ? '' : `<header class="summary-header"><a class="summary-brand" href="/">Capy Notebook</a><div id="summary-auth" data-locale="${locale}">${accountPlaceholder(locale)}</div></header>`}<main class="summary-panel" id="summary-error" data-status="${status}" data-locale="${locale}">${renderToString(createElement(SummaryFailure, { locale, status }))}</main></div>`
+        `<div class="summary-shell">${unavailable ? '' : `<header class="summary-header"><a class="summary-brand" href="/">Capy Notebook</a>${publicNav(locale)}</header>`}<main class="summary-panel" id="summary-error" data-status="${status}" data-locale="${locale}">${renderToString(createElement(SummaryFailure, { locale, status }))}</main></div>`
       );
   }
   return `<!doctype html><html lang="${locale}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${escapeHTML(unavailable ? m.error_not_found_page_title({}, options) : m.summary_error_title({}, options))} | Capy Notebook</title><body style="font:16px/1.6 system-ui;margin:12vh auto;padding:24px;max-width:580px">${unavailable ? '' : '<a href="/">Capy Notebook</a>'}<h1>${escapeHTML(unavailable ? m.error_not_found_page_title({}, options) : m.summary_error_title({}, options))}</h1><p>${escapeHTML(unavailable ? m.error_not_found_page_body({}, options) : m.summary_error_body({}, options))}</p>${unavailable ? '' : `<a href="">${escapeHTML(m.summary_retry({}, options))}</a>`}</body></html>`;

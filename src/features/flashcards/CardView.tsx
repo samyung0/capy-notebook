@@ -1,7 +1,9 @@
 import { type ReactNode, useContext } from 'react';
 import type { FlashcardContent } from '@/features/materials/blocks';
-import { useResolvedAsset } from '@/features/materials/MediaAssetView';
-import { AssetUrlContext } from '@/features/questions/QuestionView';
+import {
+  AssetUrlContext,
+  useResolvedAsset,
+} from '@/features/materials/MediaAssetView';
 import { cn } from '@/lib/cn';
 
 /** The front as the grid, previews and study show it: the text, centred. */

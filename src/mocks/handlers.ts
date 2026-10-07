@@ -873,6 +873,7 @@ export const handlers = [
       return HttpResponse.json({ message: 'not found' }, { status: 404 });
     const { id, name, privacy, questions } = db.quizFromMaterial(mt);
     return HttpResponse.json({
+      author: db.mockAuthor,
       id,
       name,
       privacy,
@@ -897,6 +898,7 @@ export const handlers = [
       return HttpResponse.json({ message: 'not found' }, { status: 404 });
     const set = db.flashcardSetFromMaterial(mt);
     return HttpResponse.json({
+      author: db.mockAuthor,
       cards: db
         .cardsFromMaterial(mt)
         .filter(({ back, front }) => front.trim() || back.trim())
@@ -905,6 +907,19 @@ export const handlers = [
       id: set.id,
       name: set.name,
       privacy: set.privacy,
+    });
+  }),
+  http.get('/p/notes/:token', ({ params }) => {
+    const mt = anonymousMaterial(String(params.token), 'note');
+    if (!mt)
+      return HttpResponse.json({ message: 'not found' }, { status: 404 });
+    return HttpResponse.json({
+      author: db.mockAuthor,
+      content: mt.content,
+      id: mt.id,
+      name: mt.title,
+      privacy: mt.privacy,
+      updatedAt: mt.updatedAt,
     });
   }),
 
@@ -2557,6 +2572,7 @@ export const handlers = [
     const quiz = db.quizFromMaterial(mt);
     return HttpResponse.json({
       ...quiz,
+      author: db.mockAuthor,
       questions: quiz.questions.map(learnerView),
     });
   }),
@@ -2609,6 +2625,31 @@ export const handlers = [
   http.delete('/api/quizzes/:id', async ({ params }) => {
     trashMaterial(String(params.id), 'quiz');
     return new HttpResponse(null, { status: 204 });
+  }),
+  // A standalone material (a note) clones into a private standalone copy.
+  http.post('/api/materials/:id/clone', async ({ params }) => {
+    const source = db.materials.find(
+      (material) => material.id === params.id && !material.parentMaterialId
+    );
+    if (!source) return new HttpResponse(null, { status: 404 });
+    const material = db.makeMaterial({
+      ...ownerMaterialAccess,
+      chapterId: null,
+      color: source.color,
+      content: structuredClone(source.content),
+      createdAt: new Date().toISOString(),
+      id: uid('mat'),
+      isOwner: true,
+      kind: source.kind,
+      privacy: 'private',
+      scopeChapters: [],
+      scopeFileNames: [],
+      title: source.title,
+      workspaceId: '',
+      workspaceName: '',
+    });
+    db.materials.unshift(material);
+    return HttpResponse.json(material, { status: 201 });
   }),
   http.post('/api/quizzes/:id/clone', async ({ params }) => {
     const sourceMaterial = db.materials.find(
@@ -2714,7 +2755,10 @@ export const handlers = [
       (x) => x.id === params.id && x.kind === 'flashcards'
     );
     return mt
-      ? HttpResponse.json(db.flashcardSetFromMaterial(mt))
+      ? HttpResponse.json({
+          ...db.flashcardSetFromMaterial(mt),
+          author: db.mockAuthor,
+        })
       : new HttpResponse(null, { status: 404 });
   }),
   http.patch('/api/flashcards/:id/content', async ({ params, request }) => {
@@ -3128,7 +3172,10 @@ export const handlers = [
 type SourceKindFix = 'pdf' | 'doc' | 'md' | 'image' | 'txt';
 
 /** Signed-out reads reach standalone, non-embedded link/public materials. */
-function anonymousMaterial(token: string, kind: 'quiz' | 'flashcards') {
+function anonymousMaterial(
+  token: string,
+  kind: 'quiz' | 'flashcards' | 'note'
+) {
   const id = token.split('.')[0];
   return db.materials.find(
     (x) =>

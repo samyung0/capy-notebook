@@ -211,6 +211,8 @@ type FlashcardSet struct {
 	Privacy       Privacy   `json:"privacy"`
 	// SharePath is the signed share link of a standalone flashcard set.
 	SharePath string `json:"sharePath,omitempty"`
+	// Author is the owner a shared page shows; only the single-set read fills it.
+	Author *MaterialAuthor `json:"author,omitempty"`
 	// ParentMaterialID is the note a set is embedded in: a quick check that
 	// records nothing (its study page sends no ratings), and the note's own only
 	// when it names that note.

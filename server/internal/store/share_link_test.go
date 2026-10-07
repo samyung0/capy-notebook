@@ -29,3 +29,13 @@ func TestShareTokenVerifiesMaterialsAndRejectsForgeries(t *testing.T) {
 		}
 	}
 }
+
+func TestMaterialSharePathCoversStandaloneNotes(t *testing.T) {
+	secret := []byte("test-secret-0123456789abcdef0000")
+	if got := materialSharePath(secret, "note", "mat_1a2b3c4d5e", "", ""); got != "/share/notes/mat_1a2b3c4d5e.tWUDh1a-tb_YSGgu" {
+		t.Fatalf("standalone note = %q", got)
+	}
+	if got := materialSharePath(secret, "note", "mat_1a2b3c4d5e", "ws_1", ""); got != "" {
+		t.Fatalf("workspace note = %q, want none", got)
+	}
+}

@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { USE_MSW } from '@/api/auth';
 import { useWorkspaces } from '@/api/hooks';
+import { CloneLinkDialog } from '@/components/app/CloneLinkDialog';
 import { Panel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
@@ -114,6 +115,7 @@ export default function Dashboard() {
         <WorkspacesSection />
       </Panel>
       {CLERK_ACTIVE && <OnboardingDialog />}
+      <CloneLinkDialog />
 
       <div className="order-first flex h-auto min-h-0 w-(--top-inset-bar-width) shrink-0 flex-col gap-2.5 overflow-visible lg:order-last lg:h-full lg:min-h-full">
         <TopInsetBar />

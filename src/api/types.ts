@@ -237,6 +237,7 @@ export type AnonymousQuiz = Omit<GenAnonymousQuiz, 'questions'> & {
 };
 export type {
   AnonymousFlashcards,
+  AnonymousNote,
   CheckBankQuestionReq,
   CheckReviewItemReq,
   ComputationCheckResp,
@@ -511,6 +512,7 @@ export type MaterialDiscussion = Omit<GenDiscussion, 'comments'> & {
 };
 
 export type {
+  MaterialAuthor,
   PDFRect,
   SourceCollaborationToken,
   SourceProcessResult,

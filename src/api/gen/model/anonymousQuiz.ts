@@ -4,12 +4,14 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { MaterialAuthor } from './materialAuthor.ts';
 import type { Privacy } from './privacy.ts';
 import type { Provenance } from './provenance.ts';
 
 export interface AnonymousQuiz {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  author: MaterialAuthor;
   id: string;
   name: string;
   privacy: Privacy;

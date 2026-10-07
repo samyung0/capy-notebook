@@ -1,4 +1,4 @@
-import { createContext, type ReactNode, useContext } from 'react';
+import type { ReactNode } from 'react';
 import { CategoryChart } from '@/components/charts/CategoryChart';
 import { Icon } from '@/components/ui/Icon';
 import { useResolvedAsset } from '@/features/materials/MediaAssetView';
@@ -89,30 +89,9 @@ export function QuestionBlockView({ block }: { block: QuestionBlock }) {
   }
 }
 
-/** Overrides where a quiz image loads from: signed-out pages use the site
- * Worker's share route, and the quiz editor shows images picked but not yet
- * uploaded. Undefined falls back to the authenticated resolve endpoint. */
-export const AssetUrlContext = createContext<
-  ((assetId: string) => string | undefined) | null
->(null);
-
-/** Quiz images are private editor assets; the signed URL is resolved per render. */
+/** Quiz images are private editor assets; the signed URL is resolved per
+ * render, or comes from AssetUrlContext on shared pages and in the editor. */
 function AssetFigure({
-  assetId,
-  block,
-}: {
-  assetId: string;
-  block: ImageBlock | GraphBlock;
-}) {
-  const src = useContext(AssetUrlContext)?.(assetId);
-  return src ? (
-    <Figure block={block} src={src} />
-  ) : (
-    <ResolvedAssetFigure assetId={assetId} block={block} />
-  );
-}
-
-function ResolvedAssetFigure({
   assetId,
   block,
 }: {

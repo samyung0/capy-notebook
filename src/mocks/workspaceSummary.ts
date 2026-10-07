@@ -15,6 +15,7 @@ export function mockWorkspaceSummary(id: string): WorkspaceSummary | undefined {
   });
   return {
     author: user.name,
+    authorAvatarUrl: user.avatarUrl,
     chapters: chapters
       .filter((chapter) => chapter.workspaceId === id)
       .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))

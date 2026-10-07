@@ -2061,6 +2061,25 @@ materials.push(
     title: 'Shared cell biology cards',
     workspaceId: '',
     workspaceName: '',
+  }),
+  makeMaterial({
+    capabilities: ownerCapabilities,
+    chapterId: null,
+    content: createMaterialDocument(
+      structuredClone(
+        seedNotes.find((note) => note.id === 'mat_note_1')?.value ?? []
+      )
+    ),
+    createdAt: days(3),
+    id: 'nt_shared',
+    kind: 'note',
+    privacy: 'link',
+    role: 'owner',
+    scopeChapters: [],
+    scopeFileNames: [],
+    title: 'Lecture notes — the cell',
+    workspaceId: '',
+    workspaceName: '',
   })
 );
 /* ---------------- editor matrix fixtures (e2e/editor) ---------------- */
@@ -2146,14 +2165,18 @@ for (const seed of embeddedSeeds) {
   );
 }
 
-/** Standalone quizzes and flashcard sets share through a signed link. MSW has
- * no Worker to verify it, so the signature is a fixed placeholder. */
+/** Standalone quizzes, flashcard sets and notes share through a signed link.
+ * MSW has no Worker to verify it, so the signature is a fixed placeholder. */
 export function mockSharePath(mt: Material): string | undefined {
   if (mt.workspaceId || mt.parentMaterialId) return;
   if (mt.kind === 'quiz') return `/share/quizzes/${mt.id}.mswSignature0000`;
   if (mt.kind === 'flashcards')
     return `/share/flashcards/${mt.id}.mswSignature0000`;
+  if (mt.kind === 'note') return `/share/notes/${mt.id}.mswSignature0000`;
 }
+
+/** Every mock material belongs to the mock user. */
+export const mockAuthor = { avatarUrl: user.avatarUrl, name: user.name };
 
 /** Derive the typed Quiz view from a quiz material (questions from the fence). */
 export function quizFromMaterial(mt: Material): EditableQuiz {

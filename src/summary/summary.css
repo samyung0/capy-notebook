@@ -64,11 +64,29 @@
   letter-spacing: -0.8px;
   overflow-wrap: anywhere;
 }
+.summary-title {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
 .summary-byline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
   margin: 14px 0 0;
   font-size: 14px;
   color: var(--text-muted);
   overflow-wrap: anywhere;
+}
+/* 1px high, so the avatar meets the name's text. */
+.summary-avatar {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  object-fit: cover;
+  border-radius: 999px;
+  transform: translateY(-1px);
 }
 .summary-description {
   margin: 20px 0 0;

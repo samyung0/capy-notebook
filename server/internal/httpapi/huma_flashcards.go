@@ -76,6 +76,11 @@ func (a *api) getFlashcardSet(ctx context.Context, in *flashcardSetIDInput) (*fl
 	if res.CanEdit, res.CanEditContent, err = a.canEditMaterial(ctx, in.ID, role); err != nil {
 		return nil, hErr(err)
 	}
+	author, err := a.s.MaterialAuthorOf(ctx, in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	res.Author = &author
 	return &flashcardSetOutput{Body: res}, nil
 }
 

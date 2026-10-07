@@ -2,6 +2,7 @@ import { queryOptions } from '@tanstack/react-query';
 import { ApiError, parseErrorBody } from './client';
 import type {
   AnonymousFlashcards,
+  AnonymousNote,
   AnonymousQuiz,
   GradeAnonymousQuizReq,
   GradedQuiz,
@@ -9,7 +10,8 @@ import type {
 } from './types';
 
 /**
- * Signed-out reads and grading of shared standalone quizzes and flashcard sets;
+ * Signed-out reads and grading of shared standalone quizzes, flashcard sets
+ * and notes;
  * `token` is the `{id}.{signature}` from the link. Reads go through the site
  * Worker's `/p/` routes, which verify the token and cache at the edge. Grading
  * calls the API directly so it sees the visitor's IP for its per-IP caps.
@@ -44,6 +46,12 @@ export const anonymousFlashcardsQuery = (token: string) =>
     queryKey: ['anonymous', 'flashcards', token] as const,
   });
 
+export const anonymousNoteQuery = (token: string) =>
+  queryOptions({
+    queryFn: () => publicJson<AnonymousNote>(`/p/notes/${token}`),
+    queryKey: ['anonymous', 'note', token] as const,
+  });
+
 /** The image URL a signed-out page renders for one of a quiz's assets. */
 export const anonymousAssetUrl = (token: string, assetId: string) =>
   `/p/quizzes/${token}/assets/${assetId}`;
@@ -51,6 +59,10 @@ export const anonymousAssetUrl = (token: string, assetId: string) =>
 /** The same for a shared flashcard set's card images. */
 export const anonymousFlashcardAssetUrl = (token: string, assetId: string) =>
   `/p/flashcards/${token}/assets/${assetId}`;
+
+/** The same for a shared note's images. */
+export const anonymousNoteAssetUrl = (token: string, assetId: string) =>
+  `/p/notes/${token}/assets/${assetId}`;
 
 /** Grades every part of a signed-out attempt; the result carries each
  * question's key, so the page shows it and keeps it in this browser. */

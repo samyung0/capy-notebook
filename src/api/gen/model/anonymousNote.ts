@@ -4,20 +4,18 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { Card } from './card.ts';
 import type { MaterialAuthor } from './materialAuthor.ts';
 import type { Privacy } from './privacy.ts';
 import type { Provenance } from './provenance.ts';
-import type { UserColor } from './userColor.ts';
 
-export interface AnonymousFlashcards {
+export interface AnonymousNote {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   author: MaterialAuthor;
-  cards: Card[];
-  color: UserColor;
+  content: unknown;
   id: string;
   name: string;
   privacy: Privacy;
   provenance?: Provenance;
+  updatedAt: string;
 }

@@ -10,7 +10,7 @@ import { ConfirmDialog } from '@/components/ui/Dialog';
 import { Icon } from '@/components/ui/Icon';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import type { FlashcardContent } from '@/features/materials/blocks';
-import { AssetUrlContext } from '@/features/questions/QuestionView';
+import { AssetUrlContext } from '@/features/materials/MediaAssetView';
 import { fitQuizImage } from '@/features/quizzes/quizImage';
 import { m } from '@/i18n';
 import { uid } from '@/lib/id';

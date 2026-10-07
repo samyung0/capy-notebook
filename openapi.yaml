@@ -231,6 +231,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        author:
+          $ref: "#/components/schemas/MaterialAuthor"
         cards:
           items:
             $ref: "#/components/schemas/Card"
@@ -251,6 +253,38 @@ components:
         - privacy
         - color
         - cards
+        - author
+      type: object
+    AnonymousNote:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/AnonymousNote.json
+          format: uri
+          readOnly: true
+          type: string
+        author:
+          $ref: "#/components/schemas/MaterialAuthor"
+        content: {}
+        id:
+          type: string
+        name:
+          type: string
+        privacy:
+          $ref: "#/components/schemas/Privacy"
+        provenance:
+          $ref: "#/components/schemas/Provenance"
+        updatedAt:
+          format: date-time
+          type: string
+      required:
+        - id
+        - name
+        - privacy
+        - content
+        - updatedAt
+        - author
       type: object
     AnonymousQuiz:
       additionalProperties: false
@@ -261,6 +295,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        author:
+          $ref: "#/components/schemas/MaterialAuthor"
         id:
           type: string
         name:
@@ -275,6 +311,7 @@ components:
         - name
         - privacy
         - questions
+        - author
       type: object
     AssignableRole:
       enum:
@@ -1773,6 +1810,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        author:
+          $ref: "#/components/schemas/MaterialAuthor"
         canEdit:
           type: boolean
         canEditContent:
@@ -2398,6 +2437,16 @@ components:
         - revision
         - isOwner
         - capabilities
+      type: object
+    MaterialAuthor:
+      additionalProperties: false
+      properties:
+        avatarUrl:
+          type: string
+        name:
+          type: string
+      required:
+        - name
       type: object
     MaterialChildBlock:
       additionalProperties: false
@@ -3339,6 +3388,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        author:
+          $ref: "#/components/schemas/MaterialAuthor"
         canEdit:
           type: boolean
         canEditContent:
@@ -5721,6 +5772,8 @@ components:
           readOnly: true
           type: string
         author:
+          type: string
+        authorAvatarUrl:
           type: string
         chapters:
           items:
@@ -8317,6 +8370,69 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Get a shared flashcard image URL
+      tags:
+        - Sharing
+  /api/public/notes/{token}:
+    get:
+      operationId: getAnonymousNote
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnonymousNote"
+          description: OK
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get a shared note for signed-out visitors
+      tags:
+        - Sharing
+  /api/public/notes/{token}/assets/{assetId}:
+    get:
+      operationId: getAnonymousNoteAsset
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: assetId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnonymousAsset"
+          description: OK
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get a shared note image URL
       tags:
         - Sharing
   /api/public/quizzes/{token}:

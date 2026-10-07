@@ -75,6 +75,28 @@ describe('anonymous material routes', () => {
     ).toBe(`https://api.example.test/api/public/quizzes/${TOKEN}`);
   });
 
+  it('reads a shared note and its images through the same token check', async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ id: 'mat_0123456789' }));
+    const response = await handleSiteRequest(
+      request(`/p/notes/${TOKEN}`),
+      env,
+      fetcher
+    );
+    expect(response.status).toBe(200);
+    expect((fetcher.mock.calls[0][0] as Request).url).toBe(
+      `https://api.example.test/api/public/notes/${TOKEN}`
+    );
+    const forged = await handleSiteRequest(
+      request(`/p/notes/${TOKEN.slice(0, -1)}x/assets/asset_1`),
+      env,
+      fetcher
+    );
+    expect(forged.status).toBe(404);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps browsers revalidating when the edge returns a cached copy', async () => {
     // Cloudflare stamps the zone's Browser Cache TTL onto Cache API hits.
     const cache = {

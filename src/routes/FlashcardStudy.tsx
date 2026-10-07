@@ -17,10 +17,11 @@ import {
   useFlashcardSet,
   useRateReviewItem,
 } from '@/api/hooks';
-import type { Provenance } from '@/api/types';
+import type { MaterialAuthor, Provenance } from '@/api/types';
 import { SessionSwitch } from '@/components/app/AuthProvider';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
-import { PublicPage } from '@/components/app/PublicHeader';
+import { PublicActionMenu } from '@/components/app/PublicActionMenu';
+import { PublicByline, PublicPage } from '@/components/app/PublicHeader';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Button } from '@/components/ui/Button';
@@ -30,7 +31,7 @@ import { userToast } from '@/components/ui/userToast';
 import { CardBack, CardFront } from '@/features/flashcards/CardView';
 import type { FlashcardContent } from '@/features/materials/blocks';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
-import { AssetUrlContext } from '@/features/questions/QuestionView';
+import { AssetUrlContext } from '@/features/materials/MediaAssetView';
 import { QuizPageHeader } from '@/features/quizzes/QuizPage';
 import { RatingTiles } from '@/features/study/RatingTiles';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
@@ -66,11 +67,7 @@ export function SharedFlashcardStudy() {
   return (
     <SessionSwitch
       anonymous={<AnonymousStudy key={token} token={token} />}
-      signedIn={
-        <div className="t-body h-dvh bg-page p-1.5 text-fg sm:p-2.5">
-          <SignedInStudy key={setId} setId={setId} shared />
-        </div>
-      }
+      signedIn={<SignedInStudy key={setId} setId={setId} shared />}
     />
   );
 }
@@ -106,57 +103,72 @@ function SignedInStudy({ setId, shared }: { setId: string; shared: boolean }) {
   const navigate = useNavigate();
   const router = useRouter();
   const canGoBack = useCanGoBack();
+  // A shared link opens in the public layout, signed in or out.
+  const frame = shared ? PublicStudyFrame : PanelWithInvertedRadius;
+  const Frame = frame;
 
   if (setFetchStatus === 'paused' || cardsFetchStatus === 'paused') {
     return (
-      <PanelWithInvertedRadius>
+      <Frame>
         <QueryPausedState className="h-full" />
-      </PanelWithInvertedRadius>
+      </Frame>
     );
   }
   const error = setError ?? cardsError;
   if (error) {
     const denied =
       isApiError(error) && (error.status === 404 || error.status === 401);
-    return (
+    const title = denied ? m.error_private_title() : m.flashcards_unable_load();
+    return shared ? (
+      <PublicStudyFrame>
+        <WorkspaceError title={title} />
+      </PublicStudyFrame>
+    ) : (
       <WorkspaceError
         backLabel={m.flashcards_back_to()}
         backTo="/flashcards"
-        title={denied ? m.error_private_title() : m.flashcards_unable_load()}
+        title={title}
       />
     );
   }
   if (!set || !cards || !setFetched || !cardsFetched)
-    return <LoadingPanel frame={PanelWithInvertedRadius} />;
+    return <LoadingPanel frame={frame} />;
 
   return (
     <StudyBody
       actions={
-        !set.canEdit && (
-          <Button
-            className="rounded-input"
-            disabled={frozen || cloneIsPending}
-            iconLeft="plus"
-            onClick={() =>
-              cloneSet(setId, {
-                onError: (err) => toastCloneError(err, 'flashcards'),
-                onSuccess: (copy) => {
-                  navigate({
-                    params: { flashcardSetId: copy.id },
-                    to: '/flashcards/$flashcardSetId',
-                  });
-                },
-              })
-            }
-            size="sm"
-            variant="outline"
-          >
-            {cloneIsPending ? m.action_cloning() : m.action_clone_flashcards()}
-          </Button>
+        shared ? (
+          <PublicActionMenu id={setId} kind="flashcards" />
+        ) : (
+          !set.canEdit && (
+            <Button
+              disabled={frozen || cloneIsPending}
+              iconLeft="plus"
+              onClick={() =>
+                cloneSet(setId, {
+                  onError: (err) => toastCloneError(err, 'flashcards'),
+                  onSuccess: (copy) => {
+                    navigate({
+                      params: { flashcardSetId: copy.id },
+                      to: '/flashcards/$flashcardSetId',
+                    });
+                  },
+                })
+              }
+              rounded="large"
+              size="sm"
+              variant="outline"
+            >
+              {cloneIsPending
+                ? m.action_cloning()
+                : m.action_clone_flashcards()}
+            </Button>
+          )
         )
       }
+      author={shared ? set.author : undefined}
       cards={cards}
-      frame={PanelWithInvertedRadius}
+      frame={frame}
       name={set.name}
       onBack={
         shared
@@ -196,7 +208,7 @@ function SignedInStudy({ setId, shared }: { setId: string; shared: boolean }) {
       provenance={set.provenance}
       trail={
         shared
-          ? [m.editor_flashcards()]
+          ? []
           : [set.workspaceName || m.files_tab_blocks(), m.editor_flashcards()]
       }
     />
@@ -244,6 +256,8 @@ function AnonymousStudy({ token }: { token: string }) {
       value={(assetId) => anonymousFlashcardAssetUrl(token, assetId)}
     >
       <StudyBody
+        actions={<PublicActionMenu id={set.id} kind="flashcards" />}
+        author={set.author}
         cards={set.cards}
         footer={
           <p className="t-meta text-center text-fg-muted">
@@ -277,17 +291,15 @@ function AnonymousStudy({ token }: { token: string }) {
           });
         }}
         provenance={set.provenance}
-        trail={[m.editor_flashcards()]}
+        trail={[]}
       />
     </AssetUrlContext.Provider>
   );
 }
 
-/** Signed-out pages use the public layout and header, as shared quizzes do. */
+/** Shared links use the public layout and header, as shared quizzes do. */
 function PublicStudyFrame({ children }: { children: ReactNode }) {
-  return (
-    <PublicPage returnTo={window.location.pathname}>{children}</PublicPage>
-  );
+  return <PublicPage>{children}</PublicPage>;
 }
 
 /** One study session over every card in order: Again sends a card to the end,
@@ -295,6 +307,7 @@ function PublicStudyFrame({ children }: { children: ReactNode }) {
  * takes no rating. */
 function StudyBody({
   actions,
+  author,
   cards,
   footer,
   frame: Frame,
@@ -306,6 +319,9 @@ function StudyBody({
   trail,
 }: {
   actions?: ReactNode;
+  /** Public pages: the owner under the title, and the card count above the
+   * card instead of in the header. */
+  author?: MaterialAuthor;
   cards: FlashcardContent[];
   footer?: ReactNode;
   frame: Frame;
@@ -340,19 +356,19 @@ function StudyBody({
     setFlipped(false);
   }
 
+  const position =
+    card &&
+    m.flashcards_card_of_total({ position: total - queue.length + 1, total });
+
   return (
     <Frame>
       <QuizPageHeader
         actions={actions}
+        byline={author && <PublicByline author={author} />}
+        // Public pages have no label row, so the title sits higher.
+        className={author ? 'pt-2 sm:pt-2' : undefined}
         meta={
-          card && (
-            <span className="t-subtitle">
-              {m.flashcards_card_of_total({
-                position: total - queue.length + 1,
-                total,
-              })}
-            </span>
-          )
+          !author && position && <span className="t-subtitle">{position}</span>
         }
         onBack={onBack}
         title={name}
@@ -364,39 +380,44 @@ function StudyBody({
         <div className="mx-auto flex max-w-160 flex-col gap-6">
           {card ? (
             <>
-              <div className="relative pt-6">
-                <div className="absolute inset-x-12 top-0 h-15 rounded-card-lg bg-solid-accent-1/20" />
-                <div className="absolute inset-x-6 top-3 h-15 rounded-card-lg bg-solid-accent-1/40" />
-                <button
-                  aria-label={
-                    flipped ? m.flashcards_answer() : m.flashcards_term()
-                  }
-                  className="relative flex h-[clamp(300px,48vh,400px)] w-full flex-col items-center justify-center overflow-auto rounded-card-lg border border-line bg-surface p-8 shadow-card"
-                  onClick={() => setFlipped((f) => !f)}
-                  type="button"
-                >
-                  {flipped ? (
-                    <div className="text-lg">
-                      <CardBack card={card} />
-                    </div>
-                  ) : (
-                    <CardFront card={card} large />
-                  )}
-                  <Icon
-                    className="absolute bottom-4 text-fg-muted opacity-60"
-                    name="refresh"
-                    size={20}
-                  />
-                </button>
+              <div>
+                {author && (
+                  <p className="t-subtitle mb-1 text-fg-muted">{position}</p>
+                )}
+                <div className="relative pt-6">
+                  <div className="absolute inset-x-12 top-0 h-15 rounded-card-lg bg-solid-accent-1/20" />
+                  <div className="absolute inset-x-6 top-3 h-15 rounded-card-lg bg-solid-accent-1/40" />
+                  <button
+                    aria-label={
+                      flipped ? m.flashcards_answer() : m.flashcards_term()
+                    }
+                    className="relative flex h-[clamp(300px,48vh,400px)] w-full flex-col items-center justify-center overflow-auto rounded-card-lg border border-line bg-surface p-8 shadow-card"
+                    onClick={() => setFlipped((f) => !f)}
+                    type="button"
+                  >
+                    {flipped ? (
+                      <div className="text-lg">
+                        <CardBack card={card} />
+                      </div>
+                    ) : (
+                      <CardFront card={card} large />
+                    )}
+                    <Icon
+                      className="absolute bottom-4 text-fg-muted opacity-60"
+                      name="refresh"
+                      size={20}
+                    />
+                  </button>
+                </div>
               </div>
               {flipped ? (
                 <RatingTiles onRate={rate} />
               ) : (
                 <Button
-                  className="rounded-input"
                   fullWidth
                   iconLeft="view"
                   onClick={() => setFlipped(true)}
+                  rounded="large"
                 >
                   {m.flashcards_show_answer()}
                 </Button>
@@ -414,9 +435,9 @@ function StudyBody({
               </h2>
               {total > 0 && (
                 <Button
-                  className="rounded-input"
                   iconLeft="flashcards"
                   onClick={studyAgain}
+                  rounded="large"
                   variant="accent"
                 >
                   {m.flashcards_study_again()}

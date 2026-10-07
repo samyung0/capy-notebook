@@ -141,6 +141,12 @@ const publicRoutes = [
     path: '/share/flashcards/$flashcardSetId',
   }),
   createRoute({
+    component: lazyRouteComponent(() => import('@/routes/SharedNote')),
+    errorComponent: ShareRouteErrorComponent,
+    getParentRoute: () => rootRoute,
+    path: '/share/notes/$noteId',
+  }),
+  createRoute({
     component: lazyRouteComponent(() => import('@/routes/SignIn')),
     getParentRoute: () => rootRoute,
     path: '/sign-in',

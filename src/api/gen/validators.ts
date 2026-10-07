@@ -1931,6 +1931,10 @@ export const CreateFlashcardSetBody = zod.object({
 
 export const CreateFlashcardSetResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "author": zod.object({
+  "avatarUrl": zod.string().optional(),
+  "name": zod.string()
+}).optional(),
   "canEdit": zod.boolean(),
   "canEditContent": zod.boolean(),
   "cardCount": zod.int(),
@@ -2002,6 +2006,10 @@ export const GetFlashcardSetParams = zod.object({
 
 export const GetFlashcardSetResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "author": zod.object({
+  "avatarUrl": zod.string().optional(),
+  "name": zod.string()
+}).optional(),
   "canEdit": zod.boolean(),
   "canEditContent": zod.boolean(),
   "cardCount": zod.int(),
@@ -2093,6 +2101,10 @@ export const CloneFlashcardSetParams = zod.object({
 
 export const CloneFlashcardSetResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "author": zod.object({
+  "avatarUrl": zod.string().optional(),
+  "name": zod.string()
+}).optional(),
   "canEdit": zod.boolean(),
   "canEditContent": zod.boolean(),
   "cardCount": zod.int(),
@@ -2215,6 +2227,10 @@ export const UpdateFlashcardSetBody = zod.object({
 
 export const UpdateFlashcardSetResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "author": zod.object({
+  "avatarUrl": zod.string().optional(),
+  "name": zod.string()
+}).optional(),
   "canEdit": zod.boolean(),
   "canEditContent": zod.boolean(),
   "cardCount": zod.int(),
@@ -2290,6 +2306,10 @@ export const UpdateFlashcardSetSharingBody = zod.object({
 
 export const UpdateFlashcardSetSharingResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "author": zod.object({
+  "avatarUrl": zod.string().optional(),
+  "name": zod.string()
+}).optional(),
   "canEdit": zod.boolean(),
   "canEditContent": zod.boolean(),
   "cardCount": zod.int(),
@@ -3472,6 +3492,10 @@ export const GetAnonymousFlashcardsParams = zod.object({
 
 export const GetAnonymousFlashcardsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "author": zod.object({
+  "avatarUrl": zod.string().optional(),
+  "name": zod.string()
+}),
   "cards": zod.array(zod.object({
   "back": zod.string(),
   "front": zod.string(),
@@ -3550,6 +3574,89 @@ export const GetAnonymousFlashcardAssetResponse = zod.object({
 
 
 /**
+ * @summary Get a shared note for signed-out visitors
+ */
+export const GetAnonymousNoteParams = zod.object({
+  "token": zod.string()
+})
+
+export const GetAnonymousNoteResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "author": zod.object({
+  "avatarUrl": zod.string().optional(),
+  "name": zod.string()
+}),
+  "content": zod.unknown(),
+  "id": zod.string(),
+  "name": zod.string(),
+  "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "questions": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+}).optional(),
+  "updatedAt": zod.iso.datetime({"offset":true})
+})
+
+
+/**
+ * @summary Get a shared note image URL
+ */
+export const GetAnonymousNoteAssetParams = zod.object({
+  "token": zod.string(),
+  "assetId": zod.string()
+})
+
+export const GetAnonymousNoteAssetResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "contentType": zod.string(),
+  "expiresAt": zod.iso.datetime({"offset":true}),
+  "url": zod.string()
+})
+
+
+/**
  * @summary Get a shared quiz for signed-out visitors
  */
 export const GetAnonymousQuizParams = zod.object({
@@ -3558,6 +3665,10 @@ export const GetAnonymousQuizParams = zod.object({
 
 export const GetAnonymousQuizResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "author": zod.object({
+  "avatarUrl": zod.string().optional(),
+  "name": zod.string()
+}),
   "id": zod.string(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
@@ -3661,6 +3772,7 @@ export const GetPublicWorkspaceSummaryParams = zod.object({
 export const GetPublicWorkspaceSummaryResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "author": zod.string(),
+  "authorAvatarUrl": zod.string().optional(),
   "chapters": zod.array(zod.object({
   "files": zod.array(zod.object({
   "addedAt": zod.iso.datetime({"offset":true}),
@@ -3724,6 +3836,10 @@ export const CreateQuizBody = zod.object({
 
 export const CreateQuizResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "author": zod.object({
+  "avatarUrl": zod.string().optional(),
+  "name": zod.string()
+}).optional(),
   "canEdit": zod.boolean(),
   "canEditContent": zod.boolean(),
   "chapters": zod.array(zod.string()),
@@ -3814,6 +3930,10 @@ export const GetQuizParams = zod.object({
 
 export const GetQuizResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "author": zod.object({
+  "avatarUrl": zod.string().optional(),
+  "name": zod.string()
+}).optional(),
   "canEdit": zod.boolean(),
   "canEditContent": zod.boolean(),
   "chapters": zod.array(zod.string()),
@@ -3913,6 +4033,10 @@ export const CloneQuizParams = zod.object({
 
 export const CloneQuizResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "author": zod.object({
+  "avatarUrl": zod.string().optional(),
+  "name": zod.string()
+}).optional(),
   "canEdit": zod.boolean(),
   "canEditContent": zod.boolean(),
   "chapters": zod.array(zod.string()),
@@ -3993,6 +4117,10 @@ export const UpdateQuizContentBody = zod.object({
 
 export const UpdateQuizContentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "author": zod.object({
+  "avatarUrl": zod.string().optional(),
+  "name": zod.string()
+}).optional(),
   "canEdit": zod.boolean(),
   "canEditContent": zod.boolean(),
   "chapters": zod.array(zod.string()),
@@ -4065,6 +4193,10 @@ export const GetQuizForEditParams = zod.object({
 
 export const GetQuizForEditResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "author": zod.object({
+  "avatarUrl": zod.string().optional(),
+  "name": zod.string()
+}).optional(),
   "canEdit": zod.boolean(),
   "canEditContent": zod.boolean(),
   "chapters": zod.array(zod.string()),
@@ -4146,6 +4278,10 @@ export const UpdateQuizMetadataBody = zod.object({
 
 export const UpdateQuizMetadataResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "author": zod.object({
+  "avatarUrl": zod.string().optional(),
+  "name": zod.string()
+}).optional(),
   "canEdit": zod.boolean(),
   "canEditContent": zod.boolean(),
   "chapters": zod.array(zod.string()),
@@ -4222,6 +4358,10 @@ export const UpdateQuizSharingBody = zod.object({
 
 export const UpdateQuizSharingResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "author": zod.object({
+  "avatarUrl": zod.string().optional(),
+  "name": zod.string()
+}).optional(),
   "canEdit": zod.boolean(),
   "canEditContent": zod.boolean(),
   "chapters": zod.array(zod.string()),

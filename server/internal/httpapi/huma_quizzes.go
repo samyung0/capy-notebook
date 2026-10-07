@@ -82,6 +82,11 @@ func (a *api) getQuiz(ctx context.Context, in *quizIDInput) (*quizOutput, error)
 		return nil, err
 	}
 	out.Body.Questions = questions.LearnerViews(out.Body.Questions)
+	author, err := a.s.MaterialAuthorOf(ctx, in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	out.Body.Author = &author
 	return out, nil
 }
 

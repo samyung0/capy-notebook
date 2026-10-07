@@ -1,8 +1,8 @@
 import { verifiedShareToken } from '../../src/lib/shareLink';
 
 /**
- * Data routes for signed-out visitors of shared standalone quizzes and
- * flashcard sets, and their images. Every route verifies the share token first, so forged links
+ * Data routes for signed-out visitors of shared standalone quizzes, flashcard
+ * sets and notes, and their images. Every route verifies the share token first, so forged links
  * never reach the API. Reads are cached at the edge for five minutes, like
  * workspace summaries; Go verifies the token again and reads privacy live.
  * Grading posts go straight to `/api/public/quizzes/{token}/grade`: a Worker
@@ -13,10 +13,12 @@ import { verifiedShareToken } from '../../src/lib/shareLink';
  *   GET /p/quizzes/{token}/assets/{assetId}   → the image bytes
  *   GET /p/flashcards/{token}                 → /api/public/flashcards/{token}
  *   GET /p/flashcards/{token}/assets/{assetId} → a card image's bytes
+ *   GET /p/notes/{token}                      → /api/public/notes/{token}
+ *   GET /p/notes/{token}/assets/{assetId}     → a note image's bytes
  */
 
 const ROUTE =
-  /^\/p\/(quizzes|flashcards)\/([^/]+)(?:\/assets\/(asset_[A-Za-z0-9_-]{1,64}))?$/;
+  /^\/p\/(quizzes|flashcards|notes)\/([^/]+)(?:\/assets\/(asset_[A-Za-z0-9_-]{1,64}))?$/;
 export const SHARED_CACHE = 'public, s-maxage=300, max-age=0, must-revalidate';
 
 /** A Cache API hit comes back with the zone's Browser Cache TTL in its

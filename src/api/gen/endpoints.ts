@@ -11,6 +11,7 @@ import type {
   AgentOperation,
   AnonymousAsset,
   AnonymousFlashcards,
+  AnonymousNote,
   AnonymousQuiz,
   Attempt,
   AttemptDetail,
@@ -5157,6 +5158,108 @@ export const getAnonymousFlashcardAsset = async (token: string,
 
   const data: getAnonymousFlashcardAssetResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getAnonymousFlashcardAssetResponse
+}
+
+
+
+export type getAnonymousNoteResponse200 = {
+  data: AnonymousNote
+  status: 200
+}
+
+export type getAnonymousNoteResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getAnonymousNoteResponseSuccess = (getAnonymousNoteResponse200) & {
+  headers: Headers;
+};
+export type getAnonymousNoteResponseError = (getAnonymousNoteResponseDefault) & {
+  headers: Headers;
+};
+
+export type getAnonymousNoteResponse = (getAnonymousNoteResponseSuccess | getAnonymousNoteResponseError)
+
+export const getGetAnonymousNoteUrl = (token: string,) => {
+
+
+
+
+  return `/api/public/notes/${token}`
+}
+
+/**
+ * @summary Get a shared note for signed-out visitors
+ */
+export const getAnonymousNote = async (token: string, options?: RequestInit): Promise<getAnonymousNoteResponse> => {
+
+  const res = await fetch(getGetAnonymousNoteUrl(token),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getAnonymousNoteResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getAnonymousNoteResponse
+}
+
+
+
+export type getAnonymousNoteAssetResponse200 = {
+  data: AnonymousAsset
+  status: 200
+}
+
+export type getAnonymousNoteAssetResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getAnonymousNoteAssetResponseSuccess = (getAnonymousNoteAssetResponse200) & {
+  headers: Headers;
+};
+export type getAnonymousNoteAssetResponseError = (getAnonymousNoteAssetResponseDefault) & {
+  headers: Headers;
+};
+
+export type getAnonymousNoteAssetResponse = (getAnonymousNoteAssetResponseSuccess | getAnonymousNoteAssetResponseError)
+
+export const getGetAnonymousNoteAssetUrl = (token: string,
+    assetId: string,) => {
+
+
+
+
+  return `/api/public/notes/${token}/assets/${assetId}`
+}
+
+/**
+ * @summary Get a shared note image URL
+ */
+export const getAnonymousNoteAsset = async (token: string,
+    assetId: string, options?: RequestInit): Promise<getAnonymousNoteAssetResponse> => {
+
+  const res = await fetch(getGetAnonymousNoteAssetUrl(token,assetId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getAnonymousNoteAssetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getAnonymousNoteAssetResponse
 }
 
 

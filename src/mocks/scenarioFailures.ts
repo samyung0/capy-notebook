@@ -128,6 +128,7 @@ export const failureScenarios = [
       '/api/workspaces/:id/clone',
       '/api/quizzes/:id/clone',
       '/api/flashcards/:id/clone',
+      '/api/materials/:id/clone',
     ],
     status: 403,
   },
