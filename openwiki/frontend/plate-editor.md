@@ -387,7 +387,7 @@ frame, and a hover toolbar with View source, Copy
 and Delete in the editor and View source only in view mode. View source opens
 `HtmlEmbedSourceDialog`, titled Source: editors change the caption and snippet and Save within
 the 64 KB cap; read-only users only read it. The snippet runs only in
-`<iframe sandbox="allow-scripts" loading="lazy">` at `VITE_EMBED_ORIGIN/`, the
+`<iframe sandbox="allow-scripts">` at `VITE_EMBED_ORIGIN/`, the
 wrapper page in `embed/` on its own site (see
 [deployment-runbook.md](../deployment-runbook.md)); without that origin the
 block shows a notice instead of a frame. On the frame's first load the host
@@ -409,9 +409,9 @@ a taller snippet scrolls inside the frame. The
 wrapper writes the snippet over itself, which fires a second `load`; a later
 `load` means the snippet navigated its frame (to a page without the
 wrapper's CSP), so the frame is replaced by a notice until the snippet
-changes. A theme change or a new snippet reloads the frame. Frames mount
-within one screen of the visible part of their scroll container and unmount
-beyond it, keeping their last height. Opening a note with `?block=<id>`
+changes. A theme change or a new snippet reloads the frame. Every frame
+loads with the note and stays loaded (at most 10 per note), so none vanishes,
+reloads or resizes while the reader scrolls. Opening a note with `?block=<id>`
 scrolls that block into view once per page load. Exports never run the
 snippet (see Readable note exports).
 

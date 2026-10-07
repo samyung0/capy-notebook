@@ -26,7 +26,6 @@ const THEME_TOKENS = {
 const MIN_HEIGHT = 32;
 const MAX_HEIGHT = 600;
 const INITIAL_HEIGHT = 240;
-const SCROLLING = /auto|scroll|overlay/;
 /** The page this load already scrolled to for `?block=`. */
 let scrolledFor = '';
 /** The same file the app's own CSS loads, so the browser cache serves it. A
@@ -101,7 +100,6 @@ export function EmbedFrame({
   return (
     <iframe
       className="block w-full border-0"
-      loading="lazy"
       onLoad={(event) => {
         loads.current += 1;
         if (loads.current > 2) onNavigate();
@@ -126,16 +124,10 @@ export function EmbedFrame({
   );
 }
 
-function scrollParent(element: Element): Element | null {
-  for (let node = element.parentElement; node; node = node.parentElement)
-    if (SCROLLING.test(getComputedStyle(node).overflowY)) return node;
-  return null;
-}
-
-/** The block's frame, toolbar and caption. The frame mounts only within a
- * screen of the visible area and unmounts beyond it; a theme change or a new
- * snippet reloads it, and a snippet that navigates its frame gets a notice
- * in its place. */
+/** The block's frame, toolbar and caption. The frame loads with the page and
+ * stays loaded, so it never reloads or resizes while the reader scrolls; a
+ * theme change or a new snippet reloads it, and a snippet that navigates its
+ * frame gets a notice in its place. */
 export function HtmlEmbed({
   caption,
   html,
@@ -150,20 +142,13 @@ export function HtmlEmbed({
   const origin: string | undefined = import.meta.env.VITE_EMBED_ORIGIN;
   const theme = useContext(ThemeContext);
   const ref = useRef<HTMLDivElement>(null);
-  const [near, setNear] = useState(false);
   const [height, setHeight] = useState(INITIAL_HEIGHT);
+  // The frame mounts after hydration on shared pages: a server-rendered one
+  // could finish loading before React listens, and never get its snippet.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   // The snippet that navigated its frame stays stopped until it changes.
   const [stopped, setStopped] = useState<string | null>(null);
-  useEffect(() => {
-    const box = ref.current;
-    if (!box || !origin) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => setNear(entry.isIntersecting),
-      { root: scrollParent(box), rootMargin: '100% 0px' }
-    );
-    observer.observe(box);
-    return () => observer.disconnect();
-  }, [origin]);
   // Export links point here with `?block=<id>`.
   useEffect(() => {
     if (
@@ -181,7 +166,7 @@ export function HtmlEmbed({
           <p className="p-3 text-fg-muted text-sm">
             {origin ? m.html_embed_navigated() : m.html_embed_not_configured()}
           </p>
-        ) : near ? (
+        ) : mounted ? (
           <EmbedFrame
             height={height}
             html={html}
