@@ -183,9 +183,9 @@ func (s *Store) ProjectMaterialContent(
 	}
 	if err := tx.QueryRow(ctx, `UPDATE materials
 		SET content=$2, node_count=$3, max_depth=$4, revision=$5, updated_at=$6, `+noteIndexDirtySQL+`
-		WHERE id=$1 AND trashed_at IS NULL RETURNING size_bytes`, materialID,
+		WHERE id=$1 AND trashed_at IS NULL RETURNING size_bytes, updated_at`, materialID,
 		json.RawMessage(projection.Raw), projected.NodeCount, projected.MaxDepth,
-		projected.Revision, projected.UpdatedAt).Scan(&projected.SizeBytes); err != nil {
+		projected.Revision, projected.UpdatedAt).Scan(&projected.SizeBytes, &projected.UpdatedAt); err != nil {
 		return ProjectedMaterial{}, err
 	}
 	if kind == "flashcards" {
