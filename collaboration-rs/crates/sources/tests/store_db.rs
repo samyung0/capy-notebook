@@ -4,8 +4,8 @@
 //! its `update` to `source_document_updates` in the CAS transaction).
 //!
 //!   docker compose -p rust-sources -f <track>/compose.yml up -d
-//!   SOURCES_TEST_DATABASE_URL=postgres://capy:capy@localhost:55750/capy \
-//!   SOURCES_TEST_REDIS_URL=redis://localhost:56750 \
+//!   SOURCES_TEST_DATABASE_URL=postgres://capy:capy@localhost:25750/capy \
+//!   SOURCES_TEST_REDIS_URL=redis://localhost:26750 \
 //!   cargo test -p sources --test store_db -- --ignored --test-threads=1
 
 #![allow(clippy::unwrap_used)]
@@ -653,7 +653,8 @@ async fn an_office_room_appends_rows_with_engine_effects_and_checks_its_seed_on_
     .unwrap();
     let edit_doc = Doc::new();
     apply(&edit_doc, &edited.state);
-    apply(&doc, &encode(&edit_doc, &doc.transact().state_vector()));
+    let held = doc.transact().state_vector();
+    apply(&doc, &encode(&edit_doc, &held));
     let row = encode(&doc, &durable);
     let saved = h
         .sources
