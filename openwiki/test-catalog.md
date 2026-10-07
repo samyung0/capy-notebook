@@ -284,6 +284,23 @@ The opt-in [`alibaba_decision.py`](../bench/grading/scripts/alibaba_decision.py)
 ---
 
 
+## Collaboration Rust notes crate (`collaboration-rs/crates/notes/`)
+
+Parity tests against a corpus the Node collaboration server wrote (`tests/corpus/*.json.gz`, regenerated with `tests/corpus/generate.sh <checkout> [families]` from a checkout whose `collaboration/src` is the oracle). Run with `cargo test --release -p notes` in `collaboration-rs/`.
+
+| File | About |
+| ---- | ----- |
+| [`collaboration-rs/crates/notes/tests/projection.rs`](../collaboration-rs/crates/notes/tests/projection.rs) | The Plate JSON projection of corpus notes (the near-limit load-test note, e2e and bench fixtures, marks, tables, voids, embeds) equals slate-yjs's, through `project` and `project_state`, and `slate_yjs::state_from_value` bootstraps a note whose projection is the value it was given. |
+| [`collaboration-rs/crates/notes/tests/ops.rs`](../collaboration-rs/crates/notes/tests/ops.rs) | Random Slate operation sequences recorded through slate-yjs (15 corpus files: seed notes, the load note, an over-limit note, and small notes with marks, nesting, tables and voids) replay through the crate's editor and slate-yjs mapping: each step's Plate JSON, metrics and outcome equal Node's, and how many updates carry the same items is reported. |
+| [`collaboration-rs/crates/notes/tests/bound.rs`](../collaboration-rs/crates/notes/tests/bound.rs) | Three writers on stale copies delivering merged or queued updates (`multi-1`..`multi-6`): every update's growth bound equals the JS bound, refusals and deferrals match, and the room's metrics and Plate JSON equal Node's. |
+| [`collaboration-rs/crates/notes/tests/bound_cost.rs`](../collaboration-rs/crates/notes/tests/bound_cost.rs) | Selecting and deleting every paragraph of a heavily formatted note (1,000 and 2,000 paragraphs) prices zero growth in one pass over the delete ranges, under 1.5 s and roughly linear between the two sizes. |
+| [`collaboration-rs/crates/notes/tests/validator.rs`](../collaboration-rs/crates/notes/tests/validator.rs) | The room validator's cases ported from `limits.test.ts`: unsupported roots refused also between measurements, growth past a limit refused while an over-limit note stays shrinkable, deep growth behind shrinking content refused, an update the room cannot place deferred without a copy, typing near the size limit with one copy, and runtime comment marks measured out of text leaves. |
+| [`collaboration-rs/crates/notes/tests/validation.rs`](../collaboration-rs/crates/notes/tests/validation.rs) | Material document and question validation against the Node corpus: canonical Plate structure per material kind, duplicate blocks, quiz bounds, hosted asset URLs and the error messages, each case accepted or refused exactly as `materialDocument.ts` does. |
+| [`collaboration-rs/crates/notes/tests/edits.rs`](../collaboration-rs/crates/notes/tests/edits.rs) | Agent edit commands (replace, insert, remove on material and text rooms) with their guards and stale-target refusals, block inspection, replace-block by stable id, and the children pass's asset and quiz ids and plans, each compared with Node's JSON and outcome. |
+| [`collaboration-rs/crates/notes/tests/markdown.rs`](../collaboration-rs/crates/notes/tests/markdown.rs) | Agent markdown to Plate nodes in embedded QuickJS gives the same nodes, embedded quizzes and flashcards as Node for every corpus source (random ids normalized); needs the bundle from `node markdown/build.mjs <checkout> markdown/markdown.bundle.mjs` (or `NOTES_MARKDOWN_BUNDLE`) and skips sources over 30 KB unless `MARKDOWN_ALL=1`. |
+
+---
+
 ## Go server (`server/`)
 
 ### `cmd` / auth / blob / mail / pipeline client
