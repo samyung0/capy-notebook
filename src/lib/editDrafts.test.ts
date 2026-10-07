@@ -797,6 +797,7 @@ describe('recording a note session', () => {
   });
 
   it('reports a storage failure and its recovery, and keeps editing', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     const key = 'u_1:material:storage';
     const onStorage = vi.fn();
     const report = vi.fn();
@@ -806,25 +807,35 @@ describe('recording a note session', () => {
       .mockImplementation(() => {
         throw new DOMException('full', 'QuotaExceededError');
       });
-    client.getText('content').insert(0, 'a');
-    // Answered after the failed append.
-    await readDrafts(key);
-    expect(onStorage).toHaveBeenLastCalledWith(false);
-    expect(report).toHaveBeenCalledExactlyOnceWith(
-      'draft_storage_failed',
-      'quota',
-      expect.any(Number)
-    );
-    put.mockRestore();
-    client.getText('content').insert(1, 'b');
-    // The write after the failure held the whole document, so nothing the
-    // failed one lost is missing.
-    const rows = await readDrafts(key);
-    expect(onStorage).toHaveBeenLastCalledWith(true);
-    expect(rows.map((row) => row.kind).sort()).toEqual(['state', 'update']);
-    const restored = new Y.Doc();
-    applyDrafts(restored, rows, 'restore');
-    expect(restored.getText('content').toString()).toBe('ab');
+    try {
+      client.getText('content').insert(0, 'a');
+      // Answered after the failed append.
+      await readDrafts(key);
+      expect(onStorage).toHaveBeenLastCalledWith(false);
+      expect(report).toHaveBeenCalledExactlyOnceWith(
+        'draft_storage_failed',
+        'quota',
+        expect.any(Number)
+      );
+      // The whole-document retry runs at once and fails too.
+      await vi.advanceTimersByTimeAsync(0);
+      await readDrafts(key);
+      put.mockRestore();
+      client.getText('content').insert(1, 'b');
+      // Editing goes on; the next retry, 5 s after the last, holds the
+      // whole document, so nothing the failed writes lost is missing.
+      await vi.advanceTimersByTimeAsync(5000);
+      const rows = await readDrafts(key);
+      expect(onStorage).toHaveBeenLastCalledWith(true);
+      expect(rows.map((row) => row.kind).sort()).toEqual(['state', 'update']);
+      const restored = new Y.Doc();
+      applyDrafts(restored, rows, 'restore');
+      expect(restored.getText('content').toString()).toBe('ab');
+      expect(report).toHaveBeenCalledOnce();
+    } finally {
+      put.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it('holds a storage failure made offline until the room is back', async () => {
