@@ -69,7 +69,6 @@ const note: AnonymousNote = {
 describe('renderSharePage', () => {
   const html = renderSharePage({
     canonical: 'https://app.example.test/share/notes/mat_note.sig',
-    locale: 'en',
     page: { kind: 'notes', note, token: 'mat_note.sig' },
     template: TEMPLATE,
   });

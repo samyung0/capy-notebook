@@ -1,12 +1,7 @@
 import { verifiedShareID, verifiedShareToken } from '../../src/lib/shareLink';
 import type { ShareKind } from '../../src/share/state';
 import { fromEdgeCache, handlePublicRequest, SHARED_CACHE } from './public';
-import {
-  localeFor,
-  renderFailure,
-  renderSummary,
-  summarySchema,
-} from './summary';
+import { renderFailure, renderSummary, summarySchema } from './summary';
 
 type SiteBindings = Pick<
   Cloudflare.Env,
@@ -62,6 +57,43 @@ async function boundedText(response: Response, limit: number): Promise<string> {
   );
 }
 
+const STYLESHEET = /<link rel="stylesheet"[^>]*href="(\/[^"]+\.css)"[^>]*>/g;
+// Hashed or deploy-scoped files, so an isolate keeps what it read.
+const stylesheets = new Map<string, Promise<string>>();
+
+/** Puts the page's own stylesheets in the HTML: the browser paints from the
+ * document alone instead of waiting a round trip per stylesheet. The edge
+ * caches the result with the page. */
+async function inlineStylesheets(
+  html: string,
+  assets: SiteBindings['ASSETS'],
+  origin: string
+): Promise<string> {
+  const hrefs = [...new Set([...html.matchAll(STYLESHEET)].map((m) => m[1]))];
+  const css = new Map(
+    await Promise.all(
+      hrefs.map(async (href) => {
+        let text = stylesheets.get(href);
+        if (!text) {
+          text = assets
+            .fetch(new Request(new URL(href, origin)))
+            .then((asset) => {
+              if (!asset.ok) throw new Error(`Stylesheet ${href} unavailable`);
+              return boundedText(asset, 1024 * 1024);
+            });
+          stylesheets.set(href, text);
+          text.catch(() => stylesheets.delete(href));
+        }
+        return [href, await text] as const;
+      })
+    )
+  );
+  return html.replace(
+    STYLESHEET,
+    (_, href: string) => `<style>${css.get(href)}</style>`
+  );
+}
+
 const headers = (extra: HeadersInit = {}) => {
   const result = new Headers(extra);
   result.set('Cache-Control', 'no-store');
@@ -76,7 +108,6 @@ export async function handleSiteRequest(
   cache?: SummaryCache
 ): Promise<Response> {
   const url = new URL(request.url);
-  const locale = localeFor(request);
   const failure = async (status: number) => {
     let template: string | undefined;
     if (request.method !== 'HEAD') {
@@ -84,16 +115,19 @@ export async function handleSiteRequest(
         const asset = await env.ASSETS.fetch(
           new Request(new URL('/summary.html', url))
         );
-        if (asset.ok) template = await boundedText(asset, 512 * 1024);
+        if (asset.ok)
+          template = await inlineStylesheets(
+            await boundedText(asset, 512 * 1024),
+            env.ASSETS,
+            url.origin
+          );
         else await asset.body?.cancel();
       } catch {
         // Keep the existing self-contained error if the asset binding also fails.
       }
     }
     return new Response(
-      request.method === 'HEAD'
-        ? null
-        : renderFailure(status, locale, template),
+      request.method === 'HEAD' ? null : renderFailure(status, template),
       {
         headers: headers({
           'Content-Type': 'text/html; charset=utf-8',
@@ -160,9 +194,7 @@ export async function handleSiteRequest(
       const id =
         kind && (await verifiedShareToken(env.SHARE_LINK_SECRET, token));
       if (!(kind && id)) return failure(404);
-      const cacheKey = new Request(
-        `${appOrigin}/share/${kind}/${id}?lang=${locale}`
-      );
+      const cacheKey = new Request(`${appOrigin}/share/${kind}/${id}`);
       const cached = await cache?.match(cacheKey);
       if (cached) return head(fromEdgeCache(cached));
       const upstream = await fetcher(
@@ -202,18 +234,20 @@ export async function handleSiteRequest(
             : { kind, set: data, token };
       const responseHeaders = headers({
         'Content-Type': 'text/html; charset=utf-8',
-        Vary: 'Accept-Language',
       });
       responseHeaders.set('Cache-Control', SHARED_CACHE);
       if (data.privacy === 'link')
         responseHeaders.set('X-Robots-Tag', 'noindex, nofollow');
       const rendered = new Response(
-        renderSharePage({
-          canonical: `${appOrigin}${url.pathname}`,
-          locale,
-          page,
-          template,
-        }),
+        await inlineStylesheets(
+          renderSharePage({
+            canonical: `${appOrigin}${url.pathname}`,
+            page,
+            template,
+          }),
+          env.ASSETS,
+          appOrigin
+        ),
         { headers: responseHeaders }
       );
       await cache?.put(cacheKey, rendered.clone());
@@ -222,9 +256,7 @@ export async function handleSiteRequest(
     // Unsigned or forged links stop here, before any API or database work.
     const id = await verifiedShareID(env.SHARE_LINK_SECRET, url.pathname);
     if (!id) return failure(404);
-    // Cloudflare's cache ignores Vary: Accept-Language, so the resolved locale
-    // belongs in the key rather than in a header the edge will not read.
-    const cacheKey = new Request(`${appOrigin}/w/${id}?lang=${locale}`);
+    const cacheKey = new Request(`${appOrigin}/w/${id}`);
     const cached = await cache?.match(cacheKey);
     if (cached) return head(fromEdgeCache(cached));
     const upstream = await fetcher(
@@ -247,7 +279,6 @@ export async function handleSiteRequest(
     );
     const responseHeaders = headers({
       'Content-Type': 'text/html; charset=utf-8',
-      Vary: 'Accept-Language',
     });
     // Shared caches hold the render for five minutes; browsers revalidate every
     // time, so a privacy change reaches a reloading reader once the edge entry
@@ -270,7 +301,11 @@ export async function handleSiteRequest(
     )
       return failure(503);
     const rendered = new Response(
-      renderSummary(template, summary, id, url.pathname, appOrigin, locale),
+      await inlineStylesheets(
+        renderSummary(template, summary, id, url.pathname, appOrigin),
+        env.ASSETS,
+        appOrigin
+      ),
       { headers: responseHeaders }
     );
     await cache?.put(cacheKey, rendered.clone());

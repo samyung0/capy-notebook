@@ -4,8 +4,6 @@ import { escapeHTML, jsonForHTML } from '@/lib/html';
    title, description, canonical, robots, Open Graph, a Twitter card and
    schema.org JSON-LD. No og:image yet: file thumbnails come later. */
 
-const OG_LOCALE = { en: 'en_US', zh: 'zh_CN' } as const;
-
 /** Text cut at a word boundary to fit a search snippet. */
 export function snippet(text: string, max = 160): string {
   const flat = text.replace(/\s+/g, ' ').trim();
@@ -21,7 +19,6 @@ export function seoHead({
   description,
   indexable,
   jsonLd,
-  locale,
   modified,
   name,
 }: {
@@ -32,7 +29,6 @@ export function seoHead({
   indexable: boolean;
   /** The item's own schema.org fields; the shared ones are added here. */
   jsonLd: Record<string, unknown>;
-  locale: keyof typeof OG_LOCALE;
   /** ISO time of the last change, when the item has one. */
   modified?: string;
   name: string;
@@ -49,7 +45,8 @@ export function seoHead({
     meta('property', 'og:description', description),
     meta('property', 'og:url', canonical),
     meta('property', 'og:site_name', 'Capy Notebook'),
-    meta('property', 'og:locale', OG_LOCALE[locale]),
+    // Public pages are English only.
+    meta('property', 'og:locale', 'en_US'),
     modified ? meta('property', 'article:modified_time', modified) : '',
     meta('name', 'twitter:card', 'summary'),
     meta('name', 'twitter:title', name),

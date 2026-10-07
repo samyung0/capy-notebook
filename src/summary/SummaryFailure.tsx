@@ -2,14 +2,7 @@ import { ErrorState } from '@/components/app/ErrorState';
 import { ErrorAction } from '@/components/ui/Button';
 import { m } from '@/i18n';
 
-export function SummaryFailure({
-  status,
-  locale,
-}: {
-  status: number;
-  locale: 'en' | 'zh';
-}) {
-  const options = { locale };
+export function SummaryFailure({ status }: { status: number }) {
   const unavailable = status === 404;
   return (
     <ErrorState
@@ -20,22 +13,16 @@ export function SummaryFailure({
           iconLeftClassName="me-1"
         >
           <a href={unavailable ? '/' : ''}>
-            {unavailable
-              ? m.error_action_go_back({}, options)
-              : m.summary_retry({}, options)}
+            {unavailable ? m.error_action_go_back() : m.summary_retry()}
           </a>
         </ErrorAction>
       }
       className="h-auto flex-1 py-12"
       description={
-        unavailable
-          ? m.error_not_found_page_body({}, options)
-          : m.summary_error_body({}, options)
+        unavailable ? m.error_not_found_page_body() : m.summary_error_body()
       }
       title={
-        unavailable
-          ? m.error_not_found_page_title({}, options)
-          : m.summary_error_title({}, options)
+        unavailable ? m.error_not_found_page_title() : m.summary_error_title()
       }
       variant="page"
     />

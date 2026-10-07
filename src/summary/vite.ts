@@ -42,9 +42,6 @@ export function summaryVitePlugin(
             '/workers/site/handler.ts'
           );
           const request = new Request(new URL(req.url ?? '/', appOrigin), {
-            headers: {
-              'Accept-Language': String(req.headers['accept-language'] ?? 'en'),
-            },
             method: req.method,
           });
           // Browser MSW cannot intercept the Worker's server-side requests;
@@ -78,17 +75,22 @@ export function summaryVitePlugin(
               API_ORIGIN: apiOrigin,
               APP_ORIGIN: appOrigin,
               ASSETS: {
-                // The Worker asks for summary.html or share.html.
+                // The Worker asks for summary.html or share.html, and for the
+                // stylesheets it inlines, which this dev server serves.
                 fetch: async (asset: Request) => {
-                  const file =
-                    new URL(asset.url).pathname === '/share.html'
-                      ? 'share.html'
-                      : 'summary.html';
+                  const { pathname } = new URL(asset.url);
+                  if (
+                    pathname !== '/share.html' &&
+                    pathname !== '/summary.html'
+                  )
+                    return fetch(
+                      new URL(pathname, `http://${req.headers.host}`)
+                    );
                   return new Response(
                     await server.transformIndexHtml(
-                      `/${file}`,
+                      pathname,
                       await fs.readFile(
-                        path.resolve(server.config.root, file),
+                        path.resolve(server.config.root, pathname.slice(1)),
                         'utf8'
                       )
                     ),

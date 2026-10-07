@@ -1,4 +1,3 @@
-import type { Locale } from '@/components/app/PublicHeader';
 import { BASE_BUTTON_STYLE } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
@@ -13,18 +12,16 @@ import { cn } from '@/lib/cn';
 export function PublicActionMenu({
   id,
   kind,
-  locale,
 }: {
   id: string;
   kind: CloneKind;
-  locale?: Locale;
 }) {
   return (
     <>
       <IconButton
         className="p-2 [anchor-name:--public-actions]"
         icon="moreVertical"
-        label={m.a11y_open_menu({}, { locale })}
+        label={m.a11y_open_menu()}
         popoverTarget="public-actions"
         size="md"
         type="button"
@@ -46,7 +43,7 @@ export function PublicActionMenu({
           role="menuitem"
         >
           <Icon className="-translate-y-px" name="clone" />
-          {cloneLabel(kind, locale)}
+          {cloneLabel(kind)}
         </a>
       </div>
     </>

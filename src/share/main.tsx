@@ -18,9 +18,8 @@ import '@/styles/tailwind.css';
 const state = JSON.parse(
   document.getElementById(SHARE_STATE_ID)?.textContent ?? 'null'
 ) as ShareState;
-// The server rendered in the page's locale; hydrate in the same one.
-const locale = document.documentElement.lang === 'zh' ? 'zh' : 'en';
-overwriteGetLocale(() => locale);
+// Public pages are English only, as the server rendered them.
+overwriteGetLocale(() => 'en');
 
 bindPublicChrome();
 

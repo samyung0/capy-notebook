@@ -182,6 +182,9 @@ export function MediaAssetView({
               'block h-auto rounded-card',
               element.width || fill ? 'w-full' : 'max-w-full'
             )}
+            decoding="async"
+            // Long notes load images as the reader scrolls to them.
+            loading="lazy"
             onLoad={(event) => {
               const image = event.currentTarget;
               if (!image.offsetWidth) setFill(true);

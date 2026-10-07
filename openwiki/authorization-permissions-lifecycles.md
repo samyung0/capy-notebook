@@ -106,7 +106,7 @@ before first paint), and the ⋮ is a native popover anchored to its button with
 the sprite and loads analytics after the page (public pages carry no Sentry). Every public page's head comes
 from `src/lib/seoHead.ts`: title, description (the workspace description, or for an item a generated line such as
 "A quiz by {author}: N questions · M marks", or the first 160 characters of a note's paragraphs), canonical, robots (`index` only for
-public items), Open Graph with `og:locale` and `article:modified_time` when the item has one, a Twitter summary
+public items), Open Graph with `og:locale` `en_US` and `article:modified_time` when the item has one, a Twitter summary
 card and schema.org JSON-LD (`CreativeWork`, `Quiz`, `LearningResource` for flashcards, `Article` for notes); no
 `og:image` until file thumbnails exist. The workspace uses its stored icon and
 shows the owner's avatar (`authorAvatarUrl`, 1px high) beside their name in its byline, and a ⋮ beside the
@@ -150,9 +150,11 @@ sharing of their own (a check constraint keeps their privacy `private`) and
 embedded ones follow a note visitors cannot open, so neither is reachable.
 
 The site Worker renders these pages (`workers/site/handler.ts`) the way it renders summaries: it verifies the
-token before any API call, reads `/api/public/{quizzes|flashcards|notes}/{token}`, renders the page in the
-visitor's locale (`en` or `zh` from `Accept-Language`) and caches the HTML at the edge for five minutes, keyed
-by item and locale, so each page has at most two cached copies. Images go through
+token before any API call, reads `/api/public/{quizzes|flashcards|notes}/{token}`, renders the page in
+English (public pages ignore `Accept-Language`: there are no per-language paths and only a few UI strings
+differ), puts the page's own stylesheets inline (`inlineStylesheets`, so first paint waits on no other request;
+MathLive's static stylesheet only when the note has math) and caches the HTML at the edge for five minutes, one
+copy per item. Images go through
 `GET /p/{quizzes|flashcards|notes}/{token}/assets/{assetId}`, verified and cached the same way. Grading posts
 straight to `/api/public/.../grade`, because a Worker subrequest reaches the API without the visitor's IP, which
 the per-IP caps need. Go verifies the token again on `/api/public/...` because the API hostname is public, and
@@ -170,8 +172,7 @@ kept out of the static assets by `.assetsignore`; `wrangler.jsonc` aliases it as
 components keep their browser imports; libraries that only run in effects or on click (Mermaid, MathLive's
 editor, jsxgraph, KaTeX, the app's embed editors) are empty modules there. It writes the data it rendered from
 into `<script id="share-state">`, and the page's script (`share.html`, `src/share/main.tsx`) never fetches it
-again. A quiz or flashcard set hydrates whole (`StudyPage.tsx`, the same tree on both sides, in the page's
-locale). Clerk loads after hydration without its UI bundle (`prefetchUI={false}`) and is asked only when an
+again. A quiz or flashcard set hydrates whole (`StudyPage.tsx`, the same tree on both sides, in English). Clerk loads after hydration without its UI bundle (`prefetchUI={false}`) and is asked only when an
 attempt is submitted or a card rated (`src/share/session.ts`): signed in, the attempt or rating goes to the
 account (`POST /api/quizzes/{id}/attempts`, `POST /api/review/ratings`); signed out, the share route grades and
 the browser keeps it. Without a Clerk key (MSW, e2e) `?anonymous` selects the signed-out path; under MSW the dev

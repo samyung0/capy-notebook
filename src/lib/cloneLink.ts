@@ -18,8 +18,7 @@ const LABELS = {
 } satisfies Record<CloneKind, unknown>;
 
 /** "Clone quiz" and the like, for the ⋮ item and the dashboard's dialog. */
-export const cloneLabel = (kind: CloneKind, locale?: 'en' | 'zh') =>
-  LABELS[kind]({}, { locale });
+export const cloneLabel = (kind: CloneKind) => LABELS[kind]();
 
 export const cloneHref = (kind: CloneKind, id: string) =>
   `/?${new URLSearchParams({ clone: `${kind}:${id}` })}`;

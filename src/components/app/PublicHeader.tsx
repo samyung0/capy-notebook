@@ -11,12 +11,10 @@ import { getLocale, m } from '@/i18n';
  * sets and notes. They need no router, so both can mount them.
  */
 
-export type Locale = 'en' | 'zh' | undefined;
-
 /** Shows the moon in light themes and the sun in dark ones by CSS alone, so
  * the server renders it for every visitor; publicChrome.ts switches the theme
  * on click. */
-function PublicThemeButton({ locale }: { locale?: Locale }) {
+function PublicThemeButton() {
   return (
     <IconButton
       data-public-theme-toggle=""
@@ -27,11 +25,9 @@ function PublicThemeButton({ locale }: { locale?: Locale }) {
       variant="ghost-hover"
     >
       <Icon className="hidden! dark:block!" name="sun" />
-      <span className="sr-only dark:hidden">
-        {m.public_theme_dark({}, { locale })}
-      </span>
+      <span className="sr-only dark:hidden">{m.public_theme_dark()}</span>
       <span className="sr-only hidden dark:inline">
-        {m.public_theme_light({}, { locale })}
+        {m.public_theme_light()}
       </span>
     </IconButton>
   );
@@ -40,18 +36,15 @@ function PublicThemeButton({ locale }: { locale?: Locale }) {
 /** Every visitor gets the same header: it never reads auth, so it cannot shift
  * or flash, and the edge cache stays shared. Signed-in visitors who press Sign
  * in land on the dashboard. */
-export function PublicNav({ locale }: { locale?: Locale }) {
+export function PublicNav() {
   return (
-    <nav
-      aria-label={m.summary_profile({}, { locale })}
-      className="flex items-center gap-2"
-    >
-      <PublicThemeButton locale={locale} />
+    <nav aria-label={m.summary_profile()} className="flex items-center gap-2">
+      <PublicThemeButton />
       <Button asChild size="lg" variant="ghost-hover">
-        <a href="/sign-in">{m.action_sign_in({}, { locale })}</a>
+        <a href="/sign-in">{m.action_sign_in()}</a>
       </Button>
       <Button asChild size="lg">
-        <a href="/sign-up">{m.summary_sign_up({}, { locale })}</a>
+        <a href="/sign-up">{m.summary_sign_up()}</a>
       </Button>
     </nav>
   );

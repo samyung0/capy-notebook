@@ -194,7 +194,7 @@ describe('public workspace SSR', () => {
       expect(fetcher).toHaveBeenCalledTimes(1);
     }
   });
-  it('supports HEAD and Chinese text without a SPA fetch', async () => {
+  it('supports HEAD and serves English whatever the visitor asks for', async () => {
     const head = await handleSiteRequest(
       request(undefined, { method: 'HEAD' }),
       env,
@@ -203,16 +203,18 @@ describe('public workspace SSR', () => {
     expect(head.status).toBe(200);
     expect(await head.text()).toBe('');
     const chinese = await handleSiteRequest(
-      request(`${SHARED}?lang=zh`),
+      new Request(`https://app.example.test${SHARED}?lang=zh`, {
+        headers: { 'Accept-Language': 'zh-CN' },
+      }),
       env,
       upstream()
     );
-    expect(await chinese.text()).toContain('打开工作区');
+    expect(await chinese.text()).toContain('Open workspace');
   });
 });
 
 describe('summary edge caching', () => {
-  it('serves a repeat visit from cache and keys each locale separately', async () => {
+  it('serves repeat visits in any language from one cached copy', async () => {
     const cache = cacheStub();
     const fetcher = vi
       .fn<typeof fetch>()
@@ -222,17 +224,17 @@ describe('summary edge caching', () => {
     const repeat = await handleSiteRequest(request(), env, fetcher, cache);
     expect(await repeat.text()).toContain('<h1>Biology</h1>');
     expect(fetcher).toHaveBeenCalledTimes(1);
-    const chinese = await handleSiteRequest(
-      request(`${SHARED}?lang=zh`),
+    await handleSiteRequest(
+      new Request(`https://app.example.test${SHARED}`, {
+        headers: { 'Accept-Language': 'zh-CN' },
+      }),
       env,
       fetcher,
       cache
     );
-    expect(await chinese.text()).toContain('打开工作区');
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(1);
     expect([...cache.store.keys()]).toEqual([
-      'https://app.example.test/w/ws_0123456789?lang=en',
-      'https://app.example.test/w/ws_0123456789?lang=zh',
+      'https://app.example.test/w/ws_0123456789',
     ]);
   });
   it('answers HEAD from the cache GET filled', async () => {

@@ -7,11 +7,17 @@ import {
 import { handleSiteRequest } from './handler';
 
 const SHARE_TEMPLATE =
-  '<html lang="en"><head><!--capy-share-head--></head><body><!--capy-share-body--></body></html>';
+  '<html lang="en"><head><link rel="stylesheet" crossorigin href="/assets/app-1.css"><!--capy-share-head--></head><body><!--capy-share-body--></body></html>';
 const env = {
   API_ORIGIN: 'https://api.example.test',
   APP_ORIGIN: 'https://app.example.test',
-  ASSETS: { fetch: vi.fn(async () => new Response(SHARE_TEMPLATE)) },
+  ASSETS: {
+    fetch: vi.fn(async (asset: Request) =>
+      new URL(asset.url).pathname === '/assets/app-1.css'
+        ? new Response('body{color:red}')
+        : new Response(SHARE_TEMPLATE)
+    ),
+  },
   SHARE_LINK_SECRET: DEV_SHARE_LINK_SECRET,
 };
 const quiz = {
@@ -51,7 +57,7 @@ describe('anonymous material routes', () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it('renders a shared page once per locale and serves repeats from the edge', async () => {
+  it('renders a shared page once and serves repeats from the edge', async () => {
     const fetcher = vi.fn<typeof fetch>(async () => Response.json(quiz));
     const cache = cacheStub();
     const first = await handleSiteRequest(
@@ -68,6 +74,9 @@ describe('anonymous material routes', () => {
     const html = await first.text();
     expect(html).toContain('<title>Cell quiz | Capy Notebook</title>');
     expect(html).toContain('Updated Oct 4, 2026');
+    // The stylesheet travels in the page, so first paint waits for nothing.
+    expect(html).toContain('<style>body{color:red}</style>');
+    expect(html).not.toContain('<link rel="stylesheet"');
     // The data the browser hydrates from, so it fetches nothing.
     expect(html).toContain('<script type="application/json" id="share-state">');
     await handleSiteRequest(
@@ -81,7 +90,7 @@ describe('anonymous material routes', () => {
       `https://api.example.test/api/public/quizzes/${TOKEN}`
     );
     expect(cache.put.mock.calls[0][0].url).toBe(
-      'https://app.example.test/share/quizzes/mat_0123456789?lang=en'
+      'https://app.example.test/share/quizzes/mat_0123456789'
     );
   });
 

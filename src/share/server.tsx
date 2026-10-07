@@ -18,15 +18,13 @@ import { SHARE_STATE_ID, type ShareState } from './state';
    browser hydrates (StudyPage); notes render to HTML for good, apart from
    their islands. */
 
-export type ShareLocale = 'en' | 'zh';
 /** The API's read for one share link. */
 export type SharePage =
   | StudyState
   | { kind: 'notes'; note: AnonymousNote; token: string };
 
-// Rendering is synchronous, so one request's locale holds for its render.
-let renderLocale: ShareLocale = 'en';
-overwriteGetLocale(() => renderLocale);
+// Public pages are English only, and a Worker has no browser to ask.
+overwriteGetLocale(() => 'en');
 
 /** MathLive's static layout, as the editor's read-only field draws it. */
 const mathMarkup = (tex: string, displayMode: boolean) =>
@@ -49,16 +47,13 @@ const hasMath = (node: unknown): boolean =>
  * material document. */
 export function renderSharePage({
   canonical,
-  locale,
   page,
   template,
 }: {
   canonical: string;
-  locale: ShareLocale;
   page: SharePage;
   template: string;
 }): string {
-  renderLocale = locale;
   let body: string;
   let state: ShareState;
   let head: string;
@@ -83,7 +78,6 @@ export function renderSharePage({
         m.share_seo_note({ author: note.author.name }),
       indexable: note.privacy === 'public',
       jsonLd: { '@type': 'Article', headline: note.name },
-      locale,
       modified: note.updatedAt,
       name: note.name,
     });
@@ -99,7 +93,7 @@ export function renderSharePage({
     );
     if (hasMath({ children: document.value }))
       extraHead =
-        '<link rel="stylesheet" href="/mathlive/mathlive-static.css"><link rel="stylesheet" href="/mathlive/mathlive-fonts.css">';
+        '<link rel="stylesheet" href="/mathlive/mathlive-static.css">';
   } else {
     state = page;
     const item = page.kind === 'quizzes' ? page.quiz : page.set;
@@ -118,14 +112,12 @@ export function renderSharePage({
         page.kind === 'quizzes'
           ? { '@type': 'Quiz' }
           : { '@type': 'LearningResource', learningResourceType: 'Flashcards' },
-      locale,
       modified: item.updatedAt,
       name: item.name,
     });
     body = renderToString(<StudyPage state={page} />);
   }
   return template
-    .replace('lang="en"', `lang="${locale}"`)
     .replace('<!--capy-share-head-->', () => head + extraHead)
     .replace(
       '<!--capy-share-body-->',

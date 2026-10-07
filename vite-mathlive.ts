@@ -3,8 +3,8 @@ import path from 'node:path';
 import type { Plugin } from 'vite';
 
 /** MathLive requests font filenames at runtime, so retain their package names.
- * Server-rendered notes link MathLive's static stylesheets beside them, whose
- * `fonts/` URLs resolve to the same files. */
+ * Server-rendered notes also use MathLive's static stylesheet, served beside
+ * them; it declares the same fonts. */
 export function mathliveFonts(): Plugin {
   const directory = path.resolve('node_modules/mathlive/fonts');
   const fonts = new Map(
@@ -15,11 +15,20 @@ export function mathliveFonts(): Plugin {
         readFileSync(path.join(directory, file)),
       ])
   );
-  for (const sheet of ['mathlive-static.css', 'mathlive-fonts.css'])
-    fonts.set(
-      `/mathlive/${sheet}`,
-      readFileSync(path.resolve('node_modules/mathlive', sheet))
-    );
+  // MathLive quotes `font-display:"swap"`, which browsers ignore (text then
+  // waits for the font), and points at `fonts/` relative to itself, which
+  // breaks once the Worker inlines the sheet into a page.
+  fonts.set(
+    '/mathlive/mathlive-static.css',
+    Buffer.from(
+      readFileSync(
+        path.resolve('node_modules/mathlive/mathlive-static.css'),
+        'utf8'
+      )
+        .replaceAll('font-display:"swap"', 'font-display:swap')
+        .replaceAll('url(fonts/', 'url(/mathlive/fonts/')
+    )
+  );
   return {
     configureServer(server) {
       server.middlewares.use((request, response, next) => {

@@ -5,7 +5,6 @@ declare module 'capy-share-render' {
   export const SHARE_TEMPLATE_MARKERS: string[];
   export function renderSharePage(input: {
     canonical: string;
-    locale: 'en' | 'zh';
     page: { kind: 'quizzes' | 'flashcards' | 'notes'; token: string } & (
       | { note: unknown }
       | { quiz: unknown }
