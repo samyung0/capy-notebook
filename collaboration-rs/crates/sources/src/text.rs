@@ -112,8 +112,9 @@ fn walk_items(branch: BranchPtr, touched: impl Fn(&ID, u32) -> bool) -> Walk {
     let mut span: Option<(usize, usize)> = None;
     let mut next = branch.start();
     while let Some(item) = next {
+        // A string item's clock length is its UTF-16 length.
         let live = match item.content() {
-            ItemContent::String(text) if !item.is_deleted() => text.utf16_len(),
+            ItemContent::String(_) if !item.is_deleted() => item.len() as usize,
             _ => 0,
         };
         if touched(item.id(), item.len()) {
@@ -130,6 +131,25 @@ fn walk_items(branch: BranchPtr, touched: impl Fn(&ID, u32) -> bool) -> Walk {
     }
 }
 
+/// Where UTF-16 offset `units` of `text` falls: the byte index of the code
+/// point holding it and the units of that code point before it (1 inside a
+/// surrogate pair). An ASCII prefix is skipped at once.
+fn utf16_offset(text: &str, units: usize) -> (usize, usize) {
+    let bytes = text.as_bytes();
+    if bytes.len() >= units && bytes[..units].is_ascii() {
+        return (units, 0);
+    }
+    let mut counted = 0;
+    for (at, character) in text.char_indices() {
+        let width = character.len_utf16();
+        if counted + width > units {
+            return (at, units - counted);
+        }
+        counted += width;
+    }
+    (bytes.len(), 0)
+}
+
 /// UTF-16 units `[from, to)` of the text.
 fn text_units(branch: BranchPtr, from: usize, to: usize) -> Vec<u16> {
     let mut out = Vec::with_capacity(to - from);
@@ -142,11 +162,13 @@ fn text_units(branch: BranchPtr, from: usize, to: usize) -> Vec<u16> {
         if let ItemContent::String(text) = item.content()
             && !item.is_deleted()
         {
-            let len = text.utf16_len();
+            let len = item.len() as usize;
             if index + len > from {
                 let skip = from.saturating_sub(index);
                 let take = (to - index).min(len) - skip;
-                out.extend(text.as_str().encode_utf16().skip(skip).take(take));
+                let text = text.as_str();
+                let (at, inside) = utf16_offset(text, skip);
+                out.extend(text[at..].encode_utf16().skip(inside).take(take));
             }
             index += len;
         }
