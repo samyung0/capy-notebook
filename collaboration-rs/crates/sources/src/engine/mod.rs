@@ -9,13 +9,17 @@
 //! the timeout (120 s, officeRuntime's `CALL_TIMEOUT_MS`) kills its process;
 //! a process that dies (a crash, an abort on its memory cap) or answers
 //! garbage fails its call; both are transient (the same call may pass) and
-//! the next call starts a new process. An engine refusal or a panic the
-//! engines catch is an ordinary answer and keeps the process.
+//! the next call starts a new process. The same call crashing again, on a
+//! process of its own, is refused (Epo 2026-10-07): it would crash every
+//! retry, so its room resets and the editor goes to recovery at once. An
+//! engine refusal or a panic the engines catch is an ordinary answer and
+//! keeps the process.
 
 pub mod child;
 pub mod frame;
 pub mod office;
 
+use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -175,6 +179,69 @@ struct ProcessState {
 struct LaneShared {
     interval: Mutex<Interval>,
     processes: Vec<Mutex<ProcessState>>,
+    /// Calls that crashed their process once, newest last.
+    crashed: Mutex<VecDeque<CallKey>>,
+}
+
+/// The crashed calls a lane remembers: a retry follows its crash within
+/// seconds to a minute, so a few dozen cover every room retrying at once.
+const CRASHED_CALLS: usize = 64;
+
+/// A call's identity: its method, size and a hash of every byte it sends.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CallKey {
+    head: String,
+    bytes: usize,
+    hash: u64,
+}
+
+impl CallKey {
+    fn of(request: &Frame) -> Self {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        request.head.hash(&mut hasher);
+        request.json.hash(&mut hasher);
+        request.blobs.hash(&mut hasher);
+        Self {
+            head: request.head.clone(),
+            bytes: request.wire_len(),
+            hash: hasher.finish(),
+        }
+    }
+}
+
+impl LaneShared {
+    /// Whether `request` crashed a process before; hashed only when a
+    /// remembered call has its method and size.
+    fn crashed_before(&self, request: &Frame) -> bool {
+        let crashed = lock(&self.crashed);
+        let bytes = request.wire_len();
+        if !crashed
+            .iter()
+            .any(|key| key.head == request.head && key.bytes == bytes)
+        {
+            return false;
+        }
+        let key = CallKey::of(request);
+        crashed.contains(&key)
+    }
+
+    fn remember_crash(&self, request: &Frame) {
+        let key = CallKey::of(request);
+        let mut crashed = lock(&self.crashed);
+        if crashed.contains(&key) {
+            return;
+        }
+        if crashed.len() == CRASHED_CALLS {
+            crashed.pop_front();
+        }
+        crashed.push_back(key);
+    }
+
+    fn forget_crash(&self, request: &Frame) {
+        let key = CallKey::of(request);
+        lock(&self.crashed).retain(|known| *known != key);
+    }
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -275,6 +342,7 @@ impl LaneHandle {
             processes: (0..count)
                 .map(|_| Mutex::new(ProcessState::default()))
                 .collect(),
+            crashed: Mutex::new(VecDeque::new()),
         });
         let processes = (0..count)
             .map(|index| {
@@ -384,6 +452,8 @@ struct Running {
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
+    /// Calls this process answered.
+    served: u64,
 }
 
 /// Owns one engine process slot: runs its calls in order, starts the process
@@ -435,12 +505,24 @@ impl Supervisor {
             child,
             stdin,
             stdout: BufReader::with_capacity(1 << 16, stdout),
+            served: 0,
         })
     }
 
     async fn handle(&mut self, job: &Job) -> Result<Reply, EngineError> {
         let started = Instant::now();
         let method = job.request.head.clone();
+        // A call that crashed a process before runs again on one of its own.
+        let repeat = self.shared.crashed_before(&job.request);
+        if repeat
+            && self
+                .running
+                .as_ref()
+                .is_some_and(|running| running.served > 0)
+        {
+            self.replace().await;
+            lock(&self.shared.interval).restarts += 1;
+        }
         if self.running.is_none() {
             match self.spawn() {
                 Ok(running) => {
@@ -491,13 +573,23 @@ impl Supervisor {
         }
         match outcome {
             Outcome::Answer(frame) => match self.decode(frame) {
-                Ok(result) => result,
+                Ok(result) => {
+                    if let Some(running) = self.running.as_mut() {
+                        running.served += 1;
+                    }
+                    if repeat {
+                        self.shared.forget_crash(&job.request);
+                    }
+                    result
+                }
                 Err(garbage) => {
                     self.replace().await;
-                    let mut interval = lock(&self.shared.interval);
-                    interval.crashes += 1;
-                    interval.restarts += 1;
-                    Err(EngineError::Transient(garbage))
+                    {
+                        let mut interval = lock(&self.shared.interval);
+                        interval.crashes += 1;
+                        interval.restarts += 1;
+                    }
+                    Err(self.crashed(&job.request, repeat, garbage))
                 }
             },
             Outcome::TimedOut => {
@@ -506,12 +598,26 @@ impl Supervisor {
             }
             Outcome::Died(cause) => {
                 let status = self.replace().await;
-                Err(EngineError::Transient(format!(
+                let message = format!(
                     "Office engine process exited ({}): {cause}",
                     status.unwrap_or_else(|| "unknown status".into())
-                )))
+                );
+                Err(self.crashed(&job.request, repeat, message))
             }
         }
+    }
+
+    /// A crash fails its call as transient the first time; the same call
+    /// crashing its own fresh process again is refused (Epo 2026-10-07).
+    fn crashed(&self, request: &Frame, repeat: bool, message: String) -> EngineError {
+        if repeat {
+            return EngineError::Refused(Failure {
+                kind: FailureKind::Engine,
+                message: format!("{message}; the same call crashed a new engine process again"),
+            });
+        }
+        self.shared.remember_crash(request);
+        EngineError::Transient(message)
     }
 
     async fn exchange(&mut self, request: &Frame) -> Outcome {

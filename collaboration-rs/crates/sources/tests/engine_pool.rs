@@ -181,6 +181,41 @@ async fn a_crash_fails_its_call_as_transient_and_only_that_process_restarts() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_same_call_crashing_a_fresh_process_again_is_refused() {
+    let pool = EnginePool::new(config(1, 1));
+    let room = "source:f_c:epoch:1";
+    let crash = |n: u64| request("test.abort", json!({ "n": n }));
+    let first = pool
+        .call(Lane::Save, Some(room), crash(1))
+        .await
+        .unwrap_err();
+    assert!(first.transient(), "{first:?}");
+    // The new process serves another call first, so the repeat gets its own.
+    pid(&pool, Lane::Save, Some(room)).await;
+    let _ = pool.take_stats();
+    let second = pool
+        .call(Lane::Save, Some(room), crash(1))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&second, EngineError::Refused(failure) if failure.kind == FailureKind::Engine),
+        "{second:?}"
+    );
+    // Another call that crashes is a first crash.
+    let other = pool
+        .call(Lane::Save, Some(room), crash(2))
+        .await
+        .unwrap_err();
+    assert!(other.transient(), "{other:?}");
+    let (save, _) = pool.take_stats();
+    // The repeat's own process (a restart), its crash, the other's crash.
+    assert_eq!((save.crashes, save.restarts), (2, 3), "{save:?}");
+    // A call that passes after its crash is forgotten.
+    let flaky = request("test.echo", json!({ "flaky": true }));
+    pool.call(Lane::Save, Some(room), flaky).await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_timed_out_call_kills_its_process_and_the_queue_moves_to_a_new_one() {
     let mut config = config(1, 1);
     config.call_timeout = Duration::from_millis(600);
