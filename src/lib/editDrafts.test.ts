@@ -796,6 +796,37 @@ describe('recording a note session', () => {
     }
   });
 
+  it('retries nothing while storage fails if receipts covered every edit', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const key = 'u_1:material:saved-failing';
+    const { client, recorder } = noteRecorder(key, 'a');
+    const put = vi
+      .spyOn(IDBObjectStore.prototype, 'put')
+      .mockImplementation(() => {
+        throw new DOMException('full', 'QuotaExceededError');
+      });
+    const wholeTries = () =>
+      put.mock.calls.filter(([row]) => (row as EditDraft).kind === 'state')
+        .length;
+    try {
+      client.getText('content').insert(1, 'b');
+      await recorder.covered(recorder.sequence);
+      // Idle for 30 s with the store failing: nothing is unsaved.
+      for (let second = 0; second < 30; second += 5) {
+        await vi.advanceTimersByTimeAsync(5000);
+        await readDrafts(key);
+      }
+      expect(wholeTries()).toBe(0);
+      // Storage works again: no row of saved content is left behind.
+      put.mockRestore();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(await readDrafts(key)).toEqual([]);
+    } finally {
+      put.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it('reports a storage failure and its recovery, and keeps editing', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     const key = 'u_1:material:storage';

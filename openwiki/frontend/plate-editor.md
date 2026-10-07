@@ -605,7 +605,7 @@ killed tab keeps every update it posted; one killed or crashed while online
 leaves no `state` row, so its rows draw only over their own room. While
 storage keeps failing (a full disk, a database another tab blocks) the whole
 document is retried at once and then at most every 5 s (2026-10-07), not on
-every key. A worker that throws loses what it had not answered: every
+every key, and only while something is unsaved. A worker that throws loses what it had not answered: every
 session is told (the next write holds the whole document) and the next request
 starts a new worker; one that never started fails every request for the page
 load. A database open another tab blocks fails the requests behind it at once

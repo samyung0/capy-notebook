@@ -536,13 +536,14 @@ export function recordDrafts({
     return write(putDrafts([row('state', sequence, data)], base?.bytes), true);
   };
   // A write failed: the whole document holds what it lost, tried at once and
-  // then at most every RETRY_MS while storage keeps failing.
+  // then at most every RETRY_MS while storage keeps failing, and only while
+  // something is unsaved (a saved document needs no row).
   function retryWhole() {
     if (retry || stopped) return;
     retry = setTimeout(
       () => {
         retry = undefined;
-        if (gap && !stopped && !over) void writeState();
+        if (gap && !stopped && !over && unsavedWork()) void writeState();
       },
       Math.max(0, lastWhole + RETRY_MS - Date.now())
     );
@@ -575,6 +576,7 @@ export function recordDrafts({
         failed(error);
       }
     if (snapshotDue) void writeState();
+    else if (gap) retryWhole();
     checkLimit();
     if (offline) requestPersistence();
   };
@@ -634,10 +636,14 @@ export function recordDrafts({
         done.push(updateRow(item.seq));
         return false;
       });
-      if (state && sequence <= covered) {
-        done.push(stateRow(state.seq));
+      if (sequence <= covered) {
+        if (state) done.push(stateRow(state.seq));
         state = null;
         sinceState = 0;
+        // Everything is saved: nothing a failed write lost is missing.
+        gap = false;
+        clearTimeout(retry);
+        retry = undefined;
       }
       return write(deleteDrafts(done));
     },
