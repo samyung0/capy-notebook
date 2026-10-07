@@ -195,8 +195,12 @@ check); it applies at the first promotion.
   Enter at a paragraph's end inserts the new mark after the existing one, so
   a peer's concurrent pPr change stays on the text instead of landing on the
   new empty paragraph. Changes how Enter is stored: matrix plus two-peer work.
-  Same item: two peers pressing Enter at the same paragraph end save the same
-  `w14:paraId` twice (the repair helper has no caller outside tests).
+  Same item: any two concurrent splits of one paragraph (Enter at its end or
+  mid-paragraph on two peers) give both new marks the paragraph's paraId, so
+  the save writes the same `w14:paraId` twice and, in the session, Backspace
+  or Delete keyed by that id acts on the wrong paragraph (joining the second
+  resolves to the first: "paragraph body:p0 is the first paragraph of its
+  story"); the repair helper (`dedupe_para_ids`) has no caller outside tests.
   Found by docx-enter-copy (`capy-docx-review-harnesses/2026-10-05-office-batch/docx-enter-copy/`).
 - **Unplaceable sync step 2 (lowest priority).** A client whose own sync step 2
   the room cannot place (it holds content out of order) is closed after 2 tries
@@ -277,7 +281,13 @@ check); it applies at the first promotion.
   Backspace, loses the section break (the join adopts the text mark's
   properties, which never carry `sectPr`; keep the survivor's section keys
   when the donor has none; probe
-  `docx-enter-copy/probes/section-enter-backspace.test.ts`).
+  `docx-enter-copy/probes/section-enter-backspace.test.ts`). Same cause: Enter
+  mid-paragraph then Backspace drops the source mark's tracked insertion
+  (`w:rPr/w:ins` on the mark; the new mark leaves out `pPrIns`/`pPrDel`,
+  `ops/paragraph.rs` `split_paragraph`, and `adopt_pilcrow` in `ops/mod.rs`
+  replaces the survivor's keys), and the copied `pPrChange` comes back under
+  new ids; keep the survivor's mark-revision and section keys when the donor
+  has none (docx-enter-copy REVIEW2 finding 4).
 - **DOCX run formatting written as direct on every save** (pre-existing, found
   by the docx-fidelity review 2026-10-06): every save writes the style's run
   formatting as direct formatting on every run of a saved story (long-handbook

@@ -352,8 +352,9 @@ typing, Enter, Accept/Reject all and publication, including breaks inside
 links, inline content controls and tracked changes. The render bridge splits
 an inline break into paragraph fragments while keeping one editable paragraph
 and one list number. Each fragment after the first gets its own layout block id
-(the paragraph's id plus `#n`, `n` counting the breaks and other blocks
-between it and the first part), since layout, painting and the resident
+(the paragraph's id plus `#n`; `n` steps from the part before by the page and
+column breaks between them, at least one, so a gap holding only shapes or
+charts steps by one), since layout, painting and the resident
 display look measured blocks up by id; the text after the break starts at the
 top of the next page or column at the paragraph's left indent, without
 first-line or hanging indent, space-before or number, as Word continues the
@@ -365,7 +366,10 @@ a page break copies as two soft breaks: the editor's `yrsSelectionText` writes
 one at each break that text comes before in its paragraph (a break opening the
 paragraph follows the previous mark's newline), view mode one for each step in
 the part number (`textLayer.ts`), and the editor's copy stays not plain text,
-so ⌘X over a break only copies. Enter at the
+so ⌘X over a break only copies. Inline shapes and charts copy nothing in edit
+mode; in view mode a gap between two parts holding only them copies one
+newline (they paint on a line of their own), and beside a break they add none,
+so view and edit mode agree wherever a break is in the gap. Enter at the
 start of a heading after a trailing column break puts the empty line after
 that break, even if the preceding text changed.
 A bookmark opening before a paragraph's leading breaks stays before them, and an empty
