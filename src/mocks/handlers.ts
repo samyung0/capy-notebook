@@ -866,8 +866,8 @@ export const handlers = [
       probability: computational ? 0.9 : 0.05,
     });
   }),
-  // The site Worker's share routes. MSW skips the signature check.
-  http.get('/p/quizzes/:token', ({ params }) => {
+  // The share reads the site Worker renders from; MSW skips the signature check.
+  http.get('/api/public/quizzes/:token', ({ params }) => {
     const mt = anonymousMaterial(String(params.token), 'quiz');
     if (!mt)
       return HttpResponse.json({ message: 'not found' }, { status: 404 });
@@ -878,6 +878,7 @@ export const handlers = [
       name,
       privacy,
       questions: questions.map(learnerView),
+      updatedAt: mt.updatedAt,
     });
   }),
   http.post('/api/public/quizzes/:token/grade', async ({ params, request }) => {
@@ -892,7 +893,7 @@ export const handlers = [
       total: graded.max,
     });
   }),
-  http.get('/p/flashcards/:token', ({ params }) => {
+  http.get('/api/public/flashcards/:token', ({ params }) => {
     const mt = anonymousMaterial(String(params.token), 'flashcards');
     if (!mt)
       return HttpResponse.json({ message: 'not found' }, { status: 404 });
@@ -907,9 +908,10 @@ export const handlers = [
       id: set.id,
       name: set.name,
       privacy: set.privacy,
+      updatedAt: mt.updatedAt,
     });
   }),
-  http.get('/p/notes/:token', ({ params }) => {
+  http.get('/api/public/notes/:token', ({ params }) => {
     const mt = anonymousMaterial(String(params.token), 'note');
     if (!mt)
       return HttpResponse.json({ message: 'not found' }, { status: 404 });

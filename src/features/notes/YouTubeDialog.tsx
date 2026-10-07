@@ -2,10 +2,8 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { Input } from '@/components/ui/Input';
-import {
-  YouTubeEmbed,
-  youtubeEmbedUrl,
-} from '@/features/materials/YouTubeEmbed';
+import { YouTubeEmbed } from '@/features/materials/YouTubeEmbed';
+import { youtubeEmbedUrl } from '@/features/materials/youtubeUrl';
 import { m } from '@/i18n';
 import { youtubeVideoId } from './youtube';
 

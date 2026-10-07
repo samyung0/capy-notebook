@@ -876,6 +876,7 @@
   "editor_youtube_edit": "编辑链接",
   "editor_youtube_link": "YouTube 链接",
   "youtube_open": "在 YouTube 打开",
+  "youtube_play": "播放视频",
   "youtube_missing_id": "此 YouTube 嵌入缺少视频 ID。",
   "youtube_dialog_title": "嵌入 YouTube",
   "youtube_dialog_body": "嵌入 YouTube 视频，无需上传视频或占用工作区存储。",

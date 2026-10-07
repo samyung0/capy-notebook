@@ -1,15 +1,9 @@
-import { useQuery } from '@tanstack/react-query';
 import { type ReactNode, useEffect, useState } from 'react';
-import {
-  anonymousAssetUrl,
-  anonymousQuizQuery,
-  gradeAnonymousQuiz,
-} from '@/api/anonymous';
+import { anonymousAssetUrl, gradeAnonymousQuiz } from '@/api/anonymous';
 import { api } from '@/api/client';
-import type { AttemptDetail } from '@/api/types';
+import type { AnonymousQuiz, AttemptDetail } from '@/api/types';
 import { PublicActionMenu } from '@/components/app/PublicActionMenu';
 import { PublicByline, PublicPage } from '@/components/app/PublicHeader';
-import { Skeleton } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
 import { AssetUrlContext } from '@/features/materials/MediaAssetView';
 import { AttemptBody } from '@/features/quizzes/AttemptBody';
@@ -20,46 +14,32 @@ import {
   localQuizAttempts,
   saveLocalQuizAttempt,
 } from '@/lib/localDb';
-import { failureStatus, ShareError } from './ShareError';
 import { signedIn, useSignedIn } from './session';
 
 function Frame({ children }: { children: ReactNode }) {
   return <PublicPage>{children}</PublicPage>;
 }
 
-/** `/share/quizzes/{token}`: every visitor takes the quiz from the same cached
- * data. Submitting asks the session: signed in, the attempt is graded and kept
- * on the account; signed out, the share route grades it and this browser keeps
- * it. */
-export function SharedQuiz({ token }: { token: string }) {
-  const {
-    data: quiz,
-    error,
-    isError,
-    isLoading,
-  } = useQuery({
-    ...anonymousQuizQuery(token),
-    // Failures render the summary's failure panel here, not the boundary.
-    meta: { errorBoundary: false },
-    retry: false,
-  });
+/** `/share/quizzes/{token}`: the Worker renders it from the same edge-cached
+ * data for every visitor and the browser hydrates it. Submitting asks the
+ * session: signed in, the attempt is graded and kept on the account; signed
+ * out, the share route grades it and this browser keeps it. */
+export function SharedQuiz({
+  quiz,
+  token,
+}: {
+  quiz: AnonymousQuiz;
+  token: string;
+}) {
   const session = useSignedIn();
   const [past, setPast] = useState<LocalQuizAttempt[]>([]);
-  const quizId = quiz?.id;
+  const quizId = quiz.id;
   useEffect(() => {
-    if (!quizId || session !== false) return;
+    if (session !== false) return;
     localQuizAttempts(quizId)
       .then(setPast)
       .catch(() => setPast([]));
   }, [quizId, session]);
-
-  if (isLoading)
-    return (
-      <Frame>
-        <Skeleton className="h-[60vh] w-full" />
-      </Frame>
-    );
-  if (isError || !quiz) return <ShareError status={failureStatus(error)} />;
 
   return (
     <AssetUrlContext.Provider
@@ -67,7 +47,9 @@ export function SharedQuiz({ token }: { token: string }) {
     >
       <AttemptBody
         actions={<PublicActionMenu id={quiz.id} kind="quiz" />}
-        byline={<PublicByline author={quiz.author} />}
+        byline={
+          <PublicByline author={quiz.author} updatedAt={quiz.updatedAt} />
+        }
         footer={
           // Signed-in attempts live on the account, so only signed-out
           // visitors get the browser note and their past attempts.

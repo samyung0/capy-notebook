@@ -99,8 +99,11 @@ toggle, large ghost-hover sign-in button and equally large sign-up button on the
 between Light (Latte) and Dark (Mocha), and is also used on authentication pages. Every visitor gets this
 header, signed in or not: it never reads the session, so nothing shifts or flashes and the edge copy stays
 shared. Its Sign in and Sign up carry no `redirect_url`; a signed-in visitor who presses them lands on the
-dashboard. The Worker renders the header (with a static theme toggle) and the ⋮ trigger, and a small island
-(`src/summary/main.tsx`, no Clerk) renders the live ones over them. The workspace uses its stored icon and
+dashboard. The Worker renders the whole page, header and ⋮ included, and neither needs React: the theme
+button shows the moon or sun by CSS and `publicChrome.ts` switches the stored theme (a head script applies it
+before first paint), and the ⋮ is a native popover anchored to its button with Clone as a plain link
+(`PublicActionMenu.tsx`). The page's script (`src/summary/main.ts`) only wires those, points the file icons at
+the sprite and loads analytics after the page. The workspace uses its stored icon and
 shows the owner's avatar (`authorAvatarUrl`, 1px high) beside their name in its byline, and a ⋮ beside the
 name offers Clone workspace (see Clone from a public page below). Chapter and file rows use the file panel's
 Catppuccin sprite and filename icon mapping, with file icons shifted up 1px;
@@ -141,50 +144,57 @@ The token is the summary's `share:v1:{id}` HMAC. Workspace materials have no
 sharing of their own (a check constraint keeps their privacy `private`) and
 embedded ones follow a note visitors cannot open, so neither is reachable.
 
-The SPA reads through the site Worker's `/p/` routes, which verify the token
-before any API call and cache reads at the edge for five minutes, as summaries
-do: `GET /p/quizzes/{token}`, `GET /p/quizzes/{token}/assets/{assetId}` and
-`GET /p/flashcards/{token}` with `GET /p/flashcards/{token}/assets/{assetId}`
-for the image of a card visitors study. Grading posts straight to
-`/api/public/quizzes/{token}/grade`, because a Worker subrequest reaches the
-API without the visitor's IP, which the per-IP caps need. Go verifies the
-token again on `/api/public/...` because the API hostname is public, and reads
-visibility and the owner's lifecycle in the same statement as the content.
-Quiz reads are answer-free (`questions.LearnerView`), like every read for
-viewing; grading returns the keys for the attempt just graded and stores
-nothing on the server. Flashcard reads carry written cards only (a new set's
-blank starter card is left out), never the owner's study state. An image is served only when it belongs to the quiz and appears
-in its current content, checked against the full content so a worked
-solution's images resolve after grading. Unsharing takes up to five minutes to clear the edge.
+The site Worker renders these pages (`workers/site/handler.ts`) the way it renders summaries: it verifies the
+token before any API call, reads `/api/public/{quizzes|flashcards|notes}/{token}`, renders the page in the
+visitor's locale (`en` or `zh` from `Accept-Language`) and caches the HTML at the edge for five minutes, keyed
+by item and locale, so each page has at most two cached copies. Images go through
+`GET /p/{quizzes|flashcards|notes}/{token}/assets/{assetId}`, verified and cached the same way. Grading posts
+straight to `/api/public/.../grade`, because a Worker subrequest reaches the API without the visitor's IP, which
+the per-IP caps need. Go verifies the token again on `/api/public/...` because the API hostname is public, and
+reads visibility and the owner's lifecycle in the same statement as the content. Quiz reads are answer-free
+(`questions.LearnerView`), like every read for viewing; grading returns the keys for the attempt just graded and
+stores nothing on the server. Flashcard reads carry written cards only (a new set's blank starter card is left
+out), never the owner's study state. An image is served only when it belongs to the item and appears in its
+current content, checked against the full content so a worked solution's images resolve after grading.
+Unsharing takes up to five minutes to clear the edge. A forged link, unknown kind, or private, unshared or
+missing item gets the summary's not-found page (404), any other failure its unavailable variant (503); owners
+preview their items in the app.
 
-These pages have their own entry (`share.html`, `src/share/main.tsx`), outside the app's router and shell:
-the Worker serves it for `/share/{quizzes|flashcards|notes}/{token}` after verifying the token, and each page's
-code loads on demand. They use the workspace summary's public layout and header
-(`src/components/app/PublicHeader.tsx`): the same header and body for every visitor, all read from the edge-cached
-`/p/` data. Clerk loads after first paint and is asked only when an attempt is submitted or a card rated
-(`src/share/session.ts`): signed in, the attempt or rating goes to the account (`POST /api/quizzes/{id}/attempts`,
-`POST /api/review/ratings`); signed out, the share route grades and the browser keeps it. Without a Clerk key (MSW,
-e2e) `?anonymous` selects the signed-out path. A forged link or unknown kind gets the summary's 404 page from the
-Worker; a private, unshared or missing item shows the same not-found panel (`SummaryFailure`) in the page, and any
-other failure its unavailable variant. Owners preview their items in the app; unsigned `/share/` links work for
-nobody. The pages drop the label
+The renderer (`src/share/server.tsx`) is built by Vite as its own bundle (`vite build --ssr` into `dist/_ssr`,
+kept out of the static assets by `.assetsignore`; `wrangler.jsonc` aliases it as `capy-share-render`), so the page
+components keep their browser imports; libraries that only run in effects or on click (Mermaid, MathLive's
+editor, jsxgraph, KaTeX, the app's embed editors) are empty modules there. It writes the data it rendered from
+into `<script id="share-state">`, and the page's script (`share.html`, `src/share/main.tsx`) never fetches it
+again. A quiz or flashcard set hydrates whole (`StudyPage.tsx`, the same tree on both sides, in the page's
+locale). Clerk loads after hydration without its UI bundle (`prefetchUI={false}`) and is asked only when an
+attempt is submitted or a card rated (`src/share/session.ts`): signed in, the attempt or rating goes to the
+account (`POST /api/quizzes/{id}/attempts`, `POST /api/review/ratings`); signed out, the share route grades and
+the browser keeps it. Without a Clerk key (MSW, e2e) `?anonymous` selects the signed-out path; under MSW the dev
+server signs the mocks' placeholder links and answers the Worker's API reads from the MSW handlers
+(`src/summary/vite.ts`). The pages drop the label
 above the title; the owner (`author`: name and avatar, on the public reads and on the single quiz and
-flashcard reads) sits under the title, then the question count, or for flashcards Card N of M just above
-the card. A ⋮ beside the title offers Clone.
+flashcard reads) sits under the title with the item's `updatedAt` after a centre dot ("Name · Updated
+{date}", in UTC so server and browser agree), then, further down and closer to the content, the question
+count, or for flashcards Card N of M just above the card. A ⋮ beside the title offers Clone.
 
-Link and public standalone notes open at `/share/notes/{id}.{signature}` the same way: `GET /p/notes/{token}`
-returns the note's read projection (Plate JSON) with its owner and update time, and
+Link and public standalone notes open at `/share/notes/{id}.{signature}` the same way. The API read returns
+the note's read projection (Plate JSON) with its owner and update time; the Worker renders it with the static
+renderer (`MaterialPreview`) to HTML for good, leaving out a first heading that repeats the title, and the
+browser loads no renderer: equations are MathLive's static markup (the page links MathLive's static and font
+stylesheets only when the note has math), code is highlighted on the server, a YouTube block is its poster
+until clicked, and the contents block scrolls with plain script. Only islands take React
+(`src/features/materials/Island.tsx`, `src/share/islands.tsx`): images (click-to-preview), diagrams (Mermaid
+draws in the browser), interactive HTML blocks and embedded quizzes and sets, each hydrated from the props the
+server wrote beside it; a note without them loads no React. Mentions render the name stored in the note.
 `GET /p/notes/{token}/assets/{assetId}` serves an image only when the note's current content shows it
-(`materialdoc.EditorAssetIDs`). Every visitor reads that edge-cached copy and the page renders it with the
-static renderer (`MaterialPreview`), leaving out a first heading that repeats the title. Mentions render the
-name stored in the note. `GET /p/notes/{token}` also returns `embeds`: each quiz and flashcard set the note owns, references in its
-current content and has not trashed, in reference order (quizzes answer-free, flashcards written cards only); the
-page renders them in place (`src/share/PublicEmbed.tsx`). The note's asset route also serves an image one of those
-embeds shows, owned by that embed. Visitors grade an embedded quiz at
-`POST /api/public/notes/{token}/quizzes/{quizId}/grade`, which has the same caps as the quiz grade, stores nothing,
-and returns 404 for any quiz the note does not embed and reference. Embedded quizzes and flashcard sets are named
-by a random UUID that is never displayed, and they are left out of every materials listing, Explore, search and
-the workspace quiz count.
+(`materialdoc.EditorAssetIDs`). The read also returns `embeds`: each quiz and flashcard set the note owns,
+references in its current content and has not trashed, in reference order (quizzes answer-free, flashcards
+written cards only); they render in place (`src/share/PublicEmbed.tsx`) and are the only note data the page's
+script receives. The note's asset route also serves an image one of those embeds shows, owned by that embed.
+Visitors grade an embedded quiz at `POST /api/public/notes/{token}/quizzes/{quizId}/grade`, which has the same
+caps as the quiz grade, stores nothing, and returns 404 for any quiz the note does not embed and reference.
+Embedded quizzes and flashcard sets are named by a random UUID that is never displayed, and they are left out of
+every materials listing, Explore, search and the workspace quiz count.
 
 #### Clone from a public page
 

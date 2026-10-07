@@ -20,4 +20,5 @@ export interface AnonymousFlashcards {
   name: string;
   privacy: Privacy;
   provenance?: Provenance;
+  updatedAt: string;
 }

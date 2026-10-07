@@ -7,10 +7,38 @@
     <link href="/favicon.svg" rel="icon" type="image/svg+xml">
     <link href="/src/styles/tailwind.css" rel="stylesheet">
     <link href="/src/summary/summary.css" rel="stylesheet">
+    <script blocking="render" type="module">
+    (() => {
+      try {
+        const STYLES = ['classroom', 'notion'];
+        const THEMES = ['latte', 'frappe', 'mocha'];
+        const DARKTHEMES = ['frappe', 'mocha'];
+        const root = document.documentElement;
+        const style = localStorage.getItem('capy.style');
+        let theme = localStorage.getItem('capy.theme');
+        if (theme === 'macchiato') {
+          theme = 'frappe';
+          localStorage.setItem('capy.theme', theme);
+        }
+
+        root.dataset.style = STYLES.includes(style) ? style : 'classroom';
+        root.dataset.theme = THEMES.includes(theme)
+          ? theme
+          : matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'mocha'
+            : 'latte';
+        if (DARKTHEMES.includes(root.dataset.theme)) {
+          root.classList.add('dark');
+        }
+      } catch {
+        // ignore
+      }
+    })();
+    </script>
     <!--capy-summary-head-->
   </head>
   <body class="summary-page">
     <!--capy-summary-body-->
-    <script src="/src/summary/main.tsx" type="module"></script>
+    <script src="/src/summary/main.ts" type="module"></script>
   </body>
 </html>

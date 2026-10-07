@@ -247,7 +247,9 @@ caption (Plate `CaptionPlugin`; the field focuses in place and an empty one hide
 on blur), open in new tab and replace; replace keeps the node id, width and
 caption. The YouTube toolbar has open on YouTube and a link editor that accepts
 any link `youtubeVideoId` parses. View mode and read-only editors show only the
-open button.
+open button. A YouTube block shows the video's poster with a play
+button everywhere; YouTube's player (about 1 MB) loads only once it is clicked
+(`YouTubeEmbed.tsx`; server-rendered shared notes start it with plain script).
 
 Every block embed (`img`, `video`, diagrams) must be a void node. Enter on a
 selected void opens an empty paragraph below it (`voidBlockBreak.ts`); a
@@ -288,10 +290,14 @@ toolbar and Add card), each change saved at once through the item's content
 endpoint, one save at a time. Removing the last question or card removes the
 block itself (the item follows the removed-block trash rule; Undo restores both). The static renderer takes the page's embed renderer from
 `EmbedViewContext` (the app's reads through the account and loads on demand; the
-share page feeds the note's public data). Inserting through the slash command or toolbar
+share page feeds the note's public data). Blocks that need the browser in a read-only
+render (images, embeds, diagrams, interactive HTML) sit in an `Island`
+(`Island.tsx`, views in `staticViews.tsx`): inert in the app, they are what a
+server-rendered shared note hydrates, and equations render MathLive's static markup
+there (`StaticMathContext`). Inserting through the slash command or toolbar
 creates the row through `POST /api/materials/{noteId}/embedded` (a set with one
-blank card), inserts the reference at the top level and opens the row's edit
-page (`/quizzes/$id/edit` or `/flashcards/$id/edit`); nothing is inserted when
+blank card) and inserts the reference at the top level, where it opens in place
+for editing; nothing is inserted when
 creation fails, and with the caret inside a callout, column, table or other container
 the quiz, flashcards and mermaid commands do nothing. A reference that lands
 nested (a paste) is lifted to the top level by the plugin's normalizer. Edits

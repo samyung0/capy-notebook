@@ -876,6 +876,7 @@
   "editor_youtube_edit": "Edit link",
   "editor_youtube_link": "YouTube link",
   "youtube_open": "Open on YouTube",
+  "youtube_play": "Play video",
   "youtube_missing_id": "This YouTube embed is missing a video ID.",
   "youtube_dialog_title": "YouTube embed",
   "youtube_dialog_body": "Embed a YouTube video without uploading a video file or using workspace storage.",

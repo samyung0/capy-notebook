@@ -10,14 +10,7 @@ import {
   SlateLeaf,
   type SlateLeafProps,
 } from 'platejs/static';
-import {
-  type CSSProperties,
-  lazy,
-  type MouseEvent,
-  Suspense,
-  useContext,
-  useState,
-} from 'react';
+import { type CSSProperties, useContext } from 'react';
 import { Button } from '@/components/ui/Button';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { CalloutIcon } from '@/features/notes/CalloutIcon';
@@ -42,7 +35,6 @@ import {
   KBD_MARK_CLASS,
   LI_CLASS,
   LINK_CLASS,
-  MEDIA_CAPTION_CLASS,
   MEDIA_MAX_WIDTH_CLASS,
   MENTION_AT_CLASS,
   MENTION_CLASS,
@@ -73,7 +65,6 @@ import {
 } from '@/features/questions/QuestionView';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { scrollIntoViewWithMotion } from '@/lib/scrollIntoViewWithMotion';
 import type {
   FlashcardElement as FlashcardNode,
   HtmlEmbedElement as HtmlEmbedNode,
@@ -83,23 +74,21 @@ import type {
   QuizQuestionElement as QuizQuestionNode,
 } from './document';
 import { quizQuestionElementToQuestion } from './document';
-import { EmbedLoading, EmbedViewContext } from './embeds/EmbedView';
-import { HtmlEmbed } from './HtmlEmbed';
+import { EmbedLoading } from './embeds/EmbedView';
+import { Island, StaticMathContext } from './Island';
 import { StandaloneMaterialTitle } from './MaterialRenderContext';
 import { MathPreview } from './MathPreview';
-import {
-  type MediaAssetNode,
-  MediaAssetView,
-  openEditorAsset,
-} from './MediaAssetView';
+import type { MediaAssetNode } from './MediaAssetView';
 import { MediaFrame } from './MediaFrame';
-import { MermaidPreview } from './MediaPreview';
-import { Mermaid } from './Mermaid';
+import { scrollToTocHeading } from './scrollToTocHeading';
 import {
-  YouTubeEmbed,
-  type YouTubeNode,
-  youtubeWatchUrl,
-} from './YouTubeEmbed';
+  EmbedSlot,
+  HtmlEmbedView,
+  MermaidView,
+  StaticMediaAsset,
+} from './staticViews';
+import { YouTubeEmbed, type YouTubeNode } from './YouTubeEmbed';
+import { youtubeWatchUrl } from './youtubeUrl';
 
 /* ------------------------------------------------------------- helpers */
 
@@ -237,18 +226,6 @@ function Callout(props: SlateElementProps) {
 }
 
 /* toc — scrolls the preview instead of moving an editor selection */
-function scrollToHeading(event: MouseEvent, headingOrder: number) {
-  const root = (event.currentTarget as HTMLElement).closest(
-    '[data-slate-editor]'
-  );
-  if (!root) return;
-  const heads = root.querySelectorAll<HTMLElement>(
-    ':scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6'
-  );
-  const heading = heads[headingOrder];
-  if (heading) scrollIntoViewWithMotion(heading);
-}
-
 function Toc(props: SlateElementProps) {
   const headings = props.editor.children.filter((node) =>
     KEYS.heading.includes(node.type as (typeof KEYS.heading)[number])
@@ -261,8 +238,11 @@ function Toc(props: SlateElementProps) {
             {headings.map((node, order) => (
               <Button
                 className={TOC_ITEM_CLASS}
+                data-toc-order={order}
                 key={(node.id as string | undefined) ?? order}
-                onClick={(event) => scrollToHeading(event, order)}
+                onClick={(event) =>
+                  scrollToTocHeading(event.currentTarget, order)
+                }
                 size="xs"
                 style={tocItemIndent(node.type as string)}
                 type="button"
@@ -295,6 +275,20 @@ function Mention(props: SlateElementProps) {
   );
 }
 
+/** MathLive's own layout: the read-only field in the browser, its static
+ * markup on the server (StaticMathContext). */
+function Equation({ displayMode, tex }: { displayMode: boolean; tex: string }) {
+  const toMarkup = useContext(StaticMathContext);
+  if (!toMarkup) return <MathPreview displayMode={displayMode} tex={tex} />;
+  // MathLive's own markup for the stored LaTeX, which it escapes.
+  return (
+    <span
+      dangerouslySetInnerHTML={{ __html: toMarkup(tex, displayMode) }}
+      role="math"
+    />
+  );
+}
+
 function BlockEquation(props: SlateElementProps) {
   const tex = String(
     (props.element as { texExpression?: string }).texExpression ?? ''
@@ -302,7 +296,7 @@ function BlockEquation(props: SlateElementProps) {
   return (
     <SlateElement {...props}>
       <div className={EQUATION_BLOCK_CLASS}>
-        <MathPreview displayMode tex={tex} />
+        <Equation displayMode tex={tex} />
       </div>
       {props.children}
     </SlateElement>
@@ -315,7 +309,7 @@ function InlineEquation(props: SlateElementProps) {
   );
   return (
     <SlateElement {...props} as="span">
-      <MathPreview displayMode={false} tex={tex} />
+      <Equation displayMode={false} tex={tex} />
       {props.children}
     </SlateElement>
   );
@@ -333,33 +327,11 @@ function CodeSyntax(props: SlateLeafProps) {
 
 function MediaAssetElement(props: SlateElementProps) {
   const element = props.element as unknown as MediaAssetNode;
-  const caption = element.caption?.map((node) => node.text).join('');
   return (
     <SlateElement {...props} className="my-3">
-      <MediaAssetView
-        caption={
-          caption && (
-            <figcaption
-              className={MEDIA_CAPTION_CLASS}
-              style={{ width: element.width }}
-            >
-              {caption}
-            </figcaption>
-          )
-        }
-        element={element}
-        toolbar={
-          element.assetId && (
-            <ToolbarButton
-              label={m.media_open_new_tab()}
-              onClick={() => openEditorAsset(element.assetId!)}
-              tooltipSide="top"
-            >
-              <EditorIcon name="externalLink" />
-            </ToolbarButton>
-          )
-        }
-      />
+      <Island name="media" props={{ element }}>
+        <StaticMediaAsset element={element} />
+      </Island>
       {props.children}
     </SlateElement>
   );
@@ -419,18 +391,15 @@ function FlashcardsElement(props: SlateElementProps) {
   );
 }
 
-/** An embedded quiz or flashcard set, studied in place with the page's own
- * embed renderer (EmbedViewContext). */
 function MaterialRefElement(props: SlateElementProps) {
-  const element = props.element as unknown as MaterialRefNode;
-  const Embed = useContext(EmbedViewContext);
+  const { materialId, refKind } = props.element as unknown as MaterialRefNode;
   return (
     <SlateElement {...props} className="my-4">
       <div contentEditable={false}>
-        {element.materialId ? (
-          <Suspense fallback={<EmbedLoading />}>
-            <Embed materialId={element.materialId} refKind={element.refKind} />
-          </Suspense>
+        {materialId ? (
+          <Island name="embed" props={{ materialId, refKind }}>
+            <EmbedSlot materialId={materialId} refKind={refKind} />
+          </Island>
         ) : (
           <EmbedLoading />
         )}
@@ -441,65 +410,34 @@ function MaterialRefElement(props: SlateElementProps) {
 }
 
 function MermaidElement(props: SlateElementProps) {
-  const element = props.element as unknown as MermaidNode;
-  const [previewing, setPreviewing] = useState(false);
+  const { source, theme, width } = props.element as unknown as MermaidNode;
+  const caption = NodeApi.string(props.element);
   return (
     <SlateElement {...props} className="my-3 border border-transparent">
       <StandaloneMaterialTitle kinds={['mindmap', 'diagram']} />
-      <MediaFrame fill onOpen={() => setPreviewing(true)} width={element.width}>
-        <Mermaid
-          code={element.source}
-          fill={element.width !== undefined}
-          theme={element.theme}
+      <Island name="mermaid" props={{ caption, source, theme, width }}>
+        <MermaidView
+          caption={caption}
+          source={source}
+          theme={theme}
+          width={width}
         />
-      </MediaFrame>
+      </Island>
       {props.children}
-      <MermaidPreview
-        caption={NodeApi.string(props.element)}
-        code={element.source}
-        onOpenChange={setPreviewing}
-        open={previewing}
-        theme={element.theme}
-      />
     </SlateElement>
   );
 }
 
-const HtmlEmbedSourceDialog = lazy(
-  () => import('@/features/notes/blocks/HtmlEmbedSourceDialog')
-);
-
 function HtmlEmbedElement(props: SlateElementProps) {
-  const element = props.element as unknown as HtmlEmbedNode;
-  const [viewing, setViewing] = useState(false);
+  const { html, id, title } = props.element as unknown as HtmlEmbedNode;
   return (
     <SlateElement {...props} className="my-3">
       <div contentEditable={false}>
-        <HtmlEmbed
-          html={element.html}
-          id={element.id}
-          title={element.title}
-          toolbar={
-            <ToolbarButton
-              label={m.html_embed_view_source()}
-              onClick={() => setViewing(true)}
-              tooltipSide="top"
-            >
-              <EditorIcon name="code" />
-            </ToolbarButton>
-          }
-        />
+        <Island name="html" props={{ html, id, title }}>
+          <HtmlEmbedView html={html} id={id} title={title} />
+        </Island>
       </div>
       {props.children}
-      {viewing && (
-        <Suspense fallback={null}>
-          <HtmlEmbedSourceDialog
-            html={element.html}
-            onClose={() => setViewing(false)}
-            title={element.title}
-          />
-        </Suspense>
-      )}
     </SlateElement>
   );
 }

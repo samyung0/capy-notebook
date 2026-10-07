@@ -28,7 +28,8 @@ function Failed() {
   return null;
 }
 
-/** Loaded after first paint; renders nothing on the page. */
+/** Loaded after first paint; renders nothing on the page. Share pages show no
+ * Clerk components, so Clerk's UI bundle (about 256 KB) never loads. */
 export default function ShareAuth({
   publishableKey,
 }: {
@@ -37,6 +38,7 @@ export default function ShareAuth({
   return (
     <ClerkProvider
       afterSignOutUrl="/sign-in"
+      prefetchUI={false}
       publishableKey={publishableKey}
       signInUrl="/sign-in"
       signUpUrl="/sign-up"

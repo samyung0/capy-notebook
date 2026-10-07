@@ -1,4 +1,5 @@
 import { verifiedShareID, verifiedShareToken } from '../../src/lib/shareLink';
+import type { ShareKind } from '../../src/share/state';
 import { fromEdgeCache, handlePublicRequest, SHARED_CACHE } from './public';
 import {
   localeFor,
@@ -137,29 +138,90 @@ export async function handleSiteRequest(
         fetcher,
         cache
       );
-    // Public share pages have their own entry. Like /w/, an unknown kind or
-    // a forged link gets the 404 page before any script or API call.
-    if (url.pathname.startsWith('/share/')) {
-      const [, kind, token] = url.pathname.match(SHARE_PAGE) ?? [];
-      if (!(kind && (await verifiedShareToken(env.SHARE_LINK_SECRET, token))))
-        return failure(404);
-      return await env.ASSETS.fetch(
-        new Request(new URL('/share.html', url), request)
-      );
-    }
-    if (!isSummary) return await env.ASSETS.fetch(request);
+    const isShare = url.pathname.startsWith('/share/');
+    if (!(isSummary || isShare)) return await env.ASSETS.fetch(request);
     if (request.method !== 'GET' && request.method !== 'HEAD')
       return new Response(null, {
         headers: headers({ Allow: 'GET, HEAD' }),
         status: 405,
       });
-    // Unsigned or forged links stop here, before any API or database work.
-    const id = await verifiedShareID(env.SHARE_LINK_SECRET, url.pathname);
-    if (!id) return failure(404);
     const apiOrigin = trustedOrigin(env.API_ORIGIN);
     const appOrigin = trustedOrigin(env.APP_ORIGIN);
     const head = (response: Response) =>
       request.method === 'HEAD' ? new Response(null, response) : response;
+    // Shared quizzes, flashcard sets and notes render here like summaries:
+    // an unknown kind or a forged link gets the 404 page before any API call.
+    if (isShare) {
+      const [, kind, token] = (url.pathname.match(SHARE_PAGE) ?? []) as [
+        string,
+        ShareKind | undefined,
+        string,
+      ];
+      const id =
+        kind && (await verifiedShareToken(env.SHARE_LINK_SECRET, token));
+      if (!(kind && id)) return failure(404);
+      const cacheKey = new Request(
+        `${appOrigin}/share/${kind}/${id}?lang=${locale}`
+      );
+      const cached = await cache?.match(cacheKey);
+      if (cached) return head(fromEdgeCache(cached));
+      const upstream = await fetcher(
+        new Request(`${apiOrigin}/api/public/${kind}/${token}`, {
+          headers: { Accept: 'application/json' },
+          redirect: 'manual',
+          signal: AbortSignal.timeout(10_000),
+        })
+      );
+      if ([401, 403, 404].includes(upstream.status)) {
+        await upstream.body?.cancel();
+        return failure(404);
+      }
+      if (!upstream.ok) {
+        await upstream.body?.cancel();
+        return failure(503);
+      }
+      const data = JSON.parse(await boundedText(upstream, 4 * 1024 * 1024));
+      const asset = await env.ASSETS.fetch(
+        new Request(`${appOrigin}/share.html`)
+      );
+      if (!asset.ok) {
+        await asset.body?.cancel();
+        return failure(503);
+      }
+      const template = await boundedText(asset, 512 * 1024);
+      const { renderSharePage, SHARE_TEMPLATE_MARKERS } = await import(
+        'capy-share-render'
+      );
+      if (!SHARE_TEMPLATE_MARKERS.every((marker) => template.includes(marker)))
+        return failure(503);
+      const page =
+        kind === 'notes'
+          ? { kind, note: data, token }
+          : kind === 'quizzes'
+            ? { kind, quiz: data, token }
+            : { kind, set: data, token };
+      const responseHeaders = headers({
+        'Content-Type': 'text/html; charset=utf-8',
+        Vary: 'Accept-Language',
+      });
+      responseHeaders.set('Cache-Control', SHARED_CACHE);
+      if (data.privacy === 'link')
+        responseHeaders.set('X-Robots-Tag', 'noindex, nofollow');
+      const rendered = new Response(
+        renderSharePage({
+          canonical: `${appOrigin}${url.pathname}`,
+          locale,
+          page,
+          template,
+        }),
+        { headers: responseHeaders }
+      );
+      await cache?.put(cacheKey, rendered.clone());
+      return head(rendered);
+    }
+    // Unsigned or forged links stop here, before any API or database work.
+    const id = await verifiedShareID(env.SHARE_LINK_SECRET, url.pathname);
+    if (!id) return failure(404);
     // Cloudflare's cache ignores Vary: Accept-Language, so the resolved locale
     // belongs in the key rather than in a header the edge will not read.
     const cacheKey = new Request(`${appOrigin}/w/${id}?lang=${locale}`);

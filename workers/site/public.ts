@@ -1,24 +1,19 @@
 import { verifiedShareToken } from '../../src/lib/shareLink';
 
 /**
- * Data routes for signed-out visitors of shared standalone quizzes, flashcard
- * sets and notes, and their images. Every route verifies the share token first, so forged links
- * never reach the API. Reads are cached at the edge for five minutes, like
- * workspace summaries; Go verifies the token again and reads privacy live.
- * Grading posts go straight to `/api/public/quizzes/{token}/grade`: a Worker
- * subrequest reaches the API without the visitor's IP, which the per-IP
- * grading caps and rate limits key on.
+ * Images of shared standalone quizzes, flashcard sets and notes for
+ * signed-out visitors (the pages themselves render in handler.ts). Every route
+ * verifies the share token first, so forged links never reach the API. Images
+ * are cached at the edge for five minutes, like the pages; Go verifies the
+ * token again and reads privacy live. Grading posts go straight to
+ * `/api/public/.../grade`: a Worker subrequest reaches the API without the
+ * visitor's IP, which the per-IP grading caps and rate limits key on.
  *
- *   GET /p/quizzes/{token}                    → /api/public/quizzes/{token}
- *   GET /p/quizzes/{token}/assets/{assetId}   → the image bytes
- *   GET /p/flashcards/{token}                 → /api/public/flashcards/{token}
- *   GET /p/flashcards/{token}/assets/{assetId} → a card image's bytes
- *   GET /p/notes/{token}                      → /api/public/notes/{token}
- *   GET /p/notes/{token}/assets/{assetId}     → a note image's bytes
+ *   GET /p/{quizzes|flashcards|notes}/{token}/assets/{assetId} → image bytes
  */
 
 const ROUTE =
-  /^\/p\/(quizzes|flashcards|notes)\/([^/]+)(?:\/assets\/(asset_[A-Za-z0-9_-]{1,64}))?$/;
+  /^\/p\/(quizzes|flashcards|notes)\/([^/]+)\/assets\/(asset_[A-Za-z0-9_-]{1,64})$/;
 export const SHARED_CACHE = 'public, s-maxage=300, max-age=0, must-revalidate';
 
 /** A Cache API hit comes back with the zone's Browser Cache TTL in its
@@ -29,7 +24,7 @@ export function fromEdgeCache(cached: Response): Response {
   response.headers.set('Cache-Control', SHARED_CACHE);
   return response;
 }
-const JSON_LIMIT = 4 * 1024 * 1024;
+const JSON_LIMIT = 64 * 1024;
 const ASSET_LIMIT = 20 * 1024 * 1024;
 // Editor asset images never include SVG, so nothing served here can script.
 const IMAGE_TYPES = new Set([
@@ -106,27 +101,23 @@ export async function handlePublicRequest(
   const [, kind, token, assetId] = match;
   const id = await verifiedShareToken(secret, token);
   if (!id) return error(404);
-  const upstreamPath = `/api/public/${kind}/${token}`;
 
   if (request.method !== 'GET' && request.method !== 'HEAD')
     return respond(null, 405, { Allow: 'GET, HEAD' });
   const head = (response: Response) =>
     request.method === 'HEAD' ? new Response(null, response) : response;
   const cacheKey = new Request(
-    `${appOrigin}/p/${kind}/${id}${assetId ? `/assets/${assetId}` : ''}`
+    `${appOrigin}/p/${kind}/${id}/assets/${assetId}`
   );
   const cached = await cache?.match(cacheKey);
   if (cached) return head(fromEdgeCache(cached));
 
   const upstream = await fetcher(
-    new Request(
-      `${apiOrigin}${upstreamPath}${assetId ? `/assets/${assetId}` : ''}`,
-      {
-        headers: { Accept: 'application/json' },
-        redirect: 'manual',
-        signal: AbortSignal.timeout(10_000),
-      }
-    )
+    new Request(`${apiOrigin}/api/public/${kind}/${token}/assets/${assetId}`, {
+      headers: { Accept: 'application/json' },
+      redirect: 'manual',
+      signal: AbortSignal.timeout(10_000),
+    })
   );
   if ([401, 403, 404].includes(upstream.status)) {
     await upstream.body?.cancel();
@@ -136,37 +127,26 @@ export async function handlePublicRequest(
     await upstream.body?.cancel();
     return error(503);
   }
-  const json = await bounded(upstream.body, JSON_LIMIT);
-
-  let response: Response;
-  if (assetId) {
-    const asset = JSON.parse(new TextDecoder().decode(json)) as {
-      contentType?: unknown;
-      url?: unknown;
-    };
-    if (
-      typeof asset.url !== 'string' ||
-      typeof asset.contentType !== 'string' ||
-      !IMAGE_TYPES.has(asset.contentType)
-    )
-      return error(503);
-    const image = await fetcher(asset.url, {
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!image.ok) {
-      await image.body?.cancel();
-      return error(503);
-    }
-    response = respond(await bounded(image.body, ASSET_LIMIT), 200, {
-      'Cache-Control': SHARED_CACHE,
-      'Content-Type': asset.contentType,
-    });
-  } else {
-    response = respond(json, 200, {
-      'Cache-Control': SHARED_CACHE,
-      'Content-Type': 'application/json',
-    });
+  const asset = JSON.parse(
+    new TextDecoder().decode(await bounded(upstream.body, JSON_LIMIT))
+  ) as { contentType?: unknown; url?: unknown };
+  if (
+    typeof asset.url !== 'string' ||
+    typeof asset.contentType !== 'string' ||
+    !IMAGE_TYPES.has(asset.contentType)
+  )
+    return error(503);
+  const image = await fetcher(asset.url, {
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!image.ok) {
+    await image.body?.cancel();
+    return error(503);
   }
+  const response = respond(await bounded(image.body, ASSET_LIMIT), 200, {
+    'Cache-Control': SHARED_CACHE,
+    'Content-Type': asset.contentType,
+  });
   await cache?.put(cacheKey, response.clone());
   return head(response);
 }

@@ -11,6 +11,10 @@ import { embedFrame } from './vite-embed';
 import { mathliveFonts } from './vite-mathlive';
 
 const BETTEROFFICE_DOCX_SUBPATH = /^@betteroffice\/docx\/(.+)$/;
+/** Libraries the share renderer imports but never runs: components load them
+ * in effects or on click, after hydration. Its server build gets an empty
+ * module instead, keeping the site Worker small. */
+const BROWSER_ONLY = /^(jsxgraph|katex|mathlive|mermaid)$|\/embeds\/AppEmbed$/;
 const DEV_ENV_FILE = /^deploy\/\.env(?:\.[^/]+)?$/;
 
 // Every component reads deploy/.env; see deploy/.env.example.
@@ -24,7 +28,7 @@ const WATCH_DIRECTORIES = [
   'workers/site',
 ];
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ isSsrBuild, mode }) => {
   const env = loadEnv(mode, ENV_DIR, '');
   // Match src/main.tsx: MSW is on unless explicitly disabled.
   const useMsw = env.VITE_USE_MSW !== 'false' && mode === 'development';
@@ -49,9 +53,24 @@ export default defineConfig(({ mode }) => {
   // released bundle ships none and a local build pays nothing for them.
   // Without them every browser stack trace in Sentry is minified.
   const uploadSourceMaps = Boolean(env.SENTRY_AUTH_TOKEN);
+  // `vite build --ssr` builds the site Worker's share page renderer
+  // (src/share/server.tsx) into dist/_ssr, which public/.assetsignore keeps
+  // out of the static assets and wrangler.jsonc aliases as capy-share-render.
+  const ssrBuild = isSsrBuild
+    ? {
+        copyPublicDir: false,
+        emptyOutDir: false,
+        minify: true,
+        outDir: 'dist/_ssr',
+        rollupOptions: {
+          input: path.resolve(import.meta.dirname, 'src/share/server.tsx'),
+          output: { inlineDynamicImports: true },
+        },
+      }
+    : undefined;
   return {
     assetsInclude: ['**/*.wasm'],
-    build: {
+    build: ssrBuild ?? {
       rollupOptions: {
         input: {
           main: path.resolve(import.meta.dirname, 'index.html'),
@@ -94,6 +113,14 @@ export default defineConfig(({ mode }) => {
       include: ['buffer', 'katex', 'pdfjs-dist/legacy/build/pdf.mjs'],
     },
     plugins: [
+      isSsrBuild && {
+        enforce: 'pre' as const,
+        load: (id: string) =>
+          id === '\0browser-only' ? 'export default undefined;' : undefined,
+        name: 'share-render-browser-only',
+        resolveId: (id: string) =>
+          BROWSER_ONLY.test(id) ? '\0browser-only' : undefined,
+      },
       react(),
       mathliveFonts(),
       embedFrame(env.VITE_EMBED_ORIGIN),
@@ -115,6 +142,7 @@ export default defineConfig(({ mode }) => {
         strategy: ['localStorage', 'preferredLanguage', 'baseLocale'],
       }),
       uploadSourceMaps &&
+        !isSsrBuild &&
         sentryVitePlugin({
           authToken: env.SENTRY_AUTH_TOKEN,
           org: env.SENTRY_ORG,
@@ -269,6 +297,13 @@ export default defineConfig(({ mode }) => {
           ),
         },
         {
+          find: 'capy-share-render',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './src/share/server.tsx'
+          ),
+        },
+        {
           find: '@paraglide',
           replacement: path.resolve(
             import.meta.dirname,
@@ -342,6 +377,8 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+    // The Worker has no Node built-ins or packages at runtime: bundle all.
+    ssr: isSsrBuild ? { noExternal: true, target: 'webworker' } : undefined,
     // The source-analysis worker imports PDF.js's own worker URL. ES workers
     // support that nested module split; Vite's IIFE worker output does not.
     worker: { format: 'es' },

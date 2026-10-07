@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react';
 import type { MaterialAuthor } from '@/api/types';
-import { PublicThemeToggle } from '@/components/app/PublicThemeToggle';
 import { Button } from '@/components/ui/Button';
-import { m } from '@/i18n';
+import { Icon } from '@/components/ui/Icon';
+import { IconButton } from '@/components/ui/IconButton';
+import { getLocale, m } from '@/i18n';
 
 /**
  * Layout pieces for pages signed-out visitors can open: the workspace summary
@@ -12,23 +13,40 @@ import { m } from '@/i18n';
 
 export type Locale = 'en' | 'zh' | undefined;
 
+/** Shows the moon in light themes and the sun in dark ones by CSS alone, so
+ * the server renders it for every visitor; publicChrome.ts switches the theme
+ * on click. */
+function PublicThemeButton({ locale }: { locale?: Locale }) {
+  return (
+    <IconButton
+      data-public-theme-toggle=""
+      icon="moon"
+      // Important: Icon sets an inline display.
+      iconClassName="dark:hidden!"
+      type="button"
+      variant="ghost-hover"
+    >
+      <Icon className="hidden! dark:block!" name="sun" />
+      <span className="sr-only dark:hidden">
+        {m.public_theme_dark({}, { locale })}
+      </span>
+      <span className="sr-only hidden dark:inline">
+        {m.public_theme_light({}, { locale })}
+      </span>
+    </IconButton>
+  );
+}
+
 /** Every visitor gets the same header: it never reads auth, so it cannot shift
  * or flash, and the edge cache stays shared. Signed-in visitors who press Sign
  * in land on the dashboard. */
-export function PublicNav({
-  locale,
-  themeToggle = <PublicThemeToggle locale={locale} />,
-}: {
-  locale?: Locale;
-  /** The Worker passes a static button; the island swaps in the live one. */
-  themeToggle?: ReactNode;
-}) {
+export function PublicNav({ locale }: { locale?: Locale }) {
   return (
     <nav
       aria-label={m.summary_profile({}, { locale })}
       className="flex items-center gap-2"
     >
-      {themeToggle}
+      <PublicThemeButton locale={locale} />
       <Button asChild size="lg" variant="ghost-hover">
         <a href="/sign-in">{m.action_sign_in({}, { locale })}</a>
       </Button>
@@ -39,8 +57,15 @@ export function PublicNav({
   );
 }
 
-/** The owner, avatar first; the avatar sits 1px high to meet the text. */
-export function PublicByline({ author }: { author: MaterialAuthor }) {
+/** The owner, avatar first (1px high to meet the text), then when the item
+ * last changed. */
+export function PublicByline({
+  author,
+  updatedAt,
+}: {
+  author: MaterialAuthor;
+  updatedAt: string;
+}) {
   return (
     <p className="t-meta flex items-center gap-2 text-fg-muted">
       {author.avatarUrl && (
@@ -52,7 +77,16 @@ export function PublicByline({ author }: { author: MaterialAuthor }) {
           width={24}
         />
       )}
-      {author.name}
+      <span>
+        {author.name} ·{' '}
+        {m.note_updated({
+          // UTC, so the server's render and the browser's agree on the day.
+          date: new Intl.DateTimeFormat(getLocale(), {
+            dateStyle: 'medium',
+            timeZone: 'UTC',
+          }).format(new Date(updatedAt)),
+        })}
+      </span>
     </p>
   );
 }

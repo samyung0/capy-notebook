@@ -2,6 +2,8 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "capy-notebook",
   "main": "workers/site/index.ts",
+  // The share page renderer, built by `vite build --ssr` (vite.config.ts).
+  "alias": { "capy-share-render": "./dist/_ssr/server.js" },
   "compatibility_date": "2026-08-27",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {

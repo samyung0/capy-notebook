@@ -1,13 +1,9 @@
-import { useQuery } from '@tanstack/react-query';
 import { type ReactNode, useEffect, useRef } from 'react';
-import {
-  anonymousFlashcardAssetUrl,
-  anonymousFlashcardsQuery,
-} from '@/api/anonymous';
+import { anonymousFlashcardAssetUrl } from '@/api/anonymous';
 import { api } from '@/api/client';
+import type { AnonymousFlashcards } from '@/api/types';
 import { PublicActionMenu } from '@/components/app/PublicActionMenu';
-import { PublicPage } from '@/components/app/PublicHeader';
-import { Skeleton } from '@/components/ui/feedback';
+import { PublicByline, PublicPage } from '@/components/app/PublicHeader';
 import { userToast } from '@/components/ui/userToast';
 import { StudyBody } from '@/features/flashcards/StudyBody';
 import { AssetUrlContext } from '@/features/materials/MediaAssetView';
@@ -22,50 +18,36 @@ import {
   type SrsRating,
   type SrsState,
 } from '@/lib/srs';
-import { failureStatus, ShareError } from './ShareError';
 import { signedIn, useSignedIn } from './session';
 
 function Frame({ children }: { children: ReactNode }) {
   return <PublicPage>{children}</PublicPage>;
 }
 
-/** `/share/flashcards/{token}`: every visitor studies the same cached cards.
- * Each rating asks the session: signed in, it goes to the account's review
- * state; signed out, ts-fsrs runs here and IndexedDB keeps it. */
-export function SharedFlashcards({ token }: { token: string }) {
-  const {
-    data: set,
-    error,
-    isError,
-    isLoading,
-  } = useQuery({
-    ...anonymousFlashcardsQuery(token),
-    // Failures render the summary's failure panel here, not the boundary.
-    meta: { errorBoundary: false },
-    retry: false,
-  });
+/** `/share/flashcards/{token}`: the Worker renders it from the same
+ * edge-cached cards for every visitor and the browser hydrates it. Each rating
+ * asks the session: signed in, it goes to the account's review state; signed
+ * out, ts-fsrs runs here and IndexedDB keeps it. */
+export function SharedFlashcards({
+  set,
+  token,
+}: {
+  set: AnonymousFlashcards;
+  token: string;
+}) {
   const session = useSignedIn();
   const states = useRef(new Map<string, SrsState>());
   // One notice per page however many saves fail.
   const saveFailed = useRef(false);
-  const setId = set?.id;
+  const setId = set.id;
 
   useEffect(() => {
-    if (!setId) return;
     localCardStates(setId)
       .then((rows) => {
         states.current = new Map(rows.map((row) => [row.cardId, row.srs]));
       })
       .catch(() => {});
   }, [setId]);
-
-  if (isLoading)
-    return (
-      <Frame>
-        <Skeleton className="h-[60vh] w-full" />
-      </Frame>
-    );
-  if (isError || !set) return <ShareError status={failureStatus(error)} />;
 
   const failed = (title: string) => {
     if (saveFailed.current) return;
@@ -74,7 +56,6 @@ export function SharedFlashcards({ token }: { token: string }) {
   };
 
   async function save(cardId: string, rating: SrsRating) {
-    if (!set) return;
     if (await signedIn()) {
       await api
         .post<void>('/review/ratings', {
@@ -104,7 +85,7 @@ export function SharedFlashcards({ token }: { token: string }) {
     >
       <StudyBody
         actions={<PublicActionMenu id={set.id} kind="flashcards" />}
-        author={set.author}
+        byline={<PublicByline author={set.author} updatedAt={set.updatedAt} />}
         cards={set.cards}
         footer={
           session === false && (

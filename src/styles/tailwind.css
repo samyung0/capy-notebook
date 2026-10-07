@@ -1,6 +1,7 @@
-/* Fustat — keep the CDN import for dev; swap to self-hosted @font-face later. */
-@import url("https://fonts.googleapis.com/css2?family=Fustat:wght@300;400;500;600;700;800&display=swap");
-@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap");
+/* Self-hosted variable fonts: one file per script covers every weight, and
+   no cross-origin stylesheet blocks the first paint. */
+@import "@fontsource-variable/fustat";
+@import "@fontsource-variable/jetbrains-mono";
 @import "tailwindcss" source("../");
 @import "./tokens/themes/classroom.css";
 @import "./tokens/themes/notion.css";
@@ -432,7 +433,7 @@ math-field {
 /* Code font for every style (the @theme entry only forwards it). */
 [data-style] {
   --font-mono:
-    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 :root {

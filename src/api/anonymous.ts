@@ -1,20 +1,12 @@
-import { queryOptions } from '@tanstack/react-query';
 import { ApiError, parseErrorBody } from './client';
-import type {
-  AnonymousFlashcards,
-  AnonymousNote,
-  AnonymousQuiz,
-  GradeAnonymousQuizReq,
-  GradedQuiz,
-  Question,
-} from './types';
+import type { GradeAnonymousQuizReq, GradedQuiz, Question } from './types';
 
 /**
- * Signed-out reads and grading of shared standalone quizzes, flashcard sets
- * and notes;
- * `token` is the `{id}.{signature}` from the link. Reads go through the site
- * Worker's `/p/` routes, which verify the token and cache at the edge. Grading
- * calls the API directly so it sees the visitor's IP for its per-IP caps.
+ * Signed-out images and grading of shared standalone quizzes, flashcard sets
+ * and notes; `token` is the `{id}.{signature}` from the link. The site Worker
+ * renders the pages themselves; images go through its `/p/` routes, which
+ * verify the token and cache at the edge. Grading calls the API directly so it
+ * sees the visitor's IP for its per-IP caps.
  */
 async function publicJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -33,24 +25,6 @@ async function publicJson<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return (await response.json()) as T;
 }
-
-export const anonymousQuizQuery = (token: string) =>
-  queryOptions({
-    queryFn: () => publicJson<AnonymousQuiz>(`/p/quizzes/${token}`),
-    queryKey: ['anonymous', 'quiz', token] as const,
-  });
-
-export const anonymousFlashcardsQuery = (token: string) =>
-  queryOptions({
-    queryFn: () => publicJson<AnonymousFlashcards>(`/p/flashcards/${token}`),
-    queryKey: ['anonymous', 'flashcards', token] as const,
-  });
-
-export const anonymousNoteQuery = (token: string) =>
-  queryOptions({
-    queryFn: () => publicJson<AnonymousNote>(`/p/notes/${token}`),
-    queryKey: ['anonymous', 'note', token] as const,
-  });
 
 /** The image URL a signed-out page renders for one of a quiz's assets. */
 export const anonymousAssetUrl = (token: string, assetId: string) =>

@@ -30,6 +30,7 @@ type AnonymousQuiz struct {
 	Name       string          `json:"name"`
 	Privacy    Privacy         `json:"privacy"`
 	Questions  json.RawMessage `json:"questions"`
+	UpdatedAt  time.Time       `json:"updatedAt"`
 	Provenance *Provenance     `json:"provenance,omitempty"`
 	Author     MaterialAuthor  `json:"author"`
 }
@@ -41,6 +42,7 @@ type AnonymousFlashcards struct {
 	Privacy    Privacy            `json:"privacy"`
 	Color      UserColor          `json:"color"`
 	Cards      []materialdoc.Card `json:"cards" nullable:"false"`
+	UpdatedAt  time.Time          `json:"updatedAt"`
 	Provenance *Provenance        `json:"provenance,omitempty"`
 	Author     MaterialAuthor     `json:"author"`
 }
@@ -112,7 +114,7 @@ func (s *Store) AnonymousQuiz(ctx context.Context, id string) (AnonymousQuiz, er
 	if err != nil {
 		return AnonymousQuiz{}, err
 	}
-	return AnonymousQuiz{ID: mt.ID, Name: mt.Title, Privacy: mt.Privacy, Questions: qs, Provenance: mt.Provenance, Author: mt.Author}, nil
+	return AnonymousQuiz{ID: mt.ID, Name: mt.Title, Privacy: mt.Privacy, Questions: qs, UpdatedAt: mt.UpdatedAt, Provenance: mt.Provenance, Author: mt.Author}, nil
 }
 
 func (s *Store) AnonymousFlashcards(ctx context.Context, id string) (AnonymousFlashcards, error) {
@@ -124,7 +126,7 @@ func (s *Store) AnonymousFlashcards(ctx context.Context, id string) (AnonymousFl
 	if err != nil {
 		return AnonymousFlashcards{}, err
 	}
-	return AnonymousFlashcards{ID: mt.ID, Name: mt.Title, Privacy: mt.Privacy, Color: mt.Color, Cards: cards, Provenance: mt.Provenance, Author: mt.Author}, nil
+	return AnonymousFlashcards{ID: mt.ID, Name: mt.Title, Privacy: mt.Privacy, Color: mt.Color, Cards: cards, UpdatedAt: mt.UpdatedAt, Provenance: mt.Provenance, Author: mt.Author}, nil
 }
 
 // AnonymousNote is a standalone note's read projection (Plate JSON), which the

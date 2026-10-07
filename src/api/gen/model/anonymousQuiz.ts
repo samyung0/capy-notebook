@@ -17,4 +17,5 @@ export interface AnonymousQuiz {
   privacy: Privacy;
   provenance?: Provenance;
   questions: unknown;
+  updatedAt: string;
 }

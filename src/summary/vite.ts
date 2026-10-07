@@ -2,8 +2,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Plugin } from 'vite';
 
-/** Use the deployed renderer and routing for local full-stack and tunnel
- * sessions too. */
+const MSW_SHARE_LINK =
+  /^(\/share\/[a-z]+\/)([a-z]+_[A-Za-z0-9_-]+)\.mswSignature0000$/;
+
+/** Use the deployed renderer and routing (workers/site/handler.ts) for local
+ * MSW, full-stack and tunnel sessions too. */
 export function summaryVitePlugin(
   apiOrigin: string,
   appOrigin: string,
@@ -14,17 +17,26 @@ export function summaryVitePlugin(
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         const pathname = req.url?.split('?')[0] ?? '';
-        // MSW signs share links with a placeholder the Worker would reject,
-        // so there /share/* only swaps in the share entry.
-        if (pathname.startsWith('/share/') && useMsw) {
-          req.url = `/share.html${req.url?.slice(pathname.length) ?? ''}`;
-          return next();
+        // MSW's share links carry a placeholder signature; sign them so the
+        // Worker's own check runs (src/mocks/db.ts mockSharePath).
+        const placeholder = pathname.match(MSW_SHARE_LINK);
+        if (placeholder && useMsw) {
+          const { shareToken } = await server.ssrLoadModule(
+            '/src/lib/shareLink.ts'
+          );
+          res.statusCode = 302;
+          res.setHeader(
+            'Location',
+            `${placeholder[1]}${await shareToken(shareLinkSecret, placeholder[2])}${req.url?.slice(pathname.length) ?? ''}`
+          );
+          return res.end();
         }
-        // Under MSW the browser worker answers /p/ routes itself.
-        const isPublic =
-          (pathname.startsWith('/p/') || pathname.startsWith('/share/')) &&
-          !useMsw;
-        if (!pathname.startsWith('/w/') && !isPublic) return next();
+        if (
+          !['/w/', '/p/', '/share/'].some((prefix) =>
+            pathname.startsWith(prefix)
+          )
+        )
+          return next();
         try {
           const { handleSiteRequest } = await server.ssrLoadModule(
             '/workers/site/handler.ts'
@@ -35,21 +47,31 @@ export function summaryVitePlugin(
             },
             method: req.method,
           });
-          // Browser MSW cannot intercept this server-side request.
-          const fetchSummary: typeof fetch = useMsw
-            ? async (input) => {
-                const { mockWorkspaceSummary } = await server.ssrLoadModule(
-                  '/src/mocks/workspaceSummary.ts'
-                );
-                const id = new URL(
-                  input instanceof Request ? input.url : String(input)
-                ).pathname.split('/')[4];
-                const summary = mockWorkspaceSummary(id);
-                return summary
-                  ? Response.json(summary)
-                  : new Response(null, { status: 404 });
-              }
-            : fetch;
+          // Browser MSW cannot intercept the Worker's server-side requests;
+          // answer them from the same handlers here.
+          const fetchMocked: typeof fetch = async (input) => {
+            const upstream =
+              input instanceof Request ? input : new Request(String(input));
+            const url = new URL(upstream.url);
+            if (url.pathname.startsWith('/api/public/workspaces/')) {
+              const { mockWorkspaceSummary } = await server.ssrLoadModule(
+                '/src/mocks/workspaceSummary.ts'
+              );
+              const summary = mockWorkspaceSummary(url.pathname.split('/')[4]);
+              return summary
+                ? Response.json(summary)
+                : new Response(null, { status: 404 });
+            }
+            const [{ getResponse }, { handlers }] = await Promise.all([
+              import('msw'),
+              server.ssrLoadModule('/src/mocks/handlers.ts'),
+            ]);
+            return (
+              (await getResponse(handlers, upstream, {
+                baseUrl: url.origin,
+              })) ?? new Response(null, { status: 404 })
+            );
+          };
           const response: Response = await handleSiteRequest(
             request,
             {
@@ -76,7 +98,7 @@ export function summaryVitePlugin(
               },
               SHARE_LINK_SECRET: shareLinkSecret,
             },
-            fetchSummary
+            useMsw ? fetchMocked : fetch
           );
           res.statusCode = response.status;
           response.headers.forEach((value, key) => {

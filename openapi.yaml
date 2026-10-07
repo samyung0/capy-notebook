@@ -266,12 +266,16 @@ components:
           $ref: "#/components/schemas/Privacy"
         provenance:
           $ref: "#/components/schemas/Provenance"
+        updatedAt:
+          format: date-time
+          type: string
       required:
         - id
         - name
         - privacy
         - color
         - cards
+        - updatedAt
         - author
       type: object
     AnonymousNote:
@@ -330,11 +334,15 @@ components:
         provenance:
           $ref: "#/components/schemas/Provenance"
         questions: {}
+        updatedAt:
+          format: date-time
+          type: string
       required:
         - id
         - name
         - privacy
         - questions
+        - updatedAt
         - author
       type: object
     AssignableRole:

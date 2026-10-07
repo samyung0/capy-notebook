@@ -154,7 +154,6 @@ describe('public workspace SSR', () => {
       expect(html).toContain('Go back');
       expect(html).not.toContain('class="summary-meta"');
       expect(html).not.toContain('class="summary-header"');
-      expect(html).toContain('id="summary-error" data-status="404"');
       expect(html).not.toMatch(PRIVATE_CONTENT);
       bodies.push(html);
     }
@@ -191,7 +190,6 @@ describe('public workspace SSR', () => {
       const html = await result.text();
       expect(html).toContain('data-error-surface="page"');
       expect(html).toContain('Try again');
-      expect(html).toContain('id="summary-error" data-status="503"');
       expect(result.headers.get('Cache-Control')).toBe('no-store');
       expect(fetcher).toHaveBeenCalledTimes(1);
     }
@@ -269,32 +267,16 @@ describe('summary edge caching', () => {
 });
 
 describe('site routing and isolation', () => {
-  it('serves signed /share pages from the share entry and 404s forged ones before any API call', async () => {
+  it('404s forged /share links and unknown kinds before any API call', async () => {
     const token = (await sharePath(DEV_SHARE_LINK_SECRET, 'qz_1')).slice(3);
-    const assets = vi.fn(async (asset: Request) =>
-      asset.url.endsWith('/share.html')
-        ? new Response('share entry')
-        : new Response(template)
-    );
     const fetcher = upstream();
-    const page = await handleSiteRequest(
-      request(`/share/quizzes/${token}?anonymous`),
-      { ...env, ASSETS: { fetch: assets } },
-      fetcher
-    );
-    expect(await page.text()).toBe('share entry');
     for (const path of [
       // Another item's signature.
       `/share/quizzes/qz_2.${token.split('.')[1]}`,
       `/share/workspaces/${token}`,
     ]) {
-      const refused = await handleSiteRequest(
-        request(path),
-        { ...env, ASSETS: { fetch: assets } },
-        fetcher
-      );
+      const refused = await handleSiteRequest(request(path), env, fetcher);
       expect(refused.status).toBe(404);
-      expect(await refused.text()).not.toContain('share entry');
     }
     expect(fetcher).not.toHaveBeenCalled();
   });

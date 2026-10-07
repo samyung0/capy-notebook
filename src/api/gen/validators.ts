@@ -3551,7 +3551,8 @@ export const GetAnonymousFlashcardsResponse = zod.object({
   "title": zod.string(),
   "url": zod.string()
 })).nullish()
-}).optional()
+}).optional(),
+  "updatedAt": zod.iso.datetime({"offset":true})
 })
 
 
@@ -3754,7 +3755,8 @@ export const GetAnonymousQuizResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
-  "questions": zod.unknown()
+  "questions": zod.unknown(),
+  "updatedAt": zod.iso.datetime({"offset":true})
 })
 
 

@@ -99,7 +99,13 @@ export function QuizPageHeader({
           )}
         </div>
         {byline}
-        {meta && <p className="t-meta -mt-1 text-fg-muted">{meta}</p>}
+        {/* Under a byline the meta belongs to the content below, so it sits
+            further from the owner than the owner from the title. */}
+        {meta && (
+          <p className={cn('t-meta text-fg-muted', byline ? 'mt-2' : '-mt-1')}>
+            {meta}
+          </p>
+        )}
       </div>
       {topBar}
     </header>

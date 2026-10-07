@@ -1,6 +1,5 @@
 import { Fragment, type ReactNode, useState } from 'react';
-import type { MaterialAuthor, Provenance } from '@/api/types';
-import { PublicByline } from '@/components/app/PublicHeader';
+import type { Provenance } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import type { FlashcardContent } from '@/features/materials/blocks';
@@ -22,7 +21,7 @@ type Frame = (props: { children: ReactNode }) => ReactNode;
  * takes no rating. */
 export function StudyBody({
   actions,
-  author,
+  byline,
   cards,
   embedded,
   footer,
@@ -38,7 +37,7 @@ export function StudyBody({
   actions?: ReactNode;
   /** Public pages: the owner under the title, and the card count above the
    * card instead of in the header. */
-  author?: MaterialAuthor;
+  byline?: ReactNode;
   cards: FlashcardContent[];
   /** Inside a note: no header, frame or page padding, and no Show answer
    * button (the card flips when clicked); the card count sits above it. */
@@ -88,11 +87,11 @@ export function StudyBody({
       {!embedded && (
         <QuizPageHeader
           actions={actions}
-          byline={author && <PublicByline author={author} />}
+          byline={byline}
           // Public pages have no label row, so the title sits higher.
-          className={author ? 'pt-2 sm:pt-2' : undefined}
+          className={byline ? 'pt-2 sm:pt-2' : undefined}
           meta={
-            !author &&
+            !byline &&
             position && <span className="t-subtitle">{position}</span>
           }
           onBack={onBack}
@@ -108,7 +107,7 @@ export function StudyBody({
           {card ? (
             <>
               <div>
-                {(author || embedded) && (
+                {(byline || embedded) && (
                   <p className="t-subtitle mb-1 text-fg-muted">{position}</p>
                 )}
                 <div className="relative pt-6">

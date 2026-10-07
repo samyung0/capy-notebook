@@ -153,16 +153,15 @@ for (const kind of kinds) {
     }) => {
       for (const item of [kind.link, kind.public]) {
         const path = await sharePath(ownerApi, kind.api, item);
-        const response = waitForApi(
-          otherPage,
-          apiEndsWith(path.replace('/share/', '/p/'))
-        );
-        await otherPage.goto(path);
-        const read = await response;
-        expect(read.status()).toBe(200);
+        const page = await otherPage.goto(path);
+        expect(page?.status()).toBe(200);
         if (kind.kind === 'quiz') {
-          // Taking reads no answer key.
-          const { questions } = await read.json();
+          // The page hydrates from the data it was rendered with, which
+          // carries no answer key.
+          const { quiz } = JSON.parse(
+            (await otherPage.locator('#share-state').textContent()) ?? '{}'
+          );
+          const { questions } = quiz;
           expect(questions.length).toBeGreaterThan(0);
           expect(JSON.stringify(questions)).not.toMatch(
             /"(correct|accepted|pairs|solution|markscheme)"/
@@ -176,6 +175,11 @@ for (const kind of kinds) {
         ).toBeVisible();
       }
       // The session is read only when saving: signed in, it goes to the account.
+      // The server's HTML shows before the page is live; act once hydrated.
+      await expect(otherPage.locator('html')).toHaveAttribute(
+        'data-hydrated',
+        ''
+      );
       if (kind.kind === 'quiz') {
         const saved = waitForApi(
           otherPage,

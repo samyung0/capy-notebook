@@ -6,11 +6,21 @@ import {
 } from '../../src/lib/shareLink';
 import { handleSiteRequest } from './handler';
 
+const SHARE_TEMPLATE =
+  '<html lang="en"><head><!--capy-share-head--></head><body><!--capy-share-body--></body></html>';
 const env = {
   API_ORIGIN: 'https://api.example.test',
   APP_ORIGIN: 'https://app.example.test',
-  ASSETS: { fetch: vi.fn(async () => new Response('')) },
+  ASSETS: { fetch: vi.fn(async () => new Response(SHARE_TEMPLATE)) },
   SHARE_LINK_SECRET: DEV_SHARE_LINK_SECRET,
+};
+const quiz = {
+  author: { name: 'Mia' },
+  id: 'mat_0123456789',
+  name: 'Cell quiz',
+  privacy: 'link',
+  questions: [],
+  updatedAt: '2026-10-04T10:00:00Z',
 };
 const TOKEN = await shareToken(DEV_SHARE_LINK_SECRET, 'mat_0123456789');
 const request = (path: string, init?: RequestInit) =>
@@ -26,12 +36,14 @@ const cacheStub = () => {
 };
 
 describe('anonymous material routes', () => {
-  it('stops forged and unsigned tokens before the API', async () => {
+  it('stops forged, unsigned and data paths before the API', async () => {
     const fetcher = vi.fn<typeof fetch>();
     for (const path of [
-      `/p/quizzes/${TOKEN.slice(0, -1)}x`,
-      '/p/quizzes/mat_0123456789',
-      `/p/quizzes/${TOKEN}/grade`,
+      `/p/quizzes/${TOKEN.slice(0, -1)}x/assets/asset_1`,
+      '/p/quizzes/mat_0123456789/assets/asset_1',
+      // Pages render in the Worker now; there is no JSON read.
+      `/p/quizzes/${TOKEN}`,
+      `/p/notes/${TOKEN}`,
     ]) {
       const response = await handleSiteRequest(request(path), env, fetcher);
       expect(response.status).toBe(404);
@@ -39,62 +51,52 @@ describe('anonymous material routes', () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it('caches a quiz at the edge and serves repeats without the API', async () => {
-    const fetcher = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(
-        Response.json({ id: 'mat_0123456789', questions: [] })
-      );
+  it('renders a shared page once per locale and serves repeats from the edge', async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => Response.json(quiz));
     const cache = cacheStub();
     const first = await handleSiteRequest(
-      request(`/p/quizzes/${TOKEN}`),
+      request(`/share/quizzes/${TOKEN}`),
       env,
       fetcher,
       cache
     );
-    const second = await handleSiteRequest(
-      request(`/p/quizzes/${TOKEN}`),
-      env,
-      fetcher,
-      cache
-    );
+    expect(first.status).toBe(200);
     expect(first.headers.get('Cache-Control')).toBe(
       'public, s-maxage=300, max-age=0, must-revalidate'
     );
-    expect(await second.json()).toEqual({
-      id: 'mat_0123456789',
-      questions: [],
-    });
+    expect(first.headers.get('X-Robots-Tag')).toBe('noindex, nofollow');
+    const html = await first.text();
+    expect(html).toContain('<title>Cell quiz | Capy Notebook</title>');
+    expect(html).toContain('Updated Oct 4, 2026');
+    // The data the browser hydrates from, so it fetches nothing.
+    expect(html).toContain('<script type="application/json" id="share-state">');
+    await handleSiteRequest(
+      request(`/share/quizzes/${TOKEN}`),
+      env,
+      fetcher,
+      cache
+    );
     expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(
-      String(
-        fetcher.mock.calls[0][0] instanceof Request
-          ? fetcher.mock.calls[0][0].url
-          : ''
-      )
-    ).toBe(`https://api.example.test/api/public/quizzes/${TOKEN}`);
+    expect((fetcher.mock.calls[0][0] as Request).url).toBe(
+      `https://api.example.test/api/public/quizzes/${TOKEN}`
+    );
+    expect(cache.put.mock.calls[0][0].url).toBe(
+      'https://app.example.test/share/quizzes/mat_0123456789?lang=en'
+    );
   });
 
-  it('reads a shared note and its images through the same token check', async () => {
-    const fetcher = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(Response.json({ id: 'mat_0123456789' }));
+  it('answers a private or missing item with the not-found page', async () => {
+    const fetcher = vi.fn<typeof fetch>(
+      async () => new Response('PRIVATE', { status: 404 })
+    );
     const response = await handleSiteRequest(
-      request(`/p/notes/${TOKEN}`),
+      request(`/share/notes/${TOKEN}`),
       env,
       fetcher
     );
-    expect(response.status).toBe(200);
-    expect((fetcher.mock.calls[0][0] as Request).url).toBe(
-      `https://api.example.test/api/public/notes/${TOKEN}`
-    );
-    const forged = await handleSiteRequest(
-      request(`/p/notes/${TOKEN.slice(0, -1)}x/assets/asset_1`),
-      env,
-      fetcher
-    );
-    expect(forged.status).toBe(404);
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(404);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(await response.text()).not.toContain('PRIVATE');
   });
 
   it('keeps browsers revalidating when the edge returns a cached copy', async () => {
@@ -111,7 +113,11 @@ describe('anonymous material routes', () => {
       put: vi.fn(),
     };
     const summary = await sharePath(DEV_SHARE_LINK_SECRET, 'ws_0123456789');
-    for (const path of [`/p/quizzes/${TOKEN}`, summary]) {
+    for (const path of [
+      `/share/quizzes/${TOKEN}`,
+      `/p/quizzes/${TOKEN}/assets/asset_1`,
+      summary,
+    ]) {
       const response = await handleSiteRequest(
         request(path),
         env,

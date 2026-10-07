@@ -2169,7 +2169,8 @@ if (sharedNote)
   };
 
 /** Standalone quizzes, flashcard sets and notes share through a signed link.
- * MSW has no Worker to verify it, so the signature is a fixed placeholder. */
+ * Signing is async, so mocks write a placeholder that the dev server swaps for
+ * a real signature on the first visit (src/summary/vite.ts). */
 export function mockSharePath(mt: Material): string | undefined {
   if (mt.workspaceId || mt.parentMaterialId) return;
   if (mt.kind === 'quiz') return `/share/quizzes/${mt.id}.mswSignature0000`;

@@ -7,7 +7,10 @@
    ============================================================ */
 
 [data-style="classroom"] {
-  --font-sans: "Fustat", system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* "Fustat" is the Office frame's own static faces (office-runtime.css). */
+  --font-sans:
+    "Fustat Variable", "Fustat", system-ui, -apple-system, "Segoe UI",
+    sans-serif;
 
   --display-font-size: 3.125rem;
   --display-font-weight: 800;

@@ -40,8 +40,8 @@ import { MediaFrame } from '@/features/materials/MediaFrame';
 import {
   YouTubeEmbed,
   type YouTubeNode,
-  youtubeWatchUrl,
 } from '@/features/materials/YouTubeEmbed';
+import { youtubeWatchUrl } from '@/features/materials/youtubeUrl';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
