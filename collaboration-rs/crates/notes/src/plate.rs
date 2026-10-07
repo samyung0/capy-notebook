@@ -313,12 +313,6 @@ pub fn value<T: ReadTxn>(txn: &T) -> Result<Vec<Value>, ProjectionError> {
     }
 }
 
-/// A fresh document state holding `value` (the bootstrap from
-/// `materials.content` and the compaction rebuild), by a random client.
-pub fn state_from_value(value: &[Value]) -> Vec<u8> {
-    crate::slate_yjs::bootstrap_state(value, 0)
-}
-
 /// `materials.content`: `{"schemaVersion":1,"value":[...]}`.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Content {
