@@ -4,6 +4,8 @@
 # <checkout>: a Capy checkout whose collaboration/src is the oracle (the
 # growth bound of capy-side/plate and main's children.ts), with node_modules
 # and collaboration/node_modules installed. families: comma list, default all.
+# While it runs, the oracle's headless editors keep links, mentions and inline
+# equations inline, as the Rust server's do (inline-oracle.mjs).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 checkout="$(cd "$1" && pwd)"
@@ -26,7 +28,8 @@ cat > "$checkout/collaboration/tsconfig.corpus.json" <<'JSON'
   }
 }
 JSON
-trap 'rm -f "$src/zz-corpus.ts" "$checkout/collaboration/tsconfig.corpus.json"' EXIT
+trap 'rm -f "$src/zz-corpus.ts" "$checkout/collaboration/tsconfig.corpus.json"; node "$here/inline-oracle.mjs" "$src" restore' EXIT
+node "$here/inline-oracle.mjs" "$src" patch
 register="$(cd "$here" && node -p "require('node:url').pathToFileURL(require('node:path').resolve('raw-register.mjs')).href")"
 cd "$checkout/collaboration"
 CORPUS_OUT="$here" CORPUS_FAMILIES="${2:-projection,ops,multi,bootstrap,validation,edits,children,commands,inspect,markdown}" \

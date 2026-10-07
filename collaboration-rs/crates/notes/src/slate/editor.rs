@@ -5,10 +5,10 @@
 //! points. Every operation goes to the yrs document as slate-yjs maps it, in
 //! the caller's transaction, against the tree as it was before it.
 //!
-//! The Node editor answers `isInline` and `isVoid` with `false` for every
-//! element (no Plate plugins): normalization treats an element child of a
-//! text-led element as a block and unwraps it. [Editor::is_inline] keeps that
-//! as one switch.
+//! Unlike the Node editor, which has no Plate plugins and answers `isInline`
+//! with `false` for every element (so normalization unwraps links into their
+//! text), links, mentions and inline equations are inline here
+//! ([INLINE_TYPES]), as in the browser. `isVoid` stays `false`, as in Node.
 
 use std::collections::HashSet;
 
@@ -200,8 +200,19 @@ pub struct Editor<'t, 'doc> {
     normalizing: bool,
     batching: bool,
     refs: Vec<(Tracked, Affinity)>,
-    /// `editor.isInline`: false for every element, as the Node server's.
+    /// `editor.isInline`: [is_inline_type].
     pub is_inline: fn(&Value) -> bool,
+}
+
+/// The inline element types the headless editor keeps inline: links,
+/// mentions and inline equations (Plate's `a`, `mention`, `inline_equation`).
+pub const INLINE_TYPES: [&str; 3] = ["a", "mention", "inline_equation"];
+
+/// Whether `node` is an element of one of the [INLINE_TYPES].
+pub fn is_inline_type(node: &Value) -> bool {
+    node.get("type")
+        .and_then(Value::as_str)
+        .is_some_and(|kind| INLINE_TYPES.contains(&kind))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -235,7 +246,7 @@ impl<'t, 'doc> Editor<'t, 'doc> {
             normalizing: true,
             batching: false,
             refs: Vec::new(),
-            is_inline: |_| false,
+            is_inline: is_inline_type,
         };
         editor.normalize(true)?;
         Ok(editor)
@@ -416,7 +427,7 @@ impl<'t, 'doc> Editor<'t, 'doc> {
         self.root.children_at(path).unwrap_or(&[])
     }
 
-    /// Slate's core `normalizeNode` with `isInline` and `isVoid` false.
+    /// Slate's core `normalizeNode` with [Editor::is_inline] and `isVoid` false.
     fn normalize_node(&mut self, path: &[usize]) -> EResult<()> {
         let is_root = path.is_empty();
         if !is_root {
@@ -792,13 +803,18 @@ impl<'t, 'doc> Editor<'t, 'doc> {
         })
     }
 
-    /// The deepest element on the way to `path` (`Editor.nodes` with a block
-    /// match in `lowest` mode; every element is a block here).
+    /// The deepest block element on the way to `path` (`Editor.nodes` with a
+    /// block match in `lowest` mode): an element that is not inline.
     fn lowest_block(&self, path: &[usize]) -> Option<Path> {
+        let inline = self.is_inline;
         (1..=path.len())
             .rev()
             .map(|i| path[..i].to_vec())
-            .find(|p| self.root.get(p).is_some_and(is_element))
+            .find(|p| {
+                self.root
+                    .get(p)
+                    .is_some_and(|n| is_element(n) && !inline(n))
+            })
     }
 
     /// `Editor.before(point)` with unit `offset`: one unit back, or the end
