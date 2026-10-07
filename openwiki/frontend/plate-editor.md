@@ -405,7 +405,11 @@ overrides it. The agent guidance names the variables and the base. The share
 page hydrates the same `HtmlEmbedView` island (without View source) and
 loads the same Fustat file, so it renders identically. The host accepts only `{type: 'resize', height}`
 from that iframe's own window with a finite height, clamped to 32 to 600 px;
-a taller snippet scrolls inside the frame. The
+a taller snippet scrolls inside the frame. The wrapper reports its height right
+after writing the snippet, on `load` and once fonts are ready, besides a
+`ResizeObserver`: Chrome runs no observers in an off-screen cross-origin frame,
+so without the eager reports a frame further down kept its 240 px default until
+scrolled to. The
 wrapper writes the snippet over itself, which fires a second `load`; a later
 `load` means the snippet navigated its frame (to a page without the
 wrapper's CSP), so the frame is replaced by a notice until the snippet

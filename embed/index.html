@@ -47,15 +47,21 @@
       document.write(data.html);
       document.close();
       const html = document.documentElement;
-      new ResizeObserver(() =>
+      const report = () =>
         parent.postMessage(
           {
             height: Math.ceil(html.getBoundingClientRect().height),
             type: 'resize',
           },
           '*'
-        )
-      ).observe(html);
+        );
+      // Chrome runs no ResizeObserver in an off-screen cross-origin frame, so
+      // the height also goes out now, on load and once fonts are ready: a
+      // frame further down the note is sized before the reader gets there.
+      report();
+      addEventListener('load', report);
+      document.fonts.ready.then(report);
+      new ResizeObserver(report).observe(html);
     });
     </script>
   </head>
