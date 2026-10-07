@@ -1706,10 +1706,12 @@ A text source edits its `source` Y.Text through a plain textarea
 (`bindSourceTextarea` in `src/features/files/sourceTextBinding.ts`). Typing,
 paste, Enter and deletions go in as one edit placed from the selection at
 `beforeinput` and the caret after `input`, so the JavaScript per key does not
-rebuild or rescan the text (0.6–0.9 ms per key at 1 MiB, 7–9 ms at 10 MiB, 26
-ms at 30 MiB, where it was 15, 160 and 554 ms; the textarea itself then takes
-about 0.45 s per key at 10 MiB and 1.9 s at 30 MiB, and decides how large an
-editable text can be). Offsets are mapped only when the source holds a `\r`;
+rebuild or rescan the text: the median key's handlers take 0.5 ms at 1 MiB,
+7–8 ms at 10 MiB and 24 ms at 30 MiB, where they took 15, 160 and 554 ms.
+Most of what is left is the browser computing the selection offsets (handlers
+that only read `selectionStart` and `selectionEnd` take 0.3–0.4, 4–8 and 14 ms
+on the same textarea), and the textarea itself takes about 0.45 s per key at
+10 MiB and 1.9 s at 30 MiB, which decides how large an editable text can be. Offsets are mapped only when the source holds a `\r`;
 anything the binding cannot place (undo from a menu, a drop, autocorrect) is
 diffed against the whole text. An input-method composition is applied at its
 end: without a co-editor's edit meanwhile it replaces the range it started on;

@@ -576,10 +576,21 @@ supported.
 Unsaved work lives in IndexedDB (`src/lib/editDrafts.ts`, database
 `capy-edit-drafts`, shared with Office and text sources), written by a
 dedicated drafts worker (`src/lib/draftStore.ts`, `draftStore.worker.ts`): the
-editor's main thread only posts rows, 0.06–0.09 ms per local edit unthrottled
-against 0.27–0.34 ms for an IndexedDB put of its own, and does no storage
-work (an OPFS log behind the worker measured the same: the cost is the
-message). The worker runs requests in the order they were posted, so a
+editor's main thread only posts rows and does no storage work. The decision
+(2026-10-06) takes whichever measures faster on the main thread. Typing in one
+editor session at CPU x4 with the path switched between interleaved blocks
+(same build and document), the main-thread draft code per local edit was, for
+the worker against an IndexedDB put on the main thread: small note 0.30 against
+1.52 ms, near-limit note 0.44 against 1.12 ms, gradebook XLSX 0.38 against
+1.40 ms, small DOCX 0.19 against 0.61 ms, 62-page DOCX 0.45 against 0.75 ms
+(the main-thread figure leaves out the browser's own IndexedDB dispatch, so it
+is a lower bound). Unthrottled in a bare page: 0.06–0.09 against 0.27–0.34 ms;
+an OPFS log behind the worker measured the same as IndexedDB behind it, since
+the main thread pays only the message. An earlier in-app run that put the
+main-thread path at 0.09–0.11 ms counted only its synchronous call into the
+store, not the transaction work queued after it; whole-task deltas between
+blocks swing by more than the typing itself (±10–250 ms per key) and decide
+nothing. The worker runs requests in the order they were posted, so a
 read sees every write posted before it and a receipt's delete lands after the
 updates it covers. Each editor mount is a session; each of its local Yjs
 updates (origin neither the room provider nor a restore) is one `update` row,
