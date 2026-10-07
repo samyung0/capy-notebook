@@ -7,11 +7,22 @@ export const BASE_BUTTON_STYLE =
   'inline-flex relative rounded-button min-w-0 text-sm cursor-pointer select-none items-center justify-center whitespace-nowrap font-semibold leading-none outline-none transition-all duration-150 ease-out focus-visible:ring-2 focus-visible:ring-action active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50';
 
 export const buttonVariants = cva(BASE_BUTTON_STYLE, {
+  // Radius classes live here because compound classes come after every
+  // variant's, so they override the size's radius (lg is a pill).
+  compoundVariants: [
+    { class: 'rounded-button-lg', rounded: 'large' },
+    { class: 'rounded-button', rounded: 'normal' },
+  ],
   defaultVariants: {
     size: 'md',
     variant: 'dark',
   },
   variants: {
+    /** Unset keeps the size's radius. */
+    rounded: {
+      large: '',
+      normal: '',
+    },
     size: {
       lg: 'h-13 min-w-24 gap-2.25 rounded-full px-6.5 text-[0.925rem]',
       md: 'h-11 gap-2 px-5',
@@ -93,6 +104,7 @@ export function Button({
   children,
   variant = 'dark',
   size = 'md',
+  rounded,
   iconLeft,
   iconRight,
   fullWidth,
@@ -107,7 +119,7 @@ export function Button({
   return (
     <Component
       className={cn(
-        buttonVariants({ size, variant }),
+        buttonVariants({ rounded, size, variant }),
         fullWidth && 'w-full',
         className
       )}

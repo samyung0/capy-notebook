@@ -1,7 +1,9 @@
 /* Static (non-React) plugin registry for read-only material previews.
    Mirrors MaterialKit's node schema using Plate's Base* plugin variants so
-   PlateStatic can render (and markdown can deserialize) without pulling in
-   the editing machinery. Keep node types/keys in sync with notes/plugins.ts. */
+   PlateStatic can render without pulling in the editing machinery. Markdown
+   import adds noteMarkdownPlugin on top (notes/markdownConvert.ts), so the
+   renderer itself never loads the parser. Keep node types/keys in sync with
+   notes/plugins.ts. */
 import {
   BaseBlockquotePlugin,
   BaseBoldPlugin,
@@ -54,7 +56,6 @@ import { BaseTocPlugin } from '@platejs/toc';
 import { common, createLowlight } from 'lowlight';
 import { BaseParagraphPlugin, createSlatePlugin, KEYS } from 'platejs';
 import { createElement } from 'react';
-import { noteMarkdownPlugin } from '@/features/notes/markdown';
 
 // Plugin-derived types are intentionally wider than Plate's base tuple.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -215,7 +216,7 @@ const StaticListKit: AnyPlugin[] = [
   }),
 ];
 
-/** Read-only material document plugins: schema + rendering + markdown import. */
+/** Read-only material document plugins: schema + rendering. */
 export const StaticMaterialKit: AnyPlugin[] = [
   BaseParagraphPlugin,
   BaseH1Plugin,
@@ -271,5 +272,4 @@ export const StaticMaterialKit: AnyPlugin[] = [
     },
   }),
   ...staticCustomBlockPlugins,
-  noteMarkdownPlugin,
 ];

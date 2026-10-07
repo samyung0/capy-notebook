@@ -205,7 +205,6 @@ export function WorkspaceSettingsDialog({
               title={m.action_clone_workspace()}
             >
               <Button
-                className="rounded-input"
                 disabled={cloning}
                 iconLeft="clone"
                 onClick={() =>
@@ -221,6 +220,7 @@ export function WorkspaceSettingsDialog({
                     },
                   })
                 }
+                rounded="large"
                 variant="outline"
               >
                 {cloning ? m.action_cloning() : m.action_clone()}
@@ -236,9 +236,10 @@ export function WorkspaceSettingsDialog({
               title={m.study_reset_title()}
             >
               <Button
-                className="h-fit rounded-input py-2.5"
+                className="h-fit py-2.5"
                 disabled={resetting}
                 onClick={() => setConfirmReset(true)}
+                rounded="large"
                 variant="danger-light"
               >
                 {m.study_reset()}
@@ -250,10 +251,11 @@ export function WorkspaceSettingsDialog({
                 title={m.workspace_delete_action()}
               >
                 <Button
-                  className="h-fit rounded-input py-2.5"
+                  className="h-fit py-2.5"
                   disabled={deleting}
                   iconLeft="trash"
                   onClick={() => setConfirmDelete(true)}
+                  rounded="large"
                   variant="danger"
                 >
                   {m.action_delete()}

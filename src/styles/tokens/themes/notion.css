@@ -50,6 +50,7 @@
   /* Low radii — rounded corners, not bubbles */
   --radius-input: 6px;
   --radius-button: 6px;
+  --radius-button-lg: 6px;
   --radius-row: 6px;
   --radius-card: 8px;
   --radius-card-lg: 10px;

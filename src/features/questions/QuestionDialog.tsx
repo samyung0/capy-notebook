@@ -735,7 +735,6 @@ function QuestionDialogSession({
         editing ? (
           <>
             <Button
-              className="rounded-input"
               disabled={
                 pending || (editing.kind === 'part' && draft.parts.length <= 1)
               }
@@ -744,6 +743,7 @@ function QuestionDialogSession({
                   ? removeBlock(editing.location)
                   : removePart(editing.part.id)
               }
+              rounded="large"
               size="lg"
               type="button"
               variant="danger-light"
@@ -753,9 +753,9 @@ function QuestionDialogSession({
                 : m.question_ui_remove_block()}
             </Button>
             <Button
-              className="rounded-input"
               disabled={pending}
               onClick={() => void saveInner()}
+              rounded="large"
               size="lg"
               type="button"
               variant="accent"
@@ -766,9 +766,9 @@ function QuestionDialogSession({
         ) : (
           <>
             <Button
-              className="rounded-input"
               disabled={pending}
               onClick={onClose}
+              rounded="large"
               size="lg"
               type="button"
               variant="ghost-hover"
@@ -776,9 +776,9 @@ function QuestionDialogSession({
               {m.question_ui_cancel()}
             </Button>
             <Button
-              className="rounded-input"
               disabled={pending}
               onClick={() => void saveQuestion()}
+              rounded="large"
               size="lg"
               type="button"
               variant="accent"

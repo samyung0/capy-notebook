@@ -3,11 +3,7 @@ import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
 import { FileError } from './FileStates';
 
-const MaterialPreview = lazy(() =>
-  import('@/features/materials/MaterialPreview').then((mod) => ({
-    default: mod.MaterialPreview,
-  }))
-);
+const MarkdownPreview = lazy(() => import('./MarkdownPreview'));
 
 /** Markdown / plain-text / JSON viewer over the stored blob. */
 export default function TextView({
@@ -53,7 +49,7 @@ export default function TextView({
   if (markdown) {
     return (
       <Suspense fallback={<Skeleton className="h-[60vh] w-full" />}>
-        <MaterialPreview className="mx-auto max-w-175" content={text} />
+        <MarkdownPreview text={text} />
       </Suspense>
     );
   }

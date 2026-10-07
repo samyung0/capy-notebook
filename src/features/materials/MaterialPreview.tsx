@@ -1,4 +1,3 @@
-import { MarkdownPlugin } from '@platejs/markdown';
 import { createSlateEditor } from 'platejs';
 import { PlateStatic } from 'platejs/static';
 import { useMemo } from 'react';
@@ -6,7 +5,6 @@ import type { MaterialKind } from '@/api/types';
 import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import { cn } from '@/lib/cn';
 import {
-  createMaterialDocument,
   type MaterialDocument,
   type MaterialValue,
   parseMaterialDocument,
@@ -15,7 +13,9 @@ import { MaterialRenderProvider } from './MaterialRenderContext';
 import { staticNoteComponents } from './staticNodeComponents';
 import { StaticMaterialKit } from './staticPlugins';
 
-/** Universal read-only renderer for the checkpointed material projection. */
+/** Universal read-only renderer for the checkpointed material projection.
+ * Markdown files convert first (files/MarkdownPreview.tsx); the renderer
+ * itself carries no markdown parser. */
 export function MaterialPreview({
   content,
   isStandalone,
@@ -23,7 +23,7 @@ export function MaterialPreview({
   className,
   title,
 }: {
-  content: string | MaterialDocument;
+  content: MaterialDocument;
   isStandalone?: boolean;
   kind?: MaterialKind;
   className?: string;
@@ -39,29 +39,10 @@ export function MaterialPreview({
     []
   );
 
-  const value = useMemo<MaterialValue>(() => {
-    const document = parseMaterialDocument(content);
-    if (document) return document.value;
-    try {
-      if (typeof content !== 'string') return content.value;
-      const imported = editor
-        .getApi(MarkdownPlugin)
-        .markdown.deserialize(content) as MaterialValue;
-      return createMaterialDocument(imported).value;
-    } catch (cause) {
-      if (import.meta.env.DEV)
-        console.error(
-          'MaterialPreview: markdown deserialization failed',
-          cause
-        );
-      return [
-        {
-          children: [{ text: typeof content === 'string' ? content : '' }],
-          type: 'p',
-        },
-      ];
-    }
-  }, [content, editor]);
+  const value = useMemo<MaterialValue>(
+    () => parseMaterialDocument(content)?.value ?? content.value,
+    [content]
+  );
   const renderContext = useMemo(
     () =>
       kind && title ? { isStandalone: !!isStandalone, kind, title } : null,

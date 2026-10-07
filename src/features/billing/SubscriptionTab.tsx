@@ -62,18 +62,18 @@ export function SubscriptionTab() {
         </div>
         {tier === 'pro' ? (
           <Button
-            className="rounded-input"
             disabled={portalIsPending}
             onClick={() => openPortal()}
+            rounded="large"
             variant="outline"
           >
             {m.subscription_manage()}
           </Button>
         ) : (
           <Button
-            className="rounded-input"
             disabled={upgrading || !billing}
             onClick={() => void upgrade()}
+            rounded="large"
           >
             {m.billing_upgrade_pro()}
           </Button>

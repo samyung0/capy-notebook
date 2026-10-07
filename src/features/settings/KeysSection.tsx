@@ -71,10 +71,9 @@ function ProviderRow({ provider }: { provider: LLMCredentialProvider }) {
           value={value}
           wrapperClassName="flex-1"
         />
-        {/* md buttons with rounded-input match the input height, as in the
+        {/* md buttons with rounded="large" match the input, as in the
             sharing dialog's link row. */}
         <Button
-          className="rounded-input"
           disabled={saving || !value.trim() || !provider.eligible}
           onClick={() => {
             save(
@@ -82,15 +81,16 @@ function ProviderRow({ provider }: { provider: LLMCredentialProvider }) {
               { onSuccess: () => setValue('') }
             );
           }}
+          rounded="large"
           variant="dark"
         >
           <BusyLabel busy={saving} label={m.settings_llm_key_save()} />
         </Button>
         {provider.last4 ? (
           <Button
-            className="rounded-input"
             disabled={removing}
             onClick={() => remove(provider.providerSlug)}
+            rounded="large"
             variant="danger"
           >
             <BusyLabel busy={removing} label={m.settings_llm_key_remove()} />

@@ -187,9 +187,10 @@ function DangerTab() {
         title={m.settings_danger_zone_title()}
       >
         <Button
-          className="shrink-0 rounded-input"
+          className="shrink-0"
           iconLeft="trash"
           onClick={() => setDeleting(true)}
+          rounded="large"
           variant="danger"
         >
           {m.action_delete()}

@@ -146,10 +146,10 @@ export function CardDialog({
                 </div>
                 <div className="flex justify-end gap-1">
                   <Button
-                    className="rounded-input"
                     disabled={picking}
                     iconLeft="upload"
                     onClick={() => fileInput.current?.click()}
+                    rounded="large"
                     size="sm"
                     type="button"
                     variant="ghost-hover"
@@ -157,10 +157,10 @@ export function CardDialog({
                     {m.question_ui_replace()}
                   </Button>
                   <Button
-                    className="rounded-input"
                     disabled={picking}
                     iconLeft="trash"
                     onClick={() => setImage(undefined)}
+                    rounded="large"
                     size="sm"
                     type="button"
                     variant="danger-light"
@@ -172,10 +172,10 @@ export function CardDialog({
             ) : (
               <div className="grid h-28 place-items-center rounded-card border border-line">
                 <Button
-                  className="rounded-input"
                   disabled={picking}
                   iconLeft="image"
                   onClick={() => fileInput.current?.click()}
+                  rounded="large"
                   size="sm"
                   type="button"
                   variant="ghost-hover"

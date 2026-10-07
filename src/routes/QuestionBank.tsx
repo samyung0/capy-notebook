@@ -411,9 +411,9 @@ export default function QuestionBank() {
                 actions={
                   syllabus?.editor && (
                     <Button
-                      className="rounded-input"
                       iconLeft={mode === 'edit' ? 'view' : 'pencil'}
                       onClick={() => setMode(mode === 'edit' ? 'view' : 'edit')}
+                      rounded="large"
                       size="sm"
                     >
                       {mode === 'edit'
@@ -470,9 +470,9 @@ export default function QuestionBank() {
                 actions={
                   syllabus?.editor && (
                     <Button
-                      className="rounded-input"
                       iconLeft={mode === 'edit' ? 'view' : 'pencil'}
                       onClick={() => setMode(mode === 'edit' ? 'view' : 'edit')}
+                      rounded="large"
                       size="sm"
                     >
                       {mode === 'edit'
@@ -793,11 +793,11 @@ function BankQuestions({
     <div className="grid gap-12">
       {range.start > 0 && (
         <Button
-          className="rounded-input"
           disabled={loadingEarlier}
           fullWidth
           iconLeft="arrowUp"
           onClick={() => void showEarlier()}
+          rounded="large"
           variant="outline"
         >
           {m.question_ui_show_questions({
@@ -923,13 +923,14 @@ function CheckableQuestion({
       <div className="flex justify-end border-divider border-t pt-3">
         {checked ? (
           <Button
-            className="h-7 gap-1 rounded-input px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
+            className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
             iconLeft="refresh"
             iconLeftClassName="size-3.5 sm:size-3.75"
             onClick={() => {
               reset();
               setAnswers({});
             }}
+            rounded="large"
             size="sm"
             variant="ghost-hover"
           >
@@ -937,11 +938,12 @@ function CheckableQuestion({
           </Button>
         ) : (
           <Button
-            className="h-7 gap-1 rounded-input px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
+            className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
             disabled={isPending}
             iconLeft="check"
             iconLeftClassName="size-3.5 sm:size-3.75"
             onClick={() => check(answers)}
+            rounded="large"
             size="sm"
             variant="accent"
           >
@@ -1161,8 +1163,8 @@ function TopicQuestions({
           <>
             <Button
               aria-pressed={!unreviewed}
-              className="rounded-input"
               onClick={() => onUnreviewed(false)}
+              rounded="large"
               size="sm"
               variant={unreviewed ? 'ghost-hover' : 'gray'}
             >
@@ -1170,8 +1172,8 @@ function TopicQuestions({
             </Button>
             <Button
               aria-pressed={unreviewed}
-              className="rounded-input"
               onClick={() => onUnreviewed(true)}
+              rounded="large"
               size="sm"
               variant={unreviewed ? 'gray' : 'ghost-hover'}
             >
@@ -1246,11 +1248,12 @@ function ReviewBar({
       </p>
       <div className="flex justify-end gap-0.5 sm:gap-1.5">
         <Button
-          className="h-7 gap-1 rounded-input px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
+          className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
           disabled={reviewing}
           iconLeft={detail.reviewedAt ? 'x' : 'check'}
           iconLeftClassName="size-3.5 sm:size-3.75"
           onClick={onReview}
+          rounded="large"
           size="sm"
           variant={detail.reviewedAt ? 'danger-light' : 'ghost-hover'}
         >
@@ -1259,10 +1262,11 @@ function ReviewBar({
             : m.question_ui_mark_reviewed()}
         </Button>
         <Button
-          className="h-7 gap-1 rounded-input px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
+          className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
           iconLeft="comment"
           iconLeftClassName="size-3.5 sm:size-3.75"
           onClick={onComment}
+          rounded="large"
           size="sm"
           variant="ghost-hover"
         >
@@ -1270,10 +1274,11 @@ function ReviewBar({
         </Button>
         <Button
           aria-label={m.question_ui_edit_question()}
-          className="h-7 gap-1 rounded-input px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
+          className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
           iconLeft="pencil"
           iconLeftClassName="size-3.5 sm:size-3.75"
           onClick={onEdit}
+          rounded="large"
           size="sm"
           variant="accent"
         >
@@ -1423,8 +1428,8 @@ function BankComment({ id, onClose }: { id: string; onClose: () => void }) {
     <SimpleDialog
       footer={
         <Button
-          className="rounded-input"
           disabled={isPending}
+          rounded="large"
           size="lg"
           type="submit"
           variant="accent"

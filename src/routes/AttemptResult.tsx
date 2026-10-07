@@ -118,8 +118,9 @@ export default function AttemptResult() {
         {attempt.materialId && (
           <Button
             asChild
-            className="mt-12 rounded-input"
+            className="mt-12"
             iconLeft="refresh"
+            rounded="large"
             size="lg"
             variant="outline"
           >

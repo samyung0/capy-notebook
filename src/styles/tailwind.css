@@ -115,6 +115,7 @@
   /* Radii → rounded-* */
   --radius-input: var(--radius-input);
   --radius-button: var(--radius-button);
+  --radius-button-lg: var(--radius-button-lg);
   --radius-card: var(--radius-card);
   --radius-card-lg: var(--radius-card-lg);
   --radius-card-xl: var(--radius-card-xl);

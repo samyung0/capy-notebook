@@ -10,12 +10,15 @@ import {
   type MaterialRefKind,
 } from '@/features/materials/document';
 import { StaticMaterialKit } from '@/features/materials/staticPlugins';
+import { noteMarkdownPlugin } from './markdown';
 import { importMarkdownValue } from './markdownImport';
 
 let editor: SlateEditor | undefined;
 
 export function markdownToDocument(source: string): MaterialDocument {
-  editor ??= createSlateEditor({ plugins: StaticMaterialKit });
+  editor ??= createSlateEditor({
+    plugins: [...StaticMaterialKit, noteMarkdownPlugin],
+  });
   return importMarkdownValue(editor, source);
 }
 

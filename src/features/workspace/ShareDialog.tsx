@@ -319,7 +319,7 @@ export function ShareDialog({
               value={absoluteLink}
               wrapperClassName="has-disabled:pointer-events-auto has-disabled:cursor-auto min-w-40 flex-1"
             />
-            <Button className="rounded-input" onClick={copy} variant="outline">
+            <Button onClick={copy} rounded="large" variant="outline">
               <ContentSwap contentKey={String(copied)} kind="icon">
                 <Icon name={copied ? 'check' : 'link'} />
               </ContentSwap>
@@ -328,7 +328,7 @@ export function ShareDialog({
               </ContentSwap>
             </Button>
             {workspaceId && (
-              <Button asChild className="rounded-input" variant="outline">
+              <Button asChild rounded="large" variant="outline">
                 <a
                   href={absoluteLink}
                   rel="noopener noreferrer"

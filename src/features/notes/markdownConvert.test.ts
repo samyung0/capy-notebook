@@ -2,6 +2,7 @@ import { serializeMd } from '@platejs/markdown';
 import { createSlateEditor } from 'platejs';
 import { describe, expect, it } from 'vitest';
 import { StaticMaterialKit } from '@/features/materials/staticPlugins';
+import { noteMarkdownPlugin } from './markdown';
 import { convertAgentMarkdown, markdownToDocument } from './markdownConvert';
 
 const fence = (lang: string, body: string) => `\`\`\`${lang}\n${body}\n\`\`\``;
@@ -49,7 +50,9 @@ describe('markdownToDocument', () => {
     const [node] = document.value;
     expect(node).toMatchObject({ title: 'Tangent', type: 'html_embed' });
     expect(node.html).toContain('<svg id="fig"></svg>\n<script>draw(40)');
-    const editor = createSlateEditor({ plugins: StaticMaterialKit });
+    const editor = createSlateEditor({
+      plugins: [...StaticMaterialKit, noteMarkdownPlugin],
+    });
     const written = serializeMd(editor, { value: document.value });
     expect(written).toContain('```html-embed');
     expect(markdownToDocument(written).value[0]).toMatchObject({

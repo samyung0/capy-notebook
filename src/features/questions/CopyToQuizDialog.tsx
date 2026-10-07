@@ -154,8 +154,8 @@ export function CopyToQuizDialog({
     <SimpleDialog
       footer={
         <Button
-          className="rounded-input"
           disabled={isPending || !workspaceId}
+          rounded="large"
           size="lg"
           type="submit"
           variant="accent"

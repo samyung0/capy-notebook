@@ -222,22 +222,17 @@ function StorageDialog({
       footer={
         status.payer ? (
           <>
-            <Button
-              asChild
-              className="rounded-input"
-              size="md"
-              variant="ghost-hover"
-            >
+            <Button asChild rounded="large" size="md" variant="ghost-hover">
               <Link to="/settings">{m.account_banner_settings()}</Link>
             </Button>
-            <Button asChild className="rounded-input" size="md">
+            <Button asChild rounded="large" size="md">
               <Link search={{ tab: 'subscription' }} to="/billing">
                 {m.account_banner_subscription()}
               </Link>
             </Button>
           </>
         ) : (
-          <Button className="rounded-input" onClick={onClose} size="md">
+          <Button onClick={onClose} rounded="large" size="md">
             {m.action_close()}
           </Button>
         )

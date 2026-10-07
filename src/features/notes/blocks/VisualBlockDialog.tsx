@@ -65,12 +65,18 @@ export default function VisualBlockDialog({
           <Button
             disabled={isSubmitting}
             onClick={onClose}
+            rounded="large"
             type="button"
             variant="ghost"
           >
             {m.action_cancel()}
           </Button>
-          <Button disabled={isSubmitting} type="submit" variant="accent">
+          <Button
+            disabled={isSubmitting}
+            rounded="large"
+            type="submit"
+            variant="accent"
+          >
             {m.action_save()}
           </Button>
         </>

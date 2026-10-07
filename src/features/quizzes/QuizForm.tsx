@@ -44,10 +44,11 @@ export function QuizForm({
         renderAfter={(question) => (
           <div className="flex justify-end">
             <Button
-              className="h-7 gap-1 rounded-input px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
+              className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
               iconLeft="pencil"
               iconLeftClassName="size-3.5 sm:size-3.75"
               onClick={() => setEditing(question)}
+              rounded="large"
               size="sm"
               type="button"
               variant="ghost-hover"
@@ -55,12 +56,13 @@ export function QuizForm({
               {m.action_edit()}
             </Button>
             <Button
-              className="h-7 gap-1 rounded-input px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
+              className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
               iconLeft="trash"
               iconLeftClassName="size-3.5 sm:size-3.75"
               onClick={() =>
                 onQuestionsChange(questions.filter((q) => q.id !== question.id))
               }
+              rounded="large"
               size="sm"
               type="button"
               variant="danger-light"
@@ -71,10 +73,10 @@ export function QuizForm({
         )}
       />
       <Button
-        className="rounded-input"
         fullWidth
         iconLeft="plus"
         onClick={() => setEditing(blankQuestion())}
+        rounded="large"
         type="button"
         variant="outline"
       >

@@ -124,8 +124,9 @@ export function WorkspaceMemberManager({
           )}
         />
         <Button
-          className="w-19 rounded-input"
+          className="w-19"
           disabled={inviteDisabled}
+          rounded="large"
           type="submit"
           variant="accent"
         >
