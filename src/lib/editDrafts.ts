@@ -93,6 +93,8 @@ const SOURCE_DATABASE = USE_MSW
 // The drafts worker (draftStore.ts) runs every storage request in the order
 // posted: answers resolve `waiting`, a failed append goes to its session.
 let worker: Worker | null = null;
+// A worker that never answered failed to start (a broken deploy, a blocked
+// script): every request fails for this page load rather than restarting it.
 let workerFailed: Error | null = null;
 let nextRequest = 0;
 const waiting = new Map<
@@ -112,7 +114,9 @@ function draftWorker(): Worker {
     new URL('./draftStore.worker.ts', import.meta.url),
     { name: 'drafts', type: 'module' }
   );
+  let answered = false;
   started.onmessage = ({ data }: MessageEvent<DraftReply>) => {
+    answered = true;
     if ('failed' in data) {
       appendFailures.get(data.failed)?.(storageError(data.error));
       return;
@@ -122,11 +126,19 @@ function draftWorker(): Worker {
     if (data.error) waiter?.reject(storageError(data.error));
     else waiter?.resolve(data.result);
   };
-  // A worker that failed to start answers nothing: every request fails.
-  started.onerror = () => {
-    workerFailed = new Error('The drafts worker failed');
-    for (const waiter of waiting.values()) waiter.reject(workerFailed);
+  // An exception in the worker: what it had not answered is lost, so every
+  // waiting request fails and every session hears its appends may be gone
+  // (they write the whole document again). One that had run is replaced by
+  // the next request; transactions are atomic, so its store is consistent.
+  started.onerror = (event) => {
+    event.preventDefault();
+    const error = new Error('The drafts worker failed');
+    started.terminate();
+    if (worker === started) worker = null;
+    if (!answered) workerFailed = error;
+    for (const waiter of waiting.values()) waiter.reject(error);
     waiting.clear();
+    for (const failed of appendFailures.values()) failed(error);
   };
   worker = started;
   return started;
@@ -366,6 +378,9 @@ export function recoveryDocument(rows: EditDraft[]): Y.Doc | null {
   return doc;
 }
 
+// The whole-state retry's floor while storage keeps failing (2026-10-07).
+const RETRY_MS = 5000;
+
 let persistenceRequested = false;
 /** Ask once per page load for storage the browser will not evict under
  * pressure, where asking is silent: Firefox shows a permission prompt, so it
@@ -437,10 +452,14 @@ export function recordDrafts({
   // Update rows written since the last merge of a run of them.
   let unmerged: number[] = [];
   let updateBytes = 0;
-  // The last whole state written, and the update bytes written after it.
+  // The last whole state written, and the bytes of the update rows written
+  // after it that no receipt covered.
   let state: { seq: number; bytes: number } | null = null;
   let sinceState = 0;
-  let writingState = false;
+  // While storage fails, the whole document is retried at most every
+  // RETRY_MS (human/frontend/error-handling.md, 2026-10-07).
+  let retry: ReturnType<typeof setTimeout> | undefined;
+  let lastWhole = Number.NEGATIVE_INFINITY;
   let offline = false;
   // How the current offline episode started (its incident reason).
   let offlineReason: 'browser_offline' | 'unreachable' = 'unreachable';
@@ -487,6 +506,7 @@ export function recordDrafts({
   const failed = (error: unknown) => {
     console.warn('Draft storage failed:', error);
     gap = true;
+    retryWhole();
     if (!storageOk) return;
     storageOk = false;
     onStorage?.(false);
@@ -511,15 +531,22 @@ export function recordDrafts({
     state = { bytes: data.length, seq: sequence };
     sinceState = 0;
     snapshotDue = false;
-    writingState = true;
+    lastWhole = Date.now();
     if (offline) requestPersistence();
-    return write(
-      putDrafts([row('state', sequence, data)], base?.bytes),
-      true
-    ).finally(() => {
-      writingState = false;
-    });
+    return write(putDrafts([row('state', sequence, data)], base?.bytes), true);
   };
+  // A write failed: the whole document holds what it lost, tried at once and
+  // then at most every RETRY_MS while storage keeps failing.
+  function retryWhole() {
+    if (retry || stopped) return;
+    retry = setTimeout(
+      () => {
+        retry = undefined;
+        if (gap && !stopped && !over) void writeState();
+      },
+      Math.max(0, lastWhole + RETRY_MS - Date.now())
+    );
+  }
   // The whole document now, when unsaved work outgrew the last one written
   // (past the offline bound nothing more is stored: the editor stopped).
   const snapshot = () =>
@@ -547,7 +574,7 @@ export function recordDrafts({
       } catch (error) {
         failed(error);
       }
-    if (snapshotDue || (gap && !writingState)) void writeState();
+    if (snapshotDue) void writeState();
     checkLimit();
     if (offline) requestPersistence();
   };
@@ -558,6 +585,7 @@ export function recordDrafts({
 
   const stop = () => {
     stopped = true;
+    clearTimeout(retry);
     appendFailures.delete(session);
     doc.off('update', onUpdate);
     if (typeof window !== 'undefined')
@@ -602,6 +630,7 @@ export function recordDrafts({
       updates = updates.filter((item) => {
         if (item.seq > covered) return true;
         updateBytes -= item.bytes;
+        if (!state || item.seq > state.seq) sinceState -= item.bytes;
         done.push(updateRow(item.seq));
         return false;
       });
@@ -626,8 +655,9 @@ export function recordDrafts({
       offlineReason =
         navigator.onLine === false ? 'browser_offline' : 'unreachable';
       snapshotDue = true;
-      checkLimit();
+      // The base the episode's update rows need, even past the bound.
       void snapshot();
+      checkLimit();
     },
     /** Write the whole document when unsaved work remains (a remount into
      * recovery reads it), and stop. */

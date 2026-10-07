@@ -90,15 +90,32 @@ function open(name: string): Promise<IDBDatabase> {
     if (!database.objectStoreNames.contains('meta'))
       database.createObjectStore('meta');
   };
-  const connection = request(opening).then((database) => {
-    database.onversionchange = () => {
-      database.close();
-      connections.delete(name);
+  const connection = new Promise<IDBDatabase>((resolve, reject) => {
+    opening.onsuccess = () => {
+      const database = opening.result;
+      database.onversionchange = () => {
+        database.close();
+        connections.delete(name);
+      };
+      database.onclose = () => connections.delete(name);
+      // Opened after a block: the requests from now on use it.
+      connections.set(name, Promise.resolve(database));
+      resolve(database);
     };
-    database.onclose = () => connections.delete(name);
-    return database;
+    opening.onerror = () => {
+      connections.delete(name);
+      reject(opening.error);
+    };
+    // Another tab holds an older version open and ignores the upgrade. The
+    // open waits for it, and so would every request behind it: they fail at
+    // once instead (the editor shows it cannot save on this device) until it
+    // goes through.
+    opening.onblocked = () =>
+      reject(
+        new DOMException('The drafts database is blocked', 'BlockedError')
+      );
   });
-  connection.catch(() => connections.delete(name));
+  connection.catch(() => undefined);
   connections.set(name, connection);
   return connection;
 }
@@ -321,10 +338,16 @@ function run(name: string, message: DraftRequest): Promise<unknown> {
             if (--waiting || found.length < 2) return;
             found.sort((a, b) => a.seq - b.seq);
             const last = found.at(-1)!;
-            stores.drafts.put({
-              ...last,
-              data: Y.mergeUpdates(found.map((row) => row.data)),
-            });
+            // A row that cannot be merged leaves the run as it was.
+            let data: Uint8Array;
+            try {
+              data = Y.mergeUpdates(found.map((row) => row.data));
+            } catch (error) {
+              console.warn('Draft merge failed:', error);
+              current.transaction?.abort();
+              return;
+            }
+            stores.drafts.put({ ...last, data });
             for (const row of found.slice(0, -1)) stores.drafts.delete(row.id);
           };
         }

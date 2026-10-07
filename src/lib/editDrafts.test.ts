@@ -6,21 +6,33 @@ import type { DraftMessage, DraftReply } from './draftStore';
 // The drafts worker, run in this process: messages are copied as
 // postMessage copies them, and each worker loads its own store module (a
 // fresh one after vi.resetModules, like a new page).
-vi.stubGlobal(
-  'Worker',
-  class {
-    onmessage: ((event: { data: DraftReply }) => void) | null = null;
-    store = import('./draftStore');
-    postMessage(message: DraftMessage) {
-      const copy = structuredClone(message);
-      void this.store.then(({ handleDraftMessage }) =>
-        handleDraftMessage(copy, (answer) =>
-          this.onmessage?.({ data: structuredClone(answer) })
-        )
-      );
-    }
+class InProcessWorker {
+  static started: InProcessWorker[] = [];
+  onerror: ((event: Event) => void) | null = null;
+  onmessage: ((event: { data: DraftReply }) => void) | null = null;
+  store = import('./draftStore');
+  terminated = false;
+  // The documents this worker was asked about.
+  keys = new Set<string>();
+  constructor() {
+    InProcessWorker.started.push(this);
   }
-);
+  postMessage(message: DraftMessage) {
+    const copy = structuredClone(message);
+    if ('key' in copy) this.keys.add(copy.key);
+    if (copy.op === 'append') this.keys.add(copy.row.key);
+    void this.store.then(({ handleDraftMessage }) =>
+      handleDraftMessage(copy, (answer) => {
+        if (!this.terminated)
+          this.onmessage?.({ data: structuredClone(answer) });
+      })
+    );
+  }
+  terminate() {
+    this.terminated = true;
+  }
+}
+vi.stubGlobal('Worker', InProcessWorker);
 
 // The sweep reports what it drops (edit_incidents) through the API client.
 const post = vi.hoisted(() => vi.fn(async () => undefined));
@@ -276,6 +288,29 @@ describe('the draft store', () => {
     expect(report).toHaveBeenCalledOnce();
   });
 
+  it('fails a request whose database open is blocked instead of waiting for it', async () => {
+    await new Promise((resolve) => {
+      indexedDB.deleteDatabase('capy-edit-drafts').onsuccess = resolve;
+    });
+    // A tab of an older build holds version 1 open and ignores the upgrade.
+    const old = await new Promise<IDBDatabase>((resolve, reject) => {
+      const opening = indexedDB.open('capy-edit-drafts', 1);
+      opening.onsuccess = () => resolve(opening.result);
+      opening.onerror = () => reject(opening.error);
+    });
+    old.onversionchange = () => undefined;
+    vi.resetModules();
+    const fresh = await import('./editDrafts');
+    await expect(fresh.readDrafts('u_blocked:material:m')).rejects.toThrow();
+    // Every request meanwhile fails at once, behind the same open.
+    await expect(fresh.readDrafts('u_blocked:material:m')).rejects.toThrow();
+    // Once it lets go, the waiting open goes through and requests work.
+    old.close();
+    await vi.waitFor(async () =>
+      expect(await fresh.readDrafts('u_blocked:material:m')).toEqual([])
+    );
+  });
+
   it('upgrades a version 1 database, keeping its drafts', async () => {
     await new Promise((resolve) => {
       indexedDB.deleteDatabase('capy-edit-drafts').onsuccess = resolve;
@@ -370,6 +405,68 @@ describe('the draft store', () => {
     expect(
       (await fresh.readDrafts('u_old:file:f_old')).map((entry) => entry.session)
     ).toEqual(['old-session']);
+  });
+});
+
+describe('the drafts worker failing', () => {
+  it('tells sessions their writes were lost and starts a new worker after one that ran', async () => {
+    const key = 'u_1:material:worker-error';
+    const onStorage = vi.fn();
+    const report = vi.fn();
+    const { client } = noteRecorder(key, 'a', { onStorage, report });
+    await readDrafts(key);
+    const running = InProcessWorker.started.find((started) =>
+      started.keys.has(key)
+    )!;
+    client.getText('content').insert(1, 'b');
+    // An exception inside the worker after appends were posted.
+    running.onerror?.(new Event('error'));
+    expect(onStorage).toHaveBeenLastCalledWith(false);
+    expect(report).toHaveBeenCalledWith(
+      'draft_storage_failed',
+      'write',
+      expect.any(Number)
+    );
+    expect(running.terminated).toBe(true);
+    // A new worker takes the next request, and the retried whole document
+    // holds what the lost appends held.
+    await vi.waitFor(async () => {
+      const rows = await readDrafts(key);
+      expect(rows.some((row) => row.kind === 'state')).toBe(true);
+    });
+    expect(
+      InProcessWorker.started.filter((started) => started.keys.has(key))
+    ).toHaveLength(2);
+    expect(onStorage).toHaveBeenLastCalledWith(true);
+  });
+
+  it('fails every request at once, without starting again, when the worker never started', async () => {
+    let starts = 0;
+    vi.stubGlobal(
+      'Worker',
+      class {
+        onerror: ((event: Event) => void) | null = null;
+        constructor() {
+          starts++;
+          queueMicrotask(() => this.onerror?.(new Event('error')));
+        }
+        postMessage() {}
+        terminate() {}
+      }
+    );
+    try {
+      vi.resetModules();
+      const fresh = await import('./editDrafts');
+      await expect(
+        fresh.readDrafts('u_1:material:no-worker')
+      ).rejects.toThrow();
+      await expect(
+        fresh.readDrafts('u_1:material:no-worker')
+      ).rejects.toThrow();
+      expect(starts).toBe(1);
+    } finally {
+      vi.stubGlobal('Worker', InProcessWorker);
+    }
   });
 });
 
@@ -633,10 +730,13 @@ describe('recording a note session', () => {
     expect(onLimit).not.toHaveBeenCalled();
     recorder.disconnected();
     expect(onLimit).toHaveBeenLastCalledWith(true);
-    // Past the bound nothing more is stored: what was held stays.
+    // Past the bound nothing more is stored: what was held stays, with the
+    // whole note the update rows need as their base.
     client.getText('content').insert(0, 'y');
+    const rows = await readDrafts(key);
+    expect(rows.filter((row) => row.kind === 'state')).toHaveLength(1);
     const text = new Y.Doc();
-    applyDrafts(text, await readDrafts(key), 'restore');
+    applyDrafts(text, rows, 'restore');
     expect(text.getText('content').toString()).toBe('x'.repeat(100));
     expect(report).not.toHaveBeenCalled();
     recorder.connected();
@@ -650,6 +750,50 @@ describe('recording a note session', () => {
     expect(recorder.unsavedBytes).toBeGreaterThan(100);
     recorder.connected();
     expect(report).toHaveBeenCalledOnce();
+  });
+
+  it('retries the whole document at most every 5 s while storage keeps failing', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const key = 'u_1:material:storm';
+    const onStorage = vi.fn();
+    const { client } = noteRecorder(key, 'a', { onStorage });
+    const put = vi
+      .spyOn(IDBObjectStore.prototype, 'put')
+      .mockImplementation(() => {
+        throw new DOMException('full', 'QuotaExceededError');
+      });
+    const wholeTries = () =>
+      put.mock.calls.filter(([row]) => (row as EditDraft).kind === 'state')
+        .length;
+    try {
+      for (let index = 0; index < 20; index++) {
+        client.getText('content').insert(1, 'x');
+        await readDrafts(key);
+        await vi.advanceTimersByTimeAsync(100);
+      }
+      await readDrafts(key);
+      // Typing for 2 s: one whole document, not one per key.
+      expect(wholeTries()).toBe(1);
+      await vi.advanceTimersByTimeAsync(2900);
+      await readDrafts(key);
+      expect(wholeTries()).toBe(1);
+      await vi.advanceTimersByTimeAsync(100);
+      await readDrafts(key);
+      expect(wholeTries()).toBe(2);
+      // Storage works again: the next retry lands with everything.
+      put.mockRestore();
+      await vi.advanceTimersByTimeAsync(5000);
+      const rows = await readDrafts(key);
+      expect(onStorage).toHaveBeenLastCalledWith(true);
+      const restored = new Y.Doc();
+      applyDrafts(restored, rows, 'restore');
+      expect(restored.getText('content').toString()).toBe(
+        client.getText('content').toString()
+      );
+    } finally {
+      put.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it('reports a storage failure and its recovery, and keeps editing', async () => {
@@ -780,6 +924,26 @@ describe('recording a source session', () => {
         ?.getText('source')
         .toString()
     ).toBe('one two three four five');
+  });
+
+  it('bounds a source by what is unsaved, not by everything typed since it opened', async () => {
+    const key = 'u_1:file:saved-bound';
+    const onLimit = vi.fn();
+    const { doc, recorder } = sourceRecorder(key, 'x'.repeat(100), {
+      limitBytes: 2000,
+      onLimit,
+    });
+    const text = doc.getText('source');
+    // Twenty-five replace-alls, each saved: far more than 2000 bytes of
+    // updates, none of them unsaved.
+    for (let round = 0; round < 25; round++) {
+      text.delete(0, text.length);
+      text.insert(0, String(round).padEnd(100, 'y'));
+      await recorder.covered(recorder.sequence);
+    }
+    recorder.disconnected();
+    expect(onLimit).not.toHaveBeenCalled();
+    expect(await readDrafts(key)).toEqual([]);
   });
 
   it('bounds offline edits by the whole state they make', async () => {
