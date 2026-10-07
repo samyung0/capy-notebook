@@ -9,7 +9,7 @@ test('a deleted image comes back on undo', async ({ page }) => {
     'mat_note_bio_feature_matrix',
     'Editor feature matrix'
   );
-  const image = editor.locator('img[src^="data:image/svg+xml"]');
+  const image = editor.getByRole('img', { name: 'animal-cell.svg' });
   await expect(image).toHaveCount(1);
 
   await image.click({ button: 'right' });
