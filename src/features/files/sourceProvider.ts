@@ -83,24 +83,10 @@ export function createSourceProvider(
       provider.disconnect();
       retry = setTimeout(() => provider.connect(), PUBLISHING_RETRY_MS);
     },
+    onDestroy: () => clearTimeout(retry),
   });
   provider.connect();
-  return {
-    connect: () => provider.connect(),
-    destroy: () => {
-      clearTimeout(retry);
-      provider.destroy();
-    },
-    disconnect: () => provider.disconnect(),
-    get hasUnsyncedChanges() {
-      return provider.hasUnsyncedChanges;
-    },
-    get isAuthenticated() {
-      return provider.isAuthenticated;
-    },
-    sendStateless: (payload) => provider.sendStateless(payload),
-    get socketStatus() {
-      return provider.socketStatus;
-    },
-  };
+  // The provider itself, not a wrapper: it is the origin of the remote
+  // updates it applies, which the session tells from local edits by identity.
+  return provider;
 }

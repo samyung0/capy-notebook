@@ -100,9 +100,7 @@ async fn bootstrap(tx: &Transaction<'_>, material_id: &str, schema: i64) -> Resu
         return Err(StoreError::Other("material not found".into()));
     };
     let content: Value = row.get("content");
-    // A random writer for the bootstrap, as a fresh Y.Doc has.
-    let client = u64::from(rand::random::<u32>()) + 1;
-    let state = notes::slate_yjs::state_from_value(envelope_value(&content)?, client);
+    let state = notes::plate::state_from_value(envelope_value(&content)?);
     let schema = i32::try_from(schema)
         .map_err(|_| StoreError::Other("invalid collaboration room schema".into()))?;
     tx.execute(
@@ -473,8 +471,7 @@ pub async fn compact(
         return Err(StoreError::Other("material not found".into()));
     };
     let content: Value = content.get("content");
-    let client_id = u64::from(rand::random::<u32>()) + 1;
-    let state = notes::slate_yjs::state_from_value(envelope_value(&content)?, client_id);
+    let state = notes::plate::state_from_value(envelope_value(&content)?);
     let next_schema = i32::try_from(schema + 1)
         .map_err(|_| StoreError::Other("invalid collaboration room schema".into()))?;
     tx.execute(

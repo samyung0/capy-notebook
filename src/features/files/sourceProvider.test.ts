@@ -22,7 +22,6 @@ vi.mock('@/features/collaboration/roomProvider', () => ({
   RoomProvider: class {
     readonly config: Handlers;
     readonly connect = vi.fn();
-    readonly destroy = vi.fn();
     readonly disconnect = vi.fn();
     constructor(config: Handlers) {
       this.config = config;

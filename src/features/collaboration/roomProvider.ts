@@ -31,6 +31,7 @@ export interface RoomProviderConfig {
   /** The room closed: the server closed this channel, or the socket dropped. */
   onClose?: (event: { code: number; reason: string }) => void;
   onConnect?: () => void;
+  onDestroy?: () => void;
   /** The socket dropped or the room was left. */
   onDisconnect?: () => void;
   onStateless?: (event: { payload: string }) => void;
@@ -100,6 +101,7 @@ export class RoomProvider implements ChannelHandler {
   destroy() {
     this.disconnect();
     this.destroyed = true;
+    this.config.onDestroy?.();
     this.document.off('update', this.documentUpdate);
     this.awareness.off('update', this.awarenessUpdate);
   }

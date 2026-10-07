@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness';
 import * as Y from 'yjs';
+import { createSourceProvider } from '@/features/files/sourceProvider';
 import {
   closedPayload,
   decodeFrame,
@@ -15,6 +16,8 @@ import {
   Writer,
 } from './protocol';
 import { RoomProvider } from './roomProvider';
+
+vi.mock('@/api/auth', () => ({ USE_MSW: false }));
 
 /** An in-page WebSocket the test plays the server through. */
 class FakeSocket {
@@ -257,4 +260,42 @@ it('ends the room when the socket drops and rejoins once it reopens', async () =
   second.open();
   await vi.advanceTimersByTimeAsync(0);
   expect(second.take(MessageKind.Join)).toHaveLength(1);
+});
+
+// useSourceSession tells a peer's update from a local edit by
+// `origin === provider`: the source provider is the origin of what it applies.
+it('applies a peer update with the source provider as its origin', async () => {
+  const document = new Y.Doc();
+  const origins: unknown[] = [];
+  document.on('update', (_update: Uint8Array, origin: unknown) =>
+    origins.push(origin)
+  );
+  const provider = createSourceProvider({
+    document,
+    name: 'source:f1:epoch:1',
+    token: async () => 't',
+    url: `wss://collab.test/${url++}`,
+  });
+  const socket = FakeSocket.instances.at(-1) as FakeSocket;
+  socket.open();
+  await flush();
+  const [join] = socket.take(MessageKind.Join);
+  const peer = new Y.Doc();
+  peer.getText('source').insert(0, 'from a peer');
+  socket.deliver(
+    message(join.channel, MessageKind.Joined, Uint8Array.of(1)),
+    message(
+      join.channel,
+      MessageKind.Sync,
+      syncMessage(SyncKind.Update, Y.encodeStateAsUpdate(peer))
+    )
+  );
+  expect(document.getText('source').toString()).toBe('from a peer');
+  expect(origins).toEqual([provider]);
+  // A remote update sends nothing back and leaves nothing unsynced.
+  expect(
+    socket.take(MessageKind.Sync).map((sent) => readSync(sent.payload).kind)
+  ).toEqual([SyncKind.Step1]);
+  expect(provider.hasUnsyncedChanges).toBe(false);
+  provider.destroy();
 });

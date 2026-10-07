@@ -220,7 +220,7 @@ async fn load(app: &Shared, name: &RoomName) -> Result<(Doc, Kindly, ydoc::Durab
                     }
                     let txn = doc.transact();
                     notes::validate::assert_roots(&txn).map_err(|error| error.to_string())?;
-                    markers::contributors(&doc).map_err(|error| error.to_string())?;
+                    markers::contributors_in(&txn).map_err(|error| error.to_string())?;
                     let metrics =
                         notes::limits::measure(&txn).map_err(|error| error.to_string())?;
                     let durable = ydoc::Durable::of(&txn);
@@ -1450,23 +1450,31 @@ impl Room {
                 crate::eviction::move_lineage(&app, &room, cause).await;
                 return;
             }
-            if stored > projected
-                && let Err(error) = projection::project_doc(&app, &material_id, stored, doc).await
-            {
-                log(
-                    Level::Warn,
-                    "unload projection failed",
-                    json!({ "error": error, "room": material_id }),
-                );
-            }
+            // The projection reads the unloaded document, the fold the rows:
+            // neither waits for the other.
+            let projecting = async {
+                if stored > projected
+                    && let Err(error) =
+                        projection::project_doc(&app, &material_id, stored, doc).await
+                {
+                    log(
+                        Level::Warn,
+                        "unload projection failed",
+                        json!({ "error": error, "room": material_id }),
+                    );
+                }
+            };
             // Compaction while the room is empty (DESIGN.md 3.5).
-            if let Err(error) = note_store::fold(&app.db, &material_id, schema, None).await {
-                observe::capture(
-                    &error.to_string(),
-                    None,
-                    &[("room", &material_id), ("stage", "fold")],
-                );
-            }
+            let folding = async {
+                if let Err(error) = note_store::fold(&app.db, &material_id, schema, None).await {
+                    observe::capture(
+                        &error.to_string(),
+                        None,
+                        &[("room", &material_id), ("stage", "fold")],
+                    );
+                }
+            };
+            tokio::join!(projecting, folding);
         });
     }
 }
@@ -1492,10 +1500,8 @@ fn validate(
     notes::validate::assert_roots(&txn).map_err(|error| StoreError::Invalid(error.to_string()))?;
     let value =
         notes::plate::value(&txn).map_err(|error| StoreError::Invalid(error.to_string()))?;
-    // PENDING rust-notes: the canonical material check (materialDocument.ts,
-    // questions.ts) for this kind; until it lands only the roots and the
-    // bounds are checked here.
-    let _ = kind;
+    notes::material::assert_canonical(&value, kind)
+        .map_err(|error| StoreError::Invalid(error.0))?;
     let metrics = notes::limits::measure_value(&value);
     let code = notes::limits::limit_code(&metrics);
     if let Some(code) = code

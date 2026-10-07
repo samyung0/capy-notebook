@@ -74,10 +74,17 @@ fn contributor(key: &str, value: &Out) -> Result<Contributor, MarkerError> {
 
 /// Every live marker, sorted by key (`documentContributors`).
 pub fn contributors(doc: &Doc) -> Result<Vec<Contributor>, MarkerError> {
-    let map = root(doc);
-    let txn = doc.transact();
+    contributors_in(&doc.transact())
+}
+
+/// [contributors] within a transaction the caller holds. Read-only lookups:
+/// yrs transactions are not re-entrant, so nothing here opens another one.
+pub fn contributors_in<T: ReadTxn>(txn: &T) -> Result<Vec<Contributor>, MarkerError> {
+    let Some(map) = txn.get_map(ydoc::CONTRIBUTORS_ROOT) else {
+        return Ok(Vec::new());
+    };
     let mut out = map
-        .iter(&txn)
+        .iter(txn)
         .map(|(key, value)| contributor(key, &value))
         .collect::<Result<Vec<_>, _>>()?;
     out.sort_by(|a, b| a.key.cmp(&b.key));
@@ -86,7 +93,9 @@ pub fn contributors(doc: &Doc) -> Result<Vec<Contributor>, MarkerError> {
 
 /// Whether the room holds a writer's update no store has committed.
 pub fn pending(doc: &Doc) -> bool {
-    root(doc).len(&doc.transact()) > 0
+    let txn = doc.transact();
+    txn.get_map(ydoc::CONTRIBUTORS_ROOT)
+        .is_some_and(|map| map.len(&txn) > 0)
 }
 
 /// The items of the live markers, which a stored row carries deleted.

@@ -44,7 +44,11 @@ impl Drop for Server {
 
 #[allow(clippy::zombie_processes)]
 async fn start(env: &Env) -> Server {
-    let port = 46_000 + (std::process::id() % 1000) as u16;
+    // A free port per server, so the tests run in parallel.
+    let port = std::net::TcpListener::bind(("127.0.0.1", 0))
+        .and_then(|listener| listener.local_addr())
+        .map(|address| address.port())
+        .expect("a free port");
     let child = Command::new(env!("CARGO_BIN_EXE_capy-collaboration"))
         .env("DATABASE_URL", &env.database)
         .env("REDIS_URL", &env.redis)
@@ -58,7 +62,11 @@ async fn start(env: &Env) -> Server {
         .env("COLLABORATION_MAX_DEBOUNCE_MS", "1000")
         .env("COLLABORATION_PROJECTION_IDLE_MS", "60000")
         .env("APP_ENV", "test")
-        .stdout(Stdio::null())
+        .stdout(if std::env::var_os("CAPY_IT_LOGS").is_some() {
+            Stdio::inherit()
+        } else {
+            Stdio::null()
+        })
         .spawn()
         .expect("the server starts");
     for _ in 0..100 {
@@ -94,7 +102,7 @@ async fn note(env: &Env, text: &str) -> (String, String) {
     });
     client
         .execute(
-            "INSERT INTO materials (id, owner_user_id, kind, title, content) VALUES ($1, $2, 'note', 'IT', $3)",
+            "INSERT INTO materials (id, created_by, kind, title, content) VALUES ($1, $2, 'note', 'IT', $3)",
             &[&material, &user, &content],
         )
         .await
@@ -247,8 +255,13 @@ impl Client {
                 let len = read_var(&bytes, &mut at) as usize;
                 let payload = bytes[at..at + len].to_vec();
                 at += len;
+                // Syncs apply as they arrive; they wait in the inbox only
+                // when asked for.
                 if message_kind == 5 {
                     self.on_sync(&payload).await;
+                    if kind != 5 {
+                        continue;
+                    }
                 }
                 if message_kind == kind && found.is_none() {
                     found = Some(payload);
@@ -263,6 +276,33 @@ impl Client {
                 return found;
             }
         }
+    }
+
+    /// Reads (applying syncs) until `check` holds, for up to 5 s.
+    async fn settle(&mut self, check: impl Fn(&Self) -> bool) -> bool {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while !check(self) {
+            let Ok(Some(Ok(Ws::Binary(bytes)))) =
+                tokio::time::timeout_at(deadline, self.ws.next()).await
+            else {
+                return check(self);
+            };
+            let mut at = 0;
+            while at < bytes.len() {
+                let _channel = read_var(&bytes, &mut at);
+                let kind = bytes[at];
+                at += 1;
+                let len = read_var(&bytes, &mut at) as usize;
+                let payload = bytes[at..at + len].to_vec();
+                at += len;
+                if kind == 5 {
+                    self.on_sync(&payload).await;
+                } else {
+                    self.inbox.push(Msg { kind, payload });
+                }
+            }
+        }
+        true
     }
 
     async fn on_sync(&mut self, payload: &[u8]) {
@@ -350,16 +390,18 @@ async fn two_clients_converge_without_echo_and_the_store_appends_a_row() {
     assert_eq!(a.joined(&room, &token(&room, &user, "write")).await, 1);
     assert_eq!(b.joined(&room, &token(&room, &user, "write")).await, 1);
     // Both receive the bootstrapped note.
-    a.until(6).await;
-    assert_eq!(a.block_text(), "hello");
+    assert!(a.settle(|c| c.block_text() == "hello").await);
+    assert!(b.settle(|c| c.block_text() == "hello").await);
 
     a.type_text(" world").await;
     // A hears its ACK, not its own update.
     let ack = a.until(6).await.expect("ack");
     assert!(!ack.is_empty());
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    b.until(5).await;
-    assert_eq!(b.block_text(), "hello world");
+    assert!(
+        b.settle(|c| c.block_text() == "hello world").await,
+        "{}",
+        b.block_text()
+    );
 
     // A receipt answers once the store committed.
     let request = serde_json::json!({ "id": "r1", "type": "checkpoint-request" }).to_string();
@@ -395,7 +437,7 @@ async fn a_reopened_room_replays_its_log_and_folds_it_once_empty() {
     {
         let mut a = Client::open(server.port).await;
         a.joined(&room, &token(&room, &user, "write")).await;
-        a.until(6).await;
+        assert!(a.settle(|c| c.block_text() == "base").await);
         a.type_text(" plus").await;
         a.until(6).await;
         tokio::time::sleep(Duration::from_millis(1500)).await;
@@ -415,8 +457,11 @@ async fn a_reopened_room_replays_its_log_and_folds_it_once_empty() {
     assert_eq!(rows, 0);
     let mut c = Client::open(server.port).await;
     c.joined(&room, &token(&room, &user, "write")).await;
-    c.until(6).await;
-    assert_eq!(c.block_text(), "base plus");
+    assert!(
+        c.settle(|c| c.block_text() == "base plus").await,
+        "{}",
+        c.block_text()
+    );
 }
 
 #[tokio::test]
@@ -443,7 +488,7 @@ async fn a_read_only_channel_that_writes_is_closed() {
     let room = format!("material:{material}:schema:1");
     let mut client = Client::open(server.port).await;
     assert_eq!(client.joined(&room, &token(&room, &user, "read")).await, 0);
-    client.until(6).await;
+    assert!(client.settle(|c| c.block_text() == "read").await);
     client.type_text("!").await;
     let closed = client.until(4).await.expect("closed");
     assert!(String::from_utf8_lossy(&closed).contains("read-only"));
