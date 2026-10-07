@@ -212,7 +212,11 @@ export async function createNote(run: UatRun, workspaceId: string) {
         `/api/workspaces/${workspaceId}/materials` &&
       response.request().method() === 'POST'
   );
-  await dialog.getByRole('button', { exact: true, name: 'Create' }).click();
+  // The dialog's Create tab shares the name; the submit button comes last.
+  await dialog
+    .getByRole('button', { exact: true, name: 'Create' })
+    .last()
+    .click();
   const response = await created;
   assert.equal(response.status(), 201, await response.text());
   const noteId = string(object(await response.json()).id);
