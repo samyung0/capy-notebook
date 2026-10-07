@@ -15,6 +15,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -218,6 +219,29 @@ function NoteEditorSurface({ children, ...props }: ComponentProps<'div'>) {
 }
 
 /**
+ * Before every commit React saves the focused element's selection, and for a
+ * contenteditable it walks the element's whole DOM to turn the selection into
+ * text offsets (getSelectionInformation). On a near-limit note that walk was
+ * about a quarter of each keystroke. React only does it when the element's
+ * `contentEditable` property reads "true", and only uses the result to put a
+ * selection back after a commit moved focus away; Slate owns the editor's
+ * selection and restores it itself. So to React the editor root's property
+ * reads "inherit". The attribute, which editing follows, is untouched, and
+ * nothing else reads the property (Slate and Plate use the attribute).
+ */
+function hideSelectionFromReact(root: HTMLElement) {
+  const property = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    'contentEditable'
+  );
+  Object.defineProperty(root, 'contentEditable', {
+    configurable: true,
+    get: () => 'inherit',
+    set: (value: string) => property?.set?.call(root, value),
+  });
+}
+
+/**
  * Memoized deliberately. Every prop change here re-renders all ~7k nodes of a
  * near-limit document, and the checkpoint acknowledgement updates footer stats
  * once per save — so the footer must not be able to reach this subtree. It only
@@ -234,6 +258,10 @@ const NoteEditorContent = memo(function NoteEditorContent({
   shouldShowStats: boolean;
 }) {
   const editor = useEditorRef();
+  useLayoutEffect(() => {
+    const root = editor.api.toDOMNode(editor);
+    if (root) hideSelectionFromReact(root);
+  }, [editor]);
   const showEditorPlaceholder = useEditorSelector((current) => {
     const firstNode = current.children[0];
     return (

@@ -1163,6 +1163,16 @@ validation and are not rendered.
   only when a flash starts or ends, and renders the same `data-nav-*`
   attributes Plate would. No stylesheet styles those attributes today, so the
   flash itself is invisible.
+- React saves the focused element's selection before every commit, and for a
+  contenteditable it walks the element's whole DOM to turn it into text
+  offsets (`getSelectionInformation`); on a near-limit note that walk was about
+  a quarter of each keystroke's main-thread time. React reads the selection
+  only when the element's `contentEditable` property is `"true"`, and uses it
+  only to put a selection back after a commit moved focus away, which Slate
+  does itself. So the editor root's `contentEditable` property reads
+  `"inherit"` (`hideSelectionFromReact` in `NoteEditorCore.tsx`); the
+  attribute, which editing follows, is untouched, and Slate and Plate read the
+  attribute. React still refocuses the editor after such a commit.
 - A block's interaction chrome mounts only once the block comes within a
   screen of the note's scroll area or the pointer enters it, and then stays
   (`useNearViewport` in `BlockInteractions.tsx`): the gutter with its drag
