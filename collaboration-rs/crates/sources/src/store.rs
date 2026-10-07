@@ -624,8 +624,10 @@ impl Sources {
         Ok(entries)
     }
 
-    /// Net effects of a whole Office `state` against the indexed baseline (or
-    /// `from`): XLSX reads them off its overrides with the room's replica.
+    /// Net effects of a whole Office `state` against the indexed baseline:
+    /// XLSX reads them off its overrides with the room's replica; DOCX and
+    /// PPTX leave out the moves an edit merely shifted (office-service
+    /// `save_effects`, API v3).
     pub(crate) async fn office_effects(
         &self,
         session: &SourceSession,
@@ -633,7 +635,6 @@ impl Sources {
         sha: &str,
         state: &[u8],
         room: &str,
-        from: Option<&[BaselineEntry]>,
     ) -> Result<Vec<NetEffect>, SourceError> {
         let format = office(session.format)
             .ok_or_else(|| SourceError::Other("not an Office source".into()))?;
@@ -643,15 +644,16 @@ impl Sources {
             base_sha256: sha,
             room: Some(room),
         };
-        let effects = if format == Format::Xlsx && !session.rebuild_pending && from.is_none() {
+        let effects = if format == Format::Xlsx && !session.rebuild_pending {
             self.engines.xlsx_pending_effects(on, state).await?
         } else {
-            let indexed = match from {
-                Some(from) => Arc::new(from.to_vec()),
-                None => self.indexed_baseline(session, base, sha, room).await?,
-            };
+            let indexed = self.indexed_baseline(session, base, sha, room).await?;
             let current = self.engines.baseline(on, state).await?;
-            office_service::compare_baselines(&indexed, &current)
+            if format == Format::Xlsx {
+                office_service::compare_baselines(&indexed, &current)
+            } else {
+                office_service::unshifted_effects(&indexed, &current)
+            }
         };
         Ok(effects.into_iter().map(trim_effect).collect())
     }
@@ -710,13 +712,13 @@ impl Sources {
                     })?;
                     let seed = self.seed(session.format, &base, &sha, Some(&name)).await?;
                     let effects = if merged_rows.is_empty() {
-                        self.office_effects(&session, &base, &sha, state, &name, None)
+                        self.office_effects(&session, &base, &sha, state, &name)
                             .await?
                     } else {
                         let mut layers = vec![state.to_vec()];
                         layers.extend(merged_rows.iter().map(|(_, row)| row.clone()));
                         let merged = whole(session.format, layers).await?;
-                        self.office_effects(&session, &base, &sha, &merged, &name, None)
+                        self.office_effects(&session, &base, &sha, &merged, &name)
                             .await?
                     };
                     (effects, Some(seed.sha256.clone()))
@@ -1512,7 +1514,7 @@ impl Sources {
         let state = self.durable_state(session, &base, &sha).await?;
         if office(session.format).is_some() {
             return self
-                .office_effects(session, &base, &sha, &state, &session.room, None)
+                .office_effects(session, &base, &sha, &state, &session.room)
                 .await;
         }
         let text = crate::text::text_state(&state)
