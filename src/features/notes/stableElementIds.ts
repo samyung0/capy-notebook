@@ -10,6 +10,10 @@ type EditorOperation = {
 function addStableIds(node: unknown): unknown {
   if (!node || typeof node !== 'object') return node;
   const value = structuredClone(node) as Record<string, unknown>;
+  // Plate's NodeIdPlugin marks a node inserted with an id as `_id` and drops
+  // the marker only from its own copy of the operation, not from the one
+  // Slate-Yjs records. The store refuses it on interactive blocks.
+  delete value._id;
   if (ElementApi.isElement(value as never)) {
     if (typeof value.id !== 'string' || !value.id.trim()) {
       value.id = crypto.randomUUID();
