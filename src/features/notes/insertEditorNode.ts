@@ -1,9 +1,14 @@
-import { KEYS, NodeApi } from 'platejs';
+import { KEYS, NodeApi, type Path, RangeApi } from 'platejs';
 
 // Plate's plugin-derived editor type includes transforms that are wider than
 // the base editor type exported by platejs.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type NoteEditorInstance = any;
+
+function isEmptyParagraph(editor: NoteEditorInstance, path: Path) {
+  const block = editor.api.node(path)?.[0];
+  return block?.type === editor.getType(KEYS.p) && NodeApi.string(block) === '';
+}
 
 /**
  * Insert an inline node at the caret, or a block at the current block position.
@@ -17,12 +22,7 @@ export function insertEditorNode(editor: NoteEditorInstance, node: unknown) {
   const isNode = node !== null && typeof node === 'object';
   if (selection && isNode && !editor.api.isInline(node)) {
     const currentBlockPath = [selection.anchor.path[0]];
-    const currentBlock = editor.api.node(currentBlockPath)?.[0];
-
-    if (
-      currentBlock?.type === editor.getType(KEYS.p) &&
-      NodeApi.string(currentBlock) === ''
-    ) {
+    if (isEmptyParagraph(editor, currentBlockPath)) {
       editor.tf.withoutNormalizing(() => {
         editor.tf.removeNodes({ at: currentBlockPath });
         editor.tf.insertNodes(node, { at: currentBlockPath, select: true });
@@ -32,4 +32,49 @@ export function insertEditorNode(editor: NoteEditorInstance, node: unknown) {
   }
 
   editor.tf.insertNodes(node, { select: true });
+}
+
+/**
+ * Hold the place a block command ran for a block whose data arrives after a
+ * round trip, while the user may keep typing or move elsewhere. `insert` puts
+ * the top-level block there: over the command's line while it is still an
+ * empty paragraph, otherwise after it (where the line stood, if it was
+ * deleted). The block takes the caret only if the caret has not moved since.
+ * Call `release` once the round trip settles.
+ */
+export function holdInsertPlace(editor: NoteEditorInstance) {
+  const selection = editor.selection;
+  if (!selection)
+    return {
+      insert: (node: unknown) => insertEditorNode(editor, node),
+      release: () => {},
+    };
+  const index = selection.anchor.path[0];
+  const line = editor.api.pathRef([index]);
+  // Typing at the caret moves the selection but not this ref.
+  const caret = editor.api.rangeRef(selection, { affinity: 'backward' });
+  return {
+    insert(node: unknown) {
+      const still =
+        !!caret.current &&
+        !!editor.selection &&
+        RangeApi.equals(caret.current, editor.selection);
+      const at: Path = line.current
+        ? [line.current[0]]
+        : [Math.min(index, editor.children.length)];
+      if (still) editor.tf.focus();
+      editor.tf.withoutNormalizing(() => {
+        if (line.current && isEmptyParagraph(editor, at)) {
+          editor.tf.removeNodes({ at });
+        } else if (line.current) {
+          at[0] += 1;
+        }
+        editor.tf.insertNodes(node, { at, select: still });
+      });
+    },
+    release() {
+      line.unref();
+      caret.unref();
+    },
+  };
 }

@@ -303,7 +303,11 @@ server-rendered shared note hydrates, and equations render MathLive's static mar
 there (`StaticMathContext`). Inserting through the slash command or toolbar
 creates the row through `POST /api/materials/{noteId}/embedded` (a set with one
 blank card) and inserts the reference at the top level, where it opens in place
-for editing; nothing is inserted when
+for editing. The block goes where the command ran, not where the caret is when
+the row arrives (`holdInsertPlace` in `insertEditorNode.ts`): over the
+command's line while it is still an empty paragraph, otherwise after it, and it
+takes the caret only if the caret has not moved, so typing elsewhere during the
+round trip is kept. Nothing is inserted when
 creation fails, and with the caret inside a callout, column, table or other container
 the quiz, flashcards and mermaid commands do nothing. A reference that lands
 nested (a paste) is lifted to the top level by the plugin's normalizer. Edits

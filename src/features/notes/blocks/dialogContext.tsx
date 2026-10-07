@@ -19,7 +19,7 @@ import {
   type MaterialRefKind,
   materialRefNode,
 } from '@/features/materials/document';
-import { insertEditorNode, type NoteEditorInstance } from '../insertEditorNode';
+import { holdInsertPlace, type NoteEditorInstance } from '../insertEditorNode';
 import { YouTubeDialog } from '../YouTubeDialog';
 import type { NoteVisualBlock } from './VisualBlockDialog';
 
@@ -30,7 +30,8 @@ type SaveYouTubeFn = (videoId: string) => void;
 export interface NoteBlockDialogsApi {
   /** Create the embedded quiz or flashcard set a fence body describes. */
   createEmbedded: (kind: MaterialRefKind, code: string) => Promise<Material>;
-  /** Create the row first, then insert its reference block at the caret. */
+  /** Create the row first, then insert its reference block where the caret
+   * was when the command ran. */
   insertEmbedded: (
     editor: NoteEditorInstance,
     kind: MaterialRefKind,
@@ -111,11 +112,17 @@ export function NoteBlockDialogsProvider({
       createEmbeddedMaterial({ noteId, ...embeddedDraftFromFence(kind, code) }),
     [createEmbeddedMaterial, noteId]
   );
-  // The new block is authored in place: Edit mode shows its editor.
+  // The new block is authored in place: Edit mode shows its editor. It goes
+  // where the command ran, whatever the user did during the round trip.
   const insertEmbedded = useCallback(
     async (editor: NoteEditorInstance, kind: MaterialRefKind, code: string) => {
-      const material = await createEmbedded(kind, code);
-      insertEditorNode(editor, materialRefNode(material.id, kind));
+      const place = holdInsertPlace(editor);
+      try {
+        const material = await createEmbedded(kind, code);
+        place.insert(materialRefNode(material.id, kind));
+      } finally {
+        place.release();
+      }
     },
     [createEmbedded]
   );
