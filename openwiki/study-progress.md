@@ -208,9 +208,15 @@ Leaving the page refreshes progress once the pending ratings settle.
 
 The per-set Study page (`src/routes/FlashcardStudy.tsx`) takes every written
 card in document order; Again sends a card to the end. It uses the quiz pages'
-frame (header with back, breadcrumb and title, "Card 1 of 6" under it) and
-never edits cards: the card is centred and flips on a click, with the rating
-tiles (`src/features/study/RatingTiles.tsx`) under it. Signed in, each rating
+frame (header with back, breadcrumb and title) and never edits cards. The same
+`StudyBody` (`src/features/flashcards/StudyBody.tsx`) serves the page, note
+embeds and the shared page: "Card 1 of 6" centred above the card, which flips
+on a click and carries the text rating buttons
+(`src/features/study/RatingTiles.tsx`) on its back; Previous and Next sit under
+it at the right. Next skips without rating (the card goes to the session's
+end), Previous brings back the card shown before, to rate again. Moving on
+swipes the top card off to the top left over the next one (no motion under
+reduced motion). Signed in, each rating
 posts to `/api/review/ratings`; a shared link opened signed out renders the same
 page, rating with ts-fsrs into IndexedDB, as shared quizzes keep attempts in
 the browser. Embedded sets study there too and send no ratings

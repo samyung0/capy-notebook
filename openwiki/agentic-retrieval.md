@@ -2517,7 +2517,8 @@ question formats out of the write tools into the contract's `formats`, which
 the materials skill quotes (`ContractVersion` in `agenttools.go`,
 `SUPPORTED_VERSION` in `retrieval/contract.py`). Version 13 adds
 `copy_questions`. Version 14 (2026-10-05) drops `fallback` from the
-`html-embed` fence: an interactive carries only `title` and `html`, and the
+`html-embed` fence: an interactive carries only `title` (`caption` since
+version 17) and `html`, and the
 chat's text answer carries the explanation. Version 15 adds `create_deck` and
 `write_slide` ([decks.md](decks.md)). Version 16 (2026-10-06) adds `book` and
 `section` to `search_knowledge`, `count` to `read_knowledge`, and the section
@@ -2525,7 +2526,8 @@ reading arguments (`browse_knowledge.book`, `read_knowledge.book` and
 `.section`), which the pipeline offers only behind `CAPY_LIBRARY_SECTION_TOOLS`;
 `read_knowledge.excerpt_id` is no longer schema-required, and the offered
 production schema puts the requirement and the 12-chunk `count` back
-(`tools.without_sections`). `cmd/openapi -agent-tools`
+(`tools.without_sections`). Version 17 (2026-10-07) renames the
+`html-embed` fence's `title` to `caption`. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
 tools, while the same Go types reach TypeScript through the OpenAPI schema. Go

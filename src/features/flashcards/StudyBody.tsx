@@ -35,12 +35,10 @@ export function StudyBody({
   trail,
 }: {
   actions?: ReactNode;
-  /** Public pages: the owner under the title, and the card count above the
-   * card instead of in the header. */
+  /** Public pages: the owner under the title. */
   byline?: ReactNode;
   cards: FlashcardContent[];
-  /** Inside a note: no header, frame or page padding, and no Show answer
-   * button (the card flips when clicked); the card count sits above it. */
+  /** Inside a note: no header, frame or page padding. */
   embedded?: boolean;
   footer?: ReactNode;
   frame?: Frame;
@@ -57,25 +55,60 @@ export function StudyBody({
   const studyIds = () =>
     cards.filter((c) => c.front.trim() || c.back.trim()).map((c) => c.id);
   const [queue, setQueue] = useState(studyIds);
+  // Cards shown before the current one, most recent last, for Previous.
+  const [history, setHistory] = useState<string[]>([]);
   const [total, setTotal] = useState(queue.length);
   const [flipped, setFlipped] = useState(false);
+  // Each move remounts the card so it animates in: rising from the stack,
+  // or for Previous swiping back from the top left.
+  const [turn, setTurn] = useState({ back: false, n: 0 });
+  // The card swiping away on top of the next one.
+  const [leaving, setLeaving] = useState<{
+    card: FlashcardContent;
+    flipped: boolean;
+  } | null>(null);
   const card = cards.find((c) => c.id === queue[0]);
+
+  function move(next: string[], nextHistory: string[], back = false) {
+    setLeaving(card && !back ? { card, flipped } : null);
+    setTurn((t) => ({ back, n: t.n + 1 }));
+    setQueue(next);
+    setHistory(nextHistory);
+    setFlipped(false);
+  }
 
   function rate(rating: SrsRating) {
     if (!card) return;
     onRate(card, rating);
-    setFlipped(false);
     const [head, ...rest] = queue;
     const next = rating === 'again' ? [...rest, head] : rest;
-    setQueue(next);
+    move(next, [...history, head]);
     if (next.length === 0) onFinished?.(total);
+  }
+
+  /** Skips without rating: the card waits at the end of the session. */
+  function skip() {
+    const [head, ...rest] = queue;
+    move([...rest, head], [...history, head]);
+  }
+
+  function previous() {
+    const prev = history.at(-1);
+    if (!prev) return;
+    move(
+      [prev, ...queue.filter((id) => id !== prev)],
+      history.slice(0, -1),
+      true
+    );
   }
 
   function studyAgain() {
     const ids = studyIds();
     setQueue(ids);
+    setHistory([]);
     setTotal(ids.length);
     setFlipped(false);
+    setLeaving(null);
   }
 
   const position =
@@ -90,10 +123,6 @@ export function StudyBody({
           byline={byline}
           // Public pages have no label row, so the title sits higher.
           className={byline ? 'pt-2 sm:pt-2' : undefined}
-          meta={
-            !byline &&
-            position && <span className="t-subtitle">{position}</span>
-          }
           onBack={onBack}
           title={name}
           topBar={topBar}
@@ -107,49 +136,57 @@ export function StudyBody({
           {card ? (
             <>
               <div>
-                {(byline || embedded) && (
-                  <p className="t-subtitle mb-1 text-fg-muted">{position}</p>
-                )}
+                <p className="t-meta mb-1 text-center text-fg-muted">
+                  {position}
+                </p>
                 <div className="relative pt-6">
                   <div className="absolute inset-x-12 top-0 h-15 rounded-card-lg bg-solid-accent-1/20" />
                   <div className="absolute inset-x-6 top-3 h-15 rounded-card-lg bg-solid-accent-1/40" />
-                  <button
-                    aria-label={
-                      flipped ? m.flashcards_answer() : m.flashcards_term()
-                    }
-                    className="relative flex h-[clamp(300px,48vh,400px)] w-full flex-col items-center justify-center overflow-auto rounded-card-lg border border-line bg-surface p-8 shadow-card"
-                    onClick={() => setFlipped((f) => !f)}
-                    type="button"
-                  >
-                    {flipped ? (
-                      <div className="text-lg">
-                        <CardBack card={card} />
-                      </div>
-                    ) : (
-                      <CardFront card={card} large />
+                  <StudyCard
+                    card={card}
+                    className={cn(
+                      turn.n > 0 &&
+                        (turn.back
+                          ? 'motion-safe:motion-card-swipe-in'
+                          : 'motion-safe:motion-card-rise')
                     )}
-                    <Icon
-                      className="absolute bottom-4 text-fg-muted opacity-60"
-                      name="refresh"
-                      size={20}
+                    flipped={flipped}
+                    key={turn.n}
+                    onFlip={() => setFlipped((f) => !f)}
+                    onRate={rate}
+                  />
+                  {leaving && (
+                    <StudyCard
+                      card={leaving.card}
+                      className="motion-safe:motion-card-swipe-out pointer-events-none absolute inset-x-0 top-6 motion-reduce:hidden"
+                      flipped={leaving.flipped}
+                      inert
+                      key={`leaving-${turn.n}`}
+                      onAnimationEnd={() => setLeaving(null)}
                     />
-                  </button>
+                  )}
                 </div>
               </div>
-              {flipped ? (
-                <RatingTiles onRate={rate} />
-              ) : (
-                !embedded && (
-                  <Button
-                    fullWidth
-                    iconLeft="view"
-                    onClick={() => setFlipped(true)}
-                    rounded="large"
-                  >
-                    {m.flashcards_show_answer()}
-                  </Button>
-                )
-              )}
+              <div className="flex justify-end gap-2">
+                <Button
+                  disabled={history.length === 0}
+                  iconLeft="navigationBack"
+                  onClick={previous}
+                  rounded="large"
+                  variant="outline"
+                >
+                  {m.action_previous()}
+                </Button>
+                <Button
+                  disabled={queue.length < 2}
+                  iconRight="navigationForward"
+                  onClick={skip}
+                  rounded="large"
+                  variant="outline"
+                >
+                  {m.action_next()}
+                </Button>
+              </div>
             </>
           ) : (
             <div className="flex flex-col items-center gap-4 py-16 text-center">
@@ -178,5 +215,69 @@ export function StudyBody({
         </div>
       </div>
     </Shell>
+  );
+}
+
+/** One card face in the stack: clicking flips it, and its back carries the
+ * ratings. */
+function StudyCard({
+  card,
+  className,
+  flipped,
+  inert,
+  onAnimationEnd,
+  onFlip,
+  onRate,
+}: {
+  card: FlashcardContent;
+  className?: string;
+  flipped: boolean;
+  /** The copy swiping away: shown only, never focused or clicked. */
+  inert?: boolean;
+  onAnimationEnd?: () => void;
+  onFlip?: () => void;
+  onRate?: (rating: SrsRating) => void;
+}) {
+  return (
+    <div
+      aria-hidden={inert}
+      className={cn(
+        'relative flex h-[clamp(300px,48vh,400px)] w-full flex-col overflow-hidden rounded-card-lg border border-line bg-surface shadow-card',
+        className
+      )}
+      inert={inert}
+      onAnimationEnd={(e) => {
+        if (e.target === e.currentTarget) onAnimationEnd?.();
+      }}
+    >
+      <button
+        aria-label={
+          flipped ? m.flashcards_answer() : m.flashcards_show_answer()
+        }
+        className="relative flex min-h-0 w-full flex-1 flex-col items-center justify-center overflow-auto p-8"
+        onClick={onFlip}
+        type="button"
+      >
+        {flipped ? (
+          <div className="text-lg">
+            <CardBack card={card} />
+          </div>
+        ) : (
+          <>
+            <CardFront card={card} large />
+            <Icon
+              className="absolute bottom-4 text-fg-muted opacity-60"
+              name="refresh"
+              size={20}
+            />
+          </>
+        )}
+      </button>
+      {flipped && (
+        <div className="px-4 pb-4">
+          <RatingTiles onRate={(rating) => onRate?.(rating)} />
+        </div>
+      )}
+    </div>
   );
 }

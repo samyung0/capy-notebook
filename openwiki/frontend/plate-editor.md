@@ -234,7 +234,7 @@ payer's storage is dropped and only the writer who pasted gets
 `children-refused`, shown as a toast. Nothing is kept in IndexedDB and the
 browser never calls an adopt route.
 
-Image, YouTube and mermaid blocks share `MediaFrame`: a toolbar docked top-right
+Image, YouTube, mermaid, chart and graph blocks share `MediaFrame`: a toolbar docked top-right
 that shows on hover, and in edit mode two side handles that resize the block
 symmetrically and store `width` as a percentage string (`"62%"`). Frames stop at
 48rem wide and images and diagrams at `min(70vh, 48rem)` tall. Clicking an image
@@ -283,8 +283,7 @@ any materials list), and the note stores a void `material_ref` block
 (`{materialId, refKind}`) that renders the item itself, with no title row
 (`src/features/materials/embeds/`): View (note View and the public note page)
 shows the study component in the note's flow (`AttemptBody` / `StudyBody` in
-embedded mode: Submit grades in place, a flashcard flips when clicked with no
-Show answer button), Edit shows the editors in place (`QuizForm`'s Edit and
+embedded mode: Submit grades in place, a flashcard flips when clicked), Edit shows the editors in place (`QuizForm`'s Edit and
 Remove per question and Add question; the `FlashcardsEditor` grid with its hover
 toolbar and Add card), each change saved at once through the item's content
 endpoint, one save at a time. Removing the last question or card removes the
@@ -327,8 +326,13 @@ Removing the reference trashes the row at the next save, hidden for a day (see
 and sets are quick checks that record nothing (attempts, ratings; see
 [study-progress](../study-progress.md)). Mermaid blocks
 stay inline. Mermaid, chart and graph embeds render view-only in every editor
-mode. Selecting a chart or graph shows the shared floating Edit/Copy/Delete
-toolbar; Edit opens a dialog.
+mode. A chart or graph's hover toolbar has Edit/Copy/Delete in edit mode; Edit
+opens a dialog. Toolbar Copy (charts, graphs, Mermaid, HTML
+blocks) fires a real copy event filled by `setFragmentData`, so the clipboard
+holds `application/x-slate-fragment` like Cmd+C; `navigator.clipboard.write`
+cannot carry that type and its paste inserted nothing. Unresized charts open at 28rem and graphs at their image width;
+the chart preview sits on a page-coloured panel because its text uses page
+colours. Shared pages still render them as plain figures (no frame).
 
 Mermaid blocks keep mermaid.js and draw in one of five presets ported from
 modern_mermaid (`mermaidPresets.ts`): Linear Light, Linear Dark, Brutalist,
@@ -358,16 +362,16 @@ preview in the block's theme (Tab indents by two spaces; deleting lives on the
 toolbar); a parse error appears under the source while the
 preview keeps the last diagram that parsed.
 
-Chart and graph nodes store their question block under `block`
-and a single empty text child; graphs export their SVG before saving. Inline
+Chart and graph nodes store their question block under `block`, an optional
+`width`, and a single empty text child; graphs export their SVG before saving. Inline
 and display equations use MathLive in both viewing and editing, including question-editing previews. The math toolbar inserts formulas and common symbol templates.
 
 ## Interactive HTML blocks
 
-`html_embed {id, html, title?}` is a top-level void with one empty text leaf,
+`html_embed {id, html, caption?}` is a top-level void with one empty text leaf,
 shaped like chart and graph (a nested one is lifted by the plugin's
 normalizer). The agent writes it as an ` ```html-embed ` fence with YAML
-`title` and `html` and no fallback (`blocks/shared.ts`, `markdown.ts`); the
+`caption` and `html` and no fallback (`blocks/shared.ts`, `markdown.ts`); the
 collaboration service's converter builds the same node. A fence without html,
 with html over 64 KB, or an eleventh fence is refused by name. Go
 `materialdoc`, the collaboration validator and the browser's
@@ -377,20 +381,31 @@ mermaid. There is no insert command; people edit the snippet through the
 source dialog.
 
 `HtmlEmbed.tsx` renders it in `MediaFrame` (mock A of
-`artifacts/2026-10-04-interactive-blocks.html`): a bordered frame, the title as
-caption after an Interactive label, and a hover toolbar with View source, Copy
+`artifacts/2026-10-04-interactive-blocks.html`, since stripped to a frame
+with no border, radius or label): the caption as muted text under the
+frame, and a hover toolbar with View source, Copy
 and Delete in the editor and View source only in view mode. View source opens
-`HtmlEmbedSourceDialog`: editors change the title and snippet and Save within
+`HtmlEmbedSourceDialog`, titled Source: editors change the caption and snippet and Save within
 the 64 KB cap; read-only users only read it. The snippet runs only in
 `<iframe sandbox="allow-scripts" loading="lazy">` at `VITE_EMBED_ORIGIN/`, the
 wrapper page in `embed/` on its own site (see
 [deployment-runbook.md](../deployment-runbook.md)); without that origin the
 block shows a notice instead of a frame. On the frame's first load the host
-posts `{type: 'render', html, theme}` with target `*` (the frame's origin is
-opaque), where `theme` holds `--bg`, `--fg`, `--muted`, `--accent` and
-`--border` read from the app's tokens; the agent guidance names the same
-variables. The host accepts only `{type: 'resize', height}` from that
-iframe's own window with a finite height, clamped to 32 to 2000 px. The
+posts `{type: 'render', html, theme, font}` with target `*` (the frame's
+origin is opaque), where `theme` holds `--bg`, `--fg`, `--muted`, `--accent`,
+`--border` and `--font` (the style's `--font-sans`) read from the app's
+tokens plus `--scheme` (the app's computed `color-scheme`), and `font` is the
+app's cached Fustat latin woff2, which the frame registers with `FontFace`
+because its CSP allows no font request. Before the snippet the wrapper
+applies a base sheet: `color-scheme: var(--scheme)` (a scheme differing from
+the page would paint the frame opaque), `accent-color: var(--accent)`, and a
+body with no margin, `16px/1.5 var(--font)` in `--fg` on a transparent
+background, with form controls inheriting the font; the snippet's own CSS
+overrides it. The agent guidance names the variables and the base. The share
+page hydrates the same `HtmlEmbedView` island and loads the same Fustat file,
+so it renders identically. The host accepts only `{type: 'resize', height}`
+from that iframe's own window with a finite height, clamped to 32 to 600 px;
+a taller snippet scrolls inside the frame. The
 wrapper writes the snippet over itself, which fires a second `load`; a later
 `load` means the snippet navigated its frame (to a page without the
 wrapper's CSP), so the frame is replaced by a notice until the snippet

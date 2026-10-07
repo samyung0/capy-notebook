@@ -33,7 +33,7 @@ describe('interactive block frame', () => {
     expect(height(own, { height: Number.NaN, type: 'resize' })).toBeNull();
     expect(height(own, { height: '300', type: 'resize' })).toBeNull();
     expect(height(own, null)).toBeNull();
-    expect(height(own, { height: 1e9, type: 'resize' })).toBe(2000);
+    expect(height(own, { height: 1e9, type: 'resize' })).toBe(600);
     expect(height(own, { height: -5, type: 'resize' })).toBe(32);
   });
 });

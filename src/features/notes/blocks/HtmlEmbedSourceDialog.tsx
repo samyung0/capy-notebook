@@ -8,27 +8,28 @@ import { Textarea } from '@/components/ui/TextArea';
 import { HTML_EMBED_MAX_BYTES, htmlBytes } from '@/features/materials/document';
 import { m } from '@/i18n';
 
-/** An interactive block's title and snippet. Editors save changes (within the
+/** An interactive block's caption and snippet. Editors save changes (within the
  * 64 KB cap); without `onSave` it only shows the source. */
 export default function HtmlEmbedSourceDialog({
+  caption,
   html,
-  title,
   onSave,
   onClose,
 }: {
+  caption?: string;
   html: string;
-  title?: string;
-  onSave?: (next: { html: string; title: string }) => void;
+  onSave?: (next: { caption: string; html: string }) => void;
   onClose: () => void;
 }) {
   const {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<{ html: string; title: string }>({
-    defaultValues: { html, title: title ?? '' },
+  } = useForm<{ caption: string; html: string }>({
+    defaultValues: { caption: caption ?? '', html },
     resolver: zodResolver(
       z.object({
+        caption: z.string().trim(),
         html: z
           .string()
           .trim()
@@ -36,7 +37,6 @@ export default function HtmlEmbedSourceDialog({
           .refine((value) => htmlBytes(value) <= HTML_EMBED_MAX_BYTES, {
             message: m.html_embed_too_large(),
           }),
-        title: z.string().trim(),
       })
     ),
   });
@@ -77,16 +77,16 @@ export default function HtmlEmbedSourceDialog({
         })
       }
       open
-      title={title || m.editor_export_interactive()}
+      title={m.html_embed_source()}
       width={880}
     >
       {onSave && (
         <InputField
-          error={errors.title}
-          id="html-embed-title"
-          label={m.common_title()}
+          error={errors.caption}
+          id="html-embed-caption"
+          label={m.html_embed_caption()}
         >
-          <Input id="html-embed-title" {...register('title')} />
+          <Input id="html-embed-caption" {...register('caption')} />
         </InputField>
       )}
       <Textarea

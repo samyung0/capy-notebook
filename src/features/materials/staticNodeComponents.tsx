@@ -429,12 +429,12 @@ function MermaidElement(props: SlateElementProps) {
 }
 
 function HtmlEmbedElement(props: SlateElementProps) {
-  const { html, id, title } = props.element as unknown as HtmlEmbedNode;
+  const { caption, html, id } = props.element as unknown as HtmlEmbedNode;
   return (
     <SlateElement {...props} className="my-3">
       <div contentEditable={false}>
-        <Island name="html" props={{ html, id, title }}>
-          <HtmlEmbedView html={html} id={id} title={title} />
+        <Island name="html" props={{ caption, html, id }}>
+          <HtmlEmbedView caption={caption} html={html} id={id} />
         </Island>
       </div>
       {props.children}

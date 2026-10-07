@@ -53,7 +53,7 @@ export default function FlashcardsEdit() {
               revision={material.revision}
               setId={setId}
               showTitle={false}
-              title={material.title}
+              title={material.parentMaterialId ? '' : material.title}
             />
             <MaterialAttributionFooter provenance={material.provenance} />
           </>

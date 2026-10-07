@@ -502,15 +502,18 @@ function PartRunner({
                     }
                     value={letter < 0 ? '' : String(letter)}
                   >
-                    <SelectTrigger aria-label={left} size="sm">
+                    <SelectTrigger aria-label={left}>
                       <SelectValue placeholder="–" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
                         {answer.options.map((option, index) => (
                           <SelectItem
-                            hint={<TextView text={option} />}
+                            hint={
+                              <TextView className="text-fg" text={option} />
+                            }
                             key={index}
+                            size="sm"
                             value={String(index)}
                           >
                             {optionLetter(index)}.

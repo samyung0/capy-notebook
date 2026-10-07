@@ -212,7 +212,10 @@ Clerk development instance. Point a local gateway at the UAT database only with
   `curl -sI https://uat.capy-embed.pages.dev/` returns `200` with the
   `Content-Security-Policy` from `embed/_headers` (`default-src 'none'; …`),
   `nosniff` and `no-referrer`, and the project's `uat` deployment carries the
-  release SHA. Set up in
+  release SHA. A `302` to `capypy.cloudflareaccess.com` means Access still
+  guards the project's preview deployments and every block renders blank.
+  A note's interactive HTML block renders, in the app and on a signed-out
+  `/share/notes/…` page. Set up in
   [deployment-runbook.md §2.3](deployment-runbook.md#23-interactive-block-frame).
 - `COLLABORATION_UAT_PUBLICATION_HOLD` is `true` in UAT's Coolify variables and
   blank in production's (the renderer refuses a production value). Without it

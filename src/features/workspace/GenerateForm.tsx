@@ -343,7 +343,12 @@ export function GenerateForm({
       </div>
 
       <DialogFooter className="mt-6">
-        <Button disabled={pending} onClick={onCancel} size="lg" variant="ghost">
+        <Button
+          disabled={pending}
+          onClick={onCancel}
+          size="lg"
+          variant="ghost-hover"
+        >
           {m.action_cancel()}
         </Button>
         <Button

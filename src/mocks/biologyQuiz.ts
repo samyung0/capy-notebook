@@ -391,7 +391,7 @@ export const biologyQuizQuestions: Question[] = [
   },
   {
     id: 'q12',
-    labels: 'numbers',
+    labels: 'letters',
     layout: 'split',
     parts: [
       {
@@ -472,7 +472,7 @@ export const biologyQuizQuestions: Question[] = [
   },
   {
     id: 'q14',
-    labels: 'numbers',
+    labels: 'letters',
     layout: 'paper',
     parts: [
       {
@@ -594,7 +594,7 @@ export const biologyQuizQuestions: Question[] = [
   },
   {
     id: 'q15',
-    labels: 'numbers',
+    labels: 'letters',
     layout: 'paper',
     parts: [
       {

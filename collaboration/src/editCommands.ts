@@ -877,8 +877,8 @@ export function inspectMaterial(document: Y.Doc): InspectedBlock[] {
     if (block.type === 'mermaid' && typeof block.source === 'string') {
       out.properties = { source: block.source };
     }
-    if (block.type === 'html_embed' && typeof block.title === 'string') {
-      out.properties = { title: block.title };
+    if (block.type === 'html_embed' && typeof block.caption === 'string') {
+      out.properties = { caption: block.caption };
     }
     if (block.type === MATERIAL_REF_TYPE) {
       out.properties = {

@@ -139,10 +139,10 @@ describe('embedded material references', () => {
 
 describe('interactive HTML blocks', () => {
   const embed = (id: string, html = '<p>x</p>') => ({
+    caption: 'Tangent',
     children: [{ text: '' }],
     html,
     id,
-    title: 'Tangent',
     type: HTML_EMBED_TYPE,
   });
 

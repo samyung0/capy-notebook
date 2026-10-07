@@ -13,7 +13,13 @@ const YOUTUBE_VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 export const HTML_EMBED_TYPE = 'html_embed';
 export const HTML_EMBED_MAX_BYTES = 64 * 1024;
 export const HTML_EMBED_MAX_COUNT = 10;
-const HTML_EMBED_FIELDS = new Set(['id', 'type', 'html', 'title', 'children']);
+const HTML_EMBED_FIELDS = new Set([
+  'id',
+  'type',
+  'html',
+  'caption',
+  'children',
+]);
 
 type MaterialNode = Record<string, unknown>;
 
@@ -281,8 +287,8 @@ function validateHtmlEmbed(node: MaterialNode, depth: number) {
   const bytes = Buffer.byteLength(node.html, 'utf8');
   if (bytes > HTML_EMBED_MAX_BYTES)
     fail(`interactive html is ${bytes} bytes, over ${HTML_EMBED_MAX_BYTES}`);
-  if (hasOwn(node, 'title') && typeof node.title !== 'string')
-    fail('interactive title must be a string');
+  if (hasOwn(node, 'caption') && typeof node.caption !== 'string')
+    fail('interactive caption must be a string');
   for (const key of Object.keys(node))
     if (!HTML_EMBED_FIELDS.has(key))
       fail(`unexpected interactive field ${key}`);

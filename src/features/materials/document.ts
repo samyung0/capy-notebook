@@ -55,6 +55,8 @@ export interface QuestionFigureElement extends MaterialElement {
   children: [MaterialText];
   id: string;
   type: 'chart' | 'graph';
+  /** Percentage of the block, set by the resize handles. */
+  width?: string;
 }
 
 export interface FlashcardFaceElement extends MaterialElement {
@@ -94,10 +96,10 @@ export interface MermaidElement extends MaterialElement {
 /** An interactive HTML block: one self-contained snippet, run only in a
  * sandboxed frame on a separate site (HtmlEmbed.tsx). Top-level void. */
 export interface HtmlEmbedElement extends MaterialElement {
+  caption?: string;
   children: [MaterialText];
   html: string;
   id: string;
-  title?: string;
   type: 'html_embed';
 }
 
@@ -286,7 +288,8 @@ function validateCustomElement(element: MaterialElement): boolean {
         hasId(element) &&
         typeof element.html === 'string' &&
         htmlBytes(element.html) <= HTML_EMBED_MAX_BYTES &&
-        (element.title === undefined || typeof element.title === 'string') &&
+        (element.caption === undefined ||
+          typeof element.caption === 'string') &&
         element.children.length === 1 &&
         isTextNode(element.children[0]) &&
         element.children[0].text === ''
@@ -605,14 +608,14 @@ export function mermaidNode(
 
 export function htmlEmbedNode(
   html: string,
-  title?: string,
+  caption?: string,
   id = uid('block')
 ): HtmlEmbedElement {
   return {
+    ...(caption ? { caption } : {}),
     children: [{ text: '' }],
     html,
     id,
-    ...(title ? { title } : {}),
     type: HTML_EMBED_TYPE,
   };
 }

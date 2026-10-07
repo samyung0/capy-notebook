@@ -116,17 +116,17 @@ const HtmlEmbedSourceDialog = lazy(
 
 /** An interactive HTML block in its sandboxed frame, with View source. */
 export function HtmlEmbedView({
+  caption,
   html,
   id,
-  title,
-}: Pick<HtmlEmbedElement, 'html' | 'id' | 'title'>) {
+}: Pick<HtmlEmbedElement, 'caption' | 'html' | 'id'>) {
   const [viewing, setViewing] = useState(false);
   return (
     <>
       <HtmlEmbed
+        caption={caption}
         html={html}
         id={id}
-        title={title}
         toolbar={
           <ToolbarButton
             label={m.html_embed_view_source()}
@@ -142,7 +142,6 @@ export function HtmlEmbedView({
           <HtmlEmbedSourceDialog
             html={html}
             onClose={() => setViewing(false)}
-            title={title}
           />
         </Suspense>
       )}

@@ -123,6 +123,7 @@ export function QuizQuestionList<Q extends Question | LearnerQuestion>({
   showAnswerKey,
   renderAfter,
   credits,
+  className,
 }: {
   questions: Q[];
   answers?: Answers;
@@ -134,9 +135,10 @@ export function QuizQuestionList<Q extends Question | LearnerQuestion>({
   renderAfter?: (question: Q, index: number) => ReactNode;
   /** Bank credits of copied questions, by question id (the quiz's provenance). */
   credits?: Record<string, QuestionCredit> | null;
+  className?: string;
 }) {
   return (
-    <ol className="grid gap-12">
+    <ol className={cn('grid gap-12', className)}>
       {questions.map((question, i) => (
         <li
           className="grid scroll-mt-6 gap-4"

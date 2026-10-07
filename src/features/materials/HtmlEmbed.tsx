@@ -2,13 +2,14 @@
  * sandboxed to `allow-scripts`, loaded from VITE_EMBED_ORIGIN: a separate site,
  * so the snippet gets its own process, no access to the app and, by the
  * wrapper's CSP (embed/_headers), no network. Protocol with embed/index.html:
- * on load the host posts {type: 'render', html, theme} once; the frame posts
+ * on load the host posts {type: 'render', html, theme, font} once, `font`
+ * being the app's Fustat bytes (the frame cannot fetch them); the frame posts
  * back only {type: 'resize', height}. A frame navigated away (to a page
  * without that CSP) is removed. SECURITY.md attack path 11. */
+import fustat from '@fontsource-variable/fustat/files/fustat-latin-wght-normal.woff2?url';
 import { type ReactNode, useContext, useEffect, useRef, useState } from 'react';
 import { MERMAID_CAPTION_CLASS } from '@/features/notes/nodeStyles';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
 import { ThemeContext } from '@/theme/theme';
 import { MediaFrame } from './MediaFrame';
 
@@ -19,23 +20,38 @@ const THEME_TOKENS = {
   '--bg': '--surface-page',
   '--border': '--border-default',
   '--fg': '--text-primary',
+  '--font': '--font-sans',
   '--muted': '--text-muted',
 } as const;
 const MIN_HEIGHT = 32;
-const MAX_HEIGHT = 2000;
+const MAX_HEIGHT = 600;
 const INITIAL_HEIGHT = 240;
 const SCROLLING = /auto|scroll|overlay/;
 /** The page this load already scrolled to for `?block=`. */
 let scrolledFor = '';
+/** The same file the app's own CSS loads, so the browser cache serves it. A
+ * failed fetch renders the snippet in the frame's default font. */
+let fontBytes: Promise<ArrayBuffer | undefined> | undefined;
+const loadFont = () => {
+  fontBytes ??= fetch(fustat)
+    .then((response) => (response.ok ? response.arrayBuffer() : undefined))
+    .catch(() => undefined);
+  return fontBytes;
+};
 
+/** The theme variables plus `--scheme`, the app's light or dark, which the
+ * frame's base sheet uses as its color-scheme so the frame stays see-through. */
 function frameTheme(element: Element): Record<string, string> {
   const style = getComputedStyle(element);
-  return Object.fromEntries(
-    Object.entries(THEME_TOKENS).map(([name, token]) => [
-      name,
-      style.getPropertyValue(token).trim(),
-    ])
-  );
+  return {
+    ...Object.fromEntries(
+      Object.entries(THEME_TOKENS).map(([name, token]) => [
+        name,
+        style.getPropertyValue(token).trim(),
+      ])
+    ),
+    '--scheme': style.colorScheme,
+  };
 }
 
 /** The height a message reports, or null unless it is a resize posted by
@@ -90,10 +106,14 @@ export function EmbedFrame({
         loads.current += 1;
         if (loads.current > 2) onNavigate();
         if (loads.current !== 1) return;
-        // The frame's origin is opaque, so no narrower target exists.
-        event.currentTarget.contentWindow?.postMessage(
-          { html, theme: frameTheme(event.currentTarget), type: 'render' },
-          '*'
+        const frame = event.currentTarget;
+        const theme = frameTheme(frame);
+        loadFont().then((font) =>
+          // The frame's origin is opaque, so no narrower target exists.
+          frame.contentWindow?.postMessage(
+            { font, html, theme, type: 'render' },
+            '*'
+          )
         );
       }}
       ref={ref}
@@ -117,14 +137,14 @@ function scrollParent(element: Element): Element | null {
  * snippet reloads it, and a snippet that navigates its frame gets a notice
  * in its place. */
 export function HtmlEmbed({
+  caption,
   html,
   id,
-  title,
   toolbar,
 }: {
+  caption?: string;
   html: string;
   id: string;
-  title?: string;
   toolbar?: ReactNode;
 }) {
   const origin: string | undefined = import.meta.env.VITE_EMBED_ORIGIN;
@@ -154,43 +174,28 @@ export function HtmlEmbed({
     scrolledFor = location.href;
     ref.current?.scrollIntoView({ block: 'center' });
   }, [id]);
-  const label = title || m.html_embed_label();
   return (
     <div ref={ref}>
       <MediaFrame fill toolbar={toolbar}>
-        <div className="overflow-hidden rounded-card border border-line">
-          {!origin || stopped === html ? (
-            <p className="p-3 text-fg-muted text-sm">
-              {origin
-                ? m.html_embed_navigated()
-                : m.html_embed_not_configured()}
-            </p>
-          ) : near ? (
-            <EmbedFrame
-              height={height}
-              html={html}
-              key={`${theme?.theme}:${theme?.style}:${html}`}
-              onHeight={setHeight}
-              onNavigate={() => setStopped(html)}
-              origin={origin}
-              title={label}
-            />
-          ) : (
-            <div style={{ height }} />
-          )}
-        </div>
-      </MediaFrame>
-      <p
-        className={cn(
-          MERMAID_CAPTION_CLASS,
-          'flex items-center justify-center gap-2'
+        {!origin || stopped === html ? (
+          <p className="p-3 text-fg-muted text-sm">
+            {origin ? m.html_embed_navigated() : m.html_embed_not_configured()}
+          </p>
+        ) : near ? (
+          <EmbedFrame
+            height={height}
+            html={html}
+            key={`${theme?.theme}:${theme?.style}:${html}`}
+            onHeight={setHeight}
+            onNavigate={() => setStopped(html)}
+            origin={origin}
+            title={caption || m.editor_export_interactive()}
+          />
+        ) : (
+          <div style={{ height }} />
         )}
-      >
-        <span className="rounded-sm bg-tint-accent-1 px-1.5 text-tint-accent-1-fg text-xs">
-          {m.html_embed_label()}
-        </span>
-        {title}
-      </p>
+      </MediaFrame>
+      {caption && <p className={MERMAID_CAPTION_CLASS}>{caption}</p>}
     </div>
   );
 }

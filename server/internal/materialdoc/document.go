@@ -580,13 +580,13 @@ func validateHTMLEmbed(node map[string]any, depth int) error {
 	if len(html) > HTMLEmbedMaxBytes {
 		return fmt.Errorf("interactive html is %d bytes, over %d", len(html), HTMLEmbedMaxBytes)
 	}
-	if title, ok := node["title"]; ok {
-		if _, ok := title.(string); !ok {
-			return errors.New("interactive title must be a string")
+	if caption, ok := node["caption"]; ok {
+		if _, ok := caption.(string); !ok {
+			return errors.New("interactive caption must be a string")
 		}
 	}
 	for key := range node {
-		if key != "type" && key != "id" && key != "html" && key != "title" && key != "children" {
+		if key != "type" && key != "id" && key != "html" && key != "caption" && key != "children" {
 			return fmt.Errorf("unexpected interactive field %s", key)
 		}
 	}

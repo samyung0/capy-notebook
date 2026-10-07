@@ -14,16 +14,10 @@ import {
   useEditorRef,
   useEditorSelector,
   useReadOnly,
-  useSelected,
 } from 'platejs/react';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { showErrorToast } from '@/api/queryClient';
-import { FloatingBlockToolbar } from '@/components/ui/BlockToolbar';
-import {
-  Popover,
-  PopoverAnchor,
-  PopoverTrigger,
-} from '@/components/ui/Popover';
+import { ContentSwap } from '@/components/ui/ContentSwap';
+import { Popover, PopoverTrigger } from '@/components/ui/Popover';
 import { PopupMotion } from '@/components/ui/PopupMotion';
 import { ButtonTooltip } from '@/components/ui/Tooltip';
 import {
@@ -34,6 +28,7 @@ import {
   type MaterialRefElement as MaterialRefNode,
   type MermaidElement as MermaidNode,
   normalizeMaterialValue,
+  type QuestionFigureElement as QuestionFigureNode,
   type QuizQuestionElement as QuizQuestionNode,
   quizQuestionElementToQuestion,
 } from '@/features/materials/document';
@@ -45,7 +40,10 @@ import { EmbedLoading } from '@/features/materials/embeds/EmbedView';
 import { HtmlEmbed } from '@/features/materials/HtmlEmbed';
 import { StandaloneMaterialTitle } from '@/features/materials/MaterialRenderContext';
 import { MediaFrame } from '@/features/materials/MediaFrame';
-import { MermaidPreview } from '@/features/materials/MediaPreview';
+import {
+  MediaPreview,
+  MermaidPreview,
+} from '@/features/materials/MediaPreview';
 import { Mermaid, MermaidSwatch } from '@/features/materials/Mermaid';
 import {
   MERMAID_THEME_LABEL,
@@ -62,12 +60,10 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { uid } from '@/lib/id';
 import { useOptionalEditorRuntime } from '../EditorRuntime';
-import { useEditorScrollArea } from '../editorScrollArea';
 import {
   FLASHCARD_BACK_CLASS,
   FLASHCARD_CLASS,
   FLASHCARD_FRONT_CLASS,
-  MEDIA_MAX_WIDTH_CLASS,
   MERMAID_CAPTION_CLASS,
   QUIZ_REVIEW_QUESTION_CLASS,
   STUDY_BLOCK_LIST_CLASS,
@@ -79,7 +75,6 @@ import {
 } from '../toolbar/ToolbarPopover';
 import { useOptionalNoteBlockDialogs } from './dialogContext';
 import { setMermaidCaption } from './mermaidBlock';
-import type { NoteVisualBlock } from './VisualBlockDialog';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyEditor = any;
@@ -450,137 +445,169 @@ export function MaterialRefElement(props: PlateElementProps) {
 const MermaidSourceDialog = lazy(() => import('./MermaidSourceDialog'));
 const HtmlEmbedSourceDialog = lazy(() => import('./HtmlEmbedSourceDialog'));
 
-/** Copies one block as rich HTML and plain text, through the editor's own fragment. */
-async function copyBlock(editor: PlateEditor, element: TElement) {
+/**
+ * Copies one block exactly as Cmd+C would: a real copy event the editor fills.
+ * navigator.clipboard.write cannot carry Plate's application/x-slate-fragment,
+ * without which a paste finds no block.
+ */
+function copyBlock(editor: PlateEditor, element: TElement) {
   const at = editor.api.findPath(element);
-  if (!at) return;
+  if (!at) return false;
   editor.tf.select(editor.api.range(at));
   editor.tf.focus();
-  const data = new DataTransfer();
-  editor.tf.setFragmentData(data, 'copy');
-  await navigator.clipboard.write([
-    new ClipboardItem({
-      'text/html': new Blob([data.getData('text/html')], {
-        type: 'text/html',
-      }),
-      'text/plain': new Blob([data.getData('text/plain')], {
-        type: 'text/plain',
-      }),
-    }),
-  ]);
+  const fill = (event: ClipboardEvent) => {
+    if (!event.clipboardData) return;
+    event.preventDefault();
+    // The editor's own copy handler would refill it from the DOM selection.
+    event.stopImmediatePropagation();
+    editor.tf.setFragmentData(event.clipboardData, 'copy');
+  };
+  document.addEventListener('copy', fill, { capture: true });
+  try {
+    return document.execCommand('copy');
+  } finally {
+    document.removeEventListener('copy', fill, { capture: true });
+  }
 }
 
-function EmbedShell({
-  props,
-  onEdit,
-  tools,
-  media = false,
-  children,
-}: {
-  props: PlateElementProps;
-  onEdit: () => void;
-  /** Block-specific controls placed before edit, copy and delete. */
-  tools?: React.ReactNode;
-  /** Diagrams and charts share the media width cap. */
-  media?: boolean;
-  children: React.ReactNode;
-}) {
+/** Copy for a block's toolbar; the icon swaps to a check for a moment. */
+function CopyBlockButton({ element }: { element: TElement }) {
+  const editor = useEditorRef();
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timeout = window.setTimeout(() => setCopied(false), 2000);
+    return () => window.clearTimeout(timeout);
+  }, [copied]);
+  return (
+    <ToolbarButton
+      label={copied ? m.editor_copied() : m.action_copy()}
+      onClick={() => setCopied(copyBlock(editor, element))}
+      tooltipSide="top"
+    >
+      <ContentSwap contentKey={String(copied)} kind="icon">
+        <EditorIcon name={copied ? 'check' : 'copy'} />
+      </ContentSwap>
+    </ToolbarButton>
+  );
+}
+
+/** Mouse down on a media block selects it; its own fields and controls keep their focus. */
+function useSelectOnMouseDown(element: TElement) {
   const editor = useEditorRef();
   const readOnly = useReadOnly();
-  const selected = useSelected();
-  const collapsed = useEditorSelector(
-    (current) => current.api.isCollapsed(),
-    []
-  );
-  const active = selected && collapsed && !readOnly;
-  const scrollArea = useEditorScrollArea();
-  const locate = () => editor.api.findPath(props.element);
-  const className = cn(
-    'relative my-4 rounded-md border border-transparent p-2',
-    media && MEDIA_MAX_WIDTH_CLASS,
-    active && 'border-action-accent ring-2 ring-action-accent/20'
-  );
-  const body = (
-    <div
-      contentEditable={false}
-      onMouseDown={(event) => {
-        // Fields inside the embed (the caption) take their own focus.
-        if (readOnly || (event.target as Element).closest('input')) return;
-        event.preventDefault();
-        const at = locate();
-        if (at) {
-          editor.tf.select(editor.api.start(at));
-          editor.tf.focus();
-        }
-      }}
-    >
-      {children}
-    </div>
-  );
-  // Slate's void spacer is already invisible; display:none would leave the
-  // caret without a position, so focusing the block scrolled the page away.
-  const spacer = (
-    <span className="absolute top-0 left-0">{props.children}</span>
-  );
-  const actions = (
+  return (event: React.MouseEvent) => {
+    if (
+      readOnly ||
+      (event.target as Element).closest(
+        'input, button, [data-media-resize-handle]'
+      )
+    )
+      return;
+    event.preventDefault();
+    const at = editor.api.findPath(element);
+    if (at) {
+      editor.tf.select(editor.api.start(at));
+      editor.tf.focus();
+    }
+  };
+}
+
+/** Edit, Copy and Delete at the end of a media block's hover toolbar. */
+function MediaBlockActions({
+  element,
+  onEdit,
+}: {
+  element: TElement;
+  onEdit: () => void;
+}) {
+  const editor = useEditorRef();
+  return (
     <>
-      <ToolbarButton label={m.action_edit()} onClick={onEdit}>
+      <ToolbarButton label={m.action_edit()} onClick={onEdit} tooltipSide="top">
         <EditorIcon name="pencil" />
       </ToolbarButton>
-      <ToolbarButton
-        label={m.action_copy()}
-        onClick={() =>
-          void copyBlock(editor, props.element).catch(showErrorToast)
-        }
-      >
-        <EditorIcon name="copy" />
-      </ToolbarButton>
+      <CopyBlockButton element={element} />
       <ToolbarButton
         label={m.action_delete()}
         onClick={() => {
-          const at = locate();
+          const at = editor.api.findPath(element);
           if (at) editor.tf.removeNodes({ at });
         }}
+        tooltipSide="top"
         variant="danger-light"
       >
         <EditorIcon name="trash" />
       </ToolbarButton>
     </>
   );
-  return (
-    <Popover modal={false} open={active}>
-      <PopoverAnchor asChild>
-        <PlateElement {...props} className={className}>
-          {body}
-          {spacer}
-        </PlateElement>
-      </PopoverAnchor>
-      <FloatingBlockToolbar
-        aria-label={m.editor_study_actions()}
-        collisionBoundary={scrollArea}
-        open={active}
-      >
-        {tools}
-        {actions}
-      </FloatingBlockToolbar>
-    </Popover>
-  );
 }
+
+/** Unresized charts open at their question-figure width (max-w-md). */
+const CHART_WIDTH = '28rem';
 
 export function VisualBlockElement(props: PlateElementProps) {
   const editor = useEditorRef();
+  const readOnly = useReadOnly();
   const dialogs = useOptionalNoteBlockDialogs();
-  const element = props.element as unknown as { block: NoteVisualBlock };
-  function edit() {
-    dialogs?.openVisual(element.block, (block) => {
-      const at = editor.api.findPath(props.element);
-      if (at) editor.tf.setNodes({ block }, { at });
-    });
-  }
+  const element = props.element as unknown as QuestionFigureNode;
+  const { block } = element;
+  const [previewing, setPreviewing] = useState(false);
+  const onMouseDown = useSelectOnMouseDown(props.element);
+  const update = (patch: Partial<QuestionFigureNode>) => {
+    const at = editor.api.findPath(props.element);
+    if (at) editor.tf.setNodes(patch, { at });
+  };
   return (
-    <EmbedShell media onEdit={edit} props={props}>
-      <QuestionBlockView block={element.block} />
-    </EmbedShell>
+    <PlateElement {...props} className="relative my-3">
+      <div contentEditable={false} onMouseDown={onMouseDown}>
+        <MediaFrame
+          aspectRatio={
+            block.type === 'graph' ? block.width / block.height : undefined
+          }
+          onOpen={() => setPreviewing(true)}
+          onWidthChange={readOnly ? undefined : (width) => update({ width })}
+          toolbar={
+            readOnly ? undefined : (
+              <MediaBlockActions
+                element={props.element}
+                onEdit={() =>
+                  dialogs?.openVisual(block, (next) => update({ block: next }))
+                }
+              />
+            )
+          }
+          width={
+            element.width ??
+            (block.type === 'chart' ? CHART_WIDTH : block.width)
+          }
+        >
+          {/* The figure fills the frame so the handles scale it. */}
+          <div className="[&_figure]:my-0 [&_figure]:w-full [&_figure]:max-w-none [&_img]:w-full">
+            <QuestionBlockView block={block} />
+          </div>
+        </MediaFrame>
+      </div>
+      {/* Slate's void spacer is already invisible; display:none would leave
+       * the caret without a position, so focusing scrolled the page away. */}
+      <span className="absolute top-0 left-0">{props.children}</span>
+      <MediaPreview
+        onOpenChange={setPreviewing}
+        open={previewing}
+        title={block.type === 'chart' ? m.editor_chart() : m.editor_graph()}
+      >
+        {block.type === 'chart' ? (
+          // Chart text uses the page colours, so it keeps a page-coloured panel.
+          <div className="w-[min(100%,56rem)] rounded-card bg-surface p-6 text-fg [&_figure]:my-0 [&_figure]:max-w-none">
+            <QuestionBlockView block={block} />
+          </div>
+        ) : (
+          <div className="max-h-full max-w-full [&_img]:h-[calc(100dvh-10rem)] [&_img]:w-auto [&_img]:max-w-full">
+            <QuestionBlockView block={block} />
+          </div>
+        )}
+      </MediaPreview>
+    </PlateElement>
   );
 }
 
@@ -633,6 +660,7 @@ export function MermaidElement(props: PlateElementProps) {
   const [captioning, setCaptioning] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const captionRef = useRef<HTMLInputElement>(null);
+  const onMouseDown = useSelectOnMouseDown(props.element);
   const locate = () => editor.api.findPath(props.element);
   const update = (patch: Partial<MermaidNode>) => {
     const at = locate();
@@ -643,25 +671,7 @@ export function MermaidElement(props: PlateElementProps) {
   }, [captioning]);
   return (
     <PlateElement {...props} className="relative my-3">
-      <div
-        contentEditable={false}
-        onMouseDown={(event) => {
-          // Fields and controls inside the block take their own focus.
-          if (
-            readOnly ||
-            (event.target as Element).closest(
-              'input, button, [data-media-resize-handle]'
-            )
-          )
-            return;
-          event.preventDefault();
-          const at = locate();
-          if (at) {
-            editor.tf.select(editor.api.start(at));
-            editor.tf.focus();
-          }
-        }}
-      >
+      <div contentEditable={false} onMouseDown={onMouseDown}>
         <StandaloneMaterialTitle kinds={['mindmap', 'diagram']} />
         <MediaFrame
           fill
@@ -681,33 +691,10 @@ export function MermaidElement(props: PlateElementProps) {
                 >
                   <EditorIcon name="closedCaption" />
                 </ToolbarButton>
-                <ToolbarButton
-                  label={m.action_edit()}
-                  onClick={() => setEditing(true)}
-                  tooltipSide="top"
-                >
-                  <EditorIcon name="pencil" />
-                </ToolbarButton>
-                <ToolbarButton
-                  label={m.action_copy()}
-                  onClick={() =>
-                    void copyBlock(editor, props.element).catch(showErrorToast)
-                  }
-                  tooltipSide="top"
-                >
-                  <EditorIcon name="copy" />
-                </ToolbarButton>
-                <ToolbarButton
-                  label={m.action_delete()}
-                  onClick={() => {
-                    const at = locate();
-                    if (at) editor.tf.removeNodes({ at });
-                  }}
-                  tooltipSide="top"
-                  variant="danger-light"
-                >
-                  <EditorIcon name="trash" />
-                </ToolbarButton>
+                <MediaBlockActions
+                  element={props.element}
+                  onEdit={() => setEditing(true)}
+                />
               </>
             )
           }
@@ -793,9 +780,9 @@ export function HtmlEmbedElement(props: PlateElementProps) {
         }}
       >
         <HtmlEmbed
+          caption={element.caption}
           html={element.html}
           id={element.id}
-          title={element.title}
           toolbar={
             <>
               <ToolbarButton
@@ -807,17 +794,7 @@ export function HtmlEmbedElement(props: PlateElementProps) {
               </ToolbarButton>
               {!readOnly && (
                 <>
-                  <ToolbarButton
-                    label={m.action_copy()}
-                    onClick={() =>
-                      void copyBlock(editor, props.element).catch(
-                        showErrorToast
-                      )
-                    }
-                    tooltipSide="top"
-                  >
-                    <EditorIcon name="copy" />
-                  </ToolbarButton>
+                  <CopyBlockButton element={props.element} />
                   <ToolbarButton
                     label={m.action_delete()}
                     onClick={() => {
@@ -840,6 +817,7 @@ export function HtmlEmbedElement(props: PlateElementProps) {
       {viewing && (
         <Suspense fallback={null}>
           <HtmlEmbedSourceDialog
+            caption={element.caption}
             html={element.html}
             onClose={() => setViewing(false)}
             onSave={
@@ -850,7 +828,6 @@ export function HtmlEmbedElement(props: PlateElementProps) {
                     if (at) editor.tf.setNodes(next, { at });
                   }
             }
-            title={element.title}
           />
         </Suspense>
       )}

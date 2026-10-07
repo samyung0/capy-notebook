@@ -119,7 +119,7 @@ type TopNode = {
   id: string;
   materialId?: string;
   html?: string;
-  title?: string;
+  caption?: string;
 };
 
 /** The note's top-level nodes of `type`, in document order. */
@@ -404,7 +404,7 @@ export async function deleteAndUndoNoteImage(
 function embedMarkdown(marker: string) {
   return [
     '```html-embed',
-    `title: Tide chart ${marker}`,
+    `caption: Tide chart ${marker}`,
     'html: |',
     '  <style>html,body{margin:0}</style>',
     `  <div id="tide" style="height:${EMBED_HEIGHT}px">Tide ${marker}</div>`,
@@ -447,7 +447,7 @@ export async function importHtmlEmbed(
     () => topNodes(run, noteId, 'html_embed'),
     (blocks) => blocks.length === 1 && Boolean(blocks[0].html?.includes(marker))
   );
-  return { id: block.id, marker, title: string(block.title) };
+  return { caption: string(block.caption), id: block.id, marker };
 }
 
 /**
@@ -462,7 +462,7 @@ export async function readView(
   noteId: string,
   lines: string[],
   imageName: string,
-  embed: { title: string; marker: string }
+  embed: { caption: string; marker: string }
 ) {
   const { page } = actor;
   await page.goto(
@@ -480,8 +480,8 @@ export async function readView(
     )
     .toBeGreaterThan(0);
   // Frames mount within a screen of the visible area.
-  await page.getByText(embed.title).scrollIntoViewIfNeeded();
-  const frame = page.locator(`iframe[title="${embed.title}"]`);
+  await page.getByText(embed.caption).scrollIntoViewIfNeeded();
+  const frame = page.locator(`iframe[title="${embed.caption}"]`);
   await expect(frame).toHaveAttribute('src', `${EMBED_ORIGIN}/`, {
     timeout: 60_000,
   });

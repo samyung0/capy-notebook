@@ -97,7 +97,7 @@ func TestQuestionEmbedsValidateAndIndexWithoutSVGText(t *testing.T) {
 
 func TestHTMLEmbedCapsSizeAndCountAndSkipsIndexing(t *testing.T) {
 	embed := func(id, html string) map[string]any {
-		return map[string]any{"type": HTMLEmbedType, "id": id, "title": "Tangent", "html": html, "children": []any{textLeaf("")}}
+		return map[string]any{"type": HTMLEmbedType, "id": id, "caption": "Tangent", "html": html, "children": []any{textLeaf("")}}
 	}
 	doc := Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{ParagraphNode("intro")}}
 	for i := range HTMLEmbedMaxCount {

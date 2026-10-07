@@ -78,20 +78,23 @@ export function customBlockNode(
   return mermaidNode(code);
 }
 
-/** YAML `title` and `html`; no fallback. Throws on a fence the block cannot
+/** YAML `caption` and `html`; no fallback. Throws on a fence the block cannot
  * hold, so the agent's converter names the problem. */
 function htmlEmbedFenceNode(code: string): HtmlEmbedElement {
-  const data = (YAML.parse(code) ?? {}) as { html?: unknown; title?: unknown };
+  const data = (YAML.parse(code) ?? {}) as {
+    caption?: unknown;
+    html?: unknown;
+  };
   if (typeof data.html !== 'string' || !data.html.trim())
     throw new Error('An html-embed fence needs html.');
-  if (data.title !== undefined && typeof data.title !== 'string')
-    throw new Error('An html-embed title must be text.');
+  if (data.caption !== undefined && typeof data.caption !== 'string')
+    throw new Error('An html-embed caption must be text.');
   const bytes = htmlBytes(data.html);
   if (bytes > HTML_EMBED_MAX_BYTES)
     throw new Error(
       `html-embed html is ${bytes} bytes, over ${HTML_EMBED_MAX_BYTES}.`
     );
-  return htmlEmbedNode(data.html, data.title);
+  return htmlEmbedNode(data.html, data.caption);
 }
 
 export function customBlockCode(element: CustomMaterialElement): string {
@@ -106,8 +109,8 @@ export function customBlockCode(element: CustomMaterialElement): string {
   if (element.type === MATERIAL_REF_KEY) return element.pending ?? '';
   if (element.type === 'html_embed')
     return YAML.stringify(
-      element.title
-        ? { html: element.html, title: element.title }
+      element.caption
+        ? { caption: element.caption, html: element.html }
         : { html: element.html }
     );
   return '';

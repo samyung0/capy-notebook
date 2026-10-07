@@ -63,7 +63,9 @@ const questionExample = `{"id": "q1", "stem": [{"type": "text", "text": "A red b
 // lists its outline and read_knowledge with book and section reads a section in
 // order; the pipeline offers those two arguments only behind
 // CAPY_LIBRARY_SECTION_TOOLS.
-const ContractVersion = 16
+// v17: html-embed fences name their muted line `caption` instead of `title`,
+// and the frame gives snippets the note's font and base style.
+const ContractVersion = 17
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -419,11 +421,13 @@ const noteMarkdownDescription = "Markdown. A mindmap or diagram is one " +
 	"```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; " +
 	"```quiz fences (YAML `questions:` list, each in the quiz question format) and " +
 	"```flashcards fences (YAML `cards:` list of `front`/`back`), each a mini check of 2 to 4 " +
-	"items; and ```html-embed fences for an interactive (YAML: `title`, `html: |`), at most 10 " +
+	"items; and ```html-embed fences for an interactive (YAML: `caption`, `html: |`), at most 10 " +
 	"per note. The html is one small self-contained snippet under 64 KB: inline CSS and script, " +
 	"no network, no external URLs, no navigating the page, colours only from the provided " +
 	"variables --bg, --fg, --muted, --accent and --border so it follows the light and dark " +
-	"theme, height fitting its content with no vh or vw units. Use an interactive only where " +
+	"theme, height fitting its content with no vh or vw units. The frame already gives the " +
+	"body the note's font (--font), text colour, no margin and a transparent background, and " +
+	"form controls the accent colour, so style only what differs. Use an interactive only where " +
 	"moving something teaches more than a diagram."
 
 // todoSchema is the ledger todo a write completes.

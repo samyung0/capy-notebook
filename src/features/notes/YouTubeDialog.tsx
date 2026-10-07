@@ -41,7 +41,7 @@ export function YouTubeDialog({
     <SimpleDialog
       footer={
         <>
-          <Button onClick={onClose} size="lg" variant="ghost">
+          <Button onClick={onClose} size="lg" variant="ghost-hover">
             {m.action_cancel()}
           </Button>
           <Button disabled={!videoId} onClick={save} size="lg" variant="accent">

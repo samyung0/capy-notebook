@@ -6,11 +6,16 @@
     <script>
     'use strict';
     // Frame for a note's interactive HTML block (deployment-runbook.md §2.3).
-    // The note posts {type: 'render', html, theme} once; the snippet then
-    // replaces this page, so its inline scripts and load events run as on a
-    // normal page, and the frame reports its height as {type: 'resize',
+    // The note posts {type: 'render', html, theme, font} once; the snippet
+    // then replaces this page, so its inline scripts and load events run as on
+    // a normal page, and the frame reports its height as {type: 'resize',
     // height}. The CSP header in _headers blocks every request, and this page
-    // makes none.
+    // makes none: `font` carries the note's Fustat bytes, and BASE gives the
+    // snippet the note's look, which its own CSS overrides.
+    const BASE =
+      ':root{color-scheme:var(--scheme);accent-color:var(--accent)}' +
+      'body{margin:0;font:16px/1.5 var(--font);color:var(--fg);background:transparent}' +
+      'button,input,select,textarea{font:inherit}';
     addEventListener('message', function render(event) {
       const data = event.data;
       if (
@@ -18,13 +23,20 @@
         data?.type !== 'render' ||
         typeof data.html !== 'string' ||
         typeof data.theme !== 'object' ||
-        data.theme === null
+        data.theme === null ||
+        !(data.font === undefined || data.font instanceof ArrayBuffer)
       )
         return;
       removeEventListener('message', render);
       document.open();
       document.write('<!doctype html><head>');
-      // Theme tokens come before the snippet, so its own :root rules win.
+      if (data.font)
+        document.fonts.add(
+          new FontFace('Fustat Variable', data.font, { weight: '200 800' })
+        );
+      // Base and theme come before the snippet, so its own rules win.
+      document.head.appendChild(document.createElement('style')).textContent =
+        BASE;
       const sheet = document.head.appendChild(
         document.createElement('style')
       ).sheet;

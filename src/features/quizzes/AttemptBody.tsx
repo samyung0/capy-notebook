@@ -5,10 +5,15 @@ import { TabContent } from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
 import { userToast } from '@/components/ui/userToast';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
-import type { LearnerQuestion } from '@/features/questions/types';
+import type {
+  LearnerPart,
+  LearnerQuestion,
+  QuestionPart,
+} from '@/features/questions/types';
 import { m } from '@/i18n';
 import { scoreBucket, track } from '@/lib/analytics';
 import { toastSignInRequired } from '@/lib/authToasts';
+import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import type { Answer } from './grade';
 import { isAnswered } from './QuestionRunner';
@@ -144,20 +149,23 @@ export function AttemptBody({
       <Shell key="result">
         {header()}
         <Body>
-          <QuizScore
-            awarded={graded.awarded}
-            confetti
-            max={graded.max}
-            questions={graded.questions}
-          />
-          <div className="mt-12">
-            <QuizQuestionList
-              answers={answers}
-              credits={provenance?.questions}
+          {/* Inside a note the score would push the note down; each question
+              shows its own result. */}
+          {!embedded && (
+            <QuizScore
+              awarded={graded.awarded}
+              confetti
+              max={graded.max}
               questions={graded.questions}
-              review
             />
-          </div>
+          )}
+          <QuizQuestionList
+            answers={answers}
+            className={cn(embedded ? 'gap-10' : 'mt-12')}
+            credits={provenance?.questions}
+            questions={graded.questions}
+            review
+          />
           <Button
             className="mt-12"
             iconLeft="refresh"
@@ -178,8 +186,18 @@ export function AttemptBody({
     );
   }
 
-  const parts = questions.flatMap((q) => q.parts.map((part) => part.id));
-  const answered = parts.filter((id) => isAnswered(answers[id])).length;
+  const parts = questions.flatMap(
+    (q): (QuestionPart | LearnerPart)[] => q.parts
+  );
+  // An ordering part holds its shown order from the start, so it counts only
+  // once the learner has moved an item.
+  const answered = parts.filter((part) => {
+    const value = answers[part.id];
+    return part.answer.type === 'ordering'
+      ? Array.isArray(value) &&
+          value.join('\n') !== part.answer.items.join('\n')
+      : isAnswered(value);
+  }).length;
 
   return (
     <Shell>
@@ -187,6 +205,7 @@ export function AttemptBody({
       <Body>
         <QuizQuestionList
           answers={answers}
+          className={cn(embedded && 'gap-10')}
           credits={provenance?.questions}
           onChange={setAnswer}
           questions={questions}

@@ -78,7 +78,12 @@ export function CardDialog({
     <SimpleDialog
       footer={
         <>
-          <Button onClick={onClose} size="lg" type="button" variant="ghost">
+          <Button
+            onClick={onClose}
+            size="lg"
+            type="button"
+            variant="ghost-hover"
+          >
             {m.action_cancel()}
           </Button>
           {onRemove && (
@@ -118,7 +123,10 @@ export function CardDialog({
       }
       width={920}
     >
-      <p className="t-meta -mt-3 mb-4 text-fg-muted">{setTitle}</p>
+      {/* Note-embedded sets pass no title: their name is never shown. */}
+      {setTitle && (
+        <p className="t-meta -mt-3 mb-4 text-fg-muted">{setTitle}</p>
+      )}
       <div className="grid gap-7 md:grid-cols-2">
         <div className="flex flex-col gap-4">
           <label className="flex flex-col gap-1.5" htmlFor="card-front">
@@ -214,7 +222,7 @@ export function CardDialog({
             <InputError errors={[errors.back]} />
           </label>
         </div>
-        <div className="hidden border-divider border-l pl-7 md:block">
+        <div className="hidden md:block">
           <CardSides card={{ back, front, id: '', image }} />
         </div>
       </div>

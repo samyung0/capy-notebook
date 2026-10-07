@@ -67,7 +67,7 @@ export default function VisualBlockDialog({
             onClick={onClose}
             rounded="large"
             type="button"
-            variant="ghost"
+            variant="ghost-hover"
           >
             {m.action_cancel()}
           </Button>

@@ -2080,12 +2080,12 @@ def check() -> None:
             raise AssertionError(f"accepted invalid skills: {invalid}")
     # Note fences: flashcards and html-embed are checked here, quizzes by Go.
     note = "```flashcards\ncards:\n- front: a\n  back: b\n```\n"
-    embed = "```html-embed\ntitle: t\nhtml: |\n  <p>x</p>\n```\n"
+    embed = "```html-embed\ncaption: t\nhtml: |\n  <p>x</p>\n```\n"
     assert asyncio.run(check_note("text\n" + note + embed + "```mermaid\nflowchart\n```\n")) == ""
     for bad, says in (
         ("```flashcards\ncards: []\n```\n", "non-empty cards"),
         ("```flashcards\ncards:\n- front: a\n```\n", "front and a back"),
-        ("```html-embed\ntitle: t\n```\n", "needs html"),
+        ("```html-embed\ncaption: t\n```\n", "needs html"),
         ("```html-embed\nhtml: <img src='https://x'>\n```\n", "network"),
         ("```html-embed\n: [\n```\n", "not YAML"),
     ):

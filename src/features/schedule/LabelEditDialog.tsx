@@ -56,7 +56,12 @@ export function LabelEditDialog({
     <SimpleDialog
       footer={
         <>
-          <Button onClick={onClose} size="lg" type="button" variant="ghost">
+          <Button
+            onClick={onClose}
+            size="lg"
+            type="button"
+            variant="ghost-hover"
+          >
             {m.action_cancel()}
           </Button>
           <Button

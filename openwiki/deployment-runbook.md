@@ -907,6 +907,16 @@ First setup, once, by hand:
    The SPA build fails without `VITE_EMBED_ORIGIN` and the frame step without
    `EMBED_PAGES_PROJECT`. `VITE_EMBED_ORIGIN` is a bare origin with no
    trailing slash; the app loads `${VITE_EMBED_ORIGIN}/`.
+4. Turn off Cloudflare Access on the project's preview deployments: Workers &
+   Pages → `capy-embed` → Settings → General → Access policy → disable (or
+   delete its application under Zero Trust → Access → Applications). The `uat`
+   alias is a preview deployment, and Cloudflare puts previews behind Access by
+   default; Access answers with a login page that sends
+   `frame-ancestors 'none'`, so the browser refuses to frame it and every
+   interactive block on UAT is blank. The production branch is not covered by
+   that policy. Previews hold nothing private, so they stay public. A custom
+   domain under `capynotebook.com` is not an alternative: it is the same site
+   as the app.
 
 Local development: `pnpm dev` serves `embed/` at `VITE_EMBED_ORIGIN` when that
 is a loopback `http` origin (`vite-embed.ts`), with the headers from
