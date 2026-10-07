@@ -15,4 +15,8 @@ export interface SourceRefreshFinalize {
   sizeBytes: number;
   sourceETag: string;
   sourceSHA256: string;
+  /** @nullable */
+  state?: string | null;
+  /** @nullable */
+  stateSeedSHA256?: string | null;
 }

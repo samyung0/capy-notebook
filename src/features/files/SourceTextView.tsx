@@ -13,11 +13,8 @@ import {
 } from './FileStates';
 import { useReportEditorStatus } from './fileModeContext';
 import { SourceTextEditor } from './SourceTextEditor';
-import {
-  decodeSourceState,
-  sourceHeaderStatus,
-  useSourceSession,
-} from './useSourceSession';
+import { fetchSourceBytes, savedSourceUpdate } from './sourceState';
+import { sourceHeaderStatus, useSourceSession } from './useSourceSession';
 
 export function SourceTextView({
   file,
@@ -82,12 +79,19 @@ export function SourceTextView({
     let cancelled = false;
     let url: string | undefined;
     setSaved(null);
-    api.get<SourceSession>(`/files/${file.id}/source-session?view=true`).then(
-      (session) => {
+    api
+      .get<SourceSession>(`/files/${file.id}/source-session?view=true`)
+      .then(async (session) => {
+        // Rows saved over a state that is still seed(base) need the base.
+        const base =
+          !session.state && session.stateRows?.length
+            ? await fetchSourceBytes(session.sourceURL)
+            : undefined;
         if (cancelled) return;
-        if (session.state) {
+        const update = savedSourceUpdate(session, base);
+        if (update) {
           const doc = new Y.Doc();
-          Y.applyUpdate(doc, decodeSourceState(session.state));
+          Y.applyUpdate(doc, update);
           url = URL.createObjectURL(
             new Blob([doc.getText('source').toString()], {
               type: 'text/plain;charset=utf-8',
@@ -96,11 +100,10 @@ export function SourceTextView({
           doc.destroy();
         }
         setSaved({ url });
-      },
-      () => {
+      })
+      .catch(() => {
         if (!cancelled) setSaved('failed');
-      }
-    );
+      });
     return () => {
       cancelled = true;
       if (url) URL.revokeObjectURL(url);

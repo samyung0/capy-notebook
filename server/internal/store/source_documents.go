@@ -17,9 +17,11 @@ import (
 
 // SourceSession: browser reads send null pendingEffects (server-side only),
 // and the viewer read sends null state unless a checkpoint is ahead of the
-// indexed one. A null state is seed(base) until the first save. An Office
-// state is its change over seed(base), whose SHA-256 stateSeedSHA256 is; a
-// text state is complete. The indexed baseline is derived from the base.
+// indexed one. A null state is seed(base). An Office state is its change over
+// seed(base), whose SHA-256 stateSeedSHA256 is; a text state is complete.
+// Every save since appends a row (delta saves): the saved document is the
+// state, then stateRows in order, which browser reads carry with the state.
+// The indexed baseline is derived from the base.
 type SourceSession struct {
 	FileID            string          `json:"fileId"`
 	WorkspaceID       string          `json:"workspaceId"`
@@ -34,6 +36,7 @@ type SourceSession struct {
 	SourceURL         string          `json:"sourceURL"`
 	State             []byte          `json:"state" nullable:"true"`
 	StateSeedSHA256   *string         `json:"stateSeedSHA256" nullable:"true"`
+	StateRows         [][]byte        `json:"stateRows,omitempty"`
 	PendingEffects    json.RawMessage `json:"pendingEffects"`
 	NetTokens         int64           `json:"netTokens"`
 	BaseBlobPath      string          `json:"-"`
@@ -59,12 +62,14 @@ type SourceCheckpoint struct {
 	// The base revision the effects were measured under: a publication in
 	// between (which keeps epoch and checkpoint) refuses the save, whose
 	// effects are then stale.
-	BaseRevision   int64           `json:"baseRevision" minimum:"1"`
-	State          []byte          `json:"state"`
+	BaseRevision int64 `json:"baseRevision" minimum:"1"`
+	// The room's update since its durable state (a delta save), appended to
+	// the source's rows at the new checkpoint.
+	Update         []byte          `json:"update"`
 	PendingEffects json.RawMessage `json:"pendingEffects"`
 	NetTokens      int64           `json:"netTokens" minimum:"0"`
-	// Required for an Office state, which is its change over seed(base): the
-	// seed's SHA-256.
+	// Required for an Office source, whose saved document is a change over
+	// seed(base): the seed's SHA-256, which must match the stored one.
 	StateSeedSHA256 string `json:"stateSeedSHA256,omitempty"`
 	// The first save over a null state (seed(base)) binds the SHA the service
 	// computed from the source bytes when the file has none yet (a store-only
@@ -240,7 +245,7 @@ func (s *Store) SourceSession(ctx context.Context, actor, fileID string) (Source
 func (s *Store) ViewSourceSession(ctx context.Context, fileID string) (SourceSession, error) {
 	out := SourceSession{FileID: fileID, Access: "read"}
 	var name, kind string
-	err := s.pool.QueryRow(ctx, `SELECT f.workspace_id,f.name,f.kind,COALESCE(d.epoch,0),COALESCE(d.checkpoint,0),COALESCE(d.indexed_checkpoint,0),COALESCE(d.base_revision,f.revision),COALESCE(d.base_blob_path,f.blob_path,''),COALESCE(d.base_source_sha256,f.source_sha256,''),CASE WHEN d.checkpoint>d.indexed_checkpoint OR d.rebuild_pending THEN d.state END,CASE WHEN d.checkpoint>d.indexed_checkpoint OR d.rebuild_pending THEN d.state_seed_sha256 END FROM files f LEFT JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID).Scan(&out.WorkspaceID, &name, &kind, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256)
+	err := s.pool.QueryRow(ctx, `SELECT f.workspace_id,f.name,f.kind,COALESCE(d.epoch,0),COALESCE(d.checkpoint,0),COALESCE(d.indexed_checkpoint,0),COALESCE(d.base_revision,f.revision),COALESCE(d.base_blob_path,f.blob_path,''),COALESCE(d.base_source_sha256,f.source_sha256,''),CASE WHEN d.checkpoint>d.indexed_checkpoint OR d.rebuild_pending THEN d.state END,CASE WHEN d.checkpoint>d.indexed_checkpoint OR d.rebuild_pending THEN d.state_seed_sha256 END,CASE WHEN d.checkpoint>d.indexed_checkpoint OR d.rebuild_pending THEN `+sourceStateRowsSQL+` END FROM files f LEFT JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID).Scan(&out.WorkspaceID, &name, &kind, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256, &out.StateRows)
 	if isNoRows(err) {
 		return out, ErrNotFound
 	}
@@ -302,9 +307,13 @@ func (s *Store) CheckSourceAccess(ctx context.Context, actor, fileID string, epo
 	return tx.Commit(ctx)
 }
 
+// sourceStateRowsSQL: the rows saved over d.state, in order, read in the
+// statement that reads the state (a fold moves rows into it meanwhile).
+const sourceStateRowsSQL = `ARRAY(SELECT u.update FROM source_document_updates u WHERE u.file_id=d.file_id AND u.epoch=d.epoch ORDER BY u.checkpoint)`
+
 func readSourceSession(ctx context.Context, tx pgx.Tx, fileID, ws string) (SourceSession, error) {
 	out := SourceSession{FileID: fileID, WorkspaceID: ws, Access: "read"}
-	err := tx.QueryRow(ctx, `SELECT d.format,d.epoch,d.checkpoint,d.indexed_checkpoint,d.base_revision,d.base_blob_path,d.base_source_sha256,d.state,d.state_seed_sha256,d.pending_effects,d.net_tokens,d.rebuild_pending,d.published_state,d.published_state_seed_sha256,CASE WHEN d.rebuild_pending THEN COALESCE(f.blob_path,'') ELSE '' END,CASE WHEN d.rebuild_pending THEN COALESCE(f.source_sha256,'') ELSE '' END FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1`, fileID).Scan(&out.Format, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256, &out.PendingEffects, &out.NetTokens, &out.RebuildPending, &out.PublishedState, &out.PublishedStateSeedSHA256, &out.PublishedBlobPath, &out.PublishedSourceSHA256)
+	err := tx.QueryRow(ctx, `SELECT d.format,d.epoch,d.checkpoint,d.indexed_checkpoint,d.base_revision,d.base_blob_path,d.base_source_sha256,d.state,d.state_seed_sha256,`+sourceStateRowsSQL+`,d.pending_effects,d.net_tokens,d.rebuild_pending,d.published_state,d.published_state_seed_sha256,CASE WHEN d.rebuild_pending THEN COALESCE(f.blob_path,'') ELSE '' END,CASE WHEN d.rebuild_pending THEN COALESCE(f.source_sha256,'') ELSE '' END FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1`, fileID).Scan(&out.Format, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256, &out.StateRows, &out.PendingEffects, &out.NetTokens, &out.RebuildPending, &out.PublishedState, &out.PublishedStateSeedSHA256, &out.PublishedBlobPath, &out.PublishedSourceSHA256)
 	out.Room = fmt.Sprintf("source:%s:epoch:%d", fileID, out.Epoch)
 	out.SourceIdentity = fmt.Sprintf("revision:%d", out.BaseRevision)
 	return out, err
@@ -334,7 +343,7 @@ type SourceCheckpointSaved struct {
 func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in SourceCheckpoint) (SourceCheckpointSaved, error) {
 	var out SourceCheckpointSaved
 	var effects []json.RawMessage
-	if len(in.State) == 0 || len(in.State) > 100<<20 || in.NetTokens < 0 || json.Unmarshal(in.PendingEffects, &effects) != nil || effects == nil {
+	if len(in.Update) == 0 || len(in.Update) > 100<<20 || in.NetTokens < 0 || json.Unmarshal(in.PendingEffects, &effects) != nil || effects == nil {
 		return out, ErrInvalidCheckpoint
 	}
 	tx, err := s.pool.Begin(ctx)
@@ -348,9 +357,10 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 	}
 	// Sizes only: the stored state alone may reach 100 MB.
 	var format, sha string
+	var storedSeed *string
 	var epoch, baseRevision, seedBytes int64
 	var seeded bool
-	if err = tx.QueryRow(ctx, `SELECT format,epoch,checkpoint,base_revision,base_source_sha256,seed_bytes,state IS NULL FROM source_documents WHERE file_id=$1`, fileID).Scan(&format, &epoch, &out.Checkpoint, &baseRevision, &sha, &seedBytes, &seeded); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT format,epoch,checkpoint,base_revision,base_source_sha256,seed_bytes,state IS NULL AND log_rows=0,state_seed_sha256 FROM source_documents WHERE file_id=$1`, fileID).Scan(&format, &epoch, &out.Checkpoint, &baseRevision, &sha, &seedBytes, &seeded, &storedSeed); err != nil {
 		return out, err
 	}
 	if in.Operation != nil {
@@ -409,16 +419,18 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 			return out, err
 		}
 	}
-	// An Office state is stored as its change over seed(base); text is complete.
-	if text != (in.StateSeedSHA256 == "") || (!text && !sha256Hex(in.StateSeedSHA256)) {
+	// An Office document is a change over seed(base), every row over the seed
+	// the stored state names (the first row names it over a NULL state); text
+	// is complete.
+	if text != (in.StateSeedSHA256 == "") || (!text && !sha256Hex(in.StateSeedSHA256)) || (storedSeed != nil && *storedSeed != in.StateSeedSHA256) {
 		return out, ErrInvalidCheckpoint
 	}
-	// A refresh that captured the state being replaced keeps its own copy from
-	// now on; until a save lands, its NULL state reads this row's.
-	if _, err = tx.Exec(ctx, `UPDATE source_refresh_candidates c SET state=d.state,state_seed_sha256=d.state_seed_sha256 FROM source_documents d WHERE c.file_id=$1 AND d.file_id=c.file_id AND c.epoch=d.epoch AND c.checkpoint=d.checkpoint`, fileID); err != nil {
+	// The row goes in at the next checkpoint; a capture keeps reading the rows
+	// up to its own (the collaboration service materializes it at export).
+	if _, err = tx.Exec(ctx, `INSERT INTO source_document_updates(file_id,epoch,checkpoint,update) VALUES($1,$2,$3,$4)`, fileID, epoch, out.Checkpoint+1, in.Update); err != nil {
 		return out, err
 	}
-	err = tx.QueryRow(ctx, `UPDATE source_documents SET state=$2,state_seed_sha256=NULLIF($7,''),seed_bytes=$5,base_source_sha256=$6,pending_effects=$3,net_tokens=$4,checkpoint=checkpoint+1,last_edited_at=now(),updated_at=now(),desired_checkpoint=CASE WHEN desired_manual THEN checkpoint+1 ELSE NULL END,refresh_error=NULL WHERE file_id=$1 RETURNING checkpoint`, fileID, in.State, in.PendingEffects, in.NetTokens, seedBytes, sha, in.StateSeedSHA256).Scan(&out.Checkpoint)
+	err = tx.QueryRow(ctx, `UPDATE source_documents SET state_seed_sha256=NULLIF($7,''),seed_bytes=$5,base_source_sha256=$6,pending_effects=$3,net_tokens=$4,log_bytes=log_bytes+$2,log_rows=log_rows+1,checkpoint=checkpoint+1,last_edited_at=now(),updated_at=now(),desired_checkpoint=CASE WHEN desired_manual THEN checkpoint+1 ELSE NULL END,refresh_error=NULL WHERE file_id=$1 RETURNING checkpoint`, fileID, int64(len(in.Update)), in.PendingEffects, in.NetTokens, seedBytes, sha, in.StateSeedSHA256).Scan(&out.Checkpoint)
 	if err != nil {
 		return out, err
 	}

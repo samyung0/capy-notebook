@@ -46,12 +46,12 @@ const sourceTestSeedBytes = 4
 
 var sourceTestStateSeed = strings.Repeat("c", 64)
 
-// sourceTestSave is a save of doc's next checkpoint under migration 0039's
-// rules: the first save binds the base SHA (and a text seed's size), and an
-// Office state names the seed it is a change over.
+// sourceTestSave is a save of doc's next checkpoint (one appended row) under
+// migration 0039's rules: the first save binds the base SHA (and a text
+// seed's size), and an Office row names the seed it is a change over.
 func sourceTestSave(doc SourceSession, actor, state string) SourceCheckpoint {
-	save := SourceCheckpoint{ActorIDs: []string{actor}, Epoch: doc.Epoch, BaseRevision: doc.BaseRevision, ExpectedCheckpoint: doc.Checkpoint, State: []byte(state), PendingEffects: json.RawMessage(`[{"type":"text","before":"old","after":"new"}]`), NetTokens: 6000}
-	if doc.State == nil {
+	save := SourceCheckpoint{ActorIDs: []string{actor}, Epoch: doc.Epoch, BaseRevision: doc.BaseRevision, ExpectedCheckpoint: doc.Checkpoint, Update: []byte(state), PendingEffects: json.RawMessage(`[{"type":"text","before":"old","after":"new"}]`), NetTokens: 6000}
+	if doc.State == nil && len(doc.StateRows) == 0 {
 		save.BaseSourceSHA256 = strings.Repeat("a", 64)
 		if doc.Format == "text" {
 			save.SeedBytes = sourceTestSeedBytes
@@ -61,6 +61,19 @@ func sourceTestSave(doc SourceSession, actor, state string) SourceCheckpoint {
 		save.StateSeedSHA256 = sourceTestStateSeed
 	}
 	return save
+}
+
+// sourceTestDocument is a saved document as these tests write it: the state,
+// then the rows saved over it, joined by "+" ("" is seed(base)).
+func sourceTestDocument(doc SourceSession) string {
+	parts := []string{}
+	if doc.State != nil {
+		parts = append(parts, string(doc.State))
+	}
+	for _, row := range doc.StateRows {
+		parts = append(parts, string(row))
+	}
+	return strings.Join(parts, "+")
 }
 
 func sourceTestEdit(t *testing.T, s *Store, actor string, doc SourceSession, state string) SourceSession {
@@ -102,7 +115,7 @@ func TestSourceCheckpointAuthorizationAndCreditIndependence(t *testing.T) {
 	if err := s.CheckSourceAccess(ctx, owner, file.ID, doc.Epoch, true); err != nil {
 		t.Fatalf("owner edit admission: %v", err)
 	}
-	req := SourceCheckpoint{ActorIDs: []string{viewer}, Epoch: doc.Epoch, BaseRevision: doc.BaseRevision, ExpectedCheckpoint: 0, State: []byte("new"), PendingEffects: json.RawMessage(`[]`), SeedBytes: sourceTestSeedBytes, BaseSourceSHA256: strings.Repeat("a", 64)}
+	req := SourceCheckpoint{ActorIDs: []string{viewer}, Epoch: doc.Epoch, BaseRevision: doc.BaseRevision, ExpectedCheckpoint: 0, Update: []byte("new"), PendingEffects: json.RawMessage(`[]`), SeedBytes: sourceTestSeedBytes, BaseSourceSHA256: strings.Repeat("a", 64)}
 	if _, err := s.SaveSourceCheckpoint(ctx, file.ID, req); err == nil {
 		t.Fatal("viewer authored checkpoint")
 	}
@@ -229,9 +242,6 @@ func TestOfficeAutomaticRefreshAdmission(t *testing.T) {
 	}
 }
 
-// schedulerSource reads a statement or constant of the collaboration
-// scheduler (collaboration/src/sourceDocuments.ts), the first capture group of
-// pattern, so the Go tests run it verbatim.
 func TestPendingOverflowNotifiesOwnerOnceUntilProcessed(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -257,33 +267,36 @@ func TestPendingOverflowNotifiesOwnerOnceUntilProcessed(t *testing.T) {
 	notify(1)
 }
 
+// schedulerSource reads a statement or constant of the collaboration
+// scheduler (collaboration-rs/crates/sources/src/refresh.rs), the first
+// capture group of pattern, so the Go tests run it verbatim.
 func schedulerSource(t *testing.T, pattern string) string {
 	t.Helper()
-	raw, err := os.ReadFile("../../../collaboration/src/sourceDocuments.ts")
+	raw, err := os.ReadFile("../../../collaboration-rs/crates/sources/src/refresh.rs")
 	if err != nil {
 		t.Fatal(err)
 	}
 	match := regexp.MustCompile(pattern).FindSubmatch(raw)
 	if match == nil {
-		t.Fatalf("%s not found in sourceDocuments.ts", pattern)
+		t.Fatalf("%s not found in refresh.rs", pattern)
 	}
 	return string(match[1])
 }
 
 // TestRefreshSchedulerQuery runs the collaboration scheduler's statements from
-// collaboration/src/sourceDocuments.ts verbatim with its trigger constants,
-// which must equal Go admission's.
+// collaboration-rs/crates/sources/src/refresh.rs verbatim with its trigger
+// constants, which must equal Go admission's.
 func TestRefreshSchedulerQuery(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	find := func(pattern string) string { return schedulerSource(t, pattern) }
-	candidatesSQL := find("(?s)const REFRESH_CANDIDATES_SQL = `(.*?)`;")
-	deferSQL := find(`(?s)const REFRESH_DEFER_SQL =\s*'(.*?)';`)
-	tokens, err := strconv.Atoi(find(`const OFFICE_REFRESH_TOKENS = (\d+);`))
+	candidatesSQL := find(`(?s)const REFRESH_CANDIDATES_SQL: &str = "(.*?)";`)
+	deferSQL := find(`(?s)const REFRESH_DEFER_SQL: &str =\s*"(.*?)";`)
+	tokens, err := strconv.Atoi(find(`const OFFICE_REFRESH_TOKENS: i64 = (\d+);`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	idle, stale := find(`const OFFICE_REFRESH_IDLE = '(.*?)';`), find(`const OFFICE_REFRESH_STALE = '(.*?)';`)
+	idle, stale := find(`const OFFICE_REFRESH_IDLE: &str = "(.*?)";`), find(`const OFFICE_REFRESH_STALE: &str = "(.*?)";`)
 	var same bool
 	if err = s.pool.QueryRow(ctx, `SELECT $1::interval=make_interval(secs=>$2) AND $3::interval=make_interval(secs=>$4)`, idle, officeRefreshIdle.Seconds(), stale, officeRefreshStale.Seconds()).Scan(&same); err != nil || !same || tokens != officeRefreshTokens {
 		t.Fatalf("scheduler trigger %d/%s/%s differs from Go admission (err %v)", tokens, idle, stale, err)
@@ -444,8 +457,8 @@ func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 	if _, err = s.ClaimSourceRefresh(ctx, file.ID, job.JobID); !errors.Is(err, ErrConflict) {
 		t.Fatalf("duplicate export claim: %v", err)
 	}
-	// Copy-on-write: the candidate holds no state until a save lands, and the
-	// claim reads the row's.
+	// The candidate holds no state until the collaboration service finalizes
+	// the export with the capture it materialized from the base and rows.
 	captured := func() []byte {
 		t.Helper()
 		var state []byte
@@ -454,16 +467,21 @@ func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 		}
 		return state
 	}
-	if string(candidate.State) != "candidate-state" || captured() != nil {
-		t.Fatalf("capture: claimed %q, stored %q", candidate.State, captured())
+	if captured() != nil {
+		t.Fatalf("claim stored a capture: %q", captured())
 	}
-	finalize := SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-b"}
+	finalize := SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-b", State: []byte("candidate-state")}
+	// An Office capture names its seed.
+	if err = s.FinalizeSourceRefresh(ctx, file.ID, finalize); !errors.Is(err, ErrConflict) {
+		t.Fatalf("Office capture without its seed: %v", err)
+	}
+	finalize.StateSeedSHA256 = &sourceTestStateSeed
 	if err = s.FinalizeSourceRefresh(ctx, file.ID, finalize); err != nil {
 		t.Fatal(err)
 	}
 	doc = sourceTestEdit(t, s, owner, doc, "newer-state")
 	if string(captured()) != "candidate-state" {
-		t.Fatalf("the first later save copied %q", captured())
+		t.Fatalf("a later save changed the capture: %q", captured())
 	}
 	if _, err = s.pool.Exec(ctx, `UPDATE jobs SET status='running',attempts=1,lease_expires_at=now()+interval '5 minutes' WHERE id=$1`, job.JobID); err != nil {
 		t.Fatal(err)
@@ -486,7 +504,7 @@ func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 	// Another save wins while the native rebase is being calculated.
 	doc = sourceTestEdit(t, s, owner, doc, "newest-state")
 	if string(captured()) != "candidate-state" {
-		t.Fatalf("a second later save replaced the copy with %q", captured())
+		t.Fatalf("a second later save changed the capture: %q", captured())
 	}
 	if _, err = s.PublishSourceRefresh(ctx, file.ID, publish); !errors.Is(err, ErrConflict) {
 		t.Fatalf("stale rebase published: %v", err)
@@ -495,7 +513,7 @@ func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(retained.State) != "newest-state" || retained.Checkpoint != doc.Checkpoint || retained.Epoch != 1 {
+	if sourceTestDocument(retained) != "candidate-state+newer-state+newest-state" || retained.Checkpoint != doc.Checkpoint || retained.Epoch != 1 {
 		t.Fatalf("stale rebase lost saved edits: %+v", retained)
 	}
 	old, err := s.GetFile(ctx, file.ID)
@@ -541,7 +559,7 @@ func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 	if err = s.pool.QueryRow(ctx, `SELECT $1::jsonb`, residual).Scan(&normalizedResidual); err != nil {
 		t.Fatal(err)
 	}
-	if published.Epoch != 2 || published.Checkpoint != doc.Checkpoint || published.IndexedCheckpoint != 1 || published.NetTokens != 3 || string(published.State) != "rebased-newest-state" || published.StateSeedSHA256 == nil || *published.StateSeedSHA256 != sourceTestStateSeed || published.BaseRevision != 2 || string(published.PendingEffects) != string(normalizedResidual) {
+	if published.Epoch != 2 || published.Checkpoint != doc.Checkpoint || published.IndexedCheckpoint != 1 || published.NetTokens != 3 || sourceTestDocument(published) != "rebased-newest-state" || published.StateSeedSHA256 == nil || *published.StateSeedSHA256 != sourceTestStateSeed || published.BaseRevision != 2 || string(published.PendingEffects) != string(normalizedResidual) {
 		t.Fatalf("bad base promotion: %+v", published)
 	}
 	// The rebased change is charged as stored.
@@ -564,7 +582,7 @@ func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 	if repeat, err := s.PublishSourceRefresh(ctx, file.ID, publish); err != nil || repeat.BaseRevision != 2 {
 		t.Fatalf("idempotent publication: %+v %v", repeat, err)
 	}
-	if _, err = s.SaveSourceCheckpoint(ctx, file.ID, SourceCheckpoint{ActorIDs: []string{owner}, Epoch: 1, BaseRevision: 2, ExpectedCheckpoint: doc.Checkpoint, State: []byte("late"), PendingEffects: json.RawMessage(`[]`)}); !errors.Is(err, ErrConflict) {
+	if _, err = s.SaveSourceCheckpoint(ctx, file.ID, SourceCheckpoint{ActorIDs: []string{owner}, Epoch: 1, BaseRevision: 2, ExpectedCheckpoint: doc.Checkpoint, Update: []byte("late"), PendingEffects: json.RawMessage(`[]`)}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("old epoch accepted: %v", err)
 	}
 }
@@ -795,8 +813,8 @@ func TestRefusedRebuildMakesTheFileDue(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `UPDATE source_documents SET net_tokens=5,last_edited_at=now()-interval '2 minutes',last_refresh_requested_at=now()-interval '2 minutes' WHERE file_id=$1`, fileID); err != nil {
 		t.Fatal(err)
 	}
-	candidatesSQL := schedulerSource(t, "(?s)const REFRESH_CANDIDATES_SQL = `(.*?)`;")
-	idle, stale := schedulerSource(t, `const OFFICE_REFRESH_IDLE = '(.*?)';`), schedulerSource(t, `const OFFICE_REFRESH_STALE = '(.*?)';`)
+	candidatesSQL := schedulerSource(t, `(?s)const REFRESH_CANDIDATES_SQL: &str = "(.*?)";`)
+	idle, stale := schedulerSource(t, `const OFFICE_REFRESH_IDLE: &str = "(.*?)";`), schedulerSource(t, `const OFFICE_REFRESH_STALE: &str = "(.*?)";`)
 	listed := func() bool {
 		t.Helper()
 		tx, err := s.pool.Begin(ctx)
@@ -1306,40 +1324,6 @@ func TestSourceCheckpointStateKind(t *testing.T) {
 		if stateSeed == nil || *stateSeed != sourceTestStateSeed || doc.StateSeedSHA256 == nil || *doc.StateSeedSHA256 != sourceTestStateSeed || seedBytes != 0 {
 			t.Fatalf("Office state kind: %v %d", stateSeed, seedBytes)
 		}
-	}
-}
-
-// A refresh that captured a NULL state (seed(base)) still reads NULL after a
-// save lands: the save copies NULL into the candidate, and the readers (Go's
-// claim and the service's CAPTURED_STATE_SQL, run verbatim) take the copy
-// once the checkpoints differ instead of the row's newer state.
-func TestNullCaptureSurvivesALaterSave(t *testing.T) {
-	s := openAccessTestStore(t)
-	ctx := context.Background()
-	reg, err := models.New(ctx, s.Pool())
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.SetModelRegistry(reg)
-	owner := newBlobTestUser(t, s, "null_capture")
-	_, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
-	doc := sourceTestSeed(t, s, owner, file.ID)
-	job, err := s.RequestSourceRefresh(ctx, owner, file.ID, false) // Process with no edits
-	if err != nil {
-		t.Fatal(err)
-	}
-	sourceTestEdit(t, s, owner, doc, "later-state")
-	candidate, err := s.ClaimSourceRefresh(ctx, file.ID, job.JobID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	reader := schedulerSource(t, `(?s)export const CAPTURED_STATE_SQL =\s*'(.*?)';`)
-	var captured []byte
-	if err = s.pool.QueryRow(ctx, `SELECT `+reader+` FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id WHERE c.file_id=$1`, file.ID).Scan(&captured); err != nil {
-		t.Fatal(err)
-	}
-	if candidate.State != nil || captured != nil {
-		t.Fatalf("captured seed(base) read as %q (claim) and %q (service)", candidate.State, captured)
 	}
 }
 

@@ -17,16 +17,14 @@ type SourceRefreshCandidate struct {
 	Epoch      int64  `json:"epoch"`
 	Checkpoint int64  `json:"checkpoint"`
 	LeaseToken string `json:"leaseToken"`
-	// Null when the captured state is seed(base). With StateSeedSHA256 it is
-	// the change over seed(base), as in SourceSession.
-	State            []byte  `json:"state" nullable:"true"`
-	StateSeedSHA256  *string `json:"stateSeedSHA256" nullable:"true"`
-	SourceBlobPath   string  `json:"sourceBlobPath"`
-	Format           string  `json:"format"`
-	BaseSourceURL    string  `json:"baseSourceURL"`
-	BaseSourceSHA256 string  `json:"baseSourceSHA256"`
-	BaseRevision     int64   `json:"baseRevision"`
-	BaseBlobPath     string  `json:"-"`
+	// The collaboration service exports the state as of Checkpoint from the
+	// base and the rows saved up to it, and finalizes with that capture.
+	SourceBlobPath   string `json:"sourceBlobPath"`
+	Format           string `json:"format"`
+	BaseSourceURL    string `json:"baseSourceURL"`
+	BaseSourceSHA256 string `json:"baseSourceSHA256"`
+	BaseRevision     int64  `json:"baseRevision"`
+	BaseBlobPath     string `json:"-"`
 }
 
 type SourceRefreshFinalize struct {
@@ -37,6 +35,11 @@ type SourceRefreshFinalize struct {
 	SourceSHA256 string `json:"sourceSHA256"`
 	SizeBytes    int64  `json:"sizeBytes"`
 	SourceETag   string `json:"sourceETag"`
+	// The capture the export was built from, as SourceSession's state (null:
+	// seed(base)): publication measures and keeps it, and a fold keeps the
+	// rows it covers until it is here.
+	State           []byte  `json:"state,omitempty" nullable:"true"`
+	StateSeedSHA256 *string `json:"stateSeedSHA256,omitempty" nullable:"true"`
 }
 
 type SourceRefreshPublish struct {
@@ -123,9 +126,7 @@ func (s *Store) ClaimSourceRefresh(ctx context.Context, fileID, jobID string) (S
 	}
 	out := SourceRefreshCandidate{FileID: fileID, JobID: jobID}
 	var attempts int
-	// Copy-on-write: while no save has landed since the capture, the captured
-	// state is the row's own (NULL for both: seed(base)).
-	err = tx.QueryRow(ctx, `SELECT c.epoch,c.checkpoint,CASE WHEN c.checkpoint=d.checkpoint THEN d.state ELSE c.state END,CASE WHEN c.checkpoint=d.checkpoint THEN d.state_seed_sha256 ELSE c.state_seed_sha256 END,d.format,d.base_blob_path,d.base_source_sha256,d.base_revision,j.attempts FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id JOIN jobs j ON j.id=c.job_id WHERE c.file_id=$1 AND c.job_id=$2 AND d.running_job_id=j.id AND d.epoch=c.epoch AND j.type='source_refresh' AND(j.status='pending' OR(j.status='running' AND j.lease_expires_at<now())) FOR UPDATE OF c,d,j`, fileID, jobID).Scan(&out.Epoch, &out.Checkpoint, &out.State, &out.StateSeedSHA256, &out.Format, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.BaseRevision, &attempts)
+	err = tx.QueryRow(ctx, `SELECT c.epoch,c.checkpoint,d.format,d.base_blob_path,d.base_source_sha256,d.base_revision,j.attempts FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id JOIN jobs j ON j.id=c.job_id WHERE c.file_id=$1 AND c.job_id=$2 AND d.running_job_id=j.id AND d.epoch=c.epoch AND j.type='source_refresh' AND(j.status='pending' OR(j.status='running' AND j.lease_expires_at<now())) FOR UPDATE OF c,d,j`, fileID, jobID).Scan(&out.Epoch, &out.Checkpoint, &out.Format, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.BaseRevision, &attempts)
 	if err != nil {
 		if isNoRows(err) {
 			err = ErrConflict
@@ -171,7 +172,7 @@ func (s *Store) SourceCandidateBlob(ctx context.Context, fileID, jobID, lease st
 }
 
 func (s *Store) FinalizeSourceRefresh(ctx context.Context, fileID string, in SourceRefreshFinalize) error {
-	if in.SizeBytes < 0 || len(in.SourceSHA256) != 64 || in.SourceETag == "" {
+	if in.SizeBytes < 0 || len(in.SourceSHA256) != 64 || in.SourceETag == "" || len(in.State) > 100<<20 || (in.StateSeedSHA256 != nil && (len(in.State) == 0 || !sha256Hex(*in.StateSeedSHA256))) {
 		return ErrConflict
 	}
 	tx, err := s.pool.Begin(ctx)
@@ -200,6 +201,11 @@ func (s *Store) FinalizeSourceRefresh(ctx context.Context, fileID string, in Sou
 		return err
 	}
 	if in.SizeBytes > maxBytes {
+		return ErrConflict
+	}
+	// An Office capture is a change over seed(base) and names its seed; text
+	// is complete.
+	if (format == "text") != (in.StateSeedSHA256 == nil) && len(in.State) > 0 {
 		return ErrConflict
 	}
 	// The candidate is uncharged while transient, and publication gates the
@@ -236,7 +242,11 @@ func (s *Store) FinalizeSourceRefresh(ctx context.Context, fileID string, in Sou
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE source_refresh_candidates SET source_sha256=$6,size_bytes=$7 WHERE file_id=$1 AND job_id=$2 AND epoch=$3 AND checkpoint=$4 AND lease_token=$5`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, in.SourceSHA256, in.SizeBytes); err != nil {
+	var captured []byte
+	if len(in.State) > 0 {
+		captured = in.State
+	}
+	if _, err = tx.Exec(ctx, `UPDATE source_refresh_candidates SET source_sha256=$6,size_bytes=$7,state=$8,state_seed_sha256=$9 WHERE file_id=$1 AND job_id=$2 AND epoch=$3 AND checkpoint=$4 AND lease_token=$5`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, in.SourceSHA256, in.SizeBytes, captured, in.StateSeedSHA256); err != nil {
 		return err
 	}
 	planBytes, err := json.Marshal(plan)
@@ -360,22 +370,24 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	}
 	// A deferred publication keeps the captured state on the old base: pending
 	// effects are measured against it until the rebuild. The candidate row
-	// goes below, so it is copied first. It is what the export was built from.
+	// goes below, so it is copied first. It is what the export was built from
+	// (the collaboration service materialized it at finalize).
 	var captured []byte
 	var capturedSeed *string
 	var replacedSHA string
-	if err = tx.QueryRow(ctx, `SELECT CASE WHEN c.checkpoint=d.checkpoint THEN d.state ELSE c.state END,CASE WHEN c.checkpoint=d.checkpoint THEN d.state_seed_sha256 ELSE c.state_seed_sha256 END,COALESCE(f.source_sha256,'') FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2`, fileID, in.JobID).Scan(&captured, &capturedSeed, &replacedSHA); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT c.state,c.state_seed_sha256,COALESCE(f.source_sha256,'') FROM source_refresh_candidates c JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2`, fileID, in.JobID).Scan(&captured, &capturedSeed, &replacedSHA); err != nil {
 		return doc, err
 	}
-	// The file's new bytes plus its storage_bytes afterwards (migration 0054's
-	// rule) minus before. A text state's seed size moves with the file's size,
-	// and a deferred Office state is charged beyond the capture the file now
-	// holds; any other Office state as stored.
+	// The file's new bytes plus its storage_bytes afterwards (migrations 0054
+	// and 0067) minus before. A text state's seed size moves with the file's
+	// size, and a deferred Office state is charged beyond the capture the file
+	// now holds; both keep their rows. Any other Office state as stored, its
+	// rows gone with the epoch.
 	if in.Deferred {
 		state = doc.State
 	}
 	var growth, resized int64
-	if err = tx.QueryRow(ctx, `SELECT ($2::bigint-f.size_bytes)+COALESCE(octet_length(NULLIF($3::jsonb,'[]'::jsonb)::text),0)+CASE WHEN d.format='text' THEN GREATEST(0,COALESCE(octet_length(d.state),0)-(d.seed_bytes+$2::bigint-f.size_bytes)) WHEN $5 THEN GREATEST(0,COALESCE(octet_length($4::bytea),0)-COALESCE(octet_length($6::bytea),0)) ELSE COALESCE(octet_length($4::bytea),0) END-d.storage_bytes,$2::bigint-f.size_bytes FROM files f JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1`, fileID, size, effects, state, in.Deferred, captured).Scan(&growth, &resized); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT ($2::bigint-f.size_bytes)+COALESCE(octet_length(NULLIF($3::jsonb,'[]'::jsonb)::text),0)+CASE WHEN d.format='text' THEN GREATEST(0,COALESCE(octet_length(d.state),0)+d.log_bytes-(d.seed_bytes+$2::bigint-f.size_bytes)) WHEN $5 THEN GREATEST(0,COALESCE(octet_length($4::bytea),0)+d.log_bytes-COALESCE(octet_length($6::bytea),0)) ELSE COALESCE(octet_length($4::bytea),0) END-d.storage_bytes,$2::bigint-f.size_bytes FROM files f JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1`, fileID, size, effects, state, in.Deferred, captured).Scan(&growth, &resized); err != nil {
 		return doc, err
 	}
 	if growth > 0 && !job.system {
@@ -428,7 +440,11 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 		_, err = tx.Exec(ctx, `UPDATE source_documents SET indexed_checkpoint=$2,base_revision=base_revision+1,base_blob_path=$3,base_source_sha256=$4,pending_effects=$5,net_tokens=$6,seed_bytes=seed_bytes+$7,desired_manual=desired_manual AND $5::jsonb<>'[]'::jsonb,desired_checkpoint=CASE WHEN $5::jsonb='[]'::jsonb THEN NULL ELSE desired_checkpoint END,running_job_id=NULL,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, source, sha, effects, netTokens, resized)
 	default:
 		// Indexed now, so an export-only publication's reprocess mark is done.
-		_, err = tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,indexed_checkpoint=$2,state=$3,state_seed_sha256=NULLIF($8,''),reprocess_at=NULL,rebuild_pending=false,rebuild_refusal=NULL,published_state=NULL,published_state_seed_sha256=NULL,base_revision=d.base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$6,net_tokens=$7,running_job_id=NULL,desired_checkpoint=CASE WHEN $6::jsonb='[]'::jsonb THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $6::jsonb<>'[]'::jsonb,refresh_error=NULL,updated_at=now() WHERE d.file_id=$1`, fileID, in.Checkpoint, state, source, sha, effects, netTokens, stateSeed)
+		// The new epoch's state replaces the old base and its rows.
+		if err = dropSourceRowsTx(ctx, tx, fileID); err != nil {
+			return doc, err
+		}
+		_, err = tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,log_bytes=0,log_rows=0,indexed_checkpoint=$2,state=$3,state_seed_sha256=NULLIF($8,''),reprocess_at=NULL,rebuild_pending=false,rebuild_refusal=NULL,published_state=NULL,published_state_seed_sha256=NULL,base_revision=d.base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$6,net_tokens=$7,running_job_id=NULL,desired_checkpoint=CASE WHEN $6::jsonb='[]'::jsonb THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $6::jsonb<>'[]'::jsonb,refresh_error=NULL,updated_at=now() WHERE d.file_id=$1`, fileID, in.Checkpoint, state, source, sha, effects, netTokens, stateSeed)
 		if err == nil {
 			// Rebase can change native identities. Release AI edit guards and
 			// their Undo with the old editing epoch.
@@ -457,6 +473,14 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 		return out, err
 	}
 	return out, tx.Commit(ctx)
+}
+
+// dropSourceRowsTx deletes a source's saved rows when a new state replaces its
+// base and rows (a new epoch); the caller zeroes log_bytes and log_rows in the
+// same transaction.
+func dropSourceRowsTx(ctx context.Context, tx pgx.Tx, fileID string) error {
+	_, err := tx.Exec(ctx, `DELETE FROM source_document_updates WHERE file_id=$1`, fileID)
+	return err
 }
 
 // releaseArtifactCacheTx drops cached artifacts of a replaced base once nothing
@@ -684,7 +708,10 @@ func (s *Store) RebuildSource(ctx context.Context, fileID string, in SourceRebui
 	if _, err = tx.Exec(ctx, `SELECT enqueue_source_collaboration_eviction($1,'discard')`, fileID); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,base_blob_path=f.blob_path,base_source_sha256=f.source_sha256,state=$2,state_seed_sha256=NULLIF($3,''),pending_effects=$4,net_tokens=$5,rebuild_pending=false,rebuild_refusal=NULL,published_state=NULL,published_state_seed_sha256=NULL,updated_at=now() FROM files f WHERE d.file_id=$1 AND f.id=d.file_id`, fileID, state, in.StateSeedSHA256, in.PendingEffects, in.NetTokens); err != nil {
+	if err = dropSourceRowsTx(ctx, tx, fileID); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,log_bytes=0,log_rows=0,base_blob_path=f.blob_path,base_source_sha256=f.source_sha256,state=$2,state_seed_sha256=NULLIF($3,''),pending_effects=$4,net_tokens=$5,rebuild_pending=false,rebuild_refusal=NULL,published_state=NULL,published_state_seed_sha256=NULL,updated_at=now() FROM files f WHERE d.file_id=$1 AND f.id=d.file_id`, fileID, state, in.StateSeedSHA256, in.PendingEffects, in.NetTokens); err != nil {
 		return err
 	}
 	// Rebase can change native identities. Release AI edit guards and their
@@ -722,6 +749,10 @@ func (s *Store) ResetSourceEpoch(ctx context.Context, fileID string, in SourceEp
 	}
 	tag, err := tx.Exec(ctx, `UPDATE source_documents SET epoch=epoch+1,updated_at=now() WHERE file_id=$1 AND epoch=$2`, fileID, in.Epoch)
 	if err != nil {
+		return false, err
+	}
+	// The saved rows are part of the saved state: they move with it.
+	if _, err = tx.Exec(ctx, `UPDATE source_document_updates SET epoch=epoch+1 WHERE file_id=$1 AND epoch=$2`, fileID, in.Epoch); err != nil {
 		return false, err
 	}
 	return tag.RowsAffected() > 0, tx.Commit(ctx)

@@ -413,6 +413,10 @@ func (s *Store) RestoreTrashed(ctx context.Context, ownerID string, kind agentto
 			if _, err := tx.Exec(ctx, `UPDATE source_documents SET epoch=epoch+1, updated_at=now() WHERE file_id=$1`, id); err != nil {
 				return nil, err
 			}
+			// The saved rows move with the state they belong to.
+			if _, err := tx.Exec(ctx, `UPDATE source_document_updates SET epoch=epoch+1 WHERE file_id=$1`, id); err != nil {
+				return nil, err
+			}
 		} else {
 			if _, err := tx.Exec(ctx, `UPDATE material_yjs_documents SET room_schema=room_schema+1, updated_at=now()
 				WHERE material_id=$1`, id); err != nil {

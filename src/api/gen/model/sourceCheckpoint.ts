@@ -27,6 +27,6 @@ export interface SourceCheckpoint {
   pendingEffects: unknown;
   /** @minimum 0 */
   seedBytes?: number;
-  state: string;
   stateSeedSHA256?: string;
+  update: string;
 }

@@ -34,6 +34,7 @@ import {
   openPresenterWindow,
 } from './officeRuntimeConfig';
 import { printPages } from './printPages';
+import { savedSourceUpdate } from './sourceState';
 import {
   canEncodeWebp,
   createThumbnailCapture,
@@ -41,7 +42,6 @@ import {
   uploadThumbnail,
 } from './thumbnailCapture';
 import {
-  decodeSourceState,
   SOURCE_IFRAME_ORIGIN,
   sessionReported,
   useSourceSession,
@@ -335,10 +335,10 @@ export function useOfficeRuntime({
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const bytes = await response.arrayBuffer();
         const saved =
-          session.checkpoint !== session.indexedCheckpoint && session.state;
-        const checkpoint = saved
-          ? decodeSourceState(saved).slice().buffer
-          : undefined;
+          session.checkpoint === session.indexedCheckpoint
+            ? null
+            : savedSourceUpdate(session);
+        const checkpoint = saved ? saved.slice().buffer : undefined;
         // A stored change applies over seed(base), named by its hash.
         const checkpointSeedSHA256 = saved
           ? (session.stateSeedSHA256 ?? undefined)

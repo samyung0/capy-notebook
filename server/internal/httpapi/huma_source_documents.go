@@ -154,7 +154,7 @@ func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*so
 	// A pending rebuild is the collaboration service's.
 	session.RebuildPending, session.PublishedState, session.PublishedStateSeedSHA256, session.PublishedSourceSHA256 = false, nil, nil, ""
 	if session.Format != "text" {
-		session.State, session.StateSeedSHA256 = nil, nil
+		session.State, session.StateSeedSHA256, session.StateRows = nil, nil, nil
 	}
 	return a.sourceSessionResponse(ctx, session)
 }
@@ -166,6 +166,9 @@ func (a *api) bootstrapSourceDocument(ctx context.Context, in *sourceBootstrapIn
 	if err != nil {
 		return nil, hErr(err)
 	}
+	// The collaboration service reads the state and its rows from the
+	// database in one snapshot when it loads a room.
+	session.StateRows = nil
 	return a.sourceSessionResponse(ctx, session)
 }
 func (a *api) checkSourceAccess(ctx context.Context, in *sourceAccessInput) (*struct{}, error) {

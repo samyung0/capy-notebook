@@ -3,7 +3,7 @@ import * as Y from 'yjs';
 import { qk } from '@/api/client';
 import { queryClient } from '@/api/queryClient';
 import type { MockDialogId } from '@/components/dev/mockDialogOptions';
-import { decodeSourceState } from '@/features/files/useSourceSession';
+import { decodeSourceState } from '@/features/files/sourceState';
 import { m } from '@/i18n';
 import { draftKey, putDrafts, sourceLineage } from '@/lib/editDrafts';
 import { router } from '@/router';

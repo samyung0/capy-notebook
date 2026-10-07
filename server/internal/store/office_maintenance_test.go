@@ -71,7 +71,7 @@ func TestOfficeEditingPause(t *testing.T) {
 	sourceTestEdit(t, s, owner, doc, "flushed-state")
 	// An agent edit that passed the gateway's check just before the pause is
 	// refused where it commits.
-	_, err := s.SaveSourceCheckpoint(ctx, open.ID, SourceCheckpoint{ActorIDs: []string{owner}, Epoch: doc.Epoch, BaseRevision: doc.BaseRevision, ExpectedCheckpoint: doc.Checkpoint + 1, State: []byte("agent-state"), PendingEffects: json.RawMessage(`[]`), Operation: &SourceCheckpointOperation{Receipt: SourceCheckpointReceipt{ID: uid("op"), RequestHash: "hash", ActorUserID: owner, ToolVersion: 1}, Inverse: json.RawMessage(`{"commands":[]}`)}})
+	_, err := s.SaveSourceCheckpoint(ctx, open.ID, SourceCheckpoint{ActorIDs: []string{owner}, Epoch: doc.Epoch, BaseRevision: doc.BaseRevision, ExpectedCheckpoint: doc.Checkpoint + 1, Update: []byte("agent-state"), PendingEffects: json.RawMessage(`[]`), Operation: &SourceCheckpointOperation{Receipt: SourceCheckpointReceipt{ID: uid("op"), RequestHash: "hash", ActorUserID: owner, ToolVersion: 1}, Inverse: json.RawMessage(`{"commands":[]}`)}})
 	if !errors.Is(err, ErrOfficeEditingPaused) {
 		t.Fatalf("agent edit commit during the pause: %v", err)
 	}
@@ -386,7 +386,8 @@ func TestStoreOnlyAutomaticExport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = s.FinalizeSourceRefresh(ctx, file, SourceRefreshFinalize{JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("d", 64), SizeBytes: 90, SourceETag: "etag-d"}); err != nil {
+	// The collaboration service exports the capture it materialized.
+	if err = s.FinalizeSourceRefresh(ctx, file, SourceRefreshFinalize{JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("d", 64), SizeBytes: 90, SourceETag: "etag-d", State: []byte("edited-state"), StateSeedSHA256: &sourceTestStateSeed}); err != nil {
 		t.Fatal(err)
 	}
 	// The handoff that follows gets a fresh lease.
@@ -410,7 +411,7 @@ func TestStoreOnlyAutomaticExport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if published.Epoch != 1 || published.IndexedCheckpoint != candidate.Checkpoint || published.Checkpoint != doc.Checkpoint || string(published.State) != "later-state" || !published.RebuildPending || string(published.PublishedState) != string(candidate.State) || published.PublishedSourceSHA256 != strings.Repeat("d", 64) || published.NetTokens != 1 || published.BaseRevision != 2 {
+	if published.Epoch != 1 || published.IndexedCheckpoint != candidate.Checkpoint || published.Checkpoint != doc.Checkpoint || sourceTestDocument(published) != "edited-state+later-state" || !published.RebuildPending || string(published.PublishedState) != "edited-state" || published.PublishedSourceSHA256 != strings.Repeat("d", 64) || published.NetTokens != 1 || published.BaseRevision != 2 {
 		t.Fatalf("export publication: %+v", published)
 	}
 	var marked, indexed bool
@@ -711,8 +712,8 @@ func TestReprocessSelection(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	candidatesSQL := schedulerSource(t, "(?s)const REFRESH_CANDIDATES_SQL = `(.*?)`;")
-	deferSQL := schedulerSource(t, `(?s)const REPROCESS_DEFER_SQL =\s*"(.*?)";`)
+	candidatesSQL := schedulerSource(t, `(?s)const REFRESH_CANDIDATES_SQL: &str = "(.*?)";`)
+	deferSQL := schedulerSource(t, `(?s)const REPROCESS_DEFER_SQL: &str = "(.*?)";`)
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -905,28 +906,21 @@ func TestOfficeSeeds(t *testing.T) {
 	doc := sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, first.ID), "first")
 	sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, second.ID), "second")
 	sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, text.ID), "text")
-	job, err := s.RequestSourceRefresh(ctx, owner, first.ID, false)
+	_, err = s.RequestSourceRefresh(ctx, owner, first.ID, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A save after the capture copies the captured change into the candidate;
-	// give that copy an older seed.
+	// The export stores the capture it materialized on the candidate; give
+	// that copy an older seed. The saved rows name the seed of their own.
 	sourceTestEdit(t, s, owner, doc, "later")
 	older := strings.Repeat("d", 64)
-	if _, err = s.pool.Exec(ctx, `UPDATE source_refresh_candidates SET state_seed_sha256=$2 WHERE file_id=$1`, first.ID, older); err != nil {
+	if _, err = s.pool.Exec(ctx, `UPDATE source_refresh_candidates SET state='first',state_seed_sha256=$2 WHERE file_id=$1`, first.ID, older); err != nil {
 		t.Fatal(err)
 	}
 	// A base of this test's own: the store holds other tests' rows.
 	base := uid("base")
 	if _, err = s.pool.Exec(ctx, `UPDATE source_documents SET base_source_sha256=$3 WHERE file_id IN ($1,$2)`, first.ID, second.ID, base); err != nil {
 		t.Fatal(err)
-	}
-	candidate, err := s.ClaimSourceRefresh(ctx, first.ID, job.JobID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(candidate.State) != "first" || candidate.StateSeedSHA256 == nil || *candidate.StateSeedSHA256 != older {
-		t.Fatalf("claimed copy: %q %v", candidate.State, candidate.StateSeedSHA256)
 	}
 	seeds, err := s.OfficeSeeds(ctx)
 	if err != nil {

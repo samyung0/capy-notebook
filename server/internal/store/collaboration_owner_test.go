@@ -271,23 +271,23 @@ func TestStorageUsageLevels(t *testing.T) {
 }
 
 // The collaboration service decides read-only rooms with its own SQL
-// (collaboration/src/persistence.ts frozenSQL and fullSQL). Run it verbatim
-// against the accounts Go resolves, so the two cannot drift apart.
+// (collaboration-rs/crates/server/src/access.rs frozen_sql and full_sql). Run
+// it verbatim against the accounts Go resolves, so the two cannot drift apart.
 func TestCollaborationFrozenSQLMatchesGo(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	raw, err := os.ReadFile("../../../collaboration/src/persistence.ts")
+	raw, err := os.ReadFile("../../../collaboration-rs/crates/server/src/access.rs")
 	if err != nil {
 		t.Fatal(err)
 	}
 	sqlOf := func(name string) string {
-		match := regexp.MustCompile("(?s)function " + name + "\\(userAlias: string, storageAlias: string\\): string \\{\\s*return `(.*?)`;").FindSubmatch(raw)
+		match := regexp.MustCompile(`(?s)pub fn ` + name + `\(user: &str, storage: &str\) -> String \{\s*format!\(\s*"(.*?)"\s*\)`).FindSubmatch(raw)
 		if match == nil {
-			t.Fatalf("%s not found in persistence.ts", name)
+			t.Fatalf("%s not found in access.rs", name)
 		}
-		return strings.NewReplacer("${userAlias}", "u", "${storageAlias}", "st").Replace(string(match[1]))
+		return strings.NewReplacer("{user}", "u", "{storage}", "st").Replace(string(match[1]))
 	}
-	query := `SELECT ` + sqlOf("frozenSQL") + `, ` + sqlOf("fullSQL") + ` FROM users u LEFT JOIN user_storage st ON st.user_id=u.id WHERE u.id=$1`
+	query := `SELECT ` + sqlOf("frozen_sql") + `, ` + sqlOf("full_sql") + ` FROM users u LEFT JOIN user_storage st ON st.user_id=u.id WHERE u.id=$1`
 
 	cases := map[string]func(user, ws string){
 		"active": func(string, string) {},

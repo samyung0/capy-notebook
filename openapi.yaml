@@ -4674,13 +4674,6 @@ components:
           type: string
         sourceBlobPath:
           type: string
-        state:
-          format: base64
-          nullable: true
-          type: string
-        stateSeedSHA256:
-          nullable: true
-          type: string
         uploadHeaders:
           additionalProperties:
             type: string
@@ -4695,8 +4688,6 @@ components:
         - epoch
         - checkpoint
         - leaseToken
-        - state
-        - stateSeedSHA256
         - sourceBlobPath
         - format
         - baseSourceURL
@@ -4743,17 +4734,17 @@ components:
           format: int64
           minimum: 0
           type: integer
-        state:
-          format: base64
-          type: string
         stateSeedSHA256:
+          type: string
+        update:
+          format: base64
           type: string
       required:
         - actorIds
         - epoch
         - expectedCheckpoint
         - baseRevision
-        - state
+        - update
         - pendingEffects
         - netTokens
       type: object
@@ -5060,6 +5051,13 @@ components:
           type: string
         sourceSHA256:
           type: string
+        state:
+          format: base64
+          nullable: true
+          type: string
+        stateSeedSHA256:
+          nullable: true
+          type: string
       required:
         - jobId
         - epoch
@@ -5204,6 +5202,12 @@ components:
           format: base64
           nullable: true
           type: string
+        stateRows:
+          items:
+            format: base64
+            type: string
+          nullable: true
+          type: array
         stateSeedSHA256:
           nullable: true
           type: string

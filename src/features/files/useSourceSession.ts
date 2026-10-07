@@ -49,6 +49,7 @@ import {
   type SourceProvider,
   sourceDocOptions,
 } from './sourceProvider';
+import { savedSourceUpdate } from './sourceState';
 
 export type SourceSaveState =
   | 'connecting'
@@ -63,10 +64,6 @@ export type SourceSaveState =
 export const SOURCE_IFRAME_ORIGIN = Symbol('source-iframe');
 const RESTORE_ORIGIN = Symbol('restore');
 const LINEAGE_EPOCH = /:epoch:(\d+)@/;
-
-export function decodeSourceState(state: string): Uint8Array {
-  return Uint8Array.from(atob(state), (character) => character.charCodeAt(0));
-}
 
 export function acknowledgeSourceCheckpoint(
   state: {
@@ -360,8 +357,9 @@ export function useSourceSession(
       doc = shared;
       // A text session carries its state; an Office editor takes its document
       // from the room's sync (the stored state may be a change over the seed).
-      if (session.state && session.format === 'text')
-        Y.applyUpdate(shared, decodeSourceState(session.state), RESTORE_ORIGIN);
+      const saved =
+        session.format === 'text' ? savedSourceUpdate(session, bytes) : null;
+      if (saved) Y.applyUpdate(shared, saved, RESTORE_ORIGIN);
       const lineage = sourceLineage(session);
       const { current: restoredDrafts, recovery: found } = draftGroups(
         storedDrafts ?? [],
