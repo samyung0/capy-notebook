@@ -1174,8 +1174,10 @@ validation and are not rendered.
   about a third of each keystroke. `navigationFeedback.ts` overrides that
   inject: an element reads the plugin's `activeTarget` option, which changes
   only when a flash starts or ends, and renders the same `data-nav-*`
-  attributes Plate would. No stylesheet styles those attributes today, so the
-  flash itself is invisible.
+  attributes Plate would. The note editor stylesheet (`src/styles/tailwind.css`)
+  fades the target from the highlight colour over Plate's duration, restarting
+  on a second jump (`data-nav-cycle`); under reduced motion the highlight
+  holds for that time instead.
 - React saves the focused element's selection before every commit, and for a
   contenteditable it walks the element's whole DOM to turn it into text
   offsets (`getSelectionInformation`); on a near-limit note that walk was about

@@ -460,6 +460,21 @@ math-field {
     box-shadow: inset 0 0 0 9999px var(--selection-bg);
   }
 
+  /* A table-of-contents jump flashes its heading: Plate's navigation feedback
+     marks the target for --plate-nav-feedback-duration, and alternates
+     data-nav-cycle so a second jump to it restarts the fade. Under reduced
+     motion the highlight holds for that time instead of fading. */
+  .note-editor [data-nav-target="true"] {
+    animation: nav-flash-a var(--plate-nav-feedback-duration, 800ms)
+      var(--motion-ease-out) both;
+    @media (prefers-reduced-motion: reduce) {
+      background-color: var(--highlight-bg);
+    }
+  }
+  .note-editor [data-nav-target="true"][data-nav-cycle="1"] {
+    animation-name: nav-flash-b;
+  }
+
   /* lowlight emits highlight.js token classes on code-syntax leaves. */
   .note-editor pre .hljs-comment,
   .note-editor pre .hljs-code,
@@ -564,5 +579,17 @@ math-field {
     transition-property:
       background-color, border-color, color, opacity, fill, stroke !important;
     /* or simply: transition: none and live with instant everything */
+  }
+}
+
+@keyframes nav-flash-a {
+  from {
+    background-color: var(--highlight-bg);
+  }
+}
+
+@keyframes nav-flash-b {
+  from {
+    background-color: var(--highlight-bg);
   }
 }
