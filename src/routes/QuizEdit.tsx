@@ -131,18 +131,21 @@ function QuizEditor({ quizId }: { quizId: string }) {
   const saveDisabled =
     updateIsPending || !seeded.current || !quiz?.canEditContent;
   return (
-    <PanelWithInvertedRadius>
-      <QuizPageHeader
-        className="px-6 pt-6 pb-2 sm:px-6 sm:pt-6 lg:px-6 xl:px-6"
-        onBack={updateIsPending ? undefined : back}
-        title={m.quiz_edit()}
-        topBar={<TopInsetBar className="hidden shrink-0 lg:flex" />}
-        trail={
-          quiz
-            ? [quiz.workspaceName || m.files_tab_blocks(), name || quiz.name]
-            : []
-        }
-      />
+    <PanelWithInvertedRadius
+      header={
+        <QuizPageHeader
+          className="px-6 pt-6 pb-2 sm:px-6 sm:pt-6 lg:px-6 xl:px-6"
+          onBack={updateIsPending ? undefined : back}
+          title={m.quiz_edit()}
+          topBar={<TopInsetBar className="hidden shrink-0 lg:flex" />}
+          trail={
+            quiz
+              ? [quiz.workspaceName || m.files_tab_blocks(), name || quiz.name]
+              : []
+          }
+        />
+      }
+    >
       <Tabs
         className="px-6"
         onChange={setTab}

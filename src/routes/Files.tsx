@@ -73,8 +73,11 @@ export default function Files() {
   }
 
   return (
-    <PanelWithInvertedRadius>
-      <PageHeader actions={<AccountStatusButton />} title={m.nav_files()} />
+    <PanelWithInvertedRadius
+      header={
+        <PageHeader actions={<AccountStatusButton />} title={m.nav_files()} />
+      }
+    >
       <fieldset className="min-w-0" disabled={busy}>
         <Tabs
           className="px-6"

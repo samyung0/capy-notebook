@@ -13,8 +13,7 @@ export default function Billing() {
   const { tab = 'usage' } = useSearch({ from: '/auth-shell/billing' });
 
   return (
-    <PanelWithInvertedRadius>
-      <PageHeader title={m.billing_title()} />
+    <PanelWithInvertedRadius header={<PageHeader title={m.billing_title()} />}>
       <Tabs
         className="px-6"
         onChange={(value) => {

@@ -273,24 +273,28 @@ export default function Schedule() {
       </div>
 
       {/* main calendar */}
-      <PanelWithInvertedRadius className="flex-1">
-        <PageHeader
-          actions={
-            <>
-              <IconButton
-                disabled={frozen}
-                icon="plus"
-                label={m.schedule_new_event()}
-                onClick={() => setEventForm({})}
-                size="lg"
-                variant="page"
-              />
-              <AccountStatusButton />
-            </>
-          }
-          showTopBar
-          title={`${monthName(month)} ${month.getFullYear()}`}
-        />
+      <PanelWithInvertedRadius
+        className="flex-1"
+        header={
+          <PageHeader
+            actions={
+              <>
+                <IconButton
+                  disabled={frozen}
+                  icon="plus"
+                  label={m.schedule_new_event()}
+                  onClick={() => setEventForm({})}
+                  size="lg"
+                  variant="page"
+                />
+                <AccountStatusButton />
+              </>
+            }
+            showTopBar
+            title={`${monthName(month)} ${month.getFullYear()}`}
+          />
+        }
+      >
         <div className="flex items-center gap-3 px-6 pb-3">
           {/* TODO: change */}
           {/* <SegmentedControl

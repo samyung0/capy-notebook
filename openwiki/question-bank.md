@@ -417,21 +417,32 @@ chosen status; the search text applies on top, and the main panel shows the
 same rows. Status is matched against the marks as they were when it was last
 toggled, so a question answered while filtered stays in view.
 
-A checkbox in each question's left margin selects it for Copy to quiz (mocks
-3.1 B and 3.2 B in `artifacts/2026-10-05-bank-learner-mocks.html`): selections
-survive filtering, cap at the route's 20, and a floating bar (count, Copy to
-quiz, clear) replaces the phone navigation bar. `CopyToQuizDialog`
+Clone, right of the filter, turns the side panel's question list into a picker
+for Copy to quiz and gives way to Copy to quiz and ✕ (cancel). Each row then
+leads with a checkbox in place of its result mark; a click toggles the row and
+still scrolls to its question, and on phones the sheet stays open between picks.
+Picks survive filtering and cap at the route's 20. `/bank` is one route whose
+`$topicId` and `$topicId/$questionId` children have no component
+(`src/router.ts`), so moving between questions keeps the page, its filters and
+picks mounted. `CopyToQuizDialog`
 (`src/features/questions/CopyToQuizDialog.tsx`) has Workspace (workspaces with
-`capabilities.canEdit`, each with its icon) dropdown, then every top-level
-quiz in that workspace as rows under New quiz, newest edit first from the
+`capabilities.canEdit`, each with its icon) dropdown, then a Quiz combobox
+(`QuizTargetSelect.tsx`) styled after TagSelect but single-valued: the picked
+quiz's name sits in the input. Its list loads on first open (skeleton until
+then) with every top-level quiz in that workspace, newest edit first from the
 Create page's list (`GET /api/materials?kind=quiz&location=workspace&scope=member`,
 Load more past 100), each with its chapter name (nothing when unfiled) and
-question count. New quiz, the default, is a name field prefilled with the
-topic name and the Add source dialog's chapter picker
-(`src/features/workspace/ChapterSelect.tsx`): No chapter by default, an
-existing chapter, or New chapter…, whose typed name is matched to an existing
-chapter in any case or sent as `chapterName`; a name still being typed counts
-on Copy. Copy posts the copy route in topic order;
+question count. Typing over a new quiz's name renames it with the list
+closed; otherwise typing clears the pick and filters the loaded quizzes, and
+Enter on "New quiz: …" (first row) names a new quiz. ✕ clears the field.
+The form draws while workspaces load (Workspace select spinning) and focuses
+the dialog, not the picker, on open. The default is a new quiz named after the
+topic. A Chapter row keeps its space but stays hidden until a quiz is picked:
+an existing quiz shows its chapter, locked; a new one uses the Add source
+dialog's chapter picker (`src/features/workspace/ChapterSelect.tsx`, `field`
+look): No chapter by default, an existing chapter, or New chapter…, whose
+typed name is matched to an existing chapter in any case or sent as
+`chapterName`; a name still being typed counts on Copy. Copy posts the copy route in topic order;
 success shows a toast whose Open quiz opens the quiz in its workspace, and a
 failure keeps the dialog open behind the global mutation toast. The MSW mock
 seeds answers in Area practice and Mensuration and makes copies in the mock

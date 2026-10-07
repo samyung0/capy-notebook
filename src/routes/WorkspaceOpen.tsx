@@ -428,7 +428,6 @@ export default function WorkspaceOpen() {
   return (
     <>
       <div className="flex h-full min-h-0 flex-col gap-2.5">
-        {layout === 'one' && <TopInsetBar className="w-full" />}
         <ResizablePanelGroup
           className="overflow-visible! flex min-h-0 flex-1 gap-1.5"
           orientation="horizontal"

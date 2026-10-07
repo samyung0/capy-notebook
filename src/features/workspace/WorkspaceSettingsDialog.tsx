@@ -129,7 +129,7 @@ export function WorkspaceSettingsDialog({
         ]}
         value={tab}
       />
-      <div className="mt-1 h-full flex-1 px-3 py-5">
+      <div className="mt-1 flex-1 px-3 py-5">
         {tab === 'general' && (
           <WorkspaceFormEditDialog
             embedded

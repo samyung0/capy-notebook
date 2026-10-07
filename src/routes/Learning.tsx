@@ -153,8 +153,7 @@ export default function Learning() {
   };
   const navigate = useNavigate();
   return (
-    <PanelWithInvertedRadius>
-      <PageHeader title={m.nav_learning()} />
+    <PanelWithInvertedRadius header={<PageHeader title={m.nav_learning()} />}>
       <div className="px-6 pt-4">
         <Tabs
           onChange={(next) =>

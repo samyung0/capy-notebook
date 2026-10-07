@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode, useCallback, useState } from 'react';
+import { type ReactNode, useCallback, useState } from 'react';
 import { isAnonymousGradingLimit } from '@/api/anonymous';
 import type { Provenance, Question } from '@/api/types';
 import { TabContent } from '@/components/app/tabPanel';
@@ -31,7 +31,12 @@ type Answers = Record<string, Answer>;
 const EmbeddedBody = ({ children }: { children: ReactNode }) => (
   <div>{children}</div>
 );
-export type Frame = (props: { children: ReactNode }) => ReactNode;
+/** The panel around the page; its header stays put while the body scrolls. */
+export type Frame = (props: {
+  children: ReactNode;
+  header?: ReactNode;
+}) => ReactNode;
+export const NoFrame: Frame = ({ children }) => children;
 /** An attempt graded on the server: its questions with their keys and each
  * part's award, and the marks over the quiz's total. */
 export type Graded = { questions: Question[]; awarded: number; max: number };
@@ -78,7 +83,7 @@ export function AttemptBody({
   topBar?: ReactNode;
   trail: string[];
 }) {
-  const Shell = frame ?? Fragment;
+  const Shell = frame ?? NoFrame;
   const Body = embedded ? EmbeddedBody : TabContent;
   const [answers, setAnswers] = useState<Answers>({});
   const [graded, setGraded] = useState<Graded | null>(null);
@@ -107,8 +112,7 @@ export function AttemptBody({
 
   if (!questions.length) {
     return (
-      <Shell>
-        {header()}
+      <Shell header={header()}>
         <Body>
           <p className="text-fg-muted">{m.quiz_no_questions()}</p>
           {emptyAction}
@@ -146,8 +150,7 @@ export function AttemptBody({
   if (graded) {
     return (
       // A fresh panel so the result opens at the top, not at the quiz's scroll.
-      <Shell key="result">
-        {header()}
+      <Shell header={header()} key="result">
         <Body>
           {/* Inside a note the score would push the note down; each question
               shows its own result. */}
@@ -200,8 +203,7 @@ export function AttemptBody({
   }).length;
 
   return (
-    <Shell>
-      {header(actions)}
+    <Shell header={header(actions)}>
       <Body>
         <QuizQuestionList
           answers={answers}

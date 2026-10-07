@@ -209,8 +209,9 @@ export default function Settings() {
   const { tab = 'account' } = useSearch({ from: '/auth-shell/settings' });
 
   return (
-    <PanelWithInvertedRadius>
-      <PageHeader title={m.profile_menu_settings()} />
+    <PanelWithInvertedRadius
+      header={<PageHeader title={m.profile_menu_settings()} />}
+    >
       <Tabs
         className="px-6"
         onChange={(value) => {

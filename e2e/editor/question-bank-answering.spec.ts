@@ -47,7 +47,7 @@ test('bank checks an answer and marks the topic list', async ({ page }) => {
 });
 
 // The landing continues a topic, the filter narrows it, and ticked questions
-// copy into a new quiz.
+// copy into a new quiz named in the picker.
 test('bank continues, filters and copies to a quiz', async ({ page }) => {
   await page.goto('/bank');
   await expect(page.getByText(m.study_of({ done: 3, total: 34 }))).toBeVisible({
@@ -72,20 +72,35 @@ test('bank continues, filters and copies to a quiz', async ({ page }) => {
     /^4\./,
   ]);
 
-  await page
-    .getByRole('checkbox', {
-      name: m.question_ui_select_question({ number: 4 }),
-    })
-    .click();
+  await list.getByRole('button', { name: m.action_clone() }).click();
+  await list.getByRole('checkbox', { name: /^4\./ }).click();
   await page
     .getByRole('button', { name: m.question_ui_copy_to_quiz() })
     .click();
   const dialog = page.getByRole('dialog', {
-    name: m.question_ui_copy_one_title(),
+    name: m.question_ui_copy_to_quiz(),
   });
+  const quiz = dialog.getByRole('combobox', {
+    name: m.question_ui_quiz_name(),
+  });
+  await expect(quiz).toHaveValue('Area practice');
+  const copy = dialog.getByRole('button', { name: m.action_copy() });
+  // Typing over a new quiz's name renames it without opening the list.
+  await quiz.fill('Area drills');
+  await expect(quiz).toHaveAttribute('aria-expanded', 'false');
+  await expect(copy).toBeEnabled();
+  // Cleared, typing searches, so Copy waits until Enter names the new quiz.
+  await dialog
+    .getByRole('button', { name: m.question_ui_clear_quiz() })
+    .click();
+  await quiz.fill('Bank quiz');
+  await expect(copy).toBeDisabled();
   await expect(
-    dialog.getByRole('textbox', { name: m.question_ui_quiz_name() })
-  ).toHaveValue('Area practice');
+    page.getByRole('option', {
+      name: m.question_ui_create_quiz({ name: 'Bank quiz' }),
+    })
+  ).toBeVisible();
+  await quiz.press('Enter');
   // The new quiz goes into a chapter typed here, created with the copy.
   // The row picker shows its value as text, not as an accessible name.
   const chapter = dialog
@@ -99,7 +114,7 @@ test('bank continues, filters and copies to a quiz', async ({ page }) => {
   await expect(
     dialog.getByRole('combobox').filter({ hasText: 'Bank picks' })
   ).toBeVisible();
-  await dialog.getByRole('button', { name: m.action_copy() }).click();
+  await copy.click();
   await expect(page.getByText(m.question_ui_copied())).toBeVisible();
   await expect(dialog).toHaveCount(0);
 });

@@ -80,7 +80,8 @@ export function StudyPanel({
   const { data: chapters } = useChapters(workspaceId);
   const { data: files } = useFiles(workspaceId);
   const { data: materials } = useMaterials(workspaceId);
-  const { mutate: setEnabled } = useSetWorkspaceStudyEnabled(workspaceId);
+  const { isPending: savingEnabled, mutate: setEnabled } =
+    useSetWorkspaceStudyEnabled(workspaceId);
 
   const loaded = !!(study && chapters && files && materials);
   const states = new Map(
@@ -119,6 +120,7 @@ export function StudyPanel({
       <Switch
         aria-label={m.study_track_progress()}
         checked={!!study?.enabled}
+        disabled={savingEnabled}
         onCheckedChange={(checked) => setEnabled(checked)}
       />
     </div>

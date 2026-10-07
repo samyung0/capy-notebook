@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { checkboxVariants } from '@/components/ui/Checkbox';
 import { Icon } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -10,12 +11,14 @@ import { TextView } from './QuestionView';
  * lines, then a muted line with the marks, figure and table icons and `meta`.
  * `result` leads the row with the learner's latest score (1 right, 0 wrong,
  * between partly right, null not answered); lists without results leave it out.
+ * `selected` turns the row into a checkbox whose box takes the result's place.
  */
 export function QuestionListRow({
   row,
   current,
   result,
   meta,
+  selected,
   onClick,
 }: {
   row: Pick<
@@ -25,23 +28,39 @@ export function QuestionListRow({
   current: boolean;
   result?: number | null;
   meta?: ReactNode;
+  selected?: boolean;
   onClick: () => void;
 }) {
+  const picking = selected !== undefined;
   const marked = result !== undefined;
   const status = bankStatus(result ?? undefined);
   return (
     <button
+      aria-checked={selected}
       aria-current={current ? 'true' : undefined}
       className={cn(
         'grid w-full grid-cols-[1.5rem_minmax(0,1fr)] rounded-button px-2 py-2 text-left text-sm hover:bg-surface-hover-bg',
-        marked && 'grid-cols-[1.5rem_1.5rem_minmax(0,1fr)]',
+        (marked || picking) && 'grid-cols-[1.5rem_1.5rem_minmax(0,1fr)]',
         current && 'bg-surface-hover-bg'
       )}
       data-result={marked ? status : undefined}
       onClick={onClick}
+      role={picking ? 'checkbox' : undefined}
       type="button"
     >
+      {picking && (
+        <span
+          aria-hidden
+          className={cn(
+            checkboxVariants({ checked: selected }),
+            'mt-0.5 size-4'
+          )}
+        >
+          {selected && <Icon name="check" size={11.5} strokeWidth={2.4} />}
+        </span>
+      )}
       {marked &&
+        !picking &&
         // Screen readers hear the result after the row, so its name still
         // starts with the question number. Correct uses the file panel's
         // done mark.
@@ -79,7 +98,7 @@ export function QuestionListRow({
       <span
         className={cn(
           'col-start-2 mt-0.5 flex items-center gap-2 text-fg-muted text-xs',
-          marked && 'col-start-3'
+          (marked || picking) && 'col-start-3'
         )}
       >
         {row.marks === 1
@@ -88,7 +107,9 @@ export function QuestionListRow({
         {row.hasFigure && <Icon name="image" size={13} />}
         {row.hasTable && <Icon name="table" size={13} />}
         {meta}
-        {marked && <span className="sr-only">{statusLabels[status]()}</span>}
+        {marked && !picking && (
+          <span className="sr-only">{statusLabels[status]()}</span>
+        )}
       </span>
     </button>
   );

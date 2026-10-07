@@ -66,11 +66,14 @@ export default function Workspaces() {
   const sortedWorkspaces = ascending ? data?.slice().reverse() : data;
 
   return (
-    <PanelWithInvertedRadius>
-      <PageHeader
-        actions={<AccountStatusButton />}
-        title={m.workspaces_title()}
-      />
+    <PanelWithInvertedRadius
+      header={
+        <PageHeader
+          actions={<AccountStatusButton />}
+          title={m.workspaces_title()}
+        />
+      }
+    >
       <ListToolbar
         action={
           <Button

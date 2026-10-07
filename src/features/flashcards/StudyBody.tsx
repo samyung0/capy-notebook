@@ -1,9 +1,10 @@
-import { Fragment, type ReactNode, useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import type { Provenance } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import type { FlashcardContent } from '@/features/materials/blocks';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
+import { type Frame, NoFrame } from '@/features/quizzes/AttemptBody';
 import { QuizPageHeader } from '@/features/quizzes/QuizPage';
 import { RatingTiles } from '@/features/study/RatingTiles';
 import { m } from '@/i18n';
@@ -13,8 +14,6 @@ import { CardBack, CardFront } from './CardView';
 
 /* Studying a flashcard set, shared by the app page and the public /share page.
    It knows no router or session: callers pass the frame and where ratings go. */
-
-type Frame = (props: { children: ReactNode }) => ReactNode;
 
 /** One study session over every card in order: Again sends a card to the end,
  * the others move on. A card with both faces blank (a new set's placeholder)
@@ -51,7 +50,7 @@ export function StudyBody({
   topBar?: ReactNode;
   trail: string[];
 }) {
-  const Shell = frame ?? Fragment;
+  const Shell = frame ?? NoFrame;
   const studyIds = () =>
     cards.filter((c) => c.front.trim() || c.back.trim()).map((c) => c.id);
   const [queue, setQueue] = useState(studyIds);
@@ -116,19 +115,22 @@ export function StudyBody({
     m.flashcards_card_of_total({ position: total - queue.length + 1, total });
 
   return (
-    <Shell>
-      {!embedded && (
-        <QuizPageHeader
-          actions={actions}
-          byline={byline}
-          // Public pages have no label row, so the title sits higher.
-          className={byline ? 'pt-2 sm:pt-2' : undefined}
-          onBack={onBack}
-          title={name}
-          topBar={topBar}
-          trail={trail}
-        />
-      )}
+    <Shell
+      header={
+        !embedded && (
+          <QuizPageHeader
+            actions={actions}
+            byline={byline}
+            // Public pages have no label row, so the title sits higher.
+            className={byline ? 'pt-2 sm:pt-2' : undefined}
+            onBack={onBack}
+            title={name}
+            topBar={topBar}
+            trail={trail}
+          />
+        )
+      }
+    >
       <div
         className={cn(!embedded && 'px-4 pt-8 pb-8 sm:px-6 lg:px-10 xl:px-16')}
       >

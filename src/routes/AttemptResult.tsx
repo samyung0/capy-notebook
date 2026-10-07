@@ -80,23 +80,26 @@ export default function AttemptResult() {
   const hasBreakdown = attempt.questions.length > 0;
 
   return (
-    <PanelWithInvertedRadius>
-      <QuizPageHeader
-        meta={[
-          new Date(attempt.takenAt).toLocaleDateString(getLocale(), {
-            day: 'numeric',
-            month: 'short',
-            year: 'numeric',
-          }),
-          attempt.workspaceName,
-        ]
-          .filter(Boolean)
-          .join(' · ')}
-        onBack={() => void navigate({ to: '/learning' })}
-        title={attempt.quizName}
-        topBar={<TopInsetBar className="hidden shrink-0 lg:flex" />}
-        trail={[m.nav_learning(), m.learning_tab_results()]}
-      />
+    <PanelWithInvertedRadius
+      header={
+        <QuizPageHeader
+          meta={[
+            new Date(attempt.takenAt).toLocaleDateString(getLocale(), {
+              day: 'numeric',
+              month: 'short',
+              year: 'numeric',
+            }),
+            attempt.workspaceName,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+          onBack={() => void navigate({ to: '/learning' })}
+          title={attempt.quizName}
+          topBar={<TopInsetBar className="hidden shrink-0 lg:flex" />}
+          trail={[m.nav_learning(), m.learning_tab_results()]}
+        />
+      }
+    >
       <TabContent>
         {hasBreakdown ? (
           <>

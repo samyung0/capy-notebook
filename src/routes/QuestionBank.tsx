@@ -31,7 +31,6 @@ import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { FloatingToolbar } from '@/components/ui/BlockToolbar';
 import { Button } from '@/components/ui/Button';
-import { Checkbox } from '@/components/ui/Checkbox';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/Drawer';
 import { Skeleton, SkeletonList } from '@/components/ui/feedback';
@@ -90,7 +89,7 @@ const PAGE = 10;
 /**
  * Question bank: every question of the chosen topic in the main panel; exams,
  * topics and the topic's question list in the right column (a floating bar
- * and bottom sheet on phones).
+ * and bottom sheet on phones), where Clone picks questions for Copy to quiz.
  */
 export default function QuestionBank() {
   const { topicId = '', questionId = '' } = useParams({ strict: false }) as {
@@ -110,6 +109,8 @@ export default function QuestionBank() {
   // The marks the status filter was set against, so a question answered
   // while filtered stays in view.
   const [statusMarks, setStatusMarks] = useState<Record<string, number>>({});
+  // Clone turns the panel's question list into a picker for Copy to quiz.
+  const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [copying, setCopying] = useState(false);
   const [shownTopic, setShownTopic] = useState(topicId);
@@ -118,6 +119,7 @@ export default function QuestionBank() {
     setFilter('');
     setTypes([]);
     setStatuses([]);
+    setSelecting(false);
     setSelected([]);
   }
   const [editing, setEditing] = useState<BankDetail | null>(null);
@@ -182,8 +184,9 @@ export default function QuestionBank() {
       })),
       selected: statuses,
     });
-  function selectQuestion(id: string, checked: boolean) {
-    if (!checked) setSelected(selected.filter((item) => item !== id));
+  function toggleQuestion(id: string) {
+    if (selected.includes(id))
+      setSelected(selected.filter((item) => item !== id));
     else if (selected.length < COPY_MAX) setSelected([...selected, id]);
     else
       userToast({
@@ -265,7 +268,8 @@ export default function QuestionBank() {
     }
   }
   function select(id: string) {
-    setNavOpen(false);
+    // Picking questions keeps the phone sheet open between picks.
+    if (!selecting) setNavOpen(false);
     // The URL does not change for the current question, so scroll directly.
     if (id === questionId) scrollToQuestion(id);
     void navigate({
@@ -302,16 +306,29 @@ export default function QuestionBank() {
         label={place?.item.label ?? ''}
         list={list}
         onBack={() => setShowTopics(true)}
+        onCancelSelect={() => {
+          setSelecting(false);
+          setSelected([]);
+        }}
+        onCopy={() => {
+          setNavOpen(false);
+          setCopying(true);
+        }}
         onFilter={setFilter}
-        onQuestion={select}
+        onQuestion={(id) => {
+          if (selecting) toggleQuestion(id);
+          select(id);
+        }}
         onResetFilters={() => {
           setTypes([]);
           setStatuses([]);
         }}
+        onSelect={() => setSelecting(true)}
         onUnreviewed={setUnreviewed}
         questionId={questionId}
         results={mode === 'view' && !resultsError ? (marks ?? {}) : undefined}
         rows={rows}
+        selected={selecting ? selected : undefined}
         unreviewed={unreviewed}
       />
     )
@@ -374,12 +391,10 @@ export default function QuestionBank() {
             reviewed: !detail.reviewedAt,
           })
         }
-        onSelect={selectQuestion}
         questionId={questionId}
         reviewing={reviewing}
         rows={rows}
         scrollRef={scrollRef}
-        selected={selected}
         topicId={topicId}
       />
     );
@@ -454,12 +469,7 @@ export default function QuestionBank() {
                     : []
                 }
               />
-              <div
-                className={cn(
-                  'px-4 pt-8 pb-28 sm:px-6 lg:px-10 lg:pb-10 xl:px-16',
-                  selected.length > 0 && 'lg:pb-28'
-                )}
-              >
+              <div className="px-4 pt-8 pb-28 sm:px-6 lg:px-10 lg:pb-10 xl:px-16">
                 <div className="max-w-3xl">{body}</div>
               </div>
             </>
@@ -492,12 +502,7 @@ export default function QuestionBank() {
                   </div>
                 }
               />
-              <div
-                className={cn(
-                  'px-6 pt-6 pb-28 lg:pb-10',
-                  selected.length > 0 && 'lg:pb-28'
-                )}
-              >
+              <div className="px-6 pt-6 pb-28 lg:pb-10">
                 <div className="max-w-3xl">{body}</div>
               </div>
             </>
@@ -509,7 +514,7 @@ export default function QuestionBank() {
           <FloatingToolbar
             aria-label={m.question_ui_bank_navigation()}
             className="gap-1 rounded-full! px-2 py-1 lg:hidden"
-            open={!navOpen && !selected.length}
+            open={!navOpen}
             positionClassName="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 lg:hidden"
           >
             <ToolbarButton
@@ -538,36 +543,6 @@ export default function QuestionBank() {
             </ToolbarButton>
           </FloatingToolbar>
         )}
-        {/* Copy to quiz (mock 3.1 B): the count, Copy to quiz and clear. */}
-        <FloatingToolbar
-          aria-label={m.question_ui_copy_to_quiz()}
-          className="gap-1 rounded-full! px-2 py-1"
-          open={selected.length > 0 && !navOpen}
-          positionClassName="absolute bottom-4 left-1/2 z-10 -translate-x-1/2"
-        >
-          <span className="whitespace-nowrap pr-1 pl-2 text-fg-muted text-sm">
-            {m.question_ui_selected_count({ count: selected.length })}
-          </span>
-          <ToolbarButton
-            className="h-10 w-auto gap-2 rounded-card-xl px-3 [&_svg]:size-5"
-            label={m.question_ui_copy_to_quiz()}
-            onClick={() => setCopying(true)}
-            tooltipSide="top"
-          >
-            <Icon name="copy" />
-            <span className="whitespace-nowrap">
-              {m.question_ui_copy_to_quiz()}
-            </span>
-          </ToolbarButton>
-          <ToolbarButton
-            className="h-10 rounded-card-xl [&_svg]:size-5"
-            label={m.question_ui_clear_selection()}
-            onClick={() => setSelected([])}
-            tooltipSide="top"
-          >
-            <Icon name="x" />
-          </ToolbarButton>
-        </FloatingToolbar>
       </div>
       <Drawer
         onOpenChange={setNavOpen}
@@ -640,6 +615,7 @@ export default function QuestionBank() {
           onClose={() => setCopying(false)}
           onCopied={() => {
             setCopying(false);
+            setSelecting(false);
             setSelected([]);
           }}
           questionIds={questions
@@ -675,25 +651,20 @@ function BankQuestions({
   topicId,
   mode,
   reviewing,
-  selected,
   scrollRef,
   onReview,
   onComment,
   onEdit,
-  onSelect,
 }: {
   rows: BankRow[];
   questionId: string;
   topicId: string;
   mode: BankMode;
   reviewing: boolean;
-  /** Question ids ticked for Copy to quiz. */
-  selected: string[];
   scrollRef: RefObject<HTMLDivElement | null>;
   onReview: (detail: BankDetail) => void;
   onComment: (id: string) => void;
   onEdit: (detail: BankDetail) => void;
-  onSelect: (id: string, checked: boolean) => void;
 }) {
   const client = useQueryClient();
   const target = rows.findIndex((row) => row.id === questionId);
@@ -809,23 +780,9 @@ function BankQuestions({
         {shown.map((row, i) => {
           const detail = details[i]?.data;
           return (
-            <li
-              className="relative grid gap-4 pl-6 sm:pl-0"
-              data-question-id={row.id}
-              key={row.id}
-            >
+            <li className="grid gap-4" data-question-id={row.id} key={row.id}>
               {detail ? (
                 <>
-                  {/* In the left margin, beside the question number. */}
-                  <Checkbox
-                    aria-label={m.question_ui_select_question({
-                      number: row.position,
-                    })}
-                    checked={selected.includes(row.id)}
-                    className="absolute top-1 left-0 sm:-left-6 lg:-left-7"
-                    onChange={(checked) => onSelect(row.id, checked)}
-                    size={16}
-                  />
                   {mode === 'view' ? (
                     <CheckableQuestion
                       question={detail.question}
@@ -919,7 +876,7 @@ function CheckableQuestion({
         questionNumber={questionNumber}
         review={Boolean(checked)}
       />
-      <div className="flex justify-end border-divider border-t pt-3">
+      <div className="flex justify-end">
         {checked ? (
           <Button
             className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
@@ -984,35 +941,46 @@ function PanelHeading({
   searchLabel: string;
 }) {
   const [searching, setSearching] = useState(filter !== '');
-  return searching ? (
-    <div className="px-2">
-      <Input
-        actionCallback={() => {
-          onFilter('');
-          setSearching(false);
-        }}
-        actionIcon="x"
-        actionLabel={m.question_ui_close_search()}
-        aria-label={searchLabel}
-        autoFocus
-        leftIcon="search"
-        onChange={(event) => onFilter(event.target.value)}
-        placeholder={searchLabel}
-        size="sm"
-        value={filter}
-        wrapperClassName="w-full"
-      />
+  // Both states share one height, so opening the search moves nothing.
+  return (
+    <div className="grid h-9 items-center">
+      {searching ? (
+        <div className="px-2">
+          <Input
+            actionCallback={() => {
+              onFilter('');
+              setSearching(false);
+            }}
+            actionClassName="p-1.5 text-fg-muted"
+            actionIcon="x"
+            actionLabel={m.question_ui_close_search()}
+            aria-label={searchLabel}
+            autoFocus
+            className="py-0"
+            leftIcon="search"
+            onChange={(event) => onFilter(event.target.value)}
+            placeholder={searchLabel}
+            size="sm"
+            value={filter}
+            wrapperClassName="h-9 w-full text-sm"
+          />
+        </div>
+      ) : (
+        <PanelHeader
+          actions={
+            <ToolbarButton
+              className="mr-0.5 size-7"
+              label={searchLabel}
+              onClick={() => setSearching(true)}
+            >
+              <Icon name="search" />
+            </ToolbarButton>
+          }
+          leading={leading}
+          title={title}
+        />
+      )}
     </div>
-  ) : (
-    <PanelHeader
-      actions={
-        <ToolbarButton label={searchLabel} onClick={() => setSearching(true)}>
-          <Icon name="search" />
-        </ToolbarButton>
-      }
-      leading={leading}
-      title={title}
-    />
   );
 }
 
@@ -1058,7 +1026,7 @@ function TopicTree({
       />
       {exams.map((exam) => (
         <div key={exam.id}>
-          <div className="t-subtitle px-2 py-1.5">{exam.label}</div>
+          <div className="t-subtitle px-4 py-1.5">{exam.label}</div>
           {exam.subjects.map((subject) => (
             <details className="group" key={subject.id} open>
               <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-button px-2 py-1.5 hover:bg-surface-hover-bg [&::-webkit-details-marker]:hidden">
@@ -1119,9 +1087,13 @@ function TopicQuestions({
   filters,
   unreviewed,
   results,
+  selected,
   onBack,
+  onCancelSelect,
+  onCopy,
   onFilter,
   onResetFilters,
+  onSelect,
   onUnreviewed,
   onQuestion,
 }: {
@@ -1135,9 +1107,14 @@ function TopicQuestions({
   unreviewed: boolean;
   /** View mode: answered questions' latest scores by id. */
   results?: Record<string, number>;
+  /** While picking for Copy to quiz: the picked question ids. */
+  selected?: string[];
   onBack: () => void;
+  onCancelSelect: () => void;
+  onCopy: () => void;
   onFilter: (value: string) => void;
   onResetFilters: () => void;
+  onSelect: () => void;
   onUnreviewed: (value: boolean) => void;
   onQuestion: (id: string) => void;
 }) {
@@ -1157,7 +1134,7 @@ function TopicQuestions({
         searchLabel={m.question_ui_find_a_question()}
         title={label}
       />
-      <div className="flex flex-wrap items-center gap-1 px-1">
+      <div className="flex flex-wrap items-center gap-1 px-3">
         {edit && (
           <>
             <Button
@@ -1182,6 +1159,36 @@ function TopicQuestions({
           </>
         )}
         <FilterPopover filters={filters} onResetFilters={onResetFilters} />
+        {selected ? (
+          <>
+            <ToolbarButton
+              className="w-auto gap-2 px-2"
+              disabled={!selected.length}
+              label={m.question_ui_copy_to_quiz()}
+              onClick={onCopy}
+            >
+              <Icon name="copy" />
+              <span className="whitespace-nowrap">
+                {m.question_ui_copy_to_quiz()}
+              </span>
+            </ToolbarButton>
+            <ToolbarButton
+              label={m.question_ui_clear_selection()}
+              onClick={onCancelSelect}
+            >
+              <Icon name="x" />
+            </ToolbarButton>
+          </>
+        ) : (
+          <ToolbarButton
+            className="w-auto gap-2 px-2"
+            label={m.action_clone()}
+            onClick={onSelect}
+          >
+            <Icon name="clone" />
+            <span>{m.action_clone()}</span>
+          </ToolbarButton>
+        )}
       </div>
       <ol className="grid gap-0.5">
         {rows.map((row) => (
@@ -1199,6 +1206,7 @@ function TopicQuestions({
               onClick={() => onQuestion(row.id)}
               result={results && (results[row.id] ?? null)}
               row={row}
+              selected={selected?.includes(row.id)}
             />
           </li>
         ))}

@@ -51,12 +51,15 @@ export default function Explore() {
   const navigate = useNavigate();
 
   return (
-    <PanelWithInvertedRadius>
-      <PageHeader
-        actions={<AccountStatusButton />}
-        subtitle={m.explore_subtitle()}
-        title={m.nav_explore()}
-      />
+    <PanelWithInvertedRadius
+      header={
+        <PageHeader
+          actions={<AccountStatusButton />}
+          subtitle={m.explore_subtitle()}
+          title={m.nav_explore()}
+        />
+      }
+    >
       <div className="px-6">
         <Tabs
           onChange={setTab}

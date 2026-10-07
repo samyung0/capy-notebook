@@ -59,7 +59,11 @@ export function QuizPageHeader({
       >
         {(onBack || trail.length > 0) && (
           <div
-            className={cn('flex min-h-9 items-center gap-1', onBack && '-ml-2')}
+            className={cn(
+              'flex min-h-9 items-center gap-1',
+              // Pulled left past the icon's padding so arrow and text balance.
+              onBack && '-ml-2 -translate-x-2'
+            )}
           >
             {onBack && (
               <IconButton

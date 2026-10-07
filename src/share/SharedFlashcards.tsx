@@ -19,8 +19,19 @@ import {
 } from '@/lib/srs';
 import { signedIn, useSignedIn } from './session';
 
-function Frame({ children }: { children: ReactNode }) {
-  return <PublicPage>{children}</PublicPage>;
+function Frame({
+  children,
+  header,
+}: {
+  children: ReactNode;
+  header?: ReactNode;
+}) {
+  return (
+    <PublicPage>
+      {header}
+      {children}
+    </PublicPage>
+  );
 }
 
 /** `/share/flashcards/{token}`: the Worker renders it from the same

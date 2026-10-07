@@ -145,6 +145,7 @@ export function ModelPicker({
           </Select>
         ) : slot === 'chat' ? (
           <ReasoningControls
+            disabled={isPending}
             selected={selected}
             stored={data?.selectedThinking ?? ''}
           />

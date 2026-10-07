@@ -14,11 +14,16 @@ const TopBarAbovePanel = createContext(false);
  */
 export function PanelWithInvertedRadius({
   children,
+  header,
   className,
   sectionClassName,
   topBar = <TopInsetBar />,
 }: {
   children: ReactNode;
+  /** Stays put above the scrolling body. It holds the top bar in the notch
+   * from lg, and content scrolling under the notch would show outside the
+   * panel's shape. */
+  header?: ReactNode;
   sectionClassName?: string;
   scroll?: boolean;
   /** Placement in the parent layout, e.g. flex-1 in a row. */
@@ -52,9 +57,12 @@ export function PanelWithInvertedRadius({
           >
             <div />
           </Card>
-          <div className="relative flex h-full flex-col items-stretch gap-2 overflow-auto p-0">
+          <div className="relative flex h-full flex-col gap-2">
             <TopBarAbovePanel.Provider value={Boolean(topBar)}>
-              {children}
+              {header && <div className="shrink-0">{header}</div>}
+              <div className="flex min-h-0 flex-1 flex-col items-stretch gap-2 overflow-auto p-0">
+                {children}
+              </div>
             </TopBarAbovePanel.Provider>
           </div>
         </section>

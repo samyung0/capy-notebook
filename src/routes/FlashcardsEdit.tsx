@@ -30,18 +30,23 @@ export default function FlashcardsEdit() {
   );
 
   return (
-    <PanelWithInvertedRadius>
-      <QuizPageHeader
-        className="px-6 pt-6 pb-2 sm:px-6 sm:pt-6 lg:px-6 xl:px-6"
-        onBack={() => void navigate({ href: returnTo ?? '/files?tab=blocks' })}
-        title={m.flashcards_edit()}
-        topBar={<TopInsetBar className="hidden shrink-0 lg:flex" />}
-        trail={
-          material
-            ? [material.workspaceName || m.files_tab_blocks(), material.title]
-            : []
-        }
-      />
+    <PanelWithInvertedRadius
+      header={
+        <QuizPageHeader
+          className="px-6 pt-6 pb-2 sm:px-6 sm:pt-6 lg:px-6 xl:px-6"
+          onBack={() =>
+            void navigate({ href: returnTo ?? '/files?tab=blocks' })
+          }
+          title={m.flashcards_edit()}
+          topBar={<TopInsetBar className="hidden shrink-0 lg:flex" />}
+          trail={
+            material
+              ? [material.workspaceName || m.files_tab_blocks(), material.title]
+              : []
+          }
+        />
+      }
+    >
       <TabContent>
         {isError ? (
           <p role="alert">{m.flashcards_unable_load()}</p>

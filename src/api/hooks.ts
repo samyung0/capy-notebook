@@ -150,6 +150,31 @@ function mutationMeta(options?: MutationUiOptions) {
     : undefined;
 }
 
+/** Optimistic writes to one cache share a mutation key, and only the last of
+ * them to settle refetches: an earlier write's refetch can return before a
+ * later write lands and overwrite its optimistic value. */
+function refetchIfLast(
+  qc: QueryClient,
+  mutationKey: QueryKey,
+  refetch: () => Promise<unknown>
+) {
+  return qc.isMutating({ mutationKey }) === 1 ? refetch() : undefined;
+}
+
+/** Shared key for optimistic file, material and chapter ordering writes. */
+const contentMutationKey = (wsId: string) =>
+  ['workspace', wsId, 'content'] as const;
+
+function refetchContentIfLast(qc: QueryClient, wsId: string) {
+  return refetchIfLast(qc, contentMutationKey(wsId), () =>
+    Promise.all([
+      qc.invalidateQueries({ queryKey: qk.files(wsId) }),
+      qc.invalidateQueries({ queryKey: qk.materials(wsId) }),
+      qc.invalidateQueries({ queryKey: qk.chapters(wsId) }),
+    ])
+  );
+}
+
 /* ---------------- account / shell ---------------- */
 export const meQuery = () =>
   queryOptions({ queryFn: () => api.get<User>('/me'), queryKey: qk.me });
@@ -177,10 +202,13 @@ export function useSetModelPrefs() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: SetModelPrefsReq) => api.patch<void>('/me/models', body),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: qk.me });
-      void qc.invalidateQueries({ queryKey: ['models'] });
-    },
+    // Stays pending until the refetch lands, so the pickers never re-enable
+    // showing the old choice.
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: qk.me }),
+        qc.invalidateQueries({ queryKey: ['models'] }),
+      ]),
   });
 }
 
@@ -211,11 +239,12 @@ export function useDeleteLLMCredential() {
   return useMutation({
     mutationFn: (provider: string) =>
       api.del<void>(`/me/llm-credentials/${encodeURIComponent(provider)}`),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: qk.llmCredentials });
-      void qc.invalidateQueries({ queryKey: ['models'] });
-      void qc.invalidateQueries({ queryKey: qk.me });
-    },
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: qk.llmCredentials }),
+        qc.invalidateQueries({ queryKey: ['models'] }),
+        qc.invalidateQueries({ queryKey: qk.me }),
+      ]),
   });
 }
 
@@ -560,12 +589,15 @@ export function useSetStudyPreferences() {
       );
       return request;
     },
-    onMutate: (prefs) => {
+    mutationKey: qk.me,
+    onMutate: async (prefs) => {
+      await qc.cancelQueries({ queryKey: qk.me });
       qc.setQueryData<User>(qk.me, (me) =>
         me ? { ...me, studyPreferences: prefs } : me
       );
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: qk.me }),
+    onSettled: () =>
+      refetchIfLast(qc, qk.me, () => qc.invalidateQueries({ queryKey: qk.me })),
   });
 }
 
@@ -985,6 +1017,7 @@ export function useMoveFile(wsId: string) {
     meta: { errorToast: false },
     mutationFn: ({ id, chapterId }: { id: string; chapterId: string | null }) =>
       api.patch<SourceFile>(`/files/${id}`, { chapterId: chapterId ?? '' }),
+    mutationKey: contentMutationKey(wsId),
     onError: (_e, _v, ctx) => {
       if (ctx?.prev) qc.setQueryData(qk.files(wsId), ctx.prev);
     },
@@ -996,10 +1029,7 @@ export function useMoveFile(wsId: string) {
       );
       return { prev };
     },
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: qk.files(wsId) });
-      qc.invalidateQueries({ queryKey: qk.chapters(wsId) });
-    },
+    onSettled: () => refetchContentIfLast(qc, wsId),
   });
 }
 function invalidateAfterFileDelete(qc: QueryClient, wsId: string) {
@@ -1145,6 +1175,7 @@ export function useReorderChapters(wsId: string) {
   return useMutation<void, Error, string[], { prev?: Chapter[] }>({
     mutationFn: (ids) =>
       api.post<void>(`/workspaces/${wsId}/chapters/reorder`, { ids }),
+    mutationKey: contentMutationKey(wsId),
     onError: (_error, _ids, context) => {
       if (context?.prev) qc.setQueryData(qk.chapters(wsId), context.prev);
     },
@@ -1162,7 +1193,7 @@ export function useReorderChapters(wsId: string) {
       );
       return { prev };
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: qk.chapters(wsId) }),
+    onSettled: () => refetchContentIfLast(qc, wsId),
   });
 }
 
@@ -1187,6 +1218,7 @@ export function useReorderContent(wsId: string) {
         chapterId,
         items,
       }),
+    mutationKey: contentMutationKey(wsId),
     onError: (_error, _variables, context) => {
       if (context?.prevFiles)
         qc.setQueryData(qk.files(wsId), context.prevFiles);
@@ -1221,12 +1253,7 @@ export function useReorderContent(wsId: string) {
       );
       return { prevFiles, prevMaterials };
     },
-    onSettled: () =>
-      Promise.all([
-        qc.invalidateQueries({ queryKey: qk.files(wsId) }),
-        qc.invalidateQueries({ queryKey: qk.materials(wsId) }),
-        qc.invalidateQueries({ queryKey: qk.chapters(wsId) }),
-      ]),
+    onSettled: () => refetchContentIfLast(qc, wsId),
   });
 }
 
@@ -1885,6 +1912,7 @@ export function useMoveMaterial(wsId: string) {
       api.patch<MaterialUpdateResult>(`/materials/${id}/metadata`, {
         chapterId: chapterId ?? '',
       }),
+    mutationKey: contentMutationKey(wsId),
     onError: (_e, { id }, ctx) => {
       if (ctx?.prevList) qc.setQueryData(qk.materials(wsId), ctx.prevList);
       if (ctx?.prevMaterial) qc.setQueryData(qk.material(id), ctx.prevMaterial);
@@ -1901,7 +1929,7 @@ export function useMoveMaterial(wsId: string) {
       );
       return { prevList, prevMaterial };
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: qk.materials(wsId) }),
+    onSettled: () => refetchContentIfLast(qc, wsId),
     onSuccess: (result) =>
       qc.setQueryData<Material>(qk.material(result.id), (current) =>
         current ? { ...current, ...result } : current
@@ -2140,6 +2168,7 @@ export function useSetStudyItem(workspaceId: string) {
   return useMutation<void, Error, SetStudyItemReq, { prev?: StudySummary }>({
     mutationFn: (body) =>
       api.put<void>(`/workspaces/${workspaceId}/study/items`, body),
+    mutationKey: qk.study(workspaceId),
     onError: (_e, _v, ctx) => {
       if (ctx?.prev) qc.setQueryData(qk.study(workspaceId), ctx.prev);
     },
@@ -2157,7 +2186,10 @@ export function useSetStudyItem(workspaceId: string) {
       });
       return { prev };
     },
-    onSettled: () => invalidateStudy(qc, workspaceId),
+    onSettled: () =>
+      refetchIfLast(qc, qk.study(workspaceId), () =>
+        invalidateStudy(qc, workspaceId)
+      ),
   });
 }
 
@@ -2178,17 +2210,37 @@ export function useResetWorkspaceStudy(workspaceId: string) {
   });
 }
 
-/** The global default for workspaces without their own setting. */
+/** The global default for workspaces without their own setting. Optimistic;
+ * changes queue so a fast second toggle cannot land before the first. */
 export function useSetStudyProgressDefault() {
   const qc = useQueryClient();
+  const queue = useRef(Promise.resolve());
   return useMutation({
-    mutationFn: (enabled: boolean) =>
-      api.patch<void>('/me/study-progress', { enabled }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.me });
-      qc.invalidateQueries({ queryKey: ['workspace'] });
-      qc.invalidateQueries({ queryKey: qk.reviewWorkspaces });
+    mutationFn: (enabled: boolean) => {
+      const request = queue.current.then(() =>
+        api.patch<void>('/me/study-progress', { enabled })
+      );
+      queue.current = request.then(
+        () => undefined,
+        () => undefined
+      );
+      return request;
     },
+    mutationKey: qk.me,
+    onMutate: async (enabled) => {
+      await qc.cancelQueries({ queryKey: qk.me });
+      qc.setQueryData<User>(qk.me, (me) =>
+        me ? { ...me, studyProgress: enabled } : me
+      );
+    },
+    onSettled: () =>
+      refetchIfLast(qc, qk.me, () =>
+        Promise.all([
+          qc.invalidateQueries({ queryKey: qk.me }),
+          qc.invalidateQueries({ queryKey: ['workspace'] }),
+          qc.invalidateQueries({ queryKey: qk.reviewWorkspaces }),
+        ])
+      ),
   });
 }
 
@@ -2312,6 +2364,7 @@ export function useToggleTask() {
   >({
     meta: { errorToast: false },
     mutationFn: ({ id, done }) => api.patch<Task>(`/tasks/${id}`, { done }),
+    mutationKey: qk.tasks,
     onError: (_e, _v, ctx) => {
       if (ctx?.prev) qc.setQueryData(qk.tasks, ctx.prev);
     },
@@ -2322,7 +2375,10 @@ export function useToggleTask() {
       );
       return { prev };
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: qk.tasks }),
+    onSettled: () =>
+      refetchIfLast(qc, qk.tasks, () =>
+        qc.invalidateQueries({ queryKey: qk.tasks })
+      ),
   });
 }
 export function useUpdateTask() {
@@ -2335,6 +2391,7 @@ export function useUpdateTask() {
   >({
     meta: { errorToast: false },
     mutationFn: ({ id, ...patch }) => api.patch<Task>(`/tasks/${id}`, patch),
+    mutationKey: qk.tasks,
     onError: (_e, _v, ctx) => {
       if (ctx?.prev) qc.setQueryData(qk.tasks, ctx.prev);
     },
@@ -2345,7 +2402,10 @@ export function useUpdateTask() {
       );
       return { prev };
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: qk.tasks }),
+    onSettled: () =>
+      refetchIfLast(qc, qk.tasks, () =>
+        qc.invalidateQueries({ queryKey: qk.tasks })
+      ),
   });
 }
 export function useDeleteTask() {
@@ -2353,6 +2413,7 @@ export function useDeleteTask() {
   return useMutation<void, Error, string, TasksMutationContext>({
     meta: { errorToast: false },
     mutationFn: (id) => api.del<void>(`/tasks/${id}`),
+    mutationKey: qk.tasks,
     onError: (_e, _v, ctx) => {
       if (ctx?.prev) qc.setQueryData(qk.tasks, ctx.prev);
     },
@@ -2363,7 +2424,10 @@ export function useDeleteTask() {
       );
       return { prev };
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: qk.tasks }),
+    onSettled: () =>
+      refetchIfLast(qc, qk.tasks, () =>
+        qc.invalidateQueries({ queryKey: qk.tasks })
+      ),
   });
 }
 

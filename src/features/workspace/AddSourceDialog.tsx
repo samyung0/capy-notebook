@@ -597,8 +597,13 @@ function SourceList({
 
   return (
     <>
-      <Separator className="mt-4.5 mb-3" />
-      <div className="mb-1.5 flex shrink-0 items-center gap-1.5">
+      {!fixed && <Separator className="mt-4.5 mb-3" />}
+      <div
+        className={cn(
+          'mb-1.5 flex shrink-0 items-center gap-1.5',
+          fixed && 'mt-3'
+        )}
+      >
         <h3 className="t-card-title">{m.source_selected_files()}</h3>
         <Popover>
           <PopoverTrigger asChild>

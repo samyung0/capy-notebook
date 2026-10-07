@@ -59,7 +59,7 @@ const STATUS_ICON = {
   offline: 'cloudOff',
   reconnecting: 'cloudSync',
   saved: 'CloudIcon',
-  synced: 'cloudSavingDone',
+  synced: 'CloudIcon',
   syncing: 'cloudSync',
   unsaved: 'cloudAlert',
 } satisfies Record<NoteEditorSaveState, IconName>;
@@ -128,10 +128,7 @@ function EditorSaveStatus({
         render={<span role="status" />}
         tabIndex={0}
       >
-        <Icon
-          className="size-4 lg:size-5"
-          name={STATUS_ICON[editorStatus.saveState]}
-        />
+        <Icon className="size-4.5" name={STATUS_ICON[editorStatus.saveState]} />
         <span className="sr-only">{statusLabel}</span>
       </TooltipTrigger>
       <TooltipContent side="bottom">{statusLabel}</TooltipContent>

@@ -143,15 +143,19 @@ const publicRoutes = [
   }),
 ];
 
-const bankPage = <const T extends string>(path: T) =>
-  createRoute({
-    component: lazyRouteComponent(() => import('@/routes/QuestionBank')),
-    getParentRoute: () => authShellRoute,
-    path,
-    validateSearch: (search: Record<string, unknown>): { mode?: 'edit' } => ({
-      mode: search.mode === 'edit' ? 'edit' : undefined,
-    }),
-  });
+// One page for every /bank URL: the topic and question are child routes
+// without components, so moving between them keeps the page mounted and its
+// filters and picks intact.
+const bankRoute = createRoute({
+  component: lazyRouteComponent(() => import('@/routes/QuestionBank')),
+  getParentRoute: () => authShellRoute,
+  path: '/bank',
+  validateSearch: (search: Record<string, unknown>): { mode?: 'edit' } => ({
+    mode: search.mode === 'edit' ? 'edit' : undefined,
+  }),
+});
+const bankChild = <const T extends string>(path: T) =>
+  createRoute({ getParentRoute: () => bankRoute, path });
 
 // The old Create, Quizzes and Flashcards list pages now live in the Files
 // page's Blocks tab.
@@ -243,9 +247,10 @@ const appRoutes = [
     path: '/files/$fileId',
     validateSearch: parseDocumentModeSearch,
   }),
-  bankPage('/bank'),
-  bankPage('/bank/$topicId'),
-  bankPage('/bank/$topicId/$questionId'),
+  bankRoute.addChildren([
+    bankChild('$topicId'),
+    bankChild('$topicId/$questionId'),
+  ]),
   page(
     '/quizzes/$quizId/attempt',
     () => import('@/routes/QuizAttempt'),

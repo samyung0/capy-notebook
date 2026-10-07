@@ -2,7 +2,7 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/cn';
 import { Icon } from './Icon';
 
-const checkboxVariants = cva(
+export const checkboxVariants = cva(
   'inline-flex shrink-0 cursor-pointer items-center justify-center rounded-md border transition-colors',
   {
     compoundVariants: [

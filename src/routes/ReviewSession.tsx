@@ -90,11 +90,14 @@ export default function ReviewSession() {
 
   const item = session?.[index];
   return (
-    <PanelWithInvertedRadius>
-      <PageHeader
-        subtitle={item?.materialTitle}
-        title={m.review_title({ workspace: ws?.name ?? '' })}
-      />
+    <PanelWithInvertedRadius
+      header={
+        <PageHeader
+          subtitle={item?.materialTitle}
+          title={m.review_title({ workspace: ws?.name ?? '' })}
+        />
+      }
+    >
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-6 py-5">
         <div className="flex items-center justify-between">
           <Button

@@ -721,6 +721,12 @@ export const handlers = [
     db.user.studyPreferences = (await request.json()) as StudyPreferences;
     return new HttpResponse(null, { status: 204 });
   }),
+  http.patch('/api/me/study-progress', async ({ request }) => {
+    db.user.studyProgress = (
+      (await request.json()) as { enabled: boolean }
+    ).enabled;
+    return new HttpResponse(null, { status: 204 });
+  }),
   http.get('/api/models', async ({ request }) => {
     const slot = new URL(request.url).searchParams.get('slot');
     const fallback = {

@@ -22,22 +22,25 @@ export default function Thinking() {
   const frozen = useAccountFrozen();
 
   return (
-    <PanelWithInvertedRadius>
-      <PageHeader
-        actions={
-          <>
-            <IconButton
-              disabled={frozen}
-              icon="plus"
-              label={m.thinking_new_canvas()}
-              onClick={() => setCreateOpen(true)}
-              variant="dark"
-            />
-            <AccountStatusButton />
-          </>
-        }
-        title={m.nav_thinking()}
-      />
+    <PanelWithInvertedRadius
+      header={
+        <PageHeader
+          actions={
+            <>
+              <IconButton
+                disabled={frozen}
+                icon="plus"
+                label={m.thinking_new_canvas()}
+                onClick={() => setCreateOpen(true)}
+                variant="dark"
+              />
+              <AccountStatusButton />
+            </>
+          }
+          title={m.nav_thinking()}
+        />
+      }
+    >
       <div className="flex-1 px-6 py-5">
         {fetchStatus === 'paused' ? (
           <QueryPausedState />
