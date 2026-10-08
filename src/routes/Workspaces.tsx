@@ -115,7 +115,7 @@ export default function Workspaces() {
           <SkeletonCardGrid count={6} />
         ) : (
           <div
-            className="grid w-full grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4"
+            className="@container grid w-full grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4"
             ref={revealRef}
           >
             {sortedWorkspaces?.map((w) => (

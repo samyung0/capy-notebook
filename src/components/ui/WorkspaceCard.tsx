@@ -20,7 +20,6 @@ import { iconUrl } from '@/lib/icon-catalog';
 import { Badge } from './Badge';
 import { Card } from './Card';
 import { CoverArt } from './CoverArt';
-import { Skeleton } from './feedback';
 
 export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
   const { mutate: deleteWorkspace } = useDeleteWorkspace();
@@ -112,20 +111,21 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
               shade="card"
             />
           )}
-          {/* Phones put the icon beside the name and the counts on their own
-              line; from sm it is the icon above the name. */}
-          <div className="relative grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 sm:flex sm:flex-1 sm:flex-col sm:items-stretch sm:gap-4">
+          {/* A one-column grid (the parent is an @container) puts the icon
+              beside the name and the counts on their own line; two columns
+              and up keep the icon above the name. */}
+          <div className="relative @card-grid:flex grid @card-grid:flex-1 grid-cols-[auto_minmax(0,1fr)] @card-grid:flex-col items-center @card-grid:items-stretch @card-grid:gap-4 gap-x-3">
             <img
               alt=""
-              className="size-10 rounded-button sm:size-11"
+              className="@card-grid:size-11 size-10 rounded-button"
               height={44}
               src={iconUrl(workspace.iconId)}
               width={44}
             />
-            <div className="contents sm:block sm:flex-1">
+            <div className="@card-grid:block contents @card-grid:flex-1">
               <h3
                 className={cn(
-                  't-card-title line-clamp-2 pr-8 sm:pr-0',
+                  't-card-title line-clamp-2 @card-grid:pr-0 pr-8',
                   ink === 'dark' && 'text-white',
                   ink === 'light' && 'text-[#1d1d1f]'
                 )}
@@ -134,7 +134,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
               </h3>
               <p
                 className={cn(
-                  't-meta col-span-2 mt-2 text-fg-muted sm:mt-1',
+                  't-meta col-span-2 @card-grid:mt-1 mt-2 text-fg-muted',
                   ink === 'dark' && 'text-white/85',
                   ink === 'light' && 'text-[#4b4b4b]'
                 )}
@@ -225,24 +225,5 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
         </>
       )}
     </div>
-  );
-}
-
-/** Loading placeholder that mirrors {@link WorkspaceCard}'s footprint. */
-export function WorkspaceCardSkeleton() {
-  return (
-    <Card border="solid" className="gap-4 p-4.5 xl:p-5.5">
-      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 sm:flex sm:flex-col sm:items-stretch sm:gap-4">
-        <Skeleton className="size-10 rounded-card sm:size-11" />
-        <div className="contents sm:block sm:flex-1">
-          <Skeleton className="h-4.5 w-3/5 rounded-button" />
-          <Skeleton className="col-span-2 mt-2.5 h-3 w-2/5 rounded-button sm:mt-2" />
-          <div className="col-span-2 mt-3.5 flex gap-1.5">
-            <Skeleton className="h-5 w-14 rounded-full" />
-            <Skeleton className="h-5 w-10 rounded-full" />
-          </div>
-        </div>
-      </div>
-    </Card>
   );
 }
