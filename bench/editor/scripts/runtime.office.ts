@@ -1239,6 +1239,7 @@ const pasted = (row: number, col: number) => String((row * 7 + col) % 97);
  */
 async function peerUpdates(
   fixture: Fixture,
+  clientId: number,
   edit: (
     handle: import('../../../vendor/betteroffice/packages/xlsx/src/wasm/loader').WorkbookHandle
   ) => void
@@ -1257,7 +1258,7 @@ async function peerUpdates(
   const files = XLSX_FILES[fixture.id];
   const handle = engine.openWorkbook(
     readFileSync(path.join(benchRoot, files.source)),
-    { clientId: 4_000_000_001, collaborative: true }
+    { clientId, collaborative: true }
   );
   try {
     handle.applyUpdate(readFileSync(path.join(benchRoot, files.state)));
@@ -1617,7 +1618,8 @@ for (const fixture of FIXTURES) {
       await page.waitForTimeout(5000);
       const frame = runtimeFrame(page);
       const at = cellAt(fixture.cell);
-      const paste = await peerUpdates(fixture, (handle) => {
+      // Two peers: each update builds on the room's state alone.
+      const paste = await peerUpdates(fixture, 4_000_000_001, (handle) => {
         const edits = [];
         for (let row = 0; row < PASTE.rows; row += 1)
           for (let col = 0; col < PASTE.cols; col += 1)
@@ -1628,7 +1630,7 @@ for (const fixture of FIXTURES) {
             });
         handle.editCells(0, edits);
       });
-      const insert = await peerUpdates(fixture, (handle) => {
+      const insert = await peerUpdates(fixture, 4_000_000_002, (handle) => {
         handle.applyOps([
           { at: at.row - 1, count: 1, sheet: 0, type: 'insertRows' },
         ]);
@@ -1670,6 +1672,11 @@ for (const fixture of FIXTURES) {
         frame,
         () => page.keyboard.press('ControlOrMeta+v'),
         'keydown'
+      );
+      // The paste landed: its last cell is selected and shows its value.
+      await expect(frame.getByTestId('xlsx-formula-input')).toHaveValue(
+        pasted(PASTE.rows - 1, PASTE.cols - 1),
+        { timeout: 60_000 }
       );
       const { version } = await page.evaluate(
         () =>
@@ -1769,6 +1776,114 @@ for (const fixture of FIXTURES) {
     );
   });
 }
+
+// Two peers on the 8 MiB gradebook: the user types values into a column, one
+// Enter after another, while the other peer's 8,000-cell paste and row insert
+// (a whole recalculation) reach the editor. Every value lands where it was
+// typed and the selection walks on with each Enter; the typing's span and the
+// frame's long tasks meanwhile are reported.
+const TYPED_ENTRIES = 20;
+test('xlsx large-gradebook.xlsx: typing while a peer pastes and inserts a row', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(600_000);
+  const fixture = FIXTURES.find((each) => each.id === 'bio-office-xlsx-long')!;
+  await openInView(page, fixture);
+  const mode = page.getByRole('button', { name: m.material_mode() });
+  await expect(mode).toBeEnabled({ timeout: 60_000 });
+  await clickUntil(page, ['ready', 'collaboration-ready'], () => mode.click());
+  await page.waitForTimeout(5000);
+  const frame = runtimeFrame(page);
+  const at = cellAt(fixture.cell);
+  // The peer pastes below the typed cells and inserts a row below that.
+  const paste = await peerUpdates(fixture, 4_000_000_003, (handle) => {
+    const edits = [];
+    for (let row = 0; row < PASTE.rows; row += 1)
+      for (let col = 0; col < PASTE.cols; col += 1)
+        edits.push({
+          col: at.col + 1 + col,
+          input: pasted(row, col),
+          row: at.row + TYPED_ENTRIES + row,
+        });
+    handle.editCells(0, edits);
+  });
+  const insert = await peerUpdates(fixture, 4_000_000_004, (handle) => {
+    handle.applyOps([
+      { at: at.row + TYPED_ENTRIES + PASTE.rows + 10, count: 1, sheet: 0, type: 'insertRows' },
+    ]);
+  });
+  await placeCaret(page, frame, fixture);
+  await frame.evaluate(() => {
+    const probe = {
+      keys: [] as number[],
+      tasks: [] as { duration: number; start: number }[],
+    };
+    (window as unknown as { __twoPeers: typeof probe }).__twoPeers = probe;
+    window.addEventListener('keydown', () => probe.keys.push(performance.now()), true);
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries())
+        probe.tasks.push({ duration: entry.duration, start: entry.startTime });
+    }).observe({ type: 'longtask' });
+  });
+  const typed: string[] = [];
+  for (let entry = 0; entry < TYPED_ENTRIES; entry += 1) {
+    if (entry === 3) await postToRuntime(page, paste);
+    if (entry === 6) await postToRuntime(page, insert);
+    const value = String(500 + entry);
+    for (const key of value) {
+      await page.keyboard.press(key);
+      await page.waitForTimeout(40);
+    }
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(40);
+    typed.push(value);
+  }
+  // Every Enter moved the selection on by one.
+  const nameBox = frame.getByTestId('xlsx-name-box');
+  await expect(nameBox).toHaveValue(
+    `${fixture.cell.replace(/\d+$/, '')}${at.row + TYPED_ENTRIES}`,
+    { timeout: 120_000 }
+  );
+  const probe = await frame.evaluate(() => {
+    const { keys, tasks } = (
+      window as unknown as {
+        __twoPeers: { keys: number[]; tasks: { duration: number; start: number }[] };
+      }
+    ).__twoPeers;
+    const during = tasks.filter((task) => task.start >= keys[0]);
+    // A key waits for the frame's main thread: blocked, the span grows.
+    return {
+      keySpanMs: Math.round(keys.at(-1)! - keys[0]),
+      longestTaskMs: Math.round(Math.max(0, ...during.map((task) => task.duration))),
+      longTaskMs: Math.round(during.reduce((sum, task) => sum + task.duration, 0)),
+    };
+  });
+  // Back up the column: every value typed is in its cell.
+  const formula = frame.getByTestId('xlsx-formula-input');
+  for (let entry = TYPED_ENTRIES - 1; entry >= 0; entry -= 1) {
+    await page.keyboard.press('ArrowUp');
+    await expect(formula).toHaveValue(typed[entry], { timeout: 60_000 });
+  }
+  const errors = await page.evaluate(() =>
+    window.__officeBench.messages
+      .filter((message) => message.type === 'error')
+      .map((message) => message.message)
+  );
+  await reportMetrics(
+    testInfo,
+    `office-xlsx-${fixture.id}-two-peers`,
+    {
+      budget: 'report-only',
+      entries: TYPED_ENTRIES,
+      errors,
+      fixture: fixture.name,
+      mainThread: probe,
+      runner: RUNNER,
+    },
+    'unthrottled'
+  );
+  expect(errors).toEqual([]);
+});
 
 // The 50,000-row sheet in the editor: open to editable, then scrolling it
 // slowly and fast, with the paints the grid keeps up with.
