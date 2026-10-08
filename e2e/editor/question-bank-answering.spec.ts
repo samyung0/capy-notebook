@@ -7,7 +7,7 @@ import { m } from '../i18n';
 // Check answer reveals the key, shows the quiz review and marks the list;
 // Try again clears the answer.
 test('bank checks an answer and marks the topic list', async ({ page }) => {
-  await page.goto('/bank/practice');
+  await page.goto('/qb/practice');
   const question = page.locator('[data-question-id="bank-practice-1"]');
   // A cold dev server compiles the bank route first.
   await expect(question).toContainText('width 2 cm', { timeout: 30_000 });
@@ -49,7 +49,7 @@ test('bank checks an answer and marks the topic list', async ({ page }) => {
 // The landing continues a topic, the filter narrows it, and ticked questions
 // copy into a new quiz named in the picker.
 test('bank continues, filters and copies to a quiz', async ({ page }) => {
-  await page.goto('/bank');
+  await page.goto('/qb');
   await expect(page.getByText(m.study_of({ done: 3, total: 34 }))).toBeVisible({
     timeout: 30_000,
   });
@@ -58,7 +58,7 @@ test('bank continues, filters and copies to a quiz', async ({ page }) => {
     'Mensuration is fully answered'
   ).toBeVisible();
   await page.getByRole('button', { name: m.question_ui_continue() }).click();
-  await expect(page).toHaveURL(/\/bank\/practice\/bank-practice-5$/);
+  await expect(page).toHaveURL(/\/qb\/practice\/bank-practice-5$/);
 
   await page.getByRole('button', { name: m.workspaces_filter() }).click();
   await page

@@ -2,7 +2,7 @@
 
 The bank is a separate syllabus and question database. Signed-in learners read
 question content; granted bank editors can edit, mark reviewed, upload figures
-and send a comment. The bank page is at `/bank`, under Explore in the
+and send a comment. The bank page is at `/qb`, under Explore in the
 sidebar, inside the app shell: the main panel shows the chosen topic's
 questions, and a dashboard-style right column (`PanelHeader`, shared with
 Recent Files and the theme drawer) holds exams and topics (Exam switcher and
@@ -480,7 +480,7 @@ Clone, right of the filter, turns the side panel's question list into a picker
 for Copy to quiz and gives way to Copy to quiz and ✕ (cancel). Each row then
 leads with a checkbox in place of its result mark; a click toggles the row and
 still scrolls to its question, and on phones the sheet stays open between picks.
-Picks survive filtering and cap at the route's 20. `/bank` is one route whose
+Picks survive filtering and cap at the route's 20. `/qb` is one route whose
 `$topicId` and `$topicId/$questionId` children have no component
 (`src/router.ts`), so moving between questions keeps the page, its filters and
 picks mounted. `CopyToQuizDialog`

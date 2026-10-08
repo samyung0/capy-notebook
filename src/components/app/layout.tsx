@@ -109,7 +109,7 @@ export function Panel({
 
 /**
  * The title row of a side panel or drawer (Dashboard's Recent Files, the
- * /bank topics panel, the theme drawer): card title, with optional controls
+ * /qb topics panel, the theme drawer): card title, with optional controls
  * before it and after it. Sits in a `px-2 py-5` panel section.
  */
 export function PanelHeader({

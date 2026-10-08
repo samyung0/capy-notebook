@@ -218,7 +218,7 @@ func TestBankHTTPPermissionsAssetsAndComments(t *testing.T) {
 	if comment.Code != 204 || len(sender.Captured()) != 1 {
 		t.Fatalf("comment: %d %s", comment.Code, comment.Body.String())
 	}
-	if !strings.Contains(sender.Captured()[0].Text, "https://app.example/bank/t/q?mode=edit") {
+	if !strings.Contains(sender.Captured()[0].Text, "https://app.example/qb/t/q?mode=edit") {
 		t.Fatal("comment link missing")
 	}
 	configNoMail := config

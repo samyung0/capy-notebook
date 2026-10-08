@@ -20,7 +20,7 @@ session deploys UAT next and takes everything below with it.
 
 - **Built 2026-10-06:** the answer-key rule (53f232fa: keys only for editing
   and for what was just checked, grading on the server, for quizzes and the
-  bank everywhere); the `/bank` landing (Continue and Finished) and the bank
+  bank everywhere); the `/qb` landing (Continue and Finished) and the bank
   page refinements, Copy to quiz with chapters and counts, and the sidebar's
   Explore section (49a8eed4); quiz images capped at 2 MB, shrunk in the
   browser and uploaded on Save (9d4d6170, d06114e9, 45c85c77); every editor
@@ -109,7 +109,7 @@ session deploys UAT next and takes everything below with it.
   requires the origin). Bank migration 0003 is applied to the shared bank
   database (2026-10-05).
 - **Was unblocked:** the `/generate` defaults from study preferences (2.4; AI
-  generate moved into the Add file dialog), and learners answering on `/bank`
+  generate moved into the Add file dialog), and learners answering on `/qb`
   with per-topic progress (built 2026-10-06; see todo-question-bank.md).
 - **Phase 3 mocks:** https://5i16xblach8o.postplan.dev. Epo picked A (media
   frame, like diagrams). People may edit the snippet, since the risk is the

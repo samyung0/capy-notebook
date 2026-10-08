@@ -73,7 +73,7 @@ test('block formula preserves its height and dismisses the virtual keyboard', as
 test('question formula accepts physical digits and retains them after commit', async ({
   page,
 }) => {
-  await page.goto('/bank/mensuration/bank-quadratic?mode=edit');
+  await page.goto('/qb/mensuration/bank-quadratic?mode=edit');
   // Page readiness: MathLive loads lazily, so this gets the editor-loading
   // allowance openEditorNote uses.
   await expect(

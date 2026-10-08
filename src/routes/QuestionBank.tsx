@@ -263,8 +263,8 @@ export default function QuestionBank() {
       search: { mode: next === 'edit' ? ('edit' as const) : undefined },
     };
     if (topicId)
-      void navigate({ ...options, params: { topicId }, to: '/bank/$topicId' });
-    else void navigate({ ...options, to: '/bank' });
+      void navigate({ ...options, params: { topicId }, to: '/qb/$topicId' });
+    else void navigate({ ...options, to: '/qb' });
   }
   function topic(id: string) {
     setShowTopics(false);
@@ -272,7 +272,7 @@ export default function QuestionBank() {
     void navigate({
       params: { topicId: id },
       search: modeSearch,
-      to: '/bank/$topicId',
+      to: '/qb/$topicId',
     });
   }
   /** From the landing: Continue opens the next question, Summary the top. */
@@ -282,14 +282,14 @@ export default function QuestionBank() {
       void navigate({
         params: { questionId: next, topicId: id },
         search: modeSearch,
-        to: '/bank/$topicId/$questionId',
+        to: '/qb/$topicId/$questionId',
       });
     else {
       scrollRef.current?.scrollTo({ top: 0 });
       void navigate({
         params: { topicId: id },
         search: modeSearch,
-        to: '/bank/$topicId',
+        to: '/qb/$topicId',
       });
     }
   }
@@ -302,7 +302,7 @@ export default function QuestionBank() {
       params: { questionId: id, topicId },
       replace: true,
       search: modeSearch,
-      to: '/bank/$topicId/$questionId',
+      to: '/qb/$topicId/$questionId',
     });
   }
 
@@ -1483,7 +1483,7 @@ function ReviewBar({
 }
 
 /**
- * /bank with no topic open: in View mode, the topics the learner has answered
+ * /qb with no topic open: in View mode, the topics the learner has answered
  * in, in the Learning Review tab's table, each with Continue (the next
  * unanswered question) or, once all are answered, Summary (the topic's top).
  * Without any, Choose a topic as before; phones pick topics in the page.

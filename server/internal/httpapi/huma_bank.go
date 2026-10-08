@@ -347,7 +347,7 @@ func (a *api) bankComment(ctx context.Context, in *bankCommentInput) (*Empty, er
 	if err != nil {
 		return nil, hErr(err)
 	}
-	link := strings.TrimRight(a.cfg.AppURL, "/") + "/bank/" + url.PathEscape(detail.TopicID) + "/" + url.PathEscape(in.ID) + "?mode=edit"
+	link := strings.TrimRight(a.cfg.AppURL, "/") + "/qb/" + url.PathEscape(detail.TopicID) + "/" + url.PathEscape(in.ID) + "?mode=edit"
 	body := fmt.Sprintf("%s\n%s · %s · %s\nQuestion %d\nFrom: %s <%s>\n\n%s", link, detail.ExamLabel, detail.SubjectLabel, detail.TopicLabel, detail.Position, name, email, text)
 	sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()

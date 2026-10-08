@@ -100,7 +100,7 @@ UI redesign, which Epo is doing in its own session.
 
 ## Later
 
-- [x] **Learners on `/bank`** (2026-10-06): answering with reveal on check
+- [x] **Learners on `/qb`** (2026-10-06): answering with reveal on check
       (ebd5bafe); progress keeps each learner's latest score per question
       (`bank_progress`, app migration 0056, no FSRS or review); the landing
       lists attempted topics with Continue or Summary (only there);

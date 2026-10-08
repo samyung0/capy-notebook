@@ -143,13 +143,13 @@ const publicRoutes = [
   }),
 ];
 
-// One page for every /bank URL: the topic and question are child routes
+// One page for every /qb URL: the topic and question are child routes
 // without components, so moving between them keeps the page mounted and its
 // filters and picks intact.
 const bankRoute = createRoute({
   component: lazyRouteComponent(() => import('@/routes/QuestionBank')),
   getParentRoute: () => authShellRoute,
-  path: '/bank',
+  path: '/qb',
   validateSearch: (search: Record<string, unknown>): { mode?: 'edit' } => ({
     mode: search.mode === 'edit' ? 'edit' : undefined,
   }),

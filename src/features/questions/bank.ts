@@ -209,7 +209,7 @@ export const bankMarksQuery = (topicId: string) =>
     queryKey: ['bank', 'marks', topicId],
     retry: false,
   });
-/** The /bank landing: topics with an answered question, latest first. */
+/** The /qb landing: topics with an answered question, latest first. */
 export const bankProgressQuery = () =>
   queryOptions({
     queryFn: () => api.get<BankProgress>('/bank/progress'),

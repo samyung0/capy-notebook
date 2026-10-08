@@ -11,7 +11,7 @@ test('bank jumps to an unloaded question and loads earlier ones in place', async
     if (request.url().includes('/api/bank/questions?') && ids)
       batches.push(ids.split(',').length);
   });
-  await page.goto('/bank/practice');
+  await page.goto('/qb/practice');
   const question = (n: number) =>
     page.locator(`[data-question-id="bank-practice-${n}"]`);
   // Page readiness: a cold dev server compiles the bank route first, so this

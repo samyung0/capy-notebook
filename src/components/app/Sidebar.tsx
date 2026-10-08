@@ -32,7 +32,7 @@ function items(): {
       { items: tools(), label: m.nav_section_tools() },
       {
         items: [
-          { icon: 'quiz', label: m.question_ui_question_bank(), to: '/bank' },
+          { icon: 'quiz', label: m.question_ui_question_bank(), to: '/qb' },
         ],
         label: m.nav_section_explore(),
       },
