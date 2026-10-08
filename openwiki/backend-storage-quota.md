@@ -192,7 +192,7 @@ re-check the bounds: the collaboration service already refused every update
 that grows an over-limit document, so re-rejecting here would strand
 `materials.content` behind the Y.Doc for exactly the documents recovering
 towards the limit. The internal projection handler uses
-`materialdoc.MarshalProjection`, which still validates and canonicalizes the
+`materialdoc.NewProjection`, which still validates and canonicalizes the
 Plate envelope but does not apply the product caps.
 
 The browser applies its own, independent render threshold

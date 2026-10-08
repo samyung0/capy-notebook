@@ -72,6 +72,8 @@ type projectMaterialReq struct {
 type projectMaterialInput struct {
 	ID     string `path:"id"`
 	Secret string `header:"X-Collaboration-Secret"`
+	// Hidden from the OpenAPI document, as Huma's own body handling read it.
+	ContentType string `header:"Content-Type" hidden:"true"`
 	// A projectMaterialReq the handler decodes itself (decodeProjectionBody).
 	RawBody []byte
 }
@@ -95,7 +97,15 @@ func (a *api) registerCollaboration(api huma.API) {
 	// generic value for schema validation and then into the struct. The
 	// collaboration service gives up after 15 s.
 	const projectionPath = "/internal/collaboration/materials/{id}/projection"
-	regWithMaxBody(api, http.MethodPost, projectionPath, "projectMaterialYjsDocument", tag, "Project a durably stored Yjs document", http.StatusOK, materialRequestMaxBytes, a.projectMaterialYjsDocument, func(op *huma.Operation) {
+	project := func(ctx context.Context, in *projectMaterialInput) (*projectMaterialOutput, error) {
+		// Huma read a body only in a format it has (JSON) and answered 415
+		// otherwise, before any handler ran.
+		if err := api.Unmarshal(in.ContentType, []byte("null"), new(any)); err != nil {
+			return nil, huma.Error415UnsupportedMediaType(err.Error())
+		}
+		return a.projectMaterialYjsDocument(ctx, in)
+	}
+	regWithMaxBody(api, http.MethodPost, projectionPath, "projectMaterialYjsDocument", tag, "Project a durably stored Yjs document", http.StatusOK, materialRequestMaxBytes, project, func(op *huma.Operation) {
 		op.SkipValidateBody = true
 		op.BodyReadTimeout = 15 * time.Second
 		// Documented as the JSON it must hold, as a Body field would be.
@@ -308,8 +318,9 @@ func (a *api) projectMaterialYjsDocument(
 
 // decodeProjectionBody reads the projection body once and refuses what Huma's
 // schema validation refused before the route skipped it, with Huma's codes:
-// 400 for malformed JSON, 422 for a missing, null, unknown or mistyped field
-// or a yjsVersion below 1. Field names match regardless of case and the
+// 400 for what does not decode as JSON at all (malformed, a number out of
+// float64 range), 422 for a missing, null, unknown or mistyped field or a
+// yjsVersion below 1. Field names match regardless of case and the
 // documented `$schema` link is ignored, as with Huma; `value` may be null, as
 // its schema allows. materialdoc then checks the document itself (400).
 func decodeProjectionBody(raw []byte) (projectMaterialReq, error) {
@@ -330,19 +341,19 @@ func decodeProjectionBody(raw []byte) (projectMaterialReq, error) {
 	body.Content.Value = &nodes
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	// The decoder scans the whole object before decoding it, so a syntax
-	// error anywhere wins over a field error, as with Huma.
 	err := decoder.Decode(&body)
-	var syntax *json.SyntaxError
-	malformed := errors.As(err, &syntax) || errors.Is(err, io.ErrUnexpectedEOF)
-	if err == nil {
-		_, end := decoder.Token()
-		malformed = end != io.EOF // anything after the object
+	if _, end := decoder.Token(); err == nil && end != io.EOF {
+		err = errors.New("data after the body")
 	}
-	if malformed {
-		return projectMaterialReq{}, huma.Error400BadRequest("malformed JSON body")
+	if err == nil && body.Schema != nil && json.Unmarshal(body.Schema, new(any)) != nil {
+		err = errors.New("unreadable $schema")
 	}
 	if err != nil {
+		// Huma first decoded the body into a generic value and answered 400
+		// when that failed; only then did it check the fields (422).
+		if json.Unmarshal(raw, new(any)) != nil {
+			return projectMaterialReq{}, huma.Error400BadRequest("malformed JSON body")
+		}
 		return invalid(err.Error())
 	}
 	if body.YjsVersion == nil || *body.YjsVersion < 1 {

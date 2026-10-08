@@ -25,7 +25,7 @@ type MaterialNode = Record<string, unknown>;
 
 /** The one width a resizable block (image, YouTube video, Mermaid, chart,
  * graph) stores: what MediaFrame's resize handles write, a whole percentage
- * from 20 to 100. Mirrors materialdoc.MediaWidth in Go. */
+ * from 20 to 100. Mirrors mediaWidth in Go (server/internal/materialdoc). */
 const MEDIA_WIDTH = /^(?:[2-9][0-9]|100)%$/;
 
 export class MaterialDocumentValidationError extends Error {
