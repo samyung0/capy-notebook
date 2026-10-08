@@ -1307,76 +1307,88 @@ async function postToRuntime(page: Page, updates: Uint8Array[]) {
 
 /**
  * A local operation in the runtime frame, from `trigger` (a key press or a
- * message posted to the frame) to the next painted grid, with the frame's
- * long tasks in between.
+ * message posted to the frame) until the formula bar shows `shows` (the
+ * result's own text, drawn from the engine's answer), with the frame's long
+ * tasks in between.
  */
 async function timeLocal(
   page: Page,
   frame: Frame,
   trigger: () => Promise<void>,
-  startOn: 'keydown' | 'menu-command'
+  startOn: 'keydown' | 'menu-command',
+  shows: string
 ) {
-  await frame.evaluate((startOn) => {
-    const local = {
-      paintsFrom: window.__xlsxPaints.length,
-      start: undefined as number | undefined,
-      tasks: [] as { duration: number; start: number }[],
-    };
-    (window as unknown as { __officeLocal: typeof local }).__officeLocal =
-      local;
-    const observer = new PerformanceObserver((list) => {
-      for (const entry of list.getEntries())
-        local.tasks.push({ duration: entry.duration, start: entry.startTime });
-    });
-    observer.observe({ type: 'longtask' });
-    if (startOn === 'keydown')
-      window.addEventListener(
-        'keydown',
-        () => {
-          local.start ??= performance.now();
-        },
-        { capture: true, once: true }
-      );
-    else
-      window.addEventListener('message', function listen(event) {
-        if ((event.data as { type?: unknown })?.type !== 'menu-command')
-          return;
-        // The post's time: this listener runs after the runtime's handler.
-        local.start ??= event.timeStamp;
-        window.removeEventListener('message', listen);
+  await frame.evaluate(
+    ({ shows, startOn }) => {
+      const local = {
+        shown: undefined as number | undefined,
+        start: undefined as number | undefined,
+        tasks: [] as { duration: number; start: number }[],
+      };
+      (window as unknown as { __officeLocal: typeof local }).__officeLocal =
+        local;
+      const observer = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries())
+          local.tasks.push({ duration: entry.duration, start: entry.startTime });
       });
-  }, startOn);
-  await trigger();
-  const paint = () =>
-    frame.evaluate(() => {
-      const local = (
-        window as unknown as {
-          __officeLocal: { paintsFrom: number; start?: number };
+      observer.observe({ type: 'longtask' });
+      const formula = document.querySelector<HTMLInputElement>(
+        '[data-testid="xlsx-formula-input"]'
+      )!;
+      // Every frame from the trigger on, until the formula bar shows it.
+      const watch = (now: number) => {
+        if (local.start !== undefined && formula.value === shows) {
+          local.shown = now;
+          observer.disconnect();
+          return;
         }
-      ).__officeLocal;
-      return local.start === undefined
-        ? undefined
-        : window.__xlsxPaints
-            .slice(local.paintsFrom)
-            .find((at) => at > local.start!);
-    });
-  await expect.poll(paint, { intervals: [50], timeout: 120_000 }).toBeDefined();
+        requestAnimationFrame(watch);
+      };
+      requestAnimationFrame(watch);
+      if (startOn === 'keydown')
+        window.addEventListener(
+          'keydown',
+          () => {
+            local.start ??= performance.now();
+          },
+          { capture: true, once: true }
+        );
+      else
+        window.addEventListener('message', function listen(event) {
+          if ((event.data as { type?: unknown })?.type !== 'menu-command')
+            return;
+          // The post's time: this listener runs after the runtime's handler.
+          local.start ??= event.timeStamp;
+          window.removeEventListener('message', listen);
+        });
+    },
+    { shows, startOn }
+  );
+  await trigger();
+  await expect
+    .poll(
+      () =>
+        frame.evaluate(
+          () =>
+            (window as unknown as { __officeLocal: { shown?: number } })
+              .__officeLocal.shown
+        ),
+      { intervals: [50], timeout: 120_000 }
+    )
+    .toBeDefined();
   await page.waitForTimeout(1000);
   return frame.evaluate(() => {
-    const local = (
+    const { shown, start, tasks } = (
       window as unknown as {
         __officeLocal: {
-          paintsFrom: number;
+          shown: number;
           start: number;
           tasks: { duration: number; start: number }[];
         };
       }
     ).__officeLocal;
-    const painted = window.__xlsxPaints
-      .slice(local.paintsFrom)
-      .find((at) => at > local.start)!;
-    const blocking = local.tasks.filter(
-      (task) => task.start >= local.start - 1 && task.start < painted
+    const blocking = tasks.filter(
+      (task) => task.start >= start - 1 && task.start < shown
     );
     return {
       longestTaskMs: Math.round(
@@ -1385,7 +1397,7 @@ async function timeLocal(
       longTaskMs: Math.round(
         blocking.reduce((sum, task) => sum + task.duration, 0)
       ),
-      toPaintMs: Math.round(painted - local.start),
+      toShownMs: Math.round(shown - start),
     };
   });
 }
@@ -1667,15 +1679,18 @@ for (const fixture of FIXTURES) {
         },
         PASTE
       );
+      // The paste selects what it pasted; its last cell shows its value.
       const localPaste = await timeLocal(
         page,
         frame,
         () => page.keyboard.press('ControlOrMeta+v'),
-        'keydown'
+        'keydown',
+        pasted(PASTE.rows - 1, PASTE.cols - 1)
       );
-      // The paste landed: its last cell is selected and shows its value.
+      // One row above the fixture's cell, which the paste filled.
+      await placeCaret(page, frame, fixture);
       await expect(frame.getByTestId('xlsx-formula-input')).toHaveValue(
-        pasted(PASTE.rows - 1, PASTE.cols - 1),
+        pasted(0, 0),
         { timeout: 60_000 }
       );
       const { version } = await page.evaluate(
@@ -1699,7 +1714,8 @@ for (const fixture of FIXTURES) {
             },
             version
           ),
-        'menu-command'
+        'menu-command',
+        ''
       );
       const errors = await page.evaluate(() =>
         window.__officeBench.messages
