@@ -130,6 +130,9 @@ struct Member {
     /// The handoff's name for this channel.
     channel_id: u64,
     read_only: bool,
+    /// The source handoff made this channel read-only until RestoreAccess;
+    /// a token refresh keeps it so.
+    held_read_only: bool,
     out: Outbox,
     socket: String,
     /// Awareness client ids this channel sent.
@@ -288,6 +291,17 @@ pub fn spawn(app: &Shared, name: &RoomName, id: u64, actor: &str) -> RoomHandle 
         }
     });
     RoomHandle { id, tx, view }
+}
+
+/// Takes `bytes` off the loaded rooms' log bytes, never below zero (an
+/// accounting slip must not wrap the metric).
+fn unlog_bytes(app: &Shared, bytes: u64) {
+    let _ = app
+        .stats
+        .log_bytes
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |held| {
+            Some(held.saturating_sub(bytes))
+        });
 }
 
 /// A room's stored bytes (its base and log rows), for the load and unload
@@ -647,7 +661,7 @@ impl Room {
             RoomCmd::Stateless(key, payload) => self.on_stateless(key, &payload).await,
             RoomCmd::Token(key, context) => {
                 if let Some(member) = self.members.get_mut(&key) {
-                    member.read_only = context.access == Access::Read;
+                    member.read_only = member.held_read_only || context.access == Access::Read;
                     member.context = context;
                     self.view_dirty = true;
                 }
@@ -715,10 +729,7 @@ impl Room {
                     *log_rows -= rows;
                     *log_bytes -= bytes;
                     *base_bytes = base;
-                    self.app
-                        .stats
-                        .log_bytes
-                        .fetch_sub(bytes.max(0) as u64, Ordering::Relaxed);
+                    unlog_bytes(&self.app, bytes.max(0) as u64);
                 }
             }
             RoomCmd::SetReadOnly(channel) => {
@@ -728,11 +739,13 @@ impl Room {
                     .find(|member| member.channel_id == channel)
                 {
                     member.read_only = true;
+                    member.held_read_only = true;
                     self.view_dirty = true;
                 }
             }
             RoomCmd::RestoreAccess => {
                 for member in self.members.values_mut() {
+                    member.held_read_only = false;
                     member.read_only = member.context.access == Access::Read;
                 }
                 self.view_dirty = true;
@@ -1141,6 +1154,7 @@ impl Room {
                 context,
                 channel_id: self.app.next_channel.fetch_add(1, Ordering::Relaxed),
                 read_only,
+                held_read_only: false,
                 out,
                 socket,
                 clients: HashSet::new(),
@@ -1747,6 +1761,7 @@ impl Room {
                 && let Some(member) = self.members.get_mut(&key)
             {
                 member.read_only = true;
+                member.held_read_only = true;
                 self.view_dirty = true;
             }
             return;
@@ -2113,7 +2128,8 @@ impl Room {
         }
         match &mut self.kind {
             Kindly::Note(note) => {
-                note.stored_version = version;
+                // A service edit that landed meanwhile may be ahead.
+                note.stored_version = note.stored_version.max(version);
                 note.durable_metrics = metrics;
                 note.log_bytes += row_bytes as i64;
                 note.log_rows += 1;
@@ -2199,6 +2215,12 @@ impl Room {
         self.broadcast_stateless(
             &json!({ "materialId": self.material_id(), "type": "checkpoint-failed" }).to_string(),
         );
+        // A View waiting on this store's projection serves the stored one now.
+        if let Kindly::Note(note) = &mut self.kind {
+            for waiter in note.project_waiters.drain(..) {
+                let _ = waiter.send(Err(error.to_string()));
+            }
+        }
         self.retry_later(&error.to_string(), "document_store");
     }
 
@@ -2521,10 +2543,7 @@ impl Room {
         let note = match &self.kind {
             Kindly::Note(note) => note,
             Kindly::Source(source) => {
-                self.app
-                    .stats
-                    .log_bytes
-                    .fetch_sub(source.log_bytes.max(0) as u64, Ordering::Relaxed);
+                unlog_bytes(&self.app, source.log_bytes.max(0) as u64);
                 let (app, room, generation) =
                     (self.app.clone(), source.room.clone(), source.generation);
                 let discarded = self.discard_pending.take();
@@ -2548,10 +2567,7 @@ impl Room {
                 return;
             }
         };
-        self.app
-            .stats
-            .log_bytes
-            .fetch_sub(note.log_bytes.max(0) as u64, Ordering::Relaxed);
+        unlog_bytes(&self.app, note.log_bytes.max(0) as u64);
         let app = self.app.clone();
         let doc = self.doc.clone();
         let (material_id, schema, stored, projected) = (
