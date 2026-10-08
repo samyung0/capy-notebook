@@ -382,7 +382,14 @@ pub async fn durable(
     material_id: &str,
 ) -> Result<Option<(i64, i64, Vec<u8>, Vec<Vec<u8>>)>, StoreError> {
     let mut client = pool.get().await?;
-    let tx = client.transaction().await?;
+    // One snapshot: a fold committing between the base and the rows would
+    // otherwise pair the old base with no rows.
+    let tx = client
+        .build_transaction()
+        .isolation_level(tokio_postgres::IsolationLevel::RepeatableRead)
+        .read_only(true)
+        .start()
+        .await?;
     let found = tx
         .query(
             "SELECT room_schema, stored_version, state FROM material_yjs_documents WHERE material_id=$1",

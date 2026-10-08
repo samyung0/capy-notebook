@@ -232,7 +232,12 @@ pub async fn inspect_material(
         .get()
         .await
         .map_err(|error| DocumentError::Unknown(error.to_string()))?;
-    let tx = client.transaction().await?;
+    // One snapshot of the base and its rows (a fold may commit between them).
+    let tx = client
+        .build_transaction()
+        .isolation_level(tokio_postgres::IsolationLevel::RepeatableRead)
+        .start()
+        .await?;
     let found = tx
         .query(
             "SELECT state, room_schema FROM material_yjs_documents WHERE material_id=$1",
