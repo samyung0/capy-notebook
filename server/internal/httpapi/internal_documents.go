@@ -312,7 +312,7 @@ func materialOperations(kind string) []string {
 	case "mindmap", "diagram":
 		return []string{"set_mermaid"}
 	default:
-		return []string{"replace_text", "insert_markdown", "remove_block"}
+		return []string{"replace_text", "replace_block", "insert_markdown", "remove_block"}
 	}
 }
 
@@ -572,21 +572,25 @@ func normalizeMaterialCommands(kind string, raw []json.RawMessage, insertMarkdow
 				return nil, refusal(agenttools.ErrInvalidInput, "replace_text on a material needs target_id")
 			}
 			normalized = map[string]any{"type": "replace_text", "blockId": c.TargetID, "expectedText": c.ExpectedText, "text": c.Text}
-		case "insert_markdown":
+		case "insert_markdown", "replace_block":
 			if kind != "note" {
 				return nil, refusal(agenttools.ErrUnsupportedOperation, "use the %s commands for this material", kind)
 			}
 			if strings.TrimSpace(c.Markdown) == "" {
-				return nil, refusal(agenttools.ErrInvalidInput, "insert_markdown needs markdown")
+				return nil, refusal(agenttools.ErrInvalidInput, "%s needs markdown", c.Type)
 			}
 			if insertMarkdown == nil {
-				return nil, refusal(agenttools.ErrUnsupportedOperation, "insert_markdown is not available here")
+				return nil, refusal(agenttools.ErrUnsupportedOperation, "%s is not available here", c.Type)
 			}
 			blocks, err := insertMarkdown(i, c.Markdown)
 			if err != nil {
 				return nil, err
 			}
-			normalized = map[string]any{"type": "insert_block", "afterBlockId": c.AfterBlockID, "blocks": blocks}
+			if c.Type == "replace_block" {
+				normalized = map[string]any{"type": "replace_block", "blockId": c.BlockID, "expectedText": c.ExpectedText, "blocks": blocks}
+			} else {
+				normalized = map[string]any{"type": "insert_block", "afterBlockId": c.AfterBlockID, "blocks": blocks}
+			}
 		case "remove_block":
 			if kind != "note" {
 				return nil, refusal(agenttools.ErrUnsupportedOperation, "use the %s commands for this material", kind)

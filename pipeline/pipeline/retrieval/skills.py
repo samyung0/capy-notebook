@@ -56,7 +56,9 @@ REQUIRES: dict[str, tuple[str, ...]] = {
     "create_deck": (EDITING, DECK),
     "write_slide": (EDITING, DECK),
 }
-FORMAT_COMMANDS = frozenset({"insert_markdown", "add_question", "replace_question"})
+FORMAT_COMMANDS = frozenset(
+    {"insert_markdown", "replace_block", "add_question", "replace_question"}
+)
 
 _HEADER = "# Skill: "
 _HEADER_LINE = re.compile(r"^# Skill: (\S+)$", re.MULTILINE)

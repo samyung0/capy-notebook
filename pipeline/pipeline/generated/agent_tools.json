@@ -1,5 +1,5 @@
 {
-  "version": 17,
+  "version": 18,
   "operations": [
     "source.read",
     "material.read",
@@ -946,7 +946,7 @@
     {
       "name": "edit_document",
       "version": 1,
-      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly, each with an Undo; no formatting, media or PDF edits.",
+      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly, each with an Undo; replace_block rewrites a note block with formatting or math; no media or PDF edits.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -957,7 +957,7 @@
                   "additionalProperties": false,
                   "properties": {
                     "expected_text": {
-                      "description": "Exact text to replace; must occur once in the target.",
+                      "description": "Exact text to replace as inspect_document shows it, without math; must occur once in the target.",
                       "maxLength": 200000,
                       "type": "string"
                     },
@@ -966,7 +966,7 @@
                       "type": "string"
                     },
                     "text": {
-                      "description": "Replacement text; empty deletes the expected text.",
+                      "description": "Plain replacement text; empty deletes the expected text.",
                       "maxLength": 200000,
                       "type": "string"
                     },
@@ -978,6 +978,35 @@
                     "type",
                     "expected_text",
                     "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "block_id": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "expected_text": {
+                      "description": "The block's current text as inspect_document shows it.",
+                      "maxLength": 200000,
+                      "type": "string"
+                    },
+                    "markdown": {
+                      "description": "The block's new content as note markdown in the materials skill's format.",
+                      "maxLength": 200000,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "replace_block"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "block_id",
+                    "expected_text",
+                    "markdown"
                   ],
                   "type": "object"
                 },
@@ -1015,7 +1044,7 @@
                       "type": "string"
                     },
                     "expected_text": {
-                      "description": "The block's current text.",
+                      "description": "The block's current text as inspect_document shows it.",
                       "maxLength": 200000,
                       "type": "string"
                     },

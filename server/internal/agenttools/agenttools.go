@@ -65,7 +65,10 @@ const questionExample = `{"id": "q1", "stem": [{"type": "text", "text": "A red b
 // CAPY_LIBRARY_SECTION_TOOLS.
 // v17: html-embed fences name their muted line `caption` instead of `title`,
 // and the frame gives snippets the note's font and base style.
-const ContractVersion = 17
+// v18: edit_document gains replace_block (a note block rewritten from
+// markdown); inspect_document shows math as $tex$, and expected texts match
+// that rendering.
+const ContractVersion = 18
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -382,16 +385,21 @@ func editCommandSchema() map[string]any {
 		"oneOf": []any{
 			variant("replace_text", map[string]any{
 				"target_id":     map[string]any{"type": "string", "description": "Block, paragraph or shape target id; omit for a plain text source."},
-				"expected_text": text("Exact text to replace; must occur once in the target."),
-				"text":          text("Replacement text; empty deletes the expected text."),
+				"expected_text": text("Exact text to replace as inspect_document shows it, without math; must occur once in the target."),
+				"text":          text("Plain replacement text; empty deletes the expected text."),
 			}, "expected_text", "text"),
+			variant("replace_block", map[string]any{
+				"block_id":      str(""),
+				"expected_text": text("The block's current text as inspect_document shows it."),
+				"markdown":      text("The block's new content as note markdown in the materials skill's format."),
+			}, "block_id", "expected_text", "markdown"),
 			variant("insert_markdown", map[string]any{
 				"after_block_id": map[string]any{"type": []string{"string", "null"}, "description": "Insert after this block; null inserts at the start."},
 				"markdown":       text("Note markdown in the materials skill's format."),
 			}, "after_block_id", "markdown"),
 			variant("remove_block", map[string]any{
 				"block_id":      str(""),
-				"expected_text": text("The block's current text."),
+				"expected_text": text("The block's current text as inspect_document shows it."),
 			}, "block_id", "expected_text"),
 			variant("set_cell", map[string]any{
 				"sheet":          str("Sheet id or name from inspect_document."),
@@ -806,7 +814,8 @@ func Definitions() []Definition {
 			Retention: RetainFull,
 			Description: "Edit the content of one inspected document: each command names a " +
 				"target and the exact text or value it expects, and one stale expectation refuses " +
-				"the whole call. Edits save directly, each with an Undo; no formatting, media or PDF edits.",
+				"the whole call. Edits save directly, each with an Undo; replace_block rewrites a note " +
+				"block with formatting or math; no media or PDF edits.",
 			InputSchema: obj(map[string]any{
 				"target": resourceTarget("The document to edit."),
 				"commands": map[string]any{

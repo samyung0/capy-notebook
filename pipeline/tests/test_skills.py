@@ -67,6 +67,15 @@ async def test_writes_need_the_skill_while_its_text_is_in_the_request(monkeypatc
     assert skills.missing("edit_document", {"commands": [note]}, {"editing"}) == [
         "workspace_building"
     ]
+    rewrite = {
+        "type": "replace_block",
+        "block_id": "b",
+        "expected_text": "a",
+        "markdown": "b",
+    }
+    assert skills.missing("edit_document", {"commands": [rewrite]}, {"editing"}) == [
+        "workspace_building"
+    ]
     assert skills.missing("create_material", {}, set(skills.SKILLS)) == []
 
 

@@ -2069,7 +2069,7 @@ def _missed_target(details: dict[str, Any], seen: dict[str, str]) -> str:
 def _saw_edit(seen: dict[str, str], commands: list[dict[str, Any]]) -> None:
     """Carry this turn's view of a material through its own edit: a replaced
     span is replaced in the seen text as the authority replaced it, and a
-    removed block is gone."""
+    removed or replaced block is gone."""
     for command in commands:
         kind = command.get("type")
         if kind == "replace_text":
@@ -2080,7 +2080,7 @@ def _saw_edit(seen: dict[str, str], commands: list[dict[str, Any]]) -> None:
                 seen[bid] = before.replace(expected, str(command.get("text") or ""))
             else:
                 seen.pop(bid, None)
-        elif kind == "remove_block":
+        elif kind in ("remove_block", "replace_block"):
             seen.pop(str(command.get("block_id") or ""), None)
 
 

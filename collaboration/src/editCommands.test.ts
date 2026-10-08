@@ -248,6 +248,91 @@ describe('material edit commands', () => {
     expect(ids()).toEqual(['b1', 'b2', 'b3']);
   });
 
+  it('shows math as written and replaces a whole block, which Undo restores in place', () => {
+    const line = {
+      children: [
+        { text: 'The slope ' },
+        {
+          children: [{ text: '' }],
+          texExpression: 'm',
+          type: 'inline_equation',
+        },
+        { text: ' is steep.' },
+      ],
+      id: 'b1',
+      type: 'p',
+    };
+    const formula = {
+      children: [{ text: '' }],
+      id: 'f1',
+      texExpression: 'P(X=k)',
+      type: 'equation',
+    };
+    const document = material([line, formula, paragraph('b3', 'end')]);
+    expect(inspectMaterial(document).map((block) => block.text)).toEqual([
+      'The slope $m$ is steep.',
+      '$$P(X=k)$$',
+      'end',
+    ]);
+    // Text is matched as shown; only the plain text around math changes.
+    expect(() =>
+      applyMaterialCommands(document, [
+        {
+          blockId: 'b1',
+          expectedText: 'slope $m$',
+          text: 'gradient',
+          type: 'replace_text',
+        },
+      ])
+    ).toThrow('replace_block');
+    const edited = applyMaterialCommands(document, [
+      {
+        blockId: 'b1',
+        expectedText: ' is steep.',
+        text: ' is gentle.',
+        type: 'replace_text',
+      },
+    ]);
+    expect(inspectMaterial(document)[0].text).toBe('The slope $m$ is gentle.');
+    applyMaterialCommands(document, edited.inverse);
+    expect(blocks(document)[0]).toEqual(line);
+
+    const replaced = applyMaterialCommands(document, [
+      {
+        blockId: 'f1',
+        blocks: [
+          { children: [{ text: 'Binomial' }], id: 'n1', type: 'h2' },
+          paragraph('n2', 'The chance of k successes.'),
+        ],
+        expectedText: '$$P(X=k)$$',
+        type: 'replace_block',
+      },
+    ]);
+    expect(blocks(document).map((block) => block.id)).toEqual([
+      'b1',
+      'n1',
+      'n2',
+      'b3',
+    ]);
+    verifyMaterialGuards(document, replaced.guards);
+    applyMaterialCommands(document, replaced.inverse);
+    expect(blocks(document)).toEqual([line, formula, paragraph('b3', 'end')]);
+    expect(() =>
+      applyMaterialCommands(document, [
+        {
+          blockId: 'f1',
+          blocks: [paragraph('n3', 'x')],
+          expectedText: '$$P(X=1)$$',
+          type: 'replace_block',
+        },
+      ])
+    ).toThrow(
+      expect.objectContaining({
+        details: { block: { id: 'f1', text: '$$P(X=k)$$', type: 'equation' } },
+      })
+    );
+  });
+
   it('exposes an embedded material reference by id and kind', () => {
     const document = material([
       paragraph('b1', 'intro'),

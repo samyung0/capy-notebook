@@ -68,6 +68,12 @@ export type DocumentCommand =
   | { type: 'insert_block'; afterBlockId: string | null; blocks: PlateNode[] }
   | { type: 'remove_block'; blockId: string; expectedText: string }
   | {
+      type: 'replace_block';
+      blockId: string;
+      expectedText: string;
+      blocks: PlateNode[];
+    }
+  | {
       type: 'replace_child';
       parentType: string;
       nodeId: string;
@@ -162,7 +168,48 @@ function stableId(node: PlateNode): string {
 
 /** A block's text as inspect shows it: the text an expected text matches. */
 export function blockText(node: PlateNode): string {
-  return Node.string(node as never);
+  return shownText(node).text;
+}
+
+/**
+ * A block's text with its math written out, inline as `$tex$` and display as
+ * `$$tex$$` (Node.string leaves math out), and the [start, end) spans the
+ * math takes in it.
+ */
+function shownText(node: PlateNode): {
+  math: Array<[number, number]>;
+  text: string;
+} {
+  const out = { math: [] as Array<[number, number]>, text: '' };
+  const walk = (current: PlateNode) => {
+    if (typeof current.text === 'string') {
+      out.text += current.text;
+      return;
+    }
+    const tex = String(current.texExpression ?? '');
+    const math =
+      current.type === 'inline_equation'
+        ? `$${tex}$`
+        : current.type === 'equation'
+          ? `$$${tex}$$`
+          : null;
+    if (math !== null) {
+      out.math.push([out.text.length, out.text.length + math.length]);
+      out.text += math;
+      return;
+    }
+    for (const child of (current.children as PlateNode[] | undefined) ?? [])
+      walk(child);
+  };
+  walk(node);
+  return out;
+}
+
+/** An offset in a block's shown text as an offset in its text without math. */
+function withoutMath(math: Array<[number, number]>, offset: number): number {
+  let flat = offset;
+  for (const [start, end] of math) if (end <= offset) flat -= end - start;
+  return flat;
 }
 
 /** How many blocks, and how much of each, a refusal for a gone id lists. */
@@ -450,16 +497,34 @@ export function applyMaterialCommands(
                 'this block holds media, not text'
               );
             }
-            const span = resolveSpan(
-              blockText(block),
-              command,
-              currentBlock(block)
+            // Expected text matches the block as inspect shows it, math
+            // included, but only plain text around the math can be replaced.
+            const shown = shownText(block);
+            const span = resolveSpan(shown.text, command, currentBlock(block));
+            const spanEnd = span.offset + span.length;
+            if (
+              shown.math.some(([from, to]) =>
+                span.length
+                  ? span.offset < to && spanEnd > from
+                  : from < span.offset && span.offset < to
+              )
+            ) {
+              throw new EditError(
+                'invalid_input',
+                'replace_text changes plain text and this span includes math; rewrite the block with replace_block',
+                { details: currentBlock(block) }
+              );
+            }
+            const start = pointAt(
+              editor,
+              [index],
+              withoutMath(shown.math, span.offset),
+              'start'
             );
-            const start = pointAt(editor, [index], span.offset, 'start');
             const end = pointAt(
               editor,
               [index],
-              span.offset + span.length,
+              withoutMath(shown.math, spanEnd),
               'end'
             );
             if (span.length > 0) {
@@ -563,6 +628,60 @@ export function applyMaterialCommands(
             guardTargets.push(() =>
               gapGuard(sharedRoot, editor, surviving(before, exists))
             );
+            break;
+          }
+          case 'replace_block': {
+            if (!command.blocks.length)
+              throw new EditError(
+                'invalid_input',
+                'replace_block needs blocks'
+              );
+            for (const node of command.blocks)
+              assertNodeShape(node, 'replace_block');
+            const [block, index] = requireBlock(editor, command.blockId);
+            if (blockText(block) !== command.expectedText) {
+              throw new EditError(
+                'stale_target',
+                `block ${command.blockId} changed`,
+                { details: currentBlock(block) }
+              );
+            }
+            if (hasMedia(block)) {
+              throw new EditError(
+                'unsupported_operation',
+                'blocks holding media cannot be replaced by an edit'
+              );
+            }
+            const ids = command.blocks.map(stableId);
+            for (const id of ids) {
+              if (exists(id))
+                throw new EditError(
+                  'stale_target',
+                  `block id ${id} already exists`
+                );
+            }
+            const before = (editor.children as unknown as PlateNode[])
+              .slice(0, index)
+              .map(stableId);
+            Transforms.removeNodes(editor, { at: [index] });
+            Transforms.insertNodes(editor, command.blocks as never, {
+              at: [index],
+            });
+            // An insert after the replaced id later in this call follows
+            // the replacement.
+            removed.set(command.blockId, [...before, ...ids]);
+            // Undo puts the original back after the first new block, then
+            // removes the new blocks, so it returns to its own place.
+            inverse.unshift(
+              { afterBlockId: ids[0], blocks: [block], type: 'insert_block' },
+              ...command.blocks.map((node) => ({
+                blockId: stableId(node),
+                expectedText: blockText(node),
+                type: 'remove_block' as const,
+              }))
+            );
+            for (const id of ids)
+              guardTargets.push(() => blockGuard(sharedRoot, editor, id));
             break;
           }
           case 'replace_child': {

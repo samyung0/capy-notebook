@@ -2318,7 +2318,7 @@ def test_argument_errors_name_the_fields_without_echoing_the_command():
     untyped = problem({"expected_text": section, "text": "b"})
     assert untyped.startswith(
         'edit_document arguments invalid at commands/0: "type" must be one of '
-        "replace_text, insert_markdown,"
+        "replace_text, replace_block, insert_markdown,"
     )
     assert section not in untyped
     assert problem({**note, "after_block_id": 3}).endswith(
