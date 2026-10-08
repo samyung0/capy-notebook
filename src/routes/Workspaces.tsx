@@ -115,7 +115,7 @@ export default function Workspaces() {
           <SkeletonCardGrid count={6} />
         ) : (
           <div
-            className="@container grid w-full grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4"
+            className="grid w-full grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4"
             ref={revealRef}
           >
             {sortedWorkspaces?.map((w) => (
@@ -123,7 +123,7 @@ export default function Workspaces() {
             ))}
             <Card
               border="dashed"
-              className="min-h-40 cursor-pointer items-center justify-center focus-visible:border-0 focus-visible:ring-2 focus-visible:ring-action focus-visible:transition-none"
+              className="min-h-34 cursor-pointer items-center justify-center focus-visible:border-0 focus-visible:ring-2 focus-visible:ring-action focus-visible:transition-none"
               interactive
               onClick={() => setCreateOpen(true)}
               radius="card-lg"

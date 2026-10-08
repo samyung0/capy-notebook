@@ -121,10 +121,6 @@
   --radius-card-lg: var(--radius-card-lg);
   --radius-card-xl: var(--radius-card-xl);
 
-  /* Container widths → @<name>: variants. card-grid: two 300px cards and a
-     gap-4, where the workspace grids first fit two columns. */
-  --container-card-grid: 38.5rem;
-
   /* Shadows → shadow-* */
   --shadow-xs: var(--shadow-xs);
   --shadow-card: var(--shadow-card);

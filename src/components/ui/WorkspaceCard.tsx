@@ -89,7 +89,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
       : []),
   ];
   return (
-    <div className="relative">
+    <div className="group/ws relative">
       <Link
         key={workspace.id}
         params={{ workspaceId: workspace.id }}
@@ -111,73 +111,67 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
               shade="card"
             />
           )}
-          {/* A one-column grid (the parent is an @container) puts the icon
-              beside the name and the counts on their own line; two columns
-              and up keep the icon above the name. */}
-          <div className="relative @card-grid:flex grid @card-grid:flex-1 grid-cols-[auto_minmax(0,1fr)] @card-grid:flex-col items-center @card-grid:items-stretch @card-grid:gap-4 gap-x-3">
+          {/* The icon sits beside the name; counts and tags take their own lines. */}
+          <div className="relative grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3">
             <img
               alt=""
-              className="@card-grid:size-11 size-10 rounded-button"
+              className="size-10 rounded-button"
               height={44}
               src={iconUrl(workspace.iconId)}
               width={44}
             />
-            <div className="@card-grid:block contents @card-grid:flex-1">
-              <h3
-                className={cn(
-                  't-card-title line-clamp-2 @card-grid:pr-0 pr-8',
-                  ink === 'dark' && 'text-white',
-                  ink === 'light' && 'text-[#1d1d1f]'
-                )}
-              >
-                {workspace.name}
-              </h3>
-              <p
-                className={cn(
-                  't-meta col-span-2 @card-grid:mt-1 mt-2 text-fg-muted',
-                  ink === 'dark' && 'text-white/85',
-                  ink === 'light' && 'text-[#4b4b4b]'
-                )}
-              >
-                {m.workspace_card_meta({
-                  chapters: String(workspace.chapterCount),
-                  files: String(workspace.fileCount),
-                })}
-              </p>
-              <div className="col-span-2 mt-3 -ml-1 flex flex-wrap gap-1">
-                {workspace.tags.map((t) => (
-                  <Badge
-                    className={cn(
-                      ink === 'dark' && 'bg-white/18 text-white',
-                      ink === 'light' && 'bg-black/8 text-[#1d1d1f]'
-                    )}
-                    key={t.value}
-                    size="sm"
-                  >
-                    # {t.value}
-                  </Badge>
-                ))}
-                {workspace.privacy !== 'private' && (
-                  <Badge
-                    className={cn(
-                      ink === 'dark' && 'bg-white/18 text-white',
-                      ink === 'light' && 'bg-black/8 text-[#1d1d1f]'
-                    )}
-                    size="sm"
-                    tone={workspace.privacy === 'public' ? 'success' : 'info'}
-                  >
-                    {workspace.privacy === 'public'
-                      ? m.share_public()
-                      : m.workspace_privacy_shared()}
-                  </Badge>
-                )}
-              </div>
+            <h3
+              className={cn(
+                't-card-title line-clamp-2 pr-8',
+                ink === 'dark' && 'text-white',
+                ink === 'light' && 'text-[#1d1d1f]'
+              )}
+            >
+              {workspace.name}
+            </h3>
+            <p
+              className={cn(
+                't-meta col-span-2 mt-2 text-fg-muted',
+                ink === 'dark' && 'text-white/85',
+                ink === 'light' && 'text-[#4b4b4b]'
+              )}
+            >
+              {m.workspace_card_meta({
+                chapters: String(workspace.chapterCount),
+                files: String(workspace.fileCount),
+              })}
+            </p>
+            <div className="col-span-2 mt-3 -ml-1 flex flex-wrap gap-1">
+              {workspace.tags.map((t) => (
+                <Badge
+                  className={cn(
+                    ink === 'dark' && 'bg-white/18 text-white',
+                    ink === 'light' && 'bg-black/8 text-[#1d1d1f]'
+                  )}
+                  key={t.value}
+                  size="sm"
+                >
+                  # {t.value}
+                </Badge>
+              ))}
+              {workspace.privacy !== 'private' && (
+                // Access keeps its colour on covers so it stands apart from tags.
+                <Badge
+                  size="sm"
+                  tone={workspace.privacy === 'public' ? 'success' : 'info'}
+                >
+                  {workspace.privacy === 'public'
+                    ? m.share_public()
+                    : m.workspace_privacy_shared()}
+                </Badge>
+              )}
             </div>
           </div>
         </Card>
       </Link>
       {menuItems.length > 0 && (
-        <div className="absolute top-3 right-3 z-50">
+        // Lifts with the card, which rises on hover (Card interactive).
+        <div className="absolute top-3 right-3 z-50 transition-transform duration-100 ease-(--motion-ease-smooth-out) group-has-[[data-slot=card]:hover]/ws:-translate-y-0.5">
           <Menu
             align="start"
             iconContainerClassName={cn(
