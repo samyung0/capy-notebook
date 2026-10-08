@@ -185,6 +185,7 @@ fn validate_diagram(node: &Node) -> Check {
     if !node.get("source").is_some_and(Value::is_string) {
         return fail("source must be a string");
     }
+    validate_width(node)?;
     let list = children(node);
     if list.len() != 1 || list[0].get("type").and_then(Value::as_str) != Some("mermaid_caption") {
         return fail("diagram requires one mermaid_caption child");
@@ -192,12 +193,9 @@ fn validate_diagram(node: &Node) -> Check {
     Ok(())
 }
 
-/// The one optional `width` of a resizable block (image, YouTube video,
-/// Mermaid, chart, graph): exactly what the resize handles write, `<n>%` with
-/// n a whole number from 20 to 100 (Epo, 2026-10-08). Any other width is
-/// refused.
-// TODO(plate-2): align the message and where it is checked with the Node and
-// Go check when it lands, then regenerate the validation corpus.
+/// `validateMediaWidth` (plate-2 3a87184d): the one optional `width` of a
+/// resizable block (image, YouTube video, Mermaid, chart, graph), exactly
+/// what the resize handles write, `^(?:[2-9][0-9]|100)%$` (Epo, 2026-10-08).
 fn validate_width(node: &Node) -> Check {
     let valid = match node.get("width") {
         None => true,
@@ -211,7 +209,7 @@ fn validate_width(node: &Node) -> Check {
     if valid {
         Ok(())
     } else {
-        fail("width must be a whole percentage from 20% to 100%")
+        fail("width must be a whole percentage from 20 to 100")
     }
 }
 
@@ -230,13 +228,13 @@ fn validate_embed(node: &Node, kind: &str, depth: usize) -> Check {
     if !typed {
         return fail("embed block type must match node type");
     }
-    validate_width(node)?;
     if node
         .keys()
         .any(|k| !matches!(k.as_str(), "id" | "type" | "block" | "children" | "width"))
     {
         return fail("unexpected embed field");
     }
+    validate_width(node)?;
     let parsed = questions::block(block.unwrap_or(&Value::Null)).map_err(ValidationError)?;
     if parsed.kind == "graph" && matches!(parsed.image, Some(("url", _))) {
         // The TS raises this inside its try and re-wraps the message.
@@ -350,10 +348,7 @@ fn validate_node(node: &Node, depth: usize, policy: &Policy) -> Check {
         "quiz_prompt" | "quiz_option" | "quiz_explanation" => fail("obsolete quiz child node"),
         "flashcards" => validate_flashcards(node),
         "flashcard" => validate_flashcard(node),
-        "mermaid" | "diagram" | "mindmap" => {
-            validate_diagram(node)?;
-            validate_width(node)
-        }
+        "mermaid" | "diagram" | "mindmap" => validate_diagram(node),
         "img" => validate_width(node),
         MATERIAL_REF_TYPE => validate_material_ref(node),
         "video" => {

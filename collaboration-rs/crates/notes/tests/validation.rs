@@ -82,8 +82,8 @@ fn validation_matches_the_node_server() {
 }
 
 /// Every resizable block takes one optional `width`, exactly "<n>%" with n a
-/// whole number from 20 to 100 (Epo, 2026-10-08), on an accepted corpus node
-/// of each kind.
+/// whole number from 20 to 100 (Epo, 2026-10-08; plate-2 3a87184d's refused
+/// values), on an accepted corpus node of each kind.
 #[test]
 fn resizable_blocks_take_only_the_widths_the_handles_write() {
     let corpus = common::load("validation");
@@ -116,19 +116,19 @@ fn resizable_blocks_take_only_the_widths_the_handles_write() {
             with_width(Value::from(width)).unwrap_or_else(|e| panic!("{kind} {width}: {e}"));
         }
         for width in [
-            json!("19%"),
-            json!("101%"),
-            json!("020%"),
-            json!("50"),
-            json!("50.5%"),
-            json!(" 50%"),
-            json!("%"),
             json!(50),
             Value::Null,
+            json!("19%"),
+            json!("101%"),
+            json!("50px"),
+            json!("50.5%"),
+            json!("050%"),
+            json!("50"),
+            json!(" 50%"),
         ] {
             let refused = with_width(width.clone()).unwrap_err();
             assert_eq!(
-                refused.0, "width must be a whole percentage from 20% to 100%",
+                refused.0, "width must be a whole percentage from 20 to 100",
                 "{kind} {width}"
             );
         }
