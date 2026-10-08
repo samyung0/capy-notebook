@@ -68,7 +68,9 @@ func TestProjectMaterialContentRevisesOnlyChangedContent(t *testing.T) {
 	}
 	created := testProjection(t, material.Content)
 	changed := testProjection(t, materialTestContent(t, "changed"))
-	expect := func(version int64, projection materialdoc.Projection, revision int64) {
+	// wrote: the projection changed the content, so it names the kind (for
+	// the embed-changed broadcast).
+	expect := func(version int64, projection materialdoc.Projection, revision int64, wrote bool) {
 		t.Helper()
 		projected, err := s.ProjectMaterialContent(ctx, material.ID, projection, version)
 		if err != nil {
@@ -85,6 +87,9 @@ func TestProjectMaterialContentRevisesOnlyChangedContent(t *testing.T) {
 			ID: stored.ID, Revision: stored.Revision, SizeBytes: int64(len(stored.Content)),
 			NodeCount: stored.NodeCount, MaxDepth: stored.MaxDepth,
 		}
+		if wrote {
+			want.Kind = MaterialKind(stored.Kind)
+		}
 		if !projected.UpdatedAt.Equal(stored.UpdatedAt) {
 			t.Fatalf("version %d: updated %v, row says %v", version, projected.UpdatedAt, stored.UpdatedAt)
 		}
@@ -93,10 +98,10 @@ func TestProjectMaterialContentRevisesOnlyChangedContent(t *testing.T) {
 			t.Fatalf("version %d: projected %+v, row says %+v", version, projected, want)
 		}
 	}
-	expect(1, created, material.Revision)   // first projection: jsonb compare
-	expect(2, created, material.Revision)   // hash compare
-	expect(3, changed, material.Revision+1) // a real change
-	expect(4, changed, material.Revision+1)
-	expect(5, created, material.Revision+2) // back to the original text
-	expect(4, changed, material.Revision+2) // stale version: nothing written
+	expect(1, created, material.Revision, false)  // first projection: jsonb compare
+	expect(2, created, material.Revision, false)  // hash compare
+	expect(3, changed, material.Revision+1, true) // a real change
+	expect(4, changed, material.Revision+1, false)
+	expect(5, created, material.Revision+2, true)  // back to the original text
+	expect(4, changed, material.Revision+2, false) // stale version: nothing written
 }

@@ -308,8 +308,11 @@ func (a *api) projectMaterialYjsDocument(
 	if err != nil {
 		return nil, collaborationError(err)
 	}
-	// An agent's edit of an embedded quiz or set lands here.
-	a.publishEmbedChanged(ctx, material.ID, material.Kind, material.ParentMaterialID)
+	// An agent's edit of an embedded quiz or set lands here (only a projection
+	// that changed the content names the kind).
+	if material.Kind != "" {
+		a.publishEmbedChanged(ctx, material.ID, material.Kind, material.ParentMaterialID)
+	}
 	return &projectMaterialOutput{Body: apimodel.MaterialUpdateResult{
 		ID: material.ID, Revision: material.Revision, ContentBytes: int(material.SizeBytes),
 		NodeCount: material.NodeCount, MaxDepth: material.MaxDepth,

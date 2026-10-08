@@ -57,6 +57,11 @@ type ProjectedMaterial struct {
 	NodeCount int
 	MaxDepth  int
 	UpdatedAt time.Time
+	// Set only when this projection changed the content: the material's
+	// kind and, for a quiz or set embedded in a note, that note (the
+	// embed-changed broadcast).
+	Kind             MaterialKind
+	ParentMaterialID string
 }
 
 // ProjectMaterialContent advances the validated JSON read model from a Y.Doc
@@ -127,11 +132,11 @@ func (s *Store) ProjectMaterialContent(
 		return commitProjected(ctx, tx, materialID)
 	}
 
-	var kind, lockedOwnerID string
+	var kind, lockedOwnerID, parentID string
 	var revision int64
-	if err := tx.QueryRow(ctx, `SELECT kind, revision, owner_user_id
+	if err := tx.QueryRow(ctx, `SELECT kind, revision, owner_user_id, COALESCE(parent_material_id,'')
 		FROM materials WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, materialID).
-		Scan(&kind, &revision, &lockedOwnerID); err != nil {
+		Scan(&kind, &revision, &lockedOwnerID, &parentID); err != nil {
 		if isNoRows(err) {
 			return ProjectedMaterial{}, ErrNotFound
 		}
@@ -179,11 +184,13 @@ func (s *Store) ProjectMaterialContent(
 		return ProjectedMaterial{}, err
 	}
 	projected := ProjectedMaterial{
-		ID:        materialID,
-		Revision:  revision + 1,
-		NodeCount: projection.Metrics.NodeCount,
-		MaxDepth:  projection.Metrics.MaxDepth,
-		UpdatedAt: time.Now().UTC(),
+		ID:               materialID,
+		Revision:         revision + 1,
+		NodeCount:        projection.Metrics.NodeCount,
+		MaxDepth:         projection.Metrics.MaxDepth,
+		UpdatedAt:        time.Now().UTC(),
+		Kind:             MaterialKind(kind),
+		ParentMaterialID: parentID,
 	}
 	if err := tx.QueryRow(ctx, `UPDATE materials
 		SET content=$2, node_count=$3, max_depth=$4, revision=$5, updated_at=$6, preview=$7, `+noteIndexDirtySQL+`
