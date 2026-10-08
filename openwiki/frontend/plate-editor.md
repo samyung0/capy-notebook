@@ -258,7 +258,10 @@ that shows on hover, and in edit mode two side handles that resize the block
 symmetrically and store `width` as a percentage string (`"62%"`), a whole number
 from 20 to 100. The Node and Go validators accept exactly that on these five
 blocks (`MEDIA_WIDTH` and `mediaWidth`, `^(?:[2-9][0-9]|100)%$`) and refuse any
-other width, so a resized block never gets its room refused. Frames stop at
+other width, so a resized block never gets its room refused. The browser's
+document check (`isMaterialNode` in `src/features/materials/document.ts`)
+applies the same rule, so a JSON import carrying another width fails on its
+own with the import's error toast instead of getting the room refused. Frames stop at
 48rem wide and images and diagrams at `min(70vh, 48rem)` tall. Clicking an image
 or diagram opens `MediaPreview`, a full-screen view on a dark backdrop with the
 name above and the caption below, in every editor mode. It zooms to 8× with the

@@ -162,6 +162,20 @@ const CUSTOM_TYPES = new Set([
   HTML_EMBED_TYPE,
 ]);
 const MEDIA_TYPES = new Set(['img', 'image', 'audio', 'file']);
+/** The one width a resizable block stores: what MediaFrame's resize handles
+ * write, a whole percentage from 20 to 100. The Node and Go validators refuse
+ * any other (MEDIA_WIDTH, mediaWidth), so an imported document carrying one
+ * fails here instead of getting the note's room refused. */
+const MEDIA_WIDTH = /^(?:[2-9][0-9]|100)%$/;
+const RESIZABLE_TYPES = new Set([
+  'img',
+  'video',
+  'mermaid',
+  'diagram',
+  'mindmap',
+  'chart',
+  'graph',
+]);
 const YOUTUBE_VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -341,6 +355,12 @@ export function isMaterialNode(value: unknown): value is MaterialNode {
   if (!isElementNode(value)) return false;
   if (!value.children.every(isMaterialNode)) return false;
   if (!validateMediaElement(value)) return false;
+  if (
+    RESIZABLE_TYPES.has(value.type) &&
+    value.width !== undefined &&
+    (typeof value.width !== 'string' || !MEDIA_WIDTH.test(value.width))
+  )
+    return false;
   return !CUSTOM_TYPES.has(value.type) || validateCustomElement(value);
 }
 
