@@ -193,9 +193,10 @@ pub fn plan(root: &Branch, writes: &ChildWrites) -> ChildPlan {
 
 /// `applyChildren`: repoints nodes to the material's own children and drops
 /// the rest through the headless editor, so the change is ordinary Slate
-/// operations; nodes are found by id at apply time. Returns whether anything
-/// changed. Opening the editor normalizes the document, as in the TS, even
-/// when nothing changes.
+/// operations; nodes are found by id at apply time. Returns whether it wrote
+/// into the transaction: opening the editor normalizes the document, as in
+/// the TS, so that may be true even when no node matched (the server then
+/// invalidates the room's validator).
 pub fn apply(
     txn: &mut TransactionMut,
     root: &TextRef,
@@ -206,7 +207,7 @@ pub fn apply(
     let mut targets: Vec<(Value, Path)> = Vec::new();
     collect(&editor.root.children, answer, &mut Vec::new(), &mut targets);
     if targets.is_empty() {
-        return Ok(false);
+        return Ok(!editor.operations.is_empty());
     }
     editor.without_normalizing(|editor| {
         // Last first, so removing one does not shift the paths still to go.

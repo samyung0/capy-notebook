@@ -823,12 +823,14 @@ fn run_command(
 
 /// `verifyMaterialGuards`: recompute each guarded region and compare. Opens
 /// the headless editor, so its normalization reaches the document, as in the
-/// TS.
+/// TS: returns whether it wrote into the transaction (it may have, too, when
+/// it refuses), and the server invalidates the room's validator when the
+/// transaction commits a change.
 pub fn verify_material_guards(
     txn: &mut TransactionMut,
     root: &TextRef,
     guards: &[GuardTarget],
-) -> Result<(), EditError> {
+) -> Result<bool, EditError> {
     let y_root = BranchPtr::from(root.as_ref() as &Branch);
     let editor = Editor::open(txn, y_root)?;
     for guard in guards {
@@ -862,7 +864,7 @@ pub fn verify_material_guards(
             return edit(StaleTarget, "an edited target changed since this edit");
         }
     }
-    Ok(())
+    Ok(!editor.operations.is_empty())
 }
 
 fn runs_of(guard: &GuardTarget) -> &[GuardRun] {

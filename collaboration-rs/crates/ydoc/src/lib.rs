@@ -83,26 +83,97 @@ impl Clone for Found {
     }
 }
 
-/// `inspectUpdate`: O(update), read against the room, never a copy of it.
-pub fn inspect_update<T: ReadTxn>(txn: &T, update: &Update) -> Inspection {
-    let state = txn.state_vector();
-    let held = |client: &ClientID| state.get(client);
-    let store = txn.store();
-    let mut incoming: HashMap<ClientID, Vec<&Item>> = HashMap::new();
-    for block in update.blocks() {
-        if let UpdateBlock::Item(item) = block {
-            incoming.entry(item.id().client).or_default().push(item);
+/// A decoded update's new items and deletes, indexed once for every check
+/// that reads them against the room: items per client in clock order (binary
+/// search by id), deleted ranges per client sorted and merged (one range
+/// holds any span the update deletes whole).
+pub struct Incoming<'a> {
+    update: &'a Update,
+    items: HashMap<ClientID, Vec<&'a Item>>,
+    deletes: HashMap<ClientID, Vec<(u32, u32)>>,
+}
+
+impl<'a> Incoming<'a> {
+    pub fn new(update: &'a Update) -> Self {
+        let mut items: HashMap<ClientID, Vec<&Item>> = HashMap::new();
+        for block in update.blocks() {
+            if let UpdateBlock::Item(item) = block {
+                items.entry(item.id().client).or_default().push(item);
+            }
+        }
+        let mut deletes = HashMap::new();
+        for (client, range) in update.delete_set().iter() {
+            let mut ranges: Vec<(u32, u32)> = range.iter().map(|r| (r.start, r.end)).collect();
+            ranges.sort_unstable();
+            let mut merged: Vec<(u32, u32)> = Vec::with_capacity(ranges.len());
+            for (start, end) in ranges {
+                match merged.last_mut() {
+                    Some(last) if start <= last.1 => last.1 = last.1.max(end),
+                    _ => merged.push((start, end)),
+                }
+            }
+            deletes.insert(*client, merged);
+        }
+        Incoming {
+            update,
+            items,
+            deletes,
         }
     }
-    // Decoded structs arrive in clock order per client.
-    let incoming_at = |id: &ID| -> Option<&Item> {
-        let items = incoming.get(&id.client)?;
+
+    pub fn update(&self) -> &'a Update {
+        self.update
+    }
+
+    /// The new item holding `id`, if the update has one. Decoded structs
+    /// arrive in clock order per client.
+    pub fn item_at(&self, id: &ID) -> Option<&'a Item> {
+        let items = self.items.get(&id.client)?;
         let index = items.partition_point(|item| item.id().clock + item.len() <= id.clock);
         items
             .get(index)
             .copied()
             .filter(|item| item.id().clock <= id.clock)
-    };
+    }
+
+    /// Whether the update deletes every unit of `[from, to)` of a client.
+    pub fn deletes(&self, client: &ClientID, from: u32, to: u32) -> bool {
+        if from >= to {
+            return true;
+        }
+        let Some(ranges) = self.deletes.get(client) else {
+            return false;
+        };
+        let index = ranges.partition_point(|(_, end)| *end <= from);
+        ranges
+            .get(index)
+            .is_some_and(|(start, end)| *start <= from && *end >= to)
+    }
+
+    pub fn items(&self) -> impl Iterator<Item = &'a Item> + '_ {
+        self.items.values().flatten().copied()
+    }
+
+    pub fn delete_ranges(&self) -> impl Iterator<Item = (&ClientID, &[(u32, u32)])> {
+        self.deletes
+            .iter()
+            .map(|(client, ranges)| (client, ranges.as_slice()))
+    }
+}
+
+/// `inspectUpdate`: O(update), read against the room, never a copy of it.
+pub fn inspect_update<T: ReadTxn>(txn: &T, update: &Update) -> Inspection {
+    inspect(txn, &Incoming::new(update))
+}
+
+/// [inspect_update] over an update already indexed (a note's admit indexes
+/// it once for this and its growth bound).
+pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Inspection {
+    let update = incoming.update();
+    let state = txn.state_vector();
+    let held = |client: &ClientID| state.get(client);
+    let store = txn.store();
+    let incoming_at = |id: &ID| incoming.item_at(id);
     let held_at = |id: &ID| -> Found {
         let Some(mut top) = store.get_item(id) else {
             return Found::Gone;
@@ -191,16 +262,14 @@ pub fn inspect_update<T: ReadTxn>(txn: &T, update: &Update) -> Inspection {
         }
     }
     let mut containers = Vec::new();
-    for items in incoming.values() {
-        for item in items {
-            if item.id().clock + item.len() <= held(&item.id().client) {
-                continue;
-            }
-            match container_of(item) {
-                Found::Gone => {}
-                Found::Unknown => unheld = true,
-                Found::At(container) => containers.push(container),
-            }
+    for item in incoming.items() {
+        if item.id().clock + item.len() <= held(&item.id().client) {
+            continue;
+        }
+        match container_of(item) {
+            Found::Gone => {}
+            Found::Unknown => unheld = true,
+            Found::At(container) => containers.push(container),
         }
     }
     Inspection { containers, unheld }

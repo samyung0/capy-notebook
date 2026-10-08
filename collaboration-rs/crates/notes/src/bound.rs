@@ -28,7 +28,7 @@ use yrs::{Any, ID, ReadTxn, StateVector};
 use crate::json;
 use crate::limits::{DEPTH_CEILING, Metrics};
 use crate::plate;
-use crate::update::Incoming;
+use ydoc::Incoming;
 
 // JSON bytes an update can add on top of its own strings and attributes: a
 // text leaf `{"text":""}` and a block `{"children":[]}`, each with its comma;

@@ -1328,7 +1328,7 @@ impl Room {
             return;
         }
         let verdict = match &mut self.kind {
-            Kindly::Note(note) => match note.validator.admit(&self.doc, bytes) {
+            Kindly::Note(note) => match note.validator.admit(&self.doc, &update) {
                 Ok(notes::limits::Admission::Accepted) => Verdict::Accept,
                 Ok(notes::limits::Admission::Unheld) => Verdict::Unheld,
                 Err(refusal) => Verdict::Note(refusal),

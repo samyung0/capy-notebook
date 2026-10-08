@@ -5,8 +5,11 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use yrs::block::ItemContent;
 use yrs::branch::Branch;
-use yrs::{Any, ReadTxn};
+use yrs::types::TypeRef;
+use yrs::updates::encoder::Encode;
+use yrs::{Any, ReadTxn, Update};
 
 use crate::json;
 use crate::plate::{self, Insert, ProjectionError};
@@ -15,7 +18,9 @@ use crate::plate::{self, Insert, ProjectionError};
 pub const MAX_CONTENT_BYTES: u64 = 2 * 1024 * 1024;
 pub const MAX_NODES: u64 = 10_000;
 pub const MAX_DEPTH: u32 = 16;
-/// Structural validation refuses nesting past this; measurement stops here.
+/// Structural validation refuses nesting past this; the projection and
+/// [measure] stop here with [ProjectionError::TooDeep] (each recurses once per
+/// level, and a writer's update can nest far deeper).
 pub const DEPTH_CEILING: u32 = 1024;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -146,27 +151,25 @@ pub fn measure<T: ReadTxn>(txn: &T) -> Result<Metrics, ProjectionError> {
 }
 
 /// Bytes of an element's `"children":[...]` array value, counting its nodes
-/// (at `depth`) into `metrics`.
+/// (at `depth`) into `metrics`; past [DEPTH_CEILING] it stops with an error.
 fn children_len(
     branch: &Branch,
     depth: u32,
     metrics: &mut Metrics,
 ) -> Result<usize, ProjectionError> {
+    if depth > DEPTH_CEILING {
+        return Err(ProjectionError::TooDeep);
+    }
     let delta = plate::insert_delta(branch)?;
-    let counted = depth <= DEPTH_CEILING;
     if delta.is_empty() {
-        if counted {
-            metrics.node_count += 1;
-            metrics.max_depth = metrics.max_depth.max(depth);
-        }
+        metrics.node_count += 1;
+        metrics.max_depth = metrics.max_depth.max(depth);
         return Ok(2 + 11);
     }
     let mut len = 2 + delta.len() - 1;
     for op in &delta {
-        if counted {
-            metrics.node_count += 1;
-            metrics.max_depth = metrics.max_depth.max(depth);
-        }
+        metrics.node_count += 1;
+        metrics.max_depth = metrics.max_depth.max(depth);
         len += match &op.insert {
             Insert::Text(text) => {
                 let mut entries = 1;
@@ -188,8 +191,7 @@ fn children_len(
     Ok(len)
 }
 
-/// Bytes of an element node at `depth`; its children count at `depth + 1`,
-/// as long as `depth` is under the ceiling.
+/// Bytes of an element node at `depth`; its children count at `depth + 1`.
 fn element_len(
     branch: &Branch,
     depth: u32,
@@ -199,16 +201,7 @@ fn element_len(
     let leaf = properties
         .iter()
         .any(|(key, value)| &**key == "text" && !matches!(value, Any::Null | Any::Undefined));
-    let mut child_metrics = Metrics::default();
-    let children = children_len(
-        branch,
-        depth + 1,
-        if depth < DEPTH_CEILING {
-            metrics
-        } else {
-            &mut child_metrics
-        },
-    )?;
+    let children = children_len(branch, depth + 1, metrics)?;
     let mut len = 2 + 11 + children;
     let mut entries = 1;
     for (key, value) in &properties {
@@ -242,6 +235,74 @@ pub enum Refusal {
     Update(#[from] ydoc::UpdateError),
     #[error(transparent)]
     Projection(#[from] ProjectionError),
+    /// Content the editor never writes, which the projection and the
+    /// metrics do not see (Epo, 2026-10-08): refused, not stored unmetered.
+    #[error("a note cannot hold {0}")]
+    Content(&'static str),
+}
+
+/// What a note may hold: its texts strings, formats and element texts, every
+/// attribute, mark or marker entry a plain value. Only what the room does not
+/// hold yet counts (Yjs skips the rest).
+fn plain_content<T: ReadTxn>(txn: &T, incoming: &ydoc::Incoming) -> Result<(), Refusal> {
+    fn plain(value: &Any) -> bool {
+        match value {
+            Any::Buffer(_) | Any::BigInt(_) => false,
+            Any::Array(items) => items.iter().all(plain),
+            Any::Map(entries) => entries.values().all(plain),
+            _ => true,
+        }
+    }
+    let state = txn.state_vector();
+    let store = txn.store();
+    // Whether an item is a map entry (an attribute or a marker), or none when
+    // Yjs drops it (its origin was garbage-collected). An item with an origin
+    // does not encode its parent: it takes its origin's, which the room or
+    // this update holds.
+    let entry = |start: &yrs::block::Item| -> Option<bool> {
+        let mut item = start;
+        for _ in 0..=incoming.items().count() {
+            if item.parent_sub().is_some() {
+                return Some(true);
+            }
+            if !matches!(item.update_parent(), yrs::block::UpdateParent::Unknown) {
+                return Some(false);
+            }
+            let origin = item.origin().or(item.right_origin())?;
+            if origin.clock < state.get(&origin.client) {
+                return store
+                    .get_item(origin)
+                    .map(|held| held.parent_sub().is_some());
+            }
+            item = incoming.item_at(origin)?;
+        }
+        None
+    };
+    for item in incoming.items() {
+        let id = item.id();
+        if id.clock + item.len() <= state.get(&id.client) {
+            continue;
+        }
+        let Some(entry) = entry(item) else {
+            continue;
+        };
+        let refused = match (entry, item.content()) {
+            (_, ItemContent::Deleted(_)) => None,
+            (true, ItemContent::Any(values)) if values.iter().all(plain) => None,
+            (true, _) => Some("a non-plain attribute value"),
+            (false, ItemContent::String(_)) => None,
+            (false, ItemContent::Format(_, value)) if plain(value) => None,
+            (false, ItemContent::Type(branch)) if matches!(branch.type_ref(), TypeRef::XmlText) => {
+                None
+            }
+            (false, ItemContent::Format(..)) => Some("a non-plain mark value"),
+            (false, _) => Some("content other than text in a note text"),
+        };
+        if let Some(what) = refused {
+            return Err(Refusal::Content(what));
+        }
+    }
+    Ok(())
 }
 
 /// One note room's limit state between exact measurements (`RoomValidator`):
@@ -259,29 +320,33 @@ pub struct Validator {
 }
 
 impl Validator {
-    /// Checks a writer's update against `doc` before the server applies it:
-    /// the bound when it fits, else an exact measure of a candidate copy.
-    /// Rejecting after the fact is not an option: yrs cannot undo a peer's
-    /// update, so the only remedy left would be discarding the whole room.
-    pub fn admit(&mut self, doc: &yrs::Doc, update: &[u8]) -> Result<Admission, Refusal> {
+    /// Checks a writer's update (decoded once by the server) against `doc`
+    /// before the server applies it: the bound when it fits, else an exact
+    /// measure of a candidate copy. Rejecting after the fact is not an
+    /// option: yrs cannot undo a peer's update, so the only remedy left would
+    /// be discarding the whole room.
+    pub fn admit(&mut self, doc: &yrs::Doc, update: &Update) -> Result<Admission, Refusal> {
         use yrs::Transact;
         let txn = doc.transact();
         crate::validate::assert_roots(&txn)?;
-        let decoded = ydoc::decode(update)?;
-        let inspection = ydoc::inspect_update(&txn, &decoded);
+        let incoming = ydoc::Incoming::new(update);
+        let inspection = ydoc::inspect(&txn, &incoming);
         if inspection.unheld {
             return Ok(Admission::Unheld);
+        }
+        // An update outside the roots goes to the exact check, which refuses
+        // it as such; one inside them must hold only what the editor writes.
+        let keeps_roots = crate::validate::keeps_roots(&inspection.containers);
+        if keeps_roots {
+            plain_content(&txn, &incoming)?;
         }
         // The common case: the room's bound plus this update's growth bound
         // stays within every limit, so the room is not copied per keystroke.
         // The exact measurement below decides anything else, and refuses a
         // root violation.
         let growth = match self.bound {
-            Some(_)
-                if plate::content_root(&txn).is_some()
-                    && crate::validate::keeps_roots(&inspection.containers) =>
-            {
-                crate::bound::growth(&txn, &crate::update::Incoming::new(&decoded))
+            Some(_) if keeps_roots && plate::content_root(&txn).is_some() => {
+                crate::bound::growth(&txn, &incoming)
             }
             _ => None,
         };
@@ -301,7 +366,9 @@ impl Validator {
         {
             let mut copy = candidate.transact_mut();
             let state = txn.encode_state_as_update_v1(&yrs::StateVector::default());
-            for bytes in [state.as_slice(), update] {
+            // yrs applies an update by value: the copy takes it re-encoded.
+            let update = update.encode_v1();
+            for bytes in [state.as_slice(), update.as_slice()] {
                 copy.apply_update(ydoc::decode(bytes)?)
                     .map_err(|error| ydoc::UpdateError::Decode(error.to_string()))?;
             }
@@ -328,7 +395,10 @@ impl Validator {
     }
 
     /// A content change `admit` did not check entered the room: the next
-    /// update measures exactly.
+    /// update measures exactly. The server calls it after every transaction
+    /// of its own on the room that commits a non-empty update: agent
+    /// commands, replace-block, the children pass, guard verification (which
+    /// opens the headless editor, whose normalization may write), a reload.
     pub fn invalidate(&mut self) {
         self.bound = None;
         self.metrics = None;

@@ -84,7 +84,7 @@ fn corrected_note(paragraphs: u32) -> (Doc, Vec<u8>) {
 fn growth_time(paragraphs: u32) -> Duration {
     let (room, update) = corrected_note(paragraphs);
     let decoded = ydoc::decode(&update).unwrap();
-    let ranges: usize = notes::update::Incoming::new(&decoded)
+    let ranges: usize = ydoc::Incoming::new(&decoded)
         .delete_ranges()
         .map(|(_, ranges)| ranges.len())
         .sum();

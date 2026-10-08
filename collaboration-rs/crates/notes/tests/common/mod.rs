@@ -12,6 +12,18 @@ use sha2::{Digest, Sha256};
 use yrs::updates::decoder::Decode;
 use yrs::{ReadTxn, Transact};
 
+/// `Validator::admit` on update bytes, decoded as the server decodes them.
+pub trait AdmitBytes {
+    fn admit_bytes(&mut self, doc: &yrs::Doc, update: &[u8]) -> Result<Admission, Refusal>;
+}
+
+impl AdmitBytes for Validator {
+    fn admit_bytes(&mut self, doc: &yrs::Doc, update: &[u8]) -> Result<Admission, Refusal> {
+        let update = ydoc::decode(update)?;
+        self.admit(doc, &update)
+    }
+}
+
 pub fn corpus_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/corpus")
@@ -114,7 +126,7 @@ impl Room {
             _ => failures.push(format!("{at}: growth {growth:?}, JS {js_growth:?}")),
         }
         let exact_before = self.validator.exact_checks;
-        let admitted = self.validator.admit(&self.doc, update);
+        let admitted = self.validator.admit_bytes(&self.doc, update);
         let outcome = &record["outcome"];
         if (self.validator.exact_checks > exact_before) != outcome["exact"].as_bool().unwrap() {
             self.exact_differs += 1;

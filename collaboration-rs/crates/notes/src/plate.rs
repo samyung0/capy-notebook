@@ -17,6 +17,7 @@ use yrs::types::TypeRef;
 use yrs::{Any, ID, ReadTxn};
 
 use crate::json::{self, Unencodable};
+use crate::limits::DEPTH_CEILING;
 
 /// The note's Plate root (a Y.XmlText named `content`).
 pub const CONTENT_ROOT: &str = "content";
@@ -29,6 +30,10 @@ pub enum ProjectionError {
     /// An element property that is a shared type or a subdocument.
     #[error("unsupported element property {0}")]
     Property(String),
+    /// A node below [DEPTH_CEILING]: the walk stops instead of running the
+    /// thread out of stack (Node throws a RangeError further down).
+    #[error("a node nests deeper than {DEPTH_CEILING} levels")]
+    TooDeep,
     #[error(transparent)]
     Unencodable(#[from] Unencodable),
 }
@@ -267,31 +272,95 @@ pub fn properties(branch: &Branch) -> Result<Vec<(Arc<str>, Any)>, ProjectionErr
     Ok(order.into_iter().filter_map(|i| slots[i].take()).collect())
 }
 
-/// `yTextToSlateElement(branch)`: `{...attributes, children}`.
+/// `yTextToSlateElement(branch)` for a top-level element:
+/// `{...attributes, children}`.
 pub fn element(branch: &Branch) -> Result<Value, ProjectionError> {
+    let mut node = attributes(branch)?;
+    node.insert("children".into(), Value::Array(children_from(branch, 1)?));
+    Ok(Value::Object(node))
+}
+
+/// The content root's children, with the placeholder leaf when it has none.
+pub fn children(branch: &Branch) -> Result<Vec<Value>, ProjectionError> {
+    children_from(branch, 0)
+}
+
+/// An element's attributes as a Plate node's keys.
+fn attributes(branch: &Branch) -> Result<Map<String, Value>, ProjectionError> {
     let mut node = Map::new();
     for (key, value) in properties(branch)? {
         if !matches!(value, Any::Undefined) {
             node.insert(key.to_string(), json::any_to_value(&value)?);
         }
     }
-    node.insert("children".into(), Value::Array(children(branch)?));
-    Ok(Value::Object(node))
+    Ok(node)
 }
 
-/// An element's children, with the placeholder leaf when it has none.
-pub fn children(branch: &Branch) -> Result<Vec<Value>, ProjectionError> {
-    let delta = insert_delta(branch)?;
-    if delta.is_empty() {
-        return Ok(vec![leaf("", &[])?]);
+/// The children of `branch`, which sit at `depth`, built with an explicit
+/// stack: a writer's update can nest texts far deeper than a thread's stack
+/// allows recursion. Past [DEPTH_CEILING] the walk stops with
+/// [ProjectionError::TooDeep], so the projected values, and what walks them
+/// recursively (`measure_value`, `json::value_len`, dropping them), stay
+/// within it.
+fn children_from(branch: &Branch, depth: u32) -> Result<Vec<Value>, ProjectionError> {
+    struct Frame {
+        /// The element's attributes (none for the walk's own branch).
+        node: Option<Map<String, Value>>,
+        ops: std::vec::IntoIter<DeltaOp>,
+        children: Vec<Value>,
     }
-    delta
-        .iter()
-        .map(|op| match &op.insert {
-            Insert::Text(text) => leaf(text, &op.attributes),
-            Insert::Element(inner) => element(inner),
+    fn open(branch: &Branch, node: Option<Map<String, Value>>) -> Result<Frame, ProjectionError> {
+        let delta = insert_delta(branch)?;
+        let children = if delta.is_empty() {
+            vec![leaf("", &[])?]
+        } else {
+            Vec::with_capacity(delta.len())
+        };
+        Ok(Frame {
+            node,
+            ops: delta.into_iter(),
+            children,
         })
-        .collect()
+    }
+    if depth > DEPTH_CEILING {
+        return Err(ProjectionError::TooDeep);
+    }
+    let mut stack = vec![open(branch, None)?];
+    loop {
+        let Some(top) = stack.last_mut() else {
+            return Ok(Vec::new());
+        };
+        match top.ops.next() {
+            Some(DeltaOp {
+                insert: Insert::Text(text),
+                attributes,
+            }) => top.children.push(leaf(&text, &attributes)?),
+            Some(DeltaOp {
+                insert: Insert::Element(inner),
+                ..
+            }) => {
+                // The children of the element opened now sit one level below
+                // the top frame's.
+                if depth + stack.len() as u32 > DEPTH_CEILING {
+                    return Err(ProjectionError::TooDeep);
+                }
+                let node = attributes(&inner)?;
+                stack.push(open(&inner, Some(node))?);
+            }
+            None => {
+                let Some(done) = stack.pop() else {
+                    return Ok(Vec::new());
+                };
+                match (stack.last_mut(), done.node) {
+                    (Some(parent), Some(mut node)) => {
+                        node.insert("children".into(), Value::Array(done.children));
+                        parent.children.push(Value::Object(node));
+                    }
+                    _ => return Ok(done.children),
+                }
+            }
+        }
+    }
 }
 
 /// `{...attributes, text}`.

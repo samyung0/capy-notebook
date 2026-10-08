@@ -114,7 +114,7 @@ fn replay_step(
             if text_source {
                 edit::verify_text_guards(&txn, &root, &guards).map(|()| Value::Null)
             } else {
-                edit::verify_material_guards(&mut txn, &root, &guards).map(|()| Value::Null)
+                edit::verify_material_guards(&mut txn, &root, &guards).map(|_| Value::Null)
             }
         }
         "inspect" => edit::inspect_material(&doc.transact())

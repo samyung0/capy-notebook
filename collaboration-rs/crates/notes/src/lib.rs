@@ -22,7 +22,6 @@ pub mod plate;
 pub mod questions;
 pub mod slate;
 pub mod slate_yjs;
-pub mod update;
 pub mod validate;
 
 pub use plate::CONTENT_ROOT;
