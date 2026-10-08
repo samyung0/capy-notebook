@@ -535,6 +535,9 @@ test.describe('study progress', () => {
 
     await ownerPage.goto(`/workspaces/${ws.id}`);
     await ownerPage
+      .getByRole('tab', { exact: true, name: m.workspace_tab_study() })
+      .click();
+    await ownerPage
       .getByRole('button', { exact: true, name: m.study_review_button() })
       .click();
     await expect(ownerPage).toHaveURL(

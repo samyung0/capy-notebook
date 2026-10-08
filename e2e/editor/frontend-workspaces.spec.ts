@@ -18,15 +18,23 @@ test('workspace creation and editing share icon and description fields', async (
   await create
     .getByPlaceholder(m.workspace_name_placeholder())
     .fill('Metadata workspace');
-  await create
-    .getByRole('textbox', { exact: true, name: m.summary_description_label() })
-    .fill('Study with a chosen icon');
-  await expect(
-    create.getByRole('textbox', {
-      exact: true,
-      name: m.summary_description_label(),
-    })
-  ).toHaveAttribute('maxlength', '500');
+  // Not exact: near the limit the label also carries the count ("501/500").
+  const description = create.getByRole('textbox', {
+    name: m.summary_description_label(),
+  });
+  const submit = create.getByRole('button', {
+    exact: true,
+    name: m.action_create(),
+  });
+  // The 500-character limit is soft: an overlong description is kept but
+  // marked, and Create waits until it fits.
+  await description.fill('a'.repeat(501));
+  await expect(description).toHaveValue('a'.repeat(501));
+  await expect(description).toHaveAttribute('aria-invalid', 'true');
+  await expect(submit).toBeDisabled();
+  await description.fill('Study with a chosen icon');
+  await expect(description).toHaveAttribute('aria-invalid', 'false');
+  await expect(submit).toBeEnabled();
   await create
     .getByRole('button', { exact: true, name: m.icon_choose() })
     .click();
@@ -46,9 +54,7 @@ test('workspace creation and editing share icon and description fields', async (
   await page.screenshot({
     path: test.info().outputPath('workspace-create-mobile.png'),
   });
-  await create
-    .getByRole('button', { exact: true, name: m.action_create() })
-    .click();
+  await submit.click();
   await expect(create).toHaveCount(0);
   const card = page
     .getByRole('link', { name: /Metadata workspace/ })

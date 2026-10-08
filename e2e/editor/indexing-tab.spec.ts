@@ -83,7 +83,7 @@ test('a failed file is retried from its row menu and listed in the Indexing tab'
     settings
       .getByRole('listitem')
       .filter({ hasText: name })
-      .getByRole('button', { exact: true, name: m.files_retry_processing() })
+      .getByRole('button', { exact: true, name: m.error_action_retry() })
   ).toBeVisible();
   await page.keyboard.press('Escape');
 

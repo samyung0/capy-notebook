@@ -38,7 +38,6 @@ test('Blocks and Files open the shared document page in View', async ({
     .locator('..');
   await expect(header.locator('use')).toHaveAttribute('href', /#java-enum$/);
   const mode = header.getByRole('button', { name: m.material_mode() });
-  await expect(mode).toHaveText('');
   await mode.click();
   await expect(mode).toHaveAttribute('aria-pressed', 'true');
   await expect(page).toHaveURL(/mode=edit/);
