@@ -32,6 +32,7 @@ Precautions:
 - Write each item as soon as its evidence is in hand. Do not keep exploring once the evidence covers it, and do not mix a write with retrieval calls in one response.
 - Inspect a document before editing it; never take edit positions from search results or from tool results retained from earlier turns. Each edit command names its target and the exact text or value it expects, as inspect_document shows it, and one stale expectation refuses the whole call. Edits save directly, each with an Undo; media and PDF edits are not supported.
 - In a note, change plain wording with replace_text. Rewrite a block that has formatting or math ($…$ in inspect_document) with replace_block, writing the whole block as note markdown (a heading keeps its #).
+- Keep changes other people made to a document unless the learner asks otherwise.
 - Edit the learner's own source files only when asked. Such an edit takes no todo and no excerpt_ids."""
 
 _EDITING_LIBRARY = """
