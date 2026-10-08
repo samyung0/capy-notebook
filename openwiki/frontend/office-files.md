@@ -122,6 +122,29 @@ swapped in at idle, so screen readers reach the whole document while scrolling
 stays cheap. The positioned mirror follows the viewport only once the scroll
 has held still for 300 ms, so pages that scroll past keep their plain text.
 
+The XLSX editor keeps its workbook (the engine and its Yrs document) in a
+dedicated worker, one per open file (`openWorkbookWorker` in
+`@betteroffice/xlsx`, `packages/xlsx/src/worker/`); the runtime's main thread
+holds no copy. The editor talks to it through an async proxy whose requests run
+in the order they are posted, and the replica the runtime hands the host is
+that proxy: peer updates are posted to the worker, its local updates come back
+before the reply of the request that made them, and `encodeStateAsUpdate`
+answers once every earlier request has run. The worker draws frames: the
+display list of the scrolled window plus everything the chrome reads at once
+(sheet info, every drawn cell's editable text, the focus cell, the selection's
+formatting and merges, history, proposals), one request in flight and a view
+change meanwhile asked for again at the next animation frame. The main thread
+paints the frame and places the selection, the open cell edit and the remote
+cursors from that same frame in one commit, so a peer's frame never moves them
+off the pixels. A committed cell input is drawn over its cell until the
+worker's frame shows it. Every change the editor makes names the active sheet's
+id and runs only while that sheet is still the active one, so a peer's sheet
+removal or reorder that reaches the worker first drops it (a draft is dropped,
+as above) rather than landing it elsewhere. Bold, italic and strikethrough flip
+from the range's state when the worker reaches them. A display list reuses the
+grid geometry the sheet info memoized: building one walks every cell for row
+autofit (130 ms native on a 50,000-row sheet).
+
 DOCX view mode (`DocxDisplayListViewer`) makes that mirror its text layer, as a
 PDF viewer's: there is no second copy of the text. The positioned mirror's text
 is transparent and hit-testable (a text cursor over text) and is painted only
@@ -976,10 +999,11 @@ shifted that sheet's index. Once a draft is dropped neither the grid nor the
 formula bar keeps the focus, so the keys still being typed do nothing until a
 click. Clicking a sheet
 tab gives the grid the keys. A cell wider
-or taller than the view stays put while it spans it. The editor only asks the engine where
+or taller than the view stays put while it spans it. The editor only asks the worker where
 the cell is (`cellPosition`, from the geometry `sheet_info` memoized) when the
-painted frame, if it is the live view, does not show it whole, and a key that
-scrolls paints once. Firefox caps an element's height near 17.9M px, so its
+painted frame, if it is the live view and newer than the last change, does not
+show it whole; an Enter that commits and scrolls draws the commit's frame and
+the scrolled one. Firefox caps an element's height near 17.9M px, so its
 scroll area stops short of the last ~150k rows; keys there still land in the
 edit.
 
