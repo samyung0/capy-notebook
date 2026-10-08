@@ -160,7 +160,7 @@ describe('stableElementIdsPlugin', () => {
     // The block menu's Duplicate (blockSelection.duplicate) inserts the same
     // nodes, ids included.
     editor.tf.duplicateNodes({ nodes: [[editor.children[0], [0]]] });
-    const ids = room().map((node) => (node as { id: string }).id);
+    const ids = room().map((node) => (node as unknown as { id: string }).id);
     expect(ids).toHaveLength(4);
     expect(new Set(ids).size).toBe(4);
     expect(ids).toEqual(editor.children.map((node) => node.id));
