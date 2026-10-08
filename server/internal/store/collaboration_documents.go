@@ -17,6 +17,10 @@ import (
 type EditRefusal struct {
 	Code    agenttools.ErrorCode
 	Message string
+	// Details describe a missed target as it is now (the block's current
+	// text, or the material's blocks); the gateway passes them to the agent
+	// unchanged and keeps them out of the stored message.
+	Details json.RawMessage
 }
 
 func (e *EditRefusal) Error() string { return string(e.Code) + ": " + e.Message }
@@ -107,8 +111,9 @@ func (s *Store) postCollaboration(ctx context.Context, baseURL, secret, path str
 		return json.Unmarshal(payload, out)
 	}
 	var refusal struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
+		Code    string          `json:"code"`
+		Message string          `json:"message"`
+		Details json.RawMessage `json:"details"`
 	}
 	_ = json.Unmarshal(payload, &refusal)
 	switch response.StatusCode {
@@ -120,7 +125,7 @@ func (s *Store) postCollaboration(ctx context.Context, baseURL, secret, path str
 		if refusal.Message == "" {
 			refusal.Message = response.Status
 		}
-		return &EditRefusal{Code: code, Message: refusal.Message}
+		return &EditRefusal{Code: code, Message: refusal.Message, Details: refusal.Details}
 	}
 	return obs.WithEventID(fmt.Errorf("%w: %s", ErrAuthorityUnavailable, response.Status), response.Header.Get(obs.ErrorEventHeader))
 }

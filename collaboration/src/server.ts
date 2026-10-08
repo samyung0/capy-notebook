@@ -1922,7 +1922,11 @@ async function handleDocumentRequest(
     jsonResponse(response, 200, result.receipt);
   } catch (error) {
     if (error instanceof EditError) {
-      jsonResponse(response, 409, { code: error.code, message: error.message });
+      jsonResponse(response, 409, {
+        code: error.code,
+        details: error.details,
+        message: error.message,
+      });
       return;
     }
     if (error instanceof CollaborationAuthorizationError) {

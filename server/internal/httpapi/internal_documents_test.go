@@ -256,3 +256,42 @@ func TestInsertMarkdownCreatesItsMiniCheckFirst(t *testing.T) {
 		t.Fatalf("inserted blocks = %+v", blocks)
 	}
 }
+
+// A refused edit's details (the target as it reads now) reach the pipeline
+// unchanged beside the code and message.
+func TestEditRefusalDetailsReachThePipeline(t *testing.T) {
+	h, st := openInternalHTTP(t)
+	details := `{"block":{"id":"b1","text":"Alpha beta.","type":"p"}}`
+	authority := httptest.NewServer(withConverter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"code":"stale_target","message":"expected text was not found in the target","details":` + details + `}`))
+	})))
+	t.Cleanup(authority.Close)
+	st.ConfigureCollaboration(authority.URL, "collab-test-secret")
+
+	msgID := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
+	rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret,
+		noteBody(msgID, "call_details_note", "Details "+msgID, "# Lecture\n\nAlpha beta."))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	noteID := decodeReceipt(t, rec).Effect.Resource.ID
+	cleanupMaterial(t, st, noteID)
+	rec = doInternal(t, h, http.MethodPost, "/api/internal/documents/edit", pipeSecret, map[string]any{
+		"workspaceId": "ws_e2e_private", "userId": "u_editor",
+		"assistantMessageId": msgID, "toolCallId": "call_details_edit",
+		"target":   map[string]any{"kind": "material", "id": noteID},
+		"commands": []map[string]any{{"type": "replace_text", "target_id": "b1", "expected_text": "gamma", "text": "delta"}},
+	})
+	var body struct {
+		Code    string          `json:"code"`
+		Details json.RawMessage `json:"details"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusConflict || body.Code != "stale_target" || string(body.Details) != details {
+		t.Fatalf("edit status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}

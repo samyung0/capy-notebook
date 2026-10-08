@@ -52,6 +52,9 @@ class ToolResult:
     effects: list[dict[str, Any]] = field(default_factory=list)
     error: str | None = None
     error_code: str | None = None
+    # What the model reads after the error, kept out of the error the chat
+    # stores and shows: a missed target as it is now, carried skills or excerpts.
+    detail: str = ""
     refused: bool = False
     failed: bool = False
     paged: bool = False
@@ -71,7 +74,7 @@ class ToolResult:
 
     def text(self) -> str:
         if self.error:
-            return self.error
+            return "\n\n".join(part for part in (self.error, self.detail) if part)
         return "\n\n".join(part for part in self.text_parts if part)
 
 
@@ -280,6 +283,10 @@ class ToolContext:
     # directory their figures and exports go to; the agent removes it at turn end.
     decks: dict[str, dict[str, Any]] = field(default_factory=dict)
     deck_dir: str = ""
+    # What this turn last saw of each material block (material id -> block id
+    # -> text), from inspect_document and its own replace_text edits, so a
+    # refused edit can say its target changed since.
+    seen_blocks: dict[str, dict[str, str]] = field(default_factory=dict)
     _scope_outline: dict[str, Any] | None = field(default=None, repr=False)
 
 
@@ -427,8 +434,10 @@ def _result(text: str, *, passages: list[Passage] | None = None) -> ToolResult:
     return ToolResult(text_parts=[text], passages=list(passages or []))
 
 
-def _refused(text: str, *, code: str = "invalid_input") -> ToolResult:
-    return ToolResult(text_parts=[text], error=text, error_code=code, refused=True)
+def _refused(text: str, *, code: str = "invalid_input", detail: str = "") -> ToolResult:
+    return ToolResult(
+        text_parts=[text], error=text, error_code=code, detail=detail, refused=True
+    )
 
 
 def _failed(text: str, *, code: str = "unavailable_target") -> ToolResult:
@@ -1563,12 +1572,14 @@ async def _post_operation(
     *,
     failure: str,
     timeout: float = 10,
+    explain: Callable[[dict[str, Any]], str] | None = None,
 ) -> ToolResult:
     """POST a receipt-backed mutation to the gateway.
 
     Transient failures retry the same operation id (Go makes it idempotent);
     a lost response is reconciled through the durable receipt read. A confirmed
     absence is a normal tool failure; an unknown outcome fails the turn.
+    ``explain`` turns a refusal's ``details`` into the result's detail.
     """
     last_exc: BaseException | None = None
     last_status = 0
@@ -1593,9 +1604,11 @@ async def _post_operation(
                 None, resp.status_code
             ):
                 detail = _response_detail(resp)
+                details = _response_details(resp)
                 return _refused(
                     f"Could not {failure}: {detail or resp.status_code}",
                     code=_gateway_error_code(resp),
+                    detail=explain(details) if explain and details else "",
                 )
         except (requests.Timeout, requests.ConnectionError) as exc:
             last_exc = exc
@@ -1654,6 +1667,15 @@ def _response_detail(resp: requests.Response) -> str:
         return str(resp.json().get("message") or "")
     except ValueError:
         return resp.text[:200]
+
+
+def _response_details(resp: requests.Response) -> dict[str, Any]:
+    """A refusal's structured details (collaboration EditDetails), if any."""
+    try:
+        details = resp.json().get("details")
+    except ValueError:
+        return {}
+    return details if isinstance(details, dict) else {}
 
 
 _GATEWAY_CODES = {
@@ -1935,7 +1957,67 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
     )
     if isinstance(body, ToolResult):
         return body
+    if kind == "material":
+        seen = ctx.seen_blocks.setdefault(rid, {})
+        for block in body.get("blocks") or []:
+            seen[str(block.get("id"))] = str(block.get("text") or "")
     return _result(_render_inspection(body))
+
+
+# How much of a missed block's current text a refused edit shows.
+SHOWN_BLOCK_CHARS = 2000
+
+
+def _missed_target(details: dict[str, Any], seen: dict[str, str]) -> str:
+    """A refused edit's target as it is now, so the retry needs no
+    inspect_document: the block's current text, saying when it changed since
+    this turn last saw it, or the material's blocks for an id that is gone."""
+    block = details.get("block")
+    if isinstance(block, dict):
+        bid, text = str(block.get("id") or ""), str(block.get("text") or "")
+        shown = text[:SHOWN_BLOCK_CHARS]
+        if len(text) > SHOWN_BLOCK_CHARS:
+            more = len(text) - SHOWN_BLOCK_CHARS
+            shown += f" … ({more} more characters; inspect_document shows them)"
+        changed = seen.get(bid, text) != text
+        return (
+            f"Block {bid} ({block.get('type')})"
+            + (" changed since you last saw it. It" if changed else "")
+            + f" now reads:\n{shown}"
+        )
+    blocks = details.get("blocks")
+    if isinstance(blocks, list):
+        lines = [
+            f"[{b.get('id')}] ({b.get('type')}) {b.get('text')}"
+            for b in blocks
+            if isinstance(b, dict)
+        ]
+        more = int(details.get("total") or len(lines)) - len(lines)
+        tail = f"\n… {more} more; inspect_document pages through them" if more else ""
+        return (
+            "The material's blocks now, with the start of each:\n"
+            + "\n".join(lines)
+            + tail
+        )
+    return ""
+
+
+def _saw_edit(seen: dict[str, str], commands: list[dict[str, Any]]) -> None:
+    """Carry this turn's view of a material through its own edit: a replaced
+    span is replaced in the seen text as the authority replaced it, and a
+    removed block is gone."""
+    for command in commands:
+        kind = command.get("type")
+        if kind == "replace_text":
+            bid = str(command.get("target_id") or "")
+            before = seen.get(bid)
+            expected = str(command.get("expected_text") or "")
+            if before is not None and expected and before.count(expected) == 1:
+                seen[bid] = before.replace(expected, str(command.get("text") or ""))
+            else:
+                seen.pop(bid, None)
+        elif kind == "remove_block":
+            seen.pop(str(command.get("block_id") or ""), None)
 
 
 async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
@@ -1975,6 +2057,7 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         operation_id(ctx.assistant_message_id, call_id),
         ctx,
         failure="edit the document",
+        explain=lambda details: _missed_target(details, ctx.seen_blocks.get(rid, {})),
     )
     if result.effects:
         # This turn's own view: drop cached outlines and re-read the exact
@@ -1984,6 +2067,7 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
             ctx.pending_sources = await pending.load(ctx.workspace_id, ctx.file_ids)
         else:
             ctx.ledger.complete(todo)
+            _saw_edit(ctx.seen_blocks.get(rid, {}), commands)
     return result
 
 
@@ -2501,7 +2585,7 @@ def assign_citations(
 
 def render_result(result: ToolResult, numbered: list[tuple[int, Passage]]) -> str:
     if result.refused and not numbered:
-        return result.error or result.text()
+        return result.text()
     parts: list[str] = []
     if numbered and result.paged:
         body = "\n\n".join(

@@ -321,7 +321,11 @@ func (a *api) failDocument(w http.ResponseWriter, err error) {
 	obs.ResponseError(w, err)
 	var refusal *store.EditRefusal
 	if errors.As(err, &refusal) {
-		writeJSON(w, http.StatusConflict, map[string]string{"code": string(refusal.Code), "message": refusal.Message})
+		body := map[string]any{"code": refusal.Code, "message": refusal.Message}
+		if len(refusal.Details) > 0 {
+			body["details"] = refusal.Details
+		}
+		writeJSON(w, http.StatusConflict, body)
 		return
 	}
 	if errors.Is(err, store.ErrAuthorityUnavailable) {

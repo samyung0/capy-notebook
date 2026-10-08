@@ -1904,6 +1904,7 @@ class _JsonResp:
     def __init__(self, body, status=200):
         self._body = body
         self.status_code = status
+        self.headers: dict[str, str] = {}
 
     def json(self):
         return self._body
@@ -2165,6 +2166,89 @@ async def test_edit_document_refuses_a_file_outside_the_scope_and_invalid_comman
         ctx,
     )
     assert invalid.error_code == "invalid_input" and calls["n"] == 0
+
+
+async def test_a_missed_edit_target_comes_back_as_it_reads_now(monkeypatch):
+    """The refusal carries the target's current text (or the block list for a
+    gone id) for the model only, and says when the block changed since this
+    turn last saw it, counting the turn's own edits as seen."""
+    ctx = _owner_ctx()
+    ctx.skills_read = {"editing"}
+
+    def refused(code, message, details):
+        return _JsonResp(
+            {"code": code, "message": message, "details": details}, status=409
+        )
+
+    def block(bid, text):
+        return {"block": {"id": bid, "type": "p", "text": text}}
+
+    answers = iter(
+        [
+            _JsonResp(
+                {
+                    "format": "plate",
+                    "title": "Notes",
+                    "blocks": [
+                        {"id": "b1", "type": "p", "text": "alpha beta"},
+                        {"id": "b2", "type": "p", "text": "gamma"},
+                    ],
+                }
+            ),
+            _JsonResp(_receipt("edited", "material", "mat_1")),
+            refused(
+                "stale_target",
+                "expected text was not found in the target",
+                block("b1", "alpha delta"),
+            ),
+            refused(
+                "stale_target",
+                "expected text was not found in the target",
+                block("b2", "gamma, said Ann"),
+            ),
+            refused(
+                "unavailable_target",
+                "block b9 no longer exists",
+                {
+                    "blocks": [{"id": "b1", "type": "p", "text": "alpha delta"}],
+                    "total": 3,
+                },
+            ),
+        ]
+    )
+    _gateway(monkeypatch, post=lambda url, **kwargs: next(answers))
+    target = {"kind": "material", "id": "mat_1"}
+    await tools.run("inspect_document", {"target": target, "_tool_call_id": "c0"}, ctx)
+
+    def edit(n, bid, expected, text):
+        command = {
+            "type": "replace_text",
+            "target_id": bid,
+            "expected_text": expected,
+            "text": text,
+        }
+        return tools.run(
+            "edit_document",
+            {"target": target, "commands": [command], "_tool_call_id": f"c{n}"},
+            ctx,
+        )
+
+    assert (await edit(1, "b1", "beta", "delta")).outcome == "succeeded"
+    own = await edit(2, "b1", "beta", "x")
+    assert own.text().endswith("Block b1 (p) now reads:\nalpha delta")
+    other = await edit(3, "b2", "gamma.", "g")
+    assert other.text().endswith(
+        "Block b2 (p) changed since you last saw it. It now reads:\ngamma, said Ann"
+    )
+    assert other.error_payload() == {
+        "code": "stale_target",
+        "message": "Could not edit the document: expected text was not found in the target",
+    }
+    gone = await edit(4, "b9", "x", "y")
+    assert gone.text().endswith(
+        "The material's blocks now, with the start of each:\n[b1] (p) alpha delta\n"
+        "… 2 more; inspect_document pages through them"
+    )
 
 
 def test_argument_errors_name_the_fields_without_echoing_the_command():

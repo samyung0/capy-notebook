@@ -28,15 +28,29 @@ export type EditErrorCode =
   | 'unavailable_target'
   | 'unsupported_operation';
 
+/**
+ * What a missed target looks like now, for the agent's retry: the block as it
+ * reads (an expected text that no longer matches), or the material's blocks
+ * (an id that is gone). Kept out of the message, which the chat stores and
+ * shows.
+ */
+export interface EditDetails {
+  block?: { id: string; text: string; type: string };
+  blocks?: Array<{ id: string; text: string; type: string }>;
+  total?: number;
+}
+
 export class EditError extends Error {
   readonly code: EditErrorCode;
+  readonly details?: EditDetails;
   constructor(
     code: EditErrorCode,
     message: string,
-    options?: { cause?: unknown }
+    options?: { cause?: unknown; details?: EditDetails }
   ) {
     super(message, options);
     this.code = code;
+    if (options?.details) this.details = options.details;
   }
 }
 
@@ -133,6 +147,37 @@ function stableId(node: PlateNode): string {
   return typeof node.id === 'string' ? node.id : '';
 }
 
+/** A block's text as inspect shows it: the text an expected text matches. */
+export function blockText(node: PlateNode): string {
+  return Node.string(node as never);
+}
+
+/** How many blocks, and how much of each, a refusal for a gone id lists. */
+const LISTED_BLOCKS = 60;
+const LISTED_PREVIEW = 80;
+
+function currentBlock(block: PlateNode): EditDetails {
+  return {
+    block: {
+      id: stableId(block),
+      text: blockText(block),
+      type: String(block.type ?? ''),
+    },
+  };
+}
+
+function blockListing(editor: Editor): EditDetails {
+  const children = editor.children as unknown as PlateNode[];
+  return {
+    blocks: children.slice(0, LISTED_BLOCKS).map((block) => ({
+      id: stableId(block),
+      text: blockText(block).slice(0, LISTED_PREVIEW),
+      type: String(block.type ?? ''),
+    })),
+    total: children.length,
+  };
+}
+
 function hasMedia(node: PlateNode): boolean {
   if (MEDIA_TYPES.has(String(node.type ?? '')) || 'assetId' in node)
     return true;
@@ -198,7 +243,8 @@ function requireBlock(editor: Editor, blockId: string): [PlateNode, number] {
   if (!entry) {
     throw new EditError(
       'unavailable_target',
-      `block ${blockId} no longer exists`
+      `block ${blockId} no longer exists`,
+      { details: blockListing(editor) }
     );
   }
   return entry;
@@ -386,8 +432,11 @@ export function applyMaterialCommands(
                 'this block holds media, not text'
               );
             }
-            const current = Node.string(block as never);
-            const span = resolveSpan(current, command);
+            const span = resolveSpan(
+              blockText(block),
+              command,
+              currentBlock(block)
+            );
             const start = pointAt(editor, [index], span.offset, 'start');
             const end = pointAt(
               editor,
@@ -439,7 +488,7 @@ export function applyMaterialCommands(
             for (const block of [...command.blocks].reverse()) {
               inverse.unshift({
                 blockId: stableId(block),
-                expectedText: Node.string(block as never),
+                expectedText: blockText(block),
                 type: 'remove_block',
               });
             }
@@ -451,10 +500,11 @@ export function applyMaterialCommands(
           }
           case 'remove_block': {
             const [block, index] = requireBlock(editor, command.blockId);
-            if (Node.string(block as never) !== command.expectedText) {
+            if (blockText(block) !== command.expectedText) {
               throw new EditError(
                 'stale_target',
-                `block ${command.blockId} changed`
+                `block ${command.blockId} changed`,
+                { details: currentBlock(block) }
               );
             }
             if (hasMedia(block)) {
@@ -705,9 +755,11 @@ function anchorSpan(
   return current.indexOf(expected);
 }
 
+/** `details` describe the target for a stale expectation's refusal. */
 function resolveSpan(
   current: string,
-  command: { expectedText: string; offset?: number }
+  command: { expectedText: string; offset?: number },
+  details?: EditDetails
 ): { offset: number; length: number } {
   if (command.expectedText.length > MAX_TEXT_EDIT_CHARS) {
     throw new EditError('invalid_input', 'expected text is too long');
@@ -715,7 +767,9 @@ function resolveSpan(
   if (typeof command.offset === 'number') {
     const offset = anchorSpan(current, command.offset, command.expectedText);
     if (offset === null)
-      throw new EditError('stale_target', 'the edited span changed');
+      throw new EditError('stale_target', 'the edited span changed', {
+        details,
+      });
     return { length: command.expectedText.length, offset };
   }
   if (!command.expectedText) {
@@ -728,7 +782,8 @@ function resolveSpan(
   if (occurrences === 0) {
     throw new EditError(
       'stale_target',
-      'expected text was not found in the target'
+      'expected text was not found in the target',
+      { details }
     );
   }
   if (occurrences > 1) {
@@ -892,7 +947,7 @@ export function inspectMaterial(document: Y.Doc): InspectedBlock[] {
   return value.map((block) => {
     const out: InspectedBlock = {
       id: stableId(block),
-      text: Node.string(block as never),
+      text: blockText(block),
       type: String(block.type ?? ''),
     };
     if (block.type === 'quiz' || block.type === 'flashcards') {

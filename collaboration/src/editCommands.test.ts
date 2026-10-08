@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 import {
   applyMaterialCommands,
   applyTextCommands,
+  type DocumentCommand,
   EditError,
   inspectMaterial,
   officeError,
@@ -158,6 +159,55 @@ describe('material edit commands', () => {
       rich('b1', ' when ', ' grows quickly.'),
       rich('b2', ' where ', ' grows fast.'),
     ]);
+  });
+
+  it('names a missed target as it reads now', () => {
+    const document = material([
+      paragraph('b1', 'alpha beta'),
+      paragraph('b2', 'gamma'),
+    ]);
+    const refusal = (command: DocumentCommand) => {
+      try {
+        applyMaterialCommands(document, [command]);
+      } catch (error) {
+        return error;
+      }
+      throw new Error('the edit applied');
+    };
+    expect(
+      refusal({
+        blockId: 'b1',
+        expectedText: 'delta',
+        text: 'x',
+        type: 'replace_text',
+      })
+    ).toMatchObject({
+      code: 'stale_target',
+      details: { block: { id: 'b1', text: 'alpha beta', type: 'p' } },
+    });
+    expect(
+      refusal({ blockId: 'b2', expectedText: 'gam', type: 'remove_block' })
+    ).toMatchObject({
+      code: 'stale_target',
+      details: { block: { id: 'b2', text: 'gamma', type: 'p' } },
+    });
+    expect(
+      refusal({
+        blockId: 'gone',
+        expectedText: 'x',
+        text: 'y',
+        type: 'replace_text',
+      })
+    ).toMatchObject({
+      code: 'unavailable_target',
+      details: {
+        blocks: [
+          { id: 'b1', text: 'alpha beta', type: 'p' },
+          { id: 'b2', text: 'gamma', type: 'p' },
+        ],
+        total: 2,
+      },
+    });
   });
 
   it('exposes an embedded material reference by id and kind', () => {
