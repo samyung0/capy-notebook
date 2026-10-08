@@ -1,7 +1,8 @@
 //! Integration tests of note rooms against Postgres (migrated by the Go API)
 //! and Redis: the server binary runs as a child process and two clients speak
 //! capy-sync 1 to it. Set CAPY_IT_DATABASE_URL and CAPY_IT_REDIS_URL (the
-//! docker e2e stack's, see DESIGN.md 11); without them every test skips.
+//! docker e2e stack's); without them every test skips, unless CAPY_IT_REQUIRED
+//! is set (CI), which makes a missing one a failure.
 //! CAPY_IT_API_URL names that stack's Go API (with this file's secret) for
 //! the projections a command waits for.
 
@@ -27,11 +28,19 @@ struct Env {
 }
 
 fn env() -> Option<Env> {
-    Some(Env {
-        database: std::env::var("CAPY_IT_DATABASE_URL").ok()?,
-        redis: std::env::var("CAPY_IT_REDIS_URL").ok()?,
-        api: std::env::var("CAPY_IT_API_URL").ok(),
-    })
+    let found = (|| {
+        Some(Env {
+            database: std::env::var("CAPY_IT_DATABASE_URL").ok()?,
+            redis: std::env::var("CAPY_IT_REDIS_URL").ok()?,
+            api: std::env::var("CAPY_IT_API_URL").ok(),
+        })
+    })();
+    // CI runs these against a stack: there a missing variable fails.
+    assert!(
+        found.is_some() || std::env::var_os("CAPY_IT_REQUIRED").is_none(),
+        "CAPY_IT_REQUIRED is set but CAPY_IT_DATABASE_URL or CAPY_IT_REDIS_URL is not"
+    );
+    found
 }
 
 struct Server {

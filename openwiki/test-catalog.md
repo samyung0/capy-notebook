@@ -251,7 +251,7 @@ The opt-in [`alibaba_decision.py`](../bench/grading/scripts/alibaba_decision.py)
 
 ## Collaboration Rust server (`collaboration-rs/crates/server`, `sources`, `ydoc`)
 
-`pnpm test:collaboration` builds the notes markdown bundle and runs `cargo test` over the workspace in `collaboration-rs/` (the server is a binary crate: `--bins` for its unit tests alone). The integration tests need the docker e2e stack's Postgres and Redis (see the file headers); they skip without their variables.
+`pnpm test:collaboration` builds the notes markdown bundle and runs `cargo test` over the workspace in `collaboration-rs/` (the server is a binary crate: `--bins` for its unit tests alone). The integration tests need the docker e2e stack's Postgres, Redis and Go API (see the file headers); locally they skip without their variables. CI's `collaboration` job runs them all against that stack (`--include-ignored`, with `CAPY_IT_REQUIRED` making a missing variable a failure), plus `cargo fmt`/`clippy` for the workspace's crates and the release-only admit timings.
 
 | File | About |
 | --- | --- |
