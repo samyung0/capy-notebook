@@ -105,7 +105,7 @@ again:
 | --- | --- | --- |
 | `slow_save` (warn) | a material or source save took 2 s or more (`SLOW_SAVE_MS`, `health.ts`), failed ones included | `room`, `kind` (`material`, `source`), `ms`, `ok`, `bytes` (the saved state) |
 | `slow_office_call` (warn) | an Office engine call ran 2 s or more (`SLOW_OFFICE_CALL_MS`, `officeRuntime.ts`), a timeout included | `method`, `ms` (running), `wait_ms` (queued before it), `bytes` (its byte arguments: the base or exported file) |
-| `room_load` / `room_unload` (info) | a room loaded or unloaded on this instance | `room`, `bytes` (applied update bytes since the load, the load included: an estimate that never subtracts deletions; left out when nothing was applied), `ms` (load only) |
+| `room_load` / `room_unload` (info) | a room loaded or unloaded on this instance | `room`, `bytes` (the room's stored bytes, its base and log rows, as the room knows them; no encode of the document), `ms` (load only) |
 
 PostHog gets nothing from editing.
 

@@ -285,6 +285,15 @@ pub fn spawn(app: &Shared, name: &RoomName, id: u64, actor: &str) -> RoomHandle 
     RoomHandle { id, tx, view }
 }
 
+/// A room's stored bytes (its base and log rows), for the load and unload
+/// lines: known without encoding the document on the room's thread.
+fn stored_bytes(kind: &Kindly) -> i64 {
+    match kind {
+        Kindly::Note(note) => note.base_bytes + note.log_bytes,
+        Kindly::Source(source) => source.base_bytes + source.log_bytes,
+    }
+}
+
 /// Picks a client id the loaded state does not hold (markers and server
 /// edits are written under it).
 fn fresh_doc(held: &StateVector) -> Doc {
@@ -376,15 +385,19 @@ async fn load(
                 .load(&room, actor, &doc)
                 .await
                 .map_err(|error| error.to_string())?;
-            let durable = {
-                let txn = doc.transact();
+            // O(store) walks, on the blocking pool (the room is not serving yet).
+            let checked = doc.clone();
+            let durable = tokio::task::spawn_blocking(move || -> Result<_, String> {
+                let txn = checked.transact();
                 // Markers and server edits go under the room's own client.
-                if txn.state_vector().get(&doc.client_id()) > 0 {
+                if txn.state_vector().get(&checked.client_id()) > 0 {
                     return Err("source room client collided with its state".into());
                 }
                 markers::contributors_in(&txn).map_err(|error| error.to_string())?;
-                ydoc::Durable::of(&txn)
-            };
+                Ok(ydoc::Durable::of(&txn))
+            })
+            .await
+            .map_err(|error| error.to_string())??;
             let source = Source {
                 room,
                 format: loaded.format,
@@ -434,14 +447,10 @@ async fn run(
             return;
         }
     };
-    let bytes = doc
-        .transact()
-        .encode_state_as_update_v1(&StateVector::default())
-        .len();
     log(
         Level::Info,
         "room_load",
-        json!({ "bytes": bytes, "ms": started.elapsed().as_millis() as u64, "room": room_name }),
+        json!({ "bytes": stored_bytes(&kind), "ms": started.elapsed().as_millis() as u64, "room": room_name }),
     );
     let mut room = Room {
         markers: Markers::new(&app.instance_id),
@@ -618,7 +627,15 @@ impl Room {
                 let _ = reply.send(self.join(key, context, out, socket));
             }
             RoomCmd::Leave(key) => self.leave(key),
-            RoomCmd::Sync(key, payload) => self.on_sync(key, &payload),
+            RoomCmd::Sync(key, payload) => match self.step1_vector(key, &payload) {
+                // A joiner's step 1 is answered with up to the whole state,
+                // encoded on the blocking pool.
+                Some(since) => {
+                    let diff = self.encoded(since).await;
+                    self.send(key, Kind::Sync, &sync::encode(sync::STEP2, &diff));
+                }
+                None => self.on_sync(key, &payload),
+            },
             RoomCmd::Awareness(key, payload) => self.on_awareness(key, &payload),
             RoomCmd::QueryAwareness(key) => self.send_awareness_states(key),
             RoomCmd::Stateless(key, payload) => self.on_stateless(key, &payload).await,
@@ -736,10 +753,7 @@ impl Room {
                 }
             }
             RoomCmd::Snapshot(reply) => {
-                let state = self
-                    .doc
-                    .transact()
-                    .encode_state_as_update_v1(&StateVector::default());
+                let state = self.encoded(StateVector::default()).await;
                 let _ = reply.send(state);
             }
             RoomCmd::ServiceEdit(edit) => self.service_edit(*edit),
@@ -982,14 +996,12 @@ impl Room {
             .into_iter()
             .map(|c| c.user_id)
             .collect();
-        let size = bytes.or_else(|| {
-            Some(
-                self.doc
-                    .transact()
-                    .encode_state_as_update_v1(&StateVector::default())
-                    .len() as u64,
-            )
-        });
+        // Else the room's estimate (a source room's applied bytes, a note's
+        // stored ones), not an encode of the document on the room's thread.
+        let size = bytes.or(Some(match &self.kind {
+            Kindly::Source(source) => source.estimate,
+            kind => stored_bytes(kind).max(0) as u64,
+        }));
         let list: Vec<Incident> = if users.is_empty() {
             vec![Incident {
                 cause: cause.clone(),
@@ -1310,6 +1322,31 @@ impl Room {
         self.reject_room(cause, bytes, &eviction, payload.to_string());
     }
 
+    /// The state vector of a member's well-formed sync step 1, if `payload`
+    /// is one (anything else goes through `on_sync`).
+    fn step1_vector(&self, key: MemberKey, payload: &[u8]) -> Option<StateVector> {
+        use yrs::updates::decoder::Decode;
+        if !self.members.contains_key(&key)
+            || (matches!(self.kind, Kindly::Note(_)) && payload.len() > NOTE_MAX_SYNC_BYTES)
+        {
+            return None;
+        }
+        match sync::decode(payload) {
+            Ok((sync::STEP1, body)) => StateVector::decode_v1(body).ok(),
+            _ => None,
+        }
+    }
+
+    /// The room's state beyond `since`, encoded on the blocking pool; the
+    /// room waits for it, as for a store's validation, so nothing changes the
+    /// document meanwhile. A panic in the encode is the room's own.
+    async fn encoded(&self, since: StateVector) -> Vec<u8> {
+        let doc = self.doc.clone();
+        tokio::task::spawn_blocking(move || doc.transact().encode_state_as_update_v1(&since))
+            .await
+            .unwrap_or_else(|error| std::panic::resume_unwind(error.into_panic()))
+    }
+
     fn sync_message(&mut self, key: MemberKey, payload: &[u8]) {
         if !self.members.contains_key(&key) {
             return;
@@ -1323,13 +1360,8 @@ impl Room {
             return;
         };
         if kind == sync::STEP1 {
-            use yrs::updates::decoder::Decode;
-            let Ok(sv) = StateVector::decode_v1(body) else {
-                self.refuse(key, &[], "malformed state vector");
-                return;
-            };
-            let diff = self.doc.transact().encode_state_as_update_v1(&sv);
-            self.send(key, Kind::Sync, &sync::encode(sync::STEP2, &diff));
+            // A well-formed step 1 was answered before this (`step1_vector`).
+            self.refuse(key, &[], "malformed state vector");
             return;
         }
         self.app.stats.updates.fetch_add(1, Ordering::Relaxed);
@@ -2428,15 +2460,10 @@ impl Room {
     // -------------------------------------------------------------------- unload
 
     async fn unload(&mut self) {
-        let bytes = self
-            .doc
-            .transact()
-            .encode_state_as_update_v1(&StateVector::default())
-            .len();
         log(
             Level::Info,
             "room_unload",
-            json!({ "bytes": bytes, "room": self.name }),
+            json!({ "bytes": stored_bytes(&self.kind), "room": self.name }),
         );
         for reply in self.forced_unload.drain(..) {
             let _ = reply.send(());
