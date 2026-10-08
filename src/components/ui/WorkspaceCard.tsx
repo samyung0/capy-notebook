@@ -15,7 +15,7 @@ import { m } from '@/i18n';
 import { trackItemCloned } from '@/lib/analytics';
 import { toastCloneError } from '@/lib/authToasts';
 import { cn } from '@/lib/cn';
-import { coverPaint } from '@/lib/coverArt';
+import { type CoverPaint, coverPaint } from '@/lib/coverArt';
 import { iconUrl } from '@/lib/icon-catalog';
 import { Badge } from './Badge';
 import { Card } from './Card';
@@ -31,7 +31,6 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
   const { isPending: cloneIsPending, mutate: cloneWorkspace } =
     useCloneWorkspace();
   const navigate = useNavigate();
-  // A cover fills the card behind today's layout, washed so text stays legible.
   const paint = useMemo(
     () =>
       workspace.cover
@@ -96,78 +95,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
         preload="intent"
         to="/workspaces/$workspaceId"
       >
-        <Card
-          border="solid"
-          className={cn(
-            'group relative h-full gap-4 p-4.5 xl:p-5.5',
-            paint && 'overflow-hidden'
-          )}
-          interactive
-        >
-          {paint && (
-            <CoverArt
-              className="transition-[filter] group-hover:brightness-105"
-              paint={paint}
-              shade="card"
-            />
-          )}
-          {/* The icon sits beside the name; counts and tags take their own lines. */}
-          <div className="relative grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3">
-            <img
-              alt=""
-              className="size-10 rounded-button"
-              height={44}
-              src={iconUrl(workspace.iconId)}
-              width={44}
-            />
-            <h3
-              className={cn(
-                't-card-title line-clamp-2 pr-8',
-                ink === 'dark' && 'text-white',
-                ink === 'light' && 'text-[#1d1d1f]'
-              )}
-            >
-              {workspace.name}
-            </h3>
-            <p
-              className={cn(
-                't-meta col-span-2 mt-2 text-fg-muted',
-                ink === 'dark' && 'text-white/85',
-                ink === 'light' && 'text-[#4b4b4b]'
-              )}
-            >
-              {m.workspace_card_meta({
-                chapters: String(workspace.chapterCount),
-                files: String(workspace.fileCount),
-              })}
-            </p>
-            <div className="col-span-2 mt-3 -ml-1 flex flex-wrap gap-1">
-              {workspace.tags.map((t) => (
-                <Badge
-                  className={cn(
-                    ink === 'dark' && 'bg-white/18 text-white',
-                    ink === 'light' && 'bg-black/8 text-[#1d1d1f]'
-                  )}
-                  key={t.value}
-                  size="sm"
-                >
-                  # {t.value}
-                </Badge>
-              ))}
-              {workspace.privacy !== 'private' && (
-                // Access keeps its colour on covers so it stands apart from tags.
-                <Badge
-                  size="sm"
-                  tone={workspace.privacy === 'public' ? 'success' : 'info'}
-                >
-                  {workspace.privacy === 'public'
-                    ? m.share_public()
-                    : m.workspace_privacy_shared()}
-                </Badge>
-              )}
-            </div>
-          </div>
-        </Card>
+        <WorkspaceCardFace interactive paint={paint} workspace={workspace} />
       </Link>
       {menuItems.length > 0 && (
         // Lifts with the card, which rises on hover (Card interactive).
@@ -220,5 +148,101 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
         </>
       )}
     </div>
+  );
+}
+
+/** The fields a card shows; the settings cover picker previews them too. */
+export type WorkspaceCardFields = Pick<
+  Workspace,
+  'chapterCount' | 'fileCount' | 'iconId' | 'name' | 'privacy'
+> & { tags: { value: string }[] };
+
+/**
+ * The card itself, without its link and menu. A cover fills the card behind
+ * the layout, washed so text stays legible; `paint` comes from coverPaint.
+ */
+export function WorkspaceCardFace({
+  workspace,
+  paint,
+  interactive = false,
+}: {
+  workspace: WorkspaceCardFields;
+  paint: CoverPaint | null;
+  interactive?: boolean;
+}) {
+  const ink = paint && (paint.light ? 'light' : 'dark');
+  return (
+    <Card
+      border="solid"
+      className={cn(
+        'group relative h-full gap-4 p-4.5 xl:p-5.5',
+        paint && 'overflow-hidden'
+      )}
+      interactive={interactive}
+    >
+      {paint && (
+        <CoverArt
+          className="transition-[filter] group-hover:brightness-105"
+          paint={paint}
+          shade="card"
+        />
+      )}
+      {/* The icon sits beside the name; counts and tags take their own lines. */}
+      <div className="relative grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3">
+        <img
+          alt=""
+          className="size-10 rounded-button"
+          height={44}
+          src={iconUrl(workspace.iconId)}
+          width={44}
+        />
+        <h3
+          className={cn(
+            't-card-title line-clamp-2 pr-8',
+            ink === 'dark' && 'text-white',
+            ink === 'light' && 'text-[#1d1d1f]'
+          )}
+        >
+          {workspace.name}
+        </h3>
+        <p
+          className={cn(
+            't-meta col-span-2 mt-2.5 text-fg-muted',
+            ink === 'dark' && 'text-white/85',
+            ink === 'light' && 'text-[#4b4b4b]'
+          )}
+        >
+          {m.workspace_card_meta({
+            chapters: String(workspace.chapterCount),
+            files: String(workspace.fileCount),
+          })}
+        </p>
+        <div className="col-span-2 mt-2.5 -ml-1 flex flex-wrap gap-1">
+          {workspace.tags.map((t) => (
+            <Badge
+              className={cn(
+                ink === 'dark' && 'bg-white/18 text-white',
+                ink === 'light' && 'bg-black/8 text-[#1d1d1f]'
+              )}
+              key={t.value}
+              size="sm"
+            >
+              # {t.value}
+            </Badge>
+          ))}
+          {workspace.privacy !== 'private' && (
+            // Access keeps its colour on covers so it stands apart from tags.
+            <Badge
+              size="sm"
+              tone={workspace.privacy === 'public' ? 'success' : 'info'}
+            >
+              {workspace.privacy === 'public'
+                ? m.share_public()
+                : m.workspace_privacy_shared()}
+            </Badge>
+          )}
+        </div>
+      </div>
+    </Card>
   );
 }

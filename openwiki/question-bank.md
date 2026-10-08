@@ -31,7 +31,7 @@ The syllabus gives each exam `fullLabel` and `cover`: a style (`symbols`,
 `doodles`, `shelf`, `paper`, `type`, `geo`, `hero`), a `#rrggbb` colour, and the
 style's own fields: `kind` (`math`, `latin`, `kana`) for symbols, doodles and
 paper, `pattern` for geo (a GeoPattern generator) and hero (one of 18 Hero
-Patterns), and an optional handwritten `line` for paper. `bank.Cover.Check`
+Patterns), and an optional handwritten `line` for paper. A paper cover's colour is the paper (`cover.PaperPalette`: cream, white, grey, yellow; lines and ink are fixed), so its catalog colour must be one of those. `bank.Cover.Check`
 accepts only those fields. The browser draws the strip from the config, seeded
 by the exam id (`src/lib/coverArt.ts`), so nothing is stored in
 a bucket; the pattern lists in Go and TypeScript must match. The config is

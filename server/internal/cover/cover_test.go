@@ -5,7 +5,7 @@ import "testing"
 func TestCoverCheck(t *testing.T) {
 	for _, c := range []Cover{
 		{Style: "symbols", Color: "#7866cf", Kind: "math"},
-		{Style: "paper", Color: "#2a78d6", Kind: "kana", Line: "わたしは がくせいです。"},
+		{Style: "paper", Color: "#fbf9f3", Kind: "kana", Line: "わたしは がくせいです。"},
 		{Style: "geo", Color: "#1b9e6f", Pattern: "hexagons"},
 		{Style: "shelf", Color: "#d0505e", Seed: "k3x9"},
 		Default("hkdse"),
@@ -21,6 +21,7 @@ func TestCoverCheck(t *testing.T) {
 		{Style: "hero", Color: "#7866cf", Pattern: "topography"},
 		{Style: "symbols", Color: "#7866cf", Kind: "math", Line: "x"},
 		{Style: "photo", Color: "#7866cf"},
+		{Style: "paper", Color: "#2a78d6", Kind: "latin"},
 		{Style: "type", Color: "#7866cf", Seed: "Not-Lower"},
 	} {
 		if c.Check() == nil {

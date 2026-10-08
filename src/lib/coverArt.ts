@@ -359,6 +359,17 @@ function shelf(id: string, color: string) {
   );
 }
 
+/** Paper covers: the colour is the paper; print and pen are fixed. */
+export const PAPER_COLORS = [
+  '#fbf9f3',
+  '#ffffff',
+  '#eceef1',
+  '#f8efc9',
+] as const;
+const PAPER_LINE = '#6f8fbf';
+const GENKO_LINE = '#b98a6a';
+export const PAPER_INK = '#2f4f86';
+
 function paper(color: string, kind: Kind, line: string) {
   let lines = '';
   if (kind === 'math') {
@@ -380,10 +391,10 @@ function paper(color: string, kind: Kind, line: string) {
       : '';
   const italic = kind === 'kana' ? '' : ' font-style="italic"';
   const hand = line
-    ? `<text x="${W - 14}" y="22" text-anchor="end" font-size="${kind === 'kana' ? 13 : 15}" fill="${color}" fill-opacity=".8" font-family="${glyphFont(kind)}"${italic} transform="rotate(-3 ${W - 14} 22)">${xmlText(line)}</text>`
+    ? `<text x="${W - 14}" y="22" text-anchor="end" font-size="${kind === 'kana' ? 13 : 15}" fill="${PAPER_INK}" fill-opacity=".85" font-family="${glyphFont(kind)}"${italic} transform="rotate(-3 ${W - 14} 22)">${xmlText(line)}</text>`
     : '';
   return svg(
-    `<rect width="${W}" height="${H}" fill="#fbf9f3"/><path d="${lines}" stroke="${color}" stroke-opacity=".2"/><g fill="none" stroke="${color}" stroke-opacity=".22">${squares}</g>${margin}${hand}`,
+    `<rect width="${W}" height="${H}" fill="${color}"/><path d="${lines}" stroke="${PAPER_LINE}" stroke-opacity=".3"/><g fill="none" stroke="${GENKO_LINE}" stroke-opacity=".45">${squares}</g>${margin}${hand}`,
     'xMax'
   );
 }

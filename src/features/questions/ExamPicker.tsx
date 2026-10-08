@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/Input';
 import { Popover, PopoverContent } from '@/components/ui/Popover';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { glyphFont, LEAD_GLYPH } from '@/lib/coverArt';
+import { glyphFont, LEAD_GLYPH, PAPER_INK } from '@/lib/coverArt';
 import type { BankExam } from './bank';
 
 /**
@@ -29,8 +29,9 @@ export function ExamTile({ exam }: { exam: BankExam }) {
           kind !== 'kana' && 'italic'
         )}
         style={{
-          backgroundColor: paint.light ? '#fbf9f3' : paint.color,
-          color: paint.light ? paint.color : '#fff',
+          // Paper is the paper colour with pen ink; symbols are white on colour.
+          backgroundColor: paint.color,
+          color: style === 'paper' ? PAPER_INK : '#fff',
           fontFamily: glyphFont(kind),
         }}
       >

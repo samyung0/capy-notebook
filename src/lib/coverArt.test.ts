@@ -12,7 +12,7 @@ it('draws every cover style and escapes text inside the SVG', () => {
     { color, kind: 'latin', style: 'symbols' },
     { color, kind: 'kana', style: 'doodles' },
     { color, style: 'shelf' },
-    { color, kind: 'math', line: 'Q&A <1>', style: 'paper' },
+    { color: '#fbf9f3', kind: 'math', line: 'Q&A <1>', style: 'paper' },
     { color, style: 'type' },
     { color, pattern: 'hexagons', style: 'geo' },
     { color, pattern: 'graphPaper', style: 'hero' },

@@ -27,6 +27,9 @@ var (
 	HeroPatterns = []string{"bankNote", "bubbles", "current", "diagonalLines", "endlessClouds", "formalInvitation", "fourPointStars", "graphPaper", "hexagons", "jigsaw", "overlappingCircles", "plus", "polkaDots", "signal", "texture", "wiggle", "xEquals", "zigZag"}
 	// Palette is the covers' colour choice in the app and for defaults.
 	Palette = []string{"#7866cf", "#2a78d6", "#1b9e6f", "#d0505e", "#eb6834", "#c48a00", "#5b6472"}
+	// PaperPalette is a paper cover's colours: the paper itself (cream, white,
+	// grey, yellow); its lines and ink are fixed.
+	PaperPalette = []string{"#fbf9f3", "#ffffff", "#eceef1", "#f8efc9"}
 )
 
 // Default is a GeoPattern in a palette colour, both picked from the id so it
@@ -40,6 +43,9 @@ func Default(id string) Cover {
 func (c Cover) Check() error {
 	if !color.MatchString(c.Color) {
 		return errors.New("cover color must be #rrggbb in lower case")
+	}
+	if c.Style == "paper" && !slices.Contains(PaperPalette, c.Color) {
+		return fmt.Errorf("a paper cover's color is its paper: one of %v", PaperPalette)
 	}
 	if !seed.MatchString(c.Seed) {
 		return errors.New("cover seed must be at most 16 lower-case letters and digits")

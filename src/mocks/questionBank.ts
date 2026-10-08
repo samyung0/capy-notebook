@@ -232,7 +232,7 @@ export const questionBankHandlers = [
         },
         {
           cover: {
-            color: '#2a78d6',
+            color: '#fbf9f3',
             kind: 'latin',
             line: 'Paraphrase, then summarise.',
             style: 'paper',

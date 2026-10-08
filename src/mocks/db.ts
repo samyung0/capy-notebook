@@ -301,7 +301,7 @@ export const workspaces: Workspace[] = [
       canView: true,
     },
     chapterCount: 0,
-    cover: { color: '#d0505e', kind: 'latin', style: 'paper' },
+    cover: { color: '#f8efc9', kind: 'latin', style: 'paper' },
     createdAt: days(8),
     description: '',
     fileCount: 0,

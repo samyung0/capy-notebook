@@ -42,7 +42,10 @@ export function WorkspaceFormDialog({
 }: {
   open: boolean;
   setOpen: (open: boolean) => void;
-  workspace: CreateWorkspaceReq & { id?: string; cover?: CoverConfig };
+  workspace: CreateWorkspaceReq &
+    Partial<
+      Pick<Workspace, 'chapterCount' | 'cover' | 'fileCount' | 'id' | 'privacy'>
+    >;
   onSubmit: (values: WorkspaceFormValues) => Promise<Workspace | void>;
   mode: 'create' | 'edit';
   embedded?: boolean;
@@ -58,7 +61,11 @@ export function WorkspaceFormDialog({
     mode: 'onChange',
     resolver: zodResolver(WorkspaceFormBody),
   });
-  const name = useWatch({ control, name: 'name' });
+  // The cover picker previews the card with the unsaved name, icon and tags.
+  const [name, iconId, tags] = useWatch({
+    control,
+    name: ['name', 'iconId', 'tags'],
+  });
   const wasOpen = useRef(false);
   useEffect(() => {
     if (open && !wasOpen.current) {
@@ -120,8 +127,15 @@ export function WorkspaceFormDialog({
             <div className="flex flex-col gap-1.5">
               <InputTitle>{m.cover_label()}</InputTitle>
               <CoverField
+                card={{
+                  chapterCount: workspace.chapterCount ?? 0,
+                  fileCount: workspace.fileCount ?? 0,
+                  iconId: iconId ?? workspace.iconId ?? '',
+                  name: name || workspace.name,
+                  privacy: workspace.privacy ?? 'private',
+                  tags: tags ?? [],
+                }}
                 disabled={isSubmitting}
-                label={name || workspace.name}
                 onChange={field.onChange}
                 ownerId={workspace.id ?? ''}
                 value={field.value ?? null}
