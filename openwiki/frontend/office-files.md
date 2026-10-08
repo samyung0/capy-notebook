@@ -340,8 +340,21 @@ and edits after a capture land beside them exactly. A break that opens its
 paragraph's text is flagged `leading` (this replaced the `pageBreakBeforeRun`
 paragraph attribute): the save writes it as the paragraph's first run, and the
 editor keeps the paragraph's space-before after it only while text follows,
-as the saved file does. Other breaks that open a paragraph slot are written
-as trailing breaks of the paragraph before it. A break with no paragraph
+as the saved file does. A paragraph whose text ends in a page break (Enter
+right after a mid-paragraph break, or deleting the text after one) keeps its
+mark on the break's page, as Word does when the file does not set
+`splitPgBreakAndParaMark`: the last text part runs to the mark
+(`flush_paragraph_parts`), the next paragraph opens the next page, and a
+caret at the mark sits after the text (`caret_rect` in
+`docx-layout/src/hit.rs` places a position nothing paints after the text
+before it). The parser does not read `splitPgBreakAndParaMark`, so a file
+setting it still lays out Word's default way. The seed moves a file's page
+break after a paragraph's last text onto the next paragraph's slot, which
+lays out the same, so the editor and the reopened file look alike while
+their units differ (the toolbar's break opens the next slot and saves as the
+previous paragraph's trailing break, so the seed keeps reading such breaks
+that way). Other breaks that open a paragraph slot are written as trailing
+breaks of the paragraph before it. A break with no paragraph
 before it and no text to lead (a story's start, right before a table) saves
 as a break-only paragraph of its own, and an insertion there after a capture
 refuses the rebase; a text-less paragraph whose breaks end in a column break
@@ -419,8 +432,10 @@ the two (`merge_paragraphs` in `crates/docx-edit`):
   is empty: then Delete at its end, or Backspace at the start of the break's
   paragraph, removes the empty paragraph and hands its bookmarks to the
   paragraph that stays, so Enter at the start of a break's paragraph then
-  Delete or Backspace restores the document. Deleting the text after a break,
-  or Enter right after it, leaves the break before an empty paragraph;
+  Delete or Backspace restores the document. Deleting the text after a
+  break that has text before it leaves the break ending its paragraph, the
+  mark on the break's page; after a break that opens its paragraph it leaves
+  the break before an empty paragraph;
 - before a table or block content control it removes the paragraph when that
   is empty (nothing but its mark and comment reference fields, which show
   nothing; the table's paragraph keeps its own properties), and otherwise

@@ -303,15 +303,6 @@ check); it applies at the first promotion.
   2026-10-08): Home/End go to the paragraph's start and end, not the line's
   (Shift+End from text before a break selects across it; Word stops at the
   line end). Needs the display line plus a caret affinity at a wrap point.
-- **Enter right after a mid-paragraph break** (docx-breaks review,
-  2026-10-06; decided 2026-10-08: the seed keeps a page break ending a
-  paragraph's text where Word put it): the editor gives `Aa[pageBreak]¶Bb¶`,
-  the reopened file `Aa¶[pageBreak]Bb¶`. The seed change is ready (fork-small
-  `patches/seed-keeps-trailing-page-break.patch`, both seeders) but makes the
-  bridge paint that paragraph's mark as an empty line at the top of the next
-  page, where Word (no `splitPgBreakAndParaMark`) keeps the mark on the
-  break's page; `mid_paragraph_breaks.rs` pins Word's layout. Waits for the
-  layout decision in the Rust round's `fork-small/PROGRESS.md`.
 - **Recovery logging** (decided 2026-10-05): log each draft from another epoch
   entering copy-only recovery (no late merge), in the `edit_incidents` table.
 - **Editing incident log** (decided 2026-10-05, with the optimization round):
