@@ -166,7 +166,7 @@ fn paste_time(blocks: usize) -> Duration {
         .transact()
         .encode_state_as_update_v1(&room.transact().state_vector());
     let decoded = ydoc::decode(&update).unwrap();
-    (0..3)
+    (0..5)
         .map(|_| {
             // A bound in place, as in a room that has measured once.
             let mut validator = Validator::default();
@@ -196,11 +196,12 @@ fn a_paste_is_admitted_in_linear_time() {
     let small = paste_time(600);
     let large = paste_time(2_400);
     eprintln!("admit of a paste: 600 blocks {small:?}, 2,400 blocks {large:?}");
-    // Four times the blocks in under eight times the time: linear passes
-    // (about 5x measured), quadratic (16x) does not. Before the memo,
-    // release: 184 ms for 1,000 blocks and 734 ms for 2,000.
+    // Four times the blocks in under ten times the time (best of five, the
+    // other test of this file runs beside it): linear passes (about 5x
+    // measured), quadratic (16x) does not. Before the memo, release: 184 ms
+    // for 1,000 blocks and 734 ms for 2,000.
     assert!(
-        large < small * 8 + Duration::from_millis(20),
+        large < small * 10 + Duration::from_millis(20),
         "{small:?} -> {large:?}"
     );
 }

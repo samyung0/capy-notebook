@@ -162,13 +162,33 @@ impl<'a> Incoming<'a> {
 }
 
 /// `inspectUpdate`: O(update), read against the room, never a copy of it.
-pub fn inspect_update<T: ReadTxn>(txn: &T, update: &Update) -> Inspection {
+pub fn inspect_update<T: ReadTxn>(txn: &T, update: &Update) -> Result<Inspection, UpdateError> {
     inspect(txn, &Incoming::new(update))
 }
 
 /// [inspect_update] over an update already indexed (a note's admit indexes
 /// it once for this and its growth bound).
-pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Inspection {
+///
+/// An update whose struct refers (origin, right origin or parent) to the same
+/// or a later clock of its own client is malformed: a client's structs
+/// integrate in clock order, so it would stay pending in the room forever.
+pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, UpdateError> {
+    for item in incoming.items() {
+        let ID { client, clock } = *item.id();
+        let parent = match item.update_parent() {
+            UpdateParent::Item(parent) => Some(parent),
+            _ => None,
+        };
+        let forward = [item.origin(), item.right_origin(), parent]
+            .into_iter()
+            .flatten()
+            .any(|reference| reference.client == client && reference.clock >= clock);
+        if forward {
+            return Err(UpdateError::Decode(format!(
+                "struct {clock} of client {client} refers to itself or a later struct of its client"
+            )));
+        }
+    }
     let update = incoming.update();
     let state = txn.state_vector();
     let held = |client: &ClientID| state.get(client);
@@ -272,7 +292,7 @@ pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Inspection {
             Found::At(container) => containers.push(container),
         }
     }
-    Inspection { containers, unheld }
+    Ok(Inspection { containers, unheld })
 }
 
 /// `yjsUpdateContainsChanges`: whether a read-only connection's sync frame

@@ -38,6 +38,9 @@ use ydoc::Incoming;
 const LEAF_BYTES: u64 = 12;
 const ELEMENT_BYTES: u64 = 16;
 const SPLIT_BYTES: u64 = 4;
+/// The most hidden items one side check walks: a text full of tombstones
+/// would otherwise be walked again for every new item (notes REVIEW3 M8).
+const HIDDEN_WALK: u32 = 32;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
@@ -385,8 +388,7 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
                         || self.adjacent(*text, None, None))
                 } else {
                     // A block between two strings of one leaf splits it.
-                    self.neighbour(left, Side::Origin).is_some_and(is_string)
-                        && self.neighbour(right, Side::Right).is_some_and(is_string)
+                    self.string_beside(left, Side::Origin) && self.string_beside(right, Side::Right)
                 };
             }
             // Re-price the text's leaves: each run of visible held strings
@@ -452,6 +454,7 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
     fn held_side(&self, start: Option<ID>, side: Side) -> Result<Option<ID>, Unbounded> {
         let key = |item: &Item| (*item.id(), matches!(side, Side::Origin));
         let mut chain: Vec<(ID, bool)> = Vec::new();
+        let mut seen: HashSet<(ID, bool)> = HashSet::new();
         let mut id = start;
         let found = loop {
             let Some(current) = id else { break None };
@@ -462,7 +465,7 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
             if let Some(known) = self.sides.borrow().get(&key(next)) {
                 break *known;
             }
-            if chain.contains(&key(next)) {
+            if !seen.insert(key(next)) {
                 return Err(Unbounded);
             }
             chain.push(key(next));
@@ -513,6 +516,7 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
             }
             None => text.start(),
         };
+        let mut budget = HIDDEN_WALK;
         while let Some(current) = item {
             let ID { client, clock } = *current.id();
             if let Some(right) = right
@@ -524,27 +528,38 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
                     || current.is_deleted()
                     || self.decoded.deletes(&client, clock, right.clock);
             }
-            if !self.hidden(current) {
+            // Past the budget the sides count as apart: the caller re-prices
+            // the text once instead of walking its tombstones per new item.
+            if !self.hidden(current) || budget == 0 {
                 return false;
             }
+            budget -= 1;
             item = current.right();
         }
         right.is_none()
     }
 
     /// The nearest visible held item that is not a format, from a position on.
-    fn neighbour(&self, id: Option<ID>, side: Side) -> Option<ItemPtr> {
+    /// Whether the first visible item from `id` towards `side`, past
+    /// hidden items and formats, is a string. Past [HIDDEN_WALK] items it
+    /// answers yes: the caller then re-prices the text, an upper bound.
+    fn string_beside(&self, id: Option<ID>, side: Side) -> bool {
         let mut item = id.and_then(|id| self.held_item(&id));
+        let mut budget = HIDDEN_WALK;
         while let Some(current) = item {
             if !(self.hidden(current) || matches!(current.content(), ItemContent::Format(..))) {
                 break;
             }
+            if budget == 0 {
+                return true;
+            }
+            budget -= 1;
             item = match side {
                 Side::Origin => current.left(),
                 Side::Right => current.right(),
             };
         }
-        item
+        item.is_some_and(is_string)
     }
 }
 

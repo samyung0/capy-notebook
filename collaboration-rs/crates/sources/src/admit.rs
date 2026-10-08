@@ -81,7 +81,10 @@ pub fn admit_update(
             Err(message) => return Admission::Refuse(Refusal::OfficeUpdate(message)),
             Ok(unheld) => unheld,
         },
-        None => ydoc::inspect_update(&txn, &decoded).unheld,
+        None => match ydoc::inspect_update(&txn, &decoded) {
+            Ok(inspection) => inspection.unheld,
+            Err(error) => return Admission::Refuse(Refusal::Malformed(error.to_string())),
+        },
     };
     if unheld {
         Admission::Unheld
@@ -121,7 +124,8 @@ pub fn office_update_violation<T: ReadTxn>(
     update: &Update,
     format: Format,
 ) -> Result<bool, String> {
-    let Inspection { containers, unheld } = ydoc::inspect_update(txn, update);
+    let Inspection { containers, unheld } =
+        ydoc::inspect_update(txn, update).map_err(|error| error.to_string())?;
     let roots = office_service::document_roots(format);
     for found in &containers {
         if !roots.contains(&&*found.root) {

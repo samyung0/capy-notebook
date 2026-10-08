@@ -24,7 +24,9 @@ fn delta(client: &Doc, edit: impl FnOnce(&mut yrs::TransactionMut)) -> Vec<u8> {
 }
 
 fn unheld(room: &Doc, update: &[u8]) -> bool {
-    inspect_update(&room.transact(), &decode(update).unwrap()).unheld
+    inspect_update(&room.transact(), &decode(update).unwrap())
+        .unwrap()
+        .unheld
 }
 
 // officeRoots.test: an update the room cannot integrate in order is unheld.
@@ -57,7 +59,7 @@ fn an_update_out_of_order_is_unheld() {
     ));
     sync(&client, &room);
     let fine = delta(&client, |txn| text.insert(txn, 0, "!"));
-    let inspection = inspect_update(&room.transact(), &decode(&fine).unwrap());
+    let inspection = inspect_update(&room.transact(), &decode(&fine).unwrap()).unwrap();
     assert!(!inspection.unheld);
     assert_eq!(
         inspection.containers,
@@ -113,7 +115,9 @@ fn containers_follow_origins_parents_and_keys() {
         let fresh = client_meta.insert(txn, "fresh", MapPrelim::default());
         fresh.insert(txn, "inner", 3);
     });
-    let mut containers = inspect_update(&room.transact(), &decode(&update).unwrap()).containers;
+    let mut containers = inspect_update(&room.transact(), &decode(&update).unwrap())
+        .unwrap()
+        .containers;
     containers.sort_by(|a, b| a.key.cmp(&b.key));
     let keys: Vec<_> = containers
         .iter()
@@ -144,7 +148,7 @@ fn a_struct_in_a_collected_type_is_gone() {
         .cast::<yrs::TextRef>()
         .unwrap();
     let update = delta(&client, |txn| client_text.insert(txn, 1, "x"));
-    let inspection = inspect_update(&room.transact(), &decode(&update).unwrap());
+    let inspection = inspect_update(&room.transact(), &decode(&update).unwrap()).unwrap();
     assert!(!inspection.unheld);
     assert!(inspection.containers.is_empty());
 }
@@ -256,4 +260,47 @@ fn replay_refuses_pending_content() {
         replay(&target, &first, &[third]),
         Err(ReplayError::Pending)
     ));
+}
+
+/// A struct referring to its own or a later clock of its client can never
+/// integrate (a client integrates in clock order): malformed, not unheld.
+#[test]
+fn a_reference_forward_in_its_own_client_is_malformed() {
+    use yrs::encoding::write::Write;
+    let room = doc(1);
+    room.get_or_insert_text("t")
+        .insert(&mut room.transact_mut(), 0, "hello");
+    // Client 77: struct k takes struct k + 1 as its origin; the last one a
+    // character the room holds.
+    let mut bytes: Vec<u8> = Vec::new();
+    bytes.write_var(1u32);
+    bytes.write_var(3u32);
+    bytes.write_var(77u64);
+    bytes.write_var(0u32);
+    for k in 0..3u32 {
+        bytes.write_u8(0x80 | 4);
+        if k < 2 {
+            bytes.write_var(77u64);
+            bytes.write_var(k + 1);
+        } else {
+            bytes.write_var(1u64);
+            bytes.write_var(4u32);
+        }
+        bytes.write_string("x");
+    }
+    bytes.write_var(0u32);
+    let inspected = inspect_update(&room.transact(), &decode(&bytes).unwrap());
+    assert!(
+        matches!(inspected, Err(UpdateError::Decode(_))),
+        "{inspected:?}"
+    );
+    // Its own earlier clock is how typing chains: fine.
+    let client = doc(2);
+    sync(&room, &client);
+    let text = client.get_or_insert_text("t");
+    let typed = delta(&client, |txn| {
+        text.insert(txn, 5, "a");
+        text.insert(txn, 6, "b");
+    });
+    assert!(!unheld(&room, &typed));
 }

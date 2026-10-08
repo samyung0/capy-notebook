@@ -3,7 +3,7 @@
 //! `JSON.stringify({schemaVersion:1, value})` with runtime comment marks
 //! stripped from text leaves, the node count and the deepest node.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -265,12 +265,13 @@ fn plain_content<T: ReadTxn>(txn: &T, incoming: &ydoc::Incoming) -> Result<(), R
     let mut entries: HashMap<yrs::ID, Option<bool>> = HashMap::new();
     let mut entry = |start: &yrs::block::Item| -> Option<bool> {
         let mut chain: Vec<yrs::ID> = Vec::new();
+        let mut seen: HashSet<yrs::ID> = HashSet::new();
         let mut item = start;
         let found = loop {
             if let Some(known) = entries.get(item.id()) {
                 break *known;
             }
-            if chain.contains(item.id()) {
+            if !seen.insert(*item.id()) {
                 break None;
             }
             chain.push(*item.id());
@@ -350,7 +351,7 @@ impl Validator {
         let txn = doc.transact();
         crate::validate::assert_roots(&txn)?;
         let incoming = ydoc::Incoming::new(update);
-        let inspection = ydoc::inspect(&txn, &incoming);
+        let inspection = ydoc::inspect(&txn, &incoming)?;
         if inspection.unheld {
             return Ok(Admission::Unheld);
         }
