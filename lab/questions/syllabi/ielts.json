@@ -3,6 +3,7 @@
     "id": "ielts",
     "label": "IELTS",
     "full_label": "International English Language Testing System",
+    "description": "English test for study, work and migration, scored in bands from 1 to 9.",
     "position": 2,
     "cover": {
       "style": "paper",

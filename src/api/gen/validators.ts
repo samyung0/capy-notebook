@@ -741,7 +741,8 @@ export const BankSyllabusResponse = zod.object({
   "seed": zod.string().max(bankSyllabusResponseExamsItemCoverSeedMax).regex(bankSyllabusResponseExamsItemCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
   "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
 }),
-  "fullLabel": zod.string().describe('The exam\'s full name, shown and searched in the exam switcher'),
+  "description": zod.string().describe('A 12 to 15 word line shown under the name on exam strips'),
+  "fullLabel": zod.string().describe('The exam\'s full name, searched in the exam switcher and panel search'),
   "id": zod.string(),
   "label": zod.string(),
   "subjects": zod.array(zod.object({

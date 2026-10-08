@@ -3,6 +3,7 @@
     "id": "hkdse",
     "label": "HKDSE",
     "full_label": "Hong Kong Diploma of Secondary Education",
+    "description": "Hong Kong's university entrance exam, taken at the end of secondary school.",
     "position": 1,
     "cover": {
       "style": "symbols",

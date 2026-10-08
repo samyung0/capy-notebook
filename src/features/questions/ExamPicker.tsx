@@ -1,5 +1,10 @@
 import { Popover as PopoverPrimitive } from 'radix-ui';
-import { type KeyboardEvent, useId, useState } from 'react';
+import {
+  type ComponentProps,
+  type KeyboardEvent,
+  useId,
+  useState,
+} from 'react';
 import {
   CoverArt,
   coverBackground,
@@ -10,40 +15,80 @@ import { Input } from '@/components/ui/Input';
 import { Popover, PopoverContent } from '@/components/ui/Popover';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { glyphFont, LEAD_GLYPH, PAPER_INK } from '@/lib/coverArt';
 import type { BankExam } from './bank';
 
+// Corner fades (bank exam list mocks, round 3): white text stays readable on
+// any art, and light covers such as paper need the darker one.
+const FADE =
+  'radial-gradient(ellipse 130% 190% at 0% 100%, rgb(0 0 0 / 0.74), rgb(0 0 0 / 0.4) 60%, rgb(0 0 0 / 0.1) 95%)';
+const LIGHT_FADE =
+  'radial-gradient(ellipse 140% 200% at 0% 100%, rgb(0 0 0 / 0.88), rgb(0 0 0 / 0.6) 60%, rgb(0 0 0 / 0.32) 95%)';
+
+const topicCount = (exam: BankExam) => {
+  const count = exam.subjects.reduce(
+    (sum, subject) => sum + subject.topics.length,
+    0
+  );
+  return count === 1
+    ? m.question_ui_one_topic()
+    : m.question_ui_topic_count({ count });
+};
+
 /**
- * An exam's small square: its cover art, or for symbols and paper covers,
- * whose art crops badly that small, the kind's lead glyph.
+ * An exam as a low cover strip: name, a description of at most two lines and
+ * the topic count, centred against the text. Used by the panel's exam list,
+ * its search and the exam switcher. `active` marks the keyboard's option.
  */
-export function ExamTile({ exam }: { exam: BankExam }) {
+export function ExamStrip({
+  exam,
+  active,
+  selected,
+  className,
+  ...rest
+}: {
+  exam: BankExam;
+  active?: boolean;
+  selected?: boolean;
+} & Omit<ComponentProps<'button'>, 'children'>) {
   const paint = useCoverPaint(exam.id, exam.label, exam.cover);
-  const { kind, style } = exam.cover;
-  if ((style === 'symbols' || style === 'paper') && kind)
-    return (
+  return (
+    <button
+      className={cn(
+        'group relative flex min-h-15 w-full items-end overflow-hidden rounded-button px-3 pt-4.5 pb-2 text-left text-white outline-none focus-visible:ring-2 focus-visible:ring-tint-accent-1-fg',
+        active && 'ring-2 ring-white/70 ring-inset',
+        className
+      )}
+      type="button"
+      {...rest}
+    >
       <span
         aria-hidden
         className={cn(
-          'grid size-7.5 shrink-0 place-items-center rounded-[8px] text-[15px] leading-none',
-          kind !== 'kana' && 'italic'
+          'absolute inset-0 transition-[filter] group-hover:brightness-110',
+          active && 'brightness-110'
         )}
-        style={{
-          // Paper is the paper colour with pen ink; symbols are white on colour.
-          backgroundColor: paint.color,
-          color: style === 'paper' ? PAPER_INK : '#fff',
-          fontFamily: glyphFont(kind),
-        }}
-      >
-        {LEAD_GLYPH[kind]}
+        style={coverBackground(paint)}
+      />
+      <span
+        aria-hidden
+        className="absolute inset-0"
+        style={{ backgroundImage: paint.light ? LIGHT_FADE : FADE }}
+      />
+      <span className="relative flex w-full min-w-0 items-center gap-2.5">
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-bold leading-snug">
+            {exam.label}
+          </span>
+          <span className="t-meta line-clamp-2 text-white/85 leading-[1.3]">
+            {exam.description}
+          </span>
+        </span>
+        <span className="shrink-0 whitespace-nowrap font-bold text-white/90 text-xs tabular-nums [text-shadow:0_1px_3px_rgb(0_0_0/0.55)]">
+          {topicCount(exam)}
+        </span>
+        {selected && <Icon className="size-4 shrink-0" name="tick" />}
       </span>
-    );
-  return (
-    <span
-      aria-hidden
-      className="size-7.5 shrink-0 rounded-[8px]"
-      style={coverBackground(paint)}
-    />
+    </button>
   );
 }
 
@@ -155,7 +200,7 @@ export function ExamPicker({
       <PopoverContent
         align="start"
         alignWidthToTrigger
-        className="gap-1.5 rounded-card p-1.5"
+        className="gap-2 rounded-card p-2"
         // Inside the phone sheet the list must render in the sheet's layer.
         container={anchor?.closest<HTMLElement>('[data-slot="drawer-content"]')}
         sideOffset={6}
@@ -169,6 +214,7 @@ export function ExamPicker({
           aria-expanded
           aria-label={m.question_ui_find_an_exam()}
           autoComplete="off"
+          className="py-0"
           leftIcon="search"
           onChange={(event) => {
             setQuery(event.target.value);
@@ -182,38 +228,23 @@ export function ExamPicker({
           wrapperClassName="h-9 w-full text-sm"
         />
         <div
-          className="flex max-h-80 flex-col gap-0.5 overflow-auto"
+          className="flex max-h-96 flex-col gap-2.5 overflow-auto"
           id={listId}
           role="listbox"
         >
           {matches.map((item, i) => (
-            <button
+            <ExamStrip
+              active={i === activeIdx}
               aria-selected={item.id === exam.id}
-              className={cn(
-                'flex w-full items-center gap-2.5 rounded-button px-2 py-1.5 text-left',
-                i === activeIdx ? 'bg-overlay-hover' : 'hover:bg-overlay-hover'
-              )}
+              exam={item}
               id={`${listId}-${i}`}
               key={item.id}
               onClick={() => pick(item.id)}
               onMouseEnter={() => setActive(i)}
               role="option"
+              selected={item.id === exam.id}
               tabIndex={-1}
-              type="button"
-            >
-              <ExamTile exam={item} />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate font-semibold">
-                  {item.label}
-                </span>
-                <span className="t-meta block truncate text-fg-muted">
-                  {item.fullLabel}
-                </span>
-              </span>
-              {item.id === exam.id && (
-                <Icon className="size-4 shrink-0" name="tick" />
-              )}
-            </button>
+            />
           ))}
         </div>
         {!matches.length && (

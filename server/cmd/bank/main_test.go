@@ -61,7 +61,7 @@ func TestPublicationNeverOverwritesExistingQuestions(t *testing.T) {
 	if err = insertPublication(ctx, pool, p); err == nil {
 		t.Fatal("published under an exam no catalog added")
 	}
-	if err = upsertExams(ctx, pool, []examRecord{{ID: "exam", Label: "Exam", FullLabel: "Example exam", Position: 1}}); err != nil {
+	if err = upsertExams(ctx, pool, []examRecord{{ID: "exam", Label: "Exam", FullLabel: "Example exam", Description: "An exam for tests.", Position: 1}}); err != nil {
 		t.Fatal(err)
 	}
 	var style string
@@ -72,7 +72,7 @@ func TestPublicationNeverOverwritesExistingQuestions(t *testing.T) {
 	if _, err = pool.Exec(ctx, `UPDATE exams SET cover='{"style":"type","color":"#7866cf"}'`); err != nil {
 		t.Fatal(err)
 	}
-	if err = upsertExams(ctx, pool, []examRecord{{ID: "exam", Label: "Exam", FullLabel: "Example exam", Position: 1}}); err != nil {
+	if err = upsertExams(ctx, pool, []examRecord{{ID: "exam", Label: "Exam", FullLabel: "Example exam", Description: "An exam for tests.", Position: 1}}); err != nil {
 		t.Fatal(err)
 	}
 	if err = pool.QueryRow(ctx, "SELECT cover->>'style' FROM exams WHERE id='exam'").Scan(&style); err != nil || style != "type" {

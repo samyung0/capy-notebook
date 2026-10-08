@@ -113,11 +113,12 @@ type Subject struct {
 	Topics []Topic `json:"topics"`
 }
 type Exam struct {
-	ID        string    `json:"id"`
-	Label     string    `json:"label"`
-	FullLabel string    `json:"fullLabel" doc:"The exam's full name, shown and searched in the exam switcher"`
-	Cover     Cover     `json:"cover"`
-	Subjects  []Subject `json:"subjects"`
+	ID          string    `json:"id"`
+	Label       string    `json:"label"`
+	FullLabel   string    `json:"fullLabel" doc:"The exam's full name, searched in the exam switcher and panel search"`
+	Description string    `json:"description" doc:"A 12 to 15 word line shown under the name on exam strips"`
+	Cover       Cover     `json:"cover"`
+	Subjects    []Subject `json:"subjects"`
 }
 
 // Cover is shared with workspace cards (package cover).
@@ -135,7 +136,7 @@ func (s *Store) Syllabus(ctx context.Context) (Syllabus, error) {
 	if err != nil {
 		return out, err
 	}
-	rows, err := p.Query(ctx, `SELECT e.id,e.label,e.full_label,e.cover,s.id,s.label,t.id,t.label,count(q.id),count(q.reviewed_at)
+	rows, err := p.Query(ctx, `SELECT e.id,e.label,e.full_label,e.description,e.cover,s.id,s.label,t.id,t.label,count(q.id),count(q.reviewed_at)
  FROM exams e LEFT JOIN subjects s ON s.exam_id=e.id LEFT JOIN topics t ON t.subject_id=s.id
  LEFT JOIN questions q ON q.topic_id=t.id AND q.retracted_at IS NULL GROUP BY e.id,s.id,t.id ORDER BY e.position,e.id,s.position,s.id,t.position,t.id`)
 	if err != nil {
@@ -143,15 +144,15 @@ func (s *Store) Syllabus(ctx context.Context) (Syllabus, error) {
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var eid, el, full string
+		var eid, el, full, desc string
 		var cover Cover
 		var sid, sl, tid, tl *string
 		var total, reviewed int
-		if err := rows.Scan(&eid, &el, &full, &cover, &sid, &sl, &tid, &tl, &total, &reviewed); err != nil {
+		if err := rows.Scan(&eid, &el, &full, &desc, &cover, &sid, &sl, &tid, &tl, &total, &reviewed); err != nil {
 			return out, dbError(err)
 		}
 		if len(out.Exams) == 0 || out.Exams[len(out.Exams)-1].ID != eid {
-			out.Exams = append(out.Exams, Exam{ID: eid, Label: el, FullLabel: full, Cover: cover, Subjects: []Subject{}})
+			out.Exams = append(out.Exams, Exam{ID: eid, Label: el, FullLabel: full, Description: desc, Cover: cover, Subjects: []Subject{}})
 		}
 		e := &out.Exams[len(out.Exams)-1]
 		if sid == nil {

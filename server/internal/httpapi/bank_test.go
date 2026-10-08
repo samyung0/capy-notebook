@@ -56,7 +56,7 @@ func openTestBank(t *testing.T, st *store.Store, dsn string) (string, *pgxpool.P
 	if err := store.MigrateFS(ctx, pool, bankmigrations.FS); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO exams VALUES('e','Exam',1,'Example exam','{"style":"type","color":"#7866cf"}');INSERT INTO subjects VALUES('s','e','Subject',1);INSERT INTO topics VALUES('t','s','Topic',1)`); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO exams VALUES('e','Exam',1,'Example exam','{"style":"type","color":"#7866cf"}','An exam for tests.');INSERT INTO subjects VALUES('s','e','Subject',1);INSERT INTO topics VALUES('t','s','Topic',1)`); err != nil {
 		t.Fatal(err)
 	}
 	return bankDSN, pool

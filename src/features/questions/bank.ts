@@ -26,8 +26,10 @@ export type BankSubject = { id: string; label: string; topics: BankTopic[] };
 export type BankExam = {
   id: string;
   label: string;
-  /** The full name, shown and searched in the exam switcher. */
+  /** The full name; panel and switcher searches match it. */
   fullLabel: string;
+  /** A short line under the name on exam strips, wrapped to two lines. */
+  description: string;
   cover: CoverConfig;
   subjects: BankSubject[];
 };

@@ -525,7 +525,7 @@ export function FilesPanel({
                       )}
                     </div>
                     {expanded && (
-                      <div className="flex flex-col pl-5">
+                      <div className="flex flex-col pl-7">
                         {contentFor(ch.id).map((item) =>
                           renderContentItem(item, ch.id)
                         )}

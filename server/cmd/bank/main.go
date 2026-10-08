@@ -411,11 +411,13 @@ func insertPublication(ctx context.Context, pool *pgxpool.Pool, p publication) e
 
 // examRecord is a syllabus catalog's exam (lab/questions/syllabi).
 type examRecord struct {
-	ID        string      `json:"id"`
-	Label     string      `json:"label"`
-	FullLabel string      `json:"full_label"`
-	Position  int         `json:"position"`
-	Cover     *bank.Cover `json:"cover"`
+	ID        string `json:"id"`
+	Label     string `json:"label"`
+	FullLabel string `json:"full_label"`
+	// Description is the 12 to 15 word line under the name on exam strips.
+	Description string      `json:"description"`
+	Position    int         `json:"position"`
+	Cover       *bank.Cover `json:"cover"`
 }
 
 func loadExams(dir string) ([]examRecord, error) {
@@ -436,8 +438,8 @@ func loadExams(dir string) ([]examRecord, error) {
 			return nil, fmt.Errorf("%s: %w", path, e)
 		}
 		x := catalog.Exam
-		if x.ID == "" || x.Label == "" || x.FullLabel == "" || x.Position < 1 {
-			return nil, fmt.Errorf("%s: exam needs id, label, full_label and a position from 1", path)
+		if x.ID == "" || x.Label == "" || x.FullLabel == "" || x.Description == "" || x.Position < 1 {
+			return nil, fmt.Errorf("%s: exam needs id, label, full_label, description and a position from 1", path)
 		}
 		if x.Cover != nil {
 			if e = x.Cover.Check(); e != nil {
@@ -463,9 +465,9 @@ func upsertExams(ctx context.Context, pool *pgxpool.Pool, exams []examRecord) er
 	defer tx.Rollback(ctx)
 	ids := []string{}
 	for _, x := range exams {
-		if _, err = tx.Exec(ctx, `INSERT INTO exams(id,label,full_label,position,cover) VALUES($1,$2,$3,$4,COALESCE($5::jsonb,$6::jsonb))
- ON CONFLICT(id) DO UPDATE SET label=excluded.label,full_label=excluded.full_label,position=excluded.position,cover=COALESCE($5::jsonb,exams.cover)`,
-			x.ID, x.Label, x.FullLabel, x.Position, x.Cover, cover.Default(x.ID)); err != nil {
+		if _, err = tx.Exec(ctx, `INSERT INTO exams(id,label,full_label,description,position,cover) VALUES($1,$2,$3,$4,$5,COALESCE($6::jsonb,$7::jsonb))
+ ON CONFLICT(id) DO UPDATE SET label=excluded.label,full_label=excluded.full_label,description=excluded.description,position=excluded.position,cover=COALESCE($6::jsonb,exams.cover)`,
+			x.ID, x.Label, x.FullLabel, x.Description, x.Position, x.Cover, cover.Default(x.ID)); err != nil {
 			return err
 		}
 		ids = append(ids, x.ID)

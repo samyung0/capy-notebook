@@ -9,7 +9,9 @@ import type { Subject } from './subject.ts';
 
 export interface Exam {
   cover: Cover;
-  /** The exam's full name, shown and searched in the exam switcher */
+  /** A 12 to 15 word line shown under the name on exam strips */
+  description: string;
+  /** The exam's full name, searched in the exam switcher and panel search */
   fullLabel: string;
   id: string;
   label: string;

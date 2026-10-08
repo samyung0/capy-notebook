@@ -40,7 +40,9 @@ export function QuestionListRow({
       aria-current={current ? 'true' : undefined}
       className={cn(
         'grid w-full grid-cols-[1.5rem_minmax(0,1fr)] rounded-button py-2 pr-1 pl-2 text-left text-sm hover:bg-surface-hover-bg',
-        (marked || picking) && 'grid-cols-[1.75rem_1.5rem_minmax(0,1fr)]',
+        // The result circle or checkbox sits 2px left of the panel's icons.
+        (marked || picking) &&
+          'grid-cols-[1.75rem_1.5rem_minmax(0,1fr)] pl-3.5',
         current && 'bg-surface-hover-bg'
       )}
       data-result={marked ? status : undefined}

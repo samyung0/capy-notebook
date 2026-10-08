@@ -11,8 +11,9 @@ to learners.
 | `ielts.json` | IELTS Academic Reading | 7 passage subject areas |
 
 Each JSON has one `exam` and a `subjects` array. A subject contains `topics`.
-The exam also carries `full_label` and an optional `cover` for the bank's exam
-switcher (fields in `openwiki/question-bank.md`, Exam switcher and covers);
+The exam also carries `full_label`, a 12 to 15 word `description` (shown under
+the name on the exam strips, cut after two lines) and an optional `cover` for
+the bank's exam switcher (fields in `openwiki/question-bank.md`, Exam switcher and covers);
 `go run ./cmd/bank exams ../lab/questions/syllabi` from `server` writes them, and
 a new exam without a cover gets a default one picked from its id. A paper cover's colour is the paper itself: #fbf9f3, #ffffff, #eceef1 or #f8efc9.
 IDs are stable and namespaced; positions are one-based within their parent.

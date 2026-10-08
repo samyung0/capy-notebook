@@ -1652,8 +1652,11 @@ components:
       properties:
         cover:
           $ref: "#/components/schemas/Cover"
+        description:
+          description: A 12 to 15 word line shown under the name on exam strips
+          type: string
         fullLabel:
-          description: The exam's full name, shown and searched in the exam switcher
+          description: The exam's full name, searched in the exam switcher and panel search
           type: string
         id:
           type: string
@@ -1668,6 +1671,7 @@ components:
         - id
         - label
         - fullLabel
+        - description
         - cover
         - subjects
       type: object

@@ -15,19 +15,27 @@ quizzes; production Jev grading remains in `todo-question-bank.md`.
 
 ## Exam switcher and covers
 
-The topics view shows one exam at a time (`TopicTree` in
-`src/routes/QuestionBank.tsx`): `ExamPicker` (`src/features/questions/ExamPicker.tsx`)
-draws the picked exam as a cover strip with its name and subject and question
-counts over the art, and opens a list of every exam with a Find an exam search
-over the short and full names. The panel opens on the exam holding the current
-topic, else the first. Subjects start collapsed except the one holding the
-current topic; a collapsed subject shows its question count. The header's
-topic search lists the topics whose topic or subject name matches, the picked
-exam's first and then other exams' under "In other exams" with the exam on
-each row's second line (mock S2); it filters the syllabus already loaded, so it
-sends no request. Picking another exam's result switches the exam.
+The topics view (`TopicTree` in `src/routes/QuestionBank.tsx`) opens on
+every exam as a cover strip (`ExamStrip` in
+`src/features/questions/ExamPicker.tsx`): the name, the exam's description
+wrapped to at most two lines and its topic count, over a dark fade from the
+bottom-left corner (a darker one on light covers). Picking one sets
+`/qb?exam=<id>` and shows that exam: `ExamPicker` draws it as a taller strip
+with subject and question counts and opens a list of every exam (the same
+strips) with a Find an exam search. A topic URL opens its own exam unless
+`exam` names another, and a back arrow (only without an open topic) returns to
+the list. Subjects start collapsed except the one holding the current topic; a
+collapsed subject shows its question count, and an open one indents its topics
+under a guide line. The header search (`searchSyllabus` in
+`src/features/questions/bankSearch.ts`) lists exams and topics together, best
+first: the name exactly, at its start, at a later word's start, anywhere (an
+exam's full name or description counts from the word-start rank), then topics
+whose subject or exam matches; ties put exams first, then syllabus order. With
+an exam open its topics come first and the rest go under "In other exams". It
+filters the syllabus already loaded, so it sends no request.
 
-The syllabus gives each exam `fullLabel` and `cover`: a style (`symbols`,
+The syllabus gives each exam `fullLabel`, a 12 to 15 word `description` (bank
+migration 0006) and `cover`: a style (`symbols`,
 `doodles`, `shelf`, `paper`, `type`, `geo`, `hero`), a `#rrggbb` colour, and the
 style's own fields: `kind` (`math`, `latin`, `kana`) for symbols, doodles and
 paper, `pattern` for geo (a GeoPattern generator) and hero (one of 18 Hero

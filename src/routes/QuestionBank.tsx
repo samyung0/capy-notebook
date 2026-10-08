@@ -62,8 +62,12 @@ import {
   storeBankEdit,
   uploadBankAsset,
 } from '@/features/questions/bank';
+import {
+  type SyllabusHit,
+  searchSyllabus,
+} from '@/features/questions/bankSearch';
 import { CopyToQuizDialog } from '@/features/questions/CopyToQuizDialog';
-import { ExamPicker } from '@/features/questions/ExamPicker';
+import { ExamPicker, ExamStrip } from '@/features/questions/ExamPicker';
 import { answerLabels } from '@/features/questions/editorFields';
 import {
   QuestionListRow,
@@ -261,7 +265,10 @@ export default function QuestionBank() {
   function setMode(next: 'view' | 'edit') {
     const options = {
       replace: true,
-      search: { mode: next === 'edit' ? ('edit' as const) : undefined },
+      search: {
+        exam: search.exam,
+        mode: next === 'edit' ? ('edit' as const) : undefined,
+      },
     };
     if (topicId)
       void navigate({ ...options, params: { topicId }, to: '/qb/$topicId' });
@@ -315,11 +322,19 @@ export default function QuestionBank() {
     )
     .find(({ item }) => item.id === topicId);
 
+  /** Opens an exam in the side panel, or the exam list, on the current page. */
+  function openExam(exam: string | undefined) {
+    void navigate({ search: { ...modeSearch, exam }, to: '.' });
+  }
+
   const nav = syllabus ? (
     showTopics || !topicId ? (
       <TopicTree
         edit={mode === 'edit'}
+        examId={search.exam ?? place?.exam.id}
         filter={topicFilter}
+        onAllExams={topicId ? undefined : () => openExam(undefined)}
+        onExam={openExam}
         onFilter={setTopicFilter}
         onTopic={topic}
         syllabus={syllabus}
@@ -535,7 +550,7 @@ export default function QuestionBank() {
                   </div>
                 }
               />
-              <div className="px-6 pt-6 pb-28 lg:pb-10">
+              <div className="px-4 pt-6 pb-28 sm:px-6 lg:pb-10">
                 <div className="max-w-3xl">{body}</div>
               </div>
             </>
@@ -1088,110 +1103,129 @@ function Highlight({ text, needle }: { text: string; needle: string }) {
 }
 
 /**
- * One exam at a time, picked from its cover strip, then its subjects with
- * indented topics. Subjects start collapsed except the current topic's. A
- * search lists matching topics from the syllabus: the picked exam's first,
- * then other exams' (mock S2), so it needs no request of its own.
+ * Every exam as a cover strip until one is open (the URL's `exam`, or the
+ * open topic's exam), then that exam's switcher and its subjects with indented
+ * topics; subjects start collapsed except the current topic's. A search lists
+ * exams and topics from every exam together (searchSyllabus); with an exam
+ * open, its topics come first and the rest go under "In other exams".
  */
 function TopicTree({
   syllabus,
+  examId,
   topicId,
   edit,
   filter,
   onFilter,
+  onExam,
+  onAllExams,
   onTopic,
 }: {
   syllabus: BankSyllabus;
+  examId?: string;
   topicId: string;
   edit: boolean;
   filter: string;
   onFilter: (value: string) => void;
+  onExam: (id: string) => void;
+  /** Back to the exam list; only offered without an open topic. */
+  onAllExams?: () => void;
   onTopic: (id: string) => void;
 }) {
   const current = syllabus.exams
     .flatMap((exam) => exam.subjects.map((subject) => ({ exam, subject })))
     .find(({ subject }) => subject.topics.some((item) => item.id === topicId));
-  const [picked, setPicked] = useState(current?.exam.id);
   const [open, setOpen] = useState(
     () => new Set(current ? [current.subject.id] : [])
   );
-  const exam =
-    syllabus.exams.find((item) => item.id === picked) ?? syllabus.exams[0];
+  const exam = syllabus.exams.find((item) => item.id === examId);
   const needle = filter.trim().toLocaleLowerCase();
-  const hits = needle
-    ? syllabus.exams.flatMap((hitExam) =>
-        hitExam.subjects.flatMap((subject) =>
-          subject.topics
-            .filter((item) =>
-              [subject.label, item.label].some((label) =>
-                label.toLocaleLowerCase().includes(needle)
-              )
-            )
-            .map((item) => ({ exam: hitExam, item, subject }))
-        )
-      )
+  const hits = needle ? searchSyllabus(syllabus.exams, needle) : [];
+  const here = exam
+    ? hits.filter((hit) => hit.kind === 'topic' && hit.exam.id === exam.id)
     : [];
-  const here = hits.filter((hit) => hit.exam.id === exam?.id);
-  const away = hits.filter((hit) => hit.exam.id !== exam?.id);
+  const away = exam ? hits.filter((hit) => hit.exam.id !== exam.id) : hits;
   const count = (item: BankTopic) => (
     <span className="shrink-0 font-semibold text-fg-muted text-xs tabular-nums">
       {edit ? `${item.reviewed}/${item.total}` : item.total}
     </span>
   );
-  const hitRow = (hit: (typeof hits)[number], other: boolean) => (
-    <button
-      aria-current={hit.item.id === topicId ? 'page' : undefined}
-      className={cn(
-        'flex w-full items-center gap-2 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg',
-        hit.item.id === topicId && 'bg-surface-hover-bg'
-      )}
-      key={hit.item.id}
-      onClick={() => {
-        setPicked(hit.exam.id);
-        setOpen((prev) => new Set(prev).add(hit.subject.id));
-        onTopic(hit.item.id);
-      }}
-      type="button"
-    >
-      <span className="min-w-0 flex-1">
-        <span className="block truncate">
-          <Highlight needle={needle} text={hit.item.label} />
+  const hitRow = (hit: SyllabusHit) =>
+    hit.kind === 'exam' ? (
+      <div className="mx-4 py-1" key={hit.exam.id}>
+        <ExamStrip
+          exam={hit.exam}
+          onClick={() => {
+            onFilter('');
+            onExam(hit.exam.id);
+          }}
+        />
+      </div>
+    ) : (
+      <button
+        aria-current={hit.item.id === topicId ? 'page' : undefined}
+        className={cn(
+          'flex w-full items-center gap-2 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg',
+          hit.item.id === topicId && 'bg-surface-hover-bg'
+        )}
+        key={hit.item.id}
+        onClick={() => {
+          setOpen((prev) => new Set(prev).add(hit.subject.id));
+          onTopic(hit.item.id);
+        }}
+        type="button"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block truncate">
+            <Highlight needle={needle} text={hit.item.label} />
+          </span>
+          <span className="t-meta block truncate text-fg-muted">
+            {hit.exam.id === exam?.id
+              ? hit.subject.label
+              : `${hit.exam.label} · ${hit.subject.label}`}
+          </span>
         </span>
-        <span className="t-meta block truncate text-fg-muted">
-          {other
-            ? `${hit.exam.label} · ${hit.subject.label}`
-            : hit.subject.label}
-        </span>
-      </span>
-      {count(hit.item)}
-    </button>
-  );
+        {count(hit.item)}
+      </button>
+    );
   return (
     <nav aria-label={m.question_ui_topics()} className="flex flex-col gap-3">
       <PanelHeading
         filter={filter}
+        leading={
+          exam &&
+          onAllExams && (
+            <ToolbarButton
+              label={m.question_ui_all_exams()}
+              onClick={onAllExams}
+            >
+              <Icon className="-translate-y-px" name="navigationBack" />
+            </ToolbarButton>
+          )
+        }
         onFilter={onFilter}
         searchLabel={m.question_ui_find_a_topic()}
         title={m.question_ui_exams_and_topics()}
       />
       {exam && (
-        <div className="border-line border-b pb-3">
-          <ExamPicker exam={exam} exams={syllabus.exams} onPick={setPicked} />
+        // Inset like the heading's open search field, so the strip, its
+        // divider and the dropdown never run past the title row.
+        <div className="mx-2 border-line border-b pb-3">
+          <ExamPicker exam={exam} exams={syllabus.exams} onPick={onExam} />
         </div>
       )}
       {needle ? (
         <div className="flex flex-col gap-0.5">
-          {here.map((hit) => hitRow(hit, false))}
-          {away.length > 0 && (
+          {here.map(hitRow)}
+          {exam && away.length > 0 && (
             <p className="t-label px-2 pt-3 pb-1 text-fg-muted uppercase">
               {m.question_ui_in_other_exams()}
             </p>
           )}
-          {away.map((hit) => hitRow(hit, true))}
+          {away.map(hitRow)}
         </div>
-      ) : (
+      ) : exam ? (
         <div className="flex flex-col gap-0.5">
-          {exam?.subjects.map((subject) => {
+          {exam.subjects.map((subject) => {
             const expanded = open.has(subject.id);
             return (
               <div key={subject.id}>
@@ -1228,7 +1262,9 @@ function TopicTree({
                   )}
                 </button>
                 {expanded && (
-                  <ul className="flex flex-col pl-5">
+                  // A guide line under the subject's chevron; topics sit
+                  // right of it, indented past the subject's name.
+                  <ul className="ml-3.5 flex flex-col border-line border-l pl-3">
                     {subject.topics.map((item) => (
                       <li key={item.id}>
                         <button
@@ -1255,6 +1291,16 @@ function TopicTree({
               </div>
             );
           })}
+        </div>
+      ) : (
+        <div className="mx-4 flex flex-col gap-3">
+          {syllabus.exams.map((item) => (
+            <ExamStrip
+              exam={item}
+              key={item.id}
+              onClick={() => onExam(item.id)}
+            />
+          ))}
         </div>
       )}
       {(needle ? !hits.length : !syllabus.exams.length) && (
@@ -1370,7 +1416,7 @@ function TopicQuestions({
     if (nearStart && !from && hasEarlier && !loadingEarlier) onEarlier();
   }, [nearStart, from, hasEarlier, loadingEarlier, onEarlier]);
   return (
-    <nav aria-label={m.question_ui_questions()} className="flex flex-col gap-3">
+    <nav aria-label={m.question_ui_questions()} className="flex flex-col gap-2">
       <PanelHeading
         filter={filter}
         leading={
@@ -1441,7 +1487,7 @@ function TopicQuestions({
           </ToolbarButton>
         )}
       </div>
-      <div aria-hidden className="-mb-3" ref={startRef} />
+      <div aria-hidden className="-mb-2" ref={startRef} />
       {(hasEarlier || from > 0) && <SkeletonList count={3} rowHeight={28} />}
       <ol className="grid gap-0.5" ref={listRef}>
         {rows.slice(from).map((row) => (

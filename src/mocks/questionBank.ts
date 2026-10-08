@@ -202,6 +202,8 @@ export const questionBankHandlers = [
       exams: [
         {
           cover: { color: '#7866cf', kind: 'math', style: 'symbols' },
+          description:
+            "Hong Kong's university entrance exam, taken at the end of secondary school.",
           fullLabel: 'Hong Kong Diploma of Secondary Education',
           id: 'hkdse',
           label: 'HKDSE',
@@ -237,6 +239,8 @@ export const questionBankHandlers = [
             line: 'Paraphrase, then summarise.',
             style: 'paper',
           },
+          description:
+            'English test for study, work and migration, scored in bands from 1 to 9.',
           fullLabel: 'International English Language Testing System',
           id: 'ielts',
           label: 'IELTS',

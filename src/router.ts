@@ -150,7 +150,13 @@ const bankRoute = createRoute({
   component: lazyRouteComponent(() => import('@/routes/QuestionBank')),
   getParentRoute: () => authShellRoute,
   path: '/qb',
-  validateSearch: (search: Record<string, unknown>): { mode?: 'edit' } => ({
+  // `exam` is the exam open in the side panel; without it /qb lists every
+  // exam, and a topic URL opens the topic's own exam.
+  validateSearch: (
+    search: Record<string, unknown>
+  ): { mode?: 'edit'; exam?: string } => ({
+    exam:
+      typeof search.exam === 'string' && search.exam ? search.exam : undefined,
     mode: search.mode === 'edit' ? 'edit' : undefined,
   }),
 });

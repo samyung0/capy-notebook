@@ -42,7 +42,7 @@ func TestBankMigrationAndReviewSurviveEdit(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO exams VALUES ('exam','Exam',1,'Example exam','{"style":"type","color":"#7866cf"}');INSERT INTO subjects VALUES ('subject','exam','Subject',1);INSERT INTO topics VALUES ('topic','subject','Topic',1)`); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO exams VALUES ('exam','Exam',1,'Example exam','{"style":"type","color":"#7866cf"}','An exam for tests.');INSERT INTO subjects VALUES ('subject','exam','Subject',1);INSERT INTO topics VALUES ('topic','subject','Topic',1)`); err != nil {
 		t.Fatal(err)
 	}
 	raw := `{"id":"q","stem":[{"type":"text","text":"Question"}],"parts":[{"id":"p","blocks":[{"type":"text","text":"Answer this"}],"answer":{"type":"short","accepted":["2"]},"marks":1,"solution":[{"type":"text","text":"Two"}]}],"layout":"paper","labels":"letters"}`
