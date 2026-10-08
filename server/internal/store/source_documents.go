@@ -645,8 +645,8 @@ func (s *Store) requestSourceRefresh(ctx context.Context, actor, fileID string, 
 	if _, err = tx.Exec(ctx, `INSERT INTO jobs(id,type,payload) VALUES($1,'source_refresh',$2)`, jobID, payload); err != nil {
 		return result, err
 	}
-	// Copy-on-write: the candidate's NULL state is the source's state at this
-	// checkpoint until a save copies it (SaveSourceCheckpoint). A transient
+	// The candidate's state stays NULL until finalize records the capture its
+	// export was built from (null there too: seed(base)). A transient
 	// candidate is uncharged; publication gates the net growth.
 	if _, err = tx.Exec(ctx, `INSERT INTO source_refresh_candidates(file_id,job_id,epoch,checkpoint,lease_token) VALUES($1,$2,$3,$4,$5)`, fileID, jobID, doc.Epoch, doc.Checkpoint, lease); err != nil {
 		return result, err
