@@ -192,6 +192,29 @@ fn validate_diagram(node: &Node) -> Check {
     Ok(())
 }
 
+/// The one optional `width` of a resizable block (image, YouTube video,
+/// Mermaid, chart, graph): exactly what the resize handles write, `<n>%` with
+/// n a whole number from 20 to 100 (Epo, 2026-10-08). Any other width is
+/// refused.
+// TODO(plate-2): align the message and where it is checked with the Node and
+// Go check when it lands, then regenerate the validation corpus.
+fn validate_width(node: &Node) -> Check {
+    let valid = match node.get("width") {
+        None => true,
+        Some(Value::String(width)) => width.strip_suffix('%').is_some_and(|n| {
+            !n.starts_with('0')
+                && n.bytes().all(|b| b.is_ascii_digit())
+                && n.parse::<u32>().is_ok_and(|n| (20..=100).contains(&n))
+        }),
+        Some(_) => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        fail("width must be a whole percentage from 20% to 100%")
+    }
+}
+
 fn validate_embed(node: &Node, kind: &str, depth: usize) -> Check {
     if depth != 0 {
         return fail("chart and graph embeds must be top-level blocks");
@@ -207,9 +230,10 @@ fn validate_embed(node: &Node, kind: &str, depth: usize) -> Check {
     if !typed {
         return fail("embed block type must match node type");
     }
+    validate_width(node)?;
     if node
         .keys()
-        .any(|k| !matches!(k.as_str(), "id" | "type" | "block" | "children"))
+        .any(|k| !matches!(k.as_str(), "id" | "type" | "block" | "children" | "width"))
     {
         return fail("unexpected embed field");
     }
@@ -242,7 +266,10 @@ fn validate_html_embed(node: &Node, depth: usize) -> Check {
         return fail("interactive caption must be a string");
     }
     for key in node.keys() {
-        if !matches!(key.as_str(), "id" | "type" | "html" | "caption" | "children") {
+        if !matches!(
+            key.as_str(),
+            "id" | "type" | "html" | "caption" | "children"
+        ) {
             return fail(format!("unexpected interactive field {key}"));
         }
     }
@@ -323,7 +350,11 @@ fn validate_node(node: &Node, depth: usize, policy: &Policy) -> Check {
         "quiz_prompt" | "quiz_option" | "quiz_explanation" => fail("obsolete quiz child node"),
         "flashcards" => validate_flashcards(node),
         "flashcard" => validate_flashcard(node),
-        "mermaid" | "diagram" | "mindmap" => validate_diagram(node),
+        "mermaid" | "diagram" | "mindmap" => {
+            validate_diagram(node)?;
+            validate_width(node)
+        }
+        "img" => validate_width(node),
         MATERIAL_REF_TYPE => validate_material_ref(node),
         "video" => {
             if node.get("provider").and_then(Value::as_str) != Some("youtube") {
@@ -346,7 +377,7 @@ fn validate_node(node: &Node, depth: usize, policy: &Policy) -> Check {
                     return fail(format!("YouTube video cannot contain {key}"));
                 }
             }
-            Ok(())
+            validate_width(node)
         }
         _ => Ok(()),
     }

@@ -8,7 +8,7 @@ mod common;
 
 use notes::material;
 use notes::questions::{self, Policy};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 fn policy(fixture: &Value, host: &Value) -> Policy {
     Policy {
@@ -79,4 +79,54 @@ fn validation_matches_the_node_server() {
         "{} failures: {failures:#?}",
         failures.len()
     );
+}
+
+/// Every resizable block takes one optional `width`, exactly "<n>%" with n a
+/// whole number from 20 to 100 (Epo, 2026-10-08), on an accepted corpus node
+/// of each kind.
+#[test]
+fn resizable_blocks_take_only_the_widths_the_handles_write() {
+    let corpus = common::load("validation");
+    for kind in ["img", "video", "mermaid", "mindmap", "chart", "graph"] {
+        let (base, material_kind) = corpus["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|case| case["outcome"]["ok"] == true)
+            .find_map(|case| {
+                let node = case["value"]
+                    .as_array()?
+                    .iter()
+                    .find(|node| node["type"] == kind)?;
+                Some((node.clone(), case["kind"].as_str()?.to_owned()))
+            })
+            .unwrap_or_else(|| panic!("no accepted {kind} in the corpus"));
+        let with_width = |width: Value| {
+            let mut node = base.clone();
+            node["width"] = width;
+            material::assert_canonical_with(&[node], &material_kind, &Policy::default())
+        };
+        material::assert_canonical_with(&[base.clone()], &material_kind, &Policy::default())
+            .unwrap();
+        for width in ["20%", "55%", "100%"] {
+            with_width(Value::from(width)).unwrap_or_else(|e| panic!("{kind} {width}: {e}"));
+        }
+        for width in [
+            json!("19%"),
+            json!("101%"),
+            json!("020%"),
+            json!("50"),
+            json!("50.5%"),
+            json!(" 50%"),
+            json!("%"),
+            json!(50),
+            Value::Null,
+        ] {
+            let refused = with_width(width.clone()).unwrap_err();
+            assert_eq!(
+                refused.0, "width must be a whole percentage from 20% to 100%",
+                "{kind} {width}"
+            );
+        }
+    }
 }
