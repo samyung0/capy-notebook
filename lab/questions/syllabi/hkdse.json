@@ -2,7 +2,13 @@
   "exam": {
     "id": "hkdse",
     "label": "HKDSE",
-    "position": 1
+    "full_label": "Hong Kong Diploma of Secondary Education",
+    "position": 1,
+    "cover": {
+      "style": "symbols",
+      "color": "#7866cf",
+      "kind": "math"
+    }
   },
   "subjects": [
     {

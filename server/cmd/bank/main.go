@@ -1,4 +1,4 @@
-// Local owner-only bank migration, insert-only publication and status.
+// Local owner-only bank migration, exam catalogs, insert-only publication and status.
 package main
 
 import (
@@ -362,8 +362,13 @@ func insertPublication(ctx context.Context, pool *pgxpool.Pool, p publication) e
 		return err
 	}
 	e, s, t := p.Syllabus.Exam, p.Syllabus.Subject, p.Syllabus.Topic
-	if _, err = tx.Exec(ctx, "INSERT INTO exams(id,label,position) VALUES($1,$2,$3) ON CONFLICT(id) DO UPDATE SET label=excluded.label,position=excluded.position", e.ID, e.Label, e.Position); err != nil {
+	// Exams come only from the catalogs (bank exams), which own their covers.
+	var known bool
+	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM exams WHERE id=$1)", e.ID).Scan(&known); err != nil {
 		return err
+	}
+	if !known {
+		return fmt.Errorf("exam %q is not in the bank; run bank exams first", e.ID)
 	}
 	if _, err = tx.Exec(ctx, "INSERT INTO subjects(id,exam_id,label,position) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET label=excluded.label,position=excluded.position WHERE subjects.exam_id=excluded.exam_id", s.ID, e.ID, s.Label, s.Position); err != nil {
 		return err
@@ -403,9 +408,76 @@ func insertPublication(ctx context.Context, pool *pgxpool.Pool, p publication) e
 	return json.NewEncoder(os.Stdout).Encode(map[string]any{"inserted": inserted, "skipped": skipped})
 }
 
+// examRecord is a syllabus catalog's exam (lab/questions/syllabi).
+type examRecord struct {
+	ID        string      `json:"id"`
+	Label     string      `json:"label"`
+	FullLabel string      `json:"full_label"`
+	Position  int         `json:"position"`
+	Cover     *bank.Cover `json:"cover"`
+}
+
+func loadExams(dir string) ([]examRecord, error) {
+	paths, err := filepath.Glob(filepath.Join(dir, "*.json"))
+	if err != nil {
+		return nil, err
+	}
+	exams := []examRecord{}
+	for _, path := range paths {
+		raw, e := os.ReadFile(path)
+		if e != nil {
+			return nil, e
+		}
+		var catalog struct {
+			Exam examRecord `json:"exam"`
+		}
+		if e = json.Unmarshal(raw, &catalog); e != nil {
+			return nil, fmt.Errorf("%s: %w", path, e)
+		}
+		x := catalog.Exam
+		if x.ID == "" || x.Label == "" || x.FullLabel == "" || x.Position < 1 {
+			return nil, fmt.Errorf("%s: exam needs id, label, full_label and a position from 1", path)
+		}
+		if x.Cover != nil {
+			if e = x.Cover.Check(); e != nil {
+				return nil, fmt.Errorf("%s: %w", path, e)
+			}
+		}
+		exams = append(exams, x)
+	}
+	if len(exams) == 0 {
+		return nil, errors.New("no syllabus catalogs")
+	}
+	return exams, nil
+}
+
+// upsertExams writes every catalog exam; publication only files topics under them.
+// A catalog without a cover keeps the stored one, and a new exam without one
+// gets bank.DefaultCover.
+func upsertExams(ctx context.Context, pool *pgxpool.Pool, exams []examRecord) error {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	ids := []string{}
+	for _, x := range exams {
+		if _, err = tx.Exec(ctx, `INSERT INTO exams(id,label,full_label,position,cover) VALUES($1,$2,$3,$4,COALESCE($5::jsonb,$6::jsonb))
+ ON CONFLICT(id) DO UPDATE SET label=excluded.label,full_label=excluded.full_label,position=excluded.position,cover=COALESCE($5::jsonb,exams.cover)`,
+			x.ID, x.Label, x.FullLabel, x.Position, x.Cover, bank.DefaultCover(x.ID)); err != nil {
+			return err
+		}
+		ids = append(ids, x.ID)
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(map[string]any{"exams": ids})
+}
+
 func run() error {
 	if len(os.Args) < 2 {
-		return errors.New("usage: bank migrate | validate <topic-dir> | publish <topic-dir> | status")
+		return errors.New("usage: bank migrate | exams <syllabi-dir> | validate <topic-dir> | publish <topic-dir> | status")
 	}
 	if err := loadEnv(); err != nil {
 		return err
@@ -434,6 +506,15 @@ func run() error {
 	switch os.Args[1] {
 	case "migrate":
 		return store.MigrateFS(ctx, pool, bankmigrations.FS)
+	case "exams":
+		if len(os.Args) != 3 {
+			return errors.New("exams requires the syllabi directory")
+		}
+		exams, e := loadExams(os.Args[2])
+		if e != nil {
+			return e
+		}
+		return upsertExams(ctx, pool, exams)
 	case "publish":
 		if len(os.Args) != 3 {
 			return errors.New("publish requires topic directory")

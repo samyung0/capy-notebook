@@ -180,6 +180,12 @@ importers:
       fflate:
         specifier: 0.8.2
         version: 0.8.2
+      geopattern:
+        specifier: 1.2.3
+        version: 1.2.3
+      hero-patterns:
+        specifier: 2.1.0
+        version: 2.1.0
       html2canvas-pro:
         specifier: ^2.2.1
         version: 2.3.3
@@ -9064,6 +9070,12 @@ packages:
         integrity: sha512-9U/jZUgjnSGyntRr6y5Muu1MJcwFl6kPu7k8qLF0IMNfLqvw0NZ4nnVDq0RVoZ0RvCyumib4Ez3KYrVfilrw+g==,
       }
 
+  extend@1.2.1:
+    resolution:
+      {
+        integrity: sha512-2/JwIYRpMBDSjbQjUUppNSrmc719crhFaWIdT+TRSVA8gE+6HEobQWqJ6VkPt/H8twS7h/0WWs7veh8wmp98Ng==,
+      }
+
   extend@3.0.2:
     resolution:
       {
@@ -9314,6 +9326,12 @@ packages:
         integrity: sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg==,
       }
     engines: { node: ">=6.9.0" }
+
+  geopattern@1.2.3:
+    resolution:
+      {
+        integrity: sha512-UzrR9D0xUrXx71ROZTKbTg1isWdcfcYAXsJrqtvhDkQV2JCsRyqws6TuqUdkBKncg5CPevb0vyXXUJrZpjGFXw==,
+      }
 
   get-browser-rtc@1.1.0:
     resolution:
@@ -9595,6 +9613,12 @@ packages:
     resolution:
       {
         integrity: sha512-1TJ6Fih/b8h5TIcv+1+Hw0PDQWJTKDKzFZzcKOiW1wJza3XoAQlkCuXLbymPYB8+ZQyw8mHvdw560e8zVFIWyA==,
+      }
+
+  hero-patterns@2.1.0:
+    resolution:
+      {
+        integrity: sha512-cHob8+etbF3kl+ylmvFQORBdFx3njmFUv+JIbu4i+GVNvfCgvNkWolkBhYU9fE2cecx+DGxLSiSNq+F5NWJrTQ==,
       }
 
   highlight.js@11.11.1:
@@ -20132,6 +20156,8 @@ snapshots:
 
   exsolve@1.1.1: {}
 
+  extend@1.2.1: {}
+
   extend@3.0.2: {}
 
   fake-indexeddb@6.2.5: {}
@@ -20237,6 +20263,10 @@ snapshots:
   fuzzy@0.1.3: {}
 
   gensync@1.0.0-beta.2: {}
+
+  geopattern@1.2.3:
+    dependencies:
+      extend: 1.2.1
 
   get-browser-rtc@1.1.0: {}
 
@@ -20481,6 +20511,8 @@ snapshots:
     dependencies:
       "@types/set-cookie-parser": 2.4.10
       set-cookie-parser: 3.1.2
+
+  hero-patterns@2.1.0: {}
 
   highlight.js@11.11.1: {}
 

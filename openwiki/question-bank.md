@@ -5,13 +5,38 @@ question content; granted bank editors can edit, mark reviewed, upload figures
 and send a comment. The bank page is at `/bank`, under Explore in the
 sidebar, inside the app shell: the main panel shows the chosen topic's
 questions, and a dashboard-style right column (`PanelHeader`, shared with
-Recent Files and the theme drawer) holds exams and topics, swapping
-to the topic's question list; on phones that column becomes a floating bar and
+Recent Files and the theme drawer) holds exams and topics (Exam switcher and
+covers, below), swapping to the topic's question list; on phones that column becomes a floating bar and
 bottom sheet. Editors switch between View mode and Edit mode; edit mode adds
 the answer key and a review bar (review status, Mark reviewed/Undo review,
 Comment, Edit) under each question. In View mode signed-in learners answer and
 check each question (Learner answering, below) and copy questions into their
 quizzes; production Jev grading remains in `todo-question-bank.md`.
+
+## Exam switcher and covers
+
+The topics view shows one exam at a time (`TopicTree` in
+`src/routes/QuestionBank.tsx`): `ExamPicker` (`src/features/questions/ExamPicker.tsx`)
+draws the picked exam as a cover strip with its name and subject and question
+counts over the art, and opens a list of every exam with a Find an exam search
+over the short and full names. The panel opens on the exam holding the current
+topic, else the first. Subjects start collapsed except the one holding the
+current topic; a collapsed subject shows its question count, and the header's
+topic search opens every matching subject of the picked exam.
+
+The syllabus gives each exam `fullLabel` and `cover`: a style (`symbols`,
+`doodles`, `shelf`, `paper`, `type`, `geo`, `hero`), a `#rrggbb` colour, and the
+style's own fields: `kind` (`math`, `latin`, `kana`) for symbols, doodles and
+paper, `pattern` for geo (a GeoPattern generator) and hero (one of 18 Hero
+Patterns), and an optional handwritten `line` for paper. `bank.Cover.Check`
+accepts only those fields. The browser draws the strip from the config, seeded
+by the exam id (`src/features/questions/examCover.ts`), so nothing is stored in
+a bucket; the pattern lists in Go and TypeScript must match. Covers are fixed
+art in every theme, so their text colours are fixed too: dark on the light
+bookshelf and paper styles, white elsewhere, with a bottom shade on busy art.
+Subjects have no covers of their own. Official exam board logos are not used
+(trademarks; Epo, 2026-10-08). Hero Patterns (CC BY 4.0) and GeoPattern (MIT)
+are credited on the Credits page.
 
 The topic list (`GET /api/bank/topics/{id}/questions`) returns light rows for
 the navigation panel a page at a time, like the file and material lists:
@@ -337,7 +362,13 @@ question, and record that excerpt as the question's source; HKDSE questions are
 original with empty sources. The renderer serves MathLive's fonts, waits for
 every formula, and re-renders only named question ids after a fix. See its
 [README](../lab/questions/README.md).
-`server/cmd/bank` migrates, publishes and reports status. Publication uploads
+`server/cmd/bank` migrates, writes exams, publishes and reports status.
+`go run ./cmd/bank exams ../lab/questions/syllabi` upserts every catalog's exam
+(label, full label, position, cover); a catalog without a cover keeps the stored
+one, and a new exam without one gets `bank.DefaultCover`, a GeoPattern in a
+palette colour picked from its id. Publication files topics only under an exam
+that already exists. Bank migration `0005_exam_covers.sql` adds the two exam
+columns and fills the pilot's HKDSE and IELTS. Publication uploads
 immutable assets and inserts new IDs; it does not overwrite later reviewer edits.
 No task-type labels are stored (Epo, 2026-10-06): the page and the chat
 agent's `list_question_bank` (`answer_type`, see

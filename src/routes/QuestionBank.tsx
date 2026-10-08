@@ -62,6 +62,7 @@ import {
   uploadBankAsset,
 } from '@/features/questions/bank';
 import { CopyToQuizDialog } from '@/features/questions/CopyToQuizDialog';
+import { ExamPicker } from '@/features/questions/ExamPicker';
 import { answerLabels } from '@/features/questions/editorFields';
 import {
   QuestionListRow,
@@ -1072,7 +1073,10 @@ function PanelHeading({
   );
 }
 
-/** Exams and topics in the FilesPanel rhythm: exam label, subject row, indented topics. */
+/**
+ * One exam at a time, picked from its cover strip, then its subjects with
+ * indented topics. Subjects start collapsed except the current topic's.
+ */
 function TopicTree({
   syllabus,
   topicId,
@@ -1088,22 +1092,26 @@ function TopicTree({
   onFilter: (value: string) => void;
   onTopic: (id: string) => void;
 }) {
+  const current = syllabus.exams
+    .flatMap((exam) => exam.subjects.map((subject) => ({ exam, subject })))
+    .find(({ subject }) => subject.topics.some((item) => item.id === topicId));
+  const [picked, setPicked] = useState(current?.exam.id);
+  const [open, setOpen] = useState(
+    () => new Set(current ? [current.subject.id] : [])
+  );
+  const exam =
+    syllabus.exams.find((item) => item.id === picked) ?? syllabus.exams[0];
   const needle = filter.trim().toLocaleLowerCase();
-  const exams = syllabus.exams
-    .map((exam) => ({
-      ...exam,
-      subjects: exam.subjects
-        .map((subject) => ({
-          ...subject,
-          topics: subject.topics.filter((item) =>
-            [exam.label, subject.label, item.label].some((label) =>
-              label.toLocaleLowerCase().includes(needle)
-            )
-          ),
-        }))
-        .filter((subject) => subject.topics.length > 0),
+  const subjects = (exam?.subjects ?? [])
+    .map((subject) => ({
+      ...subject,
+      topics: subject.topics.filter((item) =>
+        [subject.label, item.label].some((label) =>
+          label.toLocaleLowerCase().includes(needle)
+        )
+      ),
     }))
-    .filter((exam) => exam.subjects.length > 0);
+    .filter((subject) => subject.topics.length > 0);
   return (
     <nav aria-label={m.question_ui_topics()} className="flex flex-col gap-3">
       <PanelHeading
@@ -1112,48 +1120,75 @@ function TopicTree({
         searchLabel={m.question_ui_find_a_topic()}
         title={m.question_ui_exams_and_topics()}
       />
-      {exams.map((exam) => (
-        <div key={exam.id}>
-          <div className="t-subtitle px-4 py-1.5">{exam.label}</div>
-          {exam.subjects.map((subject) => (
-            <details className="group" key={subject.id} open>
-              <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-button px-2 py-1.5 hover:bg-surface-hover-bg [&::-webkit-details-marker]:hidden">
+      {exam && (
+        <div className="border-line border-b pb-3">
+          <ExamPicker exam={exam} exams={syllabus.exams} onPick={setPicked} />
+        </div>
+      )}
+      <div className="flex flex-col gap-0.5">
+        {subjects.map((subject) => {
+          // A search shows every subject with a match opened.
+          const expanded = needle !== '' || open.has(subject.id);
+          return (
+            <div key={subject.id}>
+              <button
+                aria-expanded={expanded}
+                className="flex w-full items-center gap-1.5 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg"
+                onClick={() =>
+                  setOpen((prev) => {
+                    const next = new Set(prev);
+                    if (!next.delete(subject.id)) next.add(subject.id);
+                    return next;
+                  })
+                }
+                type="button"
+              >
                 <Icon
-                  className="shrink-0 -rotate-90 text-fg-muted transition-transform group-open:rotate-0"
+                  className={cn(
+                    'shrink-0 text-fg-muted transition-transform',
+                    !expanded && '-rotate-90'
+                  )}
                   name="chevronDown"
                   size={13}
                 />
-                <span className="translate-y-px truncate font-semibold">
+                <span className="min-w-0 flex-1 translate-y-px truncate font-semibold">
                   {subject.label}
                 </span>
-              </summary>
-              <ul className="flex flex-col pl-5">
-                {subject.topics.map((item) => (
-                  <li key={item.id}>
-                    <button
-                      aria-current={item.id === topicId ? 'page' : undefined}
-                      className={cn(
-                        'flex w-full items-center gap-2 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg',
-                        item.id === topicId && 'bg-surface-hover-bg font-bold'
-                      )}
-                      onClick={() => onTopic(item.id)}
-                      type="button"
-                    >
-                      <span className="min-w-0 flex-1 translate-y-px truncate">
-                        {item.label}
-                      </span>
-                      <span className="shrink-0 font-semibold text-fg-muted text-xs tabular-nums">
-                        {edit ? `${item.reviewed}/${item.total}` : item.total}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          ))}
-        </div>
-      ))}
-      {!exams.length && (
+                {!expanded && (
+                  <span className="shrink-0 font-semibold text-fg-muted text-xs tabular-nums">
+                    {subject.topics.reduce((sum, item) => sum + item.total, 0)}
+                  </span>
+                )}
+              </button>
+              {expanded && (
+                <ul className="flex flex-col pl-5">
+                  {subject.topics.map((item) => (
+                    <li key={item.id}>
+                      <button
+                        aria-current={item.id === topicId ? 'page' : undefined}
+                        className={cn(
+                          'flex w-full items-center gap-2 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg',
+                          item.id === topicId && 'bg-surface-hover-bg font-bold'
+                        )}
+                        onClick={() => onTopic(item.id)}
+                        type="button"
+                      >
+                        <span className="min-w-0 flex-1 translate-y-px truncate">
+                          {item.label}
+                        </span>
+                        <span className="shrink-0 font-semibold text-fg-muted text-xs tabular-nums">
+                          {edit ? `${item.reviewed}/${item.total}` : item.total}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {!subjects.length && (
         <p className="px-2 text-fg-muted">
           {syllabus.exams.length
             ? m.question_ui_no_topics_match()

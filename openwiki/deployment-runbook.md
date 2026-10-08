@@ -1551,7 +1551,9 @@ content. Never point the ordinary app migrator at `bank`.
    `bank_editor_password` psql variables. It creates the database and roles.
    Through the existing 15433 tunnel, set `BANK_OWNER_DATABASE_URL` in the
    publisher's ignored `.env.local` and run `go run ./cmd/bank migrate` from
-   `server`. Re-run `bank-db.sql` after migration to apply the column grants.
+   `server`, then `go run ./cmd/bank exams ../lab/questions/syllabi` to write
+   the exams before publishing under them. Re-run `bank-db.sql` after migration
+   to apply the column grants.
 2. Set `BANK_DATABASE_URL` to the reader URL in each environment. Configure
    `BANK_EDITOR_DATABASE_URL` only in production. Hand-grant editor accounts
    in the production app database with `INSERT INTO bank_editors(user_id,note)

@@ -2,7 +2,14 @@
   "exam": {
     "id": "ielts",
     "label": "IELTS",
-    "position": 2
+    "full_label": "International English Language Testing System",
+    "position": 2,
+    "cover": {
+      "style": "paper",
+      "color": "#2a78d6",
+      "kind": "latin",
+      "line": "Paraphrase, then summarise."
+    }
   },
   "subjects": [
     {

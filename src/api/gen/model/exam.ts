@@ -4,9 +4,13 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { Cover } from './cover.ts';
 import type { Subject } from './subject.ts';
 
 export interface Exam {
+  cover: Cover;
+  /** The exam's full name, shown and searched in the exam switcher */
+  fullLabel: string;
   id: string;
   label: string;
   /** @nullable */

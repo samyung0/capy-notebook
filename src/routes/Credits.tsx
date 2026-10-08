@@ -88,6 +88,43 @@ export default function Credits() {
               </a>
             </div>
           </section>
+          <section className="mt-6 text-fg-muted text-sm">
+            <h2 className="t-subtitle text-fg">{m.credits_covers_title()}</h2>
+            <p className="mt-1">{m.credits_hero_patterns()}</p>
+            <div className="mt-2 flex flex-wrap gap-4 text-link">
+              <a
+                href="https://heropatterns.com/"
+                rel="noreferrer"
+                target="_blank"
+              >
+                {m.credits_source()}
+              </a>
+              <a
+                href="https://creativecommons.org/licenses/by/4.0/"
+                rel="noreferrer"
+                target="_blank"
+              >
+                CC BY 4.0
+              </a>
+            </div>
+            <p className="mt-3">{m.credits_geopattern()}</p>
+            <div className="mt-2 flex flex-wrap gap-4 text-link">
+              <a
+                href="https://github.com/btmills/geopattern"
+                rel="noreferrer"
+                target="_blank"
+              >
+                {m.credits_source()}
+              </a>
+              <a
+                href="/icons/LICENSE-geopattern.txt"
+                rel="noreferrer"
+                target="_blank"
+              >
+                {m.credits_mit_notice()}
+              </a>
+            </div>
+          </section>
         </div>
       </div>
     </Panel>

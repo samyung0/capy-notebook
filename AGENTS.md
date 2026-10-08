@@ -44,6 +44,7 @@ Understand the following terms so we can communicate on the same page:
 - Read `human` skill for coding tasks.
 - Keep things simple. Do not preserve existing complexity just because it already exists.
 - Do not introduce machinery because it looks architectually impressive. Understand the real constraint and push for the smallest model that solves the issue.
+- For betteroffice, plate editors and any editor related code, more machinery is fine as long as speed, performance and latency is prioritized, do throrough optimizations.
 - Tests are good, but endless smoke tests, "regression tests" for feature deletion, etc are not good. Make tests focused.
 - Comments are good way to clarify functionality and how code is used, but dont comment every line, make it concise.
 - Clean up dead codes and test cases if the changes deprecate it.

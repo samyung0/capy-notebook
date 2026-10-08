@@ -1011,6 +1011,40 @@ components:
         - createdAt
         - updatedAt
       type: object
+    Cover:
+      additionalProperties: false
+      properties:
+        color:
+          pattern: ^#[0-9a-f]{6}$
+          type: string
+        kind:
+          description: The symbols, icons or paper of a symbols, doodles or paper cover
+          enum:
+            - math
+            - latin
+            - kana
+          type: string
+        line:
+          description: A paper cover's handwritten line
+          maxLength: 40
+          type: string
+        pattern:
+          description: The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover
+          type: string
+        style:
+          enum:
+            - symbols
+            - doodles
+            - shelf
+            - paper
+            - type
+            - geo
+            - hero
+          type: string
+      required:
+        - style
+        - color
+      type: object
     CreateAttemptReq:
       additionalProperties: false
       properties:
@@ -1611,6 +1645,11 @@ components:
     Exam:
       additionalProperties: false
       properties:
+        cover:
+          $ref: "#/components/schemas/Cover"
+        fullLabel:
+          description: The exam's full name, shown and searched in the exam switcher
+          type: string
         id:
           type: string
         label:
@@ -1623,6 +1662,8 @@ components:
       required:
         - id
         - label
+        - fullLabel
+        - cover
         - subjects
       type: object
     File:

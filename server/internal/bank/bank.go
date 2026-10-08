@@ -3,6 +3,7 @@ package bank
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"regexp"
@@ -112,10 +113,68 @@ type Subject struct {
 	Topics []Topic `json:"topics"`
 }
 type Exam struct {
-	ID       string    `json:"id"`
-	Label    string    `json:"label"`
-	Subjects []Subject `json:"subjects"`
+	ID        string    `json:"id"`
+	Label     string    `json:"label"`
+	FullLabel string    `json:"fullLabel" doc:"The exam's full name, shown and searched in the exam switcher"`
+	Cover     Cover     `json:"cover"`
+	Subjects  []Subject `json:"subjects"`
 }
+
+// Cover is how the exam switcher draws an exam's strip. The browser renders
+// it (src/features/questions/examCover.ts), so its pattern lists match these.
+type Cover struct {
+	Style   string `json:"style" enum:"symbols,doodles,shelf,paper,type,geo,hero"`
+	Color   string `json:"color" pattern:"^#[0-9a-f]{6}$"`
+	Kind    string `json:"kind,omitempty" enum:"math,latin,kana" doc:"The symbols, icons or paper of a symbols, doodles or paper cover"`
+	Pattern string `json:"pattern,omitempty" doc:"The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover"`
+	Line    string `json:"line,omitempty" maxLength:"40" doc:"A paper cover's handwritten line"`
+}
+
+var (
+	coverColor   = regexp.MustCompile(`^#[0-9a-f]{6}$`)
+	geoPatterns  = []string{"octogons", "overlappingCircles", "plusSigns", "xes", "sineWaves", "hexagons", "overlappingRings", "plaid", "triangles", "squares", "concentricCircles", "diamonds", "tessellation", "nestedSquares", "mosaicSquares", "chevrons"}
+	heroPatterns = []string{"bankNote", "bubbles", "current", "diagonalLines", "endlessClouds", "formalInvitation", "fourPointStars", "graphPaper", "hexagons", "jigsaw", "overlappingCircles", "plus", "polkaDots", "signal", "texture", "wiggle", "xEquals", "zigZag"}
+)
+
+// DefaultCover is a new exam's cover when its catalog sets none: a GeoPattern
+// in a palette colour, both picked from the exam id so reruns agree.
+func DefaultCover(examID string) Cover {
+	sum := sha256.Sum256([]byte(examID))
+	palette := []string{"#7866cf", "#2a78d6", "#1b9e6f", "#d0505e", "#eb6834", "#c48a00", "#5b6472"}
+	return Cover{Style: "geo", Color: palette[int(sum[0])%len(palette)], Pattern: geoPatterns[int(sum[1])%len(geoPatterns)]}
+}
+
+// Check accepts only the fields the cover's style draws.
+func (c Cover) Check() error {
+	if !coverColor.MatchString(c.Color) {
+		return errors.New("cover color must be #rrggbb in lower case")
+	}
+	kinded := c.Style == "symbols" || c.Style == "doodles" || c.Style == "paper"
+	if kinded != slices.Contains([]string{"math", "latin", "kana"}, c.Kind) {
+		return fmt.Errorf("a %s cover takes kind only for symbols, doodles and paper", c.Style)
+	}
+	switch c.Style {
+	case "geo":
+		if !slices.Contains(geoPatterns, c.Pattern) {
+			return fmt.Errorf("unknown geo pattern %q", c.Pattern)
+		}
+	case "hero":
+		if !slices.Contains(heroPatterns, c.Pattern) {
+			return fmt.Errorf("unknown hero pattern %q", c.Pattern)
+		}
+	case "symbols", "doodles", "paper", "shelf", "type":
+		if c.Pattern != "" {
+			return errors.New("only geo and hero covers take a pattern")
+		}
+	default:
+		return fmt.Errorf("unknown cover style %q", c.Style)
+	}
+	if c.Line != "" && (c.Style != "paper" || len([]rune(c.Line)) > 40) {
+		return errors.New("only a paper cover takes a line, of at most 40 characters")
+	}
+	return nil
+}
+
 type Syllabus struct {
 	Exams     []Exam `json:"exams"`
 	Editor    bool   `json:"editor"`
@@ -128,7 +187,7 @@ func (s *Store) Syllabus(ctx context.Context) (Syllabus, error) {
 	if err != nil {
 		return out, err
 	}
-	rows, err := p.Query(ctx, `SELECT e.id,e.label,s.id,s.label,t.id,t.label,count(q.id),count(q.reviewed_at)
+	rows, err := p.Query(ctx, `SELECT e.id,e.label,e.full_label,e.cover,s.id,s.label,t.id,t.label,count(q.id),count(q.reviewed_at)
  FROM exams e LEFT JOIN subjects s ON s.exam_id=e.id LEFT JOIN topics t ON t.subject_id=s.id
  LEFT JOIN questions q ON q.topic_id=t.id AND q.retracted_at IS NULL GROUP BY e.id,s.id,t.id ORDER BY e.position,e.id,s.position,s.id,t.position,t.id`)
 	if err != nil {
@@ -136,14 +195,15 @@ func (s *Store) Syllabus(ctx context.Context) (Syllabus, error) {
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var eid, el string
+		var eid, el, full string
+		var cover Cover
 		var sid, sl, tid, tl *string
 		var total, reviewed int
-		if err := rows.Scan(&eid, &el, &sid, &sl, &tid, &tl, &total, &reviewed); err != nil {
+		if err := rows.Scan(&eid, &el, &full, &cover, &sid, &sl, &tid, &tl, &total, &reviewed); err != nil {
 			return out, dbError(err)
 		}
 		if len(out.Exams) == 0 || out.Exams[len(out.Exams)-1].ID != eid {
-			out.Exams = append(out.Exams, Exam{ID: eid, Label: el, Subjects: []Subject{}})
+			out.Exams = append(out.Exams, Exam{ID: eid, Label: el, FullLabel: full, Cover: cover, Subjects: []Subject{}})
 		}
 		e := &out.Exams[len(out.Exams)-1]
 		if sid == nil {

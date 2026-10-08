@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/samyung0/capy-notebook/server/bankmigrations"
+	"github.com/samyung0/capy-notebook/server/internal/bank"
 )
 
 func TestPublicationNeverOverwritesExistingQuestions(t *testing.T) {
@@ -57,6 +58,26 @@ func TestPublicationNeverOverwritesExistingQuestions(t *testing.T) {
 	p.Syllabus.Exam = node{ID: "exam", Label: "Exam"}
 	p.Syllabus.Subject = node{ID: "subject", Label: "Subject"}
 	p.Syllabus.Topic = node{ID: "topic", Label: "Topic"}
+	if err = insertPublication(ctx, pool, p); err == nil {
+		t.Fatal("published under an exam no catalog added")
+	}
+	if err = upsertExams(ctx, pool, []examRecord{{ID: "exam", Label: "Exam", FullLabel: "Example exam", Position: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	var style string
+	if err = pool.QueryRow(ctx, "SELECT cover->>'style' FROM exams WHERE id='exam'").Scan(&style); err != nil || style != bank.DefaultCover("exam").Style {
+		t.Fatalf("default cover style=%q err=%v", style, err)
+	}
+	// A later catalog without a cover keeps the stored one.
+	if _, err = pool.Exec(ctx, `UPDATE exams SET cover='{"style":"type","color":"#7866cf"}'`); err != nil {
+		t.Fatal(err)
+	}
+	if err = upsertExams(ctx, pool, []examRecord{{ID: "exam", Label: "Exam", FullLabel: "Example exam", Position: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	if err = pool.QueryRow(ctx, "SELECT cover->>'style' FROM exams WHERE id='exam'").Scan(&style); err != nil || style != "type" {
+		t.Fatalf("kept cover style=%q err=%v", style, err)
+	}
 	if err = insertPublication(ctx, pool, p); err != nil {
 		t.Fatal(err)
 	}
@@ -108,5 +129,16 @@ func TestSourceReferenceContract(t *testing.T) {
 		if _, err := parseSources(json.RawMessage(raw)); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// The committed catalogs are what bank exams writes, so they must load.
+func TestSyllabusCatalogExamsLoad(t *testing.T) {
+	exams, err := loadExams("../../../lab/questions/syllabi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(exams) != 2 {
+		t.Fatalf("exams=%d", len(exams))
 	}
 }

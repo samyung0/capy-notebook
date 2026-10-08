@@ -201,6 +201,8 @@ export const questionBankHandlers = [
       editor: true,
       exams: [
         {
+          cover: { color: '#7866cf', kind: 'math', style: 'symbols' },
+          fullLabel: 'Hong Kong Diploma of Secondary Education',
           id: 'hkdse',
           label: 'HKDSE',
           subjects: [
@@ -229,6 +231,13 @@ export const questionBankHandlers = [
           ],
         },
         {
+          cover: {
+            color: '#2a78d6',
+            kind: 'latin',
+            line: 'Paraphrase, then summarise.',
+            style: 'paper',
+          },
+          fullLabel: 'International English Language Testing System',
           id: 'ielts',
           label: 'IELTS',
           subjects: [

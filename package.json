@@ -56,6 +56,8 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "fflate": "0.8.2",
+    "geopattern": "1.2.3",
+    "hero-patterns": "2.1.0",
     "html2canvas-pro": "^2.2.1",
     "jsxgraph": "1.13.3",
     "katex": "^0.17.0",

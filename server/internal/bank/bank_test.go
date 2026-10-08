@@ -42,7 +42,7 @@ func TestBankMigrationAndReviewSurviveEdit(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO exams VALUES ('exam','Exam',1);INSERT INTO subjects VALUES ('subject','exam','Subject',1);INSERT INTO topics VALUES ('topic','subject','Topic',1)`); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO exams VALUES ('exam','Exam',1,'Example exam','{"style":"type","color":"#7866cf"}');INSERT INTO subjects VALUES ('subject','exam','Subject',1);INSERT INTO topics VALUES ('topic','subject','Topic',1)`); err != nil {
 		t.Fatal(err)
 	}
 	raw := `{"id":"q","stem":[{"type":"text","text":"Question"}],"parts":[{"id":"p","blocks":[{"type":"text","text":"Answer this"}],"answer":{"type":"short","accepted":["2"]},"marks":1,"solution":[{"type":"text","text":"Two"}]}],"layout":"paper","labels":"letters"}`
@@ -141,5 +141,31 @@ func TestMissingBankConfigurationAndUnavailablePool(t *testing.T) {
 	}
 	if err := b.Review(ctx, "q", "u", true); !errors.Is(err, ErrReadOnly) {
 		t.Fatalf("read-only: %v", err)
+	}
+}
+
+func TestCoverCheck(t *testing.T) {
+	for _, c := range []Cover{
+		{Style: "symbols", Color: "#7866cf", Kind: "math"},
+		{Style: "paper", Color: "#2a78d6", Kind: "kana", Line: "わたしは がくせいです。"},
+		{Style: "geo", Color: "#1b9e6f", Pattern: "hexagons"},
+		{Style: "shelf", Color: "#d0505e"},
+		DefaultCover("hkdse"),
+	} {
+		if err := c.Check(); err != nil {
+			t.Fatalf("%+v: %v", c, err)
+		}
+	}
+	for _, c := range []Cover{
+		{Style: "symbols", Color: "#7866CF", Kind: "math"},
+		{Style: "symbols", Color: "#7866cf"},
+		{Style: "type", Color: "#7866cf", Kind: "math"},
+		{Style: "hero", Color: "#7866cf", Pattern: "topography"},
+		{Style: "symbols", Color: "#7866cf", Kind: "math", Line: "x"},
+		{Style: "photo", Color: "#7866cf"},
+	} {
+		if c.Check() == nil {
+			t.Fatalf("accepted %+v", c)
+		}
 	}
 }

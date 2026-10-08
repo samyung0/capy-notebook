@@ -689,11 +689,24 @@ export const ReviewBankQuestionResponse = zod.object({
 /**
  * @summary Read the exam syllabus
  */
+export const bankSyllabusResponseExamsItemCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
+export const bankSyllabusResponseExamsItemCoverLineMax = 40;
+
+
+
 export const BankSyllabusResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "assetsUrl": zod.string(),
   "editor": zod.boolean(),
   "exams": zod.array(zod.object({
+  "cover": zod.object({
+  "color": zod.string().regex(bankSyllabusResponseExamsItemCoverColorRegExp),
+  "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
+  "line": zod.string().max(bankSyllabusResponseExamsItemCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
+  "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
+  "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
+}),
+  "fullLabel": zod.string().describe('The exam\'s full name, shown and searched in the exam switcher'),
   "id": zod.string(),
   "label": zod.string(),
   "subjects": zod.array(zod.object({
