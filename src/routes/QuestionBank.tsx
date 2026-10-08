@@ -78,6 +78,7 @@ import { QuizPageHeader } from '@/features/quizzes/QuizPage';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { CopyError, describeError } from '@/lib/errors';
+import { holdPosition, scrollSettled } from '@/lib/scrollAnchor';
 import { scrollIntoViewWithMotion } from '@/lib/scrollIntoViewWithMotion';
 import { useDebounced } from '@/lib/useDebounced';
 
@@ -327,8 +328,10 @@ export default function QuestionBank() {
         edit={mode === 'edit'}
         filter={filter}
         filters={filters}
-        hasEarlier={hasPreviousPage}
-        hasMore={hasNextPage}
+        // A failed page shows the list error with Try again; the panel's
+        // ends stop loading until then.
+        hasEarlier={hasPreviousPage && !listError}
+        hasMore={hasNextPage && !listError}
         label={place?.item.label ?? ''}
         loadingEarlier={isFetchingPreviousPage}
         loadingMore={isFetchingNextPage}
@@ -341,9 +344,9 @@ export default function QuestionBank() {
           setNavOpen(false);
           setCopying(true);
         }}
-        onEarlier={() => void fetchPreviousPage()}
+        onEarlier={() => void fetchPreviousPage(joinFetch)}
         onFilter={refilter(setFilter)}
-        onMore={() => void fetchNextPage()}
+        onMore={() => void fetchNextPage(joinFetch)}
         onQuestion={(row) => {
           if (selecting) toggleQuestion(row);
           select(row.id);
@@ -409,9 +412,9 @@ export default function QuestionBank() {
         hasEarlier={hasPreviousPage}
         hasMore={hasNextPage}
         key={JSON.stringify([topicId, listFilters, anchor])}
-        loadEarlier={fetchPreviousPage}
+        loadEarlier={() => fetchPreviousPage(joinFetch)}
         loadingMore={isFetchingNextPage}
-        loadMore={fetchNextPage}
+        loadMore={() => fetchNextPage(joinFetch)}
         mode={mode}
         onComment={setCommentFor}
         onEdit={(detail) => setEditing(structuredClone(detail))}
@@ -670,10 +673,10 @@ function scrollToQuestion(id: string) {
  * The loaded rows as a window of full questions that grows PAGE at a time as
  * the reader nears its end, loading the list's next page when the window
  * reaches it. Jumping to a question outside the window (or not next to it)
- * restarts the window at the question, and a button above brings back earlier
- * questions (the list's previous page first, if needed) while keeping the
- * reading position: Safari has no scroll anchoring, so content never loads
- * above the viewport on its own.
+ * restarts the window at the question. Earlier questions (the list's previous
+ * page first, if needed) load the same way near the window's start, going in
+ * only once scrolling settles and with the reading position held
+ * (src/lib/scrollAnchor.ts).
  */
 function BankQuestions({
   rows,
@@ -757,93 +760,85 @@ function BankQuestions({
 
   // Grow the window when its end comes within 800px of the viewport.
   const endRef = useRef<HTMLDivElement>(null);
-  const [nearEnd, setNearEnd] = useState(false);
-  useEffect(() => {
-    const end = endRef.current;
-    if (!end) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => setNearEnd(entry.isIntersecting),
-      { root: scrollRef.current, rootMargin: '0px 0px 800px 0px' }
-    );
-    observer.observe(end);
-    return () => observer.disconnect();
-  }, [scrollRef]);
+  const nearEnd = useNear(endRef, '0px 0px 800px 0px', scrollRef);
   useEffect(() => {
     if (!nearEnd || isFetching || error) return;
     if (range.end < rows.length) setRange({ ...range, end: range.end + PAGE });
     else if (hasMore && !loadingMore) void loadMore();
   });
 
-  // Earlier questions are fetched first, then inserted with the scroll
-  // position moved by the height they add.
-  const anchor = useRef<{ element: Element; top: number } | null>(null);
+  // Earlier questions load as the window's start comes within 800px: fetched
+  // first, then put in once scrolling settles, with the reading position held.
+  const startRef = useRef<HTMLDivElement>(null);
+  const nearStart = useNear(
+    startRef,
+    '800px 0px 0px 0px',
+    scrollRef,
+    range.start
+  );
+  const earlierLeft = range.start > 0 || hasEarlier;
   const [loadingEarlier, setLoadingEarlier] = useState(false);
-  const earlier = Math.max(0, range.start - PAGE);
+  const [earlierError, setEarlierError] = useState<Error | null>(null);
+  const hold = useRef<(() => void) | null>(null);
+  // The rows and window of the latest render, for showEarlier after its waits.
+  const latest = useRef({ range, rows });
+  latest.current = { range, rows };
+  useEffect(() => {
+    if (nearStart && earlierLeft && !loadingEarlier && !earlierError)
+      void showEarlier();
+  });
   async function showEarlier() {
     setLoadingEarlier(true);
     try {
+      const first = rows[range.start];
       let list = rows;
       if (range.start === 0) {
         const result = await loadEarlier();
         if (result.error) throw result.error;
         list = result.data?.pages.flatMap((page) => page.items) ?? rows;
       }
-      const first = rows[range.start];
       const start = list.findIndex((row) => row.id === first?.id);
-      const from = Math.max(0, start - PAGE);
       await client.fetchQuery(
         bankBatchQuery(
           client,
-          list.slice(from, start).map((row) => row.id),
+          list.slice(Math.max(0, start - PAGE), start).map((row) => row.id),
           mode
         )
       );
+      await scrollSettled();
+      // A jump while waiting moved the window on; it loads its own.
+      const now = latest.current;
       const element = first && questionElement(first.id);
-      anchor.current = element && {
-        element,
-        top: element.getBoundingClientRect().top,
-      };
+      if (!element || now.rows[now.range.start]?.id !== first.id) return;
+      const at = now.rows.findIndex((row) => row.id === first.id);
+      hold.current = holdPosition(element);
       setView({
-        base: list[0]?.id,
-        end: start + range.end - range.start,
-        start: from,
+        base: now.rows[0]?.id,
+        end: at + now.range.end - now.range.start,
+        start: Math.max(0, at - PAGE),
       });
     } catch (loadError) {
-      userToast({
-        description: loadError instanceof Error ? loadError.message : undefined,
-        title: m.question_ui_questions_load_failed(),
-        variant: 'error',
-      });
+      setEarlierError(
+        loadError instanceof Error ? loadError : new Error(String(loadError))
+      );
     } finally {
       setLoadingEarlier(false);
     }
   }
+  // The commit after holdPosition is the one that put the questions in.
   useLayoutEffect(() => {
-    const saved = anchor.current;
-    anchor.current = null;
-    if (saved && scrollRef.current)
-      scrollRef.current.scrollTop +=
-        saved.element.getBoundingClientRect().top - saved.top;
-  }, [range.start, scrollRef]);
+    hold.current?.();
+    hold.current = null;
+  });
 
   return (
-    <div className="grid gap-12">
-      {(range.start > 0 || hasEarlier) && (
-        <Button
-          disabled={loadingEarlier}
-          fullWidth
-          iconLeft="arrowUp"
-          onClick={() => void showEarlier()}
-          rounded="large"
-          variant="outline"
-        >
-          {range.start > 0
-            ? m.question_ui_show_questions({
-                from: rows[earlier]?.position ?? 1,
-                to: rows[range.start - 1]?.position ?? 1,
-              })
-            : m.question_ui_show_earlier_questions()}
-        </Button>
+    <div className="relative grid gap-12">
+      {/* Out of the grid flow, so it adds no gap above the first question. */}
+      <div aria-hidden className="absolute top-0" ref={startRef} />
+      {earlierError ? (
+        <BankError error={earlierError} onRetry={() => setEarlierError(null)} />
+      ) : (
+        earlierLeft && <Skeleton className="h-40 w-full" />
       )}
       <ol className="grid gap-12">
         {shown.map((row, i) => {
@@ -977,6 +972,32 @@ function CheckableQuestion({
     </>
   );
 }
+
+/** Whether the element is within the root (default the viewport) grown by
+ * `margin`; an ancestor scroller still clips it. The observer reports a frame
+ * late, so a new `key` (content moved the element) reads false until then. */
+function useNear(
+  ref: RefObject<Element | null>,
+  margin: string,
+  root?: RefObject<Element | null>,
+  key?: unknown
+) {
+  const [seen, setSeen] = useState({ key, near: false });
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setSeen({ key, near: entry.isIntersecting }),
+      { root: root?.current, rootMargin: margin }
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref, margin, root, key]);
+  return seen.key === key && seen.near;
+}
+
+// Both panels load pages; a second call joins the request in flight.
+const joinFetch = { cancelRefetch: false };
 
 /** A question's page and the next one, so the question can scroll to the top. */
 function around(index: number) {
@@ -1201,22 +1222,49 @@ function TopicQuestions({
   onUnreviewed: (value: boolean) => void;
   onQuestion: (row: BankRow) => void;
 }) {
-  // The viewport root also sees the end inside the panel's or sheet's scroller.
+  // The viewport root also sees the ends inside the panel's or sheet's
+  // scroller, which clips them, so they count once in view.
   const endRef = useRef<HTMLDivElement>(null);
-  const [nearEnd, setNearEnd] = useState(false);
-  useEffect(() => {
-    const end = endRef.current;
-    if (!end) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => setNearEnd(entry.isIntersecting),
-      { rootMargin: '0px 0px 400px 0px' }
-    );
-    observer.observe(end);
-    return () => observer.disconnect();
-  }, []);
+  const nearEnd = useNear(endRef, '0px 0px 400px 0px');
   useEffect(() => {
     if (nearEnd && hasMore && !loadingMore) onMore();
   }, [nearEnd, hasMore, loadingMore, onMore]);
+
+  // Rows loaded above the shown ones wait for scrolling to settle, then go in
+  // with the visible rows held still (src/lib/scrollAnchor.ts).
+  const listRef = useRef<HTMLOListElement>(null);
+  const [firstId, setFirstId] = useState(rows[0]?.id);
+  if (rows.length && !rows.some((row) => row.id === firstId))
+    setFirstId(rows[0]?.id);
+  const from = Math.max(
+    0,
+    rows.findIndex((row) => row.id === firstId)
+  );
+  const topId = rows[0]?.id;
+  const hold = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    if (!from) return;
+    let live = true;
+    void scrollSettled().then(() => {
+      const element = listRef.current?.firstElementChild;
+      if (!(live && element)) return;
+      hold.current = holdPosition(element);
+      setFirstId(topId);
+    });
+    return () => {
+      live = false;
+    };
+  }, [from, topId]);
+  useLayoutEffect(() => {
+    hold.current?.();
+    hold.current = null;
+  });
+  // The previous page loads at the top once the rows waiting have gone in.
+  const startRef = useRef<HTMLDivElement>(null);
+  const nearStart = useNear(startRef, '400px 0px 0px 0px', undefined, firstId);
+  useEffect(() => {
+    if (nearStart && !from && hasEarlier && !loadingEarlier) onEarlier();
+  }, [nearStart, from, hasEarlier, loadingEarlier, onEarlier]);
   return (
     <nav aria-label={m.question_ui_questions()} className="flex flex-col gap-3">
       <PanelHeading
@@ -1289,21 +1337,10 @@ function TopicQuestions({
           </ToolbarButton>
         )}
       </div>
-      {hasEarlier && (
-        <Button
-          className="mx-2"
-          disabled={loadingEarlier}
-          iconLeft="arrowUp"
-          onClick={onEarlier}
-          rounded="large"
-          size="sm"
-          variant="ghost-hover"
-        >
-          {m.question_ui_show_earlier_questions()}
-        </Button>
-      )}
-      <ol className="grid gap-0.5">
-        {rows.map((row) => (
+      <div aria-hidden className="-mb-3" ref={startRef} />
+      {(hasEarlier || from > 0) && <SkeletonList count={3} rowHeight={28} />}
+      <ol className="grid gap-0.5" ref={listRef}>
+        {rows.slice(from).map((row) => (
           <li key={row.id}>
             <QuestionListRow
               current={row.id === questionId}

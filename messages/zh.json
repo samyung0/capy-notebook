@@ -1623,8 +1623,6 @@
   "question_ui_comment": "评论",
   "question_ui_reviewed": "已审核",
   "question_ui_not_reviewed": "未审核",
-  "question_ui_show_questions": "显示第 {from}–{to} 题",
-  "question_ui_show_earlier_questions": "显示前面的题目",
   "question_ui_questions_load_failed": "无法加载这些题目",
   "question_ui_try_again": "重试",
   "question_ui_comment_on_this_question": "评论此题",

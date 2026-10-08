@@ -29,10 +29,11 @@ answered while the Status filter is on shifts nothing on the next page, and
 already loaded pages keep it listed until a filter changes. Topic counts in the
 heading and the editor's All/Unreviewed buttons come from the syllabus, not
 the loaded pages.
-One infinite query feeds both panels: the side list loads the next page as
-its end nears and earlier pages from a "Show earlier questions" button; a
-filter change or a question outside the loaded pages reopens the list
-`around` that question.
+One infinite query feeds both panels and loads at either end: the side list
+asks for the next page as its end comes into view and the previous page as
+its top does; a filter change or a question outside the loaded pages reopens
+the list `around` that question. Concurrent page calls from the two panels
+join the request in flight (`cancelRefetch: false`).
 Full questions come from `GET /api/bank/questions?ids=`, up to 50 per request
 in the requested order; an unknown id fails the whole
 batch with 404, so the page refetches the list. The page renders a window of
@@ -44,13 +45,20 @@ top, with the editor TOC's motion
 (`src/lib/scrollIntoViewWithMotion.ts`, which sets the position each frame so
 content loading above cannot cancel it the way it cancelled a native smooth
 scroll); a page next to the window extends it instead.
-Earlier questions come back through a "Show questions x–y" button (the
-list's previous page first, when the window starts at the loaded rows) that
-fetches first, then inserts them and moves the scroll position by the added
-height.
-Content never loads above the viewport on its own because Safari has no CSS
-scroll anchoring. Each loaded question lives in its own query-cache entry,
-which edits and reviews update in place.
+Earlier questions load the same way as the window's start comes within 800px
+(the list's previous page first, when the window starts at the loaded rows),
+with a skeleton above while any remain. Each loaded question lives in its own
+query-cache entry, which edits and reviews update in place.
+
+Content added above the view goes through `src/lib/scrollAnchor.ts`, in both
+panels (the side list holds back rows its query loads above until then).
+`holdPosition` turns the scroller's native anchoring off, lets the change in
+and moves the scroll position by however far the first shown question moved:
+Chrome does not anchor at scrollTop 0 and Safari before 27 has no
+anchoring. `scrollSettled` makes the insert wait until no finger is down and
+nothing has scrolled for 150 ms, because iOS Safari cancels a fling, or drops
+the write, when script sets scrollTop during a touch scroll, its momentum or
+its bounce.
 
 ## Shared question format
 
