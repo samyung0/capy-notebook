@@ -232,7 +232,7 @@ export function OptionKey({
   return (
     <span
       className={cn(
-        'grid size-6 shrink-0 place-items-center font-bold text-[13px] text-fg-secondary tabular-nums leading-none',
+        'grid size-6 shrink-0 place-items-center font-bold text-fg-secondary tabular-nums leading-none',
         className
       )}
     >
@@ -251,7 +251,8 @@ export function answerRowClass(variant?: CalloutVariant) {
   );
 }
 
-/** Matching items above the lettered options on phones, side by side from md. */
+/** Lettered options above the matching items, side by side once the answer
+ * area is 50rem wide. */
 export function MatchingLayout({
   className,
   items,
@@ -262,21 +263,18 @@ export function MatchingLayout({
   options: string[];
 }) {
   return (
-    <div
-      className={cn(
-        'grid gap-4.5 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] md:gap-6',
-        className
-      )}
-    >
-      {items}
-      <ol className="grid content-start gap-2 md:pt-2.5">
-        {options.map((text, i) => (
-          <li className="flex items-baseline gap-3" key={i}>
-            <OptionKey className="h-auto">{optionLetter(i)}.</OptionKey>
-            <TextView className="min-w-0" text={text} />
-          </li>
-        ))}
-      </ol>
+    <div className={cn('@container', className)}>
+      <div className="grid @min-[50rem]:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] @min-[50rem]:gap-6 gap-4.5">
+        {items}
+        <ol className="@min-[50rem]:order-none order-first grid content-start gap-2 @min-[50rem]:pt-2.5">
+          {options.map((text, i) => (
+            <li className="flex items-baseline gap-3" key={i}>
+              <OptionKey className="h-auto">{optionLetter(i)}.</OptionKey>
+              <TextView className="min-w-0" text={text} />
+            </li>
+          ))}
+        </ol>
+      </div>
     </div>
   );
 }

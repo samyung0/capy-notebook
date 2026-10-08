@@ -20,10 +20,10 @@ import type {
   BankCommentInputBody,
   BankCopyInputBody,
   BankCopyOutputBody,
-  BankListBody,
   BankMarksOutputBody,
   BankProgressOutputBody,
   BankQuestionBatchParams,
+  BankQuestionsParams,
   BankReviewInputBody,
   BankSaveInputBody,
   BillingCheckoutReq,
@@ -152,6 +152,7 @@ import type {
   Syllabus,
   Tag,
   Task,
+  TopicPage,
   TransferWorkspaceReq,
   TrashActionReq,
   TrashPage,
@@ -1035,7 +1036,7 @@ export const bankTopicMarks = async (topicId: string, options?: RequestInit): Pr
 
 
 export type bankQuestionsResponse200 = {
-  data: BankListBody
+  data: TopicPage
   status: 200
 }
 
@@ -1053,20 +1054,29 @@ export type bankQuestionsResponseError = (bankQuestionsResponseDefault) & {
 
 export type bankQuestionsResponse = (bankQuestionsResponseSuccess | bankQuestionsResponseError)
 
-export const getBankQuestionsUrl = (topicId: string,) => {
+export const getBankQuestionsUrl = (topicId: string,
+    params?: BankQuestionsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/bank/topics/${topicId}/questions`
+  return stringifiedParams.length > 0 ? `/api/bank/topics/${topicId}/questions?${stringifiedParams}` : `/api/bank/topics/${topicId}/questions`
 }
 
 /**
  * @summary List topic questions
  */
-export const bankQuestions = async (topicId: string, options?: RequestInit): Promise<bankQuestionsResponse> => {
+export const bankQuestions = async (topicId: string,
+    params?: BankQuestionsParams, options?: RequestInit): Promise<bankQuestionsResponse> => {
 
-  const res = await fetch(getBankQuestionsUrl(topicId),
+  const res = await fetch(getBankQuestionsUrl(topicId,params),
   {
     ...options,
     method: 'GET'

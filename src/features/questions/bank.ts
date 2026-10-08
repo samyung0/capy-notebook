@@ -1,4 +1,8 @@
-import { type QueryClient, queryOptions } from '@tanstack/react-query';
+import {
+  infiniteQueryOptions,
+  type QueryClient,
+  queryOptions,
+} from '@tanstack/react-query';
 import { api } from '@/api/client';
 import type {
   BankCopyReq,
@@ -56,14 +60,54 @@ export const bankSyllabusQuery = () =>
     queryKey: ['bank', 'syllabus'],
     retry: false,
   });
-export const bankQuestionsQuery = (topicId: string) =>
-  queryOptions({
+/** The topic list's filters; empty values keep every question. */
+export type BankListFilters = {
+  types: string[];
+  statuses: string[];
+  search: string;
+  unreviewed: boolean;
+};
+/** One page of a topic's rows, filtered on the server in position order. */
+export type BankPage = {
+  items: BankRow[];
+  nextCursor?: string;
+  prevCursor?: string;
+  /** The answer types present in the whole topic. */
+  answerTypes: string[];
+};
+/** Every list query of a topic, whatever its filters. */
+export const bankTopicKey = (topicId: string) => ['bank', 'topics', topicId];
+/**
+ * The topic's rows a page at a time, loading at either end. `around` opens on
+ * the page holding that question (the top when it is not listed).
+ */
+export const bankListQuery = (
+  topicId: string,
+  filters: BankListFilters,
+  around: string
+) =>
+  infiniteQueryOptions({
     enabled: Boolean(topicId),
-    queryFn: () =>
-      api.get<{ questions: BankRow[] }>(
-        '/bank/topics/' + encodeURIComponent(topicId) + '/questions'
-      ),
-    queryKey: ['bank', 'topics', topicId],
+    getNextPageParam: (last: BankPage) => last.nextCursor,
+    getPreviousPageParam: (first: BankPage) => first.prevCursor,
+    initialPageParam: '',
+    queryFn: ({ pageParam }) => {
+      const params = new URLSearchParams();
+      if (filters.types.length) params.set('type', filters.types.join(','));
+      if (filters.statuses.length)
+        params.set('status', filters.statuses.join(','));
+      if (filters.search) params.set('q', filters.search);
+      if (filters.unreviewed) params.set('unreviewed', 'true');
+      if (pageParam) params.set('cursor', pageParam);
+      else if (around) params.set('around', around);
+      return api.get<BankPage>(
+        '/bank/topics/' +
+          encodeURIComponent(topicId) +
+          '/questions?' +
+          params.toString()
+      );
+    },
+    queryKey: [...bankTopicKey(topicId), filters, around],
     retry: false,
   });
 /** View mode reads questions without their key, for editors too; Edit mode
@@ -185,21 +229,6 @@ export type BankStatus = (typeof BANK_STATUSES)[number];
 export function bankStatus(score: number | undefined): BankStatus {
   if (score === undefined) return 'notDone';
   return score >= 1 ? 'correct' : score <= 0 ? 'wrong' : 'partial';
-}
-
-/** Rows with a part of one of `types` and a status among `statuses`; an
- * empty list keeps every row. */
-export function filterBankRows<R extends Pick<BankRow, 'id' | 'answerTypes'>>(
-  rows: R[],
-  types: string[],
-  statuses: string[],
-  marks: Record<string, number>
-): R[] {
-  return rows.filter(
-    (row) =>
-      (!types.length || row.answerTypes.some((type) => types.includes(type))) &&
-      (!statuses.length || statuses.includes(bankStatus(marks[row.id])))
-  );
 }
 
 export function uploadBankAsset(file: File): Promise<{ url: string }> {

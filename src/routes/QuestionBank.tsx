@@ -1,5 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
+  keepPreviousData,
+  useInfiniteQuery,
   useMutation,
   useQueries,
   useQuery,
@@ -44,17 +46,18 @@ import { relativeTime } from '@/features/materials/MaterialListCard';
 import {
   BANK_STATUSES,
   type BankDetail,
+  type BankListFilters,
   type BankMode,
   type BankRow,
   type BankSyllabus,
   bankBatchQuery,
+  bankListQuery,
   bankMarksQuery,
   bankProgressQuery,
   bankQuestionQuery,
-  bankQuestionsQuery,
   bankSyllabusQuery,
+  bankTopicKey,
   checkBankQuestion,
-  filterBankRows,
   storeBankEdit,
   uploadBankAsset,
 } from '@/features/questions/bank';
@@ -76,6 +79,7 @@ import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { CopyError, describeError } from '@/lib/errors';
 import { scrollIntoViewWithMotion } from '@/lib/scrollIntoViewWithMotion';
+import { useDebounced } from '@/lib/useDebounced';
 
 const QuestionDialog = lazy(() =>
   import('@/features/questions/QuestionDialog').then((module) => ({
@@ -106,12 +110,14 @@ export default function QuestionBank() {
   const [unreviewed, setUnreviewed] = useState(false);
   const [types, setTypes] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<string[]>([]);
-  // The marks the status filter was set against, so a question answered
-  // while filtered stays in view.
-  const [statusMarks, setStatusMarks] = useState<Record<string, number>>({});
-  // Clone turns the panel's question list into a picker for Copy to quiz.
+  // The list opens on the page holding this question: the URL's question when
+  // the topic or a filter changes, or one the loaded pages do not hold.
+  const [anchor, setAnchor] = useState(questionId);
+  // Clone turns the panel's question list into a picker for Copy to quiz;
+  // picks keep their rows so they survive filtering and copy in list order.
   const [selecting, setSelecting] = useState(false);
-  const [selected, setSelected] = useState<string[]>([]);
+  const [picked, setPicked] = useState<BankRow[]>([]);
+  const selected = picked.map((row) => row.id);
   const [copying, setCopying] = useState(false);
   const [shownTopic, setShownTopic] = useState(topicId);
   if (shownTopic !== topicId) {
@@ -119,8 +125,9 @@ export default function QuestionBank() {
     setFilter('');
     setTypes([]);
     setStatuses([]);
+    setAnchor(questionId);
     setSelecting(false);
-    setSelected([]);
+    setPicked([]);
   }
   const [editing, setEditing] = useState<BankDetail | null>(null);
   const [conflict, setConflict] = useState(false);
@@ -133,14 +140,6 @@ export default function QuestionBank() {
     fetchStatus,
   } = useQuery({ ...bankSyllabusQuery(), meta: { errorBoundary: false } });
   const mode = syllabus?.editor && search.mode === 'edit' ? 'edit' : 'view';
-  const {
-    data: list,
-    error: listError,
-    isPending: listPending,
-  } = useQuery({
-    ...bankQuestionsQuery(topicId),
-    meta: { errorBoundary: false },
-  });
   // Learners' results lead the list rows in view mode only.
   const { data: results, error: resultsError } = useQuery({
     ...bankMarksQuery(topicId),
@@ -148,24 +147,52 @@ export default function QuestionBank() {
     meta: { errorBoundary: false },
   });
   const marks = mode === 'view' && !resultsError ? results?.marks : undefined;
-  const questions = list?.questions ?? [];
-  const rows = filterBankRows(
-    questions,
+  const searchText = useDebounced(filter);
+  // The server filters with the learner's results at request time; loaded
+  // pages keep a question answered while filtered until a filter changes.
+  const listFilters: BankListFilters = {
+    search: searchText,
+    statuses: marks ? statuses : [],
     types,
-    marks ? statuses : [],
-    statusMarks
-  ).filter(
-    (row) =>
-      (mode !== 'edit' || !unreviewed || !row.reviewedAt) &&
-      row.preview.toLowerCase().includes(filter.toLowerCase())
-  );
+    unreviewed: mode === 'edit' && unreviewed,
+  };
+  const {
+    data: list,
+    error: listError,
+    isPending: listPending,
+    isFetching: listFetching,
+    isPlaceholderData: listStale,
+    hasNextPage,
+    hasPreviousPage,
+    isFetchingNextPage,
+    isFetchingPreviousPage,
+    fetchNextPage,
+    fetchPreviousPage,
+  } = useInfiniteQuery({
+    ...bankListQuery(topicId, listFilters, anchor),
+    meta: { errorBoundary: false },
+    // The side list stays while a new filter loads.
+    placeholderData: keepPreviousData,
+  });
+  const rows = list?.pages.flatMap((page) => page.items) ?? [];
+  const listed = rows.some((row) => row.id === questionId);
+  useEffect(() => {
+    if (questionId && !listFetching && !listed) setAnchor(questionId);
+  }, [questionId, listFetching, listed]);
+  /** A filter change reopens the list around the current question. */
+  function refilter<T>(set: (value: T) => void) {
+    return (value: T) => {
+      set(value);
+      setAnchor(questionId);
+    };
+  }
   const filters: FilterSection[] = [
     {
       key: 'type',
       label: m.question_ui_question_type(),
-      onToggle: (value) => setTypes(toggleValue(types, value)),
+      onToggle: (value) => refilter(setTypes)(toggleValue(types, value)),
       options: QUESTION_TYPES.filter((type) =>
-        questions.some((row) => row.answerTypes.includes(type))
+        list?.pages[0]?.answerTypes.includes(type)
       ).map((type) => ({ label: answerLabels[type](), value: type })),
       selected: types,
     },
@@ -174,20 +201,17 @@ export default function QuestionBank() {
     filters.push({
       key: 'status',
       label: m.common_status(),
-      onToggle: (value) => {
-        setStatusMarks(marks);
-        setStatuses(toggleValue(statuses, value));
-      },
+      onToggle: (value) => refilter(setStatuses)(toggleValue(statuses, value)),
       options: BANK_STATUSES.map((status) => ({
         label: statusLabels[status](),
         value: status,
       })),
       selected: statuses,
     });
-  function toggleQuestion(id: string) {
-    if (selected.includes(id))
-      setSelected(selected.filter((item) => item !== id));
-    else if (selected.length < COPY_MAX) setSelected([...selected, id]);
+  function toggleQuestion(row: BankRow) {
+    if (selected.includes(row.id))
+      setPicked(picked.filter((item) => item.id !== row.id));
+    else if (selected.length < COPY_MAX) setPicked([...picked, row]);
     else
       userToast({
         title: m.question_ui_copy_limit({ count: COPY_MAX }),
@@ -209,7 +233,7 @@ export default function QuestionBank() {
     onSuccess: (saved) => {
       storeBankEdit(client, saved);
       void client.invalidateQueries({
-        queryKey: bankQuestionsQuery(saved.topicId).queryKey,
+        queryKey: bankTopicKey(saved.topicId),
       });
     },
   });
@@ -222,7 +246,7 @@ export default function QuestionBank() {
     onSuccess: (saved) => {
       storeBankEdit(client, saved);
       void client.invalidateQueries({
-        queryKey: bankQuestionsQuery(saved.topicId).queryKey,
+        queryKey: bankTopicKey(saved.topicId),
       });
       void client.invalidateQueries({ queryKey: bankSyllabusQuery().queryKey });
     },
@@ -303,32 +327,40 @@ export default function QuestionBank() {
         edit={mode === 'edit'}
         filter={filter}
         filters={filters}
+        hasEarlier={hasPreviousPage}
+        hasMore={hasNextPage}
         label={place?.item.label ?? ''}
-        list={list}
+        loadingEarlier={isFetchingPreviousPage}
+        loadingMore={isFetchingNextPage}
         onBack={() => setShowTopics(true)}
         onCancelSelect={() => {
           setSelecting(false);
-          setSelected([]);
+          setPicked([]);
         }}
         onCopy={() => {
           setNavOpen(false);
           setCopying(true);
         }}
-        onFilter={setFilter}
-        onQuestion={(id) => {
-          if (selecting) toggleQuestion(id);
-          select(id);
+        onEarlier={() => void fetchPreviousPage()}
+        onFilter={refilter(setFilter)}
+        onMore={() => void fetchNextPage()}
+        onQuestion={(row) => {
+          if (selecting) toggleQuestion(row);
+          select(row.id);
         }}
         onResetFilters={() => {
           setTypes([]);
           setStatuses([]);
+          setAnchor(questionId);
         }}
         onSelect={() => setSelecting(true)}
-        onUnreviewed={setUnreviewed}
+        onUnreviewed={refilter(setUnreviewed)}
         questionId={questionId}
         results={mode === 'view' && !resultsError ? (marks ?? {}) : undefined}
+        reviewedCount={place?.item.reviewed ?? 0}
         rows={rows}
         selected={selecting ? selected : undefined}
+        total={place?.item.total ?? 0}
         unreviewed={unreviewed}
       />
     )
@@ -364,24 +396,22 @@ export default function QuestionBank() {
       <BankError
         error={listError}
         onRetry={() =>
-          void client.invalidateQueries({
-            queryKey: bankQuestionsQuery(topicId).queryKey,
-          })
+          void client.invalidateQueries({ queryKey: bankTopicKey(topicId) })
         }
       />
     );
-  else if (listPending) body = <Skeleton className="h-64 w-full" />;
+  else if (listPending || listStale)
+    body = <Skeleton className="h-64 w-full" />;
   else if (rows.length)
     body = (
       <BankQuestions
-        // A new topic or filter starts a new window.
-        key={[
-          topicId,
-          filter,
-          mode === 'edit' && unreviewed,
-          types,
-          marks && statuses,
-        ].join('|')}
+        // A new topic, filter or anchor starts a new window.
+        hasEarlier={hasPreviousPage}
+        hasMore={hasNextPage}
+        key={JSON.stringify([topicId, listFilters, anchor])}
+        loadEarlier={fetchPreviousPage}
+        loadingMore={isFetchingNextPage}
+        loadMore={fetchNextPage}
         mode={mode}
         onComment={setCommentFor}
         onEdit={(detail) => setEditing(structuredClone(detail))}
@@ -438,18 +468,16 @@ export default function QuestionBank() {
                   )
                 }
                 meta={
-                  topicId &&
-                  list &&
+                  place &&
                   [
-                    list.questions.length === 1
+                    place.item.total === 1
                       ? m.question_ui_one_question()
                       : m.question_ui_question_count({
-                          count: list.questions.length,
+                          count: place.item.total,
                         }),
                     mode === 'edit' &&
                       m.question_ui_reviewed_count({
-                        count: list.questions.filter((row) => row.reviewedAt)
-                          .length,
+                        count: place.item.reviewed,
                       }),
                   ]
                     .filter(Boolean)
@@ -616,10 +644,10 @@ export default function QuestionBank() {
           onCopied={() => {
             setCopying(false);
             setSelecting(false);
-            setSelected([]);
+            setPicked([]);
           }}
-          questionIds={questions
-            .filter((row) => selected.includes(row.id))
+          questionIds={[...picked]
+            .sort((a, b) => a.position - b.position)
             .map((row) => row.id)}
           topicLabel={place?.item.label ?? ''}
         />
@@ -639,14 +667,21 @@ function scrollToQuestion(id: string) {
 }
 
 /**
- * The topic's questions as a window that loads PAGE at a time as the reader
- * nears its end. Jumping to a question outside the window (or not next to it)
- * restarts the window at the question's page, and a button above brings back
- * the earlier page while keeping the reading position: Safari has no scroll
- * anchoring, so content never loads above the viewport on its own.
+ * The loaded rows as a window of full questions that grows PAGE at a time as
+ * the reader nears its end, loading the list's next page when the window
+ * reaches it. Jumping to a question outside the window (or not next to it)
+ * restarts the window at the question, and a button above brings back earlier
+ * questions (the list's previous page first, if needed) while keeping the
+ * reading position: Safari has no scroll anchoring, so content never loads
+ * above the viewport on its own.
  */
 function BankQuestions({
   rows,
+  hasMore,
+  hasEarlier,
+  loadingMore,
+  loadMore,
+  loadEarlier,
   questionId,
   topicId,
   mode,
@@ -657,6 +692,14 @@ function BankQuestions({
   onEdit,
 }: {
   rows: BankRow[];
+  hasMore: boolean;
+  hasEarlier: boolean;
+  loadingMore: boolean;
+  loadMore: () => Promise<unknown>;
+  loadEarlier: () => Promise<{
+    data?: { pages: { items: BankRow[] }[] };
+    error: Error | null;
+  }>;
   questionId: string;
   topicId: string;
   mode: BankMode;
@@ -668,9 +711,19 @@ function BankQuestions({
 }) {
   const client = useQueryClient();
   const target = rows.findIndex((row) => row.id === questionId);
-  const [range, setRange] = useState(() =>
-    target >= 0 ? around(target) : { end: PAGE, start: 0 }
+  // Indices into rows, counted from the row `base` so that loading earlier
+  // pages, which puts rows in front, leaves the window where it is.
+  const [view, setView] = useState(() => ({
+    base: rows[0]?.id,
+    ...(target >= 0 ? around(target) : { end: PAGE, start: 0 }),
+  }));
+  const shift = Math.max(
+    0,
+    rows.findIndex((row) => row.id === view.base)
   );
+  const range = { end: view.end + shift, start: view.start + shift };
+  const setRange = (next: { start: number; end: number }) =>
+    setView({ base: rows[0]?.id, ...next });
   const shown = rows.slice(range.start, range.end);
   const { error, isFetching, refetch } = useQuery({
     ...bankBatchQuery(
@@ -689,8 +742,10 @@ function BankQuestions({
   });
 
   useEffect(() => {
-    if (target >= 0) setRange((current) => jump(current, target));
-  }, [target]);
+    if (target < 0) return;
+    const next = jump(range, target);
+    if (next !== range) setRange(next);
+  });
   // Scroll once the question and everything above it in the window has loaded.
   const targetReady =
     target >= range.start &&
@@ -713,11 +768,11 @@ function BankQuestions({
     observer.observe(end);
     return () => observer.disconnect();
   }, [scrollRef]);
-  const more = range.end < rows.length;
   useEffect(() => {
-    if (nearEnd && more && !isFetching && !error)
-      setRange((current) => ({ ...current, end: current.end + PAGE }));
-  }, [nearEnd, more, isFetching, error]);
+    if (!nearEnd || isFetching || error) return;
+    if (range.end < rows.length) setRange({ ...range, end: range.end + PAGE });
+    else if (hasMore && !loadingMore) void loadMore();
+  });
 
   // Earlier questions are fetched first, then inserted with the scroll
   // position moved by the height they add.
@@ -727,20 +782,32 @@ function BankQuestions({
   async function showEarlier() {
     setLoadingEarlier(true);
     try {
+      let list = rows;
+      if (range.start === 0) {
+        const result = await loadEarlier();
+        if (result.error) throw result.error;
+        list = result.data?.pages.flatMap((page) => page.items) ?? rows;
+      }
+      const first = rows[range.start];
+      const start = list.findIndex((row) => row.id === first?.id);
+      const from = Math.max(0, start - PAGE);
       await client.fetchQuery(
         bankBatchQuery(
           client,
-          rows.slice(earlier, range.start).map((row) => row.id),
+          list.slice(from, start).map((row) => row.id),
           mode
         )
       );
-      const first = rows[range.start];
       const element = first && questionElement(first.id);
       anchor.current = element && {
         element,
         top: element.getBoundingClientRect().top,
       };
-      setRange((current) => ({ ...current, start: earlier }));
+      setView({
+        base: list[0]?.id,
+        end: start + range.end - range.start,
+        start: from,
+      });
     } catch (loadError) {
       userToast({
         description: loadError instanceof Error ? loadError.message : undefined,
@@ -761,7 +828,7 @@ function BankQuestions({
 
   return (
     <div className="grid gap-12">
-      {range.start > 0 && (
+      {(range.start > 0 || hasEarlier) && (
         <Button
           disabled={loadingEarlier}
           fullWidth
@@ -770,10 +837,12 @@ function BankQuestions({
           rounded="large"
           variant="outline"
         >
-          {m.question_ui_show_questions({
-            from: earlier + 1,
-            to: range.start,
-          })}
+          {range.start > 0
+            ? m.question_ui_show_questions({
+                from: rows[earlier]?.position ?? 1,
+                to: rows[range.start - 1]?.position ?? 1,
+              })
+            : m.question_ui_show_earlier_questions()}
         </Button>
       )}
       <ol className="grid gap-12">
@@ -821,9 +890,7 @@ function BankQuestions({
           error={error}
           onRetry={() => {
             // A 404 means a question left the topic; the list drops it.
-            void client.invalidateQueries({
-              queryKey: bankQuestionsQuery(topicId).queryKey,
-            });
+            void client.invalidateQueries({ queryKey: bankTopicKey(topicId) });
             void refetch();
           }}
         />
@@ -1079,8 +1146,13 @@ function TopicTree({
 /** The chosen topic's question list; a row scrolls the page to its question. */
 function TopicQuestions({
   label,
-  list,
+  total,
+  reviewedCount,
   rows,
+  hasMore,
+  hasEarlier,
+  loadingMore,
+  loadingEarlier,
   questionId,
   edit,
   filter,
@@ -1091,15 +1163,24 @@ function TopicQuestions({
   onBack,
   onCancelSelect,
   onCopy,
+  onEarlier,
   onFilter,
+  onMore,
   onResetFilters,
   onSelect,
   onUnreviewed,
   onQuestion,
 }: {
   label: string;
-  list?: { questions: BankRow[] };
+  /** The topic's question and reviewed counts, unfiltered. */
+  total: number;
+  reviewedCount: number;
+  /** The loaded pages' rows; more load at the end as it scrolls into view. */
   rows: BankRow[];
+  hasMore: boolean;
+  hasEarlier: boolean;
+  loadingMore: boolean;
+  loadingEarlier: boolean;
   questionId: string;
   edit: boolean;
   filter: string;
@@ -1112,12 +1193,30 @@ function TopicQuestions({
   onBack: () => void;
   onCancelSelect: () => void;
   onCopy: () => void;
+  onEarlier: () => void;
   onFilter: (value: string) => void;
+  onMore: () => void;
   onResetFilters: () => void;
   onSelect: () => void;
   onUnreviewed: (value: boolean) => void;
-  onQuestion: (id: string) => void;
+  onQuestion: (row: BankRow) => void;
 }) {
+  // The viewport root also sees the end inside the panel's or sheet's scroller.
+  const endRef = useRef<HTMLDivElement>(null);
+  const [nearEnd, setNearEnd] = useState(false);
+  useEffect(() => {
+    const end = endRef.current;
+    if (!end) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setNearEnd(entry.isIntersecting),
+      { rootMargin: '0px 0px 400px 0px' }
+    );
+    observer.observe(end);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    if (nearEnd && hasMore && !loadingMore) onMore();
+  }, [nearEnd, hasMore, loadingMore, onMore]);
   return (
     <nav aria-label={m.question_ui_questions()} className="flex flex-col gap-3">
       <PanelHeading
@@ -1134,7 +1233,7 @@ function TopicQuestions({
         searchLabel={m.question_ui_find_a_question()}
         title={label}
       />
-      <div className="flex flex-wrap items-center gap-1 px-3">
+      <div className="flex flex-wrap items-center gap-x-1 px-3">
         {edit && (
           <>
             <Button
@@ -1144,7 +1243,7 @@ function TopicQuestions({
               size="sm"
               variant={unreviewed ? 'ghost-hover' : 'gray'}
             >
-              {m.action_all()} {list?.questions.length ?? 0}
+              {m.action_all()} {total}
             </Button>
             <Button
               aria-pressed={unreviewed}
@@ -1153,8 +1252,7 @@ function TopicQuestions({
               size="sm"
               variant={unreviewed ? 'gray' : 'ghost-hover'}
             >
-              {m.question_ui_unreviewed()}{' '}
-              {list?.questions.filter((row) => !row.reviewedAt).length ?? 0}
+              {m.question_ui_unreviewed()} {total - reviewedCount}
             </Button>
           </>
         )}
@@ -1162,7 +1260,7 @@ function TopicQuestions({
         {selected ? (
           <>
             <ToolbarButton
-              className="w-auto gap-2 px-2"
+              className="-mx-1 h-7 w-auto gap-2 px-2"
               disabled={!selected.length}
               label={m.question_ui_copy_to_quiz()}
               onClick={onCopy}
@@ -1173,6 +1271,7 @@ function TopicQuestions({
               </span>
             </ToolbarButton>
             <ToolbarButton
+              className="size-7"
               label={m.question_ui_clear_selection()}
               onClick={onCancelSelect}
             >
@@ -1181,7 +1280,7 @@ function TopicQuestions({
           </>
         ) : (
           <ToolbarButton
-            className="w-auto gap-2 px-2"
+            className="-mx-1 h-7 w-auto gap-2 px-2"
             label={m.action_clone()}
             onClick={onSelect}
           >
@@ -1190,6 +1289,19 @@ function TopicQuestions({
           </ToolbarButton>
         )}
       </div>
+      {hasEarlier && (
+        <Button
+          className="mx-2"
+          disabled={loadingEarlier}
+          iconLeft="arrowUp"
+          onClick={onEarlier}
+          rounded="large"
+          size="sm"
+          variant="ghost-hover"
+        >
+          {m.question_ui_show_earlier_questions()}
+        </Button>
+      )}
       <ol className="grid gap-0.5">
         {rows.map((row) => (
           <li key={row.id}>
@@ -1203,7 +1315,7 @@ function TopicQuestions({
                   </span>
                 )
               }
-              onClick={() => onQuestion(row.id)}
+              onClick={() => onQuestion(row)}
               result={results && (results[row.id] ?? null)}
               row={row}
               selected={selected?.includes(row.id)}
@@ -1211,6 +1323,8 @@ function TopicQuestions({
           </li>
         ))}
       </ol>
+      {loadingMore && <SkeletonList count={3} rowHeight={28} />}
+      <div aria-hidden ref={endRef} />
     </nav>
   );
 }

@@ -60,9 +60,10 @@ export function QuizPageHeader({
         {(onBack || trail.length > 0) && (
           <div
             className={cn(
-              'flex min-h-9 items-center gap-1',
-              // Pulled left past the icon's padding so arrow and text balance.
-              onBack && '-ml-2 -translate-x-2'
+              'flex min-h-9 items-center',
+              // Pulled left past the icon's padding, and from sm a further
+              // 8px so arrow and text balance; phones keep the edge margin.
+              onBack && '-ml-2 sm:-translate-x-2'
             )}
           >
             {onBack && (

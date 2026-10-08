@@ -1624,6 +1624,7 @@
   "question_ui_reviewed": "Reviewed",
   "question_ui_not_reviewed": "Not reviewed",
   "question_ui_show_questions": "Show questions {from}–{to}",
+  "question_ui_show_earlier_questions": "Show earlier questions",
   "question_ui_questions_load_failed": "Couldn't load these questions",
   "question_ui_try_again": "Try again",
   "question_ui_comment_on_this_question": "Comment on this question",

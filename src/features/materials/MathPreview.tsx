@@ -29,6 +29,9 @@ export function MathPreview({
       element.mathVirtualKeyboardPolicy = 'manual';
       element.style.cssText =
         'max-width:100%;padding:0;background:transparent;border:0;outline:0;color:inherit;font-size:1.21em;font-weight:400;font-style:normal;line-height:1.2;pointer-events:none;--text-font-family:KaTeX_Main,"Times New Roman",serif;';
+      // The larger inline formula would otherwise grow its line box and push
+      // the text below the baseline of neighbouring text.
+      if (!displayMode) element.style.marginBlock = '-0.25em';
       // The initial render reads this attribute synchronously on connection.
       // MathLive 0.110 has no \dots; show \ldots, keeping the stored LaTeX.
       element.setAttribute(

@@ -6,9 +6,12 @@
  */
 import type { Row } from './row.ts';
 
-export interface BankListBody {
+export interface TopicPage {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** @nullable */
-  questions: Row[] | null;
+  /** The answer types present in the topic, for the Question type filter */
+  answerTypes: string[];
+  items: Row[];
+  nextCursor?: string;
+  prevCursor?: string;
 }

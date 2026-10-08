@@ -39,8 +39,8 @@ export function QuestionListRow({
       aria-checked={selected}
       aria-current={current ? 'true' : undefined}
       className={cn(
-        'grid w-full grid-cols-[1.5rem_minmax(0,1fr)] rounded-button px-2 py-2 text-left text-sm hover:bg-surface-hover-bg',
-        (marked || picking) && 'grid-cols-[1.5rem_1.5rem_minmax(0,1fr)]',
+        'grid w-full grid-cols-[1.5rem_minmax(0,1fr)] rounded-button py-2 pr-1 pl-2 text-left text-sm hover:bg-surface-hover-bg',
+        (marked || picking) && 'grid-cols-[1.75rem_1.5rem_minmax(0,1fr)]',
         current && 'bg-surface-hover-bg'
       )}
       data-result={marked ? status : undefined}
@@ -62,30 +62,20 @@ export function QuestionListRow({
       {marked &&
         !picking &&
         // Screen readers hear the result after the row, so its name still
-        // starts with the question number. Correct uses the file panel's
-        // done mark.
-        (status === 'correct' ? (
-          <Icon
-            aria-hidden
-            className="mt-0.5 text-tint-success-fg"
-            name="circleCheck"
-            size={16}
-          />
-        ) : (
+        // starts with the question number. Correct is the file panel's done
+        // mark; wrong and partly right use the same hollow circle.
+        (status === 'notDone' ? (
           <span
             aria-hidden
-            className={cn(
-              'mt-0.5 grid size-4 place-items-center rounded-full text-surface',
-              status === 'notDone' && 'border-[1.5px] border-line-strong',
-              status === 'partial' && 'bg-tint-warning-fg',
-              status === 'wrong' && 'bg-tint-error-fg'
-            )}
-            title={statusLabels[status]()}
-          >
-            {status !== 'notDone' && (
-              <Icon name={statusIcons[status]} size={11} />
-            )}
-          </span>
+            className="mt-0.5 size-4 rounded-full border-[1.5px] border-line-strong"
+          />
+        ) : (
+          <Icon
+            aria-hidden
+            className={cn('mt-0.5', statusTones[status])}
+            name={statusIcons[status]}
+            size={16}
+          />
         ))}
       <span className="font-bold">{row.position}.</span>
       <span className="line-clamp-2">
@@ -121,4 +111,13 @@ export const statusLabels: Record<BankStatus, () => string> = {
   partial: m.question_ui_status_partial,
   wrong: m.question_ui_status_wrong,
 };
-const statusIcons = { partial: 'minus', wrong: 'x' } as const;
+const statusIcons = {
+  correct: 'circleCheck',
+  partial: 'circleMinus',
+  wrong: 'circleX',
+} as const;
+const statusTones = {
+  correct: 'text-tint-success-fg',
+  partial: 'text-tint-warning-fg',
+  wrong: 'text-tint-error-fg',
+};

@@ -106,12 +106,12 @@ export function ListToolbar<V extends string>({
               }))}
               trigger={
                 <Button
-                  className="flex h-fit flex-row items-start px-1 py-1.5"
+                  className="-mx-1 flex h-fit flex-row items-start px-2 py-1.5"
                   data-order={ascending ? 'ascending' : 'descending'}
                   data-sort={current.value}
                   iconRight="chevronDown"
                   size="md"
-                  variant="ghost"
+                  variant="ghost-hover"
                 >
                   {m.workspaces_sort_prefix({ label: current.label })}
                   <span className="-translate-y-px font-normal text-fg-muted text-xs">
@@ -163,11 +163,11 @@ export function FilterPopover({
     <Popover onOpenChange={setFilterOpen} open={filterOpen}>
       <PopoverTrigger asChild>
         <Button
-          className="h-fit px-1 py-1.5"
+          className="-mx-1 h-fit px-2 py-1.5"
           iconLeft="filter"
           iconRight="chevronDown"
           size="md"
-          variant="ghost"
+          variant="ghost-hover"
         >
           {filterLabel}
         </Button>

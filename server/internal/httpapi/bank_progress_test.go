@@ -165,10 +165,20 @@ func TestBankProgressAndRetraction(t *testing.T) {
 	}
 
 	list := doReq(t, h, http.MethodGet, "/api/bank/topics/t/questions", learner, nil)
-	var rows struct{ Questions []bank.Row }
-	if err := json.Unmarshal(list.Body.Bytes(), &rows); err != nil || len(rows.Questions) != 3 || rows.Questions[0].ID != "bp2" ||
-		!slices.Equal(rows.Questions[0].AnswerTypes, []string{"mcq"}) {
+	var rows bank.TopicPage
+	if err := json.Unmarshal(list.Body.Bytes(), &rows); err != nil || len(rows.Items) != 3 || rows.Items[0].ID != "bp2" ||
+		!slices.Equal(rows.Items[0].AnswerTypes, []string{"mcq"}) {
 		t.Fatalf("list: %d %s", list.Code, list.Body.String())
+	}
+	// The Status filter reads the learner's current results: only bp3 is wrong.
+	wrong := doReq(t, h, http.MethodGet, "/api/bank/topics/t/questions?status=wrong", learner, nil)
+	if err := json.Unmarshal(wrong.Body.Bytes(), &rows); err != nil || len(rows.Items) != 1 || rows.Items[0].ID != "bp3" {
+		t.Fatalf("wrong list: %d %s", wrong.Code, wrong.Body.String())
+	}
+	for _, query := range []string{"status=done", "cursor=bad"} {
+		if code := doReq(t, h, http.MethodGet, "/api/bank/topics/t/questions?"+query, learner, nil).Code; code != 400 {
+			t.Fatalf("%s = %d", query, code)
+		}
 	}
 	syllabus := doReq(t, h, http.MethodGet, "/api/bank/syllabus", learner, nil)
 	var tree bank.Syllabus

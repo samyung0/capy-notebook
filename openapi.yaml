@@ -546,23 +546,6 @@ components:
         - workspaceId
         - quizId
       type: object
-    BankListBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/BankListBody.json
-          format: uri
-          readOnly: true
-          type: string
-        questions:
-          items:
-            $ref: "#/components/schemas/Row"
-          nullable: true
-          type: array
-      required:
-        - questions
-      type: object
     BankMarksOutputBody:
       additionalProperties: false
       properties:
@@ -4932,6 +4915,32 @@ components:
         - total
         - reviewed
       type: object
+    TopicPage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/TopicPage.json
+          format: uri
+          readOnly: true
+          type: string
+        answerTypes:
+          description: The answer types present in the topic, for the Question type filter
+          items:
+            type: string
+          type: array
+        items:
+          items:
+            $ref: "#/components/schemas/Row"
+          type: array
+        nextCursor:
+          type: string
+        prevCursor:
+          type: string
+      required:
+        - items
+        - answerTypes
+      type: object
     TopicProgress:
       additionalProperties: false
       properties:
@@ -6290,12 +6299,64 @@ paths:
           required: true
           schema:
             type: string
+        - description: Comma-separated answer types; a question matches if any of its parts has one
+          explode: false
+          in: query
+          name: type
+          schema:
+            description: Comma-separated answer types; a question matches if any of its parts has one
+            type: string
+        - description: "Comma-separated latest results: correct, wrong, partial, notDone"
+          explode: false
+          in: query
+          name: status
+          schema:
+            description: "Comma-separated latest results: correct, wrong, partial, notDone"
+            type: string
+        - description: Case-insensitive text in the question preview
+          explode: false
+          in: query
+          name: q
+          schema:
+            description: Case-insensitive text in the question preview
+            maxLength: 200
+            type: string
+        - description: Only questions without a review marker
+          explode: false
+          in: query
+          name: unreviewed
+          schema:
+            description: Only questions without a review marker
+            type: boolean
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - description: Opaque cursor from the previous page's nextCursor or prevCursor
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page's nextCursor or prevCursor
+            type: string
+        - description: "A question id: the page holding it, when no cursor is given"
+          explode: false
+          in: query
+          name: around
+          schema:
+            description: "A question id: the page holding it, when no cursor is given"
+            type: string
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BankListBody"
+                $ref: "#/components/schemas/TopicPage"
           description: OK
         default:
           content:

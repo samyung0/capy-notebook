@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
+	"github.com/samyung0/capy-notebook/server/internal/review"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -170,6 +171,8 @@ type Row struct {
 	ReviewedAt   *time.Time `json:"reviewedAt"`
 	ReviewedBy   string     `json:"reviewedBy"`
 	ReviewerName string     `json:"reviewerName"`
+	// Hash is review.QuestionHash of the content, which progress rows match.
+	Hash string `json:"-"`
 }
 
 // Source is where a bank question's material came from: a library excerpt,
@@ -257,6 +260,7 @@ func (s *Store) List(ctx context.Context, topic string) ([]Row, error) {
 		}
 		row.Marks = questions.Marks(q)
 		row.AnswerTypes = AnswerTypes(q)
+		row.Hash = review.QuestionHash(q)
 		if stem, ok := q["stem"].([]any); ok {
 			for _, v := range stem {
 				b, _ := v.(map[string]any)

@@ -730,9 +730,27 @@ export const BankQuestionsParams = zod.object({
   "topicId": zod.string()
 })
 
+export const bankQuestionsQueryQMax = 200;
+
+export const bankQuestionsQueryLimitDefault = 50;
+export const bankQuestionsQueryLimitMax = 100;
+
+
+
+export const BankQuestionsQueryParams = zod.object({
+  "type": zod.string().optional().describe('Comma-separated answer types; a question matches if any of its parts has one'),
+  "status": zod.string().optional().describe('Comma-separated latest results: correct, wrong, partial, notDone'),
+  "q": zod.string().max(bankQuestionsQueryQMax).optional().describe('Case-insensitive text in the question preview'),
+  "unreviewed": zod.boolean().optional().describe('Only questions without a review marker'),
+  "limit": zod.int().min(1).max(bankQuestionsQueryLimitMax).default(bankQuestionsQueryLimitDefault),
+  "cursor": zod.string().optional().describe('Opaque cursor from the previous page\'s nextCursor or prevCursor'),
+  "around": zod.string().optional().describe('A question id: the page holding it, when no cursor is given')
+})
+
 export const BankQuestionsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "questions": zod.array(zod.object({
+  "answerTypes": zod.array(zod.string()).describe('The answer types present in the topic, for the Question type filter'),
+  "items": zod.array(zod.object({
   "answerTypes": zod.array(zod.string()).describe('The distinct answer types of the question\'s parts, in part order'),
   "hasFigure": zod.boolean(),
   "hasTable": zod.boolean(),
@@ -743,7 +761,9 @@ export const BankQuestionsResponse = zod.object({
   "reviewedAt": zod.iso.datetime({"offset":true}).nullable(),
   "reviewedBy": zod.string(),
   "reviewerName": zod.string()
-})).nullable()
+})),
+  "nextCursor": zod.string().optional(),
+  "prevCursor": zod.string().optional()
 })
 
 

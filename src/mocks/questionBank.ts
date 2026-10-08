@@ -8,10 +8,12 @@ import {
   createMaterialDocument,
   quizNode,
 } from '@/features/materials/document';
-import type {
-  BankDetail,
-  BankRow,
-  BankSyllabus,
+import {
+  type BankDetail,
+  type BankPage,
+  type BankRow,
+  type BankSyllabus,
+  bankStatus,
 } from '@/features/questions/bank';
 import { exampleQuestion } from '@/features/questions/questionFixtures';
 import type { Question } from '@/features/questions/types';
@@ -250,9 +252,54 @@ export const questionBankHandlers = [
     };
     return HttpResponse.json(syllabus);
   }),
-  http.get('/api/bank/topics/:topicId/questions', ({ params }) =>
-    HttpResponse.json({ questions: topicRows(String(params.topicId)) })
-  ),
+  // Mirrors bank.PageRows: filter, then a page by position cursor or around a question.
+  http.get('/api/bank/topics/:topicId/questions', ({ params, request }) => {
+    const query = new URL(request.url).searchParams;
+    const list = (key: string) => query.get(key)?.split(',') ?? [];
+    const types = list('type');
+    const statuses = list('status');
+    const search = (query.get('q') ?? '').toLowerCase();
+    const limit = Number(query.get('limit') ?? 50);
+    const all = topicRows(String(params.topicId)).sort(
+      (a, b) => a.position - b.position
+    );
+    const kept = all.filter(
+      (row) =>
+        (!types.length ||
+          row.answerTypes.some((type) => types.includes(type))) &&
+        (!statuses.length ||
+          statuses.includes(bankStatus(answersById.get(row.id)?.score))) &&
+        (query.get('unreviewed') !== 'true' || !row.reviewedAt) &&
+        row.preview.toLowerCase().includes(search)
+    );
+    const [dir, at] = (query.get('cursor') ?? '').split('|');
+    let start = 0;
+    let end: number;
+    if (dir === 'p') {
+      end = kept.filter((row) => row.position < Number(at)).length;
+      start = Math.max(0, end - limit);
+    } else {
+      if (dir === 'n')
+        start = kept.filter((row) => row.position <= Number(at)).length;
+      else {
+        const index = kept.findIndex((row) => row.id === query.get('around'));
+        if (index > 0) start = index - (index % limit);
+      }
+      end = Math.min(start + limit, kept.length);
+    }
+    const items = kept.slice(start, end);
+    const page: BankPage = {
+      answerTypes: [...new Set(all.flatMap((row) => row.answerTypes))],
+      items,
+      nextCursor:
+        items.length && end < kept.length
+          ? `n|${kept[end - 1].position}`
+          : undefined,
+      prevCursor:
+        items.length && start > 0 ? `p|${kept[start].position}` : undefined,
+    };
+    return HttpResponse.json(page);
+  }),
   // View mode reads, answer-free for editors too.
   http.get('/api/bank/questions', async ({ request }) => {
     const ids = new URL(request.url).searchParams.get('ids')?.split(',') ?? [];

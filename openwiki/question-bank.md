@@ -14,20 +14,40 @@ check each question (Learner answering, below) and copy questions into their
 quizzes; production Jev grading remains in `todo-question-bank.md`.
 
 The topic list (`GET /api/bank/topics/{id}/questions`) returns light rows for
-the navigation panel; each row's `answerTypes` lists its parts' distinct answer
-types in part order (`bank.AnswerTypes`), for the page's Question type filter.
+the navigation panel a page at a time, like the file and material lists:
+`limit` (default 50, at most 100), an opaque `cursor`, `{items, nextCursor}`,
+plus `prevCursor` for paging back and `around=<questionId>` for the page
+holding a question when no cursor is given. Filters are `type` and `status`
+(comma-separated; `status` is correct, wrong, partial or notDone against the
+learner's latest results), `q` (preview text) and `unreviewed`; a bad status
+or cursor is 400. Each row's `answerTypes` lists its parts' distinct answer
+types in part order (`bank.AnswerTypes`) and the page's `answerTypes` lists the
+whole topic's, for the Question type filter. `bank.PageRows`
+(`server/internal/bank/page.go`) filters the topic in memory after one `List`
+query; cursors carry a question position, not an offset, so a question
+answered while the Status filter is on shifts nothing on the next page, and
+already loaded pages keep it listed until a filter changes. Topic counts in the
+heading and the editor's All/Unreviewed buttons come from the syllabus, not
+the loaded pages.
+One infinite query feeds both panels: the side list loads the next page as
+its end nears and earlier pages from a "Show earlier questions" button; a
+filter change or a question outside the loaded pages reopens the list
+`around` that question.
 Full questions come from `GET /api/bank/questions?ids=`, up to 50 per request
 in the requested order; an unknown id fails the whole
 batch with 404, so the page refetches the list. The page renders a window of
-the list that grows 10 questions at a time when its end comes within 800px of
-the view. A list click on a question outside the window restarts the window at
-that question's page plus the next (one request) and scrolls the panel so the
-question sits at the top, with the editor TOC's motion
+the loaded rows that grows 10 questions at a time when its end comes within
+800px of the view, loading the list's next page when it runs out. A list click
+on a question outside the window restarts the window at that question's page
+plus the next (one request) and scrolls the panel so the question sits at the
+top, with the editor TOC's motion
 (`src/lib/scrollIntoViewWithMotion.ts`, which sets the position each frame so
 content loading above cannot cancel it the way it cancelled a native smooth
 scroll); a page next to the window extends it instead.
-Earlier pages come back through a "Show questions x–y" button that fetches
-first, then inserts them and moves the scroll position by the added height.
+Earlier questions come back through a "Show questions x–y" button (the
+list's previous page first, when the window starts at the loaded rows) that
+fetches first, then inserts them and moves the scroll position by the added
+height.
 Content never loads above the viewport on its own because Safari has no CSS
 scroll anchoring. Each loaded question lives in its own query-cache entry,
 which edits and reviews update in place.

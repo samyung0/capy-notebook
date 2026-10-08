@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -26,11 +27,18 @@ type bankBatchInput struct {
 type bankTopicInput struct {
 	TopicID string `path:"topicId"`
 }
-type bankSyllabusOutput struct{ Body bank.Syllabus }
-type bankListBody struct {
-	Questions []bank.Row `json:"questions"`
+type bankListInput struct {
+	TopicID    string `path:"topicId"`
+	Type       string `query:"type" doc:"Comma-separated answer types; a question matches if any of its parts has one"`
+	Status     string `query:"status" doc:"Comma-separated latest results: correct, wrong, partial, notDone"`
+	Q          string `query:"q" maxLength:"200" doc:"Case-insensitive text in the question preview"`
+	Unreviewed bool   `query:"unreviewed" doc:"Only questions without a review marker"`
+	Limit      int    `query:"limit" minimum:"1" maximum:"100" default:"50"`
+	Cursor     string `query:"cursor" doc:"Opaque cursor from the previous page's nextCursor or prevCursor"`
+	Around     string `query:"around" doc:"A question id: the page holding it, when no cursor is given"`
 }
-type bankListOutput struct{ Body bankListBody }
+type bankSyllabusOutput struct{ Body bank.Syllabus }
+type bankListOutput struct{ Body bank.TopicPage }
 type bankDetailOutput struct{ Body bank.Detail }
 type bankBatchBody struct {
 	Questions []bank.Detail `json:"questions"`
@@ -144,16 +152,38 @@ func (a *api) bankSyllabus(ctx context.Context, _ *struct{}) (*bankSyllabusOutpu
 	body.Editor = editor
 	return &bankSyllabusOutput{Body: body}, nil
 }
-func (a *api) bankList(ctx context.Context, in *bankTopicInput) (*bankListOutput, error) {
+
+// bankList pages a topic's light rows, filtered on the server; the Status
+// filter reads the learner's latest results from the app database.
+func (a *api) bankList(ctx context.Context, in *bankListInput) (*bankListOutput, error) {
 	if _, err := a.bankAccess(ctx, false); err != nil {
 		return nil, err
+	}
+	f := bank.ListFilter{Types: csv(in.Type), Statuses: csv(in.Status), Search: in.Q, Unreviewed: in.Unreviewed, Limit: in.Limit, Cursor: in.Cursor, Around: in.Around}
+	for _, status := range f.Statuses {
+		if !slices.Contains(bank.Statuses, status) {
+			return nil, huma.Error400BadRequest("unsupported status")
+		}
 	}
 	rows, err := a.cfg.Bank.List(ctx, in.TopicID)
 	if err != nil {
 		return nil, bankHTTPError(err)
 	}
+	if len(f.Statuses) > 0 {
+		hashes := map[string]string{}
+		for _, r := range rows {
+			hashes[r.ID] = r.Hash
+		}
+		if f.Marks, err = a.s.BankMarks(ctx, userID(ctx), in.TopicID, hashes); err != nil {
+			return nil, hErr(err)
+		}
+	}
+	page, err := bank.PageRows(rows, f)
+	if err != nil {
+		return nil, hErr(err)
+	}
 	ids := []string{}
-	for _, r := range rows {
+	for _, r := range page.Items {
 		if r.ReviewedBy != "" {
 			ids = append(ids, r.ReviewedBy)
 		}
@@ -162,10 +192,10 @@ func (a *api) bankList(ctx context.Context, in *bankTopicInput) (*bankListOutput
 	if err != nil {
 		return nil, hErr(err)
 	}
-	for i := range rows {
-		rows[i].ReviewerName = names[rows[i].ReviewedBy]
+	for i := range page.Items {
+		page.Items[i].ReviewerName = names[page.Items[i].ReviewedBy]
 	}
-	return &bankListOutput{Body: bankListBody{Questions: rows}}, nil
+	return &bankListOutput{Body: page}, nil
 }
 
 // bankDetail reads one question; keys only for an editor's edit read and the
