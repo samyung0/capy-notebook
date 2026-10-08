@@ -72,10 +72,17 @@ def get_run(url: str, run_id: str) -> dict[str, Any]:
 
 
 def fence_questions(markdown: str) -> int:
+    """Questions in the note's quiz fences. A fence the editor's import would
+    refuse (an edit_document call after the note passed check_note can leave
+    unquoted YAML behind) counts no questions."""
     count = 0
     for match in FENCE.finditer(markdown):
         if match.group(1) == "quiz":
-            data = yaml.safe_load(match.group(2))
+            try:
+                data = yaml.safe_load(match.group(2))
+            except yaml.YAMLError as err:
+                print(f"  quiz fence not YAML, counted as 0 questions: {str(err).splitlines()[0]}", flush=True)
+                continue
             count += len(data.get("questions") or []) if isinstance(data, dict) else 0
     return count
 
