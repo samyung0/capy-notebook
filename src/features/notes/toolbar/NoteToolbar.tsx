@@ -35,6 +35,7 @@ import {
 } from '@/features/notes/editorCommands';
 import { isEditorCommandAllowed } from '@/features/notes/editorMode';
 import { toggleEditorBlock } from '@/features/notes/editorTransforms';
+import { holdInsertPlace } from '@/features/notes/insertEditorNode';
 import {
   cloneLinkSelection,
   type LinkSelection,
@@ -129,14 +130,21 @@ export function NoteToolbar({ className }: { className?: string }) {
     editor.tf.focus();
     toggleEditorBlock(editor, type);
   };
+  // The document goes where the import ran, whatever the user did while the
+  // file was read and converted.
   async function importFile(file: File, kind: ImportKind) {
-    const document =
-      kind === 'docx'
-        ? await importDocxDocument(editor, await file.arrayBuffer())
-        : kind === 'json'
-          ? importJsonDocument(editor, await file.text())
-          : importMarkdownDocument(editor, await file.text());
-    editor.tf.insertNodes(document.value);
+    const place = holdInsertPlace(editor);
+    try {
+      const document =
+        kind === 'docx'
+          ? await importDocxDocument(editor, await file.arrayBuffer())
+          : kind === 'json'
+            ? importJsonDocument(editor, await file.text())
+            : importMarkdownDocument(editor, await file.text());
+      place.insert(document.value);
+    } finally {
+      place.release();
+    }
   }
 
   function applyLink() {

@@ -35,12 +35,12 @@ export function insertEditorNode(editor: NoteEditorInstance, node: unknown) {
 }
 
 /**
- * Hold the place a block command ran for a block whose data arrives after a
- * round trip, while the user may keep typing or move elsewhere. `insert` puts
- * the top-level block there: over the command's line while it is still an
- * empty paragraph, otherwise after it (where the line stood, if it was
- * deleted). The block takes the caret only if the caret has not moved since.
- * Call `release` once the round trip settles.
+ * Hold the place a block command ran for blocks whose data arrives later (a
+ * round trip, a file read), while the user may keep typing or move elsewhere.
+ * `insert` puts the top-level block, or blocks, there: over the command's
+ * line while it is still an empty paragraph, otherwise after it (where the
+ * line stood, if it was deleted). They take the caret only if the caret has
+ * not moved since. Call `release` once the wait settles.
  */
 export function holdInsertPlace(editor: NoteEditorInstance) {
   const selection = editor.selection;

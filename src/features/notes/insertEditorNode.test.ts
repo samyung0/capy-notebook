@@ -97,6 +97,20 @@ describe('holdInsertPlace', () => {
     expect(editor.selection?.anchor).toEqual({ offset: 5, path: [3, 0] });
   });
 
+  // The toolbar's Import inserts a whole document this way.
+  it('puts several blocks there in order', () => {
+    const { editor, place } = commandRan();
+    const imported = ['a', 'b'].map((text) => ({
+      children: [{ text }],
+      type: 'p',
+    }));
+    editor.tf.select(editor.api.end([2]));
+    editor.tf.insertText(' typed');
+    place.insert(imported);
+    expect(texts(editor)).toEqual(['one', 'a', 'b', 'three typed']);
+    expect(editor.selection?.anchor).toEqual({ offset: 11, path: [3, 0] });
+  });
+
   it('goes after the command line once the user typed on it', () => {
     const { editor, place } = commandRan();
     editor.tf.insertText('typed');

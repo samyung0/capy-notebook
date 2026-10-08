@@ -435,6 +435,15 @@ reloads or resizes while the reader scrolls. Opening a note with `?block=<id>`
 scrolls that block into view once per page load. Exports never run the
 snippet (see Readable note exports).
 
+## Note imports
+
+The toolbar's Import (Markdown, JSON or DOCX, `importFile` in
+`toolbar/NoteToolbar.tsx`) converts the file in the browser and inserts the
+document where the import ran, not where the caret is when the conversion
+finishes: through `holdInsertPlace`, like the embedded quiz insert, over the
+import's line while it is still an empty paragraph, otherwise after it, taking
+the caret only if it has not moved.
+
 ## Readable note exports
 
 `documentAdapters.ts` snapshots the live editor, resolves quiz/card projections
