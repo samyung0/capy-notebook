@@ -449,6 +449,25 @@ The prod file runs `/migrate` once per deploy, starts the API with
    the next deploy cold, so it should only fire as a last resort when old
    image generations push the disk past the threshold.
 
+   Coolify applies each application's *Docker images to keep* (2) only in
+   that cleanup, which runs weekly, while UAT takes about 20 deploys a day,
+   each leaving a full image generation (~0.27 GB after shared layers). A
+   daily root cron on the UAT host keeps the newest 2 images of every
+   `<uuid>_<service>` repository and removes dangling images, never the
+   build cache (`/usr/local/sbin/capy-prune-app-images.sh`, scheduled by
+   `/etc/cron.d/capy-prune-app-images` at 04:30, logged to the journal as
+   `capy-prune-app-images`):
+
+   ```sh
+   docker images --format '{{.Repository}}' | grep -E '^[a-z0-9]{24}_' | sort -u | while read -r repo; do
+     docker images "$repo" --format '{{.CreatedAt}}	{{.ID}}' | sort -r | awk -F'	' 'NR>2{print $2}' | sort -u | xargs -r docker rmi >/dev/null 2>&1 || true
+   done
+   docker image prune -f
+   ```
+
+   Production deploys rarely and has no cron. Its `daemon.json` still lacks
+   the BuildKit cap above; add it before launch.
+
 7. Disable Coolify **Auto Deploy**. The GitHub deployment workflow updates
    `git_commit_sha`, starts the deployment through the Coolify API, polls its
    result, and verifies the reported commit. A native Coolify webhook would
