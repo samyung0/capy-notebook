@@ -1531,16 +1531,60 @@ async def ledger_write(
         )
     unread = [e for e in excerpt_ids if e not in read]
     if unread:
-        return _refused(
-            f"Excerpts {unread} have no read or retained full text in this turn. read_knowledge each "
-            "of them before writing from it; workspace passages need no excerpt_ids."
-        )
+        return await _carry_excerpts(ctx, unread)
     if not excerpt_ids:
         return [], todo
     try:
         return await library.provenance(excerpt_ids), todo
     except ValueError as exc:
         return _refused(f"{tool}: {exc}")
+
+
+async def _carry_excerpts(ctx: ToolContext, unread: list[str]) -> ToolResult:
+    """Refuse a write naming excerpts this turn has not read, with their text.
+
+    Each is read here as read_knowledge reads it and counts as read from then
+    on (for the write guard and library evidence), so the model has seen its
+    full text before any write naming it is accepted, and the resent write
+    needs no read call. Excerpts are carried while the result fits the tool
+    output limit; one that does not fit or cannot be read stays unread.
+    """
+    shown: list[str] = []
+    left: list[str] = []
+    for excerpt_id in unread:
+        scratch = ToolContext(workspace_id=ctx.workspace_id, library=True)
+        result = await _read_knowledge({"excerpt_id": excerpt_id}, scratch)
+        text = limit_tool_result(result.text())
+        room = TOOL_RESULT_MAX_TOKENS - 200  # the refusal's own lines
+        if (
+            result.refused
+            or not scratch.ledger.reads
+            or estimate_tokens("\n\n".join([*shown, text])) > room
+        ):
+            left.append(excerpt_id)
+            continue
+        read = scratch.ledger.reads[0]
+        ctx.ledger.note_read(read.excerpt_id, read.start, read.section)
+        ctx.library_evidence.observe(
+            "read_knowledge", {"excerpt_id": excerpt_id}, result, text, ctx.ledger
+        )
+        shown.append(text)
+    carried = [e for e in unread if e not in left]
+    parts = []
+    if carried:
+        parts.append(
+            f"Not applied: excerpts {carried} had not been read in this turn. Their "
+            "text follows and now counts as read: check the write against it, drop "
+            "anything it does not support, and send the write again."
+        )
+    if left:
+        parts.append(
+            f"Excerpts {left} have no read or retained full text in this turn"
+            + (" and did not fit here" if carried else "")
+            + ": read_knowledge each of them before writing from it; workspace "
+            "passages need no excerpt_ids."
+        )
+    return _refused(" ".join(parts), detail="\n\n".join(shown))
 
 
 async def store_ledger(ctx: ToolContext) -> None:
@@ -2577,7 +2621,10 @@ async def run(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return _refused(problem)
     needs = skills.missing(name, args, ctx.skills_read)
     if needs:
-        return _refused(skills.refusal(needs))
+        return _refused(
+            skills.refusal(needs),
+            detail=skills.carried(needs, lambda n: skills.SKILLS[n].text(ctx.library)),
+        )
     try:
         return await spec.handler(args, ctx)
     except (TurnFailed, pending.SourceChanged):

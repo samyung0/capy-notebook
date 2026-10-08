@@ -773,11 +773,6 @@ async def test_writes_need_a_todo_while_todos_are_open_and_excerpts_once_read():
     both = await tools.ledger_write(ctx, "edit_document", {})
     assert isinstance(both, tools.ToolResult)
     assert "needs todo" in both.text() and "and excerpt_ids" in both.text()
-    unread = await tools.ledger_write(
-        ctx, "edit_document", {"todo": 1, "excerpt_ids": ["e_1", "e_9"]}
-    )
-    assert isinstance(unread, tools.ToolResult)
-    assert "'e_9'" in unread.text() and "read_knowledge" in unread.text()
 
     ctx.ledger.complete(1)
     finished = await tools.ledger_write(ctx, "create_material", {"todo": 1})

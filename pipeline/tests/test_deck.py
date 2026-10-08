@@ -135,7 +135,8 @@ async def test_deck_tools_need_ppt_master_and_the_deck_skill(monkeypatch):
     unread = await tools.run(
         "create_deck", {"title": "t", "slides": [{"title": "a", "brief": "b"}]}, ctx
     )
-    assert unread.refused and 'read_skill({"name": "deck"})' in unread.text()
+    assert unread.error == skills.refusal([skills.DECK])
+    assert "\n\n# Skill: deck\n" in unread.text()
 
 
 async def test_checker_refusal_reaches_the_model_and_keeps_the_slide_unwritten(decks):

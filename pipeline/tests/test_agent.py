@@ -2251,6 +2251,41 @@ async def test_a_missed_edit_target_comes_back_as_it_reads_now(monkeypatch):
     )
 
 
+async def test_a_write_naming_unread_excerpts_carries_their_text(monkeypatch):
+    """The write is refused, but the refusal reads the excerpts for it: those
+    that fit count as read (write guard and library evidence), so the resent
+    write passes; one that does not fit stays unread."""
+    ctx = ToolContext(workspace_id="ws", library=True)
+    texts = {"e_1": "excerpt e_1 full text", "e_2": "long " * 12_000}
+
+    async def _read(args, scratch):
+        scratch.ledger.note_read(args["excerpt_id"], 0, "8.1")
+        return ToolResult(text_parts=[texts[args["excerpt_id"]]])
+
+    async def _provenance(excerpt_ids):
+        return [_book(*excerpt_ids)]
+
+    monkeypatch.setattr(tools, "_read_knowledge", _read)
+    monkeypatch.setattr(tools.library, "provenance", _provenance)
+    args = {"kind": "note", "content": "x", "excerpt_ids": ["e_1", "e_2"]}
+    refused = await tools.ledger_write(ctx, "create_material", args)
+    assert isinstance(refused, ToolResult) and refused.refused
+    assert refused.error.startswith("Not applied: excerpts ['e_1'] had not been read")
+    assert (
+        "Excerpts ['e_2'] have no read or retained full text in this turn and did not fit here"
+        in refused.error
+    )
+    assert refused.text().endswith("\n\nexcerpt e_1 full text")
+    assert ctx.ledger.read_ids() == {"e_1"}
+    assert ctx.library_evidence.fresh[("e_1", 0)].text == "excerpt e_1 full text"
+    assert await tools.ledger_write(
+        ctx, "create_material", {**args, "excerpt_ids": ["e_1"]}
+    ) == (
+        [_book("e_1")],
+        None,
+    )
+
+
 def test_an_edit_receipt_says_where_a_relocated_insert_landed():
     body = _receipt("edited", "material", "mat_1")
     body["effect"]["relocated"] = [

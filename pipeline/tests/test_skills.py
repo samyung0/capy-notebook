@@ -44,10 +44,15 @@ async def test_writes_need_the_skill_while_its_text_is_in_the_request(monkeypatc
 
     refused = await tools.run("create_material", {"kind": "note", "content": "x"}, ctx)
     assert refused.refused
-    assert (
-        'read_skill({"name": "editing"}) and read_skill({"name": "workspace_building"})'
-        in (refused.text())
+    # The refusal carries both skills, which count as read once it is in the
+    # request; only the short refusal is the error the chat stores.
+    assert refused.error == skills.refusal(["editing", "workspace_building"])
+    building = skills.render(
+        "workspace_building", skills.SKILLS["workspace_building"].text(False)
     )
+    assert refused.text().endswith(building)
+    carried = [{"role": "tool", "tool_call_id": "c0", "content": refused.text()}]
+    assert skills.retained(carried) == {"editing", "workspace_building"}
 
     read = skills.render("editing", "instructions")
     messages = [{"role": "tool", "tool_call_id": "c1", "content": read}]

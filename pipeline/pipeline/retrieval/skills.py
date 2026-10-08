@@ -4,11 +4,13 @@ The read_skill description lists each skill with when to read it; the skill's
 text arrives as that tool's result, and later turns replay it from history
 (evidence.history_turns). A write that needs a skill is refused until the
 skill's text is in the request, which also catches a turn note or checkpoint
-that folded it away.
+that folded it away; the refusal carries the missing skills' text, so the
+resent write needs no read_skill.
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
@@ -57,6 +59,9 @@ REQUIRES: dict[str, tuple[str, ...]] = {
 FORMAT_COMMANDS = frozenset({"insert_markdown", "add_question", "replace_question"})
 
 _HEADER = "# Skill: "
+_HEADER_LINE = re.compile(r"^# Skill: (\S+)$", re.MULTILINE)
+# How a write refused for unread skills starts; the skills follow it.
+_CARRIED = "Not applied: this write needs the "
 
 
 def catalog(names: Iterable[str] = SKILLS) -> str:
@@ -76,16 +81,16 @@ def render(name: str, text: str) -> str:
 
 def retained(messages: list[dict[str, Any]]) -> set[str]:
     """Skills whose text is still in the message list: a read_skill result of
-    this turn or a replay from history."""
+    this turn, a replay from history, or the skills a refused write carried."""
     names: set[str] = set()
     for message in messages:
         content = message.get("content")
         if (
             (message.get("role") == "tool" or message.get("_kind") == "skill")
             and isinstance(content, str)
-            and content.startswith(_HEADER)
+            and content.startswith((_HEADER, _CARRIED))
         ):
-            names.add(content[len(_HEADER) :].partition("\n")[0])
+            names.update(_HEADER_LINE.findall(content))
     return names
 
 
@@ -106,5 +111,17 @@ def missing(
 
 
 def refusal(needs: list[str]) -> str:
-    calls = " and ".join(f'read_skill({{"name": "{n}"}})' for n in needs)
-    return f"Read the skills this write needs first: {calls}, then write."
+    """A write refused for the skills it lacks. Their text follows it
+    (``carried``), so they count as read from then on and the retry needs no
+    read_skill; the write itself is not applied."""
+    one = len(needs) == 1
+    return (
+        f"{_CARRIED}{' and '.join(needs)} skill{'' if one else 's'}, which "
+        f"follow{'s' if one else ''} and now count{'s' if one else ''} as read. "
+        f"Check the write against {'it' if one else 'them'} and send it again."
+    )
+
+
+def carried(needs: list[str], text: Callable[[str], str]) -> str:
+    """The skills a refused write lacks, each under its header."""
+    return "\n\n".join(render(name, text(name)) for name in needs)
