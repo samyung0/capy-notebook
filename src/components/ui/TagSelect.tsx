@@ -129,7 +129,7 @@ export function TagSelect({
       <PopoverAnchor asChild>
         <div
           className={cn(
-            'flex flex-wrap items-center gap-1.5 rounded-input border border-line bg-surface px-1.5 py-1.5 transition-colors duration-150 focus-within:border-line-strong',
+            'flex min-h-10 flex-wrap items-center gap-1.5 rounded-input border border-line bg-field px-1.5 py-1 transition-colors duration-150 focus-within:border-action-accent sm:min-h-11',
             invalid && 'motion-error-shake border-solid-error'
           )}
           onClick={() => {
@@ -166,7 +166,7 @@ export function TagSelect({
               aria-invalid={invalid}
               aria-label={m.common_tags()}
               autoComplete="off"
-              className="t-body min-w-32 flex-1 border-none bg-transparent px-2 py-1.5 outline-none placeholder:text-placeholder"
+              className="t-body min-w-32 flex-1 border-none bg-transparent px-2 py-1 outline-none placeholder:text-placeholder"
               onBlur={() => setOpen(false)}
               onChange={(e) => {
                 setQuery(e.target.value);

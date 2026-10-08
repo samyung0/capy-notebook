@@ -40,7 +40,7 @@ function WorkspacesSection() {
   const revealRef = useLoadingReveal(isLoading);
   return (
     <section>
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mt-3 mb-3 flex items-center justify-between">
         <h2 className="t-large-card-title">{m.dashboard_workspaces()}</h2>
         <Button
           asChild

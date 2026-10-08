@@ -8,13 +8,12 @@ import {
   useWorkspace,
 } from '@/api/hooks';
 import type { GenerateOptions } from '@/api/types';
-import { FileIcon } from '@/components/ui/FileIcon';
 import { userToast } from '@/components/ui/userToast';
 import type { OpenItem } from '@/features/materials/openItem';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
 import { deferStorageRefusal, describeError } from '@/lib/errors';
 import { materialIconName } from '@/lib/fileIcons';
+import { FileKindTile } from './FileKindTile';
 import {
   GenerateForm,
   type GenerateMode,
@@ -81,21 +80,13 @@ export function GenerateFilePanel({
     <div className="flex min-h-0 flex-1 flex-col gap-5">
       <div className="grid shrink-0 grid-cols-4 gap-2">
         {KINDS.map((k) => (
-          <button
-            aria-pressed={mode === k}
-            className={cn(
-              'flex flex-col items-center gap-1.5 rounded-card border px-2 py-3 font-medium text-sm transition-colors',
-              mode === k
-                ? 'border-solid-accent-1 bg-tint-accent-1/60'
-                : 'border-line hover:bg-surface-hover-bg'
-            )}
+          <FileKindTile
+            icon={materialIconName(k)}
             key={k}
+            label={generateModeLabel(k)}
             onClick={() => setMode(k)}
-            type="button"
-          >
-            <FileIcon className="size-5.5" name={materialIconName(k)} />
-            {generateModeLabel(k)}
-          </button>
+            selected={mode === k}
+          />
         ))}
       </div>
       <GenerateForm

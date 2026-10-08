@@ -15,7 +15,7 @@ export default function Billing() {
   return (
     <PanelWithInvertedRadius header={<PageHeader title={m.billing_title()} />}>
       <Tabs
-        className="px-6"
+        className="px-1 sm:px-6"
         onChange={(value) => {
           void navigate({
             replace: true,

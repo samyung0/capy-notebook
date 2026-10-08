@@ -23,9 +23,11 @@ export const buttonVariants = cva(BASE_BUTTON_STYLE, {
       large: '',
       normal: '',
     },
+    // lg and md are 4px shorter on phones, matching Select. The height goes
+    // through a variable so one h-* override (h-fit, size-10) still replaces it.
     size: {
-      lg: 'h-13 min-w-24 gap-2.25 rounded-full px-6.5 text-[0.925rem]',
-      md: 'h-11 gap-2 px-5',
+      lg: 'h-(--button-h) min-w-24 gap-2.25 rounded-full px-6.5 text-[0.925rem] [--button-h:--spacing(12)] sm:[--button-h:--spacing(13)]',
+      md: 'h-(--button-h) gap-2 px-5 [--button-h:--spacing(10)] sm:[--button-h:--spacing(11)]',
       sm: 'h-7.5 gap-1.75 px-4',
       xs: 'h-fit gap-1.5 px-0.5 py-0.5',
     },

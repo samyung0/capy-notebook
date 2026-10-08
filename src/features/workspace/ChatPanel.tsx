@@ -607,7 +607,7 @@ export function ChatPanel({
             aria-invalid={inputLimit.exceeded || undefined}
             aria-label={m.chat_placeholder()}
             className={cn(
-              'max-h-[7lh] min-h-[2lh] resize-none rounded-none border-0 bg-transparent px-0 py-0 text-fg placeholder:text-placeholder focus:border-0'
+              'max-h-[7lh] min-h-[2lh] resize-none rounded-none border-0 bg-transparent px-0 py-0 text-fg focus:border-0'
             )}
             onChange={(e) => setText(e.target.value)}
             placeholder={

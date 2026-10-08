@@ -677,7 +677,7 @@ export function MermaidElement(props: PlateElementProps) {
                 aria-label={m.editor_caption_add()}
                 className={cn(
                   MERMAID_CAPTION_CLASS,
-                  'block w-full bg-transparent outline-none placeholder:text-fg-placeholder'
+                  'block w-full bg-transparent outline-none placeholder:text-placeholder'
                 )}
                 onBlur={() => setCaptioning(false)}
                 onChange={(event) => {

@@ -502,7 +502,7 @@ function PartRunner({
                     }
                     value={letter < 0 ? '' : String(letter)}
                   >
-                    <SelectTrigger aria-label={left} className="py-1.5">
+                    <SelectTrigger aria-label={left} className="h-auto py-1.5">
                       <SelectValue placeholder="–" />
                     </SelectTrigger>
                     <SelectContent>

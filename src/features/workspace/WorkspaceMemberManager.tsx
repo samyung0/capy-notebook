@@ -18,6 +18,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
+import { Icon } from '@/components/ui/Icon';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { Menu } from '@/components/ui/Menu';
 import {
@@ -116,6 +117,7 @@ export function WorkspaceMemberManager({
           name="role"
           render={({ field }) => (
             <RoleSelect
+              className="w-22 sm:w-28"
               disabled={isSubmitting}
               label={m.members_invite_role()}
               onChange={field.onChange}
@@ -123,19 +125,15 @@ export function WorkspaceMemberManager({
             />
           )}
         />
+        {/* Phones show the send icon alone. */}
         <Button
-          className="w-19"
+          className="aspect-square px-0 sm:aspect-auto sm:rounded-button-lg sm:px-5"
           disabled={inviteDisabled}
-          rounded="large"
           type="submit"
           variant="accent"
         >
-          {isSubmitting && (
-            <span>
-              <Spinner />
-            </span>
-          )}
-          {!isSubmitting && m.members_invite()}
+          <span className="sr-only sm:not-sr-only">{m.members_invite()}</span>
+          {isSubmitting ? <Spinner /> : <Icon name="send" />}
         </Button>
       </form>
 
@@ -210,7 +208,9 @@ function RoleSelect({
   onChange,
   disabled,
   label,
+  className = 'w-28',
 }: {
+  className?: string;
   value: AssignableRole;
   onChange: (role: AssignableRole) => void;
   disabled?: boolean;
@@ -222,7 +222,7 @@ function RoleSelect({
       onValueChange={(next) => onChange(next as AssignableRole)}
       value={value}
     >
-      <SelectTrigger aria-label={label} className="w-28">
+      <SelectTrigger aria-label={label} className={className}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

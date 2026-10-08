@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
-import { PageHeader, Panel } from '@/components/app/layout';
+import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Icon, type IconName } from '@/components/ui/Icon';
@@ -72,16 +72,19 @@ function FaqItem({ q, a }: { q: string; a: string }) {
 
 export default function HelpAndLegal() {
   return (
-    <Panel>
-      <PageHeader subtitle={m.help_legal_hint()} title={m.nav_help_legal()} />
-      <div className="flex-1 px-6 py-5">
+    <PanelWithInvertedRadius
+      header={
+        <PageHeader subtitle={m.help_legal_hint()} title={m.nav_help_legal()} />
+      }
+    >
+      <div className="flex-1 px-4 py-5 sm:px-6">
         <div className="mx-auto flex max-w-4xl flex-col gap-8">
           <section>
             <h2 className="t-large-card-title mb-3">{m.nav_support()}</h2>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {CHANNELS.map((c) => (
                 <Card
-                  className="flex flex-col p-5.5"
+                  className="flex flex-col p-4 sm:p-5.5"
                   key={c.icon}
                   radius="card-lg"
                 >
@@ -112,7 +115,7 @@ export default function HelpAndLegal() {
             <h2 className="t-large-card-title mb-3">
               {m.support_faq_heading()}
             </h2>
-            <div className="rounded-card-lg border border-line bg-surface px-5">
+            <div className="rounded-card-lg border border-line bg-surface px-4 sm:px-5">
               {FAQS.map((f) => {
                 const q = f.q();
                 return <FaqItem a={f.a()} key={q} q={q} />;
@@ -121,7 +124,7 @@ export default function HelpAndLegal() {
           </section>
 
           <Link
-            className="flex items-center gap-4 rounded-card-lg border border-line bg-surface px-5 py-5 hover:text-link"
+            className="flex items-center gap-4 rounded-card-lg border border-line bg-surface p-4 hover:text-link sm:p-5"
             to="/help-and-legal/credits"
           >
             <Icon name="book" size={22} />
@@ -151,6 +154,6 @@ export default function HelpAndLegal() {
           </section>
         </div>
       </div>
-    </Panel>
+    </PanelWithInvertedRadius>
   );
 }

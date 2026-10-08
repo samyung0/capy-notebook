@@ -2,9 +2,8 @@ import { useState } from 'react';
 import { useCreateMaterial, useMaterials, useWorkspace } from '@/api/hooks';
 import type { Material, MaterialKind } from '@/api/types';
 import { Button } from '@/components/ui/Button';
-import { ButtonCard } from '@/components/ui/ButtonCard';
 import { DialogClose, DialogFooter } from '@/components/ui/Dialog';
-import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
+import type { FileIconName } from '@/components/ui/FileIcon';
 import { SectionGallery } from '@/components/ui/SectionGallery';
 import {
   createMaterialDocument,
@@ -16,6 +15,7 @@ import type { OpenItem } from '@/features/materials/openItem';
 import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import { m } from '@/i18n';
 import { materialIconName } from '@/lib/fileIcons';
+import { FileKindTile } from './FileKindTile';
 import { nextGenerateTitle } from './generateTitle';
 
 type CreateKind = MaterialKind | 'docx' | 'xlsx' | 'csv' | 'pptx';
@@ -148,17 +148,14 @@ export function CreateFilePanel({
         nav={false}
         sections={SECTIONS.map((section) => ({
           content: (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-2">
               {section.tiles.map((tile) => (
-                <ButtonCard
-                  aria-pressed={selected === tile.kind}
-                  buttonText={tile.label()}
-                  className="font-medium! [font-size:var(--body-font-size)]!"
-                  componentBeforeText={
-                    <FileIcon className="size-5.5" name={tile.icon} />
-                  }
+                <FileKindTile
+                  icon={tile.icon}
                   key={tile.kind}
+                  label={tile.label()}
                   onClick={() => setSelected(tile.kind)}
+                  selected={selected === tile.kind}
                 />
               ))}
             </div>

@@ -29,10 +29,10 @@ import {
 
 // Work in flight first, then what needs the owner.
 const STATE_ORDER: Record<FileChange['state'], number> = {
-  failed: 2,
+  failed: 3,
   processing: 0,
   queued: 1,
-  waiting: 3,
+  waiting: 2,
 };
 
 function ChangeStatus({ change }: { change: FileChange }) {
@@ -114,17 +114,18 @@ function FileChanges({
         <ul className="m-0 mt-3 flex list-none flex-col p-0">
           {sorted.map((change) => (
             <li
-              className="flex min-h-11 items-center gap-3 py-1.5"
+              className="grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 py-1.5 sm:flex"
               data-state={change.state}
               key={change.fileId}
             >
               <FileIcon className="size-3.75" name={fileIconName(change)} />
-              <span className="min-w-0 flex-1 truncate">{change.name}</span>
-              <span className="t-meta flex shrink-0 items-center gap-1.5 text-fg-muted">
+              <span className="min-w-0 truncate sm:flex-1">{change.name}</span>
+              <span className="t-meta col-start-2 flex shrink-0 -translate-x-0.5 items-center gap-1.5 text-fg-muted">
                 <ChangeStatus change={change} />
               </span>
               {owner && change.state === 'queued' && (
                 <Button
+                  className="col-start-3 row-span-2 row-start-1"
                   disabled={busy}
                   onClick={() => cancel(change.fileId)}
                   size="sm"
@@ -136,13 +137,14 @@ function FileChanges({
               {owner &&
                 (change.state === 'waiting' || change.state === 'failed') && (
                   <Button
+                    className="col-start-3 row-span-2 row-start-1"
                     disabled={busy}
                     onClick={() => process([change.fileId])}
                     size="sm"
                     variant="outline"
                   >
                     {change.state === 'failed'
-                      ? m.workspace_change_retry()
+                      ? m.error_action_retry()
                       : m.workspace_change_process()}
                   </Button>
                 )}
@@ -181,20 +183,24 @@ function FailedFiles({
       </p>
       <ul className="m-0 mt-3 flex list-none flex-col p-0">
         {failed.map((file) => (
-          <li className="flex min-h-11 items-center gap-3 py-1.5" key={file.id}>
+          <li
+            className="grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 py-1.5 sm:flex"
+            key={file.id}
+          >
             <FileIcon className="size-3.75" name={fileIconName(file)} />
-            <span className="min-w-0 flex-1 truncate">{file.name}</span>
-            <span className="t-meta flex shrink-0 items-center gap-1.5 text-tint-error-fg">
+            <span className="min-w-0 truncate sm:flex-1">{file.name}</span>
+            <span className="t-meta col-start-2 flex shrink-0 items-center gap-1.5 text-tint-error-fg">
               <Icon name="alert" size={14} />
               {m.workspace_change_failed()}
             </span>
             {owner && (
               <Button
+                className="col-start-3 row-span-2 row-start-1"
                 onClick={() => setRetrying(file)}
                 size="sm"
                 variant="outline"
               >
-                {m.files_retry_processing()}
+                {m.error_action_retry()}
               </Button>
             )}
           </li>

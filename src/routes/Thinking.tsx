@@ -41,7 +41,7 @@ export default function Thinking() {
         />
       }
     >
-      <div className="flex-1 px-6 py-5">
+      <div className="flex-1 px-4 py-5 sm:px-6">
         {fetchStatus === 'paused' ? (
           <QueryPausedState />
         ) : isLoading ? (

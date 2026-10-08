@@ -75,7 +75,7 @@ export function EditorSettingsDialog() {
           })}
         >
           <Tabs
-            className="mt-2.5 whitespace-nowrap"
+            className="-mx-3 mt-2.5 w-auto whitespace-nowrap sm:mx-0"
             onChange={setTab}
             tabs={[
               { label: m.settings_tab_general(), value: 'general' },
@@ -83,11 +83,14 @@ export function EditorSettingsDialog() {
             ]}
             value={tab}
           />
-          <div className="mt-1 px-3 py-5">
+          <div className="mt-1 py-5 sm:px-3">
             {tab === 'general' ? (
               <div className="grid gap-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <label className="font-semibold" htmlFor="note-display-width">
+                <div className="flex items-center justify-between gap-3">
+                  <label
+                    className="min-w-0 font-semibold"
+                    htmlFor="note-display-width"
+                  >
                     {m.editor_prefs_display_size()}
                   </label>
                   <Controller
@@ -99,7 +102,7 @@ export function EditorSettingsDialog() {
                         value={field.value}
                       >
                         <SelectTrigger
-                          className="w-44"
+                          className="w-40 shrink-0 sm:w-44"
                           data-width={field.value}
                           id="note-display-width"
                           onBlur={field.onBlur}
@@ -119,8 +122,11 @@ export function EditorSettingsDialog() {
                     )}
                   />
                 </div>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <label className="font-semibold" htmlFor="note-mermaid-theme">
+                <div className="flex items-center justify-between gap-3">
+                  <label
+                    className="min-w-0 font-semibold"
+                    htmlFor="note-mermaid-theme"
+                  >
                     {m.editor_prefs_mermaid_theme()}
                   </label>
                   <Controller
@@ -132,7 +138,7 @@ export function EditorSettingsDialog() {
                         value={field.value}
                       >
                         <SelectTrigger
-                          className="w-44"
+                          className="w-40 shrink-0 sm:w-44"
                           id="note-mermaid-theme"
                           onBlur={field.onBlur}
                           ref={field.ref}

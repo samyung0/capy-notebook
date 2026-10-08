@@ -80,7 +80,7 @@ export default function Files() {
     >
       <fieldset className="min-w-0" disabled={busy}>
         <Tabs
-          className="px-6"
+          className="px-1 sm:px-6"
           onChange={(value) => {
             void navigate({
               replace: true,
@@ -314,7 +314,7 @@ function ActiveFiles({
         sorts={sorts}
         view={view}
       />
-      <div className="shrink-0 grow px-6 pt-2 pb-5">
+      <div className="shrink-0 grow px-4 pt-2 pb-5 sm:px-6">
         {fetchStatus === 'paused' && !data ? (
           <QueryPausedState />
         ) : isLoading ? (
@@ -477,7 +477,7 @@ function TrashTab({
   }
   return (
     <>
-      <div className="-mb-3 flex flex-wrap items-center justify-between gap-x-3 px-6">
+      <div className="-mb-3 flex flex-wrap items-center justify-between gap-x-3 px-4 sm:px-6">
         {selection.selecting ? (
           <FileSelectionActions
             allSelected={
@@ -547,7 +547,7 @@ function TrashTab({
           <ListViewToggle onViewChange={onViewChange} view={view} />
         </div>
       </div>
-      <div className="shrink-0 grow px-6 pt-2 pb-5">
+      <div className="shrink-0 grow px-4 pt-2 pb-5 sm:px-6">
         <div className="flex flex-col gap-3">
           <p className="t-meta text-fg-muted" role="note">
             {m.trash_notice()}

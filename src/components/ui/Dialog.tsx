@@ -96,7 +96,7 @@ function DialogContent({
         >
           <div
             className={cn(
-              'flex h-full max-h-[88dvh] w-full flex-col items-stretch gap-0 overflow-auto px-5.5 py-6.5',
+              'flex h-full max-h-[88dvh] w-full flex-col items-stretch gap-0 overflow-auto px-4 py-5 sm:px-5.5 sm:py-6.5',
               cardScrollContainerClassName
             )}
           >

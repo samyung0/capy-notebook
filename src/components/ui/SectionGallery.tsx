@@ -139,7 +139,10 @@ export function SectionGallery({
         aria-label={label}
         className={cn(
           'relative min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain p-0 pt-0! pb-3 outline-none focus-visible:ring-2 focus-visible:ring-tint-accent-1-fg',
-          nav && 'sm:p-4.5 md:border-divider md:border-l md:p-6'
+          nav && 'sm:p-4.5 md:border-divider md:border-l md:p-6',
+          // Room for tile borders and a gap before the scrollbar, without
+          // moving the tiles off the dialog's content edge.
+          !nav && '-mx-1.5 px-1.5'
         )}
         onScroll={syncActive}
         ref={observeGallery}

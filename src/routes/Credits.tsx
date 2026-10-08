@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { PageHeader, Panel } from '@/components/app/layout';
+import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { m } from '@/i18n';
 import { iconUrl } from '@/lib/icon-catalog';
@@ -7,9 +7,12 @@ import credits from '@/lib/icon-credits.json';
 
 export default function Credits() {
   return (
-    <Panel>
-      <PageHeader subtitle={m.credits_hint()} title={m.credits_title()} />
-      <div className="flex-1 px-6 py-5">
+    <PanelWithInvertedRadius
+      header={
+        <PageHeader subtitle={m.credits_hint()} title={m.credits_title()} />
+      }
+    >
+      <div className="flex-1 px-4 py-5 sm:px-6">
         <div className="mx-auto max-w-3xl">
           <Link
             className="mb-5 inline-block text-link hover:underline"
@@ -17,7 +20,7 @@ export default function Credits() {
           >
             {m.nav_help_legal()}
           </Link>
-          <div className="divide-y divide-divider rounded-card-lg border border-line bg-surface px-5">
+          <div className="divide-y divide-divider rounded-card-lg border border-line bg-surface px-4 sm:px-5">
             {credits.map((credit) => (
               <section className="flex items-start gap-4 py-5" key={credit.id}>
                 {credit.id === 'catppuccin' ? (
@@ -127,6 +130,6 @@ export default function Credits() {
           </section>
         </div>
       </div>
-    </Panel>
+    </PanelWithInvertedRadius>
   );
 }

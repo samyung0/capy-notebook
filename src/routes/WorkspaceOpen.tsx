@@ -102,8 +102,8 @@ export default function WorkspaceOpen() {
   }
 
   const searchedOpenItem = openItemFromSearch(search);
-  // Study when nothing is open, Chat when the URL already points at an item.
-  const [tab, setTab] = useState<PanelTab>(searchedOpenItem ? 'chat' : 'study');
+  // Files when nothing is open, Chat when the URL already points at an item.
+  const [tab, setTab] = useState<PanelTab>(searchedOpenItem ? 'chat' : 'files');
   const [toolsOpen, setToolsOpen] = useState(false);
   const [citationTarget, setCitationTarget] = useState<{
     fileId: string;
@@ -205,11 +205,11 @@ export default function WorkspaceOpen() {
 
   // Every role that can read the workspace studies, browses and chats; AI
   // generate lives in the Add file dialog.
-  const panelTabs: PanelTab[] = ['study', 'files', 'chat'];
+  const panelTabs: PanelTab[] = ['files', 'chat', 'study'];
   const railTabs =
     layout === 'three' ? panelTabs.filter((t) => t !== 'files') : panelTabs;
-  // Files lives on the left when pinned: the rail falls back to Study.
-  const railTab: PanelTab = railTabs.includes(tab) ? tab : 'study';
+  // Files lives on the left when pinned: the rail falls back to Chat.
+  const railTab: PanelTab = railTabs.includes(tab) ? tab : 'chat';
   const tabLabel = (t: PanelTab) =>
     t === 'files'
       ? m.workspace_tab_files()

@@ -55,10 +55,10 @@ export function PanelTabRow({
   return (
     <div
       className={cn(
-        'relative flex shrink-0 items-center gap-1 pt-2.5 pr-2 pl-4.5',
+        'relative flex shrink-0 items-center gap-1 pt-2.5 pr-2 pl-1.5 sm:pl-4.5',
         title
           ? 'h-12'
-          : 'before:pointer-events-none before:absolute before:right-2 before:bottom-0 before:left-4.5 before:h-px before:bg-divider'
+          : 'before:pointer-events-none before:absolute before:right-2 before:bottom-0 before:left-1.5 before:h-px before:bg-divider sm:before:left-4.5'
       )}
     >
       {title ? (

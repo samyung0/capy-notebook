@@ -232,7 +232,7 @@ export function ShareDialog({
             <InputTitle>{m.share_visibility()}</InputTitle>
             <p className="t-meta text-fg-muted">{current.hint}</p>
           </div>
-          <div className="min-w-45 max-w-70">
+          <div className="w-40 shrink-0 sm:w-auto sm:min-w-45 sm:max-w-70">
             <Select
               disabled={busy}
               onValueChange={(v) => handlePrivacyChange(v as Privacy)}
@@ -273,7 +273,7 @@ export function ShareDialog({
                 <InputTitle>{m.share_anyone_with_access()}</InputTitle>
                 <p className="t-meta text-fg-muted">{roleHint}</p>
               </div>
-              <div className="min-w-45 max-w-70">
+              <div className="w-40 shrink-0 sm:w-auto sm:min-w-45 sm:max-w-70">
                 <Select
                   disabled={busy}
                   onValueChange={(value) =>
@@ -312,29 +312,42 @@ export function ShareDialog({
           <WarningBanner message={m.share_public_edit_warning()} />
         )}
         {privacy !== 'private' && (
-          <div className="flex flex-wrap items-center gap-3.5">
+          <div className="flex items-center gap-2 sm:gap-3.5">
             <Input
               disabled
               type="text"
               value={absoluteLink}
-              wrapperClassName="has-disabled:pointer-events-auto has-disabled:cursor-auto min-w-40 flex-1"
+              wrapperClassName="has-disabled:pointer-events-auto has-disabled:cursor-auto min-w-0 flex-1"
             />
-            <Button onClick={copy} rounded="large" variant="outline">
+            {/* Phones show the icons alone so the buttons fit beside the link. */}
+            <Button
+              className="aspect-square px-0 sm:aspect-auto sm:rounded-button-lg sm:px-5"
+              onClick={copy}
+              variant="outline"
+            >
               <ContentSwap contentKey={String(copied)} kind="icon">
-                <Icon name={copied ? 'check' : 'link'} />
+                <Icon name={copied ? 'check' : 'copy'} />
               </ContentSwap>
-              <ContentSwap contentKey={String(copied)}>
-                {copied ? m.action_copied() : m.action_copy()}
-              </ContentSwap>
+              <span className="sr-only sm:not-sr-only">
+                <ContentSwap contentKey={String(copied)}>
+                  {copied ? m.action_copied() : m.action_copy()}
+                </ContentSwap>
+              </span>
             </Button>
             {workspaceId && (
-              <Button asChild rounded="large" variant="outline">
+              <Button
+                asChild
+                className="aspect-square px-0 sm:aspect-auto sm:rounded-button-lg sm:px-5"
+                variant="outline"
+              >
                 <a
                   href={absoluteLink}
                   rel="noopener noreferrer"
                   target="_blank"
                 >
-                  {m.summary_preview()}
+                  <span className="sr-only sm:not-sr-only">
+                    {m.summary_preview()}
+                  </span>
                   <Icon name="navigationForward" />
                 </a>
               </Button>

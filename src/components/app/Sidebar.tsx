@@ -200,7 +200,7 @@ export function Sidebar({
             label={m.action_close()}
             onClick={onNavigate}
             size="sm"
-            variant="ghost"
+            variant="ghost-hover"
           />
         </div>
 

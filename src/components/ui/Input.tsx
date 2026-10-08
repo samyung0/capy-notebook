@@ -31,7 +31,8 @@ const inputContainerVariants = cva(
     variants: {
       size: {
         lg: 'rounded-card-lg px-4.5 py-0',
-        md: 'rounded-input px-3.5 py-0',
+        // Same heights as Button md; one h-* override still replaces it.
+        md: 'h-(--input-h) rounded-input px-3.5 py-0 [--input-h:--spacing(10)] sm:[--input-h:--spacing(11)]',
         sm: 'rounded-input px-2.5 py-0 text-xs',
       },
       variant: {
@@ -46,7 +47,7 @@ const inputContainerVariants = cva(
 );
 
 const inputVariants = cva(
-  'min-w-0 flex-1 border-none bg-transparent py-2.5 outline-none placeholder:text-placeholder disabled:bg-field-disabled disabled:text-fg-muted',
+  'min-w-0 flex-1 border-none bg-transparent outline-none placeholder:text-placeholder disabled:bg-field-disabled disabled:text-fg-muted',
   {
     defaultVariants: {
       size: 'md',
@@ -54,7 +55,7 @@ const inputVariants = cva(
     variants: {
       size: {
         lg: 'py-3.5',
-        md: 'py-2.5',
+        md: 'self-stretch py-0',
         sm: 'pt-2 pb-0.5',
       },
     },

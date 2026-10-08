@@ -154,7 +154,7 @@ export default function Learning() {
   const navigate = useNavigate();
   return (
     <PanelWithInvertedRadius header={<PageHeader title={m.nav_learning()} />}>
-      <div className="px-6 pt-4">
+      <div className="px-1 sm:px-6 sm:pt-4">
         <Tabs
           onChange={(next) =>
             navigate({
@@ -170,7 +170,7 @@ export default function Learning() {
           value={tab}
         />
       </div>
-      <div className="flex flex-1 flex-col gap-4 px-6 py-5">
+      <div className="flex flex-1 flex-col gap-4 px-4 py-5 sm:px-6">
         {tab === 'review' ? <ReviewWorkspaces /> : <PastAttempts />}
       </div>
     </PanelWithInvertedRadius>

@@ -179,7 +179,7 @@ export function SourceTransferPanel() {
     <Card
       border="solid"
       // Same overlay surface, line and shadow as dialogs and dropdowns.
-      className="pointer-events-auto fixed right-6 bottom-6 z-40 block w-96 max-w-[calc(100vw-2rem)] border-overlay-line bg-overlay p-1 shadow-pop max-sm:right-4 max-sm:bottom-4"
+      className="pointer-events-auto fixed right-4 bottom-4 z-40 block w-96 max-w-[calc(100vw-2rem)] border-overlay-line bg-overlay p-1 shadow-pop sm:right-6 sm:bottom-6"
       data-testid="source-transfer-panel"
       radius="card"
     >

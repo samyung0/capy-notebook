@@ -286,7 +286,7 @@ export function MediaAssetElement(props: PlateElementProps) {
             style={{ width: element.width }}
           >
             <CaptionTextarea
-              className="w-full resize-none overflow-hidden bg-transparent text-center outline-none placeholder:text-fg-placeholder"
+              className="w-full resize-none overflow-hidden bg-transparent text-center outline-none placeholder:text-placeholder"
               onBlur={(event) => {
                 // An empty caption the user opened and left goes away again.
                 if (!event.currentTarget.value)

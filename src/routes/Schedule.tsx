@@ -295,7 +295,7 @@ export default function Schedule() {
           />
         }
       >
-        <div className="flex items-center gap-3 px-6 pb-3">
+        <div className="flex items-center gap-3 px-4 pb-3 sm:px-6">
           {/* TODO: change */}
           {/* <SegmentedControl
             onChange={(v) => setView(v as View)}

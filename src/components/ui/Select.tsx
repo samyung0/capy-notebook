@@ -47,7 +47,8 @@ const selectTriggerVariants = cva(
     },
     variants: {
       size: {
-        md: 'px-3.25 py-2.5',
+        // Same heights as Button md and Input md.
+        md: 'h-(--select-h) px-3.25 py-0 [--select-h:--spacing(10)] sm:[--select-h:--spacing(11)]',
         sm: 'px-2.5 pt-2 pb-0.5 text-xs',
       },
       variant: {

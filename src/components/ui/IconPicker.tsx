@@ -40,7 +40,7 @@ export function IconPicker({
       </DialogTrigger>
       <DialogContent
         aria-describedby={undefined}
-        cardScrollContainerClassName="min-h-0 overflow-hidden px-4 sm:px-5 md:px-5.5"
+        cardScrollContainerClassName="min-h-0 overflow-hidden"
         className="max-w-[912px]"
         onOpenAutoFocus={(event) => {
           event.preventDefault();

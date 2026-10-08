@@ -77,7 +77,7 @@ export default function Workspaces() {
       <ListToolbar
         action={
           <Button
-            className="rounded-card font-bold text-link"
+            className="-mx-1 h-fit rounded-card px-2 py-1.5 font-bold text-link sm:mx-0 sm:h-11 sm:px-5 sm:py-0"
             disabled={frozen}
             iconLeft="plus"
             onClick={() => setCreateOpen(true)}
@@ -108,7 +108,7 @@ export default function Workspaces() {
         sorts={sorts}
       />
 
-      <div className="w-full shrink-0 grow px-6 pt-2 pb-6">
+      <div className="w-full shrink-0 grow px-4 pt-4 pb-6 sm:px-6 sm:pt-2">
         {fetchStatus === 'paused' ? (
           <QueryPausedState />
         ) : isLoading ? (

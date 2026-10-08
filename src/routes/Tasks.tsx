@@ -26,7 +26,7 @@ export default function Tasks() {
 
   return (
     <PanelWithInvertedRadius header={<PageHeader title={m.nav_tasks()} />}>
-      <div className="flex-1 px-6 py-5">
+      <div className="flex-1 px-4 py-5 sm:px-6">
         {fetchStatus === 'paused' ? (
           <QueryPausedState />
         ) : isLoading ? (

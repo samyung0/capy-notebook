@@ -82,8 +82,8 @@ export function ListToolbar<V extends string>({
   const current = sorts.find((option) => option.value === sort) ?? sorts[0];
 
   return (
-    <div className="-mb-3 flex flex-wrap items-center justify-between gap-x-3 px-6">
-      <div className="flex h-11.5 items-center py-2">
+    <div className="-mb-3 flex flex-wrap items-center justify-between gap-x-3 px-4 sm:px-6">
+      <div className="flex h-10 items-center sm:h-11.5 sm:py-2">
         {selectionActions ?? (
           <div className="flex flex-wrap items-center gap-2">
             <Menu

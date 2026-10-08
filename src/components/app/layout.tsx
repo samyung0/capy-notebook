@@ -160,7 +160,7 @@ export function PageHeader({
     <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-6">
       <div
         className={cn(
-          'flex min-w-0 items-center gap-10 px-6 pt-6 pb-2',
+          'flex min-w-0 items-center gap-10 px-4 pt-6 pb-0 sm:px-6 sm:pb-2',
           className
         )}
       >

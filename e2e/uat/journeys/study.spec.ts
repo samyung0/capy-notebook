@@ -202,12 +202,18 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
   // Continue opens the first item that is not done: the quiz not yet taken.
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
   await page
+    .getByRole('tab', { exact: true, name: m.workspace_tab_study() })
+    .click();
+  await page
     .getByRole('button', { exact: true, name: m.study_continue() })
     .click();
   await expect(page).toHaveURL(new RegExp(`[?&]material=${nextQuiz}(&|$)`));
 
   // A review session from the Study tab over the card and the question.
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
+  await page
+    .getByRole('tab', { exact: true, name: m.workspace_tab_study() })
+    .click();
   await page
     .getByRole('button', { exact: true, name: m.study_review_button() })
     .click();

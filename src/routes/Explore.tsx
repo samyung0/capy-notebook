@@ -60,7 +60,7 @@ export default function Explore() {
         />
       }
     >
-      <div className="px-6">
+      <div className="px-1 sm:px-6">
         <Tabs
           onChange={setTab}
           tabs={[
@@ -71,7 +71,7 @@ export default function Explore() {
           value={tab}
         />
       </div>
-      <div className="flex-1 px-6 py-5">
+      <div className="flex-1 px-4 py-5 sm:px-6">
         {tab === 'workspaces' ? (
           workspacesFetchStatus === 'paused' ? (
             <QueryPausedState />

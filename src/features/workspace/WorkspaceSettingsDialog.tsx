@@ -107,7 +107,7 @@ export function WorkspaceSettingsDialog({
       title={m.workspace_settings()}
     >
       <Tabs
-        className="mt-2.5 whitespace-nowrap"
+        className="-mx-3 mt-2.5 w-auto whitespace-nowrap sm:mx-0"
         onChange={setTab}
         tabs={[
           ...(manage
@@ -129,7 +129,7 @@ export function WorkspaceSettingsDialog({
         ]}
         value={tab}
       />
-      <div className="mt-1 flex-1 px-3 py-5">
+      <div className="mt-1 flex-1 py-5 sm:px-3">
         {tab === 'general' && (
           <WorkspaceFormEditDialog
             embedded

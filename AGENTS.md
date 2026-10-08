@@ -1,5 +1,7 @@
 # Capy Notebook
 
+PROJECT STATUS: UAT DB up, INGEST DB up (question bank and knowledge base), NO PROD DATA OR USER
+
 Capy Notebook is an AI notebook where users can can upload files and study through curated routines and study tools. We want to address the shortcomings of other notebook apps such as NotebookLM, Recall, Copilot Notebooks:
 
 - Lack of helpful tools and study routines that promotes learning behaviors
@@ -136,6 +138,7 @@ paraglide is used for internationalization. use paraglide functions to support i
 
 ## Frontend
 
+- When designing a page/making UI change, always check whether the UI looks on different browser size is as expected, if mock does not include the mock for smaller screens and it looks different, screenshot and get developer approval.
 - When expecting typed values from user input (e.g. names, descriptions), use the existing input components, use react hook form with the generated zod validators.
 - IMPORTANT: react-hook-forms and react-query use proxying for tracking whether state/status changes have subscribers or not, you MUST use destructuring to read the values rather than useXXX().isPending or useXXX().isError
 - DO NOT directly import types from `api/gen/model`, instead re-export type in `api/types.ts`. The file allows for subtle changes such as new frontend only fields on top of the auto generated types.
@@ -143,7 +146,7 @@ paraglide is used for internationalization. use paraglide functions to support i
 - Sometimes its ok to use arbitary values instead of canonical values for tailwind, e.g. w-[200px] instead of w-50, in order to prevent element size changing when switching themes.
 - DO NOT use template strings NOR variables just to hold classNames for tailwind, use `cn()` to inject conditional themes
 - DO NOT use chevron icon for navigational links icon, use navigationback and navigationForward
-- Do not make the tabs or title sticky/fixed to top unless told to do so.
+- Always let larger screens override smaller screen styles, phones are usually less powerful and need to run longer if it needs to pplay more styles
 
 ## Final Remarks
 

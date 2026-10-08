@@ -342,7 +342,7 @@ export function GenerateForm({
         )}
       </div>
 
-      <DialogFooter className="mt-6">
+      <DialogFooter>
         <Button
           disabled={pending}
           onClick={onCancel}

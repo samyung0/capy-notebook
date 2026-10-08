@@ -1456,6 +1456,7 @@ export function AddSourceDialog({
         }}
       >
         <Tabs
+          className="-mx-3 w-auto sm:mx-0"
           onChange={setMode}
           tabs={[
             {
@@ -1482,7 +1483,7 @@ export function AddSourceDialog({
             {uploads.sources.length === 0 ? (
               <button
                 className={cn(
-                  'flex flex-col items-center gap-2 rounded-card border-2 border-line border-dashed px-6 py-8 transition-colors hover:bg-surface-hover-bg',
+                  'flex flex-col items-center gap-2 rounded-card border-2 border-line border-dashed px-6 py-5 transition-colors hover:bg-surface-hover-bg sm:py-8',
                   isDragOver && 'border-solid-accent-1 bg-tint-accent-1/60'
                 )}
                 disabled={!uploadPolicy || !canAdd}

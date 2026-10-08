@@ -12,7 +12,7 @@ export function TabContent({
   centered?: boolean;
 }) {
   return (
-    <div className="relative flex-1 px-4 pt-8 pb-8 sm:px-6 lg:px-10 xl:px-16">
+    <div className="relative flex-1 px-4 pt-5 pb-8 sm:px-6 sm:pt-8 lg:px-10 xl:px-16">
       <div className={cn('max-w-3xl', centered && 'mx-auto')}>{children}</div>
     </div>
   );

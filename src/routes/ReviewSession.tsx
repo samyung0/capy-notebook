@@ -98,7 +98,7 @@ export default function ReviewSession() {
         />
       }
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-6 py-5">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-4 py-5 sm:px-6">
         <div className="flex items-center justify-between">
           <Button
             iconLeft="navigationBack"

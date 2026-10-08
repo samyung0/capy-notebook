@@ -269,8 +269,10 @@ test.describe('study progress', () => {
     await setStudyItem(ownerApi, ws.id, { materialId: read.id }, 'done');
     await setStudyItem(ownerApi, ws.id, { materialId: skipped.id }, 'removed');
 
-    // The Study tab is open when no item is.
     await ownerPage.goto(`/workspaces/${ws.id}`);
+    await ownerPage
+      .getByRole('tab', { exact: true, name: m.workspace_tab_study() })
+      .click();
     // Up next is the row holding Continue; the Files panel lists the same
     // titles, so match inside that row only.
     const continueButton = ownerPage.getByRole('button', {
@@ -411,6 +413,9 @@ test.describe('study progress', () => {
 
     // Continue passes Week 1 and opens the quiz that was only started.
     await ownerPage.goto(`/workspaces/${ws.id}`);
+    await ownerPage
+      .getByRole('tab', { exact: true, name: m.workspace_tab_study() })
+      .click();
     const continueButton = ownerPage.getByRole('button', {
       exact: true,
       name: m.study_continue(),
