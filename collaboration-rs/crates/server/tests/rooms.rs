@@ -558,6 +558,59 @@ async fn an_update_that_panics_yrs_costs_neither_the_process_nor_the_room() {
 }
 
 #[tokio::test]
+async fn a_panic_inside_a_transaction_discards_the_room_and_moves_its_lineage() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "durable").await;
+    let room = format!("material:{material}:schema:1");
+    let mut a = Client::open(server.port).await;
+    a.joined(&room, &token(&room, &user, "write")).await;
+    assert!(a.settle(|c| c.block_text() == "durable").await);
+    // The debug build's panic inside an open write transaction, outside the
+    // sync path: the room is discarded, not left dead in the registry.
+    let request = serde_json::json!({ "type": "capy-it-panic" }).to_string();
+    let mut payload = Vec::new();
+    varbytes(&mut payload, request.as_bytes());
+    a.send(9, &payload).await;
+    let rejected = loop {
+        let message = text_payload(&a.until(9).await.expect("a rejection"));
+        if message.contains("document-rejected") {
+            break message;
+        }
+    };
+    assert!(rejected.contains("invalid_document"), "{rejected}");
+    assert!(a.until(4).await.is_some(), "the channel closes");
+    // The process lives on and the note opens on its next lineage.
+    let next = format!("material:{material}:schema:2");
+    let mut b = Client::open(server.port).await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        b.join(&next, &token(&next, &user, "write")).await;
+        let answered = b
+            .settle(|c| c.inbox.iter().any(|m| m.kind == 1 || m.kind == 2))
+            .await;
+        assert!(answered, "no answer to the join");
+        let joined = b.inbox.iter().any(|m| m.kind == 1);
+        b.inbox.clear();
+        if joined {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the next lineage never opened"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let sv = b.doc.transact().state_vector().encode_v1();
+    b.send(5, &sync(0, &sv)).await;
+    assert!(
+        b.settle(|c| c.block_text() == "durable").await,
+        "{}",
+        b.block_text()
+    );
+}
+
+#[tokio::test]
 async fn a_note_room_caps_a_sync_message_at_4_mib_and_takes_a_near_2_mib_reconnect() {
     let Some(env) = env() else { return };
     let server = start(&env).await;

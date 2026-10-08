@@ -271,7 +271,16 @@ pub fn spawn(app: &Shared, name: &RoomName, id: u64, actor: &str) -> RoomHandle 
     let view = Arc::new(RoomView::default());
     let (app, name, actor, room_view) = (app.clone(), name.clone(), actor.to_owned(), view.clone());
     tokio::spawn(async move {
-        run(app, name, id, actor, room_view, rx).await;
+        use futures::FutureExt;
+        let room = name.to_string();
+        let ran = std::panic::AssertUnwindSafe(run(app.clone(), name, id, actor, room_view, rx))
+            .catch_unwind()
+            .await;
+        // A panic outside the room's own steps (its load, its unload): the
+        // Sentry hook reported it; the next join loads afresh.
+        if ran.is_err() {
+            app.rooms.remove_if(&room, id, || true);
+        }
     });
     RoomHandle { id, tx, view }
 }
@@ -483,12 +492,24 @@ impl Room {
     async fn serve(&mut self, rx: &mut mpsc::Receiver<RoomCmd>) {
         loop {
             let deadline = self.next_deadline();
-            tokio::select! {
+            use futures::FutureExt;
+            // A panic in any step leaves the task alive to discard the room
+            // (no dead handle in the registry); the Sentry hook reported it.
+            let step = tokio::select! {
                 command = rx.recv() => match command {
-                    Some(command) => self.handle(command).await,
+                    Some(command) => {
+                        std::panic::AssertUnwindSafe(self.handle(command))
+                            .catch_unwind()
+                            .await
+                    }
                     None => return,
                 },
-                () = sleep_until(deadline) => self.on_timers().await,
+                () = sleep_until(deadline) => {
+                    std::panic::AssertUnwindSafe(self.on_timers()).catch_unwind().await
+                }
+            };
+            if step.is_err() {
+                self.discard_after_panic("room_panicked", 0);
             }
             self.publish_view();
             if self.unloadable() {
@@ -1252,16 +1273,27 @@ impl Room {
     /// went in, the document may hold part of it, so the room is discarded
     /// as one whose store was refused for good.
     fn update_panicked(&mut self, key: MemberKey, bytes: usize) {
-        let applying = std::mem::take(&mut self.applying);
-        if let Kindly::Note(note) = &mut self.kind {
-            note.validator.invalidate();
-        }
-        if !applying {
+        if !self.applying {
+            if let Kindly::Note(note) = &mut self.kind {
+                note.validator.invalidate();
+            }
             self.refuse(key, &[], "update cannot be checked");
             return;
         }
+        self.discard_after_panic("update_panicked", bytes);
+    }
+
+    /// A panic in the room's own work, past a point where its document may
+    /// hold half an operation: the room is discarded as one whose store was
+    /// refused for good (editors drop back to the durable state, the
+    /// lineage moves once it unloads).
+    fn discard_after_panic(&mut self, reason: &str, bytes: usize) {
+        self.applying = false;
+        if let Kindly::Note(note) = &mut self.kind {
+            note.validator.invalidate();
+        }
         let eviction = uuid::Uuid::new_v4().to_string();
-        let cause = Cause::new(IncidentKind::SaveRefused, "update_panicked");
+        let cause = Cause::new(IncidentKind::SaveRefused, reason);
         let mut payload = match self.kind {
             Kindly::Note(_) => json!({
                 "code": "invalid_document",
@@ -1655,6 +1687,13 @@ impl Room {
             return;
         };
         let channel = member.channel_id;
+        // Debug builds only: the integration tests' panic inside an open
+        // write transaction, outside the sync path.
+        #[cfg(debug_assertions)]
+        if event["type"] == "capy-it-panic" {
+            let _txn = self.doc.transact_mut();
+            panic!("integration test panic in a transaction");
+        }
         if event["type"] == "source-handoff-ready" {
             // The handoff counts a clean writer's answer; it goes read-only.
             if matches!(self.kind, Kindly::Source(_))
