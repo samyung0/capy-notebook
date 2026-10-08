@@ -269,6 +269,14 @@ check); it applies at the first promotion.
   replaces the survivor's keys), and the copied `pPrChange` comes back under
   new ids; keep the survivor's mark-revision and section keys when the donor
   has none (docx-enter-copy REVIEW2 finding 4).
+- **DOCX Undo of one peer's concurrent split leaves an empty paragraph id**
+  (pre-existing on capy-ci, found by the fork-small review 2026-10-08): two
+  peers split one paragraph mid-text and sync, then one undoes its split: its
+  undo removes its re-mint of the source mark, the other peer's concurrent
+  re-mint was already overwritten, so the merged paragraph has no `paraId`
+  (`"":pha beta`) and two such paragraphs would share the empty Loc id. The
+  duplicate rename skips marks without an id; giving one `{client}.{clock}`
+  there would fix it. Probe `fork-small-review/undoBase.test.ts`.
 - **DOCX run formatting written as direct on every save** (pre-existing, found
   by the docx-fidelity review 2026-10-06): every save writes the style's run
   formatting as direct formatting on every run of a saved story (long-handbook

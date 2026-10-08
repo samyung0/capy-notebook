@@ -476,16 +476,24 @@ new paragraph its own id. A section's last paragraph, and suggesting mode
 (whose Backspace retracts the mark it deletes), keep inserting before the
 existing mark. Mid-paragraph the new mark ends the first half with the
 paragraph's id, so two peers splitting one paragraph mid-text both give their
-first half that id. After applying a peer's update that brought an embed,
-every peer renames the duplicates the same way (`applying_peer_update` and
+first half that id. After applying a peer's update, every peer renames the
+duplicates the same way (`applying_peer_update` and
 `rename_duplicate_para_ids` in `ops/paragraph.rs`, run by the session's
-`applyUpdate`): the mark whose yrs item has the lowest `(client, clock)` keeps
-the id and every other takes `{client}.{clock}` of its own item, as a system
-edit outside Undo, so typing, clicks and AI edits reach both halves. A stored
-state captured before the rename still holds the duplicate; as a backstop
-the save keeps a source `w14:paraId` on the first paragraph and mints a hex
-id for each repeat, as for editor ids, in both engines (`savedParaId` in
-`yrsToDocument.ts`, `saved_para_id` in `office-service/src/docx/project.rs`).
+`applyUpdate`): it looks only at the ids of paragraph marks the update
+inserted or re-identified (a merge's survivor), in their stories, so typing
+and other updates cost nothing extra; the mark whose yrs item has the lowest
+`(client, clock)` keeps the id and every other takes `{client}.{clock}` of
+its own item, as a system edit outside Undo, so typing, clicks and AI edits
+reach both halves. A client loading a stored state renames once after the
+load (`seedYrsSession`), so a state stored before both splitting peers
+exchanged does not keep the duplicate for a later session. If the peer whose
+split kept the id undoes it after the rename, the survivor keeps the other
+half's renamed id and no paragraph carries the source id any more. Exports
+from a stored state that still holds the duplicate (office-checkpoint loads
+without renaming) take the save's backstop: a source `w14:paraId` stays on
+the first paragraph and each repeat gets a hex id, as for editor ids, in
+both engines (`savedParaId` in `yrsToDocument.ts`, `saved_para_id` in
+`office-service/src/docx/project.rs`).
 
 A range delete (a selection delete or a cut) ending at the start of such a
 slot keeps the paragraph mark before it (`kept_mark`), so the text left stays
