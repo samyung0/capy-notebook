@@ -881,3 +881,58 @@ func TestProjectionReadsWhatItsJSONHolds(t *testing.T) {
 		t.Fatalf("asset ids = %v, stored JSON gives %v", got, assets)
 	}
 }
+
+// A resizable block stores exactly what MediaFrame's resize handles write:
+// "<n>%" with n a whole number from 20 to 100.
+func TestResizableBlocksTakeOnlyTheResizeWidth(t *testing.T) {
+	raw, err := os.ReadFile("../questions/testdata/rich-blocks.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct{ Question map[string]any }
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	stem := fixture.Question["stem"].([]any)
+	blocks := map[string]func() map[string]any{
+		"chart": func() map[string]any {
+			return map[string]any{"type": "chart", "id": "b", "block": stem[2], "children": []any{textLeaf("")}}
+		},
+		"graph": func() map[string]any {
+			return map[string]any{"type": "graph", "id": "b", "block": stem[1], "children": []any{textLeaf("")}}
+		},
+		"image": func() map[string]any {
+			return map[string]any{"type": "img", "id": "b", "assetId": "asset", "children": []any{textLeaf("")}}
+		},
+		"mermaid": func() map[string]any {
+			return map[string]any{"type": "mermaid", "id": "b", "source": "flowchart LR", "children": []any{
+				map[string]any{"type": "mermaid_caption", "children": []any{textLeaf("")}},
+			}}
+		},
+		"video": func() map[string]any {
+			return map[string]any{"type": "video", "id": "b", "provider": "youtube", "videoId": "dQw4w9WgXcQ", "children": []any{textLeaf("")}}
+		},
+	}
+	validate := func(block map[string]any) error {
+		return Validate(Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{block}})
+	}
+	for kind, block := range blocks {
+		if err := validate(block()); err != nil {
+			t.Fatalf("%s without width: %v", kind, err)
+		}
+		for _, width := range []string{"20%", "55%", "100%"} {
+			node := block()
+			node["width"] = width
+			if err := validate(node); err != nil {
+				t.Fatalf("%s width %q: %v", kind, width, err)
+			}
+		}
+		for _, width := range []any{"19%", "101%", float64(50), "50px", "50.5%", "050%", nil} {
+			node := block()
+			node["width"] = width
+			if err := validate(node); err == nil || !strings.Contains(err.Error(), "width must be a whole percentage from 20 to 100") {
+				t.Fatalf("%s width %#v: %v", kind, width, err)
+			}
+		}
+	}
+}

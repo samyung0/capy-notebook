@@ -46,6 +46,10 @@ var (
 
 var (
 	youtubeVideoID = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
+	// mediaWidth is the one width a resizable block (image, YouTube video,
+	// Mermaid, chart, graph) stores: what MediaFrame's resize handles write, a
+	// whole percentage from 20 to 100. Mirrors MEDIA_WIDTH in the Node validator.
+	mediaWidth = regexp.MustCompile(`^(?:[2-9][0-9]|100)%$`)
 )
 
 // Envelope is the generic versioned JSON value persisted in materials.content.
@@ -563,9 +567,12 @@ func validateNode(node map[string]any, depth int) error {
 			return errors.New("embed block type must match node type")
 		}
 		for key := range node {
-			if key != "type" && key != "id" && key != "block" && key != "children" {
+			if key != "type" && key != "id" && key != "block" && key != "children" && key != "width" {
 				return fmt.Errorf("unexpected embed field %s", key)
 			}
+		}
+		if err := validateMediaWidth(node); err != nil {
+			return err
 		}
 		return questions.ValidateBlock(block, questions.Policy{})
 	case HTMLEmbedType:
@@ -583,6 +590,8 @@ func validateNode(node map[string]any, depth int) error {
 		return validateDiagram(node)
 	case "video":
 		return validateYouTube(node)
+	case "img":
+		return validateMediaWidth(node)
 	case RefType:
 		return validateMaterialRef(node)
 	}
@@ -634,7 +643,18 @@ func validateYouTube(node map[string]any) error {
 			return fmt.Errorf("YouTube video cannot contain %s", key)
 		}
 	}
-	return nil
+	return validateMediaWidth(node)
+}
+
+func validateMediaWidth(node map[string]any) error {
+	raw, ok := node["width"]
+	if !ok {
+		return nil
+	}
+	if width, ok := raw.(string); ok && mediaWidth.MatchString(width) {
+		return nil
+	}
+	return errors.New("width must be a whole percentage from 20 to 100")
 }
 
 func validateQuiz(node map[string]any) error {
@@ -767,7 +787,7 @@ func validateDiagram(node map[string]any) error {
 	if len(children) != 1 || children[0].(map[string]any)["type"] != "mermaid_caption" {
 		return errors.New("diagram requires one mermaid_caption child")
 	}
-	return nil
+	return validateMediaWidth(node)
 }
 
 func validateTextElement(node map[string]any) error {

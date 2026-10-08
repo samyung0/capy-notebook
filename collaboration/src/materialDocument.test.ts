@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   assertCanonicalMaterialValue,
@@ -208,5 +209,55 @@ describe('copied bank figures in a quiz', () => {
       expect(() =>
         assertCanonicalMaterialValue(withFigure(outside), 'quiz')
       ).toThrow('bank asset host');
+  });
+});
+
+describe('resizable block width', () => {
+  const { stem } = (
+    JSON.parse(
+      readFileSync(
+        new URL(
+          '../../server/internal/questions/testdata/rich-blocks.json',
+          import.meta.url
+        ),
+        'utf8'
+      )
+    ) as { question: { stem: Record<string, unknown>[] } }
+  ).question;
+  const leaf = [{ text: '' }];
+  const blocks: Record<string, Record<string, unknown>> = {
+    chart: { block: stem[2], children: leaf, id: 'b', type: 'chart' },
+    graph: { block: stem[1], children: leaf, id: 'b', type: 'graph' },
+    image: { assetId: 'asset', children: leaf, id: 'b', type: 'img' },
+    mermaid: {
+      children: [{ children: leaf, type: 'mermaid_caption' }],
+      id: 'b',
+      source: 'flowchart LR',
+      type: 'mermaid',
+    },
+    video: {
+      children: leaf,
+      id: 'b',
+      provider: 'youtube',
+      type: 'video',
+      videoId: 'dQw4w9WgXcQ',
+    },
+  };
+  const store = (block: Record<string, unknown>, width?: unknown) =>
+    assertCanonicalMaterialValue(
+      [width === undefined ? block : { ...block, width }],
+      'note'
+    );
+
+  // Exactly what MediaFrame's resize handles write: "<n>%", n from 20 to 100.
+  it.each(Object.keys(blocks))('%s takes a resize width', (kind) => {
+    for (const width of [undefined, '20%', '55%', '100%'])
+      expect(() => store(blocks[kind], width)).not.toThrow();
+  });
+  it.each(Object.keys(blocks))('%s refuses any other width', (kind) => {
+    for (const width of ['19%', '101%', 50, '50px', '50.5%', '050%', null])
+      expect(() => store(blocks[kind], width)).toThrow(
+        'width must be a whole percentage from 20 to 100'
+      );
   });
 });
