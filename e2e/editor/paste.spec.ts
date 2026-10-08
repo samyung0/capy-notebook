@@ -154,4 +154,62 @@ test.describe('paste', () => {
       [...edited].filter((id) => id !== 'mat_embed_bio_note_quiz')
     ).toHaveLength(2);
   });
+
+  // The note's own block pasted into it again (a copy within the note): the
+  // same block id and the same quiz. It becomes a second block with an id of
+  // its own and a quiz copy of its own (the UAT note journey's last paste).
+  test('makes a quiz block pasted into its own note a second block', async ({
+    page,
+  }) => {
+    const edited: string[] = [];
+    page.on('request', (request) => {
+      const id = new URL(request.url()).pathname.match(QUIZ_EDIT_READ)?.[1];
+      if (id && !edited.includes(id)) edited.push(id);
+    });
+    const editor = await openEmptyLine(page);
+    const pasteRef = async (materialId: string) => {
+      const fragment = await page.evaluate(
+        (json) => btoa(encodeURIComponent(json)),
+        JSON.stringify([
+          {
+            children: [{ text: '' }],
+            id: 'block-own',
+            materialId,
+            refKind: 'quiz',
+            type: 'material_ref',
+          },
+        ])
+      );
+      await paste(editor, {
+        'application/x-slate-fragment': fragment,
+        'text/html': `<div data-slate-fragment="${fragment}">Quiz</div>`,
+        'text/plain': 'Quiz',
+      });
+    };
+    const quizzes = editor
+      .locator('.slate-material_ref')
+      .getByRole('button', { name: m.quiz_add_question() });
+
+    // From another note first: the block edits the note's own copy.
+    await pasteRef('mat_embed_bio_note_quiz');
+    await expect(quizzes).toHaveCount(1);
+    await expect
+      .poll(() => edited.filter((id) => id !== 'mat_embed_bio_note_quiz'))
+      .toHaveLength(1);
+    const own = edited.find((id) => id !== 'mat_embed_bio_note_quiz')!;
+
+    await clickTextEnd(
+      editor.getByText(EDITOR_NOTE.firstParagraph, { exact: true })
+    );
+    await page.keyboard.press('End');
+    await page.keyboard.press('Enter');
+    await pasteRef(own);
+    await expect(quizzes).toHaveCount(2);
+    // The second block edits a second copy, neither the original nor own.
+    await expect
+      .poll(() =>
+        edited.filter((id) => id !== 'mat_embed_bio_note_quiz' && id !== own)
+      )
+      .toHaveLength(1);
+  });
 });

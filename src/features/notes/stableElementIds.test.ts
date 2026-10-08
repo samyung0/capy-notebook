@@ -106,6 +106,40 @@ describe('stableElementIdsPlugin', () => {
     expect(json).toContain('"id":"deep"');
   });
 
+  // A block copied and pasted within the note brings an id the note holds.
+  it('gives a block pasted into its own note an id of its own', () => {
+    const { editor, room } = roomEditor();
+    editor.tf.insertNodes(
+      {
+        children: [{ text: '' }],
+        id: 'quiz',
+        materialId: 'mat_quiz',
+        refKind: 'quiz',
+        type: 'material_ref',
+      } as never,
+      { at: [1] }
+    );
+    editor.tf.select(editor.api.end([0]));
+    editor.tf.insertBreak();
+    editor.tf.insertFragment([
+      {
+        children: [{ text: '' }],
+        id: 'quiz',
+        materialId: 'mat_quiz',
+        refKind: 'quiz',
+        type: 'material_ref',
+      },
+    ] as never);
+    const blocks = room() as unknown as { id: string; type: string }[];
+    const ids = blocks.map((node) => node.id);
+    expect(ids.filter((id) => id === 'quiz')).toHaveLength(1);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toEqual(editor.children.map((node) => node.id));
+    expect(blocks.filter((node) => node.type === 'material_ref')).toHaveLength(
+      2
+    );
+  });
+
   it('keeps the marker out of a block split from one that has it', () => {
     const { editor, room } = roomEditor();
     editor.tf.select({ offset: 2, path: [0, 0] });
