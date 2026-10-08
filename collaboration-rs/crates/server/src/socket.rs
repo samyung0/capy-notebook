@@ -33,7 +33,9 @@ const MAX_PENDING_JOINS: usize = 8;
 pub const DEFAULT_REFUSAL: &str = "permission-denied";
 
 enum Channel {
-    Authenticating(VecDeque<Message>),
+    /// Queued messages and the JOIN attempt (a later JOIN on the channel
+    /// makes an earlier attempt's answers stale).
+    Authenticating(VecDeque<Message>, u64),
     Joined {
         room: RoomHandle,
         name: RoomName,
@@ -63,7 +65,45 @@ impl Refusal {
     }
 }
 
-type AuthResult = (u64, Result<(RoomName, Context), Refusal>);
+type AuthResult = (u64, u64, Result<(RoomName, Context), Refusal>);
+/// A join's answer: channel, attempt, and the joined room or the refusal.
+type JoinResult = (u64, u64, RoomName, Context, Result<RoomHandle, Refusal>);
+
+/// Joins `name`'s room (loading it if need be). A room that just unloaded
+/// fails the send or the join: look up again once.
+async fn join_room(
+    app: &Shared,
+    name: &RoomName,
+    context: &Context,
+    key: (u64, u64),
+    out: Outbox,
+    socket: String,
+) -> Result<RoomHandle, Refusal> {
+    for _ in 0..2 {
+        let room_name = name.to_string();
+        let handle = app.rooms.get_or_spawn(&room_name, |id| {
+            room::spawn(app, name, id, &context.user_id)
+        });
+        let (reply, answer) = oneshot::channel();
+        let join = RoomCmd::Join {
+            key,
+            context: context.clone(),
+            out: out.clone(),
+            socket: socket.clone(),
+            reply,
+        };
+        if handle.tx.send(join).await.is_err() {
+            continue;
+        }
+        match answer.await {
+            Ok(Ok(())) => return Ok(handle),
+            Ok(Err(error)) if error == "room unloaded" => continue,
+            Ok(Err(error)) => return Err(Refusal::plain(error)),
+            Err(_) => continue,
+        }
+    }
+    Err(Refusal::plain("collaboration room unavailable"))
+}
 
 /// Whether a room is under the eviction lease (compaction or a publication).
 pub async fn room_evicting(app: &Shared, room: &str) -> Result<bool, String> {
@@ -198,6 +238,8 @@ struct Connection {
     channels: HashMap<u64, Channel>,
     queued: (usize, usize),
     auth_tx: mpsc::UnboundedSender<AuthResult>,
+    join_tx: mpsc::UnboundedSender<JoinResult>,
+    attempts: u64,
     /// Token deadlines: (when, channel, expiry instead of refresh).
     timers: BTreeMap<(Instant, u64), bool>,
 }
@@ -209,6 +251,7 @@ pub async fn serve(app: Shared, socket: WebSocket) {
     let (outbox, mut out_rx) = Outbox::new(limit);
     let overflow = outbox.overflow();
     let (auth_tx, mut auth_rx) = mpsc::unbounded_channel();
+    let (join_tx, mut join_rx) = mpsc::unbounded_channel();
     let mut connection = Connection {
         socket_id: format!("{}-{id}", app.instance_id),
         app: app.clone(),
@@ -217,6 +260,8 @@ pub async fn serve(app: Shared, socket: WebSocket) {
         channels: HashMap::new(),
         queued: (0, 0),
         auth_tx,
+        join_tx,
+        attempts: 0,
         timers: BTreeMap::new(),
     };
     let mut socket = socket;
@@ -245,7 +290,12 @@ pub async fn serve(app: Shared, socket: WebSocket) {
                     connection.channels.remove(&channel);
                 }
             },
-            Some((channel, result)) = auth_rx.recv() => connection.authenticated(channel, result).await,
+            Some((channel, attempt, result)) = auth_rx.recv() => {
+                connection.authenticated(channel, attempt, result);
+            }
+            Some((channel, attempt, name, context, result)) = join_rx.recv() => {
+                connection.joined(channel, attempt, name, context, result).await;
+            }
             () = overflow.notified() => {
                 log(Level::Warn, "slow connection closed", json!({ "socket_id": connection.socket_id }));
                 break;
@@ -286,7 +336,7 @@ impl Connection {
 
     fn forget(&mut self, channel: u64) {
         crate::source_rooms::end_join(&self.app, (self.id, channel));
-        if let Some(Channel::Authenticating(queue)) = self.channels.remove(&channel) {
+        if let Some(Channel::Authenticating(queue, _)) = self.channels.remove(&channel) {
             self.queued.0 -= queue.len();
             self.queued.1 -= queue
                 .iter()
@@ -323,7 +373,7 @@ impl Connection {
             let pending = self
                 .channels
                 .values()
-                .filter(|c| matches!(c, Channel::Authenticating(_)))
+                .filter(|c| matches!(c, Channel::Authenticating(..)))
                 .count();
             if pending >= MAX_PENDING_JOINS {
                 log(
@@ -333,8 +383,10 @@ impl Connection {
                 );
                 return false;
             }
+            self.attempts += 1;
+            let attempt = self.attempts;
             self.channels
-                .insert(channel, Channel::Authenticating(VecDeque::new()));
+                .insert(channel, Channel::Authenticating(VecDeque::new(), attempt));
             // A source join counts as in the room until it joins or fails.
             if room.starts_with("source:") {
                 crate::source_rooms::start_join(&self.app, (self.id, channel), &room);
@@ -342,13 +394,13 @@ impl Connection {
             let (app, tx) = (self.app.clone(), self.auth_tx.clone());
             tokio::spawn(async move {
                 let result = authenticate(app, room, token).await;
-                let _ = tx.send((channel, result));
+                let _ = tx.send((channel, attempt, result));
             });
             return true;
         }
         match self.channels.get_mut(&channel) {
             None => true,
-            Some(Channel::Authenticating(queue)) => {
+            Some(Channel::Authenticating(queue, _)) => {
                 self.queued.0 += 1;
                 self.queued.1 += message.payload.len();
                 queue.push_back(message);
@@ -468,10 +520,25 @@ impl Connection {
         let _ = room.tx.send(RoomCmd::Leave((self.id, channel))).await;
     }
 
-    async fn authenticated(&mut self, channel: u64, result: Result<(RoomName, Context), Refusal>) {
-        let Some(Channel::Authenticating(_)) = self.channels.get(&channel) else {
+    fn authenticating(&self, channel: u64, attempt: u64) -> bool {
+        matches!(
+            self.channels.get(&channel),
+            Some(Channel::Authenticating(_, current)) if *current == attempt
+        )
+    }
+
+    /// An authentication answered: the join (which waits for the room's
+    /// load, an Office seed perhaps) runs apart, so this socket keeps serving
+    /// its other rooms meanwhile.
+    fn authenticated(
+        &mut self,
+        channel: u64,
+        attempt: u64,
+        result: Result<(RoomName, Context), Refusal>,
+    ) {
+        if !self.authenticating(channel, attempt) {
             return;
-        };
+        }
         let (name, context) = match result {
             Ok(joined) => joined,
             Err(refusal) => {
@@ -479,43 +546,50 @@ impl Connection {
                 return;
             }
         };
-        // A room that just unloaded fails the send or the join: look up again once.
-        let mut joined = None;
-        for _ in 0..2 {
-            let room_name = name.to_string();
-            let handle = self.app.rooms.get_or_spawn(&room_name, |id| {
-                room::spawn(&self.app, &name, id, &context.user_id)
-            });
-            let (reply, answer) = oneshot::channel();
-            let join = RoomCmd::Join {
-                key: (self.id, channel),
-                context: context.clone(),
-                out: self.outbox.clone(),
-                socket: self.socket_id.clone(),
-                reply,
-            };
-            if handle.tx.send(join).await.is_err() {
-                continue;
-            }
-            match answer.await {
-                Ok(Ok(())) => {
-                    joined = Some(handle);
-                    break;
+        let key = (self.id, channel);
+        let (app, tx, out, socket) = (
+            self.app.clone(),
+            self.join_tx.clone(),
+            self.outbox.clone(),
+            self.socket_id.clone(),
+        );
+        tokio::spawn(async move {
+            let result = join_room(&app, &name, &context, key, out, socket).await;
+            if let Err(unsent) = tx.send((channel, attempt, name, context, result)) {
+                // The socket closed meanwhile: leave the room it joined.
+                if let (.., Ok(handle)) = unsent.0 {
+                    let _ = handle.tx.send(RoomCmd::Leave(key)).await;
                 }
-                Ok(Err(error)) if error == "room unloaded" => continue,
-                Ok(Err(error)) => {
-                    self.refuse(channel, &Refusal::plain(error));
-                    return;
-                }
-                Err(_) => continue,
             }
-        }
-        let Some(handle) = joined else {
-            self.refuse(channel, &Refusal::plain("collaboration room unavailable"));
-            return;
+        });
+    }
+
+    /// A join answered: the channel serves its room, unless a LEAVE or a new
+    /// JOIN on it made this attempt stale (then the room is left at once).
+    async fn joined(
+        &mut self,
+        channel: u64,
+        attempt: u64,
+        name: RoomName,
+        context: Context,
+        result: Result<RoomHandle, Refusal>,
+    ) {
+        let current = self.authenticating(channel, attempt);
+        let handle = match result {
+            Ok(handle) => handle,
+            Err(refusal) => {
+                if current {
+                    self.refuse(channel, &refusal);
+                }
+                return;
+            }
         };
+        if !current {
+            let _ = handle.tx.send(RoomCmd::Leave((self.id, channel))).await;
+            return;
+        }
         crate::source_rooms::end_join(&self.app, (self.id, channel));
-        let Some(Channel::Authenticating(queue)) = self.channels.remove(&channel) else {
+        let Some(Channel::Authenticating(queue, _)) = self.channels.remove(&channel) else {
             return;
         };
         self.queued.0 -= queue.len();

@@ -816,6 +816,8 @@ struct Gateway {
     database: String,
     url: String,
     blobs: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<u8>>>>,
+    /// How long a base download takes (a slow room load).
+    delay: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 async fn gateway_db(gateway: &Gateway) -> tokio_postgres::Client {
@@ -927,6 +929,8 @@ async fn gateway_blob(
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> axum::response::Response {
     use axum::response::IntoResponse;
+    let delay = gateway.delay.load(std::sync::atomic::Ordering::Relaxed);
+    tokio::time::sleep(Duration::from_millis(delay)).await;
     let bytes = gateway.blobs.lock().expect("blobs").get(&id).cloned();
     match bytes {
         Some(bytes) => bytes.into_response(),
@@ -943,6 +947,7 @@ async fn gateway(env: &Env) -> Gateway {
         database: env.database.clone(),
         url: format!("http://{}", listener.local_addr().expect("address")),
         blobs: Default::default(),
+        delay: Default::default(),
     };
     let app = axum::Router::new()
         .route(
@@ -1077,4 +1082,102 @@ fn source_text(client: &Client) -> String {
     let root = client.doc.get_or_insert_text("source");
     let txn = client.doc.transact();
     root.get_string(&txn)
+}
+
+/// One message off the socket: (channel, kind, payload).
+async fn next_message(
+    ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+    pending: &mut std::collections::VecDeque<(u64, u8, Vec<u8>)>,
+) -> Option<(u64, u8, Vec<u8>)> {
+    loop {
+        if let Some(message) = pending.pop_front() {
+            return Some(message);
+        }
+        let Ws::Binary(bytes) = ws.next().await?.ok()? else {
+            continue;
+        };
+        let mut at = 0;
+        while at < bytes.len() {
+            let channel = read_var(&bytes, &mut at);
+            let kind = bytes[at];
+            at += 1;
+            let len = read_var(&bytes, &mut at) as usize;
+            pending.push_back((channel, kind, bytes[at..at + len].to_vec()));
+            at += len;
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_socket_keeps_serving_its_rooms_while_another_room_loads() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, material) = note(&env, "shared").await;
+    let (owner, file) = text_file(&env, &gateway, "slow").await;
+    let note_room = format!("material:{material}:schema:1");
+    let source_room = format!("source:{file}:epoch:1");
+
+    // One socket joins the note on channel 1.
+    let mut request = format!("ws://127.0.0.1:{}/", server.port)
+        .into_client_request()
+        .expect("request");
+    request
+        .headers_mut()
+        .insert("origin", ORIGIN.parse().expect("origin"));
+    let (mut ws, _) = tokio_tungstenite::connect_async(request)
+        .await
+        .expect("connect");
+    let mut pending = std::collections::VecDeque::new();
+    let join = |channel: u64, room: &str, token: &str| {
+        let mut payload = Vec::new();
+        varbytes(&mut payload, room.as_bytes());
+        varbytes(&mut payload, token.as_bytes());
+        frame(channel, 0, &payload)
+    };
+    ws.send(Ws::Binary(
+        join(1, &note_room, &token(&note_room, &user, "write")).into(),
+    ))
+    .await
+    .expect("join");
+    loop {
+        let (channel, kind, _) = next_message(&mut ws, &mut pending).await.expect("joined");
+        if (channel, kind) == (1, 1) {
+            break;
+        }
+    }
+    // The same socket joins a source room whose load takes 3 s.
+    gateway
+        .delay
+        .store(3000, std::sync::atomic::Ordering::Relaxed);
+    ws.send(Ws::Binary(
+        join(2, &source_room, &token(&source_room, &owner, "write")).into(),
+    ))
+    .await
+    .expect("join");
+    // Meanwhile a co-editor types into the note.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let mut b = Client::open(server.port).await;
+    b.joined(&note_room, &token(&note_room, &user, "write"))
+        .await;
+    assert!(b.settle(|c| c.block_text() == "shared").await);
+    b.type_text(" edit").await;
+    // The note's update (a sync update, not the join's step 1 or 2)
+    // reaches the first socket before the slow room joins.
+    let started = tokio::time::Instant::now();
+    loop {
+        let (channel, kind, payload) =
+            tokio::time::timeout(Duration::from_secs(10), next_message(&mut ws, &mut pending))
+                .await
+                .expect("a message")
+                .expect("the socket");
+        assert!(
+            (channel, kind) != (2, 1),
+            "the slow room joined before the note's update arrived"
+        );
+        if (channel, kind) == (1, 5) && payload.first() == Some(&2) {
+            break;
+        }
+    }
+    assert!(started.elapsed() < Duration::from_secs(2));
 }
