@@ -1075,9 +1075,9 @@ pub fn inspect_material<T: ReadTxn>(txn: &T) -> Result<Vec<InspectedBlock>, Edit
                 out.properties = props(vec![("source", source.to_owned())]);
             }
             if kind == "html_embed"
-                && let Some(title) = block.get("title").and_then(Value::as_str)
+                && let Some(caption) = block.get("caption").and_then(Value::as_str)
             {
-                out.properties = props(vec![("title", title.to_owned())]);
+                out.properties = props(vec![("caption", caption.to_owned())]);
             }
             if kind == MATERIAL_REF_TYPE {
                 out.properties = props(vec![

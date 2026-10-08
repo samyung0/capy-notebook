@@ -238,11 +238,11 @@ fn validate_html_embed(node: &Node, depth: usize) -> Check {
             html.len()
         ));
     }
-    if node.get("title").is_some_and(|t| !t.is_string()) {
-        return fail("interactive title must be a string");
+    if node.get("caption").is_some_and(|t| !t.is_string()) {
+        return fail("interactive caption must be a string");
     }
     for key in node.keys() {
-        if !matches!(key.as_str(), "id" | "type" | "html" | "title" | "children") {
+        if !matches!(key.as_str(), "id" | "type" | "html" | "caption" | "children") {
             return fail(format!("unexpected interactive field {key}"));
         }
     }

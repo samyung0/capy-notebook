@@ -66,10 +66,36 @@ pub enum MarkdownError {
 }
 
 /// The converter's globals: `console` (the import may warn),
-/// `crypto.getRandomValues` (id generation) and the WHATWG `URL` (link and
+/// `crypto.getRandomValues` (block ids only, nothing secret, so `Math.random`
+/// does), `TextEncoder` (byte sizes of embeds) and the WHATWG `URL` (link and
 /// embed checks), parsed natively by the `url` crate (`__parseUrl`).
 const PRELUDE: &str = r#"
 const ignore = () => {};
+class TextEncoder {
+  get encoding() { return 'utf-8'; }
+  encode(input = '') {
+    const text = String(input);
+    const out = [];
+    for (let i = 0; i < text.length; i++) {
+      let c = text.charCodeAt(i);
+      if (c >= 0xd800 && c <= 0xdfff) {
+        const next = text.charCodeAt(i + 1);
+        if (c <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) {
+          c = 0x10000 + ((c - 0xd800) << 10) + (next - 0xdc00);
+          i++;
+        } else {
+          c = 0xfffd;
+        }
+      }
+      if (c < 0x80) out.push(c);
+      else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 63));
+      else if (c < 0x10000) out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+      else out.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 63), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+    }
+    return new Uint8Array(out);
+  }
+}
+globalThis.TextEncoder = TextEncoder;
 globalThis.console = { log: ignore, info: ignore, warn: ignore, error: ignore, debug: ignore };
 globalThis.crypto = {
   getRandomValues(array) {

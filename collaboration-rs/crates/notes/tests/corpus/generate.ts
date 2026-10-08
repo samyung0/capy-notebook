@@ -274,10 +274,10 @@ const smallNotes: Record<string, unknown[]> = {
       videoId: 'dQw4w9WgXcQ',
     },
     {
+      caption: 'Tangent',
       children: [{ text: '' }],
       html: '<p>"quoted" \\ back</p>',
       id: 'v3',
-      title: 'Tangent',
       type: 'html_embed',
     },
     { children: [{ text: 'x' }], id: 'v4', type: 'p' },
@@ -1189,13 +1189,31 @@ function validationFamily() {
       kind: 'note',
       name: 'html-embeds',
       value: Array.from({ length: 10 }, (_, i) => ({
+        caption: 'Tangent',
         children: [{ text: '' }],
         html: 'é'.repeat(32_768),
         id: `e${i}`,
-        title: 'Tangent',
         type: 'html_embed',
       })),
     },
+    // The caption (main 55881d39, was title): a string, and nothing else.
+    ...[
+      ['caption', { caption: 'Tangent' }],
+      ['caption number', { caption: 7 }],
+      ['legacy title', { title: 'Tangent' }],
+    ].map(([name, field]) => ({
+      kind: 'note',
+      name: `html-embed ${name}`,
+      value: [
+        {
+          children: [{ text: '' }],
+          html: '<p>x</p>',
+          id: 'h1',
+          type: 'html_embed',
+          ...(field as Record<string, unknown>),
+        },
+      ],
+    })),
   ];
   const cases: unknown[] = [];
   const record = (
@@ -2295,6 +2313,10 @@ async function markdownFamily() {
     ['empty quiz', '```quiz\nquestions: []\n```'],
     ['bad cards', '```flashcards\ncards:\n  - front: only\n```'],
     ['html embed', '```html-embed\n<p>Hello</p>\n```'],
+    [
+      'html embed caption',
+      '```html-embed\ncaption: Tangent\nhtml: |\n  <svg id="fig"></svg>\n  <script>draw(40)</script>\n```',
+    ],
     [
       'too many embeds',
       Array.from({ length: 11 }, () => '```html-embed\n<p>x</p>\n```').join(
