@@ -417,6 +417,91 @@ fn only_a_small_edit_skips_the_trial() {
     assert!(tried(&delta(&late, |txn| text.insert(txn, 2, "l"))));
 }
 
+/// A reconnect's catch-up repeats the writer's whole delete set: only
+/// deletions the room does not hold yet count toward a small edit (Epo,
+/// 2026-10-08), so it applies directly, while as many new deletions take the
+/// trial.
+#[test]
+fn a_reconnect_repeating_held_deletions_is_a_small_edit() {
+    let room = doc(1);
+    let text = room.get_or_insert_text("t");
+    text.insert(&mut room.transact_mut(), 0, &"abcd".repeat(20));
+    // 40 separate deletions, which the writer's catch-up will repeat.
+    for k in 0..40u32 {
+        text.remove_range(&mut room.transact_mut(), k, 1);
+    }
+    let tried = |bytes: &[u8]| {
+        inspect_update(&room.transact(), &decode(bytes).unwrap())
+            .unwrap()
+            .trial
+            .is_some()
+    };
+    let writer = doc(2);
+    sync(&room, &writer);
+    let typed = writer.get_or_insert_text("t");
+    typed.insert(&mut writer.transact_mut(), 3, "x");
+    let catch_up = writer
+        .transact()
+        .encode_state_as_update_v1(&room.transact().state_vector());
+    assert!(decode(&catch_up).unwrap().delete_set().iter().count() > 0);
+    assert!(!tried(&catch_up));
+    // 20 deletions the room has not seen.
+    let deleter = doc(3);
+    sync(&room, &deleter);
+    let target = deleter.get_or_insert_text("t");
+    let removed = delta(&deleter, |txn| {
+        for k in 0..20 {
+            target.remove_range(txn, k, 1);
+        }
+    });
+    assert!(tried(&removed));
+}
+
+/// Security regression (Epo 2026-10-08, trial sizing): an update near the
+/// 4 MiB message cap made only of deletions the room holds already costs the
+/// held-deletion check at most the work budget in steps, then takes the trial.
+#[test]
+fn held_deletions_up_to_the_message_cap_stay_within_the_budget() {
+    use yrs::encoding::write::Write;
+    // 170 clients, each with 16,000 units the room holds deleted: clocks
+    // under 16,384 take two bytes, so 8,000 one-unit ranges per client
+    // (every other unit) fit 1,360,000 ranges, past the budget, in 4 MiB.
+    let (clients, per_client) = (170u64, 8_000u32);
+    let room = doc(1);
+    for client in 0..clients {
+        let writer = doc(1_000 + client);
+        let text = writer.get_or_insert_text("t");
+        text.insert(
+            &mut writer.transact_mut(),
+            0,
+            &"d".repeat(2 * per_client as usize),
+        );
+        text.remove_range(&mut writer.transact_mut(), 0, 2 * per_client);
+        sync(&writer, &room);
+    }
+    let mut bytes: Vec<u8> = Vec::new();
+    bytes.write_var(0u32); // no structs
+    bytes.write_var(clients);
+    for client in 0..clients {
+        bytes.write_var(1_000 + client);
+        bytes.write_var(per_client);
+        for k in 0..per_client {
+            bytes.write_var(2 * k);
+            bytes.write_var(1u32);
+        }
+    }
+    assert!(
+        (3 << 20..=4 << 20).contains(&bytes.len()),
+        "{}",
+        bytes.len()
+    );
+    steps::take();
+    let inspected = inspect_update(&room.transact(), &decode(&bytes).unwrap());
+    let spent = steps::take();
+    assert!(inspected.is_ok(), "{inspected:?}");
+    assert!(spent <= MAX_WORK + 64, "{spent} steps");
+}
+
 /// Structs of the update that wait on each other stay pending after the
 /// trial: refused, while one waiting on a unit neither side holds is unheld.
 #[test]

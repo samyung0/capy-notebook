@@ -69,28 +69,32 @@ pub const SMALL_EDIT: usize = 16;
 /// the edit creates, or after an earlier struct of the edit, before what that
 /// one was written before. Its scans then pass at most [SMALL_EDIT] squared
 /// items and it splits at most two held items per struct.
+///
+/// Only what the room lacks counts (Epo, 2026-10-08): structs it holds and
+/// deletions it holds already are no work for yrs, and a reconnect's
+/// catch-up repeats the document's whole delete set.
 fn small_edit<T: ReadTxn>(txn: &T, incoming: &Incoming) -> bool {
     let update = incoming.update();
-    let deletes: usize = incoming
-        .delete_ranges()
-        .map(|(_, ranges)| ranges.len())
-        .sum();
-    if deletes > SMALL_EDIT {
+    let state = txn.state_vector();
+    if !few_new_deletions(txn, &state, incoming) {
         return false;
     }
+    let lacking = |id: &ID, len: u32| id.clock + len > state.get(&id.client);
     let mut client = None;
     let mut structs = 0;
     for block in update.blocks() {
         let UpdateBlock::Item(item) = block else {
             return false;
         };
+        if !lacking(item.id(), item.len()) {
+            continue;
+        }
         structs += 1;
         if structs > SMALL_EDIT || client.is_some_and(|c| c != item.id().client) {
             return false;
         }
         client = Some(item.id().client);
     }
-    let state = txn.state_vector();
     let held = |id: &ID| id.clock < state.get(&id.client);
     let store = txn.store();
     // The unit after `id` as the room holds it (None past the end), unless
@@ -104,6 +108,9 @@ fn small_edit<T: ReadTxn>(txn: &T, incoming: &Incoming) -> bool {
         Some(item.right().map(|right| *right.id()))
     };
     incoming.items().all(|item| {
+        if !lacking(item.id(), item.len()) {
+            return true;
+        }
         let origin = item.origin().copied();
         let right_origin = item.right_origin().copied();
         match (origin, right_origin) {
@@ -142,6 +149,44 @@ fn small_edit<T: ReadTxn>(txn: &T, incoming: &Incoming) -> bool {
             },
         }
     })
+}
+
+/// Whether at most [SMALL_EDIT] of the update's delete ranges delete
+/// something the room does not hold deleted already (or collected). Each
+/// room block a range covers is a step; past [MAX_WORK] steps the answer is
+/// no, and the update takes the trial, as any large one does.
+fn few_new_deletions<T: ReadTxn>(txn: &T, state: &StateVector, incoming: &Incoming) -> bool {
+    let store = txn.store();
+    let (mut fresh, mut spent) = (0, 0u64);
+    for (client, ranges) in incoming.delete_ranges() {
+        for &(from, to) in ranges {
+            let mut clock = from;
+            let held = to <= state.get(client)
+                && loop {
+                    if clock >= to {
+                        break true;
+                    }
+                    steps::step();
+                    spent += 1;
+                    if spent > MAX_WORK {
+                        return false;
+                    }
+                    match store.get_block_range(&ID::new(*client, clock)) {
+                        Some((range, item)) if item.is_none_or(|item| item.is_deleted()) => {
+                            clock = range.clock + range.len;
+                        }
+                        _ => break false,
+                    }
+                };
+            if !held {
+                fresh += 1;
+                if fresh > SMALL_EDIT {
+                    return false;
+                }
+            }
+        }
+    }
+    true
 }
 
 /// Whether the room holds nothing at a map key of `branch` (or, without a
@@ -329,9 +374,20 @@ impl<'a> Incoming<'a> {
         let Some(ranges) = self.deletes.get(client) else {
             return false;
         };
-        let index = ranges.partition_point(|(_, end)| *end <= from);
+        // A binary search, each probe a step: the growth bound asks this per
+        // held item it walks (plate REVIEW1 M1 scanned the set each time).
+        let (mut low, mut high) = (0, ranges.len());
+        while low < high {
+            steps::step();
+            let middle = low + (high - low) / 2;
+            if ranges[middle].1 <= from {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
         ranges
-            .get(index)
+            .get(low)
             .is_some_and(|(start, end)| *start <= from && *end >= to)
     }
 

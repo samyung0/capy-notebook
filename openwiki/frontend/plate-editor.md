@@ -869,7 +869,14 @@ is refused at admit, before it can cost the room time or memory
   picker scans on its stack (each about 85 ns of work in release); past the
   budget yrs stops before the next struct and the copy is dropped. The copy
   then serves the exact limit check. A small edit applies directly: one
-  client, at most 16 structs and 16 delete ranges, each struct placed where its
+  client, at most 16 structs and 16 delete ranges counting only what the room
+  lacks (structs it does not hold, ranges it does not hold deleted; Epo,
+  2026-10-08), so a reconnect's catch-up, which repeats the document's whole
+  delete set (1,786 ranges on a 248-page DOCX), applies directly in about
+  0.3 ms instead of a 160-205 ms, +59 MiB trial. Checking a range walks the
+  room's blocks it covers, a step each; past 1,000,000 such steps (a crafted
+  update of held deletions near the 4 MiB cap) the update takes the trial.
+  Each struct of a small edit is placed where its
   conflict scan can pass only the edit's own items (next to its origin as the
   room holds it, into an empty sequence or key, into a type the edit creates,
   or after an earlier struct of the edit), so its scans pass at most 256 items
