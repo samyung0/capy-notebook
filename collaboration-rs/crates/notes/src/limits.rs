@@ -383,8 +383,11 @@ impl Validator {
             }
         }
         self.exact_checks += 1;
-        let candidate = ydoc::scratch_doc();
-        {
+        // The trial copy when inspect made one; for a small edit, a copy now.
+        let candidate = if let Some(trial) = inspection.trial {
+            trial
+        } else {
+            let candidate = ydoc::scratch_doc();
             let mut copy = candidate.transact_mut();
             let state = txn.encode_state_as_update_v1(&yrs::StateVector::default());
             // yrs applies an update by value: the copy takes it re-encoded.
@@ -393,7 +396,9 @@ impl Validator {
                 copy.apply_update(ydoc::decode(bytes)?)
                     .map_err(|error| ydoc::UpdateError::Decode(error.to_string()))?;
             }
-        }
+            drop(copy);
+            candidate
+        };
         let candidate_txn = candidate.transact();
         crate::validate::assert_roots(&candidate_txn)?;
         // A document that loaded already over a limit still needs a baseline,

@@ -1,8 +1,8 @@
 #![allow(clippy::unwrap_used)] // Tests panic on a broken case.
 //! `Validator::admit`'s cost, and the room's apply when it admits, on the
 //! update shapes the reviews built to find quadratic paths (notes REVIEW2 M5,
-//! REVIEW3 M7 and M8, the crowded spot of round 7): each must stay linear, so
-//! a future quadratic path fails here. Every shape is admitted against a room
+//! REVIEW3 M7 and M8, REVIEW4 M9 to M11): each must stay linear, so a future
+//! quadratic path fails here. Every shape is admitted against a room
 //! whose validator already holds a bound, as on the room task.
 use std::time::{Duration, Instant};
 
@@ -292,6 +292,90 @@ fn fanned(tombstones: u32, items: u32) -> (Doc, Vec<u8>) {
     (room, bytes)
 }
 
+/// `clients` forged clients with one item each, each item's origin the item
+/// of the client before (the first a held character): yrs's struct picker
+/// stacks them all (REVIEW4 M9, M10).
+fn chained_clients(clients: u64) -> (Doc, Vec<u8>) {
+    let room = room("h");
+    let held = {
+        let text = paragraph(&room);
+        let branch: &yrs::branch::Branch = text.as_ref();
+        *branch.start().unwrap().id()
+    };
+    let mut bytes: Vec<u8> = Vec::new();
+    bytes.write_var(clients);
+    for k in 0..clients {
+        let client = 1_000 + k;
+        bytes.write_var(1u32);
+        bytes.write_var(client);
+        bytes.write_var(0u32);
+        bytes.write_u8(0x80 | 4);
+        if k == 0 {
+            bytes.write_var(held.client.get());
+            bytes.write_var(held.clock);
+        } else {
+            bytes.write_var(client - 1);
+            bytes.write_var(0u32);
+        }
+        bytes.write_string("x");
+    }
+    bytes.write_var(0u32);
+    (room, bytes)
+}
+
+/// A paragraph holding a run of `run` characters (one item of client 5)
+/// followed by 50,000 separately prepended characters of that client, and
+/// `items` one-character items each placed between two units of the run: no
+/// conflict scan, but each splits the run, and yrs moves every later block of
+/// client 5 (REVIEW4 M10, M11).
+fn splits(run: u32, items: u32) -> (Doc, Vec<u8>) {
+    let room = room("h");
+    let writer = copy(&room, 5);
+    {
+        let text = paragraph(&writer);
+        text.insert(&mut writer.transact_mut(), 1, &"r".repeat(run as usize));
+        let mut txn = writer.transact_mut();
+        for _ in 0..50_000 {
+            text.insert(&mut txn, 0, "p");
+        }
+    }
+    let typed = since(&room, &writer);
+    room.transact_mut()
+        .apply_update(Update::decode_v1(&typed).unwrap())
+        .unwrap();
+    let mut bytes: Vec<u8> = Vec::new();
+    bytes.write_var(1u32);
+    bytes.write_var(items);
+    bytes.write_var(77u64);
+    bytes.write_var(0u32);
+    for i in 0..items {
+        let k = (i * 2) % (run - 2);
+        bytes.write_u8(0x80 | 0x40 | 4);
+        bytes.write_var(5u64);
+        bytes.write_var(k);
+        bytes.write_var(5u64);
+        bytes.write_var(k + 1);
+        bytes.write_string("x");
+    }
+    bytes.write_var(0u32);
+    (room, bytes)
+}
+
+/// `writers` writers each typing a first character into one empty paragraph
+/// at once, merged: a class asked to type into one shared box.
+fn classroom(writers: u64) -> (Doc, Vec<u8>) {
+    let room = room("");
+    let updates: Vec<Vec<u8>> = (0..writers)
+        .map(|k| {
+            let writer = copy(&room, 10 + k);
+            paragraph(&writer).insert(&mut writer.transact_mut(), 0, "x");
+            since(&room, &writer)
+        })
+        .collect();
+    let update = yrs::merge_updates_v1(&updates).unwrap();
+    (room, update)
+}
+
 /// One chain of `depth` nested blockquotes.
 fn deep(depth: usize) -> (Doc, Vec<u8>) {
     let room = room("hello");
@@ -337,7 +421,7 @@ fn wide(chars: u32) -> (Doc, Vec<u8>) {
 #[test]
 fn admit_stays_linear_on_every_hostile_shape() {
     let limit = if cfg!(debug_assertions) { 10.0 } else { 2.0 };
-    let shapes: [(&str, (Doc, Vec<u8>)); 7] = [
+    let shapes: [(&str, (Doc, Vec<u8>)); 10] = [
         ("paste", paste(3_000)),
         ("forward chain", forward_chain(40_000)),
         ("deep", deep(20_000)),
@@ -345,6 +429,9 @@ fn admit_stays_linear_on_every_hostile_shape() {
         ("tombs", tomb(20_000, 20_000)),
         ("tombs, forged clients", tomb_forged(20_000, 20_000)),
         ("fanned", fanned(10_000, 10_000)),
+        ("chained clients", chained_clients(20_000)),
+        ("splits", splits(200_000, 40_000)),
+        ("classroom", classroom(100)),
     ];
     for (name, (room, update)) in shapes {
         let cost = ms_per_kb(admit_time(&room, &update), &update);
@@ -354,34 +441,49 @@ fn admit_stays_linear_on_every_hostile_shape() {
         );
         assert!(cost < limit, "{name}: {cost} ms per KB");
     }
-    // The tombs and the fanned items cost yrs too many placement steps; a
-    // smaller pile of tombs, cheap to place, still crowds one spot (the start
-    // of the paragraph), from one client or from one per item; the reviewer's
-    // forward chain in one client is malformed.
+    // The tombs, the fanned items, the chained clients and the splits cost
+    // yrs too many steps on the trial copy; a class of 100 typing into one
+    // empty paragraph at once is taken; the reviewer's forward chain in one
+    // client is malformed.
     for (room, update) in [
         tomb(20_000, 20_000),
         tomb_forged(20_000, 20_000),
         fanned(10_000, 10_000),
+        chained_clients(20_000),
+        splits(200_000, 40_000),
     ] {
         assert_eq!(verdict(&room, &update), "Costly");
     }
-    for (room, update) in [tomb(400, 100), tomb_forged(400, 100)] {
-        assert_eq!(verdict(&room, &update), "Crowded");
-    }
+    let (room, update) = classroom(100);
+    assert_eq!(verdict(&room, &update), "Accepted");
     let (room, update) = forward_in_one_client(1_000);
     assert!(verdict(&room, &update).starts_with("Decode"));
 }
 
 /// Items each claiming their own spot but all scanned past one run of
-/// tombstones (round 8): refused once the placement steps pass the budget,
-/// before admit's O(update) passes, up to the 4 MiB message cap: the budget's
-/// steps plus indexing the decoded update, which costs less than decoding it.
+/// tombstones (round 8), clients chained one after another and items each
+/// splitting one held run (REVIEW4): refused once yrs counts more than the
+/// budget on the trial copy, up to the 4 MiB message cap. What admit spends
+/// past the budget's steps is linear in the update (indexing it, its checks,
+/// re-encoding and decoding it again for the copy): under 1 ms per KB in
+/// release (5 in debug), as the per-KB guard above, about a quarter of that
+/// measured.
 #[test]
-fn a_fanned_update_is_refused_within_the_budget() {
+fn a_costly_update_is_refused_within_the_budget() {
     let budget = Duration::from_millis(if cfg!(debug_assertions) { 500 } else { 50 });
-    // About 6 bytes per item: 600,000 items is near the 4 MiB message cap.
-    for (tombstones, items) in [(5_000, 5_000), (10_000, 10_000), (10_000, 600_000)] {
-        let (room, update) = fanned(tombstones, items);
+    let per_kb = if cfg!(debug_assertions) { 5.0 } else { 1.0 };
+    // About 6 bytes per fanned item: 600,000 is near the 4 MiB message cap,
+    // as are 330,000 chained clients.
+    let shapes = [
+        ("fanned 5,000 x 5,000", fanned(5_000, 5_000)),
+        ("fanned 10,000 x 10,000", fanned(10_000, 10_000)),
+        ("fanned 10,000 x 600,000", fanned(10_000, 600_000)),
+        ("chained clients 20,000", chained_clients(20_000)),
+        ("chained clients 330,000", chained_clients(330_000)),
+        ("splits 100,000", splits(400_000, 100_000)),
+        ("splits 250,000", splits(400_000, 250_000)),
+    ];
+    for (name, (room, update)) in shapes {
         assert!(update.len() <= 4 << 20, "{} bytes", update.len());
         let start = Instant::now();
         let decoded = ydoc::decode(&update).unwrap();
@@ -390,14 +492,15 @@ fn a_fanned_update_is_refused_within_the_budget() {
         let answer = Validator::default().admit(&room, &decoded);
         let took = start.elapsed();
         eprintln!(
-            "fanned {tombstones} x {items}: {} KB decoded in {decoding:?}, refused in {took:?}",
+            "{name}: {} KB decoded in {decoding:?}, refused in {took:?}",
             update.len() / 1024
         );
         assert!(matches!(
             answer,
             Err(Refusal::Update(ydoc::UpdateError::Costly))
         ));
-        assert!(took < budget + decoding * 2, "{took:?}");
+        let linear = Duration::from_secs_f64(per_kb * update.len() as f64 / 1024.0 / 1e3);
+        assert!(took < budget + linear, "{name}: {took:?}");
     }
 }
 

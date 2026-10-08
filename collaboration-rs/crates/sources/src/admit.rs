@@ -124,8 +124,9 @@ pub fn office_update_violation<T: ReadTxn>(
     update: &Update,
     format: Format,
 ) -> Result<bool, String> {
-    let Inspection { containers, unheld } =
-        ydoc::inspect_update(txn, update).map_err(|error| error.to_string())?;
+    let Inspection {
+        containers, unheld, ..
+    } = ydoc::inspect_update(txn, update).map_err(|error| error.to_string())?;
     let roots = office_service::document_roots(format);
     for found in &containers {
         if !roots.contains(&&*found.root) {

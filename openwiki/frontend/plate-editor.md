@@ -854,26 +854,35 @@ is refused at admit, before it can cost the room time or memory
 - structs of one client that overlap or go back in clock order (two sections
   for one client): fork yrs places an overlapping struct a second time and
   frees the first while the sequence still links it, a crash the fuzz found;
-- an update whose placement would cost yrs more than 100,000 steps
-  (`MAX_PLACEMENT_STEPS`, `crates/ydoc/src/placement.rs`), the general guard
-  against any shape whose integration is quadratic. Admit replays yrs's
-  integration over a light overlay of the room, in yrs's own order, counting
-  each item YATA's conflict scan passes and each step of a map key's walk to
-  its first value, and stops at the budget: O(update + budget), 25 to 30 ms at
-  the budget in release, and it runs first, so a 3.5 MB update of items each
-  claiming its own spot but scanned past 10,000 tombstones is refused in about
-  the time its decoding takes. The count equals an instrumented yrs on all
-  2,883 corpus updates (single writers and three writers: p50 0, p90 0, p99 4,
-  max 40) and on every crafted shape; 64 writers at one place cost 63, two
-  offline writers each typing 20,000 characters at one place 1 (yrs merges a
-  typed run into one item), the 20th such writer 19;
-- more than 64 items claiming one spot of a sequence (the same left and right
-  neighbour when written), the room's and the update's together, of any client
-  ids: yrs, like Yjs, integrates each item at a spot by scanning those already
-  there, so a pile is quadratic (20,000 such items took minutes). Real editors
-  put several items at one spot only when writers insert there at once. The
-  room-side count walks at most 256 items per spot, so a room written before the
-  rule may count low there;
+- structs of the update that wait on each other (a cycle across clients): they
+  would stay pending in the room. A struct referring to a unit neither the room
+  nor the update holds is a missing dependency, not a cycle: the update is
+  unheld and the connection resyncs. So a struct of the update that the trial
+  below still leaves pending can only be waiting on the update's own;
+- an update whose placement costs yrs more than 100,000 steps (`MAX_WORK` in
+  `crates/ydoc`), the general guard against any shape whose integration is
+  quadratic, counted by yrs itself (Epo, 2026-10-08). Past a small edit, admit
+  copies the room and applies the update to the copy with the fork's
+  `TransactionMut::limit_work`, which counts a step per item a conflict scan
+  passes and per step of a map key's walk, one plus one per 128 blocks a split
+  or merge moves in a client's list, and one plus one per 64 blocks the struct
+  picker scans on its stack (each about 85 ns of work in release); past the
+  budget yrs stops before the next struct and the copy is dropped. The copy
+  then serves the exact limit check. A small edit applies directly: one
+  client, at most 16 structs and 16 delete ranges, each struct placed where its
+  conflict scan can pass only the edit's own items (next to its origin as the
+  room holds it, into an empty sequence or key, into a type the edit creates,
+  or after an earlier struct of the edit), so its scans pass at most 256 items
+  and it splits at most two held items per struct. Measured with yrs's count:
+  the 6,524 corpus updates (single writers, three writers, 3,641 deliveries
+  made by Yjs itself) cost p50 1, p90 11, p99 44 steps, and the 2,903 of them
+  tried on a copy at most 4,395; the most, 63,388, is a one-struct edit
+  deleting 11 ranges in a 1.6 MB, heavily split room (block moves, about 6 ms;
+  a small edit, so applied directly). On the near-limit
+  note (1.8 MB of state) a reconnect bundle of 300 scattered edits costs 18,270
+  steps and a 300-paragraph paste 0; copying that room takes 15 to 19 ms and
+  admitting either update 32 to 46 ms. A class of 100 typing into one empty
+  block at once is never refused (the earlier per-spot cap is dropped);
 - in a note text, content other than strings, formats and element texts, and
   non-plain attribute, mark or marker values (invisible to the projection and
   the size metrics).
@@ -882,10 +891,13 @@ Decoding refuses an `Any` nested past 128 levels and reserves nothing from
 declared lengths (fork yrs), the projection and the measure stop past 1,024
 levels, and every walk admit does is linear in the update. Each refused shape
 has a crafted-update test in `crates/notes/tests/admit_cost.rs`, which times
-admit and apply per KB on every hostile shape the reviews built, and
-`crates/notes/tests/fuzz_admit.rs` mutates real updates with a fixed seed and
-fails on a panic or a stall. A new kind of update a real editor writes that
-one of these refuses is a bug in the rule, not in the editor.
+admit and apply per KB on every hostile shape the reviews built (refused at
+the 4 MiB cap in under 1 ms per KB), `crates/notes/tests/fuzz_admit.rs`
+mutates real and crafted updates with a fixed seed and fails on a panic or a
+stall, and `crates/notes/tests/yjs_traffic.rs` admits Yjs-made reconnect diffs
+and `Y.mergeUpdates` bundles (`corpus/yjs-traffic.cjs`) without a refusal. A
+new kind of update a real editor writes that one of these refuses is a bug in
+the rule, not in the editor.
 
 The writable Y.Doc contract permits only the Plate `content` root and the
 server-owned `__capy_pending_contributors` map. Every client update checks this

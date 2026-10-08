@@ -1,8 +1,9 @@
 #![allow(clippy::unwrap_used)] // Tests panic on a broken case.
 //! A deterministic mutation fuzz of the room path: real updates (typing,
 //! deleting, formatting, attributes, new and removed blocks, a paste,
-//! concurrent writers) mutated by one to six bytes, then decoded, admitted
-//! and, when admitted, applied, measured and projected. It fails on a panic
+//! concurrent writers) and crafted ones (items fanned over a paragraph, 40
+//! chained clients, splits of every held item) mutated by one to six bytes,
+//! then decoded, admitted and, when admitted, applied, measured and projected. It fails on a panic
 //! or on a case over the time budget, printing the case to replay. A fixed
 //! seed and case count keep it repeatable in CI; FUZZ_CASES and FUZZ_SEED
 //! run more or other cases locally.
@@ -127,32 +128,85 @@ fn seeds(base: &[u8]) -> Vec<Vec<u8>> {
         })
         .collect();
     out.push(yrs::merge_updates_v1(&concurrent).unwrap());
-    out.push(fanned(base));
+    let units = units(base);
+    out.push(fanned(&units));
+    out.push(chained_clients(&units, 40));
+    out.push(splits(&units));
     out
+}
+
+/// The units of the first paragraph, in order (its characters and marks).
+fn units(base: &[u8]) -> Vec<yrs::ID> {
+    let room = load(base, 1);
+    let txn = room.transact();
+    let block = match &plate::insert_delta(&plate::content_root(&txn).unwrap()).unwrap()[0].insert {
+        plate::Insert::Element(branch) => *branch,
+        plate::Insert::Text(_) => panic!("not a block"),
+    };
+    let mut units = Vec::new();
+    let mut next = block.start();
+    while let Some(item) = next {
+        let id = *item.id();
+        units.extend((0..item.len()).map(|offset| yrs::ID::new(id.client, id.clock + offset)));
+        next = item.right();
+    }
+    units
+}
+
+/// `clients` clients with one item each, each item's origin the item of the
+/// client before, the first after the paragraph's first unit (REVIEW4 M9).
+fn chained_clients(units: &[yrs::ID], clients: u64) -> Vec<u8> {
+    use yrs::encoding::write::Write;
+    let mut bytes: Vec<u8> = Vec::new();
+    bytes.write_var(clients);
+    for k in 0..clients {
+        bytes.write_var(1u32);
+        bytes.write_var(60 + k);
+        bytes.write_var(0u32);
+        bytes.write_u8(0x80 | 4); // an origin, a string
+        if k == 0 {
+            bytes.write_var(units[0].client.get());
+            bytes.write_var(units[0].clock);
+        } else {
+            bytes.write_var(60 + k - 1);
+            bytes.write_var(0u32);
+        }
+        bytes.write_string("x");
+    }
+    bytes.write_var(0u32);
+    bytes
+}
+
+/// One-character items each between two consecutive units of one held item
+/// of the paragraph: each splits it (REVIEW4 M10, M11).
+fn splits(units: &[yrs::ID]) -> Vec<u8> {
+    use yrs::encoding::write::Write;
+    let pairs: Vec<_> = units
+        .windows(2)
+        .filter(|pair| pair[0].client == pair[1].client && pair[0].clock + 1 == pair[1].clock)
+        .collect();
+    let mut bytes: Vec<u8> = Vec::new();
+    bytes.write_var(1u32);
+    bytes.write_var(pairs.len() as u32);
+    bytes.write_var(55u64);
+    bytes.write_var(0u32);
+    for pair in pairs {
+        bytes.write_u8(0x80 | 0x40 | 4); // an origin, a right origin, a string
+        for unit in pair {
+            bytes.write_var(unit.client.get());
+            bytes.write_var(unit.clock);
+        }
+        bytes.write_string("x");
+    }
+    bytes.write_var(0u32);
+    bytes
 }
 
 /// One-character items with only a right origin, each a unit of the first
 /// paragraph from its last back: each claims a spot of its own, and yrs scans
 /// from the paragraph's start to each (round 8's costly shape, small).
-fn fanned(base: &[u8]) -> Vec<u8> {
+fn fanned(units: &[yrs::ID]) -> Vec<u8> {
     use yrs::encoding::write::Write;
-    let room = load(base, 1);
-    let units: Vec<yrs::ID> = {
-        let txn = room.transact();
-        let block =
-            match &plate::insert_delta(&plate::content_root(&txn).unwrap()).unwrap()[0].insert {
-                plate::Insert::Element(branch) => *branch,
-                plate::Insert::Text(_) => panic!("not a block"),
-            };
-        let mut units = Vec::new();
-        let mut next = block.start();
-        while let Some(item) = next {
-            let id = *item.id();
-            units.extend((0..item.len()).map(|offset| yrs::ID::new(id.client, id.clock + offset)));
-            next = item.right();
-        }
-        units
-    };
     let mut bytes: Vec<u8> = Vec::new();
     bytes.write_var(1u32);
     bytes.write_var(units.len() as u32);

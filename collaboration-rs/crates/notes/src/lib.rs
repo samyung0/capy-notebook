@@ -14,12 +14,14 @@
 //! 2026-10-08): `limits::Validator::admit` refuses, through `ydoc::inspect`
 //! and its own content check, what is valid Yjs but no editor produces and
 //! would cost the room time or memory (a struct referring forward in its own
-//! client, overlapping structs of one client, an update whose placement would
-//! cost yrs more than 100,000 conflict-scan steps, more than 64 items at one
-//! spot of a text, invisible content), and every walk it does stays linear in
-//! the update. `tests/admit_cost.rs` times
-//! admit and apply on each hostile shape; `tests/fuzz_admit.rs` mutates real
-//! updates. See openwiki/frontend/plate-editor.md.
+//! client, overlapping structs of one client, structs waiting on each other,
+//! invisible content), and every walk it does stays linear in the update. An
+//! update past a small edit is first applied to a copy of the room with yrs
+//! counting its own work, and refused past `ydoc::MAX_WORK` steps.
+//! `tests/admit_cost.rs` times admit and apply on each hostile shape,
+//! `tests/fuzz_admit.rs` mutates real and crafted updates, and
+//! `tests/yjs_traffic.rs` admits traffic made by Yjs itself. See
+//! openwiki/frontend/plate-editor.md.
 
 pub mod bound;
 pub mod children;

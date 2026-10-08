@@ -23,145 +23,166 @@ pub const CONTRIBUTORS_ROOT: &str = "__capy_pending_contributors";
 pub enum UpdateError {
     #[error("malformed yjs update: {0}")]
     Decode(String),
-    /// More than [MAX_SPOT_ITEMS] items would claim one spot of a text.
-    #[error("update crowds one spot of a text past {MAX_SPOT_ITEMS} items")]
-    Crowded,
-    /// Placing the update would cost yrs more than [MAX_PLACEMENT_STEPS].
-    #[error("update would take more than {MAX_PLACEMENT_STEPS} steps to place")]
+    /// Placing the update would cost yrs more than [MAX_WORK] steps.
+    #[error("update would take yrs more than {MAX_WORK} steps to place")]
     Costly,
 }
 
-mod placement;
-pub use placement::MAX_PLACEMENT_STEPS;
+/// The integration work, counted by yrs itself, an update may cost the room
+/// (Epo, 2026-10-08): a step per item a conflict scan passes or per step of a
+/// map key's walk, per 128 blocks a split or merge moves and per 64 blocks the
+/// struct picker scans, about 85 ns of work each in release (the fork's
+/// `TransactionMut::limit_work`).
+pub const MAX_WORK: u64 = 100_000;
 
-/// The steps yrs would take to place `incoming` in the room (its conflict
-/// scans and map-key walks), or `None` past `budget`. O(update + budget).
-pub fn placement_cost<T: ReadTxn>(txn: &T, incoming: &Incoming, budget: u64) -> Option<u64> {
-    placement::placement_steps(txn, incoming, budget).ok()
-}
+/// The most structs, and delete ranges, of a small edit.
+pub const SMALL_EDIT: usize = 16;
 
-/// The most items that may claim one spot of a sequence (the same left and
-/// right neighbour when written), the room's and an update's together, of
-/// any clients (Epo, 2026-10-08). A real editor puts more than one item at a
-/// spot only when writers insert there at once; yrs, like Yjs, integrates
-/// each item at a spot by scanning those already there, so a pile of them
-/// costs quadratic time.
-pub const MAX_SPOT_ITEMS: usize = 64;
-
-/// How many of the room's items the count of one spot looks at. A room
-/// written before the rule may hold more than [MAX_SPOT_ITEMS] at a spot, far
-/// apart: past this many items its count stops (and so may be low), which
-/// keeps the check O(update).
-const SPOT_WALK: usize = 4 * MAX_SPOT_ITEMS;
-
-/// One spot of a sequence: the left and right neighbour an item names. With
-/// neither, the spot is the start of an otherwise empty sequence, so its
-/// parent names it.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-enum Spot {
-    Between(Option<ID>, Option<ID>),
-    Empty(SpotParent),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-enum SpotParent {
-    Root(Arc<str>),
-    Item(ID),
-}
-
-/// Refuses an update that would leave more than [MAX_SPOT_ITEMS] items at
-/// one spot of a sequence (map entries are not sequence items). The update's
-/// new items are counted per spot; for each spot it touches, the room's items
-/// there are counted by a walk of at most [SPOT_WALK] items. O(update).
-fn crowded<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<(), UpdateError> {
+/// Whether `incoming` is a small edit the room applies directly, without a
+/// trial (Epo, 2026-10-08): structs of one client, at most [SMALL_EDIT] of
+/// them and of delete ranges, each an item placed where its conflict scan can
+/// pass only the edit's own items: right after its origin as the room holds
+/// it (its right origin the room's next unit, or the first of a sequence with
+/// no origin), into a sequence or map key the room holds empty, into a type
+/// the edit creates, or after an earlier struct of the edit, before what that
+/// one was written before. Its scans then pass at most [SMALL_EDIT] squared
+/// items and it splits at most two held items per struct.
+fn small_edit<T: ReadTxn>(txn: &T, incoming: &Incoming) -> bool {
+    let update = incoming.update();
+    let deletes: usize = incoming
+        .delete_ranges()
+        .map(|(_, ranges)| ranges.len())
+        .sum();
+    if deletes > SMALL_EDIT {
+        return false;
+    }
+    let mut client = None;
+    let mut structs = 0;
+    for block in update.blocks() {
+        let UpdateBlock::Item(item) = block else {
+            return false;
+        };
+        structs += 1;
+        if structs > SMALL_EDIT || client.is_some_and(|c| c != item.id().client) {
+            return false;
+        }
+        client = Some(item.id().client);
+    }
     let state = txn.state_vector();
-    let mut spots: HashMap<Spot, usize> = HashMap::new();
-    for item in incoming.items() {
-        let ID { client, clock } = *item.id();
-        if item.parent_sub().is_some() || clock + item.len() <= state.get(&client) {
-            continue;
-        }
-        let spot = match (item.origin(), item.right_origin(), item.update_parent()) {
-            (None, None, UpdateParent::Root(root)) => Spot::Empty(SpotParent::Root(root.clone())),
-            (None, None, UpdateParent::Item(parent)) => Spot::Empty(SpotParent::Item(*parent)),
-            (None, None, _) => continue,
-            (origin, right, _) => Spot::Between(origin.copied(), right.copied()),
-        };
-        *spots.entry(spot).or_default() += 1;
-    }
-    let store = txn.store();
     let held = |id: &ID| id.clock < state.get(&id.client);
-    for (spot, count) in spots {
-        if count > MAX_SPOT_ITEMS {
-            return Err(UpdateError::Crowded);
+    let store = txn.store();
+    // The unit after `id` as the room holds it (None past the end), unless
+    // the room collected it.
+    let room_next = |id: &ID| -> Option<Option<ID>> {
+        let item = store.get_item(id)?;
+        let start = item.id();
+        if id.clock + 1 < start.clock + item.len() {
+            return Some(Some(ID::new(id.client, id.clock + 1)));
         }
-        // The room's items at the spot sit between its neighbours: walk from
-        // the left one (or the sequence's start) towards the right one.
-        let (origin, right, mut next) = match &spot {
-            Spot::Between(Some(origin), right) if held(origin) => {
-                let Some(left) = store.get_item(origin) else {
-                    continue;
-                };
-                // An item names the last unit of its left neighbour; one in
-                // the middle of a held item has nothing after it yet.
-                if left.id().clock + left.len() - 1 != origin.clock {
-                    continue;
-                }
-                (Some(*origin), *right, left.right())
+        Some(item.right().map(|right| *right.id()))
+    };
+    incoming.items().all(|item| {
+        let origin = item.origin().copied();
+        let right_origin = item.right_origin().copied();
+        match (origin, right_origin) {
+            (Some(origin), right) if held(&origin) => {
+                right.is_none_or(|right| held(&right)) && room_next(&origin) == Some(right)
             }
-            Spot::Between(None, Some(right)) if held(right) => {
-                let Some(start) = store
-                    .get_item(right)
-                    .and_then(|item| item.parent_branch())
-                    .and_then(|parent| parent.start())
-                else {
-                    continue;
-                };
-                (None, Some(*right), Some(start))
-            }
-            Spot::Empty(parent) => {
-                let branch = match parent {
-                    SpotParent::Root(root) => BranchID::get_root(txn, &**root),
-                    SpotParent::Item(id) if held(id) => match store.get_item(id) {
-                        Some(holder) => match holder.content() {
-                            yrs::block::ItemContent::Type(branch) => {
-                                Some(yrs::branch::BranchPtr::from(&**branch))
-                            }
-                            _ => None,
-                        },
-                        None => None,
-                    },
-                    SpotParent::Item(_) => None,
-                };
-                let Some(start) = branch.and_then(|branch| branch.start()) else {
-                    continue;
-                };
-                (None, None, Some(start))
-            }
-            // A neighbour the room does not hold yet: nothing of the room's
-            // is there.
-            Spot::Between(..) => continue,
-        };
-        let mut there = count;
-        for _ in 0..SPOT_WALK {
-            let Some(item) = next else { break };
-            if right.is_some_and(|right| {
-                right.client == item.id().client
-                    && right.clock >= item.id().clock
-                    && right.clock < item.id().clock + item.len()
-            }) {
-                break;
-            }
-            if item.origin().copied() == origin && item.right_origin().copied() == right {
-                there += 1;
-                if there > MAX_SPOT_ITEMS {
-                    return Err(UpdateError::Crowded);
-                }
-            }
-            next = item.right();
+            // The first of a sequence (not a map key: yrs would walk its values).
+            (None, Some(right)) if held(&right) => store.get_item(&right).is_some_and(|first| {
+                *first.id() == right && first.left().is_none() && first.parent_sub().is_none()
+            }),
+            (Some(origin), right) => incoming.item_at(&origin).is_some_and(|earlier| {
+                let last = earlier.id().clock + earlier.len() - 1;
+                (origin.clock == last && right == earlier.right_origin().copied())
+                    || right.is_some_and(|right| {
+                        right.client == origin.client
+                            && right.clock == origin.clock + 1
+                            && right.clock <= last
+                    })
+            }),
+            (None, Some(_)) => false,
+            (None, None) => match item.update_parent() {
+                UpdateParent::Item(parent) if !held(parent) => true,
+                UpdateParent::Item(parent) => store
+                    .get_item(parent)
+                    .and_then(|parent| match parent.content() {
+                        yrs::block::ItemContent::Type(branch) => Some(empty(
+                            yrs::branch::BranchPtr::from(&**branch),
+                            item.parent_sub(),
+                        )),
+                        _ => None,
+                    })
+                    .unwrap_or(false),
+                UpdateParent::Root(name) => BranchID::get_root(txn, &**name)
+                    .is_none_or(|branch| empty(branch, item.parent_sub())),
+                _ => false,
+            },
         }
+    })
+}
+
+/// Whether the room holds nothing at a map key of `branch` (or, without a
+/// key, in its sequence).
+fn empty(branch: yrs::branch::BranchPtr, key: Option<&Arc<str>>) -> bool {
+    match key {
+        Some(key) => branch.entry_item(key).is_none(),
+        None => branch.start().is_none(),
     }
-    Ok(())
+}
+
+/// The first unit of each struct a document holds pending.
+fn pending_ids<T: ReadTxn>(txn: &T) -> Vec<ID> {
+    let Some(pending) = txn.store().pending_update() else {
+        return Vec::new();
+    };
+    pending
+        .update
+        .blocks()
+        .map(|block| match block {
+            UpdateBlock::Item(item) => *item.id(),
+            UpdateBlock::Gc(range) | UpdateBlock::Skip(range) => ID::new(range.client, range.clock),
+        })
+        .collect()
+}
+
+/// The room copied and the update applied to the copy, with yrs counting its
+/// work: past [MAX_WORK], or with structs of the update the copy still leaves
+/// pending (the references [inspect] checked are all held by the room or the
+/// update, so they wait on each other in a cycle), the update is refused.
+fn trial<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Doc, UpdateError> {
+    use yrs::error::UpdateError as Refused;
+    let update = incoming.update();
+    let doc = scratch_doc();
+    let state = txn.encode_state_as_update_v1(&StateVector::default());
+    doc.transact_mut()
+        .apply_update(decode(&state)?)
+        .map_err(|error| UpdateError::Decode(error.to_string()))?;
+    let mut copy = doc.transact_mut();
+    // A room never holds pending structs (it drops what it cannot place), but
+    // what one holds stays its own.
+    let held_pending = pending_ids(&copy);
+    copy.limit_work(MAX_WORK);
+    // yrs applies an update by value: the copy takes it re-encoded.
+    match copy.apply_update(decode(&update.encode_v1())?) {
+        Ok(()) => {}
+        Err(Refused::WorkBudgetExceeded(_)) => return Err(UpdateError::Costly),
+        Err(error) => return Err(UpdateError::Decode(error.to_string())),
+    }
+    copy.commit();
+    if copy.work() > MAX_WORK {
+        return Err(UpdateError::Costly);
+    }
+    let cycle = pending_ids(&copy)
+        .iter()
+        .any(|id| incoming.item_at(id).is_some() && !held_pending.contains(id));
+    if cycle {
+        return Err(UpdateError::Decode(
+            "structs of the update wait on each other in a cycle".into(),
+        ));
+    }
+    drop(copy);
+    Ok(doc)
 }
 
 /// Decodes a v1 update once, for every check that reads it.
@@ -202,6 +223,9 @@ pub struct Inspection {
     /// a deletion past what is held, a reference neither side holds): the
     /// caller drops it and resyncs the connection, never refuses it.
     pub unheld: bool,
+    /// The room with the update applied, when [inspect] tried it on a copy
+    /// (any update past a small edit the room can place).
+    pub trial: Option<Doc>,
 }
 
 enum Found {
@@ -300,7 +324,8 @@ impl<'a> Incoming<'a> {
     }
 }
 
-/// `inspectUpdate`: O(update), read against the room, never a copy of it.
+/// `inspectUpdate`, read against the room, plus a trial on a copy of it past
+/// a small edit (see [inspect]).
 pub fn inspect_update<T: ReadTxn>(txn: &T, update: &Update) -> Result<Inspection, UpdateError> {
     inspect(txn, &Incoming::new(update))
 }
@@ -313,10 +338,12 @@ pub fn inspect_update<T: ReadTxn>(txn: &T, update: &Update) -> Result<Inspection
 /// integrate in clock order, so it would stay pending in the room forever.
 /// So is one whose structs of a client overlap or go back in clock order
 /// (two sections for one client): yrs would place an overlapping struct a
-/// second time and free the first while the sequence still links it.
-/// An update that crowds one spot of a sequence is refused too (`crowded`),
-/// and one whose placement would cost yrs more than [MAX_PLACEMENT_STEPS].
-/// These are shapes no real editor writes.
+/// second time and free the first while the sequence still links it. These
+/// are shapes no real editor writes.
+///
+/// Past a small edit ([small_edit]), an update the room can place is applied
+/// to a copy of the room first ([trial]): refused if yrs counts more than
+/// [MAX_WORK] steps placing it, or if its structs wait on each other.
 pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, UpdateError> {
     let mut ends: HashMap<ClientID, u32> = HashMap::new();
     for block in incoming.update().blocks() {
@@ -350,12 +377,6 @@ pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, U
             )));
         }
     }
-    // Before the O(update) passes below: an update that would cost yrs more
-    // than the budget to place is refused in O(budget) past its decoding.
-    if placement_cost(txn, incoming, MAX_PLACEMENT_STEPS).is_none() {
-        return Err(UpdateError::Costly);
-    }
-    crowded(txn, incoming)?;
     let update = incoming.update();
     let state = txn.state_vector();
     let held = |client: &ClientID| state.get(client);
@@ -448,6 +469,36 @@ pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, U
             unheld = true;
         }
     }
+    // So does a struct referring to a unit neither side holds. A struct the
+    // trial still leaves pending then waits only on the update's own.
+    for item in incoming.items() {
+        if item.id().clock + item.len() <= held(&item.id().client) {
+            continue;
+        }
+        let parent = match item.update_parent() {
+            UpdateParent::Item(parent) => Some(parent),
+            _ => None,
+        };
+        for reference in [item.origin(), item.right_origin(), parent]
+            .into_iter()
+            .flatten()
+        {
+            let until = reach
+                .get(&reference.client)
+                .copied()
+                .unwrap_or_else(|| held(&reference.client));
+            if reference.clock >= until {
+                unheld = true;
+            }
+        }
+    }
+    // The trial before the containers: a costly update is refused before
+    // that pass. One the pass then finds unheld drops its trial.
+    let mut trial = if unheld || small_edit(txn, incoming) {
+        None
+    } else {
+        Some(trial(txn, incoming)?)
+    };
     let mut containers = Vec::new();
     for item in incoming.items() {
         if item.id().clock + item.len() <= held(&item.id().client) {
@@ -459,7 +510,14 @@ pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, U
             Found::At(container) => containers.push(container),
         }
     }
-    Ok(Inspection { containers, unheld })
+    if unheld {
+        trial = None;
+    }
+    Ok(Inspection {
+        containers,
+        unheld,
+        trial,
+    })
 }
 
 /// `yjsUpdateContainsChanges`: whether a read-only connection's sync frame
