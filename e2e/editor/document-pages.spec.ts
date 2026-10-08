@@ -343,7 +343,9 @@ test('workspace links remember each file and material mode independently', async
 }) => {
   test.setTimeout(90_000);
   await page.goto('/workspaces/ws_bio');
-  await page.getByRole('button', { exact: true, name: m.nav_files() }).click();
+  await page
+    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
+    .click();
   const origin = await page.evaluate(() => performance.timeOrigin);
   const tree = page.locator('[data-workspace-file-tree]');
   const material = tree.getByRole('link', {
