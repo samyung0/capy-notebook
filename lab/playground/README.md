@@ -441,4 +441,8 @@ blind A versus B and A versus C preference per request, and with
 the pairs; `locator` asks whether the first place a run read is on topic;
 `chapters` judges a generic request's notes as a set (chapters completed,
 notation, repeats) and records the run's mechanical counts; `summary` prints
-the tallies the report uses. Every command resumes.
+the tallies the report uses; `check` validates every written verdict against
+its schema and lists null ones. Every command resumes. With `--pack` (protocol
+amendment 6) a judge command writes each pending call as a task file under
+`judge/tasks/` for a judge subagent to read, view the page images and write the
+verdict file, instead of calling the CLI.

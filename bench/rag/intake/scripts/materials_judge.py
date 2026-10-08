@@ -15,6 +15,13 @@ Claude Opus 5.5 at medium effort through the CLI. Both commands are resumable.
     uv run --project pipeline python bench/rag/intake/scripts/materials_judge.py locator
     uv run --project pipeline python bench/rag/intake/scripts/materials_judge.py chapters
     uv run --project pipeline python bench/rag/intake/scripts/materials_judge.py summary
+    uv run --project pipeline python bench/rag/intake/scripts/materials_judge.py check [--delete]
+
+With ``--pack`` (amendment 6) a judge command writes each pending call as a task
+file under judge/tasks/ instead of calling the CLI; the judge subagents
+(.claude/agents/intake-judge.md, intake-judge-second.md: the same models and
+effort) read a task, view its page images and write the verdict file. ``check``
+validates every written verdict against its schema and lists null ones.
 
 The second rater (`pairwise --model ... --sample`) rates a seeded share of the
 pairs into judge/pairwise-<model>/; `locator` judges whether the first place
@@ -46,6 +53,33 @@ PAIRS = (("A", "B"), ("A", "C"))
 SCRATCH = "postgresql://postgres:intake@127.0.0.1:15445/capy_library"
 PAGE_CAP = 32
 TEXT_CAP = 40_000
+TRANSPORT = {"mode": "cli"}  # "pack": write task files for the judge subagents (amendment 6)
+TASKS = JUDGE / "tasks"
+
+
+def write_verdict(verdict_path: Path, outcome: dict) -> None:
+    verdict_path.parent.mkdir(parents=True, exist_ok=True)
+    verdict_path.write_text(json.dumps(outcome, ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n")
+
+
+def judge_call(system: str, content: list[dict], schema: dict, *, model: str, effort: str, record: dict, verdict_path: Path) -> dict | None:
+    """One judge call. Image parts are ``{"type": "image_path", "path": ...}``.
+    In pack mode the call is written as a task file for a judge subagent and
+    None is returned; otherwise the CLI is called and the verdict is written."""
+    if TRANSPORT["mode"] == "pack":
+        TASKS.mkdir(parents=True, exist_ok=True)
+        task = TASKS / verdict_path.relative_to(JUDGE).as_posix().replace("/", "--")
+        task.write_text(
+            json.dumps({"model": model, "effort": effort, "system": system, "content": content, "schema": schema, "verdict_path": str(verdict_path), "record": record}, ensure_ascii=False, indent=1) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        return None
+    blocks = [claude_headless.image_block(Path(c["path"])) if c.get("type") == "image_path" else c for c in content]
+    outcome = claude_headless.call(system, blocks, schema, model=model, effort=effort)
+    outcome.update(record, transport="cli")
+    write_verdict(verdict_path, outcome)
+    return outcome
 
 FIDELITY_SCHEMA = {
     "type": "object",
@@ -173,7 +207,7 @@ def fidelity(arm: str | None, limit: int | None) -> None:
                         image.parent.mkdir(parents=True, exist_ok=True)
                         render(pdf, page, image)
                         content.append({"type": "text", "text": f"[{manifest[book]['title']}, PDF page {page}]"})
-                        content.append(claude_headless.image_block(image))
+                        content.append({"type": "image_path", "path": str(image)})
                         shown.append({"book": book, "page": page})
                 text = f"Request: {output['turns'][0]['question']}\n\nMaterial ({material['kind']}): {material['title']}\n\n{material.get('content') or ''}"
                 if material.get("questions"):
@@ -183,12 +217,13 @@ def fidelity(arm: str | None, limit: int | None) -> None:
                 if not shown:
                     text += "\n\n[The cited excerpts resolved to no pages in the library; every claim is unsupported unless it is self-evident arithmetic.]"
                 content.insert(0, {"type": "text", "text": text[:TEXT_CAP]})
-                outcome = claude_headless.call(system, content, FIDELITY_SCHEMA, model=MODEL, effort=EFFORT)
-                outcome.update(arm=a, output=path.name, material=material["id"], kind=material["kind"], title=material["title"], pages_shown=shown, pages_cited={b: len(p) for b, p in pages_by_book.items()})
-                verdict_path.parent.mkdir(parents=True, exist_ok=True)
-                verdict_path.write_text(json.dumps(outcome, ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n")
-                v = outcome["value"]
-                print(json.dumps({"arm": a, "output": path.name, "material": i, "ok": v is not None, "claims": len(v["claims"]) if v else None, "seconds": outcome["seconds"]}), flush=True)
+                record = dict(arm=a, output=path.name, material=material["id"], kind=material["kind"], title=material["title"], pages_shown=shown, pages_cited={b: len(p) for b, p in pages_by_book.items()})
+                outcome = judge_call(system, content, FIDELITY_SCHEMA, model=MODEL, effort=EFFORT, record=record, verdict_path=verdict_path)
+                if outcome is None:
+                    print(json.dumps({"arm": a, "output": path.name, "material": i, "packed": True}), flush=True)
+                else:
+                    v = outcome["value"]
+                    print(json.dumps({"arm": a, "output": path.name, "material": i, "ok": v is not None, "claims": len(v["claims"]) if v else None, "seconds": outcome["seconds"]}), flush=True)
                 done += 1
                 if limit and done >= limit:
                     return
@@ -223,11 +258,12 @@ def pairwise(limit: int | None, seed: int, model: str = MODEL, sample: float | N
                 + "\n\n## Second\n\n"
                 + (material_text(mats[order[1]]) or "[no material was written]")
             )
-            outcome = claude_headless.call(system, [{"type": "text", "text": text}], PAIRWISE_SCHEMA, model=model, effort=EFFORT)
-            outcome.update(pair=f"{first_arm}{second_arm}", output=path.name, labels=labels, materials={a: len(m) for a, m in mats.items()})
-            verdict_path.parent.mkdir(parents=True, exist_ok=True)
-            verdict_path.write_text(json.dumps(outcome, ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n")
-            print(json.dumps({"pair": f"{first_arm}{second_arm}", "output": path.name, "ok": outcome["value"] is not None, "seconds": outcome["seconds"]}), flush=True)
+            record = dict(pair=f"{first_arm}{second_arm}", output=path.name, labels=labels, materials={a: len(m) for a, m in mats.items()})
+            outcome = judge_call(system, [{"type": "text", "text": text}], PAIRWISE_SCHEMA, model=model, effort=EFFORT, record=record, verdict_path=verdict_path)
+            if outcome is None:
+                print(json.dumps({"pair": f"{first_arm}{second_arm}", "output": path.name, "packed": True}), flush=True)
+            else:
+                print(json.dumps({"pair": f"{first_arm}{second_arm}", "output": path.name, "ok": outcome["value"] is not None, "seconds": outcome["seconds"]}), flush=True)
             done += 1
             if limit and done >= limit:
                 return
@@ -298,20 +334,22 @@ def locator(arm: str | None, limit: int | None) -> None:
             if a not in conns:
                 conns[a] = psycopg.connect(SCRATCH if a == "B" else live_url())
             read = first_read(output, conns[a])
+            record = dict(arm=a, output=path.name, read=read)
             if read is None:
-                outcome = {"value": {"on_topic": "no", "reason": "the run read nothing from the library"}, "error": None, "usage": None, "seconds": 0, "model": None, "effort": None}
+                outcome = {"value": {"on_topic": "no", "reason": "the run read nothing from the library"}, "error": None, "usage": None, "seconds": 0, "model": None, "effort": None, **record}
+                write_verdict(verdict_path, outcome)
             else:
                 title = manifest.get(read["book"] or "", {}).get("title") or read["book"] or "unknown book"
                 text = (
                     f"Request:\n{output['turns'][0]['question']}\n\nFirst reading: {title} ({read['book']}), {read['kind']}, path: {read['where'] or 'unresolved'}\n\n"
                     f"Opening lines of what was read:\n{read['text']}"
                 )
-                outcome = claude_headless.call(system, [{"type": "text", "text": text}], LOCATOR_SCHEMA, model=MODEL, effort=EFFORT)
-            outcome.update(arm=a, output=path.name, read=read)
-            verdict_path.parent.mkdir(parents=True, exist_ok=True)
-            verdict_path.write_text(json.dumps(outcome, ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n")
-            v = outcome["value"]
-            print(json.dumps({"arm": a, "output": path.name, "ok": v is not None, "on_topic": v and v["on_topic"], "seconds": outcome["seconds"]}), flush=True)
+                outcome = judge_call(system, [{"type": "text", "text": text}], LOCATOR_SCHEMA, model=MODEL, effort=EFFORT, record=record, verdict_path=verdict_path)
+            if outcome is None:
+                print(json.dumps({"arm": a, "output": path.name, "packed": True}), flush=True)
+            else:
+                v = outcome["value"]
+                print(json.dumps({"arm": a, "output": path.name, "ok": v is not None, "on_topic": v and v["on_topic"], "seconds": outcome["seconds"]}), flush=True)
             done += 1
             if limit and done >= limit:
                 return
@@ -363,12 +401,13 @@ def chapters(arm: str | None, limit: int | None) -> None:
             request = "\n".join(t["question"] for t in output["turns"])
             body = "\n\n---\n\n".join(f"# {m['title']}\n\n{(m.get('content') or '')[:NOTE_CAP]}" for m in notes) or "[no note was written]"
             text = f"Request (the learner's turns):\n{request}\n\n## Notes, in the order written ({len(notes)})\n\n{body}"
-            outcome = claude_headless.call(system, [{"type": "text", "text": text}], CHAPTERS_SCHEMA, model=MODEL, effort=EFFORT)
-            outcome.update(arm=a, output=path.name, notes=len(notes), mechanical=mechanical(output))
-            verdict_path.parent.mkdir(parents=True, exist_ok=True)
-            verdict_path.write_text(json.dumps(outcome, ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n")
-            v = outcome["value"]
-            print(json.dumps({"arm": a, "output": path.name, "ok": v is not None, "completed": v and f"{v['chapters_completed']}/{v['chapters_requested']}", "seconds": outcome["seconds"]}), flush=True)
+            record = dict(arm=a, output=path.name, notes=len(notes), mechanical=mechanical(output))
+            outcome = judge_call(system, [{"type": "text", "text": text}], CHAPTERS_SCHEMA, model=MODEL, effort=EFFORT, record=record, verdict_path=verdict_path)
+            if outcome is None:
+                print(json.dumps({"arm": a, "output": path.name, "packed": True}), flush=True)
+            else:
+                v = outcome["value"]
+                print(json.dumps({"arm": a, "output": path.name, "ok": v is not None, "completed": v and f"{v['chapters_completed']}/{v['chapters_requested']}", "seconds": outcome["seconds"]}), flush=True)
             done += 1
             if limit and done >= limit:
                 return
@@ -506,15 +545,54 @@ def summary() -> None:
     print(json.dumps({"fidelity": fid, "pairwise": pairwise_tallies(JUDGE / "pairwise"), "second_rater": raters, "locator": loc, "chapters": chap, "counters": counters}, indent=1))
 
 
+SCHEMAS = {"fidelity": FIDELITY_SCHEMA, "pairwise": PAIRWISE_SCHEMA, "locator": LOCATOR_SCHEMA, "chapters": CHAPTERS_SCHEMA}
+
+
+def check(delete: bool) -> None:
+    """Every written verdict against its schema; null verdicts (a failed call) listed; invalid ones deleted with --delete so the next pack re-issues them."""
+    import jsonschema
+
+    counts: dict[str, dict[str, int]] = {}
+    for directory in sorted(JUDGE.iterdir()):
+        kind = directory.name.split("-")[0]
+        if kind not in SCHEMAS or not directory.is_dir():
+            continue
+        c = counts[directory.name] = {"valid": 0, "null": 0, "invalid": 0, "skipped": 0}
+        for path in sorted(directory.glob("*/*.json")):
+            d = json.loads(path.read_text(encoding="utf-8"))
+            if d.get("skipped"):
+                c["skipped"] += 1
+                continue
+            if d.get("value") is None:
+                c["null"] += 1
+                continue
+            try:
+                jsonschema.validate(d["value"], SCHEMAS[kind])
+                c["valid"] += 1
+            except jsonschema.ValidationError as err:
+                c["invalid"] += 1
+                print(json.dumps({"invalid": str(path.relative_to(JUDGE)), "error": err.message[:160], "deleted": delete}), flush=True)
+                if delete:
+                    path.unlink()
+    print(json.dumps(counts, indent=1))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=["fidelity", "pairwise", "locator", "chapters", "summary"])
+    parser.add_argument("command", choices=["fidelity", "pairwise", "locator", "chapters", "summary", "check"])
+    parser.add_argument("--pack", action="store_true", help="write task files for the judge subagents instead of calling the CLI (amendment 6)")
+    parser.add_argument("--delete", action="store_true", help="check: delete invalid verdicts")
     parser.add_argument("--arm", choices=ARMS)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--seed", type=int, default=20261006)
     parser.add_argument("--model", default=MODEL, help="pairwise: the rater; a second model writes to judge/pairwise-<model>/")
     parser.add_argument("--sample", type=float, help="pairwise: rate only this seeded share of the pairs (the second rater's 0.2)")
     args = parser.parse_args()
+    if args.pack:
+        TRANSPORT["mode"] = "pack"
+    if args.command == "check":
+        check(args.delete)
+        return
     if args.command == "fidelity":
         fidelity(args.arm, args.limit)
     elif args.command == "pairwise":
