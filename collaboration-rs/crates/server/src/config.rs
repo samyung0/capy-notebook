@@ -32,6 +32,9 @@ pub struct Config {
     pub uat_publication_hold: bool,
     /// A note projects after this long without a content change (Epo 2026-10-07).
     pub projection_idle: Duration,
+    /// A note edited without such a pause still projects this often (Epo
+    /// 2026-10-08).
+    pub projection_cadence: Duration,
     /// A loaded room folds its log past `max(fold_min_bytes, base bytes)` or
     /// `fold_max_rows` rows (DESIGN.md 3.5); an unloaded one always.
     pub fold_min_bytes: u64,
@@ -150,6 +153,7 @@ impl Config {
             source_max_debounce: millis(env, "COLLABORATION_SOURCE_MAX_DEBOUNCE_MS", 30_000)?,
             uat_publication_hold: flag(env, "COLLABORATION_UAT_PUBLICATION_HOLD")?,
             projection_idle: millis(env, "COLLABORATION_PROJECTION_IDLE_MS", 30_000)?,
+            projection_cadence: millis(env, "COLLABORATION_PROJECTION_CADENCE_MS", 300_000)?,
             fold_min_bytes: positive(env, "COLLABORATION_FOLD_MIN_BYTES", 256 * 1024)?,
             fold_max_rows: positive(env, "COLLABORATION_FOLD_MAX_ROWS", 1000)?,
             engine_save_processes: required(env, "COLLABORATION_ENGINE_SAVE_PROCESSES")?,
@@ -203,6 +207,7 @@ mod tests {
         assert_eq!(config.secret, dev::SECRET);
         assert_eq!(config.port, 1234);
         assert_eq!(config.projection_idle, Duration::from_secs(30));
+        assert_eq!(config.projection_cadence, Duration::from_secs(300));
     }
 
     #[test]

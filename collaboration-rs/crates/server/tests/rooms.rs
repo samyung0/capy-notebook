@@ -51,8 +51,13 @@ async fn start(env: &Env) -> Server {
 }
 
 /// The server with `api` as its gateway (a stand-in for source rooms).
-#[allow(clippy::zombie_processes)]
 async fn start_with(env: &Env, api: Option<&str>) -> Server {
+    start_configured(env, api, &[]).await
+}
+
+/// The server with `api` as its gateway and `extra` settings.
+#[allow(clippy::zombie_processes)]
+async fn start_configured(env: &Env, api: Option<&str>, extra: &[(&str, &str)]) -> Server {
     // A free port per server, so the tests run in parallel.
     let port = std::net::TcpListener::bind(("127.0.0.1", 0))
         .and_then(|listener| listener.local_addr())
@@ -75,6 +80,7 @@ async fn start_with(env: &Env, api: Option<&str>) -> Server {
         .env("COLLABORATION_ENGINE_SAVE_PROCESSES", "1")
         .env("COLLABORATION_ENGINE_BACKGROUND_PROCESSES", "1")
         .env("COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES", "3221225472")
+        .envs(extra.iter().copied())
         .stdout(if std::env::var_os("CAPY_IT_LOGS").is_some() {
             Stdio::inherit()
         } else {
@@ -1214,4 +1220,49 @@ async fn oversized_frames_before_a_join_and_oversized_awareness_are_refused() {
         "{}",
         String::from_utf8_lossy(&closed)
     );
+}
+
+#[tokio::test]
+async fn a_note_edited_without_a_pause_still_projects_on_the_cadence() {
+    let Some(env) = env() else { return };
+    if env.api.is_none() {
+        return;
+    }
+    // The idle projection never fires here (60 s); the cadence is 2 s.
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[("COLLABORATION_PROJECTION_CADENCE_MS", "2000")],
+    )
+    .await;
+    let (user, material) = note(&env, "start").await;
+    let room = format!("material:{material}:schema:1");
+    let mut a = Client::open(server.port).await;
+    a.joined(&room, &token(&room, &user, "write")).await;
+    assert!(a.settle(|c| c.block_text() == "start").await);
+    let client = db(&env).await;
+    let projected = || async {
+        let content: serde_json::Value = client
+            .query_one("SELECT content FROM materials WHERE id=$1", &[&material])
+            .await
+            .expect("content")
+            .get(0);
+        content.to_string()
+    };
+    // Typing every 300 ms for up to 8 s, never pausing.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(8);
+    let mut typed = 0;
+    loop {
+        a.type_text(&format!(" k{typed}")).await;
+        typed += 1;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        if projected().await.contains(" k0") {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "no projection while edits continued: {}",
+            projected().await
+        );
+    }
 }

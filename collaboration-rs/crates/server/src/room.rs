@@ -155,6 +155,9 @@ struct Note {
     stored_version: i64,
     projected_version: i64,
     projecting: bool,
+    /// When the room last projected (or loaded): edits that never pause
+    /// still project every `projection_cadence`.
+    projected_at: Instant,
     project_waiters: Vec<oneshot::Sender<Result<i64, String>>>,
     log_bytes: i64,
     log_rows: i64,
@@ -369,6 +372,7 @@ async fn load(
                 stored_version,
                 projected_version,
                 projecting: false,
+                projected_at: Instant::now(),
                 project_waiters: Vec::new(),
                 log_bytes,
                 log_rows,
@@ -2146,6 +2150,7 @@ impl Room {
                 self.source_receipt(&claimed, version as u64);
             }
         }
+        self.project_on_cadence();
         if self.store.dirty || markers::pending(&self.doc) {
             if self.store.again {
                 self.store.again = false;
@@ -2396,6 +2401,40 @@ impl Room {
 
     // ---------------------------------------------------------------- projection
 
+    /// After a store: a note whose edits have not paused long enough for the
+    /// idle projection projects anyway once `projection_cadence` passed since
+    /// its last projection. The live document may already hold newer edits,
+    /// so this projects the durable state from the store.
+    fn project_on_cadence(&mut self) {
+        let handle = self.own_handle();
+        let cadence = self.app.config.projection_cadence;
+        let Kindly::Note(note) = &mut self.kind else {
+            return;
+        };
+        if note.projecting
+            || note.stored_version <= note.projected_version
+            || note.projected_at.elapsed() < cadence
+        {
+            return;
+        }
+        let Some(handle) = handle else {
+            return;
+        };
+        note.projecting = true;
+        let (app, material_id, version) = (
+            self.app.clone(),
+            note.material_id.clone(),
+            note.stored_version,
+        );
+        tokio::spawn(async move {
+            let projected = match projection::project_durable(&app, &material_id).await {
+                Ok(projected) => RoomCmd::Projected(projected, Ok(())),
+                Err(error) => RoomCmd::Projected(version, Err(error)),
+            };
+            let _ = handle.tx.send(projected).await;
+        });
+    }
+
     fn arm_idle(&mut self) {
         let Kindly::Note(note) = &self.kind else {
             return;
@@ -2453,6 +2492,7 @@ impl Room {
         match &result {
             Ok(()) => {
                 note.projected_version = note.projected_version.max(version);
+                note.projected_at = Instant::now();
                 let payload = json!({ "materialId": note.material_id, "type": "projection-updated", "yjsVersion": version });
                 for waiter in note.project_waiters.drain(..) {
                     let _ = waiter.send(Ok(version));

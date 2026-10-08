@@ -983,8 +983,10 @@ names it. A room loads by replaying base and rows, and folds the log into the
 base when it unloads or the log passes `max(256 KiB, base bytes)` or 1,000
 rows. The server converts the `content` root to a Plate envelope and calls the
 internal Go projection endpoint: once a store is followed by 30 s without a
-change (`COLLABORATION_PROJECTION_IDLE_MS`), when the room unloads, and on
-demand. View asks for one (`ProjectLiveNote`,
+change (`COLLABORATION_PROJECTION_IDLE_MS`), at least every 5 minutes while
+edits continue without such a pause (`COLLABORATION_PROJECTION_CADENCE_MS`,
+projecting the durable state from the store; Epo 2026-10-08), when the room
+unloads, and on demand. View asks for one (`ProjectLiveNote`,
 `POST /internal/materials/{id}/project`) when the stored version is ahead of
 the projection, and serves the stored projection if that call fails
 (Epo, 2026-10-07).
