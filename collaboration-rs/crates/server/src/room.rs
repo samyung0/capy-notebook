@@ -177,6 +177,8 @@ struct Source {
     paused: bool,
     /// When this room's saves started failing without a success.
     failing_since: Option<Instant>,
+    /// The sources record this room's load made.
+    generation: u64,
 }
 
 /// Why a store failed.
@@ -386,6 +388,7 @@ async fn load(
                 pending_reported: false,
                 paused: false,
                 failing_since: None,
+                generation: loaded.generation,
             };
             Ok((doc, Kindly::Source(Box::new(source)), durable))
         }
@@ -2406,10 +2409,11 @@ impl Room {
                     .stats
                     .log_bytes
                     .fetch_sub(source.log_bytes.max(0) as u64, Ordering::Relaxed);
-                let (app, room) = (self.app.clone(), source.room.clone());
+                let (app, room, generation) =
+                    (self.app.clone(), source.room.clone(), source.generation);
                 let discarded = self.discard_pending.take();
                 tokio::spawn(async move {
-                    app.sources.forget(&room).await;
+                    app.sources.forget(&room, generation).await;
                     if let Some(cause) = discarded {
                         crate::eviction::move_lineage(&app, &room.name(), cause).await;
                         return;

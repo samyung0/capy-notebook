@@ -763,3 +763,25 @@ async fn cold_folds_outnumbering_the_pool_connections_all_finish() {
         assert_eq!(fold.unwrap().rows, 1);
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn an_unloaded_room_forgets_only_its_own_record() {
+    let h = harness().await;
+    let room = h.file("text", "again.md", b"abc").await;
+    let first = h
+        .sources
+        .load(&room, &h.user, &text_doc(100))
+        .await
+        .unwrap();
+    // The room reloads before the old one's forget runs.
+    let second = h
+        .sources
+        .load(&room, &h.user, &text_doc(101))
+        .await
+        .unwrap();
+    h.sources.forget(&room, first.generation).await;
+    assert_eq!(h.sources.known_checkpoint(&room), Some(0));
+    h.sources.forget(&room, second.generation).await;
+    assert_eq!(h.sources.known_checkpoint(&room), None);
+}

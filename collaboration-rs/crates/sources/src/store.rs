@@ -52,6 +52,8 @@ pub(crate) struct Seed {
 
 /// What this instance knows of a loaded room between its saves.
 struct RoomRecord {
+    /// Which load made it (see [`Loaded::generation`]).
+    generation: u64,
     session: SourceSession,
     /// The checkpoint the room's durable state is at.
     checkpoint: u64,
@@ -74,6 +76,9 @@ pub struct Loaded {
     pub rows: u64,
     pub row_bytes: u64,
     pub session: SourceSession,
+    /// This load's record; [`Sources::forget`] removes only that one, never a
+    /// later load's under the same room name.
+    pub generation: u64,
 }
 
 /// One store of a room: its update since the durable state and what the
@@ -231,6 +236,7 @@ pub struct Sources {
     seeds: Mutex<ByteCache<Arc<Seed>>>,
     baselines: Mutex<ByteCache<Arc<Vec<BaselineEntry>>>>,
     rooms: Mutex<HashMap<String, RoomRecord>>,
+    generations: std::sync::atomic::AtomicU64,
 }
 
 impl Sources {
@@ -244,6 +250,7 @@ impl Sources {
             seeds: Mutex::new(ByteCache::new(SEED_CACHE_BYTES)),
             baselines: Mutex::new(ByteCache::new(BASELINE_CACHE_BYTES)),
             rooms: Mutex::new(HashMap::new()),
+            generations: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -462,7 +469,11 @@ impl Sources {
         tokio::task::spawn_blocking(move || replay(&target, applied.iter().map(Vec::as_slice)))
             .await
             .map_err(|error| SourceError::Other(format!("room load: {error}")))??;
+        let generation = self
+            .generations
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut record = RoomRecord {
+            generation,
             checkpoint: stored.checkpoint,
             seeded: stored.state.is_none() && stored.rows.is_empty(),
             baseline: None,
@@ -492,6 +503,7 @@ impl Sources {
             base_bytes: stored.state.as_ref().map_or(0, |state| state.len() as u64),
             rows: stored.rows.len() as u64,
             row_bytes: stored.rows.iter().map(|(_, row)| row.len() as u64).sum(),
+            generation,
             session,
         })
     }
@@ -528,10 +540,20 @@ impl Sources {
             .map(|record| record.checkpoint)
     }
 
-    /// Drops a room's record and its XLSX replica (its room unloaded).
-    pub async fn forget(&self, room: &SourceRoom) {
+    /// Drops a room's record and its XLSX replica (its room unloaded),
+    /// unless a later load of the same room replaced the record meanwhile.
+    pub async fn forget(&self, room: &SourceRoom, generation: u64) {
         let name = room.name();
-        lock(&self.rooms).remove(&name);
+        {
+            let mut rooms = lock(&self.rooms);
+            if rooms
+                .get(&name)
+                .is_none_or(|record| record.generation != generation)
+            {
+                return;
+            }
+            rooms.remove(&name);
+        }
         self.engines.drop_room(&name).await;
     }
 
