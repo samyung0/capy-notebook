@@ -146,3 +146,38 @@ test('a note opened in View keeps its document through a re-render', async ({
   ).toBe(0);
   await expect(answer).toHaveAttribute('aria-pressed', 'true');
 });
+
+// Edits the room discarded (it turned read-only) never reach the cached
+// material: the pane falls back to View with the copy it had, not the editor's.
+test('a room turned read-only leaves the cached material alone', async ({
+  page,
+}) => {
+  const editor = await openEditorNote(
+    page,
+    EDITOR_NOTE.id,
+    EDITOR_NOTE.firstParagraph
+  );
+  await clickTextEnd(
+    editor.getByText(EDITOR_NOTE.firstParagraph, { exact: true })
+  );
+  await page.keyboard.type(' discarded');
+  await expect(
+    editor.getByText(`${EDITOR_NOTE.firstParagraph} discarded`)
+  ).toBeVisible();
+  // Hold any refetch of the material, so View can only show the cache.
+  await page.evaluate(async (id) => {
+    const browserPath = '/src/mocks/browser.ts';
+    const mswPath = '/node_modules/msw/lib/core/index.mjs';
+    const collaborationPath = '/src/mocks/collaboration.ts';
+    const { worker } = await import(browserPath);
+    const { http } = await import(mswPath);
+    worker.use(
+      http.get(`/api/materials/${id}`, () => new Promise<never>(() => {}))
+    );
+    const { announceReadOnly } = await import(collaborationPath);
+    announceReadOnly();
+  }, EDITOR_NOTE.id);
+  const preview = page.getByTestId('material-preview');
+  await expect(preview).toContainText(EDITOR_NOTE.firstParagraph);
+  await expect(preview).not.toContainText('discarded');
+});

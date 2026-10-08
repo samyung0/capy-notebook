@@ -62,3 +62,40 @@ test('a quiz lands where its command ran while the user types elsewhere', async 
   expect(await top(quiz)).toBeLessThan(await top(second));
   expect(await top(typed)).toBeGreaterThan(await top(third));
 });
+
+// The slash input removes itself, re-selects and focuses before the command
+// runs; the caret it leaves is where the quiz must go, and the quiz takes it.
+test('a quiz takes its line and the caret when the caret stayed', async ({
+  page,
+}) => {
+  const editor = await openEditorNote(
+    page,
+    EDITOR_NOTE.id,
+    EDITOR_NOTE.firstParagraph
+  );
+  const first = editor.getByText(EDITOR_NOTE.firstParagraph, { exact: true });
+  await clickTextEnd(first);
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('/quiz');
+  await page.getByRole('option', { exact: true, name: 'Quiz' }).click();
+  const quiz = editor.locator('.slate-material_ref');
+  await expect(quiz).toHaveCount(1);
+  const top = async (locator: typeof quiz) => (await locator.boundingBox())!.y;
+  const second = editor.getByText(EDITOR_NOTE.secondParagraph, {
+    exact: true,
+  });
+  expect(await top(quiz)).toBeGreaterThan(await top(first));
+  expect(await top(quiz)).toBeLessThan(await top(second));
+  // The caret sits on the quiz.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          !!window
+            .getSelection()
+            ?.anchorNode?.parentElement?.closest('.slate-material_ref')
+      )
+    )
+    .toBe(true);
+});
