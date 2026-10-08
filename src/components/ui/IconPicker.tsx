@@ -62,7 +62,7 @@ export function IconPicker({
           label={m.icon_style()}
           sections={iconStyles.map((item) => ({
             content: (
-              <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(4.5rem,1fr))] gap-1.5">
                 {item.avatars.map((icon) => (
                   <button
                     aria-label={icon.id}
