@@ -127,7 +127,45 @@ fn seeds(base: &[u8]) -> Vec<Vec<u8>> {
         })
         .collect();
     out.push(yrs::merge_updates_v1(&concurrent).unwrap());
+    out.push(fanned(base));
     out
+}
+
+/// One-character items with only a right origin, each a unit of the first
+/// paragraph from its last back: each claims a spot of its own, and yrs scans
+/// from the paragraph's start to each (round 8's costly shape, small).
+fn fanned(base: &[u8]) -> Vec<u8> {
+    use yrs::encoding::write::Write;
+    let room = load(base, 1);
+    let units: Vec<yrs::ID> = {
+        let txn = room.transact();
+        let block =
+            match &plate::insert_delta(&plate::content_root(&txn).unwrap()).unwrap()[0].insert {
+                plate::Insert::Element(branch) => *branch,
+                plate::Insert::Text(_) => panic!("not a block"),
+            };
+        let mut units = Vec::new();
+        let mut next = block.start();
+        while let Some(item) = next {
+            let id = *item.id();
+            units.extend((0..item.len()).map(|offset| yrs::ID::new(id.client, id.clock + offset)));
+            next = item.right();
+        }
+        units
+    };
+    let mut bytes: Vec<u8> = Vec::new();
+    bytes.write_var(1u32);
+    bytes.write_var(units.len() as u32);
+    bytes.write_var(50u64);
+    bytes.write_var(0u32);
+    for right in units.iter().rev() {
+        bytes.write_u8(0x40 | 4); // a right origin, a string
+        bytes.write_var(right.client.get());
+        bytes.write_var(right.clock);
+        bytes.write_string("x");
+    }
+    bytes.write_var(0u32);
+    bytes
 }
 
 #[test]

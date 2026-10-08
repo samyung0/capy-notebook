@@ -74,13 +74,44 @@ fn admit_time(room: &Doc, update: &[u8]) -> Duration {
         .unwrap_or_default()
 }
 
-/// Whether `admit` refuses `update` as a crowded spot.
-fn crowded(room: &Doc, update: &[u8]) -> bool {
+/// `admit`'s answer to `update`, as text (`Accepted`, the refusal).
+fn verdict(room: &Doc, update: &[u8]) -> String {
     let mut validator = Validator::default();
-    matches!(
-        validator.admit(room, &ydoc::decode(update).unwrap()),
-        Err(Refusal::Update(ydoc::UpdateError::Crowded))
-    )
+    match validator.admit(room, &ydoc::decode(update).unwrap()) {
+        Ok(admission) => format!("{admission:?}"),
+        Err(Refusal::Update(error)) => format!("{error:?}"),
+        Err(error) => format!("{error}"),
+    }
+}
+
+/// The reviewer's forward chain in one client (REVIEW3 M7): struct k takes
+/// struct k + 1 of its own client as its origin.
+fn forward_in_one_client(items: u32) -> (Doc, Vec<u8>) {
+    let room = room("hello");
+    let held = {
+        let text = paragraph(&room);
+        let branch: &yrs::branch::Branch = text.as_ref();
+        let first = branch.start().unwrap();
+        ID::new(first.id().client, first.id().clock + first.len() - 1)
+    };
+    let mut bytes: Vec<u8> = Vec::new();
+    bytes.write_var(1u32);
+    bytes.write_var(items);
+    bytes.write_var(77u64);
+    bytes.write_var(0u32);
+    for k in 0..items {
+        bytes.write_u8(0x80 | 4);
+        if k + 1 < items {
+            bytes.write_var(77u64);
+            bytes.write_var(k + 1);
+        } else {
+            bytes.write_var(held.client.get());
+            bytes.write_var(held.clock);
+        }
+        bytes.write_string("x");
+    }
+    bytes.write_var(0u32);
+    (room, bytes)
 }
 
 /// How long the growth bound alone takes on `update` (best of three). The
@@ -226,6 +257,41 @@ fn tomb_from(tombstones: u32, items: u32, forged: bool) -> (Doc, Vec<u8>) {
     (room, bytes)
 }
 
+/// A paragraph of `tombstones` separately typed and deleted characters,
+/// then `items` one-character items without an origin, each naming one of the
+/// tombstones as its right origin (cycling from the last): every item claims
+/// its own spot, but yrs scans from the paragraph's start to its right origin
+/// for each (round 8).
+fn fanned(tombstones: u32, items: u32) -> (Doc, Vec<u8>) {
+    let (room, _) = tomb(tombstones, 0);
+    let ids: Vec<ID> = {
+        let _txn = room.transact();
+        let mut ids = Vec::new();
+        let text = paragraph(&room);
+        let branch: &yrs::branch::Branch = text.as_ref();
+        let mut next = branch.start();
+        while let Some(item) = next {
+            ids.push(*item.id());
+            next = item.right();
+        }
+        ids
+    };
+    let mut bytes: Vec<u8> = Vec::new();
+    bytes.write_var(1u32);
+    bytes.write_var(items);
+    bytes.write_var(77u64);
+    bytes.write_var(0u32);
+    for k in 0..items as usize {
+        let right = ids[ids.len() - 1 - k % ids.len()];
+        bytes.write_u8(0x40 | 4); // a right origin, string content
+        bytes.write_var(right.client.get());
+        bytes.write_var(right.clock);
+        bytes.write_string("x");
+    }
+    bytes.write_var(0u32);
+    (room, bytes)
+}
+
 /// One chain of `depth` nested blockquotes.
 fn deep(depth: usize) -> (Doc, Vec<u8>) {
     let room = room("hello");
@@ -271,13 +337,14 @@ fn wide(chars: u32) -> (Doc, Vec<u8>) {
 #[test]
 fn admit_stays_linear_on_every_hostile_shape() {
     let limit = if cfg!(debug_assertions) { 10.0 } else { 2.0 };
-    let shapes: [(&str, (Doc, Vec<u8>)); 6] = [
+    let shapes: [(&str, (Doc, Vec<u8>)); 7] = [
         ("paste", paste(3_000)),
         ("forward chain", forward_chain(40_000)),
         ("deep", deep(20_000)),
         ("wide", wide(40_000)),
         ("tombs", tomb(20_000, 20_000)),
         ("tombs, forged clients", tomb_forged(20_000, 20_000)),
+        ("fanned", fanned(10_000, 10_000)),
     ];
     for (name, (room, update)) in shapes {
         let cost = ms_per_kb(admit_time(&room, &update), &update);
@@ -287,10 +354,50 @@ fn admit_stays_linear_on_every_hostile_shape() {
         );
         assert!(cost < limit, "{name}: {cost} ms per KB");
     }
-    // The tombs crowd one spot (the start of the paragraph), from one client
-    // or from 20,000.
-    for (room, update) in [tomb(20_000, 20_000), tomb_forged(20_000, 20_000)] {
-        assert!(crowded(&room, &update));
+    // The tombs and the fanned items cost yrs too many placement steps; a
+    // smaller pile of tombs, cheap to place, still crowds one spot (the start
+    // of the paragraph), from one client or from one per item; the reviewer's
+    // forward chain in one client is malformed.
+    for (room, update) in [
+        tomb(20_000, 20_000),
+        tomb_forged(20_000, 20_000),
+        fanned(10_000, 10_000),
+    ] {
+        assert_eq!(verdict(&room, &update), "Costly");
+    }
+    for (room, update) in [tomb(400, 100), tomb_forged(400, 100)] {
+        assert_eq!(verdict(&room, &update), "Crowded");
+    }
+    let (room, update) = forward_in_one_client(1_000);
+    assert!(verdict(&room, &update).starts_with("Decode"));
+}
+
+/// Items each claiming their own spot but all scanned past one run of
+/// tombstones (round 8): refused once the placement steps pass the budget,
+/// before admit's O(update) passes, up to the 4 MiB message cap: the budget's
+/// steps plus indexing the decoded update, which costs less than decoding it.
+#[test]
+fn a_fanned_update_is_refused_within_the_budget() {
+    let budget = Duration::from_millis(if cfg!(debug_assertions) { 500 } else { 50 });
+    // About 6 bytes per item: 600,000 items is near the 4 MiB message cap.
+    for (tombstones, items) in [(5_000, 5_000), (10_000, 10_000), (10_000, 600_000)] {
+        let (room, update) = fanned(tombstones, items);
+        assert!(update.len() <= 4 << 20, "{} bytes", update.len());
+        let start = Instant::now();
+        let decoded = ydoc::decode(&update).unwrap();
+        let decoding = start.elapsed();
+        let start = Instant::now();
+        let answer = Validator::default().admit(&room, &decoded);
+        let took = start.elapsed();
+        eprintln!(
+            "fanned {tombstones} x {items}: {} KB decoded in {decoding:?}, refused in {took:?}",
+            update.len() / 1024
+        );
+        assert!(matches!(
+            answer,
+            Err(Refusal::Update(ydoc::UpdateError::Costly))
+        ));
+        assert!(took < budget + decoding * 2, "{took:?}");
     }
 }
 

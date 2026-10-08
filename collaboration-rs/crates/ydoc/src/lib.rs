@@ -26,6 +26,18 @@ pub enum UpdateError {
     /// More than [MAX_SPOT_ITEMS] items would claim one spot of a text.
     #[error("update crowds one spot of a text past {MAX_SPOT_ITEMS} items")]
     Crowded,
+    /// Placing the update would cost yrs more than [MAX_PLACEMENT_STEPS].
+    #[error("update would take more than {MAX_PLACEMENT_STEPS} steps to place")]
+    Costly,
+}
+
+mod placement;
+pub use placement::MAX_PLACEMENT_STEPS;
+
+/// The steps yrs would take to place `incoming` in the room (its conflict
+/// scans and map-key walks), or `None` past `budget`. O(update + budget).
+pub fn placement_cost<T: ReadTxn>(txn: &T, incoming: &Incoming, budget: u64) -> Option<u64> {
+    placement::placement_steps(txn, incoming, budget).ok()
 }
 
 /// The most items that may claim one spot of a sequence (the same left and
@@ -299,9 +311,29 @@ pub fn inspect_update<T: ReadTxn>(txn: &T, update: &Update) -> Result<Inspection
 /// An update whose struct refers (origin, right origin or parent) to the same
 /// or a later clock of its own client is malformed: a client's structs
 /// integrate in clock order, so it would stay pending in the room forever.
-/// An update that crowds one spot of a sequence is refused too (`crowded`).
-/// Both are shapes no real editor writes.
+/// So is one whose structs of a client overlap or go back in clock order
+/// (two sections for one client): yrs would place an overlapping struct a
+/// second time and free the first while the sequence still links it.
+/// An update that crowds one spot of a sequence is refused too (`crowded`),
+/// and one whose placement would cost yrs more than [MAX_PLACEMENT_STEPS].
+/// These are shapes no real editor writes.
 pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, UpdateError> {
+    let mut ends: HashMap<ClientID, u32> = HashMap::new();
+    for block in incoming.update().blocks() {
+        let (client, clock, len) = match block {
+            UpdateBlock::Item(item) => (item.id().client, item.id().clock, item.len()),
+            UpdateBlock::Gc(range) | UpdateBlock::Skip(range) => {
+                (range.client, range.clock, range.len)
+            }
+        };
+        let end = ends.entry(client).or_default();
+        if clock < *end {
+            return Err(UpdateError::Decode(format!(
+                "struct {clock} of client {client} overlaps or precedes the one before it"
+            )));
+        }
+        *end = clock + len;
+    }
     for item in incoming.items() {
         let ID { client, clock } = *item.id();
         let parent = match item.update_parent() {
@@ -317,6 +349,11 @@ pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, U
                 "struct {clock} of client {client} refers to itself or a later struct of its client"
             )));
         }
+    }
+    // Before the O(update) passes below: an update that would cost yrs more
+    // than the budget to place is refused in O(budget) past its decoding.
+    if placement_cost(txn, incoming, MAX_PLACEMENT_STEPS).is_none() {
+        return Err(UpdateError::Costly);
     }
     crowded(txn, incoming)?;
     let update = incoming.update();

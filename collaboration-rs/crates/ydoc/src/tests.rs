@@ -305,6 +305,34 @@ fn a_reference_forward_in_its_own_client_is_malformed() {
     assert!(!unheld(&room, &typed));
 }
 
+/// Two sections for one client whose structs overlap (found by the fuzz):
+/// yrs would place the struct twice and free the first while the text still
+/// links it. Malformed.
+#[test]
+fn overlapping_structs_of_one_client_are_malformed() {
+    use yrs::encoding::write::Write;
+    let room = doc(1);
+    room.get_or_insert_text("t")
+        .insert(&mut room.transact_mut(), 0, "hello");
+    let mut bytes: Vec<u8> = Vec::new();
+    bytes.write_var(2u32);
+    for origin in [1u32, 3] {
+        bytes.write_var(1u32);
+        bytes.write_var(77u64);
+        bytes.write_var(0u32);
+        bytes.write_u8(0x80 | 4);
+        bytes.write_var(1u64);
+        bytes.write_var(origin);
+        bytes.write_string("x");
+    }
+    bytes.write_var(0u32);
+    let inspected = inspect_update(&room.transact(), &decode(&bytes).unwrap());
+    assert!(
+        matches!(inspected, Err(UpdateError::Decode(_))),
+        "{inspected:?}"
+    );
+}
+
 /// Updates of `count` concurrent writers each typing at the same place of a
 /// room's text, merged into one.
 fn concurrent_at_one_spot(room: &Doc, first_client: u64, count: u64) -> Vec<u8> {
@@ -392,4 +420,81 @@ fn a_crowded_spot_is_refused() {
         inspect(&crowded, &more(5)),
         Err(UpdateError::Crowded)
     ));
+}
+
+/// A text of `tombstones` characters each typed at its start, then all
+/// deleted, and an update of as many one-character items with only a right
+/// origin, each a tombstone from the last back: every item has a spot of its
+/// own, but yrs scans from the start of the text to the right origin of each.
+fn fanned(tombstones: u32) -> (Doc, Vec<u8>) {
+    use yrs::encoding::write::Write;
+    let room = doc(1);
+    let text = room.get_or_insert_text("t");
+    for _ in 0..tombstones {
+        text.insert(&mut room.transact_mut(), 0, "t");
+    }
+    text.remove_range(&mut room.transact_mut(), 0, tombstones);
+    let mut ids: Vec<ID> = Vec::new();
+    {
+        let _txn = room.transact();
+        let branch: &yrs::branch::Branch = text.as_ref();
+        let mut next = branch.start();
+        while let Some(item) = next {
+            ids.push(*item.id());
+            next = item.right();
+        }
+    }
+    let mut bytes: Vec<u8> = Vec::new();
+    bytes.write_var(1u32);
+    bytes.write_var(tombstones);
+    bytes.write_var(1_000u64);
+    bytes.write_var(0u32);
+    for right in ids.iter().rev() {
+        bytes.write_u8(0x40 | 4); // a right origin, a string
+        bytes.write_var(right.client.get());
+        bytes.write_var(right.clock);
+        bytes.write_string("x");
+    }
+    bytes.write_var(0u32);
+    (room, bytes)
+}
+
+/// The placement estimate counts the steps yrs takes (Epo, 2026-10-08): one
+/// per item a conflict scan passes; checked against an instrumented yrs on
+/// the corpus and these shapes.
+#[test]
+fn placement_counts_the_steps_yrs_scans() {
+    let cost = |room: &Doc, bytes: &[u8], budget| {
+        placement_cost(
+            &room.transact(),
+            &Incoming::new(&decode(bytes).unwrap()),
+            budget,
+        )
+    };
+    let room = doc(1);
+    room.get_or_insert_text("t")
+        .insert(&mut room.transact_mut(), 0, "hello");
+    // Concurrent writers at one place: each placed after one step.
+    assert_eq!(
+        cost(&room, &concurrent_at_one_spot(&room, 10, 64), u64::MAX),
+        Some(63)
+    );
+    // Fanned: n - 1 tombstones scanned for the first item, then one fewer each.
+    let (room, bytes) = fanned(100);
+    assert_eq!(cost(&room, &bytes, u64::MAX), Some(4_950));
+    assert_eq!(cost(&room, &bytes, 4_950), Some(4_950));
+    assert_eq!(cost(&room, &bytes, 4_949), None);
+}
+
+/// An update whose placement would cost yrs more than 100,000 steps is
+/// refused, whatever its spots (Epo, 2026-10-08).
+#[test]
+fn a_costly_update_is_refused() {
+    let inspect =
+        |room: &Doc, bytes: &[u8]| inspect_update(&room.transact(), &decode(bytes).unwrap());
+    // 447 * 446 / 2 = 99,681 steps: taken; 448 * 447 / 2 = 100,128: refused.
+    let (room, bytes) = fanned(447);
+    assert!(inspect(&room, &bytes).is_ok());
+    let (room, bytes) = fanned(448);
+    assert!(matches!(inspect(&room, &bytes), Err(UpdateError::Costly)));
 }
