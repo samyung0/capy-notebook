@@ -13,7 +13,7 @@ import json
 from importlib import resources
 from typing import Any
 
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, ValidationError
 
 SUPPORTED_VERSION = 17
 
@@ -68,7 +68,69 @@ def validate_args(name: str, args: dict[str, Any]) -> str | None:
     if error is None:
         return None
     where = "/".join(str(p) for p in error.absolute_path)
-    return f"{name} arguments invalid at {where or '$'}: {error.message}"
+    return f"{name} arguments invalid at {where or '$'}: {_problem(error)}"
+
+
+def _problem(error: ValidationError) -> str:
+    """What is wrong, in a few words. The argument itself is never echoed: a
+    command carrying a whole note section would come back at full size and
+    hide the one field that is wrong."""
+    if error.validator == "oneOf" and isinstance(error.instance, dict):
+        tags = {
+            v.get("properties", {}).get("type", {}).get("const"): v
+            for v in error.validator_value
+        }
+        if None not in tags:
+            return _variant_problem(tags, error.instance)
+    if error.validator == "type":
+        return f"must be {_types(error.validator_value)}"
+    if error.validator in _BOUNDS:
+        return f"{_BOUNDS[error.validator]} {error.validator_value}"
+    text = error.message
+    return text if len(text) <= 200 else text[:200] + " …"
+
+
+_BOUNDS = {
+    "minLength": "must have at least this many characters:",
+    "maxLength": "must have at most this many characters:",
+    "minItems": "must have at least this many items:",
+    "maxItems": "must have at most this many items:",
+    "minimum": "must be at least",
+    "maximum": "must be at most",
+}
+
+
+def _types(value: Any) -> str:
+    return " or ".join(value) if isinstance(value, list) else str(value)
+
+
+def _variant_problem(tags: dict[str, dict[str, Any]], instance: dict[str, Any]) -> str:
+    """A tagged-union member (an edit command): the tags when its type is not
+    one of them, else the variant's fields it lacks, has extra or mistypes."""
+    kind = instance.get("type")
+    if kind not in tags:
+        got = "" if kind is None else f", not {str(kind)[:40]!r}"
+        return f'"type" must be one of {", ".join(tags)}{got}'
+    variant = tags[kind]
+    fields = variant["properties"]
+    parts = [f"{kind} takes {', '.join(f for f in fields if f != 'type')}"]
+    missing = [f for f in variant.get("required", []) if f not in instance]
+    unknown = [f for f in instance if f not in fields]
+    wrong = [
+        f"{f} ({_problem(error)})"
+        for f, value in instance.items()
+        if f in fields
+        for error in [next(Draft202012Validator(fields[f]).iter_errors(value), None)]
+        if error is not None
+    ]
+    for label, names in (
+        ("missing", missing),
+        ("unknown", unknown),
+        ("invalid", wrong),
+    ):
+        if names:
+            parts.append(f"{label} {', '.join(names)}")
+    return "; ".join(parts)
 
 
 def model_schema(name: str) -> dict[str, Any]:

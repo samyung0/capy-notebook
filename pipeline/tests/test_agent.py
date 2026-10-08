@@ -2167,6 +2167,32 @@ async def test_edit_document_refuses_a_file_outside_the_scope_and_invalid_comman
     assert invalid.error_code == "invalid_input" and calls["n"] == 0
 
 
+def test_argument_errors_name_the_fields_without_echoing_the_command():
+    section = "A long section. " * 200
+    target = {"kind": "material", "id": "mat_1"}
+
+    def problem(*commands):
+        return contract.validate_args(
+            "edit_document", {"target": target, "commands": list(commands)}
+        )
+
+    note = {"type": "insert_markdown", "after_block_id": None, "markdown": section}
+    misnamed = {"type": "remove_block", "target_id": "b1", "expected_text": section}
+    assert problem(note, misnamed) == (
+        "edit_document arguments invalid at commands/1: remove_block takes "
+        "block_id, expected_text; missing block_id; unknown target_id"
+    )
+    untyped = problem({"expected_text": section, "text": "b"})
+    assert untyped.startswith(
+        'edit_document arguments invalid at commands/0: "type" must be one of '
+        "replace_text, insert_markdown,"
+    )
+    assert section not in untyped
+    assert problem({**note, "after_block_id": 3}).endswith(
+        "invalid after_block_id (must be string or null)"
+    )
+
+
 # ------------------------------------------------------------ program answers
 
 
