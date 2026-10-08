@@ -379,7 +379,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 		return doc, err
 	}
 	// The file's new bytes plus its storage_bytes afterwards (migrations 0054
-	// and 0068) minus before. A text state's seed size moves with the file's
+	// and 0069) minus before. A text state's seed size moves with the file's
 	// size, and a deferred Office state is charged beyond the capture the file
 	// now holds; both keep their rows. Any other Office state as stored, its
 	// rows gone with the epoch.
