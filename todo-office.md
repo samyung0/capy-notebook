@@ -365,9 +365,10 @@ check); it applies at the first promotion.
 The 2026-09-25 storage probes stay in `artifacts/2026-09-25-office-storage/`
 (reference only).
 
-- **Storage-bytes run:** rerun `bench/parsers/scripts/office_storage.ts` and
-  `office_storage_charging.spec.ts`; compare with the 2026-09-28 and
-  2026-10-05 reports in `bench/parsers/reports/`.
+- **Storage-bytes run:** rebuild the engine and charging measurements on the
+  Rust server through the stress harness's capy-sync client (the Node-based
+  `office_storage.ts` and charging run were retired, Epo 2026-10-08); compare
+  with the 2026-09-28 and 2026-10-05 reports in `bench/parsers/reports/`.
 - **WASM sizes:** the 2026-09-26 upstream merge grew the viewers 10–50%
   (`artifacts/2026-09-25-office-progress/c5.md`); DOCX viewer 7.6 MB, DOCX
   editor 10.3 MB, PPTX viewer 2.1 MB. Find what the viewers carry that view

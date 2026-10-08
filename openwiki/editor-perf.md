@@ -262,10 +262,10 @@ and writes each case's captures and the geometry JSON to the gitignored
 starts the e2e Docker stack through `e2e/global-setup.ts` with
 [`docker-compose.stress.yml`](../bench/collaboration/scripts/docker-compose.stress.yml)
 and [`docker-compose.stress-run.yml`](../bench/collaboration/scripts/docker-compose.stress-run.yml)
-layered on (`E2E_COMPOSE_OVERRIDES`). The first, which the Office
-storage-charging bench and the capacity harness also use, replaces the memory blob
-store, whose `memory://` URLs the collaboration service cannot fetch, with
-[`fake-s3.mjs`](../bench/collaboration/scripts/fake-s3.mjs) in the collaboration
+layered on (`E2E_COMPOSE_OVERRIDES`). The first, which the capacity harness
+also uses, replaces the memory blob store, whose `memory://` URLs the
+collaboration service cannot fetch, with
+[`fake-s3.mjs`](../bench/collaboration/scripts/fake-s3.mjs) on the stock Node
 image, served over TLS under a `*.backblazeb2.com` name the server accepts with
 a throwaway certificate. The owner uploads `exchange-plan.docx` as the app
 does: it reserves the upload (`POST .../sources/uploads`), PUTs the bytes to

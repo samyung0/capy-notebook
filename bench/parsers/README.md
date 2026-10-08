@@ -115,12 +115,12 @@ prompt is changed.
 whose marker strings must survive Office conversion and parsing.
 
 The [September 27 storage comparison](reports/2026-09-27-office-storage.md)
-measures the six application fixtures and twelve larger or specialized controls
-with the pinned Office engine and PostgreSQL TOAST. Run
-`OFFICE_STORAGE_DATABASE_URL=postgresql://... pnpm exec tsx bench/parsers/scripts/office_storage.ts OUTPUT_DIRECTORY`
-after `pnpm office:prepare`, against an isolated loopback database. It asserts
-that export and rebase preserve its edits and records quota separately from
-stored payloads. The optional
+measured the six application fixtures and twelve larger or specialized controls
+with the pinned Office engine and PostgreSQL TOAST through
+`office_storage.ts`, which imported the Node collaboration server; it was
+retired with that server (Epo, 2026-10-08), and the storage-bytes phase
+rebuilds the measurement on the Rust server through the stress harness's
+capy-sync client. The optional
 `pnpm exec playwright test --config bench/parsers/scripts/office_storage_ingest.config.ts`
 uses the authorized UAT journey environment, fresh run ID, verifier tunnel and
 normal cleanup to measure real upload, editing and reparse/index storage.
@@ -140,15 +140,10 @@ after generation. Local ZIP bytes and calculated overlap remain separate from
 persistent payloads.
 
 The [October 5 charging run](reports/2026-10-05-office-storage-charging.md)
-measures what the owner pays through edit, deferred publication, rebuild and
-the blob reaper on the local e2e stack, with the collaboration stress test's
-fake S3: `office_storage_charging.config.ts` (see its header for the image and
-output variables) runs `office_storage_charging.spec.ts`, which edits
-store-only Office fixtures in the browser and stands in for the ingest worker
-on a Markdown file's text publications. Build the server image of each release
-to compare (`git archive <sha>:server | docker build -t <tag> -`) and one
-collaboration image, then run the config once per server image. Call
-`node_modules/.bin/playwright` directly in a worktree.
+measured what the owner pays through edit, deferred publication, rebuild and
+the blob reaper on the local e2e stack. Its harness
+(`office_storage_charging.*`) drove the Node server's Hocuspocus provider and
+was retired with it (Epo, 2026-10-08); the report stays as the record.
 
 The August 28 accuracy harness belonged to the previous parser stack. The
 September 8 OpenDataLoader comparison instead freezes source PDFs and evaluates
