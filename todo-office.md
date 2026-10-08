@@ -454,3 +454,22 @@ slow editor (no handoff outside maintenance since the deferred rebuild).
     byte bound as the HTML embed source (`HTML_EMBED_MAX_BYTES`), with its
     existing error message.
 - Today only the 2 MiB document cap bounds them.
+
+## Agent writes to notes and Office files (2026-10-09)
+
+- Test the chat agent's writes end to end against notes and Office sources,
+  beyond the paragraph-text cases the 2026-10-09 edit lab covered
+  (`bench/rag/reports/local/2026-10-intake-eval/edit-tools-comparison.md` on the
+  developer PC): `create_material` and `edit_document` on notes holding
+  embedded quizzes and flashcard sets, mermaid diagrams, interactive HTML
+  embeds, tables, images, block and inline equations, links and mentions; and
+  `edit_document` on DOCX, PPTX and XLSX sources (`replace_text` by paragraph or
+  shape id, `set_cell`). For each, check that the write lands where the agent
+  meant, that blocks it did not touch keep their content and ids, that Undo
+  restores the whole change, and that open editors (another tab, a
+  collaborator) see it.
+- Developer observation: an `html-embed` fence in an agent-written note does
+  not seem to become an interactive block in the app right now. Check the
+  import (fence to element), the child pass and the renderer; in the
+  2026-10-08 UAT backfill two notes were refused with "An html-embed fence
+  needs html", so look at what GLM writes there too.
