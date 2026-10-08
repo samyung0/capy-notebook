@@ -1,4 +1,4 @@
-//! Contributor markers (`collaboration/src/contributors.ts`, DESIGN.md 2):
+//! Contributor markers (the Node server's `contributors.ts`, DESIGN.md 2):
 //! server-owned entries in `__capy_pending_contributors` naming every writer
 //! whose update no committed store holds yet. Written once per writer per
 //! store window: a writer gets a fresh marker only when it has none or a

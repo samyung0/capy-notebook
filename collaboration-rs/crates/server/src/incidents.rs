@@ -1,4 +1,4 @@
-//! Editing incidents (`collaboration/src/editIncidents.ts`): where a user
+//! Editing incidents (the Node server's `editIncidents.ts`): where a user
 //! lost or could lose work, written to `edit_incidents` in the background,
 //! never awaited by editing and never retried.
 

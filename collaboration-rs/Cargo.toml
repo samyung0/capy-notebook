@@ -1,4 +1,4 @@
-# The Rust collaboration server (replaces `collaboration/` at the UAT cutover).
+# The Rust collaboration server (replaced the Node `collaboration/` package).
 # Design and the behaviour checklist: capy-harness/2026-10-06-rust-round/rust-core/DESIGN.md.
 [workspace]
 members = ["crates/*"]

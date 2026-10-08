@@ -63,7 +63,7 @@ ones that cannot be traced to the request that caused them.
 | --- | --- |
 | Go gateway | `obs.Init` — `log/slog`, and the stdlib `log` package is redirected into it so existing `log.Printf` call sites gain structure without being rewritten |
 | Python | `obs.init_logging` — JSON formatter, uvicorn handlers removed so everything shares one shape |
-| Node collaboration | `collaboration/src/observability.ts` |
+| Rust collaboration | `collaboration-rs/crates/server/src/observe.rs` (the Office engine processes log to stderr through the same shape) |
 
 Field names are shared across all three: `service`, `env`, `trace_id`,
 `user_id`, `component`, `msg`. `LOG_FORMAT` is `json` outside development.
@@ -74,23 +74,26 @@ The gateway emits one access line per request from `obs.AccessLog`, including
 finding streams that hang.
 
 The collaboration server logs one `collab_health` line per minute
-(`collaboration/src/health.ts`, an unref'd timer; counting a message is an
-increment, nothing allocates):
+(`collaboration-rs/crates/server/src/health.rs`, a background task; counting a message is an
+atomic increment, nothing allocates):
 
 | Field | Meaning |
 | --- | --- |
-| `lag_p99_ms`, `lag_max_ms` | Main-thread event-loop delay over the minute (`perf_hooks.monitorEventLoopDelay`, reset each line) |
+| `lag_p99_ms`, `lag_max_ms` | Scheduling delay over the interval: how late a 20 ms timer task ran on the server's async runtime (reset each line) |
 | `updates_per_s`, `awareness_per_s` | Inbound sync frames (document updates and sync steps) and awareness frames per second |
-| `material_stores`, `source_stores` | Per kind of room: `count`, `failures`, `p95_ms`, `max_ms` of the saves in the minute |
+| `material_stores`, `source_stores` | Per kind of room: `count`, `failures`, `p95_ms`, `max_ms` of the saves in the interval |
 | `connections`, `rooms` | Open connections and loaded rooms at the line |
-| `office` | The Office engine worker (one, serial): `calls` finished, `busy_ms` running, `wait_p95_ms`/`wait_max_ms` queued behind other calls, `run_p95_ms`/`run_max_ms`, `queue_max` calls waiting, `timeouts`; its XLSX room replicas ([office files](frontend/office-files.md)): `replicas` kept and `replica_mib` their estimated heap, `replica_hits`/`replica_misses`/`replica_evictions` in the interval, and `wasm_mib` the XLSX engine's linear memory (it never shrinks) |
+| `log_bytes` | Bytes in the loaded rooms' update logs not yet folded |
+| `office` | The Office engine processes per lane, `save` and `background`: `processes` running, `restarts`, `crashes`, `timeouts`, `calls` finished, `busy_ms` running, `queue`/`queue_max` calls waiting, `run_p95_ms`/`run_max_ms`, `wait_p95_ms`/`wait_max_ms`, `rss_mib`; and the XLSX room replicas the save processes keep ([office files](frontend/office-files.md)): `replicas`, `replica_mib` (estimated), `replica_hits`/`replica_misses`/`replica_evictions` in the interval |
 
-Read it from the delay first. A single Node process handles every room, so
-an event-loop p99 near or above about 100 ms means the server is near
-capacity: every message, save and access check waits that long. Store
-duration that grows while the delay stays low points at Postgres or the
+Read it from the delay first. Every room shares the server's async runtime,
+so a lag p99 near or above about 100 ms means something holds its threads:
+every message, save and access check waits that long (a stall the 2026-10-08
+comparison found and fixed is in
+[its report](../bench/collaboration/reports/2026-10-08-rust-node-stress.md)).
+Store duration that grows while the delay stays low points at Postgres or the
 gateway instead; `failures` say which kind of room is failing to save.
-An `office.busy_ms` near the whole interval means the engine worker is
+An `office.save.busy_ms` near the whole interval means the save processes are
 saturated: Office saves queue behind each other and their duration grows
 while edits stay fast. `COLLAB_HEALTH_INTERVAL_MS` shortens the interval for
 capacity runs ([2026-10-05 report](../bench/collaboration/reports/2026-10-05-prod-capacity.md)).
@@ -127,7 +130,7 @@ exists and by `deploy/ops-roles.sql`, and part of its startup contract in
 `server/internal/ops/privileges.go`).
 
 The collaboration service writes its kinds straight into Postgres
-(`collaboration/src/editIncidents.ts`): in the background, never retried, a
+(`collaboration-rs/crates/server/src/incidents.rs`): in the background, never retried, a
 failed write reported to Sentry as `edit_incident_write`. A room discard writes
 one row per writer whose unsaved update the room held (its pending contributor
 markers), or one naming nobody, sized by the discarded state (exact where the

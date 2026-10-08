@@ -83,13 +83,10 @@ check); it applies at the first promotion.
   `sheetInfoJson`, then remeasure memory.
 - **Second collaboration instance** with document-sticky routing (the gateway's
   collaboration-token response already returns the WebSocket URL) only when
-  one main thread runs out. First the contributor-marker check
-  (`collaboration/src/contributors.ts`): it knows only this instance's marker
-  client, so a crafted delete of another instance's markers isn't rejected;
+  one instance runs out. First the contributor-marker check
+  (`check` in `collaboration-rs/crates/server/src/markers.rs`): it knows only
+  this instance's room client, so a crafted delete of another instance's markers isn't rejected;
   design the trade-off (rejecting honest resends after a room reload) first.
-- **Rust/yrs collaboration server** (decided 2026-10-06): full rewrite with
-  delta saves and native Office engines, in progress in the rust round
-  (`capy-harness/2026-10-06-rust-round/PLAN.md`).
 - **Load generator limits:** at 2×100+ peers the generator saturated its own
   two cores; split peers across machines for bigger shapes.
 - **Text source history** is not compacted (see `openwiki/backend-storage-quota.md`,
@@ -207,7 +204,7 @@ check); it applies at the first promotion.
   `capy-docx-review-harnesses/2026-10-05-office-batch/docx-table-menu/`.
 - **Unplaceable sync step 2 (lowest priority).** A client whose own sync step 2
   the room cannot place (it holds content out of order) is closed after 2 tries
-  (`resyncUnheld`, `collaboration/src/officeRoots.ts`) and then reconnects
+  (`resync` in `collaboration-rs/crates/server/src/room.rs`) and then reconnects
   forever with its edits unsent. The fix is a new stateless signal that makes
   the client call `replace()` and enter recovery with a download. Build it only
   if `source_step2_unplaced` ever shows up in the collaboration logs.
@@ -223,9 +220,9 @@ check); it applies at the first promotion.
 - **AI-edit Undo storage is not released on source publications** (upload
   audit 2026-10-06, unverified; context in `todo-storage.md`):
   `agent_edit_inverses` are charged at up to 256 KiB each
-  (`collaboration/src/persistence.ts` ~66) and released only by Undo, an
+  (`collaboration-rs/crates/server/src/edits.rs`) and released only by Undo, an
   immediate Office publication or rebuild (`source_refresh.go` ~435, ~691),
-  trash, compaction (small notes rarely qualify, `persistence.ts` ~1262) or
+  trash, compaction (small notes rarely qualify, `note_store.rs`) or
   deleting the chat or workspace. Text-source publications
   (`source_refresh.go` ~424-428) and deferred Office publications (~417-423)
   leave them charged with no expiry; maintenance-window resets release them
@@ -442,6 +439,10 @@ slow editor (no handoff outside maintenance since the deferred rebuild).
   minutes, and two people editing one set conflict on the revision. Mermaid
   blocks keep their source as one string attribute, so two people typing in
   one diagram overwrite each other's whole source (last write wins).
+- Interim, with the Rust collaboration server: after an embedded quiz or set
+  write (agent and API edits included) Go asks the collaboration service to
+  broadcast `embed-changed` to the parent note's room and open editors refetch
+  that one item (decision 2026-10-07), until live editing below replaces it.
 - Epo decided (2026-10-09): **this is not a "content changed, go fetch the new
   content" signal.** The 2026-10-07 suggestion (Go broadcasts a stateless
   "embed {id} changed" and open editors refetch the whole item) is dropped.

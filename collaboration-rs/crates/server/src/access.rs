@@ -1,4 +1,4 @@
-//! Note access in SQL (`collaboration/src/persistence.ts`): who may hold a
+//! Note access in SQL (the Node server's `persistence.ts`): who may hold a
 //! material room, and the read-only narrowing for a frozen account or an
 //! owner at its storage limit. `frozen_sql` and `full_sql` mirror Go's
 //! `over_quota_frozen` and `StorageUsage.Full` (`TestCollaborationFrozenSQLMatchesGo`).

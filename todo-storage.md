@@ -18,7 +18,7 @@ context (dbf26afc). The AI-edit Undo storage item is in `todo-office.md`.
 ## Built 2026-10-06 (uncommitted), to verify on UAT
 
 - **Pastes and removed children on the server.** The collaboration service's
-  children pass (`collaboration/src/children.ts`) makes the ids a writer's
+  children pass (`collaboration-rs/crates/server/src/children.rs`) makes the ids a writer's
   update or an AI edit/Undo wrote the note's own through
   `POST /internal/collaboration/materials/{id}/children`; a removed child sits
   in a hidden trash for a day (`editor_assets.trashed_at`, migration 0065;

@@ -446,7 +446,7 @@ and [material editor checks](../server/internal/store/share.go#L209).
   (`StorageUsage.Full`) for the owner. Frozen and the limit are enforced at
   admission only: authentication and the room token give `read`, and a
   writer's access is rechecked on its updates at most every 5 s
-  (`writerRecheck` in `collaboration/src/accessRecheck.ts`). A refused update
+  (`recheck` in `collaboration-rs/crates/server/src/socket.rs`). A refused update
   sends that writer a `room-read-only` stateless message and closes only its
   connection; a reconnect is refused with reason `collaboration-read-only`.
   Co-editors whose access still holds stay connected, while an owner at its
@@ -482,9 +482,9 @@ and [material editor checks](../server/internal/store/share.go#L209).
   delivery resolves the current Yjs room epoch and rechecks it after eviction,
   so an event enqueued beside compaction cannot acknowledge only an obsolete
   room. A failed discard keeps the room blocked until a later retry verifies
-  that unload succeeded. Within one eviction an unload that Hocuspocus skips
-  (a save or a connection admitted before the reset landed late) closes,
-  flushes and unloads again for up to 30 s, and a discard that still fails is
+  that unload succeeded. Within one eviction the room closes every channel
+  and refuses joins and messages until it has unloaded (its task runs the
+  eviction in order with its stores), and a discard whose lineage move fails is
   retried every 5 s, so a blocked room always has a retry pending. Message
   handling, authentication, token sync and room loads recheck that the room is
   available after each await, so nothing admitted before a reset lands after
@@ -550,7 +550,7 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   trashes the rows it created at once (`DiscardEmbeddedDrafts`).
 - A quiz or flashcard block an update writes into a note (a paste, undo, cut
   and paste, replayed draft, AI edit or Undo) becomes that note's own through
-  the collaboration service's children pass (`collaboration/src/children.ts`),
+  the collaboration service's children pass (`collaboration-rs/crates/server/src/children.rs`),
   which calls `POST /internal/collaboration/materials/{id}/children` (service
   secret) naming the writer as `actorUserId`; Go checks that user edits the
   note (`AssertMaterialEditor`) and reads each source as them. Every block has

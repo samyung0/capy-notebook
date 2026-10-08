@@ -1,4 +1,4 @@
-//! Collaboration tokens and room names (`collaboration/src/auth.ts`): HS256
+//! Collaboration tokens and room names (the Node server's `auth.ts`): HS256
 //! JWTs the Go API mints for one room and schema.
 
 use base64::Engine;

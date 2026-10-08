@@ -1,7 +1,7 @@
 //! Note persistence with delta saves (DESIGN.md 3): a base state in
 //! `material_yjs_documents.state` and an append-only log in
 //! `material_yjs_updates`. Every write takes the material's advisory lock, as
-//! `collaboration/src/persistence.ts` does.
+//! the Node server's `persistence.ts` does.
 
 use deadpool_postgres::{Pool, Transaction};
 use serde_json::Value;

@@ -1,4 +1,4 @@
-//! `collab_health` (`collaboration/src/health.ts`): one line per interval
+//! `collab_health` (the Node server's `health.ts`): one line per interval
 //! with scheduling lag, message rates, store durations per kind of room,
 //! connections and rooms; `slow_save` lines at 2 s or more.
 

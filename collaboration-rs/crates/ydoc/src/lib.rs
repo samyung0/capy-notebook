@@ -1,5 +1,5 @@
 //! Pure yrs helpers shared by note rooms (`notes`), source rooms (`sources`)
-//! and the server: no I/O, no clocks. Ports of `collaboration/src/officeRoots.ts`
+//! and the server: no I/O, no clocks. Ports of the Node server's `officeRoots.ts`
 //! (`inspectUpdate`), `yjsUpdateMessage.ts` (`yjsUpdateContainsChanges`),
 //! `guards.ts` and `scratchDoc.ts`, plus the delta rows and the replay of
 //! delta saves (DESIGN.md section 3).

@@ -1,4 +1,4 @@
-//! Discards and lineage moves (`collaboration/src/eviction.ts`, the discard
+//! Discards and lineage moves (the Node server's `eviction.ts`, the discard
 //! half of `evictLocalRoom`): a discard that threw unsaved room state away
 //! moves the room's name on (a material's schema, a source's epoch) before
 //! the room is accepted again, so a client holding that state goes to

@@ -2866,7 +2866,8 @@ the lock catches target drift, the lock and the source checkpoint CAS serialize
 concurrent commits, and the server-resolved room incarnation fences trash,
 restore and rebase. Each edit stores an inverse command list and target guards
 in `agent_edit_inverses`; guards are the Yjs item-run signatures of the edited
-target only (`collaboration/src/guards.ts`): a block, a card or question node,
+target only (`collaboration-rs/crates/notes/src/edit.rs`,
+`crates/sources/src/edit.rs` for Office): a block, a card or question node,
 a gap with its two neighbours by identity only, a text span re-found by its
 text when earlier edits moved it, or an Office paragraph or cell re-located by
 its stable id at Undo time. A gap whose anchor the same call also removed is
@@ -2875,16 +2876,15 @@ removed needs no guard of its own, and no guard reaches past its neighbours,
 so a deletion two blocks away or a keystroke beside a span keeps the Undo. Undo refuses with `stale_target`
 when its target changed, and stays valid when nearby content changed. A material
 inverse plus guards above 256 KB refuses the edit as `quota_rejected`. Office
-edits run in the BetterOffice headless runtime (`inspectOffice`,
-`applyOfficeCommands`, `locateOfficeTargets` in
-`vendor/betteroffice/shared/office-checkpoint.ts`), which returns the new
-checkpoint state, the inverse and Yrs locators of the targets; Capy derives the
+edits run in the collaboration server's Office engine processes (the fork's
+`office-service`: inspect, apply commands, locate targets), which return the
+new checkpoint state, the inverse and Yrs locators of the targets; Capy derives the
 guards from those locators. PDFs and store-only files refuse with
 `unsupported_format`. Undo is `POST /api/chat/edit-operations/{id}/undo`, only
 for the original chat actor with current edit access; a trash, source rebase or
 material compaction invalidates outstanding Undo entries. After a material edit
 or its Undo the collaboration service runs its children pass over the update
-as the chat actor (`collaboration/src/children.ts`): a quiz, flashcard set or
+as the chat actor (`collaboration-rs/crates/server/src/children.rs`): a quiz, flashcard set or
 image the note trashed within the day comes back, one purged since (or never
 readable) is dropped from the note, so a late Undo brings back everything else. Browser idempotency
 keys for trash, restore, purge and Undo are scoped to the acting user
@@ -3042,8 +3042,8 @@ flashcard rows are separate materials and stay out of note text.
 The trigger is the projection. `ProjectMaterialContent` (and the SQL content
 path of `UpdateMaterial`) sets `materials.index_dirty_at` when a workspace
 note's content changes, clears `index_error`, and skips unchanged writes; a
-new workspace note is dirty from creation. The collaboration sidecar's 5 s
-timer (`scheduleNoteIndexes`) asks Go to admit dirty notes that have been idle
+new workspace note is dirty from creation. The collaboration server's 5 s
+timer (`schedule_note_indexes`) asks Go to admit dirty notes that have been idle
 15 s, have no running job and no parked error, in workspaces with
 `auto_process` on. `POST /internal/collaboration/materials/{id}/index`
 (`RequestMaterialIndex`) reserves ingest credits on the workspace owner,

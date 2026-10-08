@@ -147,6 +147,25 @@ describe('stableElementIdsPlugin', () => {
     expect(room()[1]).not.toHaveProperty('_id');
   });
 
+  // Moved from the Node collaboration server's noteEditorInsert test at the
+  // Rust cutover: the store refuses a room whose block ids repeat.
+  it('keeps the editor and the room on the same ids through Enter, Duplicate and a split', () => {
+    const { editor, room } = roomEditor();
+    // Enter at the end of a line, then a split inside it.
+    editor.tf.select(editor.api.end([0]));
+    editor.tf.insertBreak();
+    editor.tf.insertText('second');
+    editor.tf.select({ offset: 2, path: [0, 0] });
+    editor.tf.insertBreak();
+    // The block menu's Duplicate (blockSelection.duplicate) inserts the same
+    // nodes, ids included.
+    editor.tf.duplicateNodes({ nodes: [[editor.children[0], [0]]] });
+    const ids = room().map((node) => (node as { id: string }).id);
+    expect(ids).toHaveLength(4);
+    expect(new Set(ids).size).toBe(4);
+    expect(ids).toEqual(editor.children.map((node) => node.id));
+  });
+
   it('counts an id as metadata, not block state', () => {
     const { editor } = roomEditor();
     expect(

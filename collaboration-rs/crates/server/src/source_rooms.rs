@@ -1,7 +1,7 @@
 //! What source rooms need from the server beyond the room task: the room
 //! layer the publication handoff drives (`sources::Rooms`), the joins it
 //! counts as in a room, and the source timers (refresh scheduler, rebuild
-//! sweep, maintenance pause poll), as `collaboration/src/server.ts` ran them.
+//! sweep, maintenance pause poll), as the Node server's `server.ts` ran them.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Weak;

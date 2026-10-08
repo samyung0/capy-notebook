@@ -159,16 +159,6 @@
           }
         }
       }
-    },
-    {
-      "includes": ["collaboration/scripts/**"],
-      "linter": {
-        "rules": {
-          "style": {
-            "noParameterProperties": "off"
-          }
-        }
-      }
     }
   ]
 }

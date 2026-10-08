@@ -74,7 +74,7 @@ base seeding the same bytes. Before deploying a pin to an environment, run the
 seed check there: `office-maintenance seed-manifest` in the gateway container
 lists every base a stored change names (format, base SHA, seed SHA-256, file
 count, a signed base link), and `pnpm office:seed-check <manifest>` re-seeds each
-with the new pin's engine (`collaboration/src/seedCheck.ts`). It exits 1 when
+with the new pin's engine (the collaboration server's `seed-check` subcommand). It exits 1 when
 any seed hash differs; the pin then ships in a maintenance window whose reset
 covers the formats it lists.
 The Office parity checklists must also resolve on the new pin
@@ -275,7 +275,7 @@ newer version is available and its changes were saved; the banner's Reload
 button reloads the page, which opens the new epoch with empty Undo/Redo. Starting Edit from a PDF citation creates the editor directly
 without warming the native Office viewer.
 
-The parent owns the Hocuspocus provider and Y.Doc. The isolated iframe exchanges
+The parent owns the room provider and Y.Doc. The isolated iframe exchanges
 raw Yrs updates with that parent through a versioned message protocol, and waits
 for provider sync before restoring its replica. The iframe receives base bytes
 and shared state, never an authentication token or protected source URL.
@@ -1435,13 +1435,14 @@ and alignment a column of them.
 Strip thumbnails paint off screen and show only their latest paint.
 
 The collaboration service refuses a client update that writes outside the
-engine's document roots (the bundle's `OFFICE_DOCUMENT_ROOTS`, the contributor
+engine's document roots (the fork's document roots, the contributor
 map included) or, in PPTX, writes or deletes anything in `pptx:meta` other
 than `commentFlavor`. The refusal is the unrecoverable
 `source-checkpoint-failed` message, like an oversized update. An update the
 room cannot integrate yet is dropped instead, and that connection gets the
 room's sync step 1: its step 2 reply carries everything the room lacks, the
-dropped update included, with no disconnect (`collaboration/src/officeRoots.ts`).
+dropped update included, with no disconnect (`crates/sources/src/admit.rs`,
+`resync` in the server's `room.rs`).
 That covers an update that refers to content the room does not hold (the room
 reloaded without a client's last unsaved typing, and the client typed before
 its sync step 2), and one that starts past the clocks the room holds of its
@@ -2091,23 +2092,29 @@ collaboration process by SHA within a bounded 128 MiB cache, their seeds and
 derived baselines within 64 MiB each. A refresh candidate is copy-on-write:
 admission stores no state, the save that first replaces the captured state
 copies it into the candidate, and readers take the row's state while no save
-has landed since the capture. Headless export,
-comparison and asset extraction run in one worker thread. Calls queue on the
-main thread with one in flight and time out about 2 minutes after sending; a
-WebAssembly trap or a timeout fails that call and replaces the worker, while
-engine refusals such as `stale_target` are ordinary results. wasm-bindgen's
-broken-object errors (for example "attempted to take ownership of Rust value
-while it was borrowed") count as traps, because the engine's cleanup throws
-them in place of the trap. A save the engine refuses (or traps on) is not
+has landed since the capture. The Office engines (the fork's native
+`office-service`) run in child processes of the collaboration server's own
+binary (`capy-collaboration engine`, `collaboration-rs/crates/sources/src/engine/`),
+in two lanes so exports and agent work never queue behind saves: `save`
+(save effects, seeds for a load) and `background` (exports, rebases,
+inspection, agent commands, locating targets, assets). Production runs 2 save
+and 1 background process, UAT 1 and 1 (`COLLABORATION_ENGINE_*`, rendered by
+`scripts/env/config.py`). Within a lane a room's calls go to one process; each
+process runs one call at a time, with its own data cap
+(`COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES`, 4 GiB production, 3 GiB UAT) and
+`oom_score_adj` 1000. A call running past 120 s kills its process; a process
+that dies (a crash, an abort at its cap) fails its call as transient and the
+next call starts a new process, and the same call crashing a fresh process
+again is refused at once (Epo, 2026-10-07). Engine refusals such as
+`stale_target` are ordinary results. A save the engine refuses is not
 retried: the room is discarded and reopens at the last good save, while
 clients with unsaved edits enter recovery with them. An engine timeout or a
-lost worker is a slow failure, retried with backoff while the room stays
+lost process is a slow failure, retried with backoff while the room stays
 editable, until five minutes pass without a successful save (see
 [error handling](error-handling.md#collaborative-source-failures)).
 
-The worker keeps a replica per XLSX room: the room's source opened only to
-read pending effects (`XlsxEffectsReader`, `configureOfficeReplicas` in
-`vendor/betteroffice/shared/office-checkpoint.ts`), without the dependency
+A save process keeps a replica per XLSX room: the room's source opened only to
+read pending effects (the fork's `XlsxReplicas`), without the dependency
 graph or the recalculation an editor needs. A save's pending effects pass
 the room; the engine checks the saved state exactly as an apply would and
 reads the effects off it beside the source, without applying it or
@@ -2119,13 +2126,12 @@ workbook document is applied to a fresh session as before. Only
 `xlsxPendingEffects` takes a room: agent edits, inspection, exports and
 rebases open their own session. A call on the replica that fails drops it;
 a fresh fallback session that fails leaves it, since the replica took no
-part. The room's unload drops it too, and a replaced worker loses them all.
-Replicas stay within `OFFICE_REPLICA_BUDGET_BYTES`
-(`collaboration/src/officeRuntime.ts`) of estimated WASM heap, least
-recently used first, and a new replica pushes out only replicas idle for 2
-minutes; the estimate is 16 times the unzipped package (the heap measured
-per unzipped byte), and a workbook whose estimate exceeds the whole budget
-is never kept. DOCX and PPTX keep none: a DOCX open is a small part of its
+part. The room's unload drops it too, and a replaced process loses them all.
+Replicas stay within 1 GiB (`OFFICE_REPLICA_BUDGET_BYTES` in
+`crates/sources/src/engine/mod.rs`, split evenly over the save processes) of
+estimated memory, least recently used first, and a new replica pushes out
+only replicas idle for 2 minutes; a workbook whose estimate exceeds the whole
+budget is never kept. DOCX and PPTX keep none: a DOCX open is a small part of its
 baseline, and a PPTX replica saves little (about 0.3 s per save of a 24 MB
 deck on the production box) for its memory (about 90 MB).
 `collab_health`'s `office` object reports them

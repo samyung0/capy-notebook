@@ -127,8 +127,8 @@ part of adding development tools.
 - **Note permissions:** removing edit capability after opening follows the
   parent material guard and shows a static preview. The inner note-editor
   permission message is not reachable through that path.
-- **Chaos peers:** the `collab-chaos` scenario ports
-  `collaboration/scripts/chaos-peers.ts` into the page (`src/mocks/chaosPeers.ts`):
+- **Chaos peers:** the `collab-chaos` scenario ports the Node server's former
+  peer-churn driver into the page (`src/mocks/chaosPeers.ts`):
   three synthetic editors per open room join through the mock room, show
   cursors, type snippets every 0.7–2.8 s, leave after 6–20 s and rejoin after
   2–8 s, and appear as workspace editors in the members list while the

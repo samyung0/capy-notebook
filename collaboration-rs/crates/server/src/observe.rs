@@ -1,4 +1,4 @@
-//! Structured logging and error reporting (`collaboration/src/observability.ts`):
+//! Structured logging and error reporting (the Node server's `observability.ts`):
 //! one JSON line per event with the gateway's field names, and Sentry for
 //! failures nobody would otherwise see. Every capture also logs its cause.
 

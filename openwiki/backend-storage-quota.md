@@ -222,7 +222,7 @@ view-only for owner and members alike:
   (`StorageFullErr`) before any credits are reserved or spent.
 
 Enforcement is at admission only, like frozen: the collaboration service's
-5 s writer recheck (`fullSQL` in `collaboration/src/persistence.ts`, mirrored
+5 s writer recheck (`full_sql` in `collaboration-rs/crates/server/src/access.rs`, mirrored
 by `StorageUsage.Full`) closes every writer in the owner's rooms with
 `room-read-only` once the owner crosses the limit, and up to about 5 s of
 edits admitted before that may save. The open editor drops to view mode under
@@ -426,8 +426,13 @@ clones release the fence, so a clone cannot leave an orphan counter behind.
 ## Yjs storage growth
 
 `gc: true` does not bound Yjs history: deleted structs and related metadata
-remain in `material_yjs_documents.state`. Idle rooms whose stored state is at
-least `max(256 KiB, material.size_bytes * 4)` are compaction candidates.
+remain in `material_yjs_documents.state` and its update log
+(`material_yjs_updates`, one row per store, folded into the state when the room
+unloads or the log passes `max(256 KiB, state bytes)` or 1,000 rows; the
+document row keeps `log_bytes` and `log_rows`). Idle rooms whose state plus log
+is at least `max(256 KiB, material.size_bytes * 4)` are compaction candidates.
+Source documents keep the same log in `source_document_updates`, charged in
+`storage_bytes` with the state (migration 0068).
 
 Source text states are not compacted. Their history grows with the number of
 separate edits (and the contributor markers each save writes and clears), not
@@ -457,29 +462,29 @@ state; newer generations remain for the next save. A token minted before role
 removal, suspension, deletion, or plan expiry cannot bypass the database
 boundary. A rejected authorization-race save evicts the room so the uncommitted
 update is not retained in memory. Before writing authoritative Yjs state, the
-sidecar applies the same structural and material-kind contract as Go. Invalid
+collaboration server applies the same structural and material-kind contract as Go. Invalid
 Plate content cannot become a durable state that projection will reject. The
-sidecar discards that in-memory room and reloads the last durable state instead
+server discards that in-memory room and reloads the last durable state instead
 of retrying an unsavable snapshot.
 
 A document over a product shape bound must not grow in serialized size, node
 count, or depth. Structural validation does not apply those caps, so a valid
 document that starts over a limit can still shrink back towards it. The
-TypeScript and Go metric walks count every node through the shared structural
+Rust and Go metric walks count every node through the shared structural
 depth ceiling, so growth below an already-over-limit deep branch cannot hide
 behind unrelated deletions. A live Free subscription by itself is an ordinary
-active account. The sidecar treats an account as frozen, and its rooms as
+active account. The collaboration server treats an account as frozen, and its rooms as
 read-only, only when it sees an expired or closed Pro boundary at least 14
 days old and usage over the Free limit, matching Go's account resolver. It
 treats a material as view-only when its owner's stored plus reserved bytes
-reach the current plan's limit (`fullSQL`, matching `StorageUsage.Full`);
+reach the current plan's limit (`full_sql`, matching `StorageUsage.Full`);
 `TestCollaborationFrozenSQLMatchesGo` runs both statements against Go.
 
 Sources: [storage gate and reconciliation](../server/internal/store/storage.go),
 [material bounds](../server/internal/materialdoc/document.go),
-[collab limits](../collaboration/src/limits.ts),
-[collab document validation](../collaboration/src/materialDocument.ts),
-[compaction config](../collaboration/src/config.ts).
+[collab limits](../collaboration-rs/crates/notes/src/limits.rs),
+[collab document validation](../collaboration-rs/crates/notes/src/material.rs),
+[compaction config](../collaboration-rs/crates/server/src/config.rs).
 
 ## Text field limits
 

@@ -1,6 +1,5 @@
 packages:
   - .
-  - collaboration
   - collaboration-rs/crates/notes/markdown
   - emails/editor
   - ops
@@ -23,14 +22,12 @@ allowBuilds:
   vue-demi: true
   workerd: true
 
-# Capy patch: Hocuspocus builds a scratch Y.Doc (a webcrypto UUID) for every
-# awareness message, for beforeHandleAwareness hooks we do not set. Offer
-# upstream; drop once a release skips it.
+# Capy patch: provider 3.4.4 sends back every awareness change it applies
+# from the server, so each change returns N-1 times. Fixed upstream in
+# hocuspocus PR #1129 (4.5); drop once @platejs/yjs allows ^4. Only
+# @platejs/yjs's peer dependency installs it now (the editor uses the capy-sync
+# room provider).
 patchedDependencies:
-  "@hocuspocus/server@4.5.0": patches/@hocuspocus__server@4.5.0.patch
-  # Capy patch: provider 3.4.4 sends back every awareness change it applies
-  # from the server, so each change returns N-1 times. Fixed upstream in
-  # hocuspocus PR #1129 (4.5); drop once @platejs/yjs allows ^4.
   "@hocuspocus/provider@3.4.4": patches/@hocuspocus__provider@3.4.4.patch
   # Capy patch: Yjs has no option to skip its after-transaction formatting
   # cleanup; a doc built with `meta: { formattingCleanup: false }` skips it.

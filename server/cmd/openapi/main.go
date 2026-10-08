@@ -29,7 +29,6 @@ func main() {
 	pythonSlots := flag.String("python-slots", "", "optional generated Python Slot enum path")
 	pythonLimits := flag.String("python-limits", "", "optional generated Python field limits path")
 	typescriptLimits := flag.String("typescript-limits", "", "optional generated TypeScript field limits path")
-	collaborationLimits := flag.String("collaboration-limits", "", "optional generated collaboration question limits path")
 	agentTools := flag.String("agent-tools", "", "optional generated agent-tool contract JSON path")
 	flag.Parse()
 
@@ -77,13 +76,6 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	if *collaborationLimits != "" {
-		if err := writeAtomic(*collaborationLimits, renderQuestionTypeScriptLimits()); err != nil {
-			fmt.Fprintln(os.Stderr, "collaboration limits:", err)
-			os.Exit(1)
-		}
-	}
-
 }
 
 // Export limits for raw routes and pipeline writes from the gateway's constants.

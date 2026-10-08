@@ -65,7 +65,7 @@ refused until the gateway catches up.
 
 ## 1. DNS & hostnames
 
-One Cloudflare Worker serves the static SPA and live `/w/{workspaceId}` summaries. The Go gateway, the Hocuspocus sidecar, the Python
+One Cloudflare Worker serves the static SPA and live `/w/{workspaceId}` summaries. The Go gateway, the Rust collaboration server, the Python
 retrieval service, the ingest worker, and the operator dashboard are separate
 processes. The table gives intended production hostnames; production services
 still need provisioning. Cloudflare Access protects the
@@ -78,7 +78,7 @@ operator hostname before traffic reaches its origin.
 | `capynotebook.com`         | future separate static public site                | yes        | yes                  |
 | `www.capynotebook.com`     | future redirect to apex                                   | yes        | yes                  |
 | `api.capynotebook.com`     | Go gateway (`server`, :8080)                       | yes        | yes                  |
-| `collab.capynotebook.com`  | Hocuspocus WebSocket (`collaboration`, :1234)      | yes        | yes                  |
+| `collab.capynotebook.com`  | capy-sync WebSocket (`collaboration`, :1234)       | yes        | yes                  |
 | `ops.capynotebook.com` | Go ops API + static dashboard (`ops`, :8082)       | yes        | yes, Access required |
 | retrieval :8001    | Python chat/generate                               | **no**     | —                    |
 | ingest host        | parser + ingest worker + embed                     | **no**     | —                    |
@@ -2774,21 +2774,20 @@ kept as their change over seed(base), so a pin that seeds any stored base
 differently cannot read them (the service refuses them, it never misapplies
 them). Before deploying a pin to an environment, run
 `docker exec server-<resource-uuid> /app/office-maintenance seed-manifest > seeds.jsonl`
-there, copy the file to a checkout of the new pin, run `pnpm office:prepare`,
-then `pnpm office:seed-check seeds.jsonl`. It prints `same` or `changed` per
+there, copy the file to a checkout of the new pin, then run
+`pnpm office:seed-check seeds.jsonl` (the collaboration server's `seed-check`
+subcommand, built with the new pin's native engines). It prints `same` or `changed` per
 base and exits 1 when any seed changed: that pin then ships through the
 window below, and its reset covers the formats listed as changed (plus any
 golden seed changes). An empty manifest passes.
 
 The same bump keeps the fork's Yjs equal to Capy's: the fork's root
 `package.json` pins the `yjs` it bundles into `shared/office-checkpoint.mjs`
-(which the collaboration worker rebases with), and it must be the version
-`collaboration/package.json` and `pnpm-lock.yaml` resolve. Compare
-`grep '"yjs"' vendor/betteroffice/package.json collaboration/package.json`
-before the bump and bump both together. Both copies speak the same update
-format, and the collaboration service's main thread loads the bundle only for
-`OFFICE_DOCUMENT_ROOTS`, which is why it logs Yjs's "already imported" warning
-once.
+(the browser-side tests, dev seeding and the UAT journeys use it), and it must
+be the version Capy's root `package.json` and `pnpm-lock.yaml` resolve.
+Compare `grep '"yjs"' vendor/betteroffice/package.json package.json` before the
+bump and bump both together. The collaboration server and its Office engines
+share the fork's own `third_party/yrs`, so they need no Yjs pin.
 
 A maintenance export-only publication makes the saved state the file's bytes
 without a parser or provider call: the collaboration service exports and

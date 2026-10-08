@@ -1,4 +1,4 @@
-//! Environment configuration (`collaboration/src/config.ts`): the same names
+//! Environment configuration (the Node server's `config.ts`): the same names
 //! and local-dev values, plus the Rust server's own (projection idle, folds,
 //! the Office engine pool, the markdown bundle). The engine pool has no
 //! default: each environment sets it (scripts/env/config.py, the compose

@@ -85,7 +85,7 @@ editor e2e seed and writes captures and geometry JSON to
 
 ### collaboration
 
-`collaboration/scripts/stress.ts` starts the e2e Docker stack through
+`bench/collaboration/scripts/stress.ts` starts the e2e Docker stack through
 `e2e/global-setup.ts` (collaboration, server, Postgres, Redis) with
 `docker-compose.stress.yml` layered on: the e2e stack's memory blob store gives
 the collaboration service `memory://` URLs it cannot fetch, so a fake S3
@@ -296,11 +296,9 @@ image — the scripts will not run against a production deployment.
 
 ## Not benchmarks
 
-`collaboration/` has a peer-churn chaos driver (`pnpm chaos:peers`, an open-ended
-dev harness against a live room; the bounded test is `bench/collaboration`) and
 `pipeline/scripts/certify_agentic_loop_model.py` records and replays one
-provider's agentic loop. Both are correctness harnesses, not measurements, and
-stay where they are.
+provider's agentic loop. It is a correctness harness, not a measurement, and
+stays where it is.
 
 Developer-PC tools that are not measurements live under [`lab/`](../lab/):
 the agentic-loop playground (`lab/playground`) and the knowledge-base builder
