@@ -859,7 +859,7 @@ is refused at admit, before it can cost the room time or memory
   nor the update holds is a missing dependency, not a cycle: the update is
   unheld and the connection resyncs. So a struct of the update that the trial
   below still leaves pending can only be waiting on the update's own;
-- an update whose placement costs yrs more than 100,000 steps (`MAX_WORK` in
+- an update whose placement costs yrs more than 1,000,000 steps (`MAX_WORK` in
   `crates/ydoc`), the general guard against any shape whose integration is
   quadratic, counted by yrs itself (Epo, 2026-10-08). Past a small edit, admit
   copies the room and applies the update to the copy with the fork's

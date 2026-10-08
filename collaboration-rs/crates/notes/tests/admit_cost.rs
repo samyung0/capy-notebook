@@ -416,11 +416,13 @@ fn wide(chars: u32) -> (Doc, Vec<u8>) {
 /// quadratic path at that size passes by an order of magnitude (the forward
 /// chain took 5.7 ms per KB at 193 KB in release before REVIEW3 M7, the
 /// tombs 41 ms per KB at 60 KB before M8, the paste 17 ms per KB at 314 KB
-/// before REVIEW2 M5; debug builds are about five times slower). Linear, they
-/// measure under 0.5 ms per KB in release and 3.5 in debug.
+/// before REVIEW2 M5). Linear, they measure under 0.8 ms per KB in release.
 #[test]
 fn admit_stays_linear_on_every_hostile_shape() {
-    let limit = if cfg!(debug_assertions) { 10.0 } else { 2.0 };
+    // Timings are asserted in release only (`cargo test --release`, as CI
+    // runs this file): debug yrs is about ten times slower and varies more.
+    let timed = !cfg!(debug_assertions);
+    let limit = 2.0;
     let shapes: [(&str, (Doc, Vec<u8>)); 10] = [
         ("paste", paste(3_000)),
         ("forward chain", forward_chain(40_000)),
@@ -434,12 +436,17 @@ fn admit_stays_linear_on_every_hostile_shape() {
         ("classroom", classroom(100)),
     ];
     for (name, (room, update)) in shapes {
+        // A refused shape spends up to the work budget first, which the
+        // test below bounds; the per-KB guard is for what admit takes in.
+        if verdict(&room, &update) == "Costly" {
+            continue;
+        }
         let cost = ms_per_kb(admit_time(&room, &update), &update);
         eprintln!(
             "{name}: {} KB, admit and apply {cost:.3} ms per KB",
             update.len() / 1024
         );
-        assert!(cost < limit, "{name}: {cost} ms per KB");
+        assert!(!timed || cost < limit, "{name}: {cost} ms per KB");
     }
     // The tombs, the fanned items, the chained clients and the splits cost
     // yrs too many steps on the trial copy; a class of 100 typing into one
@@ -466,12 +473,17 @@ fn admit_stays_linear_on_every_hostile_shape() {
 /// budget on the trial copy, up to the 4 MiB message cap. What admit spends
 /// past the budget's steps is linear in the update (indexing it, its checks,
 /// re-encoding and decoding it again for the copy): under 1 ms per KB in
-/// release (5 in debug), as the per-KB guard above, about a quarter of that
-/// measured.
+/// release, as the per-KB guard above, about a quarter of that
+/// measured. The budget's own steps measured 130-170 ns each in release, the
+/// copy included, and 400 on a host busy with other builds; the bound allows
+/// 1,000, so a loaded runner passes while a quadratic path past the budget
+/// (seconds to minutes at these sizes) fails.
 #[test]
 fn a_costly_update_is_refused_within_the_budget() {
-    let budget = Duration::from_millis(if cfg!(debug_assertions) { 500 } else { 50 });
-    let per_kb = if cfg!(debug_assertions) { 5.0 } else { 1.0 };
+    // Asserted in release only, as above.
+    let timed = !cfg!(debug_assertions);
+    let budget = Duration::from_nanos(ydoc::MAX_WORK * 1_000);
+    let per_kb = 1.0;
     // About 6 bytes per fanned item: 600,000 is near the 4 MiB message cap,
     // as are 330,000 chained clients.
     let shapes = [
@@ -500,7 +512,7 @@ fn a_costly_update_is_refused_within_the_budget() {
             Err(Refusal::Update(ydoc::UpdateError::Costly))
         ));
         let linear = Duration::from_secs_f64(per_kb * update.len() as f64 / 1024.0 / 1e3);
-        assert!(took < budget + linear, "{name}: {took:?}");
+        assert!(!timed || took < budget + linear, "{name}: {took:?}");
     }
 }
 

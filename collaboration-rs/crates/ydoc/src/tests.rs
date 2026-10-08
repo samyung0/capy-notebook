@@ -505,16 +505,16 @@ fn fanned(tombstones: u32) -> (Doc, Vec<u8>) {
     (room, bytes)
 }
 
-/// An update whose placement costs yrs more than 100,000 steps on the trial
-/// copy is refused, whatever its spots (Epo, 2026-10-08).
+/// An update whose placement costs yrs more than 1,000,000 steps on the
+/// trial copy is refused, whatever its spots (Epo, 2026-10-08).
 #[test]
 fn a_costly_update_is_refused() {
     let inspect =
         |room: &Doc, bytes: &[u8]| inspect_update(&room.transact(), &decode(bytes).unwrap());
-    // 447 * 446 / 2 = 99,681 scan steps (and nothing else): taken;
-    // 448 * 447 / 2 = 100,128: refused.
-    let (room, bytes) = fanned(447);
+    // 1,414 * 1,413 / 2 = 998,991 scan steps (and nothing else): taken;
+    // 1,415 * 1,414 / 2 = 1,000,405: refused.
+    let (room, bytes) = fanned(1_414);
     assert!(inspect(&room, &bytes).is_ok());
-    let (room, bytes) = fanned(448);
+    let (room, bytes) = fanned(1_415);
     assert!(matches!(inspect(&room, &bytes), Err(UpdateError::Costly)));
 }

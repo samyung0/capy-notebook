@@ -32,8 +32,9 @@ pub enum UpdateError {
 /// (Epo, 2026-10-08): a step per item a conflict scan passes or per step of a
 /// map key's walk, per 128 blocks a split or merge moves and per 64 blocks the
 /// struct picker scans, about 85 ns of work each in release (the fork's
-/// `TransactionMut::limit_work`).
-pub const MAX_WORK: u64 = 100_000;
+/// `TransactionMut::limit_work`): a million is about 90 ms, so large real
+/// offline bundles pass (raised from 100,000 the same day).
+pub const MAX_WORK: u64 = 1_000_000;
 
 /// The most structs, and delete ranges, of a small edit.
 pub const SMALL_EDIT: usize = 16;
