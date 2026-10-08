@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 
-import { savedSourceUpdate } from './sourceState';
+import { applySavedSource, savedSourceUpdate } from './sourceState';
 
 const base64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
 
@@ -38,5 +38,17 @@ describe('savedSourceUpdate', () => {
 
   it('is null when nothing is saved', () => {
     expect(savedSourceUpdate({ state: null })).toBeNull();
+  });
+});
+
+describe('applySavedSource', () => {
+  it('applies the state and the rows in order, or reports nothing saved', () => {
+    const [first, ...later] = savedRows();
+    const doc = new Y.Doc();
+    expect(applySavedSource(doc, { state: first, stateRows: later })).toBe(
+      true
+    );
+    expect(doc.getText('source').toString()).toBe('hello world!');
+    expect(applySavedSource(new Y.Doc(), { state: null })).toBe(false);
   });
 });

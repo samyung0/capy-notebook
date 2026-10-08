@@ -49,7 +49,7 @@ import {
   type SourceProvider,
   sourceDocOptions,
 } from './sourceProvider';
-import { savedSourceUpdate } from './sourceState';
+import { applySavedSource } from './sourceState';
 
 export type SourceSaveState =
   | 'connecting'
@@ -357,9 +357,8 @@ export function useSourceSession(
       doc = shared;
       // A text session carries its state; an Office editor takes its document
       // from the room's sync (the stored state may be a change over the seed).
-      const saved =
-        session.format === 'text' ? savedSourceUpdate(session) : null;
-      if (saved) Y.applyUpdate(shared, saved, RESTORE_ORIGIN);
+      if (session.format === 'text')
+        applySavedSource(shared, session, RESTORE_ORIGIN);
       const lineage = sourceLineage(session);
       const { current: restoredDrafts, recovery: found } = draftGroups(
         storedDrafts ?? [],

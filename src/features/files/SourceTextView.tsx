@@ -13,7 +13,7 @@ import {
 } from './FileStates';
 import { useReportEditorStatus } from './fileModeContext';
 import { SourceTextEditor } from './SourceTextEditor';
-import { savedSourceUpdate } from './sourceState';
+import { applySavedSource } from './sourceState';
 import { sourceHeaderStatus, useSourceSession } from './useSourceSession';
 
 export function SourceTextView({
@@ -83,17 +83,15 @@ export function SourceTextView({
       .get<SourceSession>(`/files/${file.id}/source-session?view=true`)
       .then((session) => {
         if (cancelled) return;
-        const update = savedSourceUpdate(session);
-        if (update) {
-          const doc = new Y.Doc();
-          Y.applyUpdate(doc, update);
+        const doc = new Y.Doc();
+        if (applySavedSource(doc, session)) {
           url = URL.createObjectURL(
             new Blob([doc.getText('source').toString()], {
               type: 'text/plain;charset=utf-8',
             })
           );
-          doc.destroy();
         }
+        doc.destroy();
         setSaved({ url });
       })
       .catch(() => {
