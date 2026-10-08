@@ -1,6 +1,9 @@
+/** An editor's replica; the XLSX one answers from its workbook worker. */
 export interface OfficeReplica {
   applyUpdate(update: Uint8Array): unknown;
-  encodeStateAsUpdate(remoteStateVector?: Uint8Array): Uint8Array;
+  encodeStateAsUpdate(
+    remoteStateVector?: Uint8Array
+  ): Uint8Array | Promise<Uint8Array>;
   onUpdate(
     listener: (update: Uint8Array, origin: 'local' | 'remote') => void
   ): () => void;
