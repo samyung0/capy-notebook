@@ -769,13 +769,21 @@ impl Sources {
                 (None, None)
             };
             let row_bytes = row.len();
+            // O(effect text): a text room's pending effect spans every edit
+            // since its baseline, up to the whole file twice.
+            let net_tokens = {
+                let effects = effects.clone();
+                tokio::task::spawn_blocking(move || effect_tokens(&effects))
+                    .await
+                    .map_err(|error| SourceError::Other(format!("effect tokens: {error}")))?
+            };
             let body = CheckpointBody {
                 actor_ids: save.actors.clone(),
                 epoch: room.epoch,
                 expected_checkpoint: expected,
                 base_revision: session.base_revision,
                 update: Some(row),
-                net_tokens: effect_tokens(&effects),
+                net_tokens,
                 pending_effects: effects.clone(),
                 state_seed_sha256,
                 base_source_sha256: seed_report.0,

@@ -513,36 +513,10 @@ async fn an_update_that_panics_yrs_costs_neither_the_process_nor_the_room() {
     let room = format!("material:{material}:schema:1");
     let mut a = Client::open(server.port).await;
     a.join(&room, &token(&room, &user, "write")).await;
-    // The room bootstraps the note as it loads.
-    let client = db(&env).await;
-    let mut held = None;
-    for _ in 0..50 {
-        let rows = client
-            .query(
-                "SELECT state FROM material_yjs_documents WHERE material_id=$1",
-                &[&material],
-            )
-            .await
-            .expect("state");
-        if let Some(row) = rows.first() {
-            let state: Vec<u8> = row.get(0);
-            held = Some(Update::decode_v1(&state).expect("state").state_vector());
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    let held = held.expect("the room bootstrapped the note");
-    let (&held_client, _) = held
-        .iter()
-        .find(|(_, clock)| **clock > 0)
-        .expect("a client the room holds");
-    // One entry with no structs for a client the room holds: yrs
-    // `BlockSet::exclude` unwraps its first struct (rust-notes REVIEW1 M3).
-    // As the room's first update it is measured on a copy, where it panics.
-    let mut crash = vec![1, 0];
-    var(&mut crash, held_client.get());
-    crash.extend([1, 0]);
-    a.send(5, &sync(2, &crash)).await;
+    // The debug build's stand-in for an update that panics yrs: the
+    // hardened fork answers REVIEW1's inputs (an empty client, a deep Any)
+    // without panicking, and a 30k-mutation fuzz found no other.
+    a.send(5, &sync(2, b"capy-it-panic")).await;
     let closed = a.until(4).await.expect("the sender's channel closes");
     assert!(
         String::from_utf8_lossy(&closed).contains("update cannot be checked"),
@@ -579,6 +553,40 @@ async fn an_update_that_panics_yrs_costs_neither_the_process_nor_the_room() {
     );
     b.type_text(" still").await;
     assert!(b.until(6).await.is_some());
+}
+
+#[tokio::test]
+async fn a_note_room_caps_a_sync_message_at_4_mib_and_takes_a_near_2_mib_reconnect() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "cap").await;
+    let room = format!("material:{material}:schema:1");
+    // An offline editor's reconnect: up to 2 MiB of unsaved edits in one
+    // step 2 goes in.
+    let mut a = Client::open(server.port).await;
+    a.joined(&room, &token(&room, &user, "write")).await;
+    assert!(a.settle(|c| c.block_text() == "cap").await);
+    a.type_text(&"x".repeat(1_900_000)).await;
+    // A second editor receives it from the room.
+    let mut b = Client::open(server.port).await;
+    b.joined(&room, &token(&room, &user, "write")).await;
+    assert!(
+        b.settle(|c| c.block_text().len() == 1_900_003).await,
+        "{} bytes",
+        b.block_text().len()
+    );
+    // One byte past 4 MiB is refused before it is read (y-sync step 2: its
+    // type, a 4-byte length and the body).
+    let body = vec![0u8; 4 * 1024 * 1024 - 4];
+    let message = sync(2, &body);
+    assert_eq!(message.len(), 4 * 1024 * 1024 + 1);
+    b.send(5, &message).await;
+    let closed = b.until(4).await.expect("the channel closes");
+    assert!(
+        String::from_utf8_lossy(&closed).contains("malformed update"),
+        "{}",
+        String::from_utf8_lossy(&closed)
+    );
 }
 
 #[tokio::test]

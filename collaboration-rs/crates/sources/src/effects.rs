@@ -131,10 +131,13 @@ pub fn trim_effect(mut effect: NetEffect) -> NetEffect {
 }
 
 fn cjk(character: char) -> bool {
-    matches!(
-        character.script(),
-        Script::Han | Script::Hiragana | Script::Katakana | Script::Hangul
-    )
+    // Nothing in these scripts sits below Hangul Jamo (U+1100), so most text
+    // skips the script lookup, which cost ~0.5 s for an 8 MB text effect.
+    character >= '\u{1100}'
+        && matches!(
+            character.script(),
+            Script::Han | Script::Hiragana | Script::Katakana | Script::Hangul
+        )
 }
 
 /// Estimated tokens of a change list: 4 UTF-16 units a token, except changed
@@ -270,6 +273,11 @@ mod tests {
         let mut image = moved.clone();
         image.kind = EffectKind::Image;
         assert_eq!(effect_tokens(&[moved, image]), 0);
+        // The floor `cjk` checks first.
+        assert!((0..0x1100).filter_map(char::from_u32).all(|c| !matches!(
+            c.script(),
+            Script::Han | Script::Hiragana | Script::Katakana | Script::Hangul
+        )));
     }
 
     // Effect context counts 4 units a token in every script, changed CJK per

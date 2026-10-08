@@ -32,6 +32,10 @@ const MAX_PENDING_CHECKPOINTS: usize = 64;
 const MAX_CHECKPOINT_ID: usize = 128;
 /// Consecutive unplaceable step 2 replies before a channel closes.
 pub const MAX_UNPLACED_STEPS: u32 = 2;
+/// The largest sync message a note room takes: twice the 2 MiB of unsaved
+/// edits an offline editor may hold, so its reconnect always fits (Epo,
+/// 2026-10-08). Source rooms take whole states up to the frame cap.
+pub const NOTE_MAX_SYNC_BYTES: usize = 4 * 1024 * 1024;
 /// Failed stores retry after 5 s, doubling to 60 s.
 const RETRY_FIRST: Duration = Duration::from_secs(5);
 const RETRY_MAX: Duration = Duration::from_secs(60);
@@ -221,6 +225,10 @@ struct Store {
     failed_event: Option<String>,
     waiters: Vec<oneshot::Sender<Result<(), String>>>,
 }
+
+/// See `sync_message`: not a valid update, so a release build refuses it.
+#[cfg(debug_assertions)]
+const IT_PANIC_UPDATE: &[u8] = b"capy-it-panic";
 
 pub struct Room {
     app: Shared,
@@ -1264,6 +1272,10 @@ impl Room {
         if !self.members.contains_key(&key) {
             return;
         }
+        if matches!(self.kind, Kindly::Note(_)) && payload.len() > NOTE_MAX_SYNC_BYTES {
+            self.refuse(key, &[], "malformed update");
+            return;
+        }
         let Ok((kind, body)) = sync::decode(payload) else {
             self.refuse(key, &[], "malformed sync message");
             return;
@@ -1279,6 +1291,12 @@ impl Room {
             return;
         }
         self.app.stats.updates.fetch_add(1, Ordering::Relaxed);
+        // Debug builds only: the integration tests' stand-in for an update
+        // that panics yrs (the hardened fork has none left to send).
+        #[cfg(debug_assertions)]
+        if body == IT_PANIC_UPDATE {
+            panic!("integration test panic");
+        }
         self.on_update(key, body, kind == sync::STEP2);
     }
 
@@ -1736,7 +1754,7 @@ impl Room {
             return;
         }
         if matches!(self.kind, Kindly::Source(_)) {
-            self.start_source_store();
+            self.start_source_store().await;
             return;
         }
         let contributors = match self.markers.claim(&self.doc) {
@@ -1817,7 +1835,7 @@ impl Room {
     /// `storeSource`: the room's update since its durable state goes to the
     /// gateway's checkpoint with its effects (an Office room's whole state for
     /// the engine, a text room's effects from the change).
-    fn start_source_store(&mut self) {
+    async fn start_source_store(&mut self) {
         let started = Instant::now();
         // A failed store waits out its backoff; only its retry calls the engine.
         if self.store.retry_at.is_some() {
@@ -1859,12 +1877,22 @@ impl Room {
             return;
         };
         let (room, format) = (source.room.clone(), source.format);
-        let (row, durable, state, text) = {
-            let txn = self.doc.transact();
-            let (row, durable) = ydoc::delta_update(&txn, &self.durable, &hidden);
+        // O(state) for an Office room (its whole state for the engine) and up
+        // to O(text) for a text room (the pending effect spans every edit
+        // since the baseline): off the runtime's threads, while the room
+        // waits as it does for a note store's validation.
+        let (doc, previous, sources) = (
+            self.doc.clone(),
+            self.durable.clone(),
+            self.app.sources.clone(),
+        );
+        let effect_room = room.clone();
+        let computed = tokio::task::spawn_blocking(move || {
+            let txn = doc.transact();
+            let (row, durable) = ydoc::delta_update(&txn, &previous, &hidden);
             let (state, text) = match format {
                 sources::SourceFormat::Text => {
-                    (None, Some(self.app.sources.text_effects(&room, &txn, &row)))
+                    (None, Some(sources.text_effects(&effect_room, &txn, &row)))
                 }
                 _ => (
                     Some(txn.encode_state_as_update_v1(&StateVector::default())),
@@ -1872,6 +1900,16 @@ impl Room {
                 ),
             };
             (row, durable, state, text)
+        })
+        .await;
+        let (row, durable, state, text) = match computed {
+            Ok(computed) => computed,
+            Err(error) => {
+                self.markers.unclaim(&contributors);
+                let error = sources::SourceError::Other(error.to_string());
+                self.source_store_failed(error, started, 0, claimed);
+                return;
+            }
         };
         let text = match text.transpose() {
             Ok(text) => text,
