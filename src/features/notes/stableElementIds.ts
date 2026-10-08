@@ -23,13 +23,12 @@ function addStableIds(
   value: Record<string, unknown>,
   taken: () => Set<string>
 ) {
-  // Plate's NodeIdPlugin marks a node inserted with an id as `_id` and drops
-  // the marker only from its own copy of the operation, not from the one
-  // Slate-Yjs records. The store refuses it on interactive blocks.
+  // Plate's NodeIdPlugin `_id` insert marker, which the store refuses on
+  // interactive blocks. The note editor runs without that plugin, but content
+  // copied from an editor that has it (question text) or from a room written
+  // before can still carry the marker.
   delete value._id;
   if (!ElementApi.isElement(value as never)) return;
-  // NodeIdPlugin also replaces an id already in the note on its own copy only,
-  // so the room got the duplicate and the store refused it.
   if (
     typeof value.id !== 'string' ||
     !value.id.trim() ||
@@ -44,9 +43,13 @@ function addStableIds(
 }
 
 /**
- * Assign IDs in the Slate operation before Slate-Yjs records it. Remote Yjs
- * operations are never rewritten, because non-deterministic normalization on
- * each peer would diverge.
+ * Assign IDs in the Slate operation before Slate-Yjs records it, so the editor
+ * and the room hold the same ids. It replaces Plate's NodeIdPlugin, which the
+ * note editor turns off (`nodeId: false`): that plugin repaired ids only on its
+ * own copy of each operation, after Slate-Yjs had recorded the original, so a
+ * block made by Enter or Duplicate had one id locally and another in the room.
+ * Remote Yjs operations are never rewritten, because non-deterministic
+ * normalization on each peer would diverge.
  */
 export const stableElementIdsPlugin = createSlatePlugin({
   extendEditor: ({ editor }) => {
@@ -61,12 +64,14 @@ export const stableElementIdsPlugin = createSlatePlugin({
       ) {
         const node = structuredClone(operation.node) as Record<string, unknown>;
         let ids: Set<string> | undefined;
-        addStableIds(node, () => (ids ??= elementIds(editor.children)));
+        addStableIds(node, () => {
+          ids ??= elementIds(editor.children);
+          return ids;
+        });
         operation.node = node;
       }
       if (local && operation.type === 'split_node' && operation.properties) {
-        // Plate leaves `_id` on the node it inserted from (a duplicated
-        // block), and a split copies the node's properties.
+        // A split copies the node's properties, a marker included.
         const { _id, ...properties } = operation.properties;
         if (typeof properties.id === 'string')
           properties.id = crypto.randomUUID();
@@ -77,4 +82,7 @@ export const stableElementIdsPlugin = createSlatePlugin({
     return editor;
   },
   key: 'capy-stable-element-ids',
+  // NodeIdPlugin's other job: an id alone does not make a block hold state
+  // (`isElementStateEmpty`, which the placeholder and block resets read).
+  node: { isMetadataProp: ({ key }) => key === 'id' },
 });

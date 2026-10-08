@@ -10,18 +10,18 @@ import * as Y from 'yjs';
 import { stableElementIdsPlugin } from './stableElementIds';
 
 /** A Plate editor bound to a Yjs room as the note editor is: YjsPlugin first,
- * then this plugin, with Plate's NodeIdPlugin on (Plate turns it off by
- * default under tests). */
+ * then this plugin, without Plate's NodeIdPlugin. The room starts with a
+ * paragraph that carries Plate's `_id` marker, as one written before can. */
 function roomEditor() {
   const ydoc = new Y.Doc();
   const root = ydoc.get('content', Y.XmlText);
   root.applyDelta(
     slateNodesToInsertDelta([
-      { children: [{ text: 'first' }], id: 'first', type: 'p' },
+      { _id: 'first', children: [{ text: 'first' }], id: 'first', type: 'p' },
     ] as never)
   );
   const editor = createPlateEditor({
-    nodeId: {},
+    nodeId: false,
     plugins: [
       BaseYjsPlugin.configure({ options: { ydoc } }),
       stableElementIdsPlugin,
@@ -61,13 +61,14 @@ describe('stableElementIdsPlugin', () => {
     expect(block.children[0].id).toBeTruthy();
   });
 
-  // Plate's NodeIdPlugin marks every node inserted with an id as `_id` and
-  // removes the marker only on its own copy of the operation; the room must
-  // never receive it (the store refuses unknown fields on interactive blocks).
+  // Content copied from an editor that runs NodeIdPlugin (question text) or
+  // from a room written before can carry its `_id` marker, at any depth; the
+  // store refuses it on interactive blocks.
   it('keeps the insert marker out of the room', () => {
     const { editor, room } = roomEditor();
     editor.tf.insertNodes(
       {
+        _id: 'embed',
         caption: 'Embed',
         children: [{ text: '' }],
         html: '<p>hi</p>',
@@ -83,12 +84,6 @@ describe('stableElementIdsPlugin', () => {
       id: 'embed',
       type: 'html_embed',
     });
-  });
-
-  // Plate marks only the inserted roots; a descendant can still carry one when
-  // it was copied out of a document that already holds the marker.
-  it('keeps the marker out of an inserted subtree', () => {
-    const { editor, room } = roomEditor();
     editor.tf.insertNodes(
       {
         children: [
@@ -102,12 +97,30 @@ describe('stableElementIdsPlugin', () => {
         id: 'outer',
         type: 'blockquote',
       } as never,
-      { at: [1] }
+      { at: [2] }
     );
-    const json = JSON.stringify(room()[1]);
+    const json = JSON.stringify(room()[2]);
     expect(json).not.toContain('_id');
     expect(json).toContain('"id":"outer"');
     expect(json).toContain('"id":"inner"');
     expect(json).toContain('"id":"deep"');
+  });
+
+  it('keeps the marker out of a block split from one that has it', () => {
+    const { editor, room } = roomEditor();
+    editor.tf.select({ offset: 2, path: [0, 0] });
+    editor.tf.insertBreak();
+    expect(room()[1]).not.toHaveProperty('_id');
+  });
+
+  it('counts an id as metadata, not block state', () => {
+    const { editor } = roomEditor();
+    expect(
+      editor.api.isElementStateEmpty({
+        children: [{ text: '' }],
+        id: 'block',
+        type: 'p',
+      })
+    ).toBe(true);
   });
 });

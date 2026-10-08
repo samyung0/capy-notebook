@@ -903,6 +903,9 @@ export function NoteEditorCore({
     // `content-visibility: auto` boxes that carry scrolling.
     chunking: { chunkSize: 32 },
     components: noteComponents,
+    // stableElementIdsPlugin assigns ids in the operation the room records;
+    // Plate's NodeIdPlugin would give the editor different ones.
+    nodeId: false,
     plugins,
     value: initialValue,
   });

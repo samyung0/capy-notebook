@@ -202,14 +202,24 @@ All element nodes need stable IDs before entering Yjs. IDs are used by:
 - AI insertion/table targets;
 - custom block rendering and relational card state.
 
-`stableElementIdsPlugin` (`src/features/notes/stableElementIds.ts`) gives
-every element in a local `insert_node` an ID in the operation Slate-Yjs
-records: a new one when it has none or one another element of the note already
-has (a duplicated or re-pasted block), and it drops Plate's `_id` insert marker
-at every depth there and from a `split_node`'s properties. Plate's NodeIdPlugin
-sets that marker and replaces a taken ID only on its own copy of the
-operation, so without this the room received the marker or the duplicate and
-the store refused the room.
+The note editor runs without Plate's NodeIdPlugin (`nodeId: false` in
+`NoteEditorCore.tsx`). That plugin repaired ids only on its own copy of each
+operation, after Slate-Yjs had recorded the original, so a block made by Enter,
+a split or Duplicate had one id in the editor and another in the room (or a
+duplicate the store refused). `stableElementIdsPlugin`
+(`src/features/notes/stableElementIds.ts`) does the work in the operation
+Slate-Yjs records instead, so both hold the same ids:
+
+- every element of a local `insert_node` gets a new id when it has none or one
+  another element of the note already has (a duplicated or re-pasted block);
+  the note's id set is built only when the inserted subtree brings ids;
+- a local `split_node` gets a new id;
+- `id` counts as metadata, not block state (`isElementStateEmpty`, which the
+  empty-note placeholder reads), as NodeIdPlugin declared;
+- Plate's `_id` insert marker is dropped at every depth of an insert and from a
+  split's properties. The note editor no longer writes it, but content copied
+  from an editor that runs NodeIdPlugin (question text) or from a room written
+  before can carry it, and the store refuses it on interactive blocks.
 
 Text leaves do not need IDs. Runtime values must never be written onto nodes:
 
