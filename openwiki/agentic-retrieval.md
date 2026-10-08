@@ -2169,7 +2169,9 @@ build, and the knowledge library is one more source while the switch is on.
   budget (the tool cap, the stall guard and the errored-write grace, moved out
   of the base prompt), and the precautions (ground every write, write as soon
   as the evidence is in hand, no write beside retrieval in one response,
-  inspect before editing, edits save with an Undo, source files only when
+  inspect before editing, edits save with an Undo, `replace_text` for plain
+  wording and `replace_block` for a block with formatting or math, keep other
+  people's changes unless the learner asks otherwise, source files only when
   asked), with Library on the `excerpt_ids` rules. `workspace_building`, for
   new materials: the plan (survey, propose the plan before building more than
   one item, build a single item directly), output rules (one main explainer note per chapter, mindmaps, diagrams
@@ -2179,14 +2181,19 @@ build, and the knowledge library is one more source while the switch is on.
   (`Formats` in the contract: `noteMarkdownDescription`, `questionJSONDescription`
   and `questionExample`, which `TestQuestionExampleIsValid` runs through the
   quiz validator), and with Library on one primary excerpt and question-bank
-  and exercise reuse. A write is refused, naming every skill it lacks, until
-  their results are in the request (`skills.REQUIRES`, checked in `tools.run`):
-  `create_ledger` needs `editing`; `create_material` both; `edit_document`
-  `editing`, plus `workspace_building` when a command is `insert_markdown`,
-  `add_question` or `replace_question`. The agent recomputes
-  `ctx.skills_read` from the message list before every call
-  (`skills.retained`), so a turn note that folded the result away asks for a
-  re-read. A later turn does not read a skill again: `evidence.pack` stores the
+  and exercise reuse. A write is refused until the skills it needs are in the
+  request (`skills.REQUIRES`, checked in `tools.run`): `create_ledger` needs
+  `editing`; `create_material` both; `edit_document` `editing`, plus
+  `workspace_building` when a command is `insert_markdown`, `replace_block`,
+  `add_question` or `replace_question`. The refusal carries the missing
+  skills: a short error (`Not applied: this write needs the … skills, which
+  follow and now count as read`, the text the chat stores) and, for the model
+  only (`ToolResult.detail`), each skill's text under its `# Skill:` header.
+  The write is not applied; the model checks it against the skills and sends
+  it again without a `read_skill`. The agent recomputes `ctx.skills_read` from
+  the message list before every call (`skills.retained`, which counts every
+  header in a `read_skill` result, a replayed skill or such a refusal), so a
+  turn note that folded the text away refuses the next write again. A later turn does not read a skill again: `evidence.pack` stores the
   names in the turn's `toolEvidence.skills`, and `evidence.history_turns`
   replays each one with its current text as a `_kind: "skill"` message where it
   was first read, which `skills.retained` counts. A checkpoint that folds the
@@ -2286,7 +2293,16 @@ build, and the knowledge library is one more source while the switch is on.
   read any library excerpt, `excerpt_ids` is required, and each id must have
   been read through `read_knowledge` this turn or be retained as full,
   revalidated text in the request; a material written only from workspace
-  files in a turn with no library reads needs none. None of this reaches an
+  files in a turn with no library reads needs none. A write naming excerpts
+  the turn has not read is refused, but the refusal reads them for it
+  (`tools._carry_excerpts`): each is read as `read_knowledge` reads it, while
+  the refusal stays within the tool output limit, and its text goes to the
+  model (`ToolResult.detail`, not the stored error). Those count as read for
+  the write guard and for library evidence from then on, so the resent write
+  needs no read call; one that does not fit or cannot be read stays unread and
+  the refusal says to `read_knowledge` it. The write itself is not applied, so
+  a write still cites only excerpts whose full text the model has seen. None
+  of this reaches an
   `edit_document` on a **source file**: the learner's own file is not written
   from the library, so it carries no provenance to Go (which refuses a source
   edit that does) and completes no todo. `excerpt_ids` and `todo` on a source
@@ -2439,8 +2455,8 @@ build, and the knowledge library is one more source while the switch is on.
 | `capture_knowledge_page` | none | Library on only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. No per-turn capture cap. Adds no citation. Retains nothing |
 | `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source, or an uploaded image as its single page 1, as a JPEG for the model; refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); no per-turn cap; adds no citation |
 | `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, quizzes and flashcard sets. Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record; a material with provenance is grounded in the library and does not require indexed workspace content. `todo` is required while the ledger has open todos and marks the todo this write completes; see Write guard. The note fence format (mermaid, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration/scripts/build-markdown.mjs` from `src/features/notes/markdownConvert.ts`), so it gets the nodes a paste would. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)) |
-| `inspect_document` | none | Plate blocks with stable ids, text-source lines, or Office paragraphs/cells with target ids, paged by `start`/`count`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it) |
-| `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt with an Undo ref. A material target follows the same `todo` and `excerpt_ids` rules as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes neither and may not carry provenance |
+| `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), text-source lines, or Office paragraphs/cells with target ids, paged by `start`/`count`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it) |
+| `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt with an Undo ref. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `todo` and `excerpt_ids` rules as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes neither and may not carry provenance |
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
 | `list_trashed_files` | none | Trash of the workspace, owner only |
 | `restore_file` | yes | Restores one trashed resource, owner only |
@@ -2533,10 +2549,17 @@ reading arguments (`browse_knowledge.book`, `read_knowledge.book` and
 `read_knowledge.excerpt_id` is no longer schema-required, and the offered
 production schema puts the requirement and the 12-chunk `count` back
 (`tools.without_sections`). Version 17 (2026-10-07) renames the
-`html-embed` fence's `title` to `caption`. `cmd/openapi -agent-tools`
+`html-embed` fence's `title` to `caption`. Version 18 (2026-10-09) adds the
+`replace_block` edit command and makes every expected text match the block as
+`inspect_document` shows it, math included. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
-tools, while the same Go types reach TypeScript through the OpenAPI schema. Go
+tools, while the same Go types reach TypeScript through the OpenAPI schema.
+An argument refusal names the problem without echoing the argument
+(`contract._problem`): an edit command names its type's fields and the ones
+missing, unknown or invalid (`remove_block takes block_id, expected_text;
+missing block_id; unknown target_id`), an unknown type lists the command
+types, and type and size errors say what is expected. Go
 computes the caller's operations from the effective role
 (`source.read, material.read, material.create, document.edit, resource.trash,
 trash.read, trash.restore`) and sends them with the chat request; Python offers
@@ -2562,14 +2585,15 @@ code (`unsupported_format`, `unsupported_operation`, `invalid_input`,
 `outcome_unknown`, `limit_reached`, `office_editing_paused`) that the frontend localizes.
 
 **Direct edits.** `edit_document` commands are normalized by Go
-(`replace_text`, `insert_markdown`, `remove_block`, `replace_card`, `add_card`,
-`remove_card`, `replace_question`, `add_question`, `remove_question`,
-`set_mermaid` for Plate materials; `replace_text` for text, DOCX and PPTX
-sources; `set_cell` for XLSX) and applied by the collaboration service on an
-isolated Y.Doc. `insert_markdown` converts its markdown like a created note and
-inserts the resulting blocks; its fences' rows are created under the note
-first (`EnsureEmbeddedMaterial`, ids derived from call and command, so a
-retried edit finds them), the order the editor uses. When the authority
+(`replace_text`, `replace_block`, `insert_markdown`, `remove_block`,
+`replace_card`, `add_card`, `remove_card`, `replace_question`, `add_question`,
+`remove_question`, `set_mermaid` for Plate materials; `replace_text` for text,
+DOCX and PPTX sources; `set_cell` for XLSX) and applied by the collaboration
+service on an isolated Y.Doc. `insert_markdown` converts its markdown like a
+created note and inserts the resulting blocks, and `replace_block` converts
+the same way and puts the blocks in place of one block; their fences' rows are
+created under the note first (`EnsureEmbeddedMaterial`, ids derived from call
+and command, so a retried edit finds them), the order the editor uses. When the authority
 refuses the edit, or a later command fails before it is sent, Go trashes the
 rows that edit created and no projection has referenced
 (`DiscardEmbeddedDrafts`), so no hidden rows stay charged to the owner; a lost
@@ -2610,6 +2634,35 @@ image the note trashed within the day comes back, one purged since (or never
 readable) is dropped from the note, so a late Undo brings back everything else. Browser idempotency
 keys for trash, restore, purge and Undo are scoped to the acting user
 (`req_<user>:<key>`, at most 64 characters).
+
+A block's text, as `inspect_document` shows it and as every expected text
+(`replace_text`, `remove_block`, `replace_block`, their Undo) matches it, is its
+flattened text with inline math written `$tex$` and display math `$$tex$$`
+(`blockText` in `collaboration/src/editCommands.ts`). `replace_text` replaces
+plain text only: a span over math is refused (`invalid_input`) with a pointer
+to `replace_block`, which rewrites the whole block from note markdown and keeps
+its place, Undo putting the original back there. The headless editor every
+material edit, children pass and service command opens declares the note
+editor's inline elements (`INLINE_TYPES`: links, inline equations, mentions
+and the combobox inputs); without it, `YjsEditor.connect`'s forced
+normalization removed every link and inline equation in the material. A
+replaced span that only touches an inline element does not take it in. A
+missed target comes back as it is now, in the refusal's `details`, which Go
+passes through unchanged and the pipeline gives the model only
+(`ToolResult.detail`; the stored error stays the short message): a
+`stale_target` from `replace_text`, `remove_block` or `replace_block` carries
+the block's current text (shown up to 2,000 characters), and an id that is
+gone carries the material's first 60 blocks with an 80-character preview and
+the total. The pipeline keeps what this turn last inspected or wrote of each
+block (`ToolContext.seen_blocks`, applying its own `replace_text` edits) and
+adds "changed since you last saw it" when the block differs. An insert whose
+`after_block_id` is gone is not refused (decision 2026-10-09): when the same
+call removed or replaced the anchor, the blocks land after the nearest
+surviving block before its place (after the replacement for a replaced one);
+otherwise at the end of the material, since a deleted block's tombstone keeps
+no id once Yjs garbage-collects it. The receipt's effect lists each
+`relocated` insert (`anchor`, `after`, `end`) and the tool result says where
+the blocks landed and why; Undo removes them by id as for any insert.
 
 Citation numbers belong to the current answer. Structured citations still map
 the answer to file, page, region, and chunk data for the UI. Checkpoints preserve
