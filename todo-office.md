@@ -127,6 +127,13 @@ check); it applies at the first promotion.
 
 ## Queued tracks (each needs its own decisions and a visual checkpoint)
 
+- **PPTX embedded fonts** (Epo 2026-10-08): decks exported from Google Slides, or saved
+  from PowerPoint with embedded fonts, carry them in `ppt/fonts/*.fntdata` listed in
+  `p:embeddedFontLst`. Layout and paint ignore them and fall back (Arial for Raleway
+  in `Your big idea.pptx` on UAT, `f_46e3e917f1`), so wrapping and widths differ from
+  PowerPoint and Google Slides. Load them for layout and paint (deobfuscate where the
+  part is obfuscated), keep today's fallback when absent, and keep them in exports.
+
 - **Order after the 2026-10-05 batch:** one optimization round (Yjs save
   latency, typing latency, memory; Office and Plate), then heap/latency
   ceilings from the largest allowed files, then a prod-box stress run for the
