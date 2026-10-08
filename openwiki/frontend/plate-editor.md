@@ -841,6 +841,36 @@ There is no exception for a room stored with pending structs before this rule:
 its clients' step 2 replies carry those structs, so their connections hit that
 close, which is accepted because no such room holds data worth keeping.
 
+### Only update shapes a real editor writes
+
+The room admits only what a real editor (slate-yjs over Yjs, or the Office
+engines) writes; a crafted update that is valid Yjs but that no editor produces
+is refused at admit, before it can cost the room time or memory
+(`ydoc::inspect` in `collaboration-rs/crates/ydoc`, `plain_content` in
+`crates/notes/src/limits.rs`). Refused today:
+
+- a struct that refers to its own or a later clock of its client (it could
+  never integrate and would stay pending);
+- more than 64 items claiming one spot of a sequence (the same left and right
+  neighbour when written), the room's and the update's together, of any client
+  ids: yrs, like Yjs, integrates each item at a spot by scanning those already
+  there, so a pile is quadratic (20,000 such items took minutes). Real editors
+  put several items at one spot only when writers insert there at once. The
+  room-side count walks at most 256 items per spot, so a room written before the
+  rule may count low there;
+- in a note text, content other than strings, formats and element texts, and
+  non-plain attribute, mark or marker values (invisible to the projection and
+  the size metrics).
+
+Decoding refuses an `Any` nested past 128 levels and reserves nothing from
+declared lengths (fork yrs), the projection and the measure stop past 1,024
+levels, and every walk admit does is linear in the update. Each refused shape
+has a crafted-update test in `crates/notes/tests/admit_cost.rs`, which times
+admit and apply per KB on every hostile shape the reviews built, and
+`crates/notes/tests/fuzz_admit.rs` mutates real updates with a fixed seed and
+fails on a panic or a stall. A new kind of update a real editor writes that
+one of these refuses is a bug in the rule, not in the editor.
+
 The writable Y.Doc contract permits only the Plate `content` root and the
 server-owned `__capy_pending_contributors` map. Every client update checks this
 allowlist before application, and load/store paths check it again. Unknown or

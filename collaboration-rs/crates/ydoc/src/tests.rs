@@ -304,3 +304,92 @@ fn a_reference_forward_in_its_own_client_is_malformed() {
     });
     assert!(!unheld(&room, &typed));
 }
+
+/// Updates of `count` concurrent writers each typing at the same place of a
+/// room's text, merged into one.
+fn concurrent_at_one_spot(room: &Doc, first_client: u64, count: u64) -> Vec<u8> {
+    let updates: Vec<Vec<u8>> = (0..count)
+        .map(|k| {
+            let writer = doc(first_client + k);
+            sync(room, &writer);
+            let text = writer.get_or_insert_text("t");
+            delta(&writer, |txn| text.insert(txn, 2, "x"))
+        })
+        .collect();
+    yrs::merge_updates_v1(&updates).unwrap()
+}
+
+/// `items` one-character structs with neither origin nor right origin in the
+/// root text `t`, from `clients` client ids (one struct each, or all from one).
+fn without_origins(items: u32, clients: u32) -> Vec<u8> {
+    use yrs::encoding::write::Write;
+    let mut bytes: Vec<u8> = Vec::new();
+    let per = items / clients;
+    bytes.write_var(clients);
+    for client in 0..clients {
+        bytes.write_var(per);
+        bytes.write_var(1_000 + client as u64);
+        bytes.write_var(0u32);
+        for _ in 0..per {
+            bytes.write_u8(4); // a string, no origins: the parent follows
+            bytes.write_var(1u32); // the parent is a root, by name
+            bytes.write_string("t");
+            bytes.write_string("x");
+        }
+    }
+    bytes.write_var(0u32);
+    bytes
+}
+
+/// No more than 64 items may claim one spot of a text (Epo, 2026-10-08):
+/// the room's and the update's together, of any clients.
+#[test]
+fn a_crowded_spot_is_refused() {
+    let room = doc(1);
+    room.get_or_insert_text("t")
+        .insert(&mut room.transact_mut(), 0, "hello");
+    let inspect =
+        |room: &Doc, bytes: &[u8]| inspect_update(&room.transact(), &decode(bytes).unwrap());
+    // 64 writers typing at one place at once: accepted; 65: refused.
+    assert!(inspect(&room, &concurrent_at_one_spot(&room, 10, 64)).is_ok());
+    assert!(matches!(
+        inspect(&room, &concurrent_at_one_spot(&room, 10, 65)),
+        Err(UpdateError::Crowded)
+    ));
+    // Items without origins (the start of an empty text): from one client or
+    // from forged client ids, one each.
+    let empty = doc(1);
+    empty.get_or_insert_text("t");
+    assert!(inspect(&empty, &without_origins(64, 1)).is_ok());
+    assert!(matches!(
+        inspect(&empty, &without_origins(65, 1)),
+        Err(UpdateError::Crowded)
+    ));
+    assert!(matches!(
+        inspect(&empty, &without_origins(20_000, 20_000)),
+        Err(UpdateError::Crowded)
+    ));
+    // The room's items at the spot count: 60 there, 5 more refused, 4 taken.
+    let crowded = doc(1);
+    crowded
+        .get_or_insert_text("t")
+        .insert(&mut crowded.transact_mut(), 0, "hello");
+    let sixty = concurrent_at_one_spot(&crowded, 100, 60);
+    crowded
+        .transact_mut()
+        .apply_update(decode(&sixty).unwrap())
+        .unwrap();
+    let more = |count| {
+        // Writers that synced before the 60 arrived write at the same spot.
+        let before = doc(1);
+        before
+            .get_or_insert_text("t")
+            .insert(&mut before.transact_mut(), 0, "hello");
+        concurrent_at_one_spot(&before, 200, count)
+    };
+    assert!(inspect(&crowded, &more(4)).is_ok());
+    assert!(matches!(
+        inspect(&crowded, &more(5)),
+        Err(UpdateError::Crowded)
+    ));
+}

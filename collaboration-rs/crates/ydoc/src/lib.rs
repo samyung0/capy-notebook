@@ -23,6 +23,133 @@ pub const CONTRIBUTORS_ROOT: &str = "__capy_pending_contributors";
 pub enum UpdateError {
     #[error("malformed yjs update: {0}")]
     Decode(String),
+    /// More than [MAX_SPOT_ITEMS] items would claim one spot of a text.
+    #[error("update crowds one spot of a text past {MAX_SPOT_ITEMS} items")]
+    Crowded,
+}
+
+/// The most items that may claim one spot of a sequence (the same left and
+/// right neighbour when written), the room's and an update's together, of
+/// any clients (Epo, 2026-10-08). A real editor puts more than one item at a
+/// spot only when writers insert there at once; yrs, like Yjs, integrates
+/// each item at a spot by scanning those already there, so a pile of them
+/// costs quadratic time.
+pub const MAX_SPOT_ITEMS: usize = 64;
+
+/// How many of the room's items the count of one spot looks at. A room
+/// written before the rule may hold more than [MAX_SPOT_ITEMS] at a spot, far
+/// apart: past this many items its count stops (and so may be low), which
+/// keeps the check O(update).
+const SPOT_WALK: usize = 4 * MAX_SPOT_ITEMS;
+
+/// One spot of a sequence: the left and right neighbour an item names. With
+/// neither, the spot is the start of an otherwise empty sequence, so its
+/// parent names it.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+enum Spot {
+    Between(Option<ID>, Option<ID>),
+    Empty(SpotParent),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+enum SpotParent {
+    Root(Arc<str>),
+    Item(ID),
+}
+
+/// Refuses an update that would leave more than [MAX_SPOT_ITEMS] items at
+/// one spot of a sequence (map entries are not sequence items). The update's
+/// new items are counted per spot; for each spot it touches, the room's items
+/// there are counted by a walk of at most [SPOT_WALK] items. O(update).
+fn crowded<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<(), UpdateError> {
+    let state = txn.state_vector();
+    let mut spots: HashMap<Spot, usize> = HashMap::new();
+    for item in incoming.items() {
+        let ID { client, clock } = *item.id();
+        if item.parent_sub().is_some() || clock + item.len() <= state.get(&client) {
+            continue;
+        }
+        let spot = match (item.origin(), item.right_origin(), item.update_parent()) {
+            (None, None, UpdateParent::Root(root)) => Spot::Empty(SpotParent::Root(root.clone())),
+            (None, None, UpdateParent::Item(parent)) => Spot::Empty(SpotParent::Item(*parent)),
+            (None, None, _) => continue,
+            (origin, right, _) => Spot::Between(origin.copied(), right.copied()),
+        };
+        *spots.entry(spot).or_default() += 1;
+    }
+    let store = txn.store();
+    let held = |id: &ID| id.clock < state.get(&id.client);
+    for (spot, count) in spots {
+        if count > MAX_SPOT_ITEMS {
+            return Err(UpdateError::Crowded);
+        }
+        // The room's items at the spot sit between its neighbours: walk from
+        // the left one (or the sequence's start) towards the right one.
+        let (origin, right, mut next) = match &spot {
+            Spot::Between(Some(origin), right) if held(origin) => {
+                let Some(left) = store.get_item(origin) else {
+                    continue;
+                };
+                // An item names the last unit of its left neighbour; one in
+                // the middle of a held item has nothing after it yet.
+                if left.id().clock + left.len() - 1 != origin.clock {
+                    continue;
+                }
+                (Some(*origin), *right, left.right())
+            }
+            Spot::Between(None, Some(right)) if held(right) => {
+                let Some(start) = store
+                    .get_item(right)
+                    .and_then(|item| item.parent_branch())
+                    .and_then(|parent| parent.start())
+                else {
+                    continue;
+                };
+                (None, Some(*right), Some(start))
+            }
+            Spot::Empty(parent) => {
+                let branch = match parent {
+                    SpotParent::Root(root) => BranchID::get_root(txn, &**root),
+                    SpotParent::Item(id) if held(id) => match store.get_item(id) {
+                        Some(holder) => match holder.content() {
+                            yrs::block::ItemContent::Type(branch) => {
+                                Some(yrs::branch::BranchPtr::from(&**branch))
+                            }
+                            _ => None,
+                        },
+                        None => None,
+                    },
+                    SpotParent::Item(_) => None,
+                };
+                let Some(start) = branch.and_then(|branch| branch.start()) else {
+                    continue;
+                };
+                (None, None, Some(start))
+            }
+            // A neighbour the room does not hold yet: nothing of the room's
+            // is there.
+            Spot::Between(..) => continue,
+        };
+        let mut there = count;
+        for _ in 0..SPOT_WALK {
+            let Some(item) = next else { break };
+            if right.is_some_and(|right| {
+                right.client == item.id().client
+                    && right.clock >= item.id().clock
+                    && right.clock < item.id().clock + item.len()
+            }) {
+                break;
+            }
+            if item.origin().copied() == origin && item.right_origin().copied() == right {
+                there += 1;
+                if there > MAX_SPOT_ITEMS {
+                    return Err(UpdateError::Crowded);
+                }
+            }
+            next = item.right();
+        }
+    }
+    Ok(())
 }
 
 /// Decodes a v1 update once, for every check that reads it.
@@ -172,6 +299,8 @@ pub fn inspect_update<T: ReadTxn>(txn: &T, update: &Update) -> Result<Inspection
 /// An update whose struct refers (origin, right origin or parent) to the same
 /// or a later clock of its own client is malformed: a client's structs
 /// integrate in clock order, so it would stay pending in the room forever.
+/// An update that crowds one spot of a sequence is refused too (`crowded`).
+/// Both are shapes no real editor writes.
 pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, UpdateError> {
     for item in incoming.items() {
         let ID { client, clock } = *item.id();
@@ -189,6 +318,7 @@ pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, U
             )));
         }
     }
+    crowded(txn, incoming)?;
     let update = incoming.update();
     let state = txn.state_vector();
     let held = |client: &ClientID| state.get(client);

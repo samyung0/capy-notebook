@@ -1,11 +1,12 @@
 #![allow(clippy::unwrap_used)] // Tests panic on a broken case.
-//! `Validator::admit`'s cost on the update shapes the reviews built to find
-//! quadratic paths (notes REVIEW2 M5, REVIEW3 M7 and M8): each must stay
-//! linear, so a future quadratic walk fails here. Every shape is admitted
-//! against a room whose validator already holds a bound, as on the room task.
+//! `Validator::admit`'s cost, and the room's apply when it admits, on the
+//! update shapes the reviews built to find quadratic paths (notes REVIEW2 M5,
+//! REVIEW3 M7 and M8, the crowded spot of round 7): each must stay linear, so
+//! a future quadratic path fails here. Every shape is admitted against a room
+//! whose validator already holds a bound, as on the room task.
 use std::time::{Duration, Instant};
 
-use notes::limits::Validator;
+use notes::limits::{Admission, Refusal, Validator};
 use notes::{plate, slate_yjs};
 use serde_json::json;
 use ydoc::doc_options;
@@ -53,21 +54,33 @@ fn paragraph(doc: &Doc) -> XmlTextRef {
     }
 }
 
-/// How long `admit` takes on `update`, with a bound in place (best of
-/// three).
+/// How long `admit` and, when it admits, the room's apply take on `update`,
+/// with a bound in place (best of three, each on a fresh copy of the room).
 fn admit_time(room: &Doc, update: &[u8]) -> Duration {
     (0..3)
         .map(|_| {
+            let room = copy(room, 1);
             let mut validator = Validator::default();
-            let nothing = ydoc::decode(&since(room, room)).unwrap();
-            validator.admit(room, &nothing).unwrap();
+            let nothing = ydoc::decode(&since(&room, &room)).unwrap();
+            validator.admit(&room, &nothing).unwrap();
             let decoded = ydoc::decode(update).unwrap();
             let start = Instant::now();
-            let _ = validator.admit(room, &decoded);
+            if let Ok(Admission::Accepted) = validator.admit(&room, &decoded) {
+                room.transact_mut().apply_update(decoded).unwrap();
+            }
             start.elapsed()
         })
         .min()
         .unwrap_or_default()
+}
+
+/// Whether `admit` refuses `update` as a crowded spot.
+fn crowded(room: &Doc, update: &[u8]) -> bool {
+    let mut validator = Validator::default();
+    matches!(
+        validator.admit(room, &ydoc::decode(update).unwrap()),
+        Err(Refusal::Update(ydoc::UpdateError::Crowded))
+    )
 }
 
 /// How long the growth bound alone takes on `update` (best of three). The
@@ -161,8 +174,17 @@ fn forward_chain(items: u32) -> (Doc, Vec<u8>) {
 
 /// A paragraph holding `tombstones` separately typed and deleted characters,
 /// then an update of `items` one-character items with no origins and the
-/// paragraph as their parent.
+/// paragraph as their parent, from one client or each from its own (forged)
+/// client id.
 fn tomb(tombstones: u32, items: u32) -> (Doc, Vec<u8>) {
+    tomb_from(tombstones, items, false)
+}
+
+fn tomb_forged(tombstones: u32, items: u32) -> (Doc, Vec<u8>) {
+    tomb_from(tombstones, items, true)
+}
+
+fn tomb_from(tombstones: u32, items: u32, forged: bool) -> (Doc, Vec<u8>) {
     let room = room("");
     let writer = copy(&room, 5);
     {
@@ -185,17 +207,20 @@ fn tomb(tombstones: u32, items: u32) -> (Doc, Vec<u8>) {
             plate::Insert::Text(_) => panic!("no paragraph"),
         }
     };
+    let (clients, per) = if forged { (items, 1) } else { (1, items) };
     let mut bytes: Vec<u8> = Vec::new();
-    bytes.write_var(1u32);
-    bytes.write_var(items);
-    bytes.write_var(77u64);
-    bytes.write_var(0u32);
-    for _ in 0..items {
-        bytes.write_u8(4); // string content, no origins: the parent follows
-        bytes.write_var(0u32); // the parent is an item
-        bytes.write_var(parent.client.get());
-        bytes.write_var(parent.clock);
-        bytes.write_string("x");
+    bytes.write_var(clients);
+    for client in 0..clients {
+        bytes.write_var(per);
+        bytes.write_var(1_000 + client as u64);
+        bytes.write_var(0u32);
+        for _ in 0..per {
+            bytes.write_u8(4); // string content, no origins: the parent follows
+            bytes.write_var(0u32); // the parent is an item
+            bytes.write_var(parent.client.get());
+            bytes.write_var(parent.clock);
+            bytes.write_string("x");
+        }
     }
     bytes.write_var(0u32);
     (room, bytes)
@@ -246,27 +271,27 @@ fn wide(chars: u32) -> (Doc, Vec<u8>) {
 #[test]
 fn admit_stays_linear_on_every_hostile_shape() {
     let limit = if cfg!(debug_assertions) { 10.0 } else { 2.0 };
-    let shapes: [(&str, (Doc, Vec<u8>)); 4] = [
+    let shapes: [(&str, (Doc, Vec<u8>)); 6] = [
         ("paste", paste(3_000)),
         ("forward chain", forward_chain(40_000)),
         ("deep", deep(20_000)),
         ("wide", wide(40_000)),
+        ("tombs", tomb(20_000, 20_000)),
+        ("tombs, forged clients", tomb_forged(20_000, 20_000)),
     ];
     for (name, (room, update)) in shapes {
         let cost = ms_per_kb(admit_time(&room, &update), &update);
         eprintln!(
-            "{name}: {} KB, admit {cost:.3} ms per KB",
+            "{name}: {} KB, admit and apply {cost:.3} ms per KB",
             update.len() / 1024
         );
         assert!(cost < limit, "{name}: {cost} ms per KB");
     }
-    let (room, update) = tomb(20_000, 20_000);
-    let cost = ms_per_kb(growth_time(&room, &update), &update);
-    eprintln!(
-        "tombs: {} KB, growth {cost:.3} ms per KB",
-        update.len() / 1024
-    );
-    assert!(cost < limit, "tombs: {cost} ms per KB");
+    // The tombs crowd one spot (the start of the paragraph), from one client
+    // or from 20,000.
+    for (room, update) in [tomb(20_000, 20_000), tomb_forged(20_000, 20_000)] {
+        assert!(crowded(&room, &update));
+    }
 }
 
 /// The REVIEW3 shapes at two sizes: four times the input in under eight
