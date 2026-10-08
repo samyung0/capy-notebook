@@ -340,6 +340,16 @@ check); it applies at the first promotion.
 
 ## After the optimization round (decided 2026-10-05)
 
+- **Performance baselines and user-side measurement** (Epo 2026-10-08; last,
+  after the Fable 5.1 review of the Rust round): decide how every measured
+  performance number gets a baseline and a regression gate so new changes
+  cannot fall below standard (editor budgets, stress, engine and server
+  timings). Decide how to measure from the user's side: bundle size, network
+  requests, scroll FPS, time to first paint, font and CSS loading, repaints and
+  render blocking, and whether these run inside the user journeys or on
+  their own. It covers every page, not only the editors (`openwiki/editor-perf.md`,
+  `bench/`).
+
 The 2026-09-25 storage probes stay in `artifacts/2026-09-25-office-storage/`
 (reference only).
 
