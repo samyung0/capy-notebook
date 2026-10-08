@@ -335,7 +335,14 @@ async fn load(
                 material_id: material_id.clone(),
                 schema: *schema,
                 kind,
-                validator: notes::limits::Validator::default(),
+                // The load measured the room exactly (off the room task), so
+                // the first update takes the growth bound instead of copying
+                // and measuring a near-limit note on the room task (~55 ms).
+                validator: notes::limits::Validator {
+                    bound: Some(metrics),
+                    metrics: Some(metrics),
+                    ..Default::default()
+                },
                 durable_metrics: Some(metrics),
                 stored_version,
                 projected_version,
