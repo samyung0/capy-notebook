@@ -133,7 +133,7 @@ export function NoteToolbar({ className }: { className?: string }) {
   // The document goes where the import ran, whatever the user did while the
   // file was read and converted.
   async function importFile(file: File, kind: ImportKind) {
-    const place = holdInsertPlace(editor);
+    const place = holdInsertPlace(editor, { atCaret: true });
     try {
       const document =
         kind === 'docx'

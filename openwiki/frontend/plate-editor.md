@@ -450,9 +450,10 @@ snippet (see Readable note exports).
 The toolbar's Import (Markdown, JSON or DOCX, `importFile` in
 `toolbar/NoteToolbar.tsx`) converts the file in the browser and inserts the
 document where the import ran, not where the caret is when the conversion
-finishes: through `holdInsertPlace`, like the embedded quiz insert, over the
-import's line while it is still an empty paragraph, otherwise after it, taking
-the caret only if it has not moved.
+finishes (`holdInsertPlace(editor, { atCaret: true })`). If nothing has touched
+the import's line meanwhile, the document goes in at the remembered caret
+point, splitting the line exactly as an insert at the caret does; otherwise it
+goes after that line. It takes the caret only if the caret has not moved.
 
 ## Readable note exports
 

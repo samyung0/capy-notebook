@@ -39,10 +39,16 @@ export function insertEditorNode(editor: NoteEditorInstance, node: unknown) {
  * round trip, a file read), while the user may keep typing or move elsewhere.
  * `insert` puts the top-level block, or blocks, there: over the command's
  * line while it is still an empty paragraph, otherwise after it (where the
- * line stood, if it was deleted). They take the caret only if the caret has
- * not moved since. Call `release` once the wait settles.
+ * line stood, if it was deleted). With `atCaret` (the toolbar's Import) they
+ * go exactly where the caret was, splitting the line as an insert at the
+ * caret does, when nothing has touched that line since; otherwise after it.
+ * They take the caret only if the caret has not moved. Call `release` once
+ * the wait settles.
  */
-export function holdInsertPlace(editor: NoteEditorInstance) {
+export function holdInsertPlace(
+  editor: NoteEditorInstance,
+  { atCaret = false } = {}
+) {
   const selection = editor.selection;
   if (!selection)
     return {
@@ -51,6 +57,8 @@ export function holdInsertPlace(editor: NoteEditorInstance) {
     };
   const index = selection.anchor.path[0];
   const line = editor.api.pathRef([index]);
+  // Any edit inside the line replaces this object; edits elsewhere keep it.
+  const lineNode = editor.children[index];
   // Typing at the caret moves the selection but not this ref.
   const caret = editor.api.rangeRef(selection, { affinity: 'backward' });
   return {
@@ -59,12 +67,21 @@ export function holdInsertPlace(editor: NoteEditorInstance) {
         !!caret.current &&
         !!editor.selection &&
         RangeApi.equals(caret.current, editor.selection);
+      if (still) editor.tf.focus();
+      if (
+        atCaret &&
+        caret.current &&
+        line.current &&
+        editor.children[line.current[0]] === lineNode
+      ) {
+        editor.tf.insertNodes(node, { at: caret.current, select: still });
+        return;
+      }
       const at: Path = line.current
         ? [line.current[0]]
         : [Math.min(index, editor.children.length)];
-      if (still) editor.tf.focus();
       editor.tf.withoutNormalizing(() => {
-        if (line.current && isEmptyParagraph(editor, at)) {
+        if (!atCaret && line.current && isEmptyParagraph(editor, at)) {
           editor.tf.removeNodes({ at });
         } else if (line.current) {
           at[0] += 1;

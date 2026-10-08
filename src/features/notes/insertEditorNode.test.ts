@@ -97,25 +97,60 @@ describe('holdInsertPlace', () => {
     expect(editor.selection?.anchor).toEqual({ offset: 5, path: [3, 0] });
   });
 
-  // The toolbar's Import inserts a whole document this way.
-  it('puts several blocks there in order', () => {
-    const { editor, place } = commandRan();
-    const imported = ['a', 'b'].map((text) => ({
-      children: [{ text }],
-      type: 'p',
-    }));
-    editor.tf.select(editor.api.end([2]));
-    editor.tf.insertText(' typed');
-    place.insert(imported);
-    expect(texts(editor)).toEqual(['one', 'a', 'b', 'three typed']);
-    expect(editor.selection?.anchor).toEqual({ offset: 11, path: [3, 0] });
-  });
-
   it('goes after the command line once the user typed on it', () => {
     const { editor, place } = commandRan();
     editor.tf.insertText('typed');
     place.insert(block);
     expect(texts(editor)).toEqual(['one', 'typed', 'QUIZ', 'three']);
     expect(editor.selection?.anchor).toEqual({ offset: 5, path: [1, 0] });
+  });
+});
+
+// The toolbar's Import, run with the caret inside "three" (after "th").
+describe('holdInsertPlace at the caret', () => {
+  const imported = () =>
+    ['a', 'b'].map((text) => ({ children: [{ text }], type: 'p' }));
+  function importRan() {
+    const editor = createPlateEditor({
+      value: [
+        { children: [{ text: 'one' }], type: 'p' },
+        { children: [{ text: 'three' }], type: 'p' },
+      ],
+    });
+    editor.tf.select({ offset: 2, path: [1, 0] });
+    return { editor, place: holdInsertPlace(editor, { atCaret: true }) };
+  }
+  const texts = (editor: NoteEditorInstance) =>
+    editor.children.map(
+      (node: { children: { text: string }[] }) => node.children[0].text
+    );
+
+  it('splits the untouched line at the caret, as an insert at the caret does', () => {
+    const { editor, place } = importRan();
+    // Typing on another line leaves the import's line untouched.
+    editor.tf.select(editor.api.end([0]));
+    editor.tf.insertText(' typed');
+    place.insert(imported());
+    expect(texts(editor)).toEqual(['one typed', 'th', 'a', 'b', 'ree']);
+    expect(editor.selection?.anchor).toEqual({ offset: 9, path: [0, 0] });
+  });
+
+  it('takes the caret along when it stayed, as the import did before', () => {
+    const { editor, place } = importRan();
+    place.insert(imported());
+    // The import used to insert at the selection right away.
+    const before = importRan().editor;
+    before.tf.insertNodes(imported());
+    expect(texts(editor)).toEqual(['one', 'th', 'a', 'b', 'ree']);
+    expect(editor.children).toEqual(before.children);
+    expect(editor.selection).toEqual(before.selection);
+  });
+
+  it('goes after the line once the line changed', () => {
+    const { editor, place } = importRan();
+    editor.tf.insertText('X');
+    place.insert(imported());
+    expect(texts(editor)).toEqual(['one', 'thXree', 'a', 'b']);
+    expect(editor.selection?.anchor).toEqual({ offset: 3, path: [1, 0] });
   });
 });
