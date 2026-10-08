@@ -160,7 +160,7 @@ type materialChildrenOutput struct {
 
 // adoptMaterialChildren answers the collaboration service's pass over the
 // asset and quiz or flashcard ids an update brought into a material room
-// (collaboration/src/children.ts): the material's own child keeps its id and
+// (collaboration-rs/crates/server/src/children.rs): the material's own child keeps its id and
 // leaves the trash, another material's child the actor can read becomes a
 // copy, and anything else (unreadable, purged, unknown) gets "".
 func (a *api) adoptMaterialChildren(ctx context.Context, in *materialChildrenInput) (*materialChildrenOutput, error) {

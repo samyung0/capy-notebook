@@ -3,7 +3,8 @@ import { MATERIAL_DOCUMENT_LIMITS } from '@/lib/const';
 
 /**
  * Stateless room messages exchanged with the collaboration service.
- * IMPORTANT: KEEP IN SYNC WITH collaboration/src/server.ts.
+ * IMPORTANT: KEEP IN SYNC WITH collaboration-rs/crates/server/src (room.rs,
+ * pubsub.rs).
  */
 /** Authentication refusal reason for a writer whose room turned read-only. */
 export const COLLABORATION_READ_ONLY_REASON = 'collaboration-read-only';

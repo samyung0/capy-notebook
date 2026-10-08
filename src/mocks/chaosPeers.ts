@@ -16,7 +16,7 @@ import { checkpointRoom, join, type Room, rooms } from './collaboration';
 import * as db from './db';
 import { mockWorkspaceMembers } from './handlers';
 
-/** In-page port of `collaboration/scripts/chaos-peers.ts`: synthetic
+/** In-page port of the Node server's former peer-churn driver: synthetic
  * collaborators that join whatever mock rooms the app has open, move cursors,
  * type, leave and come back. They ride the mock room fan-out, so no sidecar is
  * involved. Started and stopped by the `collab-chaos` user scenario. */

@@ -1,6 +1,7 @@
 /* The collaboration service's markdown converter: the editor's markdown
-   import on the read-only plugin set, so it runs in Node.
-   collaboration/scripts/build-markdown.mjs bundles this file. */
+   import on the read-only plugin set, so it runs without a DOM.
+   collaboration-rs/crates/notes/markdown/build.mjs bundles this file for the
+   server's V8. */
 import { createSlateEditor, type SlateEditor } from 'platejs';
 import YAML from 'yaml';
 import {

@@ -105,7 +105,7 @@ export interface HtmlEmbedElement extends MaterialElement {
 
 export const HTML_EMBED_TYPE = 'html_embed';
 // IMPORTANT: KEEP IN SYNC WITH server/internal/materialdoc/document.go and
-// collaboration/src/materialDocument.ts
+// collaboration-rs/crates/notes/src/material.rs
 export const HTML_EMBED_MAX_BYTES = 64 * 1024;
 export const HTML_EMBED_MAX_COUNT = 10;
 

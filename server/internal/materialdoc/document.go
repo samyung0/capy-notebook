@@ -29,7 +29,7 @@ const (
 	depthCeiling = 1024
 	// HTMLEmbedType is the interactive HTML block: a top-level void holding
 	// one snippet of at most HTMLEmbedMaxBytes, at most HTMLEmbedMaxCount per
-	// document. Keep in sync with collaboration/src/materialDocument.ts and
+	// document. Keep in sync with collaboration-rs/crates/notes/src/material.rs and
 	// src/features/materials/document.ts.
 	HTMLEmbedType     = "html_embed"
 	HTMLEmbedMaxBytes = 64 << 10

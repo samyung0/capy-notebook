@@ -10,8 +10,8 @@ import * as Y from 'yjs';
 import type { OfficeFormat } from '@/features/files/officeProtocol';
 import { exportCheckpoint } from './exportCheckpoint.worker';
 
-// The collaboration service's headless engine bundle, loaded as the service
-// loads it (collaboration/src/officeRuntime.ts).
+// The fork's headless engine bundle (the TypeScript twin of the collaboration
+// server's native engines).
 type Checkpoint = {
   baseSha256: string;
   format: OfficeFormat;

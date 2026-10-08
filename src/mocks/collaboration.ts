@@ -72,7 +72,7 @@ function checkpointState(checkpoint: Checkpoint): Uint8Array {
 const REMOTE = 'mock-room';
 
 /** The quiz and flashcard blocks whose materialId an update wrote, as the
- * service reads them (collaboration/src/children.ts childWrites). */
+ * service reads them (`child_writes` in collaboration-rs/crates/notes/src/children.rs). */
 function writtenBlocks(document: Y.Doc, update: Uint8Array) {
   const blocks = new Set<Y.XmlText>();
   for (const struct of Y.decodeUpdate(update).structs) {
@@ -95,7 +95,7 @@ function writtenBlocks(document: Y.Doc, update: Uint8Array) {
   return blocks;
 }
 
-/** The collaboration service's children pass (collaboration/src/children.ts)
+/** The collaboration service's children pass (collaboration-rs/crates/server/src/children.rs)
  * for quiz and flashcard blocks a writer's update wrote: a block naming
  * another note's set gets the note's copy, a set already in another block gets
  * its own copy, an unknown one goes. Mock assets all belong to every note, so

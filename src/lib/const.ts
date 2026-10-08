@@ -3,7 +3,7 @@ export const NOTIFICATION_PAGE_SIZE = 50;
 export const MATERIAL_SCHEMA_VERSION = 1 as const;
 
 // Display denominators only; the collaboration service owns enforcement.
-// IMPORTANT: KEEP IN SYNC WITH VALUES IN collaboration/src/limits.ts
+// IMPORTANT: KEEP IN SYNC WITH VALUES IN collaboration-rs/crates/notes/src/limits.rs
 export const MATERIAL_DOCUMENT_LIMITS = {
   maxContentBytes: 2 * 1024 * 1024,
   maxDepth: 16,
@@ -12,7 +12,7 @@ export const MATERIAL_DOCUMENT_LIMITS = {
 
 // A source room's state cap, which also bounds the edits a device holds while
 // offline. IMPORTANT: KEEP IN SYNC WITH MAX_SOURCE_STATE_BYTES IN
-// collaboration/src/sourceDocuments.ts
+// collaboration-rs/crates/sources/src/lib.rs
 export const SOURCE_STATE_MAX_BYTES = 100 * 1024 * 1024;
 
 /**

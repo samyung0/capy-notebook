@@ -12,7 +12,7 @@ import (
 )
 
 // sourcePublishTimeout outlasts the collaboration publish coordinator's room
-// lock (LOCK_MS in collaboration/src/sourceHandoff.ts: a 60 s acknowledgement
+// lock (LOCK in collaboration-rs/crates/sources/src/handoff.rs: a 60 s acknowledgement
 // wait plus one 120 s Office engine call), so the gateway never abandons a
 // publication the coordinator can still complete. Other collaboration calls
 // keep the client's 20 s.

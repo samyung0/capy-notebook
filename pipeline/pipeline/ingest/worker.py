@@ -77,8 +77,8 @@ _REQUIRED_RESOURCE_RATES = {
 }
 # A job that found the parser or a provider full re-pends after this long.
 YIELD_BACKOFF_S = 2
-# A source publication may hold the collaboration room lock for 180 s (LOCK_MS
-# in collaboration/src/sourceHandoff.ts); the gateway waits 200 s for it
+# A source publication may hold the collaboration room lock for 180 s (LOCK in
+# collaboration-rs/crates/sources/src/handoff.rs); the gateway waits 200 s for it
 # (sourcePublishTimeout in server/internal/store/source_proxy.go). Wait longer
 # than both so the gateway's answer arrives first.
 _SOURCE_PUBLISH_TIMEOUT_S = 210

@@ -585,7 +585,7 @@ func (s *Store) workspaceIndexCounts(ctx context.Context, ws string, stats *Work
 }
 
 // workspaceFileChanges lists files with unprocessed saved edits (the
-// scheduler's predicate in collaboration/src/sourceDocuments.ts) or a refresh
+// scheduler's predicate in collaboration-rs/crates/sources/src/refresh.rs) or a refresh
 // in flight. A refresh stays queued until its first claim; a maintenance
 // republish is the system's own and is left out.
 func (s *Store) workspaceFileChanges(ctx context.Context, ws string) ([]FileChange, error) {
