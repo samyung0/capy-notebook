@@ -208,6 +208,7 @@ export * from './rateReviewItemReq.ts';
 export * from './readSourceRefreshParams.ts';
 export * from './ref.ts';
 export * from './region.ts';
+export * from './relocation.ts';
 export * from './reorderChaptersReq.ts';
 export * from './reorderContentReq.ts';
 export * from './reportEditIncidentReq.ts';

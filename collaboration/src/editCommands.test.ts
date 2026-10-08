@@ -210,6 +210,44 @@ describe('material edit commands', () => {
     });
   });
 
+  it('lands an insert whose anchor block is gone and undoes it', () => {
+    const document = material([
+      paragraph('b1', 'alpha'),
+      paragraph('b2', 'beta'),
+      paragraph('b3', 'gamma'),
+    ]);
+    const ids = () => blocks(document).map((block) => block.id);
+    // Deleted before this call: its place is unknown, so the end.
+    const late = applyMaterialCommands(document, [
+      {
+        afterBlockId: 'deleted',
+        blocks: [paragraph('n1', 'one')],
+        type: 'insert_block',
+      },
+    ]);
+    expect(late.relocated).toEqual([
+      { after: 'b3', anchor: 'deleted', end: true },
+    ]);
+    expect(ids()).toEqual(['b1', 'b2', 'b3', 'n1']);
+    verifyMaterialGuards(document, late.guards);
+    applyMaterialCommands(document, late.inverse);
+    expect(ids()).toEqual(['b1', 'b2', 'b3']);
+    // Removed earlier in the same call: the blocks take its place.
+    const swap = applyMaterialCommands(document, [
+      { blockId: 'b2', expectedText: 'beta', type: 'remove_block' },
+      {
+        afterBlockId: 'b2',
+        blocks: [paragraph('n2', 'two')],
+        type: 'insert_block',
+      },
+    ]);
+    expect(swap.relocated).toEqual([{ after: 'b1', anchor: 'b2', end: false }]);
+    expect(ids()).toEqual(['b1', 'n2', 'b3']);
+    verifyMaterialGuards(document, swap.guards);
+    applyMaterialCommands(document, swap.inverse);
+    expect(ids()).toEqual(['b1', 'b2', 'b3']);
+  });
+
   it('exposes an embedded material reference by id and kind', () => {
     const document = material([
       paragraph('b1', 'intro'),

@@ -115,9 +115,22 @@ export type GuardTarget =
       runs: GuardRun[];
     };
 
+/**
+ * An insert whose anchor block was gone, and where it landed instead: after
+ * the nearest block before the anchor's place when this call removed the
+ * anchor, else at the end of the material (`end`), since a deleted block's
+ * tombstone no longer carries its id. `after` null is the start.
+ */
+export interface Relocation {
+  after: string | null;
+  anchor: string;
+  end: boolean;
+}
+
 export interface EditOutcome {
   guards: GuardTarget[];
   inverse: DocumentCommand[];
+  relocated: Relocation[];
 }
 
 const MEDIA_TYPES = new Set([
@@ -414,6 +427,11 @@ export function applyMaterialCommands(
   const { editor, sharedRoot } = openHeadlessEditor(document);
   const inverse: DocumentCommand[] = [];
   const guardTargets: Array<() => GuardTarget> = [];
+  const relocated: Relocation[] = [];
+  // Blocks this call removed, by id: the ids that stood before each.
+  const removed = new Map<string, string[]>();
+  const exists = (id: string) =>
+    Boolean(topLevelEntry(editor, (node) => stableId(node) === id));
   try {
     Editor.withoutNormalizing(editor, () => {
       for (const command of commands) {
@@ -465,10 +483,20 @@ export function applyMaterialCommands(
               throw new EditError('invalid_input', 'insert_block needs blocks');
             for (const block of command.blocks)
               assertNodeShape(block, 'insert_block');
-            const index =
-              command.afterBlockId === null
-                ? 0
-                : requireBlock(editor, command.afterBlockId)[1] + 1;
+            const anchor = command.afterBlockId;
+            let index = 0;
+            if (anchor !== null && exists(anchor)) {
+              index = requireBlock(editor, anchor)[1] + 1;
+            } else if (anchor !== null) {
+              // The anchor is gone: land the blocks rather than refuse them.
+              const before = removed.get(anchor);
+              const children = editor.children as unknown as PlateNode[];
+              const after = before
+                ? surviving(before, exists)
+                : (children.map(stableId).at(-1) ?? null);
+              index = after === null ? 0 : requireBlock(editor, after)[1] + 1;
+              relocated.push({ after, anchor, end: !before });
+            }
             for (const block of command.blocks) {
               if (
                 topLevelEntry(
@@ -524,6 +552,7 @@ export function applyMaterialCommands(
               .map(stableId);
             const previous = before.at(-1) ?? null;
             Transforms.removeNodes(editor, { at: [index] });
+            removed.set(command.blockId, before);
             inverse.unshift({
               afterBlockId: previous,
               blocks: [block],
@@ -532,15 +561,7 @@ export function applyMaterialCommands(
             // A later command in this call may remove the anchor too; the
             // gap is then guarded after the nearest block that survived.
             guardTargets.push(() =>
-              gapGuard(
-                sharedRoot,
-                editor,
-                surviving(before, (id) =>
-                  Boolean(
-                    topLevelEntry(editor, (node) => stableId(node) === id)
-                  )
-                )
-              )
+              gapGuard(sharedRoot, editor, surviving(before, exists))
             );
             break;
           }
@@ -710,7 +731,7 @@ export function applyMaterialCommands(
       }
     }
     const guards = dedupeGuards(captured);
-    return { guards, inverse };
+    return { guards, inverse, relocated };
   } finally {
     if (YjsEditor.connected(editor)) YjsEditor.disconnect(editor);
   }

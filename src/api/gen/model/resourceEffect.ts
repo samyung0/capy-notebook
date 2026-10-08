@@ -4,6 +4,7 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { Relocation } from './relocation.ts';
 import type { ResourceEffectOperation } from './resourceEffectOperation.ts';
 import type { ResourceRef } from './resourceRef.ts';
 import type { UndoRef } from './undoRef.ts';
@@ -13,6 +14,8 @@ export interface ResourceEffect {
   operationId?: string;
   projectionPending?: boolean;
   purgeAfter?: string;
+  /** @nullable */
+  relocated?: Relocation[] | null;
   resource: ResourceRef;
   trashEpisodeId?: string;
   undo?: UndoRef;

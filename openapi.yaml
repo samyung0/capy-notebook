@@ -3559,6 +3559,21 @@ components:
         - bbox
         - space
       type: object
+    Relocation:
+      additionalProperties: false
+      properties:
+        after:
+          nullable: true
+          type: string
+        anchor:
+          type: string
+        end:
+          type: boolean
+      required:
+        - anchor
+        - after
+        - end
+      type: object
     ReorderChaptersReq:
       additionalProperties: false
       properties:
@@ -3695,6 +3710,11 @@ components:
         purgeAfter:
           format: date-time
           type: string
+        relocated:
+          items:
+            $ref: "#/components/schemas/Relocation"
+          nullable: true
+          type: array
         resource:
           $ref: "#/components/schemas/ResourceRef"
         trashEpisodeId:

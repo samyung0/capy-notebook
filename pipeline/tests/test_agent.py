@@ -2251,6 +2251,20 @@ async def test_a_missed_edit_target_comes_back_as_it_reads_now(monkeypatch):
     )
 
 
+def test_an_edit_receipt_says_where_a_relocated_insert_landed():
+    body = _receipt("edited", "material", "mat_1")
+    body["effect"]["relocated"] = [
+        {"anchor": "b2", "after": "b9", "end": True},
+        {"anchor": "b4", "after": None, "end": False},
+    ]
+    text = tools._receipt_result(body).text()
+    assert (
+        "Block b2 no longer existed, so the blocks meant to follow it were added "
+        "at the end of the material, after block b9. Block b4 was removed earlier "
+        "in this edit, so the blocks meant to follow it took its place, at the start."
+    ) in text
+
+
 def test_argument_errors_name_the_fields_without_echoing_the_command():
     section = "A long section. " * 200
     target = {"kind": "material", "id": "mat_1"}

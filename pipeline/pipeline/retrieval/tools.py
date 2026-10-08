@@ -1361,7 +1361,10 @@ def _receipt_result(body: dict[str, Any]) -> ToolResult:
             if effect.get("projectionPending")
             else ""
         )
-        text = f"Edited '{title}' (id {rid}).{pending_note} The user can undo this edit from the chat result."
+        text = (
+            f"Edited '{title}' (id {rid}).{pending_note}{_relocations(effect)} "
+            "The user can undo this edit from the chat result."
+        )
     elif operation == "edit_undone":
         text = f"Reversed the earlier edit of '{title}' (id {rid})."
     else:
@@ -1370,6 +1373,23 @@ def _receipt_result(body: dict[str, Any]) -> ToolResult:
             "It is now in the workspace."
         )
     return ToolResult(text_parts=[text], effects=[effect])
+
+
+def _relocations(effect: dict[str, Any]) -> str:
+    """Where the edit's inserts whose anchor block was gone landed instead."""
+    out = ""
+    for moved in effect.get("relocated") or []:
+        after = moved.get("after")
+        place = f"after block {after}" if after else "at the start"
+        why = (
+            "no longer existed, so the blocks meant to follow it were added at "
+            "the end of the material"
+            if moved.get("end")
+            else "was removed earlier in this edit, so the blocks meant to follow "
+            "it took its place"
+        )
+        out += f" Block {moved.get('anchor')} {why}, {place}."
+    return out
 
 
 async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult:

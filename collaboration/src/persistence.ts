@@ -1117,6 +1117,10 @@ export class YjsDocumentStore {
         ...(input.undo
           ? {}
           : { undo: { operationId: input.operation.id, status: 'available' } }),
+        // Inserts whose anchor block was gone say where they landed instead.
+        ...(input.undo || outcome.relocated.length === 0
+          ? {}
+          : { relocated: outcome.relocated }),
       };
       const kind = input.undo ? 'undo_edit' : 'edit_document';
       await client.query(

@@ -238,6 +238,18 @@ type ResourceEffect struct {
 	TrashEpisodeID    string     `json:"trashEpisodeId,omitempty"`
 	PurgeAfter        *time.Time `json:"purgeAfter,omitempty"`
 	Undo              *UndoRef   `json:"undo,omitempty"`
+	// Relocated lists the edit's inserts whose anchor block was gone.
+	Relocated []Relocation `json:"relocated,omitempty"`
+}
+
+// Relocation is an insert whose anchor block was gone and where it landed
+// instead: after the nearest block before the anchor's place when the same
+// edit removed the anchor, else at the end of the material (End). After is
+// the block it follows; nil is the start.
+type Relocation struct {
+	Anchor string  `json:"anchor"`
+	After  *string `json:"after"`
+	End    bool    `json:"end"`
 }
 
 // Contract is the exported document Python loads at startup.

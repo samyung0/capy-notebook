@@ -933,6 +933,11 @@ export const UndoEditOperationResponse = zod.object({
   "operationId": zod.string().optional(),
   "projectionPending": zod.boolean().optional(),
   "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
+  "relocated": zod.array(zod.object({
+  "after": zod.string().nullable(),
+  "anchor": zod.string(),
+  "end": zod.boolean()
+})).nullish(),
   "resource": zod.object({
   "id": zod.string(),
   "kind": zod.enum(['source_file', 'material']),
@@ -1029,6 +1034,11 @@ export const ListMessagesResponseItem = zod.object({
   "operationId": zod.string().optional(),
   "projectionPending": zod.boolean().optional(),
   "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
+  "relocated": zod.array(zod.object({
+  "after": zod.string().nullable(),
+  "anchor": zod.string(),
+  "end": zod.boolean()
+})).nullish(),
   "resource": zod.object({
   "id": zod.string(),
   "kind": zod.enum(['source_file', 'material']),
@@ -4863,6 +4873,11 @@ export const PurgeTrashedResponse = zod.object({
   "operationId": zod.string().optional(),
   "projectionPending": zod.boolean().optional(),
   "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
+  "relocated": zod.array(zod.object({
+  "after": zod.string().nullable(),
+  "anchor": zod.string(),
+  "end": zod.boolean()
+})).nullish(),
   "resource": zod.object({
   "id": zod.string(),
   "kind": zod.enum(['source_file', 'material']),
@@ -4915,6 +4930,11 @@ export const RestoreTrashedResponse = zod.object({
   "operationId": zod.string().optional(),
   "projectionPending": zod.boolean().optional(),
   "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
+  "relocated": zod.array(zod.object({
+  "after": zod.string().nullable(),
+  "anchor": zod.string(),
+  "end": zod.boolean()
+})).nullish(),
   "resource": zod.object({
   "id": zod.string(),
   "kind": zod.enum(['source_file', 'material']),
@@ -6452,6 +6472,11 @@ export const CheckpointSourceDocumentResponse = zod.object({
   "operationId": zod.string().optional(),
   "projectionPending": zod.boolean().optional(),
   "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
+  "relocated": zod.array(zod.object({
+  "after": zod.string().nullable(),
+  "anchor": zod.string(),
+  "end": zod.boolean()
+})).nullish(),
   "resource": zod.object({
   "id": zod.string(),
   "kind": zod.enum(['source_file', 'material']),

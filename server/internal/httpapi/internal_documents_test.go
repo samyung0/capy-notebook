@@ -295,3 +295,34 @@ func TestEditRefusalDetailsReachThePipeline(t *testing.T) {
 		t.Fatalf("edit status = %d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+// An insert whose anchor block was gone lands elsewhere, and the authority's
+// receipt saying where reaches the pipeline.
+func TestEditReceiptKeepsRelocatedInserts(t *testing.T) {
+	h, st := openInternalHTTP(t)
+	authority := httptest.NewServer(withConverter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"operationId":"op","outcome":"succeeded","kind":"edit_document","effect":{"operation":"edited",` +
+			`"resource":{"kind":"material","id":"m"},"relocated":[{"anchor":"b2","after":"b9","end":true}]}}`))
+	})))
+	t.Cleanup(authority.Close)
+	st.ConfigureCollaboration(authority.URL, "collab-test-secret")
+
+	msgID := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
+	rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret,
+		noteBody(msgID, "call_relocated_note", "Relocated "+msgID, "# Lecture\n\nBody."))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	noteID := decodeReceipt(t, rec).Effect.Resource.ID
+	cleanupMaterial(t, st, noteID)
+	rec = doInternal(t, h, http.MethodPost, "/api/internal/documents/edit", pipeSecret, map[string]any{
+		"workspaceId": "ws_e2e_private", "userId": "u_editor",
+		"assistantMessageId": msgID, "toolCallId": "call_relocated_edit",
+		"target":   map[string]any{"kind": "material", "id": noteID},
+		"commands": []map[string]any{{"type": "insert_markdown", "after_block_id": "b2", "markdown": "More."}},
+	})
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"relocated":[{"anchor":"b2","after":"b9","end":true}]`) {
+		t.Fatalf("edit status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
