@@ -181,8 +181,9 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
           <Menu
             align="start"
             iconContainerClassName={cn(
-              ink === 'dark' && 'bg-black/25 text-white hover:bg-black/35',
-              ink === 'light' && 'bg-white/50 text-[#1d1d1f] hover:bg-white/70'
+              // No resting background: it read as already hovered.
+              ink === 'dark' && 'text-white hover:bg-white/15',
+              ink === 'light' && 'text-[#1d1d1f] hover:bg-black/8'
             )}
             items={menuItems}
           />
