@@ -1,6 +1,7 @@
-import { withYjs, YjsEditor, yTextToSlateElement } from '@slate-yjs/core';
-import { createEditor, Editor, Element, Transforms } from 'slate';
+import { YjsEditor } from '@slate-yjs/core';
+import { Editor, Element, Transforms } from 'slate';
 import * as Y from 'yjs';
+import { openHeadlessEditor } from './editCommands.js';
 import { MATERIAL_REF_TYPE } from './materialDocument.js';
 
 /**
@@ -127,13 +128,7 @@ export interface ChildAnswer {
  * operations. Nodes are found by id at apply time: the document may have moved
  * on while the API answered. Returns whether anything changed. */
 export function applyChildren(document: Y.Doc, answer: ChildAnswer) {
-  const sharedRoot = document.get('content', Y.XmlText);
-  const baseEditor = createEditor();
-  baseEditor.children = (
-    yTextToSlateElement(sharedRoot) as { children: typeof baseEditor.children }
-  ).children;
-  const editor = withYjs(baseEditor, sharedRoot, { autoConnect: false });
-  YjsEditor.connect(editor);
+  const { editor } = openHeadlessEditor(document);
   let changed = false;
   try {
     const targets = [

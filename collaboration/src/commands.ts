@@ -1,7 +1,8 @@
 import { isDeepStrictEqual } from 'node:util';
-import { withYjs, YjsEditor, yTextToSlateElement } from '@slate-yjs/core';
-import { createEditor, Editor, Element, Transforms } from 'slate';
-import * as Y from 'yjs';
+import { YjsEditor } from '@slate-yjs/core';
+import { Editor, Element, Transforms } from 'slate';
+import type * as Y from 'yjs';
+import { openHeadlessEditor } from './editCommands.js';
 
 export interface ReplaceBlockCommand {
   actorUserId: string;
@@ -44,13 +45,7 @@ export function applyCollaborationCommand(
     throw new Error('unsupported collaboration command');
   }
   assertReplacement(command);
-  const sharedRoot = document.get('content', Y.XmlText);
-  const baseEditor = createEditor();
-  baseEditor.children = (
-    yTextToSlateElement(sharedRoot) as { children: typeof baseEditor.children }
-  ).children;
-  const editor = withYjs(baseEditor, sharedRoot, { autoConnect: false });
-  YjsEditor.connect(editor);
+  const { editor } = openHeadlessEditor(document);
   try {
     const expectedId = stableId(command.expectedBlock);
     const entry = Editor.nodes(editor, {

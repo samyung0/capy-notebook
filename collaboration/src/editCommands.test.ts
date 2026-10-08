@@ -118,6 +118,48 @@ describe('material edit commands', () => {
     expect(inspectMaterial(document)[0].text).toBe('alpha beta');
   });
 
+  it('keeps links and inline equations in other blocks and beside the replaced span', () => {
+    const rich = (id: string, where: string, grows: string) => ({
+      children: [
+        { text: 'See ' },
+        { children: [{ text: 'the source' }], type: 'a', url: 'https://x.org' },
+        { text: where },
+        {
+          children: [{ text: '' }],
+          texExpression: 'x^2',
+          type: 'inline_equation',
+        },
+        { text: grows },
+      ],
+      id,
+      type: 'p',
+    });
+    const document = material([
+      rich('b1', ' where ', ' grows fast.'),
+      rich('b2', ' where ', ' grows fast.'),
+    ]);
+    // Each span starts right after one inline element and the first ends
+    // right before the other.
+    applyMaterialCommands(document, [
+      {
+        blockId: 'b1',
+        expectedText: ' where ',
+        text: ' when ',
+        type: 'replace_text',
+      },
+      {
+        blockId: 'b1',
+        expectedText: ' grows fast.',
+        text: ' grows quickly.',
+        type: 'replace_text',
+      },
+    ]);
+    expect(blocks(document)).toEqual([
+      rich('b1', ' when ', ' grows quickly.'),
+      rich('b2', ' where ', ' grows fast.'),
+    ]);
+  });
+
   it('exposes an embedded material reference by id and kind', () => {
     const document = material([
       paragraph('b1', 'intro'),

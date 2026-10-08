@@ -17,6 +17,7 @@ import {
 } from 'slate';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
+import { INLINE_TYPES } from './editCommands.js';
 import {
   MATERIAL_DOCUMENT_LIMITS,
   MaterialDocumentLimitError,
@@ -383,8 +384,6 @@ function seeded(seed: number) {
     return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
   };
 }
-
-const INLINE_TYPES = new Set(['a', 'inline_equation', 'mention']);
 
 /**
  * A Slate editor on its own copy of the room, as a browser holds one. Each

@@ -119,6 +119,16 @@ const MEDIA_TYPES = new Set([
 
 export const MAX_TEXT_EDIT_CHARS = 200_000;
 
+/** The note editor's inline elements (Plate keys: link, inline equation,
+ * mention, and the mention and slash combobox inputs). */
+export const INLINE_TYPES = new Set([
+  'a',
+  'inline_equation',
+  'mention',
+  'mention_input',
+  'slash_input',
+]);
+
 function stableId(node: PlateNode): string {
   return typeof node.id === 'string' ? node.id : '';
 }
@@ -145,12 +155,26 @@ function countOccurrences(haystack: string, needle: string): number {
   }
 }
 
-/** Slate point for a UTF-16 offset inside an element's concatenated text. */
-function pointAt(editor: Editor, path: Path, offset: number): Point {
+/**
+ * Slate point for a UTF-16 offset inside an element's concatenated text. On a
+ * boundary between two text leaves a span's start goes in the later leaf and
+ * its end in the earlier one, so a span that only touches an inline element
+ * (an equation, a link) does not take it in.
+ */
+function pointAt(
+  editor: Editor,
+  path: Path,
+  offset: number,
+  edge: 'start' | 'end'
+): Point {
   let remaining = offset;
   let last: Point | null = null;
   for (const [text, textPath] of Node.texts(editor, { from: path, to: path })) {
-    if (remaining <= text.text.length) {
+    if (
+      edge === 'end'
+        ? remaining <= text.text.length
+        : remaining < text.text.length
+    ) {
       return { offset: remaining, path: textPath };
     }
     remaining -= text.text.length;
@@ -236,6 +260,11 @@ function assertNodeShape(node: PlateNode, what: string) {
 export function openHeadlessEditor(document: Y.Doc) {
   const sharedRoot = document.get('content', Y.XmlText);
   const baseEditor = createEditor();
+  // YjsEditor.connect normalizes the whole document, and a bare editor takes
+  // every element for a block: without this it removes every link and inline
+  // equation in the material.
+  baseEditor.isInline = (element) =>
+    INLINE_TYPES.has((element as { type?: string }).type ?? '');
   baseEditor.children = (
     yTextToSlateElement(sharedRoot) as { children: typeof baseEditor.children }
   ).children;
@@ -359,8 +388,13 @@ export function applyMaterialCommands(
             }
             const current = Node.string(block as never);
             const span = resolveSpan(current, command);
-            const start = pointAt(editor, [index], span.offset);
-            const end = pointAt(editor, [index], span.offset + span.length);
+            const start = pointAt(editor, [index], span.offset, 'start');
+            const end = pointAt(
+              editor,
+              [index],
+              span.offset + span.length,
+              'end'
+            );
             if (span.length > 0) {
               Transforms.delete(editor, { at: { anchor: start, focus: end } });
             }
