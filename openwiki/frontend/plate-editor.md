@@ -851,6 +851,22 @@ is refused at admit, before it can cost the room time or memory
 
 - a struct that refers to its own or a later clock of its client (it could
   never integrate and would stay pending);
+- structs of one client that overlap or go back in clock order (two sections
+  for one client): fork yrs places an overlapping struct a second time and
+  frees the first while the sequence still links it, a crash the fuzz found;
+- an update whose placement would cost yrs more than 100,000 steps
+  (`MAX_PLACEMENT_STEPS`, `crates/ydoc/src/placement.rs`), the general guard
+  against any shape whose integration is quadratic. Admit replays yrs's
+  integration over a light overlay of the room, in yrs's own order, counting
+  each item YATA's conflict scan passes and each step of a map key's walk to
+  its first value, and stops at the budget: O(update + budget), 25 to 30 ms at
+  the budget in release, and it runs first, so a 3.5 MB update of items each
+  claiming its own spot but scanned past 10,000 tombstones is refused in about
+  the time its decoding takes. The count equals an instrumented yrs on all
+  2,883 corpus updates (single writers and three writers: p50 0, p90 0, p99 4,
+  max 40) and on every crafted shape; 64 writers at one place cost 63, two
+  offline writers each typing 20,000 characters at one place 1 (yrs merges a
+  typed run into one item), the 20th such writer 19;
 - more than 64 items claiming one spot of a sequence (the same left and right
   neighbour when written), the room's and the update's together, of any client
   ids: yrs, like Yjs, integrates each item at a spot by scanning those already
