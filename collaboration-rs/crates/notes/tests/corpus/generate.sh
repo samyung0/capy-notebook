@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Regenerates the parity corpus from the Node collaboration server.
 #   generate.sh <checkout> [families]
-# <checkout>: a main checkout (its collaboration/src is the oracle) at the
-# branch's base, with node_modules and collaboration/node_modules installed and
+# <checkout>: a main checkout from before the Rust cutover removed the Node
+# server (its collaboration/src is the oracle; last regenerated on e2270ccc),
+# with node_modules and collaboration/node_modules installed and
 # collaboration/dist/markdown.bundle.mjs built (scripts/build-markdown.mjs).
 # families: comma list, default all.
 # While it runs, the oracle's headless editors keep links, mentions and inline
