@@ -959,7 +959,11 @@ It skips a value the room refused or discarded (a rejected document, a room
 turned read-only) and one that never synced. `MaterialPreview` is memoized,
 so a projected copy equal to the live one (React Query keeps the same
 content object) re-renders nothing, and Edit loads its module so View does
-not suspend on it (`CenterContent.tsx`). Until the room projects on demand,
+not suspend on it (`CenterContent.tsx`). The pane picks the preview's
+component type once per mount, at its first View: a note opened straight in
+View keeps the lazy wrapper, because swapping it for the loaded component at
+the next re-render would remount the whole document (frames reload, an
+embedded quiz loses its answer). Until the room projects on demand,
 a refetch that lands before the room's last store is projected can show a
 copy a few seconds older than the live one.
 

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { EDITOR_NOTE } from '../../src/mocks/editorSeed';
+import { EDITOR_NOTE, EDITOR_WORKSPACE_ID } from '../../src/mocks/editorSeed';
 import { clickTextEnd, openEditorNote } from './helpers';
 
 // Switching a note from Edit to View in the same tab renders that tab's live
@@ -81,4 +81,68 @@ test('Edit to View shows the live note at once, then the projected copy', async 
       () => (window as unknown as { __flashes: string[] }).__flashes
     )
   ).toEqual([]);
+});
+
+// A note opened straight in View renders through the lazily loaded renderer.
+// Once it has loaded, a re-render of the pane (here a title-only update of the
+// material, as a rename or refetch makes) must keep the same document: the
+// interactive frame does not reload and the embedded quiz keeps its answer.
+test('a note opened in View keeps its document through a re-render', async ({
+  page,
+}) => {
+  await page.goto(
+    `/workspaces/${EDITOR_WORKSPACE_ID}?material=mat_note_bio_feature_matrix&mode=view`
+  );
+  const preview = page.getByTestId('material-preview');
+  const frame = preview.locator('iframe').first();
+  await expect(frame).toBeVisible({ timeout: 30_000 });
+  const answer = preview.getByRole('button', { name: /Mitochondria/ }).first();
+  await answer.click();
+  await expect(answer).toHaveAttribute('aria-pressed', 'true');
+  await frame.evaluate((element) => {
+    const marked = element as HTMLIFrameElement & { __loads?: number };
+    marked.__loads = 0;
+    marked.addEventListener('load', () => {
+      marked.__loads = (marked.__loads ?? 0) + 1;
+    });
+  });
+
+  const retitled = await page.evaluate(async (id) => {
+    const root = document.querySelector('[data-testid="material-preview"]')!;
+    const fiberKey = Object.keys(root).find((key) =>
+      key.startsWith('__reactFiber$')
+    )!;
+    type Fiber = { memoizedProps?: Record<string, unknown>; return?: Fiber };
+    let fiber = (root as unknown as Record<string, Fiber>)[fiberKey];
+    while (fiber && !fiber.memoizedProps?.client) fiber = fiber.return!;
+    const client = fiber.memoizedProps!.client as {
+      getQueryCache: () => {
+        findAll: () => {
+          queryKey: unknown[];
+          state: { data?: { id?: string; content?: unknown } };
+        }[];
+      };
+      setQueryData: (key: unknown[], update: (data: object) => object) => void;
+    };
+    const query = client
+      .getQueryCache()
+      .findAll()
+      .find(({ state }) => state.data?.id === id && state.data?.content);
+    if (!query) return false;
+    for (const round of [1, 2])
+      client.setQueryData(query.queryKey, (data) => ({
+        ...data,
+        title: `Renamed ${round}`,
+      }));
+    return true;
+  }, 'mat_note_bio_feature_matrix');
+  expect(retitled).toBe(true);
+  await page.waitForTimeout(1500);
+
+  expect(
+    await frame.evaluate(
+      (element) => (element as HTMLIFrameElement & { __loads?: number }).__loads
+    )
+  ).toBe(0);
+  await expect(answer).toHaveAttribute('aria-pressed', 'true');
 });

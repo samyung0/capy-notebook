@@ -1,5 +1,12 @@
 import { Navigate, useRouter } from '@tanstack/react-router';
-import { lazy, type ReactNode, Suspense, useEffect, useState } from 'react';
+import {
+  lazy,
+  type ReactNode,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { isMaterialContentUnreadable } from '@/api/client';
 import { useFile, useMaterial, useMaterials } from '@/api/hooks';
 import type { Chapter, Region, UserColor } from '@/api/types';
@@ -70,6 +77,9 @@ const loadPreview = () =>
 const LazyMaterialPreview = lazy(() =>
   loadPreview().then((m) => ({ default: m.MaterialPreview }))
 );
+type PreviewComponent =
+  | typeof LazyMaterialPreview
+  | typeof import('./MaterialPreview').MaterialPreview;
 
 /** The center pane. Dispatches on the currently-open item — a source file or a
  * study material — and renders a consistent header plus the item body. Quiz and
@@ -311,6 +321,7 @@ export function MaterialContent({
   useEffect(() => {
     if (mode === 'edit') void loadPreview();
   }, [mode]);
+  const previewType = useRef<PreviewComponent>(undefined);
   if (isLoading) {
     return <FileLoading />;
   }
@@ -329,8 +340,13 @@ export function MaterialContent({
     forceReadOnly || readOnly ? 'view' : resolveMaterialMode(mode, policy);
   // Edit to View shows the note at once (NoteEditorCore hands over its live
   // value), so View must not suspend on loading its renderer: Edit loads it,
-  // and View then renders it directly.
-  const MaterialPreview = previewModule?.MaterialPreview ?? LazyMaterialPreview;
+  // and View then renders it directly. The type is chosen once per mount, at
+  // the first View: swapping the lazy wrapper for the loaded component later
+  // would remount the whole document (frames reload, quiz attempts reset).
+  if (activeMode === 'view')
+    previewType.current ??=
+      previewModule?.MaterialPreview ?? LazyMaterialPreview;
+  const MaterialPreview = previewType.current ?? LazyMaterialPreview;
 
   if (material.kind === 'quiz' && activeMode === 'edit') {
     return <OpenQuizEditor quizId={materialId} />;
