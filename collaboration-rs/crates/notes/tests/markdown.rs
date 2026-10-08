@@ -210,6 +210,20 @@ fn the_prescan_refuses_pathological_sources_at_once() {
     // A closed block does not hide what follows it.
     let after = format!("<pre>x</pre>\n{} x", ">".repeat(20));
     assert!(prescan::prescan(&after).unwrap_err().contains("quotes"));
+    // Types 6-7 (a block tag, a lone complete tag) run to a blank line.
+    for source in [
+        format!("<div>\n{} x\n</div>\n", ">".repeat(20)),
+        format!("<DIV class=\"a\">\n{} x\n", ">".repeat(20)),
+        format!("<custom-tag>\n{} x\n", ">".repeat(20)),
+    ] {
+        prescan::prescan(&source).unwrap_or_else(|refused| panic!("{refused}"));
+    }
+    let after_blank = format!("<div>\n\n{} x", ">".repeat(20));
+    assert!(
+        prescan::prescan(&after_blank)
+            .unwrap_err()
+            .contains("quotes")
+    );
 }
 
 /// Output nesting past serde_json's 128 levels (a list item opening 70

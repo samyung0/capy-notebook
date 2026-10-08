@@ -9,10 +9,11 @@
 //! - link brackets and emphasis delimiter runs in one paragraph, outside code
 //!   spans and escapes.
 //!
-//! Fenced code and raw HTML blocks of CommonMark types 1-5 (`<pre>`,
-//! `<script>`, `<style>`, `<textarea>`, comments, processing instructions,
-//! declarations, CDATA) run to their closing marker and are skipped whole:
-//! the import keeps them as text.
+//! Fenced code and raw HTML blocks are skipped whole (the import keeps them
+//! as text): types 1-5 (`<pre>`, `<script>`, `<style>`, `<textarea>`,
+//! comments, processing instructions, declarations, CDATA) to their closing
+//! marker, types 6-7 (block tags such as `<div>`, a lone complete tag) to a
+//! blank line.
 //!
 //! The conversion's deadline stays the backstop for anything else.
 
@@ -81,6 +82,105 @@ fn html_open(text: &str) -> Option<(&'static str, usize)> {
     } else {
         None
     }
+}
+
+/// CommonMark's type 6 block tag names.
+const BLOCK_TAGS: [&str; 62] = [
+    "address",
+    "article",
+    "aside",
+    "base",
+    "basefont",
+    "blockquote",
+    "body",
+    "caption",
+    "center",
+    "col",
+    "colgroup",
+    "dd",
+    "details",
+    "dialog",
+    "dir",
+    "div",
+    "dl",
+    "dt",
+    "fieldset",
+    "figcaption",
+    "figure",
+    "footer",
+    "form",
+    "frame",
+    "frameset",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "head",
+    "header",
+    "hr",
+    "html",
+    "iframe",
+    "legend",
+    "li",
+    "link",
+    "main",
+    "menu",
+    "menuitem",
+    "nav",
+    "noframes",
+    "ol",
+    "optgroup",
+    "option",
+    "p",
+    "param",
+    "search",
+    "section",
+    "summary",
+    "table",
+    "tbody",
+    "td",
+    "tfoot",
+    "th",
+    "thead",
+    "title",
+    "tr",
+    "track",
+    "ul",
+];
+
+/// Whether `text` opens an HTML block of type 6 (a block tag, which may
+/// interrupt a paragraph) or 7 (a lone complete tag, which may not), both
+/// running to a blank line.
+fn html_open_to_blank(text: &str, in_paragraph: bool) -> bool {
+    let Some(rest) = text.strip_prefix('<') else {
+        return false;
+    };
+    let closing = rest.starts_with('/');
+    let rest = rest.strip_prefix('/').unwrap_or(rest);
+    let name_len = rest
+        .bytes()
+        .take_while(|b| b.is_ascii_alphanumeric() || *b == b'-')
+        .count();
+    if name_len == 0 || !rest.as_bytes()[0].is_ascii_alphabetic() {
+        return false;
+    }
+    let name = rest[..name_len].to_ascii_lowercase();
+    let after = &rest[name_len..];
+    let ends_name =
+        after.is_empty() || after.starts_with([' ', '\t', '>']) || after.starts_with("/>");
+    if ends_name && BLOCK_TAGS.contains(&name.as_str()) {
+        return true;
+    }
+    // Type 7: a complete tag alone on its line, not one of type 1's names.
+    let line = text.trim_end();
+    !in_paragraph
+        && ends_name
+        && !matches!(name.as_str(), "pre" | "script" | "style" | "textarea")
+        && line.ends_with('>')
+        && !line[1..line.len() - 1].contains(['<', '>'])
+        && (!closing || after.trim_end() == ">")
 }
 
 /// Whether `text` holds `marker` (lowercase), ignoring ASCII case.
@@ -217,8 +317,9 @@ pub fn prescan(source: &str) -> Result<(), Refused> {
     let max_depth = MAX_DEPTH as usize;
     // An open fence: its character, length and the quote depth it opened at.
     let mut fence: Option<(u8, usize, usize)> = None;
-    // An open HTML block: its end marker and the quote depth it opened at.
-    let mut html: Option<(&'static str, usize)> = None;
+    // An open HTML block: its end marker (none: a blank line) and the quote
+    // depth it opened at.
+    let mut html: Option<(Option<&'static str>, usize)> = None;
     let mut in_paragraph = false;
     let mut in_list = false;
     let mut after_blank = true;
@@ -250,7 +351,11 @@ pub fn prescan(source: &str) -> Result<(), Refused> {
         if let Some((end, depth)) = html {
             let (markers, content) = quote_markers(line, depth);
             if markers == depth {
-                if holds(content, end) {
+                let ends = match end {
+                    Some(end) => holds(content, end),
+                    None => content.trim().is_empty(),
+                };
+                if ends {
                     html = None;
                 }
                 continue;
@@ -279,11 +384,21 @@ pub fn prescan(source: &str) -> Result<(), Refused> {
             // Indented code (a tab counts as four spaces).
             continue;
         }
+        let to_blank = indent <= 3 && html_open_to_blank(text, in_paragraph);
+        if to_blank {
+            html = Some((None, depth));
+            in_paragraph = false;
+            header = None;
+            table = None;
+            marks = 0;
+            code = None;
+            continue;
+        }
         if indent <= 3
             && let Some((end, opener)) = html_open(text)
         {
             if !holds(&text[opener..], end) {
-                html = Some((end, depth));
+                html = Some((Some(end), depth));
             }
             in_paragraph = false;
             header = None;
