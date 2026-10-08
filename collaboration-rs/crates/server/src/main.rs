@@ -83,6 +83,9 @@ fn main() {
     }
 }
 
+/// The longest wait for a pooled database connection.
+const DB_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
+
 async fn serve(config: Config) -> Result<(), String> {
     let db = {
         let pg: tokio_postgres::Config = config
@@ -90,8 +93,13 @@ async fn serve(config: Config) -> Result<(), String> {
             .parse()
             .map_err(|error: tokio_postgres::Error| error.to_string())?;
         let manager = deadpool_postgres::Manager::new(pg, tokio_postgres::NoTls);
+        // A connection held across slow work starved the pool once (the
+        // source fold, rust-core REVIEW1 M2): a wait this long fails the
+        // caller instead of hanging every room.
         deadpool_postgres::Pool::builder(manager)
             .max_size(10)
+            .wait_timeout(Some(DB_WAIT))
+            .runtime(deadpool_postgres::Runtime::Tokio1)
             .build()
             .map_err(|error| error.to_string())?
     };

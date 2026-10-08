@@ -915,44 +915,56 @@ impl Sources {
 
     /// Merges the log of `room`'s epoch into its base (DESIGN 3.5): replays
     /// base + rows, runs the load check, writes the base and deletes the rows
-    /// it covers, in one transaction holding the document row. Rows a refresh
-    /// candidate that is not exported yet still needs stay.
+    /// it covers. Rows a refresh candidate that is not exported yet still
+    /// needs stay. The slow part (the base, an engine seed, the replay) runs
+    /// holding neither a connection nor the row: the write then locks the
+    /// row and checks that nothing it folded changed meanwhile.
     pub async fn fold(&self, room: &SourceRoom) -> Result<Folded, SourceError> {
-        let mut client = self.db.get().await.map_err(db_error)?;
-        let txn = client.transaction().await.map_err(db_error)?;
-        let Some(row) = txn
-            .query_opt(
-                "SELECT d.format,d.state,d.state_seed_sha256,d.checkpoint,d.epoch,COALESCE(d.base_source_sha256,''),(SELECT MIN(c.checkpoint) FROM source_refresh_candidates c WHERE c.file_id=d.file_id AND c.epoch=d.epoch AND c.source_sha256 IS NULL) FROM source_documents d WHERE d.file_id=$1 FOR UPDATE",
-                &[&room.file_id],
-            )
-            .await
-            .map_err(db_error)?
-        else {
-            return Ok(Folded::default());
+        const DOCUMENT: &str = "SELECT d.format,d.state,d.state_seed_sha256,d.checkpoint,d.epoch,COALESCE(d.base_source_sha256,''),(SELECT MIN(c.checkpoint) FROM source_refresh_candidates c WHERE c.file_id=d.file_id AND c.epoch=d.epoch AND c.source_sha256 IS NULL),sha256(d.state) FROM source_documents d WHERE d.file_id=$1";
+        // One snapshot of the document and its rows.
+        let (row, rows) = {
+            let mut client = self.db.get().await.map_err(db_error)?;
+            let txn = client
+                .build_transaction()
+                .isolation_level(tokio_postgres::IsolationLevel::RepeatableRead)
+                .read_only(true)
+                .start()
+                .await
+                .map_err(db_error)?;
+            let Some(row) = txn
+                .query_opt(DOCUMENT, &[&room.file_id])
+                .await
+                .map_err(db_error)?
+            else {
+                return Ok(Folded::default());
+            };
+            let (epoch, checkpoint, captured): (i64, i64, Option<i64>) =
+                (row.get(4), row.get(3), row.get(6));
+            if epoch as u64 != room.epoch {
+                return Ok(Folded::default());
+            }
+            let upto = captured.map_or(checkpoint, |captured| captured.min(checkpoint));
+            let rows = txn
+                .query(
+                    "SELECT checkpoint,update FROM source_document_updates WHERE file_id=$1 AND epoch=$2 AND checkpoint<=$3 ORDER BY checkpoint",
+                    &[&room.file_id, &epoch, &upto],
+                )
+                .await
+                .map_err(db_error)?;
+            txn.commit().await.map_err(db_error)?;
+            (row, rows)
         };
-        let format: SourceFormat = serde_json::from_value(Value::String(row.get(0)))
-            .map_err(|error| SourceError::Other(format!("source format: {error}")))?;
-        let epoch: i64 = row.get(4);
-        if epoch as u64 != room.epoch {
-            return Ok(Folded::default());
-        }
-        let checkpoint: i64 = row.get(3);
-        let captured: Option<i64> = row.get(6);
-        let upto = captured.map_or(checkpoint, |captured| captured.min(checkpoint));
-        let rows = txn
-            .query(
-                "SELECT checkpoint,update FROM source_document_updates WHERE file_id=$1 AND epoch=$2 AND checkpoint<=$3 ORDER BY checkpoint",
-                &[&room.file_id, &epoch, &upto],
-            )
-            .await
-            .map_err(db_error)?;
         if rows.is_empty() {
             return Ok(Folded::default());
         }
+        let format: SourceFormat = serde_json::from_value(Value::String(row.get(0)))
+            .map_err(|error| SourceError::Other(format!("source format: {error}")))?;
+        let (epoch, sha, state_hash): (i64, String, Option<Vec<u8>>) =
+            (row.get(4), row.get(5), row.get(7));
         let stored = Stored {
             state: row.get(1),
             state_seed_sha256: row.get(2),
-            checkpoint: checkpoint as u64,
+            checkpoint: row.get::<_, i64>(3) as u64,
             epoch: epoch as u64,
             base_revision: 0,
             rows: rows
@@ -960,7 +972,6 @@ impl Sources {
                 .map(|row| (row.get::<_, i64>(0) as u64, row.get(1)))
                 .collect(),
         };
-        let sha: String = row.get(5);
         let base = self.base_by_sha(&room.file_id, &sha).await?;
         let (seed, layers) = self.layers(format, &base, &sha, &stored, None).await?;
         let folded_bytes: i64 = stored.rows.iter().map(|(_, row)| row.len() as i64).sum();
@@ -982,6 +993,37 @@ impl Sources {
         })
         .await
         .map_err(|error| SourceError::Other(format!("fold: {error}")))??;
+        // The write: only if the epoch, base, state and folded rows are as read
+        // and no candidate captured since needs a folded row.
+        let mut client = self.db.get().await.map_err(db_error)?;
+        let txn = client.transaction().await.map_err(db_error)?;
+        let Some(now) = txn
+            .query_opt(&format!("{DOCUMENT} FOR UPDATE OF d"), &[&room.file_id])
+            .await
+            .map_err(db_error)?
+        else {
+            return Ok(Folded::default());
+        };
+        let (now_rows, now_bytes): (i64, i64) = {
+            let counted = txn
+                .query_one(
+                    "SELECT count(*),COALESCE(sum(octet_length(update)),0)::bigint FROM source_document_updates WHERE file_id=$1 AND epoch=$2 AND checkpoint<=$3",
+                    &[&room.file_id, &epoch, &last],
+                )
+                .await
+                .map_err(db_error)?;
+            (counted.get(0), counted.get(1))
+        };
+        let captured: Option<i64> = now.get(6);
+        let unchanged = now.get::<_, i64>(4) == epoch
+            && now.get::<_, String>(5) == sha
+            && now.get::<_, Option<Vec<u8>>>(7) == state_hash
+            && now_rows == folded_rows
+            && now_bytes == folded_bytes
+            && captured.is_none_or(|captured| captured >= last);
+        if !unchanged {
+            return Ok(Folded::default());
+        }
         txn.execute(
             "UPDATE source_documents SET state=$2,log_bytes=log_bytes-$3,log_rows=log_rows-$4 WHERE file_id=$1",
             &[&room.file_id, &state, &folded_bytes, &(folded_rows as i32)],

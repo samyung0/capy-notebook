@@ -283,23 +283,7 @@ async fn harness() -> Harness {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     *fake.url.lock().unwrap() = format!("http://{}", listener.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let sources = Arc::new(Sources::new(
-        SourcesConfig {
-            api_url: fake.url.lock().unwrap().clone(),
-            secret: "secret".into(),
-            engine: PoolConfig {
-                program: PathBuf::from(env!("CARGO_BIN_EXE_sources-test-engine")),
-                args: Vec::new(),
-                save_processes: 1,
-                background_processes: 1,
-                call_timeout: Duration::from_secs(120),
-                replica_budget_bytes: 1 << 30,
-                memory_limit_bytes: None,
-            },
-        },
-        db.clone(),
-        reqwest::Client::new(),
-    ));
+    let sources = Arc::new(sources_on(&fake, db.clone()));
     let user = unique("u");
     let workspace = unique("ws");
     let client = db.get().await.unwrap();
@@ -323,6 +307,27 @@ async fn harness() -> Harness {
         user,
         workspace,
     }
+}
+
+/// A `Sources` against the stand-in gateway on `db`, its caches empty.
+fn sources_on(fake: &Fake, db: deadpool_postgres::Pool) -> Sources {
+    Sources::new(
+        SourcesConfig {
+            api_url: fake.url.lock().unwrap().clone(),
+            secret: "secret".into(),
+            engine: PoolConfig {
+                program: PathBuf::from(env!("CARGO_BIN_EXE_sources-test-engine")),
+                args: Vec::new(),
+                save_processes: 1,
+                background_processes: 1,
+                call_timeout: Duration::from_secs(120),
+                replica_budget_bytes: 1 << 30,
+                memory_limit_bytes: None,
+            },
+        },
+        db,
+        reqwest::Client::new(),
+    )
 }
 
 impl Harness {
@@ -712,4 +717,49 @@ async fn an_office_room_appends_rows_with_engine_effects_and_checks_its_seed_on_
         .unwrap_err();
     assert_eq!(error, SourceError::SeedChanged);
     assert!(error.refused());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn cold_folds_outnumbering_the_pool_connections_all_finish() {
+    let h = harness().await;
+    let mut rooms = Vec::new();
+    for n in 0..4 {
+        let room = h
+            .file(
+                "text",
+                &format!("n{n}.md"),
+                format!(
+                    "text {n}
+"
+                )
+                .as_bytes(),
+            )
+            .await;
+        let doc = text_doc(100);
+        h.sources.load(&room, &h.user, &doc).await.unwrap();
+        let mut durable = doc.transact().state_vector();
+        type_into(&doc, 7, 0, "X");
+        save_text(&h, &room, &doc, &mut durable).await.unwrap();
+        rooms.push(room);
+    }
+    // A fresh instance (no cached base or seed) on two connections that wait
+    // without limit: a fold holding one while it takes another would hang.
+    let mut config = deadpool_postgres::Config::new();
+    config.url = Some(std::env::var("SOURCES_TEST_DATABASE_URL").unwrap());
+    config.pool = Some(deadpool_postgres::PoolConfig::new(2));
+    let small = config
+        .create_pool(
+            Some(deadpool_postgres::Runtime::Tokio1),
+            tokio_postgres::NoTls,
+        )
+        .unwrap();
+    let cold = sources_on(&h.fake, small);
+    let folds = futures::future::join_all(rooms.iter().map(|room| cold.fold(room)));
+    let folded = tokio::time::timeout(Duration::from_secs(60), folds)
+        .await
+        .expect("every fold finishes");
+    for fold in folded {
+        assert_eq!(fold.unwrap().rows, 1);
+    }
 }

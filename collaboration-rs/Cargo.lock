@@ -3093,6 +3093,7 @@ dependencies = [
  "betteroffice-office-service",
  "cpu-time",
  "deadpool-postgres",
+ "futures",
  "indexmap",
  "memory-stats",
  "notes",

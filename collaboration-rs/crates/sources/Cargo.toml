@@ -39,6 +39,7 @@ rlimit = "0.10"
 
 [dev-dependencies]
 axum.workspace = true
+futures.workspace = true
 
 [lints]
 workspace = true

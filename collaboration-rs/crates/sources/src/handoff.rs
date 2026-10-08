@@ -517,10 +517,6 @@ impl Handoff {
         if !pending {
             return Ok(false);
         }
-        let session = self.sources.current(file_id).await?;
-        if !session.rebuild_pending || session.format == SourceFormat::Text {
-            return Ok(false);
-        }
         // The pause closed every writer; a viewer left open must not hold the
         // maintenance window.
         let writers_only: bool = client
@@ -528,7 +524,12 @@ impl Handoff {
             .await
             .map_err(|error| SourceError::Other(error.to_string()))?
             .get(0);
+        // `current` takes a connection of its own.
         drop(client);
+        let session = self.sources.current(file_id).await?;
+        if !session.rebuild_pending || session.format == SourceFormat::Text {
+            return Ok(false);
+        }
         if self.busy(&session.room) || self.rooms.busy(&session.room, writers_only) {
             return Ok(false);
         }
