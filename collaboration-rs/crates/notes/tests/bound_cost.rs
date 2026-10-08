@@ -3,10 +3,13 @@
 //! note (plate REVIEW1 M1, the reviewer's probe-delete-all): one delete range
 //! per surviving character, every text re-priced in the JS bound. Here the
 //! delete set is searched, not scanned, and deleted blocks are skipped, so the
-//! cost stays linear in the note.
+//! cost stays linear in the note. And `admit` on a long paste, whose
+//! blocks chain each to the one before (notes REVIEW2 M5).
 use std::time::{Duration, Instant};
 
-use notes::{bound, plate};
+use notes::limits::{Admission, Validator};
+use notes::{bound, plate, slate_yjs};
+use serde_json::json;
 use ydoc::doc_options;
 use yrs::types::Attrs;
 use yrs::updates::decoder::Decode;
@@ -119,6 +122,83 @@ fn a_select_all_delete_is_bounded_in_linear_time() {
     assert!(large < Duration::from_millis(3_000), "{large:?}");
     // Four times the paragraphs in under eight times the time: linear passes
     // (about 4x release, 5x debug), quadratic (16x) does not.
+    assert!(
+        large < small * 8 + Duration::from_millis(20),
+        "{small:?} -> {large:?}"
+    );
+}
+
+/// A writer's paste of `blocks` paragraphs (two leaves each, as
+/// `slate_yjs::insert_nodes` writes them, each block chained to the one
+/// before) into a one-paragraph room whose validator holds a bound: the time
+/// of `admit` alone, best of three.
+fn paste_time(blocks: usize) -> Duration {
+    let room = Doc::with_options(doc_options(1));
+    room.get_or_insert_text(plate::CONTENT_ROOT);
+    {
+        let mut txn = room.transact_mut();
+        let root = plate::content_root(&txn).unwrap();
+        slate_yjs::insert_nodes(
+            &mut txn,
+            root,
+            0,
+            &[json!({ "type": "p", "id": "a", "children": [{ "text": "hello" }] })],
+        );
+    }
+    let state = room
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    let writer = Doc::with_options(doc_options(2));
+    writer
+        .transact_mut()
+        .apply_update(Update::decode_v1(&state).unwrap())
+        .unwrap();
+    {
+        let mut txn = writer.transact_mut();
+        let root = plate::content_root(&txn).unwrap();
+        let len = yrs::XmlTextRef::from(root).len(&txn);
+        let nodes: Vec<_> = (0..blocks)
+            .map(|i| json!({ "type": "p", "id": format!("b{i}"), "children": [{ "text": "x" }, { "text": "y", "bold": true }] }))
+            .collect();
+        slate_yjs::insert_nodes(&mut txn, root, len, &nodes);
+    }
+    let update = writer
+        .transact()
+        .encode_state_as_update_v1(&room.transact().state_vector());
+    let decoded = ydoc::decode(&update).unwrap();
+    (0..3)
+        .map(|_| {
+            // A bound in place, as in a room that has measured once.
+            let mut validator = Validator::default();
+            let nothing = ydoc::decode(
+                &room
+                    .transact()
+                    .encode_state_as_update_v1(&room.transact().state_vector()),
+            )
+            .unwrap();
+            validator.admit(&room, &nothing).unwrap();
+            let start = Instant::now();
+            assert_eq!(
+                validator.admit(&room, &decoded).unwrap(),
+                Admission::Accepted
+            );
+            // Both sizes stay on the bound, no copy of the room.
+            assert_eq!(validator.exact_checks, 1);
+            start.elapsed()
+        })
+        .min()
+        .unwrap_or_default()
+}
+
+#[test]
+fn a_paste_is_admitted_in_linear_time() {
+    // 2,400 blocks bound at 9,600 nodes: both sizes stay on the bound path.
+    let small = paste_time(600);
+    let large = paste_time(2_400);
+    eprintln!("admit of a paste: 600 blocks {small:?}, 2,400 blocks {large:?}");
+    // Four times the blocks in under eight times the time: linear passes
+    // (about 5x measured), quadratic (16x) does not. Before the memo,
+    // release: 184 ms for 1,000 blocks and 734 ms for 2,000.
     assert!(
         large < small * 8 + Duration::from_millis(20),
         "{small:?} -> {large:?}"

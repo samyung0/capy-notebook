@@ -3,6 +3,8 @@
 //! `JSON.stringify({schemaVersion:1, value})` with runtime comment marks
 //! stripped from text leaves, the node count and the deepest node.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use yrs::block::ItemContent;
@@ -258,25 +260,43 @@ fn plain_content<T: ReadTxn>(txn: &T, incoming: &ydoc::Incoming) -> Result<(), R
     // Whether an item is a map entry (an attribute or a marker), or none when
     // Yjs drops it (its origin was garbage-collected). An item with an origin
     // does not encode its parent: it takes its origin's, which the room or
-    // this update holds.
-    let entry = |start: &yrs::block::Item| -> Option<bool> {
+    // this update holds. Each item resolves once per update (a pasted run
+    // chains every item to the one before it); a chain that loops is none.
+    let mut entries: HashMap<yrs::ID, Option<bool>> = HashMap::new();
+    let mut entry = |start: &yrs::block::Item| -> Option<bool> {
+        let mut chain: Vec<yrs::ID> = Vec::new();
         let mut item = start;
-        for _ in 0..=incoming.items().count() {
+        let found = loop {
+            if let Some(known) = entries.get(item.id()) {
+                break *known;
+            }
+            if chain.contains(item.id()) {
+                break None;
+            }
+            chain.push(*item.id());
             if item.parent_sub().is_some() {
-                return Some(true);
+                break Some(true);
             }
             if !matches!(item.update_parent(), yrs::block::UpdateParent::Unknown) {
-                return Some(false);
+                break Some(false);
             }
-            let origin = item.origin().or(item.right_origin())?;
+            let Some(origin) = item.origin().or(item.right_origin()) else {
+                break None;
+            };
             if origin.clock < state.get(&origin.client) {
-                return store
+                break store
                     .get_item(origin)
                     .map(|held| held.parent_sub().is_some());
             }
-            item = incoming.item_at(origin)?;
+            match incoming.item_at(origin) {
+                Some(next) => item = next,
+                None => break None,
+            }
+        };
+        for id in chain {
+            entries.insert(id, found);
         }
-        None
+        found
     };
     for item in incoming.items() {
         let id = item.id();

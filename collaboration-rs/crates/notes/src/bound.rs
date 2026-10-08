@@ -17,6 +17,7 @@
 //! leaves the value, whatever the update writes into it (plate REVIEW1 M1, as
 //! capy-side/plate 3ed9e16a fixed the JS bound).
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -111,6 +112,9 @@ struct Bound<'a, T: ReadTxn> {
     decoded: &'a Incoming<'a>,
     state: StateVector,
     content: BranchPtr,
+    /// [Bound::held_side] per new item and side: a pasted run chains each
+    /// item to the one before, so unmemoized walks are quadratic.
+    sides: RefCell<HashMap<(ID, bool), Option<ID>>>,
 }
 
 impl<'a, T: ReadTxn> Bound<'a, T> {
@@ -120,6 +124,7 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
             decoded,
             state: txn.state_vector(),
             content: plate::content_root(txn)?,
+            sides: RefCell::new(HashMap::new()),
         })
     }
 
@@ -442,21 +447,36 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
     }
 
     /// The held item on one side of a new item: its origin, followed through
-    /// other new items. `Err` when the chain leaves both update and room.
+    /// other new items, each resolved once per update. `Err` when the chain
+    /// leaves both update and room, or loops.
     fn held_side(&self, start: Option<ID>, side: Side) -> Result<Option<ID>, Unbounded> {
+        let key = |item: &Item| (*item.id(), matches!(side, Side::Origin));
+        let mut chain: Vec<(ID, bool)> = Vec::new();
         let mut id = start;
-        while let Some(current) = id {
+        let found = loop {
+            let Some(current) = id else { break None };
             if self.held(&current) {
-                break;
+                break Some(current);
             }
             let next = self.decoded.item_at(&current).ok_or(Unbounded)?;
+            if let Some(known) = self.sides.borrow().get(&key(next)) {
+                break *known;
+            }
+            if chain.contains(&key(next)) {
+                return Err(Unbounded);
+            }
+            chain.push(key(next));
             id = match side {
                 Side::Origin => next.origin(),
                 Side::Right => next.right_origin(),
             }
             .copied();
+        };
+        let mut sides = self.sides.borrow_mut();
+        for step in chain {
+            sides.insert(step, found);
         }
-        Ok(id)
+        Ok(found)
     }
 
     fn visible_string(&self, id: &ID) -> bool {
