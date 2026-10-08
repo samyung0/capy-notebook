@@ -348,7 +348,10 @@ mark on the break's page, as Word does when the file does not set
 caret at the mark sits after the text (`caret_rect` in
 `docx-layout/src/hit.rs` places a position nothing paints after the text
 before it). The parser does not read `splitPgBreakAndParaMark`, so a file
-setting it still lays out Word's default way. The seed moves a file's page
+setting it still lays out Word's default way. Copy follows the units: after
+Enter right after a mid-paragraph break, edit-mode copy writes the break's
+newline and the paragraph mark's, an empty line the reopened file (break on
+the next paragraph) does not copy (accepted, 2026-10-08). The seed moves a file's page
 break after a paragraph's last text onto the next paragraph's slot, which
 lays out the same, so the editor and the reopened file look alike while
 their units differ (the toolbar's break opens the next slot and saves as the
@@ -472,10 +475,17 @@ paragraph change stays on the text and two peers' Enters at one end give each
 new paragraph its own id. A section's last paragraph, and suggesting mode
 (whose Backspace retracts the mark it deletes), keep inserting before the
 existing mark. Mid-paragraph the new mark ends the first half with the
-paragraph's id, so two peers splitting one paragraph mid-text leave two
-paragraphs with that id in the session; the save keeps a source `w14:paraId`
-on the first and mints a hex id for each repeat (`savedParaId` in
-`yrsToDocument.ts`), as it does for editor ids.
+paragraph's id, so two peers splitting one paragraph mid-text both give their
+first half that id. After applying a peer's update that brought an embed,
+every peer renames the duplicates the same way (`applying_peer_update` and
+`rename_duplicate_para_ids` in `ops/paragraph.rs`, run by the session's
+`applyUpdate`): the mark whose yrs item has the lowest `(client, clock)` keeps
+the id and every other takes `{client}.{clock}` of its own item, as a system
+edit outside Undo, so typing, clicks and AI edits reach both halves. A stored
+state captured before the rename still holds the duplicate; as a backstop
+the save keeps a source `w14:paraId` on the first paragraph and mints a hex
+id for each repeat, as for editor ids, in both engines (`savedParaId` in
+`yrsToDocument.ts`, `saved_para_id` in `office-service/src/docx/project.rs`).
 
 A range delete (a selection delete or a cut) ending at the start of such a
 slot keeps the paragraph mark before it (`kept_mark`), so the text left stays

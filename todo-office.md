@@ -303,6 +303,12 @@ check); it applies at the first promotion.
   2026-10-08): Home/End go to the paragraph's start and end, not the line's
   (Shift+End from text before a break selects across it; Word stops at the
   line end). Needs the display line plus a caret affinity at a wrap point.
+- **DOCX `splitPgBreakAndParaMark` is not honoured** (fork-small review,
+  2026-10-08): the parser reads only `compatibilityMode` from `w:compat`
+  (`docx-parse/src/settings.rs`), so a file setting the flag keeps a
+  paragraph's mark on its page break's page here while Word moves it to the
+  next page. Read `w:compat/w:splitPgBreakAndParaMark` into the render env and
+  skip `mark_stays` in `flush_paragraph_parts` when it is set.
 - **Recovery logging** (decided 2026-10-05): log each draft from another epoch
   entering copy-only recovery (no late merge), in the `edit_incidents` table.
 - **Editing incident log** (decided 2026-10-05, with the optimization round):
