@@ -121,6 +121,15 @@ measures the Office engine worker keeping each XLSX room's workbook open. The
 [2026-10-11 run](collaboration/reports/2026-10-11-prod-capacity-rust.md)
 repeats the ladder for the Rust collaboration server against Node.
 
+`bench/collaboration/scripts/chaos-peers.ts` (`pnpm chaos:peers`) is not a
+measurement: it joins synthetic collaborators to one live room of the Rust
+server over capy-sync 1 (Slate edits and cursors in a note, inserts in a text
+source), each leaving after a session and coming back, so the real editor can
+be watched under presence and concurrent edits. Its tokens are minted with
+`COLLABORATION_SECRET` for `--user`, whom the server checks for access to the
+room. Phase two's UAT collaboration load test is planned on top of it
+(human/review-automation.md).
+
 ### parity
 
 One checklist per Office format in `parity/fixtures/` (`docx.tsv`, `xlsx.tsv`,
