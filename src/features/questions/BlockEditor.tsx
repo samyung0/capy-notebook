@@ -1,5 +1,6 @@
 import { Collapsible } from 'radix-ui';
 import { useState } from 'react';
+import * as limits from '@/api/limits.generated';
 import { CategoryChart } from '@/components/charts/CategoryChart';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
@@ -10,6 +11,7 @@ import { IMAGE_ACCEPT } from '@/features/quizzes/quizImage';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
+import { textLength } from '@/lib/textLength';
 import { Field, SelectField } from './editorFields';
 import { GraphEditor } from './GraphEditor';
 import { QuestionBlockView } from './QuestionView';
@@ -61,6 +63,10 @@ function ChartEditor({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {(['title', 'unit', 'xTitle', 'yTitle'] as const).map((key) => (
             <Field
+              count={{
+                max: limits.QUESTION_METADATA_MAX,
+                value: textLength(block[key]),
+              }}
               key={key}
               label={
                 {
@@ -322,7 +328,13 @@ export function BlockEditor({
             </Button>
           </Collapsible.Trigger>
           <Collapsible.Content className="pt-3">
-            <Field label={m.question_ui_paragraph_label()}>
+            <Field
+              count={{
+                max: limits.QUESTION_METADATA_MAX,
+                value: textLength(block.label),
+              }}
+              label={m.question_ui_paragraph_label()}
+            >
               <Input
                 onChange={(event) =>
                   onChange({ ...block, label: event.target.value || undefined })
@@ -380,7 +392,13 @@ export function BlockEditor({
             {error}
           </p>
         )}
-        <Field label={m.question_ui_description()}>
+        <Field
+          count={{
+            max: limits.QUESTION_TEXT_MAX,
+            value: textLength(block.description),
+          }}
+          label={m.question_ui_description()}
+        >
           <Input
             onChange={(event) =>
               onChange({ ...block, description: event.target.value })
@@ -388,7 +406,13 @@ export function BlockEditor({
             value={block.description}
           />
         </Field>
-        <Field label={m.question_ui_attribution()}>
+        <Field
+          count={{
+            max: limits.QUESTION_METADATA_MAX,
+            value: textLength(block.attribution),
+          }}
+          label={m.question_ui_attribution()}
+        >
           <Input
             onChange={(event) =>
               onChange({

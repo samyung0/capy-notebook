@@ -13,6 +13,7 @@ import { Spinner } from '@/components/ui/feedback';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { textLength } from '@/lib/textLength';
 import {
   GENERATE_TITLE_MAX,
   nextGenerateTitle,
@@ -223,12 +224,16 @@ export function GenerateForm({
     <>
       <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-auto">
         <label className="flex flex-col gap-1.5">
-          <InputTitle required>{m.generate_file_name()}</InputTitle>
+          <InputTitle
+            count={{ max: GENERATE_TITLE_MAX, value: textLength(title) }}
+            required
+          >
+            {m.generate_file_name()}
+          </InputTitle>
           <Input
             aria-invalid={!!titleError}
             autoComplete="off"
             autoFocus
-            maxLength={GENERATE_TITLE_MAX}
             onChange={(e) => setTitle(e.target.value)}
             value={title}
           />

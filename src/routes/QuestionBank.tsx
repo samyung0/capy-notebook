@@ -21,7 +21,11 @@ import {
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { api, isApiError } from '@/api/client';
-import { copyBankQuestionsBodyQuestionIdsMax as COPY_MAX } from '@/api/gen/validators';
+import {
+  bankQuestionsQueryQMax,
+  copyBankQuestionsBodyQuestionIdsMax as COPY_MAX,
+  commentBankQuestionBodyTextMax,
+} from '@/api/gen/validators';
 import type { BankTopicProgress } from '@/api/types';
 import {
   FilterPopover,
@@ -31,13 +35,17 @@ import {
 import { PageHeader, Panel, PanelHeader } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
-import { FloatingToolbar } from '@/components/ui/BlockToolbar';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/Drawer';
 import { Skeleton, SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Input, InputError } from '@/components/ui/Input';
+import {
+  PageFloatingBar,
+  PageFloatingBarButton,
+} from '@/components/ui/PageFloatingBar';
+import { Tabs } from '@/components/ui/Tabs';
 import { Textarea } from '@/components/ui/TextArea';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { userToast } from '@/components/ui/userToast';
@@ -93,7 +101,9 @@ const QuestionDialog = lazy(() =>
     default: module.QuestionDialog,
   }))
 );
-const commentSchema = z.object({ text: z.string().trim().min(1).max(2000) });
+const commentSchema = z.object({
+  text: z.string().trim().min(1).max(commentBankQuestionBodyTextMax),
+});
 /** Questions per load; the window grows by this many as the reader nears its end. */
 const PAGE = 10;
 
@@ -327,66 +337,85 @@ export default function QuestionBank() {
     void navigate({ search: { ...modeSearch, exam }, to: '.' });
   }
 
-  const nav = syllabus ? (
-    showTopics || !topicId ? (
-      <TopicTree
-        edit={mode === 'edit'}
-        examId={search.exam ?? place?.exam.id}
-        filter={topicFilter}
-        onAllExams={topicId ? undefined : () => openExam(undefined)}
-        onExam={openExam}
-        onFilter={setTopicFilter}
-        onTopic={topic}
-        syllabus={syllabus}
-        topicId={topicId}
-      />
-    ) : (
-      <TopicQuestions
-        edit={mode === 'edit'}
-        filter={filter}
-        filters={filters}
-        // A failed page shows the list error with Try again; the panel's
-        // ends stop loading until then.
-        hasEarlier={hasPreviousPage && !listError}
-        hasMore={hasNextPage && !listError}
-        label={place?.item.label ?? ''}
-        loadingEarlier={isFetchingPreviousPage}
-        loadingMore={isFetchingNextPage}
-        onBack={() => setShowTopics(true)}
-        onCancelSelect={() => {
-          setSelecting(false);
-          setPicked([]);
-        }}
-        onCopy={() => {
-          setNavOpen(false);
-          setCopying(true);
-        }}
-        onEarlier={() => void fetchPreviousPage(joinFetch)}
-        onFilter={refilter(setFilter)}
-        onMore={() => void fetchNextPage(joinFetch)}
-        onQuestion={(row) => {
-          if (selecting) toggleQuestion(row);
-          select(row.id);
-        }}
-        onResetFilters={() => {
-          setTypes([]);
-          setStatuses([]);
-          setAnchor(questionId);
-        }}
-        onSelect={() => setSelecting(true)}
-        onUnreviewed={refilter(setUnreviewed)}
-        questionId={questionId}
-        results={mode === 'view' && !resultsError ? (marks ?? {}) : undefined}
-        reviewedCount={place?.item.reviewed ?? 0}
-        rows={rows}
-        selected={selecting ? selected : undefined}
-        total={place?.item.total ?? 0}
-        unreviewed={unreviewed}
-      />
-    )
-  ) : syllabusPending ? (
-    <SkeletonList count={8} rowHeight={28} />
-  ) : null;
+  const topicsShown = showTopics || !topicId;
+  // The bottom sheet swaps the panel title for Topics / Questions tabs, so the
+  // other list is one tap away without closing the sheet.
+  const navTabs = (
+    <Tabs
+      className="inset-shadow-none min-w-0 flex-1"
+      onChange={(value) => setShowTopics(value === 'topics')}
+      tabs={[
+        { label: m.question_ui_exams(), value: 'topics' },
+        ...(topicId
+          ? [{ label: m.question_ui_questions(), value: 'questions' }]
+          : []),
+      ]}
+      value={topicsShown ? 'topics' : 'questions'}
+    />
+  );
+  const nav = (tabs?: ReactNode) =>
+    syllabus ? (
+      topicsShown ? (
+        <TopicTree
+          edit={mode === 'edit'}
+          examId={search.exam ?? place?.exam.id}
+          filter={topicFilter}
+          onAllExams={topicId ? undefined : () => openExam(undefined)}
+          onExam={openExam}
+          onFilter={setTopicFilter}
+          onTopic={topic}
+          syllabus={syllabus}
+          tabs={tabs}
+          topicId={topicId}
+        />
+      ) : (
+        <TopicQuestions
+          edit={mode === 'edit'}
+          filter={filter}
+          filters={filters}
+          // A failed page shows the list error with Try again; the panel's
+          // ends stop loading until then.
+          hasEarlier={hasPreviousPage && !listError}
+          hasMore={hasNextPage && !listError}
+          label={place?.item.label ?? ''}
+          loadingEarlier={isFetchingPreviousPage}
+          loadingMore={isFetchingNextPage}
+          onBack={() => setShowTopics(true)}
+          onCancelSelect={() => {
+            setSelecting(false);
+            setPicked([]);
+          }}
+          onCopy={() => {
+            setNavOpen(false);
+            setCopying(true);
+          }}
+          onEarlier={() => void fetchPreviousPage(joinFetch)}
+          onFilter={refilter(setFilter)}
+          onMore={() => void fetchNextPage(joinFetch)}
+          onQuestion={(row) => {
+            if (selecting) toggleQuestion(row);
+            select(row.id);
+          }}
+          onResetFilters={() => {
+            setTypes([]);
+            setStatuses([]);
+            setAnchor(questionId);
+          }}
+          onSelect={() => setSelecting(true)}
+          onUnreviewed={refilter(setUnreviewed)}
+          questionId={questionId}
+          results={mode === 'view' && !resultsError ? (marks ?? {}) : undefined}
+          reviewedCount={place?.item.reviewed ?? 0}
+          rows={rows}
+          selected={selecting ? selected : undefined}
+          tabs={tabs}
+          total={place?.item.total ?? 0}
+          unreviewed={unreviewed}
+        />
+      )
+    ) : syllabusPending ? (
+      <SkeletonList count={8} rowHeight={28} />
+    ) : null;
 
   let body: ReactNode;
   if (fetchStatus === 'paused') body = <QueryPausedState />;
@@ -408,9 +437,7 @@ export default function QuestionBank() {
       />
     );
   else if (!topicId)
-    body = (
-      <BankLanding nav={nav} onOpen={openProgress} view={mode === 'view'} />
-    );
+    body = <BankLanding onOpen={openProgress} view={mode === 'view'} />;
   else if (listError)
     body = (
       <BankError
@@ -461,7 +488,7 @@ export default function QuestionBank() {
           className="hidden min-h-0 flex-1 lg:flex"
           sectionClassName="scroll-fade-y h-full px-2 py-5 [--scroll-fade-bottom-padding:--spacing(5)]"
         >
-          {nav}
+          {nav()}
         </Panel>
       </div>
       <div className="relative flex min-h-0 flex-1 flex-col">
@@ -556,40 +583,33 @@ export default function QuestionBank() {
             </>
           )}
         </Panel>
-        {/* Phones: the side panel becomes a floating bar and a bottom sheet,
-            as in WorkspaceOpen's single-column layout. */}
-        {topicId && syllabus && (
-          <FloatingToolbar
+        {/* Without the side panel (below lg) it becomes a floating bar and a
+            bottom sheet, as in WorkspaceOpen's single-column layout. */}
+        {syllabus && (
+          <PageFloatingBar
             aria-label={m.question_ui_bank_navigation()}
-            className="gap-1 rounded-full! px-2 py-1 lg:hidden"
+            className="lg:hidden"
             open={!navOpen}
-            positionClassName="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 lg:hidden"
           >
-            <ToolbarButton
-              className="h-10 w-auto gap-2 rounded-card-xl px-3 [&_svg]:size-5"
-              label={m.question_ui_topics()}
+            <PageFloatingBarButton
+              icon="book"
+              label={m.question_ui_exams()}
               onClick={() => {
                 setShowTopics(true);
                 setNavOpen(true);
               }}
-              tooltipSide="top"
-            >
-              <Icon name="book" />
-              <span>{m.question_ui_topics()}</span>
-            </ToolbarButton>
-            <ToolbarButton
-              className="h-10 w-auto gap-2 rounded-card-xl px-3 [&_svg]:size-5"
-              label={m.question_ui_questions()}
-              onClick={() => {
-                setShowTopics(false);
-                setNavOpen(true);
-              }}
-              tooltipSide="top"
-            >
-              <Icon name="list" />
-              <span>{m.question_ui_questions()}</span>
-            </ToolbarButton>
-          </FloatingToolbar>
+            />
+            {topicId && (
+              <PageFloatingBarButton
+                icon="list"
+                label={m.question_ui_questions()}
+                onClick={() => {
+                  setShowTopics(false);
+                  setNavOpen(true);
+                }}
+              />
+            )}
+          </PageFloatingBar>
         )}
       </div>
       <Drawer
@@ -604,7 +624,7 @@ export default function QuestionBank() {
           <DrawerTitle className="sr-only">
             {m.question_ui_bank_navigation()}
           </DrawerTitle>
-          <div className="min-h-0 overflow-auto px-3 pb-6">{nav}</div>
+          <div className="min-h-0 overflow-auto px-3 pb-6">{nav(navTabs)}</div>
         </DrawerContent>
       </Drawer>
       {editing && (
@@ -1034,23 +1054,35 @@ function jump(range: { start: number; end: number }, index: number) {
 /** Title with a search icon that expands into a full-width field. */
 function PanelHeading({
   title,
+  tabs,
   leading,
   filter,
   onFilter,
   searchLabel,
 }: {
   title: string;
+  /** Shown in place of the title, as in the bottom sheet. */
+  tabs?: ReactNode;
   leading?: ReactNode;
   filter: string;
   onFilter: (value: string) => void;
   searchLabel: string;
 }) {
   const [searching, setSearching] = useState(filter !== '');
+  const searchButton = (
+    <ToolbarButton
+      className="mr-0.5 size-7"
+      label={searchLabel}
+      onClick={() => setSearching(true)}
+    >
+      <Icon name="search" />
+    </ToolbarButton>
+  );
   // Both states share one height, so opening the search moves nothing.
   return (
-    <div className="grid h-9 items-center">
+    <div className={cn('grid items-center', tabs ? 'h-10' : 'h-9')}>
       {searching ? (
-        <div className="px-2">
+        <div>
           <Input
             actionCallback={() => {
               onFilter('');
@@ -1063,6 +1095,7 @@ function PanelHeading({
             autoFocus
             className="py-0"
             leftIcon="search"
+            maxLength={bankQuestionsQueryQMax}
             onChange={(event) => onFilter(event.target.value)}
             placeholder={searchLabel}
             size="sm"
@@ -1070,20 +1103,16 @@ function PanelHeading({
             wrapperClassName="h-9 w-full text-sm"
           />
         </div>
+      ) : tabs ? (
+        // The divider runs under the search button too, as in the workspace
+        // panels' tab row.
+        <div className="inset-shadow-[0_-1px_var(--color-divider)] flex h-full items-center gap-1">
+          {leading}
+          {tabs}
+          {searchButton}
+        </div>
       ) : (
-        <PanelHeader
-          actions={
-            <ToolbarButton
-              className="mr-0.5 size-7"
-              label={searchLabel}
-              onClick={() => setSearching(true)}
-            >
-              <Icon name="search" />
-            </ToolbarButton>
-          }
-          leading={leading}
-          title={title}
-        />
+        <PanelHeader actions={searchButton} leading={leading} title={title} />
       )}
     </div>
   );
@@ -1119,6 +1148,7 @@ function TopicTree({
   onExam,
   onAllExams,
   onTopic,
+  tabs,
 }: {
   syllabus: BankSyllabus;
   examId?: string;
@@ -1130,6 +1160,7 @@ function TopicTree({
   /** Back to the exam list; only offered without an open topic. */
   onAllExams?: () => void;
   onTopic: (id: string) => void;
+  tabs?: ReactNode;
 }) {
   const current = syllabus.exams
     .flatMap((exam) => exam.subjects.map((subject) => ({ exam, subject })))
@@ -1151,7 +1182,8 @@ function TopicTree({
   );
   const hitRow = (hit: SyllabusHit) =>
     hit.kind === 'exam' ? (
-      <div className="mx-4 py-1" key={hit.exam.id}>
+      // Spaced like the exam list (12px apart, flush with the heading).
+      <div className="py-[5px] first:pt-0" key={hit.exam.id}>
         <ExamStrip
           exam={hit.exam}
           onClick={() => {
@@ -1188,7 +1220,10 @@ function TopicTree({
       </button>
     );
   return (
-    <nav aria-label={m.question_ui_topics()} className="flex flex-col gap-3">
+    <nav
+      aria-label={m.question_ui_exams_and_topics()}
+      className="flex flex-col gap-3"
+    >
       <PanelHeading
         filter={filter}
         leading={
@@ -1204,14 +1239,11 @@ function TopicTree({
         }
         onFilter={onFilter}
         searchLabel={m.question_ui_find_a_topic()}
+        tabs={tabs}
         title={m.question_ui_exams_and_topics()}
       />
       {exam && (
-        // Inset like the heading's open search field, so the strip, its
-        // divider and the dropdown never run past the title row.
-        <div className="mx-2 border-line border-b pb-3">
-          <ExamPicker exam={exam} exams={syllabus.exams} onPick={onExam} />
-        </div>
+        <ExamPicker exam={exam} exams={syllabus.exams} onPick={onExam} />
       )}
       {needle ? (
         <div className="flex flex-col gap-0.5">
@@ -1293,7 +1325,7 @@ function TopicTree({
           })}
         </div>
       ) : (
-        <div className="mx-4 flex flex-col gap-3">
+        <div className="flex flex-col gap-3">
           {syllabus.exams.map((item) => (
             <ExamStrip
               exam={item}
@@ -1341,6 +1373,7 @@ function TopicQuestions({
   onSelect,
   onUnreviewed,
   onQuestion,
+  tabs,
 }: {
   label: string;
   /** The topic's question and reviewed counts, unfiltered. */
@@ -1369,6 +1402,8 @@ function TopicQuestions({
   onMore: () => void;
   onResetFilters: () => void;
   onSelect: () => void;
+  /** Replace the title and the back button, as in the bottom sheet. */
+  tabs?: ReactNode;
   onUnreviewed: (value: boolean) => void;
   onQuestion: (row: BankRow) => void;
 }) {
@@ -1420,15 +1455,18 @@ function TopicQuestions({
       <PanelHeading
         filter={filter}
         leading={
-          <ToolbarButton
-            label={m.question_ui_back_to_topics()}
-            onClick={onBack}
-          >
-            <Icon className="-translate-y-px" name="navigationBack" />
-          </ToolbarButton>
+          !tabs && (
+            <ToolbarButton
+              label={m.question_ui_back_to_topics()}
+              onClick={onBack}
+            >
+              <Icon className="-translate-y-px" name="navigationBack" />
+            </ToolbarButton>
+          )
         }
         onFilter={onFilter}
         searchLabel={m.question_ui_find_a_question()}
+        tabs={tabs}
         title={label}
       />
       <div className="flex flex-wrap items-center gap-x-1 px-3">
@@ -1605,11 +1643,9 @@ function ReviewBar({
  */
 function BankLanding({
   view,
-  nav,
   onOpen,
 }: {
   view: boolean;
-  nav: ReactNode;
   onOpen: (topicId: string, next: string | null) => void;
 }) {
   const { data, error, isPending, refetch } = useQuery({
@@ -1644,11 +1680,8 @@ function BankLanding({
   return (
     <div className="grid gap-8">
       {progress}
-      <div className="lg:hidden">{nav}</div>
       {!progress && (
-        <p className="hidden text-fg-muted lg:block">
-          {m.question_ui_choose_a_topic()}
-        </p>
+        <p className="text-fg-muted">{m.question_ui_choose_a_topic()}</p>
       )}
     </div>
   );
@@ -1765,7 +1798,7 @@ function BankComment({ id, onClose }: { id: string; onClose: () => void }) {
       <Textarea
         aria-label={m.question_ui_comment()}
         {...register('text')}
-        maxLength={2000}
+        maxLength={commentBankQuestionBodyTextMax}
       />
       <InputError>{errors.text?.message}</InputError>
     </SimpleDialog>

@@ -18,10 +18,9 @@ import { cn } from '@/lib/cn';
 
 export interface SortOption<V extends string = string> {
   icon: IconName;
+  /** Names the default order, e.g. "Newest created". Clicking the active
+   * option reverses it without changing the label. */
   label: string;
-  /** Picks the direction wording: dates get newest/oldest, counts get
-   * most/fewest, names get A to Z. */
-  order: 'time' | 'count' | 'name';
   value: V;
 }
 
@@ -35,24 +34,6 @@ export interface FilterSection {
 }
 
 export type ListView = 'grid' | 'list';
-
-export function sortDirectionLabel(
-  order: SortOption['order'],
-  ascending: boolean
-): string {
-  switch (order) {
-    case 'time':
-      return ascending
-        ? m.workspaces_sort_oldest_first()
-        : m.workspaces_sort_newest_first();
-    case 'count':
-      return ascending
-        ? m.workspaces_sort_fewest_first()
-        : m.workspaces_sort_most_first();
-    default:
-      return ascending ? m.list_sort_a_to_z() : m.list_sort_z_to_a();
-  }
-}
 
 export function ListToolbar<V extends string>({
   sorts,
@@ -91,11 +72,6 @@ export function ListToolbar<V extends string>({
               alignWidthToTrigger
               itemClassName="gap-2.5"
               items={sorts.map((option) => ({
-                closeOnSelect: false,
-                description: sortDirectionLabel(
-                  option.order,
-                  option.value === sort && ascending
-                ),
                 icon: option.icon,
                 label: option.label,
                 onClick: () =>
@@ -106,7 +82,7 @@ export function ListToolbar<V extends string>({
               }))}
               trigger={
                 <Button
-                  className="-mx-1 flex h-fit flex-row items-start px-2 py-1.5"
+                  className="-mx-1 h-fit px-2 py-1.5"
                   data-order={ascending ? 'ascending' : 'descending'}
                   data-sort={current.value}
                   iconRight="chevronDown"
@@ -114,9 +90,6 @@ export function ListToolbar<V extends string>({
                   variant="ghost-hover"
                 >
                   {m.workspaces_sort_prefix({ label: current.label })}
-                  <span className="-translate-y-px font-normal text-fg-muted text-xs">
-                    {sortDirectionLabel(current.order, ascending)}
-                  </span>
                 </Button>
               }
             />

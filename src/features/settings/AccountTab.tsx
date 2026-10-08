@@ -5,7 +5,7 @@ import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { USE_MSW } from '@/api/auth';
 import { qk } from '@/api/client';
-import { UpdateMeBody } from '@/api/gen/validators';
+import { UpdateMeBody, updateMeBodyNameMax } from '@/api/gen/validators';
 import { useMe, useUpdateMe } from '@/api/hooks';
 import { TabHeader } from '@/components/app/tabPanel';
 import { Avatar } from '@/components/ui/Avatar';
@@ -19,8 +19,7 @@ import { useProfilePhoto } from '@/features/auth/useProfilePhoto';
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
 import { iconUrl } from '@/lib/icon-catalog';
-
-const NAME_MAX = UpdateMeBody.shape.name.maxLength ?? 60;
+import { textLength } from '@/lib/textLength';
 
 type ClerkUser = ReturnType<typeof useUser>['user'];
 
@@ -158,13 +157,20 @@ function AccountForm({ user }: { user?: ClerkUser }) {
             name="name"
             render={({ field, fieldState }) => (
               <label className="flex min-w-0 flex-col gap-1.5">
-                <InputTitle required>{m.onboarding_name()}</InputTitle>
+                <InputTitle
+                  count={{
+                    max: updateMeBodyNameMax,
+                    value: textLength(field.value),
+                  }}
+                  required
+                >
+                  {m.onboarding_name()}
+                </InputTitle>
                 <Input
                   {...field}
                   aria-invalid={fieldState.invalid}
                   autoComplete="nickname"
                   disabled={isSubmitting}
-                  maxLength={NAME_MAX}
                 />
                 {fieldState.invalid && (
                   <InputError errors={[fieldState.error]} />

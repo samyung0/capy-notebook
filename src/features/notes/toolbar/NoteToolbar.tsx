@@ -38,6 +38,8 @@ import { toggleEditorBlock } from '@/features/notes/editorTransforms';
 import { holdInsertPlace } from '@/features/notes/insertEditorNode';
 import {
   cloneLinkSelection,
+  LINK_TEXT_MAX,
+  LINK_URL_MAX,
   type LinkSelection,
   upsertLinkAtSelection,
 } from '@/features/notes/linkEditor';
@@ -475,6 +477,7 @@ export function NoteToolbar({ className }: { className?: string }) {
               <Input
                 aria-invalid={Boolean(linkError)}
                 autoFocus
+                maxLength={LINK_URL_MAX}
                 onChange={(event) => {
                   setLinkUrl(event.target.value);
                   setLinkError('');
@@ -487,6 +490,7 @@ export function NoteToolbar({ className }: { className?: string }) {
             <label className="flex flex-col gap-1.5">
               <InputTitle>{m.editor_link_text()}</InputTitle>
               <Input
+                maxLength={LINK_TEXT_MAX}
                 onChange={(event) => setLinkText(event.target.value)}
                 placeholder={m.editor_link_text_placeholder()}
                 value={linkText}

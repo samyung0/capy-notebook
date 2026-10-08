@@ -58,7 +58,7 @@ func (a *api) upsertLLMCredential(ctx context.Context, in *upsertLLMCredentialIn
 		return nil, err
 	}
 	slug := strings.TrimSpace(in.Body.ProviderSlug)
-	key := strings.TrimSpace(in.Body.APIKey)
+	key := strings.TrimSpace(string(in.Body.APIKey))
 	if !store.ValidLLMProviderSlug(slug) {
 		return nil, huma.Error400BadRequest("unsupported provider")
 	}

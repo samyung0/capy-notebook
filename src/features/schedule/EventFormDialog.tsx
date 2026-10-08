@@ -5,6 +5,7 @@ import { z } from 'zod';
 import {
   CreateEventBody,
   createEventBodyLocationMax,
+  createEventBodyTitleMax,
 } from '@/api/gen/validators';
 import type { Label } from '@/api/types';
 import { Button } from '@/components/ui/Button';
@@ -13,6 +14,7 @@ import { Spinner } from '@/components/ui/feedback';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { textLength } from '@/lib/textLength';
 import { userColorPair } from '@/lib/userColor';
 
 export interface EventFormValues {
@@ -171,7 +173,15 @@ export function EventFormDialog({
           name="title"
           render={({ field, fieldState }) => (
             <label className="flex flex-col gap-1.5">
-              <InputTitle required>{m.common_title()}</InputTitle>
+              <InputTitle
+                count={{
+                  max: createEventBodyTitleMax,
+                  value: textLength(field.value),
+                }}
+                required
+              >
+                {m.common_title()}
+              </InputTitle>
               <Input
                 {...field}
                 aria-invalid={fieldState.invalid}
@@ -237,7 +247,14 @@ export function EventFormDialog({
           name="location"
           render={({ field, fieldState }) => (
             <label className="flex flex-col gap-1.5">
-              <InputTitle>{m.common_location()}</InputTitle>
+              <InputTitle
+                count={{
+                  max: createEventBodyLocationMax,
+                  value: textLength(field.value),
+                }}
+              >
+                {m.common_location()}
+              </InputTitle>
               <Input
                 {...field}
                 aria-invalid={fieldState.invalid}

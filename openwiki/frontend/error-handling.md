@@ -21,6 +21,26 @@ tags: [frontend, errors, react-query, msw, playwright]
 
 Do not report the same failure through multiple surfaces.
 
+## Input length limits
+
+Limits come from the backend (`server/internal/fieldlimits`, generated into
+`src/api/gen/validators.ts` as `*Max` and `src/api/limits.generated.ts`).
+Counts are Unicode code points (`textLength`), matching the backend's runes.
+
+- A titled field passes `count={{ max, value }}` to `InputTitle` (or
+  `InputField`, or the question editor's `Field`). `CharCount` shows `72/80` at
+  the right end of the title row from 90% of the limit (`from` overrides it, the
+  workspace tags show from 4 of 5) and turns the error colour at or over it. The
+  limit is soft: no `maxLength`, so pasting is not cut; the form's zod
+  validation marks the field and disables Save.
+- An untitled field with a limit gets a silent `maxLength` (searches, the new
+  chapter name, the AI prompt at 4,000, link URL/text, short and gap answers at
+  1,000).
+- Long free text without a title shows `CharCount` under the box: chat (5,000,
+  send disabled when over), note comments (3,000, enforced by the API on the
+  paragraphs' text plus breaks) and quiz open answers (5,000, also capped with
+  `maxLength` so a 422 from grading never happens).
+
 ## TanStack Query defaults
 
 Queries stay fresh for five minutes by default. Notifications and workspace

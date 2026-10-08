@@ -194,11 +194,6 @@ export function QuizTargetSelect({
             role="combobox"
             value={query}
           />
-          {value?.kind === 'new' && (
-            <span className="t-meta shrink-0 text-fg-muted">
-              {m.question_ui_new_quiz()}
-            </span>
-          )}
           {query && !disabled && (
             <IconButton
               className="shrink-0 text-fg-muted"

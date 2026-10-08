@@ -205,13 +205,47 @@ export function InputError({
   );
 }
 
+export interface CountLimit {
+  /** First count that shows; 90% of `max` by default. */
+  from?: number;
+  max: number;
+  value: number;
+}
+
+/**
+ * "72/80" once the count nears its limit, in the error colour at or over it.
+ * Limits are soft: the field's own validation refuses values over `max`.
+ */
+export function CharCount({
+  value,
+  max,
+  from = Math.ceil(max * 0.9),
+  className,
+}: CountLimit & { className?: string }) {
+  if (value < from) return null;
+  return (
+    <span
+      className={cn(
+        't-meta whitespace-nowrap font-normal tabular-nums',
+        value >= max ? 'text-solid-error' : 'text-fg-muted',
+        className
+      )}
+    >
+      {value}/{max}
+    </span>
+  );
+}
+
 export function InputTitle({
   className,
   children,
   required,
+  count,
   ...props
 }: React.ComponentProps<'div'> & {
   required?: boolean;
+  /** Character (or item) count shown at the right end of the title row. */
+  count?: CountLimit;
 }) {
   return (
     <div
@@ -223,6 +257,7 @@ export function InputTitle({
     >
       <div>{children}</div>
       {required && <div className="text-solid-error">*</div>}
+      {count && <CharCount className="ml-auto" {...count} />}
     </div>
   );
 }
@@ -231,12 +266,14 @@ export function InputField({
   id,
   label,
   trailing,
+  count,
   children,
   error,
 }: {
   id: string;
   label: string;
   trailing?: React.ReactNode;
+  count?: CountLimit;
   children: React.ReactNode;
   error?: { message?: string };
 }) {
@@ -244,7 +281,9 @@ export function InputField({
     <label className="mb-3 flex flex-col gap-1.5" htmlFor={id}>
       {children}
       <span className="order-first flex items-baseline justify-between">
-        <InputTitle>{label}</InputTitle>
+        <InputTitle className="flex-1" count={count}>
+          {label}
+        </InputTitle>
         {trailing}
       </span>
       {error && <InputError errors={[error]} />}

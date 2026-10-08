@@ -8,7 +8,7 @@ import {
 import * as limits from '@/api/limits.generated';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
-import { Input } from '@/components/ui/Input';
+import { CharCount, type CountLimit, Input } from '@/components/ui/Input';
 import {
   Select,
   SelectContent,
@@ -18,22 +18,28 @@ import {
 } from '@/components/ui/Select';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { m } from '@/i18n';
+import { textLength } from '@/lib/textLength';
 import type { MarkItem, QuestionAnswer, QuestionType } from './types';
 import { QUESTION_TYPES } from './types';
 
 export function Field({
   label,
+  count,
   children,
 }: {
   label: string;
+  count?: CountLimit;
   children: ReactNode;
 }) {
   const id = useId();
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
-      <label className="t-label" htmlFor={id}>
-        {label}
-      </label>
+      <div className="flex items-center gap-1">
+        <label className="t-label" htmlFor={id}>
+          {label}
+        </label>
+        {count && <CharCount className="ml-auto" {...count} />}
+      </div>
       {isValidElement(children)
         ? cloneElement(children as ReactElement<{ id?: string }>, { id })
         : children}
@@ -327,7 +333,13 @@ export function AnswerEditor({
         />
       )}
       {answer.type === 'short' && (
-        <Field label={m.question_ui_unit()}>
+        <Field
+          count={{
+            max: limits.QUESTION_UNIT_MAX,
+            value: textLength(answer.unit),
+          }}
+          label={m.question_ui_unit()}
+        >
           <Input
             onChange={(event) =>
               onChange({ ...answer, unit: event.target.value || undefined })
@@ -419,7 +431,13 @@ export function AnswerEditor({
           <p className="t-label">{m.question_ui_matches()}</p>
           {answer.pairs.map((pair, i) => (
             <div className="flex items-end gap-2" key={i}>
-              <Field label={m.question_ui_item_number({ number: i + 1 })}>
+              <Field
+                count={{
+                  max: limits.QUESTION_TEXT_MAX,
+                  value: textLength(pair.left),
+                }}
+                label={m.question_ui_item_number({ number: i + 1 })}
+              >
                 <Input
                   onChange={(event) =>
                     onChange({

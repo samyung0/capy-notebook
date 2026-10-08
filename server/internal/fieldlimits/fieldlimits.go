@@ -13,13 +13,16 @@ import (
 
 // Limits count runes, matching huma's maxLength and Postgres char_length.
 const (
-	WorkspaceName          = 80
-	WorkspaceDescription   = 500
-	ChapterName            = 60
-	FileName               = 120
-	MaterialTitle          = FileName
-	ConversationTitle      = 60
-	ChatMessage            = 5_000
+	WorkspaceName        = 80
+	WorkspaceDescription = 500
+	ChapterName          = 60
+	FileName             = 120
+	MaterialTitle        = FileName
+	ConversationTitle    = 60
+	ChatMessage          = 5_000
+	// Comment bounds the plain text of one note comment (its paragraphs joined).
+	Comment                = 3_000
+	LLMAPIKey              = 512
 	EventTitle             = 60
 	EventLocation          = 100
 	TaskTitle              = 80

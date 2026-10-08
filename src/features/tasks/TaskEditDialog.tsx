@@ -1,13 +1,18 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { UpdateTaskBody } from '@/api/gen/validators';
+import {
+  UpdateTaskBody,
+  updateTaskBodyMetaMax,
+  updateTaskBodyTitleMax,
+} from '@/api/gen/validators';
 import type { Task, UpdateTaskReq } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { m } from '@/i18n';
+import { textLength } from '@/lib/textLength';
 
 type TaskFormValues = Pick<UpdateTaskReq, 'title' | 'meta'>;
 
@@ -87,7 +92,15 @@ export function TaskEditDialog({
         name="title"
         render={({ field, fieldState }) => (
           <label className="flex flex-col gap-1.5">
-            <InputTitle required>{m.common_title()}</InputTitle>
+            <InputTitle
+              count={{
+                max: updateTaskBodyTitleMax,
+                value: textLength(field.value),
+              }}
+              required
+            >
+              {m.common_title()}
+            </InputTitle>
             <Input
               {...field}
               aria-invalid={fieldState.invalid}
@@ -103,7 +116,14 @@ export function TaskEditDialog({
         name="meta"
         render={({ field, fieldState }) => (
           <label className="mt-3 flex flex-col gap-1.5">
-            <InputTitle>{m.common_meta()}</InputTitle>
+            <InputTitle
+              count={{
+                max: updateTaskBodyMetaMax,
+                value: textLength(field.value),
+              }}
+            >
+              {m.common_meta()}
+            </InputTitle>
             <Input
               {...field}
               aria-invalid={fieldState.invalid}

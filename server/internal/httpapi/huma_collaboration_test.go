@@ -165,3 +165,16 @@ func TestWorkspaceAccessMetadataDistinguishesEditorsAndPublicViewers(t *testing.
 			frozenActor.Capabilities, frozenOwner.Capabilities, grace.Capabilities)
 	}
 }
+
+func TestCheckCommentLengthCountsTextAndBlockBreaks(t *testing.T) {
+	para := func(text string) map[string]any {
+		return map[string]any{"type": "p", "children": []any{map[string]any{"text": text}}}
+	}
+	if err := checkCommentLength([]map[string]any{para(strings.Repeat("光", 3000))}); err != nil {
+		t.Fatalf("3,000 runes refused: %v", err)
+	}
+	// Two paragraphs of 1,500 plus the newline between them is 3,001.
+	if checkCommentLength([]map[string]any{para(strings.Repeat("a", 1500)), para(strings.Repeat("a", 1500))}) == nil {
+		t.Fatal("3,001 characters accepted")
+	}
+}

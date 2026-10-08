@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { qk } from '@/api/client';
-import { UpdateMeBody } from '@/api/gen/validators';
+import { UpdateMeBody, updateMeBodyNameMax } from '@/api/gen/validators';
 import { useMe, useUpdateMe } from '@/api/hooks';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
@@ -16,10 +16,9 @@ import { useUser } from '@/features/auth/clerkHooks';
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
 import { iconUrl } from '@/lib/icon-catalog';
+import { textLength } from '@/lib/textLength';
 import { clerkMessage } from './clerk';
 import { useProfilePhoto } from './useProfilePhoto';
-
-const NAME_MAX = UpdateMeBody.shape.name.maxLength ?? 60;
 
 /** First-run profile dialog. Opens once per Clerk account, keyed on
  * `unsafeMetadata.onboardedAt`; Confirm and Skip both set it. Photos go
@@ -199,13 +198,20 @@ export function OnboardingDialog() {
         name="name"
         render={({ field, fieldState }) => (
           <label className="flex flex-col gap-1.5">
-            <InputTitle required>{m.onboarding_name()}</InputTitle>
+            <InputTitle
+              count={{
+                max: updateMeBodyNameMax,
+                value: textLength(field.value),
+              }}
+              required
+            >
+              {m.onboarding_name()}
+            </InputTitle>
             <Input
               {...field}
               aria-invalid={fieldState.invalid}
               autoComplete="nickname"
               disabled={busy}
-              maxLength={NAME_MAX}
             />
             {fieldState.invalid && <InputError errors={[fieldState.error]} />}
           </label>

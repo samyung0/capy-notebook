@@ -17,12 +17,11 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import type { BankExam } from './bank';
 
-// Corner fades (bank exam list mocks, round 3): white text stays readable on
-// any art, and light covers such as paper need the darker one.
+// A soft corner fade keeps white text readable on dark art without the strip
+// standing out against a light page; light covers take dark text and no fade,
+// as in the switcher.
 const FADE =
-  'radial-gradient(ellipse 130% 190% at 0% 100%, rgb(0 0 0 / 0.74), rgb(0 0 0 / 0.4) 60%, rgb(0 0 0 / 0.1) 95%)';
-const LIGHT_FADE =
-  'radial-gradient(ellipse 140% 200% at 0% 100%, rgb(0 0 0 / 0.88), rgb(0 0 0 / 0.6) 60%, rgb(0 0 0 / 0.32) 95%)';
+  'radial-gradient(ellipse 130% 190% at 0% 100%, rgb(0 0 0 / 0.42), rgb(0 0 0 / 0.18) 60%, transparent 95%)';
 
 const topicCount = (exam: BankExam) => {
   const count = exam.subjects.reduce(
@@ -54,8 +53,12 @@ export function ExamStrip({
   return (
     <button
       className={cn(
-        'group relative flex min-h-15 w-full items-end overflow-hidden rounded-button px-3 pt-4.5 pb-2 text-left text-white outline-none focus-visible:ring-2 focus-visible:ring-tint-accent-1-fg',
-        active && 'ring-2 ring-white/70 ring-inset',
+        'group relative flex min-h-15 w-full items-end overflow-hidden rounded-button px-3 pt-4.5 pb-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-tint-accent-1-fg',
+        paint.light ? 'text-[#1d1d1f]' : 'text-white',
+        active &&
+          (paint.light
+            ? 'ring-2 ring-black/30 ring-inset'
+            : 'ring-2 ring-white/70 ring-inset'),
         className
       )}
       type="button"
@@ -69,21 +72,35 @@ export function ExamStrip({
         )}
         style={coverBackground(paint)}
       />
-      <span
-        aria-hidden
-        className="absolute inset-0"
-        style={{ backgroundImage: paint.light ? LIGHT_FADE : FADE }}
-      />
+      {!paint.light && (
+        <span
+          aria-hidden
+          className="absolute inset-0"
+          style={{ backgroundImage: FADE }}
+        />
+      )}
       <span className="relative flex w-full min-w-0 items-center gap-2.5">
         <span className="min-w-0 flex-1">
           <span className="block truncate font-bold leading-snug">
             {exam.label}
           </span>
-          <span className="t-meta line-clamp-2 text-white/85 leading-[1.3]">
+          <span
+            className={cn(
+              't-meta line-clamp-2 leading-[1.3]',
+              paint.light ? 'text-[#4b4b4b]' : 'text-white/85'
+            )}
+          >
             {exam.description}
           </span>
         </span>
-        <span className="shrink-0 whitespace-nowrap font-bold text-white/90 text-xs tabular-nums [text-shadow:0_1px_3px_rgb(0_0_0/0.55)]">
+        <span
+          className={cn(
+            'shrink-0 whitespace-nowrap',
+            paint.light
+              ? 'text-[#4b4b4b]'
+              : 'text-white/90 [text-shadow:0_1px_3px_rgb(0_0_0/0.55)]'
+          )}
+        >
           {topicCount(exam)}
         </span>
         {selected && <Icon className="size-4 shrink-0" name="tick" />}
@@ -190,10 +207,10 @@ export function ExamPicker({
           </span>
           <Icon
             className={cn(
-              'relative mb-1 size-4 shrink-0',
+              'relative size-4 shrink-0 self-center',
               paint.light ? 'text-[#4b4b4b]' : 'text-white'
             )}
-            name="unfold"
+            name="chevronDown"
           />
         </button>
       </PopoverPrimitive.Trigger>

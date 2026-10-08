@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { UpdateLabelBody } from '@/api/gen/validators';
+import { UpdateLabelBody, updateLabelBodyNameMax } from '@/api/gen/validators';
 import type { Label, UpdateLabelReq, UserColor } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
@@ -9,6 +9,7 @@ import { Spinner } from '@/components/ui/feedback';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { UserColorChooser } from '@/components/ui/UserColorChooser';
 import { m } from '@/i18n';
+import { textLength } from '@/lib/textLength';
 
 export interface LabelFormValues {
   color: UserColor;
@@ -90,7 +91,15 @@ export function LabelEditDialog({
           name="name"
           render={({ field, fieldState }) => (
             <label className="flex flex-col gap-1.5">
-              <InputTitle required>{m.common_name()}</InputTitle>
+              <InputTitle
+                count={{
+                  max: updateLabelBodyNameMax,
+                  value: textLength(field.value),
+                }}
+                required
+              >
+                {m.common_name()}
+              </InputTitle>
               <Input
                 {...field}
                 aria-invalid={fieldState.invalid}

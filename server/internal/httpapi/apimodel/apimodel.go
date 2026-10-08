@@ -153,8 +153,8 @@ type LLMCredentialsResponse struct {
 }
 
 type UpsertLLMCredentialReq struct {
-	ProviderSlug string `json:"providerSlug"`
-	APIKey       string `json:"apiKey"`
+	ProviderSlug string    `json:"providerSlug"`
+	APIKey       LLMAPIKey `json:"apiKey"`
 }
 
 // SourceUploadPolicy describes the server-owned file allowlist and parser

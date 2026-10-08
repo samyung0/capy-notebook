@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/Input';
 import { PopupMotion } from '@/components/ui/PopupMotion';
 import { Separator } from '@/components/ui/Separator';
 import { EditorIcon } from '@/features/notes/EditorIcon';
+import { LINK_TEXT_MAX, LINK_URL_MAX } from '@/features/notes/linkEditor';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { FloatingActionButton } from './nodeComponents';
@@ -77,6 +78,7 @@ export function LinkFloatingToolbar() {
               aria-label={m.editor_link_url()}
               className="h-7 py-1 font-medium text-sm"
               leftIcon="link"
+              maxLength={LINK_URL_MAX}
               placeholder="https://example.com"
               variant="transparent"
               wrapperClassName={cn(
@@ -90,6 +92,7 @@ export function LinkFloatingToolbar() {
             aria-label={m.editor_link_text()}
             className="h-7 py-1 font-medium text-sm"
             leftIcon="alignLeft"
+            maxLength={LINK_TEXT_MAX}
             onChange={(event) => setOption('text', event.target.value)}
             placeholder={m.editor_link_text_placeholder()}
             value={text}

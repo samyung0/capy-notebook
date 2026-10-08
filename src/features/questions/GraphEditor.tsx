@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/Popover';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { m } from '@/i18n';
+import { textLength } from '@/lib/textLength';
 import { Field, SelectField } from './editorFields';
 import { createGraphBoard, GraphError } from './graph';
 import type { GraphBlock, GraphElement } from './types';
@@ -217,7 +218,13 @@ export function GraphEditor({
           >
             <div className="min-w-0 flex-1 space-y-2">
               {element.type === 'functiongraph' && (
-                <Field label={m.question_ui_function_f_x()}>
+                <Field
+                  count={{
+                    max: limits.QUESTION_GRAPH_TERM_MAX,
+                    value: textLength(element.term),
+                  }}
+                  label={m.question_ui_function_f_x()}
+                >
                   <Input
                     onChange={(event) =>
                       update(element.id, {
@@ -232,6 +239,17 @@ export function GraphEditor({
               {(element.type === 'point' || element.type === 'text') && (
                 <>
                   <Field
+                    count={
+                      element.type === 'point'
+                        ? {
+                            max: limits.QUESTION_METADATA_MAX,
+                            value: textLength(element.name),
+                          }
+                        : {
+                            max: limits.QUESTION_TEXT_MAX,
+                            value: textLength(element.text),
+                          }
+                    }
                     label={
                       element.type === 'point'
                         ? m.question_ui_point_name()
@@ -336,7 +354,13 @@ export function GraphEditor({
                       />
                     ))}
                   </div>
-                  <Field label={m.question_ui_label()}>
+                  <Field
+                    count={{
+                      max: limits.QUESTION_METADATA_MAX,
+                      value: textLength(element.label),
+                    }}
+                    label={m.question_ui_label()}
+                  >
                     <Input
                       onChange={(event) =>
                         update(element.id, {
@@ -621,7 +645,13 @@ export function GraphEditor({
                 {m.question_ui_axes()}
               </label>
             </div>
-            <Field label={m.question_ui_description()}>
+            <Field
+              count={{
+                max: limits.QUESTION_TEXT_MAX,
+                value: textLength(value.description),
+              }}
+              label={m.question_ui_description()}
+            >
               <Input
                 onChange={(event) =>
                   onChange({ ...value, description: event.target.value })

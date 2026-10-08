@@ -3367,8 +3367,12 @@ export const ListLLMCredentialsResponse = zod.object({
 /**
  * @summary Save a provider key
  */
+export const upsertLLMCredentialBodyApiKeyMax = 512;
+
+
+
 export const UpsertLLMCredentialBody = zod.object({
-  "apiKey": zod.string(),
+  "apiKey": zod.string().max(upsertLLMCredentialBodyApiKeyMax),
   "providerSlug": zod.string()
 })
 
@@ -4604,8 +4608,12 @@ export const ListReviewWorkspacesResponse = zod.object({
 /**
  * @summary Global search
  */
+export const searchQueryQMax = 200;
+
+
+
 export const SearchQueryParams = zod.object({
-  "q": zod.string().optional()
+  "q": zod.string().max(searchQueryQMax).optional()
 })
 
 export const SearchResponseItem = zod.object({

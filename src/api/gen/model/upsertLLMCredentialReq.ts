@@ -8,6 +8,7 @@
 export interface UpsertLLMCredentialReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  /** @maxLength 512 */
   apiKey: string;
   providerSlug: string;
 }

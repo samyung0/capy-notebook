@@ -1,7 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { CreatePDFAnnotationBody } from '@/api/gen/validators';
+import {
+  CreatePDFAnnotationBody,
+  createPDFAnnotationBodyTextMax,
+} from '@/api/gen/validators';
 import { Button } from '@/components/ui/Button';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { Input, InputError } from '@/components/ui/Input';
@@ -169,7 +172,7 @@ export function PdfAnnotationToolbar({
                 aria-invalid={!!errors.text}
                 aria-label={m.pdf_text()}
                 className="rounded-lg"
-                maxLength={2000}
+                maxLength={createPDFAnnotationBodyTextMax}
                 placeholder={m.pdf_text()}
                 {...register('text')}
               />

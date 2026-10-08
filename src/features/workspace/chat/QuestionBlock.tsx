@@ -5,7 +5,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/Input';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { chatInputLimit } from '../chatInputLimit';
+import { textLength } from '@/lib/textLength';
 import { composeAnswers, type QuestionAnswer } from './questions';
 import type { AskUserProps } from './schema';
 
@@ -40,8 +40,8 @@ export function QuestionBlock({
     !!(answers[i]?.choice || answers[i]?.other?.trim());
   const done = questions.filter((_, i) => answered(i)).length;
   const composed = composeAnswers(questions, answers);
-  const limit = chatInputLimit(composed);
-  const overLimit = limit.exceeded;
+  const composedLength = textLength(composed);
+  const overLimit = composedLength > CHAT_CHARACTER_LIMIT;
   const current = questions[index];
   if (!current) return null;
 
@@ -214,7 +214,7 @@ export function QuestionBlock({
         </Button>
         <span className="text-[11px] text-fg-muted">
           {overLimit
-            ? `${limit.count}/${CHAT_CHARACTER_LIMIT}`
+            ? `${composedLength}/${CHAT_CHARACTER_LIMIT}`
             : m.chat_question_hint()}
         </span>
       </div>

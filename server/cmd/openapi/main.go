@@ -118,6 +118,7 @@ func renderTypeScriptLimits() []byte {
 	var out bytes.Buffer
 	out.Write(renderQuestionTypeScriptLimits())
 	fmt.Fprintf(&out, "export const CHAT_CHARACTER_LIMIT = %d;\n", fieldlimits.ChatMessage)
+	fmt.Fprintf(&out, "export const COMMENT_CHARACTER_LIMIT = %d;\n", fieldlimits.Comment)
 	return out.Bytes()
 }
 

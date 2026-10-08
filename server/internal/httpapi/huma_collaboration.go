@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"io"
 	"net/http"
@@ -13,8 +14,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -390,6 +393,9 @@ func (a *api) createMaterialDiscussion(ctx context.Context, in *createDiscussion
 	if err := a.s.AssertMaterialEditor(ctx, userID(ctx), in.ID); err != nil {
 		return nil, collaborationError(err)
 	}
+	if err := checkCommentLength(in.Body.ContentRich); err != nil {
+		return nil, err
+	}
 	discussion, err := a.s.CreateCommentDiscussion(
 		ctx,
 		in.ID,
@@ -435,6 +441,9 @@ func (a *api) createMaterialComment(ctx context.Context, in *createCommentInput)
 	if err := a.s.AssertMaterialEditor(ctx, userID(ctx), resource.MaterialID); err != nil {
 		return nil, collaborationError(err)
 	}
+	if err := checkCommentLength(in.Body.ContentRich); err != nil {
+		return nil, err
+	}
 	comment, err := a.s.AddComment(
 		ctx, in.ID, userID(ctx), apimodel.EncodeRaw(in.Body.ContentRich),
 	)
@@ -455,6 +464,9 @@ func (a *api) updateMaterialComment(ctx context.Context, in *updateCommentBodyIn
 	}
 	if err := a.s.AssertMaterialEditor(ctx, userID(ctx), resource.MaterialID); err != nil {
 		return nil, collaborationError(err)
+	}
+	if err := checkCommentLength(in.Body.ContentRich); err != nil {
+		return nil, err
 	}
 	comment, err := a.s.EditOwnComment(
 		ctx, in.ID, userID(ctx), apimodel.EncodeRaw(in.Body.ContentRich),
@@ -498,4 +510,29 @@ func (a *api) publishCommentInvalidation(ctx context.Context, materialID string)
 	}
 	payload, _ := json.Marshal(event)
 	_ = a.rdb.Publish(ctx, "capy:collaboration:comments", payload).Err()
+}
+
+// checkCommentLength bounds a comment's plain text the way the note shows it:
+// each top-level block's text leaves joined, blocks separated by a newline.
+func checkCommentLength(content []map[string]any) error {
+	runes := max(len(content)-1, 0)
+	var walk func(node map[string]any)
+	walk = func(node map[string]any) {
+		if text, ok := node["text"].(string); ok {
+			runes += utf8.RuneCountInString(text)
+		}
+		children, _ := node["children"].([]any)
+		for _, child := range children {
+			if c, ok := child.(map[string]any); ok {
+				walk(c)
+			}
+		}
+	}
+	for _, node := range content {
+		walk(node)
+	}
+	if runes > fieldlimits.Comment {
+		return huma.Error422UnprocessableEntity(fmt.Sprintf("a comment is at most %d characters", fieldlimits.Comment))
+	}
+	return nil
 }

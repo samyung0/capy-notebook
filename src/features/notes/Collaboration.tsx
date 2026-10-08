@@ -29,11 +29,13 @@ import {
   useMe,
   useUpdateMaterialComment,
 } from '@/api/hooks';
+import { COMMENT_CHARACTER_LIMIT } from '@/api/limits.generated';
 import type { MaterialComment, MaterialDiscussion } from '@/api/types';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { IconButton } from '@/components/ui/IconButton';
+import { CharCount } from '@/components/ui/Input';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
 import {
   Popover,
@@ -47,6 +49,7 @@ import { EditorIcon } from '@/features/notes/EditorIcon';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
+import { textLength } from '@/lib/textLength';
 import { firstLineMiddle } from './BlockInteractions';
 import { useEditorRuntime } from './EditorRuntime';
 
@@ -284,6 +287,19 @@ export const discussionPlugin = createPlatePlugin({
   render: { aboveNodes: BlockDiscussion as never },
 });
 
+const commentTooLong = (text: string) =>
+  textLength(text) > COMMENT_CHARACTER_LIMIT;
+
+function CommentCount({ text }: { text: string }) {
+  return (
+    <CharCount
+      className="self-end"
+      max={COMMENT_CHARACTER_LIMIT}
+      value={textLength(text)}
+    />
+  );
+}
+
 function richComment(text: string): MaterialValue {
   return [{ children: [{ text }], type: 'p' }];
 }
@@ -331,7 +347,7 @@ export function CollaborationProvider({
   async function submitNewComment() {
     const text = comment.trim();
     const target = commentTarget.current;
-    if (!text || !target) return;
+    if (!text || commentTooLong(text) || !target) return;
     const { blockId, selection } = target;
     const yjsEditor = editor as typeof editor & YjsEditor;
     if (!yjsEditor.sharedRoot) {
@@ -451,7 +467,11 @@ export function CollaborationProvider({
               {m.action_cancel()}
             </Button>
             <Button
-              disabled={!comment.trim() || createDiscussionIsPending}
+              disabled={
+                !comment.trim() ||
+                commentTooLong(comment) ||
+                createDiscussionIsPending
+              }
               onClick={() => void submitNewComment()}
               size="lg"
               variant="accent"
@@ -469,11 +489,13 @@ export function CollaborationProvider({
       >
         <label className="mt-3 flex flex-col gap-1.5">
           <Textarea
+            aria-invalid={commentTooLong(comment) || undefined}
             aria-label={m.editor_comment()}
             onChange={(event) => setComment(event.target.value)}
             rows={4}
             value={comment}
           />
+          <CommentCount text={comment} />
         </label>
       </SimpleDialog>
     </CollaborationActionsContext.Provider>
@@ -494,7 +516,7 @@ function DiscussionThread({ discussion }: { discussion: MaterialDiscussion }) {
   if (!actions) return null;
   const send = () => {
     const text = reply.trim();
-    if (!text || actions.mutationPending) return;
+    if (!text || commentTooLong(text) || actions.mutationPending) return;
     // Keep anything typed while the request was in flight.
     void actions
       .addComment(discussion.id, text)
@@ -537,9 +559,12 @@ function DiscussionThread({ discussion }: { discussion: MaterialDiscussion }) {
             rows={1}
             value={reply}
           />
+          <CommentCount text={reply} />
           <IconButton
             className="size-7 p-0"
-            disabled={!reply.trim() || actions.mutationPending}
+            disabled={
+              !reply.trim() || commentTooLong(reply) || actions.mutationPending
+            }
             icon="arrowRight"
             label={m.editor_reply()}
             onClick={send}
@@ -667,7 +692,8 @@ function CommentEntry({
               onChange={(event) => setEditText(event.target.value)}
               value={editText}
             />
-            <div className="flex justify-end gap-1">
+            <div className="flex items-center justify-end gap-1">
+              <CommentCount text={editText} />
               <Button
                 onClick={() => setEditing(false)}
                 size="sm"
@@ -676,7 +702,7 @@ function CommentEntry({
                 {m.action_cancel()}
               </Button>
               <Button
-                disabled={!editText.trim()}
+                disabled={!editText.trim() || commentTooLong(editText)}
                 onClick={() =>
                   void actions
                     .updateComment(entry.id, editText.trim())

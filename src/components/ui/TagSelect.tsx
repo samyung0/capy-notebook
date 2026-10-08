@@ -18,6 +18,8 @@ export interface TagSelectProps {
   kind?: string;
   /** When set, refuse to add tags beyond this count. */
   max?: number;
+  /** Silent cap on one tag's length. */
+  maxLength?: number;
   onChange: (next: TagInput[]) => void;
   placeholder?: string;
   value: TagInput[];
@@ -35,6 +37,7 @@ export function TagSelect({
   onChange,
   kind = 'workspace',
   max,
+  maxLength,
   placeholder,
   invalid,
 }: TagSelectProps) {
@@ -166,7 +169,8 @@ export function TagSelect({
               aria-invalid={invalid}
               aria-label={m.common_tags()}
               autoComplete="off"
-              className="t-body min-w-32 flex-1 border-none bg-transparent px-2 py-1 outline-none placeholder:text-placeholder"
+              className="t-body w-0 min-w-24 flex-1 border-none bg-transparent px-2 py-1 outline-none placeholder:text-placeholder"
+              maxLength={maxLength}
               onBlur={() => setOpen(false)}
               onChange={(e) => {
                 setQuery(e.target.value);

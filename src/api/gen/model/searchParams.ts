@@ -6,5 +6,8 @@
  */
 
 export type SearchParams = {
+/**
+ * @maxLength 200
+ */
 q?: string;
 };

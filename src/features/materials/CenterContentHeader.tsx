@@ -1,4 +1,3 @@
-import { useNavigate } from '@tanstack/react-router';
 import { type ReactNode, useEffect, useState } from 'react';
 import { createStore, type StoreApi } from 'zustand';
 import { useFile, useMaterial, useMaterials, useWorkspace } from '@/api/hooks';
@@ -6,12 +5,10 @@ import type {
   AccessCapabilities,
   Chapter,
   Material,
-  MaterialKind,
   MaterialRef,
   SourceFile,
   UserColor,
 } from '@/api/types';
-import { Button } from '@/components/ui/Button';
 import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import type { MenuItem } from '@/components/ui/Menu';
@@ -146,7 +143,6 @@ function useHeader(
   title?: string;
   material?: Material | MaterialRef;
   materialCapabilities?: AccessCapabilities;
-  materialKind?: MaterialKind;
   showImageZoom: boolean;
   modes?: readonly MaterialMode[];
   defaultMode?: MaterialMode;
@@ -198,63 +194,10 @@ function useHeader(
     icon: materialIconName(kind),
     material: mt,
     materialCapabilities: capabilities,
-    materialKind: kind,
     modes: policy.modes,
     showImageZoom: false,
     title: mt.title,
   };
-}
-
-function FlashcardSetPreviewActions({
-  flashcardSetId,
-}: {
-  flashcardSetId: string;
-}) {
-  const navigate = useNavigate();
-  return (
-    <div
-      aria-label={m.material_flashcard_actions()}
-      className="flex min-w-0 items-center gap-3"
-      role="toolbar"
-    >
-      <Button
-        iconRight="arrowRight"
-        onClick={() =>
-          navigate({
-            params: { flashcardSetId },
-            to: '/flashcards/$flashcardSetId',
-          })
-        }
-        size="sm"
-        variant="ghost-hover"
-      >
-        {m.flashcards_study()}
-      </Button>
-    </div>
-  );
-}
-
-function QuizPreviewActions({ quizId }: { quizId: string }) {
-  const navigate = useNavigate();
-  return (
-    <div
-      aria-label={m.material_quiz_actions()}
-      className="flex min-w-0 items-center gap-3"
-      role="toolbar"
-    >
-      <Button
-        className="font-medium text-sm"
-        iconRight="arrowRight"
-        onClick={() =>
-          navigate({ params: { quizId }, to: '/quizzes/$quizId/attempt' })
-        }
-        size="sm"
-        variant="ghost-hover"
-      >
-        {m.quiz_start()}
-      </Button>
-    </div>
-  );
 }
 
 /** Mark as read, right of the view/edit toggle: an open book with a check, a
@@ -283,19 +226,6 @@ function ReadToggle({
       />
     </ToolbarButton>
   );
-}
-
-function MaterialViewActions({
-  materialId,
-  kind,
-}: {
-  materialId: string;
-  kind: MaterialKind;
-}) {
-  if (kind === 'quiz') return <QuizPreviewActions quizId={materialId} />;
-  if (kind === 'flashcards')
-    return <FlashcardSetPreviewActions flashcardSetId={materialId} />;
-  return null;
 }
 
 export function Header({
@@ -348,7 +278,6 @@ export function Header({
     material,
     materialCapabilities,
     title,
-    materialKind,
     showImageZoom,
     modes,
     defaultMode,
@@ -385,9 +314,6 @@ export function Header({
     <>
       {item.kind === 'file' && office && fileActions}
       {item.kind === 'file' && fileControls}
-      {item.kind === 'material' && activeMode === 'view' && materialKind && (
-        <MaterialViewActions kind={materialKind} materialId={item.id} />
-      )}
       {!readOnly && modes && modes.length > 1 && activeMode && (
         <MaterialModeToggle mode={activeMode} onChange={onMaterialModeChange} />
       )}
@@ -479,7 +405,7 @@ export function Header({
             // The workspace chrome at the row's height; the workspace picker
             // (a dropdown trigger) as a slimmer pill.
             '[&_[data-slot=button]:not([data-variant])]:w-6 [&_[data-slot=button]]:h-6',
-            '[&_[data-slot=dropdown-menu-trigger]]:h-6 [&_[data-slot=dropdown-menu-trigger]]:gap-1.5 [&_[data-slot=dropdown-menu-trigger]]:px-1.5'
+            '[&_[data-slot=dropdown-menu-trigger]]:h-6 [&_[data-slot=dropdown-menu-trigger]]:gap-1.5 [&_[data-slot=dropdown-menu-trigger]]:px-2'
           )}
         >
           {leading}

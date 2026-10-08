@@ -6,8 +6,11 @@ and send a comment. The bank page is at `/qb`, under Explore in the
 sidebar, inside the app shell: the main panel shows the chosen topic's
 questions, and a dashboard-style right column (`PanelHeader`, shared with
 Recent Files and the theme drawer) holds exams and topics (Exam switcher and
-covers, below), swapping to the topic's question list; on phones that column becomes a floating bar and
-bottom sheet. Editors switch between View mode and Edit mode; edit mode adds
+covers, below), swapping to the topic's question list. Below `lg` that column
+becomes a bottom sheet opened from `PageFloatingBar`
+(`src/components/ui/PageFloatingBar.tsx`, shared with the workspace tools bar):
+Topics on every /qb page, Questions once a topic is open. Its labels stay
+visible, small under the icons on phones and beside them from `sm`. Editors switch between View mode and Edit mode; edit mode adds
 the answer key and a review bar (review status, Mark reviewed/Undo review,
 Comment, Edit) under each question. In View mode signed-in learners answer and
 check each question (Learner answering, below) and copy questions into their

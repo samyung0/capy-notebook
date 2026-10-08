@@ -3,7 +3,10 @@ import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
-import { UpdateQuizMetadataBody } from '@/api/gen/validators';
+import {
+  UpdateQuizMetadataBody,
+  updateQuizMetadataBodyNameMax,
+} from '@/api/gen/validators';
 import {
   useQuizEdit,
   useUpdateQuizContent,
@@ -25,6 +28,7 @@ import { QuizForm } from '@/features/quizzes/QuizForm';
 import { QuizPageHeader } from '@/features/quizzes/QuizPage';
 import { usePickedImages } from '@/features/quizzes/usePickedImages';
 import { m } from '@/i18n';
+import { textLength } from '@/lib/textLength';
 
 const detailsSchema = z.object({
   name: UpdateQuizMetadataBody.shape.name.unwrap(),
@@ -172,6 +176,10 @@ function QuizEditor({ quizId }: { quizId: string }) {
                 />
                 <div className="grid gap-4 sm:grid-cols-2">
                   <InputField
+                    count={{
+                      max: updateQuizMetadataBodyNameMax,
+                      value: textLength(name),
+                    }}
                     error={errors.name}
                     id="quiz-name"
                     label={m.quiz_name()}

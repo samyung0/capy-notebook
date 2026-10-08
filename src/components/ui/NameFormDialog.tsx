@@ -7,6 +7,7 @@ import { SimpleDialog } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { m } from '@/i18n';
+import { textLength } from '@/lib/textLength';
 
 type NameFields = { name: string };
 
@@ -101,13 +102,17 @@ export function NameFormDialog({
         name="name"
         render={({ field, fieldState }) => (
           <label className="flex flex-col gap-1.5">
-            <InputTitle required>{fieldLabel ?? m.common_name()}</InputTitle>
+            <InputTitle
+              count={{ max: maxLength, value: textLength(field.value) }}
+              required
+            >
+              {fieldLabel ?? m.common_name()}
+            </InputTitle>
             <Input
               {...field}
               aria-invalid={fieldState.invalid}
               autoComplete="off"
               autoFocus
-              maxLength={maxLength}
             />
             {fieldState.invalid && <InputError errors={[fieldState.error]} />}
           </label>

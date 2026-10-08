@@ -18,19 +18,20 @@ import { SimpleDialog } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
+import { CharCount } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/TextArea';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/Tooltip';
-import { m } from '@/i18n';
+import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { textLength } from '@/lib/textLength';
 import { userColorPairDark } from '@/lib/userColor';
 import { LangAnswer } from './chat/LangAnswer';
 import { QuestionBlock } from './chat/QuestionBlock';
 import { extractQuestions } from './chat/questions';
-import { chatInputLimit } from './chatInputLimit';
 import type { TabAction } from './PanelTabRow';
 import { toolErrorMessage } from './toolErrorMessage';
 import { toChatMessage, useChatStream } from './useChatStream';
@@ -38,6 +39,12 @@ import { useProcessFileChanges } from './useProcessFileChanges';
 
 /** Page label for a citation, absent for sources with no page model (txt/md
  * and anything stored without parsing). */
+function formatConversationDate(iso: string): string {
+  return new Intl.DateTimeFormat(getLocale(), { dateStyle: 'medium' }).format(
+    new Date(iso)
+  );
+}
+
 function pageLabel(c: Citation): string | null {
   if (!c.pageStart) return null;
   return c.pageEnd && c.pageEnd !== c.pageStart
@@ -418,7 +425,7 @@ export function ChatPanel({
   // TODO: show last-chat timestamps and rename/delete actions in chat history.
 
   const [text, setText] = useState('');
-  const inputLimit = chatInputLimit(text);
+  const overLimit = textLength(text) > CHAT_CHARACTER_LIMIT;
   const [historyOpen, setHistoryOpen] = useState(false);
   const [selectId, setSelectId] = useState<string | null>(null);
   // The Library switch applies per turn; it stays where the learner left it.
@@ -455,7 +462,7 @@ export function ChatPanel({
 
   function submit() {
     const trimmed = text.trim();
-    if (!trimmed || streaming || inputLimit.exceeded) return;
+    if (!trimmed || streaming || overLimit) return;
     setText('');
     void send(trimmed, chatTurn(library, openResource));
   }
@@ -501,7 +508,7 @@ export function ChatPanel({
                 <Button
                   aria-current={c.id === conversationId ? 'true' : undefined}
                   className={cn(
-                    'h-auto min-h-11 w-full shrink-0 justify-start py-2 text-left font-normal',
+                    'h-auto min-h-11 w-full shrink-0 justify-start px-2.5 py-2 text-left font-normal sm:px-5',
                     c.id === conversationId && 'bg-surface-hover-bg'
                   )}
                   iconLeft="message"
@@ -514,8 +521,17 @@ export function ChatPanel({
                   type="button"
                   variant="ghost-hover"
                 >
-                  <span className="wrap-anywhere min-w-0 flex-1 whitespace-normal">
-                    {c.title || m.chat_untitled()}
+                  {/* The date wraps under the title, aligned to its start, when the row is too narrow. */}
+                  <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                    <span className="wrap-anywhere min-w-0 grow whitespace-normal">
+                      {c.title || m.chat_untitled()}
+                    </span>
+                    <time
+                      className="whitespace-nowrap text-fg-muted text-sm"
+                      dateTime={c.createdAt}
+                    >
+                      {formatConversationDate(c.createdAt)}
+                    </time>
                   </span>
                   {c.id === conversationId && <Icon name="check" size={16} />}
                 </Button>
@@ -604,7 +620,7 @@ export function ChatPanel({
           )}
         >
           <Textarea
-            aria-invalid={inputLimit.exceeded || undefined}
+            aria-invalid={overLimit || undefined}
             aria-label={m.chat_placeholder()}
             className={cn(
               'max-h-[7lh] min-h-[2lh] resize-none rounded-none border-0 bg-transparent px-0 py-0 text-fg focus:border-0'
@@ -641,19 +657,10 @@ export function ChatPanel({
               <TooltipContent>{m.chat_library_hint()}</TooltipContent>
             </Tooltip>
             <span className="ml-auto" />
-            {inputLimit.visible && (
-              <span
-                className={cn(
-                  't-meta whitespace-nowrap',
-                  inputLimit.exceeded ? 'text-solid-error' : 'text-fg-muted'
-                )}
-              >
-                {inputLimit.count}/{CHAT_CHARACTER_LIMIT}
-              </span>
-            )}
+            <CharCount max={CHAT_CHARACTER_LIMIT} value={textLength(text)} />
             <IconButton
               className="p-2.5"
-              disabled={!streaming && inputLimit.exceeded}
+              disabled={!streaming && overLimit}
               icon="send"
               iconClassName={cn(
                 'transition-[opacity,filter,scale] duration-(--motion-duration-fast) ease-(--motion-ease-in-out) motion-reduce:transition-none',

@@ -81,25 +81,21 @@ export function MaterialsTab({
     {
       icon: 'clock',
       label: m.create_sort_updated(),
-      order: 'time',
       value: 'updated',
     },
     {
       icon: 'schedule',
       label: m.create_sort_created(),
-      order: 'time',
       value: 'created',
     },
     {
       icon: 'pencil',
       label: m.create_sort_title(),
-      order: 'name',
       value: 'title',
     },
     {
       icon: 'chapter',
       label: m.create_sort_kind(),
-      order: 'name',
       value: 'kind',
     },
   ];

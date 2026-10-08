@@ -70,7 +70,7 @@ export function WorkspacePicker({
       <ButtonTooltip label={m.workspace_switch()} side="bottom">
         <DropdownMenuTrigger asChild>
           <Button
-            className="group/ws-trigger flex h-9 min-w-0 items-center gap-2 px-2"
+            className="group/ws-trigger flex h-9 min-w-0 items-center gap-2 px-3"
             iconRight="chevronDown"
             iconRightClassName="text-fg-muted transition-transform duration-(--motion-duration-fast) ease-(--motion-ease-in-out) group-data-[state=open]/ws-trigger:rotate-180"
             variant="gray"

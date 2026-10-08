@@ -27,6 +27,10 @@ import { cn } from '@/lib/cn';
 import { llmKeyUserMessage } from '@/lib/errors';
 import { applyAiPreview, setAiPreview, useAiPreview } from './aiPreviewState';
 
+// The gateway takes 16 KiB per message; 4,000 characters stays under it even
+// when every character is 4 bytes.
+const AI_PROMPT_MAX = 4000;
+
 interface AiAction {
   icon: IconName;
   id: string;
@@ -230,6 +234,7 @@ export function AiMenu() {
             className="h-10 min-w-0 flex-1 bg-transparent px-2 text-fg text-sm outline-none placeholder:text-placeholder"
             data-plate-focus="true"
             disabled={loading}
+            maxLength={AI_PROMPT_MAX}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {

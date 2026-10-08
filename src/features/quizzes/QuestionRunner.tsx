@@ -1,8 +1,9 @@
 import { type ReactNode, useEffect, useState } from 'react';
+import { QUIZ_OPEN_ANSWER_MAX } from '@/api/limits.generated';
 import type { Question, QuestionPart } from '@/api/types';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
-import { Input, InputError } from '@/components/ui/Input';
+import { CharCount, Input, InputError } from '@/components/ui/Input';
 import {
   Select,
   SelectContent,
@@ -34,7 +35,11 @@ import {
 } from '@/features/questions/types';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { textLength } from '@/lib/textLength';
 import { type Answer, type Answers, emptyAnswer, quantityValue } from './grade';
+
+// Silent cap on gap and short answers; they are graded without the model.
+const SHORT_ANSWER_MAX = 1000;
 
 const NON_QUANTITY_CHAR = /[^\d\s+\-./eE]/;
 
@@ -176,6 +181,7 @@ function GapText({
               aria-label={m.question_ui_gap({ number: gap + 1 })}
               className="py-0.5 text-center"
               disabled={review || disabled}
+              maxLength={SHORT_ANSWER_MAX}
               onChange={(event) =>
                 onChange(
                   typed.map((item, j) =>
@@ -380,6 +386,7 @@ function PartRunner({
             <Input
               aria-label={m.question_ui_your_answer()}
               disabled={review || disabled}
+              maxLength={SHORT_ANSWER_MAX}
               onBlur={() =>
                 setUnitError(
                   Boolean(
@@ -440,16 +447,28 @@ function PartRunner({
       </div>
     );
   }
-  if (answer.type === 'open')
+  if (answer.type === 'open') {
+    const text = typeof value === 'string' ? value : '';
     return (
-      <Textarea
-        aria-label={m.question_ui_your_answer()}
-        disabled={review || disabled}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={m.question_ui_type_answer()}
-        value={typeof value === 'string' ? value : ''}
-      />
+      <div className="flex flex-col gap-1">
+        <Textarea
+          aria-label={m.question_ui_your_answer()}
+          disabled={review || disabled}
+          maxLength={QUIZ_OPEN_ANSWER_MAX}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={m.question_ui_type_answer()}
+          value={text}
+        />
+        {!review && (
+          <CharCount
+            className="self-end"
+            max={QUIZ_OPEN_ANSWER_MAX}
+            value={textLength(text)}
+          />
+        )}
+      </div>
     );
+  }
   if (answer.type === 'matching') {
     const choices =
       value !== null && typeof value === 'object' && !Array.isArray(value)

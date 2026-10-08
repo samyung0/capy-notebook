@@ -22,7 +22,7 @@ type meOutput struct {
 	Body apimodel.User
 }
 type searchInput struct {
-	Q string `query:"q"`
+	Q string `query:"q" maxLength:"200"`
 }
 type searchOutput struct {
 	Body []apimodel.SearchResult `nullable:"false"`

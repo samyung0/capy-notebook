@@ -1,22 +1,28 @@
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import type { FlashcardContent } from '@/features/materials/blocks';
 import { m } from '@/i18n';
 import { CardGrid, CardSides, CardTile } from './CardView';
 
-/** A flashcard set read as a grid of fronts; a tile opens its preview. */
+/** A flashcard set read as a grid of fronts; a tile opens its preview.
+ * `action` sits right of the title. */
 export function FlashcardGrid({
   title,
   cards,
+  action,
 }: {
   title: string;
   cards: FlashcardContent[];
+  action?: ReactNode;
 }) {
   const [open, setOpen] = useState<number | null>(null);
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="t-large-card-title">{title}</h1>
+      <div className="flex items-baseline gap-4">
+        <h1 className="t-large-card-title min-w-0 flex-1">{title}</h1>
+        {action}
+      </div>
       {cards.length === 0 ? (
         <p className="text-fg-muted">{m.flashcards_empty_flashcards()}</p>
       ) : (

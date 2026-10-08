@@ -1,4 +1,4 @@
-import { Navigate, useRouter } from '@tanstack/react-router';
+import { Navigate, useNavigate, useRouter } from '@tanstack/react-router';
 import {
   lazy,
   type ReactNode,
@@ -374,7 +374,11 @@ export function MaterialContent({
                 title={material.title}
               />
             ) : (
-              <FlashcardGrid cards={cards} title={material.title} />
+              <FlashcardGrid
+                action={<StudySetLink setId={materialId} />}
+                cards={cards}
+                title={material.title}
+              />
             )}
           </TabContent>
         </div>
@@ -393,6 +397,7 @@ export function MaterialContent({
               <QuizPreview
                 centered={centerQuiz}
                 content={material.content}
+                quizId={materialId}
                 title={material.title}
               />
             ) : (
@@ -433,12 +438,15 @@ export function MaterialContent({
 function QuizPreview({
   centered,
   content,
+  quizId,
   title,
 }: {
   centered: boolean;
   content: MaterialDocument;
+  quizId: string;
   title: string;
 }) {
+  const navigate = useNavigate();
   const quiz = content.value.find(
     (node): node is QuizElement => node.type === 'quiz'
   );
@@ -449,9 +457,53 @@ function QuizPreview({
   );
   return (
     <TabContent centered={centered}>
-      <h1 className="t-large-card-title mb-7">{title}</h1>
+      <div className="mb-7 flex items-baseline gap-4">
+        <h1 className="t-large-card-title min-w-0 flex-1">{title}</h1>
+        <TitleAction
+          label={m.quiz_start()}
+          onClick={() =>
+            navigate({ params: { quizId }, to: '/quizzes/$quizId/attempt' })
+          }
+        />
+      </div>
       <QuizQuestionList disabled questions={questions} />
     </TabContent>
+  );
+}
+
+function StudySetLink({ setId }: { setId: string }) {
+  const navigate = useNavigate();
+  return (
+    <TitleAction
+      label={m.flashcards_study()}
+      onClick={() =>
+        navigate({
+          params: { flashcardSetId: setId },
+          to: '/flashcards/$flashcardSetId',
+        })
+      }
+    />
+  );
+}
+
+/** The material's one study action, set on the title's baseline at the far
+ * right of the reading column. */
+function TitleAction({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-sm font-semibold text-sm text-tint-accent-1-fg underline underline-offset-4 outline-none hover:decoration-2 focus-visible:ring-2 focus-visible:ring-focus"
+      onClick={onClick}
+      type="button"
+    >
+      {label}
+      <Icon className="size-4 -translate-y-px" name="arrowRight" />
+    </button>
   );
 }
 

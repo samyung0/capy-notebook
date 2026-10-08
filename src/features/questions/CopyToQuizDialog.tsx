@@ -28,6 +28,7 @@ import {
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
+import { textLength } from '@/lib/textLength';
 import { copyBankQuestions } from './bank';
 import { type QuizTarget, QuizTargetSelect } from './QuizTargetSelect';
 
@@ -213,7 +214,23 @@ export function CopyToQuizDialog({
             </Select>
           </SettingRow>
           <div className="flex flex-col gap-2">
-            <InputTitle>{m.question_ui_quiz()}</InputTitle>
+            <InputTitle
+              count={
+                target?.kind === 'new'
+                  ? {
+                      max: copyBankQuestionsBodyQuizNameMax,
+                      value: textLength(target.name),
+                    }
+                  : undefined
+              }
+            >
+              {m.question_ui_quiz()}
+            </InputTitle>
+            {target?.kind === 'new' && (
+              <p className="t-meta -mt-1 text-fg-muted">
+                {m.question_ui_new_quiz()}
+              </p>
+            )}
             <QuizTargetSelect
               disabled={!workspaceId}
               invalid={target?.kind === 'new' && !!errors.quizName}

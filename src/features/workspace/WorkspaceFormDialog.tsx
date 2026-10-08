@@ -4,6 +4,8 @@ import { Controller, useForm, useWatch } from 'react-hook-form';
 import {
   CreateWorkspaceBody,
   createWorkspaceBodyDescriptionMax,
+  createWorkspaceBodyNameMax,
+  createWorkspaceBodyTagsItemValueMax,
   createWorkspaceBodyTagsMax,
   UpdateWorkspaceBody,
 } from '@/api/gen/validators';
@@ -18,6 +20,7 @@ import { TagSelect } from '@/components/ui/TagSelect';
 import { Textarea } from '@/components/ui/TextArea';
 import { m } from '@/i18n';
 import { iconStyles, iconUrl } from '@/lib/icon-catalog';
+import { textLength } from '@/lib/textLength';
 import { CoverField } from './CoverField';
 
 const workspaceIcons = iconStyles.find(
@@ -149,7 +152,15 @@ export function WorkspaceFormDialog({
         name="name"
         render={({ field, fieldState }) => (
           <label className="flex flex-col gap-1.5">
-            <InputTitle required>{m.common_name()}</InputTitle>
+            <InputTitle
+              count={{
+                max: createWorkspaceBodyNameMax,
+                value: textLength(field.value),
+              }}
+              required
+            >
+              {m.common_name()}
+            </InputTitle>
             <Input
               {...field}
               aria-invalid={fieldState.invalid}
@@ -167,11 +178,17 @@ export function WorkspaceFormDialog({
         name="description"
         render={({ field, fieldState }) => (
           <label className="flex flex-col gap-1.5">
-            <InputTitle>{m.summary_description_label()}</InputTitle>
+            <InputTitle
+              count={{
+                max: createWorkspaceBodyDescriptionMax,
+                value: textLength(field.value),
+              }}
+            >
+              {m.summary_description_label()}
+            </InputTitle>
             <Textarea
               {...field}
               aria-invalid={fieldState.invalid}
-              maxLength={createWorkspaceBodyDescriptionMax}
               placeholder={m.summary_description_placeholder()}
               value={field.value ?? ''}
             />
@@ -184,11 +201,20 @@ export function WorkspaceFormDialog({
         name="tags"
         render={({ field, fieldState }) => (
           <div className="flex flex-col gap-1.5">
-            <InputTitle>{m.common_tags()}</InputTitle>
+            <InputTitle
+              count={{
+                from: createWorkspaceBodyTagsMax - 1,
+                max: createWorkspaceBodyTagsMax,
+                value: field.value?.length ?? 0,
+              }}
+            >
+              {m.common_tags()}
+            </InputTitle>
             <TagSelect
               invalid={fieldState.invalid}
               kind="workspace"
               max={createWorkspaceBodyTagsMax}
+              maxLength={createWorkspaceBodyTagsItemValueMax}
               onChange={field.onChange}
               value={field.value ?? []}
             />

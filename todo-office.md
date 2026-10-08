@@ -418,6 +418,19 @@ slow editor (no handoff outside maintenance since the deferred rebuild).
   item. Keeping the content in the Yjs document instead would put quiz answer
   keys in the note, so every viewer projection and the public note read would
   have to strip them.
+- Developer question: how fine-grained should the broadcast edit be? One
+  object per question, or every character inside the question text and
+  options? Questions come in many types and can contain images and graphs, so
+  check this very thoroughly.
+- Developer note: should Mermaid materials like mindmaps and diagrams be
+  included? They still have the dedicated save and publish button. A UI
+  refinement for these two: edit mode can render the source code and the
+  preview directly inside the center content, rather than behind a button
+  that opens a dialog.
+- Developer note: once this change is in, the flashcard UI no longer needs the
+  cancel/confirm buttons at the end to publish changes. The quiz could also
+  move to render inside the same center panel on the same page (ask the
+  developer for a decision).
 
 ## Typing lost after inserting an embed on UAT (2026-10-07, check later)
 
@@ -428,3 +441,16 @@ slow editor (no handoff outside maintenance since the deferred rebuild).
   open. The same steps against the local MSW editor type normally. Reloading
   the note before the next insert worked around it. Epo suspects the ongoing
   Plate editor work; recheck once that lands.
+
+## Note block text caps (2026-10-09)
+
+- The input length pass (titled fields show `72/80` from 90%, untitled fields
+  get a silent `maxLength`) skipped the note blocks because the Plate editor
+  is being reworked. When it lands, give these the silent treatment, no
+  counter, frontend only since they live in the note document:
+  - HTML embed caption (`notes/blocks/HtmlEmbedSourceDialog.tsx`) and the
+    inline Mermaid caption (`notes/blocks/elements.tsx`): 300 characters.
+  - Mermaid source (`notes/blocks/MermaidSourceDialog.tsx`): the same 64 KiB
+    byte bound as the HTML embed source (`HTML_EMBED_MAX_BYTES`), with its
+    existing error message.
+- Today only the 2 MiB document cap bounds them.

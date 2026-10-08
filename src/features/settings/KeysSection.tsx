@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { isApiError } from '@/api/client';
+import { upsertLLMCredentialBodyApiKeyMax } from '@/api/gen/validators';
 import {
   useDeleteLLMCredential,
   useLLMCredentials,
@@ -64,6 +65,7 @@ function ProviderRow({ provider }: { provider: LLMCredentialProvider }) {
           aria-label={label}
           autoComplete="off"
           disabled={!provider.eligible && !provider.last4}
+          maxLength={upsertLLMCredentialBodyApiKeyMax}
           onChange={(event) => setValue(event.target.value)}
           placeholder={m.settings_llm_key_placeholder()}
           spellCheck={false}

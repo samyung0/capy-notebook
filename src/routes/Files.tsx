@@ -165,26 +165,22 @@ function ActiveFiles({
   const sorts: SortOption<FileListSort>[] = [
     {
       icon: 'clock',
-      label: m.files_sort_added(),
-      order: 'time',
+      label: m.files_sort_newest(),
       value: 'added',
     },
     {
       icon: 'pencil',
       label: m.files_sort_name(),
-      order: 'name',
       value: 'name',
     },
     {
       icon: 'files',
       label: m.files_sort_size(),
-      order: 'count',
       value: 'size',
     },
     {
       icon: 'chapter',
       label: m.files_sort_kind(),
-      order: 'name',
       value: 'kind',
     },
   ];

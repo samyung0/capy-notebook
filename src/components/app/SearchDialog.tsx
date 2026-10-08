@@ -1,6 +1,7 @@
 import { useNavigate } from '@tanstack/react-router';
 import { VisuallyHidden } from 'radix-ui';
 import { useState } from 'react';
+import { searchQueryQMax } from '@/api/gen/validators';
 import { useSearch } from '@/api/hooks';
 import type { SearchKind, SearchResult } from '@/api/types';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
@@ -80,6 +81,7 @@ export function SearchDialog({
               <Icon className="size-4.25" name="search" />
             </span>
             <Input
+              maxLength={searchQueryQMax}
               onChange={(e) => setQ(e.target.value)}
               placeholder={m.search_placeholder()}
               value={q}

@@ -25,6 +25,7 @@ type (
 	TagValue             string
 	Email                string
 	UserName             string
+	LLMAPIKey            string
 )
 
 func withMax(s *huma.Schema, max int) *huma.Schema {
@@ -70,6 +71,9 @@ func (Email) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
 }
 func (UserName) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
 	return withMax(s, fieldlimits.UserName)
+}
+func (LLMAPIKey) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
+	return withMax(s, fieldlimits.LLMAPIKey)
 }
 
 // Str dereferences an optional bounded field.

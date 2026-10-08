@@ -28,25 +28,21 @@ export default function Workspaces() {
     {
       icon: 'clock',
       label: m.workspaces_sort_accessed(),
-      order: 'time',
       value: 'accessed',
     },
     {
       icon: 'schedule',
       label: m.workspaces_sort_created(),
-      order: 'time',
       value: 'created',
     },
     {
       icon: 'chapter',
       label: m.workspaces_sort_chapters(),
-      order: 'count',
       value: 'chapters',
     },
     {
       icon: 'files',
       label: m.workspaces_sort_files(),
-      order: 'count',
       value: 'files',
     },
   ];

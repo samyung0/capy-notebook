@@ -3,7 +3,10 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMemo } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { USE_MSW } from '@/api/auth';
-import { RequestAccountDeletionBody } from '@/api/gen/validators';
+import {
+  RequestAccountDeletionBody,
+  requestAccountDeletionBodyConfirmEmailMax,
+} from '@/api/gen/validators';
 import {
   useDeletionPreflight,
   useMe,
@@ -184,6 +187,7 @@ function DeleteAccountDialogInner({
               aria-invalid={fieldState.invalid}
               autoComplete="off"
               disabled={isSubmitting || !preflightData?.canDelete}
+              maxLength={requestAccountDeletionBodyConfirmEmailMax}
               placeholder={meData?.email}
             />
             {fieldState.invalid && <InputError errors={[fieldState.error]} />}

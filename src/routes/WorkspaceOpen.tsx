@@ -16,12 +16,15 @@ import { LoadingLarge } from '@/components/app/LoadingLarge';
 import { Panel } from '@/components/app/layout';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
-import { FloatingToolbar } from '@/components/ui/BlockToolbar';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/Drawer';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
+import {
+  PageFloatingBar,
+  PageFloatingBarButton,
+} from '@/components/ui/PageFloatingBar';
 import {
   ResizableHandle,
   ResizablePanel,
@@ -222,7 +225,6 @@ export default function WorkspaceOpen() {
   }
 
   const rowProps = {
-    compact: layout === 'one',
     // Viewers open settings too, for the one row they can use: reset their
     // own study progress.
     onOpenSettings: () => setSettingsOpen(true),
@@ -345,7 +347,7 @@ export default function WorkspaceOpen() {
           item={openItem}
           leading={
             <>
-              <div className="mr-2 flex items-center gap-0 lg:mr-4">
+              <div className="flex items-center gap-0">
                 <ToolbarButton
                   label={m.workspace_back_to()}
                   onClick={() => navigate({ to: '/workspaces' })}
@@ -445,7 +447,6 @@ export default function WorkspaceOpen() {
                   {filesPanel((actions) => (
                     <PanelTabRow
                       actions={actions}
-                      compact={false}
                       title={m.workspace_tab_files()}
                       {...addProps}
                     />
@@ -484,38 +485,27 @@ export default function WorkspaceOpen() {
                 </div>
               )}
               {layout === 'one' && !officeOpen && (
-                <FloatingToolbar
+                <PageFloatingBar
                   aria-label={m.workspace_tools()}
-                  className="gap-1.5 rounded-full! px-2.5 py-1 sm:gap-0 sm:px-2"
                   open={!toolsOpen}
-                  positionClassName="absolute bottom-4 left-1/2 z-10 -translate-x-1/2"
                 >
                   {panelTabs.map((t) => (
-                    <ToolbarButton
-                      className="size-10 gap-0 rounded-card-xl sm:w-auto sm:gap-2 sm:px-3 [&_svg]:size-5"
+                    <PageFloatingBarButton
+                      icon={TAB_ICON[t]}
                       key={t}
                       label={tabLabel(t)}
                       onClick={() => showTab(t)}
-                      tooltipSide="top"
-                    >
-                      <Icon name={TAB_ICON[t]} />
-                      <span className="hidden sm:inline">{tabLabel(t)}</span>
-                    </ToolbarButton>
+                    />
                   ))}
                   {rowProps.onOpenSettings && (
-                    <ToolbarButton
-                      className="size-10 gap-0 rounded-card-xl sm:w-auto sm:gap-2 sm:px-3 [&_svg]:size-5"
+                    <PageFloatingBarButton
+                      icon="settings"
                       label={m.workspace_settings()}
                       onClick={rowProps.onOpenSettings}
-                      tooltipSide="top"
-                    >
-                      <Icon name="settings" />
-                      <span className="hidden sm:inline">
-                        {m.workspace_settings_short()}
-                      </span>
-                    </ToolbarButton>
+                      text={m.workspace_settings_short()}
+                    />
                   )}
-                </FloatingToolbar>
+                </PageFloatingBar>
               )}
             </div>
           </ResizablePanel>

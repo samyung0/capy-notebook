@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { addChapterBodyNameMax } from '@/api/gen/validators';
 import type { Chapter } from '@/api/types';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
@@ -137,6 +138,7 @@ export function NewChapterInput({
     <div className={cn('flex items-center', field && 'gap-1 sm:w-56')}>
       <Input
         autoFocus
+        maxLength={addChapterBodyNameMax}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {

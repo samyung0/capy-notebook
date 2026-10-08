@@ -1,7 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRef, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
-import { UpdateFlashcardContentBody } from '@/api/gen/validators';
+import {
+  UpdateFlashcardContentBody,
+  updateFlashcardContentBodyCardsItemBackMax,
+  updateFlashcardContentBodyCardsItemFrontMax,
+} from '@/api/gen/validators';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
@@ -10,6 +14,7 @@ import type { FlashcardContent } from '@/features/materials/blocks';
 import { IMAGE_ACCEPT } from '@/features/quizzes/quizImage';
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
+import { textLength } from '@/lib/textLength';
 import { CardImage, CardSides } from './CardView';
 
 /** The faces the whole-set save accepts, reused for one card's form. */
@@ -130,7 +135,15 @@ export function CardDialog({
       <div className="grid gap-7 md:grid-cols-2">
         <div className="flex flex-col gap-4">
           <label className="flex flex-col gap-1.5" htmlFor="card-front">
-            <InputTitle required>{m.editor_card_front()}</InputTitle>
+            <InputTitle
+              count={{
+                max: updateFlashcardContentBodyCardsItemFrontMax,
+                value: textLength(front),
+              }}
+              required
+            >
+              {m.editor_card_front()}
+            </InputTitle>
             <Controller
               control={control}
               name="front"
@@ -206,7 +219,15 @@ export function CardDialog({
             <InputError>{imageError}</InputError>
           </div>
           <label className="flex flex-col gap-1.5" htmlFor="card-back">
-            <InputTitle required>{m.editor_card_back()}</InputTitle>
+            <InputTitle
+              count={{
+                max: updateFlashcardContentBodyCardsItemBackMax,
+                value: textLength(back),
+              }}
+              required
+            >
+              {m.editor_card_back()}
+            </InputTitle>
             <Controller
               control={control}
               name="back"

@@ -5515,6 +5515,7 @@ components:
           readOnly: true
           type: string
         apiKey:
+          maxLength: 512
           type: string
         providerSlug:
           type: string
@@ -9117,6 +9118,7 @@ paths:
           in: query
           name: q
           schema:
+            maxLength: 200
             type: string
       responses:
         "200":
