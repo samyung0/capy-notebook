@@ -237,9 +237,23 @@ function OfficeRuntime() {
         const bytes = update.slice().buffer;
         post({ bytes, epoch, revision, type: 'update' }, [bytes]);
       });
-      const bytes = replica.encodeStateAsUpdate().slice().buffer;
-      post({ bytes, epoch, revision, type: 'collaboration-ready' }, [bytes]);
-      sendMenus();
+      // The XLSX replica answers from its worker, after the updates above.
+      void Promise.resolve(replica.encodeStateAsUpdate()).then(
+        (state) => {
+          if (replicaRef.current !== replica) return;
+          const bytes = state.slice().buffer;
+          post({ bytes, epoch, revision, type: 'collaboration-ready' }, [
+            bytes,
+          ]);
+          sendMenus();
+        },
+        (error: unknown) =>
+          post({
+            message: error instanceof Error ? error.message : String(error),
+            revision,
+            type: 'error',
+          })
+      );
     },
     [sendMenus]
   );
@@ -402,8 +416,10 @@ function OfficeRuntime() {
         replicaRef.current &&
         revisionRef.current !== null
       ) {
+        const replica = replicaRef.current;
         await flush();
-        const bytes = replicaRef.current.encodeStateAsUpdate().slice().buffer;
+        const state = await replica.encodeStateAsUpdate();
+        const bytes = state.slice().buffer;
         post(
           {
             bytes,

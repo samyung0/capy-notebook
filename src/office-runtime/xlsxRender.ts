@@ -9,8 +9,11 @@ interface Viewport {
   y: number;
 }
 
-/** The display list of any part of the active sheet (viewer and editor alike). */
-type Draw = (viewport: Viewport) => DisplayList;
+/**
+ * The display list of any part of the active sheet: the viewer's at once, the
+ * editor's from its workbook worker.
+ */
+type Draw = (viewport: Viewport) => DisplayList | Promise<DisplayList>;
 
 interface Extent {
   contentHeight: number;
@@ -57,9 +60,10 @@ function canvas(width: number, height: number) {
 }
 
 /** An image of the given part of the sheet, as on screen, for "PNG image". */
-export function viewportPage(draw: Draw, viewport: Viewport) {
+export async function viewportPage(draw: Draw, viewport: Viewport) {
+  const frame = await draw(viewport);
   const { context, element } = canvas(viewport.width, viewport.height);
-  paintDisplayList(context, draw(viewport), SCALE);
+  paintDisplayList(context, frame, SCALE);
   return canvasPage(element, viewport.width, viewport.height);
 }
 
@@ -69,16 +73,16 @@ interface Band {
 }
 
 /** Page bands along one axis, each starting where the last one's scrolled tracks ended. */
-function bands(
-  edgesAt: (start: number) => readonly number[],
+async function bands(
+  edgesAt: (start: number) => Promise<readonly number[]>,
   frozen: number,
   limit: number,
   extent: number
-): Band[] {
+): Promise<Band[]> {
   const result: Band[] = [];
   // One past the cap, to tell whether the sheet goes on.
   for (let start = 0; result.length <= MAX_PAGES; ) {
-    const cut = pageCut(edgesAt(start), frozen, limit);
+    const cut = pageCut(await edgesAt(start), frozen, limit);
     result.push({ cut, start });
     start += cut.advance;
     if (!cut.advance || start + cut.frozen >= extent) break;
@@ -150,7 +154,7 @@ export async function sheetPages(
     scanned < MAX_SCANS && y < Math.min(extent.contentHeight, printed());
     scanned++
   ) {
-    const frame = draw({
+    const frame = await draw({
       height: SCAN_HEIGHT,
       width: extent.contentWidth,
       x: 0,
@@ -168,18 +172,17 @@ export async function sheetPages(
   const width = right || extent.contentWidth;
   const scale = Math.min(1, INNER.width / width);
   const height = INNER.height / scale;
-  const page = (y: number) => draw({ height, width, x: 0, y });
+  const page = async (y: number) => draw({ height, width, x: 0, y });
   const columns = pageCut([], 0, width);
-  const rows = bands(
-    (y) => page(y).grid?.rowOffsets ?? [],
+  const rows = await bands(
+    async (y) => (await page(y)).grid?.rowOffsets ?? [],
     extent.frozenRows,
     height,
     extent.contentHeight
   );
   let last = 0;
-  rows.forEach((row, index) => {
-    if (hasText(page(row.start), row.cut, columns)) last = index;
-  });
+  for (const [index, row] of rows.entries())
+    if (hasText(await page(row.start), row.cut, columns)) last = index;
   const pages: OfficeRenderedPage[] = [];
   for (const row of rows.slice(0, Math.min(last + 1, MAX_PAGES))) {
     const { context, element } = canvas(PAGE.width, PAGE.height);
@@ -193,7 +196,7 @@ export async function sheetPages(
       row.cut.size * scale * SCALE
     );
     context.clip();
-    paintDisplayList(context, page(row.start), SCALE * scale, {
+    paintDisplayList(context, await page(row.start), SCALE * scale, {
       x: margin,
       y: margin,
     });
