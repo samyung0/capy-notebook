@@ -1,6 +1,10 @@
 //! The Capy collaboration server (rust-core). Design:
 //! capy-harness/2026-10-06-rust-round/rust-core/DESIGN.md.
 
+// A room survives a panic on one update only by unwinding (room.rs on_sync).
+#[cfg(panic = "abort")]
+compile_error!("the collaboration server needs panic = \"unwind\": rooms catch update panics");
+
 mod access;
 mod app;
 mod auth;

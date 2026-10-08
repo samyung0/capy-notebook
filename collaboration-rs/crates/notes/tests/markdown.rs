@@ -193,4 +193,39 @@ fn the_prescan_refuses_pathological_sources_at_once() {
     ] {
         prescan::prescan(&source).unwrap();
     }
+    // Raw HTML blocks of types 1-5 run to their end marker and the import
+    // keeps them as one text, so what they hold is not counted (notes
+    // REVIEW2 S5): many blank-separated lines, or a line of quote markers.
+    let lines = |n: usize| (0..n).map(|i| format!("line {i}\n\n")).collect::<String>();
+    for source in [
+        format!("<pre>\n{}</pre>\n", lines(5_001)),
+        format!("<pre>\n{} x\n</pre>\n", ">".repeat(20)),
+        format!("<!--\n{} x\n-->\n", ">".repeat(20)),
+        format!("<script>\n{}</script>\n", lines(5_001)),
+        format!("<?php\n{} x\n?>\n", ">".repeat(20)),
+        format!("<![CDATA[\n{} x\n]]>\n", ">".repeat(20)),
+    ] {
+        prescan::prescan(&source).unwrap_or_else(|refused| panic!("{refused}"));
+    }
+    // A closed block does not hide what follows it.
+    let after = format!("<pre>x</pre>\n{} x", ">".repeat(20));
+    assert!(prescan::prescan(&after).unwrap_err().contains("quotes"));
+}
+
+/// Output nesting past serde_json's 128 levels (a list item opening 70
+/// quotes, which the scan leaves to the import) is invalid input naming the
+/// depth limit, through the real bundle.
+#[test]
+fn deep_output_is_invalid_input() {
+    let converter = Converter::new(&bundle()).unwrap();
+    let source = format!("- {}", ">".repeat(70));
+    match converter.convert(&source) {
+        Err(MarkdownError::Invalid(message)) => {
+            assert!(
+                message.contains("nests deeper than a note allows"),
+                "{message}"
+            );
+        }
+        other => panic!("{other:?}"),
+    }
 }

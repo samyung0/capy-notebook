@@ -9,6 +9,11 @@
 //! - link brackets and emphasis delimiter runs in one paragraph, outside code
 //!   spans and escapes.
 //!
+//! Fenced code and raw HTML blocks of CommonMark types 1-5 (`<pre>`,
+//! `<script>`, `<style>`, `<textarea>`, comments, processing instructions,
+//! declarations, CDATA) run to their closing marker and are skipped whole:
+//! the import keeps them as text.
+//!
 //! The conversion's deadline stays the backstop for anything else.
 
 use crate::limits::{MAX_DEPTH, MAX_NODES};
@@ -35,6 +40,52 @@ fn quote_markers(line: &str, limit: usize) -> (usize, &str) {
         depth += 1;
     }
     (depth, rest)
+}
+
+/// A raw HTML block of CommonMark types 1-5 opening `text`: its end marker
+/// (lowercase) and the length of the opener, after which the end may already
+/// be on the same line.
+fn html_open(text: &str) -> Option<(&'static str, usize)> {
+    if !text.starts_with('<') {
+        return None;
+    }
+    let head: Vec<u8> = text
+        .bytes()
+        .take(10)
+        .map(|b| b.to_ascii_lowercase())
+        .collect();
+    for (tag, end) in [
+        ("<pre", "</pre>"),
+        ("<script", "</script>"),
+        ("<style", "</style>"),
+        ("<textarea", "</textarea>"),
+    ] {
+        if head.starts_with(tag.as_bytes())
+            && matches!(
+                text.as_bytes().get(tag.len()),
+                None | Some(b' ' | b'\t' | b'>')
+            )
+        {
+            return Some((end, tag.len()));
+        }
+    }
+    if text.starts_with("<!--") {
+        Some(("-->", 4))
+    } else if text.starts_with("<?") {
+        Some(("?>", 2))
+    } else if text.starts_with("<![CDATA[") {
+        Some(("]]>", 9))
+    } else if text.as_bytes().get(2).is_some_and(u8::is_ascii_alphabetic) && text.starts_with("<!")
+    {
+        Some((">", 2))
+    } else {
+        None
+    }
+}
+
+/// Whether `text` holds `marker` (lowercase), ignoring ASCII case.
+fn holds(text: &str, marker: &str) -> bool {
+    text.to_ascii_lowercase().contains(marker)
 }
 
 /// A fence opening (` ``` ` or `~~~`, three or more): its character and length.
@@ -166,6 +217,8 @@ pub fn prescan(source: &str) -> Result<(), Refused> {
     let max_depth = MAX_DEPTH as usize;
     // An open fence: its character, length and the quote depth it opened at.
     let mut fence: Option<(u8, usize, usize)> = None;
+    // An open HTML block: its end marker and the quote depth it opened at.
+    let mut html: Option<(&'static str, usize)> = None;
     let mut in_paragraph = false;
     let mut in_list = false;
     let mut after_blank = true;
@@ -194,6 +247,16 @@ pub fn prescan(source: &str) -> Result<(), Refused> {
             // The quote it opened in ended, and the fence with it.
             fence = None;
         }
+        if let Some((end, depth)) = html {
+            let (markers, content) = quote_markers(line, depth);
+            if markers == depth {
+                if holds(content, end) {
+                    html = None;
+                }
+                continue;
+            }
+            html = None;
+        }
         let (depth, content) = quote_markers(line, max_depth + 1);
         if depth > max_depth {
             return Err(format!(
@@ -214,6 +277,19 @@ pub fn prescan(source: &str) -> Result<(), Refused> {
         let was_blank = std::mem::replace(&mut after_blank, false);
         if content.starts_with('\t') || (indent >= 4 && !in_paragraph && !in_list) {
             // Indented code (a tab counts as four spaces).
+            continue;
+        }
+        if indent <= 3
+            && let Some((end, opener)) = html_open(text)
+        {
+            if !holds(&text[opener..], end) {
+                html = Some((end, depth));
+            }
+            in_paragraph = false;
+            header = None;
+            table = None;
+            marks = 0;
+            code = None;
             continue;
         }
         if let Some((ch, len)) = fence_open(text) {
