@@ -127,13 +127,6 @@ check); it applies at the first promotion.
 
 ## Queued tracks (each needs its own decisions and a visual checkpoint)
 
-- **PPTX embedded fonts** (Epo 2026-10-08): decks exported from Google Slides, or saved
-  from PowerPoint with embedded fonts, carry them in `ppt/fonts/*.fntdata` listed in
-  `p:embeddedFontLst`. Layout and paint ignore them and fall back (Arial for Raleway
-  in `Your big idea.pptx` on UAT, `f_46e3e917f1`), so wrapping and widths differ from
-  PowerPoint and Google Slides. Load them for layout and paint (deobfuscate where the
-  part is obfuscated), keep today's fallback when absent, and keep them in exports.
-
 - **Order after the 2026-10-05 batch:** one optimization round (Yjs save
   latency, typing latency, memory; Office and Plate), then heap/latency
   ceilings from the largest allowed files, then a prod-box stress run for the
@@ -200,6 +193,12 @@ check); it applies at the first promotion.
 
 ## Unverified or small
 
+- **PPTX embedded fonts saved by PowerPoint** (pptx-fonts review 2,
+  2026-10-08): the decoder is checked on Google Slides exports (EOT 2.2,
+  MicroType Express, run-length stage off) and on constructed run-length
+  streams; no PowerPoint-saved (t2embed) deck embedding an OFL face has been
+  opened. Add one as a fixture when someone has one
+  (`vendor/betteroffice/crates/ooxml-text/src/embedded_font/`).
 - **AI-edit Undo storage is not released on source publications** (upload
   audit 2026-10-06, unverified; context in `todo-storage.md`):
   `agent_edit_inverses` are charged at up to 256 KiB each

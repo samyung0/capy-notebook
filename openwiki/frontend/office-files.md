@@ -1392,9 +1392,10 @@ cannot collide; the presenter window paints in the frame's document, so it
 gets the same faces; the native rasterizer uses them too. The decoder checks a
 part's tables before copying any (at most 256, none twice, 32 MiB in all) and
 keeps 16-bit coordinates; one part's blocks, rebuilt glyphs and font are
-bounded by 32 MiB. A deck's embedded fonts may cost 64 MiB, charged before the
-work for each part's size and declared blocks and after it for the font kept,
-whether a decode succeeds or not, and at most 64 parts register. A part that
+bounded by 32 MiB. A deck's embedded fonts may cost 64 MiB: each part's size
+and declared blocks are charged before they are decoded, what the run-length
+stage expands as it grows, and the font kept after, whether a decode succeeds
+or not; at most 64 parts register. A part that
 is missing, cannot be decoded or does not fit is skipped, and a face the
 browser refuses is dropped from layout as well (console warning); that text
 keeps the bundled face or the CSS fallback as before, with no error. Saving
