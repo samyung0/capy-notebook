@@ -147,16 +147,13 @@ impl sources::Rooms for ServerRooms {
         );
     }
 
+    /// Persist and unload queue behind any command a full queue held back,
+    /// as the others do, then wait for the room's answer.
     fn persist(&self, room: &str) -> BoxFuture<Result<(), String>> {
-        let handle = self.app.upgrade().and_then(|app| app.rooms.get(room));
-        Box::pin(async move {
-            let Some(handle) = handle else { return Ok(()) };
-            let (reply, answer) = oneshot::channel();
-            if handle.tx.send(RoomCmd::Persist(reply)).await.is_err() {
-                return Ok(());
-            }
-            answer.await.unwrap_or(Ok(()))
-        })
+        let (reply, answer) = oneshot::channel();
+        self.send(room, RoomCmd::Persist(reply));
+        // No room here, or it ended before answering: nothing to persist.
+        Box::pin(async move { answer.await.unwrap_or(Ok(())) })
     }
 
     fn busy(&self, room: &str, writers_only: bool) -> bool {
@@ -178,13 +175,10 @@ impl sources::Rooms for ServerRooms {
     }
 
     fn unload(&self, room: &str) -> BoxFuture<()> {
-        let handle = self.app.upgrade().and_then(|app| app.rooms.get(room));
+        let (reply, answer) = oneshot::channel();
+        self.send(room, RoomCmd::Unload(reply));
         Box::pin(async move {
-            let Some(handle) = handle else { return };
-            let (reply, answer) = oneshot::channel();
-            if handle.tx.send(RoomCmd::Unload(reply)).await.is_ok() {
-                let _ = answer.await;
-            }
+            let _ = answer.await;
         })
     }
 }

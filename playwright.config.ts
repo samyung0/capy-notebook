@@ -33,6 +33,9 @@ const collaborationPort = Number(
   process.env.E2E_COLLABORATION_PORT ?? randomPort()
 );
 const dbPort = Number(process.env.E2E_DB_PORT ?? randomPort());
+// Redis is published for the collaboration server's integration tests, which
+// CI runs against the compose default; a local run takes a port of its own.
+const redisPort = Number(process.env.E2E_REDIS_PORT ?? randomPort());
 const vitePort = Number(process.env.E2E_VITE_PORT ?? randomPort());
 // Vite serves the interactive block frame here (vite-embed.ts): localhost is
 // another site than the app's 127.0.0.1, as pages.dev is in production.
@@ -53,6 +56,7 @@ process.env.E2E_API_PORT = urlPort(apiUrl);
 process.env.E2E_COLLABORATION_PORT = String(collaborationPort);
 process.env.E2E_EMBED_PORT = String(embedPort);
 process.env.E2E_DB_PORT = String(dbPort);
+process.env.E2E_REDIS_PORT = String(redisPort);
 process.env.E2E_VITE_PORT = urlPort(baseURL);
 process.env.E2E_API_URL = apiUrl;
 process.env.E2E_BASE_URL = baseURL;

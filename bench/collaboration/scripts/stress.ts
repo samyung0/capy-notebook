@@ -356,6 +356,7 @@ async function localTarget(): Promise<Target> {
   process.env.E2E_API_PORT ??= String(randomPort());
   process.env.E2E_COLLABORATION_PORT ??= String(randomPort());
   process.env.E2E_DB_PORT ??= String(randomPort());
+  process.env.E2E_REDIS_PORT ??= String(randomPort());
   // The fake S3's plain HTTP port on the host, for the presigned upload PUTs.
   process.env.STRESS_S3_PORT ??= String(randomPort());
   process.env.E2E_API_URL ??= `http://127.0.0.1:${process.env.E2E_API_PORT}`;

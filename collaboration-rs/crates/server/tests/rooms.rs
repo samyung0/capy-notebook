@@ -2,7 +2,7 @@
 //! and Redis: the server binary runs as a child process and two clients speak
 //! capy-sync 1 to it. Set CAPY_IT_DATABASE_URL and CAPY_IT_REDIS_URL (the
 //! docker e2e stack's); without them every test skips, unless CAPY_IT_REQUIRED
-//! is set (CI), which makes a missing one a failure.
+//! is set (CI), which makes a missing one (CAPY_IT_API_URL included) a failure.
 //! CAPY_IT_API_URL names that stack's Go API (with this file's secret) for
 //! the projections a command waits for.
 
@@ -35,10 +35,12 @@ fn env() -> Option<Env> {
             api: std::env::var("CAPY_IT_API_URL").ok(),
         })
     })();
-    // CI runs these against a stack: there a missing variable fails.
+    // CI runs these against a stack: there a missing variable fails, the
+    // API's too (the tests that need it would skip without it).
     assert!(
-        found.is_some() || std::env::var_os("CAPY_IT_REQUIRED").is_none(),
-        "CAPY_IT_REQUIRED is set but CAPY_IT_DATABASE_URL or CAPY_IT_REDIS_URL is not"
+        found.as_ref().is_some_and(|env| env.api.is_some())
+            || std::env::var_os("CAPY_IT_REQUIRED").is_none(),
+        "CAPY_IT_REQUIRED is set but CAPY_IT_DATABASE_URL, CAPY_IT_REDIS_URL or CAPY_IT_API_URL is not"
     );
     found
 }
