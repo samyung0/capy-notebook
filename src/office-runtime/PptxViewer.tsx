@@ -179,7 +179,7 @@ export function PptxViewer({
           handle = openPresentation(bytes, { fonts });
           handleRef.current = handle;
           // The deck's own faces, so the canvas paints what layout measured.
-          const added = await installEmbeddedFonts(handle.embeddedFonts());
+          const added = await installEmbeddedFonts(handle);
           if (disposed) {
             removeFontFaces(added);
             return;

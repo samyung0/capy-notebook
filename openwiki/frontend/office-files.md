@@ -1377,20 +1377,29 @@ Slides writes each face as Embedded OpenType with MicroType Express
 compression; the fork's `ooxml_text::decode_embedded_font` turns that, a plain
 sfnt, an XOR-encrypted EOT or a GUID-obfuscated `.odttf` into TrueType (the
 `hdmx` and `VDMX` device tables are dropped). The deck's renderer decodes the
-faces once, at its first layout (every slide shares them; the export worker,
-which lays nothing out, never decodes them), and registers each under its
-typeface and style, ahead of a bundled face of
+faces at its first layout (every slide shares them; the export worker, which
+lays nothing out, never decodes them), each part once however many slots name
+it, and registers each slot's typeface and style ahead of a bundled face of
 the same name (a deck embedding Arial measures with it, not Liberation Sans);
 a family with some styles embedded draws the others in its nearest embedded
-face, as the browser does. The viewer and editor hand the decoded bytes to the
-page as `FontFace`s before the first paint (`installEmbeddedFonts`) and delete
-them when the deck closes, so the canvas, print and PNG paint the measured
-glyphs; the native rasterizer uses the same faces. A part that is missing,
-cannot be decoded, is over 32 MiB decoded, or would take the deck past 64 MiB
-of embedded faces is skipped, and one the browser refuses is left out with a
-console warning; that text keeps the bundled face or the CSS fallback as
-before, with no error. Saving and export copy `ppt/fonts/` and the list
-untouched (`src/office-runtime/PptxViewer.tsx`,
+face, as the browser does. Display lists name an embedded face by a per-deck
+alias, `bo-embedded-<hash of its bytes>`, and the viewer and editor hand the
+decoded bytes to the page as `FontFace`s under that alias before the first
+paint (`installEmbeddedFonts`), deleting them when the deck closes. So the
+canvas, print and PNG paint the measured glyphs, a deck embedding Fustat or
+Lato styles nothing in the runtime frame but its own text, and two decks
+cannot collide; the presenter window paints in the frame's document, so it
+gets the same faces; the native rasterizer uses them too. The decoder checks a
+part's tables before copying any (at most 256, none twice, 32 MiB in all) and
+keeps 16-bit coordinates; one part's blocks, rebuilt glyphs and font are
+bounded by 32 MiB. A deck's embedded fonts may cost 64 MiB, charged before the
+work for each part's size and declared blocks and after it for the font kept,
+whether a decode succeeds or not, and at most 64 parts register. A part that
+is missing, cannot be decoded or does not fit is skipped, and a face the
+browser refuses is dropped from layout as well (console warning); that text
+keeps the bundled face or the CSS fallback as before, with no error. Saving
+and export copy `ppt/fonts/` and the list untouched
+(`src/office-runtime/PptxViewer.tsx`,
 `vendor/betteroffice/crates/ooxml-text/src/embedded_font/`,
 `vendor/betteroffice/crates/pptx-render/src/layout.rs`).
 
