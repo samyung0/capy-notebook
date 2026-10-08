@@ -1371,6 +1371,29 @@ font with no bundled face paints with its CSS fallback stack. A face that fails 
 shows an explicit error instead of the fallback layout
 (`src/office-runtime/officeFonts.ts`, `pptxFonts.ts`).
 
+A PPTX deck's own fonts (`p:embeddedFontLst`, parts in `ppt/fonts/`, as
+Google Slides and PowerPoint save them) are measured and painted too. Google
+Slides writes each face as Embedded OpenType with MicroType Express
+compression; the fork's `ooxml_text::decode_embedded_font` turns that, a plain
+sfnt, an XOR-encrypted EOT or a GUID-obfuscated `.odttf` into TrueType (the
+`hdmx` and `VDMX` device tables are dropped). The deck's renderer decodes the
+faces once, at its first layout (every slide shares them; the export worker,
+which lays nothing out, never decodes them), and registers each under its
+typeface and style, ahead of a bundled face of
+the same name (a deck embedding Arial measures with it, not Liberation Sans);
+a family with some styles embedded draws the others in its nearest embedded
+face, as the browser does. The viewer and editor hand the decoded bytes to the
+page as `FontFace`s before the first paint (`installEmbeddedFonts`) and delete
+them when the deck closes, so the canvas, print and PNG paint the measured
+glyphs; the native rasterizer uses the same faces. A part that is missing,
+cannot be decoded, is over 32 MiB decoded, or would take the deck past 64 MiB
+of embedded faces is skipped, and one the browser refuses is left out with a
+console warning; that text keeps the bundled face or the CSS fallback as
+before, with no error. Saving and export copy `ppt/fonts/` and the list
+untouched (`src/office-runtime/PptxViewer.tsx`,
+`vendor/betteroffice/crates/ooxml-text/src/embedded_font/`,
+`vendor/betteroffice/crates/pptx-render/src/layout.rs`).
+
 The iframe sandbox allows scripts and its own origin, but the runtime origin is
 cross-origin from the app, cookie-less, and restricted to the app by CSP
 `frame-ancestors`. Host and runtime validate exact origins and the message
