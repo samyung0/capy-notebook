@@ -131,7 +131,9 @@ does not also emit a global toast.
 
 Nothing app-wide sits above the page, so connection and account state never
 shift the layout. The dashboard banner slot (`DashboardBanner`) shows only the
-viewer's own account, one card at a time in place of the default banner:
+viewer's own account, one card at a time in place of the default banner
+(a cover strip of mixed subject symbols from `src/lib/coverArt.ts`; the
+account and connection cards keep their tinted card with a faint icon):
 frozen, over-quota grace, storage full (red), storage near the limit (amber),
 offline, reconnecting (stream disconnected). The full and near cards read
 `account.storageUsage` from `/me` and show "You've used X of Y" (whole

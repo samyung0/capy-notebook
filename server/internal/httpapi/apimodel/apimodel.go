@@ -9,6 +9,7 @@
 package apimodel
 
 import (
+	"github.com/samyung0/capy-notebook/server/internal/cover"
 	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
@@ -267,6 +268,7 @@ type Workspace struct {
 	ID             string                   `json:"id"`
 	Name           string                   `json:"name"`
 	IconID         string                   `json:"iconId"`
+	Cover          *cover.Cover             `json:"cover,omitempty" doc:"The card's cover art; absent means none"`
 	Privacy        store.Privacy            `json:"privacy"`
 	ShareRole      store.ShareRole          `json:"shareRole"`
 	SharePath      string                   `json:"sharePath"`
@@ -304,7 +306,7 @@ func FromWorkspace(w store.Workspace, owner store.AccountStatus) Workspace {
 	role := store.RoleOwner
 	out := Workspace{
 		AutoProcess: w.AutoProcess,
-		ID:          w.ID, Name: w.Name, Description: w.Description, IconID: w.IconID, Privacy: w.Privacy, ShareRole: w.ShareRole,
+		ID:          w.ID, Name: w.Name, Description: w.Description, IconID: w.IconID, Cover: w.Cover, Privacy: w.Privacy, ShareRole: w.ShareRole,
 		SharePath: w.SharePath,
 		Tags:      WrapTags(w.Tags), ChapterCount: w.ChapterCount, FileCount: w.FileCount,
 		FilesLimit: w.FilesLimit,

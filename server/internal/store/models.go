@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"github.com/samyung0/capy-notebook/server/internal/cover"
 	"reflect"
 	"time"
 
@@ -51,13 +52,15 @@ type StudyPreferences struct {
 type Workspace struct {
 	// AutoProcess lets automatic processing reparse and reindex edited files
 	// and notes; off, edits wait for the owner's Process.
-	AutoProcess bool      `json:"autoProcess"`
-	Description string    `json:"description"`
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	IconID      string    `json:"iconId"`
-	Privacy     Privacy   `json:"privacy"`
-	ShareRole   ShareRole `json:"shareRole"`
+	AutoProcess bool   `json:"autoProcess"`
+	Description string `json:"description"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	IconID      string `json:"iconId"`
+	// Cover is the card's art; nil means no cover, the default.
+	Cover     *cover.Cover `json:"cover,omitempty"`
+	Privacy   Privacy      `json:"privacy"`
+	ShareRole ShareRole    `json:"shareRole"`
 	// SharePath is the signed public summary path, /w/{id}.{signature}.
 	SharePath string `json:"sharePath"`
 	Tags      []Tag  `json:"tags"`

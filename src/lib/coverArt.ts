@@ -41,7 +41,7 @@ import {
   xEquals,
   zigZag,
 } from 'hero-patterns';
-import type { ExamCover } from '@/api/types';
+import type { CoverConfig } from '@/api/types';
 
 /** How a cover strip paints its background and label. */
 export type CoverPaint = {
@@ -58,9 +58,36 @@ export type CoverPaint = {
   shade: boolean;
 };
 
-type Kind = NonNullable<ExamCover['kind']>;
+type Kind = NonNullable<CoverConfig['kind']>;
 
-// Must match bank.heroPatterns in server/internal/bank/bank.go.
+// These lists must match server/internal/cover/cover.go.
+export const COVER_COLORS = [
+  '#7866cf',
+  '#2a78d6',
+  '#1b9e6f',
+  '#d0505e',
+  '#eb6834',
+  '#c48a00',
+  '#5b6472',
+] as const;
+export const GEO_PATTERNS = [
+  'octogons',
+  'overlappingCircles',
+  'plusSigns',
+  'xes',
+  'sineWaves',
+  'hexagons',
+  'overlappingRings',
+  'plaid',
+  'triangles',
+  'squares',
+  'concentricCircles',
+  'diamonds',
+  'tessellation',
+  'nestedSquares',
+  'mosaicSquares',
+  'chevrons',
+] as const;
 const HERO = {
   bankNote,
   bubbles,
@@ -81,6 +108,8 @@ const HERO = {
   xEquals,
   zigZag,
 };
+
+export const HERO_PATTERNS = Object.keys(HERO) as (keyof typeof HERO)[];
 
 const GLYPHS: Record<Kind, string[]> = {
   kana: [
@@ -213,9 +242,34 @@ const svg = (body: string, anchor: 'xMid' | 'xMax') =>
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="${anchor}YMid slice">${body}</svg>`
   )}")`;
 
-function symbols(id: string, color: string, kind: Kind) {
+// Maths, letters and kana together: the dashboard banner's "any subject" art.
+const MIXED = [
+  '∑',
+  'Aa',
+  'あ',
+  'π',
+  '?',
+  '∫',
+  '“ ”',
+  '△',
+  'x²',
+  '!',
+  'é',
+  '√x',
+  '学',
+  '¶',
+  'θ',
+  '&',
+];
+
+function symbols(
+  id: string,
+  color: string,
+  set: string[],
+  font: string,
+  italic: boolean
+) {
   const r = random(`${id}-sym`);
-  const set = GLYPHS[kind];
   let i = Math.floor(r() * set.length);
   let out = '';
   for (let y = 0; y < 2; y++) {
@@ -226,12 +280,22 @@ function symbols(id: string, color: string, kind: Kind) {
       out += `<text x="${cx.toFixed(1)}" y="${cy.toFixed(1)}" font-size="${(14 + r() * 18).toFixed(1)}" fill-opacity="${(0.16 + r() * 0.2).toFixed(2)}" text-anchor="middle" transform="${turn}">${xmlText(set[i++ % set.length])}</text>`;
     }
   }
-  const style = kind === 'kana' ? '' : ' font-style="italic"';
+  const style = italic ? ' font-style="italic"' : '';
   return svg(
-    `<rect width="${W}" height="${H}" fill="${color}"/><g fill="#fff" font-family="${glyphFont(kind)}"${style}>${out}</g>`,
+    `<rect width="${W}" height="${H}" fill="${color}"/><g fill="#fff" font-family="${font}"${style}>${out}</g>`,
     'xMid'
   );
 }
+
+/** The dashboard's default banner: mixed symbols on the accent purple. */
+export const mixedSymbolsArt = (seed: string) =>
+  symbols(
+    seed,
+    COVER_COLORS[0],
+    MIXED,
+    "'Times New Roman',Georgia,'Hiragino Sans','Noto Sans JP',serif",
+    true
+  );
 
 function doodles(id: string, color: string, kind: Kind) {
   const r = random(`${id}-doodle`);
@@ -334,13 +398,17 @@ function bigType(color: string, label: string) {
   );
 }
 
-/** Draws an exam's cover from its stored config; the exam id seeds the art. */
+/**
+ * Draws a cover from its stored config. The art is seeded by the cover's own
+ * seed (Shuffle) or else the owner's id, so it never changes between renders.
+ */
 export function coverPaint(
-  id: string,
+  ownerId: string,
   label: string,
-  cover: ExamCover
+  cover: CoverConfig
 ): CoverPaint {
   const { color } = cover;
+  const id = cover.seed || ownerId;
   const base = {
     color,
     light: false,
@@ -352,7 +420,16 @@ export function coverPaint(
   const kind = cover.kind as Kind;
   switch (cover.style) {
     case 'symbols':
-      return { ...base, image: symbols(id, color, kind) };
+      return {
+        ...base,
+        image: symbols(
+          id,
+          color,
+          GLYPHS[kind],
+          glyphFont(kind),
+          kind !== 'kana'
+        ),
+      };
     case 'doodles':
       return { ...base, image: doodles(id, color, kind) };
     case 'shelf':

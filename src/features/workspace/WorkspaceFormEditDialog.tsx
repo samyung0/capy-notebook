@@ -15,7 +15,14 @@ export function WorkspaceFormEditDialog({
     <WorkspaceFormDialog
       {...props}
       mode="edit"
-      onSubmit={(values) => onSubmit({ ...values, tags: values.tags ?? [] })}
+      // None goes out as clearCover; the API refuses cover: null.
+      onSubmit={({ cover, ...values }) =>
+        onSubmit({
+          ...values,
+          tags: values.tags ?? [],
+          ...(cover ? { cover } : { clearCover: true }),
+        })
+      }
     />
   );
 }

@@ -61,6 +61,7 @@ export function seedScenarioFixtures() {
   db.workspaces.push({
     ...structuredClone(db.workspaces[0]),
     chapterCount: 0,
+    cover: undefined,
     fileCount: 5,
     id: scenarioWorkspace,
     name: 'User scenarios',

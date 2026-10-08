@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/samyung0/capy-notebook/server/internal/cover"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
@@ -33,6 +34,8 @@ type UpdateWorkspaceReq struct {
 	Name        *WorkspaceName        `json:"name,omitempty" minLength:"1"`
 	IconID      *IconID               `json:"iconId,omitempty" minLength:"1"`
 	Tags        *[]TagInput           `json:"tags,omitempty" maxItems:"5" doc:"Tags; at most 5"`
+	Cover       *cover.Cover          `json:"cover,omitempty" doc:"Replaces the card's cover art"`
+	ClearCover  *bool                 `json:"clearCover,omitempty" doc:"true removes the cover; refused together with cover"`
 }
 
 // UpdateWorkspaceSharingReq updates visibility and nonmember permissions.

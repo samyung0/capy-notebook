@@ -21,6 +21,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/bankmigrations"
 	"github.com/samyung0/capy-notebook/server/internal/bank"
 	"github.com/samyung0/capy-notebook/server/internal/blob"
+	"github.com/samyung0/capy-notebook/server/internal/cover"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 	"golang.org/x/sync/errgroup"
@@ -453,7 +454,7 @@ func loadExams(dir string) ([]examRecord, error) {
 
 // upsertExams writes every catalog exam; publication only files topics under them.
 // A catalog without a cover keeps the stored one, and a new exam without one
-// gets bank.DefaultCover.
+// gets cover.Default.
 func upsertExams(ctx context.Context, pool *pgxpool.Pool, exams []examRecord) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
@@ -464,7 +465,7 @@ func upsertExams(ctx context.Context, pool *pgxpool.Pool, exams []examRecord) er
 	for _, x := range exams {
 		if _, err = tx.Exec(ctx, `INSERT INTO exams(id,label,full_label,position,cover) VALUES($1,$2,$3,$4,COALESCE($5::jsonb,$6::jsonb))
  ON CONFLICT(id) DO UPDATE SET label=excluded.label,full_label=excluded.full_label,position=excluded.position,cover=COALESCE($5::jsonb,exams.cover)`,
-			x.ID, x.Label, x.FullLabel, x.Position, x.Cover, bank.DefaultCover(x.ID)); err != nil {
+			x.ID, x.Label, x.FullLabel, x.Position, x.Cover, cover.Default(x.ID)); err != nil {
 			return err
 		}
 		ids = append(ids, x.ID)

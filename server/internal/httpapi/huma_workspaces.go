@@ -128,7 +128,16 @@ func (a *api) createWorkspace(ctx context.Context, in *createWorkspaceInput) (*w
 func (a *api) updateWorkspace(ctx context.Context, in *updateWorkspaceInput) (*workspaceOutput, error) {
 	p := store.WorkspacePatch{
 		Name: apimodel.Str(in.Body.Name), IconID: apimodel.Str(in.Body.IconID), Description: apimodel.Str(in.Body.Description),
-		AutoProcess: in.Body.AutoProcess,
+		AutoProcess: in.Body.AutoProcess, Cover: in.Body.Cover,
+		ClearCover: in.Body.ClearCover != nil && *in.Body.ClearCover,
+	}
+	if p.Cover != nil {
+		if p.ClearCover {
+			return nil, huma.Error422UnprocessableEntity("send cover or clearCover, not both")
+		}
+		if err := p.Cover.Check(); err != nil {
+			return nil, huma.Error422UnprocessableEntity(err.Error())
+		}
 	}
 	if in.Body.Tags != nil {
 		t := apimodel.ToTagRefs(*in.Body.Tags)

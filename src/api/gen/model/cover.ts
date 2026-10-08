@@ -19,5 +19,11 @@ export interface Cover {
   line?: string;
   /** The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover */
   pattern?: string;
+  /**
+     * Varies the generated art (Shuffle); empty uses the owner's id
+     * @maxLength 16
+     * @pattern ^[a-z0-9]*$
+     */
+  seed?: string;
   style: CoverStyle;
 }

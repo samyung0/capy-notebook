@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/samyung0/capy-notebook/server/bankmigrations"
-	"github.com/samyung0/capy-notebook/server/internal/bank"
+	"github.com/samyung0/capy-notebook/server/internal/cover"
 )
 
 func TestPublicationNeverOverwritesExistingQuestions(t *testing.T) {
@@ -65,7 +65,7 @@ func TestPublicationNeverOverwritesExistingQuestions(t *testing.T) {
 		t.Fatal(err)
 	}
 	var style string
-	if err = pool.QueryRow(ctx, "SELECT cover->>'style' FROM exams WHERE id='exam'").Scan(&style); err != nil || style != bank.DefaultCover("exam").Style {
+	if err = pool.QueryRow(ctx, "SELECT cover->>'style' FROM exams WHERE id='exam'").Scan(&style); err != nil || style != cover.Default("exam").Style {
 		t.Fatalf("default cover style=%q err=%v", style, err)
 	}
 	// A later catalog without a cover keeps the stored one.

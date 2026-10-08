@@ -21,8 +21,11 @@ draws the picked exam as a cover strip with its name and subject and question
 counts over the art, and opens a list of every exam with a Find an exam search
 over the short and full names. The panel opens on the exam holding the current
 topic, else the first. Subjects start collapsed except the one holding the
-current topic; a collapsed subject shows its question count, and the header's
-topic search opens every matching subject of the picked exam.
+current topic; a collapsed subject shows its question count. The header's
+topic search lists the topics whose topic or subject name matches, the picked
+exam's first and then other exams' under "In other exams" with the exam on
+each row's second line (mock S2); it filters the syllabus already loaded, so it
+sends no request. Picking another exam's result switches the exam.
 
 The syllabus gives each exam `fullLabel` and `cover`: a style (`symbols`,
 `doodles`, `shelf`, `paper`, `type`, `geo`, `hero`), a `#rrggbb` colour, and the
@@ -30,8 +33,12 @@ style's own fields: `kind` (`math`, `latin`, `kana`) for symbols, doodles and
 paper, `pattern` for geo (a GeoPattern generator) and hero (one of 18 Hero
 Patterns), and an optional handwritten `line` for paper. `bank.Cover.Check`
 accepts only those fields. The browser draws the strip from the config, seeded
-by the exam id (`src/features/questions/examCover.ts`), so nothing is stored in
-a bucket; the pattern lists in Go and TypeScript must match. Covers are fixed
+by the exam id (`src/lib/coverArt.ts`), so nothing is stored in
+a bucket; the pattern lists in Go and TypeScript must match. The config is
+`server/internal/cover`, shared with workspace card covers
+(`workspaces.cover`, app migration 0068: NULL by default, set in Workspace
+settings with a `seed` that Shuffle changes, cleared with `clearCover`, copied
+by clone). Covers are fixed
 art in every theme, so their text colours are fixed too: dark on the light
 bookshelf and paper styles, white elsewhere, with a bottom shade on busy art.
 Subjects have no covers of their own. Official exam board logos are not used

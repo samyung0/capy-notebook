@@ -1,4 +1,4 @@
-// Neither package ships types; these cover the calls examCover.ts makes.
+// Neither package ships types; these cover the calls coverArt.ts makes.
 declare module 'geopattern' {
   type Pattern = { toDataUrl(): string };
   const geopattern: {

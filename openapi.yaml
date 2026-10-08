@@ -1031,6 +1031,11 @@ components:
         pattern:
           description: The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover
           type: string
+        seed:
+          description: Varies the generated art (Shuffle); empty uses the owner's id
+          maxLength: 16
+          pattern: ^[a-z0-9]*$
+          type: string
         style:
           enum:
             - symbols
@@ -3353,6 +3358,9 @@ components:
         clones:
           format: int64
           type: integer
+        cover:
+          $ref: "#/components/schemas/Cover"
+          description: The card's cover art; absent means none
         createdAt:
           format: date-time
           type: string
@@ -5454,6 +5462,12 @@ components:
           type: string
         autoProcess:
           type: boolean
+        clearCover:
+          description: true removes the cover; refused together with cover
+          type: boolean
+        cover:
+          $ref: "#/components/schemas/Cover"
+          description: Replaces the card's cover art
         description:
           description: Optional workspace description; empty clears it
           maxLength: 500
@@ -5681,6 +5695,9 @@ components:
         chapterCount:
           format: int64
           type: integer
+        cover:
+          $ref: "#/components/schemas/Cover"
+          description: The card's cover art; absent means none
         createdAt:
           format: date-time
           type: string

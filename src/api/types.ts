@@ -275,7 +275,7 @@ export type {
   BankCopyOutputBody as BankCopyResult,
   BankMarksOutputBody as BankTopicMarks,
   BankProgressOutputBody as BankProgress,
-  Cover as ExamCover,
+  Cover as CoverConfig,
   RateReviewItemReq,
   ReviewWorkspace,
   Row as BankListRow,

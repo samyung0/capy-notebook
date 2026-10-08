@@ -9,8 +9,22 @@ import * as zod from 'zod';
 /**
  * @summary What account deletion would destroy, and what blocks it
  */
+export const getDeletionPreflightResponseWorkspacesNeedingTransferItemCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
+export const getDeletionPreflightResponseWorkspacesNeedingTransferItemCoverLineMax = 40;
+
+export const getDeletionPreflightResponseWorkspacesNeedingTransferItemCoverSeedMax = 16;
+
+
+export const getDeletionPreflightResponseWorkspacesNeedingTransferItemCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
 export const getDeletionPreflightResponseWorkspacesNeedingTransferItemTagsItemValueMax = 35;
 
+export const getDeletionPreflightResponseWorkspacesToDestroyItemCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
+export const getDeletionPreflightResponseWorkspacesToDestroyItemCoverLineMax = 40;
+
+export const getDeletionPreflightResponseWorkspacesToDestroyItemCoverSeedMax = 16;
+
+
+export const getDeletionPreflightResponseWorkspacesToDestroyItemCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
 export const getDeletionPreflightResponseWorkspacesToDestroyItemTagsItemValueMax = 35;
 
 
@@ -38,6 +52,14 @@ export const GetDeletionPreflightResponse = zod.object({
   "canView": zod.boolean()
 }),
   "chapterCount": zod.int(),
+  "cover": zod.object({
+  "color": zod.string().regex(getDeletionPreflightResponseWorkspacesNeedingTransferItemCoverColorRegExp),
+  "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
+  "line": zod.string().max(getDeletionPreflightResponseWorkspacesNeedingTransferItemCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
+  "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
+  "seed": zod.string().max(getDeletionPreflightResponseWorkspacesNeedingTransferItemCoverSeedMax).regex(getDeletionPreflightResponseWorkspacesNeedingTransferItemCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
+  "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
+}).optional().describe('The card\'s cover art; absent means none'),
   "createdAt": zod.iso.datetime({"offset":true}),
   "description": zod.string(),
   "fileCount": zod.int(),
@@ -69,6 +91,14 @@ export const GetDeletionPreflightResponse = zod.object({
   "canView": zod.boolean()
 }),
   "chapterCount": zod.int(),
+  "cover": zod.object({
+  "color": zod.string().regex(getDeletionPreflightResponseWorkspacesToDestroyItemCoverColorRegExp),
+  "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
+  "line": zod.string().max(getDeletionPreflightResponseWorkspacesToDestroyItemCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
+  "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
+  "seed": zod.string().max(getDeletionPreflightResponseWorkspacesToDestroyItemCoverSeedMax).regex(getDeletionPreflightResponseWorkspacesToDestroyItemCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
+  "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
+}).optional().describe('The card\'s cover art; absent means none'),
   "createdAt": zod.iso.datetime({"offset":true}),
   "description": zod.string(),
   "fileCount": zod.int(),
@@ -692,6 +722,10 @@ export const ReviewBankQuestionResponse = zod.object({
 export const bankSyllabusResponseExamsItemCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
 export const bankSyllabusResponseExamsItemCoverLineMax = 40;
 
+export const bankSyllabusResponseExamsItemCoverSeedMax = 16;
+
+
+export const bankSyllabusResponseExamsItemCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
 
 
 export const BankSyllabusResponse = zod.object({
@@ -704,6 +738,7 @@ export const BankSyllabusResponse = zod.object({
   "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
   "line": zod.string().max(bankSyllabusResponseExamsItemCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
   "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
+  "seed": zod.string().max(bankSyllabusResponseExamsItemCoverSeedMax).regex(bankSyllabusResponseExamsItemCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
   "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
 }),
   "fullLabel": zod.string().describe('The exam\'s full name, shown and searched in the exam switcher'),
@@ -1346,6 +1381,13 @@ export const ExploreQuizzesResponse = zod.array(ExploreQuizzesResponseItem)
 /**
  * @summary Public workspaces
  */
+export const exploreWorkspacesResponseCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
+export const exploreWorkspacesResponseCoverLineMax = 40;
+
+export const exploreWorkspacesResponseCoverSeedMax = 16;
+
+
+export const exploreWorkspacesResponseCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
 export const exploreWorkspacesResponseTagsItemValueMax = 35;
 
 
@@ -1362,6 +1404,14 @@ export const ExploreWorkspacesResponseItem = zod.object({
 }),
   "chapterCount": zod.int(),
   "clones": zod.int(),
+  "cover": zod.object({
+  "color": zod.string().regex(exploreWorkspacesResponseCoverColorRegExp),
+  "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
+  "line": zod.string().max(exploreWorkspacesResponseCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
+  "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
+  "seed": zod.string().max(exploreWorkspacesResponseCoverSeedMax).regex(exploreWorkspacesResponseCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
+  "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
+}).optional().describe('The card\'s cover art; absent means none'),
   "createdAt": zod.iso.datetime({"offset":true}),
   "description": zod.string(),
   "fileCount": zod.int(),
@@ -4953,6 +5003,13 @@ export const ListWorkspacesQueryParams = zod.object({
   "tag": zod.string().optional().describe('Comma-separated tags')
 })
 
+export const listWorkspacesResponseCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
+export const listWorkspacesResponseCoverLineMax = 40;
+
+export const listWorkspacesResponseCoverSeedMax = 16;
+
+
+export const listWorkspacesResponseCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
 export const listWorkspacesResponseTagsItemValueMax = 35;
 
 
@@ -4968,6 +5025,14 @@ export const ListWorkspacesResponseItem = zod.object({
   "canView": zod.boolean()
 }),
   "chapterCount": zod.int(),
+  "cover": zod.object({
+  "color": zod.string().regex(listWorkspacesResponseCoverColorRegExp),
+  "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
+  "line": zod.string().max(listWorkspacesResponseCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
+  "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
+  "seed": zod.string().max(listWorkspacesResponseCoverSeedMax).regex(listWorkspacesResponseCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
+  "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
+}).optional().describe('The card\'s cover art; absent means none'),
   "createdAt": zod.iso.datetime({"offset":true}),
   "description": zod.string(),
   "fileCount": zod.int(),
@@ -5017,6 +5082,13 @@ export const CreateWorkspaceBody = zod.object({
 })).max(createWorkspaceBodyTagsMax).nullish().describe('Tags; at most 5; reuse existing by id or create new by value')
 })
 
+export const createWorkspaceResponseCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
+export const createWorkspaceResponseCoverLineMax = 40;
+
+export const createWorkspaceResponseCoverSeedMax = 16;
+
+
+export const createWorkspaceResponseCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
 export const createWorkspaceResponseTagsItemValueMax = 35;
 
 
@@ -5032,6 +5104,14 @@ export const CreateWorkspaceResponse = zod.object({
   "canView": zod.boolean()
 }),
   "chapterCount": zod.int(),
+  "cover": zod.object({
+  "color": zod.string().regex(createWorkspaceResponseCoverColorRegExp),
+  "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
+  "line": zod.string().max(createWorkspaceResponseCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
+  "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
+  "seed": zod.string().max(createWorkspaceResponseCoverSeedMax).regex(createWorkspaceResponseCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
+  "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
+}).optional().describe('The card\'s cover art; absent means none'),
   "createdAt": zod.iso.datetime({"offset":true}),
   "description": zod.string(),
   "fileCount": zod.int(),
@@ -5071,6 +5151,13 @@ export const GetWorkspaceParams = zod.object({
   "id": zod.string()
 })
 
+export const getWorkspaceResponseCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
+export const getWorkspaceResponseCoverLineMax = 40;
+
+export const getWorkspaceResponseCoverSeedMax = 16;
+
+
+export const getWorkspaceResponseCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
 export const getWorkspaceResponseTagsItemValueMax = 35;
 
 
@@ -5086,6 +5173,14 @@ export const GetWorkspaceResponse = zod.object({
   "canView": zod.boolean()
 }),
   "chapterCount": zod.int(),
+  "cover": zod.object({
+  "color": zod.string().regex(getWorkspaceResponseCoverColorRegExp),
+  "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
+  "line": zod.string().max(getWorkspaceResponseCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
+  "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
+  "seed": zod.string().max(getWorkspaceResponseCoverSeedMax).regex(getWorkspaceResponseCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
+  "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
+}).optional().describe('The card\'s cover art; absent means none'),
   "createdAt": zod.iso.datetime({"offset":true}),
   "description": zod.string(),
   "fileCount": zod.int(),
@@ -5115,6 +5210,13 @@ export const UpdateWorkspaceParams = zod.object({
   "id": zod.string()
 })
 
+export const updateWorkspaceBodyCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
+export const updateWorkspaceBodyCoverLineMax = 40;
+
+export const updateWorkspaceBodyCoverSeedMax = 16;
+
+
+export const updateWorkspaceBodyCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
 export const updateWorkspaceBodyDescriptionMax = 500;
 
 
@@ -5130,6 +5232,15 @@ export const updateWorkspaceBodyTagsMax = 5;
 
 export const UpdateWorkspaceBody = zod.object({
   "autoProcess": zod.boolean().optional(),
+  "clearCover": zod.boolean().optional().describe('true removes the cover; refused together with cover'),
+  "cover": zod.object({
+  "color": zod.string().regex(updateWorkspaceBodyCoverColorRegExp),
+  "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
+  "line": zod.string().max(updateWorkspaceBodyCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
+  "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
+  "seed": zod.string().max(updateWorkspaceBodyCoverSeedMax).regex(updateWorkspaceBodyCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
+  "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
+}).optional().describe('Replaces the card\'s cover art'),
   "description": zod.string().max(updateWorkspaceBodyDescriptionMax).optional().describe('Optional workspace description; empty clears it'),
   "iconId": zod.string().min(1).regex(updateWorkspaceBodyIconIdRegExp).optional(),
   "name": zod.string().min(1).max(updateWorkspaceBodyNameMax).optional(),
@@ -5139,6 +5250,13 @@ export const UpdateWorkspaceBody = zod.object({
 })).max(updateWorkspaceBodyTagsMax).optional().describe('Tags; at most 5')
 })
 
+export const updateWorkspaceResponseCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
+export const updateWorkspaceResponseCoverLineMax = 40;
+
+export const updateWorkspaceResponseCoverSeedMax = 16;
+
+
+export const updateWorkspaceResponseCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
 export const updateWorkspaceResponseTagsItemValueMax = 35;
 
 
@@ -5154,6 +5272,14 @@ export const UpdateWorkspaceResponse = zod.object({
   "canView": zod.boolean()
 }),
   "chapterCount": zod.int(),
+  "cover": zod.object({
+  "color": zod.string().regex(updateWorkspaceResponseCoverColorRegExp),
+  "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
+  "line": zod.string().max(updateWorkspaceResponseCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
+  "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
+  "seed": zod.string().max(updateWorkspaceResponseCoverSeedMax).regex(updateWorkspaceResponseCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
+  "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
+}).optional().describe('The card\'s cover art; absent means none'),
   "createdAt": zod.iso.datetime({"offset":true}),
   "description": zod.string(),
   "fileCount": zod.int(),
@@ -5243,6 +5369,13 @@ export const CloneWorkspaceParams = zod.object({
   "id": zod.string()
 })
 
+export const cloneWorkspaceResponseWorkspaceCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
+export const cloneWorkspaceResponseWorkspaceCoverLineMax = 40;
+
+export const cloneWorkspaceResponseWorkspaceCoverSeedMax = 16;
+
+
+export const cloneWorkspaceResponseWorkspaceCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
 export const cloneWorkspaceResponseWorkspaceTagsItemValueMax = 35;
 
 
@@ -5260,6 +5393,14 @@ export const CloneWorkspaceResponse = zod.object({
   "canView": zod.boolean()
 }),
   "chapterCount": zod.int(),
+  "cover": zod.object({
+  "color": zod.string().regex(cloneWorkspaceResponseWorkspaceCoverColorRegExp),
+  "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
+  "line": zod.string().max(cloneWorkspaceResponseWorkspaceCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
+  "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
+  "seed": zod.string().max(cloneWorkspaceResponseWorkspaceCoverSeedMax).regex(cloneWorkspaceResponseWorkspaceCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
+  "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
+}).optional().describe('The card\'s cover art; absent means none'),
   "createdAt": zod.iso.datetime({"offset":true}),
   "description": zod.string(),
   "fileCount": zod.int(),
@@ -5733,6 +5874,13 @@ export const UpdateWorkspaceSharingBody = zod.object({
   "shareRole": zod.enum(['editor', 'viewer']).optional()
 })
 
+export const updateWorkspaceSharingResponseCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
+export const updateWorkspaceSharingResponseCoverLineMax = 40;
+
+export const updateWorkspaceSharingResponseCoverSeedMax = 16;
+
+
+export const updateWorkspaceSharingResponseCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
 export const updateWorkspaceSharingResponseTagsItemValueMax = 35;
 
 
@@ -5748,6 +5896,14 @@ export const UpdateWorkspaceSharingResponse = zod.object({
   "canView": zod.boolean()
 }),
   "chapterCount": zod.int(),
+  "cover": zod.object({
+  "color": zod.string().regex(updateWorkspaceSharingResponseCoverColorRegExp),
+  "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
+  "line": zod.string().max(updateWorkspaceSharingResponseCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
+  "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
+  "seed": zod.string().max(updateWorkspaceSharingResponseCoverSeedMax).regex(updateWorkspaceSharingResponseCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
+  "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
+}).optional().describe('The card\'s cover art; absent means none'),
   "createdAt": zod.iso.datetime({"offset":true}),
   "description": zod.string(),
   "fileCount": zod.int(),
@@ -6111,6 +6267,13 @@ export const TransferWorkspaceBody = zod.object({
   "recipientId": zod.string().min(1)
 })
 
+export const transferWorkspaceResponseCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
+export const transferWorkspaceResponseCoverLineMax = 40;
+
+export const transferWorkspaceResponseCoverSeedMax = 16;
+
+
+export const transferWorkspaceResponseCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
 export const transferWorkspaceResponseTagsItemValueMax = 35;
 
 
@@ -6126,6 +6289,14 @@ export const TransferWorkspaceResponse = zod.object({
   "canView": zod.boolean()
 }),
   "chapterCount": zod.int(),
+  "cover": zod.object({
+  "color": zod.string().regex(transferWorkspaceResponseCoverColorRegExp),
+  "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
+  "line": zod.string().max(transferWorkspaceResponseCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
+  "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
+  "seed": zod.string().max(transferWorkspaceResponseCoverSeedMax).regex(transferWorkspaceResponseCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
+  "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
+}).optional().describe('The card\'s cover art; absent means none'),
   "createdAt": zod.iso.datetime({"offset":true}),
   "description": zod.string(),
   "fileCount": zod.int(),

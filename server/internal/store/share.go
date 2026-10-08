@@ -939,11 +939,11 @@ func (s *Store) cloneWorkspaceOnce(
 		return Workspace{}, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO workspaces
-			(id, user_id, name, description, privacy, icon_id,
+			(id, user_id, name, description, privacy, icon_id, cover,
 			 embedding_provider_slug, embedding_model_slug, embedding_model_version, embedding_dim)
-		VALUES ($1,$2,$3,$8,'private',$9,$4,$5,$6,$7)`,
+		VALUES ($1,$2,$3,$8,'private',$9,$10,$4,$5,$6,$7)`,
 		newID, userID, name,
-		srcEmbed.Pin.ProviderSlug, srcEmbed.Pin.ModelSlug, srcEmbed.Pin.Version, srcEmbed.Dim, src.Description, src.IconID); err != nil {
+		srcEmbed.Pin.ProviderSlug, srcEmbed.Pin.ModelSlug, srcEmbed.Pin.Version, srcEmbed.Dim, src.Description, src.IconID, src.Cover); err != nil {
 		return Workspace{}, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'owner')`,

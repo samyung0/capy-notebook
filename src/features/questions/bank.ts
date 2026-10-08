@@ -10,7 +10,7 @@ import type {
   BankProgress,
   BankTopicMarks,
   CheckBankQuestionReq,
-  ExamCover,
+  CoverConfig,
   GradedQuestion,
   Provenance,
 } from '@/api/types';
@@ -28,7 +28,7 @@ export type BankExam = {
   label: string;
   /** The full name, shown and searched in the exam switcher. */
   fullLabel: string;
-  cover: ExamCover;
+  cover: CoverConfig;
   subjects: BankSubject[];
 };
 export type BankSyllabus = {

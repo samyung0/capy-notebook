@@ -3,7 +3,6 @@ package bank
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"regexp"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/samyung0/capy-notebook/server/internal/cover"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
 	"github.com/samyung0/capy-notebook/server/internal/review"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -120,60 +120,8 @@ type Exam struct {
 	Subjects  []Subject `json:"subjects"`
 }
 
-// Cover is how the exam switcher draws an exam's strip. The browser renders
-// it (src/features/questions/examCover.ts), so its pattern lists match these.
-type Cover struct {
-	Style   string `json:"style" enum:"symbols,doodles,shelf,paper,type,geo,hero"`
-	Color   string `json:"color" pattern:"^#[0-9a-f]{6}$"`
-	Kind    string `json:"kind,omitempty" enum:"math,latin,kana" doc:"The symbols, icons or paper of a symbols, doodles or paper cover"`
-	Pattern string `json:"pattern,omitempty" doc:"The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover"`
-	Line    string `json:"line,omitempty" maxLength:"40" doc:"A paper cover's handwritten line"`
-}
-
-var (
-	coverColor   = regexp.MustCompile(`^#[0-9a-f]{6}$`)
-	geoPatterns  = []string{"octogons", "overlappingCircles", "plusSigns", "xes", "sineWaves", "hexagons", "overlappingRings", "plaid", "triangles", "squares", "concentricCircles", "diamonds", "tessellation", "nestedSquares", "mosaicSquares", "chevrons"}
-	heroPatterns = []string{"bankNote", "bubbles", "current", "diagonalLines", "endlessClouds", "formalInvitation", "fourPointStars", "graphPaper", "hexagons", "jigsaw", "overlappingCircles", "plus", "polkaDots", "signal", "texture", "wiggle", "xEquals", "zigZag"}
-)
-
-// DefaultCover is a new exam's cover when its catalog sets none: a GeoPattern
-// in a palette colour, both picked from the exam id so reruns agree.
-func DefaultCover(examID string) Cover {
-	sum := sha256.Sum256([]byte(examID))
-	palette := []string{"#7866cf", "#2a78d6", "#1b9e6f", "#d0505e", "#eb6834", "#c48a00", "#5b6472"}
-	return Cover{Style: "geo", Color: palette[int(sum[0])%len(palette)], Pattern: geoPatterns[int(sum[1])%len(geoPatterns)]}
-}
-
-// Check accepts only the fields the cover's style draws.
-func (c Cover) Check() error {
-	if !coverColor.MatchString(c.Color) {
-		return errors.New("cover color must be #rrggbb in lower case")
-	}
-	kinded := c.Style == "symbols" || c.Style == "doodles" || c.Style == "paper"
-	if kinded != slices.Contains([]string{"math", "latin", "kana"}, c.Kind) {
-		return fmt.Errorf("a %s cover takes kind only for symbols, doodles and paper", c.Style)
-	}
-	switch c.Style {
-	case "geo":
-		if !slices.Contains(geoPatterns, c.Pattern) {
-			return fmt.Errorf("unknown geo pattern %q", c.Pattern)
-		}
-	case "hero":
-		if !slices.Contains(heroPatterns, c.Pattern) {
-			return fmt.Errorf("unknown hero pattern %q", c.Pattern)
-		}
-	case "symbols", "doodles", "paper", "shelf", "type":
-		if c.Pattern != "" {
-			return errors.New("only geo and hero covers take a pattern")
-		}
-	default:
-		return fmt.Errorf("unknown cover style %q", c.Style)
-	}
-	if c.Line != "" && (c.Style != "paper" || len([]rune(c.Line)) > 40) {
-		return errors.New("only a paper cover takes a line, of at most 40 characters")
-	}
-	return nil
-}
+// Cover is shared with workspace cards (package cover).
+type Cover = cover.Cover
 
 type Syllabus struct {
 	Exams     []Exam `json:"exams"`

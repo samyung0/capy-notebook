@@ -1,37 +1,24 @@
 import { Popover as PopoverPrimitive } from 'radix-ui';
-import { type KeyboardEvent, useId, useMemo, useState } from 'react';
+import { type KeyboardEvent, useId, useState } from 'react';
+import {
+  CoverArt,
+  coverBackground,
+  useCoverPaint,
+} from '@/components/ui/CoverArt';
 import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
 import { Popover, PopoverContent } from '@/components/ui/Popover';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { glyphFont, LEAD_GLYPH } from '@/lib/coverArt';
 import type { BankExam } from './bank';
-import {
-  type CoverPaint,
-  coverPaint,
-  glyphFont,
-  LEAD_GLYPH,
-} from './examCover';
-
-const useCoverPaint = (exam: BankExam) =>
-  useMemo(
-    () => coverPaint(exam.id, exam.label, exam.cover),
-    [exam.id, exam.label, exam.cover]
-  );
-
-const background = (paint: CoverPaint) => ({
-  backgroundColor: paint.color,
-  backgroundImage: paint.image,
-  backgroundPosition: paint.right ? 'right center' : 'center',
-  backgroundSize: paint.repeat ? 'auto' : 'cover',
-});
 
 /**
  * An exam's small square: its cover art, or for symbols and paper covers,
  * whose art crops badly that small, the kind's lead glyph.
  */
 export function ExamTile({ exam }: { exam: BankExam }) {
-  const paint = useCoverPaint(exam);
+  const paint = useCoverPaint(exam.id, exam.label, exam.cover);
   const { kind, style } = exam.cover;
   if ((style === 'symbols' || style === 'paper') && kind)
     return (
@@ -54,7 +41,7 @@ export function ExamTile({ exam }: { exam: BankExam }) {
     <span
       aria-hidden
       className="size-7.5 shrink-0 rounded-[8px]"
-      style={background(paint)}
+      style={coverBackground(paint)}
     />
   );
 }
@@ -88,7 +75,7 @@ export function ExamPicker({
   exam: BankExam;
   onPick: (id: string) => void;
 }) {
-  const paint = useCoverPaint(exam);
+  const paint = useCoverPaint(exam.id, exam.label, exam.cover);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
@@ -133,17 +120,10 @@ export function ExamPicker({
           ref={setAnchor}
           type="button"
         >
-          <span
-            aria-hidden
-            className="absolute inset-0 transition-[filter] group-hover:brightness-105"
-            style={background(paint)}
+          <CoverArt
+            className="transition-[filter] group-hover:brightness-105"
+            paint={paint}
           />
-          {paint.shade && (
-            <span
-              aria-hidden
-              className="absolute inset-0 bg-linear-to-t from-black/50 to-80% to-transparent"
-            />
-          )}
           <span
             className={cn(
               'relative min-w-0 flex-1',

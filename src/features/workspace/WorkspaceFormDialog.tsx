@@ -1,12 +1,13 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useRef } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import {
   CreateWorkspaceBody,
   createWorkspaceBodyDescriptionMax,
   createWorkspaceBodyTagsMax,
+  UpdateWorkspaceBody,
 } from '@/api/gen/validators';
-import type { CreateWorkspaceReq, Workspace } from '@/api/types';
+import type { CoverConfig, CreateWorkspaceReq, Workspace } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { DialogFooter, SimpleDialog } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
@@ -17,10 +18,19 @@ import { TagSelect } from '@/components/ui/TagSelect';
 import { Textarea } from '@/components/ui/TextArea';
 import { m } from '@/i18n';
 import { iconStyles, iconUrl } from '@/lib/icon-catalog';
+import { CoverField } from './CoverField';
 
 const workspaceIcons = iconStyles.find(
   (style) => style.id === 'waves'
 )!.avatars;
+
+/** Editing adds the card cover; null is None. Creating has no cover. */
+export type WorkspaceFormValues = CreateWorkspaceReq & {
+  cover?: CoverConfig | null;
+};
+const WorkspaceFormBody = CreateWorkspaceBody.extend({
+  cover: UpdateWorkspaceBody.shape.cover.nullable(),
+});
 
 export function WorkspaceFormDialog({
   open,
@@ -32,8 +42,8 @@ export function WorkspaceFormDialog({
 }: {
   open: boolean;
   setOpen: (open: boolean) => void;
-  workspace: CreateWorkspaceReq;
-  onSubmit: (values: CreateWorkspaceReq) => Promise<Workspace | void>;
+  workspace: CreateWorkspaceReq & { id?: string; cover?: CoverConfig };
+  onSubmit: (values: WorkspaceFormValues) => Promise<Workspace | void>;
   mode: 'create' | 'edit';
   embedded?: boolean;
 }) {
@@ -43,16 +53,18 @@ export function WorkspaceFormDialog({
     control,
     reset,
     setFocus,
-  } = useForm<CreateWorkspaceReq>({
+  } = useForm<WorkspaceFormValues>({
     defaultValues: workspace,
     mode: 'onChange',
-    resolver: zodResolver(CreateWorkspaceBody),
+    resolver: zodResolver(WorkspaceFormBody),
   });
+  const name = useWatch({ control, name: 'name' });
   const wasOpen = useRef(false);
   useEffect(() => {
     if (open && !wasOpen.current) {
       reset({
         ...workspace,
+        cover: mode === 'edit' ? (workspace.cover ?? null) : undefined,
         iconId:
           workspace.iconId ??
           (mode === 'create'
@@ -100,6 +112,24 @@ export function WorkspaceFormDialog({
           </div>
         )}
       />
+      {mode === 'edit' && workspace.id && (
+        <Controller
+          control={control}
+          name="cover"
+          render={({ field }) => (
+            <div className="flex flex-col gap-1.5">
+              <InputTitle>{m.cover_label()}</InputTitle>
+              <CoverField
+                disabled={isSubmitting}
+                label={name || workspace.name}
+                onChange={field.onChange}
+                ownerId={workspace.id ?? ''}
+                value={field.value ?? null}
+              />
+            </div>
+          )}
+        />
+      )}
       <Controller
         control={control}
         name="name"

@@ -6,6 +6,7 @@
  */
 import type { AccessCapabilities } from './accessCapabilities.ts';
 import type { AccountState } from './accountState.ts';
+import type { Cover } from './cover.ts';
 import type { Privacy } from './privacy.ts';
 import type { ShareRole } from './shareRole.ts';
 import type { StorageUsageLevel } from './storageUsageLevel.ts';
@@ -19,6 +20,8 @@ export interface Workspace {
   canClone: boolean;
   capabilities: AccessCapabilities;
   chapterCount: number;
+  /** The card's cover art; absent means none */
+  cover?: Cover;
   createdAt: string;
   description: string;
   fileCount: number;

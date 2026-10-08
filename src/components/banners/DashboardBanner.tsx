@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
+import { useMemo } from 'react';
 import { qk } from '@/api/client';
 import type { EventStreamState } from '@/api/hooks';
 import { useMe } from '@/api/hooks';
@@ -7,6 +8,7 @@ import { AccountState, StorageUsageLevel } from '@/api/types';
 import { storageLimitLabel, usagePercent } from '@/features/billing/format';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { COVER_COLORS, mixedSymbolsArt } from '@/lib/coverArt';
 import { useOnlineStatus } from '@/lib/online';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
@@ -148,13 +150,31 @@ export default function DashboardBanner() {
         tone="warning"
       />
     );
+  return <DefaultBanner />;
+}
+
+/** The slot's resting banner: a cover strip of mixed subject symbols (mock D1c). */
+function DefaultBanner() {
+  const image = useMemo(() => mixedSymbolsArt('dashboard'), []);
   return (
-    <SlotCard
-      body={m.dashboard_banner_body()}
-      icon="sparkles"
-      title={m.dashboard_banner_title()}
-      tone="accent"
-    />
+    <div
+      className="relative min-h-fit shrink-0 overflow-hidden rounded-card-lg p-5.5 text-white"
+      style={{
+        backgroundColor: COVER_COLORS[0],
+        backgroundImage: image,
+        backgroundPosition: 'center',
+        backgroundSize: 'cover',
+      }}
+    >
+      <span
+        aria-hidden
+        className="absolute inset-0 bg-linear-to-r from-black/30 to-transparent"
+      />
+      <div className="relative flex flex-col gap-1 xl:max-w-[80%]">
+        <p className="t-subtitle font-bold">{m.dashboard_banner_title()}</p>
+        <p className="mt-1 text-white/90">{m.dashboard_banner_body()}</p>
+      </div>
+    </div>
   );
 }
 
@@ -169,7 +189,7 @@ function SlotCard({
   title: string;
   body: string;
   icon: IconName;
-  tone: 'accent' | 'warning' | 'error';
+  tone: 'warning' | 'error';
   connection?: 'offline' | 'reconnecting';
   children?: React.ReactNode;
 }) {
@@ -177,8 +197,6 @@ function SlotCard({
     <Card
       className={cn(
         'relative block min-h-fit overflow-hidden',
-        tone === 'accent' &&
-          'bg-tint-accent-1 text-tint-accent-1-fg hover:bg-tint-accent-1',
         tone === 'warning' &&
           'bg-tint-warning text-tint-warning-fg hover:bg-tint-warning',
         tone === 'error' &&
@@ -186,7 +204,7 @@ function SlotCard({
       )}
       data-connection-status={connection}
       radius="card-lg"
-      role={tone === 'accent' ? undefined : 'status'}
+      role="status"
     >
       <div className="relative z-10 flex flex-col gap-1 xl:max-w-[80%]">
         <p className="t-subtitle font-bold">{title}</p>

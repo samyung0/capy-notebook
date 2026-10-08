@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samyung0/capy-notebook/server/internal/cover"
 	"github.com/samyung0/capy-notebook/server/internal/models"
 )
 
@@ -146,27 +147,32 @@ func TestWorkspaceIconPersistsAndClonesWithMemberPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.IconID != ws.IconID {
-		t.Fatal("default changed on read")
+	if loaded.IconID != ws.IconID || loaded.Cover != nil {
+		t.Fatal("default changed on read, or a new workspace has a cover")
 	}
 	selected := "critters-16"
 	if _, err := s.UpdateWorkspace(ctx, visitor, ws.ID, WorkspacePatch{IconID: &selected}); err == nil {
 		t.Fatal("visitor changed icon")
 	}
 	addWorkspaceEditor(t, s, ws.ID, editor)
-	updated, err := s.UpdateWorkspace(ctx, editor, ws.ID, WorkspacePatch{IconID: &selected})
+	art := cover.Cover{Style: "symbols", Color: "#2a78d6", Kind: "math", Seed: "k3"}
+	updated, err := s.UpdateWorkspace(ctx, editor, ws.ID, WorkspacePatch{IconID: &selected, Cover: &art})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.IconID != selected {
-		t.Fatal("icon edit failed")
+	if updated.IconID != selected || updated.Cover == nil || *updated.Cover != art {
+		t.Fatalf("icon or cover edit failed: %+v", updated.Cover)
 	}
 	cloned, err := s.CloneWorkspace(ctx, owner, ws.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cloned.IconID != selected {
-		t.Fatal("clone lost icon")
+	if cloned.IconID != selected || cloned.Cover == nil || *cloned.Cover != art {
+		t.Fatal("clone lost icon or cover")
+	}
+	cleared, err := s.UpdateWorkspace(ctx, owner, cloned.ID, WorkspacePatch{ClearCover: true})
+	if err != nil || cleared.Cover != nil {
+		t.Fatalf("cover not cleared: %+v %v", cleared.Cover, err)
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public' WHERE id=$1`, ws.ID); err != nil {
 		t.Fatal(err)

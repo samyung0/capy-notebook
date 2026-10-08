@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/samyung0/capy-notebook/server/internal/cover"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -28,6 +29,9 @@ type WorkspacePatch struct {
 	Name        *string   `json:"name"`
 	IconID      *string   `json:"iconId"`
 	Tags        *[]TagRef `json:"tags"`
+	// Cover replaces the card's cover; ClearCover removes it.
+	Cover      *cover.Cover `json:"cover"`
+	ClearCover bool         `json:"clearCover"`
 }
 
 type WorkspaceCreate struct {
@@ -185,7 +189,7 @@ const wsCols = `w.id, w.name, w.description, w.privacy, w.share_role,
 		 FROM users u WHERE u.id=w.user_id),
 	(SELECT count(*) FROM chapters c WHERE c.workspace_id=w.id),
 	(SELECT count(*) FROM files f WHERE f.workspace_id=w.id AND f.trashed_at IS NULL),
-	w.created_at, w.last_accessed_at, w.auto_process, w.icon_id`
+	w.created_at, w.last_accessed_at, w.auto_process, w.icon_id, w.cover`
 
 // memberRoleCol resolves the requester's ($1) persisted role next to wsCols;
 // the query must LEFT JOIN workspace_members AS me on that user.
@@ -196,7 +200,7 @@ func (s *Store) scanWorkspace(row pgx.Row, extra ...any) (Workspace, error) {
 	var w Workspace
 	dest := append([]any{&w.ID, &w.Name, &w.Description, &w.Privacy, &w.ShareRole, &w.Tags,
 		&w.OwnerUserID, &w.OwnerPlanTier, &w.ChapterCount,
-		&w.FileCount, &w.CreatedAt, &w.LastAccessedAt, &w.AutoProcess, &w.IconID}, extra...)
+		&w.FileCount, &w.CreatedAt, &w.LastAccessedAt, &w.AutoProcess, &w.IconID, &w.Cover}, extra...)
 	err := row.Scan(dest...)
 	if err != nil {
 		return w, err
@@ -539,8 +543,9 @@ func (s *Store) UpdateWorkspace(ctx context.Context, userID, id string, p Worksp
 
 	ct, err := tx.Exec(ctx, `UPDATE workspaces SET
 		name=COALESCE($2,name), description=COALESCE($3,description),
-		auto_process=COALESCE($4,auto_process), icon_id=COALESCE($5,icon_id) WHERE id=$1`,
-		id, p.Name, p.Description, p.AutoProcess, p.IconID)
+		auto_process=COALESCE($4,auto_process), icon_id=COALESCE($5,icon_id),
+		cover=CASE WHEN $7 THEN NULL ELSE COALESCE($6::jsonb,cover) END WHERE id=$1`,
+		id, p.Name, p.Description, p.AutoProcess, p.IconID, p.Cover, p.ClearCover)
 	if err != nil {
 		return Workspace{}, err
 	}

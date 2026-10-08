@@ -50,6 +50,7 @@ import {
   type BankMode,
   type BankRow,
   type BankSyllabus,
+  type BankTopic,
   bankBatchQuery,
   bankListQuery,
   bankMarksQuery,
@@ -1073,9 +1074,24 @@ function PanelHeading({
   );
 }
 
+/** Bolds the first case-insensitive match of the search in a label. */
+function Highlight({ text, needle }: { text: string; needle: string }) {
+  const at = needle ? text.toLocaleLowerCase().indexOf(needle) : -1;
+  if (at < 0) return text;
+  return (
+    <>
+      {text.slice(0, at)}
+      <b className="font-extrabold">{text.slice(at, at + needle.length)}</b>
+      {text.slice(at + needle.length)}
+    </>
+  );
+}
+
 /**
  * One exam at a time, picked from its cover strip, then its subjects with
- * indented topics. Subjects start collapsed except the current topic's.
+ * indented topics. Subjects start collapsed except the current topic's. A
+ * search lists matching topics from the syllabus: the picked exam's first,
+ * then other exams' (mock S2), so it needs no request of its own.
  */
 function TopicTree({
   syllabus,
@@ -1102,16 +1118,54 @@ function TopicTree({
   const exam =
     syllabus.exams.find((item) => item.id === picked) ?? syllabus.exams[0];
   const needle = filter.trim().toLocaleLowerCase();
-  const subjects = (exam?.subjects ?? [])
-    .map((subject) => ({
-      ...subject,
-      topics: subject.topics.filter((item) =>
-        [subject.label, item.label].some((label) =>
-          label.toLocaleLowerCase().includes(needle)
+  const hits = needle
+    ? syllabus.exams.flatMap((hitExam) =>
+        hitExam.subjects.flatMap((subject) =>
+          subject.topics
+            .filter((item) =>
+              [subject.label, item.label].some((label) =>
+                label.toLocaleLowerCase().includes(needle)
+              )
+            )
+            .map((item) => ({ exam: hitExam, item, subject }))
         )
-      ),
-    }))
-    .filter((subject) => subject.topics.length > 0);
+      )
+    : [];
+  const here = hits.filter((hit) => hit.exam.id === exam?.id);
+  const away = hits.filter((hit) => hit.exam.id !== exam?.id);
+  const count = (item: BankTopic) => (
+    <span className="shrink-0 font-semibold text-fg-muted text-xs tabular-nums">
+      {edit ? `${item.reviewed}/${item.total}` : item.total}
+    </span>
+  );
+  const hitRow = (hit: (typeof hits)[number], other: boolean) => (
+    <button
+      aria-current={hit.item.id === topicId ? 'page' : undefined}
+      className={cn(
+        'flex w-full items-center gap-2 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg',
+        hit.item.id === topicId && 'bg-surface-hover-bg'
+      )}
+      key={hit.item.id}
+      onClick={() => {
+        setPicked(hit.exam.id);
+        setOpen((prev) => new Set(prev).add(hit.subject.id));
+        onTopic(hit.item.id);
+      }}
+      type="button"
+    >
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">
+          <Highlight needle={needle} text={hit.item.label} />
+        </span>
+        <span className="t-meta block truncate text-fg-muted">
+          {other
+            ? `${hit.exam.label} · ${hit.subject.label}`
+            : hit.subject.label}
+        </span>
+      </span>
+      {count(hit.item)}
+    </button>
+  );
   return (
     <nav aria-label={m.question_ui_topics()} className="flex flex-col gap-3">
       <PanelHeading
@@ -1125,72 +1179,87 @@ function TopicTree({
           <ExamPicker exam={exam} exams={syllabus.exams} onPick={setPicked} />
         </div>
       )}
-      <div className="flex flex-col gap-0.5">
-        {subjects.map((subject) => {
-          // A search shows every subject with a match opened.
-          const expanded = needle !== '' || open.has(subject.id);
-          return (
-            <div key={subject.id}>
-              <button
-                aria-expanded={expanded}
-                className="flex w-full items-center gap-1.5 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg"
-                onClick={() =>
-                  setOpen((prev) => {
-                    const next = new Set(prev);
-                    if (!next.delete(subject.id)) next.add(subject.id);
-                    return next;
-                  })
-                }
-                type="button"
-              >
-                <Icon
-                  className={cn(
-                    'shrink-0 text-fg-muted transition-transform',
-                    !expanded && '-rotate-90'
-                  )}
-                  name="chevronDown"
-                  size={13}
-                />
-                <span className="min-w-0 flex-1 translate-y-px truncate font-semibold">
-                  {subject.label}
-                </span>
-                {!expanded && (
-                  <span className="shrink-0 font-semibold text-fg-muted text-xs tabular-nums">
-                    {subject.topics.reduce((sum, item) => sum + item.total, 0)}
+      {needle ? (
+        <div className="flex flex-col gap-0.5">
+          {here.map((hit) => hitRow(hit, false))}
+          {away.length > 0 && (
+            <p className="t-label px-2 pt-3 pb-1 text-fg-muted uppercase">
+              {m.question_ui_in_other_exams()}
+            </p>
+          )}
+          {away.map((hit) => hitRow(hit, true))}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-0.5">
+          {exam?.subjects.map((subject) => {
+            const expanded = open.has(subject.id);
+            return (
+              <div key={subject.id}>
+                <button
+                  aria-expanded={expanded}
+                  className="flex w-full items-center gap-1.5 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg"
+                  onClick={() =>
+                    setOpen((prev) => {
+                      const next = new Set(prev);
+                      if (!next.delete(subject.id)) next.add(subject.id);
+                      return next;
+                    })
+                  }
+                  type="button"
+                >
+                  <Icon
+                    className={cn(
+                      'shrink-0 text-fg-muted transition-transform',
+                      !expanded && '-rotate-90'
+                    )}
+                    name="chevronDown"
+                    size={13}
+                  />
+                  <span className="min-w-0 flex-1 translate-y-px truncate font-semibold">
+                    {subject.label}
                   </span>
+                  {!expanded && (
+                    <span className="shrink-0 font-semibold text-fg-muted text-xs tabular-nums">
+                      {subject.topics.reduce(
+                        (sum, item) => sum + item.total,
+                        0
+                      )}
+                    </span>
+                  )}
+                </button>
+                {expanded && (
+                  <ul className="flex flex-col pl-5">
+                    {subject.topics.map((item) => (
+                      <li key={item.id}>
+                        <button
+                          aria-current={
+                            item.id === topicId ? 'page' : undefined
+                          }
+                          className={cn(
+                            'flex w-full items-center gap-2 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg',
+                            item.id === topicId &&
+                              'bg-surface-hover-bg font-bold'
+                          )}
+                          onClick={() => onTopic(item.id)}
+                          type="button"
+                        >
+                          <span className="min-w-0 flex-1 translate-y-px truncate">
+                            {item.label}
+                          </span>
+                          {count(item)}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
                 )}
-              </button>
-              {expanded && (
-                <ul className="flex flex-col pl-5">
-                  {subject.topics.map((item) => (
-                    <li key={item.id}>
-                      <button
-                        aria-current={item.id === topicId ? 'page' : undefined}
-                        className={cn(
-                          'flex w-full items-center gap-2 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg',
-                          item.id === topicId && 'bg-surface-hover-bg font-bold'
-                        )}
-                        onClick={() => onTopic(item.id)}
-                        type="button"
-                      >
-                        <span className="min-w-0 flex-1 translate-y-px truncate">
-                          {item.label}
-                        </span>
-                        <span className="shrink-0 font-semibold text-fg-muted text-xs tabular-nums">
-                          {edit ? `${item.reviewed}/${item.total}` : item.total}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      {!subjects.length && (
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {(needle ? !hits.length : !syllabus.exams.length) && (
         <p className="px-2 text-fg-muted">
-          {syllabus.exams.length
+          {needle
             ? m.question_ui_no_topics_match()
             : m.question_ui_no_syllabi_have_been_published_yet()}
         </p>

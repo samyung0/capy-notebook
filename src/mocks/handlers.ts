@@ -1212,11 +1212,14 @@ export const handlers = [
     if (!ws) return new HttpResponse(null, { status: 404 });
     const body = (await request.json()) as Partial<Workspace> & {
       tags?: TagInput[];
+      clearCover?: boolean;
     };
     if (body.tags !== undefined) ws.tags = resolveTags('workspace', body.tags);
     if (body.name !== undefined) ws.name = body.name;
     if (body.description !== undefined) ws.description = body.description;
     if (body.iconId !== undefined) ws.iconId = body.iconId;
+    if (body.cover !== undefined) ws.cover = body.cover;
+    if (body.clearCover) ws.cover = undefined;
     return HttpResponse.json(ws);
   }),
   http.patch('/api/workspaces/:id/sharing', async ({ params, request }) => {
