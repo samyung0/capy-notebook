@@ -131,8 +131,9 @@ const IDLE = process.env.STRESS_IDLE === 'true';
  * Local: ~1.3x the slower room's median p95 over three runs of the Performance
  * workflow (2026-10-04 runs 37200395852, 37200390235, 37200383976: Office
  * 34/33/34 ms, Plate 35/34/35 ms). The collaboration service merges
- * broadcasts over 30 ms windows (`flushDelay` in collaboration/src/server.ts),
- * which raised p95 from the earlier 3 to 9 ms and so this budget from 10 ms.
+ * broadcasts over 30 ms windows (`FLUSH_WINDOW` in
+ * collaboration-rs/crates/server/src/room.rs), which raised p95 from the
+ * earlier 3 to 9 ms and so this budget from 10 ms.
  * UAT: 1 s, the ceiling the 2026-10-04 capacity run used, network round trip
  * included.
  */

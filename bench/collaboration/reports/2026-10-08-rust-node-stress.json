@@ -1,0 +1,383 @@
+{
+  "rust": {
+    "budgetMisses": [],
+    "budgetP95Ms": 45,
+    "byKind": {
+      "office": {
+        "latencyMaxMs": 57,
+        "latencyP50Ms": 35,
+        "latencyP95Ms": 40,
+        "latencyP99Ms": 42,
+        "rooms": 1,
+        "timed": 2181,
+        "budgeted": true
+      },
+      "plate": {
+        "latencyMaxMs": 234,
+        "latencyP50Ms": 34,
+        "latencyP95Ms": 39,
+        "latencyP99Ms": 43,
+        "rooms": 1,
+        "timed": 2152,
+        "budgeted": true
+      },
+      "note-limit": {
+        "latencyMaxMs": 44,
+        "latencyP50Ms": 33,
+        "latencyP95Ms": 37,
+        "latencyP99Ms": 39,
+        "rooms": 1,
+        "timed": 548,
+        "budgeted": false
+      },
+      "text": {
+        "latencyMaxMs": 84,
+        "latencyP50Ms": 33,
+        "latencyP95Ms": 37,
+        "latencyP99Ms": 38,
+        "rooms": 1,
+        "timed": 554,
+        "budgeted": false
+      }
+    },
+    "clientLoopDelayMs": {
+      "max": 149,
+      "p50": 30,
+      "p99": 35
+    },
+    "cost": {},
+    "costPeers": null,
+    "costSeconds": null,
+    "collaborationErrors": 0,
+    "collaborationErrorSample": [],
+    "editMs": 1500,
+    "failures": [],
+    "limitClientLoopDelayMs": {
+      "max": 114,
+      "p50": 31,
+      "p99": 33
+    },
+    "limitPeers": 5,
+    "minutes": 3,
+    "peers": 20,
+    "reportOnlyFailures": [],
+    "rooms": [
+      {
+        "converged": true,
+        "doubled": 0,
+        "drops": 66,
+        "latencyP50Ms": 35,
+        "latencyP95Ms": 40,
+        "latencyMaxMs": 57,
+        "lateJoinError": null,
+        "missing": 0,
+        "missingSample": [],
+        "unsettled": 0,
+        "room": "office",
+        "format": "docx",
+        "typed": 2407
+      },
+      {
+        "converged": true,
+        "doubled": 0,
+        "drops": 73,
+        "latencyP50Ms": 34,
+        "latencyP95Ms": 39,
+        "latencyMaxMs": 234,
+        "lateJoinError": null,
+        "missing": 0,
+        "missingSample": [],
+        "unsettled": 0,
+        "room": "plate",
+        "format": "plate",
+        "typed": 2412
+      },
+      {
+        "converged": true,
+        "doubled": 0,
+        "drops": 12,
+        "latencyP50Ms": 33,
+        "latencyP95Ms": 37,
+        "latencyMaxMs": 44,
+        "lateJoinError": null,
+        "missing": 0,
+        "missingSample": [],
+        "unsettled": 0,
+        "room": "note-limit",
+        "format": "plate",
+        "typed": 588
+      },
+      {
+        "converged": true,
+        "doubled": 0,
+        "drops": 14,
+        "latencyP50Ms": 33,
+        "latencyP95Ms": 37,
+        "latencyMaxMs": 84,
+        "lateJoinError": null,
+        "missing": 0,
+        "missingSample": [],
+        "unsettled": 0,
+        "room": "text",
+        "format": "text",
+        "typed": 601
+      }
+    ],
+    "runner": {
+      "cpuModel": "AMD Ryzen 7 3700X 8-Core Processor             ",
+      "cpus": 16
+    },
+    "server": {
+      "containers": [
+        "api",
+        "collaboration",
+        "db"
+      ],
+      "images": {
+        "api": {
+          "id": "sha256:fd43d9a5544bb8ebc6fc685343b90610198b349fe3338eb8fce39f4583cf11dd",
+          "image": "rust-core-server:local"
+        },
+        "collaboration": {
+          "id": "sha256:451e4f70476c731bbefb5eab2f1d9e43d5bdc8940f9af7807fcc0e884acb1adb",
+          "image": "rust-core-collaboration:local"
+        },
+        "db": {
+          "id": "sha256:9b05db12a35460fff0587e009f9326e414a53e9484555547f96d214a2ba98ef7",
+          "image": "pgvector/pgvector:pg16"
+        }
+      },
+      "limit": {
+        "probe": {
+          "failures": 0,
+          "maxMs": 63,
+          "p50Ms": 3,
+          "p99Ms": 6,
+          "samples": 697
+        },
+        "api": {
+          "cpuMs": 5404,
+          "cpuMsPerMarker": 4.55,
+          "memoryMB": {
+            "after": 211.9,
+            "before": 51.5,
+            "growth": 160.4
+          }
+        },
+        "collaboration": {
+          "cpuMs": 5950,
+          "cpuMsPerMarker": 5,
+          "memoryMB": {
+            "after": 399,
+            "before": 97.2,
+            "growth": 301.8
+          }
+        },
+        "db": {
+          "cpuMs": 7379,
+          "cpuMsPerMarker": 6.21,
+          "memoryMB": {
+            "after": 273.3,
+            "before": 176.3,
+            "growth": 97
+          }
+        }
+      },
+      "main": {
+        "probe": null,
+        "api": {
+          "cpuMs": 6051,
+          "cpuMsPerMarker": 1.26,
+          "memoryMB": {
+            "after": 25.4,
+            "before": 14.2,
+            "growth": 11.2
+          }
+        },
+        "collaboration": {
+          "cpuMs": 12382,
+          "cpuMsPerMarker": 2.57,
+          "memoryMB": {
+            "after": 97.4,
+            "before": 47.4,
+            "growth": 50
+          }
+        },
+        "db": {
+          "cpuMs": 9813,
+          "cpuMsPerMarker": 2.04,
+          "memoryMB": {
+            "after": 161,
+            "before": 76.3,
+            "growth": 84.7
+          }
+        }
+      },
+      "probePath": "/metrics"
+    },
+    "target": "local",
+    "textMiB": 4,
+    "tokenFailures": 0,
+    "tokenFailureSample": []
+  },
+  "node": {
+    "budgetMisses": [],
+    "budgetP95Ms": 45,
+    "byKind": {
+      "office": {
+        "latencyMaxMs": 78,
+        "latencyP50Ms": 33,
+        "latencyP95Ms": 37,
+        "latencyP99Ms": 39,
+        "rooms": 1,
+        "timed": 2178,
+        "budgeted": true
+      },
+      "plate": {
+        "latencyMaxMs": 189,
+        "latencyP50Ms": 33,
+        "latencyP95Ms": 37,
+        "latencyP99Ms": 39,
+        "rooms": 1,
+        "timed": 2135,
+        "budgeted": true
+      },
+      "note-limit": {
+        "latencyMaxMs": 849,
+        "latencyP50Ms": 33,
+        "latencyP95Ms": 40,
+        "latencyP99Ms": 669,
+        "rooms": 1,
+        "timed": 525,
+        "budgeted": false
+      },
+      "text": {
+        "latencyMaxMs": 837,
+        "latencyP50Ms": 33,
+        "latencyP95Ms": 39,
+        "latencyP99Ms": 584,
+        "rooms": 1,
+        "timed": 533,
+        "budgeted": false
+      }
+    },
+    "clientLoopDelayMs": {
+      "max": 163,
+      "p50": 30,
+      "p99": 33
+    },
+    "cost": {},
+    "costPeers": null,
+    "costSeconds": null,
+    "collaborationErrors": 0,
+    "collaborationErrorSample": [],
+    "editMs": 1500,
+    "failures": [],
+    "limitClientLoopDelayMs": {
+      "max": 93,
+      "p50": 31,
+      "p99": 33
+    },
+    "limitPeers": 5,
+    "minutes": 3,
+    "peers": 20,
+    "reportOnlyFailures": [
+      "server images: Error: connect ENOENT /var/run/docker.sock",
+      "server usage before office,plate: Error: connect ENOENT /var/run/docker.sock",
+      "server usage after office,plate: Error: connect ENOENT /var/run/docker.sock",
+      "server usage before note-limit,text: Error: connect ENOENT /var/run/docker.sock",
+      "server usage after note-limit,text: Error: connect ENOENT /var/run/docker.sock"
+    ],
+    "rooms": [
+      {
+        "converged": true,
+        "doubled": 0,
+        "drops": 63,
+        "latencyP50Ms": 33,
+        "latencyP95Ms": 37,
+        "latencyMaxMs": 78,
+        "lateJoinError": null,
+        "missing": 0,
+        "missingSample": [],
+        "unsettled": 0,
+        "room": "office",
+        "format": "docx",
+        "typed": 2399
+      },
+      {
+        "converged": true,
+        "doubled": 0,
+        "drops": 83,
+        "latencyP50Ms": 33,
+        "latencyP95Ms": 37,
+        "latencyMaxMs": 189,
+        "lateJoinError": null,
+        "missing": 0,
+        "missingSample": [],
+        "unsettled": 0,
+        "room": "plate",
+        "format": "plate",
+        "typed": 2423
+      },
+      {
+        "converged": true,
+        "doubled": 0,
+        "drops": 18,
+        "latencyP50Ms": 33,
+        "latencyP95Ms": 40,
+        "latencyMaxMs": 849,
+        "lateJoinError": null,
+        "missing": 0,
+        "missingSample": [],
+        "unsettled": 0,
+        "room": "note-limit",
+        "format": "plate",
+        "typed": 595
+      },
+      {
+        "converged": true,
+        "doubled": 0,
+        "drops": 19,
+        "latencyP50Ms": 33,
+        "latencyP95Ms": 39,
+        "latencyMaxMs": 837,
+        "lateJoinError": null,
+        "missing": 0,
+        "missingSample": [],
+        "unsettled": 0,
+        "room": "text",
+        "format": "text",
+        "typed": 602
+      }
+    ],
+    "runner": {
+      "cpuModel": "AMD Ryzen 7 3700X 8-Core Processor             ",
+      "cpus": 16
+    },
+    "server": {
+      "containers": [
+        "api",
+        "collaboration",
+        "db"
+      ],
+      "images": {},
+      "limit": {
+        "probe": {
+          "failures": 0,
+          "maxMs": 640,
+          "p50Ms": 4,
+          "p99Ms": 205,
+          "samples": 682
+        }
+      },
+      "main": {
+        "probe": null
+      },
+      "probePath": "/metrics"
+    },
+    "target": "local",
+    "textMiB": 4,
+    "tokenFailures": 0,
+    "tokenFailureSample": []
+  }
+}

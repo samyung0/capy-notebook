@@ -291,10 +291,15 @@ text each change inserts, so the client's own cost stays flat. Then:
 - p95 marker latency within `STRESS_P95_BUDGET_MS`, 45 ms, in the first
   phase (~1.3x the slower
   room's median of three CI runs on 2026-10-04: Office 34/33/34, Plate
-  35/34/35 ms). The service's 30 ms broadcast batching (`flushDelay` in
-  `collaboration/src/server.ts`) put most of that there: before it the runs
-  gave Office 5/5/3 and Plate 8/9/5 ms against a 10 ms budget. A loaded laptop
-  measures more, so set the variable for local runs.
+  35/34/35 ms). The service's 30 ms broadcast batching (the Node server's
+  `flushDelay`, the Rust server's `FLUSH_WINDOW`) put most of that there:
+  before it the runs gave Office 5/5/3 and Plate 8/9/5 ms against a 10 ms
+  budget. A loaded laptop measures more, so set the variable for local runs.
+  Back to back on one Windows host (2026-10-08), the Rust and Node servers
+  both met it (p95 Office 40 / 37, Plate 39 / 37 ms), and in the near-limit
+  phase the Rust server held its scheduling lag under 0.1 s where Node's
+  reached 0.8 s on each 4 MiB text save
+  ([report](../bench/collaboration/reports/2026-10-08-rust-node-stress.md)).
 
 A second phase follows on the local stack (`STRESS_LIMIT_ROOMS`, default
 `note-limit,text`; empty on UAT and external stacks, where a text source would
@@ -340,8 +345,8 @@ is a `reportOnlyFailures` entry; the phase's rooms are still judged and
 written. Outside the
 budgeted phase (calibrated without it), `probe` gives the answer time to an
 endpoint that touches only the server's event loop, every 250 ms
-(`STRESS_PROBE_PATH`, the Node service's in-memory `/metrics`; its
-`/healthz` pings Postgres and Redis, so it is not used), p50, p99, max and
+(`STRESS_PROBE_PATH`, the service's in-memory `/metrics`; the Node service's
+`/healthz` pinged Postgres and Redis, so it is not used), p50, p99, max and
 failures: it grows with whatever holds the event loop or scheduler. Read it
 beside `clientLoopDelayMs`, which bounds what the client can see. Then the
 cost windows (`STRESS_COST_ROOMS`, local default
