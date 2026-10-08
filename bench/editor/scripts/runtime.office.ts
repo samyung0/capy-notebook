@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { cpus } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   type Browser,
   type CDPSession,
@@ -48,6 +51,12 @@ import { cdpSession, percentile, reportMetrics } from './metrics';
  * engine), through a browser CDP session attached to it.
  * `performance.measureUserAgentSpecificMemory` needs cross-origin isolation,
  * which the app does not have.
+ *
+ * XLSX only: large co-editor and local operations (a peer's 8,000-cell paste
+ * and row insert, the last a whole recalculation; the same done locally),
+ * each to the next painted grid with the frame's main-thread long tasks, and
+ * scrolling a 50,000-row sheet (rows-50k.xlsx: gen_large_xlsx.py 1 50000
+ * values) with the grid's paints per second.
  */
 
 interface Timings {
@@ -188,10 +197,13 @@ const TYPED = {
 interface RuntimeMessage {
   analysis?: OfficeAnalysis;
   at: number;
+  /** `collaboration-ready`'s, which the bench's own updates must carry. */
+  epoch?: number;
   /** An `error`'s text. */
   message?: string;
   timings?: OfficeReadyTimings;
   type: string;
+  version?: number;
 }
 
 /** The mock collaboration rooms (src/mocks/collaboration.ts), as the
@@ -222,6 +234,8 @@ declare global {
       memory: WeakRef<WebAssembly.Memory>;
       names: string[];
     }[];
+    /** When the XLSX grid canvas was painted (cleared for a frame). */
+    __xlsxPaints: number[];
   }
 }
 
@@ -338,11 +352,22 @@ async function installHostProbe(page: Page) {
         probe.messages.push({
           analysis: data.analysis,
           at: performance.now(),
+          epoch: data.epoch,
           message: data.message,
           timings: data.timings,
           type: data.type,
+          version: data.version,
         });
     });
+    // The XLSX grid's paints: a frame clears the grid canvas before it draws.
+    const paints: number[] = [];
+    window.__xlsxPaints = paints;
+    const clearRect = CanvasRenderingContext2D.prototype.clearRect;
+    CanvasRenderingContext2D.prototype.clearRect = function (...args) {
+      if (this.canvas.closest?.('[data-testid="xlsx-scroll"]'))
+        paints.push(performance.now());
+      return clearRect.apply(this, args);
+    };
   });
 }
 
@@ -677,7 +702,7 @@ async function openFile(page: Page, id: string) {
   return ready;
 }
 
-async function openInView(page: Page, fixture: Fixture) {
+async function openInView(page: Page, fixture: { id: string }) {
   await openWorkspace(page);
   return openFile(page, fixture.id);
 }
@@ -835,22 +860,41 @@ async function timeKeys(page: Page, frame: Frame, fixture: Fixture) {
       { polling: 100, timeout: 30_000 }
     )
     .catch(() => undefined);
-  const lags = await frame.evaluate((format) => {
+  const { enters, lags } = await frame.evaluate((format) => {
     const { keys, presents } = window.__officeKeys;
-    return keys.map((key, index) => {
-      const next =
-        format === 'docx' ? presents.find((at) => at > key) : presents[index];
-      return next === undefined ? null : next - key;
-    });
+    return {
+      // XLSX: each Enter to the next painted grid, the committed value drawn.
+      enters: keys.flatMap((key, index) => {
+        if (format !== 'xlsx' || index % 6 !== 5) return [];
+        const next = window.__xlsxPaints.find((at) => at > key);
+        return [next === undefined ? null : next - key];
+      }),
+      lags: keys.map((key, index) => {
+        const next =
+          format === 'docx'
+            ? presents.find((at) => at > key)
+            : presents[index];
+        return next === undefined ? null : next - key;
+      }),
+    };
   }, fixture.format);
   const painted = lags.filter((lag): lag is number => lag !== null);
+  const enterPainted = enters.filter((lag): lag is number => lag !== null);
   return {
     // Edits the runtime sent to the room while typing.
     edits: (await countMessages(page, 'update')) - updatesBefore,
+    ...(fixture.format === 'xlsx'
+      ? {
+          enterToPaintP50Ms: Math.round(percentile(enterPainted, 50)),
+          enterToPaintP95Ms: Math.round(percentile(enterPainted, 95)),
+          unpaintedEnters: enters.length - enterPainted.length,
+        }
+      : {}),
     keys: lags.length,
     keyToFrameMaxMs: Math.round(Math.max(0, ...painted)),
     keyToFrameP50Ms: Math.round(percentile(painted, 50)),
     keyToFrameP90Ms: Math.round(percentile(painted, 90)),
+    keyToFrameP95Ms: Math.round(percentile(painted, 95)),
     unpaintedKeys: lags.length - painted.length,
   };
 }
@@ -943,8 +987,8 @@ async function remoteEdit(page: Page, fixture: Fixture, edit: number) {
 }
 
 /**
- * Remote edits one at a time, each to its frame in the open editor. In the
- * runtime frame, per edit:
+ * The runtime frame's probe for updates the host posts (`update` messages),
+ * per delivery:
  * - `queue`: from the host's postMessage (the event's timestamp) to the
  *   frame starting to handle it: the rest of the host's task, which shares
  *   the renderer's main thread, and the wait for the frame's turn;
@@ -956,10 +1000,12 @@ async function remoteEdit(page: Page, fixture: Fixture, edit: number) {
  * - `toFrame`: from receipt to the next `docx-pages-presented` (DOCX, a real
  *   paint) or to the first task after the next animation frame (XLSX, PPTX:
  *   the next frame, which an asynchronous render could miss; `frameSignal`);
- * - `longTask`: main-thread long tasks from the postMessage to that frame.
+ * - XLSX `toPaint`: from receipt to the next painted grid, the update drawn;
+ * - `longTask` (their sum, the time the main thread was blocked) and
+ *   `longestTask`: main-thread long tasks from the postMessage to the frame
+ *   or, for XLSX, the paint.
  */
-async function timeRemoteEdits(page: Page, fixture: Fixture) {
-  const frame = runtimeFrame(page);
+async function installRemoteProbe(frame: Frame, format: OfficeFormat) {
   await frame.evaluate((format) => {
     const probe: Window['__officeRemote'] = {
       ends: [],
@@ -999,27 +1045,39 @@ async function timeRemoteEdits(page: Page, fixture: Fixture) {
           start: entry.startTime,
         });
     }).observe({ type: 'longtask' });
-  }, fixture.format);
-  const updateBytes: number[] = [];
-  for (let edit = 0; edit < REMOTE_EDITS; edit += 1) {
-    updateBytes.push(await remoteEdit(page, fixture, edit));
-    await frame
-      .waitForFunction(
-        ({ edit, format }) => {
-          const { frames, presents, receivedFrom } = window.__officeRemote;
-          const at = window.__officeUpdateReceipts[receivedFrom + edit];
-          if (at === undefined) return false;
-          return format === 'docx'
-            ? presents.some((present) => present > at)
-            : frames[edit] !== undefined;
-        },
-        { edit, format: fixture.format },
-        { polling: 50, timeout: 30_000 }
-      )
-      .catch(() => undefined);
-    await page.waitForTimeout(500);
-  }
-  const edits = await frame.evaluate((format) => {
+  }, format);
+}
+
+/** Delivery `index` (since the probe) reached its frame, for XLSX its paint. */
+async function awaitDelivery(
+  frame: Frame,
+  format: OfficeFormat,
+  index: number,
+  timeout = 30_000
+) {
+  await frame
+    .waitForFunction(
+      ({ format, index }) => {
+        const { frames, presents, receivedFrom } = window.__officeRemote;
+        const at = window.__officeUpdateReceipts[receivedFrom + index];
+        if (at === undefined) return false;
+        if (format === 'docx') return presents.some((present) => present > at);
+        if (format === 'xlsx')
+          return (
+            frames[index] !== undefined &&
+            window.__xlsxPaints.some((paint) => paint > at)
+          );
+        return frames[index] !== undefined;
+      },
+      { format, index },
+      { polling: 50, timeout }
+    )
+    .catch(() => undefined);
+}
+
+/** Every delivery's figures since the probe was installed. */
+function deliveries(frame: Frame, format: OfficeFormat) {
+  return frame.evaluate((format) => {
     const { ends, frames, longTasks, posted, presents, receivedFrom } =
       window.__officeRemote;
     const received = window.__officeUpdateReceipts.slice(receivedFrom);
@@ -1028,27 +1086,46 @@ async function timeRemoteEdits(page: Page, fixture: Fixture) {
         format === 'docx'
           ? presents.find((present) => present > at)
           : frames[index];
-      const until = framed ?? ends[index] ?? at;
+      const painted =
+        format === 'xlsx'
+          ? window.__xlsxPaints.find((paint) => paint > at)
+          : undefined;
+      const until = Math.max(framed ?? ends[index] ?? at, painted ?? 0);
+      const blocking = longTasks.filter(
+        ({ start }) => start >= posted[index] - 1 && start < until
+      );
       return {
         applyMs: ends[index] === undefined ? null : ends[index] - at,
-        longTaskMs: longTasks
-          .filter(
-            ({ start }) => start >= posted[index] - 1 && start < until
-          )
-          .reduce((sum, { duration }) => sum + duration, 0),
+        longestTaskMs: Math.max(0, ...blocking.map((task) => task.duration)),
+        longTaskMs: blocking.reduce((sum, { duration }) => sum + duration, 0),
         queueMs: at - posted[index],
         toFrameMs: framed === undefined ? null : framed - at,
+        toPaintMs: painted === undefined ? null : painted - at,
       };
     });
-  }, fixture.format);
-  const stats = (values: (number | null)[]) => {
-    const known = values.filter((value): value is number => value !== null);
-    return {
-      maxMs: Math.round(Math.max(0, ...known)),
-      p50Ms: Math.round(percentile(known, 50)),
-      p90Ms: Math.round(percentile(known, 90)),
-    };
+  }, format);
+}
+
+const stats = (values: (number | null)[]) => {
+  const known = values.filter((value): value is number => value !== null);
+  return {
+    maxMs: Math.round(Math.max(0, ...known)),
+    p50Ms: Math.round(percentile(known, 50)),
+    p90Ms: Math.round(percentile(known, 90)),
   };
+};
+
+/** Remote edits one at a time, each to its frame in the open editor. */
+async function timeRemoteEdits(page: Page, fixture: Fixture) {
+  const frame = runtimeFrame(page);
+  await installRemoteProbe(frame, fixture.format);
+  const updateBytes: number[] = [];
+  for (let edit = 0; edit < REMOTE_EDITS; edit += 1) {
+    updateBytes.push(await remoteEdit(page, fixture, edit));
+    await awaitDelivery(frame, fixture.format, edit);
+    await page.waitForTimeout(500);
+  }
+  const edits = await deliveries(frame, fixture.format);
   return {
     apply: stats(edits.map((edit) => edit.applyMs)),
     applyScope:
@@ -1058,9 +1135,13 @@ async function timeRemoteEdits(page: Page, fixture: Fixture) {
     edits: REMOTE_EDITS,
     frameSignal:
       fixture.format === 'docx' ? 'docx-pages-presented' : 'next frame',
+    longestTask: stats(edits.map((edit) => edit.longestTaskMs)),
     longTask: stats(edits.map((edit) => edit.longTaskMs)),
     queue: stats(edits.map((edit) => edit.queueMs)),
     toFrame: stats(edits.map((edit) => edit.toFrameMs)),
+    ...(fixture.format === 'xlsx'
+      ? { toPaint: stats(edits.map((edit) => edit.toPaintMs)) }
+      : {}),
     unframed: edits.filter((edit) => edit.toFrameMs === null).length,
     updateBytes: Math.max(0, ...updateBytes),
   };
@@ -1127,6 +1208,255 @@ async function viewPass(frame: Frame, format: OfficeFormat) {
     await settle();
   }, format);
 }
+
+const benchRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..'
+);
+
+/** The XLSX fixtures' files and the mock rooms' states they open with. */
+const XLSX_FILES: Record<string, { source: string; state: string }> = {
+  'bio-office-xlsx': {
+    source: 'e2e/fixtures/files/rich-content/course-guide.xlsx',
+    state: 'src/mocks/fixtures/rich-xlsx-checkpoint.bin',
+  },
+  'bio-office-xlsx-long': {
+    source: 'bench/editor/fixtures/office/large-gradebook.xlsx',
+    state: 'src/mocks/fixtures/long-xlsx-checkpoint.bin',
+  },
+};
+
+// A peer's paste and a local one: 1,000 rows by 8 columns from the fixture's cell.
+const PASTE = { cols: 8, rows: 1000 };
+const pasted = (row: number, col: number) => String((row * 7 + col) % 97);
+
+/**
+ * A peer's update made by the XLSX engine in Node, as a co-editor's editor
+ * makes it: the fixture opened over its room's state under its own client,
+ * `edit` run, the local updates it emits returned.
+ */
+async function peerUpdates(
+  fixture: Fixture,
+  edit: (
+    handle: import('../../../vendor/betteroffice/packages/xlsx/src/wasm/loader').WorkbookHandle
+  ) => void
+) {
+  const engine = (await import(
+    '../../../vendor/betteroffice/packages/xlsx/src/wasm/loader'
+  )) as typeof import('../../../vendor/betteroffice/packages/xlsx/src/wasm/loader');
+  await engine.initWasm(
+    readFileSync(
+      path.join(
+        benchRoot,
+        'vendor/betteroffice/packages/xlsx/src/wasm/generated/xlsx_wasm_bg.wasm'
+      )
+    )
+  );
+  const files = XLSX_FILES[fixture.id];
+  const handle = engine.openWorkbook(
+    readFileSync(path.join(benchRoot, files.source)),
+    { clientId: 4_000_000_001, collaborative: true }
+  );
+  try {
+    handle.applyUpdate(readFileSync(path.join(benchRoot, files.state)));
+    const updates: Uint8Array[] = [];
+    handle.onUpdate((update, origin) => {
+      if (origin === 'local') updates.push(update);
+    });
+    edit(handle);
+    return updates;
+  } finally {
+    handle.dispose();
+  }
+}
+
+/**
+ * Posts updates to the runtime as the host would (from its parent window),
+ * bypassing the room: the peer's update reaches only the editor measured.
+ */
+async function postToRuntime(page: Page, updates: Uint8Array[]) {
+  const { epoch, version } = await page.evaluate(() => {
+    const ready = window.__officeBench.messages
+      .filter((message) => message.type === 'collaboration-ready')
+      .at(-1)!;
+    return { epoch: ready.epoch!, version: ready.version! };
+  });
+  const iframe = await runtimeFrame(page).frameElement();
+  await iframe.evaluate(
+    (element, { encoded, epoch, version }) => {
+      const target = element as HTMLIFrameElement;
+      for (const text of encoded) {
+        const bytes = Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
+        target.contentWindow!.postMessage(
+          { bytes: bytes.buffer, epoch, type: 'update', version },
+          new URL(target.src).origin,
+          [bytes.buffer]
+        );
+      }
+    },
+    {
+      encoded: updates.map((update) => Buffer.from(update).toString('base64')),
+      epoch,
+      version,
+    }
+  );
+}
+
+/**
+ * A local operation in the runtime frame, from `trigger` (a key press or a
+ * message posted to the frame) to the next painted grid, with the frame's
+ * long tasks in between.
+ */
+async function timeLocal(
+  page: Page,
+  frame: Frame,
+  trigger: () => Promise<void>,
+  startOn: 'keydown' | 'menu-command'
+) {
+  await frame.evaluate((startOn) => {
+    const local = {
+      paintsFrom: window.__xlsxPaints.length,
+      start: undefined as number | undefined,
+      tasks: [] as { duration: number; start: number }[],
+    };
+    (window as unknown as { __officeLocal: typeof local }).__officeLocal =
+      local;
+    const observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries())
+        local.tasks.push({ duration: entry.duration, start: entry.startTime });
+    });
+    observer.observe({ type: 'longtask' });
+    if (startOn === 'keydown')
+      window.addEventListener(
+        'keydown',
+        () => {
+          local.start ??= performance.now();
+        },
+        { capture: true, once: true }
+      );
+    else
+      window.addEventListener('message', function listen(event) {
+        if ((event.data as { type?: unknown })?.type !== 'menu-command')
+          return;
+        // The post's time: this listener runs after the runtime's handler.
+        local.start ??= event.timeStamp;
+        window.removeEventListener('message', listen);
+      });
+  }, startOn);
+  await trigger();
+  const paint = () =>
+    frame.evaluate(() => {
+      const local = (
+        window as unknown as {
+          __officeLocal: { paintsFrom: number; start?: number };
+        }
+      ).__officeLocal;
+      return local.start === undefined
+        ? undefined
+        : window.__xlsxPaints
+            .slice(local.paintsFrom)
+            .find((at) => at > local.start!);
+    });
+  await expect.poll(paint, { intervals: [50], timeout: 120_000 }).toBeDefined();
+  await page.waitForTimeout(1000);
+  return frame.evaluate(() => {
+    const local = (
+      window as unknown as {
+        __officeLocal: {
+          paintsFrom: number;
+          start: number;
+          tasks: { duration: number; start: number }[];
+        };
+      }
+    ).__officeLocal;
+    const painted = window.__xlsxPaints
+      .slice(local.paintsFrom)
+      .find((at) => at > local.start)!;
+    const blocking = local.tasks.filter(
+      (task) => task.start >= local.start - 1 && task.start < painted
+    );
+    return {
+      longestTaskMs: Math.round(
+        Math.max(0, ...blocking.map((task) => task.duration))
+      ),
+      longTaskMs: Math.round(
+        blocking.reduce((sum, task) => sum + task.duration, 0)
+      ),
+      toPaintMs: Math.round(painted - local.start),
+    };
+  });
+}
+
+/**
+ * Scrolls the grid down by `step` px every animation frame for `duration`
+ * ms: the grid's paints and the frames per second, the longest gap between
+ * paints and the frame's long tasks meanwhile.
+ */
+function scrollRun(frame: Frame, step: number, duration: number) {
+  return frame.evaluate(
+    async ({ duration, step }) => {
+      const scroll = document.querySelector<HTMLElement>(
+        '[data-testid="xlsx-scroll"]'
+      )!;
+      scroll.scrollTop = 0;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const from = window.__xlsxPaints.length;
+      const tasks: { duration: number; start: number }[] = [];
+      const observer = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries())
+          tasks.push({ duration: entry.duration, start: entry.startTime });
+      });
+      observer.observe({ type: 'longtask' });
+      const frames: number[] = [];
+      const start = performance.now();
+      await new Promise<void>((resolve) => {
+        const tick = (now: number) => {
+          frames.push(now);
+          if (now - start >= duration) return resolve();
+          scroll.scrollTop += step;
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+      const end = performance.now();
+      const scrolledPx = scroll.scrollTop;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      observer.disconnect();
+      const paints = window.__xlsxPaints
+        .slice(from)
+        .filter((at) => at >= start && at <= end);
+      const gaps = paints.slice(1).map((at, index) => at - paints[index]);
+      const blocking = tasks.filter(
+        (task) => task.start >= start && task.start < end
+      );
+      const seconds = (end - start) / 1000;
+      scroll.scrollTop = 0;
+      return {
+        framesPerSecond: Math.round(frames.length / seconds),
+        longestPaintGapMs: Math.round(Math.max(0, ...gaps)),
+        longestTaskMs: Math.round(
+          Math.max(0, ...blocking.map((task) => task.duration))
+        ),
+        longTaskMs: Math.round(
+          blocking.reduce((sum, task) => sum + task.duration, 0)
+        ),
+        paintsPerSecond: Math.round(paints.length / seconds),
+        scrolledPx,
+        stepPx: step,
+      };
+    },
+    { duration, step }
+  );
+}
+
+/** The 50,000-row sheet scrolled in the editor (see the file's comment). */
+const ROWS_FIXTURE = {
+  format: 'xlsx',
+  id: 'bio-office-xlsx-rows',
+  name: 'rows-50k.xlsx',
+} as const;
 
 for (const fixture of FIXTURES) {
   test(`${fixture.format} ${fixture.name}: open, View to Edit, typing`, async ({
@@ -1271,6 +1601,136 @@ for (const fixture of FIXTURES) {
     }
   });
 
+  // XLSX: large operations, a peer's and the user's own, in the open editor.
+  if (fixture.format === 'xlsx')
+    test(`${fixture.format} ${fixture.name}: large paste and row insert, a peer's and local`, async ({
+      context,
+      page,
+    }, testInfo) => {
+      test.setTimeout(600_000);
+      await openInView(page, fixture);
+      const mode = page.getByRole('button', { name: m.material_mode() });
+      await expect(mode).toBeEnabled({ timeout: 60_000 });
+      await clickUntil(page, ['ready', 'collaboration-ready'], () =>
+        mode.click()
+      );
+      await page.waitForTimeout(5000);
+      const frame = runtimeFrame(page);
+      const at = cellAt(fixture.cell);
+      const paste = await peerUpdates(fixture, (handle) => {
+        const edits = [];
+        for (let row = 0; row < PASTE.rows; row += 1)
+          for (let col = 0; col < PASTE.cols; col += 1)
+            edits.push({
+              col: at.col - 1 + col,
+              input: pasted(row, col),
+              row: at.row - 1 + row,
+            });
+        handle.editCells(0, edits);
+      });
+      const insert = await peerUpdates(fixture, (handle) => {
+        handle.applyOps([
+          { at: at.row - 1, count: 1, sheet: 0, type: 'insertRows' },
+        ]);
+      });
+      await installRemoteProbe(frame, fixture.format);
+      await postToRuntime(page, paste);
+      await awaitDelivery(frame, fixture.format, 0, 120_000);
+      await page.waitForTimeout(1000);
+      await postToRuntime(page, insert);
+      await awaitDelivery(frame, fixture.format, 1, 120_000);
+      await page.waitForTimeout(1000);
+      const [peerPaste, peerInsert] = await deliveries(frame, fixture.format);
+
+      // The user's own: a paste from the clipboard at the fixture's cell, and
+      // Insert › Row above from Capy's menu.
+      for (const origin of [
+        new URL(page.url()).origin,
+        new URL(frame.url()).origin,
+      ])
+        await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+          origin,
+        });
+      await placeCaret(page, frame, fixture);
+      await frame.evaluate(
+        ({ cols, rows }) => {
+          const lines = [];
+          for (let row = 0; row < rows; row += 1)
+            lines.push(
+              Array.from({ length: cols }, (_, col) =>
+                String((row * 7 + col) % 97)
+              ).join('\t')
+            );
+          return navigator.clipboard.writeText(lines.join('\n'));
+        },
+        PASTE
+      );
+      const localPaste = await timeLocal(
+        page,
+        frame,
+        () => page.keyboard.press('ControlOrMeta+v'),
+        'keydown'
+      );
+      const { version } = await page.evaluate(
+        () =>
+          window.__officeBench.messages.find(
+            (message) => message.type === 'collaboration-ready'
+          )!
+      );
+      const iframe = await frame.frameElement();
+      const localInsert = await timeLocal(
+        page,
+        frame,
+        () =>
+          iframe.evaluate(
+            (element, version) => {
+              const target = element as HTMLIFrameElement;
+              target.contentWindow!.postMessage(
+                { id: 'insertRowAbove', type: 'menu-command', version },
+                new URL(target.src).origin
+              );
+            },
+            version
+          ),
+        'menu-command'
+      );
+      const errors = await page.evaluate(() =>
+        window.__officeBench.messages
+          .filter((message) => message.type === 'error')
+          .map((message) => message.message)
+      );
+      const round = (delivery: (typeof peerPaste) | undefined) =>
+        delivery && {
+          applyMs: delivery.applyMs === null ? null : Math.round(delivery.applyMs),
+          longestTaskMs: Math.round(delivery.longestTaskMs),
+          longTaskMs: Math.round(delivery.longTaskMs),
+          toPaintMs:
+            delivery.toPaintMs === null ? null : Math.round(delivery.toPaintMs),
+        };
+      await reportMetrics(
+        testInfo,
+        `office-${fixture.format}-${fixture.id}-large-ops`,
+        {
+          budget: 'report-only',
+          errors,
+          fixture: fixture.name,
+          heap: await heap(page),
+          local: { insertRow: localInsert, paste: localPaste },
+          paste: PASTE,
+          peer: { insertRow: round(peerInsert), paste: round(peerPaste) },
+          runner: RUNNER,
+          updateBytes: {
+            insertRow: insert.reduce((sum, update) => sum + update.byteLength, 0),
+            paste: paste.reduce((sum, update) => sum + update.byteLength, 0),
+          },
+        },
+        'unthrottled'
+      );
+      expect(errors).toEqual([]);
+      expect(peerPaste?.toPaintMs).not.toBeNull();
+      expect(peerInsert?.toPaintMs).not.toBeNull();
+    });
+
   // The view-mode creep item (todo-office.md): heap growth over two full
   // passes, the first warming caches, the second showing what keeps growing.
   test(`${fixture.format} ${fixture.name}: view-mode heap over full passes`, async ({
@@ -1309,6 +1769,45 @@ for (const fixture of FIXTURES) {
     );
   });
 }
+
+// The 50,000-row sheet in the editor: open to editable, then scrolling it
+// slowly and fast, with the paints the grid keeps up with.
+test(`xlsx ${ROWS_FIXTURE.name}: open to Edit and scrolling`, async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(600_000);
+  const open = await openInView(page, ROWS_FIXTURE);
+  const mode = page.getByRole('button', { name: m.material_mode() });
+  await expect(mode).toBeEnabled({ timeout: 120_000 });
+  const [painted, replica] = await clickUntil(
+    page,
+    ['ready', 'collaboration-ready'],
+    () => mode.click()
+  );
+  await page.waitForTimeout(5000);
+  const editHeap = await heap(page);
+  const frame = runtimeFrame(page);
+  const scroll = {
+    fast: await scrollRun(frame, 600, 3000),
+    slow: await scrollRun(frame, 60, 3000),
+  };
+  await page.waitForTimeout(2000);
+  await reportMetrics(
+    testInfo,
+    `office-xlsx-${ROWS_FIXTURE.id}-scroll`,
+    {
+      budget: 'report-only',
+      edit: { firstPaintMs: painted.ms, readyMs: replica.ms },
+      fixture: ROWS_FIXTURE.name,
+      heap: { afterEdit: editHeap, afterScroll: await heap(page) },
+      open: { firstPaintMs: open.ms },
+      runner: RUNNER,
+      scroll,
+    },
+    'unthrottled'
+  );
+  expect(scroll.slow.paintsPerSecond).toBeGreaterThan(0);
+});
 
 // A plain text file to switch to: opening it closes the Office file, as the
 // workspace has no close button. Seeded in the same workspace (src/mocks/db.ts).
