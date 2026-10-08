@@ -191,17 +191,6 @@ check); it applies at the first promotion.
   changes. The table ops apply as plain edits in suggesting mode (unused in
   Capy). Notes in
   `capy-docx-review-harnesses/2026-10-05-office-batch/docx-table-menu/`.
-- **DOCX Enter racing a peer's paragraph change** (decided 2026-10-06, fork):
-  Enter at a paragraph's end inserts the new mark after the existing one, so
-  a peer's concurrent pPr change stays on the text instead of landing on the
-  new empty paragraph. Changes how Enter is stored: matrix plus two-peer work.
-  Same item: any two concurrent splits of one paragraph (Enter at its end or
-  mid-paragraph on two peers) give both new marks the paragraph's paraId, so
-  the save writes the same `w14:paraId` twice and, in the session, Backspace
-  or Delete keyed by that id acts on the wrong paragraph (joining the second
-  resolves to the first: "paragraph body:p0 is the first paragraph of its
-  story"); the repair helper (`dedupe_para_ids`) has no caller outside tests.
-  Found by docx-enter-copy (`capy-docx-review-harnesses/2026-10-05-office-batch/docx-enter-copy/`).
 - **Unplaceable sync step 2 (lowest priority).** A client whose own sync step 2
   the room cannot place (it holds content out of order) is closed after 2 tries
   (`resyncUnheld`, `collaboration/src/officeRoots.ts`) and then reconnects
@@ -315,15 +304,14 @@ check); it applies at the first promotion.
   (Shift+End from text before a break selects across it; Word stops at the
   line end). Needs the display line plus a caret affinity at a wrap point.
 - **Enter right after a mid-paragraph break** (docx-breaks review,
-  2026-10-06): it leaves `Aa<pageBreak>¶Bb¶`, so an empty line paints at the
-  top of the next page and "Bb" sits one line down; reopening the saved file
-  shows "Bb" at the top, because the seed moves the break onto the next
-  paragraph. Split before the break instead (the shape the seed makes, and no
-  text ahead of a break in its slot, as decided 2026-09-28); queue with the
-  matrix's `break-paragraph` rows. Reproduced 2026-10-08 (editor
-  `Aa[pageBreak]¶Bb¶`, reopened `Aa¶[pageBreak]Bb¶`); splitting before the
-  break makes that Enter change nothing on screen, unlike Word, so it waits
-  for a decision (options in the Rust round's `fork-small/PROGRESS.md`).
+  2026-10-06; decided 2026-10-08: the seed keeps a page break ending a
+  paragraph's text where Word put it): the editor gives `Aa[pageBreak]¶Bb¶`,
+  the reopened file `Aa¶[pageBreak]Bb¶`. The seed change is ready (fork-small
+  `patches/seed-keeps-trailing-page-break.patch`, both seeders) but makes the
+  bridge paint that paragraph's mark as an empty line at the top of the next
+  page, where Word (no `splitPgBreakAndParaMark`) keeps the mark on the
+  break's page; `mid_paragraph_breaks.rs` pins Word's layout. Waits for the
+  layout decision in the Rust round's `fork-small/PROGRESS.md`.
 - **Recovery logging** (decided 2026-10-05): log each draft from another epoch
   entering copy-only recovery (no late merge), in the `edit_incidents` table.
 - **Editing incident log** (decided 2026-10-05, with the optimization round):

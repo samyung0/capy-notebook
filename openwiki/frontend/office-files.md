@@ -366,10 +366,12 @@ a page break copies as two soft breaks: the editor's `yrsSelectionText` writes
 one at each break that text comes before in its paragraph (a break opening the
 paragraph follows the previous mark's newline), view mode one for each step in
 the part number (`textLayer.ts`), and the editor's copy stays not plain text,
-so ⌘X over a break only copies. Inline shapes and charts copy nothing in edit
-mode; in view mode a gap between two parts holding only them copies one
-newline (they paint on a line of their own), and beside a break they add none,
-so view and edit mode agree wherever a break is in the gap. Enter at the
+so ⌘X over a break only copies. An inline chart paints on a line of its own:
+a gap between two parts holding only charts copies one newline in both modes
+(`yrsSelectionText` writes it before the text after the chart), and beside a
+break it adds none; a chart opening a paragraph counts as no text before a
+break. Other inline shapes copy nothing in edit mode, while view mode copies
+one newline for a gap holding only them. Enter at the
 start of a heading after a trailing column break puts the empty line after
 that break, even if the preceding text changed.
 A bookmark opening before a paragraph's leading breaks stays before them, and an empty
@@ -448,7 +450,17 @@ the new paragraph restores the document; the editor's Enter then gives the
 next style to neither paragraph. Every split keeps the paragraph's borders on
 both halves, as Word copies the paragraph mark (mid-paragraph, at its start or
 end and before a block), and leaves a section with the mark that ends it (the
-new mark never takes `sectPr` or `sectionBreakType`).
+new mark never takes `sectPr` or `sectionBreakType`). Enter at a paragraph's
+end inserts the new mark after the existing one (`split_paragraph` in
+`ops/paragraph.rs`): the text keeps its mark and id, so a peer's concurrent
+paragraph change stays on the text and two peers' Enters at one end give each
+new paragraph its own id. A section's last paragraph, and suggesting mode
+(whose Backspace retracts the mark it deletes), keep inserting before the
+existing mark. Mid-paragraph the new mark ends the first half with the
+paragraph's id, so two peers splitting one paragraph mid-text leave two
+paragraphs with that id in the session; the save keeps a source `w14:paraId`
+on the first and mints a hex id for each repeat (`savedParaId` in
+`yrsToDocument.ts`), as it does for editor ids.
 
 A range delete (a selection delete or a cut) ending at the start of such a
 slot keeps the paragraph mark before it (`kept_mark`), so the text left stays
