@@ -187,3 +187,21 @@ func TestQuizQuestionsLinkFiguresOnlyUnderTheBank(t *testing.T) {
 		t.Fatal("a figure link outside the bank was accepted")
 	}
 }
+
+func TestClosedPartMarkschemeNamesThePartAndTheRule(t *testing.T) {
+	raw, err := os.ReadFile("testdata/short.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct{ Question map[string]any }
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatal(err)
+	}
+	part := f.Question["parts"].([]any)[0].(map[string]any)
+	part["markscheme"] = []any{map[string]any{"text": "right", "marks": part["marks"]}}
+	err = Validate(f.Question, Policy{})
+	want := fmt.Sprintf("part %v: a short answer has no markscheme; explain it in solution", part["id"])
+	if err == nil || err.Error() != "invalid question: "+want {
+		t.Fatalf("got %v, want %q", err, want)
+	}
+}

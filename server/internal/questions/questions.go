@@ -245,6 +245,11 @@ func Validate(q map[string]any, policy Policy) error {
 				optional += " itemAwards"
 			}
 		}
+		if _, has := p["markscheme"]; has && !open {
+			// Models attach one to every part; name the part and the rule so
+			// one rewrite fixes them all.
+			return fail(fmt.Sprintf("part %v: a %v answer has no markscheme; explain it in solution", p["id"], a["type"]))
+		}
 		if err := keys(p, required, optional); err != nil {
 			return err
 		}
