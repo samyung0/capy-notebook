@@ -118,8 +118,9 @@ fn serve_on_this_thread(mut call: impl FnMut(&Frame) -> Answer) -> io::Result<()
 /// and private anonymous mappings (what engine allocations use), so an engine
 /// past it fails its allocation and the process aborts; the pool answers that
 /// call as transient and starts a new process. `oom_score_adj` 1000 makes an
-/// engine process, not the server, the kernel's first choice when the
-/// container's cgroup limit is reached. Elsewhere (Windows dev builds) no cap.
+/// engine process, not the server, the kernel's first choice when the host
+/// runs out of memory (the container has no memory limit, Epo 2026-10-08).
+/// Elsewhere (Windows dev builds) no cap.
 fn apply_limits() {
     #[cfg(target_os = "linux")]
     {

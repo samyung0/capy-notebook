@@ -384,9 +384,10 @@ The prod file runs `/migrate` once per deploy, starts the API with
    Run exactly one `collaboration` container per environment. A redeploy
    (`docker compose up`) replaces it: the old container gets SIGTERM, flushes
    its rooms and exits before the new one starts, so two never serve at once.
-   The sidecar has no Hocuspocus Redis extension, so a second instance would
-   not share document or awareness state with the first. Its stale entry in
-   the instance registry lingers up to 60 s after a restart, which only slows
+   The Rust collaboration server keeps documents and awareness in its own
+   rooms; Redis only carries evictions, relays and handoff, so a second
+   instance would not share document or awareness state with the first. Its
+   stale entry in the instance registry lingers up to 60 s after a restart, which only slows
    an eviction or handoff in that window (they wait for its acknowledgement and
    retry). Scaling out later means document-sticky routing, every connection
    to a room reaching the instance that holds it, not Redis fan-out.
@@ -399,7 +400,7 @@ The prod file runs `/migrate` once per deploy, starts the API with
    cores, so a busy collaboration service never takes the gateway, Postgres or
    retrieval off a core. Coolify's own resource-limit fields do not apply to a
    Docker Compose resource; the limit has to be in the compose file. The
-   second core gives the Office engine worker and GC their own core: in the
+   second core gives the Office engines their own core: in the
    2026-10-05 capacity run (`bench/collaboration/reports/2026-10-05-prod-capacity.md`)
    it roughly halved small-room p95 and moved the small-room limit from about
    80 to 160 rooms of 5. Docker refuses to start a container whose `cpuset`
@@ -411,6 +412,19 @@ The prod file runs `/migrate` once per deploy, starts the API with
    ```
 
    It prints `2,3` in production and nothing on UAT.
+
+   The collaboration service has no container memory limit (Epo 2026-10-08).
+   Its Office engines are child processes of the same binary, each with its
+   own data cap (`RLIMIT_DATA`, `COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES`) and
+   `oom_score_adj` 1000, so under memory pressure the kernel kills an engine
+   child first; the room's call fails as transient and a new process starts.
+   Postgres and the gateway run at `oom_score_adj` -500
+   (`docker-compose.prod.yml`). Size a host for the collaboration budget:
+   the engines (production 2 save + 1 background at 4 GiB each, UAT 1 + 1 at
+   3 GiB, rendered by `scripts/env/config.py`), the server itself (~0.7 GiB)
+   and agent markdown's V8 (~0.8 GiB, its heap capped). Production has
+   7.6 GiB of RAM and 12 GiB of swap, UAT 3.9 GB and 6 GiB, so the engine caps
+   lean on swap; they bound a runaway call, not the expected footprint.
 
    A warm deploy rebuilds only what changed: `go build`, the Vite/collab
    bundles and the pipeline source copy. Dependency installs, the BetterOffice

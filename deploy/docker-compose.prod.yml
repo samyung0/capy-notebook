@@ -55,6 +55,9 @@ services:
       interval: 5s
       timeout: 3s
       retries: 12
+    # Under memory pressure the kernel kills an Office engine child
+    # (oom_score_adj 1000) long before Postgres or the gateway (Epo 2026-10-08).
+    oom_score_adj: -500
     restart: unless-stopped
 
   # Named for this stack: Coolify's own redis answers to the bare alias "redis"
@@ -151,6 +154,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    # See db: the gateway outlives an Office engine child under memory pressure.
+    oom_score_adj: -500
     restart: unless-stopped
 
   collaboration:
