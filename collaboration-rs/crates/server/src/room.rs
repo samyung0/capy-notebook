@@ -1758,6 +1758,16 @@ impl Room {
         }
         if !self.store.dirty && !markers::pending(&self.doc) {
             self.answer_store_waiters(Ok(()));
+            // A clean source room's requests are durability receipts at its
+            // checkpoint, as storeSource answered them (a reconnect's flush
+            // after a reload, an Edit open with no edit).
+            if let Kindly::Source(source) = &self.kind
+                && self.store.retry_at.is_none()
+                && !self.receipts.is_empty()
+            {
+                let (ids, checkpoint) = (self.receipts.clone(), source.checkpoint);
+                self.source_receipt(&ids, checkpoint);
+            }
             return;
         }
         if matches!(self.kind, Kindly::Source(_)) {

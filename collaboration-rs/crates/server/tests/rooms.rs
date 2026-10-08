@@ -46,8 +46,13 @@ impl Drop for Server {
     }
 }
 
-#[allow(clippy::zombie_processes)]
 async fn start(env: &Env) -> Server {
+    start_with(env, env.api.as_deref()).await
+}
+
+/// The server with `api` as its gateway (a stand-in for source rooms).
+#[allow(clippy::zombie_processes)]
+async fn start_with(env: &Env, api: Option<&str>) -> Server {
     // A free port per server, so the tests run in parallel.
     let port = std::net::TcpListener::bind(("127.0.0.1", 0))
         .and_then(|listener| listener.local_addr())
@@ -61,10 +66,7 @@ async fn start(env: &Env) -> Server {
         .env("COLLABORATION_SECRET", SECRET)
         .env("COLLABORATION_ALLOWED_ORIGINS", ORIGIN)
         // Without the API, projections fail and are recorded.
-        .env(
-            "API_URL",
-            env.api.as_deref().unwrap_or("http://127.0.0.1:9"),
-        )
+        .env("API_URL", api.unwrap_or("http://127.0.0.1:9"))
         .env("COLLABORATION_DEBOUNCE_MS", "200")
         .env("COLLABORATION_MAX_DEBOUNCE_MS", "1000")
         .env("COLLABORATION_PROJECTION_IDLE_MS", "60000")
@@ -750,4 +752,276 @@ async fn an_agent_edit_commits_its_row_reaches_the_live_room_and_replays_by_oper
     let (status, view) = internal(server.port, "/internal/documents/inspect", &inspect).await;
     assert_eq!(status, 200, "{view}");
     assert_eq!(view["blocks"][0]["text"], "replaced", "{view}");
+}
+
+// ------------------------------------------------------------ source rooms
+
+/// A stand-in for the Go API's internal source routes, text files only: the
+/// session, access, the base bytes and the delta-save checkpoint.
+#[derive(Clone)]
+struct Gateway {
+    database: String,
+    url: String,
+    blobs: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<u8>>>>,
+}
+
+async fn gateway_db(gateway: &Gateway) -> tokio_postgres::Client {
+    let (client, connection) = tokio_postgres::connect(&gateway.database, tokio_postgres::NoTls)
+        .await
+        .expect("postgres");
+    tokio::spawn(connection);
+    client
+}
+
+async fn gateway_get(
+    axum::extract::State(gateway): axum::extract::State<Gateway>,
+    axum::extract::Path((id, endpoint)): axum::extract::Path<(String, String)>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    use base64::Engine;
+    if endpoint == "access" {
+        return axum::http::StatusCode::NO_CONTENT.into_response();
+    }
+    if endpoint != "bootstrap" {
+        return axum::http::StatusCode::NOT_FOUND.into_response();
+    }
+    let row = gateway_db(&gateway)
+        .await
+        .query_one(
+            "SELECT d.format,d.epoch,d.checkpoint,d.indexed_checkpoint,d.base_revision,d.base_source_sha256,d.state,d.state_seed_sha256,d.pending_effects,d.net_tokens,d.rebuild_pending,f.workspace_id FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1",
+            &[&id],
+        )
+        .await
+        .expect("source row");
+    let epoch: i64 = row.get(1);
+    let state: Option<Vec<u8>> = row.get(6);
+    axum::Json(serde_json::json!({
+        "access": "write",
+        "baseRevision": row.get::<_, i64>(4),
+        "baseSourceSHA256": row.get::<_, String>(5),
+        "checkpoint": row.get::<_, i64>(2),
+        "epoch": epoch,
+        "fileId": id,
+        "format": row.get::<_, String>(0),
+        "indexedCheckpoint": row.get::<_, i64>(3),
+        "netTokens": row.get::<_, i64>(9),
+        "pendingEffects": row.get::<_, serde_json::Value>(8),
+        "rebuildPending": row.get::<_, bool>(10),
+        "room": format!("source:{id}:epoch:{epoch}"),
+        "sourceURL": format!("{}/blob/{id}", gateway.url),
+        "state": state.map(|state| base64::engine::general_purpose::STANDARD.encode(state)),
+        "stateSeedSHA256": row.get::<_, Option<String>>(7),
+        "workspaceId": row.get::<_, String>(11),
+    }))
+    .into_response()
+}
+
+/// Go's SaveSourceCheckpoint under the delta-save contract.
+async fn gateway_post(
+    axum::extract::State(gateway): axum::extract::State<Gateway>,
+    axum::extract::Path((id, endpoint)): axum::extract::Path<(String, String)>,
+    axum::Json(body): axum::Json<serde_json::Value>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    use base64::Engine;
+    if endpoint != "checkpoint" {
+        return axum::http::StatusCode::NOT_FOUND.into_response();
+    }
+    let mut client = gateway_db(&gateway).await;
+    let txn = client.transaction().await.expect("transaction");
+    let row = txn
+        .query_one(
+            "SELECT epoch,checkpoint FROM source_documents WHERE file_id=$1 FOR UPDATE",
+            &[&id],
+        )
+        .await
+        .expect("source row");
+    let (epoch, checkpoint): (i64, i64) = (row.get(0), row.get(1));
+    if checkpoint != body["expectedCheckpoint"].as_i64().unwrap_or(-1) {
+        let refusal = serde_json::json!({ "errors": [{ "message": "checkpoint_moved" }] });
+        return (axum::http::StatusCode::CONFLICT, axum::Json(refusal)).into_response();
+    }
+    let update = base64::engine::general_purpose::STANDARD
+        .decode(body["update"].as_str().unwrap_or_default())
+        .expect("update");
+    let next = checkpoint + 1;
+    txn.execute(
+        "INSERT INTO source_document_updates(file_id,epoch,checkpoint,update) VALUES($1,$2,$3,$4)",
+        &[&id, &epoch, &next, &update],
+    )
+    .await
+    .expect("row");
+    txn.execute(
+        "UPDATE source_documents SET checkpoint=$2,pending_effects=$3,net_tokens=$4,log_bytes=log_bytes+$5,log_rows=log_rows+1,seed_bytes=COALESCE($6,seed_bytes),base_source_sha256=COALESCE($7,base_source_sha256),last_edited_at=now() WHERE file_id=$1",
+        &[
+            &id,
+            &next,
+            &body["pendingEffects"],
+            &body["netTokens"].as_i64().unwrap_or(0),
+            &(update.len() as i64),
+            &body["seedBytes"].as_i64(),
+            &body["baseSourceSHA256"].as_str(),
+        ],
+    )
+    .await
+    .expect("checkpoint");
+    txn.commit().await.expect("commit");
+    axum::Json(serde_json::json!({ "checkpoint": next })).into_response()
+}
+
+async fn gateway_blob(
+    axum::extract::State(gateway): axum::extract::State<Gateway>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let bytes = gateway.blobs.lock().expect("blobs").get(&id).cloned();
+    match bytes {
+        Some(bytes) => bytes.into_response(),
+        None => axum::http::StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// The stand-in gateway, listening.
+async fn gateway(env: &Env) -> Gateway {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("listen");
+    let gateway = Gateway {
+        database: env.database.clone(),
+        url: format!("http://{}", listener.local_addr().expect("address")),
+        blobs: Default::default(),
+    };
+    let app = axum::Router::new()
+        .route(
+            "/internal/collaboration/files/{id}/{endpoint}",
+            axum::routing::get(gateway_get).post(gateway_post),
+        )
+        .route("/blob/{id}", axum::routing::get(gateway_blob))
+        .with_state(gateway.clone());
+    tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+    gateway
+}
+
+/// A text file owned by a fresh user; returns (user, file id).
+async fn text_file(env: &Env, gateway: &Gateway, text: &str) -> (String, String) {
+    let client = db(env).await;
+    let suffix = uuid_like();
+    let (user, workspace, file) = (
+        format!("u_it_{suffix}"),
+        format!("ws_it_{suffix}"),
+        format!("f_it_{suffix}"),
+    );
+    client
+        .execute("INSERT INTO users (id, name) VALUES ($1, 'IT')", &[&user])
+        .await
+        .expect("user");
+    client
+        .execute(
+            "INSERT INTO workspaces (id,user_id,name,privacy) VALUES ($1,$2,'IT','private')",
+            &[&workspace, &user],
+        )
+        .await
+        .expect("workspace");
+    let sha: String = {
+        use sha2::Digest;
+        sha2::Sha256::digest(text.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    };
+    client
+        .execute(
+            "INSERT INTO files (id,workspace_id,user_id,name,kind,size_bytes,status,blob_path) VALUES ($1,$2,$3,'it.md','text',$4,'ready','p/'||$1)",
+            &[&file, &workspace, &user, &(text.len() as i64)],
+        )
+        .await
+        .expect("file");
+    client
+        .execute(
+            "INSERT INTO source_documents (file_id,user_id,format,base_revision,base_blob_path,base_source_sha256) VALUES ($1,$2,'text',1,'p/'||$1,$3)",
+            &[&file, &user, &sha],
+        )
+        .await
+        .expect("source document");
+    gateway
+        .blobs
+        .lock()
+        .expect("blobs")
+        .insert(file.clone(), text.as_bytes().to_vec());
+    (user, file)
+}
+
+/// Sends a checkpoint request and waits for the receipt naming it.
+async fn source_receipt(client: &mut Client, id: &str) -> Option<serde_json::Value> {
+    let request = serde_json::json!({ "flush": true, "id": id, "type": "checkpoint-request" });
+    let mut payload = Vec::new();
+    varbytes(&mut payload, request.to_string().as_bytes());
+    client.send(9, &payload).await;
+    loop {
+        let message = text_payload(&client.until(9).await?);
+        let receipt: serde_json::Value = serde_json::from_str(&message).ok()?;
+        if receipt["type"] == "checkpoint-persisted"
+            && receipt["checkpointIds"]
+                .as_array()
+                .is_some_and(|ids| ids.iter().any(|known| known == id))
+        {
+            return Some(receipt);
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_clean_source_room_answers_a_checkpoint_request_after_a_reload() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file(&env, &gateway, "hello").await;
+    let room = format!("source:{file}:epoch:1");
+
+    // An Edit open with no edit: the receipt names the base (checkpoint 0).
+    let mut a = Client::open(server.port).await;
+    assert_eq!(a.joined(&room, &token(&room, &user, "write")).await, 1);
+    assert!(
+        a.settle(|c| source_text(c) == "hello").await,
+        "{}",
+        source_text(&a)
+    );
+    let receipt = source_receipt(&mut a, "open").await.expect("a receipt");
+    assert_eq!(receipt["checkpoint"], 0);
+
+    // A saved edit, then the socket goes and the room unloads.
+    let before = a.doc.transact().state_vector();
+    {
+        let text = a.doc.get_or_insert_text("source");
+        let mut txn = a.doc.transact_mut();
+        let end = text.len(&txn);
+        text.insert(&mut txn, end, " world");
+    }
+    let update = a.doc.transact().encode_state_as_update_v1(&before);
+    a.send(5, &sync(2, &update)).await;
+    let saved = source_receipt(&mut a, "edit")
+        .await
+        .expect("the edit's receipt");
+    assert_eq!(saved["checkpoint"], 1);
+    drop(a);
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+
+    // The reconnect finds nothing to store and still gets its receipt.
+    let mut b = Client::open(server.port).await;
+    assert_eq!(b.joined(&room, &token(&room, &user, "write")).await, 1);
+    assert!(
+        b.settle(|c| source_text(c) == "hello world").await,
+        "{}",
+        source_text(&b)
+    );
+    let receipt = source_receipt(&mut b, "reconnect")
+        .await
+        .expect("a receipt for a clean room");
+    assert_eq!(receipt["checkpoint"], 1);
+}
+
+fn source_text(client: &Client) -> String {
+    let root = client.doc.get_or_insert_text("source");
+    let txn = client.doc.transact();
+    root.get_string(&txn)
 }
