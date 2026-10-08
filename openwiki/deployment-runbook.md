@@ -465,8 +465,8 @@ The prod file runs `/migrate` once per deploy, starts the API with
    docker image prune -f
    ```
 
-   Production deploys rarely and has no cron. Its `daemon.json` still lacks
-   the BuildKit cap above; add it before launch.
+   Production deploys rarely and has no cron; its `daemon.json` has had the
+   BuildKit cap above since 2026-10-08.
 
 7. Disable Coolify **Auto Deploy**. The GitHub deployment workflow updates
    `git_commit_sha`, starts the deployment through the Coolify API, polls its
