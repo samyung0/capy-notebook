@@ -5,9 +5,17 @@
 //! the same entry bundled by `markdown/build.mjs` as one script. The server
 //! loads the bundle once and keeps the converter.
 //!
-//! Limits (Epo, 2026-10-07): input over [MAX_INPUT_BYTES] is refused, and a
-//! conversion stops after [TIME_LIMIT] or at [HEAP_LIMIT] of JS heap. Each
-//! is its own [MarkdownError]; the caller fails the edit, no retry.
+//! Limits (Epo, 2026-10-07 and 2026-10-08): input over [MAX_INPUT_BYTES] is
+//! refused, so is what the pre-scan (`crate::prescan`) finds past the note
+//! limits, and a conversion stops [TIME_LIMIT] after it was submitted or at
+//! [HEAP_LIMIT] of JS heap. Each is its own [MarkdownError]; the caller fails
+//! the edit, no retry.
+//!
+//! Memory: V8 runs inside the server process (Epo, 2026-10-08), so budget
+//! about 0.8 GiB for it in the container limit. The heap limit caps the JS
+//! heap, not the process: two conversions tripping it measured a 558 MiB
+//! working set and 809 MiB private (REVIEW1 D3), and the near-limit callback
+//! lets the heap grow past the limit while the script unwinds.
 
 use std::cell::RefCell;
 use std::ffi::c_void;
@@ -15,7 +23,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Once};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -24,7 +32,8 @@ pub use crate::plate::Content;
 
 /// Input over this many bytes (UTF-8) is refused: 1 MiB.
 pub const MAX_INPUT_BYTES: usize = 1 << 20;
-/// A conversion stops after this long.
+/// A conversion stops this long after it was submitted, the wait behind
+/// earlier conversions included (Epo, 2026-10-08).
 pub const TIME_LIMIT: Duration = Duration::from_secs(10);
 /// A conversion stops when the engine's JS heap reaches this: 512 MiB.
 pub const HEAP_LIMIT: usize = 512 << 20;
@@ -302,16 +311,21 @@ impl Engine {
         })
     }
 
-    /// One conversion under the time limit. `false` beside the result: a
-    /// limit tripped and the isolate must not be reused.
-    fn convert(&mut self, source: &str) -> (Result<Converted, MarkdownError>, bool) {
+    /// One conversion until `deadline`. `false` beside the result: a limit
+    /// tripped and the isolate must not be reused.
+    fn convert(
+        &mut self,
+        source: &str,
+        deadline: Instant,
+    ) -> (Result<Converted, MarkdownError>, bool) {
         let (done, wait) = mpsc::channel::<()>();
         let handle = self.isolate.thread_safe_handle();
         let fired = Arc::new(AtomicBool::new(false));
         let watchdog = {
             let fired = fired.clone();
+            let left = deadline.saturating_duration_since(Instant::now());
             thread::spawn(move || {
-                if let Err(RecvTimeoutError::Timeout) = wait.recv_timeout(TIME_LIMIT) {
+                if let Err(RecvTimeoutError::Timeout) = wait.recv_timeout(left) {
                     fired.store(true, Ordering::SeqCst);
                     handle.terminate_execution();
                 }
@@ -323,9 +337,18 @@ impl Engine {
         let timed_out = fired.load(Ordering::SeqCst);
         let out_of_memory = self.limits.out_of_memory.load(Ordering::SeqCst);
         let result = match outcome {
-            Ok(json) => {
-                serde_json::from_str(&json).map_err(|e| MarkdownError::Engine(e.to_string()))
-            }
+            Ok(json) => serde_json::from_str(&json).map_err(|error| {
+                // serde_json stops at 128 levels; the import nests past it only
+                // for a source that nests far past a note's depth limit.
+                if error.to_string().starts_with("recursion limit exceeded") {
+                    MarkdownError::Invalid(format!(
+                        "the markdown nests deeper than a note allows ({} levels)",
+                        crate::limits::MAX_DEPTH
+                    ))
+                } else {
+                    MarkdownError::Engine(error.to_string())
+                }
+            }),
             Err(_) if out_of_memory => Err(MarkdownError::OutOfMemory),
             Err(_) if timed_out => Err(MarkdownError::TimedOut),
             Err(error) => Err(error),
@@ -359,7 +382,37 @@ impl Engine {
 
 struct Job {
     source: String,
+    /// [TIME_LIMIT] after submission.
+    deadline: Instant,
     reply: mpsc::SyncSender<Result<Converted, MarkdownError>>,
+}
+
+/// Runs `job` on the engine (loading one if the last tripped a limit), or
+/// answers [MarkdownError::TimedOut] without running when its deadline passed
+/// in the queue or while the engine loaded. Returns the engine to keep.
+fn run(engine: Option<Engine>, bundle: &str, job: Job) -> Option<Engine> {
+    let expired = || Instant::now() >= job.deadline;
+    if expired() {
+        let _ = job.reply.send(Err(MarkdownError::TimedOut));
+        return engine;
+    }
+    let mut current = match engine {
+        Some(engine) => engine,
+        None => match Engine::load(bundle) {
+            Ok(engine) => engine,
+            Err(error) => {
+                let _ = job.reply.send(Err(error));
+                return None;
+            }
+        },
+    };
+    if expired() {
+        let _ = job.reply.send(Err(MarkdownError::TimedOut));
+        return Some(current);
+    }
+    let (result, reusable) = current.convert(&job.source, job.deadline);
+    let _ = job.reply.send(result);
+    reusable.then_some(current)
 }
 
 /// The import, loaded in a V8 isolate on its own thread; calls take turns.
@@ -392,21 +445,7 @@ impl Converter {
                     }
                 };
                 for job in queue {
-                    let mut current = match engine.take() {
-                        Some(engine) => engine,
-                        None => match Engine::load(&bundle) {
-                            Ok(engine) => engine,
-                            Err(error) => {
-                                let _ = job.reply.send(Err(error));
-                                continue;
-                            }
-                        },
-                    };
-                    let (result, reusable) = current.convert(&job.source);
-                    if reusable {
-                        engine = Some(current);
-                    }
-                    let _ = job.reply.send(result);
+                    engine = run(engine.take(), &bundle, job);
                 }
             })
             .map_err(|e| MarkdownError::Engine(e.to_string()))?;
@@ -420,14 +459,17 @@ impl Converter {
     }
 
     /// `convertAgentMarkdown(source)`: the document and a draft per quiz or
-    /// flashcards fence. Blocks while the conversion runs (up to
-    /// [TIME_LIMIT] plus the wait for earlier calls).
+    /// flashcards fence. Blocks until it is done, at most [TIME_LIMIT] (the
+    /// wait for earlier calls included). A source the pre-scan refuses fails
+    /// at once (crate::prescan).
     pub fn convert(&self, source: &str) -> Result<Converted, MarkdownError> {
+        let deadline = Instant::now() + TIME_LIMIT;
         if source.len() > MAX_INPUT_BYTES {
             return Err(MarkdownError::TooLarge {
                 bytes: source.len(),
             });
         }
+        crate::prescan::prescan(source).map_err(MarkdownError::Invalid)?;
         let stopped = || MarkdownError::Engine("the engine thread stopped".into());
         let (reply, answer) = mpsc::sync_channel(1);
         self.jobs
@@ -435,6 +477,7 @@ impl Converter {
             .ok_or_else(stopped)?
             .send(Job {
                 source: source.to_owned(),
+                deadline,
                 reply,
             })
             .map_err(|_| stopped())?;
@@ -448,5 +491,31 @@ impl Drop for Converter {
         if let Some(worker) = self.worker.take() {
             let _ = worker.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A job whose deadline passed while it waited answers TimedOut without
+    /// running, and keeps the engine.
+    #[test]
+    fn an_expired_job_does_not_run() {
+        init_v8();
+        let bundle =
+            "globalThis.__markdown = { convertAgentMarkdown() { throw new Error('ran'); } };";
+        let engine = Engine::load(bundle).unwrap();
+        let (reply, answer) = mpsc::sync_channel(1);
+        let job = Job {
+            source: "x".into(),
+            deadline: Instant::now() - Duration::from_millis(1),
+            reply,
+        };
+        assert!(run(Some(engine), bundle, job).is_some());
+        assert!(matches!(
+            answer.recv().unwrap(),
+            Err(MarkdownError::TimedOut)
+        ));
     }
 }

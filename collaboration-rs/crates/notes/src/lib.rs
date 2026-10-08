@@ -19,6 +19,7 @@ pub mod limits;
 pub mod markdown;
 pub mod material;
 pub mod plate;
+pub mod prescan;
 pub mod questions;
 pub mod slate;
 pub mod slate_yjs;
