@@ -222,14 +222,6 @@ check); it applies at the first promotion.
   leave them charged with no expiry; maintenance-window resets release them
   for the reset formats only. Decide with Epo whether a publication
   invalidates Undo (it rewrites the base the inverse applies to).
-- **A field that shows nothing is laid out one digit wide** (pre-existing,
-  found by docx-toc 2026-10-06): ooxml-text measures an empty field result as
-  `"1"` (`prepare_field_run`, `crates/ooxml-text/src/measure/prepare.rs`), so a
-  table of contents' own marker (and a REF over links, a split field's first
-  half) takes ~9 px at 12 pt. In every TOC's first entry, Word's or Insert's,
-  the page number then sits one digit left of the others. Fix: measure an
-  empty result as nothing unless the field is PAGE/NUMPAGES (whose text each
-  page resolves), in the JSON and typed measure paths alike.
 - **DOCX section break from the toolbar may not reach the saved file**
   (found by docx-toc review 2, probes J/J2 in
   `capy-docx-review-harnesses/2026-10-05-office-batch/docx-toc/review-2/`):
@@ -317,21 +309,21 @@ check); it applies at the first promotion.
   continued; viewer list numbers may ignore start values (8, 9), legal
   numbering and Chinese numbering (seen with minimal numbering XML — confirm on
   a real Word file first).
-- **DOCX arrows over breaks** (docx-breaks review, 2026-10-06): Left/Right step
-  through `session.paragraphs(story)[i].text`, which leaves break units out
-  (`YrsInput.tsx:829`, `:850-856`), so ArrowRight stops before the last
-  character of a paragraph holding a page, column or soft line break, and
-  Alt/Ctrl+Arrow word steps are off by one per break. Step through the story's
-  unit segments instead. Home/End go to the paragraph's start and end, not the
-  line's (Shift+End from text before a break selects across it; Word stops at
-  the line end).
+- **DOCX Home/End go to the paragraph, not the line** (docx-breaks review,
+  2026-10-06; Left/Right and word steps over breaks fixed by fork-small
+  2026-10-08): Home/End go to the paragraph's start and end, not the line's
+  (Shift+End from text before a break selects across it; Word stops at the
+  line end). Needs the display line plus a caret affinity at a wrap point.
 - **Enter right after a mid-paragraph break** (docx-breaks review,
   2026-10-06): it leaves `Aa<pageBreak>¶Bb¶`, so an empty line paints at the
   top of the next page and "Bb" sits one line down; reopening the saved file
   shows "Bb" at the top, because the seed moves the break onto the next
   paragraph. Split before the break instead (the shape the seed makes, and no
   text ahead of a break in its slot, as decided 2026-09-28); queue with the
-  matrix's `break-paragraph` rows.
+  matrix's `break-paragraph` rows. Reproduced 2026-10-08 (editor
+  `Aa[pageBreak]¶Bb¶`, reopened `Aa¶[pageBreak]Bb¶`); splitting before the
+  break makes that Enter change nothing on screen, unlike Word, so it waits
+  for a decision (options in the Rust round's `fork-small/PROGRESS.md`).
 - **Recovery logging** (decided 2026-10-05): log each draft from another epoch
   entering copy-only recovery (no late merge), in the `edit_incidents` table.
 - **Editing incident log** (decided 2026-10-05, with the optimization round):
