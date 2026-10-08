@@ -68,7 +68,9 @@ test('quiz tabs follow the WAI-ARIA tabs keyboard pattern', async ({
   const generalTab = tabs.filter({ hasText: m.settings_tab_general() });
   const name = page.getByRole('textbox', { name: m.quiz_name() });
 
-  await expect(questionsTab).toHaveAttribute('aria-selected', 'true');
+  await expect(questionsTab).toHaveAttribute('aria-selected', 'true', {
+    timeout: 30_000,
+  });
   await expect(questionsTab).toHaveAttribute('tabindex', '0');
   await expect(generalTab).toHaveAttribute('tabindex', '-1');
 

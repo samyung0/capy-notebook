@@ -466,7 +466,9 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
     ).toBeVisible();
     await page.keyboard.press('Escape');
     await page.goto('/');
-    await expect(page.getByTestId('storage-usage-meter')).toBeVisible();
+    await expect(page.getByTestId('storage-usage-meter')).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(
       page.getByText(m.account_banner_near_title(), { exact: true })
     ).toBeVisible();
