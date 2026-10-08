@@ -958,12 +958,18 @@ only re-downloads and re-parses a document nobody is reading — on a near-limit
 note that is seconds of main-thread time per save.
 
 Switching a note from Edit to View in the same tab shows that tab's live
-document at once: as the editor unmounts it puts its value (co-editors'
-changes included, normalized as the projection would be) into the cached
-material (`handOverLiveValue` in `NoteEditorCore.tsx`), and the projection
-that unmount refetches replaces it when it lands, with no loader in between.
-It skips a value the room refused or discarded (a rejected document, a room
-turned read-only) and one that never synced. `MaterialPreview` is memoized,
+document at once: the View toggle (`changeMaterialMode` in `CenterContent.tsx`)
+asks the open editor, through `liveNoteHandover.ts` so the View path never
+loads the editor, to put its value (co-editors' changes included, normalized
+as the projection would be) into the cached material before View renders
+(`handOverLiveValue` in `NoteEditorCore.tsx`); the projection the editor's
+unmount refetches replaces it when it lands, with no loader in between. Done
+at unmount instead, the hand-over came after View had already rendered the
+cached copy, so View rendered the whole note twice in one frame, and it ran
+on every navigation away as well. It skips a value the room refused or
+discarded (a rejected document, a room turned read-only, which goes to View
+without the toggle) and one that never synced; a value the document format
+refuses is reported to Sentry and leaves the cache alone. `MaterialPreview` is memoized,
 so a projected copy equal to the live one (React Query keeps the same
 content object) re-renders nothing, and Edit loads its module so View does
 not suspend on it (`CenterContent.tsx`). The pane picks the preview's

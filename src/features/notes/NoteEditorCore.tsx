@@ -1,4 +1,5 @@
 import { YjsPlugin } from '@platejs/yjs/react';
+import { captureException } from '@sentry/react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Path } from 'platejs';
 import type { PlateEditor } from 'platejs/react';
@@ -75,6 +76,7 @@ import { EditorCommandPalette } from './EditorCommandPalette';
 import type { NoteEditorStatus } from './editorMode';
 import { EditorScrollAreaContext } from './editorScrollArea';
 import { FloatingToolbar } from './FloatingToolbar';
+import { registerLiveNote } from './liveNoteHandover';
 import { noteComponents } from './nodeComponents';
 import { useNoteEditorPrefs } from './noteEditorPrefs';
 import { buildPlugins } from './plugins';
@@ -221,7 +223,8 @@ function NoteEditorSurface({ children, ...props }: ComponentProps<'div'>) {
 }
 
 /** Puts the editor's value into the cached material, as the projection will
- * hold it; a value the document format refuses leaves the cache alone. */
+ * hold it. A value the document format refuses is a bug, reported; the cache
+ * then keeps its copy until the projection lands. */
 function handOverLiveValue(
   qc: ReturnType<typeof useQueryClient>,
   materialId: string,
@@ -230,7 +233,8 @@ function handOverLiveValue(
   let content: MaterialDocument;
   try {
     content = createMaterialDocument(value);
-  } catch {
+  } catch (error) {
+    captureException(error, { tags: { component: 'note-handover' } });
     return;
   }
   qc.setQueryData<Material>(
@@ -987,16 +991,20 @@ export function NoteEditorCore({
           if (active) setStatus('error');
         });
     }, 0);
+    // Edit to View in this tab shows the live document at once: the toggle
+    // asks for it before View renders, and the material query takes the
+    // editor's value (co-editors' changes included) until the projection
+    // refetched after unmount lands. Not edits the room refused or
+    // discarded, nor a value never synced.
+    const unregisterHandOver = registerLiveNote(material.id, () => {
+      if (hasSynced.current && !rejected.current && !discarded.current)
+        handOverLiveValue(qc, material.id, editor.children as MaterialValue);
+    });
     return () => {
       active = false;
       clearTimeout(initializeTimer);
       if (checkpointTimer.current) clearTimeout(checkpointTimer.current);
-      // Edit to View in this tab shows the live document at once: the
-      // material query takes the editor's value (co-editors' changes
-      // included) until the projection refetched after unmount lands. Not
-      // edits the room refused or discarded, nor a value never synced.
-      if (hasSynced.current && !rejected.current && !discarded.current)
-        handOverLiveValue(qc, material.id, editor.children as MaterialValue);
+      unregisterHandOver();
       if (initialized) editor.getApi(YjsPlugin).yjs.destroy();
       onEditorStatusChange?.(null);
       // The next mount (a moved room, recovery, Reload) starts clean.

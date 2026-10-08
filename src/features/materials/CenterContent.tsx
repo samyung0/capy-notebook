@@ -33,6 +33,7 @@ import type { OfficeCitation } from '@/features/files/officeProtocol';
 import { FlashcardGrid } from '@/features/flashcards/FlashcardGrid';
 import { FlashcardsEditor } from '@/features/flashcards/FlashcardsEditor';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
+import { handOverLiveNote } from '@/features/notes/liveNoteHandover';
 import type { LearnerQuestion } from '@/features/questions/types';
 import { QuizQuestionList } from '@/features/quizzes/QuizPage';
 import { quizEditSearch } from '@/features/quizzes/quizNavigation';
@@ -137,6 +138,10 @@ export function CenterContent({
   const changeMaterialMode = (nextMode: MaterialMode) => {
     setEditorStatus(null);
     if (item) saveDocumentMode(item, nextMode);
+    // The open editor's live document goes into the cached material before
+    // View renders, so View renders it once.
+    if (nextMode === 'view' && item?.kind === 'material')
+      handOverLiveNote(item.id);
     onModeChange(nextMode);
   };
 
