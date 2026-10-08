@@ -204,10 +204,12 @@ All element nodes need stable IDs before entering Yjs. IDs are used by:
 
 `stableElementIdsPlugin` (`src/features/notes/stableElementIds.ts`) gives
 every element in a local `insert_node` an ID in the operation Slate-Yjs
-records, and drops Plate's `_id` insert marker at every depth there. Plate's
-NodeIdPlugin sets that marker on each node inserted with an ID and removes it
-only from its own copy of the operation, so without this the room received it
-and the store refused any interactive block carrying it.
+records: a new one when it has none or one another element of the note already
+has (a duplicated or re-pasted block), and it drops Plate's `_id` insert marker
+at every depth there and from a `split_node`'s properties. Plate's NodeIdPlugin
+sets that marker and replaces a taken ID only on its own copy of the
+operation, so without this the room received the marker or the duplicate and
+the store refused the room.
 
 Text leaves do not need IDs. Runtime values must never be written onto nodes:
 
