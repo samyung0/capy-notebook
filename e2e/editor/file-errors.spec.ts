@@ -12,7 +12,7 @@ async function openWorkspace(page: Page) {
 
 async function openFile(page: Page, name: string) {
   await page
-    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
     .click();
   await page.getByRole('link', { exact: true, name }).click();
 }
@@ -187,11 +187,11 @@ test('workspace statistics and indexing share a recoverable panel error', async 
     .click();
   const settings = page.getByRole('dialog', { name: m.workspace_settings() });
   await settings
-    .getByRole('button', { exact: true, name: m.workspace_stats_title() })
+    .getByRole('tab', { exact: true, name: m.workspace_stats_title() })
     .click();
   const error = await expectErrorSurface(page, 'panel', undefined, 30_000);
   await settings
-    .getByRole('button', { exact: true, name: m.workspace_indexing() })
+    .getByRole('tab', { exact: true, name: m.workspace_indexing() })
     .click();
   await expect(error).toBeVisible();
   // The error replaces the whole tab, as on Statistics.
@@ -208,7 +208,7 @@ test('workspace statistics and indexing share a recoverable panel error', async 
     .click();
   await expect(error).toHaveCount(0);
   await settings
-    .getByRole('button', { exact: true, name: m.workspace_stats_title() })
+    .getByRole('tab', { exact: true, name: m.workspace_stats_title() })
     .click();
   await expect(
     settings.getByText(m.stats_average_score(), { exact: true })

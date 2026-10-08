@@ -179,7 +179,7 @@ test.describe('formatting', () => {
     await settings.click();
     const dialog = page.getByRole('dialog', { name: m.editor_prefs_title() });
     await dialog
-      .getByRole('button', { exact: true, name: m.editor_prefs_commands() })
+      .getByRole('tab', { exact: true, name: m.editor_prefs_commands() })
       .click();
     await dialog
       .getByRole('switch', { name: m.editor_prefs_decorations() })

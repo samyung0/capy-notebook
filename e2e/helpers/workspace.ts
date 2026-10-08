@@ -23,7 +23,7 @@ export async function openWorkspaceSharing(page: Page) {
     .click();
   const dialog = page.getByRole('dialog');
   await dialog
-    .getByRole('button', { exact: true, name: m.workspace_sharing() })
+    .getByRole('tab', { exact: true, name: m.workspace_sharing() })
     .click();
 }
 

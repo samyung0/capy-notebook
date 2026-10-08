@@ -48,7 +48,7 @@ for (const [format, name] of [
     }
     await page.goto('/workspaces/ws_bio');
     await page
-      .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+      .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
       .click();
     await page
       .locator(`[data-workspace-file-tree] a[href*="file=${fileId}"]`)
@@ -401,14 +401,12 @@ test('Office viewer keeps its iframe when the workspace layout changes', async (
 
   // One column below lg, two columns at lg: both switch the surrounding layout.
   // Below lg an open Office file folds the workspace tools into one button.
-  for (const [width, tools] of [
-    [900, m.workspace_tools()],
-    [1280, m.workspace_tab_files()],
+  for (const [width, role, tools] of [
+    [900, 'button', m.workspace_tools()],
+    [1280, 'tab', m.workspace_tab_files()],
   ] as const) {
     await page.setViewportSize({ height: 800, width });
-    await expect(
-      page.getByRole('button', { name: tools }).first()
-    ).toBeVisible();
+    await expect(page.getByRole(role, { name: tools }).first()).toBeVisible();
     await expect(iframe).toHaveAttribute('data-layout-probe', 'kept');
   }
   expect(sessions).toBe(opened);
@@ -421,7 +419,7 @@ test('XLSX keyboard selection scrolls into view and takes typing', async ({
   await page.setViewportSize({ height: 800, width: 1280 });
   await page.goto('/workspaces/ws_bio');
   await page
-    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
     .click();
   await page
     .locator('[data-workspace-file-tree] a[href*="file=bio-office-xlsx"]')
@@ -545,7 +543,7 @@ test('XLSX zooms from View › Zoom in both modes, keeping the top-left cell, hi
   await page.setViewportSize({ height: 800, width: 1280 });
   await page.goto('/workspaces/ws_bio');
   await page
-    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
     .click();
   await page
     .locator('[data-workspace-file-tree] a[href*="file=bio-office-xlsx"]')
@@ -838,7 +836,7 @@ test('XLSX cell edit ends when focus moves into Capy, not on a window switch', a
   await page.setViewportSize({ height: 800, width: 1280 });
   await page.goto('/workspaces/ws_bio');
   await page
-    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
     .click();
   await page
     .locator('[data-workspace-file-tree] a[href*="file=bio-office-xlsx"]')
@@ -850,7 +848,7 @@ test('XLSX cell edit ends when focus moves into Capy, not on a window switch', a
   await page.getByRole('button', { name: m.material_mode() }).click();
   await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
   await page
-    .getByRole('button', { exact: true, name: m.workspace_tab_chat() })
+    .getByRole('tab', { exact: true, name: m.workspace_tab_chat() })
     .click();
   const chat = page.getByRole('textbox', { name: m.chat_placeholder() });
   await expect(chat).toBeVisible();
@@ -970,7 +968,7 @@ test('an Office citation highlights its passage again after the runtime reloads'
   test.setTimeout(180_000);
   await page.goto('/workspaces/ws_bio');
   await page
-    .getByRole('button', { exact: true, name: m.workspace_tab_chat() })
+    .getByRole('tab', { exact: true, name: m.workspace_tab_chat() })
     .click();
   await page.getByRole('button', { name: m.chat_history() }).click();
   await page.getByRole('button', { name: 'OpenUI: Office citation' }).click();
@@ -1454,7 +1452,7 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
     });
     await mode.click();
     await page
-      .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+      .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
       .click();
     await page
       .locator('[data-workspace-file-tree]')

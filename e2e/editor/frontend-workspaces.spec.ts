@@ -142,14 +142,14 @@ test('workspace cards open settings and statistics without entering the workspac
   await expect(settings).toBeVisible();
   await expect(page).toHaveURL(/\/workspaces$/);
   await settings
-    .getByRole('button', { exact: true, name: m.workspace_stats_title() })
+    .getByRole('tab', { exact: true, name: m.workspace_stats_title() })
     .click();
   await expect(
     settings.getByText(m.stats_average_score(), { exact: true })
   ).toBeVisible();
   await expect(settings.locator('.tabular-nums')).toHaveCount(5);
   await settings
-    .getByRole('button', { exact: true, name: m.workspace_general() })
+    .getByRole('tab', { exact: true, name: m.workspace_general() })
     .click();
   await expect(
     settings.getByText(m.common_color(), { exact: true })

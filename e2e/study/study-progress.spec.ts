@@ -161,7 +161,7 @@ test.describe('study progress', () => {
       .locator('[data-workspace-file-tree]')
       .getByRole('link', { name: fileName })
       .getByLabel(m.study_state_done(), { exact: true });
-    const filesTab = editorPage.getByRole('button', {
+    const filesTab = editorPage.getByRole('tab', {
       exact: true,
       name: m.workspace_tab_files(),
     });

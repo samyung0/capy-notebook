@@ -26,7 +26,7 @@ test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ height: 1100, width: 1440 });
   await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.firstParagraph);
   await page
-    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
     .click();
 });
 

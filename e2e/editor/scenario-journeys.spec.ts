@@ -55,7 +55,7 @@ test('one click fails a real source save and retry preserves the mounted editor'
   const mounted = await input.elementHandle();
   const currentURL = page.url();
   await page
-    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
     .click();
   page.once('dialog', (dialog) => dialog.dismiss());
   await page
@@ -641,7 +641,7 @@ test('a text source in view mode shows its latest saved state, not only the publ
   // A fresh open in view mode reads the viewer session: saving did not
   // publish, yet the edit shows.
   await page
-    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
     .click();
   await page
     .locator('[data-workspace-file-tree] a[href*="file=mock-scenario-pdf"]')

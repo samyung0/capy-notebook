@@ -200,7 +200,7 @@ export async function createNote(run: UatRun, workspaceId: string) {
   const page = run.owner.page;
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
   await page
-    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
     .click();
   await page
     .locator('[data-workspace-add-menu]')
@@ -217,10 +217,8 @@ export async function createNote(run: UatRun, workspaceId: string) {
         `/api/workspaces/${workspaceId}/materials` &&
       response.request().method() === 'POST'
   );
-  // The dialog's Create tab shares the name; the submit button comes last.
   await dialog
     .getByRole('button', { exact: true, name: m.action_create() })
-    .last()
     .click();
   const response = await created;
   assert.equal(response.status(), 201, await response.text());

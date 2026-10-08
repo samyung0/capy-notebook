@@ -10,7 +10,7 @@ test('Indexing tab lists file changes, cancels queued work and processes waiting
     .click();
   const settings = page.getByRole('dialog', { name: m.workspace_settings() });
   await settings
-    .getByRole('button', { exact: true, name: m.workspace_indexing() })
+    .getByRole('tab', { exact: true, name: m.workspace_indexing() })
     .click();
   const row = (name: string) =>
     settings.getByRole('listitem').filter({ hasText: name });
@@ -63,7 +63,7 @@ test('a failed file is retried from its row menu and listed in the Indexing tab'
 }) => {
   await page.goto('/workspaces/ws_bio');
   await page
-    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
     .click();
   const name = 'Biology notes - failed.md';
   const fileRow = page
@@ -77,7 +77,7 @@ test('a failed file is retried from its row menu and listed in the Indexing tab'
     .click();
   const settings = page.getByRole('dialog', { name: m.workspace_settings() });
   await settings
-    .getByRole('button', { exact: true, name: m.workspace_indexing() })
+    .getByRole('tab', { exact: true, name: m.workspace_indexing() })
     .click();
   await expect(
     settings
@@ -104,7 +104,7 @@ test('a failed file is retried from its row menu and listed in the Indexing tab'
     .getByRole('button', { exact: true, name: m.workspace_settings() })
     .click();
   await settings
-    .getByRole('button', { exact: true, name: m.workspace_indexing() })
+    .getByRole('tab', { exact: true, name: m.workspace_indexing() })
     .click();
   await expect(
     settings.getByRole('listitem').filter({ hasText: name })

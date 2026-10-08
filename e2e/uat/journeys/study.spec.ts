@@ -157,7 +157,7 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
   // The file read from its Files panel row.
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
   await page
-    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
     .click();
   const row = page
     .locator('[data-workspace-file-tree]')

@@ -1,4 +1,4 @@
-import { type ReactNode, useRef } from 'react';
+import { type KeyboardEvent, type ReactNode, useRef } from 'react';
 import { cn } from '@/lib/cn';
 import { useHorizontalWheelScroll } from '@/lib/useHorizontalWheelScroll';
 
@@ -24,6 +24,31 @@ export function Tabs({
 }: TabsProps) {
   const rowRef = useRef<HTMLDivElement>(null);
   useHorizontalWheelScroll(rowRef);
+  const items = tabs.map(norm);
+  const focusable = items.some((t) => t.value === value)
+    ? value
+    : items[0]?.value;
+
+  // WAI-ARIA tabs with automatic activation: arrows, Home and End select and
+  // focus the target tab; only the selected tab sits in the Tab order.
+  const onKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    index: number
+  ) => {
+    const last = items.length - 1;
+    const next = {
+      ArrowLeft: index === 0 ? last : index - 1,
+      ArrowRight: index === last ? 0 : index + 1,
+      End: last,
+      Home: 0,
+    }[event.key];
+    if (next === undefined) return;
+    event.preventDefault();
+    rowRef.current
+      ?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+      [next]?.focus();
+    onChange?.(items[next].value);
+  };
 
   return (
     <div
@@ -33,12 +58,13 @@ export function Tabs({
         className
       )}
       ref={rowRef}
+      role="tablist"
     >
-      {tabs.map((tab) => {
-        const t = norm(tab);
+      {items.map((t, index) => {
         const active = t.value === value;
         return (
           <button
+            aria-selected={active}
             className={cn(
               'shrink-0 px-3 py-2 font-semibold text-sm transition-colors focus-visible:ring-inset',
               bottomBorder && 'border-b-2',
@@ -52,6 +78,9 @@ export function Tabs({
             )}
             key={t.value}
             onClick={() => onChange?.(t.value)}
+            onKeyDown={(event) => onKeyDown(event, index)}
+            role="tab"
+            tabIndex={t.value === focusable ? 0 : -1}
             type="button"
           >
             {t.label}

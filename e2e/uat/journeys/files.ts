@@ -221,7 +221,7 @@ export async function upload(
   const page = run.owner.page;
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
   await page
-    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
     .click();
   await page
     .locator('[data-workspace-add-menu]')

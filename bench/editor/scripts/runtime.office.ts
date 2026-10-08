@@ -665,7 +665,7 @@ async function openWorkspace(page: Page) {
   await installWasmProbe(page);
   await page.goto(`/workspaces/${PERF_WORKSPACE_ID}`);
   await page
-    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
     .click();
 }
 

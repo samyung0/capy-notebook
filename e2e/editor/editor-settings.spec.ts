@@ -48,13 +48,13 @@ test('editor settings keep drafts until Apply, persist the width and keep margin
   await expect(displaySize).toHaveAttribute('data-width', 'half');
   await chooseWidth(m.editor_prefs_full_width());
   await dialog
-    .getByRole('button', { exact: true, name: m.editor_prefs_commands() })
+    .getByRole('tab', { exact: true, name: m.editor_prefs_commands() })
     .click();
   await expect(
     dialog.getByRole('switch', { name: m.editor_prefs_decorations() })
   ).toBeVisible();
   await dialog
-    .getByRole('button', { exact: true, name: m.settings_tab_general() })
+    .getByRole('tab', { exact: true, name: m.settings_tab_general() })
     .click();
   await expect(displaySize).toHaveAttribute('data-width', 'full');
   await dialog

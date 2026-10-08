@@ -205,7 +205,7 @@ for (const kind of kinds) {
     test('only public ones appear on Explore', async ({ otherPage }) => {
       const explore = waitForApi(otherPage, apiEndsWith(kind.explore.api));
       await otherPage.goto('/explore');
-      await otherPage.getByRole('button', { name: kind.explore.tab }).click();
+      await otherPage.getByRole('tab', { name: kind.explore.tab }).click();
       expect((await explore).status()).toBe(200);
       await expect(otherPage.getByText(kind.public.name)).toBeVisible();
       await expect(otherPage.getByText(kind.link.name)).toHaveCount(0);
