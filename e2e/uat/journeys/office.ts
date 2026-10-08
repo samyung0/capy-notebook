@@ -16,12 +16,23 @@ import {
 } from './files';
 import type { Actor, UatRun } from './runtime';
 
-/** File › Save in the Office file header (the Save button is gone). */
-export async function saveOffice(page: Page) {
-  await page
+/** A menu of the Office file header: Capy's labels in PPTX, BetterOffice's in DOCX and XLSX. */
+function officeMenu(page: Page, format: OfficeFormat, name: 'File' | 'Edit') {
+  const pptx =
+    name === 'File'
+      ? m.files_office_pptx_menu_file()
+      : m.files_office_pptx_menu_edit();
+  return page
     .getByRole('menubar', { name: m.files_office_menu_bar() })
-    .getByRole('menuitem', { exact: true, name: 'File' })
-    .click();
+    .getByRole('menuitem', {
+      exact: true,
+      name: format === 'pptx' ? pptx : name,
+    });
+}
+
+/** File › Save in the Office file header (the Save button is gone). */
+export async function saveOffice(page: Page, format: OfficeFormat) {
+  await officeMenu(page, format, 'File').click();
   await page.getByRole('menuitem', { name: /^Save/ }).click();
 }
 
@@ -292,20 +303,19 @@ export async function openEditor(
   run: UatRun,
   actor: Actor,
   workspaceId: string,
-  fileId: string
+  fileId: string,
+  format: OfficeFormat
 ): Promise<FrameLocator> {
   // The URL's mode, not the Material mode toggle: the browser remembers the
   // last mode per file, so a second open would toggle back to View.
   await openFile(run, actor, workspaceId, fileId, 'edit');
   // The editor's Edit menu arrives once the replica is ready; large workbooks
   // take longer than the action timeout to open.
-  const edit = actor.page
-    .getByRole('menubar', { name: m.files_office_menu_bar() })
-    .getByRole('menuitem', { exact: true, name: 'Edit' });
+  const edit = officeMenu(actor.page, format, 'Edit');
   await whenReady(run, actor, 'office-editor', () =>
     expect(edit).toBeVisible({ timeout: 120_000 })
   );
-  await saveOffice(actor.page);
+  await saveOffice(actor.page, format);
   return actor.page.frameLocator('iframe[src*="office-runtime"]');
 }
 
@@ -351,7 +361,7 @@ export async function editOffice(
         : 'Owner sentence: The launch code is CEDAR-42.'
     );
   }
-  await saveOffice(actor.page);
+  await saveOffice(actor.page, format);
 }
 
 export async function replaceSlideText(

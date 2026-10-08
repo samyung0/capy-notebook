@@ -196,12 +196,12 @@ async function rebuilt(fileId: string, epoch: number) {
   );
 }
 
-async function openEditor(page: Page, workspace: string, fileId: string): Promise<FrameLocator> {
+async function openEditor(page: Page, workspace: string, fileId: string, format: OfficeFormat): Promise<FrameLocator> {
   await page.goto(`/workspaces/${workspace}?file=${encodeURIComponent(fileId)}&mode=edit`);
   await expect(
     page.getByRole('menubar', { name: 'Menu bar' }).getByRole('menuitem', { exact: true, name: 'Edit' })
   ).toBeVisible({ timeout: 180_000 });
-  await saveOffice(page);
+  await saveOffice(page, format);
   return page.frameLocator('iframe[src*="office-runtime"]');
 }
 
@@ -341,13 +341,13 @@ test('office and text storage charges', async ({ browser }) => {
       const bytes = await readFile(path.join(root, 'e2e/fixtures/files/rich-content', name));
       const fileId = await upload(workspace, name, bytes);
       await measure(name, fileId, 'uploaded');
-      const frame = await openEditor(page, workspace, fileId);
+      const frame = await openEditor(page, workspace, fileId, format);
       await editRich(page, frame, format as OfficeFormat, false);
       await saved(page);
       await measure(name, fileId, 'edited');
       if (format === 'docx') {
         await insertImage(page, png);
-        await saveOffice(page);
+        await saveOffice(page, 'docx');
         await saved(page);
         await poll('image saved', () => row<{ n: number }>('SELECT octet_length(state)::int AS n FROM source_documents WHERE file_id=$1', [fileId]), (r) => r.n > png.length);
         await measure(name, fileId, 'image', { image_bytes: png.length });

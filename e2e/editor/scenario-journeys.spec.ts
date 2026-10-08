@@ -164,7 +164,7 @@ test('a refused DOCX save keeps the edit copyable until Reload', async ({
     const { refuseNextSourceSave } = await import(modulePath);
     refuseNextSourceSave('mock-scenario-docx');
   });
-  await saveOffice(page);
+  await saveOffice(page, 'docx');
   const banner = page.getByTestId('save-banner');
   await expect(banner).toHaveAttribute('data-kind', 'refused');
   await expect(
@@ -234,7 +234,7 @@ test('a refused PPTX save keeps the slide text copyable until Reload', async ({
     const { refuseNextSourceSave } = await import(modulePath);
     refuseNextSourceSave('mock-scenario-pptx');
   });
-  await saveOffice(page);
+  await saveOffice(page, 'pptx');
   const banner = page.getByTestId('save-banner');
   await expect(banner).toHaveAttribute('data-kind', 'refused');
   const frame = page.frameLocator('iframe[src*="office-runtime"]');
@@ -275,7 +275,7 @@ test('a refused PPTX save keeps the slide text copyable until Reload', async ({
   );
 });
 
-for (const format of ['docx', 'xlsx', 'pptx']) {
+for (const format of ['docx', 'xlsx', 'pptx'] as const) {
   test(`${format} opens valid bytes, edits, fails save, and retries without replacing the iframe`, async ({
     page,
   }) => {
@@ -292,7 +292,7 @@ for (const format of ['docx', 'xlsx', 'pptx']) {
       'data-save-state',
       'unsaved'
     );
-    await saveOffice(page);
+    await saveOffice(page, format);
     await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
       'data-save-state',
       'saved'
@@ -311,7 +311,7 @@ for (const format of ['docx', 'xlsx', 'pptx']) {
     await expect(mode).toHaveAttribute('aria-pressed', 'true', {
       timeout: 30_000,
     });
-    await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+    await expect(officeEditMenu(page, format)).toBeVisible({ timeout: 30_000 });
 
     const panel = page.getByTestId('mock-scenario-panel');
     await panel.evaluate((node: HTMLDetailsElement) => {

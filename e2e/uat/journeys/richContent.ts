@@ -67,7 +67,7 @@ export async function editRich(
     // First (numbered) body paragraph of slide 3, same box.
     await replaceSlideText(frame, 2, PPTX_OWNER, { x: 0.25, y: 0.265 });
   }
-  await saveOffice(page);
+  await saveOffice(page, format);
 }
 
 /**
@@ -119,7 +119,7 @@ export async function pasteRich(
     );
     await input.press('ControlOrMeta+V');
   }
-  await saveOffice(page);
+  await saveOffice(page, format);
 }
 
 // The mirror ignores pointer events, so force routes the click to the canvas.

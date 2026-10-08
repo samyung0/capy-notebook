@@ -49,14 +49,26 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
     const editor = await run.createActor(`rich-${format}-editor`);
     await invite(run, workspaceId, editor, 'editor');
 
-    const ownerFrame = await openEditor(run, run.owner, workspaceId, fileId);
+    const ownerFrame = await openEditor(
+      run,
+      run.owner,
+      workspaceId,
+      fileId,
+      format
+    );
     await saved(run.owner.page);
     // Opening persists nothing: the charge is the source alone.
     const opened = await officeCharge(run, fileId, before);
     assert.equal(opened.state_bytes, null);
     assert.deepEqual(opened.pending_effects, []);
 
-    const editorFrame = await openEditor(run, editor, workspaceId, fileId);
+    const editorFrame = await openEditor(
+      run,
+      editor,
+      workspaceId,
+      fileId,
+      format
+    );
     await editRich(run.owner.page, ownerFrame, format, false);
     await editRich(editor.page, editorFrame, format, true);
     let latest: Awaited<ReturnType<typeof savedExport>> | undefined;
@@ -110,7 +122,7 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
     // saved state is seed(published).
     await rebuiltAfterLeaving(run, [run.owner, editor], workspaceId, fileId);
     await expectRichContent(
-      await openEditor(run, editor, workspaceId, fileId),
+      await openEditor(run, editor, workspaceId, fileId, format),
       format,
       marker,
       'edit'
@@ -125,7 +137,13 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
       marker,
       'view'
     );
-    const reopened = await openEditor(run, run.owner, workspaceId, fileId);
+    const reopened = await openEditor(
+      run,
+      run.owner,
+      workspaceId,
+      fileId,
+      format
+    );
     await saved(run.owner.page);
     const republished = await officeCharge(run, fileId, before);
     assert.equal(republished.state_bytes, null);
