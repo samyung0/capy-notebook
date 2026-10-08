@@ -60,7 +60,7 @@ test.describe('live Yjs collaboration', () => {
     await expect(
       ownerPage.getByText(`${body}${suffix}`, { exact: true })
     ).toBeVisible();
-    // Durability is the client's 1s checkpoint debounce plus the sidecar's store
+    // Durability is the client's 1s checkpoint debounce plus the server's store
     // debounce, which stretches to COLLABORATION_MAX_DEBOUNCE_MS (10s) under
     // continuous updates. The default 10s expect budget cannot cover that.
     await expect(editorPage.getByTestId('editor-save-state')).toHaveAttribute(

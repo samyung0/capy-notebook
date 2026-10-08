@@ -95,17 +95,17 @@ deletes nothing.
 
 ## Collaboration authority
 
-The Hocuspocus service in `../collaboration` is authoritative for initialized
-material content. Configure the gateway with:
+The Rust collaboration server in `../collaboration-rs` is authoritative for
+initialized material content. Configure the gateway with:
 
 ```text
-COLLABORATION_SECRET=<same long random value as the sidecar>
+COLLABORATION_SECRET=<same long random value as the collaboration server>
 COLLABORATION_URL=ws://localhost:1234
 COLLABORATION_INTERNAL_URL=http://localhost:1234
 ```
 
 `COLLABORATION_URL` is returned to browsers in short-lived room tokens.
-`COLLABORATION_INTERNAL_URL` is server-to-sidecar only and carries headless
+`COLLABORATION_INTERNAL_URL` is gateway-to-collaboration only and carries headless
 quiz/flashcard commands. Content mutations fail with 503 when an initialized
 Y.Doc cannot be reached; they never fall back to SQL.
 

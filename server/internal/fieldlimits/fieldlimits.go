@@ -69,7 +69,8 @@ const (
 	AnonymousLocalID = 64
 )
 
-// QuestionBounds is exported into frontend, sidecar and pipeline contracts.
+// QuestionBounds is exported into frontend and pipeline contracts; a Go test
+// checks the collaboration server's copy (collaboration-rs/crates/notes).
 var QuestionBounds = map[string]int{
 	"QUESTION_COUNT_MAX":           QuestionCount,
 	"QUESTION_ID_MAX":              QuestionID,

@@ -84,7 +84,7 @@ func (s *Store) applyAuthoritativeContentCommand(
 			return true, ErrAuthorityUnavailable
 		}
 		// Tests and explicitly collaboration-free deployments retain the SQL
-		// bootstrap path. Production commands go through the configured sidecar.
+		// bootstrap path. Production commands go through the configured collaboration server.
 		return false, nil
 	}
 	current, err := materialdoc.Parse(currentRaw)
