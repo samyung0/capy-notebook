@@ -3,13 +3,15 @@
 //! counts as in a room, and the source timers (refresh scheduler, rebuild
 //! sweep, maintenance pause poll), as the Node server's `server.ts` ran them.
 
-use std::collections::{HashMap, HashSet};
-use std::sync::Weak;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use sources::handoff::SourcePublish;
 use sources::{BoxFuture, Channel, ChannelId, SourceError, SourceRoom};
+use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::oneshot;
 
 use crate::app::{App, Shared};
@@ -50,13 +52,16 @@ fn joining(app: &App, room: &str) -> bool {
         .any(|(joined, since)| joined == room && now.duration_since(*since) < JOIN_WINDOW)
 }
 
+/// Commands a full room queue held back, by room name and load, in order.
+type Backlog = Arc<Mutex<HashMap<(String, u64), VecDeque<RoomCmd>>>>;
+
 /// The room layer as the handoff sees it.
 pub struct ServerRooms {
     pub app: Weak<App>,
+    pub backlog: Backlog,
 }
 
 impl ServerRooms {
-    /// Sends a command to a loaded room, in order with what this task sent.
     fn send(&self, room: &str, command: RoomCmd) {
         let Some(app) = self.app.upgrade() else {
             return;
@@ -64,14 +69,43 @@ impl ServerRooms {
         let Some(handle) = app.rooms.get(room) else {
             return;
         };
-        if let Err(tokio::sync::mpsc::error::TrySendError::Full(command)) =
-            handle.tx.try_send(command)
-        {
-            tokio::spawn(async move {
-                let _ = handle.tx.send(command).await;
-            });
-        }
+        send_in_order(
+            &self.backlog,
+            (room.to_owned(), handle.id),
+            &handle.tx,
+            command,
+        );
     }
+}
+
+/// Sends a command to a room without waiting, in the order sent: while a
+/// full queue holds one back, later ones wait behind it.
+#[allow(clippy::unwrap_used)]
+fn send_in_order(backlog: &Backlog, key: (String, u64), tx: &Sender<RoomCmd>, command: RoomCmd) {
+    let mut waiting = backlog.lock().unwrap();
+    if let Some(queue) = waiting.get_mut(&key) {
+        queue.push_back(command);
+        return;
+    }
+    let Err(TrySendError::Full(command)) = tx.try_send(command) else {
+        return;
+    };
+    waiting.insert(key.clone(), VecDeque::from([command]));
+    let (backlog, tx) = (backlog.clone(), tx.clone());
+    tokio::spawn(async move {
+        loop {
+            let next = {
+                let mut waiting = backlog.lock().unwrap();
+                let next = waiting.get_mut(&key).and_then(VecDeque::pop_front);
+                if next.is_none() {
+                    waiting.remove(&key);
+                }
+                next
+            };
+            let Some(command) = next else { return };
+            let _ = tx.send(command).await;
+        }
+    });
 }
 
 impl sources::Rooms for ServerRooms {
@@ -276,5 +310,44 @@ pub async fn run_pause_poll(app: Shared) {
             }
         });
         futures::future::join_all(pauses).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn commands_held_back_by_a_full_queue_keep_their_order() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        let backlog = Backlog::default();
+        let key = ("room".to_owned(), 1);
+        let send = |n: u32| {
+            send_in_order(
+                &backlog,
+                key.clone(),
+                &tx,
+                RoomCmd::Broadcast(n.to_string()),
+            );
+        };
+        let mut got = Vec::new();
+        async fn take(rx: &mut tokio::sync::mpsc::Receiver<RoomCmd>) -> String {
+            match rx.recv().await {
+                Some(RoomCmd::Broadcast(payload)) => payload,
+                _ => panic!("unexpected command"),
+            }
+        }
+        // 1 waits behind the full queue; 2 then finds a free slot.
+        send(0);
+        send(1);
+        got.push(take(&mut rx).await);
+        send(2);
+        send(3);
+        for _ in 0..3 {
+            got.push(take(&mut rx).await);
+        }
+        assert_eq!(got, ["0", "1", "2", "3"]);
+        tokio::task::yield_now().await;
+        assert!(backlog.lock().unwrap().is_empty());
     }
 }

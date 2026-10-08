@@ -161,6 +161,7 @@ async fn serve(config: Config) -> Result<(), String> {
     });
     let rooms: Arc<dyn sources::Rooms> = Arc::new(source_rooms::ServerRooms {
         app: Arc::downgrade(&app),
+        backlog: Default::default(),
     });
     let handoff = sources::handoff::Handoff::new(
         app.instance_id.clone(),
