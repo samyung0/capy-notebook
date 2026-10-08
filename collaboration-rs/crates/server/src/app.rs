@@ -23,32 +23,47 @@ pub enum Out {
 }
 
 /// A connection's outgoing queue, shared by every room it joined. A
-/// connection whose queue passes `limit` bytes is too slow and is closed.
+/// connection whose backlog passes its cap is too slow and is closed (it
+/// reconnects).
 #[derive(Clone, Debug)]
 pub struct Outbox {
     tx: mpsc::UnboundedSender<Out>,
     queued: Arc<AtomicUsize>,
+    /// The largest frame this socket's rooms handed it so far.
+    largest: Arc<AtomicUsize>,
     overflow: Arc<tokio::sync::Notify>,
-    limit: usize,
 }
 
+/// The least a socket's outgoing queue holds before its reader counts as
+/// too slow (Epo 2026-10-08).
+pub const OUTBOX_FLOOR: usize = 4 * 1024 * 1024;
+
 impl Outbox {
-    pub fn new(limit: usize) -> (Self, mpsc::UnboundedReceiver<Out>) {
+    pub fn new() -> (Self, mpsc::UnboundedReceiver<Out>) {
         let (tx, rx) = mpsc::unbounded_channel();
         (
             Outbox {
                 tx,
                 queued: Arc::default(),
+                largest: Arc::default(),
                 overflow: Arc::default(),
-                limit,
             },
             rx,
         )
     }
 
+    /// Queues a frame, or flags a reader too slow: one whose backlog passed
+    /// max(4 MiB, the largest frame its rooms can send, as seen so far)
+    /// before this frame (Epo 2026-10-08). A frame itself always fits, so a
+    /// joiner's whole-state answer goes out.
     pub fn frame(&self, frame: Bytes) {
-        let queued = self.queued.fetch_add(frame.len(), Ordering::Relaxed) + frame.len();
-        if queued > self.limit {
+        let largest = self
+            .largest
+            .fetch_max(frame.len(), Ordering::Relaxed)
+            .max(frame.len());
+        let backlog = self.queued.fetch_add(frame.len(), Ordering::Relaxed);
+        if backlog > OUTBOX_FLOOR.max(largest) {
+            self.queued.fetch_sub(frame.len(), Ordering::Relaxed);
             self.overflow.notify_one();
             return;
         }
@@ -264,3 +279,41 @@ impl App {
 }
 
 pub type Shared = Arc<App>;
+
+#[cfg(test)]
+mod outbox_tests {
+    use super::*;
+    use futures::FutureExt;
+
+    fn overflowed(outbox: &Outbox) -> bool {
+        outbox.overflow().notified().now_or_never().is_some()
+    }
+
+    #[test]
+    fn a_backlog_past_the_floor_or_the_largest_frame_closes_the_reader() {
+        let (outbox, _rx) = Outbox::new();
+        // A joiner's whole-state answer always goes out.
+        outbox.frame(Bytes::from(vec![0; 10 * 1024 * 1024]));
+        assert!(!overflowed(&outbox));
+        // The backlog may reach that frame's size, then the reader is too slow.
+        outbox.frame(Bytes::from(vec![0; 1024]));
+        assert!(!overflowed(&outbox));
+        outbox.frame(Bytes::from(vec![0; 1024]));
+        assert!(overflowed(&outbox));
+        let (small, _rx) = Outbox::new();
+        for _ in 0..4 {
+            small.frame(Bytes::from(vec![0; 1024 * 1024]));
+        }
+        assert!(!overflowed(&small));
+        small.frame(Bytes::from(vec![0; 1]));
+        small.frame(Bytes::from(vec![0; 1]));
+        assert!(overflowed(&small));
+        // What the writer sent leaves the backlog.
+        let (draining, _rx) = Outbox::new();
+        for _ in 0..8 {
+            draining.frame(Bytes::from(vec![0; 1024 * 1024]));
+            draining.sent(1024 * 1024);
+        }
+        assert!(!overflowed(&draining));
+    }
+}

@@ -36,6 +36,8 @@ pub const MAX_UNPLACED_STEPS: u32 = 2;
 /// edits an offline editor may hold, so its reconnect always fits (Epo,
 /// 2026-10-08). Source rooms take whole states up to the frame cap.
 pub const NOTE_MAX_SYNC_BYTES: usize = 4 * 1024 * 1024;
+/// The largest awareness entry a room keeps and relays.
+pub const MAX_AWARENESS_ENTRY: usize = 64 * 1024;
 /// Failed stores retry after 5 s, doubling to 60 s.
 const RETRY_FIRST: Duration = Duration::from_secs(5);
 const RETRY_MAX: Duration = Duration::from_secs(60);
@@ -1652,6 +1654,14 @@ impl Room {
             self.refuse(key, &[], "malformed awareness update");
             return;
         };
+        // A cursor is ~200 B; an entry past this is refused (Epo 2026-10-08).
+        if entries
+            .iter()
+            .any(|entry| entry.state.len() > MAX_AWARENESS_ENTRY)
+        {
+            self.refuse(key, &[], "awareness entry too large");
+            return;
+        }
         let Some(member) = self.members.get_mut(&key) else {
             return;
         };

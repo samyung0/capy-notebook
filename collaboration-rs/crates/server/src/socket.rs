@@ -26,6 +26,9 @@ const RECHECK: Duration = Duration::from_secs(5);
 const TOKEN_LEAD: Duration = Duration::from_secs(60);
 /// Queued messages before JOINED, per socket (Hocuspocus's unauthenticated queue).
 const MAX_QUEUED_MESSAGES: usize = 1000;
+/// The largest frame a socket may send before any of its rooms joined: a
+/// client sends only JOINs then (a room name and a token).
+const PRE_JOIN_MAX_FRAME: usize = 16 * 1024;
 const MAX_QUEUED_BYTES: usize = 512 * 1024;
 /// Channels authenticating at once per socket.
 const MAX_PENDING_JOINS: usize = 8;
@@ -240,6 +243,8 @@ struct Connection {
     auth_tx: mpsc::UnboundedSender<AuthResult>,
     join_tx: mpsc::UnboundedSender<JoinResult>,
     attempts: u64,
+    /// One of this socket's rooms joined (frames may grow past a JOIN's).
+    joined_once: bool,
     /// Token deadlines: (when, channel, expiry instead of refresh).
     timers: BTreeMap<(Instant, u64), bool>,
 }
@@ -247,8 +252,7 @@ struct Connection {
 pub async fn serve(app: Shared, socket: WebSocket) {
     let id = app.next_connection.fetch_add(1, Ordering::Relaxed);
     app.stats.connections.fetch_add(1, Ordering::Relaxed);
-    let limit = app.config.max_frame_bytes().saturating_mul(2);
-    let (outbox, mut out_rx) = Outbox::new(limit);
+    let (outbox, mut out_rx) = Outbox::new();
     let overflow = outbox.overflow();
     let (auth_tx, mut auth_rx) = mpsc::unbounded_channel();
     let (join_tx, mut join_rx) = mpsc::unbounded_channel();
@@ -262,6 +266,7 @@ pub async fn serve(app: Shared, socket: WebSocket) {
         auth_tx,
         join_tx,
         attempts: 0,
+        joined_once: false,
         timers: BTreeMap::new(),
     };
     let mut socket = socket;
@@ -349,6 +354,14 @@ impl Connection {
 
     /// Returns false when the socket must close.
     async fn on_frame(&mut self, frame: Bytes) -> bool {
+        if !self.joined_once && frame.len() > PRE_JOIN_MAX_FRAME {
+            log(
+                Level::Warn,
+                "frame before any join too large",
+                json!({ "bytes": frame.len(), "socket_id": self.socket_id }),
+            );
+            return false;
+        }
         let Ok(messages) = protocol::decode_frame(&frame) else {
             return false;
         };
@@ -597,6 +610,7 @@ impl Connection {
             .iter()
             .map(|message| message.payload.len())
             .sum::<usize>();
+        self.joined_once = true;
         self.arm_token(channel, &context);
         self.channels.insert(
             channel,

@@ -57,7 +57,12 @@ pub enum FrameError {
     UnknownKind(u8),
     #[error("malformed payload")]
     Payload,
+    #[error("more than {MAX_FRAME_MESSAGES} messages in a frame")]
+    TooMany,
 }
+
+/// The most messages one client frame may carry (clients send one each).
+pub const MAX_FRAME_MESSAGES: usize = 64;
 
 pub fn write_var(out: &mut impl BufMut, mut value: u64) {
     loop {
@@ -108,6 +113,9 @@ pub fn decode_frame(frame: &Bytes) -> Result<Vec<Message>, FrameError> {
     let mut messages = Vec::new();
     let mut at = 0;
     while at < frame.len() {
+        if messages.len() == MAX_FRAME_MESSAGES {
+            return Err(FrameError::TooMany);
+        }
         let channel = read_var(frame, &mut at)?;
         let kind = *frame.get(at).ok_or(FrameError::Truncated)?;
         at += 1;
@@ -257,6 +265,18 @@ pub mod awareness {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_frame_carries_at_most_its_message_cap() {
+        let mut frame = BytesMut::new();
+        for _ in 0..MAX_FRAME_MESSAGES {
+            encode(&mut frame, 1, Kind::QueryAwareness, &[]);
+        }
+        let full = frame.clone().freeze();
+        assert_eq!(decode_frame(&full).map(|m| m.len()), Ok(MAX_FRAME_MESSAGES));
+        encode(&mut frame, 1, Kind::QueryAwareness, &[]);
+        assert_eq!(decode_frame(&frame.freeze()), Err(FrameError::TooMany));
+    }
 
     #[test]
     fn frames_round_trip_several_messages() {

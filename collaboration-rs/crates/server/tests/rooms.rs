@@ -1181,3 +1181,37 @@ async fn a_socket_keeps_serving_its_rooms_while_another_room_loads() {
     }
     assert!(started.elapsed() < Duration::from_secs(2));
 }
+
+#[tokio::test]
+async fn oversized_frames_before_a_join_and_oversized_awareness_are_refused() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    // Before any room joined, a socket sends only JOINs: a 20 KiB frame closes it.
+    let mut idle = Client::open(server.port).await;
+    idle.send(8, &vec![0; 20 * 1024]).await;
+    let closed = tokio::time::timeout(Duration::from_secs(5), idle.ws.next())
+        .await
+        .expect("the server answers");
+    assert!(
+        matches!(closed, None | Some(Ok(Ws::Close(_))) | Some(Err(_))),
+        "{closed:?}"
+    );
+    // A joined channel's awareness entry over 64 KiB closes that channel.
+    let (user, material) = note(&env, "aware").await;
+    let room = format!("material:{material}:schema:1");
+    let mut a = Client::open(server.port).await;
+    a.joined(&room, &token(&room, &user, "write")).await;
+    let mut update = Vec::new();
+    var(&mut update, 1);
+    var(&mut update, 42);
+    var(&mut update, 1);
+    let state = format!("{{\"cursor\":\"{}\"}}", "x".repeat(70 * 1024));
+    varbytes(&mut update, state.as_bytes());
+    a.send(7, &update).await;
+    let closed = a.until(4).await.expect("the channel closes");
+    assert!(
+        String::from_utf8_lossy(&closed).contains("awareness entry too large"),
+        "{}",
+        String::from_utf8_lossy(&closed)
+    );
+}
