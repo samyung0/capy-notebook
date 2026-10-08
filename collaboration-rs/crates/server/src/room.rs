@@ -240,6 +240,13 @@ struct Store {
 #[cfg(debug_assertions)]
 const IT_PANIC_UPDATE: &[u8] = b"capy-it-panic";
 
+/// See `load`: the first load of a note whose id holds this panics, in debug
+/// builds only.
+#[cfg(debug_assertions)]
+const IT_PANIC_LOAD: &str = "capy-it-panic-load";
+#[cfg(debug_assertions)]
+static IT_PANICKED_LOAD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 pub struct Room {
     app: Shared,
     id: u64,
@@ -334,6 +341,14 @@ async fn load(
             material_id,
             schema,
         } => {
+            // Debug builds only: the integration tests' panic during a load,
+            // outside the room's own steps (once, so the next join loads).
+            #[cfg(debug_assertions)]
+            if material_id.contains(IT_PANIC_LOAD)
+                && !IT_PANICKED_LOAD.swap(true, Ordering::Relaxed)
+            {
+                panic!("integration test panic during a load");
+            }
             let loaded = note_store::load(&app.db, material_id, *schema)
                 .await
                 .map_err(|error| error.to_string())?;

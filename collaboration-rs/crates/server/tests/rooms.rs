@@ -116,10 +116,15 @@ async fn db(env: &Env) -> tokio_postgres::Client {
 
 /// A note owned by a fresh user; returns (user, material).
 async fn note(env: &Env, text: &str) -> (String, String) {
+    note_named(env, text, "m_it").await
+}
+
+/// A note whose material id starts with `prefix`.
+async fn note_named(env: &Env, text: &str, prefix: &str) -> (String, String) {
     let client = db(env).await;
     let suffix = uuid_like();
     let user = format!("u_it_{suffix}");
-    let material = format!("m_it_{suffix}");
+    let material = format!("{prefix}_{suffix}");
     client
         .execute("INSERT INTO users (id, name) VALUES ($1, 'IT')", &[&user])
         .await
@@ -147,6 +152,11 @@ fn uuid_like() -> String {
 }
 
 fn token(room: &str, user: &str, access: &str) -> String {
+    token_for(room, user, access, 300)
+}
+
+/// A token for `room` that expires `ttl` seconds from now.
+fn token_for(room: &str, user: &str, access: &str, ttl: i64) -> String {
     use base64::Engine;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use hmac::{Hmac, Mac};
@@ -160,7 +170,7 @@ fn token(room: &str, user: &str, access: &str) -> String {
         .and_then(|n| n.parse().ok())
         .unwrap_or(1);
     let claims = serde_json::json!({
-        "access": access, "aud": "capy-collaboration", "exp": now + 300, "iat": now,
+        "access": access, "aud": "capy-collaboration", "exp": now + ttl, "iat": now,
         "iss": "capy-api", "jti": format!("t_{now}_{user}"), "room": room, "schema": schema, "sub": user,
     });
     let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"HS256","typ":"JWT"}"#);
@@ -522,6 +532,88 @@ async fn a_read_only_channel_that_writes_is_closed() {
     assert!(String::from_utf8_lossy(&closed).contains("read-only"));
 }
 
+/// Security regression: a writer may not write the contributor markers the
+/// server keeps in the document (who edited is the server's record).
+#[tokio::test]
+async fn a_writer_that_edits_the_contributor_markers_is_closed() {
+    use yrs::Map;
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "marked").await;
+    let room = format!("material:{material}:schema:1");
+    let mut client = Client::open(server.port).await;
+    client.joined(&room, &token(&room, &user, "write")).await;
+    assert!(client.settle(|c| c.block_text() == "marked").await);
+    let before = client.doc.transact().state_vector();
+    client
+        .doc
+        .get_or_insert_map(ydoc::CONTRIBUTORS_ROOT)
+        .insert(&mut client.doc.transact_mut(), "forged", "someone else");
+    let update = client.doc.transact().encode_state_as_update_v1(&before);
+    client.send(5, &sync(2, &update)).await;
+    let closed = client.until(4).await.expect("closed");
+    assert!(
+        String::from_utf8_lossy(&closed).contains("collaboration metadata"),
+        "{}",
+        String::from_utf8_lossy(&closed)
+    );
+}
+
+/// Security regression (edit-incidents REVIEW2 m-A): a client whose sync
+/// step 2 the room cannot place is closed after two tries, and the incident
+/// is written once per user and room, however often it reconnects.
+#[tokio::test]
+async fn an_unplaceable_step_2_is_recorded_once_per_user_and_room() {
+    use yrs::encoding::write::Write;
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "placed").await;
+    let room = format!("material:{material}:schema:1");
+    // One struct after a unit no one holds.
+    let mut unplaceable: Vec<u8> = Vec::new();
+    unplaceable.write_var(1u32);
+    unplaceable.write_var(1u32);
+    unplaceable.write_var(999u64);
+    unplaceable.write_var(0u32);
+    unplaceable.write_u8(0x80 | 4);
+    unplaceable.write_var(998u64);
+    unplaceable.write_var(3u32);
+    unplaceable.write_string("x");
+    unplaceable.write_var(0u32);
+    for _ in 0..3 {
+        let mut client = Client::open(server.port).await;
+        client.joined(&room, &token(&room, &user, "write")).await;
+        for _ in 0..2 {
+            client.send(5, &sync(1, &unplaceable)).await;
+        }
+        let closed = client.until(4).await.expect("closed after two tries");
+        assert!(
+            String::from_utf8_lossy(&closed).contains("cannot be placed"),
+            "{}",
+            String::from_utf8_lossy(&closed)
+        );
+    }
+    let db = db(&env).await;
+    let count = || async {
+        db.query_one(
+            "SELECT count(*) FROM edit_incidents WHERE file_id=$1 AND kind='step2_unplaced'",
+            &[&material],
+        )
+        .await
+        .expect("incidents")
+        .get::<_, i64>(0)
+    };
+    // The write is spawned: wait for the first, then make sure no other follows.
+    for _ in 0..50 {
+        if count().await > 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(count().await, 1);
+}
+
 #[tokio::test]
 async fn an_update_that_panics_yrs_costs_neither_the_process_nor_the_room() {
     let Some(env) = env() else { return };
@@ -594,6 +686,9 @@ async fn a_panic_inside_a_transaction_discards_the_room_and_moves_its_lineage() 
         }
     };
     assert!(rejected.contains("invalid_document"), "{rejected}");
+    // Security regression (edit-incidents REVIEW2 m-B): editors hear the
+    // rejection without the incident other instances read.
+    assert!(!rejected.contains("incident"), "{rejected}");
     assert!(a.until(4).await.is_some(), "the channel closes");
     // The process lives on and the note opens on its next lineage.
     let next = format!("material:{material}:schema:2");
@@ -833,6 +928,8 @@ struct Gateway {
     blobs: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<u8>>>>,
     /// How long a base download takes (a slow room load).
     delay: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    /// Base downloads started.
+    downloads: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 async fn gateway_db(gateway: &Gateway) -> tokio_postgres::Client {
@@ -944,6 +1041,9 @@ async fn gateway_blob(
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> axum::response::Response {
     use axum::response::IntoResponse;
+    gateway
+        .downloads
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let delay = gateway.delay.load(std::sync::atomic::Ordering::Relaxed);
     tokio::time::sleep(Duration::from_millis(delay)).await;
     let bytes = gateway.blobs.lock().expect("blobs").get(&id).cloned();
@@ -963,6 +1063,7 @@ async fn gateway(env: &Env) -> Gateway {
         url: format!("http://{}", listener.local_addr().expect("address")),
         blobs: Default::default(),
         delay: Default::default(),
+        downloads: Default::default(),
     };
     let app = axum::Router::new()
         .route(
@@ -1093,6 +1194,67 @@ async fn a_clean_source_room_answers_a_checkpoint_request_after_a_reload() {
     assert_eq!(receipt["checkpoint"], 1);
 }
 
+/// Security regression (rust-core REVIEW1 N3): a writer that answered a
+/// publication handoff ready is read-only until the handoff ends, and a
+/// token refresh meanwhile does not give it write access back.
+#[tokio::test]
+async fn a_token_refresh_inside_a_handoff_keeps_the_writer_read_only() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file(&env, &gateway, "hello").await;
+    let room = format!("source:{file}:epoch:1");
+    let mut a = Client::open(server.port).await;
+    assert_eq!(a.joined(&room, &token(&room, &user, "write")).await, 1);
+    assert!(a.settle(|c| source_text(c) == "hello").await);
+    // A publication asks the room's writers to get ready.
+    let redis = redis::Client::open(env.redis.as_str()).expect("redis");
+    let mut connection = redis
+        .get_multiplexed_async_connection()
+        .await
+        .expect("redis connection");
+    let prepare = serde_json::json!({
+        "type": "prepare", "id": "it-handoff", "room": room, "fileId": file,
+        "epoch": 1, "checkpoint": 0, "writersOnly": true,
+    });
+    let _: i64 = redis::cmd("PUBLISH")
+        .arg(sources::handoff::SOURCE_HANDOFF_CHANNEL)
+        .arg(prepare.to_string())
+        .query_async(&mut connection)
+        .await
+        .expect("publish");
+    loop {
+        let payload = a.until(9).await.expect("the handoff's prepare");
+        if text_payload(&payload).contains("source-handoff-prepare") {
+            break;
+        }
+    }
+    let ready = serde_json::json!({
+        "type": "source-handoff-ready", "id": "it-handoff", "epoch": 1, "checkpoint": 0, "clean": true,
+    });
+    let mut stateless = Vec::new();
+    varbytes(&mut stateless, ready.to_string().as_bytes());
+    a.send(9, &stateless).await;
+    // A fresh write token arrives while the handoff waits.
+    let mut refresh = Vec::new();
+    varbytes(&mut refresh, token(&room, &user, "write").as_bytes());
+    a.send(11, &refresh).await;
+    let before = a.doc.transact().state_vector();
+    {
+        let text = a.doc.get_or_insert_text("source");
+        let mut txn = a.doc.transact_mut();
+        text.insert(&mut txn, 0, "late ");
+    }
+    let update = a.doc.transact().encode_state_as_update_v1(&before);
+    a.send(5, &sync(2, &update)).await;
+    let closed = a.until(4).await.expect("the write closes the channel");
+    assert!(
+        String::from_utf8_lossy(&closed).contains("read-only"),
+        "{}",
+        String::from_utf8_lossy(&closed)
+    );
+}
+
 fn source_text(client: &Client) -> String {
     let root = client.doc.get_or_insert_text("source");
     let txn = client.doc.transact();
@@ -1161,40 +1323,53 @@ async fn a_socket_keeps_serving_its_rooms_while_another_room_loads() {
             break;
         }
     }
-    // The same socket joins a source room whose load takes 3 s.
+    // A co-editor in the note.
+    let mut b = Client::open(server.port).await;
+    b.joined(&note_room, &token(&note_room, &user, "write"))
+        .await;
+    assert!(b.settle(|c| c.block_text() == "shared").await);
+    // The same socket joins a source room whose load takes 3 s and, once
+    // that load is under way, sends its cursor to the note.
     gateway
         .delay
         .store(3000, std::sync::atomic::Ordering::Relaxed);
+    let downloads = || gateway.downloads.load(std::sync::atomic::Ordering::Relaxed);
+    let before = downloads();
     ws.send(Ws::Binary(
         join(2, &source_room, &token(&source_room, &owner, "write")).into(),
     ))
     .await
     .expect("join");
-    // Meanwhile a co-editor types into the note.
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    let mut b = Client::open(server.port).await;
-    b.joined(&note_room, &token(&note_room, &user, "write"))
-        .await;
-    assert!(b.settle(|c| c.block_text() == "shared").await);
-    b.type_text(" edit").await;
-    // The note's update (a sync update, not the join's step 1 or 2)
-    // reaches the first socket before the slow room joins.
-    let started = tokio::time::Instant::now();
-    loop {
-        let (channel, kind, payload) =
-            tokio::time::timeout(Duration::from_secs(10), next_message(&mut ws, &mut pending))
-                .await
-                .expect("a message")
-                .expect("the socket");
-        assert!(
-            (channel, kind) != (2, 1),
-            "the slow room joined before the note's update arrived"
-        );
-        if (channel, kind) == (1, 5) && payload.first() == Some(&2) {
+    for _ in 0..500 {
+        if downloads() > before {
             break;
         }
+        tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    assert!(started.elapsed() < Duration::from_secs(2));
+    assert!(downloads() > before, "the slow load started");
+    let mut cursor = Vec::new();
+    var(&mut cursor, 1);
+    var(&mut cursor, 42);
+    var(&mut cursor, 1);
+    varbytes(&mut cursor, br#"{"cursor":"a"}"#);
+    ws.send(Ws::Binary(frame(1, 7, &cursor).into()))
+        .await
+        .expect("awareness");
+    // The co-editor sees the cursor while the slow room is still loading:
+    // the socket read it without waiting on the load (REVIEW1 S4), so the
+    // slow room's JOINED has not been sent yet.
+    assert!(b.until(7).await.is_some(), "the cursor arrives");
+    while let Ok(Some((channel, kind, _))) = tokio::time::timeout(
+        Duration::from_millis(500),
+        next_message(&mut ws, &mut pending),
+    )
+    .await
+    {
+        assert!(
+            (channel, kind) != (2, 1),
+            "the slow room joined before the socket read the cursor"
+        );
+    }
 }
 
 #[tokio::test]
@@ -1274,4 +1449,121 @@ async fn a_note_edited_without_a_pause_still_projects_on_the_cadence() {
             projected().await
         );
     }
+}
+
+/// Security regressions: a token opens only the room it names; the server
+/// asks for a fresh one before it expires and closes the channel at expiry
+/// unless a valid one for the same room came back; the upgrade refuses an
+/// origin outside the allowed list.
+#[tokio::test]
+async fn a_token_holds_only_its_room_until_it_expires_and_origins_are_checked() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "mine").await;
+    let (_, other) = note(&env, "theirs").await;
+    let room = format!("material:{material}:schema:1");
+    let other_room = format!("material:{other}:schema:1");
+    let refresh = |token: &str| {
+        let mut payload = Vec::new();
+        varbytes(&mut payload, token.as_bytes());
+        payload
+    };
+    // The user may edit this room, but the token names another one.
+    let mut client = Client::open(server.port).await;
+    client
+        .join(&room, &token(&other_room, &user, "write"))
+        .await;
+    let reason = text_payload(&client.until(2).await.expect("refused"));
+    assert_eq!(reason, "permission-denied");
+    // Two seconds from expiry the server asks for a fresh token at once; a
+    // refresh naming another room does not extend the channel.
+    let mut client = Client::open(server.port).await;
+    client
+        .joined(&room, &token_for(&room, &user, "write", 2))
+        .await;
+    client.until(10).await.expect("a token request");
+    client
+        .send(11, &refresh(&token(&other_room, &user, "write")))
+        .await;
+    let closed = client.until(4).await.expect("closed at expiry");
+    assert!(
+        String::from_utf8_lossy(&closed).contains("token expired"),
+        "{}",
+        String::from_utf8_lossy(&closed)
+    );
+    // A fresh token for the room keeps the channel open past the expiry.
+    let mut client = Client::open(server.port).await;
+    client
+        .joined(&room, &token_for(&room, &user, "write", 2))
+        .await;
+    client.until(10).await.expect("a token request");
+    client
+        .send(11, &refresh(&token(&room, &user, "write")))
+        .await;
+    assert!(
+        client.until(4).await.is_none(),
+        "closed after a valid refresh"
+    );
+    // An origin outside COLLABORATION_ALLOWED_ORIGINS gets no socket.
+    let mut request = format!("ws://127.0.0.1:{}/", server.port)
+        .into_client_request()
+        .expect("request");
+    request.headers_mut().insert(
+        "origin",
+        "https://elsewhere.example".parse().expect("origin"),
+    );
+    let refused = tokio_tungstenite::connect_async(request).await;
+    assert!(
+        matches!(&refused, Err(tokio_tungstenite::tungstenite::Error::Http(response)) if response.status() == 403),
+        "{refused:?}"
+    );
+}
+
+/// Security regression: every internal route answers 401 without the
+/// service secret or with a wrong one, before reading its body.
+#[tokio::test]
+async fn internal_routes_refuse_a_missing_or_wrong_service_secret() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let routes = [
+        "/internal/materials/m/project",
+        "/internal/source-changes/resolve",
+        "/internal/source-refresh/publish",
+        "/internal/documents/inspect",
+        "/internal/documents/edit",
+        "/internal/documents/undo",
+        "/internal/commands",
+        "/internal/markdown/convert",
+    ];
+    let client = reqwest::Client::new();
+    for route in routes {
+        for secret in [
+            None,
+            Some("not-the-secret"),
+            Some(&SECRET[..SECRET.len() - 1]),
+        ] {
+            let mut request = client
+                .post(format!("http://127.0.0.1:{}{route}", server.port))
+                .json(&serde_json::json!({}));
+            if let Some(secret) = secret {
+                request = request.header("x-collaboration-secret", secret);
+            }
+            let status = request.send().await.expect("internal request").status();
+            assert_eq!(status.as_u16(), 401, "{route} with {secret:?}");
+        }
+    }
+}
+
+/// Security regression (rust-core REVIEW1 S2): a room whose task panics
+/// outside its own steps (here its first load) leaves no dead handle in the
+/// registry, so the join's retry loads the room afresh and joins.
+#[tokio::test]
+async fn a_room_whose_load_panics_loads_afresh_on_the_next_join() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note_named(&env, "panics once", "capy-it-panic-load").await;
+    let room = format!("material:{material}:schema:1");
+    let mut client = Client::open(server.port).await;
+    assert_eq!(client.joined(&room, &token(&room, &user, "write")).await, 1);
+    assert!(client.settle(|c| c.block_text() == "panics once").await);
 }

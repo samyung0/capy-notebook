@@ -27,19 +27,20 @@ fn call(request: &Frame) -> Answer {
         "test.abort" => std::process::abort(),
         "test.exit" => std::process::exit(3),
         "test.allocate" => {
-            // Grows until an allocation fails: under the Linux memory cap the
-            // allocator aborts. Elsewhere the same abort is raised directly
-            // once past the requested size, so the dev machine stays usable.
-            let cap = args(request)["mib"].as_u64().unwrap_or(64) as usize;
+            // Holds `mib` MiB, then answers. Under the Linux memory cap below
+            // that size an allocation fails first and the process aborts.
+            // Elsewhere (no cap) the abort is raised at the size directly.
+            let mib = args(request)["mib"].as_u64().unwrap_or(64) as usize;
             let mut held: Vec<Vec<u8>> = Vec::new();
-            loop {
-                if !cfg!(target_os = "linux") && held.len() >= cap {
-                    std::alloc::handle_alloc_error(std::alloc::Layout::new::<[u8; 1 << 20]>());
-                }
+            while held.len() < mib {
                 let mut chunk = vec![0u8; 1 << 20];
                 chunk[0] = 1;
                 held.push(chunk);
             }
+            if !cfg!(target_os = "linux") {
+                std::alloc::handle_alloc_error(std::alloc::Layout::new::<[u8; 1 << 20]>());
+            }
+            Ok((json!({ "held": held.len() }), Vec::new()))
         }
         "test.panic" => panic!("engine glue panicked"),
         "test.print" => {

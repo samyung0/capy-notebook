@@ -11,5 +11,9 @@ serde.workspace = true
 thiserror.workspace = true
 yrs.workspace = true
 
+[dev-dependencies]
+# Counts the bytes decoding allocates (tests/decode_alloc.rs).
+stats_alloc = "0.1.10"
+
 [lints]
 workspace = true

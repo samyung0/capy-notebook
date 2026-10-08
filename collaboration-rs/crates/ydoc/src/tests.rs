@@ -518,3 +518,51 @@ fn a_costly_update_is_refused() {
     let (room, bytes) = fanned(1_415);
     assert!(matches!(inspect(&room, &bytes), Err(UpdateError::Costly)));
 }
+
+/// Security regression (notes REVIEW4 M9): `clients` forged clients, each
+/// struct's origin the struct of the client before, made yrs's struct picker
+/// recurse once per client: 20,000 overflowed a 2 MiB stack (a tokio
+/// worker's) and aborted the process. Applied directly here, with no work
+/// budget, on such a stack.
+#[test]
+fn a_chain_of_clients_applies_on_a_task_stack() {
+    use yrs::encoding::write::Write;
+    let clients = 20_000u64;
+    let room = doc(1);
+    room.get_or_insert_text("t")
+        .insert(&mut room.transact_mut(), 0, "h");
+    let state = room
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    let mut bytes: Vec<u8> = Vec::new();
+    bytes.write_var(clients);
+    for k in 0..clients {
+        let client = 1_000 + k;
+        bytes.write_var(1u32);
+        bytes.write_var(client);
+        bytes.write_var(0u32);
+        bytes.write_u8(0x80 | 4);
+        let (origin, clock) = if k == 0 { (1, 0) } else { (client - 1, 0) };
+        bytes.write_var(origin);
+        bytes.write_var(clock);
+        bytes.write_string("x");
+    }
+    bytes.write_var(0u32);
+    let length = std::thread::Builder::new()
+        .stack_size(2 << 20)
+        .spawn(move || {
+            let room = doc(1);
+            room.transact_mut()
+                .apply_update(decode(&state).unwrap())
+                .unwrap();
+            room.transact_mut()
+                .apply_update(decode(&bytes).unwrap())
+                .unwrap();
+            let text = room.get_or_insert_text("t");
+            text.len(&room.transact())
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+    assert_eq!(length, 1 + clients as u32);
+}

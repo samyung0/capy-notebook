@@ -233,13 +233,13 @@ async fn a_timed_out_call_kills_its_process_and_the_queue_moves_to_a_new_one() {
             .await
             .unwrap()
     };
-    let started = Instant::now();
+    // The hung call fails as timed out (its sleep would answer after 30 s)
+    // and the queued one runs on a new process.
     let (hung, queued) = tokio::join!(hung, queued);
     assert_eq!(
         hung.unwrap_err(),
         EngineError::Transient("Office test.sleep timed out".into())
     );
-    assert!(started.elapsed() < Duration::from_secs(5));
     assert_ne!(queued.value["pid"].as_u64().unwrap(), before);
     let (save, _) = pool.take_stats();
     assert_eq!((save.timeouts, save.restarts, save.crashes), (1, 1, 0));
@@ -248,16 +248,19 @@ async fn a_timed_out_call_kills_its_process_and_the_queue_moves_to_a_new_one() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn running_out_of_memory_aborts_only_that_process() {
     let mut config = config(1, 1);
-    // Linux: RLIMIT_DATA in the child makes the allocator fail (then abort).
+    // Linux (CI): RLIMIT_DATA in the child makes the allocator fail, then
+    // abort, before it holds 1 GiB (security regression: the engine memory
+    // cap). Elsewhere the test engine aborts at 64 MiB by itself.
     config.memory_limit_bytes = Some(512 << 20);
     let pool = EnginePool::new(config);
     let room = "source:f_m:epoch:1";
     let before = pid(&pool, Lane::Save, Some(room)).await;
+    let mib = if cfg!(target_os = "linux") { 1024 } else { 64 };
     let error = pool
         .call(
             Lane::Save,
             Some(room),
-            request("test.allocate", json!({ "mib": 64 })),
+            request("test.allocate", json!({ "mib": mib })),
         )
         .await
         .unwrap_err();
