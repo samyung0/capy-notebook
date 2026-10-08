@@ -128,7 +128,11 @@ import { MediaPlaceholderElement, YouTubeEmbedElement } from './MediaNodes';
 import { MentionInputElement } from './MentionInput';
 import { noteMarkdownPlugin } from './markdown';
 import { navigationFeedbackPlugin } from './navigationFeedback';
-import { NoteParagraphPlugin, VscodeMarkdownPastePlugin } from './pastePlugins';
+import {
+  NoteParagraphPlugin,
+  VoidBlockPastePlugin,
+  VscodeMarkdownPastePlugin,
+} from './pastePlugins';
 import { remoteCursorDecorationPlugin } from './RemoteCursors';
 import { SlashInputElement } from './SlashInput';
 import { stableElementIdsPlugin } from './stableElementIds';
@@ -533,6 +537,7 @@ export const MaterialKit: AnyPlugin[] = [
   CodeBlockListCleanupPlugin,
   VscodeMarkdownPastePlugin,
   VoidBlockBreakPlugin,
+  VoidBlockPastePlugin,
   TablePlugin.configure({ options: { minColumnWidth: 48 } })
     .extendEditorTransforms(({ editor }) => ({
       table: {
