@@ -62,8 +62,20 @@ for (const [format, name] of [
       ).status,
       404
     );
-    const ownerFrame = await openEditor(run, run.owner, workspaceId, fileId);
-    const editorFrame = await openEditor(run, editor, workspaceId, fileId);
+    const ownerFrame = await openEditor(
+      run,
+      run.owner,
+      workspaceId,
+      fileId,
+      format
+    );
+    const editorFrame = await openEditor(
+      run,
+      editor,
+      workspaceId,
+      fileId,
+      format
+    );
     const original = await fileRow(run, fileId);
     await editOffice(run.owner, ownerFrame, format, false);
     const ownerFact = format === 'xlsx' ? '43' : 'CEDAR-42';
@@ -87,7 +99,13 @@ for (const [format, name] of [
     // This account has never loaded the Office document and has no local
     // replica. Its edits must start from the persisted shared checkpoint.
     await invite(run, workspaceId, outsider, 'editor');
-    const reopened = await openEditor(run, outsider, workspaceId, fileId);
+    const reopened = await openEditor(
+      run,
+      outsider,
+      workspaceId,
+      fileId,
+      format
+    );
     const beforeReopenSave = await savedState(run, fileId);
     if (format === 'docx') {
       const input = reopened.getByRole('textbox', { name: 'Document input' });
@@ -114,7 +132,7 @@ for (const [format, name] of [
         'Owner sentence: The launch code is CEDAR-42. Fresh client confirmed the saved field survey.'
       );
     }
-    await saveOffice(outsider.page);
+    await saveOffice(outsider.page, format);
     const fresh = await savedFacts(run, fileId, [
       ownerFact,
       editorFact,

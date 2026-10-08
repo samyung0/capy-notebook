@@ -17,9 +17,10 @@ TOOLS_PER_RESPONSE = 4
 MAX_CONCURRENT = 4
 
 # A turn without ledger todos (an answer or a single-item build) gets this many
-# responses, the last with tools off. A turn that needs more room creates a
-# ledger. CAPY_AGENT_MAX_STEPS can only lower it; the prompt states this value.
-PLANNING_RESPONSES = min(cfg.agent_max_steps, 8)
+# responses, the last with tools off; the turn context counts them down. A turn
+# that needs more room creates a ledger. CAPY_AGENT_MAX_STEPS can only lower
+# it; the prompt states this value.
+PLANNING_RESPONSES = min(cfg.agent_max_steps, 12)
 
 # Once the turn's ledger has todos there is no response ceiling: the tool cap
 # bounds productive turns, and the stall guard ends one whose responses stop

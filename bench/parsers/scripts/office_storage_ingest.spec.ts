@@ -140,7 +140,7 @@ for (const [set, name] of [
     }
     await measure('initial');
     const format = name.split('.').at(-1) as OfficeFormat;
-    const frame = await openEditor(run, run.owner, workspaceId, fileId);
+    const frame = await openEditor(run, run.owner, workspaceId, fileId, format);
     if (set === 'basic') await editOffice(run.owner, frame, format, false);
     else await editRich(run.owner.page, frame, format, false);
     await saved(run.owner.page);

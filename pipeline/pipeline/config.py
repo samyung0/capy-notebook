@@ -181,7 +181,7 @@ class Config:
     # Tool-calling rounds per chat turn. The loop is capped rather than
     # open-ended: the cost of a wrong plan is bounded. Each round re-sends the
     # whole transcript, so this is the main lever on chat spend.
-    agent_max_steps: int = int(_env("CAPY_AGENT_MAX_STEPS", "8"))
+    agent_max_steps: int = int(_env("CAPY_AGENT_MAX_STEPS", "12"))
     # Pre-model gathering budget when no catalog model has been selected yet.
     # Provider calls use the selected catalog row's required context window.
     llm_input_budget_tokens: int = int(_env("CAPY_LLM_INPUT_BUDGET_TOKENS", "50000"))

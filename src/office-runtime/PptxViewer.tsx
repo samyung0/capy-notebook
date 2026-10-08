@@ -2,10 +2,12 @@ import {
   analyzeOpenPresentation,
   type CanvasImageResolver,
   initWasm,
+  installEmbeddedFonts,
   openPresentation,
   type PresentationAnalysis,
   type PresentationViewerHandle,
   paintSlide,
+  removeFontFaces,
   type SlideDisplayList,
   sizeCanvasForSlide,
 } from '@betteroffice/pptx/viewer';
@@ -166,15 +168,23 @@ export function PptxViewer({
   useEffect(() => {
     let disposed = false;
     let handle: PresentationViewerHandle | null = null;
+    let embedded: FontFace[] = [];
     setSlides(null);
     setSlideIndex(0);
     pendingAnalysisRef.current = null;
     void Promise.all([initWasm(), loadPptxFonts()]).then(
-      ([, fonts]) => {
+      async ([, fonts]) => {
         if (disposed) return;
         try {
           handle = openPresentation(bytes, { fonts });
           handleRef.current = handle;
+          // The deck's own faces, so the canvas paints what layout measured.
+          const added = await installEmbeddedFonts(handle);
+          if (disposed) {
+            removeFontFaces(added);
+            return;
+          }
+          embedded = added;
           const analysis = analyzeOpenPresentation(handle);
           const open = handle;
           const laidOut = open.snapshot().slides.map((slide, index) => ({
@@ -198,6 +208,7 @@ export function PptxViewer({
       paintGenerationRef.current += 1;
       handleRef.current = null;
       handle?.dispose();
+      removeFontFaces(embedded);
       imagesRef.current.clear();
     };
   }, [bytes, onAnalysis, onError]);

@@ -16,8 +16,8 @@ EDITING_WHEN = (
     "read before any write: creating materials, adding to them, or editing a file"
 )
 BUILDING_WHEN = (
-    "read before creating notes, quizzes, flashcards, mindmaps or diagrams, or "
-    "adding note sections or questions"
+    "read together with editing, in the same response, before creating notes, "
+    "quizzes, flashcards, mindmaps or diagrams, or adding note sections or questions"
 )
 DECK_WHEN = "read before making a slide deck (create_deck, write_slide)"
 

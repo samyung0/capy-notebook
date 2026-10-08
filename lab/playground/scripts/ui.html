@@ -138,7 +138,8 @@ img.capture {
   text-align: left;
   cursor: pointer;
 }
-#materialDialog {
+#materialDialog,
+#contextDialog {
   box-sizing: border-box;
   width: min(1100px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
@@ -147,10 +148,12 @@ img.capture {
   border: 1px solid #ccc;
   border-radius: 8px;
 }
-#materialDialog::backdrop {
+#materialDialog::backdrop,
+#contextDialog::backdrop {
   background: #0006;
 }
-#materialDialog .row {
+#materialDialog .row,
+#contextDialog .row {
   justify-content: space-between;
 }
 #materialTitle {
@@ -353,6 +356,14 @@ img.capture {
     <summary>Saved JSON</summary>
     <pre id="materialJson"></pre>
   </details>
+</dialog>
+<dialog id="contextDialog" aria-labelledby="contextTitle">
+  <div class="row">
+    <h2 id="contextTitle"></h2>
+    <button id="closeContext" type="button" autofocus>Close</button>
+  </div>
+  <p id="contextMeta" class="muted"></p>
+  <div id="contextMessages"></div>
 </dialog>
 <script>
 'use strict';
@@ -876,6 +887,34 @@ $('materials').onclick = (event) => {
   $('materialDialog').showModal();
 };
 $('closeMaterial').onclick = () => $('materialDialog').close();
+$('closeContext').onclick = () => $('contextDialog').close();
+// Every message of one provider request, in the order it was sent.
+async function showContext(url, call) {
+  const res = await fetch(url);
+  if (!res.ok) return alert(`request ${call}: ${res.status}`);
+  const req = await res.json();
+  const text = (c) =>
+    typeof c === 'string' ? c : JSON.stringify(c ?? '', null, 2);
+  const rows = req.messages.map((m, i) => {
+    let body = text(m.content);
+    if (m.tool_calls)
+      body += '\n\ntool_calls: ' + JSON.stringify(m.tool_calls, null, 2);
+    const label = [m.role, m._kind, m.tool_call_id].filter(Boolean).join(' · ');
+    return `<details open><summary><b>#${i + 1}</b> ${esc(label)} · ≈${k(Math.ceil(body.length / 4))} tokens</summary><pre>${esc(body)}</pre></details>`;
+  });
+  const tools = req.tools || [];
+  rows.push(
+    `<details><summary><b>tools</b> ${tools.length} schemas · tool_choice ${esc(req.tool_choice ?? 'auto')}</summary><pre>${esc(JSON.stringify(tools, null, 2))}</pre></details>`
+  );
+  $('contextTitle').textContent = `Call ${call}: full context window`;
+  $('contextMeta').textContent = `${req.messages.length} messages, as sent to the provider (images omitted)`;
+  $('contextMessages').innerHTML = rows.join('');
+  $('contextDialog').showModal();
+}
+log.onclick = (e) => {
+  const b = e.target.closest('button[data-request]');
+  if (b) showContext(b.dataset.request, b.dataset.call);
+};
 // Stop the preview's frames (mermaid, interactive blocks) with the dialog.
 $('materialDialog').onclose = () => ($('materialPreview').src = 'about:blank');
 function configCard(label, c, prompt) {
@@ -1024,7 +1063,7 @@ function render(ev, runId) {
       turnOutput.written[name] = (turnOutput.written[name] || 0) + n;
     card(
       'stat',
-      `<b>call ${ev.call}</b> ${ev.seconds ?? '?'} s · ${ev.output == null ? 'out ? (run saved before 2026-10-05)' : `<b>out ${k(ev.output)}</b> = reasoning ${k(ev.reasoning || 0)}${writtenText(ev.written)}`} · <b>in ${k(ev.reported_input)}</b>${ev.cached_read ? ` (${k(ev.cached_read)} cached)` : ''} · estimated ${k(ev.estimated_total)} of limit ${k(ev.limit)} · system ${k(p.system)} · schemas ${k(p.schemas)} · memory ${k(p.memory)} · history ${k(p.history)} · query ${k(p.query)} · assistant ${k(p.assistant)} · tool results ${k(p.tool_results)} in ${ev.counts.tool_results} · images ${ev.counts.images} ≈ ${k(p.images_est)}${ev.turn_context ? `<details><summary>turn context</summary><pre>${esc(ev.turn_context)}</pre></details>` : ''}`
+      `<b>call ${ev.call}</b> ${ev.seconds ?? '?'} s · ${ev.output == null ? 'out ? (run saved before 2026-10-05)' : `<b>out ${k(ev.output)}</b> = reasoning ${k(ev.reasoning || 0)}${writtenText(ev.written)}`} · <b>in ${k(ev.reported_input)}</b>${ev.cached_read ? ` (${k(ev.cached_read)} cached)` : ''} · estimated ${k(ev.estimated_total)} of limit ${k(ev.limit)} · system ${k(p.system)} · schemas ${k(p.schemas)} · memory ${k(p.memory)} · history ${k(p.history)} · query ${k(p.query)} · assistant ${k(p.assistant)} · tool results ${k(p.tool_results)} in ${ev.counts.tool_results} · images ${ev.counts.images} ≈ ${k(p.images_est)}${ev.turn_context ? `<details><summary>turn context</summary><pre>${esc(ev.turn_context)}</pre></details>` : ''}${ev.request ? ` <button type="button" data-request="${esc(ev.request)}" data-call="${ev.call}">full context</button>` : ''}`
     );
     return;
   }

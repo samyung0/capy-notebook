@@ -704,6 +704,17 @@ async def copy_locally(
     return result
 
 
+def without_images(content: Any) -> Any:
+    if not isinstance(content, list):
+        return content
+    return [
+        {"type": part["type"], "omitted": "image"}
+        if isinstance(part, dict) and part.get("type") in ("image_url", "image")
+        else part
+        for part in content
+    ]
+
+
 def material_size(kind: str, args: dict[str, Any]) -> str:
     from pipeline.retrieval.chunking import estimate_tokens
 
@@ -1242,6 +1253,25 @@ class Turn:
             )
             context = context_breakdown(request, kw.get("tools"))
             call = len(state["provider_calls"]) + 1
+            # The whole request as sent, for the page's "full context" view.
+            # Images become placeholders: their base64 would be megabytes.
+            sent = self.run_dir / "requests" / f"{call}.json"
+            sent.parent.mkdir(exist_ok=True)
+            sent.write_text(
+                json.dumps(
+                    {
+                        "tool_choice": kw.get("tool_choice"),
+                        "tools": kw.get("tools"),
+                        "messages": [
+                            {**m, "content": without_images(m.get("content"))}
+                            for m in request
+                        ],
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                ),
+                encoding="utf-8",
+            )
             if ctx.ledger.active:
                 state["ledger"] = ledger_state(ctx.ledger)
                 state["extra"].append(
@@ -1310,6 +1340,7 @@ class Turn:
                     "written": {name: n for name, n in written.items() if n},
                     "seconds": state["provider_calls"][-1]["elapsed_seconds"],
                     "turn_context": turn_context,
+                    "request": f"/api/runs/{self.id}/requests/{call}.json",
                     **context,
                 }
             )
@@ -1814,6 +1845,13 @@ def build_app(target: str):
         if path.parent.parent.parent != RUNS or not path.exists():
             raise HTTPException(404)
         return FileResponse(path, filename=name)
+
+    @app.get("/api/runs/{run_id}/requests/{name}")
+    def get_request(run_id: str, name: str):
+        path = RUNS / run_id / "requests" / name
+        if path.parent.parent.parent != RUNS or not path.exists():
+            raise HTTPException(404)
+        return FileResponse(path)
 
     @app.get("/api/runs/{run_id}/captures/{name}")
     def get_capture(run_id: str, name: str):

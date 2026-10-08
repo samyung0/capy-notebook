@@ -114,7 +114,7 @@ export async function editTocLink(page: Page, frame: FrameLocator) {
     );
   }
   await input.pressSequentially('Z');
-  await saveOffice(page);
+  await saveOffice(page, 'docx');
   return { published: 'IntroZduction' };
 }
 

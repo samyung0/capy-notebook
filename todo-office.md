@@ -127,13 +127,6 @@ check); it applies at the first promotion.
 
 ## Queued tracks (each needs its own decisions and a visual checkpoint)
 
-- **PPTX embedded fonts** (Epo 2026-10-08): decks exported from Google Slides, or saved
-  from PowerPoint with embedded fonts, carry them in `ppt/fonts/*.fntdata` listed in
-  `p:embeddedFontLst`. Layout and paint ignore them and fall back (Arial for Raleway
-  in `Your big idea.pptx` on UAT, `f_46e3e917f1`), so wrapping and widths differ from
-  PowerPoint and Google Slides. Load them for layout and paint (deobfuscate where the
-  part is obfuscated), keep today's fallback when absent, and keep them in exports.
-
 - **Order after the 2026-10-05 batch:** one optimization round (Yjs save
   latency, typing latency, memory; Office and Plate), then heap/latency
   ceilings from the largest allowed files, then a prod-box stress run for the
@@ -191,13 +184,6 @@ check); it applies at the first promotion.
   changes. The table ops apply as plain edits in suggesting mode (unused in
   Capy). Notes in
   `capy-docx-review-harnesses/2026-10-05-office-batch/docx-table-menu/`.
-- **DOCX Enter racing a peer's paragraph change** (decided 2026-10-06, fork):
-  Enter at a paragraph's end inserts the new mark after the existing one, so
-  a peer's concurrent pPr change stays on the text instead of landing on the
-  new empty paragraph. Changes how Enter is stored: matrix plus two-peer work.
-  Same item: two peers pressing Enter at the same paragraph end save the same
-  `w14:paraId` twice (the repair helper has no caller outside tests).
-  Found by docx-enter-copy (`capy-docx-review-harnesses/2026-10-05-office-batch/docx-enter-copy/`).
 - **Unplaceable sync step 2 (lowest priority).** A client whose own sync step 2
   the room cannot place (it holds content out of order) is closed after 2 tries
   (`resyncUnheld`, `collaboration/src/officeRoots.ts`) and then reconnects
@@ -207,6 +193,12 @@ check); it applies at the first promotion.
 
 ## Unverified or small
 
+- **PPTX embedded fonts saved by PowerPoint** (pptx-fonts review 2,
+  2026-10-08): the decoder is checked on Google Slides exports (EOT 2.2,
+  MicroType Express, run-length stage off) and on constructed run-length
+  streams; no PowerPoint-saved (t2embed) deck embedding an OFL face has been
+  opened. Add one as a fixture when someone has one
+  (`vendor/betteroffice/crates/ooxml-text/src/embedded_font/`).
 - **AI-edit Undo storage is not released on source publications** (upload
   audit 2026-10-06, unverified; context in `todo-storage.md`):
   `agent_edit_inverses` are charged at up to 256 KiB each
@@ -218,14 +210,6 @@ check); it applies at the first promotion.
   leave them charged with no expiry; maintenance-window resets release them
   for the reset formats only. Decide with Epo whether a publication
   invalidates Undo (it rewrites the base the inverse applies to).
-- **A field that shows nothing is laid out one digit wide** (pre-existing,
-  found by docx-toc 2026-10-06): ooxml-text measures an empty field result as
-  `"1"` (`prepare_field_run`, `crates/ooxml-text/src/measure/prepare.rs`), so a
-  table of contents' own marker (and a REF over links, a split field's first
-  half) takes ~9 px at 12 pt. In every TOC's first entry, Word's or Insert's,
-  the page number then sits one digit left of the others. Fix: measure an
-  empty result as nothing unless the field is PAGE/NUMPAGES (whose text each
-  page resolves), in the JSON and typed measure paths alike.
 - **DOCX section break from the toolbar may not reach the saved file**
   (found by docx-toc review 2, probes J/J2 in
   `capy-docx-review-harnesses/2026-10-05-office-batch/docx-toc/review-2/`):
@@ -259,9 +243,7 @@ check); it applies at the first promotion.
   as the current pPr is. A vMerge continuation cell saves its restart cell's
   `w:tcPr`, losing its own borders and shading. The editor lays out a row's
   skipped grid columns (`w:gridBefore`) from the first column (view mode and
-  Word shift the row). Enter at the end of a paragraph keeps only style,
-  spacing, font carry and the list, where Word copies all direct pPr
-  (alignment, indents, the unmodeled children): needs a decision. Cells whose
+  Word shift the row). Cells whose
   row or column position changes (a row inserted above the header, a column
   after the last) keep their old table-style look in the editor until the
   file reopens; the save and the editor's style values already use that look,
@@ -274,6 +256,26 @@ check); it applies at the first promotion.
   whole story (about 0.75 ms more a keystroke with a stored caret font on a
   4000-paragraph story). Probes in
   `capy-docx-review-harnesses/2026-10-05-office-batch/docx-fidelity/`.
+- **DOCX Enter then Backspace drops a section** (docx-enter-copy, 2026-10-06;
+  pre-existing): Enter at the end of a paragraph that ends a section, then
+  Backspace, loses the section break (the join adopts the text mark's
+  properties, which never carry `sectPr`; keep the survivor's section keys
+  when the donor has none; probe
+  `docx-enter-copy/probes/section-enter-backspace.test.ts`). Same cause: Enter
+  mid-paragraph then Backspace drops the source mark's tracked insertion
+  (`w:rPr/w:ins` on the mark; the new mark leaves out `pPrIns`/`pPrDel`,
+  `ops/paragraph.rs` `split_paragraph`, and `adopt_pilcrow` in `ops/mod.rs`
+  replaces the survivor's keys), and the copied `pPrChange` comes back under
+  new ids; keep the survivor's mark-revision and section keys when the donor
+  has none (docx-enter-copy REVIEW2 finding 4).
+- **DOCX Undo of one peer's concurrent split leaves an empty paragraph id**
+  (pre-existing on capy-ci, found by the fork-small review 2026-10-08): two
+  peers split one paragraph mid-text and sync, then one undoes its split: its
+  undo removes its re-mint of the source mark, the other peer's concurrent
+  re-mint was already overwritten, so the merged paragraph has no `paraId`
+  (`"":pha beta`) and two such paragraphs would share the empty Loc id. The
+  duplicate rename skips marks without an id; giving one `{client}.{clock}`
+  there would fix it. Probe `fork-small-review/undoBase.test.ts`.
 - **DOCX run formatting written as direct on every save** (pre-existing, found
   by the docx-fidelity review 2026-10-06): every save writes the style's run
   formatting as direct formatting on every run of a saved story (long-handbook
@@ -303,28 +305,17 @@ check); it applies at the first promotion.
   continued; viewer list numbers may ignore start values (8, 9), legal
   numbering and Chinese numbering (seen with minimal numbering XML — confirm on
   a real Word file first).
-- **Copy at a mid-paragraph break (needs Epo's decision):** view mode copies a
-  newline at a page or column break inside a paragraph; the editor
-  (`yrsCommands.ts` `yrsSelectionText`) copies nothing there and marks the copy
-  not plain. LibreOffice's text export writes a newline; Word's clipboard is
-  unchecked (its object model uses U+000C/U+000E). Recommended: a newline in
-  both modes when text precedes the break in its paragraph, keeping
-  `plain = false` so Cut still only copies.
-- **DOCX arrows over breaks** (docx-breaks review, 2026-10-06): Left/Right step
-  through `session.paragraphs(story)[i].text`, which leaves break units out
-  (`YrsInput.tsx:829`, `:850-856`), so ArrowRight stops before the last
-  character of a paragraph holding a page, column or soft line break, and
-  Alt/Ctrl+Arrow word steps are off by one per break. Step through the story's
-  unit segments instead. Home/End go to the paragraph's start and end, not the
-  line's (Shift+End from text before a break selects across it; Word stops at
-  the line end).
-- **Enter right after a mid-paragraph break** (docx-breaks review,
-  2026-10-06): it leaves `Aa<pageBreak>¶Bb¶`, so an empty line paints at the
-  top of the next page and "Bb" sits one line down; reopening the saved file
-  shows "Bb" at the top, because the seed moves the break onto the next
-  paragraph. Split before the break instead (the shape the seed makes, and no
-  text ahead of a break in its slot, as decided 2026-09-28); queue with the
-  matrix's `break-paragraph` rows.
+- **DOCX Home/End go to the paragraph, not the line** (docx-breaks review,
+  2026-10-06; Left/Right and word steps over breaks fixed by fork-small
+  2026-10-08): Home/End go to the paragraph's start and end, not the line's
+  (Shift+End from text before a break selects across it; Word stops at the
+  line end). Needs the display line plus a caret affinity at a wrap point.
+- **DOCX `splitPgBreakAndParaMark` is not honoured** (fork-small review,
+  2026-10-08): the parser reads only `compatibilityMode` from `w:compat`
+  (`docx-parse/src/settings.rs`), so a file setting the flag keeps a
+  paragraph's mark on its page break's page here while Word moves it to the
+  next page. Read `w:compat/w:splitPgBreakAndParaMark` into the render env and
+  skip `mark_stays` in `flush_paragraph_parts` when it is set.
 - **Recovery logging** (decided 2026-10-05): log each draft from another epoch
   entering copy-only recovery (no late merge), in the `edit_incidents` table.
 - **Editing incident log** (decided 2026-10-05, with the optimization round):
@@ -408,18 +399,6 @@ slow editor (no handoff outside maintenance since the deferred rebuild).
 - **Shell traps:** no `timeout` (use `perl -e 'alarm N; exec @ARGV' …`); in zsh
   write `${C}:refs/…`; stop processes by PID only; watch the disk (each fork
   worktree's `target` grows to several GB).
-
-## Office test copy (2026-10-07)
-
-- Playwright locates app copy through paraglide `m.*` now (`e2e/i18n`, decision
-  in `human/test-catalog.md`). The shared Office menu helpers (`officeMenu`,
-  `officeEditMenu`, `saveOffice` in `e2e/helpers/office.ts` and
-  `e2e/uat/journeys/office.ts`) and the format loops in
-  `e2e/editor/biology-office.spec.ts` still pass `'File'`, `'Edit'`, `'View'`
-  and `'Save'` as literals. That is right for DOCX and XLSX (BetterOffice
-  `t()` labels) but PPTX's menus are Capy's `m.files_office_pptx_menu_*`; make
-  the helpers take the format and use `m.*` for PPTX. Left out of the e2e
-  conversion so it does not collide with the open Office work.
 
 ## Embedded quiz and flashcard freshness (2026-10-07)
 

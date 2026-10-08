@@ -3,7 +3,7 @@ that need them while their text is still in the request."""
 
 from __future__ import annotations
 
-from pipeline.retrieval import contract, skills, tools
+from pipeline.retrieval import contract, evidence, skills, tools
 from pipeline.retrieval.tools import ToolContext
 
 _EDITOR = frozenset(
@@ -63,3 +63,30 @@ async def test_writes_need_the_skill_while_its_text_is_in_the_request(monkeypatc
         "workspace_building"
     ]
     assert skills.missing("create_material", {}, set(skills.SKILLS)) == []
+
+
+async def test_a_later_turn_replays_the_skills_an_earlier_turn_read():
+    ctx = ToolContext(workspace_id="ws", user_id="u", operations=_EDITOR)
+    ctx.skills_read = {"editing", "workspace_building"}
+    saved = evidence.pack(ctx, [])
+    assert saved["skills"] == ["editing", "workspace_building"]
+
+    def turn(n):
+        return [
+            {"id": f"u{n}", "role": "user", "content": "Make a note"},
+            {
+                "id": f"a{n}",
+                "role": "assistant",
+                "content": "Done",
+                "toolEvidence": saved,
+            },
+        ]
+
+    history = await evidence.history_turns([*turn(1), *turn(2)], ctx)
+    replayed = [m for m in history if m.get("_kind") == "skill"]
+    # Once each, where first read, with the current text.
+    assert [m["id"] for m in replayed] == ["a1", "a1"]
+    assert replayed[0]["content"] == skills.render(
+        "editing", skills.SKILLS["editing"].text(False)
+    )
+    assert skills.retained(history) == {"editing", "workspace_building"}

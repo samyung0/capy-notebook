@@ -43,7 +43,7 @@ test('docx refusal: a held publication publishes, its rebuild refuses a TOC-link
   await setHold(run, fileId, name, true);
 
   const page = run.owner.page;
-  const frame = await openEditor(run, run.owner, workspaceId, fileId);
+  const frame = await openEditor(run, run.owner, workspaceId, fileId, 'docx');
   await saved(page);
   // About 3,500 net tokens: the automatic publication is due 60 s after this save.
   const paste = richPaste(marker);

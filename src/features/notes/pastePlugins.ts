@@ -1,4 +1,11 @@
-import { createSlatePlugin, isHtmlBlockElement, KEYS } from 'platejs';
+import {
+  createSlatePlugin,
+  ElementApi,
+  isHtmlBlockElement,
+  KEYS,
+  PathApi,
+  RangeApi,
+} from 'platejs';
 import { ParagraphPlugin } from 'platejs/react';
 
 /**
@@ -53,3 +60,37 @@ export const NoteParagraphPlugin = ParagraphPlugin.configure({
     },
   },
 });
+
+/**
+ * Blocks pasted while the caret is on a void block (a quiz, an image, an
+ * embed) go in right after that block, the caret following them. Slate drops
+ * a fragment inserted into a void, so the paste would do nothing.
+ */
+export const VoidBlockPastePlugin = createSlatePlugin({
+  key: 'capy-void-block-paste',
+}).overrideEditor(({ editor, tf: { insertFragment } }) => ({
+  transforms: {
+    insertFragment(fragment, options) {
+      const selection = editor.selection;
+      const entry =
+        !options?.at && selection && RangeApi.isCollapsed(selection)
+          ? editor.api.block()
+          : undefined;
+      if (
+        entry &&
+        editor.api.isVoid(entry[0]) &&
+        fragment.length > 0 &&
+        fragment.every(
+          (node) => ElementApi.isElement(node) && editor.api.isBlock(node)
+        )
+      ) {
+        editor.tf.insertNodes(fragment, {
+          at: PathApi.next(entry[1]),
+          select: true,
+        });
+        return;
+      }
+      insertFragment(fragment, options);
+    },
+  },
+}));

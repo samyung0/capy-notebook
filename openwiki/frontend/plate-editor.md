@@ -328,7 +328,10 @@ takes the caret only if the caret has not moved, so typing elsewhere during the
 round trip is kept. Nothing is inserted when
 creation fails, and with the caret inside a callout, column, table or other container
 the quiz, flashcards and mermaid commands do nothing. A reference that lands
-nested (a paste) is lifted to the top level by the plugin's normalizer. Edits
+nested (a paste) is lifted to the top level by the plugin's normalizer. Blocks
+pasted while the caret is on a void block (a quiz, an image, an embed) go in
+right after that block with the caret following them (`VoidBlockPastePlugin`
+in `pastePlugins.ts`); Slate alone drops a fragment inserted into a void. Edits
 save through the quiz or flashcard content endpoint, so note undo covers only
 inserting and removing the reference. Another open editor of the note sees an
 embed's change when its query refetches (see the freshness item in

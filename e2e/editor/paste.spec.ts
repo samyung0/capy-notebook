@@ -154,4 +154,112 @@ test.describe('paste', () => {
       [...edited].filter((id) => id !== 'mat_embed_bio_note_quiz')
     ).toHaveLength(2);
   });
+
+  // The note's own block pasted into it again (a copy within the note): the
+  // same block id and the same quiz. It becomes a second block with an id of
+  // its own and a quiz copy of its own (the UAT note journey's last paste).
+  test('makes a quiz block pasted into its own note a second block', async ({
+    page,
+  }) => {
+    const edited: string[] = [];
+    page.on('request', (request) => {
+      const id = new URL(request.url()).pathname.match(QUIZ_EDIT_READ)?.[1];
+      if (id && !edited.includes(id)) edited.push(id);
+    });
+    const editor = await openEmptyLine(page);
+    const pasteRef = async (materialId: string) => {
+      const fragment = await page.evaluate(
+        (json) => btoa(encodeURIComponent(json)),
+        JSON.stringify([
+          {
+            children: [{ text: '' }],
+            id: 'block-own',
+            materialId,
+            refKind: 'quiz',
+            type: 'material_ref',
+          },
+        ])
+      );
+      await paste(editor, {
+        'application/x-slate-fragment': fragment,
+        'text/html': `<div data-slate-fragment="${fragment}">Quiz</div>`,
+        'text/plain': 'Quiz',
+      });
+    };
+    const quizzes = editor
+      .locator('.slate-material_ref')
+      .getByRole('button', { name: m.quiz_add_question() });
+
+    // From another note first: the block edits the note's own copy.
+    await pasteRef('mat_embed_bio_note_quiz');
+    await expect(quizzes).toHaveCount(1);
+    await expect
+      .poll(() => edited.filter((id) => id !== 'mat_embed_bio_note_quiz'))
+      .toHaveLength(1);
+    const own = edited.find((id) => id !== 'mat_embed_bio_note_quiz')!;
+
+    await clickTextEnd(
+      editor.getByText(EDITOR_NOTE.firstParagraph, { exact: true })
+    );
+    await page.keyboard.press('End');
+    await page.keyboard.press('Enter');
+    await pasteRef(own);
+    await expect(quizzes).toHaveCount(2);
+    // The second block edits a second copy, neither the original nor own.
+    await expect
+      .poll(() =>
+        edited.filter((id) => id !== 'mat_embed_bio_note_quiz' && id !== own)
+      )
+      .toHaveLength(1);
+  });
+
+  // With a quiz block selected (clicked), pasted blocks go in right after it
+  // instead of being dropped, and each pasted quiz block gets its own copy.
+  test('puts blocks pasted onto a selected quiz block right after it', async ({
+    page,
+  }) => {
+    const edited: string[] = [];
+    page.on('request', (request) => {
+      const id = new URL(request.url()).pathname.match(QUIZ_EDIT_READ)?.[1];
+      if (id && !edited.includes(id)) edited.push(id);
+    });
+    const editor = await openEmptyLine(page);
+    const pasteRefs = async (ids: string[]) => {
+      const fragment = await page.evaluate(
+        (json) => btoa(encodeURIComponent(json)),
+        JSON.stringify(
+          ids.map((id) => ({
+            children: [{ text: '' }],
+            id,
+            materialId: 'mat_embed_bio_note_quiz',
+            refKind: 'quiz',
+            type: 'material_ref',
+          }))
+        )
+      );
+      await paste(editor, {
+        'application/x-slate-fragment': fragment,
+        'text/html': `<div data-slate-fragment="${fragment}">Quiz</div>`,
+        'text/plain': 'Quiz',
+      });
+    };
+    const blocks = editor.locator('.slate-material_ref');
+    const quizzes = blocks.getByRole('button', { name: m.quiz_add_question() });
+    await pasteRefs(['block-held']);
+    await expect(quizzes).toHaveCount(1);
+
+    // A click on the block's own area, away from its buttons, selects it.
+    await blocks.first().click({ position: { x: 4, y: 4 } });
+    await pasteRefs(['block-one', 'block-two']);
+    await expect(quizzes).toHaveCount(3);
+    const top = async (index: number) =>
+      (await blocks.nth(index).boundingBox())!.y;
+    const held = (await blocks.first().boundingBox())!.y;
+    expect(await top(1)).toBeGreaterThan(held);
+    expect(await top(2)).toBeGreaterThan(await top(1));
+    // Three copies of the other note's quiz, one per block.
+    await expect
+      .poll(() => edited.filter((id) => id !== 'mat_embed_bio_note_quiz'))
+      .toHaveLength(3);
+  });
 });

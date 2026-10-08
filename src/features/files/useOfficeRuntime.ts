@@ -505,11 +505,7 @@ export function useOfficeRuntime({
         return;
       }
       if (message.type === 'open-presenter') {
-        // Only a command Capy would open the window for itself.
-        if (
-          officeCommandNeeds(menusRef.current, message.id).popup === 'presenter'
-        )
-          openPresenter(message.id);
+        openRequestedPresenter(menusRef.current, message.id, openPresenter);
         return;
       }
       if (message.type === 'menus') {
@@ -818,6 +814,19 @@ function saveBlob(blob: Blob, name: string) {
   anchor.download = name;
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * The frame's `open-presenter`: opens the presenter window only for a command
+ * Capy itself opens it for (`popup: 'presenter'` in the frame's menus), so the
+ * sandboxed runtime cannot have Capy open a window for anything else.
+ */
+export function openRequestedPresenter(
+  menus: Parameters<typeof officeCommandNeeds>[0],
+  id: string,
+  open: (id: string) => void
+) {
+  if (officeCommandNeeds(menus, id).popup === 'presenter') open(id);
 }
 
 /**

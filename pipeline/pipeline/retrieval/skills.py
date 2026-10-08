@@ -1,9 +1,10 @@
 """Skills the chat agent reads on demand with read_skill.
 
 The read_skill description lists each skill with when to read it; the skill's
-text arrives as that tool's result. A write that needs a skill is refused
-until the skill's result is in the request, which also catches a turn note
-that folded the result away.
+text arrives as that tool's result, and later turns replay it from history
+(evidence.history_turns). A write that needs a skill is refused until the
+skill's text is in the request, which also catches a turn note or checkpoint
+that folded it away.
 """
 
 from __future__ import annotations
@@ -74,12 +75,13 @@ def render(name: str, text: str) -> str:
 
 
 def retained(messages: list[dict[str, Any]]) -> set[str]:
-    """Skills whose read_skill result is still in the message list."""
+    """Skills whose text is still in the message list: a read_skill result of
+    this turn or a replay from history."""
     names: set[str] = set()
     for message in messages:
         content = message.get("content")
         if (
-            message.get("role") == "tool"
+            (message.get("role") == "tool" or message.get("_kind") == "skill")
             and isinstance(content, str)
             and content.startswith(_HEADER)
         ):

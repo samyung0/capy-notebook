@@ -859,6 +859,47 @@ async def test_the_last_planning_round_turns_tools_off(monkeypatch):
     assert seen[0]["tools_off"]
 
 
+async def test_a_turn_without_a_ledger_counts_its_responses_down(monkeypatch):
+    stream, seen = _script_stream(
+        [
+            _assembled("", [_call("list_sources")]),
+            _assembled(_answer(("ok", []))),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.cfg, "agent_max_steps", 2)
+
+    async def _run(_name, _args, _ctx):
+        return ToolResult(text_parts=["sources"])
+
+    monkeypatch.setattr(agent.tools, "run", _run)
+    await _collect("q", ToolContext(workspace_id="ws_1"))
+    contexts = [
+        [m["content"] for m in call["messages"] if m.get("_kind") == "ledger"][-1]
+        for call in seen
+    ]
+    assert "Responses remaining this turn, this one included: 2;" in contexts[0]
+    assert "Responses remaining" not in contexts[1]
+    assert agent.turn_context.FINAL_NOTICE in contexts[1]
+
+
+async def test_a_tool_call_written_as_text_with_tools_off_ends_at_the_cap(monkeypatch):
+    """GLM writes its own tool-call syntax as text when tools are off. That is
+    the cap, not a flagged answer: the turn ends and keeps what it made."""
+    leaked = "Here is the note.<tool_call>create_material<arg_key>kind</arg_key>"
+    stream, seen = _script_stream([_assembled(leaked)])
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.cfg, "agent_max_steps", 1)
+
+    events = await _collect("q", ToolContext(workspace_id="ws_1"))
+    assert seen[0]["tools_off"]
+    assert not any(e["type"] == "error" for e in events)
+    assert events[-1]["type"] == "done"
+    assert events[-1]["telemetry"]["stopReason"] == "planning_cap"
+    assert not events[-1]["answer"]
+    assert "tool_call" not in "".join(e.get("text", "") for e in events)
+
+
 async def test_planning_text_with_tools_is_narration_then_answer(monkeypatch):
     stream, seen = _script_stream(
         [

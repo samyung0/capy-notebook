@@ -266,13 +266,16 @@ def main() -> None:
         help="the arm's LIBRARY_DATABASE_URL, to name the cited sections",
     )
     parser.add_argument("--only", nargs="*", help="request ids to run, default all")
+    parser.add_argument(
+        "--out", type=Path, default=OUT, help="where the arm's directory goes"
+    )
     args = parser.parse_args()
     name = f"intake-{args.arm.lower()}"
     config = json.loads((CONFIGS / f"{name}.json").read_text(encoding="utf-8"))
     requests = [
         r for r in frozen_requests() if not args.only or r["id"] in args.only
     ]
-    out = OUT / args.arm
+    out = args.out / args.arm
     out.mkdir(parents=True, exist_ok=True)
     # First runs of every request, then the dev split's repeats.
     plan = [(r, "") for r in requests] + [

@@ -103,3 +103,33 @@ func TestProjectionBodyRefusalsMatchHumaValidation(t *testing.T) {
 		}
 	}
 }
+
+// Security regression (plate REVIEW3 S2, the projection route's own body
+// decoding): the route checks the collaboration service secret before it
+// reads the body, so a caller without it gets 401 whatever it sends, and a
+// server without a configured secret refuses every call.
+func TestProjectionRouteChecksTheSecretBeforeTheBody(t *testing.T) {
+	const invalid = `{"content":{"schemaVersion":1,"value":[{"type":"p","id":"x","children":[]}]},"yjsVersion":1}`
+	for _, tc := range []struct {
+		name, configured, sent, body string
+	}{
+		{"wrong secret", "secret", "guess", invalid},
+		{"wrong secret, malformed body", "secret", "guess", `{`},
+		{"no secret", "secret", "", invalid},
+		{"no secret configured", "", "", invalid},
+	} {
+		router := chi.NewRouter()
+		api := humachi.New(router, humaConfig())
+		(&api2{cfg: Config{CollaborationSecret: tc.configured}}).registerCollaboration(api)
+		req := httptest.NewRequest(http.MethodPost, "/internal/collaboration/materials/m/projection", strings.NewReader(tc.body))
+		req.Header.Set("Content-Type", "application/json")
+		if tc.sent != "" {
+			req.Header.Set("X-Collaboration-Secret", tc.sent)
+		}
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s: %d, want 401", tc.name, rec.Code)
+		}
+	}
+}

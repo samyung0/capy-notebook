@@ -340,8 +340,24 @@ and edits after a capture land beside them exactly. A break that opens its
 paragraph's text is flagged `leading` (this replaced the `pageBreakBeforeRun`
 paragraph attribute): the save writes it as the paragraph's first run, and the
 editor keeps the paragraph's space-before after it only while text follows,
-as the saved file does. Other breaks that open a paragraph slot are written
-as trailing breaks of the paragraph before it. A break with no paragraph
+as the saved file does. A paragraph whose text ends in a page break (Enter
+right after a mid-paragraph break, or deleting the text after one) keeps its
+mark on the break's page, as Word does when the file does not set
+`splitPgBreakAndParaMark`: the last text part runs to the mark
+(`flush_paragraph_parts`), the next paragraph opens the next page, and a
+caret at the mark sits after the text (`caret_rect` in
+`docx-layout/src/hit.rs` places a position nothing paints after the text
+before it). The parser does not read `splitPgBreakAndParaMark`, so a file
+setting it still lays out Word's default way. Copy follows the units: after
+Enter right after a mid-paragraph break, edit-mode copy writes the break's
+newline and the paragraph mark's, an empty line the reopened file (break on
+the next paragraph) does not copy (accepted, 2026-10-08). The seed moves a file's page
+break after a paragraph's last text onto the next paragraph's slot, which
+lays out the same, so the editor and the reopened file look alike while
+their units differ (the toolbar's break opens the next slot and saves as the
+previous paragraph's trailing break, so the seed keeps reading such breaks
+that way). Other breaks that open a paragraph slot are written as trailing
+breaks of the paragraph before it. A break with no paragraph
 before it and no text to lead (a story's start, right before a table) saves
 as a break-only paragraph of its own, and an insertion there after a capture
 refuses the rebase; a text-less paragraph whose breaks end in a column break
@@ -352,13 +368,26 @@ typing, Enter, Accept/Reject all and publication, including breaks inside
 links, inline content controls and tracked changes. The render bridge splits
 an inline break into paragraph fragments while keeping one editable paragraph
 and one list number. Each fragment after the first gets its own layout block id
-(the paragraph's id plus `#1`, `#2`, …), since layout, painting and the resident
+(the paragraph's id plus `#n`; `n` steps from the part before by the page and
+column breaks between them, at least one, so a gap holding only shapes or
+charts steps by one), since layout, painting and the resident
 display look measured blocks up by id; the text after the break starts at the
 top of the next page or column at the paragraph's left indent, without
 first-line or hanging indent, space-before or number, as Word continues the
 paragraph there. The paragraph's space-after and a tracked paragraph mark's
 pilcrow stay on its last part. A paragraph an in-flow chart splits gets the
-same per-part ids. View-mode copy puts a newline at the break. Enter at the
+same per-part ids. Copy puts a newline at each break in view and edit mode,
+as at a soft line break, so two breaks in a row copy two and a soft break then
+a page break copies as two soft breaks: the editor's `yrsSelectionText` writes
+one at each break that text comes before in its paragraph (a break opening the
+paragraph follows the previous mark's newline), view mode one for each step in
+the part number (`textLayer.ts`), and the editor's copy stays not plain text,
+so ⌘X over a break only copies. An inline chart paints on a line of its own:
+a gap between two parts holding only charts copies one newline in both modes
+(`yrsSelectionText` writes it before the text after the chart), and beside a
+break it adds none; a chart opening a paragraph counts as no text before a
+break. Other inline shapes copy nothing in edit mode, while view mode copies
+one newline for a gap holding only them. Enter at the
 start of a heading after a trailing column break puts the empty line after
 that break, even if the preceding text changed.
 A bookmark opening before a paragraph's leading breaks stays before them, and an empty
@@ -406,8 +435,10 @@ the two (`merge_paragraphs` in `crates/docx-edit`):
   is empty: then Delete at its end, or Backspace at the start of the break's
   paragraph, removes the empty paragraph and hands its bookmarks to the
   paragraph that stays, so Enter at the start of a break's paragraph then
-  Delete or Backspace restores the document. Deleting the text after a break,
-  or Enter right after it, leaves the break before an empty paragraph;
+  Delete or Backspace restores the document. Deleting the text after a
+  break that has text before it leaves the break ending its paragraph, the
+  mark on the break's page; after a break that opens its paragraph it leaves
+  the break before an empty paragraph;
 - before a table or block content control it removes the paragraph when that
   is empty (nothing but its mark and comment reference fields, which show
   nothing; the table's paragraph keeps its own properties), and otherwise
@@ -431,13 +462,38 @@ does. Suggesting mode marks what it removes deleted; only the author's own
 pending paragraph mark goes (Backspacing over one's own Enter, or removing an
 own empty paragraph before a break). Enter at the start of a slot that opens
 with a block inserts an
-empty paragraph before the block and leaves the block's paragraph (id and
-properties, borders included) as it was, so Delete in the new paragraph
-restores the document; the editor's Enter then gives the next style to
-neither paragraph. Any split leaves a section with the mark that ends it (the
-new mark never takes `sectPr` or `sectionBreakType`), and a paragraph that
-loses its borders in a split loses them from `_originalFormatting` too, so a
-save does not write them back.
+empty paragraph before the block, with the block paragraph's properties,
+and leaves the block's paragraph (id and properties) as it was, so Delete in
+the new paragraph restores the document; the editor's Enter then gives the
+next style to neither paragraph. Every split keeps the paragraph's borders on
+both halves, as Word copies the paragraph mark (mid-paragraph, at its start or
+end and before a block), and leaves a section with the mark that ends it (the
+new mark never takes `sectPr` or `sectionBreakType`). Enter at a paragraph's
+end inserts the new mark after the existing one (`split_paragraph` in
+`ops/paragraph.rs`): the text keeps its mark and id, so a peer's concurrent
+paragraph change stays on the text and two peers' Enters at one end give each
+new paragraph its own id. A section's last paragraph, and suggesting mode
+(whose Backspace retracts the mark it deletes), keep inserting before the
+existing mark. Mid-paragraph the new mark ends the first half with the
+paragraph's id, so two peers splitting one paragraph mid-text both give their
+first half that id. After applying a peer's update, every peer renames the
+duplicates the same way (`applying_peer_update` and
+`rename_duplicate_para_ids` in `ops/paragraph.rs`, run by the session's
+`applyUpdate`): it looks only at the ids of paragraph marks the update
+inserted or re-identified (a merge's survivor), in their stories, so typing
+and other updates cost nothing extra; the mark whose yrs item has the lowest
+`(client, clock)` keeps the id and every other takes `{client}.{clock}` of
+its own item, as a system edit outside Undo, so typing, clicks and AI edits
+reach both halves. A client loading a stored state renames once after the
+load (`seedYrsSession`), so a state stored before both splitting peers
+exchanged does not keep the duplicate for a later session. If the peer whose
+split kept the id undoes it after the rename, the survivor keeps the other
+half's renamed id and no paragraph carries the source id any more. Exports
+from a stored state that still holds the duplicate (office-checkpoint loads
+without renaming) take the save's backstop: a source `w14:paraId` stays on
+the first paragraph and each repeat gets a hex id, as for editor ids, in
+both engines (`savedParaId` in `yrsToDocument.ts`, `saved_para_id` in
+`office-service/src/docx/project.rs`).
 
 A range delete (a selection delete or a cut) ending at the start of such a
 slot keeps the paragraph mark before it (`kept_mark`), so the text left stays
@@ -1315,6 +1371,39 @@ font with no bundled face paints with its CSS fallback stack. A face that fails 
 shows an explicit error instead of the fallback layout
 (`src/office-runtime/officeFonts.ts`, `pptxFonts.ts`).
 
+A PPTX deck's own fonts (`p:embeddedFontLst`, parts in `ppt/fonts/`, as
+Google Slides and PowerPoint save them) are measured and painted too. Google
+Slides writes each face as Embedded OpenType with MicroType Express
+compression; the fork's `ooxml_text::decode_embedded_font` turns that, a plain
+sfnt, an XOR-encrypted EOT or a GUID-obfuscated `.odttf` into TrueType (the
+`hdmx` and `VDMX` device tables are dropped). The deck's renderer decodes the
+faces at its first layout (every slide shares them; the export worker, which
+lays nothing out, never decodes them), each part once however many slots name
+it, and registers each slot's typeface and style ahead of a bundled face of
+the same name (a deck embedding Arial measures with it, not Liberation Sans);
+a family with some styles embedded draws the others in its nearest embedded
+face, as the browser does. Display lists name an embedded face by a per-deck
+alias, `bo-embedded-<hash of its bytes>`, and the viewer and editor hand the
+decoded bytes to the page as `FontFace`s under that alias before the first
+paint (`installEmbeddedFonts`), deleting them when the deck closes. So the
+canvas, print and PNG paint the measured glyphs, a deck embedding Fustat or
+Lato styles nothing in the runtime frame but its own text, and two decks
+cannot collide; the presenter window paints in the frame's document, so it
+gets the same faces; the native rasterizer uses them too. The decoder checks a
+part's tables before copying any (at most 256, none twice, 32 MiB in all) and
+keeps 16-bit coordinates; one part's blocks, rebuilt glyphs and font are
+bounded by 32 MiB. A deck's embedded fonts may cost 64 MiB: each part's size
+and declared blocks are charged before they are decoded, what the run-length
+stage expands as it grows, and the font kept after, whether a decode succeeds
+or not; at most 64 parts register. A part that
+is missing, cannot be decoded or does not fit is skipped, and a face the
+browser refuses is dropped from layout as well (console warning); that text
+keeps the bundled face or the CSS fallback as before, with no error. Saving
+and export copy `ppt/fonts/` and the list untouched
+(`src/office-runtime/PptxViewer.tsx`,
+`vendor/betteroffice/crates/ooxml-text/src/embedded_font/`,
+`vendor/betteroffice/crates/pptx-render/src/layout.rs`).
+
 The iframe sandbox allows scripts and its own origin, but the runtime origin is
 cross-origin from the app, cookie-less, and restricted to the app by CSP
 `frame-ancestors`. Host and runtime validate exact origins and the message
@@ -1607,12 +1696,25 @@ payloads (`storyTables`), once per style per toolbar or ruler command, and
 Enter's next style passes the current paragraph's style values without listing
 the story. Ops store tab stops in the seed's shape (`position`, `alignment`,
 reading the older `pos`/`val` too) and the hanging first-line flag as a boolean.
-Enter at the end of a paragraph starts a clean one that keeps only its style,
-spacing and the font, size and colour carry (`INHERITED_PARA_ATTRS`), plus its
-list's numbering and level indents, so a list goes on as in Word whether the
-paragraph or its style gives it; where the paragraph's style names another
-next style, the new paragraph takes that style clean, without the list
-(`applyNextStyle`), so body text after a numbered heading is not numbered.
+Enter at the end of a paragraph (comment references after the caret aside,
+so the reference stays with the text; a field ending the paragraph counts, as
+the engine's split receipt reports it with `atEnd`, which the editor's Enter
+reads) gives the new paragraph a copy of all its properties, as Word copies
+the paragraph mark (`split_paragraph`): style and
+list (so a list goes on whether the paragraph or its style gives it),
+alignment, indents, spacing, borders, shading, tabs, keep with next, keep
+lines, widow control, page break before, the mark's run properties and the
+source formatting, so the save writes the source pPr, unmodeled children
+included, for both paragraphs. The tracked mark insertion or deletion and the
+source runs stay with the text's paragraph, the copy's `w:pPrChange` takes new
+revision ids, and a section the paragraph ends stays with the mark that ends
+it, the new paragraph's. Where the paragraph's style names another next style,
+the new paragraph takes that style clean (`applyNextStyle` first clears what
+the split copied, tracked in suggesting mode so Reject all keeps the heading),
+so body text after a numbered heading has neither its list nor its direct
+formatting. A peer's paragraph property change made while another peer presses
+Enter at that paragraph's end lands on the new paragraph, which ends with the
+source's mark (a fork item moves the new mark after it).
 Enter in a list item that was empty before it (one holding a field, picture or
 break is not) works as in Word (`endEmptyListItem`): a nested item moves up one
 level, and a first-level item leaves the list, numbering set on the paragraph
