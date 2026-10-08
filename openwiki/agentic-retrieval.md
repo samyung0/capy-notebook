@@ -1954,8 +1954,9 @@ current pending changes applied. Embedded source instructions remain untrusted.
    calls is a narration block. The first completed response with text and no
    tools is the persisted answer. There is no unconditional second answer
    completion. Workload caps (`retrieval/limits.py`): 4 tools per response on
-   every turn, and 8 responses for a turn without ledger todos, the last with
-   tools off; a turn whose ledger holds todos runs under the build-flow limits
+   every turn, and 12 responses for a turn without ledger todos, the last with
+   tools off (raised from 8 on 2026-10-08: the intake comparison lost 22 of 150
+   runs to a refused write with no response left to redo it); a turn whose ledger holds todos runs under the build-flow limits
    (Build flow and the Library switch, below). Completion, compaction, query-embedding, and cumulative input counts
    remain telemetry. They do not stop a turn.
 4. Independent reads in one response run concurrently (max 4, at most 1
@@ -2185,7 +2186,11 @@ build, and the knowledge library is one more source while the switch is on.
   `add_question` or `replace_question`. The agent recomputes
   `ctx.skills_read` from the message list before every call
   (`skills.retained`), so a turn note that folded the result away asks for a
-  re-read. `read_skill` retains nothing, so each turn reads afresh. The third,
+  re-read. A later turn does not read a skill again: `evidence.pack` stores the
+  names in the turn's `toolEvidence.skills`, and `evidence.history_turns`
+  replays each one with its current text as a `_kind: "skill"` message where it
+  was first read, which `skills.retained` counts. A checkpoint that folds the
+  history drops them, and the next write asks for a re-read. The third,
   `deck`, is the method, slide rules and style for decks; `create_deck` and
   `write_slide` need `editing` and `deck`, and it is listed only where
   ppt-master is installed ([decks.md](decks.md)).
@@ -2209,7 +2214,8 @@ build, and the knowledge library is one more source while the switch is on.
   visual aids, saved values over `DEFAULTS`), the ledger's todos with their
   done state and ids, and one line per library excerpt read for this message.
   In a ledger turn it adds the responses left before the stall guard and the
-  tool calls left; once tools are off it carries `FINAL_NOTICE`, which asks for
+  tool calls left; without a ledger, the responses left in the turn, this one
+  included, and that the last has tools off; once tools are off it carries `FINAL_NOTICE`, which asks for
   the materials made, the open todos and what the learner can ask next.
 - **Ledger.** The conversation's todo list for multi-item builds (`Ledger` in
   `retrieval/tools.py`). Any conversation keeps one: it is stored as
@@ -2691,7 +2697,12 @@ stops the turn without executing its tools or making a repair request, clears th
 current answer and citations, and returns `response_flagged`. The UI shows
 "Response flagged due to safety concern"; the error code is persisted in message
 metadata so reloading shows the same notice. Earlier completed tool effects remain.
-This is a bounded protocol filter, not a content-safety classifier.
+This is a bounded protocol filter, not a content-safety classifier. The one
+exception is a tools-off response (the last response without a ledger, the stall
+guard, the tool cap, the credit guard's terminal call): GLM writes its own
+`<tool_call>` syntax as text there when it still wants to act, so the turn ends as
+at its cap (`planning_cap`, `stall` or `tool_cap`) with no answer, prose sent
+before the marker kept as narration and the materials already made in place.
 
 Chat citation chips retain parser page references. Native PDFs scroll to and
 highlight those regions. Office citations send the quoted passage to the current

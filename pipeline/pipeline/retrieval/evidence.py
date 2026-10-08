@@ -1,7 +1,8 @@
 """Bounded conversation evidence, without provider reasoning or tool protocol.
 
 Keep only cited passages and the full results selected by the tool contract. Historical passage numbers
-are reallocated on replay; only still-indexed passages can become citations.
+are reallocated on replay; only still-indexed passages can become citations. Skills are kept by name
+and replayed with their current text, so a later turn does not read them again.
 """
 
 from __future__ import annotations
@@ -10,12 +11,16 @@ import json
 from dataclasses import asdict
 from typing import Any
 
-from . import store, tools
+from . import skills, store, tools
 from .search import Passage
 
 
 def pack(ctx: tools.ToolContext, cited_order: list[int]) -> dict[str, Any]:
-    payload: dict[str, Any] = {"tools": ctx.evidence_notes, "passages": []}
+    payload: dict[str, Any] = {
+        "tools": ctx.evidence_notes,
+        "passages": [],
+        "skills": sorted(ctx.skills_read),
+    }
     seen: set[str] = set()
     for n in cited_order:
         if not 1 <= n <= len(ctx.citations):
@@ -54,6 +59,7 @@ async def history_turns(
         else {}
     )
     out = []
+    replayed: set[str] = set()
     for i, turn in enumerate(history or []):
         role, content = turn.get("role"), turn.get("content") or ""
         if role not in ("user", "assistant"):
@@ -95,6 +101,22 @@ async def history_turns(
                     "role": "user",
                     "content": part,
                     "_kind": "source_evidence",
+                }
+            )
+        # Each skill once, where it was first read, so earlier requests stay a
+        # prefix of later ones. A compacted history drops it and the turn reads it again.
+        for name in saved.get("skills", []):
+            if name in replayed or name not in skills.SKILLS:
+                continue
+            replayed.add(name)
+            out.append(
+                {
+                    "id": turn.get("id") or "",
+                    "role": "user",
+                    "content": skills.render(
+                        name, skills.SKILLS[name].text(ctx.library)
+                    ),
+                    "_kind": "skill",
                 }
             )
     return out

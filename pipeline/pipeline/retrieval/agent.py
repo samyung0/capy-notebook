@@ -408,16 +408,24 @@ async def _run_turn(
             image_tokens = capture.image_tokens(ctx.captures, messages)
             if ctx.library:
                 ctx.library_evidence.activate(messages, ctx.ledger)
-            ledger_allowance = ""
+            allowance = ""
             if building and not tools_off:
-                ledger_allowance = (
+                allowance = (
                     f"\nResponses remaining without completing a todo: {stall_limit - stalled}. "
                     "Batch needed reads and page captures, then write from the evidence "
                     "already read. Searching does not reset this allowance. "
                     f"Tool calls remaining this turn: {LEDGER_TOOLS_PER_TURN - budget.tool_calls_turn}."
                 )
+            elif not tools_off:
+                # The model cannot see the cap otherwise and reads until it is
+                # gone; a refused write then has no response left to redo it.
+                allowance = (
+                    f"\nResponses remaining this turn, this one included: {planning_cap - step}; "
+                    "the last has tools off. Write before then, or create a ledger "
+                    "for work that needs more responses."
+                )
             ledger_message = turn_context.message(
-                ctx, final=tools_off, allowance=ledger_allowance
+                ctx, final=tools_off, allowance=allowance
             )
             ledger_tokens = estimate_tokens(str(ledger_message["content"]))
             outside = image_tokens + ledger_tokens
@@ -464,7 +472,7 @@ async def _run_turn(
             ctx.skills_read = skills.retained(messages)
             _append_turn_context(
                 messages,
-                turn_context.message(ctx, final=tools_off, allowance=ledger_allowance),
+                turn_context.message(ctx, final=tools_off, allowance=allowance),
             )
             request_messages = capture.inject_images(
                 pending.inject(messages, pending_message),
@@ -601,9 +609,27 @@ async def _run_turn(
             return
 
         if guard.flagged or contains_tool_protocol(assembled.text):
-            budget.stop_reason = STOP_ERROR
-            yield _flagged_error(activity)
-            return
+            if not tools_off:
+                budget.stop_reason = STOP_ERROR
+                yield _flagged_error(activity)
+                return
+            # GLM writes a tool call as text when tools are off. The turn ends
+            # as if it had reached its cap: the call text is dropped, the
+            # materials already made stay, and prose sent before it is narration.
+            log.warning("tools-off response wrote a tool call as text; ending the turn")
+            if started:
+                yield events.block_end(block_id, "narration")
+                activity.append(
+                    {"id": block_id, "kind": "narration", "text": renderer.raw}
+                )
+            budget.stop_reason = (
+                STOP_TOOL_CAP
+                if tool_stop
+                else STOP_STALL
+                if stall_stop
+                else STOP_PLANNING_CAP
+            )
+            break
 
         # Complete a harmless suffix that looked like the start of a marker.
         tail = renderer.push(guard.finish())
