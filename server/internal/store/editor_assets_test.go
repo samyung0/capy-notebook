@@ -488,3 +488,37 @@ func TestAdoptEditorAssets(t *testing.T) {
 		t.Fatalf("adopt over quota = %v refused %v, %v", adopted, refused, err)
 	}
 }
+
+// Security regression (human/backend-storage-quota.md 2026-10-06, card images
+// follow quiz images): a flashcard set's uploads take the 2 MB study image cap
+// as a quiz's do, so the store names both study materials; a note keeps the
+// image limit.
+func TestEditorAssetMaterialNamesStudyMaterials(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "u_asset_study")
+	quiz, err := materialdoc.QuizDocument(json.RawMessage(`[]`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cards, err := materialdoc.FlashcardsDocument([]materialdoc.Card{{ID: uid("c"), Front: "front", Back: "back"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	note, err := materialdoc.Marshal(materialdoc.Empty())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for kind, want := range map[MaterialKind]struct {
+		content string
+		study   bool
+	}{"quiz": {quiz, true}, "flashcards": {cards, true}, "note": {note, false}} {
+		material, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: kind, Title: string(kind), Content: want.content})
+		if err != nil {
+			t.Fatal(kind, err)
+		}
+		if _, study, err := s.EditorAssetMaterial(ctx, material.ID); err != nil || study != want.study {
+			t.Errorf("%s: study %v, %v; want %v", kind, study, err, want.study)
+		}
+	}
+}
