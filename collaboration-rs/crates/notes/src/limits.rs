@@ -268,6 +268,7 @@ fn plain_content<T: ReadTxn>(txn: &T, incoming: &ydoc::Incoming) -> Result<(), R
         let mut seen: HashSet<yrs::ID> = HashSet::new();
         let mut item = start;
         let found = loop {
+            ydoc::steps::step();
             if let Some(known) = entries.get(item.id()) {
                 break *known;
             }

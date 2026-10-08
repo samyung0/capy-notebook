@@ -36,6 +36,27 @@ pub enum UpdateError {
 /// offline bundles pass (raised from 100,000 the same day).
 pub const MAX_WORK: u64 = 1_000_000;
 
+/// The steps of the walks admission takes over an update and its room
+/// before yrs applies it (resolving origin chains, scanning neighbours), per
+/// thread. Tests read it to catch a walk that turned quadratic by its count,
+/// not its time (Epo, 2026-10-08: security regressions count work).
+pub mod steps {
+    use std::cell::Cell;
+
+    thread_local!(static STEPS: Cell<u64> = const { Cell::new(0) });
+
+    /// Counts one step.
+    #[inline]
+    pub fn step() {
+        STEPS.with(|steps| steps.set(steps.get().wrapping_add(1)));
+    }
+
+    /// The steps counted on this thread since the last call.
+    pub fn take() -> u64 {
+        STEPS.with(|steps| steps.replace(0))
+    }
+}
+
 /// The most structs, and delete ranges, of a small edit.
 pub const SMALL_EDIT: usize = 16;
 
@@ -388,6 +409,7 @@ pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, U
             return Found::Gone;
         };
         loop {
+            steps::step();
             let Some(branch) = top.parent_branch() else {
                 return Found::Unknown;
             };
@@ -411,6 +433,7 @@ pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, U
         let mut chain: Vec<ID> = Vec::new();
         let mut item = start;
         let found = loop {
+            steps::step();
             if let Some(known) = resolved.get(item.id()) {
                 break known.clone();
             }

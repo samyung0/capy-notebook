@@ -115,6 +115,12 @@ fn conversions_stop_at_the_limits_and_the_next_one_runs() {
         Err(MarkdownError::TooLarge { bytes }) if bytes == MAX_INPUT_BYTES + 1
     ));
     converter.convert(&"a".repeat(MAX_INPUT_BYTES)).unwrap();
+    // A pathological source fails in the pre-scan, before the engine (which
+    // here would take it).
+    assert!(matches!(
+        converter.convert(&">".repeat(200_000)),
+        Err(MarkdownError::Invalid(message)) if message.contains("quotes")
+    ));
     assert!(matches!(
         converter.convert("throw"),
         Err(MarkdownError::Invalid(message)) if message == "Invalid quiz fence"
@@ -130,31 +136,27 @@ fn conversions_stop_at_the_limits_and_the_next_one_runs() {
         Err(MarkdownError::OutOfMemory)
     ));
     converter.convert("ok").unwrap();
-    // Two looping conversions: the second, queued behind the first, still
-    // stops TIME_LIMIT after it was submitted, not after it started.
+    // Two looping conversions: both time out, the second queued behind the
+    // first. That the second stops TIME_LIMIT after it was submitted, not
+    // after it started, is `markdown::tests::an_expired_job_does_not_run`
+    // (a deadline, not a time, so a loaded runner cannot fail it).
     std::thread::scope(|scope| {
         let first = scope.spawn(|| {
             let started = Instant::now();
             (converter.convert("loop"), started.elapsed())
         });
         std::thread::sleep(Duration::from_millis(300));
-        let started = Instant::now();
         let second = converter.convert("loop");
-        let waited = started.elapsed();
         let (first, took) = first.join().unwrap();
         assert!(matches!(first, Err(MarkdownError::TimedOut)));
-        assert!(
-            took >= TIME_LIMIT && took < TIME_LIMIT + Duration::from_secs(2),
-            "{took:?}"
-        );
+        assert!(took >= TIME_LIMIT, "{took:?}");
         assert!(matches!(second, Err(MarkdownError::TimedOut)));
-        assert!(waited < TIME_LIMIT + Duration::from_secs(1), "{waited:?}");
     });
     converter.convert("ok").unwrap();
 }
 
 /// The review's pathological sources fail in the pre-scan, before the
-/// import, at well under a millisecond per KB. A 1 MB nested list is not
+/// import (a linear scan). A 1 MB nested list is not
 /// among them: the import writes lists as indented paragraphs, so it makes
 /// a valid note, and the deadline is its backstop.
 #[test]
@@ -172,15 +174,8 @@ fn the_prescan_refuses_pathological_sources_at_once() {
         ("333k emphasis openers", "*a ".repeat(mb / 3), "emphasis"),
     ];
     for (name, source, says) in cases {
-        let started = Instant::now();
         let refused = prescan::prescan(&source).unwrap_err();
-        let per_kb = started.elapsed().as_secs_f64() * 1e3 / (source.len() as f64 / 1024.0);
-        eprintln!(
-            "{name}: {} bytes, {per_kb:.4} ms per KB: {refused}",
-            source.len()
-        );
         assert!(refused.contains(says), "{name}: {refused}");
-        assert!(per_kb < 0.5, "{name}: {per_kb} ms per KB");
     }
     // Just under each limit passes the scan.
     for source in [

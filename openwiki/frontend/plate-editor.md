@@ -890,11 +890,12 @@ is refused at admit, before it can cost the room time or memory
 Decoding refuses an `Any` nested past 128 levels and reserves nothing from
 declared lengths (fork yrs), the projection and the measure stop past 1,024
 levels, and every walk admit does is linear in the update. Each refused shape
-has a crafted-update test in `crates/notes/tests/admit_cost.rs`, which times
-admit and apply per KB on every hostile shape the reviews built (refused at
-the 4 MiB cap in under 1 ms per KB), `crates/notes/tests/fuzz_admit.rs`
+has a crafted-update test in `crates/notes/tests/admit_cost.rs`, which counts
+admit's walk steps (`ydoc::steps`, at most 4 per byte of the update and the
+room) on every hostile shape the reviews built, never their time (Epo
+2026-10-08: security regressions count work), `crates/notes/tests/fuzz_admit.rs`
 mutates real and crafted updates with a fixed seed and fails on a panic or a
-stall, and `crates/notes/tests/yjs_traffic.rs` admits Yjs-made reconnect diffs
+stall (counted the same way), and `crates/notes/tests/yjs_traffic.rs` admits Yjs-made reconnect diffs
 and `Y.mergeUpdates` bundles (`corpus/yjs-traffic.cjs`) without a refusal. A
 new kind of update a real editor writes that one of these refuses is a bug in
 the rule, not in the editor.

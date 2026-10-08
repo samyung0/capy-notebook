@@ -1,12 +1,12 @@
 #![allow(clippy::unwrap_used)] // Tests panic on a broken case.
-//! `Validator::admit`'s cost, and the room's apply when it admits, on the
-//! update shapes the reviews built to find quadratic paths (notes REVIEW2 M5,
-//! REVIEW3 M7 and M8, REVIEW4 M9 to M11): each must stay linear, so a future
-//! quadratic path fails here. Every shape is admitted against a room
-//! whose validator already holds a bound, as on the room task.
-use std::time::{Duration, Instant};
-
-use notes::limits::{Admission, Refusal, Validator};
+//! `Validator::admit`'s cost on the update shapes the reviews built to find
+//! quadratic paths (notes REVIEW2 M5, REVIEW3 M7 and M8, REVIEW4 M9 to M11):
+//! each must stay linear, so a future quadratic path fails here. The cost is
+//! counted, not timed (Epo, 2026-10-08): the steps of admission's own walks
+//! (`ydoc::steps`) and yrs's integration work on the trial copy, which
+//! `ydoc::MAX_WORK` bounds. Every shape is admitted against a room whose
+//! validator already holds a bound, as on the room task.
+use notes::limits::{Refusal, Validator};
 use notes::{plate, slate_yjs};
 use serde_json::json;
 use ydoc::doc_options;
@@ -54,24 +54,26 @@ fn paragraph(doc: &Doc) -> XmlTextRef {
     }
 }
 
-/// How long `admit` and, when it admits, the room's apply take on `update`,
-/// with a bound in place (best of three, each on a fresh copy of the room).
-fn admit_time(room: &Doc, update: &[u8]) -> Duration {
-    (0..3)
-        .map(|_| {
-            let room = copy(room, 1);
-            let mut validator = Validator::default();
-            let nothing = ydoc::decode(&since(&room, &room)).unwrap();
-            validator.admit(&room, &nothing).unwrap();
-            let decoded = ydoc::decode(update).unwrap();
-            let start = Instant::now();
-            if let Ok(Admission::Accepted) = validator.admit(&room, &decoded) {
-                room.transact_mut().apply_update(decoded).unwrap();
-            }
-            start.elapsed()
-        })
-        .min()
-        .unwrap_or_default()
+/// The steps admission's walks take on `update`, with a bound in place.
+fn admit_steps(room: &Doc, update: &[u8]) -> u64 {
+    let mut validator = Validator::default();
+    let nothing = ydoc::decode(&since(room, room)).unwrap();
+    validator.admit(room, &nothing).unwrap();
+    let decoded = ydoc::decode(update).unwrap();
+    ydoc::steps::take();
+    let _ = validator.admit(room, &decoded);
+    ydoc::steps::take()
+}
+
+/// Admission's steps per byte of the update and the room's state: linear
+/// walks measure under 1 on every shape below; a walk that turned quadratic
+/// takes thousands at these sizes.
+const STEPS_PER_BYTE: u64 = 4;
+
+fn room_bytes(room: &Doc) -> u64 {
+    room.transact()
+        .encode_state_as_update_v1(&StateVector::default())
+        .len() as u64
 }
 
 /// `admit`'s answer to `update`, as text (`Accepted`, the refusal).
@@ -112,28 +114,6 @@ fn forward_in_one_client(items: u32) -> (Doc, Vec<u8>) {
     }
     bytes.write_var(0u32);
     (room, bytes)
-}
-
-/// How long the growth bound alone takes on `update` (best of three). The
-/// tomb shape is priced here: past the bound, admit's exact check applies it
-/// to a copy of the room, and yrs's own integration of items without origins
-/// into a text full of them is quadratic (FIXES4 round 6).
-fn growth_time(room: &Doc, update: &[u8]) -> Duration {
-    let decoded = ydoc::decode(update).unwrap();
-    let txn = room.transact();
-    let incoming = ydoc::Incoming::new(&decoded);
-    (0..3)
-        .map(|_| {
-            let start = Instant::now();
-            let _ = notes::bound::growth(&txn, &incoming);
-            start.elapsed()
-        })
-        .min()
-        .unwrap_or_default()
-}
-
-fn ms_per_kb(time: Duration, update: &[u8]) -> f64 {
-    time.as_secs_f64() * 1e3 / (update.len() as f64 / 1024.0)
 }
 
 /// A paste of `blocks` two-leaf paragraphs, each chained to the one before.
@@ -412,19 +392,21 @@ fn wide(chars: u32) -> (Doc, Vec<u8>) {
     (room, update)
 }
 
-/// Every shape at a few hundred KB stays under a cost per KB that a
-/// quadratic path at that size passes by an order of magnitude (the forward
-/// chain took 5.7 ms per KB at 193 KB in release before REVIEW3 M7, the
-/// tombs 41 ms per KB at 60 KB before M8, the paste 17 ms per KB at 314 KB
-/// before REVIEW2 M5). Linear, they measure under 0.8 ms per KB in release.
+/// Every shape at a few hundred KB stays within [STEPS_PER_BYTE] steps per
+/// byte of the update and the room: before the fixes, the paste's and the
+/// chain's walks were quadratic in their items (REVIEW2 M5) and the bound
+/// walked a text's tombstones once per new item (REVIEW3 M8).
 #[test]
 fn admit_stays_linear_on_every_hostile_shape() {
-    // Timings are asserted in release only (`cargo test --release`, as CI
-    // runs this file): debug yrs is about ten times slower and varies more.
-    let timed = !cfg!(debug_assertions);
-    let limit = 2.0;
-    let shapes: [(&str, (Doc, Vec<u8>)); 10] = [
+    let shapes: [(&str, (Doc, Vec<u8>)); 12] = [
         ("paste", paste(3_000)),
+        // Taken by the trial: one long first walk through the chain, and new
+        // items with no visible neighbour in a text of tombstones.
+        (
+            "chained clients, within the budget",
+            chained_clients(10_000),
+        ),
+        ("tombs, within the budget", tomb(2_000, 400)),
         ("forward chain", forward_chain(40_000)),
         ("deep", deep(20_000)),
         ("wide", wide(40_000)),
@@ -436,22 +418,19 @@ fn admit_stays_linear_on_every_hostile_shape() {
         ("classroom", classroom(100)),
     ];
     for (name, (room, update)) in shapes {
-        // A refused shape spends up to the work budget first, which the
-        // test below bounds; the per-KB guard is for what admit takes in.
-        if verdict(&room, &update) == "Costly" {
-            continue;
-        }
-        let cost = ms_per_kb(admit_time(&room, &update), &update);
+        let steps = admit_steps(&room, &update);
+        let bytes = update.len() as u64 + room_bytes(&room);
         eprintln!(
-            "{name}: {} KB, admit and apply {cost:.3} ms per KB",
+            "{name}: {} KB, {steps} steps for {bytes} bytes",
             update.len() / 1024
         );
-        assert!(!timed || cost < limit, "{name}: {cost} ms per KB");
+        assert!(steps <= STEPS_PER_BYTE * bytes, "{name}: {steps} steps");
     }
     // The tombs, the fanned items, the chained clients and the splits cost
-    // yrs too many steps on the trial copy; a class of 100 typing into one
+    // yrs too many steps on the trial copy (REVIEW4 M9 to M11: the splits
+    // and the struct picker's scans count); a class of 100 typing into one
     // empty paragraph at once is taken; the reviewer's forward chain in one
-    // client is malformed.
+    // client is malformed (REVIEW3 S6).
     for (room, update) in [
         tomb(20_000, 20_000),
         tomb_forged(20_000, 20_000),
@@ -470,20 +449,10 @@ fn admit_stays_linear_on_every_hostile_shape() {
 /// Items each claiming their own spot but all scanned past one run of
 /// tombstones (round 8), clients chained one after another and items each
 /// splitting one held run (REVIEW4): refused once yrs counts more than the
-/// budget on the trial copy, up to the 4 MiB message cap. What admit spends
-/// past the budget's steps is linear in the update (indexing it, its checks,
-/// re-encoding and decoding it again for the copy): under 1 ms per KB in
-/// release, as the per-KB guard above, about a quarter of that
-/// measured. The budget's own steps measured 130-170 ns each in release, the
-/// copy included, and 400 on a host busy with other builds; the bound allows
-/// 1,000, so a loaded runner passes while a quadratic path past the budget
-/// (seconds to minutes at these sizes) fails.
+/// budget on the trial copy, up to the 4 MiB message cap, with admission's
+/// own walks within [STEPS_PER_BYTE] per byte.
 #[test]
 fn a_costly_update_is_refused_within_the_budget() {
-    // Asserted in release only, as above.
-    let timed = !cfg!(debug_assertions);
-    let budget = Duration::from_nanos(ydoc::MAX_WORK * 1_000);
-    let per_kb = 1.0;
     // About 6 bytes per fanned item: 600,000 is near the 4 MiB message cap,
     // as are 330,000 chained clients.
     let shapes = [
@@ -497,46 +466,19 @@ fn a_costly_update_is_refused_within_the_budget() {
     ];
     for (name, (room, update)) in shapes {
         assert!(update.len() <= 4 << 20, "{} bytes", update.len());
-        let start = Instant::now();
         let decoded = ydoc::decode(&update).unwrap();
-        let decoding = start.elapsed();
-        let start = Instant::now();
+        ydoc::steps::take();
         let answer = Validator::default().admit(&room, &decoded);
-        let took = start.elapsed();
+        let steps = ydoc::steps::take();
+        let bytes = update.len() as u64 + room_bytes(&room);
         eprintln!(
-            "{name}: {} KB decoded in {decoding:?}, refused in {took:?}",
+            "{name}: {} KB refused after {steps} steps",
             update.len() / 1024
         );
         assert!(matches!(
             answer,
             Err(Refusal::Update(ydoc::UpdateError::Costly))
         ));
-        let linear = Duration::from_secs_f64(per_kb * update.len() as f64 / 1024.0 / 1e3);
-        assert!(!timed || took < budget + linear, "{name}: {took:?}");
+        assert!(steps <= STEPS_PER_BYTE * bytes, "{name}: {steps} steps");
     }
-}
-
-/// The REVIEW3 shapes at two sizes: four times the input in under eight
-/// times the time (quadratic is sixteen). Admit for the forward chain, the
-/// growth bound for the tombs (see [growth_time]).
-#[test]
-fn forward_chains_and_tombs_scale_linearly() {
-    let (room, update) = forward_chain(10_000);
-    let small = admit_time(&room, &update);
-    let (room, update) = forward_chain(40_000);
-    let large = admit_time(&room, &update);
-    eprintln!("forward chain admit: 10,000 items {small:?}, 40,000 items {large:?}");
-    assert!(
-        large < small * 8 + Duration::from_millis(20),
-        "{small:?} -> {large:?}"
-    );
-    let (room, update) = tomb(5_000, 5_000);
-    let small = growth_time(&room, &update);
-    let (room, update) = tomb(20_000, 20_000);
-    let large = growth_time(&room, &update);
-    eprintln!("tombs growth: 5,000 x 5,000 {small:?}, 20,000 x 20,000 {large:?}");
-    assert!(
-        large < small * 8 + Duration::from_millis(20),
-        "{small:?} -> {large:?}"
-    );
 }

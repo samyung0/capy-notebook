@@ -30,6 +30,7 @@ use crate::json;
 use crate::limits::{DEPTH_CEILING, Metrics};
 use crate::plate;
 use ydoc::Incoming;
+use ydoc::steps::step;
 
 // JSON bytes an update can add on top of its own strings and attributes: a
 // text leaf `{"text":""}` and a block `{"children":[]}`, each with its comma;
@@ -161,6 +162,7 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
         let mut top = branch;
         let mut visible = true;
         while let Some(item) = top.item() {
+            step();
             level += 1;
             visible &= !self.hidden(item);
             match item.parent_branch() {
@@ -177,6 +179,7 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
         let mut chain = Vec::new();
         let mut item = start;
         let found = loop {
+            step();
             if let Some(known) = places.get(item.id()) {
                 break known.clone();
             }
@@ -344,6 +347,7 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
                 let until = to.min(end);
                 let mut clock = from;
                 while clock < until {
+                    step();
                     let Some((range, item)) = store.get_block_range(&ID::new(*client, clock))
                     else {
                         break;
@@ -400,6 +404,7 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
                 let mut run = false;
                 let mut next = text.start();
                 while let Some(item) = next {
+                    step();
                     next = item.right();
                     if self.hidden(item) {
                         continue;
@@ -457,6 +462,7 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
         let mut seen: HashSet<(ID, bool)> = HashSet::new();
         let mut id = start;
         let found = loop {
+            step();
             let Some(current) = id else { break None };
             if self.held(&current) {
                 break Some(current);
@@ -518,6 +524,7 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
         };
         let mut budget = HIDDEN_WALK;
         while let Some(current) = item {
+            step();
             let ID { client, clock } = *current.id();
             if let Some(right) = right
                 && right.client == client
@@ -547,6 +554,7 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
         let mut item = id.and_then(|id| self.held_item(&id));
         let mut budget = HIDDEN_WALK;
         while let Some(current) = item {
+            step();
             if !(self.hidden(current) || matches!(current.content(), ItemContent::Format(..))) {
                 break;
             }

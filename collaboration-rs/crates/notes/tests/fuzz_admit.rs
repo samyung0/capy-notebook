@@ -4,11 +4,12 @@
 //! concurrent writers) and crafted ones (items fanned over a paragraph, 40
 //! chained clients, splits of every held item) mutated by one to six bytes,
 //! then decoded, admitted and, when admitted, applied, measured and projected. It fails on a panic
-//! or on a case over the time budget, printing the case to replay. A fixed
+//! or on a case whose admission walks take more than [STEPS_PER_BYTE] steps
+//! per byte of the update and the room (a stall counted, not timed),
+//! printing the case to replay. A fixed
 //! seed and case count keep it repeatable in CI; FUZZ_CASES and FUZZ_SEED
 //! run more or other cases locally.
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::time::{Duration, Instant};
 
 use notes::limits::{Admission, Validator};
 use notes::{plate, slate_yjs};
@@ -222,6 +223,9 @@ fn fanned(units: &[yrs::ID]) -> Vec<u8> {
     bytes
 }
 
+/// As `admit_cost.rs`: linear walks take under one step per byte.
+const STEPS_PER_BYTE: u64 = 4;
+
 #[test]
 fn mutated_updates_never_panic_or_stall() {
     let cases: u64 = std::env::var("FUZZ_CASES")
@@ -232,13 +236,10 @@ fn mutated_updates_never_panic_or_stall() {
         .ok()
         .and_then(|n| n.parse().ok())
         .unwrap_or(0x9e37_79b9_7f4a_7c15);
-    // Each case is a small update on a small room: well under a millisecond
-    // in release. The budget catches a stall, not a slow machine.
-    let budget = Duration::from_millis(if cfg!(debug_assertions) { 500 } else { 100 });
     let base = state(&room());
     let seeds = seeds(&base);
     let mut rng = Rng(seed);
-    let (mut accepted, mut unheld, mut refused) = (0u64, 0u64, 0u64);
+    let (mut accepted, mut unheld, mut refused, mut most) = (0u64, 0u64, 0u64, 0u64);
     for case in 0..cases {
         let mut update = seeds[rng.below(seeds.len())].clone();
         for _ in 0..1 + rng.below(6) {
@@ -258,7 +259,7 @@ fn mutated_updates_never_panic_or_stall() {
         )
         .unwrap();
         validator.admit(&room, &nothing).unwrap();
-        let start = Instant::now();
+        ydoc::steps::take();
         let outcome = catch_unwind(AssertUnwindSafe(|| {
             let Ok(decoded) = ydoc::decode(&update) else {
                 return None;
@@ -271,7 +272,7 @@ fn mutated_updates_never_panic_or_stall() {
             }
             Some(admitted.ok())
         }));
-        let took = start.elapsed();
+        let steps = ydoc::steps::take();
         let replay = || format!("case {case} (seed {seed}): {update:02x?}");
         match outcome {
             Err(_) => panic!("panicked on {}", replay()),
@@ -279,7 +280,15 @@ fn mutated_updates_never_panic_or_stall() {
             Ok(Some(Some(Admission::Unheld))) => unheld += 1,
             Ok(_) => refused += 1,
         }
-        assert!(took < budget, "{took:?} on {}", replay());
+        let bytes = (update.len() + base.len()) as u64;
+        most = most.max(steps * 1_000 / bytes);
+        assert!(
+            steps <= STEPS_PER_BYTE * bytes,
+            "{steps} steps on {}",
+            replay()
+        );
     }
-    eprintln!("{cases} cases: {accepted} accepted, {unheld} unheld, {refused} refused");
+    eprintln!(
+        "{cases} cases: {accepted} accepted, {unheld} unheld, {refused} refused; at most {most} steps per KB"
+    );
 }
