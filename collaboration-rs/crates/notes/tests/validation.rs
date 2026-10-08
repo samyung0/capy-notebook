@@ -106,8 +106,12 @@ fn resizable_blocks_take_only_the_widths_the_handles_write() {
             node["width"] = width;
             material::assert_canonical_with(&[node], &material_kind, &Policy::default())
         };
-        material::assert_canonical_with(&[base.clone()], &material_kind, &Policy::default())
-            .unwrap();
+        material::assert_canonical_with(
+            std::slice::from_ref(&base),
+            &material_kind,
+            &Policy::default(),
+        )
+        .unwrap();
         for width in ["20%", "55%", "100%"] {
             with_width(Value::from(width)).unwrap_or_else(|e| panic!("{kind} {width}: {e}"));
         }

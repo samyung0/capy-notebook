@@ -53,5 +53,3 @@ pub fn keeps_roots(containers: &[Container]) -> bool {
         }
     })
 }
-
-pub use crate::material::{ValidationError, assert_canonical};

@@ -121,23 +121,6 @@ pub fn slice16(text: &str, from: usize, to: usize) -> &str {
     &text[start..end]
 }
 
-/// `Node.string`: all text below a node.
-pub fn string(node: &Value) -> String {
-    let mut out = String::new();
-    collect_string(node, &mut out);
-    out
-}
-
-fn collect_string(node: &Value, out: &mut String) {
-    if is_text(node) {
-        out.push_str(text(node));
-    } else {
-        for child in children(node) {
-            collect_string(child, out);
-        }
-    }
-}
-
 /// The editor root: a node holding the top-level blocks.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Root {
@@ -448,7 +431,6 @@ pub fn common(a: &[usize], b: &[usize]) -> Path {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Affinity {
     Forward,
-    Backward,
     None,
 }
 
@@ -493,7 +475,6 @@ pub fn transform_path_with(path: &[usize], op: &Operation, affinity: Affinity) -
             if o == &p {
                 match affinity {
                     Affinity::Forward => *p.last_mut()? += 1,
-                    Affinity::Backward => {}
                     Affinity::None => return None,
                 }
             } else if ends_before(o, &p) {

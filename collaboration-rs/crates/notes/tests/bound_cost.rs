@@ -90,29 +90,37 @@ fn growth_time(paragraphs: u32) -> Duration {
         .sum();
     assert!(ranges as u32 >= paragraphs * 40, "{ranges} delete ranges");
     let txn = room.transact();
-    let start = Instant::now();
-    let growth = bound::update_growth(&txn, &update).expect("a delete is bounded");
-    let elapsed = start.elapsed();
-    // Deleting adds nothing; the JS bound priced 12 bytes and 1 node per
-    // deleted formatted paragraph.
-    assert_eq!(
-        (growth.content_bytes, growth.node_count, growth.max_depth),
-        (0, 0, 0)
-    );
-    elapsed
+    // The best of three runs.
+    (0..3)
+        .map(|_| {
+            let start = Instant::now();
+            let growth = bound::update_growth(&txn, &update).expect("a delete is bounded");
+            let elapsed = start.elapsed();
+            // Deleting adds nothing; the JS bound priced 12 bytes and 1 node
+            // per deleted formatted paragraph.
+            assert_eq!(
+                (growth.content_bytes, growth.node_count, growth.max_depth),
+                (0, 0, 0)
+            );
+            elapsed
+        })
+        .min()
+        .unwrap_or_default()
 }
 
 #[test]
 fn a_select_all_delete_is_bounded_in_linear_time() {
     let small = growth_time(1_000);
-    let large = growth_time(2_000);
+    let large = growth_time(4_000);
     eprintln!(
-        "growth bound on a select-all delete: 1,000 paragraphs {small:?}, 2,000 paragraphs {large:?}"
+        "growth bound on a select-all delete: 1,000 paragraphs {small:?}, 4,000 paragraphs {large:?}"
     );
-    // JS before the M1 fix: 3.2 s and 15.6 s.
-    assert!(large < Duration::from_millis(1_500), "{large:?}");
+    // JS before the M1 fix: 3.2 s for 1,000 and 15.6 s for 2,000.
+    assert!(large < Duration::from_millis(3_000), "{large:?}");
+    // Four times the paragraphs in under eight times the time: linear passes
+    // (about 4x release, 5x debug), quadratic (16x) does not.
     assert!(
-        large < small * 4 + Duration::from_millis(50),
+        large < small * 8 + Duration::from_millis(20),
         "{small:?} -> {large:?}"
     );
 }

@@ -334,7 +334,7 @@ fn node_string(node: &Value) -> Result<String, EditError> {
 /// matches there, else at its unique occurrence, else nowhere. An empty span
 /// can only be trusted at its offset.
 fn anchor_span(current: &str, offset: usize, expected: &str) -> Option<usize> {
-    if slice16(current, offset, offset + len16(expected)) == expected {
+    if slice16(current, offset, offset.saturating_add(len16(expected))) == expected {
         return Some(offset);
     }
     let found = occurrences(current, expected);
@@ -623,7 +623,7 @@ fn run_command(
             }
             let (span_offset, span_length) = resolve_span(&current, expected_text, *offset)?;
             let start = point_at(editor, index, span_offset)?;
-            let end = point_at(editor, index, span_offset + span_length)?;
+            let end = point_at(editor, index, span_offset.saturating_add(span_length))?;
             if span_length > 0 {
                 editor.delete_range(start.clone(), end)?;
             }
