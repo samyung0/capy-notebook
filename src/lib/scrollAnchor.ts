@@ -39,8 +39,9 @@ export async function scrollSettled() {
 /**
  * Keeps `element` where it is on screen across the next DOM change: call it
  * just before the change and the returned function once the change is in the
- * DOM (a layout effect). The scroller's own anchoring is off in between so
- * the browser cannot adjust as well.
+ * DOM (a layout effect), which moves the scroll position by however far the
+ * change shifted the element within the content. The scroller's own anchoring
+ * is off in between so the browser cannot adjust as well.
  */
 export function holdPosition(element: Element) {
   let scroller = element.parentElement;
@@ -51,12 +52,15 @@ export function holdPosition(element: Element) {
     )
   )
     scroller = scroller.parentElement;
-  const top = element.getBoundingClientRect().top;
+  // Offset within the scrolled content: scrolling while React renders the
+  // change moves the screen position but not this, so it is kept.
+  const offset = () =>
+    element.getBoundingClientRect().top + (scroller?.scrollTop ?? 0);
+  const top = offset();
   if (scroller) scroller.style.overflowAnchor = 'none';
   return () => {
     if (!scroller) return;
-    if (element.isConnected)
-      scroller.scrollTop += element.getBoundingClientRect().top - top;
+    if (element.isConnected) scroller.scrollTop += offset() - top;
     scroller.style.overflowAnchor = '';
   };
 }

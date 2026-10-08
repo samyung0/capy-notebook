@@ -85,12 +85,17 @@ query-cache entry, which edits and reviews update in place.
 Content added above the view goes through `src/lib/scrollAnchor.ts`, in both
 panels (the side list holds back rows its query loads above until then).
 `holdPosition` turns the scroller's native anchoring off, lets the change in
-and moves the scroll position by however far the first shown question moved:
+and moves the scroll position by however far the first shown question moved
+within the content (not on screen, so scrolling while React renders the
+change is kept):
 Chrome does not anchor at scrollTop 0 and Safari before 27 has no
 anchoring. `scrollSettled` makes the insert wait until no finger is down and
 nothing has scrolled for 150 ms, because iOS Safari cancels a fling, or drops
 the write, when script sets scrollTop during a touch scroll, its momentum or
-its bounce.
+its bounce. Checked on the iOS 18.6 Simulator (2026-10-08): inserting during a
+fling showed a frame several screens off, snapped back and stopped the fling;
+with the wait, flicks, the top bounce, a held finger and the phone sheet's list
+kept their position.
 
 ## Shared question format
 
