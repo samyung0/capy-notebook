@@ -1,11 +1,15 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
+	"io"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -68,7 +72,8 @@ type projectMaterialReq struct {
 type projectMaterialInput struct {
 	ID     string `path:"id"`
 	Secret string `header:"X-Collaboration-Secret"`
-	Body   projectMaterialReq
+	// A projectMaterialReq the handler decodes itself (decodeProjectionBody).
+	RawBody []byte
 }
 
 type projectMaterialOutput struct {
@@ -85,13 +90,21 @@ func (a *api) registerCollaboration(api huma.API) {
 	reg(api, http.MethodPatch, "/api/comments/{id}", "updateMaterialComment", tag, "Edit an authored comment", http.StatusOK, a.updateMaterialComment)
 	reg(api, http.MethodDelete, "/api/comments/{id}", "deleteMaterialComment", tag, "Soft-delete a comment", http.StatusNoContent, a.deleteMaterialComment)
 	reg(api, http.MethodPost, "/api/materials/{id}/collaboration-token", "createMaterialCollaborationToken", tag, "Create a short-lived material room token", http.StatusCreated, a.createMaterialCollaborationToken)
-	// The handler validates the whole document itself (materialdoc.NewProjection),
-	// so Huma decodes the 2 MiB body once instead of also into a generic value
-	// for schema validation. The collaboration service gives up after 15 s.
-	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/materials/{id}/projection", "projectMaterialYjsDocument", tag, "Project a durably stored Yjs document", http.StatusOK, materialRequestMaxBytes, a.projectMaterialYjsDocument, func(op *huma.Operation) {
+	// The handler decodes the 2 MiB body once (decodeProjectionBody, then
+	// materialdoc.NewProjection) instead of Huma decoding it twice, into a
+	// generic value for schema validation and then into the struct. The
+	// collaboration service gives up after 15 s.
+	const projectionPath = "/internal/collaboration/materials/{id}/projection"
+	regWithMaxBody(api, http.MethodPost, projectionPath, "projectMaterialYjsDocument", tag, "Project a durably stored Yjs document", http.StatusOK, materialRequestMaxBytes, a.projectMaterialYjsDocument, func(op *huma.Operation) {
 		op.SkipValidateBody = true
 		op.BodyReadTimeout = 15 * time.Second
+		// Documented as the JSON it must hold, as a Body field would be.
+		op.RequestBody = &huma.RequestBody{Content: map[string]*huma.MediaType{
+			"application/json": {Schema: api.OpenAPI().Components.Schemas.Schema(reflect.TypeOf(projectMaterialReq{}), true, "")},
+		}}
 	})
+	// RawBody also documents a raw byte body the route does not take.
+	delete(api.OpenAPI().Paths[projectionPath].Post.RequestBody.Content, "application/octet-stream")
 	reg(api, http.MethodPost, "/internal/collaboration/materials/{id}/index", "requestMaterialIndex", tag, "Queue a dirty idle note for retrieval indexing", http.StatusAccepted, a.requestMaterialIndex)
 	reg(api, http.MethodPost, "/internal/collaboration/materials/{id}/children", "adoptMaterialChildren", tag, "Make the images and quiz or flashcard blocks an update brought in the material's own", http.StatusOK, a.adoptMaterialChildren)
 }
@@ -274,11 +287,15 @@ func (a *api) projectMaterialYjsDocument(
 		return nil, huma.Error401Unauthorized("invalid collaboration service secret")
 	}
 	obs.ContinueInternalRetry(ctx)
-	projection, err := materialdoc.NewProjection(in.Body.Content)
+	body, err := decodeProjectionBody(in.RawBody)
+	if err != nil {
+		return nil, err
+	}
+	projection, err := materialdoc.NewProjection(body.Content)
 	if err != nil {
 		return nil, collaborationError(err)
 	}
-	material, err := a.s.ProjectMaterialContent(ctx, in.ID, projection, in.Body.YjsVersion)
+	material, err := a.s.ProjectMaterialContent(ctx, in.ID, projection, body.YjsVersion)
 	if err != nil {
 		return nil, collaborationError(err)
 	}
@@ -287,6 +304,64 @@ func (a *api) projectMaterialYjsDocument(
 		NodeCount: material.NodeCount, MaxDepth: material.MaxDepth,
 		UpdatedAt: material.UpdatedAt,
 	}}, nil
+}
+
+// decodeProjectionBody reads the projection body once and refuses what Huma's
+// schema validation refused before the route skipped it, with Huma's codes:
+// 400 for malformed JSON, 422 for a missing, null, unknown or mistyped field
+// or a yjsVersion below 1. Field names match regardless of case and the
+// documented `$schema` link is ignored, as with Huma; `value` may be null, as
+// its schema allows. materialdoc then checks the document itself (400).
+func decodeProjectionBody(raw []byte) (projectMaterialReq, error) {
+	invalid := func(message string) (projectMaterialReq, error) {
+		return projectMaterialReq{}, huma.Error422UnprocessableEntity(message)
+	}
+	// One null node stands in for `value`: a decoded array replaces it, null
+	// clears it, and a missing field leaves it to be refused like a null node.
+	nodes := []map[string]any{nil}
+	var body struct {
+		Schema  json.RawMessage `json:"$schema"`
+		Content struct {
+			SchemaVersion *int              `json:"schemaVersion"`
+			Value         *[]map[string]any `json:"value"`
+		} `json:"content"`
+		YjsVersion *int64 `json:"yjsVersion"`
+	}
+	body.Content.Value = &nodes
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	// The decoder scans the whole object before decoding it, so a syntax
+	// error anywhere wins over a field error, as with Huma.
+	err := decoder.Decode(&body)
+	var syntax *json.SyntaxError
+	malformed := errors.As(err, &syntax) || errors.Is(err, io.ErrUnexpectedEOF)
+	if err == nil {
+		_, end := decoder.Token()
+		malformed = end != io.EOF // anything after the object
+	}
+	if malformed {
+		return projectMaterialReq{}, huma.Error400BadRequest("malformed JSON body")
+	}
+	if err != nil {
+		return invalid(err.Error())
+	}
+	if body.YjsVersion == nil || *body.YjsVersion < 1 {
+		return invalid("yjsVersion must be an integer of at least 1")
+	}
+	if body.Content.SchemaVersion == nil {
+		return invalid("content.schemaVersion is required")
+	}
+	req := projectMaterialReq{YjsVersion: *body.YjsVersion}
+	req.Content.SchemaVersion = *body.Content.SchemaVersion
+	if body.Content.Value != nil {
+		req.Content.Value = *body.Content.Value
+	}
+	for _, node := range req.Content.Value {
+		if node == nil {
+			return invalid("content.value must be an array of objects")
+		}
+	}
+	return req, nil
 }
 
 func (a *api) listMaterialDiscussions(ctx context.Context, in *materialIDInput) (*discussionsOutput, error) {

@@ -871,10 +871,15 @@ endpoint.
 Go validates the complete envelope, locks the material, ignores stale versions,
 updates `materials.content`, increments the material revision, reconciles
 flashcard stats, and advances `projected_version`. The handler parses the
-body once: Huma decodes it without a schema pass (the operation skips body
-validation; `materialdoc.NewProjection` validates the whole document), and
-the kind check, metrics, embedded references and editor assets all read that
-one parse (`materialdoc.Projection`) instead of re-parsing the canonical JSON.
+body once: the operation skips Huma's body validation and takes the raw body
+(still documented as `ProjectMaterialReq`), `decodeProjectionBody` decodes it
+in one pass and refuses what the schema refused with Huma's codes (400 for
+malformed JSON; 422 for a missing, null, unknown or mistyped field or a
+`yjsVersion` below 1; names match regardless of case and `$schema` is ignored,
+as Huma does), and `materialdoc.NewProjection` validates the whole document
+(400). The kind check, metrics, embedded references and editor assets all read
+that one parse (`materialdoc.Projection`) instead of re-parsing the canonical
+JSON.
 Content equal to what is stored advances the watermark without a revision:
 it is compared by the sha256 of the canonical JSON against
 `material_yjs_documents.projected_sha256`, the hash of what the last
