@@ -146,6 +146,34 @@ describe('holdInsertPlace at the caret', () => {
     expect(editor.selection).toEqual(before.selection);
   });
 
+  // A selection over several lines: the import replaces it only while none
+  // of those lines changed, so text typed into one of them is never deleted.
+  it('replaces an untouched selection, and deletes nothing once a line in it changed', () => {
+    const lines = () =>
+      createPlateEditor({
+        value: ['aaaa', 'bbbb', 'cccc'].map((text) => ({
+          children: [{ text }],
+          type: 'p',
+        })),
+      });
+    const range = {
+      anchor: { offset: 2, path: [0, 0] },
+      focus: { offset: 2, path: [2, 0] },
+    };
+    const untouched = lines();
+    untouched.tf.select(range);
+    holdInsertPlace(untouched, { atCaret: true }).insert(imported());
+    expect(texts(untouched)).toEqual(['aa', 'a', 'b', 'cc']);
+
+    const typed = lines();
+    typed.tf.select(range);
+    const place = holdInsertPlace(typed, { atCaret: true });
+    typed.tf.select({ offset: 1, path: [2, 0] });
+    typed.tf.insertText('TYPED');
+    place.insert(imported());
+    expect(texts(typed)).toEqual(['aaaa', 'bbbb', 'cTYPEDccc', 'a', 'b']);
+  });
+
   it('goes after the line once the line changed', () => {
     const { editor, place } = importRan();
     editor.tf.insertText('X');
