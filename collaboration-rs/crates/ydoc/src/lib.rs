@@ -151,6 +151,13 @@ fn small_edit<T: ReadTxn>(txn: &T, incoming: &Incoming) -> bool {
     })
 }
 
+/// Whether the room applies `incoming` without a trial on a copy of it (a
+/// small edit). A server runs any other update's admission off its async
+/// workers.
+pub fn applies_directly<T: ReadTxn>(txn: &T, incoming: &Incoming) -> bool {
+    small_edit(txn, incoming)
+}
+
 /// Whether at most [SMALL_EDIT] of the update's delete ranges delete
 /// something the room does not hold deleted already (or collected). Each
 /// room block a range covers is a step; past [MAX_WORK] steps the answer is
@@ -424,7 +431,10 @@ pub fn inspect_update<T: ReadTxn>(txn: &T, update: &Update) -> Result<Inspection
 /// [MAX_WORK] steps placing it, or if its structs wait on each other.
 pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, UpdateError> {
     let mut ends: HashMap<ClientID, u32> = HashMap::new();
+    // A step per struct: every update admission reads walks its structs at
+    // least once, which the cost tests take as their floor.
     for block in incoming.update().blocks() {
+        steps::step();
         let (client, clock, len) = match block {
             UpdateBlock::Item(item) => (item.id().client, item.id().clock, item.len()),
             UpdateBlock::Gc(range) | UpdateBlock::Skip(range) => {

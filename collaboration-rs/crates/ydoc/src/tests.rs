@@ -499,6 +499,8 @@ fn held_deletions_up_to_the_message_cap_stay_within_the_budget() {
     let inspected = inspect_update(&room.transact(), &decode(&bytes).unwrap());
     let spent = steps::take();
     assert!(inspected.is_ok(), "{inspected:?}");
+    // The check spends the whole budget before it gives up, and no more.
+    assert!(spent > MAX_WORK, "{spent} steps");
     assert!(spent <= MAX_WORK + 64, "{spent} steps");
 }
 
@@ -633,6 +635,14 @@ fn a_chain_of_clients_applies_on_a_task_stack() {
         bytes.write_string("x");
     }
     bytes.write_var(0u32);
+    // Admission still tries it on a copy, and refuses it: the trial sizing
+    // counts the 20,000 structs the room lacks. The notes walks' cycle checks
+    // rely on this to keep an admitted chain short (REVIEW2, REVIEW3 M7).
+    let inspected = inspect_update(&room.transact(), &decode(&bytes).unwrap());
+    assert!(
+        matches!(inspected, Err(UpdateError::Costly)),
+        "{inspected:?}"
+    );
     let length = std::thread::Builder::new()
         .stack_size(2 << 20)
         .spawn(move || {

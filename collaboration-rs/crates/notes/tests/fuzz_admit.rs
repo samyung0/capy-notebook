@@ -281,6 +281,11 @@ fn mutated_updates_never_panic_or_stall() {
             Ok(_) => refused += 1,
         }
         let bytes = (update.len() + base.len()) as u64;
+        // Admission walks the structs of a decoded update (up to the first a
+        // check refuses): a case with structs counts at least one step.
+        if ydoc::decode(&update).is_ok_and(|decoded| decoded.blocks().next().is_some()) {
+            assert!(steps > 0, "no steps on {}", replay());
+        }
         most = most.max(steps * 1_000 / bytes);
         assert!(
             steps <= STEPS_PER_BYTE * bytes,

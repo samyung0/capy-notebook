@@ -272,6 +272,12 @@ fn plain_content<T: ReadTxn>(txn: &T, incoming: &ydoc::Incoming) -> Result<(), R
             if let Some(known) = entries.get(item.id()) {
                 break *known;
             }
+            // A cycle check per step, not a scan of the chain (REVIEW3 M7). Its
+            // cost also stays bounded because a long chain cannot get here
+            // untried: the trial sizing counts every struct the room lacks, and
+            // the trial refuses chains of about 13,000 clients and more
+            // (ydoc `a_chain_of_clients_applies_on_a_task_stack`,
+            // admit_cost's chained clients).
             if !seen.insert(*item.id()) {
                 break None;
             }

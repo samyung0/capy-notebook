@@ -1454,7 +1454,14 @@ impl Room {
             self.refuse(key, &[], "client update changed collaboration metadata");
             return;
         }
-        let verdict = match &mut self.kind {
+        // Admission that copies the room (the trial past a small edit, a
+        // source's exact measure near its cap) runs off the runtime's workers
+        // while the room waits (REVIEW2 S1): this room's messages queue, and
+        // every other room and socket keeps its thread.
+        let heavy = !ydoc::applies_directly(&self.doc.transact(), &ydoc::Incoming::new(&update))
+            || matches!(&self.kind, Kindly::Source(source)
+                if source.estimate + bytes.len() as u64 > sources::MAX_SOURCE_STATE_BYTES as u64);
+        let mut admit = || match &mut self.kind {
             Kindly::Note(note) => match note.validator.admit(&self.doc, &update) {
                 Ok(notes::limits::Admission::Accepted) => Verdict::Accept,
                 Ok(notes::limits::Admission::Unheld) => Verdict::Unheld,
@@ -1467,6 +1474,11 @@ impl Room {
                     sources::Admission::Refuse(refusal) => Verdict::Source(refusal),
                 }
             }
+        };
+        let verdict = if heavy {
+            tokio::task::block_in_place(admit)
+        } else {
+            admit()
         };
         match verdict {
             Verdict::Unheld => {

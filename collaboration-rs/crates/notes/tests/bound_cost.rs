@@ -108,6 +108,8 @@ fn a_select_all_delete_is_bounded_in_linear_steps() {
     let large = growth_steps(4_000);
     eprintln!("growth bound on a select-all delete: 1,000 paragraphs {small} steps, 4,000 {large}");
     // Four times the paragraphs in at most five times the steps: linear
-    // passes, quadratic (16x) does not.
+    // passes, quadratic (16x) does not. The bound walks each of the 40,000
+    // deleted ranges at least once (a lower count is not counting).
+    assert!(small >= 40_000, "{small} steps");
     assert!(large <= small * 5, "{small} -> {large}");
 }

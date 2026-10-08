@@ -65,6 +65,13 @@ fn admit_steps(room: &Doc, update: &[u8]) -> u64 {
     ydoc::steps::take()
 }
 
+/// The structs of `update`: admission walks each at least once, a step
+/// each, so a test whose count falls below it is not counting (a stubbed or
+/// dropped `ydoc::steps::step`).
+fn structs(update: &[u8]) -> u64 {
+    ydoc::decode(update).unwrap().blocks().count() as u64
+}
+
 /// Admission's steps per byte of the update and the room's state: linear
 /// walks measure under 1 on every shape below; a walk that turned quadratic
 /// takes thousands at these sizes.
@@ -420,6 +427,7 @@ fn admit_stays_linear_on_every_hostile_shape() {
     for (name, (room, update)) in shapes {
         let steps = admit_steps(&room, &update);
         let bytes = update.len() as u64 + room_bytes(&room);
+        assert!(steps >= structs(&update), "{name}: {steps} steps");
         eprintln!(
             "{name}: {} KB, {steps} steps for {bytes} bytes",
             update.len() / 1024
@@ -479,6 +487,7 @@ fn a_costly_update_is_refused_within_the_budget() {
             answer,
             Err(Refusal::Update(ydoc::UpdateError::Costly))
         ));
+        assert!(steps >= structs(&update), "{name}: {steps} steps");
         assert!(steps <= STEPS_PER_BYTE * bytes, "{name}: {steps} steps");
     }
 }
