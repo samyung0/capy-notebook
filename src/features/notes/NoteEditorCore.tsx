@@ -247,8 +247,11 @@ function handOverLiveValue(
  * `contentEditable` property reads "true", and only uses the result to put a
  * selection back after a commit moved focus away; Slate owns the editor's
  * selection and restores it itself. So to React the editor root's property
- * reads "inherit". The attribute, which editing follows, is untouched, and
- * nothing else reads the property (Slate and Plate use the attribute).
+ * reads "inherit". The attribute, which editing follows, is untouched; Slate
+ * and Plate read the attribute. React also reads the property on focusin for
+ * its synthetic `onSelect`, which therefore no longer fires on the editor
+ * root (nothing listens for it there). A guard e2e fails if React stops
+ * reading the property (react-selection-walk.spec.ts).
  */
 function hideSelectionFromReact(root: HTMLElement) {
   const property = Object.getOwnPropertyDescriptor(
