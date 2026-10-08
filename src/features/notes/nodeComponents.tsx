@@ -182,12 +182,20 @@ function BlockStyleMenu({
         className="max-h-[min(18rem,var(--radix-popover-content-available-height))] w-48 overflow-y-auto"
         onCloseAutoFocus={(event) => {
           event.preventDefault();
-          if (restoreFocus.current) {
-            restoreFocus.current = false;
-            // Native controls inside Slate can retain its logical focus flag.
-            editor.tf.blur();
-            editor.tf.focus();
-          }
+          if (!restoreFocus.current) return;
+          restoreFocus.current = false;
+          // This runs when the popover unmounts after its exit animation; a
+          // control the user moved to meanwhile (another block's popover)
+          // keeps its focus.
+          const active = document.activeElement;
+          if (
+            active !== document.body &&
+            !editor.api.toDOMNode(editor)?.contains(active)
+          )
+            return;
+          // Native controls inside Slate can retain its logical focus flag.
+          editor.tf.blur();
+          editor.tf.focus();
         }}
         open={open}
       >

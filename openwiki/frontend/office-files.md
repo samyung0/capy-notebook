@@ -1784,7 +1784,12 @@ expiry: a probe answer read after the 2 s window counts for nothing, the swap
 is sent only while its 15 s request plus a 3 s margin still fit, the service
 abandons it after 15 s and the gateway ends its transaction after 10 s. So a
 swap never commits after the lock lapses, when a writer could have joined the
-old epoch; a late step gives up and a later attempt retries. A room in
+old epoch; a late step gives up and a later attempt retries. For the same
+reason the rebuild keeps Huma's 5 s body read deadline, while the other large
+source bodies (checkpoint, publish, refresh candidate; up to 150 MiB) may
+take 60 s to arrive, the service's own timeout for those calls
+(`sourceBodyDeadline` in `huma_source_documents.go`): at 5 s an 11 MB text
+checkpoint was answered 408 on a loaded host. A room in
 use, a save or a publication in between leaves it for later. It runs when a
 room unloads on an instance and from a sweep every minute (a room found in use
 waits five minutes, an error ten). A room that never empties keeps the old

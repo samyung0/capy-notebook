@@ -18,17 +18,14 @@ func TestProjectMaterialContentAllowsValidOverLimitRecovery(t *testing.T) {
 			"children": []any{map[string]any{"text": "x"}},
 		}
 	}
-	raw, err := materialdoc.MarshalProjection(materialdoc.Envelope{
+	projection, err := materialdoc.NewProjection(materialdoc.Envelope{
 		SchemaVersion: materialdoc.SchemaVersion,
 		Value:         value,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	metrics, err := materialdoc.Metrics(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
+	metrics := projection.Metrics
 	if metrics.NodeCount <= materialdoc.MaxNodes {
 		t.Fatalf("fixture node count=%d, want over %d", metrics.NodeCount, materialdoc.MaxNodes)
 	}
@@ -38,11 +35,15 @@ func TestProjectMaterialContentAllowsValidOverLimitRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	projected, err := s.ProjectMaterialContent(ctx, material.ID, raw, 1)
+	projected, err := s.ProjectMaterialContent(ctx, material.ID, projection, 1)
 	if err != nil {
 		t.Fatalf("valid over-limit projection failed: %v", err)
 	}
-	projectedMetrics, err := materialdoc.Metrics(projected.Content)
+	stored, err := s.GetMaterial(ctx, material.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectedMetrics, err := materialdoc.Metrics(stored.Content)
 	if err != nil {
 		t.Fatal(err)
 	}

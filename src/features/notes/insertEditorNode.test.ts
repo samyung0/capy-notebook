@@ -1,5 +1,10 @@
+import { createPlateEditor } from 'platejs/react';
 import { describe, expect, it, vi } from 'vitest';
-import { insertEditorNode, type NoteEditorInstance } from './insertEditorNode';
+import {
+  holdInsertPlace,
+  insertEditorNode,
+  type NoteEditorInstance,
+} from './insertEditorNode';
 
 function createEditor(currentText: string, inline = false) {
   const currentBlock = { children: [{ text: currentText }], type: 'p' };
@@ -53,5 +58,127 @@ describe('insertEditorNode', () => {
 
     expect(tf.removeNodes).not.toHaveBeenCalled();
     expect(tf.insertNodes).toHaveBeenCalledWith(node, { select: true });
+  });
+});
+
+describe('holdInsertPlace', () => {
+  const block = { children: [{ text: '' }], id: 'quiz', type: 'material_ref' };
+  // The slash command ran on the empty line [1].
+  function commandRan() {
+    const editor = createPlateEditor({
+      value: [
+        { children: [{ text: 'one' }], type: 'p' },
+        { children: [{ text: '' }], type: 'p' },
+        { children: [{ text: 'three' }], type: 'p' },
+      ],
+    });
+    editor.tf.select({ offset: 0, path: [1, 0] });
+    return { editor, place: holdInsertPlace(editor) };
+  }
+  const texts = (editor: NoteEditorInstance) =>
+    editor.children.map((node: { id?: string; children: unknown[] }) =>
+      node.id === 'quiz' ? 'QUIZ' : (node.children[0] as { text: string }).text
+    );
+
+  it('takes the command line and the caret when the caret stayed', () => {
+    const { editor, place } = commandRan();
+    place.insert(block);
+    expect(texts(editor)).toEqual(['one', 'QUIZ', 'three']);
+    expect(editor.selection?.anchor.path).toEqual([1, 0]);
+  });
+
+  it('leaves the caret where the user went meanwhile', () => {
+    const { editor, place } = commandRan();
+    editor.tf.select(editor.api.end([2]));
+    editor.tf.insertBreak();
+    editor.tf.insertText('typed');
+    place.insert(block);
+    expect(texts(editor)).toEqual(['one', 'QUIZ', 'three', 'typed']);
+    expect(editor.selection?.anchor).toEqual({ offset: 5, path: [3, 0] });
+  });
+
+  it('goes after the command line once the user typed on it', () => {
+    const { editor, place } = commandRan();
+    editor.tf.insertText('typed');
+    place.insert(block);
+    expect(texts(editor)).toEqual(['one', 'typed', 'QUIZ', 'three']);
+    expect(editor.selection?.anchor).toEqual({ offset: 5, path: [1, 0] });
+  });
+});
+
+// The toolbar's Import, run with the caret inside "three" (after "th").
+describe('holdInsertPlace at the caret', () => {
+  const imported = () =>
+    ['a', 'b'].map((text) => ({ children: [{ text }], type: 'p' }));
+  function importRan() {
+    const editor = createPlateEditor({
+      value: [
+        { children: [{ text: 'one' }], type: 'p' },
+        { children: [{ text: 'three' }], type: 'p' },
+      ],
+    });
+    editor.tf.select({ offset: 2, path: [1, 0] });
+    return { editor, place: holdInsertPlace(editor, { atCaret: true }) };
+  }
+  const texts = (editor: NoteEditorInstance) =>
+    editor.children.map(
+      (node: { children: { text: string }[] }) => node.children[0].text
+    );
+
+  it('splits the untouched line at the caret, as an insert at the caret does', () => {
+    const { editor, place } = importRan();
+    // Typing on another line leaves the import's line untouched.
+    editor.tf.select(editor.api.end([0]));
+    editor.tf.insertText(' typed');
+    place.insert(imported());
+    expect(texts(editor)).toEqual(['one typed', 'th', 'a', 'b', 'ree']);
+    expect(editor.selection?.anchor).toEqual({ offset: 9, path: [0, 0] });
+  });
+
+  it('takes the caret along when it stayed, as the import did before', () => {
+    const { editor, place } = importRan();
+    place.insert(imported());
+    // The import used to insert at the selection right away.
+    const before = importRan().editor;
+    before.tf.insertNodes(imported());
+    expect(texts(editor)).toEqual(['one', 'th', 'a', 'b', 'ree']);
+    expect(editor.children).toEqual(before.children);
+    expect(editor.selection).toEqual(before.selection);
+  });
+
+  // A selection over several lines: the import replaces it only while none
+  // of those lines changed, so text typed into one of them is never deleted.
+  it('replaces an untouched selection, and deletes nothing once a line in it changed', () => {
+    const lines = () =>
+      createPlateEditor({
+        value: ['aaaa', 'bbbb', 'cccc'].map((text) => ({
+          children: [{ text }],
+          type: 'p',
+        })),
+      });
+    const range = {
+      anchor: { offset: 2, path: [0, 0] },
+      focus: { offset: 2, path: [2, 0] },
+    };
+    const untouched = lines();
+    untouched.tf.select(range);
+    holdInsertPlace(untouched, { atCaret: true }).insert(imported());
+    expect(texts(untouched)).toEqual(['aa', 'a', 'b', 'cc']);
+
+    const typed = lines();
+    typed.tf.select(range);
+    const place = holdInsertPlace(typed, { atCaret: true });
+    typed.tf.select({ offset: 1, path: [2, 0] });
+    typed.tf.insertText('TYPED');
+    place.insert(imported());
+    expect(texts(typed)).toEqual(['aaaa', 'bbbb', 'cTYPEDccc', 'a', 'b']);
+  });
+
+  it('goes after the line once the line changed', () => {
+    const { editor, place } = importRan();
+    editor.tf.insertText('X');
+    place.insert(imported());
+    expect(texts(editor)).toEqual(['one', 'thXree', 'a', 'b']);
+    expect(editor.selection?.anchor).toEqual({ offset: 3, path: [1, 0] });
   });
 });

@@ -46,6 +46,10 @@ var (
 
 var (
 	youtubeVideoID = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
+	// mediaWidth is the one width a resizable block (image, YouTube video,
+	// Mermaid, chart, graph) stores: what MediaFrame's resize handles write, a
+	// whole percentage from 20 to 100. Mirrors MEDIA_WIDTH in the Node validator.
+	mediaWidth = regexp.MustCompile(`^(?:[2-9][0-9]|100)%$`)
 )
 
 // Envelope is the generic versioned JSON value persisted in materials.content.
@@ -122,34 +126,54 @@ func marshalCanonicalJSON(value any) ([]byte, error) {
 }
 
 func Marshal(doc Envelope) (string, error) {
-	raw, metrics, err := marshalValidated(doc)
+	projection, err := NewProjection(doc)
 	if err != nil {
 		return "", err
 	}
-	if err := metrics.LimitError(); err != nil {
+	if err := projection.Metrics.LimitError(); err != nil {
 		return "", err
 	}
-	return raw, nil
+	return projection.Raw, nil
 }
 
-// MarshalProjection canonicalizes structurally valid collaboration content
-// without applying product caps. The sidecar already enforces those caps and
+// Projection is a document validated and canonicalized once: the JSON to
+// store, its metrics, and the value it was serialized from, which the store
+// reads the kind check, references and assets from instead of parsing Raw
+// again (a near-limit note is 2 MiB).
+type Projection struct {
+	Raw     string
+	Metrics DocumentMetrics
+	value   []map[string]any
+}
+
+// NewProjection canonicalizes structurally valid content without applying
+// product caps: the collaboration service already enforces those caps and
 // permits valid shrink-only recovery for documents that start over a limit.
-func MarshalProjection(doc Envelope) (string, error) {
-	raw, _, err := marshalValidated(doc)
-	return raw, err
-}
-
-func marshalValidated(doc Envelope) (string, DocumentMetrics, error) {
+func NewProjection(doc Envelope) (Projection, error) {
 	if err := Validate(doc); err != nil {
-		return "", DocumentMetrics{}, err
+		return Projection{}, err
 	}
 	doc.Value = stripRuntimeCommentMarks(doc.Value)
 	b, err := marshalCanonicalJSON(doc)
 	if err != nil {
-		return "", DocumentMetrics{}, err
+		return Projection{}, err
 	}
-	return string(b), measure(b, doc.Value), nil
+	return Projection{Raw: string(b), Metrics: measure(b, doc.Value), value: doc.Value}, nil
+}
+
+// ValidateKind is ValidateKind for the projection's value.
+func (p Projection) ValidateKind(kind string) error {
+	return validateKind(p.value, kind)
+}
+
+// MaterialRefs is ExtractMaterialRefs for the projection's value.
+func (p Projection) MaterialRefs() []MaterialRef {
+	return materialRefs(p.value)
+}
+
+// EditorAssetIDs is EditorAssetIDs for the projection's value.
+func (p Projection) EditorAssetIDs() []string {
+	return editorAssetIDs(p.value)
 }
 
 // Metrics validates a canonical document and returns the serialized size and
@@ -306,28 +330,32 @@ func ValidateKind(raw, kind string) error {
 	if err != nil {
 		return err
 	}
-	if err := validateTopLevelBlockIDs(doc.Value); err != nil {
+	return validateKind(doc.Value, kind)
+}
+
+func validateKind(nodes []map[string]any, kind string) error {
+	if err := validateTopLevelBlockIDs(nodes); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
 	var valid bool
 	switch kind {
 	case "quiz":
-		valid = find(doc.Value, "quiz") != nil
+		valid = find(nodes, "quiz") != nil
 	case "flashcards":
-		valid = find(doc.Value, "flashcards") != nil
+		valid = find(nodes, "flashcards") != nil
 	case "mindmap", "diagram":
-		valid = find(doc.Value, "mermaid") != nil ||
-			find(doc.Value, "diagram") != nil ||
-			find(doc.Value, "mindmap") != nil
+		valid = find(nodes, "mermaid") != nil ||
+			find(nodes, "diagram") != nil ||
+			find(nodes, "mindmap") != nil
 	case "note":
-		return validateNoteReferences(doc.Value)
+		return validateNoteReferences(nodes)
 	default:
 		return nil
 	}
 	if !valid {
 		return fmt.Errorf("%w: %s element is required", ErrInvalid, kind)
 	}
-	if find(doc.Value, RefType) != nil {
+	if find(nodes, RefType) != nil {
 		return fmt.Errorf("%w: %s cannot contain a material reference", ErrInvalid, kind)
 	}
 	return nil
@@ -414,8 +442,12 @@ func ExtractMaterialRefs(raw string) ([]MaterialRef, error) {
 	if err != nil {
 		return nil, err
 	}
+	return materialRefs(doc.Value), nil
+}
+
+func materialRefs(nodes []map[string]any) []MaterialRef {
 	refs := []MaterialRef{}
-	for _, node := range doc.Value {
+	for _, node := range nodes {
 		if node["type"] != RefType {
 			continue
 		}
@@ -427,7 +459,7 @@ func ExtractMaterialRefs(raw string) ([]MaterialRef, error) {
 		kind, _ := node["refKind"].(string)
 		refs = append(refs, MaterialRef{ID: id, MaterialID: materialID, Kind: kind})
 	}
-	return refs, nil
+	return refs
 }
 
 // RewriteMaterialRefIDs points every reference whose material id is in ids at
@@ -535,9 +567,12 @@ func validateNode(node map[string]any, depth int) error {
 			return errors.New("embed block type must match node type")
 		}
 		for key := range node {
-			if key != "type" && key != "id" && key != "block" && key != "children" {
+			if key != "type" && key != "id" && key != "block" && key != "children" && key != "width" {
 				return fmt.Errorf("unexpected embed field %s", key)
 			}
+		}
+		if err := validateMediaWidth(node); err != nil {
+			return err
 		}
 		return questions.ValidateBlock(block, questions.Policy{})
 	case HTMLEmbedType:
@@ -555,6 +590,8 @@ func validateNode(node map[string]any, depth int) error {
 		return validateDiagram(node)
 	case "video":
 		return validateYouTube(node)
+	case "img":
+		return validateMediaWidth(node)
 	case RefType:
 		return validateMaterialRef(node)
 	}
@@ -606,7 +643,18 @@ func validateYouTube(node map[string]any) error {
 			return fmt.Errorf("YouTube video cannot contain %s", key)
 		}
 	}
-	return nil
+	return validateMediaWidth(node)
+}
+
+func validateMediaWidth(node map[string]any) error {
+	raw, ok := node["width"]
+	if !ok {
+		return nil
+	}
+	if width, ok := raw.(string); ok && mediaWidth.MatchString(width) {
+		return nil
+	}
+	return errors.New("width must be a whole percentage from 20 to 100")
 }
 
 func validateQuiz(node map[string]any) error {
@@ -739,7 +787,7 @@ func validateDiagram(node map[string]any) error {
 	if len(children) != 1 || children[0].(map[string]any)["type"] != "mermaid_caption" {
 		return errors.New("diagram requires one mermaid_caption child")
 	}
-	return nil
+	return validateMediaWidth(node)
 }
 
 func validateTextElement(node map[string]any) error {
@@ -1146,6 +1194,10 @@ func EditorAssetIDs(raw string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	return editorAssetIDs(doc.Value), nil
+}
+
+func editorAssetIDs(nodes []map[string]any) []string {
 	seen := map[string]struct{}{}
 	var collect func(map[string]any)
 	collect = func(node map[string]any) {
@@ -1166,14 +1218,14 @@ func EditorAssetIDs(raw string) ([]string, error) {
 			collect(child)
 		}
 	}
-	for _, node := range doc.Value {
+	for _, node := range nodes {
 		collect(node)
 	}
 	ids := make([]string, 0, len(seen))
 	for id := range seen {
 		ids = append(ids, id)
 	}
-	return ids, nil
+	return ids
 }
 
 // RewriteClonedEditorAssetIDs rewrites references to ready editor assets and

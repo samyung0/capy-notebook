@@ -214,6 +214,49 @@ describe('Universal Plate material documents', () => {
     ).toBe(true);
   });
 
+  // As the Node and Go validators: an imported document with any other
+  // width fails here instead of getting the note's room refused.
+  it('takes only the resize width on resizable blocks', () => {
+    const leaf = [{ text: '' }];
+    const blocks = [
+      { assetId: 'asset', children: leaf, id: 'b', type: 'img' },
+      {
+        children: leaf,
+        id: 'b',
+        provider: 'youtube',
+        type: 'video',
+        videoId: 'dQw4w9WgXcQ',
+      },
+      {
+        children: [{ children: leaf, type: 'mermaid_caption' }],
+        id: 'b',
+        source: 'flowchart LR',
+        type: 'mermaid',
+      },
+    ];
+    const valid = (block: object, width: unknown) =>
+      isMaterialDocument({ schemaVersion: 1, value: [{ ...block, width }] });
+    for (const block of blocks) {
+      for (const width of [undefined, '20%', '55%', '100%'])
+        expect(valid(block, width)).toBe(true);
+      for (const width of ['19%', '101%', 50, '50px', '50.5%', '050%', null])
+        expect(valid(block, width)).toBe(false);
+    }
+    // Plate's chart and graph nodes use the same rule.
+    const chart = customBlockNode(
+      'chart',
+      JSON.stringify({
+        kind: 'bar',
+        labels: ['A'],
+        series: [{ name: 'Total', values: [3] }],
+        title: 'Counts',
+        type: 'chart',
+      })
+    );
+    expect(valid(chart, '40%')).toBe(true);
+    expect(valid(chart, 300)).toBe(false);
+  });
+
   it('accepts only validated YouTube video nodes', () => {
     const node = {
       children: [{ text: '' }],

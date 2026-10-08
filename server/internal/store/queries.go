@@ -1733,12 +1733,20 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 		}
 	}
 	if p.Content != nil && contentKind == "note" {
-		if err := reconcileEmbeddedTx(ctx, tx, id, *p.Content, p.UpdatedBy); err != nil {
+		refs, err := materialdoc.ExtractMaterialRefs(*p.Content)
+		if err != nil {
+			return Material{}, err
+		}
+		if err := reconcileEmbeddedTx(ctx, tx, id, refs, p.UpdatedBy); err != nil {
 			return Material{}, err
 		}
 	}
 	if p.Content != nil {
-		if err := pruneMaterialAssetsTx(ctx, tx, id, *p.Content); err != nil {
+		kept, err := materialdoc.EditorAssetIDs(*p.Content)
+		if err != nil {
+			return Material{}, err
+		}
+		if err := pruneMaterialAssetsTx(ctx, tx, id, kept); err != nil {
 			return Material{}, err
 		}
 	}

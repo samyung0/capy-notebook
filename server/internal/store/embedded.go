@@ -325,16 +325,13 @@ func (s *Store) DiscardEmbeddedDrafts(ctx context.Context, noteID string, ids []
 }
 
 // reconcileEmbeddedTx aligns the note's embedded rows with the references in
-// its projected content, like pruneMaterialAssetsTx does for its assets: a
+// its new content (materialdoc's MaterialRefs), like pruneMaterialAssetsTx
+// does for its assets: a
 // referenced row that was trashed comes back (undo of a block removal), an
 // unreferenced row created over 60 seconds ago is trashed. The minute lets a
 // new row's block reach the note; a row whose block never lands (the tab
 // closed, an undo before the save) goes at a later save.
-func reconcileEmbeddedTx(ctx context.Context, tx pgx.Tx, noteID, content, actorID string) error {
-	refs, err := materialdoc.ExtractMaterialRefs(content)
-	if err != nil {
-		return err
-	}
+func reconcileEmbeddedTx(ctx context.Context, tx pgx.Tx, noteID string, refs []materialdoc.MaterialRef, actorID string) error {
 	referenced := make(map[string]bool, len(refs))
 	for _, ref := range refs {
 		referenced[ref.MaterialID] = true

@@ -202,6 +202,25 @@ All element nodes need stable IDs before entering Yjs. IDs are used by:
 - AI insertion/table targets;
 - custom block rendering and relational card state.
 
+The note editor runs without Plate's NodeIdPlugin (`nodeId: false` in
+`NoteEditorCore.tsx`). That plugin repaired ids only on its own copy of each
+operation, after Slate-Yjs had recorded the original, so a block made by Enter,
+a split or Duplicate had one id in the editor and another in the room (or a
+duplicate the store refused). `stableElementIdsPlugin`
+(`src/features/notes/stableElementIds.ts`) does the work in the operation
+Slate-Yjs records instead, so both hold the same ids:
+
+- every element of a local `insert_node` gets a new id when it has none or one
+  another element of the note already has (a duplicated or re-pasted block);
+  the note's id set is built only when the inserted subtree brings ids;
+- a local `split_node` gets a new id;
+- `id` counts as metadata, not block state (`isElementStateEmpty`, which the
+  empty-note placeholder reads), as NodeIdPlugin declared;
+- Plate's `_id` insert marker is dropped at every depth of an insert and from a
+  split's properties. The note editor no longer writes it, but content copied
+  from an editor that runs NodeIdPlugin (question text) or from a room written
+  before can carry it, and the store refuses it on interactive blocks.
+
 Text leaves do not need IDs. Runtime values must never be written onto nodes:
 
 - signed asset URLs and browser blob URLs;
@@ -236,7 +255,13 @@ browser never calls an adopt route.
 
 Image, YouTube, mermaid, chart and graph blocks share `MediaFrame`: a toolbar docked top-right
 that shows on hover, and in edit mode two side handles that resize the block
-symmetrically and store `width` as a percentage string (`"62%"`). Frames stop at
+symmetrically and store `width` as a percentage string (`"62%"`), a whole number
+from 20 to 100. The Node and Go validators accept exactly that on these five
+blocks (`MEDIA_WIDTH` and `mediaWidth`, `^(?:[2-9][0-9]|100)%$`) and refuse any
+other width, so a resized block never gets its room refused. The browser's
+document check (`isMaterialNode` in `src/features/materials/document.ts`)
+applies the same rule, so a JSON import carrying another width fails on its
+own with the import's error toast instead of getting the room refused. Frames stop at
 48rem wide and images and diagrams at `min(70vh, 48rem)` tall. Clicking an image
 or diagram opens `MediaPreview`, a full-screen view on a dark backdrop with the
 name above and the caption below, in every editor mode. It zooms to 8× with the
@@ -296,7 +321,11 @@ server-rendered shared note hydrates, and equations render MathLive's static mar
 there (`StaticMathContext`). Inserting through the slash command or toolbar
 creates the row through `POST /api/materials/{noteId}/embedded` (a set with one
 blank card) and inserts the reference at the top level, where it opens in place
-for editing; nothing is inserted when
+for editing. The block goes where the command ran, not where the caret is when
+the row arrives (`holdInsertPlace` in `insertEditorNode.ts`): over the
+command's line while it is still an empty paragraph, otherwise after it, and it
+takes the caret only if the caret has not moved, so typing elsewhere during the
+round trip is kept. Nothing is inserted when
 creation fails, and with the caret inside a callout, column, table or other container
 the quiz, flashcards and mermaid commands do nothing. A reference that lands
 nested (a paste) is lifted to the top level by the plugin's normalizer. Edits
@@ -418,6 +447,18 @@ loads with the note and stays loaded (at most 10 per note), so none vanishes,
 reloads or resizes while the reader scrolls. Opening a note with `?block=<id>`
 scrolls that block into view once per page load. Exports never run the
 snippet (see Readable note exports).
+
+## Note imports
+
+The toolbar's Import (Markdown, JSON or DOCX, `importFile` in
+`toolbar/NoteToolbar.tsx`) converts the file in the browser and inserts the
+document where the import ran, not where the caret is when the conversion
+finishes (`holdInsertPlace(editor, { atCaret: true })`). If nothing has touched
+the lines the import's selection spans meanwhile, the document goes in at the
+remembered selection, replacing it and splitting the line exactly as an insert
+at the selection does; otherwise it goes after the last of those lines and
+deletes nothing, so text typed into them while the file was read stays. It
+takes the caret only if the caret has not moved.
 
 ## Readable note exports
 
@@ -834,7 +875,27 @@ endpoint.
 
 Go validates the complete envelope, locks the material, ignores stale versions,
 updates `materials.content`, increments the material revision, reconciles
-flashcard stats, and advances `projected_version`.
+flashcard stats, and advances `projected_version`. The handler parses the
+body once: the operation skips Huma's body validation and takes the raw body
+(still documented as `ProjectMaterialReq`), `decodeProjectionBody` decodes it
+in one pass and refuses what the schema refused with Huma's codes (415 for a
+Content-Type Huma has no format for; 400 for what does not decode as JSON at
+all, including a number out of float64 range; 422 for a missing, null,
+unknown or mistyped field or a `yjsVersion` below 1; names match regardless of
+case and `$schema` is ignored, as Huma does), and `materialdoc.NewProjection`
+validates the whole document (400). Only a wrong secret answers differently:
+401 before the body is read, where Huma's validation answered first. The kind check, metrics, embedded references and editor assets all read
+that one parse (`materialdoc.Projection`) instead of re-parsing the canonical
+JSON.
+Content equal to what is stored advances the watermark without a revision:
+it is compared by the sha256 of the canonical JSON against
+`material_yjs_documents.projected_sha256`, the hash of what the last
+projection wrote or found (once a material has a Yjs document only the
+projection writes `materials.content`), and as `jsonb` only on that row's
+first projection. The answer carries the row's revision, `size_bytes` and
+metrics without reading the content back. On the 2 MB load-test note the
+handler's CPU went from ~140 ms to ~30 ms. Its body read deadline is 15 s,
+the collaboration service's own timeout for the call, instead of Huma's 5 s.
 Rows where `projected_version < stored_version` are retried by the sidecar.
 Binary persistence and projection have separate failure boundaries. Once a Yjs
 version commits, a projection outage does not enqueue that snapshot as a failed
@@ -895,6 +956,29 @@ stale without refetching, and flushes one real invalidation when it unmounts.
 The room is the content authority while the editor is open, so refetching there
 only re-downloads and re-parses a document nobody is reading — on a near-limit
 note that is seconds of main-thread time per save.
+
+Switching a note from Edit to View in the same tab shows that tab's live
+document at once: the View toggle (`changeMaterialMode` in `CenterContent.tsx`)
+asks the open editor, through `liveNoteHandover.ts` so the View path never
+loads the editor, to put its value (co-editors' changes included, normalized
+as the projection would be) into the cached material before View renders
+(`handOverLiveValue` in `NoteEditorCore.tsx`); the projection the editor's
+unmount refetches replaces it when it lands, with no loader in between. Done
+at unmount instead, the hand-over came after View had already rendered the
+cached copy, so View rendered the whole note twice in one frame, and it ran
+on every navigation away as well. It skips a value the room refused or
+discarded (a rejected document, a room turned read-only, which goes to View
+without the toggle) and one that never synced; a value the document format
+refuses is reported to Sentry and leaves the cache alone. `MaterialPreview` is memoized,
+so a projected copy equal to the live one (React Query keeps the same
+content object) re-renders nothing, and Edit loads its module so View does
+not suspend on it (`CenterContent.tsx`). The pane picks the preview's
+component type once per mount, at its first View: a note opened straight in
+View keeps the lazy wrapper, because swapping it for the loaded component at
+the next re-render would remount the whole document (frames reload, an
+embedded quiz loses its answer). Until the room projects on demand,
+a refetch that lands before the room's last store is projected can show a
+copy a few seconds older than the live one.
 
 Server-origin content mutations use the sidecar command endpoint. Commands load
 the current Y.Doc and replace one stable custom block through headless
@@ -1148,8 +1232,20 @@ validation and are not rendered.
   about a third of each keystroke. `navigationFeedback.ts` overrides that
   inject: an element reads the plugin's `activeTarget` option, which changes
   only when a flash starts or ends, and renders the same `data-nav-*`
-  attributes Plate would. No stylesheet styles those attributes today, so the
-  flash itself is invisible.
+  attributes Plate would. The note editor stylesheet (`src/styles/tailwind.css`)
+  fades the target from the highlight colour over Plate's duration, restarting
+  on a second jump (`data-nav-cycle`); under reduced motion the highlight
+  holds for that time instead.
+- React saves the focused element's selection before every commit, and for a
+  contenteditable it walks the element's whole DOM to turn it into text
+  offsets (`getSelectionInformation`); on a near-limit note that walk was about
+  a quarter of each keystroke's main-thread time. React reads the selection
+  only when the element's `contentEditable` property is `"true"`, and uses it
+  only to put a selection back after a commit moved focus away, which Slate
+  does itself. So the editor root's `contentEditable` property reads
+  `"inherit"` (`hideSelectionFromReact` in `NoteEditorCore.tsx`); the
+  attribute, which editing follows, is untouched, and Slate and Plate read the
+  attribute. React still refocuses the editor after such a commit.
 - A block's interaction chrome mounts only once the block comes within a
   screen of the note's scroll area or the pointer enters it, and then stays
   (`useNearViewport` in `BlockInteractions.tsx`): the gutter with its drag
@@ -1161,8 +1257,9 @@ validation and are not rendered.
   (`getSelectionInformation`). Drops land where the pointer is and dragging
   auto-scrolls blocks into range, so the handle shows on hover and drag and
   drop work as before (`e2e/editor/block-interactions.spec.ts`).
-- Remote cursor decorations must match Slate paths structurally (not
-  dot-joined path strings). Shared-link editors may be absent from the
+- Remote cursor and comment decorations must match Slate paths structurally
+  (`Path.compare`, not dot-joined path strings, which put block 10 before
+  block 3). Shared-link editors may be absent from the
   workspace member directory, so cursor labels fall back to the authenticated
   user's name. Because decorations split text leaves, editor end navigation
   should use the Plate document API.

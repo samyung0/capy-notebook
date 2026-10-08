@@ -8,7 +8,10 @@ import {
 import { createSlateEditor } from 'platejs';
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
-import { resolveCommentDecorations } from './Collaboration';
+import {
+  commentDecorationRangesForEntry,
+  resolveCommentDecorations,
+} from './Collaboration';
 
 function base64(value: Uint8Array) {
   return Buffer.from(value).toString('base64');
@@ -63,5 +66,28 @@ describe('relative comment decorations', () => {
     ]);
     YjsEditor.disconnect(editor);
     document.destroy();
+  });
+});
+
+describe('comment decorations per node', () => {
+  // A comment from block 2 to block 10 reaches every block between, whatever
+  // the number of digits in their indices.
+  it('reaches every block a multi-block comment spans', () => {
+    const range = {
+      anchor: { offset: 1, path: [2, 0] },
+      comment: true,
+      focus: { offset: 3, path: [10, 0] },
+    };
+    const reached = Array.from({ length: 12 }, (_, block) => block).filter(
+      (block) =>
+        commentDecorationRangesForEntry([null, [block]], [range]).length > 0
+    );
+    expect(reached).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(
+      commentDecorationRangesForEntry([null, [10, 0]], [range])
+    ).toHaveLength(1);
+    expect(
+      commentDecorationRangesForEntry([null, [11, 0]], [range])
+    ).toHaveLength(0);
   });
 });

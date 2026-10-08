@@ -1,4 +1,5 @@
 import { YjsPlugin } from '@platejs/yjs/react';
+import { captureException } from '@sentry/react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Path } from 'platejs';
 import type { PlateEditor } from 'platejs/react';
@@ -15,6 +16,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -31,6 +33,8 @@ import type { Material, MaterialCollaborationToken } from '@/api/types';
 import { userToast } from '@/components/ui/userToast';
 import { FileLoading } from '@/features/files/FileStates';
 import {
+  createMaterialDocument,
+  type MaterialDocument,
   type MaterialValue,
   parseMaterialDocument,
 } from '@/features/materials/document';
@@ -72,6 +76,7 @@ import { EditorCommandPalette } from './EditorCommandPalette';
 import type { NoteEditorStatus } from './editorMode';
 import { EditorScrollAreaContext } from './editorScrollArea';
 import { FloatingToolbar } from './FloatingToolbar';
+import { registerLiveNote } from './liveNoteHandover';
 import { noteComponents } from './nodeComponents';
 import { useNoteEditorPrefs } from './noteEditorPrefs';
 import { buildPlugins } from './plugins';
@@ -217,6 +222,53 @@ function NoteEditorSurface({ children, ...props }: ComponentProps<'div'>) {
   );
 }
 
+/** Puts the editor's value into the cached material, as the projection will
+ * hold it. A value the document format refuses is a bug, reported; the cache
+ * then keeps its copy until the projection lands. */
+function handOverLiveValue(
+  qc: ReturnType<typeof useQueryClient>,
+  materialId: string,
+  value: MaterialValue
+) {
+  let content: MaterialDocument;
+  try {
+    content = createMaterialDocument(value);
+  } catch (error) {
+    captureException(error, { tags: { component: 'note-handover' } });
+    return;
+  }
+  qc.setQueryData<Material>(
+    qk.material(materialId),
+    (cached) => cached && { ...cached, content }
+  );
+}
+
+/**
+ * Before every commit React saves the focused element's selection, and for a
+ * contenteditable it walks the element's whole DOM to turn the selection into
+ * text offsets (getSelectionInformation). On a near-limit note that walk was
+ * about a quarter of each keystroke. React only does it when the element's
+ * `contentEditable` property reads "true", and only uses the result to put a
+ * selection back after a commit moved focus away; Slate owns the editor's
+ * selection and restores it itself. So to React the editor root's property
+ * reads "inherit". The attribute, which editing follows, is untouched; Slate
+ * and Plate read the attribute. React also reads the property on focusin for
+ * its synthetic `onSelect`, which therefore no longer fires on the editor
+ * root (nothing listens for it there). A guard e2e fails if React stops
+ * reading the property (react-selection-walk.spec.ts).
+ */
+function hideSelectionFromReact(root: HTMLElement) {
+  const property = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    'contentEditable'
+  );
+  Object.defineProperty(root, 'contentEditable', {
+    configurable: true,
+    get: () => 'inherit',
+    set: (value: string) => property?.set?.call(root, value),
+  });
+}
+
 /**
  * Memoized deliberately. Every prop change here re-renders all ~7k nodes of a
  * near-limit document, and the checkpoint acknowledgement updates footer stats
@@ -234,6 +286,10 @@ const NoteEditorContent = memo(function NoteEditorContent({
   shouldShowStats: boolean;
 }) {
   const editor = useEditorRef();
+  useLayoutEffect(() => {
+    const root = editor.api.toDOMNode(editor);
+    if (root) hideSelectionFromReact(root);
+  }, [editor]);
   const showEditorPlaceholder = useEditorSelector((current) => {
     const firstNode = current.children[0];
     return (
@@ -522,6 +578,8 @@ export function NoteEditorCore({
   // client sees; the service records the refusals it sends itself.
   const readOnlyNow = useRef((_refusedConnect?: boolean) => {});
   const projectionStale = useRef(false);
+  // The room turned read-only and the unsaved edits were discarded.
+  const discarded = useRef(false);
 
   useEffect(
     () => () => {
@@ -852,6 +910,9 @@ export function NoteEditorCore({
     // `content-visibility: auto` boxes that carry scrolling.
     chunking: { chunkSize: 32 },
     components: noteComponents,
+    // stableElementIdsPlugin assigns ids in the operation the room records;
+    // Plate's NodeIdPlugin would give the editor different ones.
+    nodeId: false,
     plugins,
     value: initialValue,
   });
@@ -930,17 +991,34 @@ export function NoteEditorCore({
           if (active) setStatus('error');
         });
     }, 0);
+    // Edit to View in this tab shows the live document at once: the toggle
+    // asks for it before View renders, and the material query takes the
+    // editor's value (co-editors' changes included) until the projection
+    // refetched after unmount lands. Not edits the room refused or
+    // discarded, nor a value never synced.
+    const unregisterHandOver = registerLiveNote(material.id, () => {
+      if (hasSynced.current && !rejected.current && !discarded.current)
+        handOverLiveValue(qc, material.id, editor.children as MaterialValue);
+    });
     return () => {
       active = false;
       clearTimeout(initializeTimer);
       if (checkpointTimer.current) clearTimeout(checkpointTimer.current);
+      unregisterHandOver();
       if (initialized) editor.getApi(YjsPlugin).yjs.destroy();
       onEditorStatusChange?.(null);
       // The next mount (a moved room, recovery, Reload) starts clean.
       reportOffline.current?.(null);
       reportSaveDelayed.current?.(false);
     };
-  }, [collaborationToken.room, editor, onEditorStatusChange, setStatus]);
+  }, [
+    collaborationToken.room,
+    editor,
+    material.id,
+    onEditorStatusChange,
+    qc,
+    setStatus,
+  ]);
 
   // Cursor awareness goes to every peer through the server: at most one per
   // 50 ms (withCursors installs sendCursorPosition when the editor is made).
@@ -1020,6 +1098,7 @@ export function NoteEditorCore({
     readOnlyNow.current = (refusedConnect = false) => {
       if (reported) return;
       reported = true;
+      discarded.current = true;
       // The room refused the unsaved edits: they are discarded.
       const unsaved = recorder.current;
       if (refusedConnect && unsaved?.unsaved)

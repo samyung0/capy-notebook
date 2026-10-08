@@ -1,5 +1,12 @@
 import { Navigate, useRouter } from '@tanstack/react-router';
-import { lazy, type ReactNode, Suspense, useEffect, useState } from 'react';
+import {
+  lazy,
+  type ReactNode,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { isMaterialContentUnreadable } from '@/api/client';
 import { useFile, useMaterial, useMaterials } from '@/api/hooks';
 import type { Chapter, Region, UserColor } from '@/api/types';
@@ -26,6 +33,7 @@ import type { OfficeCitation } from '@/features/files/officeProtocol';
 import { FlashcardGrid } from '@/features/flashcards/FlashcardGrid';
 import { FlashcardsEditor } from '@/features/flashcards/FlashcardsEditor';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
+import { handOverLiveNote } from '@/features/notes/liveNoteHandover';
 import type { LearnerQuestion } from '@/features/questions/types';
 import { QuizQuestionList } from '@/features/quizzes/QuizPage';
 import { quizEditSearch } from '@/features/quizzes/quizNavigation';
@@ -61,9 +69,18 @@ const NoteEditor = lazy(() =>
 );
 
 /* Static Plate preview is still heavy — keep it out of the PDF / media path. */
-const MaterialPreview = lazy(() =>
-  import('./MaterialPreview').then((m) => ({ default: m.MaterialPreview }))
+let previewModule: typeof import('./MaterialPreview') | undefined;
+const loadPreview = () =>
+  import('./MaterialPreview').then((module) => {
+    previewModule = module;
+    return module;
+  });
+const LazyMaterialPreview = lazy(() =>
+  loadPreview().then((m) => ({ default: m.MaterialPreview }))
 );
+type PreviewComponent =
+  | typeof LazyMaterialPreview
+  | typeof import('./MaterialPreview').MaterialPreview;
 
 /** The center pane. Dispatches on the currently-open item — a source file or a
  * study material — and renders a consistent header plus the item body. Quiz and
@@ -121,6 +138,10 @@ export function CenterContent({
   const changeMaterialMode = (nextMode: MaterialMode) => {
     setEditorStatus(null);
     if (item) saveDocumentMode(item, nextMode);
+    // The open editor's live document goes into the cached material before
+    // View renders, so View renders it once.
+    if (nextMode === 'view' && item?.kind === 'material')
+      handOverLiveNote(item.id);
     onModeChange(nextMode);
   };
 
@@ -302,6 +323,10 @@ export function MaterialContent({
   // The open room turned read-only (a frozen account or an owner at its storage
   // limit): view mode under a grey strip; unsaved edits are discarded.
   const [readOnly, setReadOnly] = useState(false);
+  useEffect(() => {
+    if (mode === 'edit') void loadPreview();
+  }, [mode]);
+  const previewType = useRef<PreviewComponent>(undefined);
   if (isLoading) {
     return <FileLoading />;
   }
@@ -318,6 +343,15 @@ export function MaterialContent({
   const policy = materialModePolicy(material.capabilities);
   const activeMode =
     forceReadOnly || readOnly ? 'view' : resolveMaterialMode(mode, policy);
+  // Edit to View shows the note at once (NoteEditorCore hands over its live
+  // value), so View must not suspend on loading its renderer: Edit loads it,
+  // and View then renders it directly. The type is chosen once per mount, at
+  // the first View: swapping the lazy wrapper for the loaded component later
+  // would remount the whole document (frames reload, quiz attempts reset).
+  if (activeMode === 'view')
+    previewType.current ??=
+      previewModule?.MaterialPreview ?? LazyMaterialPreview;
+  const MaterialPreview = previewType.current ?? LazyMaterialPreview;
 
   if (material.kind === 'quiz' && activeMode === 'edit') {
     return <OpenQuizEditor quizId={materialId} />;

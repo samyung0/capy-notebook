@@ -23,6 +23,11 @@ const HTML_EMBED_FIELDS = new Set([
 
 type MaterialNode = Record<string, unknown>;
 
+/** The one width a resizable block (image, YouTube video, Mermaid, chart,
+ * graph) stores: what MediaFrame's resize handles write, a whole percentage
+ * from 20 to 100. Mirrors mediaWidth in Go (server/internal/materialdoc). */
+const MEDIA_WIDTH = /^(?:[2-9][0-9]|100)%$/;
+
 export class MaterialDocumentValidationError extends Error {
   constructor(message: string) {
     super(`invalid material document: ${message}`);
@@ -51,6 +56,14 @@ function requireId(node: MaterialNode) {
   if (typeof node.id !== 'string' || node.id.trim() === '') {
     fail('id is required');
   }
+}
+
+function validateMediaWidth(node: MaterialNode) {
+  if (
+    hasOwn(node, 'width') &&
+    (typeof node.width !== 'string' || !MEDIA_WIDTH.test(node.width))
+  )
+    fail('width must be a whole percentage from 20 to 100');
 }
 
 function rejectOpaque(node: MaterialNode) {
@@ -156,6 +169,7 @@ function validateDiagram(node: MaterialNode) {
   rejectOpaque(node);
   requireId(node);
   if (typeof node.source !== 'string') fail('source must be a string');
+  validateMediaWidth(node);
   const diagramChildren = children(node);
   if (
     diagramChildren.length !== 1 ||
@@ -213,10 +227,11 @@ function validateNode(node: MaterialNode, depth: number) {
         fail('embed block type must match node type');
       if (
         Object.keys(node).some(
-          (key) => !['id', 'type', 'block', 'children'].includes(key)
+          (key) => !['id', 'type', 'block', 'children', 'width'].includes(key)
         )
       )
         fail('unexpected embed field');
+      validateMediaWidth(node);
       try {
         const parsed = questionBlockSchema.parse(block);
         if (parsed.type === 'graph' && 'url' in parsed.image)
@@ -267,6 +282,10 @@ function validateNode(node: MaterialNode, depth: number) {
       for (const key of ['assetId', 'url', 'src']) {
         if (hasOwn(node, key)) fail(`YouTube video cannot contain ${key}`);
       }
+      validateMediaWidth(node);
+      break;
+    case 'img':
+      validateMediaWidth(node);
       break;
     default:
       break;

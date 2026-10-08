@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -289,11 +290,11 @@ func TestMetricsMeasureEveryStructurallyValidDeepNode(t *testing.T) {
 		}
 	}
 	doc := Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{node}}
-	raw, err := MarshalProjection(doc)
+	projection, err := NewProjection(doc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	metrics, err := Metrics(raw)
+	metrics, err := Metrics(projection.Raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -653,11 +654,11 @@ func TestLimitsGateWritesButNotReads(t *testing.T) {
 	if _, err := Marshal(doc); !errors.Is(err, ErrLimitExceeded) {
 		t.Fatalf("Marshal accepted an over-limit document: %v", err)
 	}
-	projected, err := MarshalProjection(doc)
+	projected, err := NewProjection(doc)
 	if err != nil {
 		t.Fatalf("projection serialization rejected valid over-limit content: %v", err)
 	}
-	if projected != raw {
+	if projected.Raw != raw {
 		t.Fatal("projection serialization did not preserve canonical over-limit content")
 	}
 }
@@ -668,8 +669,8 @@ func TestProjectionSerializationStillRejectsInvalidStructure(t *testing.T) {
 		"text":     "invalid",
 		"children": []any{},
 	}}
-	if _, err := MarshalProjection(doc); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("MarshalProjection accepted invalid structure: %v", err)
+	if _, err := NewProjection(doc); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("NewProjection accepted invalid structure: %v", err)
 	}
 }
 
@@ -826,5 +827,112 @@ func TestResolvePendingRefsPointsFencesAtTheirRows(t *testing.T) {
 	}
 	if _, err := ResolvePendingRefs(raw, []string{"mat_q"}); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("a count mismatch was accepted: %v", err)
+	}
+}
+
+// The store reads a projection's kind check, references and assets from the
+// value it serialized instead of parsing Raw again; both must agree.
+func TestProjectionReadsWhatItsJSONHolds(t *testing.T) {
+	paragraph := ParagraphNode("")
+	paragraph["children"] = []any{map[string]any{"text": "marked", "comment": true, "comment_thread": true}}
+	doc := Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{
+		paragraph,
+		MaterialRefNode("mat_child", "quiz"),
+		{"type": "column_group", "id": "block_columns", "children": []any{
+			map[string]any{"type": "img", "assetId": "asset-one", "children": []any{textLeaf("")}},
+		}},
+		{"type": "img", "id": "block_image", "assetId": "asset-two", "children": []any{textLeaf("")}},
+	}}
+	projection, err := NewProjection(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(projection.Raw, "comment") {
+		t.Fatalf("runtime comment marks reached the stored JSON: %s", projection.Raw)
+	}
+	metrics, err := Metrics(projection.Raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projection.Metrics != metrics {
+		t.Fatalf("projection metrics = %+v, stored JSON measures %+v", projection.Metrics, metrics)
+	}
+	for _, kind := range []string{"note", "quiz", "flashcards", "diagram"} {
+		parsed := ValidateKind(projection.Raw, kind)
+		if got := projection.ValidateKind(kind); (got == nil) != (parsed == nil) {
+			t.Fatalf("ValidateKind(%s) = %v, stored JSON gives %v", kind, got, parsed)
+		}
+	}
+	refs, err := ExtractMaterialRefs(projection.Raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := projection.MaterialRefs(); !reflect.DeepEqual(got, refs) || len(refs) != 1 {
+		t.Fatalf("refs = %#v, stored JSON gives %#v", got, refs)
+	}
+	assets, err := EditorAssetIDs(projection.Raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := projection.EditorAssetIDs()
+	slices.Sort(got)
+	slices.Sort(assets)
+	if !slices.Equal(got, assets) || len(assets) != 2 {
+		t.Fatalf("asset ids = %v, stored JSON gives %v", got, assets)
+	}
+}
+
+// A resizable block stores exactly what MediaFrame's resize handles write:
+// "<n>%" with n a whole number from 20 to 100.
+func TestResizableBlocksTakeOnlyTheResizeWidth(t *testing.T) {
+	raw, err := os.ReadFile("../questions/testdata/rich-blocks.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct{ Question map[string]any }
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	stem := fixture.Question["stem"].([]any)
+	blocks := map[string]func() map[string]any{
+		"chart": func() map[string]any {
+			return map[string]any{"type": "chart", "id": "b", "block": stem[2], "children": []any{textLeaf("")}}
+		},
+		"graph": func() map[string]any {
+			return map[string]any{"type": "graph", "id": "b", "block": stem[1], "children": []any{textLeaf("")}}
+		},
+		"image": func() map[string]any {
+			return map[string]any{"type": "img", "id": "b", "assetId": "asset", "children": []any{textLeaf("")}}
+		},
+		"mermaid": func() map[string]any {
+			return map[string]any{"type": "mermaid", "id": "b", "source": "flowchart LR", "children": []any{
+				map[string]any{"type": "mermaid_caption", "children": []any{textLeaf("")}},
+			}}
+		},
+		"video": func() map[string]any {
+			return map[string]any{"type": "video", "id": "b", "provider": "youtube", "videoId": "dQw4w9WgXcQ", "children": []any{textLeaf("")}}
+		},
+	}
+	validate := func(block map[string]any) error {
+		return Validate(Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{block}})
+	}
+	for kind, block := range blocks {
+		if err := validate(block()); err != nil {
+			t.Fatalf("%s without width: %v", kind, err)
+		}
+		for _, width := range []string{"20%", "55%", "100%"} {
+			node := block()
+			node["width"] = width
+			if err := validate(node); err != nil {
+				t.Fatalf("%s width %q: %v", kind, width, err)
+			}
+		}
+		for _, width := range []any{"19%", "101%", float64(50), "50px", "50.5%", "050%", nil} {
+			node := block()
+			node["width"] = width
+			if err := validate(node); err == nil || !strings.Contains(err.Error(), "width must be a whole percentage from 20 to 100") {
+				t.Fatalf("%s width %#v: %v", kind, width, err)
+			}
+		}
 	}
 }
