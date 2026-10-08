@@ -1,8 +1,8 @@
 ---
 type: Frontend
 title: "Frontend: Plate.js and Yjs Editor"
-description: "Plate v53, Hocuspocus/Yjs authority, comment anchors, projections, and local AI previews."
-tags: [frontend, plate, slate, yjs, hocuspocus, collaboration, ai]
+description: "Plate v53, the Rust collaboration server as Yjs authority, comment anchors, projections, and local AI previews."
+tags: [frontend, plate, slate, yjs, collaboration, ai]
 ---
 
 # Frontend: Plate.js and Yjs Editor
@@ -19,26 +19,32 @@ durable authority for material content after a room is initialized.
 
 ## Package boundary
 
-The browser uses Plate 53, `@platejs/yjs` 53.2.x,
-`@hocuspocus/provider` 3.4.x, `@slate-yjs/core` 1.0.2, and Yjs 13.6.x.
-The collaboration sidecar uses Hocuspocus server 4.5.x (with a pnpm patch that
-skips its awareness scratch copy when no `beforeHandleAwareness` hook is set)
-and no Hocuspocus Redis extension: each environment runs one sidecar, and the
-sidecar's own Redis use (eviction delivery, handoff and publication locks, the
-instance registry) does not sync documents.
-Provider/server wire compatibility is covered by the collaboration package
-integration test.
+The browser uses Plate 53, `@platejs/yjs` 53.2.x, `@slate-yjs/core` 1.0.2, and
+Yjs 13.6.x. Plate gets its provider through `registerProviderType`: the room
+provider in `src/features/collaboration/` (capy-sync 1, one WebSocket per tab
+with each room on its own channel, y-sync and awareness payloads unchanged
+inside, no echo of a client's own updates, batched acknowledgements, in-band
+token refresh). `@hocuspocus/provider` stays installed only because
+`@platejs/yjs` imports it.
+
+The collaboration server is Rust (`collaboration-rs/`) on yrs, the fork's
+patched copy in `vendor/betteroffice/third_party/yrs`. Each environment runs
+one instance; its Redis use (eviction delivery, comment and embed relays,
+source handoff and publication locks) does not sync documents. Each loaded
+room is one task that owns its document; Office engines run in child
+processes of the same binary (see [Office files](office-files.md)).
+`collaboration-rs/crates/server/tests/rooms.rs` drives the real binary over
+capy-sync against PostgreSQL and Redis.
 
 `@platejs/yjs` expects the Slate tree in the `content` shared `Y.XmlText`.
-The sidecar must use the same `@slate-yjs/core` conversion functions:
-
-- `slateNodesToInsertDelta` for one-time server bootstrap;
-- `yTextToSlateElement` for checkpoint projections;
-- relative-position helpers for comment anchors.
+The server's `notes` crate reproduces the `@slate-yjs/core` conversions
+exactly (`slate_yjs.rs`, `plate.rs`): bootstrap from a Plate value, the Plate
+projection of the `content` root, and Slate operations for agent edits and
+commands. The browser keeps the relative-position helpers for comment anchors.
 
 Do not initialize clients with `materials.content`. Two clients independently
 seeding an empty Y.Doc can duplicate content. Bootstrap happens under a
-PostgreSQL advisory/row lock in the sidecar.
+PostgreSQL advisory/row lock in the collaboration server.
 
 ## Material surfaces and permissions
 
@@ -53,11 +59,13 @@ The permission boundary is layered:
 
 1. Go checks `MaterialEffectiveRole` before minting a short-lived token.
 2. Viewers receive no collaboration token.
-3. Hocuspocus verifies signature, issuer, audience, expiry, exact room, schema,
-   access, and browser origin.
-4. Hocuspocus marks `read` connections (the downgrade an editor receives
-   while the storage owner's account is locked) read-only, so a modified
-   browser cannot send Yjs document updates.
+3. The collaboration server checks the browser origin at the upgrade and, per
+   room, the token's signature, issuer, audience, expiry, exact room, schema
+   and access.
+4. It joins `read` channels (the downgrade an editor receives while the
+   storage owner's account is locked) read-only: a step 2 or update holding
+   anything new closes the channel, so a modified browser cannot send Yjs
+   document updates.
 5. View mounts only the static preview, without editor plugins or comment controls.
 6. Comment REST endpoints independently enforce the editor ACL.
 
@@ -77,7 +85,7 @@ Workspace classification uses the effective nonmember grant: while privacy is
 `private`, a dormant share-role change cannot turn a later privacy widening
 into discard mode. A
 The restoration user event also acknowledges without closing that user's
-connections; account lock events still close them. The sidecar checks token expiry
+connections; account lock events still close them. The server checks token expiry
 on inbound messages and persistence rechecks actor/owner lifecycle in the
 database, so a missed Redis event cannot authorize another durable write. Each
 eviction has an operation id; a process single-flights overlapping eviction of
@@ -87,7 +95,7 @@ room concurrently or notify a later reloaded room, while a later distinct
 eviction still runs normally. A failed Redis publish or acknowledgement is
 reported and the durable sender retries, but it cannot
 skip the mandatory local unload; a rejected room remains unavailable unless
-that unload succeeds. Before unloading, the sidecar waits for the target room's Hocuspocus store hooks and save mutex as well as every queued application save. Intentional discard skips pending stores without reporting a failed save; drain still requires a successful durable save. Each active instance must return a positive delivery
+that unload succeeds. The room's task runs the eviction in order with its stores (one store at a time per room), so a running store finishes first. Intentional discard skips pending stores without reporting a failed save; drain still requires a successful durable save. Each active instance must return a positive delivery
 acknowledgement. A negative acknowledgement leaves the outbox item retryable.
 Durable material events carry the material identity as
 well as their original room. Each instance resolves and evicts the current room
@@ -239,12 +247,13 @@ does nothing but render. A save that stops using an asset (once it was
 completed more than 60 s ago) puts it in a hidden trash for a day, still
 charged, and a save that uses it again restores it. A paste, drop, undo, cut
 and paste or a draft replayed after reconnect is an ordinary Yjs edit: the
-collaboration service's children pass (`collaboration/src/children.ts`, see
-[agentic-retrieval](../agentic-retrieval.md) for the AI edit side) reads the
-asset and quiz ids each writer's update wrote, asks Go to make them the note's
-own as that writer (a copy of another note's asset, the note's own one out of
-the trash), then repoints or drops the nodes through a direct connection and
-broadcasts `children-ready` with the ids it kept. In an editable note
+collaboration service's children pass (`collaboration-rs/crates/server/src/children.rs`
+and the room, see [agentic-retrieval](../agentic-retrieval.md) for the AI edit
+side) reads the asset and quiz ids each writer's update wrote, asks Go to make
+them the note's own as that writer (a copy of another note's asset, the note's
+own one out of the trash), then repoints or drops the nodes in the room, one
+pass at a time in update order, and broadcasts `children-ready` with the ids
+it kept. In an editable note
 `MediaAssetView` (given the note as `ownerId`) shows a skeleton while a node's
 asset belongs to another material (the resolve answer's `materialId`) or does
 not resolve (trashed, waiting for the pass), and resolves again when
@@ -333,10 +342,13 @@ pasted while the caret is on a void block (a quiz, an image, an embed) go in
 right after that block with the caret following them (`VoidBlockPastePlugin`
 in `pastePlugins.ts`); Slate alone drops a fragment inserted into a void. Edits
 save through the quiz or flashcard content endpoint, so note undo covers only
-inserting and removing the reference. Another open editor of the note sees an
-embed's change when its query refetches (live editing through each item's
-own Yjs document is planned; see "Live editing for quizzes, flashcard sets and
-Mermaid" in `todo-office.md`). Go and the sidecar reject inline `quiz`/`flashcards`
+inserting and removing the reference. After any write to an embedded quiz or
+set (UI, agent or API) Go publishes `capy:collaboration:embeds` and the
+collaboration server sends the parent note's room a stateless `embed-changed`
+(`{id, kind}`); every open editor of the note refetches that one item
+(Epo, 2026-10-07). Live editing through each item's own Yjs document is
+planned (see "Live editing for quizzes, flashcard sets and Mermaid" in
+`todo-office.md`). Go and the collaboration server reject inline `quiz`/`flashcards`
 nodes in a note and references anywhere but the top level. A markdown fence
 imports as a pending reference (`materialId: ''` plus the fence body in
 `pending`); the mounted editor claims it in the shared document
@@ -561,8 +573,8 @@ Coverage and large-document measurements: `export/export.test.ts`,
 
 ## Persistence and save status
 
-Hocuspocus provider sync means only that the browser and in-memory server
-converged. It does not mean PostgreSQL durably stored the state.
+Room sync means only that the browser and in-memory server converged. It does
+not mean PostgreSQL durably stored the state.
 
 The editor reports:
 
@@ -571,12 +583,12 @@ The editor reports:
   mounted and editable;
 - `Syncing…`: edits waiting for the checkpoint debounce or durable acknowledgment;
 - `Synced`: the initial room sync completed with no local work pending;
-- `Saved`: the sidecar confirmed that a state containing this client's work was
+- `Saved`: the server confirmed that a state containing this client's work was
   committed;
 - `Offline`: the room cannot be reached (the browser is offline, or
   reconnecting kept failing for 30 s); an editor that synced once keeps
   editing on this device (see [Offline editing](#offline-editing-and-drafts));
-- `Not saved. Retrying…`: a store failed and the sidecar is retrying it;
+- `Not saved. Retrying…`: a store failed and the server is retrying it;
 - `Collaboration unavailable`: the first connection never synced, or the
   provider could not start.
 
@@ -591,11 +603,11 @@ checkpoint acknowledgment cannot report Saved while newer edits are debouncing.
 
 ### Connection lifetime and refusals
 
-Room tokens live five minutes. About a minute before expiry the sidecar asks
-the client for a fresh token in band (`connection.requestToken()`); the
-provider answers through its `token` function and `onTokenSync` verifies it,
-rechecks access and re-arms both timers (`collaboration/src/tokenExpiry.ts`).
-A connection that cannot answer is closed at expiry. A room closed on an open
+Room tokens live five minutes. A minute before expiry the server asks the
+channel for a fresh token in band (`TOKEN_REQUEST`); the provider answers
+through its `token` function (`TOKEN`), and the server verifies it, rechecks
+access and re-arms both timers. A channel that cannot answer is closed at
+expiry with code 4401. A room closed on an open
 socket (expiry, eviction, an access recheck) only emits the provider's `close`,
 never `disconnect`, so `roomReconnector` (`src/features/notes/roomConnection.ts`)
 reconnects at once with a fresh token and backs off while refusals repeat.
@@ -616,7 +628,7 @@ change. The banner also shows when a checkpoint request stays unanswered for
 [error handling](error-handling.md#collaborative-source-failures)).
 
 On a value change, edit mode debounces a `checkpoint-request` stateless message
-carrying a random receipt ID. The sidecar keeps the room's outstanding IDs in
+carrying a random receipt ID. The room keeps its outstanding IDs in
 memory, claims them before it reads the document, and after binary persistence
 commits broadcasts `checkpoint-persisted` with those IDs, the stored version, and
 the current document metrics. IDs that arrived while that store ran are
@@ -635,16 +647,13 @@ debounce forced while the request was on its way) would otherwise wait for an
 unrelated later change. A writer's sync always writes a contributor marker,
 which schedules a store, so a reopened note's request is answered by that
 store. Failed stores are retried per
-room with backoff (5 s, then doubling to 60 s,
-`collaboration/src/failedStoreRetry.ts`). A source room's live saves wait out
-the same backoff, so a state that keeps timing out in the shared Office worker
-is tried once per step instead of on every debounce. A room that is still loaded retries
-through its own store path (Hocuspocus's debouncer and save mutex, and a
-source room's save queue), so a retry never races the live save, which holds
-everything the failed snapshot did and answers its pending receipts. Only an
-unloaded room retries its failed snapshot directly; that retry carries the IDs
-claimed with the snapshot and acknowledges only those IDs if it commits.
-Checkpoints queued after that snapshot remain pending for a later store.
+room with backoff (5 s, then doubling to 60 s). A source room's live saves
+wait out the same backoff, so a state that keeps timing out in the Office
+engine pool is tried once per step instead of on every debounce. The room
+retries through its own store path (its debounce and one store at a time), so
+a retry never races the live save, which holds everything the failed snapshot
+did and answers its pending receipts. A room with a failed store stays loaded
+until a store succeeds or the room is discarded.
 
 `mod+s` stays bound so the browser's own save dialog never opens; it flushes the
 debounce through the same path rather than running a second one. A client tracks
@@ -713,10 +722,10 @@ answers earlier requests it covers, such as one sent while offline). The room's
 sync alone never deletes them. A receipt deletes only its own session's rows
 and the exact rows it adopted, so another tab's newer write survives.
 
-On reconnect the provider's normal sync sends the unsent updates. The server
-answers a client's step 1 with its own step 1 and handles a connection's
-messages in order, so the step 2 carrying them lands before any request sent
-at `synced` (`provider-compat.test.ts`). That holds only from `synced`: a
+On reconnect the provider's normal sync sends the unsent updates. After
+JOINED the server sends its step 1, the client sends its own, and the room
+handles a channel's messages in order, so the step 2 carrying them lands
+before any request sent at `synced`. That holds only from `synced`: a
 request sent once the socket authenticated can be stored ahead of the step 2,
 and its receipt would claim edits the server never saved. Notes and sources
 therefore send checkpoint requests only while the room is synced
@@ -773,12 +782,13 @@ both TypeScript and Go before measuring the persisted Plate projection. Both
 walks remain exact through the structural depth ceiling, including legacy
 documents that already exceed the product depth cap.
 
-`beforeHandleMessage` extracts writable updates from both Yjs sync-step-2 and
-ordinary update frames before they reach the authoritative document
-(`validateUpdate` in `collaboration/src/persistence.ts`). The room keeps the
+The room checks every writable update, sync step 2 or ordinary update, before
+it reaches the authoritative document (`on_update` in
+`collaboration-rs/crates/server/src/room.rs`, `Validator::admit` in
+`crates/notes/src/limits.rs`). The room keeps the
 exact metrics of its last measurement and an upper bound of its metrics now:
-each accepted update adds its growth bound (`materialUpdateGrowth` in
-`limits.ts`), read from the update's decoded structs against the room. While
+each accepted update adds its growth bound (`crates/notes/src/bound.rs`),
+read from the update's decoded structs against the room. While
 that bound stays within every limit the update goes in without a copy of the
 room; otherwise, or when the update holds content the bound does not model
 (nothing a Slate edit writes), the room is copied with the update and measured
@@ -820,7 +830,7 @@ An update the room cannot place yet (it refers to content
 the room does not hold, skips its client's clocks, or deletes a range neither
 side holds, as when a reconnecting writer types before its sync step 2) is
 dropped and that connection gets the room's sync step 1, as in source rooms
-(`collaboration/src/officeRoots.ts`, see
+(`resync` in `room.rs`, see
 [Office files](office-files.md)): its step 2 reply carries everything the room
 lacks, the dropped update included, with no disconnect, and the room never
 holds pending content. Copying the room to check such updates was the cliff of
@@ -844,9 +854,9 @@ A rejected update closes only the offending connection, preceded by a
 instead of reconnecting and resending forever. If an over-limit document reaches
 the store hook anyway, which with every update checked takes a sum no single
 check saw whole (two updates checked against the same room before either
-applied, the later one measured exactly without the earlier), the sidecar
-broadcasts `document-rejected` to the room and evicts it; Hocuspocus swallows store failures, so leaving the room loaded would
-mean it silently never persists again. A structurally invalid snapshot is
+applied, the later one measured exactly without the earlier), the server
+broadcasts `document-rejected` to the room and evicts it; leaving the room
+loaded would mean it never persists again. A structurally invalid snapshot is
 discarded the same way (`document-rejected` with code `invalid_document`), and
 an `authorization-revoked` eviction makes every editor drop its copy too.
 `NoteEditor` responds by remounting `NoteEditorCore` under a new generation
@@ -856,7 +866,7 @@ Reload; a limit also shows the too-large toast, and only edits this device
 could not store end in the changes-undone toast. Invalidating the collaboration token alone is not enough, because
 an unchanged room string leaves the editor mounted on its forked document.
 Failed-store retries use the same terminal path. If a queued snapshot later
-fails a document or quota limit, the sidecar drops it, broadcasts the rejection
+fails a document or quota limit, the server drops it, broadcasts the rejection
 when the room is still live, and discard-evicts the room back to durable Yjs
 state.
 
@@ -880,22 +890,23 @@ too (Epo, 2026-10-04).
 
 Connection admission, token refresh, and each durable store also re-read actor
 lifecycle, membership/share role, owner lifecycle, and quota state from
-PostgreSQL. The sidecar adds server-owned actor metadata inside the same Yjs
-transaction as every writable update; Redis peers therefore receive the edit
-and its provenance atomically. It writes under a dedicated marker client id
-(moved to a fresh id when a peer's update writes under it), so remote updates
-never advance and rotate the room's own client id. Client updates that alter that
-metadata are rejected; the check reads the decoded update against the room
-rather than applying it to a copy. Because the marker for an update is written
-at the marker client's next clock inside the same transaction, the check also
-rejects an update that writes under that client, names it as an origin, or
-deletes past its held clock; otherwise one crafted update could erase or forge
-every later marker. A debounced store snapshots the document and rechecks every distinct
-contributor represented by that snapshot, not only the last editor. It removes
-the claimed metadata from the committed state and clears only the matching
-in-memory generations after commit, so an update arriving during the store
-belongs to the next batch. Failed-store retries retain the same contributor
-set. If an authorization change races an already-applied in-memory Yjs update,
+PostgreSQL. The server keeps server-owned actor metadata (contributor markers
+in `__capy_pending_contributors`, `crates/server/src/markers.rs`) so that every
+admitted update no committed store holds has a live marker of its writer. A
+writer's update writes a marker, in its own transaction just before the
+content and in the same flush, only when that writer has no live marker or a
+store snapshot has claimed the one it has; typing between stores costs no
+marker. Markers are written under the room document's own client id, one the
+loaded state does not hold. Client updates that alter that metadata are
+rejected; the check reads the decoded update against the room rather than
+applying it to a copy, and also rejects an update that writes under the room's
+client, names it as an origin, or deletes past its held clock; otherwise one
+crafted update could erase or forge every later marker. A debounced store
+claims every live marker and rechecks every distinct contributor they name,
+not only the last editor. Its row holds the live markers deleted (no stored
+row carries one), and after commit it clears only the claimed ones, so an update arriving during the
+store belongs to the next batch; a failed store unclaims them, so its retry
+keeps the same contributor set. If an authorization change races an already-applied in-memory Yjs update,
 persistence rejects the whole snapshot and evicts the room; authorized clients
 then reload the last durable state rather than inheriting or later retrying the
 revoked user's update.
@@ -919,10 +930,18 @@ report as "this note could not be loaded" rather than "not found".
 
 ## PostgreSQL read projection
 
-`material_yjs_documents.state` stores the encoded Y.Doc and is the durable
-content authority. `stored_version` is monotonic. The sidecar converts the
-stored `content` root to a Plate envelope and calls the internal Go projection
-endpoint.
+The durable content authority is `material_yjs_documents.state` (the base, an
+encoded Y.Doc) plus the update log `material_yjs_updates`: a store appends one
+row, the change since the room's durable state, and `stored_version` (monotonic)
+names it. A room loads by replaying base and rows, and folds the log into the
+base when it unloads or the log passes `max(256 KiB, base bytes)` or 1,000
+rows. The server converts the `content` root to a Plate envelope and calls the
+internal Go projection endpoint: once a store is followed by 30 s without a
+change (`COLLABORATION_PROJECTION_IDLE_MS`), when the room unloads, and on
+demand. View asks for one (`ProjectLiveNote`,
+`POST /internal/materials/{id}/project`) when the stored version is ahead of
+the projection, and serves the stored projection if that call fails
+(Epo, 2026-10-07).
 
 Go validates the complete envelope, locks the material, ignores stale versions,
 updates `materials.content`, increments the material revision, reconciles
@@ -947,7 +966,9 @@ first projection. The answer carries the row's revision, `size_bytes` and
 metrics without reading the content back. On the 2 MB load-test note the
 handler's CPU went from ~140 ms to ~30 ms. Its body read deadline is 15 s,
 the collaboration service's own timeout for the call, instead of Huma's 5 s.
-Rows where `projected_version < stored_version` are retried by the sidecar.
+Rows where `projected_version < stored_version` and no instance holds the room
+are projected by the server's 5 s pending scan once they have been idle that
+long.
 Binary persistence and projection have separate failure boundaries. Once a Yjs
 version commits, a projection outage does not enqueue that snapshot as a failed
 store or advance `stored_version` again. The lag scanner projects the committed
@@ -956,12 +977,9 @@ projection, and error-recording paths contain and report their own failures.
 An error write includes its failed Yjs version and applies only while that
 version remains ahead of `projected_version`, so a slow older failure cannot
 restore `projection_error` after newer content succeeds.
-Each service command registers a completion ID before its direct connection
-opens. The store hook records projection success or failure against that ID,
-and the HTTP handler checks it after disconnect. This explicit result is needed
-because Hocuspocus catches store-hook errors. The handler returns 503 when the
-synchronous projection fails, even though the Yjs change is already durable
-and remains eligible for the normal lag retry.
+A service command commits its row and then projects before it answers; the
+handler returns 503 when that projection fails, even though the Yjs change is
+already durable and remains eligible for the normal lag retry.
 
 The final durable store takes the material advisory lock, then follows the same
 SQL row-lock order as Go mutations: workspace row (when present), contributor
@@ -998,9 +1016,9 @@ canonical ID order. Clones also lock only the physical blob refcount rows they
 copy, in stable path order, so the reaper cannot delete shared bytes before the
 new references commit. None of these locks reads or waits for Yjs state.
 
-Static previews, study views, exports, and domain reads can lag the live room by
-the persistence/projection debounce. They must never write their projection
-back into an initialized Y.Doc.
+Static previews, study views, exports, and domain reads can lag the live room
+by the store debounce plus the idle projection. They must never write their
+projection back into an initialized Y.Doc.
 
 A mounted editor answers `projection-updated` by marking the material query
 stale without refetching, and flushes one real invalidation when it unmounts.
@@ -1027,18 +1045,19 @@ not suspend on it (`CenterContent.tsx`). The pane picks the preview's
 component type once per mount, at its first View: a note opened straight in
 View keeps the lazy wrapper, because swapping it for the loaded component at
 the next re-render would remount the whole document (frames reload, an
-embedded quiz loses its answer). Until the room projects on demand,
-a refetch that lands before the room's last store is projected can show a
-copy a few seconds older than the live one.
+embedded quiz loses its answer). The refetch reads through `ProjectLiveNote`,
+which has a live room store and project first, so it is never older than the
+live copy.
 
-Server-origin content mutations use the sidecar command endpoint. Commands load
-the current Y.Doc and replace one stable custom block through headless
-Slate-Yjs transforms with a stale-block precondition. They do not replace the
+Server-origin content mutations use the collaboration server's command
+endpoint (`POST /internal/commands`). Commands load the durable document with
+the live room's unsaved state and replace one stable custom block through the
+`notes` crate's Slate-Yjs transforms with a stale-block precondition. They do not replace the
 whole document. If the authority is unavailable, Go returns 503 instead of
 falling back to SQL.
 
 Quiz and flashcard authoring sends `expectedRevision` from the loaded draft.
-The sidecar locks the material row and checks that revision and completed
+The server locks the material row and checks that revision and completed
 projection before committing a replacement; its block precondition also checks
 the live Yjs content. Rejected saves retain the local draft. Every flashcard set edits through
 `FlashcardsEditor` (`src/features/flashcards/`): the workspace file's edit mode,
@@ -1092,7 +1111,7 @@ update. If an anchor no longer resolves, the thread remains available at its
 stable block and quoted fallback instead of being deleted.
 
 Comment mutations publish `capy:collaboration:comments` through Redis.
-Hocuspocus sends a stateless `comments-invalidated` room event and clients
+The collaboration server sends a stateless `comments-invalidated` room event and clients
 invalidate the discussion query.
 
 ## Toolbar icons
@@ -1275,11 +1294,10 @@ validation and are not rendered.
 ## Operational boundaries
 
 - Viewers never connect, reducing room load.
-- Start with one sidecar replica and Redis available.
-- Persistence uses bounded debounce/max-debounce and retains failed stores for
-  retry. Retry passes do not overlap within a sidecar process, and a retry only
-  clears the exact queued snapshot it attempted; a newer failed snapshot stays
-  queued.
+- Run one collaboration server per environment, with Redis available.
+- Persistence uses bounded debounce/max-debounce (notes 2 s / 10 s, sources
+  5 s / 30 s) and runs one store at a time per room; a failed store retries
+  through the same path with backoff while the room stays loaded.
 - Redis carries eviction delivery, handoff and publication locks and the
   instance registry; it is not durable storage and does not sync documents or
   awareness between instances. Scaling out later means document-sticky
@@ -1365,15 +1383,16 @@ Run:
 ```bash
 pnpm run typecheck
 pnpm run test
-pnpm --filter @capy-notebook/collaboration typecheck
-pnpm --filter @capy-notebook/collaboration test
-cd server && go test ./...
+cargo test --manifest-path collaboration-rs/Cargo.toml
+pnpm test:go
 ```
 
-Collaboration tests cover JWT claims/origin checks, stable-block command
-preconditions, and v3 browser provider/v4 server convergence plus read-only
-enforcement. Docker E2E adds PostgreSQL/Redis/sidecar coverage for persistence,
-projection, reconnect, and multi-context behavior.
+The collaboration server's tests cover token claims and origin checks,
+stable-block command preconditions, the Slate-Yjs and markdown ports against
+the TypeScript oracle's corpus, and (with `CAPY_IT_DATABASE_URL`) capy-sync
+convergence, read-only enforcement and delta saves against PostgreSQL and
+Redis. Docker E2E adds coverage for persistence, projection, reconnect, and
+multi-context behavior.
 
 Plate and PDF toolbar popovers share `components/ui/ToolbarPopover`: 8px corners,
 4px container padding, gapless 28px rows, 14px medium text and the dropdown
