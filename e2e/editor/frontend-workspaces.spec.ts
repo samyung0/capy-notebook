@@ -210,7 +210,7 @@ test('invitations are standalone and transfer previews open only one dialog', as
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
-test('workspace sorting shows direction and stays open while reversing order', async ({
+test('workspace sorting picks an order and reverses it from the active option', async ({
   page,
 }) => {
   await page.goto('/workspaces');
@@ -221,63 +221,45 @@ test('workspace sorting shows direction and stays open while reversing order', a
   await expect(trigger).toHaveAttribute('data-order', 'descending');
   const cards = page.locator('a[href^="/workspaces/"]');
   await expect(cards.first()).toBeVisible();
-  await trigger.click();
+  const order = () =>
+    cards.evaluateAll((links) =>
+      links.map((link) => link.getAttribute('href'))
+    );
   const menu = page.getByRole('menu');
-  const byTime = [
-    m.workspaces_sort_newest_first(),
-    m.workspaces_sort_oldest_first(),
-  ];
-  const byCount = [
-    m.workspaces_sort_most_first(),
-    m.workspaces_sort_fewest_first(),
-  ];
+  // Closing hands focus back to the trigger; a click before that is lost.
+  const closed = async () => {
+    await expect(menu).toBeHidden();
+    await expect(trigger).toBeFocused();
+  };
+  // Each option names its default order; choosing closes the menu.
+  const choose = async (label: string) => {
+    await trigger.click();
+    await menu.getByRole('menuitem', { exact: true, name: label }).click();
+    await closed();
+  };
   // Created is the default (2026-09-21), so it needs no click first.
-  for (const [sort, label, [descending, ascending]] of [
-    ['created', m.workspaces_sort_created(), byTime],
-    ['accessed', m.workspaces_sort_accessed(), byTime],
-    ['chapters', m.workspaces_sort_chapters(), byCount],
-    ['files', m.workspaces_sort_files(), byCount],
+  for (const [sort, label] of [
+    ['created', m.workspaces_sort_created()],
+    ['accessed', m.workspaces_sort_accessed()],
+    ['chapters', m.workspaces_sort_chapters()],
+    ['files', m.workspaces_sort_files()],
   ] as const) {
-    if (sort !== 'created') {
-      await menu
-        .getByRole('menuitem', { name: `${label} ${descending}` })
-        .click();
-    }
-    await expect(menu).toBeVisible();
+    if (sort !== 'created') await choose(label);
     await expect(trigger).toHaveAttribute('data-sort', sort);
     await expect(trigger).toHaveAttribute('data-order', 'descending');
     await expect(cards.first()).toBeVisible();
-    const original = await cards.evaluateAll((links) =>
-      links.map((link) => link.getAttribute('href'))
-    );
+    const original = await order();
     expect(original.length).toBeGreaterThan(1);
-    await menu
-      .getByRole('menuitem', { name: `${label} ${descending}` })
-      .click();
-    await expect(menu).toBeVisible();
+    // The active option reverses its order, by mouse and by keyboard.
+    await choose(label);
     await expect(trigger).toHaveAttribute('data-order', 'ascending');
-    await expect
-      .poll(() =>
-        cards.evaluateAll((links) =>
-          links.map((link) => link.getAttribute('href'))
-        )
-      )
-      .toEqual(original.slice().reverse());
-    const selected = menu.getByRole('menuitem', {
-      name: `${label} ${ascending}`,
-    });
-    await selected.focus();
+    await expect.poll(order).toEqual(original.slice().reverse());
+    await trigger.click();
+    await menu.getByRole('menuitem', { exact: true, name: label }).focus();
     await page.keyboard.press('Enter');
-    await expect(menu).toBeVisible();
+    await closed();
+    await expect(trigger).toHaveAttribute('data-sort', sort);
     await expect(trigger).toHaveAttribute('data-order', 'descending');
-    await expect
-      .poll(() =>
-        cards.evaluateAll((links) =>
-          links.map((link) => link.getAttribute('href'))
-        )
-      )
-      .toEqual(original);
+    await expect.poll(order).toEqual(original);
   }
-  await page.keyboard.press('Escape');
-  await expect(menu).toBeHidden();
 });
