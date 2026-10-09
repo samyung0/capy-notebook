@@ -131,9 +131,12 @@ check); it applies at the first promotion.
   latency, typing latency, memory; Office and Plate), then heap/latency
   ceilings from the largest allowed files, then a prod-box stress run for the
   live document per room, a new storage-bytes run, then UAT hardening.
-- **Final optimization review (Epo 2026-10-05):** after the optimization round,
-  one read-only review of the performance and load work by a Fable 5.1
-  subagent (Agent tool `model: "fable"`) before setting the ceilings.
+- **Final optimization and security reviews (Epo 2026-10-09, replaces the
+  Fable 5.1 review):** after every rust round track lands and before the
+  ceilings, Opus 5.5 agents measure Office and Plate user-side network
+  requests, bundle sizes, memory while editing and per event, time to first
+  paint and layout shifts, and server RAM, CPU, storage and processing speed;
+  a security review runs beside it.
 - **Optimization round (in progress 2026-10-06):** plan in
   `capy-docx-review-harnesses/2026-10-05-office-batch/opt-survey/PLAN.md`;
   tracks plate, clients-bench (bench fixes land first, incl. the stress job's
@@ -332,10 +335,10 @@ check); it applies at the first promotion.
 ## After the optimization round (decided 2026-10-05)
 
 - **Performance baselines and user-side measurement** (Epo 2026-10-08; last,
-  after the Fable 5.1 review of the Rust round): decide how every measured
-  performance number gets a baseline and a regression gate so new changes
-  cannot fall below standard (editor budgets, stress, engine and server
-  timings). Decide how to measure from the user's side: bundle size, network
+  after the optimization and security reviews of the Rust round): decide how
+  every measured performance number gets a baseline and a regression gate so
+  new changes cannot fall below standard (editor budgets, stress, engine and
+  server timings). Decide how to measure from the user's side: bundle size, network
   requests, scroll FPS, time to first paint, font and CSS loading, repaints and
   render blocking, and whether these run inside the user journeys or on
   their own. It covers every page, not only the editors (`openwiki/editor-perf.md`,
