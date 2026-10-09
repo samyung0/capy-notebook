@@ -70,7 +70,7 @@ fn parse<T: serde::de::DeserializeOwned>(value: Value, what: &str) -> Result<T, 
 impl From<notes::edit::EditError> for SourceError {
     fn from(error: notes::edit::EditError) -> Self {
         match error {
-            notes::edit::EditError::Edit { code, message } => SourceError::Edit {
+            notes::edit::EditError::Edit { code, message, .. } => SourceError::Edit {
                 code: serde_json::to_value(code)
                     .ok()
                     .and_then(|code| code.as_str().map(str::to_owned))

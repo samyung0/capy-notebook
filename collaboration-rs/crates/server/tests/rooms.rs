@@ -887,6 +887,33 @@ async fn an_agent_edit_commits_its_row_reaches_the_live_room_and_replays_by_oper
     });
     let (status, refusal) = internal(server.port, "/internal/documents/edit", &stale).await;
     assert_eq!(status, 409, "{refusal}");
+    // ... and the block as it reads now, for the agent's retry.
+    assert_eq!(refusal["code"], "stale_target");
+    assert_eq!(
+        refusal["details"],
+        serde_json::json!({ "block": { "id": "b1", "text": "hello there!", "type": "p" } }),
+        "{refusal}"
+    );
+    // An insert after a block that is gone lands at the end, and the receipt
+    // says where.
+    let late = serde_json::json!({
+        "actorUserId": user,
+        "commands": [{
+            "type": "insert_block",
+            "afterBlockId": "gone",
+            "blocks": [{ "type": "p", "id": "b9", "children": [{ "text": "more" }] }],
+        }],
+        "operation": { "id": format!("op3_{material}"), "requestHash": "h3" },
+        "room": room,
+        "target": { "id": material, "kind": "material" },
+    });
+    let (status, landed) = internal(server.port, "/internal/documents/edit", &late).await;
+    assert_eq!(status, 200, "{landed}");
+    assert_eq!(
+        landed["effect"]["relocated"],
+        serde_json::json!([{ "after": "b1", "anchor": "gone", "end": true }]),
+        "{landed}"
+    );
 
     // replace-block replaces the block in the live room the same way; it
     // answers once the projection landed, so it needs the API.

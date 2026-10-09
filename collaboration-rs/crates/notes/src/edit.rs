@@ -7,8 +7,10 @@
 //! operations. The caller commits the state with the receipt, the inverse
 //! commands and the post-edit guards.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 use ydoc::guards::{GuardRun, guards_equal, range_guard};
 use yrs::branch::{Branch, BranchPtr};
 use yrs::{GetString, ReadTxn, Text, TextRef, TransactionMut};
@@ -29,11 +31,15 @@ pub enum EditErrorCode {
 
 #[derive(Debug, thiserror::Error)]
 pub enum EditError {
-    /// An `EditError` of the TS: answered to the agent with its code.
+    /// An `EditError` of the TS: answered to the agent with its code, and for
+    /// a missed target what it looks like now (`EditDetails`): the block as it
+    /// reads, or the material's blocks for a gone id. The details stay out of
+    /// the message, which the chat stores and shows.
     #[error("{message}")]
     Edit {
         code: EditErrorCode,
         message: String,
+        details: Option<Value>,
     },
     /// Anything else the editor or the document raised (a 500 in the TS).
     #[error(transparent)]
@@ -44,6 +50,19 @@ fn edit<T>(code: EditErrorCode, message: impl Into<String>) -> Result<T, EditErr
     Err(EditError::Edit {
         code,
         message: message.into(),
+        details: None,
+    })
+}
+
+fn edit_with<T>(
+    code: EditErrorCode,
+    message: impl Into<String>,
+    details: Value,
+) -> Result<T, EditError> {
+    Err(EditError::Edit {
+        code,
+        message: message.into(),
+        details: Some(details),
     })
 }
 
@@ -73,6 +92,11 @@ pub enum DocumentCommand {
     RemoveBlock {
         block_id: String,
         expected_text: String,
+    },
+    ReplaceBlock {
+        block_id: String,
+        expected_text: String,
+        blocks: Vec<Value>,
     },
     ReplaceChild {
         parent_type: String,
@@ -139,10 +163,24 @@ pub enum GuardTarget {
     },
 }
 
+/// An insert whose anchor block was gone, and where it landed instead: after
+/// the nearest block before the anchor's place when the same call removed
+/// the anchor, else at the end of the material (`end`), since a deleted
+/// block's tombstone no longer carries its id. `after` none is the start.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Relocation {
+    pub after: Option<String>,
+    pub anchor: String,
+    pub end: bool,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct EditOutcome {
     pub guards: Vec<GuardTarget>,
     pub inverse: Vec<DocumentCommand>,
+    /// Material edits only (a text source has no blocks to relocate).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relocated: Option<Vec<Relocation>>,
 }
 
 const MEDIA_TYPES: [&str; 8] = [
@@ -192,6 +230,105 @@ fn has_media(node: &Value) -> bool {
             .is_some_and(|children| children.iter().any(has_media))
 }
 
+/// A block's text as inspect shows it, the text an expected text matches:
+/// its text with math written out, inline as `$tex$` and display as
+/// `$$tex$$` (`Node.string` leaves math out), and the UTF-16 [start, end)
+/// spans the math takes in it (`shownText`).
+fn shown_text(node: &Value) -> (String, Vec<(usize, usize)>) {
+    fn walk(node: &Value, text: &mut String, units: &mut usize, math: &mut Vec<(usize, usize)>) {
+        if is_text(node) {
+            let leaf = slate::text(node);
+            text.push_str(leaf);
+            *units += len16(leaf);
+            return;
+        }
+        let delimiter = match node.get("type").and_then(Value::as_str) {
+            Some("inline_equation") => "$",
+            Some("equation") => "$$",
+            _ => {
+                for child in node
+                    .get("children")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                {
+                    walk(child, text, units, math);
+                }
+                return;
+            }
+        };
+        let shown = format!(
+            "{delimiter}{}{delimiter}",
+            js_string(node.get("texExpression"))
+        );
+        let start = *units;
+        *units += len16(&shown);
+        math.push((start, *units));
+        text.push_str(&shown);
+    }
+    let (mut text, mut units, mut math) = (String::new(), 0, Vec::new());
+    walk(node, &mut text, &mut units, &mut math);
+    (text, math)
+}
+
+/// `blockText`.
+fn block_text(node: &Value) -> String {
+    shown_text(node).0
+}
+
+/// An offset in a block's shown text as an offset in its text without math.
+fn without_math(math: &[(usize, usize)], offset: usize) -> usize {
+    math.iter()
+        .filter(|(_, end)| *end <= offset)
+        .fold(offset, |flat, (start, end)| flat - (end - start))
+}
+
+/// How many blocks, and how much of each, a refusal for a gone id lists.
+const LISTED_BLOCKS: usize = 60;
+const LISTED_PREVIEW: usize = 80;
+
+fn shown_block(block: &Value, text: String) -> Value {
+    json!({ "id": stable_id(block), "text": text, "type": js_string(block.get("type")) })
+}
+
+/// `currentBlock`: the block as it reads now.
+fn current_block(block: &Value, text: String) -> Value {
+    json!({ "block": shown_block(block, text) })
+}
+
+/// `blockListing`: the material's first blocks, each with a short preview.
+/// A preview cut inside a surrogate pair keeps the whole character (the TS
+/// keeps half of it, which a Rust string cannot hold).
+fn block_listing(editor: &Editor) -> Value {
+    let blocks: Vec<Value> = editor
+        .root
+        .children
+        .iter()
+        .take(LISTED_BLOCKS)
+        .map(|block| {
+            let text = block_text(block);
+            shown_block(block, slice16(&text, 0, LISTED_PREVIEW).to_owned())
+        })
+        .collect();
+    json!({ "blocks": blocks, "total": editor.root.children.len() })
+}
+
+/// A stale expectation's refusal carries the block as it reads now.
+fn with_current(error: EditError, block: &Value, text: &str) -> EditError {
+    match error {
+        EditError::Edit {
+            code: StaleTarget,
+            message,
+            details: None,
+        } => EditError::Edit {
+            code: StaleTarget,
+            message,
+            details: Some(current_block(block, text.to_owned())),
+        },
+        other => other,
+    }
+}
+
 /// UTF-16 positions of the non-overlapping occurrences of `needle`.
 fn occurrences(haystack: &str, needle: &str) -> Vec<usize> {
     if needle.is_empty() {
@@ -203,8 +340,18 @@ fn occurrences(haystack: &str, needle: &str) -> Vec<usize> {
         .collect()
 }
 
-/// Slate point for a UTF-16 offset inside a block's concatenated text.
-fn point_at(editor: &Editor, index: usize, offset: usize) -> Result<Point, EditError> {
+/// Which end of a span a point is for.
+#[derive(Clone, Copy, PartialEq)]
+enum Edge {
+    Start,
+    End,
+}
+
+/// Slate point for a UTF-16 offset inside a block's concatenated text. On a
+/// boundary between two text leaves a span's start goes in the later leaf
+/// and its end in the earlier one, so a span that only touches an inline
+/// element (an equation, a link) does not take it in.
+fn point_at(editor: &Editor, index: usize, offset: usize, edge: Edge) -> Result<Point, EditError> {
     let mut remaining = offset;
     let mut last = None;
     let mut texts = Vec::new();
@@ -215,7 +362,7 @@ fn point_at(editor: &Editor, index: usize, offset: usize) -> Result<Point, EditE
     );
     for (path, text) in texts {
         let len = len16(&text);
-        if remaining <= len {
+        if remaining < len || (edge == Edge::End && remaining == len) {
             return Ok(Point {
                 path,
                 offset: remaining,
@@ -255,11 +402,16 @@ fn top_level(editor: &Editor, predicate: impl Fn(&Value) -> bool) -> Option<(Val
 fn require_block(editor: &Editor, block_id: &str) -> Result<(Value, usize), EditError> {
     match top_level(editor, |node| stable_id(node) == block_id) {
         Some(entry) => Ok(entry),
-        None => edit(
+        None => edit_with(
             UnavailableTarget,
             format!("block {block_id} no longer exists"),
+            block_listing(editor),
         ),
     }
+}
+
+fn exists(editor: &Editor, id: &str) -> bool {
+    top_level(editor, |node| stable_id(node) == id).is_some()
 }
 
 fn require_parent(editor: &Editor, parent_type: &str) -> Result<(Value, usize), EditError> {
@@ -538,20 +690,17 @@ pub fn apply_material_commands(
     }
     let y_root = BranchPtr::from(root.as_ref() as &Branch);
     let mut editor = Editor::open(txn, y_root)?;
-    let mut inverse: Vec<DocumentCommand> = Vec::new();
-    let mut pending: Vec<Pending> = Vec::new();
-    run_commands(&mut editor, commands, &mut inverse, &mut pending)?;
+    let mut run = Run::default();
+    run_commands(&mut editor, commands, &mut run)?;
     // Guards describe the committed state. A node a later command removed
     // needs no guard of its own: that removal left a gap guard over it.
     let mut captured = Vec::new();
-    for target in pending {
+    for target in run.pending {
         let txn = &*editor.txn;
         let guard = match &target {
             Pending::Block(id) => block_guard(txn, &y_root, &editor, id),
             Pending::Gap(before) => {
-                let after = surviving(before, |id| {
-                    top_level(&editor, |n| stable_id(n) == id).is_some()
-                });
+                let after = surviving(before, |id| exists(&editor, id));
                 gap_guard(txn, &y_root, &editor, after.as_deref())
             }
             Pending::Child(parent, node) => child_guard(txn, &y_root, &editor, parent, node),
@@ -571,21 +720,32 @@ pub fn apply_material_commands(
     }
     Ok(EditOutcome {
         guards: dedupe(captured),
-        inverse,
+        inverse: run.inverse,
+        relocated: Some(run.relocated),
     })
+}
+
+/// What a call's commands leave behind: their inverse, the guards to read
+/// once they all ran, the inserts that landed away from a gone anchor, and
+/// the blocks the call removed (by id: the ids that stood before each).
+#[derive(Default)]
+struct Run {
+    inverse: Vec<DocumentCommand>,
+    pending: Vec<Pending>,
+    relocated: Vec<Relocation>,
+    removed: HashMap<String, Vec<String>>,
 }
 
 fn run_commands(
     editor: &mut Editor,
     commands: &[DocumentCommand],
-    inverse: &mut Vec<DocumentCommand>,
-    pending: &mut Vec<Pending>,
+    run: &mut Run,
 ) -> Result<(), EditError> {
     let mut failure = None;
     editor
         .without_normalizing(|editor| {
             for command in commands {
-                if let Err(error) = run_command(editor, command, inverse, pending) {
+                if let Err(error) = run_command(editor, command, run) {
                     failure = Some(error);
                     // Leave the without-normalizing block as the TS's throw does:
                     // no closing normalization.
@@ -603,9 +763,14 @@ fn run_commands(
 fn run_command(
     editor: &mut Editor,
     command: &DocumentCommand,
-    inverse: &mut Vec<DocumentCommand>,
-    pending: &mut Vec<Pending>,
+    run: &mut Run,
 ) -> Result<(), EditError> {
+    let Run {
+        inverse,
+        pending,
+        relocated,
+        removed,
+    } = run;
     match command {
         DocumentCommand::ReplaceText {
             block_id,
@@ -617,13 +782,30 @@ fn run_command(
                 return edit(InvalidInput, "replace_text on a material needs target_id");
             };
             let (block, index) = require_block(editor, block_id)?;
-            let current = node_string(&block)?;
-            if has_media(&block) && current.is_empty() {
+            if has_media(&block) && node_string(&block)?.is_empty() {
                 return edit(UnsupportedOperation, "this block holds media, not text");
             }
-            let (span_offset, span_length) = resolve_span(&current, expected_text, *offset)?;
-            let start = point_at(editor, index, span_offset)?;
-            let end = point_at(editor, index, span_offset.saturating_add(span_length))?;
+            // Expected text matches the block as inspect shows it, math
+            // included, but only plain text around the math can be replaced.
+            let (shown, math) = shown_text(&block);
+            let (span_offset, span_length) = resolve_span(&shown, expected_text, *offset)
+                .map_err(|error| with_current(error, &block, &shown))?;
+            let span_end = span_offset.saturating_add(span_length);
+            if math.iter().any(|&(from, to)| {
+                if span_length > 0 {
+                    span_offset < to && span_end > from
+                } else {
+                    from < span_offset && span_offset < to
+                }
+            }) {
+                return edit_with(
+                    InvalidInput,
+                    "replace_text changes plain text and this span includes math; rewrite the block with replace_block",
+                    current_block(&block, shown),
+                );
+            }
+            let start = point_at(editor, index, without_math(&math, span_offset), Edge::Start)?;
+            let end = point_at(editor, index, without_math(&math, span_end), Edge::End)?;
             if span_length > 0 {
                 editor.delete_range(start.clone(), end)?;
             }
@@ -653,11 +835,28 @@ fn run_command(
             }
             let index = match after_block_id {
                 None => 0,
-                Some(id) => require_block(editor, id)?.1 + 1,
+                Some(anchor) if exists(editor, anchor) => require_block(editor, anchor)?.1 + 1,
+                Some(anchor) => {
+                    // The anchor is gone: land the blocks rather than refuse them.
+                    let before = removed.get(anchor);
+                    let after = match before {
+                        Some(before) => surviving(before, |id| exists(editor, id)),
+                        None => editor.root.children.last().map(stable_id),
+                    };
+                    relocated.push(Relocation {
+                        after: after.clone(),
+                        anchor: anchor.clone(),
+                        end: before.is_none(),
+                    });
+                    match after {
+                        None => 0,
+                        Some(after) => require_block(editor, &after)?.1 + 1,
+                    }
+                }
             };
             for block in blocks {
                 let id = stable_id(block);
-                if top_level(editor, |node| stable_id(node) == id).is_some() {
+                if exists(editor, &id) {
                     return edit(StaleTarget, format!("block id {id} already exists"));
                 }
             }
@@ -667,7 +866,7 @@ fn run_command(
                     0,
                     DocumentCommand::RemoveBlock {
                         block_id: stable_id(block),
-                        expected_text: node_string(block)?,
+                        expected_text: block_text(block),
                     },
                 );
             }
@@ -680,8 +879,13 @@ fn run_command(
             expected_text,
         } => {
             let (block, index) = require_block(editor, block_id)?;
-            if &node_string(&block)? != expected_text {
-                return edit(StaleTarget, format!("block {block_id} changed"));
+            let text = block_text(&block);
+            if &text != expected_text {
+                return edit_with(
+                    StaleTarget,
+                    format!("block {block_id} changed"),
+                    current_block(&block, text),
+                );
             }
             if has_media(&block) {
                 return edit(
@@ -701,6 +905,7 @@ fn run_command(
                 .collect();
             let previous = before.last().cloned();
             editor.remove_node(vec![index])?;
+            removed.insert(block_id.clone(), before.clone());
             inverse.insert(
                 0,
                 DocumentCommand::InsertBlock {
@@ -708,7 +913,62 @@ fn run_command(
                     blocks: vec![block],
                 },
             );
+            // A later command in this call may remove the anchor too; the
+            // gap is then guarded after the nearest block that survived.
             pending.push(Pending::Gap(before));
+        }
+        DocumentCommand::ReplaceBlock {
+            block_id,
+            expected_text,
+            blocks,
+        } => {
+            if blocks.is_empty() {
+                return edit(InvalidInput, "replace_block needs blocks");
+            }
+            for node in blocks {
+                assert_node_shape(node, "replace_block")?;
+            }
+            let (block, index) = require_block(editor, block_id)?;
+            let text = block_text(&block);
+            if &text != expected_text {
+                return edit_with(
+                    StaleTarget,
+                    format!("block {block_id} changed"),
+                    current_block(&block, text),
+                );
+            }
+            if has_media(&block) {
+                return edit(
+                    UnsupportedOperation,
+                    "blocks holding media cannot be replaced by an edit",
+                );
+            }
+            let ids: Vec<String> = blocks.iter().map(stable_id).collect();
+            if let Some(id) = ids.iter().find(|id| exists(editor, id)) {
+                return edit(StaleTarget, format!("block id {id} already exists"));
+            }
+            let mut before: Vec<String> = editor.root.children[..index]
+                .iter()
+                .map(stable_id)
+                .collect();
+            editor.remove_node(vec![index])?;
+            editor.insert_nodes(vec![index], blocks.clone())?;
+            // An insert after the replaced id later in this call follows the
+            // replacement.
+            before.extend(ids.iter().cloned());
+            removed.insert(block_id.clone(), before);
+            // Undo puts the original back after the first new block, then
+            // removes the new blocks, so it returns to its own place.
+            let undo = std::iter::once(DocumentCommand::InsertBlock {
+                after_block_id: Some(ids[0].clone()),
+                blocks: vec![block],
+            })
+            .chain(blocks.iter().map(|node| DocumentCommand::RemoveBlock {
+                block_id: stable_id(node),
+                expected_text: block_text(node),
+            }));
+            inverse.splice(0..0, undo);
+            pending.extend(ids.into_iter().map(Pending::Block));
         }
         DocumentCommand::ReplaceChild {
             parent_type,
@@ -947,7 +1207,11 @@ pub fn apply_text_commands(
             text: slice16(&current, offset, offset + length).to_owned(),
         })
         .collect();
-    Ok(EditOutcome { guards, inverse })
+    Ok(EditOutcome {
+        guards,
+        inverse,
+        relocated: None,
+    })
 }
 
 /// A replaced span guards its own runs; a pure deletion needs a neighbour.
@@ -1029,7 +1293,7 @@ pub fn inspect_material<T: ReadTxn>(txn: &T) -> Result<Vec<InspectedBlock>, Edit
                 children: None,
                 id: stable_id(block),
                 properties: None,
-                text: node_string(block)?,
+                text: block_text(block),
                 kind: kind.clone(),
             };
             if kind == "quiz" || kind == "flashcards" {

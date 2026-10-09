@@ -5,11 +5,10 @@
 //! points. Every operation goes to the yrs document as slate-yjs maps it, in
 //! the caller's transaction, against the tree as it was before it.
 //!
-//! Unlike the Node editor, which has no Plate plugins and answers `isInline`
-//! with `false` for every element (so normalization unwraps links into their
-//! text), links, mentions, inline equations and Plate's combobox inputs are
-//! inline here ([INLINE_TYPES]), as in the browser. `isVoid` stays `false`, as
-//! in Node.
+//! Links, mentions, inline equations and Plate's combobox inputs are inline
+//! ([INLINE_TYPES]), as in the browser and the Node editor since main's
+//! 69f02a63; without them normalization would unwrap every link and inline
+//! equation into its text. `isVoid` stays `false`, as in Node.
 
 use std::collections::HashSet;
 

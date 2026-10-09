@@ -35,8 +35,14 @@ const SNAPSHOT_WAIT: Duration = Duration::from_secs(10);
 pub enum DocumentError {
     /// 400: the request itself.
     Invalid(String),
-    /// 409 with the edit's code (`stale_target`, `unavailable_target`, ...).
-    Edit { code: String, message: String },
+    /// 409 with the edit's code (`stale_target`, `unavailable_target`, ...)
+    /// and, for a missed target, what it looks like now (passed through to
+    /// the agent by the gateway).
+    Edit {
+        code: String,
+        message: String,
+        details: Option<Value>,
+    },
     /// 403 `lifecycle_rejected`: the actor or the owner may not change it.
     Lifecycle(String),
     /// 422 `quota_rejected`: a shape bound.
@@ -53,8 +59,16 @@ impl DocumentError {
             DocumentError::Invalid(message) => {
                 (400, json!({ "code": "invalid_input", "message": message }))
             }
-            DocumentError::Edit { code, message } => {
-                (409, json!({ "code": code, "message": message }))
+            DocumentError::Edit {
+                code,
+                message,
+                details,
+            } => {
+                let mut body = json!({ "code": code, "message": message });
+                if let Some(details) = details {
+                    body["details"] = details.clone();
+                }
+                (409, body)
             }
             DocumentError::Lifecycle(message) => (
                 403,
@@ -93,6 +107,7 @@ impl DocumentError {
         DocumentError::Edit {
             code: code.to_owned(),
             message: message.into(),
+            details: None,
         }
     }
 }
@@ -100,12 +115,17 @@ impl DocumentError {
 impl From<EditError> for DocumentError {
     fn from(error: EditError) -> Self {
         match error {
-            EditError::Edit { code, message } => DocumentError::Edit {
+            EditError::Edit {
+                code,
+                message,
+                details,
+            } => DocumentError::Edit {
                 code: serde_json::to_value(code)
                     .ok()
                     .and_then(|code| code.as_str().map(str::to_owned))
                     .unwrap_or_else(|| "invalid_input".into()),
                 message,
+                details,
             },
             other => DocumentError::Unknown(other.to_string()),
         }
@@ -142,7 +162,11 @@ impl From<tokio_postgres::Error> for DocumentError {
 impl From<sources::SourceError> for DocumentError {
     fn from(error: sources::SourceError) -> Self {
         match error {
-            sources::SourceError::Edit { code, message } => DocumentError::Edit { code, message },
+            sources::SourceError::Edit { code, message } => DocumentError::Edit {
+                code,
+                message,
+                details: None,
+            },
             sources::SourceError::Request {
                 status, message, ..
             } => DocumentError::Source { status, message },
@@ -558,6 +582,15 @@ pub async fn edit_material(
     });
     if undo.is_none() {
         effect["undo"] = json!({ "operationId": operation.id, "status": "available" });
+        // Inserts whose anchor block was gone say where they landed instead.
+        if let Some(relocated) = computed
+            .outcome
+            .relocated
+            .as_ref()
+            .filter(|r| !r.is_empty())
+        {
+            effect["relocated"] = json!(relocated);
+        }
     }
     let kind = if undo.is_some() {
         "undo_edit"

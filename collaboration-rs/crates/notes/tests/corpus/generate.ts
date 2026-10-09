@@ -40,6 +40,7 @@ import { applyCollaborationCommand } from './commands.js';
 import {
   applyMaterialCommands,
   applyTextCommands,
+  blockText,
   type DocumentCommand,
   EditError,
   type GuardTarget,
@@ -1295,7 +1296,13 @@ function editCall(
     };
   } catch (error) {
     return error instanceof EditError
-      ? { error: { code: error.code, message: error.message } }
+      ? {
+          error: {
+            code: error.code,
+            message: error.message,
+            ...(error.details ? { details: error.details } : {}),
+          },
+        }
       : { thrown: (error as Error).message };
   }
 }
@@ -1398,6 +1405,36 @@ function editScenarios() {
     id,
     type: 'flashcard',
   });
+  const rich = (id: string, where: string, grows: string) => ({
+    children: [
+      { text: 'See ' },
+      { children: [{ text: 'the source' }], type: 'a', url: 'https://x.org' },
+      { text: where },
+      {
+        children: [{ text: '' }],
+        texExpression: 'x^2',
+        type: 'inline_equation',
+      },
+      { text: grows },
+    ],
+    id,
+    type: 'p',
+  });
+  const mathLine = {
+    children: [
+      { text: 'The slope ' },
+      { children: [{ text: '' }], texExpression: 'm', type: 'inline_equation' },
+      { text: ' is steep.' },
+    ],
+    id: 'b1',
+    type: 'p',
+  };
+  const formula = {
+    children: [{ text: '' }],
+    id: 'f1',
+    texExpression: 'P(X=k)',
+    type: 'equation',
+  };
   const four = [
     paragraphOf('b1', 'alpha'),
     paragraphOf('b2', 'beta'),
@@ -1585,6 +1622,302 @@ function editScenarios() {
       ]),
       verify(0),
     ]),
+    // Main's 69f02a63: links and inline equations survive an edit, and a span
+    // that only touches an inline element leaves it out.
+    script(
+      'inline elements beside a replaced span',
+      material([
+        rich('b1', ' where ', ' grows fast.'),
+        rich('b2', ' where ', ' grows fast.'),
+      ]),
+      [
+        apply([
+          {
+            blockId: 'b1',
+            expectedText: ' where ',
+            text: ' when ',
+            type: 'replace_text',
+          },
+          {
+            blockId: 'b1',
+            expectedText: ' grows fast.',
+            text: ' grows quickly.',
+            type: 'replace_text',
+          },
+        ]),
+        inspect(),
+        verify(0),
+        undo(0),
+        inspect(),
+        apply([
+          {
+            blockId: 'b2',
+            expectedText: 'See the source',
+            text: 'Read',
+            type: 'replace_text',
+          },
+        ]),
+        apply([
+          {
+            blockId: 'b1',
+            expectedText: 'the source where',
+            text: 'it when',
+            type: 'replace_text',
+          },
+        ]),
+      ]
+    ),
+    // Main's f11f830f: a stale expectation carries the block as it reads, a
+    // gone id the material's blocks.
+    script(
+      'missed targets as they read now',
+      material([paragraphOf('b1', 'alpha beta'), paragraphOf('b2', 'gamma')]),
+      [
+        apply([
+          {
+            blockId: 'b1',
+            expectedText: 'delta',
+            text: 'x',
+            type: 'replace_text',
+          },
+        ]),
+        apply([{ blockId: 'b2', expectedText: 'gam', type: 'remove_block' }]),
+        apply([
+          {
+            blockId: 'gone',
+            expectedText: 'x',
+            text: 'y',
+            type: 'replace_text',
+          },
+        ]),
+        apply([{ blockId: 'gone', expectedText: 'x', type: 'remove_block' }]),
+        apply([
+          {
+            blockId: 'b1',
+            expectedText: 'beta',
+            text: 'BETA',
+            type: 'replace_text',
+          },
+        ]),
+        apply([
+          {
+            blockId: 'b1',
+            expectedText: 'BETA',
+            text: 'Beta',
+            type: 'replace_text',
+          },
+        ]),
+        undo(4),
+        apply([
+          { blockId: 'b1', expectedText: 'a', text: 'A', type: 'replace_text' },
+        ]),
+      ]
+    ),
+    script(
+      'a gone id lists sixty blocks',
+      material([
+        paragraphOf('p0', `\u{1F600}${'long text '.repeat(12)}`),
+        {
+          children: [
+            { text: 'Area ' },
+            {
+              children: [{ text: '' }],
+              texExpression: '\\pi r^2',
+              type: 'inline_equation',
+            },
+            { text: ' of a circle' },
+          ],
+          id: 'p1',
+          type: 'p',
+        },
+        ...Array.from({ length: 63 }, (_, i) =>
+          paragraphOf(`p${i + 2}`, `${i + 2} ${'é word '.repeat(i % 15)}`)
+        ),
+      ]),
+      [apply([{ blockId: 'gone', expectedText: 'x', type: 'remove_block' }])]
+    ),
+    // Main's a6a54603: an insert whose anchor is gone lands, and says where.
+    script('insert after a gone anchor', material(four.slice(0, 3)), [
+      apply([
+        {
+          afterBlockId: 'deleted',
+          blocks: [paragraphOf('n1', 'one')],
+          type: 'insert_block',
+        },
+      ]),
+      verify(0),
+      undo(0),
+      apply([
+        { blockId: 'b2', expectedText: 'beta', type: 'remove_block' },
+        {
+          afterBlockId: 'b2',
+          blocks: [paragraphOf('n2', 'two')],
+          type: 'insert_block',
+        },
+      ]),
+      verify(3),
+      undo(3),
+      apply([
+        { blockId: 'b1', expectedText: 'alpha', type: 'remove_block' },
+        { blockId: 'b2', expectedText: 'beta', type: 'remove_block' },
+        {
+          afterBlockId: 'b2',
+          blocks: [paragraphOf('n3', 'three')],
+          type: 'insert_block',
+        },
+      ]),
+      verify(6),
+      undo(6),
+      apply([
+        {
+          blockId: 'b2',
+          blocks: [paragraphOf('r1', 'r one'), paragraphOf('r2', 'r two')],
+          expectedText: 'beta',
+          type: 'replace_block',
+        },
+        {
+          afterBlockId: 'b2',
+          blocks: [paragraphOf('n4', 'four')],
+          type: 'insert_block',
+        },
+      ]),
+      verify(9),
+      undo(9),
+      inspect(),
+    ]),
+    // Main's 82c9fd29: math reads as $tex$ / $$tex$$, replace_text keeps to
+    // the plain text around it, replace_block rewrites a block in place.
+    script(
+      'math and replace_block',
+      material([mathLine, formula, paragraphOf('b3', 'end')]),
+      [
+        inspect(),
+        apply([
+          {
+            blockId: 'b1',
+            expectedText: 'slope $m$',
+            text: 'gradient',
+            type: 'replace_text',
+          },
+        ]),
+        apply([
+          {
+            blockId: 'b1',
+            expectedText: ' is steep.',
+            text: ' is gentle.',
+            type: 'replace_text',
+          },
+        ]),
+        inspect(),
+        undo(2),
+        inspect(),
+        apply([
+          {
+            blockId: 'f1',
+            blocks: [
+              { children: [{ text: 'Binomial' }], id: 'n1', type: 'h2' },
+              paragraphOf('n2', 'The chance of k successes.'),
+            ],
+            expectedText: '$$P(X=k)$$',
+            type: 'replace_block',
+          },
+        ]),
+        verify(6),
+        undo(6),
+        inspect(),
+        apply([
+          {
+            blockId: 'f1',
+            blocks: [paragraphOf('n3', 'x')],
+            expectedText: '$$P(X=1)$$',
+            type: 'replace_block',
+          },
+        ]),
+        apply([
+          {
+            blockId: 'b1',
+            expectedText: 'The slope ',
+            text: 'A slope ',
+            type: 'replace_text',
+          },
+        ]),
+        apply([
+          {
+            blockId: 'b1',
+            expectedText: '$ is',
+            text: 'x',
+            type: 'replace_text',
+          },
+        ]),
+        apply([
+          {
+            blockId: 'f1',
+            expectedText: 'X=k',
+            text: 'X=j',
+            type: 'replace_text',
+          },
+        ]),
+        undo(11),
+        apply([
+          {
+            blockId: 'b1',
+            expectedText: '',
+            offset: 11,
+            text: 'Q',
+            type: 'replace_text',
+          },
+        ]),
+        apply([
+          {
+            blockId: 'b1',
+            expectedText: '',
+            offset: 13,
+            text: 'Q',
+            type: 'replace_text',
+          },
+        ]),
+        apply([
+          {
+            blockId: 'b1',
+            blocks: [],
+            expectedText: 'The slope $m$Q is steep.',
+            type: 'replace_block',
+          },
+        ]),
+        apply([
+          {
+            blockId: 'b1',
+            blocks: [paragraphOf('b3', 'dup')],
+            expectedText: 'The slope $m$Q is steep.',
+            type: 'replace_block',
+          },
+        ]),
+        apply([
+          {
+            blockId: 'b1',
+            blocks: [paragraphOf('b1', 'same id')],
+            expectedText: 'The slope $m$Q is steep.',
+            type: 'replace_block',
+          },
+        ]),
+        apply([
+          {
+            blockId: 'gone',
+            blocks: [paragraphOf('n5', 'x')],
+            expectedText: 'x',
+            type: 'replace_block',
+          },
+        ]),
+        apply([
+          {
+            blockId: 'b1',
+            blocks: [{ id: 'n6', type: 'p' }],
+            expectedText: 'The slope $m$Q is steep.',
+            type: 'replace_block',
+          },
+        ]),
+      ]
+    ),
     script('stale expectation', material(four.slice(0, 1)), [
       apply([
         {
@@ -1744,6 +2077,22 @@ function editScenarios() {
             type: 'replace_text',
           },
         ]),
+        apply([
+          {
+            blockId: 'm1',
+            blocks: [paragraphOf('m2', 'x')],
+            expectedText: '',
+            type: 'replace_block',
+          },
+        ]),
+        apply([
+          {
+            blockId: 'b1',
+            blocks: [{ children: [{ text: '' }], id: 'v1', type: 'video' }],
+            expectedText: 'aa aa',
+            type: 'replace_block',
+          },
+        ]),
       ]
     ),
   ];
@@ -1861,7 +2210,7 @@ function randomEditScripts(seed: number) {
         ).children;
         const block = pick(value);
         const id = typeof block.id === 'string' ? block.id : '';
-        const text = Node.string(block as never);
+        const text = blockText(block as never);
         const roll = random();
         let commands: DocumentCommand[];
         if (roll < 0.5 && text.length > 0) {
@@ -1883,7 +2232,7 @@ function randomEditScripts(seed: number) {
               type: 'replace_text',
             },
           ];
-        } else if (roll < 0.7) {
+        } else if (roll < 0.65) {
           commands = [
             {
               afterBlockId: random() < 0.2 ? null : id,
@@ -1897,11 +2246,28 @@ function randomEditScripts(seed: number) {
               type: 'insert_block',
             },
           ];
-        } else if (roll < 0.85) {
+        } else if (roll < 0.78) {
           commands = [
             { blockId: id, expectedText: text, type: 'remove_block' },
           ];
-        } else if (roll < 0.95) {
+        } else if (roll < 0.88) {
+          const replacement = () => ({
+            children: [{ text: word() }],
+            id: `r${round}${Math.floor(random() * 1e6)}`,
+            type: 'p',
+          });
+          commands = [
+            {
+              blockId: id,
+              blocks:
+                random() < 0.3
+                  ? [replacement(), replacement()]
+                  : [replacement()],
+              expectedText: text,
+              type: 'replace_block',
+            },
+          ];
+        } else if (roll < 0.96) {
           commands = [
             {
               expectedValue: typeof block.align === 'string' ? block.align : '',

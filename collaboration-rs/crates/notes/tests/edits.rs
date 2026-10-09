@@ -44,8 +44,16 @@ struct Tally {
 fn outcome_json(result: &Result<Value, EditError>) -> Value {
     match result {
         Ok(ok) => json!({ "ok": ok }),
-        Err(EditError::Edit { code, message }) => {
-            json!({ "error": { "code": code, "message": message } })
+        Err(EditError::Edit {
+            code,
+            message,
+            details,
+        }) => {
+            let mut error = json!({ "code": code, "message": message });
+            if let Some(details) = details {
+                error["details"] = details.clone();
+            }
+            json!({ "error": error })
         }
         Err(EditError::Editor(error)) => json!({ "thrown": error.to_string() }),
     }
