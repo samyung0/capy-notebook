@@ -221,6 +221,36 @@ fn edit_commands_match_the_node_server() {
     );
 }
 
+/// A gone id's listing cuts each preview at 80 UTF-16 units; a cut inside a
+/// surrogate pair keeps the whole character (Node keeps its high half, which
+/// a Rust string cannot hold), so that preview is 81 units.
+#[test]
+fn a_listing_preview_cut_inside_an_emoji_keeps_it_whole() {
+    let kept = format!("{}\u{1F600}", "a".repeat(79));
+    let value =
+        [json!({ "type": "p", "id": "b1", "children": [{ "text": format!("{kept}tail") }] })];
+    let doc = common::doc(&notes::slate_yjs::state_from_value(&value, 3), 4);
+    let root = doc.get_or_insert_text(plate::CONTENT_ROOT);
+    let refusal = edit::apply_material_commands(
+        &mut doc.transact_mut(),
+        &root,
+        &[DocumentCommand::RemoveBlock {
+            block_id: "gone".into(),
+            expected_text: "x".into(),
+        }],
+    );
+    let Err(EditError::Edit {
+        details: Some(details),
+        ..
+    }) = refusal
+    else {
+        panic!("expected a refusal with details, got {refusal:?}");
+    };
+    let preview = details["blocks"][0]["text"].as_str().unwrap();
+    assert_eq!(preview, kept);
+    assert_eq!(preview.encode_utf16().count(), 81);
+}
+
 #[test]
 fn inspect_matches_the_node_server() {
     let corpus = common::load("inspect");

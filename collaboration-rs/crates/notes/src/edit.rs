@@ -402,12 +402,29 @@ fn top_level(editor: &Editor, predicate: impl Fn(&Value) -> bool) -> Option<(Val
 fn require_block(editor: &Editor, block_id: &str) -> Result<(Value, usize), EditError> {
     match top_level(editor, |node| stable_id(node) == block_id) {
         Some(entry) => Ok(entry),
-        None => edit_with(
+        None => edit(
             UnavailableTarget,
             format!("block {block_id} no longer exists"),
-            block_listing(editor),
         ),
     }
+}
+
+/// A command's target block: a gone id refuses with the material's blocks.
+/// Guards look blocks up with [require_block], whose misses they swallow, so
+/// the listing is built only for a refusal the caller returns.
+fn target_block(editor: &Editor, block_id: &str) -> Result<(Value, usize), EditError> {
+    require_block(editor, block_id).map_err(|error| match error {
+        EditError::Edit {
+            code: UnavailableTarget,
+            message,
+            details: None,
+        } => EditError::Edit {
+            code: UnavailableTarget,
+            message,
+            details: Some(block_listing(editor)),
+        },
+        other => other,
+    })
 }
 
 fn exists(editor: &Editor, id: &str) -> bool {
@@ -781,7 +798,7 @@ fn run_command(
             let Some(block_id) = block_id.as_deref().filter(|id| !id.is_empty()) else {
                 return edit(InvalidInput, "replace_text on a material needs target_id");
             };
-            let (block, index) = require_block(editor, block_id)?;
+            let (block, index) = target_block(editor, block_id)?;
             if has_media(&block) && node_string(&block)?.is_empty() {
                 return edit(UnsupportedOperation, "this block holds media, not text");
             }
@@ -878,7 +895,7 @@ fn run_command(
             block_id,
             expected_text,
         } => {
-            let (block, index) = require_block(editor, block_id)?;
+            let (block, index) = target_block(editor, block_id)?;
             let text = block_text(&block);
             if &text != expected_text {
                 return edit_with(
@@ -928,7 +945,7 @@ fn run_command(
             for node in blocks {
                 assert_node_shape(node, "replace_block")?;
             }
-            let (block, index) = require_block(editor, block_id)?;
+            let (block, index) = target_block(editor, block_id)?;
             let text = block_text(&block);
             if &text != expected_text {
                 return edit_with(
