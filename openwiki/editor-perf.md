@@ -129,7 +129,9 @@ Per file it reports:
   `Runtime.queryObjects`. Every call is bounded (5 s) and a worker's detach
   fails what is pending, so a worker that ends or stops answering is listed
   with `missing` (and counted in `workersMissing`), never waited on. Linear memory never shrinks, so `wasmMB` is also
-  the high-water mark. `performance.measureUserAgentSpecificMemory` would
+  the high-water mark; the modules grow it in steps of up to 64 MiB
+  ([frontend/office-files.md](frontend/office-files.md)), so it can run ahead
+  of what an engine holds by one step. `performance.measureUserAgentSpecificMemory` would
   need cross-origin isolation, which the app does not have;
 - `runner`: the CPU model and core count of the machine that ran it, in every
   Office result (the shared runner pool mixes EPYC models);

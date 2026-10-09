@@ -101,6 +101,14 @@ bridge with the editor. The React editor and editor WASM are imported only after
 the user presses Edit. DOCX lowering runs in a disposable worker that terminates
 as soon as it transfers the immutable display list, so its parser, transient
 Yrs projection, and viewer linear memory are absent during ordinary reading.
+Every editor and viewer WASM module grows its linear memory in steps as large
+as the memory already is, at most 64 MiB (`vendor/betteroffice/crates/wasm-alloc`):
+Rust's allocator alone grows it by the 64 KiB a request needs, and each grow
+costs the browser time that rises with the memory's size (0.1 ms at 16 MiB,
+1.6 ms at 512 MiB in Chrome), so a 248-page DOCX took 69 s to open in View,
+54 s of it growing memory, against 16 s with the steps (Chrome on Windows,
+median of three, 2026-10-09). Memory can run ahead of what an engine holds by
+one step.
 Viewer analysis reuses the already-open handle, so sheet/slide metadata does not
 trigger a second parse. Every viewer and editor sends `ready` once its first
 pages, grid or slide (pictures included) are painted, with the runtime's own
