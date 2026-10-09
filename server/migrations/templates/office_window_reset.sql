@@ -9,7 +9,7 @@
 -- Written for the NULL-state model the window ships with: a NULL state is
 -- seed(base), the indexed baseline is derived from the base, and
 -- storage_bytes counts a NULL column as 0; the rows saved over a state
--- (source_document_updates, migration 0069) go with it. Checked once against
+-- (source_document_updates, migration 0070) go with it. Checked once against
 -- that schema.
 --
 -- The deploy runs it only after `office-maintenance status` prints zero:
