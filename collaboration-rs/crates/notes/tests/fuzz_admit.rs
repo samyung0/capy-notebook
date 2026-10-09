@@ -272,7 +272,7 @@ fn mutated_updates_never_panic_or_stall() {
             }
             Some(admitted.ok())
         }));
-        let steps = ydoc::steps::take();
+        let steps = ydoc::steps::take().total();
         let replay = || format!("case {case} (seed {seed}): {update:02x?}");
         match outcome {
             Err(_) => panic!("panicked on {}", replay()),

@@ -43,17 +43,68 @@ pub const MAX_WORK: u64 = 1_000_000;
 pub mod steps {
     use std::cell::Cell;
 
-    thread_local!(static STEPS: Cell<u64> = const { Cell::new(0) });
-
-    /// Counts one step.
-    #[inline]
-    pub fn step() {
-        STEPS.with(|steps| steps.set(steps.get().wrapping_add(1)));
+    /// The walk a step belongs to, so a test can floor each one: a walk
+    /// whose step went missing then fails it (REVIEW3 N1).
+    #[derive(Clone, Copy, Debug)]
+    pub enum Walk {
+        /// `inspect`'s pass over the update's structs.
+        Structs,
+        /// [crate::applies_inline]'s count of the update's structs.
+        Inline,
+        /// `inspect`'s walk from a held reference up to its root.
+        Holders,
+        /// `inspect`'s resolution of each new struct's container.
+        Containers,
+        /// The small-edit check's walk over the room blocks a deletion covers.
+        Deletions,
+        /// A probe of [crate::Incoming::deletes]'s binary search.
+        DeleteLookup,
+        /// The notes content check's resolution of each new item.
+        Content,
+        /// The growth bound's walk from a held type to the content root.
+        Ancestry,
+        /// The growth bound's placement of each new item.
+        Placement,
+        /// The growth bound's walk over the room blocks the update deletes.
+        DeleteRanges,
+        /// The growth bound's re-pricing walk over a held text.
+        Reprice,
+        /// The growth bound's walk to each new item's held sides.
+        Sides,
+        /// The growth bound's walk over hidden units between two sides.
+        Adjacent,
+        /// The growth bound's walk to the visible unit beside a position.
+        Beside,
     }
 
-    /// The steps counted on this thread since the last call.
-    pub fn take() -> u64 {
-        STEPS.with(|steps| steps.replace(0))
+    const WALKS: usize = Walk::Beside as usize + 1;
+
+    thread_local!(static STEPS: [Cell<u64>; WALKS] = const { [const { Cell::new(0) }; WALKS] });
+
+    /// Counts one step of `walk`.
+    #[inline]
+    pub fn step(walk: Walk) {
+        STEPS.with(|steps| {
+            let count = &steps[walk as usize];
+            count.set(count.get().wrapping_add(1));
+        });
+    }
+
+    /// The steps counted on this thread since the last call, per walk.
+    pub fn take() -> Steps {
+        Steps(STEPS.with(|steps| std::array::from_fn(|walk| steps[walk].replace(0))))
+    }
+
+    pub struct Steps([u64; WALKS]);
+
+    impl Steps {
+        pub fn total(&self) -> u64 {
+            self.0.iter().sum()
+        }
+
+        pub fn of(&self, walk: Walk) -> u64 {
+            self.0[walk as usize]
+        }
     }
 }
 
@@ -151,10 +202,28 @@ fn small_edit<T: ReadTxn>(txn: &T, incoming: &Incoming) -> bool {
     })
 }
 
-/// Whether the room applies `incoming` without a trial on a copy of it (a
-/// small edit). A server runs any other update's admission off its async
-/// workers.
-pub fn applies_directly<T: ReadTxn>(txn: &T, incoming: &Incoming) -> bool {
+/// An update past this many bytes is admitted and applied off a server's
+/// async workers even when it is a small edit (REVIEW3 S1): structs and
+/// deletions the room holds cost no trial, but reading them does.
+pub const INLINE_BYTES: usize = 64 * 1024;
+
+/// Whether a server may admit and apply `incoming` inline on its async
+/// workers: at most [INLINE_BYTES], at most [SMALL_EDIT] structs counting
+/// the ones the room holds (a step each it looks at), and a small edit, so
+/// no trial on a copy. Anything else goes to the blocking pool while the room
+/// waits.
+pub fn applies_inline<T: ReadTxn>(txn: &T, incoming: &Incoming, bytes: usize) -> bool {
+    if bytes > INLINE_BYTES {
+        return false;
+    }
+    let mut structs = 0;
+    for _ in incoming.update().blocks() {
+        steps::step(steps::Walk::Inline);
+        structs += 1;
+        if structs > SMALL_EDIT {
+            return false;
+        }
+    }
     small_edit(txn, incoming)
 }
 
@@ -173,7 +242,7 @@ fn few_new_deletions<T: ReadTxn>(txn: &T, state: &StateVector, incoming: &Incomi
                     if clock >= to {
                         break true;
                     }
-                    steps::step();
+                    steps::step(steps::Walk::Deletions);
                     spent += 1;
                     if spent > MAX_WORK {
                         return false;
@@ -385,7 +454,7 @@ impl<'a> Incoming<'a> {
         // held item it walks (plate REVIEW1 M1 scanned the set each time).
         let (mut low, mut high) = (0, ranges.len());
         while low < high {
-            steps::step();
+            steps::step(steps::Walk::DeleteLookup);
             let middle = low + (high - low) / 2;
             if ranges[middle].1 <= from {
                 low = middle + 1;
@@ -434,7 +503,7 @@ pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, U
     // A step per struct: every update admission reads walks its structs at
     // least once, which the cost tests take as their floor.
     for block in incoming.update().blocks() {
-        steps::step();
+        steps::step(steps::Walk::Structs);
         let (client, clock, len) = match block {
             UpdateBlock::Item(item) => (item.id().client, item.id().clock, item.len()),
             UpdateBlock::Gc(range) | UpdateBlock::Skip(range) => {
@@ -475,7 +544,7 @@ pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, U
             return Found::Gone;
         };
         loop {
-            steps::step();
+            steps::step(steps::Walk::Holders);
             let Some(branch) = top.parent_branch() else {
                 return Found::Unknown;
             };
@@ -499,7 +568,7 @@ pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, U
         let mut chain: Vec<ID> = Vec::new();
         let mut item = start;
         let found = loop {
-            steps::step();
+            steps::step(steps::Walk::Containers);
             if let Some(known) = resolved.get(item.id()) {
                 break known.clone();
             }

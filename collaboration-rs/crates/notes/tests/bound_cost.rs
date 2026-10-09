@@ -92,7 +92,7 @@ fn growth_steps(paragraphs: u32) -> u64 {
     let txn = room.transact();
     ydoc::steps::take();
     let growth = bound::update_growth(&txn, &update).expect("a delete is bounded");
-    let steps = ydoc::steps::take();
+    let steps = ydoc::steps::take().total();
     // Deleting adds nothing; the JS bound priced 12 bytes and 1 node per
     // deleted formatted paragraph.
     assert_eq!(

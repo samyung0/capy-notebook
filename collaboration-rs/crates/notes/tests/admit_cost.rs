@@ -6,10 +6,11 @@
 //! (`ydoc::steps`) and yrs's integration work on the trial copy, which
 //! `ydoc::MAX_WORK` bounds. Every shape is admitted against a room whose
 //! validator already holds a bound, as on the room task.
-use notes::limits::{Refusal, Validator};
+use notes::limits::{Admission, Refusal, Validator};
 use notes::{plate, slate_yjs};
 use serde_json::json;
 use ydoc::doc_options;
+use ydoc::steps::{Steps, Walk};
 use yrs::encoding::write::Write;
 use yrs::updates::decoder::Decode;
 use yrs::{Doc, ID, ReadTxn, StateVector, Text, Transact, Update, Xml, XmlTextPrelim, XmlTextRef};
@@ -54,15 +55,16 @@ fn paragraph(doc: &Doc) -> XmlTextRef {
     }
 }
 
-/// The steps admission's walks take on `update`, with a bound in place.
-fn admit_steps(room: &Doc, update: &[u8]) -> u64 {
+/// The steps admission's walks take on `update`, with a bound in place, and
+/// whether it was admitted.
+fn admit_steps(room: &Doc, update: &[u8]) -> (Steps, bool) {
     let mut validator = Validator::default();
     let nothing = ydoc::decode(&since(room, room)).unwrap();
     validator.admit(room, &nothing).unwrap();
     let decoded = ydoc::decode(update).unwrap();
     ydoc::steps::take();
-    let _ = validator.admit(room, &decoded);
-    ydoc::steps::take()
+    let admitted = matches!(validator.admit(room, &decoded), Ok(Admission::Accepted));
+    (ydoc::steps::take(), admitted)
 }
 
 /// The structs of `update`: admission walks each at least once, a step
@@ -425,14 +427,25 @@ fn admit_stays_linear_on_every_hostile_shape() {
         ("classroom", classroom(100)),
     ];
     for (name, (room, update)) in shapes {
-        let steps = admit_steps(&room, &update);
+        let (walks, admitted) = admit_steps(&room, &update);
+        let steps = walks.total();
         let bytes = update.len() as u64 + room_bytes(&room);
-        assert!(steps >= structs(&update), "{name}: {steps} steps");
+        let n = structs(&update);
         eprintln!(
             "{name}: {} KB, {steps} steps for {bytes} bytes",
             update.len() / 1024
         );
         assert!(steps <= STEPS_PER_BYTE * bytes, "{name}: {steps} steps");
+        // Every update's structs are checked once; an admitted one's are
+        // also placed in their containers, content-checked and bounded, each
+        // walk at least a step per struct (REVIEW3 N1: a walk whose step goes
+        // missing fails here).
+        assert!(walks.of(Walk::Structs) >= n, "{name}: struct pass");
+        if admitted {
+            for walk in [Walk::Containers, Walk::Content, Walk::Placement] {
+                assert!(walks.of(walk) >= n, "{name}: {walk:?} {}", walks.of(walk));
+            }
+        }
     }
     // The tombs, the fanned items, the chained clients and the splits cost
     // yrs too many steps on the trial copy (REVIEW4 M9 to M11: the splits
@@ -477,7 +490,7 @@ fn a_costly_update_is_refused_within_the_budget() {
         let decoded = ydoc::decode(&update).unwrap();
         ydoc::steps::take();
         let answer = Validator::default().admit(&room, &decoded);
-        let steps = ydoc::steps::take();
+        let steps = ydoc::steps::take().total();
         let bytes = update.len() as u64 + room_bytes(&room);
         eprintln!(
             "{name}: {} KB refused after {steps} steps",

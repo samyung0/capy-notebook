@@ -457,6 +457,48 @@ fn a_reconnect_repeating_held_deletions_is_a_small_edit() {
     assert!(tried(&removed));
 }
 
+/// Security regression (REVIEW3 S1): structs the room holds cost no trial,
+/// so a crafted update of a thousand of them and one keystroke is a small
+/// edit; reading them still costs, so it is not applied inline. The
+/// predicate counts the structs it looks at, stopping past [SMALL_EDIT]; a
+/// keystroke stays inline.
+#[test]
+fn held_structs_in_bulk_are_not_applied_inline() {
+    let room = doc(1);
+    let writer = doc(2);
+    let text = writer.get_or_insert_text("t");
+    // A thousand separate items: each prepended, so none merges.
+    for _ in 0..1_000 {
+        text.insert(&mut writer.transact_mut(), 0, "h");
+    }
+    sync(&writer, &room);
+    text.insert(&mut writer.transact_mut(), 0, "k");
+    let everything = writer
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    let keystroke = delta(&writer, |txn| text.insert(txn, 0, "j"));
+    let inline = |bytes: &[u8]| {
+        let update = decode(bytes).unwrap();
+        let incoming = Incoming::new(&update);
+        steps::take();
+        let inline = applies_inline(&room.transact(), &incoming, bytes.len());
+        (inline, steps::take().of(steps::Walk::Inline))
+    };
+    // 1,001 structs, 1,000 of them held: a small edit (no trial), not inline.
+    let update = decode(&everything).unwrap();
+    assert!(small_edit(&room.transact(), &Incoming::new(&update)));
+    assert!(everything.len() <= INLINE_BYTES);
+    assert_eq!(inline(&everything), (false, SMALL_EDIT as u64 + 1));
+    // The writer's next keystroke, one struct, stays inline; a 70 KB paste,
+    // one struct too, is past INLINE_BYTES.
+    sync(&writer, &room);
+    assert_eq!(inline(&keystroke), (true, 1));
+    let paste = delta(&writer, |txn| text.insert(txn, 0, &"p".repeat(70_000)));
+    let update = decode(&paste).unwrap();
+    assert!(small_edit(&room.transact(), &Incoming::new(&update)));
+    assert_eq!(inline(&paste), (false, 0));
+}
+
 /// Security regression (Epo 2026-10-08, trial sizing): an update near the
 /// 4 MiB message cap made only of deletions the room holds already costs the
 /// held-deletion check at most the work budget in steps, then takes the trial.
@@ -497,7 +539,7 @@ fn held_deletions_up_to_the_message_cap_stay_within_the_budget() {
     );
     steps::take();
     let inspected = inspect_update(&room.transact(), &decode(&bytes).unwrap());
-    let spent = steps::take();
+    let spent = steps::take().of(steps::Walk::Deletions);
     assert!(inspected.is_ok(), "{inspected:?}");
     // The check spends the whole budget before it gives up, and no more.
     assert!(spent > MAX_WORK, "{spent} steps");

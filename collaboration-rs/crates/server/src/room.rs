@@ -1454,13 +1454,18 @@ impl Room {
             self.refuse(key, &[], "client update changed collaboration metadata");
             return;
         }
-        // Admission that copies the room (the trial past a small edit, a
-        // source's exact measure near its cap) runs off the runtime's workers
-        // while the room waits (REVIEW2 S1): this room's messages queue, and
-        // every other room and socket keeps its thread.
-        let heavy = !ydoc::applies_directly(&self.doc.transact(), &ydoc::Incoming::new(&update))
-            || matches!(&self.kind, Kindly::Source(source)
-                if source.estimate + bytes.len() as u64 > sources::MAX_SOURCE_STATE_BYTES as u64);
+        // Admission and apply run off the runtime's workers while the room
+        // waits, unless the update is a small edit of a few structs (REVIEW2
+        // S1, REVIEW3 S1): a trial on a copy, a source's exact measure near
+        // its cap, or a large update of what the room holds already would
+        // hold a worker. This room's messages queue; every other room and
+        // socket keeps its thread.
+        let heavy = !ydoc::applies_inline(
+            &self.doc.transact(),
+            &ydoc::Incoming::new(&update),
+            bytes.len(),
+        ) || matches!(&self.kind, Kindly::Source(source)
+            if source.estimate + bytes.len() as u64 > sources::MAX_SOURCE_STATE_BYTES as u64);
         let mut admit = || match &mut self.kind {
             Kindly::Note(note) => match note.validator.admit(&self.doc, &update) {
                 Ok(notes::limits::Admission::Accepted) => Verdict::Accept,
@@ -1527,7 +1532,11 @@ impl Room {
             applied += marker.len();
             self.broadcast_update(None, marker);
         }
-        let content = ydoc::apply(&self.doc, update);
+        let content = if heavy {
+            tokio::task::block_in_place(|| ydoc::apply(&self.doc, update))
+        } else {
+            ydoc::apply(&self.doc, update)
+        };
         self.applying = false;
         let content = match content {
             Ok(content) => content,
