@@ -723,10 +723,11 @@ fn live_format_markers(doc: &Doc) -> usize {
     count
 }
 
-// Epo D3 (2026-10-09): room documents run no formatting cleanup. A peer bolds
-// a letter while another deletes it; both markers then enclose nothing, and a
-// room with yrs's cleanup on deletes them for itself only, so it would read
-// differently from the peers that keep them.
+// Room documents run no formatting cleanup (Epo D3, 2026-10-09, for Office
+// rooms; note rooms take the same options). A peer bolds a letter while
+// another deletes it; both markers then enclose nothing, and a room with
+// yrs's cleanup on deletes them for itself only, so it would read differently
+// from the peers that keep them.
 #[test]
 fn a_room_keeps_the_format_markers_its_peers_sent() {
     // Rooms take a random client (0); the same holds for a chosen one.

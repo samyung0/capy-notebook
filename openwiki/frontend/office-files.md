@@ -2113,10 +2113,15 @@ lost process is a slow failure, retried with backoff while the room stays
 editable, until five minutes pass without a successful save (see
 [error handling](error-handling.md#collaborative-source-failures)).
 
-The server's room documents (`ydoc::doc_options` in
-`collaboration-rs/crates/ydoc`) run no yrs formatting cleanup (Epo, 2026-10-09):
-with it on, each replica deletes the format markers an update left redundant
-for itself only, and peers read differently.
+The collaboration server's documents run no yrs formatting cleanup: every
+room and every working document (folds, captures, saves, rebuilds, the size
+check) takes its options from `ydoc::doc_options` in
+`collaboration-rs/crates/ydoc`. For Office rooms this is Epo's decision
+(2026-10-09): with the cleanup on, each replica deletes the format markers an
+update left redundant for itself only, and peers read differently. Note rooms
+use the same options; the server has run no cleanup in them since the Rust
+rooms began, while browser peers still run Yjs's cleanup and send it, as
+before, and the room relays and stores what they send.
 
 A save process keeps a replica per XLSX room: the room's source opened only to
 read pending effects (the fork's `XlsxReplicas`), without the dependency
