@@ -2113,6 +2113,11 @@ lost process is a slow failure, retried with backoff while the room stays
 editable, until five minutes pass without a successful save (see
 [error handling](error-handling.md#collaborative-source-failures)).
 
+The server's room documents (`ydoc::doc_options` in
+`collaboration-rs/crates/ydoc`) run no yrs formatting cleanup (Epo, 2026-10-09):
+with it on, each replica deletes the format markers an update left redundant
+for itself only, and peers read differently.
+
 A save process keeps a replica per XLSX room: the room's source opened only to
 read pending effects (the fork's `XlsxReplicas`), without the dependency
 graph or the recalculation an editor needs. A save's pending effects pass

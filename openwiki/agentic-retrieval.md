@@ -2893,14 +2893,15 @@ keys for trash, restore, purge and Undo are scoped to the acting user
 A block's text, as `inspect_document` shows it and as every expected text
 (`replace_text`, `remove_block`, `replace_block`, their Undo) matches it, is its
 flattened text with inline math written `$tex$` and display math `$$tex$$`
-(`blockText` in `collaboration/src/editCommands.ts`). `replace_text` replaces
+(`block_text` in `collaboration-rs/crates/notes/src/edit.rs`). `replace_text` replaces
 plain text only: a span over math is refused (`invalid_input`) with a pointer
 to `replace_block`, which rewrites the whole block from note markdown and keeps
 its place, Undo putting the original back there. The headless editor every
 material edit, children pass and service command opens declares the note
-editor's inline elements (`INLINE_TYPES`: links, inline equations, mentions
-and the combobox inputs); without it, `YjsEditor.connect`'s forced
-normalization removed every link and inline equation in the material. A
+editor's inline elements (`INLINE_TYPES` in `crates/notes/src/slate/editor.rs`:
+links, inline equations, mentions and the combobox inputs); without them, its
+opening normalization would remove every link and inline equation in the
+material. A
 replaced span that only touches an inline element does not take it in. A
 missed target comes back as it is now, in the refusal's `details`, which Go
 passes through unchanged and the pipeline gives the model only

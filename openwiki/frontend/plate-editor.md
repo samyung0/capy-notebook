@@ -1299,7 +1299,8 @@ and commenting are available only in Edit mode.
 Chat `edit_document` never touches the browser editor. The collaboration
 service loads the durable material state into an isolated Y.Doc, merges the
 open live room's state so in-flight typing counts, applies the normalized
-commands through a headless Slate editor (`editCommands.ts`), stores the
+commands through a headless Slate editor
+(`collaboration-rs/crates/notes/src/edit.rs`), stores the
 inverse and item-run guards of the edited nodes, then fans the committed delta
 into the live room as a `service-edit` update; the projection runs on the same
 commit.
