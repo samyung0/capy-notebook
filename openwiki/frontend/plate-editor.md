@@ -229,6 +229,16 @@ Slate-Yjs records instead, so both hold the same ids:
   from an editor that runs NodeIdPlugin (question text) or from a room written
   before can carry it, and the store refuses it on interactive blocks.
 
+Slate-Yjs applies a remote Yjs event without normalizing; the normalization
+after it (merging the leaves a remote insert left side by side) runs as local
+operations that Slate-Yjs keeps with the tree they were made on and would
+flush at the next onChange microtask. `remoteNormalizationPlugin`
+(`src/features/notes/remoteNormalization.ts`, after YjsPlugin) flushes them
+right after their event: a second remote update in the same task would
+otherwise have them applied to the newer Yjs state, writing a wrong change
+into the room. The Rust server sends one merged update per room per frame,
+so the burst comes from in-page rooms or several updates read at once.
+
 Text leaves do not need IDs. Runtime values must never be written onto nodes:
 
 - signed asset URLs and browser blob URLs;
