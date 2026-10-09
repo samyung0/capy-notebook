@@ -280,14 +280,19 @@ func (s *Store) MarkEditorAssetUploadExpired(ctx context.Context, uploadID strin
 }
 
 // EditorAssetMaterial returns the live material's workspace (empty when
-// standalone) and whether it is a quiz or flashcard set, which caps its images.
-func (s *Store) EditorAssetMaterial(ctx context.Context, id string) (workspaceID string, study bool, err error) {
-	err = s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id,''), kind IN ('quiz','flashcards')
-		FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&workspaceID, &study)
+// standalone) and the image cap of the account that pays for its assets.
+func (s *Store) EditorAssetMaterial(ctx context.Context, id string) (workspaceID string, imageMaxBytes int64, err error) {
+	var ownerID string
+	err = s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id,''), owner_user_id
+		FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&workspaceID, &ownerID)
 	if isNoRows(err) {
-		return "", false, ErrNotFound
+		return "", 0, ErrNotFound
 	}
-	return workspaceID, study, err
+	if err != nil {
+		return "", 0, err
+	}
+	imageMaxBytes, err = s.ImageMaxBytes(ctx, ownerID)
+	return workspaceID, imageMaxBytes, err
 }
 
 // pruneMaterialAssetsTx trashes the material's own ready editor assets that its
@@ -361,7 +366,7 @@ func (s *Store) PurgeTrashedEditorAssets(ctx context.Context, limit int) (int, e
 // object under blob refcounting and charged to the target's payer; a trashed
 // source is copied too. A source that is unknown (purged), not
 // ready, or unreadable by the actor (the resolve rule) is left out, as is an
-// image over imageMaxBytes when that is positive (a quiz's or flashcard set's 2 MB cap).
+// image over imageMaxBytes (the payer's plan image cap).
 // When the copies do not fit the payer's quota none is made and refused is
 // true; restores still land.
 func (s *Store) AdoptEditorAssets(
@@ -418,7 +423,7 @@ func (s *Store) AdoptEditorAssets(
 			continue
 		}
 		if asset.Status != "ready" ||
-			(imageMaxBytes > 0 && asset.Purpose == "image" && asset.SizeBytes > imageMaxBytes) {
+			(asset.Purpose == "image" && asset.SizeBytes > imageMaxBytes) {
 			continue
 		}
 		readable, err := editorAssetReadableTx(ctx, tx, actorID, asset)

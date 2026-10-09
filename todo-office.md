@@ -400,37 +400,207 @@ slow editor (no handoff outside maintenance since the deferred rebuild).
   write `${C}:refs/…`; stop processes by PID only; watch the disk (each fork
   worktree's `target` grows to several GB).
 
-## Embedded quiz and flashcard freshness (2026-10-07)
+## Live editing for quizzes, flashcard sets and Mermaid (2026-10-07, revised 2026-10-09)
 
-- Note-embedded quizzes and flashcard sets now render and edit inside the note
-  (decisions in `human/frontend/plate-editor.md`, 2026-10-07), each change
-  saved at once through the API. The note document holds only the item's id;
-  its content comes from the API with React Query's 5-minute cache and no
-  refetch on focus. The tab that saved is current, but another open editor of
-  the same note (a collaborator, another tab, or an agent edit) keeps a stale
-  copy for up to 5 minutes. Note View and the public note page are fresh when
-  they open.
-- Suggestion: after any embedded quiz or set write (including agent and API
-  edits), Go asks the collaboration service to broadcast a stateless
-  "embed {id} changed" message to the parent note's room (the Node server
-  already relays stateless messages, `collaboration/src/server.ts`; the Rust
-  server needs the same relay); open editors invalidate and refetch that one
-  item. Keeping the content in the Yjs document instead would put quiz answer
-  keys in the note, so every viewer projection and the public note read would
-  have to strip them.
-- Developer question: how fine-grained should the broadcast edit be? One
-  object per question, or every character inside the question text and
-  options? Questions come in many types and can contain images and graphs, so
-  check this very thoroughly.
-- Developer note: should Mermaid materials like mindmaps and diagrams be
-  included? They still have the dedicated save and publish button. A UI
-  refinement for these two: edit mode can render the source code and the
-  preview directly inside the center content, rather than behind a button
-  that opens a dialog.
-- Developer note: once this change is in, the flashcard UI no longer needs the
-  cancel/confirm buttons at the end to publish changes. The quiz could also
-  move to render inside the same center panel on the same page (ask the
-  developer for a decision).
+- Problem: note-embedded quizzes and flashcard sets render and edit inside the
+  note (decisions in `human/frontend/plate-editor.md`, 2026-10-07). Their
+  editors stage a draft and write the whole item through the content endpoints
+  with `expectedRevision`; the collaboration service then replaces the item's
+  one `quiz`/`flashcards` block in its own Yjs document (headless Slate-Yjs
+  command). The note holds only the item's id, and its content comes from the
+  API with React Query's 5-minute cache, so another open editor of the note (a
+  collaborator, another tab, an agent edit) keeps a stale copy for up to 5
+  minutes, and two people editing one set conflict on the revision. Mermaid
+  blocks keep their source as one string attribute, so two people typing in
+  one diagram overwrite each other's whole source (last write wins).
+- Epo decided (2026-10-09): **this is not a "content changed, go fetch the new
+  content" signal.** The 2026-10-07 suggestion (Go broadcasts a stateless
+  "embed {id} changed" and open editors refetch the whole item) is dropped.
+  Each edit travels as a Yjs update that carries the edit itself: these
+  characters inserted at this place in this option, this card added after that
+  one, this question moved, this mark changed. It works the way blocks and
+  text in a note work, so two people can type in the same quiz, set or diagram
+  at once and each sees the other's keystrokes merge in place. It is a large
+  change, and it makes these items natively editable inside the note. Build it
+  on the Rust/yrs server only: the Node server is deleted at the cutover, so
+  nothing here goes into `collaboration/`.
+
+### Proposal
+
+- **Where the content lives.** Keep one Yjs document per quiz and flashcard
+  set (they already have one), not inside the note's document. Permissions,
+  sharing, study state, clone and trash stay per row, and answer keys never
+  enter the note document, its projection or the public note read.
+- **Shape, finest useful grain** (answers the 2026-10-07 question of how
+  fine-grained edits should be):
+  - Every typed text is a `Y.Text` that merges per character: text blocks
+    (with their inline math text), options, accepted answers, hints, mark
+    scheme items, matching and ordering items, table cells, card front and
+    back, captions, and the Mermaid source.
+  - Lists are collections of items with stable ids: questions, parts, blocks,
+    options, cards, graph elements. Adding and removing are list operations.
+    Reordering sets an order key on the moved item (a fractional index) rather
+    than deleting and reinserting it, so an edit someone makes inside a
+    question while another person drags it is kept.
+  - Small values are one field each, last write wins: question type, marks,
+    unit, boolean answer, correct options, image `assetId`, time limit, chart
+    and graph properties, Mermaid theme and width. Changing a question's type
+    replaces only that question's answer.
+  - Correct answers point at option ids, not positions. Today `correct:
+    number[]` indexes `options`, which goes wrong when someone inserts an
+    option above.
+- **Rust server.**
+  - Check every incoming update for these documents against the schema and
+    caps before applying and relaying it (types, the 2,000-rune card back,
+    option and part counts, assets the material owns), and refuse it
+    otherwise, in the same place as the note update check. Check the item the
+    update touched, not the whole document, so typing stays cheap.
+  - Only people who may edit an item join its room; under the answer-key rule
+    they may see keys. Viewers, learners, comment-mode note collaborators and
+    public pages keep the answer-free reads.
+  - One WebSocket carries the note's document plus the document of each
+    embedded item that is on screen, so the note editor opens an embed's
+    document only while it is visible or being edited.
+  - Agent and API writes become server-side transactions that change only the
+    fields that differ (a diff of the old and new item), so they don't
+    overwrite someone typing in another question. The content endpoints stay
+    as thin wrappers over that; `expectedRevision` goes away for the editors.
+  - `materials.content` is projected on idle, as notes are. Study state is
+    already keyed by card and question id, so kept ids keep their progress.
+  - Viewers and learners see edits live too (Epo, 2026-10-09). See "Live
+    reads without answer keys" below for how.
+- **Frontend.**
+  - The quiz edit page and `FlashcardsEditor` bind each field to the shared
+    document: an input applies its change to its `Y.Text` as a minimal edit
+    (common prefix and suffix), the question `TextEditor` converts its math
+    text the same way, and remote edits move the caret correctly.
+  - The staged draft, Save, Reset and their confirmations go away. Each user
+    gets their own Undo (`Y.UndoManager` on the item's document); note Undo
+    still covers only inserting and removing the reference.
+  - Card and question images upload when picked; an unused upload is cleaned
+    by the existing asset sweep.
+  - Optional: per-field presence (who is in which question) from awareness.
+- **Mermaid.** The source becomes a `Y.Text`, in the note's document for
+  inline blocks and in the material's own room for standalone mindmaps and
+  diagrams. slate-yjs keeps element properties as plain attributes, so the
+  source needs either a nested shared text or a hidden text child of the
+  block; prototype both. It touches the node shape every note uses: the Plate
+  binding, the server validator, Go `materialdoc`, markdown import and export,
+  agent edits and projections. The code column is CodeMirror 6 (Epo,
+  2026-10-09; it landed for the standalone editor the same day, see the next
+  section), so the binding is `y-codemirror.next` or an equivalent written
+  against our trimmed CodeMirror, which also gives remote cursors.
+
+### Live reads without answer keys
+
+- Epo decided (2026-10-09) viewers and learners see quiz, set and diagram
+  edits live, and asked why that needs a separate answer-free copy instead of
+  filtering the keys out per requester.
+- Observation: filtering per requester is what reads already do
+  (`questions.LearnerView`), and it works for any one-shot read. It does not
+  work on the live stream. A Yjs update is a binary batch of items that point
+  at earlier items by id; a client that is sent an update with the answer-key
+  items cut out holds the later items as pending forever (they reference
+  items it never got) and its document stops advancing. So the server cannot
+  forward a filtered Yjs update.
+- Observation: note viewers are not live today either. View mode renders the
+  `materials.content` projection and never joins a room
+  (`openwiki/frontend/plate-editor.md`, "Viewers never join a room"), so live
+  View would be new for notes as well. Decide whether notes get the same.
+- Two ways that do filter per requester, with no third copy:
+  - **Keys in their own document** (suggested): each quiz has a content
+    document everyone who can read it joins, and a keys document (correct
+    options, accepted answers, mark schemes, hints, worked solutions) keyed by
+    question, part and option id that only editors join. Readers get real Yjs
+    updates; the server's per-document access check is the filter. Flashcard
+    sets and diagrams have no keys and need only the content document.
+  - **Filtered changes for readers**: readers don't run Yjs for these items.
+    The server turns each applied update into a plain change list ("question
+    q3 stem: insert 'abc' at 12"), drops paths under answer keys, and fans the
+    same list out to every reader of that item, computed once per update.
+- Either way, public pages and signed-out shares stay on fresh-on-open reads.
+
+### Running costs
+
+Measured bundle sizes (esbuild, minified, gzip -9, 2026-10-09): `yjs` 28.8
+KB; `yjs` with `@hocuspocus/provider` 36.9 KB; CodeMirror state and view
+70.3 KB, plus history and its keys 78.3 KB, plus the default keymap 91.5 KB;
+for scale, `mermaid.core` is 150.7 KB before any diagram chunk.
+
+- **Storage (server).**
+  - An item's stored state is its Yjs document instead of one JSON row per
+    Save. Yjs keeps an id and length for every deleted character (garbage
+    collection drops the text, not the bookkeeping), and every field, list
+    item and order key carries its own ids, so a heavily edited quiz stores
+    more than its JSON. Measure a 50-question quiz and a 200-card set before
+    and after a scripted edit session with the stress harness; the room size
+    caps still bound it, and compaction is the open "Text source history"
+    item above.
+  - The `materials.content` projection stays, as for notes. A keys document
+    (if chosen) adds one more small row per quiz.
+  - Mermaid: the source as shared text costs the same per-character
+    bookkeeping in the note's document; diagrams are a few KB.
+- **Server performance.**
+  - Memory: one loaded document per open item, two for a quiz with a keys
+    document. A note with 10 embeds on screen for an editor loads up to 10
+    (or 20) more small documents; readers add load only if they go live.
+  - CPU per update: apply, the schema check on the item the update touched,
+    relay, and with filtered changes for readers one conversion per update.
+    The check and conversion must scale with the change, not the item.
+  - Projection on idle per item, as notes; fewer whole-item replaces than
+    today's Save, which rewrites the block.
+  - No extra sockets: items share the note's connection; each opened item
+    costs one sync exchange (state vectors) on open.
+- **Client performance.**
+  - Bundle: quiz and flashcard edit and study pages that go live load Yjs and
+    the provider (36.9 KB gz); the note editor already has them. The Mermaid
+    code column loads CodeMirror (78.3 KB gz) lazily, only in Edit.
+  - Memory: one Y.Doc per item on screen plus its field bindings.
+  - Rendering: each field subscribes to its own shared value, so a keystroke
+    re-renders that field only, never the whole quiz or set.
+- **Latency.**
+  - Typing: local edits show at once with no Save round trip; others see them
+    after one relay hop, as in notes.
+  - Opening an embed or item: the projection paints first, then one sync
+    exchange before it is editable (the same handover notes use).
+  - Agent and API edits: one server transaction per write, relayed like a
+    peer's edit, instead of a refetch.
+- **Gone:** revision conflicts, staged drafts, Save, Reset and Cancel with
+  their confirmations, refetching on open for editors, and the 5-minute stale
+  copy.
+
+### For the session that picks this up
+
+- Epo decided (2026-10-09) the editing mechanics above (shared document
+  shapes, bindings, server checks, live reads) are not built in the Mermaid
+  UI session; they are this item's own work. Before starting, read the Rust
+  round plan and the current `collaboration-rs` state, and reconsider any
+  point here that conflicts with what the Rust port or other ongoing editor
+  work is doing (document layout, update checks, multiplexing, projection on
+  idle, agent edits). Bring conflicts back to Epo rather than picking a side.
+- Developer questions:
+  - Keys in their own document, or filtered changes for readers?
+  - Should note View go live too?
+  - The quiz could also render inside the same center panel on the same page,
+    like flashcards (still open from 2026-10-07).
+
+## Mermaid materials without Plate (2026-10-09)
+
+- Landed 2026-10-09 (decisions in `human/frontend/plate-editor.md`): View
+  draws the diagram without Plate; Edit is mock option A with Cancel and Save,
+  the blamed line marked in a CodeMirror source, a phone Preview toggle, and
+  the full-screen viewer on click; a diagram that cannot be drawn shows
+  "Syntax error on line N" and its marked source everywhere it is read.
+- Observation for the live-editing session: Edit still runs on the note
+  editor. `NoteEditorCore` keeps its room, saving, offline and recovery, and
+  mounts `PlateSlate` without `PlateContent`, so the full note plugin set
+  loads for one block. Save writes the whole source string by index; two
+  editors saving at once still overwrite each other. Replace this with the
+  shared-text source from the previous section, and drop the Plate editor here
+  once the block can be edited through a lighter binding.
+- An unclosed bracket mid-source makes mermaid read to the end, so the
+  marked line is the last one, not the bracket's. That is the parser's
+  position; improving it means scanning brackets ourselves.
 
 ## Typing lost after inserting an embed on UAT (2026-10-07, check later)
 
@@ -487,3 +657,21 @@ slow editor (no handoff outside maintenance since the deferred rebuild).
   pipeline never learns inserted block ids. Decide whether that partial
   marker is worth it, or wait for per-block attribution (the Rust server work
   may be the place for it).
+
+## Image size cap in Office files (2026-10-09)
+
+- Every other image upload is moving to a byte cap by plan (2 MiB Free,
+  5 MiB Pro, from `plan_limits`): under the cap the file goes in as is, over
+  it the browser shrinks it first (`src/features/quizzes/quizImage.ts`, to be
+  generalised). Office was left alone because of the ongoing work there.
+- Today an inserted image goes into the file at its original size with no
+  limit. DOCX reads the picked file into a data URL and only caps the display
+  width at 612 px (`insertImageFile` in
+  `vendor/betteroffice/packages/docx-react/src/components/DocxEditor/hooks/useFileIO.ts`);
+  PPTX gets the raw bytes from Capy's Insert › Image (`api.insertImage` in
+  `src/office-runtime/PptxEditorHost.tsx`). Check paste and drop too, in case
+  they take another path.
+- To do: apply the same cap before the bytes reach the document, using the
+  plan of whoever pays for the file. Shrink to JPEG (opaque) or PNG
+  (transparent), never WebP: older Word, PowerPoint, LibreOffice and Google
+  Docs imports cannot open WebP inside DOCX/PPTX.

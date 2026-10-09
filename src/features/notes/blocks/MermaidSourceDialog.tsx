@@ -5,12 +5,14 @@ import { z } from 'zod';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { InputError } from '@/components/ui/Input';
-import { Textarea } from '@/components/ui/TextArea';
-import { Mermaid } from '@/features/materials/Mermaid';
+import { Mermaid, mermaidFailureMessage } from '@/features/materials/Mermaid';
+import { MermaidCodeEditor } from '@/features/materials/MermaidCodeEditor';
+import type { MermaidFailure } from '@/features/materials/mermaidError';
 import type { MermaidTheme } from '@/features/materials/mermaidThemes';
 import { m } from '@/i18n';
 
-/** Source on the left, a live preview in the block's theme on the right. */
+/** Source on the left, a live preview in the block's theme on the right; the
+ * line mermaid blames is marked in the source. */
 export default function MermaidSourceDialog({
   source,
   theme,
@@ -31,8 +33,8 @@ export default function MermaidSourceDialog({
     defaultValues: { source },
     resolver: zodResolver(z.object({ source: z.string().trim().min(1) })),
   });
-  // The preview keeps the last diagram that parsed; the error shows here.
-  const [renderError, setRenderError] = useState<string | null>(null);
+  // The preview keeps the last diagram that parsed; the error shows in the source.
+  const [failure, setFailure] = useState<MermaidFailure | null>(null);
   return (
     <SimpleDialog
       footer={
@@ -65,45 +67,25 @@ export default function MermaidSourceDialog({
             control={control}
             name="source"
             render={({ field }) => (
-              <Textarea
-                {...field}
-                aria-label={m.editor_mermaid_source()}
-                className="min-h-72 flex-1 font-mono"
-                onKeyDown={(event) => {
-                  // Tab indents the source; Shift+Tab still leaves the field.
-                  if (
-                    event.key !== 'Tab' ||
-                    event.shiftKey ||
-                    event.nativeEvent.isComposing
-                  )
-                    return;
-                  event.preventDefault();
-                  const area = event.currentTarget;
-                  area.setRangeText(
-                    '  ',
-                    area.selectionStart,
-                    area.selectionEnd,
-                    'end'
-                  );
-                  field.onChange(area.value);
-                }}
+              <MermaidCodeEditor
+                className="h-72 rounded-card border border-line bg-field"
+                errorLine={failure?.line ?? null}
+                label={m.editor_mermaid_source()}
+                onChange={field.onChange}
+                value={field.value}
               />
             )}
           />
           <InputError errors={[errors.source]} />
-          {renderError != null && (
-            <p className="mt-1 whitespace-pre-wrap font-mono text-solid-error text-xs">
-              {m.mermaid_failed()}
-              {renderError ? `: ${renderError}` : ''}
+          {/* A blamed line is marked in the source instead. */}
+          {failure && failure.line == null && (
+            <p className="mt-1 font-semibold text-solid-error text-xs">
+              {mermaidFailureMessage(failure)}
             </p>
           )}
         </div>
         <div className="min-w-0">
-          <Mermaid
-            code={watch('source')}
-            onError={setRenderError}
-            theme={theme}
-          />
+          <Mermaid code={watch('source')} onError={setFailure} theme={theme} />
         </div>
       </div>
     </SimpleDialog>

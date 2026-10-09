@@ -10,11 +10,12 @@ import { useMe, useUpdateMe } from '@/api/hooks';
 import { TabHeader } from '@/components/app/tabPanel';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
-import { Spinner } from '@/components/ui/feedback';
+import { Skeleton, Spinner } from '@/components/ui/feedback';
 import { IconPicker } from '@/components/ui/IconPicker';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { clerkMessage } from '@/features/auth/clerk';
 import { useUser } from '@/features/auth/clerkHooks';
+import { PhotoEditorDialog } from '@/features/auth/PhotoEditorDialog';
 import { useProfilePhoto } from '@/features/auth/useProfilePhoto';
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
@@ -109,14 +110,18 @@ function AccountForm({ user }: { user?: ClerkUser }) {
         <div className="mb-2 flex flex-col gap-1.5">
           <InputTitle>{m.settings_avatar()}</InputTitle>
           <div className="flex items-center gap-5">
-            <Avatar
-              className="size-14 text-[22.4px]"
-              name={me?.name}
-              src={
-                photo.preview ??
-                (avatarIconId ? iconUrl(avatarIconId) : me?.avatarUrl)
-              }
-            />
+            {me ? (
+              <Avatar
+                className="size-14 text-[22.4px]"
+                name={me.name}
+                src={
+                  photo.preview ??
+                  (avatarIconId ? iconUrl(avatarIconId) : me.avatarUrl)
+                }
+              />
+            ) : (
+              <Skeleton className="size-14 shrink-0 rounded-full" />
+            )}
             <div className="flex flex-wrap gap-2">
               <Controller
                 control={control}
@@ -145,6 +150,7 @@ function AccountForm({ user }: { user?: ClerkUser }) {
                     {m.onboarding_upload()}
                   </Button>
                   <input {...photo.inputProps} disabled={isSubmitting} />
+                  <PhotoEditorDialog {...photo.editor} />
                 </>
               )}
             </div>

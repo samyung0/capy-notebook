@@ -92,15 +92,29 @@ export function MermaidView({
   caption,
   source,
   theme,
+  title,
   width,
 }: {
   caption: string;
+  /** Names the full-screen view; a block in a note leaves it to the context. */
+  title?: string;
 } & Pick<MermaidElement, 'source' | 'theme' | 'width'>) {
   const [previewing, setPreviewing] = useState(false);
+  // A diagram that cannot be drawn shows its error, with nothing to enlarge.
+  const [drawn, setDrawn] = useState(false);
   return (
     <>
-      <MediaFrame fill onOpen={() => setPreviewing(true)} width={width}>
-        <Mermaid code={source} fill={width !== undefined} theme={theme} />
+      <MediaFrame
+        fill
+        onOpen={drawn ? () => setPreviewing(true) : undefined}
+        width={width}
+      >
+        <Mermaid
+          code={source}
+          fill={width !== undefined}
+          onDrawn={setDrawn}
+          theme={theme}
+        />
       </MediaFrame>
       <MermaidPreview
         caption={caption}
@@ -108,6 +122,7 @@ export function MermaidView({
         onOpenChange={setPreviewing}
         open={previewing}
         theme={theme}
+        title={title}
       />
     </>
   );

@@ -1,9 +1,10 @@
 import { m } from '@/i18n';
 import { CopyError } from '@/lib/errors';
 
-/** The server's cap on images uploaded through a quiz (editor_assets.go). */
-export const QUIZ_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
-/** The image types the server stores for quizzes and flashcards (no SVG). */
+/** Bank figures' flat cap (server/internal/bank/assets.go); editor images take
+ * the payer's plan cap from the material (`imageMaxBytes`). */
+export const BANK_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
+/** The image types the server stores as editor images (no SVG). */
 export const IMAGE_ACCEPT =
   'image/png,image/jpeg,image/webp,image/gif,image/avif';
 const MAX_SIDE = 2000;
@@ -44,9 +45,10 @@ export function isAnimatedGif(bytes: Uint8Array) {
 /** Whether a picked image uploads as is, gets shrunk first, or is refused. */
 export function shrinkPlan(
   file: Pick<File, 'size' | 'type'>,
-  animated: boolean
+  animated: boolean,
+  maxBytes: number
 ): 'upload' | 'shrink' | 'too_large' {
-  if (file.size <= QUIZ_IMAGE_MAX_BYTES) return 'upload';
+  if (file.size <= maxBytes) return 'upload';
   return animated || !SHRINKABLE.has(file.type) ? 'too_large' : 'shrink';
 }
 
@@ -65,16 +67,16 @@ export function fitSize(width: number, height: number, maxSide = MAX_SIDE) {
   };
 }
 
-/** Returns the image to upload into a quiz: the file itself when it fits,
+/** Returns the image to upload under maxBytes: the file itself when it fits,
  * otherwise a resized WebP (transparency kept) at falling quality, or JPEG
  * (opaque) or PNG (transparent) where WebP cannot be encoded. Throws a
- * CopyError naming the 2 MB limit when nothing fits. */
-export async function fitQuizImage(file: File): Promise<File> {
+ * CopyError naming the limit when nothing fits. */
+export async function fitImage(file: File, maxBytes: number): Promise<File> {
   const animated =
     file.type === 'image/gif' &&
-    file.size > QUIZ_IMAGE_MAX_BYTES &&
+    file.size > maxBytes &&
     isAnimatedGif(new Uint8Array(await file.arrayBuffer()));
-  const plan = shrinkPlan(file, animated);
+  const plan = shrinkPlan(file, animated, maxBytes);
   if (plan === 'upload') return file;
   if (plan === 'shrink') {
     const bitmap = await createImageBitmap(file);
@@ -89,7 +91,7 @@ export async function fitQuizImage(file: File): Promise<File> {
           const blob = await canvas.convertToBlob({ quality, type });
           // A browser without the encoder returns PNG and ignores quality.
           if (blob.type !== type) return null;
-          if (blob.size <= QUIZ_IMAGE_MAX_BYTES) return blob;
+          if (blob.size <= maxBytes) return blob;
         }
         return null;
       };
@@ -99,7 +101,7 @@ export async function fitQuizImage(file: File): Promise<File> {
         (hasAlpha(context.getImageData(0, 0, width, height).data)
           ? await canvas.convertToBlob({ type: 'image/png' })
           : await encodeWithin('image/jpeg'));
-      if (blob && blob.size <= QUIZ_IMAGE_MAX_BYTES)
+      if (blob && blob.size <= maxBytes)
         return new File(
           [blob],
           `${file.name.replace(EXTENSION, '')}.${EXTENSIONS[blob.type] ?? 'png'}`,
@@ -109,5 +111,7 @@ export async function fitQuizImage(file: File): Promise<File> {
       bitmap.close();
     }
   }
-  throw new CopyError(m.quiz_image_too_large());
+  throw new CopyError(
+    m.image_too_large({ limit: `${Math.round(maxBytes / 1024 ** 2)} MB` })
+  );
 }

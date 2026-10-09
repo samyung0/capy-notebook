@@ -124,7 +124,7 @@ func (a *api) cloneMaterial(ctx context.Context, in *materialIDInput) (*material
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return materialResponse(mt, store.RoleOwner, false, false)
+	return a.materialResponse(ctx, mt, store.RoleOwner, false, false)
 }
 
 /* ------------------------------------------------------------------ explore */

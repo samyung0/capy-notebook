@@ -1,9 +1,9 @@
 import { useMutation } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
-import { uploadEditorAsset } from '@/api/editorAssets';
+import { editorImageMaxBytes, uploadEditorAsset } from '@/api/editorAssets';
 import type { Question } from '@/api/types';
 import { questionAssetIds, replaceAssetIds } from '@/features/questions/types';
-import { fitQuizImage } from './quizImage';
+import { fitImage } from '@/lib/fitImage';
 
 /** Images picked in a question dialog stay in this browser until the quiz
  * saves, so an abandoned pick never reaches storage. `pick` hands the dialog
@@ -51,7 +51,7 @@ export function usePickedImages(
     },
   });
   async function pick(file: File) {
-    const fitted = await fitQuizImage(file);
+    const fitted = await fitImage(file, await editorImageMaxBytes(quizId));
     const assetId = crypto.randomUUID();
     picked.current.set(assetId, fitted);
     previews.current.set(assetId, URL.createObjectURL(fitted));

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { type MermaidFailure, mermaidFailure } from './mermaidError';
 import type { MermaidFont } from './mermaidPresets';
 import {
   MERMAID_THEME_SWATCH,
@@ -73,13 +74,14 @@ export function renderMermaid(
 /**
  * Renders a mermaid code block to inline SVG on its theme's background. With
  * `onError` the last good diagram stays up and the parent shows the error;
- * without it a failed parse shows the message and the raw source.
+ * without it a failed parse shows `MermaidError`.
  */
 export function Mermaid({
   className,
   code,
   fill = false,
   theme,
+  onDrawn,
   onError,
 }: {
   /** Extra classes for the rendered diagram box. */
@@ -88,16 +90,20 @@ export function Mermaid({
   /** Stretch past the diagram's natural width to fill the box (a resized block). */
   fill?: boolean;
   theme?: MermaidTheme;
-  onError?: (message: string | null) => void;
+  /** Whether the current code drew; a failed one has nothing to preview. */
+  onDrawn?: (drawn: boolean) => void;
+  onError?: (failure: MermaidFailure | null) => void;
 }) {
   const [result, setResult] = useState<{
     background: string;
     svg: string;
   } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<MermaidFailure | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
+  const onDrawnRef = useRef(onDrawn);
+  onDrawnRef.current = onDrawn;
 
   useEffect(() => {
     let cancelled = false;
@@ -123,12 +129,14 @@ export function Mermaid({
         setResult(next);
         setError(null);
         onErrorRef.current?.(null);
+        onDrawnRef.current?.(true);
       })
       .catch((e: unknown) => {
         if (cancelled) return;
-        const message = e instanceof Error ? e.message : '';
-        setError(message);
-        onErrorRef.current?.(message);
+        const failure = mermaidFailure(e, code);
+        setError(failure);
+        onErrorRef.current?.(failure);
+        onDrawnRef.current?.(false);
       })
       .finally(() => renderHost.remove());
 
@@ -140,14 +148,13 @@ export function Mermaid({
   if (error != null && !onError) {
     return (
       <div ref={containerRef}>
-        <p className="mb-2 font-medium text-solid-error text-xs">
-          {m.mermaid_failed()}
-          {error ? `: ${error}` : ''}
-        </p>
-        <pre className="overflow-auto text-fg-muted text-xs">{code}</pre>
+        <MermaidError code={code} failure={error} />
       </div>
     );
   }
+  // The parent shows the error and nothing has drawn yet: an empty box.
+  if (!result && error != null)
+    return <div className="h-40" ref={containerRef} />;
   if (!result) {
     return (
       <div
@@ -201,5 +208,57 @@ export function MermaidSwatch({
         style={{ background: fill, borderColor: border }}
       />
     </span>
+  );
+}
+
+/** The line mermaid blamed, or that the diagram could not be drawn at all. */
+export function mermaidFailureMessage(failure: MermaidFailure) {
+  return failure.line == null
+    ? m.mermaid_failed()
+    : m.mermaid_syntax_error({ line: failure.line });
+}
+
+/** A diagram that cannot be drawn: the message, then its source with the
+ * blamed line marked, the way the source editor marks it. */
+export function MermaidError({
+  code,
+  failure,
+}: {
+  code: string;
+  failure: MermaidFailure;
+}) {
+  return (
+    <div className="flex flex-col gap-2.5">
+      <p className="font-semibold text-sm text-solid-error">
+        {mermaidFailureMessage(failure)}
+      </p>
+      <pre className="overflow-x-auto font-mono text-[13px] leading-[22px] [font-variant-ligatures:none]">
+        {code.split('\n').map((text, index) => {
+          const bad = index + 1 === failure.line;
+          return (
+            // Lines never reorder; the index is the line number.
+            <div className={cn('flex', bad && 'bg-tint-error')} key={index}>
+              <span
+                className={cn(
+                  'w-11 shrink-0 select-none pr-3.5 text-right text-fg-muted tabular-nums',
+                  bad && 'font-bold text-solid-error'
+                )}
+              >
+                {index + 1}
+              </span>
+              <span
+                className={cn(
+                  'pr-4',
+                  bad &&
+                    'underline decoration-solid-error decoration-wavy underline-offset-4'
+                )}
+              >
+                {text || ' '}
+              </span>
+            </div>
+          );
+        })}
+      </pre>
+    </div>
   );
 }

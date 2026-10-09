@@ -1,6 +1,7 @@
 package bank
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -43,7 +44,8 @@ func TestSummarizeProgress(t *testing.T) {
 	}
 	wrap, done := got[0], got[1]
 	if wrap.Total != 4 || wrap.Answered != 2 || wrap.Correct != 1 || !wrap.LastAnsweredAt.Equal(now.Add(-time.Hour)) ||
-		wrap.NextQuestionID == nil || *wrap.NextQuestionID != "a2" {
+		wrap.NextQuestionID == nil || *wrap.NextQuestionID != "a2" || !slices.Equal(wrap.QuestionIDs, []string{"a1", "a2", "a3", "a4"}) || wrap.LastAnsweredPosition != 4 ||
+		!slices.Equal(wrap.AnsweredPositions, []int{1, 4}) {
 		t.Fatalf("wrap = %+v next %v", wrap, wrap.NextQuestionID)
 	}
 	if done.Total != 2 || done.Answered != 2 || done.Correct != 1 || done.NextQuestionID != nil {

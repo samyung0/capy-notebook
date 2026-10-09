@@ -1,7 +1,8 @@
-export const PROFILE_PHOTO_MAX_BYTES = 10_000_000;
+// Our own pick limit: the editor crops to 512 px, so this only bounds the
+// browser's decode memory. Capy offers PNG, JPEG, and WebP uploads.
+export const PROFILE_PHOTO_MAX_BYTES = 10 * 1024 * 1024;
 export const PROFILE_PHOTO_ACCEPT = 'image/png,image/jpeg,image/webp';
 
-// Clerk's 10 MB byte limit; Capy offers PNG, JPEG, and WebP uploads.
 export function profilePhotoError(
   file: Pick<File, 'type' | 'size'>
 ): 'type' | 'size' | undefined {

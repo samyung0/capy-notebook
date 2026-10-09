@@ -2,14 +2,11 @@ import { Popover as PopoverPrimitive } from 'radix-ui';
 import {
   type ComponentProps,
   type KeyboardEvent,
+  type ReactNode,
   useId,
   useState,
 } from 'react';
-import {
-  CoverArt,
-  coverBackground,
-  useCoverPaint,
-} from '@/components/ui/CoverArt';
+import { coverBackground, useCoverPaint } from '@/components/ui/CoverArt';
 import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
 import { Popover, PopoverContent } from '@/components/ui/Popover';
@@ -36,24 +33,32 @@ const topicCount = (exam: BankExam) => {
 /**
  * An exam as a low cover strip: name, a description of at most two lines and
  * the topic count, centred against the text. Used by the panel's exam list,
- * its search and the exam switcher. `active` marks the keyboard's option.
+ * its search, the exam switcher and (with `detail` and `trailing` swapped for
+ * counts and a chevron) the switcher's trigger. `active` marks the keyboard's
+ * option.
  */
 export function ExamStrip({
   exam,
   active,
   selected,
+  detail,
+  trailing,
   className,
   ...rest
 }: {
   exam: BankExam;
   active?: boolean;
   selected?: boolean;
+  /** Replaces the description. */
+  detail?: ReactNode;
+  /** Replaces the topic count. */
+  trailing?: ReactNode;
 } & Omit<ComponentProps<'button'>, 'children'>) {
   const paint = useCoverPaint(exam.id, exam.label, exam.cover);
   return (
     <button
       className={cn(
-        'group relative flex min-h-15 w-full items-end overflow-hidden rounded-button px-3 pt-4.5 pb-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-tint-accent-1-fg',
+        'group relative flex w-full items-end overflow-hidden rounded-button px-3 pt-3 pb-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-tint-accent-1-fg',
         paint.light ? 'text-[#1d1d1f]' : 'text-white',
         active &&
           (paint.light
@@ -86,11 +91,11 @@ export function ExamStrip({
           </span>
           <span
             className={cn(
-              't-meta line-clamp-2 leading-[1.3]',
+              'line-clamp-2 text-xs leading-[1.3]',
               paint.light ? 'text-[#4b4b4b]' : 'text-white/85'
             )}
           >
-            {exam.description}
+            {detail ?? exam.description}
           </span>
         </span>
         <span
@@ -101,7 +106,7 @@ export function ExamStrip({
               : 'text-white/90 [text-shadow:0_1px_3px_rgb(0_0_0/0.55)]'
           )}
         >
-          {topicCount(exam)}
+          {trailing ?? topicCount(exam)}
         </span>
         {selected && <Icon className="size-4 shrink-0" name="tick" />}
       </span>
@@ -138,7 +143,6 @@ export function ExamPicker({
   exam: BankExam;
   onPick: (id: string) => void;
 }) {
-  const paint = useCoverPaint(exam.id, exam.label, exam.cover);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
@@ -177,42 +181,13 @@ export function ExamPicker({
       open={open}
     >
       <PopoverPrimitive.Trigger asChild>
-        <button
+        <ExamStrip
           aria-label={m.question_ui_switch_exam({ exam: exam.label })}
-          className="group relative flex h-[76px] w-full items-end gap-3 overflow-hidden rounded-button px-3 pb-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-tint-accent-1-fg"
+          detail={examCounts(exam)}
+          exam={exam}
           ref={setAnchor}
-          type="button"
-        >
-          <CoverArt
-            className="transition-[filter] group-hover:brightness-105"
-            paint={paint}
-          />
-          <span
-            className={cn(
-              'relative min-w-0 flex-1',
-              paint.light ? 'text-[#1d1d1f]' : 'text-white'
-            )}
-          >
-            <span className="block truncate font-bold text-[1.0625rem] leading-snug">
-              {exam.label}
-            </span>
-            <span
-              className={cn(
-                't-meta block truncate',
-                paint.light ? 'text-[#4b4b4b]' : 'text-white/85'
-              )}
-            >
-              {examCounts(exam)}
-            </span>
-          </span>
-          <Icon
-            className={cn(
-              'relative size-4 shrink-0 self-center',
-              paint.light ? 'text-[#4b4b4b]' : 'text-white'
-            )}
-            name="chevronDown"
-          />
-        </button>
+          trailing={<Icon className="size-4" name="chevronDown" />}
+        />
       </PopoverPrimitive.Trigger>
       <PopoverContent
         align="start"

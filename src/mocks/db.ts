@@ -1499,7 +1499,12 @@ const ownerCapabilities = {
 type MaterialMetrics = 'contentBytes' | 'maxDepth' | 'nodeCount';
 
 /** Wire fields with an obvious default for authored content. */
-type MaterialDefaults = 'isOwner' | 'position' | 'revision' | 'updatedAt';
+type MaterialDefaults =
+  | 'imageMaxBytes'
+  | 'isOwner'
+  | 'position'
+  | 'revision'
+  | 'updatedAt';
 
 export type MaterialDraft = Omit<Material, MaterialMetrics | MaterialDefaults> &
   Partial<Pick<Material, MaterialDefaults>>;
@@ -1525,6 +1530,7 @@ export function makeMaterial(draft: MaterialDraft): Material {
     nodeCount: 0,
   };
   return {
+    imageMaxBytes: PLAN_LIMITS.free.imageMaxBytes,
     isOwner: true,
     position: nextContentPosition(draft.workspaceId, draft.chapterId),
     revision: 1,

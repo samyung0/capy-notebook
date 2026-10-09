@@ -47,7 +47,7 @@ PostgreSQL advisory/row lock in the sidecar.
 - `view`: static `MaterialPreview`; no token, WebSocket, awareness, or editor;
 - `edit`: live editable Plate with a `write` room token.
 
-Files and materials remember their last View/Edit mode separately in localStorage, keyed by item kind and ID. Explicit URL modes take precedence; otherwise the saved mode is used, with View as the default for an uncached item. Viewers only get `view`. The header toggles View/Edit with the current mode icon and identical styling in both states, for materials and uploaded files at every viewport size. Workspace and standalone document URLs accept `mode=view|edit`; a successful toggle replaces that query parameter, so reload and shared links retain the mode. File transitions retain their save/export gates, and a failed transition keeps the editor and URL in their previous mode.
+Files and materials remember their last View/Edit mode separately in localStorage, keyed by item kind and ID. Explicit URL modes take precedence; otherwise the saved mode is used, with View as the default for an uncached item. Viewers only get `view`. The header toggles View/Edit showing the mode it switches to (the Edit icon and label while viewing, View while editing; pressed still means editing) with identical styling in both states, for materials and uploaded files at every viewport size. Workspace and standalone document URLs accept `mode=view|edit`; a successful toggle replaces that query parameter, so reload and shared links retain the mode. File transitions retain their save/export gates, and a failed transition keeps the editor and URL in their previous mode.
 
 The permission boundary is layered:
 
@@ -334,8 +334,9 @@ right after that block with the caret following them (`VoidBlockPastePlugin`
 in `pastePlugins.ts`); Slate alone drops a fragment inserted into a void. Edits
 save through the quiz or flashcard content endpoint, so note undo covers only
 inserting and removing the reference. Another open editor of the note sees an
-embed's change when its query refetches (see the freshness item in
-`todo-office.md`). Go and the sidecar reject inline `quiz`/`flashcards`
+embed's change when its query refetches (live editing through each item's
+own Yjs document is planned; see "Live editing for quizzes, flashcard sets and
+Mermaid" in `todo-office.md`). Go and the sidecar reject inline `quiz`/`flashcards`
 nodes in a note and references anywhere but the top level. A markdown fence
 imports as a pending reference (`materialId: ''` plus the fence body in
 `pending`); the mounted editor claims it in the shared document
@@ -391,8 +392,31 @@ caption is typed in a field under the diagram that rewrites the
 selection inside it maps to the caption element; `fixMermaidSelection` moves
 such points onto the caption text. The edit dialog shows source beside a live
 preview in the block's theme (Tab indents by two spaces; deleting lives on the
-toolbar); a parse error appears under the source while the
-preview keeps the last diagram that parsed.
+toolbar). The source is a trimmed CodeMirror 6 (`MermaidCodeEditor.tsx`: state,
+view and history only, ~78 KB gzipped, loaded with the dialog or the editor,
+ligatures off) with line numbers; the line mermaid blames gets a tinted
+background, a wavy underline and a red number, while the preview keeps the last
+diagram that parsed. `mermaidFailure` reads that line out of the parser message
+(blank lines trimmed off the top added back, an end-of-source error clamped onto
+the last line); a failure with no line says "This diagram could not be drawn".
+Wherever a diagram is only read (View, note blocks, shared pages) a failure
+shows `MermaidError`: "Syntax error on line N", then the source with that line
+marked the same way.
+
+Standalone mindmaps and diagrams render without Plate. View
+(`MermaidMaterialView`) draws the block's `MermaidView` straight from the
+material content, looking as the static renderer did. Edit keeps the note
+editor's room, saving, offline and recovery machinery, but `NoteEditorCore`
+mounts `PlateSlate` (change reporting, selectors, checkpoint scheduling)
+without `PlateContent` and renders `MermaidMaterialEditor`: a bar with the
+theme dropdown, Cancel and Save, then source and preview side by side. On
+phones one shows at a time behind a Preview/Code toggle in the bar. Changes
+are a draft until Save writes source, theme and caption into the block by
+index (path lookups by node need the rendered editor), so the block keeps its
+one-string source and the last Save wins; per-keystroke editing is planned in
+`todo-office.md`. Clicking any diagram preview opens `MermaidPreview`, the
+same full-screen viewer images use, titled with the material; a diagram that
+has not drawn (a syntax error) opens nothing, in View, note blocks and Edit.
 
 Chart and graph nodes store their question block under `block`, an optional
 `width`, and a single empty text child; graphs export their SVG before saving. Inline

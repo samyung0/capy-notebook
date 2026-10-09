@@ -91,6 +91,111 @@ const practice = Array.from({ length: 34 }, (_, index) => {
   ];
   return question;
 });
+// More topics for the /qb landing, short-answer drills answered hours to
+// days ago: started ones (one answered out of order) and finished ones.
+const DRILLS = [
+  {
+    answered: 12,
+    exam: 'HKDSE',
+    id: 'quadratic-equations',
+    label: 'Quadratic equations',
+    size: 20,
+    subject: 'Mathematics',
+  },
+  {
+    answered: 18,
+    exam: 'HKDSE',
+    id: 'kinematics',
+    label: 'Kinematics',
+    size: 30,
+    subject: 'Physics',
+  },
+  {
+    answered: [1, 2, 3, 7, 8],
+    exam: 'HKDSE',
+    id: 'probability',
+    label: 'Probability',
+    size: 24,
+    subject: 'Mathematics',
+  },
+  {
+    answered: 9,
+    exam: 'IELTS',
+    id: 'true-false-not-given',
+    label: 'True, false, not given',
+    size: 18,
+    subject: 'Academic Reading',
+  },
+  {
+    answered: 5,
+    exam: 'HKDSE',
+    id: 'trigonometry',
+    label: 'Trigonometry',
+    size: 16,
+    subject: 'Mathematics',
+  },
+  {
+    answered: 3,
+    exam: 'IELTS',
+    id: 'sentence-completion',
+    label: 'Sentence completion',
+    size: 12,
+    subject: 'Academic Reading',
+  },
+  {
+    answered: 10,
+    exam: 'HKDSE',
+    id: 'circles',
+    label: 'Circles',
+    size: 10,
+    subject: 'Mathematics',
+  },
+  {
+    answered: 9,
+    exam: 'HKDSE',
+    id: 'waves',
+    label: 'Waves',
+    size: 9,
+    subject: 'Physics',
+  },
+  {
+    answered: 12,
+    exam: 'HKDSE',
+    id: 'statistics',
+    label: 'Statistics',
+    size: 12,
+    subject: 'Mathematics',
+  },
+  {
+    answered: 6,
+    exam: 'IELTS',
+    id: 'summary-completion',
+    label: 'Summary completion',
+    size: 6,
+    subject: 'Academic Reading',
+  },
+  {
+    answered: 8,
+    exam: 'HKDSE',
+    id: 'coordinate-geometry',
+    label: 'Coordinate geometry',
+    size: 8,
+    subject: 'Mathematics',
+  },
+];
+const drillQuestions = DRILLS.flatMap((drill) =>
+  Array.from({ length: drill.size }, (_, index) => {
+    const question = exampleQuestion(`bank-${drill.id}-${index + 1}`, {
+      accepted: [String(index + 2)],
+      type: 'short',
+    });
+    question.stem = [
+      { text: `${drill.label}, question ${index + 1}.`, type: 'text' },
+    ];
+    question.parts[0].blocks = [{ text: `Type ${index + 2}.`, type: 'text' }];
+    return { drill, index, question };
+  })
+);
 const details = new Map([
   ...samples.map((question, index): [string, BankDetail] => [
     question.id,
@@ -126,6 +231,23 @@ const details = new Map([
       updatedAt: new Date().toISOString(),
     },
   ]),
+  ...drillQuestions.map(({ drill, index, question }): [string, BankDetail] => [
+    question.id,
+    {
+      editor: true,
+      examLabel: drill.exam,
+      position: index + 1,
+      question,
+      reviewedAt: null,
+      reviewedBy: '',
+      reviewerName: '',
+      sources: [],
+      subjectLabel: drill.subject,
+      topicId: drill.id,
+      topicLabel: drill.label,
+      updatedAt: new Date().toISOString(),
+    },
+  ]),
 ]);
 const topicRows = (id: string): BankRow[] =>
   [...details.values()]
@@ -146,12 +268,30 @@ const topicRows = (id: string): BankRow[] =>
       reviewerName: detail.reviewerName,
     }));
 // The learner's latest score per question and when it was checked, seeded
-// so the landing lists a topic to continue and one to summarize.
+// so the landing lists seven topics to continue and seven to summarize.
 const answersById = new Map<string, { at: number; score: number }>([
   ['bank-quadratic', { at: Date.now() - 86_400_000, score: 1 }],
   ['bank-practice-2', { at: Date.now() - 3_600_000, score: 1 }],
   ['bank-practice-3', { at: Date.now() - 3_000_000, score: 0 }],
   ['bank-practice-4', { at: Date.now() - 2_400_000, score: 0.5 }],
+  // Drills: started ones an hour further back each, finished ones a day; a
+  // third of the answers wrong.
+  ...DRILLS.flatMap((drill, order) =>
+    (typeof drill.answered === 'number'
+      ? Array.from({ length: drill.answered }, (_, i) => i + 1)
+      : drill.answered
+    ).map((position): [string, { at: number; score: number }] => [
+      `bank-${drill.id}-${position}`,
+      {
+        at:
+          Date.now() -
+          (order + 2) *
+            (drill.answered === drill.size ? 86_400_000 : 3_600_000) +
+          position * 1000,
+        score: position % 3 ? 1 : 0,
+      },
+    ])
+  ),
 ]);
 /** Mirrors the server's progress row for one topic. */
 function topicProgress(topicId: string): BankTopicProgress | null {
@@ -168,11 +308,14 @@ function topicProgress(topicId: string): BankTopicProgress | null {
   const detail = details.get(rows[0].id) as BankDetail;
   return {
     answered: done.length,
+    answeredPositions: done.map((answer) => answer.index + 1),
     correct: done.filter((answer) => answer.score >= 1).length,
     examId: detail.examLabel.toLowerCase(),
     examLabel: detail.examLabel,
     lastAnsweredAt: new Date(last.at).toISOString(),
+    lastAnsweredPosition: last.index + 1,
     nextQuestionId: next?.id ?? null,
+    questionIds: rows.map((row) => row.id),
     subjectId: detail.subjectLabel.toLowerCase(),
     subjectLabel: detail.subjectLabel,
     topicId,
@@ -194,6 +337,15 @@ const ownerAccess = {
   },
   role: 'owner' as const,
 };
+const drillTopics = (exam: string, subject: string) =>
+  DRILLS.filter(
+    (drill) => drill.exam === exam && drill.subject === subject
+  ).map((drill) => ({
+    id: drill.id,
+    label: drill.label,
+    reviewed: 0,
+    total: drill.size,
+  }));
 export const questionBankHandlers = [
   http.get('/api/bank/syllabus', () => {
     const syllabus: BankSyllabus = {
@@ -228,7 +380,13 @@ export const questionBankHandlers = [
                   ).length,
                   total: practice.length,
                 },
+                ...drillTopics('HKDSE', 'Mathematics'),
               ],
+            },
+            {
+              id: 'physics',
+              label: 'Physics',
+              topics: drillTopics('HKDSE', 'Physics'),
             },
           ],
         },
@@ -257,6 +415,7 @@ export const questionBankHandlers = [
                   ).length,
                   total: 1,
                 },
+                ...drillTopics('IELTS', 'Academic Reading'),
               ],
             },
           ],
@@ -408,7 +567,12 @@ export const questionBankHandlers = [
     return HttpResponse.json(body);
   }),
   http.get('/api/bank/progress', () => {
-    const topics = ['mensuration', 'practice', 'reading-headings']
+    const topics = [
+      'mensuration',
+      'practice',
+      'reading-headings',
+      ...DRILLS.map((drill) => drill.id),
+    ]
       .flatMap((id) => topicProgress(id) ?? [])
       .sort((a, b) => b.lastAnsweredAt.localeCompare(a.lastAnsweredAt));
     return HttpResponse.json({ topics });

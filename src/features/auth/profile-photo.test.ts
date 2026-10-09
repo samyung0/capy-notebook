@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PROFILE_PHOTO_MAX_BYTES, profilePhotoError } from './profile-photo';
 
 describe('profile photo validation', () => {
-  it('accepts the supported formats at Clerk’s exact byte limit', () => {
+  it('accepts the supported formats at the 10 MiB limit', () => {
     for (const type of ['image/png', 'image/jpeg', 'image/webp']) {
       expect(
         profilePhotoError({ size: PROFILE_PHOTO_MAX_BYTES, type })

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { m } from '../i18n';
 
 // The bank mock seeds Area practice with questions 2–4 answered (right,
-// wrong, half right) and Mensuration fully answered.
+// wrong, half right) as the latest topic, plus older started and finished ones.
 
 // Check answer reveals the key, shows the quiz review and marks the list;
 // Try again clears the answer.
@@ -50,14 +50,18 @@ test('bank checks an answer and marks the topic list', async ({ page }) => {
 // copy into a new quiz named in the picker.
 test('bank continues, filters and copies to a quiz', async ({ page }) => {
   await page.goto('/qb');
-  await expect(page.getByText(m.study_of({ done: 3, total: 34 }))).toBeVisible({
-    timeout: 30_000,
-  });
   await expect(
-    page.getByRole('button', { name: m.question_ui_summary() }),
-    'Mensuration is fully answered'
+    page.getByText(
+      m.question_ui_progress_line({ answered: 3, correct: 1, total: 34 })
+    )
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(
+    page.getByRole('button', { name: m.question_ui_summary() }).first(),
+    'fully answered topics are listed as finished'
   ).toBeVisible();
-  await page.getByRole('button', { name: m.question_ui_continue() }).click();
+  await page
+    .getByRole('button', { name: m.question_ui_continue_at({ position: 5 }) })
+    .click();
   await expect(page).toHaveURL(/\/qb\/practice\/bank-practice-5$/);
 
   await page.getByRole('button', { name: m.workspaces_filter() }).click();

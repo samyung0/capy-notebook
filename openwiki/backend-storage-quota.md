@@ -14,7 +14,7 @@ This page is the accounting contract.
 
 ## Product plan limits
 
-`plan_limits` in `server/migrations/0001_init.sql` is the canonical backend
+`plan_limits` (`server/migrations/0001_init.sql`, image cap added in `0069`) is the canonical backend
 catalog for every numeric limit that may vary by subscription plan:
 
 | Limit                           |                       Free |                        Pro |
@@ -26,6 +26,7 @@ catalog for every numeric limit that may vary by subscription plan:
 | Owned workspaces                |         Unlimited (`NULL`) |         Unlimited (`NULL`) |
 | Files per workspace             |                        100 |                        100 |
 | Files per upload/import request |                         20 |                         20 |
+| One uploaded image              |                      2 MiB |                      5 MiB |
 
 Material history retains at most one snapshot per UTC day. A Pro-to-Free
 downgrade permanently deletes snapshots 4 through 30 in the same transaction
@@ -86,7 +87,8 @@ Storage limits are **100 MB** free and **1 GB** Pro. These use decimal bytes:
 100,000,000 and 1,000,000,000 respectively.
 
 Per-file **source upload** caps are separate from that quota and from editor-asset
-purpose limits (images 20 MB, audio 100 MB, …). They follow the **workspace
+purpose limits (images take the plan image cap, audio 100 MB, …); an image
+uploaded as a source takes the source cap, not the image cap. They follow the **workspace
 owner's** plan, create-only (no retroactive invalidation): **10 MiB** free,
 **30 MiB** Pro (from the startup plan snapshot). GPU/LLM cost is metered
 elsewhere. `GET /api/source-upload-policy?workspaceId=` returns the cap the
@@ -303,16 +305,20 @@ Editor assets upload through the material that uses them
 Every asset names that material (`editor_assets.material_id`). A workspace
 material's asset also names the workspace and is charged to its owner; a
 standalone note, quiz or flashcard set's asset is charged to the material
-owner, the only account that can edit it. Images uploaded through a quiz or a
-flashcard set are capped at 2 MB before any bytes are reserved
-(`studyImageMaxBytes`); the quiz and flashcard editors shrink a larger image first (`src/features/quizzes/quizImage.ts`: long side
-to 2000 px, WebP at falling quality, animated GIFs refused) and holds it in
+owner, the only account that can edit it. Every editor image (note, quiz,
+flashcard set, and a pasted copy through the children pass) is capped by the
+plan image cap of the account that pays, checked before any bytes are
+reserved; the material response carries it as `imageMaxBytes`. The browser
+uploads an image under the cap unchanged and shrinks a larger one first
+(`src/lib/fitImage.ts`, called from `uploadEditorAsset`: long side to 2000 px,
+WebP at falling quality, JPEG or PNG where the browser has no WebP encoder,
+animated GIFs refused). The quiz and flashcard editors shrink at pick time and hold the image in
 the browser under a local id, previewed from an object URL, until Save
 uploads the referenced ones and swaps in their asset ids
 (`src/routes/QuizEdit.tsx`, `src/features/flashcards/FlashcardsEditor.tsx`; a
 card's image is `image: {assetId}` on its `flashcard` node); a picked image the user abandons never reaches
-storage, and a failed upload fails the save. Notes keep the
-20 MB image limit and bank figures keep their own. Every material content
+storage, and a failed upload fails the save. Bank figures have a flat 4 MiB
+cap ([question-bank.md](question-bank.md)). Every material content
 write (the PATCH and the collaboration projection behind live editing, agent
 and bank-copy edits) trashes, in its transaction, the material's `ready`
 assets the new content no longer references and that completed more than 60

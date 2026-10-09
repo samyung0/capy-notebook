@@ -40,7 +40,7 @@ function WorkspacesSection() {
   const revealRef = useLoadingReveal(isLoading);
   return (
     <section>
-      <div className="mt-3 mb-3 flex items-center justify-between">
+      <div className="mb-3 flex items-center justify-between sm:mt-3">
         <h2 className="t-large-card-title">{m.dashboard_workspaces()}</h2>
         <Button
           asChild
@@ -107,7 +107,7 @@ export default function Dashboard() {
     <div className="flex h-full min-h-full flex-col gap-1.5 sm:gap-2.5 lg:flex-row">
       <Panel
         className="order-last min-h-0 flex-1 rounded-button lg:order-first lg:rounded-card-xl"
-        sectionClassName="gap-5 2xl:gap-6 p-4 sm:p-6"
+        sectionClassName="gap-4 sm:gap-5 2xl:gap-6 p-4 sm:p-6"
       >
         <Greeting />
         {/* <CloudConnectBanner /> */}
@@ -121,7 +121,7 @@ export default function Dashboard() {
         <TopInsetBar />
         <Panel
           className="hidden min-h-0 flex-1 lg:flex"
-          sectionClassName="scroll-fade-y min-h-0 flex-1 gap-2.5 px-2 py-5 [--scroll-fade-bottom-padding:--spacing(5)]"
+          sectionClassName="scroll-fade-y min-h-0 flex-1 gap-2.5 px-2 pt-5 pb-6 [--scroll-fade-bottom-padding:--spacing(6)]"
         >
           <RecentItemsCard />
         </Panel>

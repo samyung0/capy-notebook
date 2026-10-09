@@ -24,6 +24,7 @@ export interface Material {
   contentBytes: number;
   createdAt: string;
   id: string;
+  imageMaxBytes: number;
   isOwner: boolean;
   kind: MaterialKind;
   maxDepth: number;

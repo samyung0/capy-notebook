@@ -178,6 +178,9 @@ options stay plain strings; no images or rich content go inside them.
 
 `POST /api/bank/assets` checks the editor grant, validates the bytes and uses
 server environment credentials. The local publisher has the same validation.
+Figures are capped at a flat 4 MiB (SVG 256 KiB), with no plan because the
+platform pays; the bank editor shrinks a larger raster image in the browser
+first (`uploadBankAsset`, `src/lib/fitImage.ts`).
 `BANK_ASSETS_URL` is the allowed public base URL for stored bank asset references;
 it does not restrict uploads to one developer machine. Credentials stay on the
 server or publisher. Existing private workspace editor assets are separate.
@@ -416,7 +419,7 @@ storage.
 | --- | --- |
 | `POST /api/bank/questions/{id}/check` | `{answers}`, the learner's answers by part id. Grades them on the server (open parts with Jev), upserts the question's topic, hash, score (`correct / total`, 0 to 1) and time, and returns `{correct, total, question}`, that one question with its key and awards; 404 when unknown or retracted. |
 | `GET /api/bank/topics/{topicId}/marks` | `{marks: {questionId: score}}` for the topic list: the latest score of each answered current question. |
-| `GET /api/bank/progress` | `{topics}`: every topic with at least one answered current question, most recent answer first. Each carries exam, subject and topic ids and labels, `total` (current questions), `answered`, `correct` (score 1), `lastAnsweredAt` and `nextQuestionId`: the first unanswered question after the most recently answered one in topic order, wrapping to the start, or null when every question is answered. |
+| `GET /api/bank/progress` | `{topics}`: every topic with at least one answered current question, most recent answer first. Each carries exam, subject and topic ids and labels, `total` (current questions), `answered`, `correct` (score 1), `lastAnsweredAt`, `nextQuestionId`: the first unanswered question after the most recently answered one in topic order, wrapping to the start, or null when every question is answered, `questionIds` (the topic's current questions in order), `answeredPositions` (1-based places of the answered ones) and `lastAnsweredPosition` (the place of the most recent answer), which the landing's progress map draws and links. |
 | `POST /api/bank/copy` | `{questionIds (1–20), workspaceId, quizId \| quizName, chapterId? \| chapterName?}` returns `{workspaceId, quizId}`. Below. |
 
 A current question is one that is not retracted and whose stored hash equals
@@ -482,13 +485,48 @@ unanswered), and one line under the topic heading reads "N correct · M to
 retry" (M counts scores below 1), both from the marks route. Edit mode shows
 no marks; its rows keep the reviewed label on the muted line.
 
-With no topic open, View mode's main panel lists the progress route's topics
-in the Learning Review tab's table (`BankLanding`): topic with exam and
-subject, "answered of total", correct count, and Continue (opens
-`nextQuestionId`) or, once every question is answered, Summary (the topic at
-its top). With none, or in Edit mode, it keeps Choose a topic; phones list the
-topics in the page under the table. Continue exists only on the landing (Epo,
-2026-10-06); there is no review session.
+With no topic open, View mode's main panel shows the progress route's topics
+(`BankLanding`). Continue: the most recently answered started topic (the route
+lists newest first) as a hand-drawn progress map (`TrailMap`), with its exam
+and subject above, then its name, "answered of total · correct" and an accent
+"Continue at question N" link (opens `nextQuestionId`); the other started
+topics follow as rows with a small trail (`MiniTrail`) and a Continue link.
+Finished: a divider list with the score, the date of the last answer and a
+Summary link (the topic at its top). With none, or in Edit mode, it keeps
+Choose a topic; phones list the topics in the page under it. Continue exists
+only on the landing (Epo, 2026-10-06); there is no review session.
+
+The map (`src/features/questions/trailMap/`) is generated in the browser from
+the topic id and question count, so a topic looks the same on every visit and
+device and adding questions only extends its end: each part (biome order,
+each landmark, each question-width of scatter, sky, horizon) has its own
+seeded stream. One stop per question, 60 map units apart, then a summit. The
+map is a run of biomes 7 to 12 questions long (forest, meadow, farm, village,
+lake, river, hills, camp) whose borders blend over 80 units; each scatters
+drawn element templates (placed with `<use>`) by its own mix and has at most
+one landmark (windmill with fields, cabins and a well, lake, river with a
+bridge, lookout tower, tent with a campfire). Every question-width holds at
+most 5 elements (grass, pebbles, flowers and butterflies count half) and a
+visual weight of 22 (footprint times ink or fill share; water and fields count
+1.6 times). The `DENSITY` labels come from `measure()`, each biome alone over
+30 seeds: under 6 sparse, under 11.5 medium, else dense; the order never puts
+two dense biomes side by side or three sparse in a row, and has a dense one at
+least every fourth. Answered stops are filled; the next question's stop is hollow inside a ring
+with a "Q5 next" tag, the trail is solid up to it, and the map is faint from
+six questions past the next question or the last attempted one, whichever is
+later (going back to an earlier question pulls the full ink back). Answered
+stops are filled wherever they are drawn. Hovering a stop shows "Q7" (the app Tooltip) and
+clicking opens that question in the page. The map is `aria-hidden` and the
+stop buttons are out of the tab order: the line under the map and the
+Continue link carry the same information and action for keyboard and screen
+reader users, and the topic's question list reaches every question. The generator
+returns pieces with a left and right edge; the view draws only those within
+120 units of the visible stretch, tracked in whole question-widths, and the
+faint and full-ink copies each hold only their side of the cut-off. The scroller hides its scrollbar like `Tabs` and fades an edge only while there is more to scroll that way (`scroll-fade-x`). Colours
+mix from the theme's text and card tokens (`trailMap.css`, `tm-` classes: a
+scoped selector does not reach elements placed with `<use>`). Mocks:
+`artifacts/2026-10-09-bank-path-mocks.html`,
+`artifacts/2026-10-09-bank-map-gallery.html`.
 
 Every topic has the list pages' filter (`FilterPopover` from
 `src/components/app/ListToolbar.tsx`) beside Edit mode's All/Unreviewed

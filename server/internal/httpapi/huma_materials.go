@@ -109,7 +109,8 @@ func (a *api) assertMaterialOwner(ctx context.Context, matID string) error {
 // api.readOnly) strips editing where a frozen account makes it read-only, and
 // full (see api.ownerFull) strips content editing while the storage owner is
 // at its limit.
-func materialResponse(
+func (a *api) materialResponse(
+	ctx context.Context,
 	material store.Material,
 	role store.WorkspaceRole,
 	readOnly, full bool,
@@ -126,6 +127,9 @@ func materialResponse(
 	body, err := apimodel.FromMaterial(material)
 	if err != nil {
 		return nil, materialContentError(err)
+	}
+	if body.ImageMaxBytes, err = a.s.ImageMaxBytes(ctx, material.OwnerUserID); err != nil {
+		return nil, hErr(err)
 	}
 	return &materialOutput{Body: body}, nil
 }
@@ -196,7 +200,7 @@ func (a *api) createStandaloneMaterial(ctx context.Context, in *createStandalone
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return materialResponse(res, store.RoleOwner, false, false)
+	return a.materialResponse(ctx, res, store.RoleOwner, false, false)
 }
 
 func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*materialOutput, error) {
@@ -250,7 +254,7 @@ func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*mat
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return materialResponse(res, role, false, false)
+	return a.materialResponse(ctx, res, role, false, false)
 }
 
 func (a *api) getMaterial(ctx context.Context, in *materialIDInput) (*materialOutput, error) {
@@ -273,7 +277,7 @@ func (a *api) getMaterial(ctx context.Context, in *materialIDInput) (*materialOu
 	if err != nil {
 		return nil, hErr(err)
 	}
-	out, err := materialResponse(res, role, readOnly, full)
+	out, err := a.materialResponse(ctx, res, role, readOnly, full)
 	// The workspace reads a quiz to view it; editing loads GET /api/quizzes/{id}/edit.
 	if err == nil && res.Kind == "quiz" {
 		materialdoc.LearnerQuiz(out.Body.Content)
@@ -351,7 +355,7 @@ func (a *api) updateMaterialSharing(
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return materialResponse(material, store.RoleOwner, readOnly, full)
+	return a.materialResponse(ctx, material, store.RoleOwner, readOnly, full)
 }
 
 // deleteMaterial moves the material into the trash (see deleteFile).
@@ -377,7 +381,7 @@ func (a *api) createEmbeddedMaterial(ctx context.Context, in *createEmbeddedMate
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return materialResponse(mt, role, false, false)
+	return a.materialResponse(ctx, mt, role, false, false)
 }
 
 func (a *api) deleteMaterial(ctx context.Context, in *trashMaterialInput) (*Empty, error) {

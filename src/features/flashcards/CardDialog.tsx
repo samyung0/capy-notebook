@@ -11,9 +11,9 @@ import { SimpleDialog } from '@/components/ui/Dialog';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/TextArea';
 import type { FlashcardContent } from '@/features/materials/blocks';
-import { IMAGE_ACCEPT } from '@/features/quizzes/quizImage';
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
+import { IMAGE_ACCEPT } from '@/lib/fitImage';
 import { textLength } from '@/lib/textLength';
 import { CardImage, CardSides } from './CardView';
 

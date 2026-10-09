@@ -575,10 +575,13 @@ export function VisualBlockElement(props: PlateElementProps) {
   );
 }
 
-function MermaidThemeMenu({
+export function MermaidThemeMenu({
+  compactOnPhones = false,
   theme,
   onTheme,
 }: {
+  /** Only the swatch below `sm`, where the bar is short of room. */
+  compactOnPhones?: boolean;
   theme: MermaidTheme;
   onTheme: (theme: MermaidTheme) => void;
 }) {
@@ -594,7 +597,12 @@ function MermaidThemeMenu({
           tooltipSide="top"
         >
           <MermaidSwatch theme={theme} />
-          <span className="translate-y-px pl-1">
+          <span
+            className={cn(
+              'translate-y-px pl-1',
+              compactOnPhones && 'hidden sm:inline'
+            )}
+          >
             {MERMAID_THEME_LABEL[theme]()}
           </span>
         </ToolbarButton>
@@ -623,6 +631,8 @@ export function MermaidElement(props: PlateElementProps) {
   const [editing, setEditing] = useState(false);
   const [captioning, setCaptioning] = useState(false);
   const [previewing, setPreviewing] = useState(false);
+  // A diagram that cannot be drawn shows its error, with nothing to enlarge.
+  const [drawn, setDrawn] = useState(false);
   const captionRef = useRef<HTMLInputElement>(null);
   const onMouseDown = useSelectOnMouseDown(props.element);
   const locate = () => editor.api.findPath(props.element);
@@ -636,10 +646,9 @@ export function MermaidElement(props: PlateElementProps) {
   return (
     <PlateElement {...props} className="relative my-3">
       <div contentEditable={false} onMouseDown={onMouseDown}>
-        <StandaloneMaterialTitle kinds={['mindmap', 'diagram']} />
         <MediaFrame
           fill
-          onOpen={() => setPreviewing(true)}
+          onOpen={drawn ? () => setPreviewing(true) : undefined}
           onWidthChange={readOnly ? undefined : (width) => update({ width })}
           toolbar={
             readOnly ? undefined : (
@@ -667,6 +676,7 @@ export function MermaidElement(props: PlateElementProps) {
           <Mermaid
             code={element.source}
             fill={element.width !== undefined}
+            onDrawn={setDrawn}
             theme={theme}
           />
         </MediaFrame>

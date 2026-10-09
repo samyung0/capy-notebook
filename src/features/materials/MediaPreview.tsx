@@ -128,31 +128,31 @@ export function MediaPreview({
   );
 }
 
-/** A diagram block's preview, titled with its material when it stands alone. */
+/** A diagram block's preview, titled with its material when it stands alone
+ * or `title` names it (a mindmap or diagram material's own page). */
 export function MermaidPreview({
   caption,
   code,
   onOpenChange,
   open,
   theme,
+  title,
 }: {
   caption?: string;
   code: string;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   theme?: MermaidTheme;
+  title?: string;
 }) {
   const material = useMaterialRender();
+  const named = title ?? (material?.isStandalone ? material.title : undefined);
   return (
     <MediaPreview
       caption={caption}
       onOpenChange={onOpenChange}
       open={open}
-      title={
-        material?.isStandalone && material.title.trim()
-          ? material.title
-          : m.editor_mermaid()
-      }
+      title={named?.trim() ? named : m.editor_mermaid()}
     >
       {/* Height drives the size; the width follows from the SVG's viewBox. */}
       <Mermaid

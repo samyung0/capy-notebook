@@ -7,6 +7,7 @@ import {
   Plate,
   PlateContainer,
   PlateContent,
+  PlateSlate,
   useEditorRef,
   useEditorSelector,
   usePlateEditor,
@@ -53,6 +54,7 @@ import { editIncidentReporter } from '@/lib/editIncidents';
 import { editorAiEnabled } from '@/lib/features';
 import { AiMenu } from './ai/AiMenu';
 import { NoteBlockDialogsProvider } from './blocks/dialogContext';
+import { MermaidMaterialEditor } from './blocks/MermaidMaterialEditor';
 import {
   CollaborationProvider,
   commentDecorationRangesForEntry,
@@ -1117,6 +1119,25 @@ export function NoteEditorCore({
     resendPendingCheckpoints,
     saveImmediately,
   ]);
+
+  // A standalone mindmap or diagram edits its one block in its own source
+  // and preview view; the room, saving and recovery stay the note editor's.
+  if (material.kind === 'mindmap' || material.kind === 'diagram')
+    return (
+      <Plate editor={editor} onValueChange={scheduleCheckpoint}>
+        {handshaking ? (
+          <FileLoading message={m.editor_connecting()} />
+        ) : (
+          // PlateSlate is what reports changes (onValueChange, selectors);
+          // PlateContent would mount it with the editable surface.
+          <PlateSlate>
+            <div className="flex min-h-0 flex-1 flex-col" inert={offlineLimit}>
+              <MermaidMaterialEditor title={material.title} />
+            </div>
+          </PlateSlate>
+        )}
+      </Plate>
+    );
 
   return (
     <NoteBlockDialogsProvider noteId={material.id}>

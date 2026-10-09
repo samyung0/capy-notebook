@@ -215,6 +215,9 @@ type Material struct {
 	Provenance *store.Provenance `json:"provenance,omitempty"`
 	// ParentMaterialID names the note a quiz or flashcard set is embedded in.
 	ParentMaterialID string `json:"parentMaterialId,omitempty"`
+	// ImageMaxBytes caps one uploaded image by the plan of the account that
+	// pays for this material's assets; the browser shrinks larger images.
+	ImageMaxBytes int64 `json:"imageMaxBytes"`
 }
 
 // MaterialUpdateResult is the lightweight acknowledgement returned by

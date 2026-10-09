@@ -15,7 +15,9 @@ import (
 	"strings"
 )
 
-const AssetMaxBytes = 20 << 20
+// AssetMaxBytes is flat: the platform pays for bank figures, not a plan
+// (human/question-bank.md 2026-10-09). The browser shrinks larger images.
+const AssetMaxBytes = 4 << 20
 const SVGMaxBytes = 256 << 10
 const ImmutableCache = "public, max-age=31536000, immutable"
 
@@ -48,7 +50,7 @@ func UploadAsset(ctx context.Context, writer AssetWriter, base string, data []by
 
 func ValidateAsset(data []byte) (string, string, error) {
 	if len(data) == 0 || len(data) > AssetMaxBytes {
-		return "", "", errors.New("asset must be between 1 byte and 20 MiB")
+		return "", "", errors.New("asset must be between 1 byte and 4 MiB")
 	}
 	mime := http.DetectContentType(data)
 	switch mime {

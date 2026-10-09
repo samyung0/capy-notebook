@@ -12,6 +12,7 @@ import {
   type Style,
   THEMES,
   type Theme,
+  themeSwatch,
   useTheme,
 } from '@/theme/theme';
 import { ButtonCard } from '../ui/ButtonCard';
@@ -21,10 +22,12 @@ import { InputTitle } from '../ui/Input';
 import { PanelHeader } from './layout';
 
 const ThemeChooser = ({
+  style,
   selected,
   onChange,
   supportedThemes,
 }: {
+  style: Style;
   selected: Theme;
   onChange: (color: Theme) => void;
   supportedThemes: Theme[];
@@ -48,7 +51,7 @@ const ThemeChooser = ({
               isSelected &&
                 'ring-2 ring-action ring-offset-2 ring-offset-surface'
             )}
-            style={{ background: t.displayColor }}
+            style={{ background: themeSwatch(style, c) }}
           />
           <span
             className={cn(
@@ -247,6 +250,7 @@ export function ThemeDrawer({
                     <ThemeChooser
                       onChange={setTheme}
                       selected={theme}
+                      style={style}
                       supportedThemes={
                         STYLES.find((s) => s.value === style)
                           ?.supportedThemes || []

@@ -99,7 +99,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
       </Link>
       {menuItems.length > 0 && (
         // Lifts with the card, which rises on hover (Card interactive).
-        <div className="absolute top-3 right-3 z-50 transition-transform duration-100 ease-(--motion-ease-smooth-out) group-has-[[data-slot=card]:hover]/ws:-translate-y-0.5">
+        <div className="absolute top-3 right-3 z-50 transition-transform duration-320 ease-(--motion-ease-bounce-strong) group-has-[[data-slot=card]:hover]/ws:-translate-y-1 group-has-[[data-slot=card]:hover]/ws:ease-(--motion-ease-smooth-out)">
           <Menu
             align="start"
             iconContainerClassName={cn(

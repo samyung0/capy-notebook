@@ -2441,6 +2441,9 @@ components:
           type: string
         id:
           type: string
+        imageMaxBytes:
+          format: int64
+          type: integer
         isOwner:
           type: boolean
         kind:
@@ -2502,6 +2505,7 @@ components:
         - revision
         - isOwner
         - capabilities
+        - imageMaxBytes
       type: object
     MaterialAuthor:
       additionalProperties: false
@@ -5021,6 +5025,12 @@ components:
           description: Current questions with a result for their current content
           format: int64
           type: integer
+        answeredPositions:
+          description: 1-based positions of the answered questions, in topic order
+          items:
+            format: int64
+            type: integer
+          type: array
         correct:
           description: Answered questions whose latest score is full marks
           format: int64
@@ -5032,10 +5042,18 @@ components:
         lastAnsweredAt:
           format: date-time
           type: string
+        lastAnsweredPosition:
+          format: int64
+          type: integer
         nextQuestionId:
           description: The next unanswered question after the most recently answered one, in topic order and wrapping to the start; null once every question is answered
           nullable: true
           type: string
+        questionIds:
+          description: The topic's current questions in topic order
+          items:
+            type: string
+          type: array
         subjectId:
           type: string
         subjectLabel:
@@ -5059,7 +5077,10 @@ components:
         - answered
         - correct
         - lastAnsweredAt
+        - lastAnsweredPosition
         - nextQuestionId
+        - questionIds
+        - answeredPositions
       type: object
     TransferWorkspaceReq:
       additionalProperties: false

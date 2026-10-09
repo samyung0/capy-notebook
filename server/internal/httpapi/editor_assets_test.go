@@ -9,7 +9,7 @@ func TestValidateEditorAssetMetadata(t *testing.T) {
 	t.Run("accepts matching image metadata", func(t *testing.T) {
 		name, ext, contentType, err := validateEditorAssetMetadata(reserveEditorAssetRequest{
 			Name: "photo.JPEG", Purpose: "image", SizeBytes: 1024, ContentType: "image/jpeg",
-		}, 100_000_000, false)
+		}, 100_000_000, 2<<20)
 		if err != nil {
 			t.Fatalf("validateEditorAssetMetadata: %v", err)
 		}
@@ -35,39 +35,39 @@ func TestValidateEditorAssetMetadata(t *testing.T) {
 			Name: "notes.txt", Purpose: "file", SizeBytes: 0, ContentType: "text/plain",
 		}},
 		{"rejects oversized image", reserveEditorAssetRequest{
-			Name: "photo.png", Purpose: "image", SizeBytes: (20 << 20) + 1, ContentType: "image/png",
+			Name: "photo.png", Purpose: "image", SizeBytes: (2 << 20) + 1, ContentType: "image/png",
 		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, _, _, err := validateEditorAssetMetadata(tt.in, 100_000_000, false); err == nil {
+			if _, _, _, err := validateEditorAssetMetadata(tt.in, 100_000_000, 2<<20); err == nil {
 				t.Fatal("metadata was accepted")
 			}
 		})
 	}
 }
 
-// Images uploaded through a quiz stop at 2 MB; notes keep the image limit and a
-// quiz's other purposes keep theirs.
-func TestValidateEditorAssetMetadataQuizImageCap(t *testing.T) {
+// Images stop at the payer's plan cap (2 MiB Free, 5 MiB Pro); other purposes
+// keep their own limits.
+func TestValidateEditorAssetMetadataImageCap(t *testing.T) {
 	image := func(size int64) reserveEditorAssetRequest {
 		return reserveEditorAssetRequest{Name: "figure.png", Purpose: "image", SizeBytes: size, ContentType: "image/png"}
 	}
 	for _, tc := range []struct {
 		name string
 		in   reserveEditorAssetRequest
-		quiz bool
+		cap  int64
 		ok   bool
 	}{
-		{"quiz image at 2 MB", image(2 << 20), true, true},
-		{"quiz image over 2 MB", image(2<<20 + 1), true, false},
-		{"note image over 2 MB", image(2<<20 + 1), false, true},
-		{"quiz pdf over 2 MB", reserveEditorAssetRequest{
+		{"free image at 2 MiB", image(2 << 20), 2 << 20, true},
+		{"free image over 2 MiB", image(2<<20 + 1), 2 << 20, false},
+		{"pro image over 2 MiB", image(2<<20 + 1), 5 << 20, true},
+		{"pdf over the image cap", reserveEditorAssetRequest{
 			Name: "paper.pdf", Purpose: "pdf", SizeBytes: 3 << 20, ContentType: "application/pdf",
-		}, true, true},
+		}, 2 << 20, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, _, _, err := validateEditorAssetMetadata(tc.in, 100_000_000, tc.quiz)
+			_, _, _, err := validateEditorAssetMetadata(tc.in, 100_000_000, tc.cap)
 			if (err == nil) != tc.ok {
 				t.Fatalf("err = %v, want ok=%v", err, tc.ok)
 			}

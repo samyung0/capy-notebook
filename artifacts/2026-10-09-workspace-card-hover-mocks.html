@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workspace card hover motion</title>
+<style>
+  :root {
+    --page: #f6f5f1; --surface: #ffffff; --line: #e6e3dc; --fg: #1d1d1f; --muted: #6b6b6b;
+    --shadow-card: 0 1px 2px rgba(0,0,0,.04), 0 4px 12px rgba(0,0,0,.05);
+    --shadow-lift: 0 2px 4px rgba(0,0,0,.05), 0 12px 28px rgba(0,0,0,.10);
+    --motion-ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --motion-ease-spring: cubic-bezier(0.34, 1.25, 0.64, 1);
+    --ease-bounce-strong: cubic-bezier(0.34, 3.85, 0.64, 1);
+    --ease-bounce: cubic-bezier(0.34, 1.36, 0.64, 1);
+    --ease-toggle: cubic-bezier(0.34, 1.35, 0.64, 1);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --page: #1b1b1d; --surface: #252528; --line: #34343a; --fg: #ececec; --muted: #a0a0a6;
+      --shadow-card: 0 1px 2px rgba(0,0,0,.25), 0 8px 24px rgba(0,0,0,.2);
+      --shadow-lift: 0 2px 6px rgba(0,0,0,.3), 0 16px 36px rgba(0,0,0,.35); }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--fg); font: 14px/1.45 system-ui, -apple-system, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  h2 { font-size: 16px; margin: 0; }
+  p { margin: 4px 0; }
+  .muted { color: var(--muted); }
+  code { font-size: 12px; background: rgba(127,127,127,.12); padding: 1px 4px; border-radius: 4px; }
+  .bar { display: flex; gap: 8px; align-items: center; margin: 12px 0 20px; flex-wrap: wrap; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--surface); color: var(--fg); padding: 6px 12px; border-radius: 8px; cursor: pointer; }
+  section { margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .tag { font-weight: 700; font-size: 15px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; margin-top: 14px; }
+
+  .card { position: relative; display: block; border: 1px solid var(--line); border-radius: 14px; background: var(--surface);
+    padding: 18px; overflow: hidden; cursor: pointer; box-shadow: none; text-decoration: none; color: inherit;
+    transition-property: translate, scale, rotate, box-shadow; }
+  .card:active { scale: 0.98; }
+  .cover { position: absolute; inset: 0; transition: filter 150ms; }
+  .card:hover .cover, .card.lift .cover { filter: brightness(1.05); }
+  .wash { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(0,0,0,.55), rgba(0,0,0,.35)); }
+  .body { position: relative; display: grid; grid-template-columns: auto 1fr; gap: 0 12px; align-items: center; }
+  .icon { width: 40px; height: 40px; border-radius: 9px; display: grid; place-items: center; font-size: 22px; background: rgba(255,255,255,.9); }
+  .title { font-weight: 650; font-size: 16px; padding-right: 28px; }
+  .meta { grid-column: span 2; margin-top: 10px; font-size: 12.5px; }
+  .chips { grid-column: span 2; margin-top: 10px; display: flex; gap: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11.5px; padding: 1px 7px; border-radius: 999px; background: rgba(127,127,127,.14); }
+  .dark .title, .dark .meta { color: #fff; } .dark .meta { color: rgba(255,255,255,.85); }
+  .dark .chip { background: rgba(255,255,255,.18); color: #fff; }
+  .kebab { position: absolute; top: 12px; right: 12px; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 6px; font-size: 16px; }
+  .dark .kebab { color: #fff; }
+
+  /* A: today */
+  .vA .card { transition-duration: 100ms; transition-timing-function: var(--motion-ease-smooth-out); }
+  .vA .card:hover, .vA .card.lift { translate: 0 -2px; box-shadow: var(--shadow-card); }
+
+  /* B: transitions.dev Avatar group hover, exact values */
+  .vB .card { transition-duration: 320ms; transition-timing-function: var(--ease-bounce-strong); }
+  .vB .card:hover, .vB .card.lift { translate: 0 -4px; box-shadow: var(--shadow-lift);
+    transition-timing-function: var(--motion-ease-smooth-out); }
+
+  /* C: B with the badge-pop curve on the way in too */
+  .vC .card { transition-duration: 320ms; transition-timing-function: var(--ease-bounce-strong); }
+  .vC .card:hover, .vC .card.lift { translate: 0 -4px; box-shadow: var(--shadow-lift);
+    transition-duration: 250ms; transition-timing-function: var(--ease-bounce); }
+
+  /* D: transitions.dev Toggle double bounce on the way in, B's return */
+  @keyframes lift-double-bounce {
+    0% { translate: 0 0; }
+    55% { translate: 0 calc(-4px - 2px); }
+    80% { translate: 0 calc(-4px + 1px); }
+    100% { translate: 0 -4px; }
+  }
+  .vD .card { transition-duration: 320ms; transition-timing-function: var(--ease-bounce-strong); }
+  .vD .card:hover, .vD .card.lift { translate: 0 -4px; box-shadow: var(--shadow-lift);
+    animation: lift-double-bounce 350ms var(--ease-toggle) both; }
+
+  .card:active, .card.lift:active { scale: 0.98; transition-duration: 100ms; transition-timing-function: var(--motion-ease-smooth-out); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .card { transition-property: box-shadow !important; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Workspace card hover motion</h1>
+  <p class="muted">Hover each card. Today the card lifts 2px in 100ms with <code>--motion-ease-smooth-out</code>. Our motion tokens only have <code>--motion-ease-spring</code> (one small overshoot, used by the menu morph); Every variant uses values from the transitions.dev library, all 350ms or shorter. B and D need <code>--ease-bounce-strong</code> and C needs <code>--ease-bounce</code>, both from the transitions-polish token scale. All variants keep the 0.98 press, the ⋮ menu lifts with the card, and reduced motion keeps only the shadow.</p>
+  <div class="bar"><button id="toggle" type="button">Lift all (for touch screens)</button></div>
+
+  <section class="vA"><div class="head"><span class="tag">A</span><h2>Today</h2><span class="muted">-2px, 100ms, smooth-out, both ways</span></div><div class="grid"></div></section>
+  <section class="vB"><div class="head"><span class="tag">B</span><h2>Avatar group hover recipe</h2><span class="muted">transitions.dev values: -4px, 320ms; in <code>--ease-smooth-out</code>, out <code>--ease-bounce-strong</code> (springs past rest and settles)</span></div><div class="grid"></div></section>
+  <section class="vC"><div class="head"><span class="tag">C</span><h2>Bounce both ways</h2><span class="muted">B, but the lift uses <code>--ease-bounce</code> (badge pop) in 250ms, so it pops up as well as down</span></div><div class="grid"></div></section>
+  <section class="vD"><div class="head"><span class="tag">D</span><h2>Double bounce in</h2><span class="muted">lift reuses the Toggle recipe: 350ms, overshoot 2px then settle back 1px; out as B</span></div><div class="grid"></div></section>
+</main>
+<script>
+  var cards = [
+    { name: 'Cell biology', icon: '🧬', meta: '6 chapters · 24 files', tags: ['biology', 'ib'], cover: 'linear-gradient(135deg,#3f7d5c,#7fb38a)' },
+    { name: 'Calculus II', icon: '∫', meta: '4 chapters · 12 files', tags: ['math'], cover: '' },
+    { name: 'Organic chemistry', icon: '⚗️', meta: '9 chapters · 31 files', tags: ['chem', 'exam'], cover: 'linear-gradient(135deg,#7a4fa3,#c18ad8)' }
+  ];
+  document.querySelectorAll('.grid').forEach(function (grid) {
+    cards.forEach(function (c) {
+      var a = document.createElement('a');
+      a.className = 'card' + (c.cover ? ' dark' : '');
+      a.href = '#';
+      a.innerHTML = (c.cover ? '<div class="cover" style="background:' + c.cover + '"><div class="wash"></div></div>' : '') +
+        '<div class="kebab">⋮</div><div class="body"><div class="icon">' + c.icon + '</div><div class="title">' + c.name +
+        '</div><div class="meta muted">' + c.meta + '</div><div class="chips">' +
+        c.tags.map(function (t) { return '<span class="chip"># ' + t + '</span>'; }).join('') + '</div></div>';
+      a.addEventListener('click', function (e) { e.preventDefault(); });
+      grid.appendChild(a);
+    });
+  });
+  document.getElementById('toggle').addEventListener('click', function () {
+    document.querySelectorAll('.card').forEach(function (c) { c.classList.toggle('lift'); });
+  });
+</script>
+</body>
+</html>

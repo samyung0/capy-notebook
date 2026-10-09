@@ -62,7 +62,8 @@ export function Card({
         cardVariants({ border, radius, theme }),
         raised && 'bg-overlay shadow-pop',
         interactive &&
-          'cursor-pointer transition-all duration-100 ease-(--motion-ease-smooth-out) hover:-translate-y-0.5 hover:shadow-card active:scale-[0.98]',
+          // transitions.dev Avatar group hover: a direct lift, a bouncy return.
+          'cursor-pointer transition-all duration-320 ease-(--motion-ease-bounce-strong) hover:-translate-y-1 hover:shadow-card hover:ease-(--motion-ease-smooth-out) active:scale-[0.98] active:duration-100',
         (!hoverBackgroundColorChange || !interactive) && 'hover:bg-unset', //todo
         className
       )}

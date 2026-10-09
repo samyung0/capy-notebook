@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  fitSize,
-  hasAlpha,
-  isAnimatedGif,
-  QUIZ_IMAGE_MAX_BYTES,
-  shrinkPlan,
-} from './quizImage';
+import { fitSize, hasAlpha, isAnimatedGif, shrinkPlan } from './fitImage';
 
 // One graphic control extension followed by an image descriptor.
 const frame = [0x21, 0xf9, 0x04, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x2c];
@@ -17,21 +11,26 @@ const gif = (frames: number) =>
   ]);
 
 describe('shrinkPlan', () => {
-  const over = QUIZ_IMAGE_MAX_BYTES + 1;
-  it('uploads an image within 2 MB as is, even animated', () => {
-    expect(
-      shrinkPlan({ size: QUIZ_IMAGE_MAX_BYTES, type: 'image/gif' }, true)
-    ).toBe('upload');
+  const max = 2 * 1024 * 1024;
+  const over = max + 1;
+  it('uploads an image within the cap as is, even animated', () => {
+    expect(shrinkPlan({ size: max, type: 'image/gif' }, true, max)).toBe(
+      'upload'
+    );
   });
   it('shrinks a larger raster image', () => {
-    expect(shrinkPlan({ size: over, type: 'image/png' }, false)).toBe('shrink');
-    expect(shrinkPlan({ size: over, type: 'image/gif' }, false)).toBe('shrink');
+    expect(shrinkPlan({ size: over, type: 'image/png' }, false, max)).toBe(
+      'shrink'
+    );
+    expect(shrinkPlan({ size: over, type: 'image/gif' }, false, max)).toBe(
+      'shrink'
+    );
   });
   it('refuses a larger animated GIF or SVG', () => {
-    expect(shrinkPlan({ size: over, type: 'image/gif' }, true)).toBe(
+    expect(shrinkPlan({ size: over, type: 'image/gif' }, true, max)).toBe(
       'too_large'
     );
-    expect(shrinkPlan({ size: over, type: 'image/svg+xml' }, false)).toBe(
+    expect(shrinkPlan({ size: over, type: 'image/svg+xml' }, false, max)).toBe(
       'too_large'
     );
   });

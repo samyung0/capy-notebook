@@ -64,7 +64,7 @@ GRANT SELECT (
 GRANT SELECT (
   plan_tier, storage_limit_bytes, credit_limit_micros,
   source_file_max_bytes, owned_workspace_limit,
-  files_per_workspace, files_per_upload
+  files_per_workspace, files_per_upload, image_max_bytes
 ) ON plan_limits TO capy_ops;
 GRANT SELECT (
   id, actor_user_id, trace_id, surface, paid_by, status,

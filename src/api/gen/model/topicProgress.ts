@@ -8,16 +8,21 @@
 export interface TopicProgress {
   /** Current questions with a result for their current content */
   answered: number;
+  /** 1-based positions of the answered questions, in topic order */
+  answeredPositions: number[];
   /** Answered questions whose latest score is full marks */
   correct: number;
   examId: string;
   examLabel: string;
   lastAnsweredAt: string;
+  lastAnsweredPosition: number;
   /**
      * The next unanswered question after the most recently answered one, in topic order and wrapping to the start; null once every question is answered
      * @nullable
      */
   nextQuestionId: string | null;
+  /** The topic's current questions in topic order */
+  questionIds: string[];
   subjectId: string;
   subjectLabel: string;
   topicId: string;

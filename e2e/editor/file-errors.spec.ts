@@ -249,7 +249,11 @@ test('User scenarios opens seeded material errors in the workspace and survives 
       'mock-material-unreadable',
       m.material_decode_title(),
     ],
-    ['Broken diagram', 'mock-material-diagram', m.mermaid_failed()],
+    [
+      'Broken diagram',
+      'mock-material-diagram',
+      m.mermaid_syntax_error({ line: 2 }),
+    ],
   ]) {
     await panel.locator('summary').click();
     await panel.getByRole('button', { exact: true, name: label }).click();
@@ -257,13 +261,13 @@ test('User scenarios opens seeded material errors in the workspace and survives 
       new RegExp(`/workspaces/ws_bio\\?material=${id}$`)
     );
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(
-      page.getByText(message, { exact: id !== 'mock-material-diagram' })
-    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(message, { exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
   }
   await page.reload();
   await expect(
-    page.getByText(m.mermaid_failed(), { exact: false })
+    page.getByText(m.mermaid_syntax_error({ line: 2 }), { exact: true })
   ).toBeVisible({ timeout: 30_000 });
 });
 

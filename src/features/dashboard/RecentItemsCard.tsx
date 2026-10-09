@@ -74,7 +74,7 @@ export function RecentItemsCard() {
   const isLoading = filesLoading || materialsLoading || workspacesLoading;
 
   return (
-    <div className="flex h-full flex-col gap-3">
+    <div className="flex min-h-full shrink-0 flex-col gap-3">
       <PanelHeader title={m.dashboard_recent()} />
       {paused ? (
         <QueryPausedState className="h-full min-h-full flex-1" />

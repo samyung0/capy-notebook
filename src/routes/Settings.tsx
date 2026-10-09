@@ -27,7 +27,7 @@ import { StudyPreferencesSection } from '@/features/settings/StudyPreferencesSec
 import { m } from '@/i18n';
 import { features } from '@/lib/features';
 import type { SettingsTab } from '@/lib/tabSearch';
-import { STYLES, THEMES, useTheme } from '@/theme/theme';
+import { STYLES, THEMES, themeSwatch, useTheme } from '@/theme/theme';
 
 function CustomizationsTab() {
   const { style, theme, setStyle, setTheme } = useTheme();
@@ -79,7 +79,7 @@ function CustomizationsTab() {
                   <span className="flex items-center gap-2">
                     <span
                       className="size-4 shrink-0 rounded-full border border-line-strong"
-                      style={{ background: t.displayColor }}
+                      style={{ background: themeSwatch(style, t.value) }}
                     />
                     {t.value === 'latte'
                       ? m.mode_light()

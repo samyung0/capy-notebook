@@ -18,6 +18,7 @@ import { errorCopy } from '@/lib/errors';
 import { iconUrl } from '@/lib/icon-catalog';
 import { textLength } from '@/lib/textLength';
 import { clerkMessage } from './clerk';
+import { PhotoEditorDialog } from './PhotoEditorDialog';
 import { useProfilePhoto } from './useProfilePhoto';
 
 /** First-run profile dialog. Opens once per Clerk account, keyed on
@@ -189,6 +190,7 @@ export function OnboardingDialog() {
             </div>
             <p className="mt-1.5 text-fg-muted">{m.onboarding_upload_hint()}</p>
             <input {...photo.inputProps} disabled={busy} />
+            <PhotoEditorDialog {...photo.editor} />
           </div>
         </div>
         {photo.error && <InputError errors={[{ message: photo.error }]} />}

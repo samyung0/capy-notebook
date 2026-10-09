@@ -54,7 +54,12 @@ type TopicProgress struct {
 	Answered       int       `json:"answered" doc:"Current questions with a result for their current content"`
 	Correct        int       `json:"correct" doc:"Answered questions whose latest score is full marks"`
 	LastAnsweredAt time.Time `json:"lastAnsweredAt"`
-	NextQuestionID *string   `json:"nextQuestionId" doc:"The next unanswered question after the most recently answered one, in topic order and wrapping to the start; null once every question is answered"`
+	// 1-based place of the most recently answered question.
+	LastAnsweredPosition int     `json:"lastAnsweredPosition"`
+	NextQuestionID       *string `json:"nextQuestionId" doc:"The next unanswered question after the most recently answered one, in topic order and wrapping to the start; null once every question is answered"`
+	// The landing's progress map draws one stop per question and links each.
+	QuestionIDs       []string `json:"questionIds" nullable:"false" doc:"The topic's current questions in topic order"`
+	AnsweredPositions []int    `json:"answeredPositions" nullable:"false" doc:"1-based positions of the answered questions, in topic order"`
 }
 
 // topicQuestions is a topic's labels and its current questions' hashes in
@@ -125,6 +130,7 @@ func summarize(topics []topicQuestions, results []store.BankResult) []TopicProgr
 	out := []TopicProgress{}
 	for _, t := range topics {
 		answered := make([]bool, len(t.ids))
+		t.AnsweredPositions = []int{}
 		last := -1
 		for i, id := range t.ids {
 			r, ok := byID[id]
@@ -133,6 +139,7 @@ func summarize(topics []topicQuestions, results []store.BankResult) []TopicProgr
 			}
 			answered[i] = true
 			t.Answered++
+			t.AnsweredPositions = append(t.AnsweredPositions, i+1)
 			if r.Score >= 1 {
 				t.Correct++
 			}
@@ -144,6 +151,8 @@ func summarize(topics []topicQuestions, results []store.BankResult) []TopicProgr
 			continue
 		}
 		t.Total = len(t.ids)
+		t.LastAnsweredPosition = last + 1
+		t.QuestionIDs = t.ids
 		for step := 1; step < len(t.ids); step++ {
 			if i := (last + step) % len(t.ids); !answered[i] {
 				t.NextQuestionID = &t.ids[i]

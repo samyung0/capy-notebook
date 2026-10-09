@@ -158,7 +158,7 @@ function DefaultBanner() {
   const image = useMemo(() => mixedSymbolsArt('dashboard'), []);
   return (
     <div
-      className="relative min-h-fit shrink-0 overflow-hidden rounded-card-lg p-5.5 text-white"
+      className="relative min-h-fit shrink-0 overflow-hidden rounded-card-lg px-4 py-3.5 text-white sm:p-5.5"
       style={{
         backgroundColor: COVER_COLORS[0],
         backgroundImage: image,
@@ -170,9 +170,9 @@ function DefaultBanner() {
         aria-hidden
         className="absolute inset-0 bg-linear-to-r from-black/30 to-transparent"
       />
-      <div className="relative flex flex-col gap-1 xl:max-w-[80%]">
+      <div className="relative flex flex-col gap-0.5 sm:gap-1 xl:max-w-[80%]">
         <p className="t-subtitle font-bold">{m.dashboard_banner_title()}</p>
-        <p className="mt-1 text-white/90">{m.dashboard_banner_body()}</p>
+        <p className="text-white/90 sm:mt-1">{m.dashboard_banner_body()}</p>
       </div>
     </div>
   );

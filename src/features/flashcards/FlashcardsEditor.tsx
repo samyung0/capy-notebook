@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
-import { uploadEditorAsset } from '@/api/editorAssets';
+import { editorImageMaxBytes, uploadEditorAsset } from '@/api/editorAssets';
 import { useUpdateFlashcardContent } from '@/api/hooks';
 import type { Flashcard } from '@/api/types';
 import { BlockToolbar } from '@/components/ui/BlockToolbar';
@@ -11,8 +11,8 @@ import { Icon } from '@/components/ui/Icon';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import type { FlashcardContent } from '@/features/materials/blocks';
 import { AssetUrlContext } from '@/features/materials/MediaAssetView';
-import { fitQuizImage } from '@/features/quizzes/quizImage';
 import { m } from '@/i18n';
+import { fitImage } from '@/lib/fitImage';
 import { uid } from '@/lib/id';
 import { CardDialog, type CardFaces } from './CardDialog';
 import { CardGrid, CardTile } from './CardView';
@@ -126,7 +126,7 @@ export function FlashcardsEditor({
   const kept = draft.filter(written);
 
   async function pickImage(file: File) {
-    const fitted = await fitQuizImage(file);
+    const fitted = await fitImage(file, await editorImageMaxBytes(setId));
     const localId = crypto.randomUUID();
     picked.current.set(localId, fitted);
     previews.current.set(localId, URL.createObjectURL(fitted));

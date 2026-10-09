@@ -1,0 +1,197 @@
+/*
+ * Question bank progress map. Strokes and colour washes mix from the theme's
+ * text and card colours, so every theme and dark mode works without its own
+ * values. Classes carry a tm- prefix instead of a scope.
+ */
+.trail-map,
+.trail-mini {
+  --map-ink: color-mix(in oklab, var(--text-muted) 80%, var(--surface-card-bg));
+  --map-ink-soft: color-mix(
+    in oklab,
+    var(--text-muted) 45%,
+    var(--surface-card-bg)
+  );
+  --map-hatch: color-mix(
+    in oklab,
+    var(--text-muted) 35%,
+    var(--surface-card-bg)
+  );
+  --map-trail: var(--solid-error);
+  --map-water: color-mix(in oklab, #5b9bd5 70%, var(--surface-card-bg));
+  --wash: var(--surface-card-bg);
+}
+
+/* Plain class selectors: elements placed with <use> do not match ancestor-scoped ones. */
+:is(
+  .tm-ink,
+  .tm-ink-soft,
+  .tm-ink-hatch,
+  .tm-ink-thin,
+  .tm-water,
+  .tm-trail-ink,
+  .tm-crop,
+  .tm-path-edge,
+  .tm-trail-rest,
+  .tm-trail-done,
+  .tm-you-ring
+) {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tm-ink {
+  stroke: var(--map-ink);
+  stroke-width: 1.3;
+}
+.tm-ink-soft {
+  stroke: var(--map-ink-soft);
+  stroke-width: 1.1;
+}
+.tm-ink-hatch {
+  stroke: var(--map-hatch);
+  stroke-width: 1;
+}
+.tm-ink-thin {
+  stroke: var(--map-ink);
+  stroke-width: 0.8;
+}
+.tm-water {
+  stroke: var(--map-water);
+  stroke-width: 1.2;
+}
+.tm-trail-ink {
+  stroke: var(--map-trail);
+  stroke-width: 1.8;
+}
+.tm-crop {
+  stroke: color-mix(in oklab, #a8955d 60%, var(--wash));
+  stroke-width: 1.1;
+}
+
+.tm-leaf {
+  fill: color-mix(in oklab, #8cc47a 30%, var(--wash));
+}
+.tm-waterfill {
+  fill: color-mix(in oklab, #7db7e8 30%, var(--wash));
+}
+.tm-canvas {
+  fill: color-mix(in oklab, #f0b968 35%, var(--wash));
+}
+.tm-wood {
+  fill: color-mix(in oklab, #c99464 35%, var(--wash));
+}
+.tm-roof {
+  fill: color-mix(in oklab, #e08a70 40%, var(--wash));
+}
+.tm-door {
+  fill: color-mix(in oklab, #9c6b45 55%, var(--wash));
+}
+.tm-window {
+  fill: color-mix(in oklab, #f5cf4a 45%, var(--wash));
+}
+.tm-stone {
+  fill: color-mix(in oklab, var(--text-muted) 18%, var(--wash));
+}
+.tm-hay {
+  fill: color-mix(in oklab, #e6c04f 45%, var(--wash));
+}
+.tm-field {
+  fill: color-mix(in oklab, #e2c97a 30%, var(--wash));
+}
+:is(.tm-feather, .tm-wool, .tm-tail, .tm-spot) {
+  fill: color-mix(in oklab, #fff 88%, var(--wash));
+}
+.tm-fur {
+  fill: color-mix(in oklab, #c8935c 50%, var(--wash));
+}
+.tm-face {
+  fill: color-mix(in oklab, var(--text-primary) 80%, var(--wash));
+}
+.tm-eye {
+  fill: var(--text-primary);
+}
+.tm-beak {
+  fill: #f0a04b;
+}
+.tm-petal {
+  fill: color-mix(in oklab, #ec8fa3 75%, var(--wash));
+}
+.tm-reedhead {
+  fill: color-mix(in oklab, #8a6440 75%, var(--wash));
+}
+.tm-cap {
+  fill: color-mix(in oklab, #df5e4d 80%, var(--wash));
+}
+.tm-fishfill {
+  fill: color-mix(in oklab, #ef9a4f 70%, var(--wash));
+}
+.tm-flame {
+  opacity: 0.9;
+  fill: #f0a04b;
+}
+.tm-flame-in {
+  fill: color-mix(in oklab, #f7d774 70%, var(--wash));
+}
+.tm-flag {
+  fill: var(--map-trail);
+}
+.tm-sign {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  fill: var(--map-ink);
+}
+
+.tm-path-edge {
+  stroke: var(--map-ink-soft);
+  stroke-width: 1;
+  stroke-dasharray: 14 5 30 6;
+}
+.tm-trail-rest {
+  opacity: 0.8;
+  stroke: var(--map-trail);
+  stroke-width: 2.6;
+  stroke-dasharray: 7 7;
+}
+.tm-trail-done {
+  stroke: var(--map-trail);
+  stroke-width: 3.2;
+}
+.tm-stop {
+  fill: var(--surface-card-bg);
+  stroke: var(--map-trail);
+  stroke-width: 2.4;
+}
+.tm-stop-done {
+  fill: var(--map-trail);
+  stroke: var(--map-trail);
+  stroke-width: 2.4;
+}
+.tm-num {
+  font-size: 10.5px;
+  font-weight: 600;
+  fill: var(--text-muted);
+}
+.tm-you-ring {
+  opacity: 0.45;
+  stroke: var(--map-trail);
+  stroke-width: 2;
+}
+.tm-you-dot {
+  fill: var(--map-trail);
+  stroke: var(--surface-card-bg);
+  stroke-width: 2;
+}
+.tm-fog {
+  opacity: 0.35;
+}
+.tm-mini-pole {
+  stroke: var(--text-secondary);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+.tm-mini-ground {
+  stroke: var(--map-ink-soft);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}

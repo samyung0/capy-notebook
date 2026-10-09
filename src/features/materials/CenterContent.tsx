@@ -53,6 +53,7 @@ import {
 import { HeavyMaterialGate } from './HeavyMaterialGate';
 import { type HeavyMaterialChoice, heavyMaterial } from './heavyDocument';
 import { MaterialAttributionFooter } from './MaterialAttributionFooter';
+import { MermaidMaterialView } from './MermaidMaterialView';
 import {
   type MaterialMode,
   materialModePolicy,
@@ -386,6 +387,27 @@ export function MaterialContent({
       </div>
     );
   }
+
+  if (
+    (material.kind === 'mindmap' || material.kind === 'diagram') &&
+    activeMode === 'view'
+  )
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        {readOnly && <FileBanner message={m.editor_read_only_strip()} />}
+        <div className="min-h-0 flex-1 overflow-auto">
+          <MermaidMaterialView
+            content={material.content}
+            material={{
+              isStandalone: !material.workspaceId,
+              kind: material.kind,
+              title: material.title,
+            }}
+          />
+        </div>
+        <MaterialAttributionFooter provenance={material.provenance} />
+      </div>
+    );
 
   return (
     <div className="flex h-full min-h-0 flex-col">

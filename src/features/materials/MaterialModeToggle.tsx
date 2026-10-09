@@ -12,8 +12,10 @@ export function MaterialModeToggle({
   mode: MaterialMode;
   onChange: (mode: MaterialMode) => void;
 }) {
+  // The button names the mode it switches to; pressed still means editing.
+  const next: MaterialMode = mode === 'edit' ? 'view' : 'edit';
   const label =
-    mode === 'edit' ? m.material_mode_edit() : m.material_mode_view();
+    next === 'edit' ? m.material_mode_edit() : m.material_mode_view();
   return (
     <Toggle.Root
       asChild
@@ -25,7 +27,7 @@ export function MaterialModeToggle({
         className="lg:w-auto lg:gap-1.5 lg:px-2"
         label={label}
       >
-        <Icon className="lg:-translate-y-px" name={MATERIALMODE_ICON[mode]} />
+        <Icon className="lg:-translate-y-px" name={MATERIALMODE_ICON[next]} />
         {/* Phones and tablets keep the icon only: the header has no room. */}
         <span className="hidden lg:inline">{label}</span>
       </ToolbarButton>

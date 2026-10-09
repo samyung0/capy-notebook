@@ -9,6 +9,7 @@ import {
 } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import {
+  type ComponentProps,
   lazy,
   type ReactNode,
   type RefObject,
@@ -81,6 +82,7 @@ import {
   QuestionListRow,
   statusLabels,
 } from '@/features/questions/QuestionListRow';
+import { MiniTrail, TrailMap } from '@/features/questions/trailMap/TrailMap';
 import {
   type LearnerQuestion,
   QUESTION_TYPES,
@@ -95,6 +97,7 @@ import { CopyError, describeError } from '@/lib/errors';
 import { holdPosition, scrollSettled } from '@/lib/scrollAnchor';
 import { scrollIntoViewWithMotion } from '@/lib/scrollIntoViewWithMotion';
 import { useDebounced } from '@/lib/useDebounced';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 
 const QuestionDialog = lazy(() =>
   import('@/features/questions/QuestionDialog').then((module) => ({
@@ -122,6 +125,12 @@ export default function QuestionBank() {
   const search = useSearch({ strict: false });
   const [showTopics, setShowTopics] = useState(!topicId);
   const [navOpen, setNavOpen] = useState(false);
+  // From lg the side panel shows the same nav, so a sheet left open while
+  // the window widens closes instead of covering the page.
+  const lg = useMediaQuery('(min-width: 1024px)');
+  useEffect(() => {
+    if (lg) setNavOpen(false);
+  }, [lg]);
   const [topicFilter, setTopicFilter] = useState('');
   const [filter, setFilter] = useState('');
   const [unreviewed, setUnreviewed] = useState(false);
@@ -491,7 +500,7 @@ export default function QuestionBank() {
           {nav()}
         </Panel>
       </div>
-      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <Panel
           className="min-h-0 flex-1 rounded-button lg:rounded-card-xl"
           scrollRef={scrollRef}
@@ -565,6 +574,7 @@ export default function QuestionBank() {
                     </Button>
                   )
                 }
+                className="justify-between md:flex-1"
                 showTopBar={false}
                 title={
                   <div>
@@ -577,9 +587,8 @@ export default function QuestionBank() {
                   </div>
                 }
               />
-              <div className="px-4 pt-6 pb-28 sm:px-6 lg:pb-10">
-                <div className="max-w-3xl">{body}</div>
-              </div>
+              {/* Full panel width: the map and the lists line up with Edit mode. */}
+              <div className="px-4 pt-6 pb-28 sm:px-6 lg:pb-10">{body}</div>
             </>
           )}
         </Panel>
@@ -1183,7 +1192,10 @@ function TopicTree({
   const hitRow = (hit: SyllabusHit) =>
     hit.kind === 'exam' ? (
       // Spaced like the exam list (12px apart, flush with the heading).
-      <div className="py-[5px] first:pt-0" key={hit.exam.id}>
+      <div
+        className={cn('py-[5px] first:pt-0', !tabs && 'mx-3')}
+        key={hit.exam.id}
+      >
         <ExamStrip
           exam={hit.exam}
           onClick={() => {
@@ -1222,7 +1234,7 @@ function TopicTree({
   return (
     <nav
       aria-label={m.question_ui_exams_and_topics()}
-      className="flex flex-col gap-3"
+      className={cn('flex flex-col gap-3', !tabs && '-mt-1')}
     >
       <PanelHeading
         filter={filter}
@@ -1243,7 +1255,9 @@ function TopicTree({
         title={m.question_ui_exams_and_topics()}
       />
       {exam && (
-        <ExamPicker exam={exam} exams={syllabus.exams} onPick={onExam} />
+        <div className={cn(!tabs && 'mx-3')}>
+          <ExamPicker exam={exam} exams={syllabus.exams} onPick={onExam} />
+        </div>
       )}
       {needle ? (
         <div className="flex flex-col gap-0.5">
@@ -1325,7 +1339,7 @@ function TopicTree({
           })}
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className={cn('flex flex-col gap-3', !tabs && 'mx-3')}>
           {syllabus.exams.map((item) => (
             <ExamStrip
               exam={item}
@@ -1636,10 +1650,11 @@ function ReviewBar({
 }
 
 /**
- * /qb with no topic open: in View mode, the topics the learner has answered
- * in, in the Learning Review tab's table, each with Continue (the next
- * unanswered question) or, once all are answered, Summary (the topic's top).
- * Without any, Choose a topic as before; phones pick topics in the page.
+ * /qb with no topic open: in View mode, the topics the learner has answered in.
+ * Started topics: the latest as a progress map with Continue, the rest as
+ * rows with a small trail. Finished topics: a divider list with Summary (the
+ * topic's top). Without any, Choose a topic as before; phones pick topics in
+ * the page.
  */
 function BankLanding({
   view,
@@ -1658,27 +1673,55 @@ function BankLanding({
   else if (view && error)
     progress = <BankError error={error} onRetry={() => void refetch()} />;
   else if (view && data?.topics.length) {
-    const going = data.topics.filter((topic) => topic.nextQuestionId);
+    // The server lists the most recently answered first.
+    const going = data.topics.filter(isStarted);
     const finished = data.topics.filter((topic) => !topic.nextQuestionId);
+    // Flex, not grid: a grid track would widen to the scrolling map's full width.
     progress = (
-      <div className="grid gap-8">
-        {going.length > 0 && (
-          <section className="grid gap-3">
-            <h2 className="t-card-title">{m.question_ui_continue()}</h2>
-            <ProgressTable onOpen={onOpen} topics={going} />
-          </section>
-        )}
+      <div className="flex flex-col gap-12">
+        {going.length > 0 && <ContinueSection onOpen={onOpen} topics={going} />}
         {finished.length > 0 && (
-          <section className="grid gap-3">
-            <h2 className="t-card-title">{m.question_ui_finished()}</h2>
-            <ProgressTable onOpen={onOpen} topics={finished} />
+          <section>
+            <h2 className="t-card-title mb-3">{m.question_ui_finished()}</h2>
+            {finished.map((topic) => (
+              <div
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-0.5 border-divider border-t py-3 last:border-b sm:grid-cols-[minmax(0,1fr)_9rem_4.5rem_auto]"
+                key={topic.topicId}
+              >
+                <TopicName topic={topic} />
+                <div className="col-start-1 row-start-2 text-fg-secondary text-sm sm:col-start-auto sm:row-start-auto">
+                  {m.question_ui_finished_score({
+                    correct: topic.correct,
+                    total: topic.total,
+                  })}
+                </div>
+                <time
+                  className="hidden text-fg-muted text-sm sm:block"
+                  dateTime={topic.lastAnsweredAt}
+                >
+                  {new Date(topic.lastAnsweredAt).toLocaleDateString(
+                    getLocale(),
+                    {
+                      day: 'numeric',
+                      month: 'short',
+                    }
+                  )}
+                </time>
+                <ProgressLink
+                  className="col-start-2 row-span-2 row-start-1 sm:col-start-auto sm:row-span-1 sm:row-start-auto"
+                  onClick={() => onOpen(topic.topicId, null)}
+                >
+                  {m.question_ui_summary()}
+                </ProgressLink>
+              </div>
+            ))}
           </section>
         )}
       </div>
     );
   }
   return (
-    <div className="grid gap-8">
+    <div className="flex flex-col gap-8">
       {progress}
       {!progress && (
         <p className="text-fg-muted">{m.question_ui_choose_a_topic()}</p>
@@ -1687,54 +1730,115 @@ function BankLanding({
   );
 }
 
-function ProgressTable({
-  topics,
+type StartedTopic = BankTopicProgress & { nextQuestionId: string };
+const isStarted = (topic: BankTopicProgress): topic is StartedTopic =>
+  topic.nextQuestionId !== null;
+
+function ContinueSection({
+  topics: [latest, ...others],
   onOpen,
 }: {
-  topics: BankTopicProgress[];
+  topics: StartedTopic[];
   onOpen: (topicId: string, next: string | null) => void;
 }) {
   return (
-    <div className="overflow-hidden rounded-card border border-line">
-      <div className="grid grid-cols-[minmax(0,1fr)_5rem_6rem] items-center gap-3 bg-surface-hover-bg px-4 py-3 font-bold text-fg-muted text-xs uppercase tracking-wide md:grid-cols-[minmax(0,1fr)_7rem_6rem_6rem]">
-        <div>{m.question_ui_col_topic()}</div>
-        <div className="text-center">{m.question_ui_col_answered()}</div>
-        <div className="hidden text-center md:block">
-          {m.question_ui_status_correct()}
+    <section>
+      <h2 className="t-card-title">{m.question_ui_continue()}</h2>
+      <p className="t-meta mb-1 text-fg-muted">
+        {latest.examLabel} · {latest.subjectLabel}
+      </p>
+      <TrailMap
+        answeredPositions={latest.answeredPositions}
+        lastAnsweredPosition={latest.lastAnsweredPosition}
+        nextQuestionId={latest.nextQuestionId}
+        onOpen={(questionId) => onOpen(latest.topicId, questionId)}
+        questionIds={latest.questionIds}
+        topicId={latest.topicId}
+      />
+      <div className="mt-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+        <div className="min-w-0">
+          <h3 className="t-large-card-title">{latest.topicLabel}</h3>
+          <p className="mt-1 text-fg-muted text-sm">
+            {m.question_ui_progress_line({
+              answered: latest.answered,
+              correct: latest.correct,
+              total: latest.total,
+            })}
+          </p>
         </div>
-        <div />
-      </div>
-      {topics.map((topic) => (
-        <div
-          className="grid grid-cols-[minmax(0,1fr)_5rem_6rem] items-center gap-3 border-divider border-t py-2 pr-2 pl-4 first:border-t-0 md:grid-cols-[minmax(0,1fr)_7rem_6rem_6rem]"
-          key={topic.topicId}
+        <ProgressLink
+          accent
+          onClick={() => onOpen(latest.topicId, latest.nextQuestionId)}
         >
-          <div className="min-w-0">
-            <div className="truncate font-semibold text-fg">
-              {topic.topicLabel}
+          {m.question_ui_continue_at({
+            position: latest.questionIds.indexOf(latest.nextQuestionId) + 1,
+          })}
+        </ProgressLink>
+      </div>
+      {others.length > 0 && (
+        <div className="mt-8">
+          <h3 className="mb-1 font-bold text-fg-muted text-sm">
+            {m.question_ui_other_topics()}
+          </h3>
+          {others.map((topic) => (
+            <div
+              className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 border-divider border-t py-3 sm:grid-cols-[minmax(0,1fr)_150px_4.5rem_auto]"
+              key={topic.topicId}
+            >
+              <TopicName topic={topic} />
+              <div className="col-span-2 row-start-2 sm:col-span-1 sm:row-start-auto">
+                <MiniTrail
+                  answered={topic.answered}
+                  topicId={topic.topicId}
+                  total={topic.total}
+                />
+              </div>
+              <div className="hidden text-right text-fg-secondary text-sm sm:block">
+                {m.study_of({ done: topic.answered, total: topic.total })}
+              </div>
+              <ProgressLink
+                className="col-start-2 row-start-1 sm:col-start-auto sm:row-start-auto"
+                onClick={() => onOpen(topic.topicId, topic.nextQuestionId)}
+              >
+                {m.question_ui_continue()}
+              </ProgressLink>
             </div>
-            <div className="truncate text-fg-muted text-xs">
-              {topic.examLabel} · {topic.subjectLabel}
-            </div>
-          </div>
-          <div className="text-center tabular-nums">
-            {m.study_of({ done: topic.answered, total: topic.total })}
-          </div>
-          <div className="hidden text-center text-fg-muted text-sm tabular-nums md:block">
-            {topic.correct}
-          </div>
-          <Button
-            onClick={() => onOpen(topic.topicId, topic.nextQuestionId)}
-            size="sm"
-            variant="outline"
-          >
-            {topic.nextQuestionId
-              ? m.question_ui_continue()
-              : m.question_ui_summary()}
-          </Button>
+          ))}
         </div>
-      ))}
+      )}
+    </section>
+  );
+}
+
+function TopicName({ topic }: { topic: BankTopicProgress }) {
+  return (
+    <div className="min-w-0">
+      <div className="truncate font-semibold text-fg">{topic.topicLabel}</div>
+      <div className="truncate text-fg-muted text-xs">
+        {topic.examLabel} · {topic.subjectLabel}
+      </div>
     </div>
+  );
+}
+
+/** Continue and Summary as underlined links, so they don't outweigh the page. */
+function ProgressLink({
+  accent,
+  className,
+  ...props
+}: ComponentProps<'button'> & { accent?: boolean }) {
+  return (
+    <Button
+      className={cn(
+        'justify-self-end underline decoration-[1.5px] underline-offset-4',
+        !accent && 'text-fg-secondary hover:text-fg',
+        className
+      )}
+      iconRight="navigationForward"
+      size="xs"
+      variant={accent ? 'ghost-link' : 'ghost'}
+      {...props}
+    />
   );
 }
 

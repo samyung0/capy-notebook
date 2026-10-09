@@ -93,14 +93,15 @@ export function FileModeControl({
           }}
           pressed={mode === 'edit'}
         >
+          {/* Names the mode it switches to; pressed still means editing. */}
           <ToolbarButton
             aria-label={m.material_mode()}
             disabled={disabled}
             label={
-              mode === 'edit' ? m.material_mode_edit() : m.material_mode_view()
+              mode === 'edit' ? m.material_mode_view() : m.material_mode_edit()
             }
           >
-            <Icon name={mode === 'edit' ? 'pencil' : 'view'} />
+            <Icon name={mode === 'edit' ? 'view' : 'pencil'} />
           </ToolbarButton>
         </Toggle.Root>
       )}

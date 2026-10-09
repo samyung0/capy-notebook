@@ -14,6 +14,7 @@ import type {
   GradedQuestion,
   Provenance,
 } from '@/api/types';
+import { BANK_IMAGE_MAX_BYTES, fitImage } from '@/lib/fitImage';
 import type { LearnerQuestion, Question } from './types';
 
 export type BankTopic = {
@@ -242,8 +243,8 @@ export function bankStatus(score: number | undefined): BankStatus {
   return score >= 1 ? 'correct' : score <= 0 ? 'wrong' : 'partial';
 }
 
-export function uploadBankAsset(file: File): Promise<{ url: string }> {
+export async function uploadBankAsset(file: File): Promise<{ url: string }> {
   const body = new FormData();
-  body.append('file', file);
+  body.append('file', await fitImage(file, BANK_IMAGE_MAX_BYTES));
   return api.upload('/bank/assets', body);
 }

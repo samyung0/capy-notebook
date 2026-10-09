@@ -1,4 +1,7 @@
+import { fitImage } from '@/lib/fitImage';
 import { api } from './client';
+import { materialQuery } from './hooks';
+import { queryClient } from './queryClient';
 
 export type EditorAssetPurpose = 'image' | 'audio' | 'pdf' | 'file';
 
@@ -94,14 +97,28 @@ export function completeEditorAssetUpload(
   );
 }
 
+/** The plan image cap of the account paying for the material's assets. The
+ * editors already hold the material, so this reads the cache. */
+export async function editorImageMaxBytes(materialId: string) {
+  const { imageMaxBytes } = await queryClient.ensureQueryData(
+    materialQuery(materialId)
+  );
+  return imageMaxBytes;
+}
+
 // Returns only stable metadata. Plate documents should persist assetId, never
-// the reservation URL or a resolved short-lived URL.
+// the reservation URL or a resolved short-lived URL. An image over the plan
+// cap is shrunk first.
 export async function uploadEditorAsset(
   materialId: string,
-  file: File,
+  picked: File,
   purpose: EditorAssetPurpose,
   options: EditorAssetUploadOptions = {}
 ): Promise<EditorAsset> {
+  const file =
+    purpose === 'image'
+      ? await fitImage(picked, await editorImageMaxBytes(materialId))
+      : picked;
   const reservation = await reserveEditorAsset(
     materialId,
     file,

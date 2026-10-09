@@ -436,7 +436,7 @@ func TestAdoptEditorAssets(t *testing.T) {
 
 	usedBefore := f.used(ownerID)
 	adopted, refused, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID,
-		[]string{own.ID, readable.ID, pending.ID, deleted.ID, foreign.ID, "asset_unknown"}, 0)
+		[]string{own.ID, readable.ID, pending.ID, deleted.ID, foreign.ID, "asset_unknown"}, 2<<20)
 	if err != nil || refused {
 		t.Fatal(err, refused)
 	}
@@ -465,7 +465,7 @@ func TestAdoptEditorAssets(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `UPDATE materials SET privacy='link' WHERE id=$1`, foreignNote.ID); err != nil {
 		t.Fatal(err)
 	}
-	if adopted, _, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID, []string{foreign.ID}, 0); err != nil || adopted[foreign.ID] == "" {
+	if adopted, _, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID, []string{foreign.ID}, 2<<20); err != nil || adopted[foreign.ID] == "" {
 		t.Fatalf("adopt shared foreign asset = %v, %v", adopted, err)
 	}
 
@@ -474,7 +474,7 @@ func TestAdoptEditorAssets(t *testing.T) {
 		t.Fatalf("adopt over the image cap = %v, %v; want it left out", adopted, err)
 	}
 
-	if _, _, err := s.AdoptEditorAssets(ctx, viewerID, workspace.ID, target.ID, []string{readable.ID}, 0); err == nil {
+	if _, _, err := s.AdoptEditorAssets(ctx, viewerID, workspace.ID, target.ID, []string{readable.ID}, 2<<20); err == nil {
 		t.Fatal("a viewer adopted into the note")
 	}
 	limit := mustPlanLimits(t, s, PlanFree).StorageBytes
@@ -483,42 +483,33 @@ func TestAdoptEditorAssets(t *testing.T) {
 	}
 	// Over the quota no copy is made and the call says so; the own asset
 	// still answers.
-	if adopted, refused, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID, []string{own.ID, readable.ID}, 0); err != nil || !refused ||
+	if adopted, refused, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID, []string{own.ID, readable.ID}, 2<<20); err != nil || !refused ||
 		adopted[readable.ID] != "" || adopted[own.ID] != own.ID {
 		t.Fatalf("adopt over quota = %v refused %v, %v", adopted, refused, err)
 	}
 }
 
-// Security regression (human/backend-storage-quota.md 2026-10-06, card images
-// follow quiz images): a flashcard set's uploads take the 2 MB study image cap
-// as a quiz's do, so the store names both study materials; a note keeps the
-// image limit.
-func TestEditorAssetMaterialNamesStudyMaterials(t *testing.T) {
+// Every material's images take the payer's plan image cap
+// (human/backend-storage-quota.md 2026-10-09): 2 MiB Free, 5 MiB Pro.
+func TestEditorAssetMaterialTakesPayerImageCap(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	ownerID := newBlobTestUser(t, s, "u_asset_study")
-	quiz, err := materialdoc.QuizDocument(json.RawMessage(`[]`), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cards, err := materialdoc.FlashcardsDocument([]materialdoc.Card{{ID: uid("c"), Front: "front", Back: "back"}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	ownerID := newBlobTestUser(t, s, "u_asset_cap")
 	note, err := materialdoc.Marshal(materialdoc.Empty())
 	if err != nil {
 		t.Fatal(err)
 	}
-	for kind, want := range map[MaterialKind]struct {
-		content string
-		study   bool
-	}{"quiz": {quiz, true}, "flashcards": {cards, true}, "note": {note, false}} {
-		material, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: kind, Title: string(kind), Content: want.content})
-		if err != nil {
-			t.Fatal(kind, err)
-		}
-		if _, study, err := s.EditorAssetMaterial(ctx, material.ID); err != nil || study != want.study {
-			t.Errorf("%s: study %v, %v; want %v", kind, study, err, want.study)
-		}
+	material, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "note", Content: note})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, got, err := s.EditorAssetMaterial(ctx, material.ID); err != nil || got != 2<<20 {
+		t.Fatalf("free cap = %d, %v; want 2 MiB", got, err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET plan_tier='pro' WHERE id=$1`, ownerID); err != nil {
+		t.Fatal(err)
+	}
+	if _, got, err := s.EditorAssetMaterial(ctx, material.ID); err != nil || got != 5<<20 {
+		t.Fatalf("pro cap = %d, %v; want 5 MiB", got, err)
 	}
 }
