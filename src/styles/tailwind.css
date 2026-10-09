@@ -182,7 +182,11 @@
     transparent
   );
   @supports (animation-timeline: scroll()) {
-    animation: scroll-fade-x linear both;
+    /* Longhands on purpose: the build minifier expands the shorthand with
+       animation-duration: 0s, which pins a scroll-driven animation to its end. */
+    animation-name: scroll-fade-x;
+    animation-timing-function: linear;
+    animation-fill-mode: both;
     animation-timeline: scroll(self inline);
   }
 }
@@ -212,7 +216,9 @@
     transparent
   );
   @supports (animation-timeline: scroll()) {
-    animation: scroll-fade-y-start linear both, scroll-fade-y-end linear both;
+    animation-name: scroll-fade-y-start, scroll-fade-y-end;
+    animation-timing-function: linear;
+    animation-fill-mode: both;
     animation-timeline: scroll(self block);
     /* Clear the bottom fade as the last row reaches the viewport edge,
        before the trailing padding scrolls into view. */
