@@ -135,6 +135,7 @@ import {
   VscodeMarkdownPastePlugin,
 } from './pastePlugins';
 import { remoteCursorDecorationPlugin } from './RemoteCursors';
+import { remoteNormalizationPlugin } from './remoteNormalization';
 import { SlashInputElement } from './SlashInput';
 import { stableElementIdsPlugin } from './stableElementIds';
 import { mergeTableCellsSafe, sanitizeTableStructure } from './tableStructure';
@@ -631,6 +632,7 @@ export function buildPlugins(options: BuildPluginsOptions): AnyPlugin[] {
         ]),
     navigationFeedbackPlugin,
     stableElementIdsPlugin,
+    remoteNormalizationPlugin,
     remoteCursorDecorationPlugin,
     ...MaterialKit,
     ...buildCollaborationPlugins(options),
