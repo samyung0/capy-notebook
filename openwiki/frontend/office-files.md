@@ -139,9 +139,11 @@ that proxy: peer updates are posted to the worker, its local updates come back
 before the reply of the request that made them, and `encodeStateAsUpdate`
 answers once every earlier request has run. The worker draws frames: the
 display list of the scrolled window plus everything the chrome reads at once
-(sheet info, every drawn cell's editable text, the focus cell, the selection's
-formatting and merges, history, proposals), one request in flight and a view
-change meanwhile asked for again at the next animation frame. The main thread
+(sheet info, the editable text of every non-empty drawn cell, read in blocks
+under the engine's 100,000-cell range cap, the focus cell, the selection's
+formatting and merges, read again only when the selection or the workbook
+changes, history, proposals), one request in flight and a view change meanwhile
+asked for again at the next animation frame. The main thread
 paints the frame and places the selection, the open cell edit and the remote
 cursors from that same frame in one commit, so a peer's frame never moves them
 off the pixels. A committed cell input is drawn over its cell until the
@@ -151,7 +153,12 @@ removal or reorder that reaches the worker first drops it (a draft is dropped,
 as above) rather than landing it elsewhere. Bold, italic and strikethrough flip
 from the range's state when the worker reaches them. A display list reuses the
 grid geometry the sheet info memoized: building one walks every cell for row
-autofit (130 ms native on a 50,000-row sheet).
+autofit (130 ms native on a 50,000-row sheet). A change the host makes through
+the editor's `handle` repaints like the editor's own. Closing or swapping the
+file while it opens ends its worker at once, and a browser without module
+workers gets an explicit open error, with no main-thread fallback. Print pages
+take one display-list request per band, so a change that lands while they are
+drawn can show on some pages and not others.
 
 DOCX view mode (`DocxDisplayListViewer`) makes that mirror its text layer, as a
 PDF viewer's: there is no second copy of the text. The positioned mirror's text

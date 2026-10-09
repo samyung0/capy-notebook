@@ -138,6 +138,8 @@ const MAX_SCANS = 1000;
  * the rows run down the pages ending at a row edge, frozen rows repeat as
  * titles, and trailing pages without text (formatted but empty rows) are left
  * out. At most MAX_PAGES pages, `truncated` when text goes on past them.
+ * Each `draw` is its own worker request, so a change that lands meanwhile (a
+ * peer's edit, a sheet switch) can show on some pages and not others.
  */
 export async function sheetPages(
   draw: Draw,
