@@ -262,6 +262,13 @@ pub fn properties(branch: &Branch) -> Result<Vec<(Arc<str>, Any)>, ProjectionErr
                 .and_then(|text| serde_json::from_str::<Value>(text).ok())
                 .map_or(Any::Undefined, |value| json::value_to_any(&value)),
             ItemContent::String(text) => Any::String(text.as_str().into()),
+            // live-items prototype (DESIGN.md 6, shape A): a shared text held
+            // as an attribute (a Mermaid block's `source`) reads as its string.
+            ItemContent::Type(text)
+                if shared_text_key(key) && matches!(text.type_ref(), TypeRef::Text) =>
+            {
+                Any::String(shared_text(text)?.into())
+            }
             _ => return Err(ProjectionError::Property(key.to_string())),
         };
         out.push((key.clone(), value));
@@ -270,6 +277,24 @@ pub fn properties(branch: &Branch) -> Result<Vec<(Arc<str>, Any)>, ProjectionErr
     order.sort_by_key(|&i| firsts[i]);
     let mut slots: Vec<Option<(Arc<str>, Any)>> = out.into_iter().map(Some).collect();
     Ok(order.into_iter().filter_map(|i| slots[i].take()).collect())
+}
+
+/// Attributes that may hold a shared text instead of a string (prototype:
+/// only a Mermaid block's source).
+pub fn shared_text_key(key: &str) -> bool {
+    key == "source"
+}
+
+/// The string of a shared text attribute: strings only, no formats or embeds.
+pub fn shared_text(branch: &Branch) -> Result<String, ProjectionError> {
+    let mut out = String::new();
+    for op in insert_delta(branch)? {
+        match op.insert {
+            Insert::Text(text) if op.attributes.is_empty() => out.push_str(&text),
+            _ => return Err(ProjectionError::Property("source".into())),
+        }
+    }
+    Ok(out)
 }
 
 /// `yTextToSlateElement(branch)` for a top-level element:

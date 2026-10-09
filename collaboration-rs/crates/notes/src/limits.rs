@@ -399,6 +399,15 @@ fn plain_content<T: ReadTxn>(
         let refused = match (&at, item.content()) {
             (_, ItemContent::Deleted(_)) => None,
             (Place::Entry(..), ItemContent::Any(values)) if values.iter().all(plain) => None,
+            // live-items prototype (shape A): a Mermaid source as shared text.
+            (Place::Entry(..), ItemContent::Type(branch))
+                if matches!(branch.type_ref(), TypeRef::Text)
+                    && item
+                        .parent_sub()
+                        .is_some_and(|key| plate::shared_text_key(key)) =>
+            {
+                None
+            }
             (Place::Entry(..), _) => Some("a non-plain attribute value"),
             (Place::Sequence(_), ItemContent::String(_)) => None,
             (Place::Sequence(_), ItemContent::Format(_, value)) if plain(value) => None,
