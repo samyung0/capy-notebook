@@ -582,8 +582,9 @@ for scale, `mermaid.core` is 150.7 KB before any diagram chunk.
   work is doing (document layout, update checks, multiplexing, projection on
   idle, agent edits). Bring conflicts back to Epo rather than picking a side.
 - Developer questions:
-  - Keys in their own document, or filtered changes for readers?
-  - Should note View go live too?
+  - Answered (Epo 2026-10-10): keys in their own document; signed-in note
+    View goes live too (read-only channel). Built in the rust round session
+    (`capy-harness/2026-10-06-rust-round/live-items/`).
   - The quiz could also render inside the same center panel on the same page,
     like flashcards (still open from 2026-10-07).
 
