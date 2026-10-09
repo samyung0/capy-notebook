@@ -703,3 +703,68 @@ fn a_chain_of_clients_applies_on_a_task_stack() {
         .unwrap();
     assert_eq!(length, 1 + clients as u32);
 }
+
+/// The live format markers of the Y.Text at `stories.body`.
+fn live_format_markers(doc: &Doc) -> usize {
+    let txn = doc.transact();
+    let stories = txn.get_map("stories").unwrap();
+    let Some(yrs::Out::YText(body)) = stories.get(&txn, "body") else {
+        panic!("no story")
+    };
+    let branch: &yrs::branch::Branch = body.as_ref();
+    let mut count = 0;
+    let mut next = branch.start();
+    while let Some(item) = next {
+        if !item.is_deleted() && matches!(item.content(), yrs::block::ItemContent::Format(..)) {
+            count += 1;
+        }
+        next = item.right();
+    }
+    count
+}
+
+// Epo D3 (2026-10-09): room documents run no formatting cleanup. A peer bolds
+// a letter while another deletes it; both markers then enclose nothing, and a
+// room with yrs's cleanup on deletes them for itself only, so it would read
+// differently from the peers that keep them.
+#[test]
+fn a_room_keeps_the_format_markers_its_peers_sent() {
+    // Rooms take a random client (0); the same holds for a chosen one.
+    for room_client in [0, 9] {
+        let room = doc(room_client);
+        let writer = doc(1);
+        let stories = writer.get_or_insert_map("stories");
+        let body = stories.insert(
+            &mut writer.transact_mut(),
+            "body",
+            yrs::TextPrelim::new("abc"),
+        );
+        let other = doc(2);
+        sync(&writer, &room);
+        sync(&writer, &other);
+        let bold = delta(&writer, |txn| {
+            let attrs = yrs::types::Attrs::from([(Arc::from("bold"), yrs::Any::Bool(true))]);
+            body.format(txn, 1, 1, attrs);
+        });
+        let Some(yrs::Out::YText(theirs)) = other
+            .get_or_insert_map("stories")
+            .get(&other.transact(), "body")
+        else {
+            panic!("no story")
+        };
+        let deletion = delta(&other, |txn| theirs.remove_range(txn, 1, 1));
+        for update in [bold, deletion] {
+            apply(&room, decode(&update).unwrap()).unwrap();
+        }
+        assert_eq!(live_format_markers(&room), 2, "room client {room_client}");
+        sync(&room, &writer);
+        assert_eq!(
+            room.transact()
+                .encode_state_as_update_v1(&StateVector::default()),
+            writer
+                .transact()
+                .encode_state_as_update_v1(&StateVector::default()),
+            "the room and a peer hold the same document"
+        );
+    }
+}

@@ -334,7 +334,10 @@ pub fn decode(update: &[u8]) -> Result<Update, UpdateError> {
 }
 
 /// Options of every room and working document: Yjs counts text in UTF-16
-/// units, garbage collection on. `client_id` 0 picks a random one.
+/// units, garbage collection on, and no formatting cleanup (Epo D3,
+/// 2026-10-09): with it on, each replica deletes the format markers an
+/// update left redundant only for itself, and peers read differently.
+/// `client_id` 0 picks a random one.
 pub fn doc_options(client_id: u64) -> Options {
     let mut options = if client_id == 0 {
         Options::default()
@@ -342,6 +345,7 @@ pub fn doc_options(client_id: u64) -> Options {
         Options::with_client_id(ClientID::new(client_id))
     };
     options.offset_kind = OffsetKind::Utf16;
+    options.cleanup_formatting = false;
     options
 }
 
