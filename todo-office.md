@@ -473,3 +473,17 @@ slow editor (no handoff outside maintenance since the deferred rebuild).
   import (fence to element), the child pass and the renderer; in the
   2026-10-08 UAT backfill two notes were refused with "An html-embed fence
   needs html", so look at what GLM writes there too.
+- Developer consideration: a "changed by someone else since you last saw it"
+  marker in `inspect_document` output, so the agent keeps collaborators'
+  changes (in the 2026-10-09 edit lab GLM once deleted a collaborator's
+  sentence and section to restore "exactly three sections"). Only the editing
+  skill line ("keep other people's changes unless the learner asks
+  otherwise", 271a8d5a) shipped. No existing source is correct: the Yjs
+  contributor markers are per document and cleared on store, Yjs client ids
+  are random for browsers and agent edits alike, and stored inspect results
+  would flag the agent's own later edits and are dropped by compaction. A
+  within-turn marker could come from the per-turn record of what the turn
+  inspected or wrote (f11f830f), but it cannot flag new blocks because the
+  pipeline never learns inserted block ids. Decide whether that partial
+  marker is worth it, or wait for per-block attribution (the Rust server work
+  may be the place for it).
