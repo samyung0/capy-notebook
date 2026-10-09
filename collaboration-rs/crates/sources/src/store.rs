@@ -223,6 +223,18 @@ pub(crate) fn replay<'a>(
     Ok(())
 }
 
+/// A document to replay stored state into (a fold, a capture, a save's
+/// change and its load check, a rebuild): every room's options
+/// (`ydoc::doc_options`), so no formatting cleanup deletes a marker the
+/// peers sent (Epo D3, 2026-10-09, for Office sources).
+fn working_doc(office: bool) -> Doc {
+    if office {
+        ydoc::scratch_doc()
+    } else {
+        text_doc(1)
+    }
+}
+
 fn encode(doc: &Doc) -> Vec<u8> {
     doc.transact()
         .encode_state_as_update_v1(&StateVector::default())
@@ -1004,7 +1016,7 @@ impl Sources {
             .map_or(0, |(checkpoint, _)| *checkpoint as i64);
         let is_office = office(format).is_some();
         let state = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, SourceError> {
-            let doc = if is_office { Doc::new() } else { text_doc(1) };
+            let doc = working_doc(is_office);
             replay(&doc, layers.iter().map(Vec::as_slice))?;
             let txn = doc.transact();
             Ok(if is_office {
@@ -1364,7 +1376,7 @@ impl Sources {
         let is_office = office(candidate.format).is_some();
         let seed_sha = is_office.then(|| seed.sha256.clone());
         let state = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, SourceError> {
-            let doc = if is_office { Doc::new() } else { text_doc(1) };
+            let doc = working_doc(is_office);
             replay(&doc, layers.iter().map(Vec::as_slice))?;
             let txn = doc.transact();
             let none = StateVector::default();
@@ -1565,11 +1577,14 @@ impl Sources {
             .await?;
         let seed_sha = seed.sha256.clone();
         let change = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, SourceError> {
-            let doc = Doc::new();
+            let doc = working_doc(true);
             replay(&doc, [state.as_slice()])?;
             let change = doc.transact().encode_state_as_update_v1(&seed.vector);
             // Seed plus the change must load (the load check), never pending.
-            replay(&Doc::new(), [seed.state.as_slice(), change.as_slice()])?;
+            replay(
+                &working_doc(true),
+                [seed.state.as_slice(), change.as_slice()],
+            )?;
             Ok(change)
         })
         .await
@@ -1635,11 +1650,7 @@ pub(crate) fn text_of(bytes: &[u8]) -> Result<&str, SourceError> {
 /// The whole state of `layers` applied in order (checked like a load).
 async fn whole(format: SourceFormat, layers: Vec<Vec<u8>>) -> Result<Vec<u8>, SourceError> {
     tokio::task::spawn_blocking(move || {
-        let doc = if office(format).is_some() {
-            Doc::new()
-        } else {
-            text_doc(1)
-        };
+        let doc = working_doc(office(format).is_some());
         replay(&doc, layers.iter().map(Vec::as_slice))?;
         Ok(encode(&doc))
     })
@@ -1669,4 +1680,57 @@ pub async fn read_source_bytes(http: &reqwest::Client, url: &str) -> Result<Vec<
         bytes.extend_from_slice(&chunk);
     }
     Ok(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use yrs::{Any, Text, WriteTxn};
+
+    use super::*;
+
+    /// The live format markers of the root text `source`.
+    fn live_format_markers(doc: &Doc) -> usize {
+        let txn = doc.transact();
+        let text = txn.get_text(TEXT_ROOT).unwrap();
+        let branch: &yrs::branch::Branch = text.as_ref();
+        let mut count = 0;
+        let mut next = branch.start();
+        while let Some(item) = next {
+            if !item.is_deleted() && matches!(item.content(), yrs::block::ItemContent::Format(..)) {
+                count += 1;
+            }
+            next = item.right();
+        }
+        count
+    }
+
+    // Epo D3 (2026-10-09): replaying stored state for a fold, a capture, a
+    // save or a rebuild keeps the format markers peers sent. Two peers bold
+    // the same opening letters at once; with yrs's formatting cleanup on, the
+    // replay deletes one of the two start markers as overwritten.
+    #[test]
+    fn working_docs_keep_the_format_markers_peers_sent() {
+        let writer = Doc::with_options(ydoc::doc_options(1));
+        let text = writer.get_or_insert_text(TEXT_ROOT);
+        text.insert(&mut writer.transact_mut(), 0, "abcd");
+        let seed = encode(&writer);
+        let other = Doc::with_options(ydoc::doc_options(2));
+        replay(&other, [seed.as_slice()]).unwrap();
+        let theirs = other.transact_mut().get_or_insert_text(TEXT_ROOT);
+        let bold = |doc: &Doc, text: &yrs::TextRef| {
+            let before = doc.transact().state_vector();
+            let attrs = yrs::types::Attrs::from([(Arc::from("bold"), Any::Bool(true))]);
+            text.format(&mut doc.transact_mut(), 0, 2, attrs);
+            doc.transact().encode_state_as_update_v1(&before)
+        };
+        let first = bold(&writer, &text);
+        let second = bold(&other, &theirs);
+        for office in [true, false] {
+            let doc = working_doc(office);
+            replay(&doc, [seed.as_slice(), first.as_slice(), second.as_slice()]).unwrap();
+            assert_eq!(live_format_markers(&doc), 4, "office {office}");
+        }
+    }
 }

@@ -7,22 +7,19 @@ use office_service::NetEffect;
 use yrs::block::ItemContent;
 use yrs::branch::{BranchID, BranchPtr};
 use yrs::updates::decoder::Decode;
-use yrs::{
-    ClientID, Doc, GetString, ID, OffsetKind, Options, ReadTxn, Text, Transact, Update, UpdateBlock,
-};
+use yrs::{ClientID, Doc, GetString, ID, ReadTxn, Text, Transact, Update, UpdateBlock};
 
 use crate::effects::{text_effects, text_effects_with, utf16};
 
 pub const TEXT_ROOT: &str = "source";
 
-/// A working document for text sources: UTF-16 offsets, as the browser and
-/// the TS server indexed `Y.Text`.
+/// A working document for text sources under exactly `client_id`, with
+/// every room's options (`ydoc::doc_options`): UTF-16 offsets, as the browser
+/// and the TS server indexed `Y.Text`, and no formatting cleanup.
 pub fn text_doc(client_id: u64) -> Doc {
-    Doc::with_options(Options {
-        client_id: yrs::block::ClientID::new(client_id),
-        offset_kind: OffsetKind::Utf16,
-        ..Options::default()
-    })
+    let mut options = ydoc::doc_options(0);
+    options.client_id = yrs::block::ClientID::new(client_id);
+    Doc::with_options(options)
 }
 
 /// A text source's bytes as text: newlines and a BOM kept, invalid UTF-8

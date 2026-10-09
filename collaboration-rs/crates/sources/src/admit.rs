@@ -104,7 +104,7 @@ fn fits_room(doc: &Doc, update: &[u8], estimate: &mut u64, cap: u64) -> Result<b
         .transact()
         .encode_state_as_update_v1(&StateVector::default());
     *estimate = state.len() as u64;
-    let candidate = Doc::new();
+    let candidate = ydoc::scratch_doc();
     let mut txn = candidate.transact_mut();
     for bytes in [&state[..], update] {
         let decoded = Update::decode_v1(bytes).map_err(|error| error.to_string())?;
