@@ -52,6 +52,8 @@ export interface EditDraft {
   session: string;
 }
 
+type DocOptions = ConstructorParameters<typeof Y.Doc>[0];
+
 export function draftKey(
   actorId: string,
   kind: 'material' | 'file',
@@ -186,11 +188,13 @@ export function readDraftBase(key: string, base: string) {
  *   dropping it would lose edits still stored, and the failure is reported
  *   as `draft_storage_failed`, once per page load (`kept`).
  * A group kept for good this way sorts ahead of later groups of the file,
- * which then wait behind it (draftGroups shows one group per open).
+ * which then wait behind it (draftGroups shows one group per open). The
+ * document takes the session's own `docOptions` (sourceDocOptions).
  */
 export async function openRecoveryGroup(
   group: EditDraft[],
-  report: EditIncidentReporter
+  report: EditIncidentReporter,
+  docOptions: DocOptions
 ): Promise<{ base: Uint8Array; doc: Y.Doc } | 'dropped' | 'kept'> {
   const [first] = group;
   if (!first) return 'dropped';
@@ -209,7 +213,7 @@ export async function openRecoveryGroup(
       );
       return 'kept';
     }
-    const doc = base && recoveryDocument(group);
+    const doc = base && recoveryDocument(group, docOptions);
     if (base && doc) return { base, doc };
   }
   await deleteDrafts(group).catch((error) =>
@@ -368,8 +372,11 @@ export function applyDrafts(doc: Y.Doc, rows: EditDraft[], origin: unknown) {
 
 /** A recovery group as one document, or null when it cannot be drawn: update
  * rows whose base was never stored (a tab closed online, then the room moved). */
-export function recoveryDocument(rows: EditDraft[]): Y.Doc | null {
-  const doc = new Y.Doc();
+export function recoveryDocument(
+  rows: EditDraft[],
+  docOptions?: DocOptions
+): Y.Doc | null {
+  const doc = new Y.Doc(docOptions);
   applyDrafts(doc, rows, null);
   if (doc.store.pendingStructs || doc.store.pendingDs) {
     doc.destroy();

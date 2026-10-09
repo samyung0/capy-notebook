@@ -207,6 +207,16 @@ raw Yrs updates with that parent through a versioned message protocol, and waits
 for provider sync before restoring its replica. The iframe receives base bytes
 and shared state, never an authentication token or protected source URL.
 
+The parent's Y.Doc runs no formatting cleanup, matching yrs in the editor and
+the room. Stock Yjs, after every remote update to a text with formatting,
+deletes the redundant format markers it leaves in a new local transaction,
+which the provider and the iframe relay would send on. Yjs 13.6.31 carries a
+Capy pnpm patch (`patches/yjs@13.6.31.patch`) that skips that cleanup for a
+doc built with `meta: { formattingCleanup: false }`. `sourceDocOptions`
+(`src/features/files/sourceProvider.ts`) sets it for an Office session's
+document, a recovered draft group of an Office file, and an Office room in the
+mock collaboration service. Text sources and notes keep the cleanup.
+
 Each format accepts exactly one fork-owned state schema and rejects every
 other; there are no migrations. Office editing state stores only what users
 changed, over the fingerprinted source that every open requires:

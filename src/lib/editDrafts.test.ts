@@ -168,8 +168,8 @@ describe('the draft store', () => {
       .mockImplementation(() => {
         throw new DOMException('busy', 'UnknownError');
       });
-    expect(await openRecoveryGroup(group, report)).toBe('kept');
-    expect(await openRecoveryGroup(group, report)).toBe('kept');
+    expect(await openRecoveryGroup(group, report, {})).toBe('kept');
+    expect(await openRecoveryGroup(group, report, {})).toBe('kept');
     get.mockRestore();
     expect(report).toHaveBeenCalledExactlyOnceWith(
       'draft_storage_failed',
@@ -177,7 +177,7 @@ describe('the draft store', () => {
       state.length
     );
     expect(await readDrafts(key)).toHaveLength(1);
-    const opened = await openRecoveryGroup(group, report);
+    const opened = await openRecoveryGroup(group, report, {});
     expect(opened).toMatchObject({ base });
     expect(
       typeof opened === 'object' && opened.doc.getText('content').toString()
@@ -186,7 +186,7 @@ describe('the draft store', () => {
     report.mockClear();
     const gone = draft('gone', { base: 'sha_gone', key, lineage });
     await putDrafts([gone]);
-    expect(await openRecoveryGroup([gone], report)).toBe('dropped');
+    expect(await openRecoveryGroup([gone], report, {})).toBe('dropped');
     expect(report).toHaveBeenCalledExactlyOnceWith(
       'draft_unrestorable',
       'base_missing',
@@ -207,7 +207,7 @@ describe('the draft store', () => {
       lineage: 'source:f_1:epoch:0@sha_1',
     });
     await putDrafts([orphan]);
-    expect(await openRecoveryGroup([orphan], report)).toBe('dropped');
+    expect(await openRecoveryGroup([orphan], report, {})).toBe('dropped');
     expect(report).toHaveBeenCalledExactlyOnceWith(
       'draft_unrestorable',
       'base_missing',

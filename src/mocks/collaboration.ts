@@ -18,6 +18,7 @@ import {
   registerMockSourceProvider,
   type SourceProvider,
   type SourceProviderConfig,
+  sourceDocOptions,
 } from '@/features/files/sourceProvider';
 import {
   createMaterialDocumentWithMetrics,
@@ -150,8 +151,12 @@ function mockChildrenPass(room: Room, update: Uint8Array) {
   }, REMOTE);
 }
 
-function createRoom(name: string, target: Room['target']): Room {
-  const document = new Y.Doc({ gc: true, guid: name });
+function createRoom(
+  name: string,
+  target: Room['target'],
+  docOptions?: ReturnType<typeof sourceDocOptions>
+): Room {
+  const document = new Y.Doc({ gc: true, guid: name, ...docOptions });
   let checkpoint = checkpoints.get(name);
   if (
     !checkpoint &&
@@ -225,7 +230,11 @@ export function sourceRoom(
   const name = sourceRoomName(fileId, epoch);
   const existing = rooms.get(name);
   if (existing) return existing;
-  const room = createRoom(name, { id: fileId, kind: 'source' });
+  const room = createRoom(
+    name,
+    { id: fileId, kind: 'source' },
+    sourceDocOptions(format)
+  );
   room.format = format;
   if (!checkpoints.has(name)) {
     if (state) Y.applyUpdate(room.document, state);
