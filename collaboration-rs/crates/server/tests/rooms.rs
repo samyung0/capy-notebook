@@ -914,6 +914,26 @@ async fn an_agent_edit_commits_its_row_reaches_the_live_room_and_replays_by_oper
         serde_json::json!([{ "after": "b1", "anchor": "gone", "end": true }]),
         "{landed}"
     );
+    // An Undo's receipt never lists relocations, even when its inverse lands
+    // an insert away from a gone anchor (a hand-written inverse here; Go
+    // sends the stored one).
+    let undo = serde_json::json!({
+        "actorUserId": user,
+        "guards": [],
+        "inverse": [{
+            "type": "insert_block",
+            "afterBlockId": "gone_too",
+            "blocks": [{ "type": "p", "id": "b10", "children": [{ "text": "back" }] }],
+        }],
+        "operation": { "id": format!("op4_{material}"), "requestHash": "h4" },
+        "room": room,
+        "target": { "id": material, "kind": "material" },
+        "undoOf": format!("op3_{material}"),
+    });
+    let (status, undone) = internal(server.port, "/internal/documents/undo", &undo).await;
+    assert_eq!(status, 200, "{undone}");
+    assert_eq!(undone["effect"]["operation"], "edit_undone", "{undone}");
+    assert!(undone["effect"].get("relocated").is_none(), "{undone}");
 
     // replace-block replaces the block in the live room the same way; it
     // answers once the projection landed, so it needs the API.
