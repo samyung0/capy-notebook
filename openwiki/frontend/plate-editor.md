@@ -237,7 +237,9 @@ flush at the next onChange microtask. `remoteNormalizationPlugin`
 right after their event: a second remote update in the same task would
 otherwise have them applied to the newer Yjs state, writing a wrong change
 into the room. The Rust server sends one merged update per room per frame,
-so the burst comes from in-page rooms or several updates read at once.
+each frame its own WebSocket message (its own task), and draft replay is one
+merged update before the room connects, so with the server the burst does
+not happen; the in-page mock room can produce it.
 
 Text leaves do not need IDs. Runtime values must never be written onto nodes:
 

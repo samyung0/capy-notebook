@@ -8,9 +8,9 @@ import { createSlatePlugin } from 'platejs';
  * which Slate-Yjs keeps with the tree they were made on and flushes at the
  * next onChange (a microtask) or at the start of the next remote event. A
  * second remote update in the same task (two Yjs transactions before that
- * microtask: an in-page room, or several updates read at once) would flush
- * them onto the newer Yjs state, writing the wrong change into the shared
- * document. Flushed right after their event, they meet the state they were
+ * microtask; the in-page mock room can do it, the server's frames cannot)
+ * would flush them onto the newer Yjs state, writing the wrong change into
+ * the shared document. Flushed right after their event, they meet the state they were
  * made on. Goes after YjsPlugin, which makes the editor a Yjs editor.
  */
 export const remoteNormalizationPlugin = createSlatePlugin({
