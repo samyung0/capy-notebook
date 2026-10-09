@@ -143,7 +143,8 @@ export async function savedExport(run: UatRun, fileId: string) {
  */
 function overSeed(seed: Uint8Array, change: Uint8Array, seedSHA256: string) {
   assert.equal(sha256(seed), seedSHA256, 'Stored change names another seed');
-  const doc = new Y.Doc();
+  // No formatting cleanup, as the room (sourceDocOptions in sourceProvider.ts).
+  const doc = new Y.Doc({ meta: { formattingCleanup: false } });
   try {
     Y.applyUpdate(doc, seed);
     Y.applyUpdate(doc, change);

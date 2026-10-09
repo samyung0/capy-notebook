@@ -215,7 +215,9 @@ Capy pnpm patch (`patches/yjs@13.6.31.patch`) that skips that cleanup for a
 doc built with `meta: { formattingCleanup: false }`. `sourceDocOptions`
 (`src/features/files/sourceProvider.ts`) sets it for an Office session's
 document, a recovered draft group of an Office file, and an Office room in the
-mock collaboration service. Text sources and notes keep the cleanup.
+mock collaboration service. The stress bench's Office peers and the UAT
+journey that re-exports a stored Office state build theirs with the same
+option. Text sources and notes keep the cleanup.
 
 Each format accepts exactly one fork-owned state schema and rejects every
 other; there are no migrations. Office editing state stores only what users
