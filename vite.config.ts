@@ -318,9 +318,15 @@ export default defineConfig(({ isSsrBuild, mode }) => {
     },
     server: {
       allowedHosts: serveLocalUat ? [devHost] : undefined,
-      hmr: serveLocalUat
-        ? { clientPort: 443, host: devHost, protocol: 'wss' }
-        : undefined,
+      // DEV_HMR=off stops pushed updates and reloads while files keep
+      // changing (e.g. agents editing); a manual refresh still serves the
+      // latest code. Vite has no CLI flag for this.
+      hmr:
+        env.DEV_HMR === 'off'
+          ? false
+          : serveLocalUat
+            ? { clientPort: 443, host: devHost, protocol: 'wss' }
+            : undefined,
       host: serveLocalUat ? '127.0.0.1' : true,
       open: !serveLocalUat,
       port: serveLocalUat ? 5173 : Number.parseInt(env.VITE_PORT, 10) || 5173,
