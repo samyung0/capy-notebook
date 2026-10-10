@@ -119,13 +119,14 @@ export function PastReviews() {
       ) : (
         <div className="flex flex-col gap-3" ref={revealRef}>
           <div className="overflow-hidden rounded-card border border-line">
-            <div className="hidden bg-surface-hover-bg px-4 py-2.5 font-bold text-fg-muted text-xs uppercase tracking-wide md:grid md:grid-cols-[8.5rem_minmax(0,1.2fr)_minmax(0,1.1fr)_8rem_8rem_4rem_40px] md:gap-3">
+            <div className="hidden bg-surface-hover-bg px-4 py-2.5 font-bold text-fg-muted text-xs uppercase tracking-wide md:grid md:grid-cols-[7rem_minmax(0,1.2fr)_minmax(0,1.1fr)_7rem_7rem_4rem_8.5rem_40px] md:gap-3">
               <div>{m.quiz_col_date()}</div>
               <div>{m.quiz_col_workspace()}</div>
               <div>{m.past_col_chapter()}</div>
               <div>{m.past_col_quiz()}</div>
               <div>{m.past_col_cards()}</div>
               <div className="text-right">{m.past_col_time()}</div>
+              <div>{m.past_col_status()}</div>
               <div />
             </div>
             {rows.map((r) => (
@@ -171,7 +172,7 @@ function Row({
     r.answered < r.total &&
     m.past_stopped({ answered: r.answered, total: r.total });
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto_40px] items-center gap-x-3 gap-y-0.5 border-divider border-t py-2.5 pr-2 pl-4 md:grid-cols-[8.5rem_minmax(0,1.2fr)_minmax(0,1.1fr)_8rem_8rem_4rem_40px] md:gap-3">
+    <div className="grid grid-cols-[minmax(0,1fr)_auto_40px] items-center gap-x-3 gap-y-0.5 border-divider border-t py-2.5 pr-2 pl-4 md:grid-cols-[7rem_minmax(0,1.2fr)_minmax(0,1.1fr)_7rem_7rem_4rem_8.5rem_40px] md:gap-3">
       {/* Phones: what, where and when, then both scores at the right. */}
       <div className="min-w-0 md:hidden">
         <p className="truncate font-semibold text-fg">
@@ -189,10 +190,7 @@ function Row({
           <span>{m.past_phone_cards({ score: scoreText(r.cards) })}</span>
         )}
       </div>
-      <div className="hidden min-w-0 md:block">
-        <p className="t-meta text-fg-secondary">{date}</p>
-        {stopped && <p className="truncate text-fg-muted text-xs">{stopped}</p>}
-      </div>
+      <p className="t-meta hidden text-fg-secondary md:block">{date}</p>
       <div className="hidden min-w-0 items-center gap-2.5 md:flex">
         <img
           alt=""
@@ -211,6 +209,12 @@ function Row({
       <p className="t-meta hidden text-right text-fg-muted md:block">
         {m.past_minutes({ count: minutes })}
       </p>
+      <div className="hidden min-w-0 md:block">
+        <p className="t-meta text-fg-secondary">
+          {stopped ? m.past_status_incomplete() : m.past_status_completed()}
+        </p>
+        {stopped && <p className="truncate text-fg-muted text-xs">{stopped}</p>}
+      </div>
       <div className="relative z-10 -my-2 flex justify-self-end">
         <Menu
           items={[
