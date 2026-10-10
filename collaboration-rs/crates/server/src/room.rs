@@ -2711,13 +2711,19 @@ async fn sleep_until(deadline: Option<Instant>) {
 /// writer uploads, and a listed id shows that block as uploading to every
 /// editor. Every entry is parsed (a key may be escaped, REVIEW5 R1), within
 /// the 64 KiB entry cap and serde_json's nesting limit, and loses the field.
+/// An entry serde_json refuses (an unpaired surrogate escape, which a
+/// browser's `JSON.parse` takes) becomes a removal (REVIEW5 R1b).
 fn without_uploads(entry: &mut awareness::Entry) {
     if entry.removed() {
         return;
     }
-    if let Ok(serde_json::Value::Object(mut state)) = serde_json::from_str(&entry.state)
-        && state.remove("uploads").is_some()
-    {
-        entry.state = serde_json::Value::Object(state).to_string();
+    match serde_json::from_str(&entry.state) {
+        Ok(serde_json::Value::Object(mut state)) => {
+            if state.remove("uploads").is_some() {
+                entry.state = serde_json::Value::Object(state).to_string();
+            }
+        }
+        Ok(_) => {}
+        Err(_) => entry.state = "null".into(),
     }
 }

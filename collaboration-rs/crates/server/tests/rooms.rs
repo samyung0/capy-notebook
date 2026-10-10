@@ -2099,11 +2099,12 @@ fn awareness_entries(payload: &[u8]) -> Vec<(u64, String)> {
         .collect()
 }
 
-/// Security regression (REVIEW5 E2, R1): a read-only channel cannot show
+/// Security regression (REVIEW5 E2, R1, R1b): a read-only channel cannot show
 /// blocks as uploading to editors. Its presence reaches the room without an
 /// `uploads` list, the rest of it (a cursor) intact, even under an escaped
-/// key (`upl\u006fads`, which a peer's JSON.parse reads as `uploads`); a
-/// writer's list goes through.
+/// key (`upl\u006fads`, which a peer's JSON.parse reads as `uploads`); an
+/// entry serde_json refuses but JSON.parse takes (an unpaired surrogate
+/// escape) never reaches peers as sent (R1b); a writer's list goes through.
 #[tokio::test]
 async fn a_read_only_channel_names_no_uploads_in_presence() {
     let Some(env) = env() else { return };
@@ -2120,20 +2121,36 @@ async fn a_read_only_channel_names_no_uploads_in_presence() {
     viewer.send(7, &awareness_update(9001, 1, state)).await;
     let escaped = r#"{"cursor":null,"upl\u006fads":["block-b"]}"#;
     viewer.send(7, &awareness_update(9003, 1, escaped)).await;
+    // serde_json refuses an unpaired surrogate escape; JSON.parse takes it
+    // and would read the list (REVIEW5 R1b). Client 9005, sent after it on
+    // the same channel, marks that the room has handled it.
+    let unparsed = r#"{"cursor":null,"uploads":["block-c"],"x":"\ud800"}"#;
+    viewer.send(7, &awareness_update(9004, 1, unparsed)).await;
+    viewer.send(7, &awareness_update(9005, 1, "{}")).await;
     writer.send(7, &awareness_update(9002, 1, state)).await;
     let (mut from_viewer, mut from_writer, mut escaped_key) = (None, None, None);
-    while from_viewer.is_none() || from_writer.is_none() || escaped_key.is_none() {
+    let (mut unparsed_seen, mut marked) = (Vec::new(), false);
+    while from_viewer.is_none() || from_writer.is_none() || escaped_key.is_none() || !marked {
         let payload = observer.until(7).await.expect("awareness");
         for (client, state) in awareness_entries(&payload) {
+            if client == 9004 {
+                unparsed_seen.push(state);
+                continue;
+            }
             let state: serde_json::Value = serde_json::from_str(&state).expect("json");
             match client {
                 9001 => from_viewer = Some(state),
                 9002 => from_writer = Some(state),
                 9003 => escaped_key = Some(state),
+                9005 => marked = true,
                 _ => {}
             }
         }
     }
+    assert!(
+        unparsed_seen.iter().all(|state| state == "null"),
+        "{unparsed_seen:?}"
+    );
     let from_viewer = from_viewer.unwrap();
     assert!(from_viewer.get("uploads").is_none(), "{from_viewer}");
     assert_eq!(from_viewer["cursor"]["anchor"], 1);
