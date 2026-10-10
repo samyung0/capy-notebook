@@ -4047,6 +4047,8 @@ components:
           type: string
         front:
           type: string
+        image:
+          $ref: "#/components/schemas/CardImage"
         itemId:
           type: string
         kind:

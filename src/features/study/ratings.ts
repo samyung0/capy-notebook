@@ -1,4 +1,5 @@
-import type { RateReviewItemReq } from '@/api/types';
+import type { RateReviewItemReq, ReviewItem } from '@/api/types';
+import type { FlashcardContent } from '@/features/materials/blocks';
 import { m } from '@/i18n';
 import type { SrsRating } from '@/lib/srs';
 
@@ -8,12 +9,16 @@ export const RATING_LABEL: Record<SrsRating, () => string> = {
   good: m.srs_good,
   hard: m.srs_hard,
 };
-export const RATING_STYLE: Record<SrsRating, string> = {
-  again: 'border-tint-error text-tint-error-fg hover:bg-tint-error',
-  easy: 'border-tint-success text-tint-success-fg hover:bg-tint-success',
-  good: 'border-tint-accent-1 text-tint-accent-1-fg hover:bg-tint-accent-1',
-  hard: 'border-tint-warning text-tint-warning-fg hover:bg-tint-warning',
-};
+
+/** A review card item as the shared card shows it. */
+export function reviewCard(item: ReviewItem): FlashcardContent {
+  return {
+    back: item.back ?? '',
+    front: item.front ?? '',
+    id: item.itemId,
+    ...(item.image ? { image: item.image } : {}),
+  };
+}
 
 /** A review session's ratings: each posts in the background, and `saved`
  * resolves once every one has settled, so the next batch is chosen from them. */

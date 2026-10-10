@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flashcard flip</title>
+<style>
+:root {
+  --motion-duration-stagger: 40ms;
+  --motion-duration-quick: 150ms;
+  --motion-duration-fast: 250ms;
+  --motion-duration-medium: 350ms;
+  --motion-duration-slow: 400ms;
+  --motion-ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-ease-spring: cubic-bezier(0.34, 1.25, 0.64, 1);
+  --motion-ease-in-out: ease-in-out;
+  --motion-distance-micro: 4px;
+  --motion-scale-popup: 0.97;
+  --motion-blur-small: 2px;
+  --slow: 1;
+  --bg: rgb(13 18 25);
+  --panel: rgb(17 23 32);
+  --surface: rgb(22 29 39);
+  --line: rgb(50 62 82);
+  --fg: rgb(230 233 239);
+  --muted: rgb(154 164 179);
+  --accent: 180 190 254;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 Fustat, system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+.lede { color: var(--muted); margin: 0 0 16px; max-width: 80ch; }
+.bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 20px; }
+.bar button { background: transparent; color: var(--fg); border: 1px solid var(--line); border-radius: 12px; padding: 6px 12px; font: inherit; cursor: pointer; }
+.bar button[aria-pressed="true"] { background: rgb(var(--accent) / .18); border-color: rgb(var(--accent) / .6); }
+.grid { display: grid; gap: 16px; grid-template-columns: 1fr; }
+@media (min-width: 900px) { .grid { grid-template-columns: 1fr 1fr; } }
+.variant { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 16px; min-width: 0; }
+.variant h2 { font-size: 16px; margin: 0; }
+.variant h2 b { display: inline-block; min-width: 1.6em; color: rgb(var(--accent)); }
+.rec { font-size: 12px; color: rgb(166 227 161); border: 1px solid rgb(166 227 161 / .5); border-radius: 999px; padding: 1px 8px; margin-left: 6px; vertical-align: 2px; }
+.spec { color: var(--muted); font-size: 13px; margin: 4px 0 14px; }
+.spec code { color: var(--fg); font-size: 12px; }
+.pos { text-align: center; color: var(--muted); font-size: 12px; margin: 0 0 4px; }
+
+/* The stack, as CardStack draws it (compact size). */
+.stack { position: relative; padding-top: 20px; max-width: 460px; margin: 0 auto; }
+.layer { position: absolute; height: 40px; border-radius: 24px; }
+.layer.l1 { inset-inline: 32px; top: 0; background: rgb(var(--accent) / .2); }
+.layer.l2 { inset-inline: 16px; top: 10px; background: rgb(var(--accent) / .4); }
+.slot { position: relative; height: 250px; perspective: 1200px; }
+.card { position: absolute; inset: 0; }
+.face { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--line); border-radius: 24px; background: var(--surface); box-shadow: 0 1px 2px rgb(0 0 0 / .25), 0 8px 24px rgb(0 0 0 / .2); }
+.hit { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 20px; text-align: center; cursor: pointer; position: relative; }
+.front-text { font-weight: 650; font-size: 17px; }
+.back-text { max-width: 52ch; line-height: 1.6; }
+.hit img { height: 80px; }
+.hint { position: absolute; bottom: 12px; width: 16px; height: 16px; opacity: .6; color: var(--muted); }
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 0 12px 12px; }
+.tiles button { border: 0; border-radius: 18px; padding: 10px 0; font: 600 14px/1.2 inherit; font-family: inherit; cursor: pointer; }
+.t-again { background: rgb(60 48 61); color: rgb(243 139 168); }
+.t-hard { background: rgb(66 60 46); color: rgb(249 226 175); }
+.t-good { background: rgb(42 55 75); color: rgb(137 180 250); }
+.t-easy { background: rgb(46 63 60); color: rgb(166 227 161); }
+
+/* Ratings arrive after the back shows: 4px rise, 40ms apart (160ms total). */
+.flipped .tiles button { animation: tile-in calc(var(--motion-duration-fast) * var(--slow)) var(--motion-ease-smooth-out) both; animation-delay: calc((var(--tile-wait, 0ms) + var(--i) * var(--motion-duration-stagger)) * var(--slow)); }
+@keyframes tile-in { from { opacity: 0; translate: 0 var(--motion-distance-micro); } }
+
+/* A, D: one 3D turn of the whole card; both faces stay mounted. */
+.v-turn .card, .v-tip .card { transform-style: preserve-3d; transition: transform calc(var(--motion-duration-slow) * var(--slow)) var(--motion-ease-smooth-out); }
+.v-turn .face, .v-tip .face { backface-visibility: hidden; }
+.v-turn .face.back { transform: rotateY(180deg); }
+.v-turn .card.flipped { transform: rotateY(180deg); }
+.v-tip .face.back { transform: rotateX(180deg); }
+.v-tip .card.flipped { transform: rotateX(180deg); }
+.v-turn, .v-tip { --tile-wait: 150ms; }
+
+/* B: squash turn. Edge-on out (150ms), content swaps, turns in lifted (250ms). */
+.v-squash .face.back { display: none; }
+.v-squash .card.flipped .face.back { display: flex; }
+.v-squash .card.flipped .face.front { display: none; }
+.v-squash .card.out { animation: squash-out calc(var(--motion-duration-quick) * var(--slow)) var(--motion-ease-in-out) forwards; }
+.v-squash .card.in { animation: squash-in calc(var(--motion-duration-fast) * var(--slow)) var(--motion-ease-spring); }
+@keyframes squash-out { to { transform: rotateY(90deg) scale(var(--motion-scale-popup)); } }
+@keyframes squash-in { from { transform: rotateY(-90deg) scale(var(--motion-scale-popup)); } }
+
+/* C: the card stays; text swaps in place (text-swap tokens). */
+.v-swap .face.back { display: none; }
+.v-swap .card.flipped .face.back { display: flex; }
+.v-swap .card.flipped .face.front { display: none; }
+.v-swap .card.swapping .face .hit > * { animation: swap-in calc(var(--motion-duration-fast) * var(--slow)) var(--motion-ease-in-out) both; }
+.v-swap .ghost .hit > * { animation: swap-out calc(var(--motion-duration-quick) * var(--slow)) var(--motion-ease-in-out) forwards; }
+.v-swap .ghost { pointer-events: none; }
+.v-swap .ghost .tiles, .v-swap .ghost .hint { visibility: hidden; }
+.v-swap .ghost .face { background: transparent; border-color: transparent; box-shadow: none; }
+@keyframes swap-in { from { opacity: 0; translate: 0 var(--motion-distance-micro); filter: blur(var(--motion-blur-small)); } }
+@keyframes swap-out { to { opacity: 0; translate: 0 calc(var(--motion-distance-micro) * -1); filter: blur(var(--motion-blur-small)); } }
+
+/* Moving on: the app's existing throw and rise (unchanged). */
+.throw { pointer-events: none; z-index: 2; animation: throw calc(var(--motion-duration-medium) * var(--slow)) var(--motion-ease-smooth-out) forwards, fade calc(var(--motion-duration-fast) * var(--slow)) var(--motion-ease-smooth-out) calc(100ms * var(--slow)) forwards; }
+.rise { animation: rise calc(var(--motion-duration-medium) * var(--slow)) var(--motion-ease-spring); }
+@keyframes throw { to { translate: -70% -45%; rotate: -14deg; filter: blur(var(--motion-blur-small)); } }
+@keyframes fade { to { opacity: 0; } }
+@keyframes rise { from { translate: 0 12px; scale: 0.96; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .card, .card *, .throw, .rise { animation: none !important; transition: none !important; }
+}
+table { width: 100%; border-collapse: collapse; margin-top: 24px; font-size: 13px; }
+th, td { text-align: left; padding: 8px; border-top: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Flashcard flip transition</h1>
+  <p class="lede">Today a click flips the card instantly; only moving to the next card animates (throw away + rise, kept as is below). Four flip options on the motion-token scale. Click a card to flip it (and again to flip back), rate to move on. All variants show the compact card the note embed and Quick review now use; the study page uses the same motion on its taller card. Reduced motion: every variant becomes an instant swap.</p>
+  <div class="bar">
+    <button aria-pressed="false" id="slow" type="button">Slow motion ×5</button>
+    <button id="reset" type="button">Reset all</button>
+  </div>
+  <div class="grid">
+    <section class="variant v-turn" data-variant>
+      <h2><b>A</b>Turn over<span class="rec">Recommended</span></h2>
+      <p class="spec">rotateY 180° in <code>--motion-duration-slow</code> (400ms) <code>--motion-ease-smooth-out</code>, perspective 1200px; ratings rise <code>--motion-distance-micro</code> with a <code>--motion-duration-stagger</code> offset. Same motion both ways (a reversible swap). Reads as a real card, matching the stack and the throw.</p>
+    </section>
+    <section class="variant v-squash" data-variant>
+      <h2><b>B</b>Squash turn</h2>
+      <p class="spec">Edge-on in <code>--motion-duration-quick</code> (150ms, ease-in-out) dipping to <code>--motion-scale-popup</code>, content swaps, turns in with <code>--motion-duration-fast</code> (250ms) on the menu morph's <code>--motion-ease-spring</code>. Snappier; never shows a mirrored half-turn; one face mounted at a time.</p>
+    </section>
+    <section class="variant v-swap" data-variant>
+      <h2><b>C</b>Text swap</h2>
+      <p class="spec">The card stays put; front leaves up <code>--motion-distance-micro</code> with <code>--motion-blur-small</code> in <code>--motion-duration-quick</code>, back enters from below in <code>--motion-duration-fast</code>, both <code>--motion-ease-in-out</code> (the text-swap tokens). Quietest; best in tight spots (Quick review), least "card-like".</p>
+    </section>
+    <section class="variant v-tip" data-variant>
+      <h2><b>D</b>Tip over</h2>
+      <p class="spec">As A but around the horizontal axis (rotateX 180°): the card tips toward you like an index card, in line with the stack's vertical rise. Same tokens as A.</p>
+    </section>
+  </div>
+  <table>
+    <tr><th>Variant</th><th>Flip total</th><th>Feel</th><th>Build cost in CardStack</th></tr>
+    <tr><td>A</td><td>400ms + 160ms ratings stagger</td><td>Physical, matches throw/rise</td><td>Both faces mounted (back inert + aria-hidden until flipped); CSS transition only</td></tr>
+    <tr><td>B</td><td>150ms + 250ms</td><td>Quick, a bit playful</td><td>One face; two keyframes, face swap on animationend</td></tr>
+    <tr><td>C</td><td>150ms out, 250ms in</td><td>Subtle</td><td>One face plus an exiting copy of the text</td></tr>
+    <tr><td>D</td><td>400ms + 160ms</td><td>Physical, vertical</td><td>As A</td></tr>
+  </table>
+</main>
+<script>
+(function () {
+  var CELL = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 90"><rect width="160" height="90" fill="#e8f3ee"/><ellipse cx="80" cy="45" rx="70" ry="36" fill="#bfe3cf" stroke="#4b9e74" stroke-width="2"/><circle cx="72" cy="42" r="13" fill="#b9a7f0" stroke="#6c56c9" stroke-width="2"/><circle cx="72" cy="42" r="4" fill="#6c56c9"/><ellipse cx="112" cy="34" rx="10" ry="5" fill="#f4c26b"/><ellipse cx="108" cy="58" rx="10" ry="5" fill="#f4c26b"/><ellipse cx="44" cy="60" rx="9" ry="5" fill="#f4c26b"/></svg>');
+  var CARDS = [
+    { front: 'Golgi apparatus', back: 'Packages and ships proteins.' },
+    { front: 'Nucleus', back: 'Stores DNA and controls cell activity.', img: true },
+    { front: 'Lysosome', back: 'Digests waste with hydrolytic enzymes.' }
+  ];
+  var RATINGS = [['Again', 't-again'], ['Hard', 't-hard'], ['Good', 't-good'], ['Easy', 't-easy']];
+  var HINT = '<svg class="hint" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>';
+
+  function esc(s) { return s.replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function faces(c) {
+    var tiles = RATINGS.map(function (r, i) { return '<button class="' + r[1] + '" style="--i:' + i + '" type="button" data-rate>' + r[0] + '</button>'; }).join('');
+    return '<div class="face front"><div class="hit" data-flip><span class="front-text">' + esc(c.front) + '</span>' + (c.img ? '<img alt="" src="' + CELL + '">' : '') + HINT + '</div></div>' +
+      '<div class="face back"><div class="hit" data-flip><span class="back-text">' + esc(c.back) + '</span></div><div class="tiles">' + tiles + '</div></div>';
+  }
+  function setup(root) {
+    var kind = root.classList.contains('v-squash') ? 'squash' : root.classList.contains('v-swap') ? 'swap' : 'turn';
+    var pos = document.createElement('p'); pos.className = 'pos';
+    var stack = document.createElement('div'); stack.className = 'stack';
+    stack.innerHTML = '<div class="layer l1"></div><div class="layer l2"></div><div class="slot"></div>';
+    root.appendChild(pos); root.appendChild(stack);
+    var slot = stack.querySelector('.slot');
+    var index = 0, card, busy = false;
+    function show(rise) {
+      pos.textContent = 'Card ' + (index + 1) + ' of ' + CARDS.length;
+      card = document.createElement('div'); card.className = 'card' + (rise ? ' rise' : '');
+      card.innerHTML = faces(CARDS[index]);
+      card.addEventListener('animationend', function (e) { if (e.target === card) card.classList.remove('rise'); });
+      slot.appendChild(card);
+    }
+    function sync() {
+      var flipped = card.classList.contains('flipped');
+      card.querySelector('.face.front').inert = flipped;
+      card.querySelector('.face.back').inert = !flipped;
+    }
+    function flip() {
+      if (busy) return;
+      if (kind === 'turn') { card.classList.toggle('flipped'); sync(); return; }
+      if (kind === 'swap') {
+        var ghost = card.cloneNode(true); ghost.classList.add('ghost'); ghost.classList.remove('swapping');
+        slot.appendChild(ghost);
+        ghost.addEventListener('animationend', function () { ghost.remove(); }, { once: true });
+        card.classList.toggle('flipped'); card.classList.remove('swapping'); void card.offsetWidth; card.classList.add('swapping'); sync();
+        return;
+      }
+      busy = true; card.classList.add('out');
+      card.addEventListener('animationend', function step() {
+        card.removeEventListener('animationend', step);
+        card.classList.remove('out'); card.classList.toggle('flipped'); card.classList.add('in'); sync();
+        card.addEventListener('animationend', function () { card.classList.remove('in'); busy = false; }, { once: true });
+      });
+    }
+    function next() {
+      var leaving = card; leaving.classList.add('throw'); leaving.inert = true;
+      leaving.addEventListener('animationend', function (e) { if (e.animationName === 'fade') leaving.remove(); });
+      index = (index + 1) % CARDS.length; busy = false; show(true); sync();
+    }
+    slot.addEventListener('click', function (e) {
+      if (e.target.closest('[data-rate]')) { next(); return; }
+      if (e.target.closest('[data-flip]')) flip();
+    });
+    root.reset = function () { slot.innerHTML = ''; index = 0; busy = false; show(false); sync(); };
+    root.reset();
+  }
+  var roots = document.querySelectorAll('[data-variant]');
+  for (var i = 0; i < roots.length; i++) setup(roots[i]);
+  var slow = document.getElementById('slow');
+  slow.addEventListener('click', function () {
+    var on = slow.getAttribute('aria-pressed') !== 'true';
+    slow.setAttribute('aria-pressed', String(on));
+    document.documentElement.style.setProperty('--slow', on ? '5' : '1');
+  });
+  document.getElementById('reset').addEventListener('click', function () { for (var i = 0; i < roots.length; i++) roots[i].reset(); });
+})();
+</script>
+</body>
+</html>

@@ -43,13 +43,15 @@ type StudySummary struct {
 // ReviewItem is one card or question in a review session, with the content
 // needed to show and grade it.
 type ReviewItem struct {
-	MaterialID    string         `json:"materialId"`
-	MaterialTitle string         `json:"materialTitle"`
-	ItemID        string         `json:"itemId"`
-	Kind          string         `json:"kind" enum:"card,question"`
-	Front         string         `json:"front,omitempty"`
-	Back          string         `json:"back,omitempty"`
-	Question      map[string]any `json:"question,omitempty"`
+	MaterialID    string `json:"materialId"`
+	MaterialTitle string `json:"materialTitle"`
+	ItemID        string `json:"itemId"`
+	Kind          string `json:"kind" enum:"card,question"`
+	Front         string `json:"front,omitempty"`
+	Back          string `json:"back,omitempty"`
+	// Image is a card's image, shown under the front text as in study.
+	Image    *materialdoc.CardImage `json:"image,omitempty"`
+	Question map[string]any         `json:"question,omitempty"`
 }
 
 const quickReviewSize = 20
@@ -123,7 +125,7 @@ func materialItems(mt Material) ([]studyItem, error) {
 				continue
 			}
 			it := base
-			it.ItemID, it.Kind, it.Front, it.Back = c.ID, "card", c.Front, c.Back
+			it.ItemID, it.Kind, it.Front, it.Back, it.Image = c.ID, "card", c.Front, c.Back, c.Image
 			out = append(out, studyItem{it, review.CardHash(c.Front, c.Back)})
 		}
 	case "quiz":

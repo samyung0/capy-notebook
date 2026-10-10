@@ -4871,6 +4871,9 @@ export const ResumeReviewSessionResponse = zod.object({
   "items": zod.array(zod.object({
   "back": zod.string().optional(),
   "front": zod.string().optional(),
+  "image": zod.object({
+  "assetId": zod.string()
+}).optional(),
   "itemId": zod.string(),
   "kind": zod.enum(['card', 'question']),
   "materialId": zod.string(),
@@ -6178,6 +6181,9 @@ export const GetWorkspaceReviewResponse = zod.object({
   "items": zod.array(zod.object({
   "back": zod.string().optional(),
   "front": zod.string().optional(),
+  "image": zod.object({
+  "assetId": zod.string()
+}).optional(),
   "itemId": zod.string(),
   "kind": zod.enum(['card', 'question']),
   "materialId": zod.string(),
@@ -6519,6 +6525,9 @@ export const GetWorkspaceStudyResponse = zod.object({
   "quickReview": zod.array(zod.object({
   "back": zod.string().optional(),
   "front": zod.string().optional(),
+  "image": zod.object({
+  "assetId": zod.string()
+}).optional(),
   "itemId": zod.string(),
   "kind": zod.enum(['card', 'question']),
   "materialId": zod.string(),

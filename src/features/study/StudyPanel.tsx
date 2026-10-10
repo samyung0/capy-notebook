@@ -15,6 +15,7 @@ import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Switch } from '@/components/ui/Switch';
 import { userToast } from '@/components/ui/userToast';
+import { CardStack, useCardStack } from '@/features/flashcards/CardStack';
 import type { OpenItem } from '@/features/materials/openItem';
 import { MiniTrail } from '@/features/questions/trailMap/TrailMap';
 import '@/features/study/railMap/railMap.css';
@@ -29,7 +30,7 @@ import { cn } from '@/lib/cn';
 import { coverInk } from '@/lib/coverInk';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { SRS_RATINGS, type SrsRating } from '@/lib/srs';
-import { RATING_LABEL, RATING_STYLE } from './ratings';
+import { reviewCard } from './ratings';
 import { groupName, REVIEW_MODE, reviewReason } from './reviewText';
 
 function itemTitle(item: WorkspaceContentItem): string {
@@ -359,7 +360,7 @@ function QuickReview({
   // and the round should not reshuffle under the learner.
   const [round, setRound] = useState(items);
   const [index, setIndex] = useState(0);
-  const [flipped, setFlipped] = useState(false);
+  const stack = useCardStack();
   const { mutateAsync: rateItem } = useRateReviewItem(workspaceId);
   const card = round[index];
   if (!card) return null;
@@ -376,7 +377,7 @@ function QuickReview({
         variant: 'error',
       })
     );
-    setFlipped(false);
+    stack.move(reviewCard(card));
     if (index + 1 < round.length) setIndex(index + 1);
     else {
       setRound(items);
@@ -394,33 +395,13 @@ function QuickReview({
       title={m.study_quick_review()}
     >
       <div className="flex flex-col gap-2 px-1.5 pt-1">
-        <button
-          aria-label={flipped ? card.back : m.flashcards_show_answer()}
-          className="flex h-36 flex-col items-center justify-center rounded-card border border-line bg-surface px-4 text-center"
-          onClick={() => setFlipped((f) => !f)}
-          type="button"
-        >
-          <p className="t-label text-fg-muted">{card.front}</p>
-          {flipped && <p className="mt-2 font-semibold">{card.back}</p>}
-          <p className="t-meta mt-3 text-fg-muted">{card.materialTitle}</p>
-        </button>
-        {flipped && (
-          <div className="grid grid-cols-4 gap-1.5">
-            {SRS_RATINGS.map((r) => (
-              <button
-                className={cn(
-                  'rounded-button border px-2 py-1.5 font-semibold text-xs transition-colors',
-                  RATING_STYLE[r]
-                )}
-                key={r}
-                onClick={() => rate(r)}
-                type="button"
-              >
-                {RATING_LABEL[r]()}
-              </button>
-            ))}
-          </div>
-        )}
+        <CardStack
+          card={reviewCard(card)}
+          compact
+          onRate={rate}
+          stack={stack}
+        />
+        <p className="t-meta text-center text-fg-muted">{card.materialTitle}</p>
       </div>
     </Section>
   );

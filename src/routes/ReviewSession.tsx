@@ -13,7 +13,6 @@ import {
 import type {
   CheckReviewItemReq,
   GradedQuestion,
-  RateReviewItemReq,
   ReviewItem,
   ReviewSessionRef,
   ReviewStart,
@@ -23,17 +22,13 @@ import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { Button, ErrorAction } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
+import { CardStack, useCardStack } from '@/features/flashcards/CardStack';
 import type { Answers } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
-import {
-  RATING_LABEL,
-  RATING_STYLE,
-  ratingQueue,
-} from '@/features/study/ratings';
+import { ratingQueue, reviewCard } from '@/features/study/ratings';
 import type { ReviewSearch } from '@/features/study/reviewSearch';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
-import { SRS_RATINGS, type SrsRating } from '@/lib/srs';
+import { SRS_RATINGS } from '@/lib/srs';
 
 function ratingFailed() {
   userToast({
@@ -103,6 +98,8 @@ export default function ReviewSession() {
       },
     });
   const [loadingMore, setLoadingMore] = useState(false);
+  // Cards rise from one stack across the session, the rated one swiping away.
+  const stack = useCardStack();
 
   // Ratings save in the background and refresh progress once, when the
   // session is left or Review more asks for the next batch.
@@ -148,6 +145,7 @@ export default function ReviewSession() {
         });
       setSession(null);
       setIndex(0);
+      stack.reset();
     } finally {
       setLoadingMore(false);
     }
@@ -193,12 +191,26 @@ export default function ReviewSession() {
           )
         ) : item ? (
           item.kind === 'card' ? (
-            <CardItem
-              item={item}
-              key={`${item.materialId}/${item.itemId}`}
-              onNext={() => setIndex(index + 1)}
-              onRate={(body) => ratings.rate({ ...body, session: session.ref })}
-            />
+            <div className="mx-auto w-full max-w-160">
+              <CardStack
+                card={reviewCard(item)}
+                onRate={(rating) => {
+                  ratings.rate({
+                    itemId: item.itemId,
+                    materialId: item.materialId,
+                    rating: SRS_RATINGS.indexOf(rating) + 1,
+                    session: session.ref,
+                  });
+                  // Only a card swipes away over the next card.
+                  const next = session.items[index + 1];
+                  stack.move(
+                    next?.kind === 'card' ? reviewCard(item) : undefined
+                  );
+                  setIndex(index + 1);
+                }}
+                stack={stack}
+              />
+            </div>
           ) : (
             <QuestionItem
               item={item}
@@ -228,59 +240,6 @@ export default function ReviewSession() {
         )}
       </div>
     </PanelWithInvertedRadius>
-  );
-}
-
-function CardItem({
-  item,
-  onNext,
-  onRate,
-}: {
-  item: ReviewItem;
-  onNext: () => void;
-  onRate: (body: RateReviewItemReq) => void;
-}) {
-  const [flipped, setFlipped] = useState(false);
-  function rate(rating: SrsRating) {
-    onRate({
-      itemId: item.itemId,
-      materialId: item.materialId,
-      rating: SRS_RATINGS.indexOf(rating) + 1,
-    });
-    onNext();
-  }
-  return (
-    <div className="mx-auto flex w-full max-w-xl flex-col gap-3">
-      <button
-        className="flex min-h-56 flex-col items-center justify-center gap-3 rounded-card border border-line bg-surface px-6 py-8 text-center"
-        onClick={() => setFlipped(true)}
-        type="button"
-      >
-        <p className="t-label text-fg-muted">{item.front}</p>
-        {flipped && <p className="t-card-title">{item.back}</p>}
-      </button>
-      {flipped ? (
-        <div className="grid grid-cols-4 gap-2">
-          {SRS_RATINGS.map((r) => (
-            <button
-              className={cn(
-                'rounded-card border px-2 py-2.5 font-semibold text-sm transition-colors',
-                RATING_STYLE[r]
-              )}
-              key={r}
-              onClick={() => rate(r)}
-              type="button"
-            >
-              {RATING_LABEL[r]()}
-            </button>
-          ))}
-        </div>
-      ) : (
-        <Button fullWidth onClick={() => setFlipped(true)}>
-          {m.flashcards_show_answer()}
-        </Button>
-      )}
-    </div>
   );
 }
 

@@ -284,6 +284,7 @@ function pool(wsId: string): ReviewItem[] {
           out.push({
             back: card.back,
             front: card.front,
+            ...(card.image ? { image: card.image } : {}),
             itemId: card.id,
             kind: 'card',
             materialId: id,

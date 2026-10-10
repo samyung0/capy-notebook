@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
 const studyQuestions = `[
@@ -378,5 +380,22 @@ func TestCloneCopiesNoStudyProgress(t *testing.T) {
 	}
 	if n := f.count(t, `SELECT count(*) FROM review_states rs JOIN materials m ON m.id=rs.material_id WHERE m.workspace_id=$1`, clone.ID); n != 0 {
 		t.Fatalf("cloned review states = %d", n)
+	}
+}
+
+func TestReviewCardItemsCarryTheCardImage(t *testing.T) {
+	content, err := materialdoc.FlashcardsDocument([]materialdoc.Card{
+		{ID: "c1", Front: "Nucleus", Back: "Holds DNA", Image: &materialdoc.CardImage{AssetID: "asset-cell"}},
+		{ID: "c2", Front: "Golgi", Back: "Ships proteins"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := materialItems(Material{ID: "m", Kind: "flashcards", Content: content})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].Image == nil || items[0].Image.AssetID != "asset-cell" || items[1].Image != nil {
+		t.Fatalf("items = %+v", items)
 	}
 }

@@ -233,7 +233,8 @@ line says quiz results are still kept. Top to bottom:
   as an underlined link, which opens the suggestion, or the whole workspace's
   review without one.
 - **Quick review**: one card at a time from `quickReview`, the pool's cards
-  with at least one lapse, least retained first, at most 20. A card flips and
+  with at least one lapse, least retained first, at most 20, on the shared
+  card in its compact size with the set's name under it. A card flips and
   takes the four ratings, posted like any rating; the round is a snapshot of
   the list and restarts from the refreshed list when it runs out, so a card
   rated Good drops down.
@@ -264,8 +265,10 @@ green closed book once read) and the same items in its ⋮ menu, for every role.
 (`src/routes/ReviewSession.tsx`), a full page scoped to one workspace. The
 session is the batch fetched when it began, so it does not reshuffle as
 ratings land; the browser mints its id and every answer carries it with the
-served items, so the first answer records the session. Cards flip and take
-the four ratings. Questions use the quiz page's `QuestionRunner` on the
+served items, so the first answer records the session. Cards use the study
+card (`CardStack`, below) without Previous/Next: every item is rated to move
+on, and a rated card swipes away only over another card. Review items carry
+the card's image, shown under the front. Questions use the quiz page's `QuestionRunner` on the
 answer-free question; Check posts the answers to `POST /api/review/check`,
 which grades (open parts with Jev), rates, records and returns the question
 with its key, then shows the marked answer. A failed check shows an error and
@@ -282,8 +285,12 @@ The per-set Study page (`src/routes/FlashcardStudy.tsx`) takes every written
 card in document order; Again sends a card to the end. It uses the quiz pages'
 frame (header with back, breadcrumb and title) and never edits cards. The same
 `StudyBody` (`src/features/flashcards/StudyBody.tsx`) serves the page, note
-embeds and the shared page: "Card 1 of 6" centred above the card, which flips
-on a click and carries the text rating buttons
+embeds and the shared page, drawing the card with `CardStack`
+(`src/features/flashcards/CardStack.tsx`, also the review session's and Quick
+review's card; note embeds and Quick review use its shorter compact size):
+"Card 1 of 6" centred above the card, which flips
+on a click (the text swaps in place, old face up and out, new face in from
+below, the ratings rising in one after another) and carries the text rating buttons
 (`src/features/study/RatingTiles.tsx`) on its back; Previous and Next sit under
 it at the right. Next skips without rating (the card goes to the session's
 end), Previous brings back the card shown before, to rate again. Moving on

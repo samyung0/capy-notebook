@@ -4,12 +4,14 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { CardImage } from './cardImage.ts';
 import type { ReviewItemKind } from './reviewItemKind.ts';
 import type { ReviewItemQuestion } from './reviewItemQuestion.ts';
 
 export interface ReviewItem {
   back?: string;
   front?: string;
+  image?: CardImage;
   itemId: string;
   kind: ReviewItemKind;
   materialId: string;

@@ -6,27 +6,29 @@ import {
 } from '@/features/materials/MediaAssetView';
 import { cn } from '@/lib/cn';
 
-/** The front as the grid, previews and study show it: the text, centred. */
+/** The front as the grid, previews and study show it: the text, centred,
+ * its image under it. A grid tile's image takes over half the tile. */
 export function CardFront({
   card,
   className,
-  large = false,
+  size = 'tile',
 }: {
   card: FlashcardContent;
   className?: string;
-  large?: boolean;
+  size?: 'tile' | 'compact' | 'large';
 }) {
   return (
     <div
       className={cn(
-        'flex flex-col items-center justify-center gap-3 text-center',
+        'flex flex-col items-center justify-center text-center',
+        size === 'tile' ? 'gap-2' : 'gap-3',
         className
       )}
     >
       <p
         className={cn(
           'whitespace-pre-line break-words',
-          large ? 't-large-card-title' : 't-card-title'
+          size === 'large' ? 't-large-card-title' : 't-card-title'
         )}
       >
         {card.front}
@@ -34,7 +36,11 @@ export function CardFront({
       {card.image && (
         <CardImage
           assetId={card.image.assetId}
-          className={large ? 'h-30' : 'max-h-[38%]'}
+          className={cn(
+            size === 'tile' && 'max-h-[58%]',
+            size === 'compact' && 'h-20',
+            size === 'large' && 'h-30'
+          )}
         />
       )}
     </div>
@@ -134,7 +140,7 @@ export function CardSides({
         className
       )}
     >
-      <CardFront card={card} className="p-7" large />
+      <CardFront card={card} className="p-7" size="large" />
       <div className="flex items-center justify-center overflow-auto border-divider border-t p-7">
         <CardBack card={card} />
       </div>

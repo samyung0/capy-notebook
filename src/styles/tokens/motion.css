@@ -1,5 +1,6 @@
 /* transitions.dev tokens, namespaced to preserve Tailwind's default easing. */
 :root {
+  --motion-duration-stagger: 40ms;
   --motion-duration-micro: 80ms;
   --motion-duration-quick: 150ms;
   --motion-duration-fast: 250ms;
@@ -428,4 +429,47 @@
 @utility motion-card-rise {
   animation: motion-card-rise var(--motion-duration-medium)
     var(--motion-ease-spring);
+}
+
+/* Flipping a flashcard swaps its text in place (the text-swap tokens): the
+   old face leaves upward as the new one enters from below, and the ratings
+   rise in one after another (`--motion-stagger-index` per tile). */
+@keyframes motion-card-face-in {
+  from {
+    opacity: 0;
+    translate: 0 var(--motion-distance-micro);
+    filter: blur(var(--motion-blur-small));
+  }
+}
+
+@keyframes motion-card-face-out {
+  to {
+    opacity: 0;
+    translate: 0 calc(var(--motion-distance-micro) * -1);
+    filter: blur(var(--motion-blur-small));
+  }
+}
+
+@keyframes motion-card-tile-in {
+  from {
+    opacity: 0;
+    translate: 0 var(--motion-distance-micro);
+  }
+}
+
+@utility motion-card-face-in {
+  animation: motion-card-face-in var(--motion-duration-fast)
+    var(--motion-ease-in-out) both;
+}
+@utility motion-card-face-out {
+  animation: motion-card-face-out var(--motion-duration-quick)
+    var(--motion-ease-in-out) forwards;
+}
+@utility motion-card-tile-in {
+  animation: motion-card-tile-in var(--motion-duration-fast)
+    var(--motion-ease-smooth-out) both;
+  animation-delay: calc(
+    var(--motion-stagger-index, 0) *
+    var(--motion-duration-stagger)
+  );
 }
