@@ -811,7 +811,7 @@ function SourceFooter({
       </div>
       <div className="flex flex-1 justify-between gap-2 sm:flex-none">
         <DialogClose asChild>
-          <Button className="-ml-6.5 sm:ml-0" size="lg" variant="ghost-hover">
+          <Button className="-ml-4 sm:ml-0" size="lg" variant="ghost-hover">
             {m.action_cancel()}
           </Button>
         </DialogClose>

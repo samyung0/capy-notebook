@@ -232,7 +232,7 @@ export function ShareDialog({
             <InputTitle>{m.share_visibility()}</InputTitle>
             <p className="t-meta text-fg-muted">{current.hint}</p>
           </div>
-          <div className="w-40 shrink-0 sm:w-auto sm:min-w-45 sm:max-w-70">
+          <div className="w-36 shrink-0 sm:w-auto sm:min-w-45 sm:max-w-70">
             <Select
               disabled={busy}
               onValueChange={(v) => handlePrivacyChange(v as Privacy)}
@@ -273,7 +273,7 @@ export function ShareDialog({
                 <InputTitle>{m.share_anyone_with_access()}</InputTitle>
                 <p className="t-meta text-fg-muted">{roleHint}</p>
               </div>
-              <div className="w-40 shrink-0 sm:w-auto sm:min-w-45 sm:max-w-70">
+              <div className="w-36 shrink-0 sm:w-auto sm:min-w-45 sm:max-w-70">
                 <Select
                   disabled={busy}
                   onValueChange={(value) =>

@@ -110,7 +110,6 @@ export function IconPicker({
         />
         <DialogFooter className="shrink-0 flex-row">
           <Button
-            className="flex-1 sm:flex-none"
             onClick={() => setOpen(false)}
             size="lg"
             type="button"
@@ -119,7 +118,6 @@ export function IconPicker({
             {m.action_cancel()}
           </Button>
           <Button
-            className="flex-1 sm:flex-none"
             disabled={!draft}
             onClick={() => {
               if (draft) {

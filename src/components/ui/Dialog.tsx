@@ -145,11 +145,11 @@ function DialogFooter({
       className={cn(
         '-mx-4 -mb-3 flex flex-row justify-end gap-2 px-4 pt-5.5 pb-3',
         // Phones split a multi-button footer: the first (secondary) action goes
-        // to the left edge, and a borderless one sheds its padding so its label
-        // lines up with the content above.
+        // to the left edge, and a borderless one sheds most of its padding so
+        // its label sits just inside the content edge.
         '[&>:first-child:not(:only-child)]:mr-auto sm:[&>:first-child:not(:only-child)]:mr-0',
-        '[&>[data-variant=ghost-hover][data-size=lg]:first-child:not(:only-child)]:-ml-6.5 sm:[&>[data-variant=ghost-hover][data-size=lg]:first-child:not(:only-child)]:ml-0',
-        '[&>[data-variant=ghost-hover][data-size=md]:first-child:not(:only-child)]:-ml-5 sm:[&>[data-variant=ghost-hover][data-size=md]:first-child:not(:only-child)]:ml-0',
+        '[&>[data-variant=ghost-hover][data-size=lg]:first-child:not(:only-child)]:-ml-4 sm:[&>[data-variant=ghost-hover][data-size=lg]:first-child:not(:only-child)]:ml-0',
+        '[&>[data-variant=ghost-hover][data-size=md]:first-child:not(:only-child)]:-ml-3 sm:[&>[data-variant=ghost-hover][data-size=md]:first-child:not(:only-child)]:ml-0',
         className
       )}
       data-slot="dialog-footer"
@@ -329,7 +329,7 @@ function ConfirmDialog({
       title={title}
     >
       {/* t-body is slightly too small to draw user's attention */}
-      {body && <p className="text-base">{body}</p>}
+      {body && <p className="text-[0.9375rem] sm:text-base">{body}</p>}
       {children}
     </SimpleDialog>
   );
