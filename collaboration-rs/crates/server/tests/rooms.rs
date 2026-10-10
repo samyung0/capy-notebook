@@ -1534,6 +1534,53 @@ async fn a_note_edited_without_a_pause_still_projects_on_the_cadence() {
     }
 }
 
+/// The editor's footer re-reads the note when the projection after a save
+/// that changed its embeds lands, so a save's receipt must reach it before
+/// the projection that covers it (as Node sent them).
+#[tokio::test]
+async fn a_save_receipt_reaches_the_editor_before_its_projection() {
+    let Some(env) = env() else { return };
+    if env.api.is_none() {
+        return;
+    }
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[("COLLABORATION_PROJECTION_IDLE_MS", "300")],
+    )
+    .await;
+    let (user, material) = note(&env, "start").await;
+    let room = format!("material:{material}:schema:1");
+    let mut a = Client::open(server.port).await;
+    a.joined(&room, &token(&room, &user, "write")).await;
+    assert!(a.settle(|c| c.block_text() == "start").await);
+    a.type_text(" saved").await;
+    let request = serde_json::json!({ "id": "r1", "type": "checkpoint-request" }).to_string();
+    let mut payload = Vec::new();
+    varbytes(&mut payload, request.as_bytes());
+    a.send(9, &payload).await;
+    let (projection, before) = a.stateless("projection-updated").await;
+    let receipt = before
+        .iter()
+        .find(|message| {
+            message["type"] == "checkpoint-persisted"
+                && message["checkpointIds"]
+                    .as_array()
+                    .is_some_and(|ids| ids.iter().any(|id| id == "r1"))
+        })
+        .unwrap_or_else(|| panic!("no receipt before {projection}: {before:?}"));
+    let (saved, projected) = (
+        receipt["yjsVersion"].as_i64(),
+        projection["yjsVersion"].as_i64(),
+    );
+    assert!(
+        saved
+            .zip(projected)
+            .is_some_and(|(saved, projected)| saved <= projected),
+        "{receipt} {projection}"
+    );
+}
+
 /// Security regressions: a token opens only the room it names; the server
 /// asks for a fresh one before it expires and closes the channel at expiry
 /// unless a valid one for the same room came back; the upgrade refuses an

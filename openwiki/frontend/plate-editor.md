@@ -1179,6 +1179,11 @@ projection back into an initialized Y.Doc.
 
 A mounted editor answers `projection-updated` by marking the material query
 stale without refetching, and flushes one real invalidation when it unmounts.
+A room sends a store's `checkpoint-persisted` before the `projection-updated`
+that covers it, which the footer's credit refresh relies on: the idle and
+on-demand projections start from a version the room already confirmed, and the
+receipt leaves as the commit returns, while a cadence projection that read the
+commit still has its replay and the Go call ahead of it.
 The room is the content authority while the editor is open, so refetching there
 only re-downloads and re-parses a document nobody is reading — on a near-limit
 note that is seconds of main-thread time per save.
