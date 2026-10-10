@@ -6,6 +6,7 @@
  */
 import type { AccessCapabilities } from './accessCapabilities.ts';
 import type { Envelope } from './envelope.ts';
+import type { MaterialEmbedCredits } from './materialEmbedCredits.ts';
 import type { MaterialKind } from './materialKind.ts';
 import type { Privacy } from './privacy.ts';
 import type { Provenance } from './provenance.ts';
@@ -23,6 +24,7 @@ export interface Material {
   /** UTF-8 byte length of persisted content JSON */
   contentBytes: number;
   createdAt: string;
+  embedCredits?: MaterialEmbedCredits;
   id: string;
   imageMaxBytes: number;
   isOwner: boolean;

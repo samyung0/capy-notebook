@@ -41,12 +41,12 @@ import { userToast } from '@/components/ui/userToast';
 import { FileLoading } from '@/features/files/FileStates';
 import {
   createMaterialDocument,
-  MATERIAL_REF_TYPE,
   type MaterialDocument,
   type MaterialValue,
   parseMaterialDocument,
 } from '@/features/materials/document';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
+import { embedKey, useNoteFooter } from '@/features/materials/useNoteFooter';
 import { NoteToolbar } from '@/features/notes/toolbar/NoteToolbar';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -144,18 +144,6 @@ function requestReceipt(editor: PlateEditor, synced: boolean, id: string) {
   );
 }
 
-/** The quizzes and flashcard sets a note embeds, in order: the ones its
- * footer credits once a save stores them. */
-function embedKey(value: readonly { type?: unknown; materialId?: unknown }[]) {
-  return value
-    .flatMap((node) =>
-      node.type === MATERIAL_REF_TYPE && typeof node.materialId === 'string'
-        ? [node.materialId]
-        : []
-    )
-    .join(' ');
-}
-
 function sameStats(a: MaterialDocumentStats, b: MaterialDocumentStats) {
   return (
     a.contentBytes === b.contentBytes &&
@@ -227,20 +215,27 @@ function DocumentStatsFooter({
 }
 
 /** The note's credits after its editable content, outside the Yjs document
- * and in the column its content uses, where View puts them too. Memoized:
- * the editor re-renders on every save acknowledgement, the credits only when
- * the material is read again. Ending the scroll area, it keeps room under the
- * workspace's floating bar where that shows and some space above the end;
- * the stats footer, when it follows, keeps that room instead. */
+ * and in the column its content uses, where View puts them too: its own and
+ * those of the embeds the document holds now (useNoteFooter), so adding or
+ * removing an embed shows at once. Memoized: the editor re-renders on every
+ * save acknowledgement, the credits only when the embeds or their reads
+ * change. Ending the scroll area, it keeps room under the workspace's floating
+ * bar where that shows and some space above the end; the stats footer, when it
+ * follows, keeps that room instead. */
 const NoteAttribution = memo(function NoteAttribution({
   beforeStats,
-  provenance,
+  embedCredits,
+  embeds,
+  provenance: own,
 }: {
   beforeStats: boolean;
+  embedCredits: Material['embedCredits'];
+  embeds: string;
   provenance: Provenance | undefined;
 }) {
   const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
   const overBar = useContext(FloatingBarContext);
+  const provenance = useNoteFooter({ embedCredits, provenance: own }, embeds);
   return (
     <MaterialAttributionFooter
       className={cn(
@@ -500,12 +495,6 @@ export function NoteEditorCore({
   // service answers the first must not orphan the earlier request.
   // Each request's local edit count, so a receipt covers the stored drafts.
   const pendingCheckpoints = useRef(new Map<string, number>());
-  // The embeds each requested checkpoint stores, and those the stored note
-  // has: when a save changes them, the note's credits (computed from its
-  // projection) are read again once the projection holds that save.
-  const checkpointEmbeds = useRef(new Map<string, string>());
-  const storedEmbeds = useRef(embedKey(material.content.value));
-  const embedsChanged = useRef(false);
   const unsavedChanges = useRef(restored.length > 0);
   const recorder = useRef<DraftRecorder | null>(null);
   // The room is unreachable: the editor keeps editing on this device.
@@ -672,19 +661,9 @@ export function NoteEditorCore({
           covered = Math.max(covered, pendingCheckpoints.current.get(id) ?? -1);
         const acknowledged = covered >= 0;
         if (acknowledged) {
-          let embeds: string | undefined;
           for (const [id, sequence] of pendingCheckpoints.current)
-            if (sequence <= covered) {
-              if (sequence === covered)
-                embeds = checkpointEmbeds.current.get(id);
-              pendingCheckpoints.current.delete(id);
-              checkpointEmbeds.current.delete(id);
-            }
+            if (sequence <= covered) pendingCheckpoints.current.delete(id);
           void recorder.current?.covered(covered);
-          if (embeds !== undefined && embeds !== storedEmbeds.current) {
-            storedEmbeds.current = embeds;
-            embedsChanged.current = true;
-          }
         }
         saveDelay.retain(pendingCheckpoints.current.keys());
         // Saving works again: the banner goes, and comes back only if the
@@ -728,7 +707,6 @@ export function NoteEditorCore({
         const unsaved = hasUnsavedWork() || !!recorder.current?.unsaved;
         if (unsaved) recorder.current?.refuse();
         pendingCheckpoints.current.clear();
-        checkpointEmbeds.current.clear();
         saveDelay.retain([]);
         setStatus('error');
         reportRejection.current?.(
@@ -780,14 +758,10 @@ export function NoteEditorCore({
         // refetching now would re-download and re-parse the whole document for
         // a reader that does not exist. Mark it stale and flush on teardown,
         // when static previews and exports start reading the projection again.
-        // A save that changed the note's embeds is the exception: the footer's
-        // credits come with the read.
-        const refetch = embedsChanged.current;
-        embedsChanged.current = false;
-        projectionStale.current = !refetch;
+        projectionStale.current = true;
         void qc.invalidateQueries({
           queryKey: qk.material(material.id),
-          refetchType: refetch ? 'active' : 'none',
+          refetchType: 'none',
         });
         return;
       }
@@ -1127,10 +1101,6 @@ export function NoteEditorCore({
       return;
     const id = crypto.randomUUID();
     pendingCheckpoints.current.set(id, recorder.current?.sequence ?? 0);
-    checkpointEmbeds.current.set(
-      id,
-      embedKey(editor.children as MaterialValue)
-    );
     saveDelay.requested(id);
     unsavedChanges.current = false;
     // Enter the pending state before dispatching: a provider that answers
@@ -1150,6 +1120,27 @@ export function NoteEditorCore({
       CHECKPOINT_DEBOUNCE_MS
     );
   }, [markSyncing, requestCheckpoint]);
+
+  // The embeds the document holds now, for the footer. Only a change to the
+  // top-level blocks (or a whole new value, as the room's first sync) can add
+  // or remove one, so typing never reaches the scan.
+  const [embeds, setEmbeds] = useState(() => embedKey(material.content.value));
+  const changeValue = useCallback(
+    ({ editor: current }: { editor: PlateEditor }) => {
+      scheduleCheckpoint();
+      const { operations } = current;
+      if (
+        operations.length > 0 &&
+        !operations.some(
+          (op) => (op as { path?: readonly number[] }).path?.length === 1
+        )
+      )
+        return;
+      const next = embedKey(current.children);
+      setEmbeds((previous) => (previous === next ? previous : next));
+    },
+    [scheduleCheckpoint]
+  );
 
   // `mod+s` stays registered so the browser's own save dialog never opens, and
   // it flushes the debounce rather than running a second checkpoint path.
@@ -1218,7 +1209,7 @@ export function NoteEditorCore({
   return (
     <NoteBlockDialogsProvider noteId={material.id}>
       <div className="flex max-h-full flex-1 flex-col overflow-auto">
-        <Plate editor={editor} onValueChange={scheduleCheckpoint}>
+        <Plate editor={editor} onValueChange={changeValue}>
           <CollaborationProvider
             currentUserId={currentUserId}
             discussions={discussions}
@@ -1248,6 +1239,8 @@ export function NoteEditorCore({
                     </EditorScrollAreaContext.Provider>
                     <NoteAttribution
                       beforeStats={shouldShowDocumentStats(documentStats)}
+                      embedCredits={material.embedCredits}
+                      embeds={embeds}
                       provenance={material.provenance}
                     />
                     <DocumentStatsFooter

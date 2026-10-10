@@ -327,6 +327,34 @@ func (s *Store) EmbedSources(ctx context.Context, noteID, content string) ([]*Pr
 	return embedSources(ctx, s.pool, noteID, content)
 }
 
+// EmbedCredits reads the provenance of the note's own live embedded rows that
+// have credits, by id, whichever its content references now: the app keeps the
+// ones its document references.
+func (s *Store) EmbedCredits(ctx context.Context, noteID string) (map[string]*Provenance, error) {
+	return embedCredits(ctx, s.pool, noteID)
+}
+
+func embedCredits(ctx context.Context, q rowsQueryer, noteID string) (map[string]*Provenance, error) {
+	rows, err := q.Query(ctx, `SELECT id, provenance FROM materials
+		WHERE parent_material_id=$1 AND trashed_at IS NULL AND provenance IS NOT NULL`, noteID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	credits := map[string]*Provenance{}
+	for rows.Next() {
+		var id string
+		var raw []byte
+		if err := rows.Scan(&id, &raw); err != nil {
+			return nil, err
+		}
+		if credits[id], err = decodeProvenance(raw); err != nil {
+			return nil, err
+		}
+	}
+	return credits, rows.Err()
+}
+
 // CheckFooterLicence refuses a write that would put two copyleft families in a
 // note's footer (FooterLicence): note's own record as the write leaves it, its
 // live embeds' and the records the write adds to an embed. The code is the
@@ -343,24 +371,8 @@ func (s *Store) CheckFooterLicence(ctx context.Context, note Material, added ...
 }
 
 func embedSources(ctx context.Context, q rowsQueryer, noteID, content string) ([]*Provenance, error) {
-	rows, err := q.Query(ctx, `SELECT id, provenance FROM materials
-		WHERE parent_material_id=$1 AND trashed_at IS NULL AND provenance IS NOT NULL`, noteID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	credited := map[string]*Provenance{}
-	for rows.Next() {
-		var id string
-		var raw []byte
-		if err := rows.Scan(&id, &raw); err != nil {
-			return nil, err
-		}
-		if credited[id], err = decodeProvenance(raw); err != nil {
-			return nil, err
-		}
-	}
-	if err := rows.Err(); err != nil || len(credited) == 0 {
+	credited, err := embedCredits(ctx, q, noteID)
+	if err != nil || len(credited) == 0 {
 		return nil, err
 	}
 	refs, err := materialdoc.ExtractMaterialRefs(content)

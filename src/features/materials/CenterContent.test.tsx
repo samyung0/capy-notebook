@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { prerenderToNodeStream } from 'react-dom/static';
 import { describe, expect, it, vi } from 'vitest';
@@ -66,6 +67,32 @@ const materials: Record<string, Partial<Material>> = {
     } as Material['content'],
     kind: 'note',
   },
+  // A note embedding one credited quiz; the read also names a credited row
+  // its content no longer references.
+  noteWithEmbed: {
+    content: {
+      schemaVersion: 1,
+      value: [
+        { children: [{ text: 'Note body' }], id: 'p1', type: 'p' },
+        block('material_ref', { materialId: 'qz_child', refKind: 'quiz' }),
+      ],
+    } as Material['content'],
+    embedCredits: {
+      qz_child: {
+        ...provenance,
+        books: [
+          { ...provenance.books[0], id: 'child', title: 'Embedded quiz book' },
+        ],
+      },
+      qz_removed: {
+        ...provenance,
+        books: [
+          { ...provenance.books[0], id: 'gone', title: 'Removed quiz book' },
+        ],
+      },
+    },
+    kind: 'note',
+  },
   quiz: {
     content: { schemaVersion: 1, value: [] } as Material['content'],
     kind: 'quiz',
@@ -98,7 +125,9 @@ vi.mock('./MaterialPreview', () => ({
 }));
 
 async function render(node: ReactNode) {
-  const { prelude } = await prerenderToNodeStream(node);
+  const { prelude } = await prerenderToNodeStream(
+    <QueryClientProvider client={new QueryClient()}>{node}</QueryClientProvider>
+  );
   let html = '';
   for await (const chunk of prelude) html += chunk;
   return html;
@@ -147,4 +176,25 @@ describe('material attribution placement', () => {
     // with its collapsed Sources line.
     expect(area.includes('<footer')).toBe(id === 'note' || id === 'diagram');
   });
+});
+
+// The note's footer credits its own sources then each embed its content holds
+// (the read's embedCredits until the embed's own read lands), never one it
+// no longer holds.
+it('credits the embeds the note holds in its footer', async () => {
+  const html = await render(
+    <MaterialContent
+      allowExternalAssets={false}
+      centerQuiz={false}
+      forceReadOnly={false}
+      materialId="noteWithEmbed"
+      mode="view"
+      onEditorStatusChange={() => {}}
+    />
+  );
+  const footer = html.slice(html.lastIndexOf('<footer'));
+  expect(footer.indexOf('Embedded quiz book')).toBeGreaterThan(
+    footer.indexOf('Credited source book')
+  );
+  expect(footer).not.toContain('Removed quiz book');
 });

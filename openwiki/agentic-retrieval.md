@@ -2494,13 +2494,22 @@ build, and the knowledge library is one more source while the switch is on.
   (its block goes, as for an unreadable source). Clones copy a union that
   already passed. A union that still has two families (an embed restored by
   undo after a conflicting write) has no single licence, so its footer states
-  none and each embed shows its own. `materialResponse` adds the union for
-  every note response (one indexed query for the note's credited rows; the
-  content is parsed only when one exists) and `AnonymousNote` for the shared
-  note, so a removed or trashed embed drops out and returns on restore. The
-  open editor reads the note again when a save changes which embeds it stores
-  (`NoteEditorCore`'s per-checkpoint embed key), so pasting or removing an
-  embed updates the footer once that save lands.
+  none and each embed shows its own. In the app the union is computed in the
+  browser (Epo 2026-10-11) from the document's current embeds, so adding,
+  removing or undoing an embed changes the footer at once, with no wait for a
+  save or the projection: a note read returns its own record in `provenance`
+  and each of its own live embeds' credits by id in `embedCredits` (one
+  indexed query; trashed rows and other notes' rows never appear), and
+  `useNoteFooter` takes each embed's credits from the read its block already
+  makes (`qk.quiz`/`qk.material`; a failed read, such as a trashed row, drops
+  it), else from `embedCredits`, and unions them in document order with
+  `noteFooterProvenance` (`footerUnion.ts`, Go's rules: the parity table
+  `server/internal/store/testdata/footer_union_parity.json` is read by
+  `TestFooterUnionParity` and `footerUnion.test.ts`). The editor keeps the
+  document's embed list (`embedKey`) and rescans it only for changes to
+  top-level blocks or a whole new value, never for typing. Go keeps its own
+  union for the shared note (`AnonymousNote`) and the write-time family check;
+  the projection stays on its idle schedule.
 - **Answer.** A build turn ends like any turn: an OpenUI Lang answer
   (`LangRenderer`) listing the materials made, cited under the usual rules. The
   attribution the user sees for library content is the provenance footer on

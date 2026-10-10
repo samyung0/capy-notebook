@@ -2766,6 +2766,52 @@ export const CreateStandaloneMaterialResponse = zod.object({
 }),
   "contentBytes": zod.int().describe('UTF-8 byte length of persisted content JSON'),
   "createdAt": zod.iso.datetime({"offset":true}),
+  "embedCredits": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "questions": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
   "id": zod.string(),
   "imageMaxBytes": zod.int(),
   "isOwner": zod.boolean(),
@@ -2873,6 +2919,52 @@ export const GetMaterialResponse = zod.object({
 }),
   "contentBytes": zod.int().describe('UTF-8 byte length of persisted content JSON'),
   "createdAt": zod.iso.datetime({"offset":true}),
+  "embedCredits": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "questions": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
   "id": zod.string(),
   "imageMaxBytes": zod.int(),
   "isOwner": zod.boolean(),
@@ -2962,6 +3054,52 @@ export const CloneMaterialResponse = zod.object({
 }),
   "contentBytes": zod.int().describe('UTF-8 byte length of persisted content JSON'),
   "createdAt": zod.iso.datetime({"offset":true}),
+  "embedCredits": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "questions": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
   "id": zod.string(),
   "imageMaxBytes": zod.int(),
   "isOwner": zod.boolean(),
@@ -3173,6 +3311,52 @@ export const CreateEmbeddedMaterialResponse = zod.object({
 }),
   "contentBytes": zod.int().describe('UTF-8 byte length of persisted content JSON'),
   "createdAt": zod.iso.datetime({"offset":true}),
+  "embedCredits": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "questions": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
   "id": zod.string(),
   "imageMaxBytes": zod.int(),
   "isOwner": zod.boolean(),
@@ -3295,6 +3479,52 @@ export const UpdateMaterialSharingResponse = zod.object({
 }),
   "contentBytes": zod.int().describe('UTF-8 byte length of persisted content JSON'),
   "createdAt": zod.iso.datetime({"offset":true}),
+  "embedCredits": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "questions": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
   "id": zod.string(),
   "imageMaxBytes": zod.int(),
   "isOwner": zod.boolean(),
@@ -6152,6 +6382,52 @@ export const CreateMaterialResponse = zod.object({
 }),
   "contentBytes": zod.int().describe('UTF-8 byte length of persisted content JSON'),
   "createdAt": zod.iso.datetime({"offset":true}),
+  "embedCredits": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "questions": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
   "id": zod.string(),
   "imageMaxBytes": zod.int(),
   "isOwner": zod.boolean(),

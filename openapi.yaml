@@ -2563,6 +2563,10 @@ components:
         createdAt:
           format: date-time
           type: string
+        embedCredits:
+          additionalProperties:
+            $ref: "#/components/schemas/Provenance"
+          type: object
         id:
           type: string
         imageMaxBytes:

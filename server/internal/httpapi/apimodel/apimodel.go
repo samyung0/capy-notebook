@@ -215,6 +215,10 @@ type Material struct {
 	Provenance *store.Provenance `json:"provenance,omitempty"`
 	// ParentMaterialID names the note a quiz or flashcard set is embedded in.
 	ParentMaterialID string `json:"parentMaterialId,omitempty"`
+	// EmbedCredits is, for a note, the provenance of each of its own live
+	// embedded quizzes and flashcard sets that has credits, by id: the app
+	// computes the note's footer from it and the document's current embeds.
+	EmbedCredits map[string]*store.Provenance `json:"embedCredits,omitempty"`
 	// ImageMaxBytes caps one uploaded image by the plan of the account that
 	// pays for this material's assets; the browser shrinks larger images.
 	ImageMaxBytes int64 `json:"imageMaxBytes"`

@@ -128,10 +128,11 @@ func TestAgentWriteSourcesReachEveryFence(t *testing.T) {
 	}
 }
 
-// A note read credits its own sources plus its live embeds', computed for the
-// read: the app's material read, and the public note with each embed's own
-// credits. A trashed embed drops out and returns on restore; the note's stored
-// record never changes.
+// A note read carries what its footer credits: the app's material read gives
+// the note's own record and each live embed's credits by id (the app unions
+// them with the document's embeds), the public note the union itself with each
+// embed's own credits. A trashed embed drops out and returns on restore; the
+// note's stored record never changes.
 func TestNoteReadsCreditLiveEmbeds(t *testing.T) {
 	h, st := openInternalHTTP(t)
 	ctx := context.Background()
@@ -161,19 +162,28 @@ func TestNoteReadsCreditLiveEmbeds(t *testing.T) {
 	if _, err := st.UpdateStandaloneMaterialPrivacy(ctx, "u_owner", note.ID, "", store.PrivacyLink); err != nil {
 		t.Fatal(err)
 	}
-	read := func() *store.Provenance {
+	// read is the note read's own credits and its embeds' by id, as one line.
+	read := func() string {
 		t.Helper()
 		rec := doAsUser(t, h, http.MethodGet, "/api/materials/"+note.ID, "u_owner", nil)
 		var body struct {
-			Provenance *store.Provenance `json:"provenance"`
+			Provenance   *store.Provenance            `json:"provenance"`
+			EmbedCredits map[string]*store.Provenance `json:"embedCredits"`
 		}
 		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &body) != nil {
 			t.Fatalf("material read → %d %s", rec.Code, rec.Body.String())
 		}
-		return body.Provenance
+		got := creditedBooks(body.Provenance)
+		for id, credits := range body.EmbedCredits {
+			if id != quiz.ID {
+				t.Fatalf("embed credits name %s, not the note's quiz", id)
+			}
+			got += " | " + creditedBooks(credits)
+		}
+		return got
 	}
-	if got := read(); creditedBooks(got) != "own quiz" || got.License != "CC BY-SA 4.0" {
-		t.Fatalf("note read credits = %+v, want its own then its quiz's, under its own licence", got)
+	if got := read(); got != "own | quiz" {
+		t.Fatalf("note read credits %q, want its own and its quiz's by id", got)
 	}
 	rec := doReq(t, h, http.MethodGet, "/api/public/notes/"+store.ShareToken(nil, note.ID), "", nil)
 	var shared struct {
@@ -194,13 +204,13 @@ func TestNoteReadsCreditLiveEmbeds(t *testing.T) {
 		purge_after=now() + interval '1 day' WHERE id=$1`, quiz.ID); err != nil {
 		t.Fatal(err)
 	}
-	if got := creditedBooks(read()); got != "own" {
+	if got := read(); got != "own" {
 		t.Fatalf("with its quiz trashed the note credits %q, want its own only", got)
 	}
 	if _, err := st.Pool().Exec(ctx, `UPDATE materials SET trashed_at=NULL, trash_episode_id=NULL, purge_after=NULL WHERE id=$1`, quiz.ID); err != nil {
 		t.Fatal(err)
 	}
-	if got := creditedBooks(read()); got != "own quiz" {
+	if got := read(); got != "own | quiz" {
 		t.Fatalf("restored quiz: the note credits %q", got)
 	}
 	stored, err := st.GetMaterial(ctx, note.ID)
@@ -276,10 +286,15 @@ func TestFooterLicenceCoversNoteAndEmbeds(t *testing.T) {
 	}
 	rec := doAsUser(t, h, http.MethodGet, "/api/materials/"+plain, "u_editor", nil)
 	var body struct {
-		Provenance *store.Provenance `json:"provenance"`
+		Provenance   *store.Provenance            `json:"provenance"`
+		EmbedCredits map[string]*store.Provenance `json:"embedCredits"`
 	}
-	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &body) != nil ||
-		creditedBooks(body.Provenance) != "own_call_lic_plain sa_quiz" || body.Provenance.License != "CC BY-SA 4.0" {
-		t.Fatalf("plain note with a ShareAlike quiz reads %d %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &body) != nil {
+		t.Fatalf("plain note read %d %s", rec.Code, rec.Body.String())
+	}
+	// The footer the app computes from them (footerUnion.ts, same rules).
+	footer := store.WithEmbedSources(body.Provenance, []*store.Provenance{body.EmbedCredits[quiz]})
+	if creditedBooks(footer) != "own_call_lic_plain sa_quiz" || footer.License != "CC BY-SA 4.0" {
+		t.Fatalf("plain note with a ShareAlike quiz reads %s", rec.Body.String())
 	}
 }

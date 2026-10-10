@@ -5,6 +5,7 @@ import {
   Suspense,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -12,7 +13,7 @@ import { isMaterialContentUnreadable } from '@/api/client';
 import { useFile, useMaterial, useMaterials } from '@/api/hooks';
 import type {
   Chapter,
-  MaterialKind,
+  Material,
   Provenance,
   Region,
   UserColor,
@@ -72,6 +73,7 @@ import {
   resolveMaterialMode,
 } from './modePolicy';
 import { type OpenItem, readDocumentMode, saveDocumentMode } from './openItem';
+import { embedKey, useNoteFooter } from './useNoteFooter';
 
 /* Interactive Plate is the heaviest chunk in this route. View mode
  * deliberately never loads it. */
@@ -428,10 +430,7 @@ export function MaterialContent({
               title: material.title,
             }}
           />
-          <DocumentAttribution
-            kind={material.kind}
-            provenance={material.provenance}
-          />
+          <DocumentAttribution material={material} />
         </div>
       </div>
     );
@@ -459,10 +458,7 @@ export function MaterialContent({
                   kind={material.kind}
                   title={material.title}
                 />
-                <DocumentAttribution
-                  kind={material.kind}
-                  provenance={material.provenance}
-                />
+                <DocumentAttribution material={material} />
               </Suspense>
             )}
           </div>
@@ -486,18 +482,19 @@ export function MaterialContent({
 }
 
 /** A material's credits after its document, in the reading column the static
- * renderer uses for it, so View and Edit (NoteEditorCore) end alike. Like
- * every footer ending a view here, it keeps room under the workspace's
- * floating bar where that shows, and some space above the page's end. */
-function DocumentAttribution({
-  kind,
-  provenance,
-}: {
-  kind: MaterialKind;
-  provenance: Provenance | undefined;
-}) {
+ * renderer uses for it, so View and Edit (NoteEditorCore) end alike: a note's
+ * own and those of the embeds its content holds (useNoteFooter). Like every
+ * footer ending a view here, it keeps room under the workspace's floating bar
+ * where that shows, and some space above the page's end. */
+function DocumentAttribution({ material }: { material: Material }) {
   const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
   const overBar = useContext(FloatingBarContext);
+  const embeds = useMemo(
+    () => embedKey(material.content.value),
+    [material.content]
+  );
+  const provenance = useNoteFooter(material, embeds);
+  const { kind } = material;
   return (
     <MaterialAttributionFooter
       className={cn(
