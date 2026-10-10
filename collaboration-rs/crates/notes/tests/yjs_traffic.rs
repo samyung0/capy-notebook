@@ -7,7 +7,7 @@
 //! REVIEW4 M12, corpus/yjs-review4-pairs.json, each with its room state).
 mod common;
 
-use notes::limits::{Admission, Validator};
+use notes::limits::{Admission, Refusal, Validator};
 use yrs::{Doc, ReadTxn, Transact};
 
 fn room(state: &[u8]) -> Doc {
@@ -34,7 +34,7 @@ fn validator(room: &Doc) -> Validator {
 #[test]
 fn yjs_made_updates_are_never_refused() {
     let corpus = common::load("yjs-traffic");
-    let (mut accepted, mut unheld, mut refused) = (0, 0, Vec::new());
+    let (mut accepted, mut unheld, mut refused, mut tightened) = (0, 0, Vec::new(), 0);
     for (seed, record) in corpus["seeds"].as_array().unwrap().iter().enumerate() {
         let room = room(&common::bytes(&record["initial"]));
         let mut validator = validator(&room);
@@ -44,6 +44,14 @@ fn yjs_made_updates_are_never_refused() {
             match &admitted {
                 Ok(Admission::Accepted) => accepted += 1,
                 Ok(Admission::Unheld) => unheld += 1,
+                // The generator inserts a block with no id and sets its type
+                // in a later transaction; the note editor writes an element
+                // with its type and id in one (REVIEW5 R2's key rule refuses
+                // the rest). Counted; the room takes it below regardless.
+                Err(Refusal::Content(what)) if *what == notes::limits::MISSING_KEY => {
+                    tightened += 1;
+                    validator.invalidate();
+                }
                 Err(error) => refused.push(format!(
                     "seed {seed} delivery {index} ({}): {error}",
                     delivery["kind"]
@@ -59,7 +67,7 @@ fn yjs_made_updates_are_never_refused() {
         }
     }
     eprintln!(
-        "Yjs traffic ({}): {accepted} accepted, {unheld} unheld, {} refused",
+        "Yjs traffic ({}): {accepted} accepted, {unheld} unheld, {} refused, {tightened} without a key",
         corpus["yjs"],
         refused.len()
     );
@@ -74,6 +82,13 @@ fn yjs_made_updates_are_never_refused() {
             &room,
             &ydoc::decode(&common::bytes(&pair["update"])).unwrap(),
         );
-        assert!(admitted.is_ok(), "pair {}: {admitted:?}", pair["pair"]);
+        // Placed and measured; the same generator's id-less blocks may meet
+        // the key rule after that.
+        assert!(
+            admitted.is_ok()
+                || matches!(&admitted, Err(Refusal::Content(what)) if *what == notes::limits::MISSING_KEY),
+            "pair {}: {admitted:?}",
+            pair["pair"]
+        );
     }
 }

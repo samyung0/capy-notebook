@@ -97,6 +97,9 @@ pub struct Room {
     pub checked: usize,
     pub same_growth: usize,
     pub exact_differs: usize,
+    /// Updates Node took and the key rule refuses (REVIEW5 R2): the corpus's
+    /// synthetic writers insert blocks without ids.
+    pub tightened: usize,
 }
 
 impl Room {
@@ -110,6 +113,7 @@ impl Room {
             checked: 0,
             same_growth: 0,
             exact_differs: 0,
+            tightened: 0,
         }
     }
 
@@ -141,10 +145,20 @@ impl Room {
         };
         let mut theirs = outcome.clone();
         theirs.as_object_mut().unwrap().remove("exact");
-        if ours != theirs {
+        // Counted, and the update still goes in as Node took it, so later
+        // deliveries compare; the room re-measures exactly, as after any
+        // content the validator did not admit.
+        let tightened = outcome["accepted"].as_bool() == Some(true)
+            && matches!(&admitted, Err(Refusal::Content(what)) if *what == notes::limits::MISSING_KEY);
+        if tightened {
+            self.tightened += 1;
+            self.validator.invalidate();
+        } else if ours != theirs {
             failures.push(format!("{at}: outcome {ours} != JS {theirs}"));
         }
-        if let (Some(true), Ok(Admission::Accepted)) = (outcome["accepted"].as_bool(), &admitted) {
+        if outcome["accepted"].as_bool() == Some(true)
+            && (tightened || matches!(admitted, Ok(Admission::Accepted)))
+        {
             apply(&self.doc, update);
             for cleanup in record["roomCleanup"].as_array().unwrap() {
                 apply(&self.doc, &bytes(cleanup));
@@ -182,8 +196,8 @@ impl Room {
 
     pub fn summary(&self) -> String {
         format!(
-            "{} room checks, growth equal to JS {}, exact path differs {}",
-            self.checked, self.same_growth, self.exact_differs
+            "{} room checks, growth equal to JS {}, exact path differs {}, tightened {}",
+            self.checked, self.same_growth, self.exact_differs, self.tightened
         )
     }
 }

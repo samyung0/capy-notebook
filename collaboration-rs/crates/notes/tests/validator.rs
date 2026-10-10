@@ -165,7 +165,10 @@ fn refuses_growth_past_a_limit_and_keeps_an_over_limit_note_shrinkable() {
         .map(|i| paragraph(&format!("block {i}")))
         .collect();
     let room = document(&over);
-    let update = replacing(&room, &[paragraph("recovered")]);
+    let update = replacing(
+        &room,
+        &[json!({ "children": [{ "text": "recovered" }], "id": "r1", "type": "p" })],
+    );
     assert_eq!(
         Validator::default().admit_bytes(&room, &update).unwrap(),
         Admission::Accepted
@@ -609,4 +612,118 @@ fn a_media_key_update_copies_the_room_only_off_the_async_workers() {
     );
     assert!(validator.admit_bytes(&room, &image_url).is_err());
     assert_eq!(validator.media_copies, 1);
+}
+
+/// Security regression (REVIEW5 R2: an update the store refuses discards the
+/// room for every editor). An update that leaves an element without a key
+/// the store requires is refused when it arrives, with no copy of the room:
+/// a deleted `type`, a deleted top-level `id`, a new top-level block without
+/// an id or without a type, a paragraph made a reference without its
+/// material id, a reference's material id deleted. A deleted optional key,
+/// a new block with its keys, retyping a heading and deleting whole blocks
+/// go in, still with no copy.
+#[test]
+fn an_element_left_without_a_required_key_is_refused_at_admit() {
+    let room = document(&[
+        json!({ "children": [{ "text": "intro" }], "id": "p1", "indent": 1, "type": "p" }),
+        json!({ "children": [{ "text": "" }], "id": "q1", "materialId": "m1", "refKind": "quiz", "type": "material_ref" }),
+        json!({ "children": [{ "text": "end" }], "id": "p2", "type": "p" }),
+    ]);
+    let mut validator = Validator::default();
+    let nothing = room
+        .transact()
+        .encode_state_as_update_v1(&room.transact().state_vector());
+    validator.admit_bytes(&room, &nothing).unwrap();
+    let copies = validator.exact_checks;
+    let unset = |index: usize, key: &'static str| {
+        edit(&room, 2, move |peer| {
+            block(peer, index).remove_attribute(&mut peer.transact_mut(), &key.to_owned())
+        })
+    };
+    let set = |index: usize, key: &'static str, value: &'static str| {
+        edit(&room, 3, move |peer| {
+            block(peer, index).insert_attribute(&mut peer.transact_mut(), key, value);
+        })
+    };
+    let inserting = |node: Value| edit(&room, 4, |peer| insert_value(peer, &[node]));
+    let refused = [
+        ("a deleted type", unset(0, "type")),
+        ("a deleted top-level id", unset(0, "id")),
+        (
+            "a new block without an id",
+            inserting(json!({ "children": [{ "text": "x" }], "type": "p" })),
+        ),
+        (
+            "a new block without a type",
+            inserting(json!({ "children": [{ "text": "x" }], "id": "n1" })),
+        ),
+        (
+            "a paragraph made a reference",
+            set(2, "type", "material_ref"),
+        ),
+        ("a reference's material id deleted", unset(1, "materialId")),
+    ];
+    for (name, update) in refused {
+        assert!(
+            matches!(
+                validator.admit_bytes(&room, &update),
+                Err(Refusal::Content(what)) if what == "an element without a key it requires"
+            ),
+            "{name}"
+        );
+    }
+    let delete_blocks = edit(&room, 5, |peer| {
+        peer.get_or_insert_text(plate::CONTENT_ROOT)
+            .remove_range(&mut peer.transact_mut(), 0, 2);
+    });
+    let accepted = [
+        ("an optional key deleted", unset(0, "indent")),
+        (
+            "a new block with its keys",
+            inserting(json!({ "children": [{ "text": "x" }], "id": "n2", "type": "p" })),
+        ),
+        ("a paragraph made a heading", set(2, "type", "h1")),
+        ("whole blocks deleted", delete_blocks),
+    ];
+    for (name, update) in accepted {
+        assert_eq!(
+            validator.admit_bytes(&room, &update).unwrap(),
+            Admission::Accepted,
+            "{name}"
+        );
+    }
+    assert_eq!(
+        (validator.media_copies, validator.exact_checks),
+        (0, copies)
+    );
+    // The same on the exact path (no bound yet, as a room's first update).
+    assert!(matches!(
+        Validator::default().admit_bytes(&room, &unset(0, "type")),
+        Err(Refusal::Content(what)) if what == limits::MISSING_KEY
+    ));
+}
+
+/// A writer that already wrote pastes several blocks, an image among them:
+/// the elements it creates sit at clocks the room has not seen, which yrs's
+/// lookup must not be asked for (it indexes past the client's last block and
+/// panics), so the paste goes in (REVIEW5 recheck, the key and media checks).
+#[test]
+fn a_paste_by_a_writer_that_already_wrote_goes_in() {
+    let room = document(&[json!({ "children": [{ "text": "intro" }], "id": "p1", "type": "p" })]);
+    for at in [0, 5] {
+        let typed = edit(&room, 2, |peer| {
+            block(peer, 0).insert(&mut peer.transact_mut(), at, "x");
+        });
+        apply(&room, &typed);
+    }
+    let mut blocks: Vec<Value> = (0..5)
+        .map(|n| json!({ "children": [{ "text": format!("pasted {n}") }], "id": format!("n{n}"), "type": "p" }))
+        .collect();
+    blocks
+        .push(json!({ "assetId": "a1", "children": [{ "text": "" }], "id": "i1", "type": "img" }));
+    let paste = edit(&room, 2, |peer| insert_value(peer, &blocks));
+    assert_eq!(
+        Validator::default().admit_bytes(&room, &paste).unwrap(),
+        Admission::Accepted
+    );
 }
