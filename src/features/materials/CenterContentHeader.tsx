@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from 'react';
+import { createContext, type ReactNode, useEffect, useState } from 'react';
 import { createStore, type StoreApi } from 'zustand';
 import { useFile, useMaterial, useMaterials, useWorkspace } from '@/api/hooks';
 import type {
@@ -75,7 +75,13 @@ export const createEditorStatusStore = (): EditorStatusStore =>
     status: null,
   }));
 
-function EditorSaveStatus({
+/** The open editor's save status store, for an editor's own dialogs (a
+ * note's Mermaid source dialog shows the note's status in its footer). */
+export const EditorStatusStoreContext = createContext<EditorStatusStore | null>(
+  null
+);
+
+export function EditorSaveStatus({
   layout,
   store,
 }: {

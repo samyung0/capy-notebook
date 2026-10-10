@@ -967,8 +967,9 @@ function fullReaderLists(contentName: string) {
 }
 
 /** A live item's room (live-items): seeded from the mock row as the service
- * bootstraps one (a quiz's two documents together), written back to it as
- * the service projects. */
+ * bootstraps one (a quiz's two documents together; a standalone diagram's
+ * note document, its source a text), written back to it as the service
+ * projects. */
 function itemRoom(name: string): Room {
   const existing = rooms.get(name);
   if (existing) return existing;
@@ -977,6 +978,13 @@ function itemRoom(name: string): Room {
   const material = db.materials.find((row) => row.id === materialId);
   if (!checkpoints.has(name) && material?.kind === 'flashcards')
     seedCards(room.document, db.cardsFromMaterial(material));
+  if (
+    !checkpoints.has(name) &&
+    (material?.kind === 'mindmap' || material?.kind === 'diagram')
+  )
+    room.document
+      .get('content', Y.XmlText)
+      .applyDelta(slateNodesToInsertDelta(material.content.value));
   if (!checkpoints.has(name) && material?.kind === 'quiz') {
     const content = new Y.Doc();
     const keys = new Y.Doc();
@@ -1006,6 +1014,10 @@ function itemRoom(name: string): Room {
 function persistItem(room: Room) {
   const material = db.materials.find((row) => row.id === room.target.id);
   if (!(material && room.dirty)) return;
+  if (material.kind === 'mindmap' || material.kind === 'diagram') {
+    persistMaterial(room);
+    return;
+  }
   if (material.kind === 'quiz') {
     const contentName = room.name.startsWith('keys:')
       ? peerName(room.name)

@@ -1,5 +1,17 @@
-import { history, historyKeymap } from '@codemirror/commands';
-import { RangeSet, StateEffect, StateField } from '@codemirror/state';
+import {
+  history,
+  historyKeymap,
+  redo,
+  redoDepth,
+  undo,
+  undoDepth,
+} from '@codemirror/commands';
+import {
+  type Extension,
+  RangeSet,
+  StateEffect,
+  StateField,
+} from '@codemirror/state';
 import {
   Decoration,
   EditorView,
@@ -9,7 +21,10 @@ import {
   lineNumbers,
 } from '@codemirror/view';
 import { useEffect, useRef } from 'react';
+import type * as Y from 'yjs';
+import type { UndoTarget } from '@/features/collaboration/undo';
 import { cn } from '@/lib/cn';
+import { yTextSync } from './yTextCodeMirror';
 
 /* Only state, view and history load here (78 KB gzipped with this file's
  * imports, measured 2026-10-09); the default keymap would pull in the
@@ -91,51 +106,108 @@ const theme = EditorView.theme({
 });
 
 /** Tab indents by two spaces; Shift+Tab is left to move focus out. */
-const indentKeys = keymap.of([
-  {
-    key: 'Tab',
-    run: (view) => {
-      view.dispatch(view.state.replaceSelection('  '), {
-        scrollIntoView: true,
-        userEvent: 'input',
-      });
-      return true;
-    },
+const indentKey = {
+  key: 'Tab',
+  run: (view: EditorView) => {
+    view.dispatch(view.state.replaceSelection('  '), {
+      scrollIntoView: true,
+      userEvent: 'input',
+    });
+    return true;
   },
-  ...historyKeymap,
-]);
+};
+
+/** Undo and Redo keys that act on a live item's history instead of the
+ * editor's own (the standalone diagram's header buttons share it). */
+function itemHistoryKeys(target: UndoTarget): Extension {
+  const act = (step: () => void) => () => {
+    step();
+    return true;
+  };
+  return keymap.of([
+    { key: 'Mod-z', preventDefault: true, run: act(() => target.undo()) },
+    { key: 'Mod-y', preventDefault: true, run: act(() => target.redo()) },
+    {
+      key: 'Mod-Shift-z',
+      preventDefault: true,
+      run: act(() => target.redo()),
+    },
+  ]);
+}
+
+/** The editor's own history as Undo and Redo buttons read it (a note's
+ * Mermaid dialog, whose typing the note's Undo does not cover). */
+export function editorHistory(): {
+  attach: (view: EditorView | null) => void;
+  target: UndoTarget;
+} {
+  let view: EditorView | null = null;
+  const listeners = new Set<() => void>();
+  return {
+    attach: (next) => {
+      view = next;
+      for (const notify of listeners) notify();
+    },
+    target: {
+      canRedo: () => !!view && redoDepth(view.state) > 0,
+      canUndo: () => !!view && undoDepth(view.state) > 0,
+      redo: () => view && redo(view),
+      subscribe: (notify) => {
+        listeners.add(notify);
+        return () => listeners.delete(notify);
+      },
+      undo: () => view && undo(view),
+    },
+  };
+}
 
 /**
- * Mermaid source with line numbers, undo and the blamed line marked. The
- * parent owns the text: a `value` that differs from what is typed (Cancel, a
- * remote change) replaces the document.
+ * Mermaid source with line numbers, undo and the blamed line marked.
+ * Bound to a live source (`text`), it edits that Y.Text under `origin` and
+ * follows others' edits; otherwise the parent owns the string and a `value`
+ * that differs from what is typed replaces the document. `history` hands
+ * Undo and Redo to a live item's history; without it the editor keeps its
+ * own, which `onView` lets the caller drive.
  */
 export function MermaidCodeEditor({
   className,
   errorLine: line,
+  history: itemHistory,
   label,
   onChange,
+  onView,
+  origin,
+  text,
   value,
 }: {
   className?: string;
   errorLine: number | null;
+  history?: UndoTarget;
   label: string;
   onChange: (value: string) => void;
+  onView?: (view: EditorView | null) => void;
+  origin?: unknown;
+  text?: Y.Text;
   value: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const onViewRef = useRef(onView);
+  onViewRef.current = onView;
 
-  // Created once; the effects below keep it in step with the props.
+  // Created once per bound text; the effects below keep it in step with
+  // the other props.
   useEffect(() => {
     const created = new EditorView({
-      doc: value,
+      doc: text ? text.toString() : value,
       extensions: [
         lineNumbers(),
-        history(),
-        indentKeys,
+        itemHistory
+          ? [keymap.of([indentKey]), itemHistoryKeys(itemHistory)]
+          : [history(), keymap.of([indentKey, ...historyKeymap])],
+        text ? yTextSync(text, origin) : [],
         errorLine,
         errorMarks,
         theme,
@@ -143,24 +215,28 @@ export function MermaidCodeEditor({
         EditorView.updateListener.of((update) => {
           if (update.docChanged)
             onChangeRef.current(update.state.doc.toString());
+          if (update.transactions.length) onViewRef.current?.(update.view);
         }),
       ],
       parent: host.current!,
     });
     view.current = created;
+    onViewRef.current?.(created);
+    if (text) onChangeRef.current(created.state.doc.toString());
     return () => {
       created.destroy();
       view.current = null;
+      onViewRef.current?.(null);
     };
-  }, []);
+  }, [text]);
 
   useEffect(() => {
     const current = view.current;
-    if (!current || current.state.doc.toString() === value) return;
+    if (text || !current || current.state.doc.toString() === value) return;
     current.dispatch({
       changes: { from: 0, insert: value, to: current.state.doc.length },
     });
-  }, [value]);
+  }, [value, text]);
 
   useEffect(() => {
     view.current?.dispatch({ effects: setErrorLine.of(line) });

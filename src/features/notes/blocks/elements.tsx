@@ -16,6 +16,7 @@ import {
   useReadOnly,
 } from 'platejs/react';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import type * as Y from 'yjs';
 import { ContentSwap } from '@/components/ui/ContentSwap';
 import { Popover, PopoverTrigger } from '@/components/ui/Popover';
 import { PopupMotion } from '@/components/ui/PopupMotion';
@@ -69,7 +70,7 @@ import {
   ToolbarPopoverRow,
 } from '../toolbar/ToolbarPopover';
 import { useOptionalNoteBlockDialogs } from './dialogContext';
-import { setMermaidCaption } from './mermaidBlock';
+import { mermaidSourceText, setMermaidCaption } from './mermaidBlock';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyEditor = any;
@@ -587,13 +588,10 @@ export function VisualBlockElement(props: PlateElementProps) {
   );
 }
 
-export function MermaidThemeMenu({
-  compactOnPhones = false,
+function MermaidThemeMenu({
   theme,
   onTheme,
 }: {
-  /** Only the swatch below `sm`, where the bar is short of room. */
-  compactOnPhones?: boolean;
   theme: MermaidTheme;
   onTheme: (theme: MermaidTheme) => void;
 }) {
@@ -609,12 +607,7 @@ export function MermaidThemeMenu({
           tooltipSide="top"
         >
           <MermaidSwatch theme={theme} />
-          <span
-            className={cn(
-              'translate-y-px pl-1',
-              compactOnPhones && 'hidden sm:inline'
-            )}
-          >
+          <span className="translate-y-px pl-1">
             {MERMAID_THEME_LABEL[theme]()}
           </span>
         </ToolbarButton>
@@ -640,7 +633,8 @@ export function MermaidElement(props: PlateElementProps) {
   const element = props.element as unknown as MermaidNode;
   const theme = mermaidTheme(element.theme);
   const caption = NodeApi.string(props.element);
-  const [editing, setEditing] = useState(false);
+  // The source text the dialog edits live, while it is open.
+  const [editing, setEditing] = useState<Y.Text | null>(null);
   const [captioning, setCaptioning] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   // A diagram that cannot be drawn shows its error, with nothing to enlarge.
@@ -678,7 +672,9 @@ export function MermaidElement(props: PlateElementProps) {
                 </ToolbarButton>
                 <MediaBlockActions
                   element={props.element}
-                  onEdit={() => setEditing(true)}
+                  onEdit={() =>
+                    setEditing(mermaidSourceText(editor, element.id))
+                  }
                 />
               </>
             )
@@ -733,9 +729,8 @@ export function MermaidElement(props: PlateElementProps) {
       {editing && (
         <Suspense fallback={null}>
           <MermaidSourceDialog
-            onClose={() => setEditing(false)}
-            onSave={(source) => update({ source })}
-            source={element.source}
+            onClose={() => setEditing(null)}
+            text={editing}
             theme={theme}
           />
         </Suspense>

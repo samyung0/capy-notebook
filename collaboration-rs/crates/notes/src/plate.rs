@@ -262,10 +262,10 @@ pub fn properties(branch: &Branch) -> Result<Vec<(Arc<str>, Any)>, ProjectionErr
                 .and_then(|text| serde_json::from_str::<Value>(text).ok())
                 .map_or(Any::Undefined, |value| json::value_to_any(&value)),
             ItemContent::String(text) => Any::String(text.as_str().into()),
-            // live-items prototype (DESIGN.md 6, shape A): a shared text held
-            // as an attribute (a Mermaid block's `source`) reads as its string.
+            // A Mermaid block's source held as a text (shape A, Epo
+            // 2026-10-10) reads as its string, as the patched slate-yjs reads it.
             ItemContent::Type(text)
-                if shared_text_key(key) && matches!(text.type_ref(), TypeRef::Text) =>
+                if &**key == SHARED_TEXT_KEY && matches!(text.type_ref(), TypeRef::Text) =>
             {
                 Any::String(shared_text(text)?.into())
             }
@@ -279,13 +279,11 @@ pub fn properties(branch: &Branch) -> Result<Vec<(Arc<str>, Any)>, ProjectionErr
     Ok(order.into_iter().filter_map(|i| slots[i].take()).collect())
 }
 
-/// Attributes that may hold a shared text instead of a string (prototype:
-/// only a Mermaid block's source).
-pub fn shared_text_key(key: &str) -> bool {
-    key == "source"
-}
+/// The attribute that may hold a text instead of a string: a `mermaid`
+/// block's source (shape A; the admit allows it on `mermaid` alone).
+pub const SHARED_TEXT_KEY: &str = "source";
 
-/// The string of a shared text attribute: strings only, no formats or embeds.
+/// The string of a source text: strings only, no formats or embeds.
 pub fn shared_text(branch: &Branch) -> Result<String, ProjectionError> {
     let mut out = String::new();
     for op in insert_delta(branch)? {

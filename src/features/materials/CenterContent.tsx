@@ -55,7 +55,11 @@ import {
 } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { createEditorStatusStore, Header } from './CenterContentHeader';
+import {
+  createEditorStatusStore,
+  EditorStatusStoreContext,
+  Header,
+} from './CenterContentHeader';
 import {
   type FlashcardsElement,
   flashcardsElementToCards,
@@ -83,6 +87,11 @@ const NoteEditor = lazy(() =>
   import('@/features/notes/NoteEditor').then((m) => ({
     default: m.NoteEditor,
   }))
+);
+
+/* A standalone mindmap's or diagram's live editor: CodeMirror, no Plate. */
+const MermaidMaterialEditor = lazy(
+  () => import('@/features/notes/blocks/MermaidMaterialEditor')
 );
 
 /* Static Plate preview is still heavy — keep it out of the PDF / media path. */
@@ -178,81 +187,88 @@ export function CenterContent({
         <FileMenuTarget.Provider value={fileMenu}>
           <FileActionsTarget.Provider value={fileActions}>
             <EditorStatusContext.Provider value={setEditorStatus}>
-              <div
-                className={cn(
-                  'flex min-h-0 flex-1 flex-col bg-surface',
-                  isFullscreen && 'fixed inset-0 z-40'
-                )}
-              >
-                <Header
-                  beforeFileDelete={beforeFileDelete}
-                  chapters={chapters}
-                  color={color}
-                  editorStatus={editorStatus}
-                  fileActions={
-                    <span className="flex items-center" ref={setFileActions} />
-                  }
-                  fileControls={
-                    <span className="flex items-center" ref={setFileHeader} />
-                  }
-                  imageZoom={imageZoom}
-                  isFullscreen={isFullscreen}
-                  item={item}
-                  leading={leading}
-                  materialMode={materialMode}
-                  menuBar={
-                    <span
-                      className="flex min-w-0 items-center"
-                      ref={setFileMenu}
-                    />
-                  }
-                  onDeleted={onDeleted}
-                  onImageZoomChange={setImageZoom}
-                  onMaterialModeChange={changeMaterialMode}
-                  onToggleFullscreen={() => setIsFullscreen((value) => !value)}
-                  readOnly={readOnly}
-                  standalone={standalone}
-                  workspaceId={workspaceId}
-                />
-                {/* One strip at a time under the header: the newest shows. */}
-                <BannerStack key={item.id}>
-                  <div
-                    className={cn(
-                      'relative min-h-0 flex-1',
-                      item.kind === 'file'
-                        ? 'flex flex-col overflow-hidden'
-                        : 'overflow-auto'
-                    )}
-                  >
-                    {item.kind === 'material' && (
-                      <MaterialBody
-                        allowExternalAssets={!readOnly}
-                        centerQuiz={!standalone}
-                        key={item.id}
-                        materialId={item.id}
-                        mode={materialMode}
-                        onEditorStatusChange={setEditorStatus}
-                        readOnly={readOnly}
-                        target={item.target}
-                        workspaceId={workspaceId}
+              <EditorStatusStoreContext.Provider value={editorStatus}>
+                <div
+                  className={cn(
+                    'flex min-h-0 flex-1 flex-col bg-surface',
+                    isFullscreen && 'fixed inset-0 z-40'
+                  )}
+                >
+                  <Header
+                    beforeFileDelete={beforeFileDelete}
+                    chapters={chapters}
+                    color={color}
+                    editorStatus={editorStatus}
+                    fileActions={
+                      <span
+                        className="flex items-center"
+                        ref={setFileActions}
                       />
-                    )}
-                    {item.kind === 'file' && (
-                      <FileBody
-                        citation={item.citation}
-                        color={color}
-                        fileId={item.id}
-                        imageZoom={imageZoom}
-                        key={item.id}
-                        onImageZoomChange={setImageZoom}
-                        onViewerDirtyChange={onFileViewerDirtyChange}
-                        page={item.page}
-                        regions={item.regions}
+                    }
+                    fileControls={
+                      <span className="flex items-center" ref={setFileHeader} />
+                    }
+                    imageZoom={imageZoom}
+                    isFullscreen={isFullscreen}
+                    item={item}
+                    leading={leading}
+                    materialMode={materialMode}
+                    menuBar={
+                      <span
+                        className="flex min-w-0 items-center"
+                        ref={setFileMenu}
                       />
-                    )}
-                  </div>
-                </BannerStack>
-              </div>
+                    }
+                    onDeleted={onDeleted}
+                    onImageZoomChange={setImageZoom}
+                    onMaterialModeChange={changeMaterialMode}
+                    onToggleFullscreen={() =>
+                      setIsFullscreen((value) => !value)
+                    }
+                    readOnly={readOnly}
+                    standalone={standalone}
+                    workspaceId={workspaceId}
+                  />
+                  {/* One strip at a time under the header: the newest shows. */}
+                  <BannerStack key={item.id}>
+                    <div
+                      className={cn(
+                        'relative min-h-0 flex-1',
+                        item.kind === 'file'
+                          ? 'flex flex-col overflow-hidden'
+                          : 'overflow-auto'
+                      )}
+                    >
+                      {item.kind === 'material' && (
+                        <MaterialBody
+                          allowExternalAssets={!readOnly}
+                          centerQuiz={!standalone}
+                          key={item.id}
+                          materialId={item.id}
+                          mode={materialMode}
+                          onEditorStatusChange={setEditorStatus}
+                          readOnly={readOnly}
+                          target={item.target}
+                          workspaceId={workspaceId}
+                        />
+                      )}
+                      {item.kind === 'file' && (
+                        <FileBody
+                          citation={item.citation}
+                          color={color}
+                          fileId={item.id}
+                          imageZoom={imageZoom}
+                          key={item.id}
+                          onImageZoomChange={setImageZoom}
+                          onViewerDirtyChange={onFileViewerDirtyChange}
+                          page={item.page}
+                          regions={item.regions}
+                        />
+                      )}
+                    </div>
+                  </BannerStack>
+                </div>
+              </EditorStatusStoreContext.Provider>
             </EditorStatusContext.Provider>
           </FileActionsTarget.Provider>
         </FileMenuTarget.Provider>
@@ -450,6 +466,26 @@ export function MaterialContent({
     );
   }
 
+  if (
+    (material.kind === 'mindmap' || material.kind === 'diagram') &&
+    activeMode === 'edit'
+  )
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <AppErrorBoundary resetKeys={[materialId, activeMode]}>
+          <Suspense fallback={<FileLoading />}>
+            <MermaidMaterialEditor
+              kind={material.kind}
+              materialId={materialId}
+              onReadOnly={() => setReadOnly(true)}
+              onStatusChange={onEditorStatusChange}
+              title={material.title}
+            />
+          </Suspense>
+        </AppErrorBoundary>
+        <MaterialAttributionFooter provenance={material.provenance} />
+      </div>
+    );
   if (
     (material.kind === 'mindmap' || material.kind === 'diagram') &&
     activeMode === 'view'

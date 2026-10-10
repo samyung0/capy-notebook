@@ -244,8 +244,9 @@ pub enum Refusal {
     Content(&'static str),
 }
 
-/// Where an item of an update sits: in a sequence (a text, a root), or an
-/// entry of a map (an attribute or a marker) under `key` of its parent.
+/// Where an item of an update sits: in a sequence (a text, a root) of its
+/// parent, or an entry of a map (an attribute or a marker) under `key` of its
+/// parent.
 #[derive(Clone)]
 enum Place {
     Sequence(Option<BranchID>),
@@ -307,8 +308,11 @@ fn guarded(key: &str) -> bool {
 }
 
 /// What a note may hold: its texts strings, formats and element texts, every
-/// attribute, mark or marker entry a plain value. Only what the room does not
-/// hold yet counts (Yjs skips the rest). Returns the elements whose media
+/// attribute, mark or marker entry a plain value, except a `mermaid` block's
+/// `source`, which may be a text of strings alone (shape A, Epo 2026-10-10:
+/// no formats, embeds or attributes in it, on no other key or element). Only
+/// what the room does not hold yet counts (Yjs skips the rest). Returns the
+/// elements whose media
 /// attributes the update sets or deletes (`type` to a media type, `assetId`,
 /// `url`, `src`), for [media_assets] to check on the result, less those the
 /// room shows are not media: held, of a non-media `type` the update leaves
@@ -386,8 +390,31 @@ fn plain_content<T: ReadTxn>(
         }
         found
     };
+    // Whether a parent is a Mermaid source: the only text that is not an
+    // element (a Y.XmlText) the admit lets in, so its type tells.
+    let mut sources: HashMap<yrs::ID, bool> = HashMap::new();
+    let mut is_source = |parent: &Option<BranchID>| -> bool {
+        let Some(BranchID::Nested(id)) = parent else {
+            return false;
+        };
+        *sources.entry(*id).or_insert_with(|| {
+            ydoc::steps::step(ydoc::steps::Walk::Content);
+            let text = |content: &ItemContent| {
+                matches!(content, ItemContent::Type(branch) if matches!(branch.type_ref(), TypeRef::Text))
+            };
+            if id.clock < state.get(&id.client) {
+                store.get_item(id).is_some_and(|held| text(held.content()))
+            } else {
+                incoming.item_at(id).is_some_and(|item| text(item.content()))
+            }
+        })
+    };
     let mut media = HashSet::new();
     let mut typed = HashSet::new();
+    // Elements given a source text, and the `type` values the update writes
+    // per element (whether each is `mermaid`).
+    let mut holders: HashSet<BranchID> = HashSet::new();
+    let mut types: HashMap<BranchID, Vec<bool>> = HashMap::new();
     for item in incoming.items() {
         let id = item.id();
         if id.clock + item.len() <= state.get(&id.client) {
@@ -398,14 +425,20 @@ fn plain_content<T: ReadTxn>(
         };
         let refused = match (&at, item.content()) {
             (_, ItemContent::Deleted(_)) => None,
+            (Place::Entry(_, parent), _) if is_source(parent) => {
+                Some("an attribute on a Mermaid source")
+            }
+            (Place::Sequence(parent), ItemContent::String(_)) if is_source(parent) => None,
+            (Place::Sequence(parent), _) if is_source(parent) => {
+                Some("content other than text in a Mermaid source")
+            }
             (Place::Entry(..), ItemContent::Any(values)) if values.iter().all(plain) => None,
-            // live-items prototype (shape A): a Mermaid source as shared text.
-            (Place::Entry(..), ItemContent::Type(branch))
-                if matches!(branch.type_ref(), TypeRef::Text)
-                    && item
-                        .parent_sub()
-                        .is_some_and(|key| plate::shared_text_key(key)) =>
+            (Place::Entry(key, Some(parent)), ItemContent::Type(branch))
+                if &**key == plate::SHARED_TEXT_KEY
+                    && matches!(branch.type_ref(), TypeRef::Text)
+                    && matches!(parent, BranchID::Nested(_)) =>
             {
+                holders.insert(parent.clone());
                 None
             }
             (Place::Entry(..), _) => Some("a non-plain attribute value"),
@@ -453,10 +486,31 @@ fn plain_content<T: ReadTxn>(
             };
             if &**key == "type" {
                 typed.insert(parent.clone());
+                types.entry(parent.clone()).or_default().push(matches!(
+                    values.last(),
+                    Some(Any::String(kind)) if &**kind == MERMAID
+                ));
             }
             if matches!(&**key, "assetId" | "url" | "src") || (&**key == "type" && media_type()) {
                 media.insert(parent.clone());
             }
+        }
+    }
+    // A source text sits on a `mermaid` block only: one the update gives a
+    // source, or retypes while it holds one, is a `mermaid` afterwards.
+    for (element, mermaid) in &types {
+        if !mermaid.iter().all(|m| *m) && held_source(txn, incoming, element) {
+            holders.insert(element.clone());
+        }
+    }
+    for element in &holders {
+        ydoc::steps::step(ydoc::steps::Walk::Content);
+        let mermaid = match types.get(element) {
+            Some(written) => written.iter().all(|m| *m),
+            None => held_type(txn, element).as_deref() == Some(MERMAID),
+        };
+        if !mermaid {
+            return Err(Refusal::Content("a Mermaid source outside a mermaid block"));
         }
     }
     // A deleted asset id leaves its block without one; any deleted current
@@ -509,6 +563,37 @@ fn plain_content<T: ReadTxn>(
             })
     });
     Ok(media)
+}
+
+const MERMAID: &str = "mermaid";
+
+/// The `type` a held element has, if the room holds it.
+fn held_type<T: ReadTxn>(txn: &T, element: &BranchID) -> Option<String> {
+    let branch = held_branch(txn, element)?;
+    let (_, item) = branch
+        .map_items()
+        .find(|(key, item)| &***key == "type" && !item.is_deleted())?;
+    match item.content() {
+        ItemContent::Any(values) => match values.last() {
+            Some(Any::String(kind)) => Some(kind.to_string()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Whether a held element holds a source text this update leaves in place.
+fn held_source<T: ReadTxn>(txn: &T, incoming: &ydoc::Incoming, element: &BranchID) -> bool {
+    let Some(branch) = held_branch(txn, element) else {
+        return false;
+    };
+    branch.map_items().any(|(key, item)| {
+        let id = item.id();
+        &**key == plate::SHARED_TEXT_KEY
+            && !item.is_deleted()
+            && !incoming.deletes(&id.client, id.clock, id.clock + item.len())
+            && matches!(item.content(), ItemContent::Type(text) if matches!(text.type_ref(), TypeRef::Text))
+    })
 }
 
 /// Whether admitting `update` takes the room's thread off the async workers

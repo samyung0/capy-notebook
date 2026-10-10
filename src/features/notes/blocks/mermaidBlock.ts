@@ -1,3 +1,4 @@
+import { YjsEditor } from '@slate-yjs/core';
 import {
   NodeApi,
   type Operation,
@@ -5,6 +6,8 @@ import {
   type SlateEditor,
   type TElement,
 } from 'platejs';
+import * as Y from 'yjs';
+import { blockSource } from '@/features/materials/liveMermaid';
 import type { MermaidTheme } from '@/features/materials/mermaidThemes';
 
 /**
@@ -44,6 +47,26 @@ export function stampMermaidTheme<O extends Operation>(
   )
     return operation;
   return { ...operation, node: { ...operation.node, theme } };
+}
+
+/** The source text (shape A) of the top-level mermaid block `id` in the
+ * note's shared document, for its dialog to edit live. Null outside a
+ * collaborative editor. */
+export function mermaidSourceText(
+  editor: SlateEditor,
+  id: string
+): Y.Text | null {
+  if (!YjsEditor.isYjsEditor(editor)) return null;
+  for (const op of editor.sharedRoot.toDelta() as { insert: unknown }[]) {
+    const block = op.insert;
+    if (
+      block instanceof Y.XmlText &&
+      block.getAttribute('type') === 'mermaid' &&
+      block.getAttribute('id') === id
+    )
+      return blockSource(block);
+  }
+  return null;
 }
 
 /** Replaces the caption text of the mermaid block at `at`. */

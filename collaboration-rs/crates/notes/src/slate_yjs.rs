@@ -14,7 +14,9 @@ use serde_json::Value;
 use yrs::block::{EmbedPrelim, ItemContent, ItemPtr, Prelim};
 use yrs::branch::{Branch, BranchPtr};
 use yrs::types::{Attrs, TypeRef};
-use yrs::{Any, ReadTxn, Text, TransactionMut, Xml, XmlTextRef};
+use yrs::{
+    Any, GetString, Out, ReadTxn, Text, TextPrelim, TextRef, TransactionMut, Xml, XmlTextRef,
+};
 
 use crate::json::value_to_any;
 use crate::plate::{self, DeltaOp, Insert, ProjectionError, utf16_len};
@@ -238,9 +240,21 @@ impl Prelim for ElementPrelim {
 
     fn integrate(self, txn: &mut TransactionMut, inner_ref: BranchPtr) {
         let text = XmlTextRef::from(inner_ref);
+        let mermaid = self.properties.iter().any(|(key, value)| {
+            key == "type" && matches!(value, Any::String(kind) if &**kind == "mermaid")
+        });
         let set = |txn: &mut TransactionMut, properties: Vec<(String, Any)>| {
             for (key, value) in properties {
-                text.insert_attribute(txn, key, value);
+                match value {
+                    // A Mermaid block's source is a text (shape A), as the
+                    // patched slate-yjs inserts and clones it.
+                    Any::String(source) if mermaid && key == plate::SHARED_TEXT_KEY => {
+                        text.insert_attribute(txn, key, TextPrelim::new(source.as_ref()));
+                    }
+                    value => {
+                        text.insert_attribute(txn, key, value);
+                    }
+                }
             }
         };
         let mut properties = Some(self.properties);
@@ -385,6 +399,35 @@ fn nothing_follows(parent: BranchPtr, at: u32, last: Option<ItemPtr>) -> bool {
     true
 }
 
+/// Changes a source text to `next` with the fewest edits: the common head
+/// and tail stay (the slate-yjs patch's `editSharedText`), cut at character
+/// boundaries.
+pub fn edit_text(txn: &mut TransactionMut, text: &TextRef, next: &str) {
+    let current = text.get_string(txn);
+    if current == next {
+        return;
+    }
+    let (held, wanted): (Vec<char>, Vec<char>) =
+        (current.chars().collect(), next.chars().collect());
+    let head = held.iter().zip(&wanted).take_while(|(a, b)| a == b).count();
+    let tail = held[head..]
+        .iter()
+        .rev()
+        .zip(wanted[head..].iter().rev())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let units = |chars: &[char]| chars.iter().map(|c| c.len_utf16() as u32).sum::<u32>();
+    let start = units(&held[..head]);
+    let removed = units(&held[head..held.len() - tail]);
+    if removed > 0 {
+        text.remove_range(txn, start, removed);
+    }
+    let inserted: String = wanted[head..wanted.len() - tail].iter().collect();
+    if !inserted.is_empty() {
+        text.insert(txn, start, &inserted);
+    }
+}
+
 /// `YText.delete`: Yjs deletes what is there and stops at the end (a Slate
 /// tree can run ahead of its document after Yjs dropped a newline).
 fn remove(txn: &mut TransactionMut, parent: BranchPtr, index: u32, len: u32) {
@@ -480,6 +523,12 @@ pub fn apply_op(
                 for (key, value) in new_properties {
                     if value.is_null() {
                         element.remove_attribute(txn, key);
+                    } else if let (Some(Out::YText(held)), Some(next)) =
+                        (element.get_attribute(txn, key), value.as_str())
+                    {
+                        // A source text takes the change as a text diff, so
+                        // typing that reaches the room meanwhile stays.
+                        edit_text(txn, &held, next);
                     } else {
                         element.insert_attribute(txn, key.as_str(), value_to_any(value));
                     }

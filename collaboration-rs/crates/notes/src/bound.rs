@@ -328,16 +328,18 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
                     if !self.ancestry(branch).1 {
                         continue;
                     }
-                    // live-items prototype (shape A): a string typed into a
-                    // shared text attribute only lengthens that string.
+                    // A string typed into a Mermaid source (shape A) only
+                    // lengthens that string, plus a surrogate pair it splits.
                     if matches!(branch.type_ref(), TypeRef::Text)
                         && branch
                             .item()
                             .and_then(|holder| holder.parent_sub().cloned())
-                            .is_some_and(|key| plate::shared_text_key(&key))
+                            .is_some_and(|key| &*key == plate::SHARED_TEXT_KEY)
                     {
                         match item.content() {
-                            ItemContent::String(text) => bytes += text_bytes(text.as_str()),
+                            ItemContent::String(text) => {
+                                bytes += SPLIT_BYTES + text_bytes(text.as_str());
+                            }
                             _ => return Err(Unbounded),
                         }
                         continue;

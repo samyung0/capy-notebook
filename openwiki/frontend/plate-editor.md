@@ -513,7 +513,10 @@ caption is typed in a field under the diagram that rewrites the
 selection inside it maps to the caption element; `fixMermaidSelection` moves
 such points onto the caption text. The edit dialog shows source beside a live
 preview in the block's theme (Tab indents by two spaces; deleting lives on the
-toolbar). The source is a trimmed CodeMirror 6 (`MermaidCodeEditor.tsx`: state,
+toolbar) and edits the block live: there is no Save or Cancel, it closes with
+its X or Esc, and its footer holds Undo, Redo (CodeMirror's own history; the
+note's Undo does not cover the dialog's typing) and the note's save status.
+The source is a trimmed CodeMirror 6 (`MermaidCodeEditor.tsx`: state,
 view and history only, ~78 KB gzipped, loaded with the dialog or the editor,
 ligatures off) with line numbers; the line mermaid blames gets a tinted
 background, a wavy underline and a red number, while the preview keeps the last
@@ -524,18 +527,44 @@ Wherever a diagram is only read (View, note blocks, shared pages) a failure
 shows `MermaidError`: "Syntax error on line N", then the source with that line
 marked the same way.
 
+A Mermaid block's source is a strings-only Y.Text held as the `source`
+attribute of the `mermaid` element's Y.XmlText (shape A, Epo 2026-10-10), so
+two people typing in one source merge per character (9.5 B per keystroke
+against about 400 for a rewritten string). Nothing outside Yjs changes:
+Slate, the projection, Go, markdown, exports and share pages keep `source`
+a string. `@slate-yjs/core` 1.0.2 is patched for it
+(`patches/@slate-yjs__core@1.0.2.patch`, registered in `pnpm-workspace.yaml`):
+Slate reads the attribute as its string, a remote edit of the text becomes one
+`set_node` of `source`, a local `set_node` of `source` edits the text with the
+fewest changes, and an insert or a clone (a move) creates the text. The
+editors bind CodeMirror to the text itself (`yTextCodeMirror.ts`: local
+changes go in under the binding's origin, remote ones come back as one
+CodeMirror transaction kept out of its history); the note block's dialog finds
+it by the block's id (`mermaidSourceText`). A source a room still holds as a
+string (written before shape A) becomes a text when an editor first binds it,
+outside every Undo. The Rust server bootstraps sources as texts, reads them as
+their strings in the projection and the metrics, bounds a string typed into
+one by its escaped bytes (no copy of the room per keystroke), and writes an
+agent's `set_mermaid` (`set_property` of `source`) as a text diff, so typing
+that reaches the room meanwhile stays. Its admit lets a text in as `source`
+on a `mermaid` block only, with strings and nothing else inside
+(`collaboration-rs/crates/notes/src/limits.rs`): a text under another key or
+on another element, a block retyped while it holds one, and a format, embed,
+nested type or attribute inside a source are refused.
+
 Standalone mindmaps and diagrams render without Plate. View
 (`MermaidMaterialView`) draws the block's `MermaidView` straight from the
-material content, looking as the static renderer did. Edit keeps the note
-editor's room, saving, offline and recovery machinery, but `NoteEditorCore`
-mounts `PlateSlate` (change reporting, selectors, checkpoint scheduling)
-without `PlateContent` and renders `MermaidMaterialEditor`: a bar with the
-theme dropdown, Cancel and Save, then source and preview side by side. On
-phones one shows at a time behind a Preview/Code toggle in the bar. Changes
-are a draft until Save writes source, theme and caption into the block by
-index (path lookups by node need the rendered editor), so the block keeps its
-one-string source and the last Save wins; per-keystroke editing is planned in
-`todo-office.md`. Clicking any diagram preview opens `MermaidPreview`, the
+material content, looking as the static renderer did. Edit
+(`MermaidMaterialEditor`, no Plate) joins the material's room through
+`useItemRoom` (the note document's `content` root, read by `liveMermaid.ts`)
+and edits its one block live: a bar with the theme dropdown and, at its
+right, Undo and Redo of this user's own edits (the room's Undo manager, which
+CodeMirror's Undo keys use too), then source and preview side by side, the
+caption bound under the preview; there is no Save or Cancel, the cloud status
+follows the title, and editing ends through the View/Edit switch, which hands
+the live block to View first. Unsent edits stay on this device like a set's
+(offline banner, recovery to copy). On phones one shows at a time behind a
+Preview/Code toggle in the bar. Clicking any diagram preview opens `MermaidPreview`, the
 same full-screen viewer images use, titled with the material; a diagram that
 has not drawn (a syntax error) opens nothing, in View, note blocks and Edit.
 

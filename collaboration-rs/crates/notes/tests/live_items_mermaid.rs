@@ -1,22 +1,26 @@
-#![allow(clippy::unwrap_used, clippy::print_stdout)]
-//! Prototype measurement for live-items DESIGN.md section 6 (not a CI test):
-//! the keystroke updates `bench/collaboration/scripts/live-items/mermaid-shapes.ts`
-//! wrote for each Mermaid source shape, admitted and applied one by one as a
-//! note room does. Reports whether each update stays on the bound (no copy
-//! of the room) and what the projection and the store check make of the end
-//! state.
-//!
-//! LIVE_ITEMS_FIXTURES=<dir> cargo test -p notes --test live_items_mermaid -- --ignored --nocapture
+#![allow(clippy::unwrap_used)] // Tests panic on a broken fixture.
+//! A Mermaid source typed live (shape A, live-items DESIGN.md 6): the 77
+//! keystroke updates `bench/collaboration/scripts/live-items/mermaid-shapes.ts`
+//! recorded through the patched slate-yjs and a CodeMirror binding (67 keys,
+//! 10 backspaces, then two peers typing at once), admitted and applied one
+//! by one as a note room does (fixtures in `tests/fixtures/mermaid`).
 
 mod common;
 
-use std::time::Instant;
-
 use common::AdmitBytes;
 use notes::limits::{Admission, Validator};
-use serde_json::Value;
-use yrs::Transact;
+use notes::plate;
+use yrs::{Out, Transact, Xml, XmlTextRef};
 
+fn fixture(name: &str) -> Vec<u8> {
+    std::fs::read(format!(
+        "{}/tests/fixtures/mermaid/{name}",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap()
+}
+
+/// The recorded updates, each prefixed by its length (u32, little endian).
 fn updates(bytes: &[u8]) -> Vec<Vec<u8>> {
     let mut out = Vec::new();
     let mut at = 0;
@@ -28,73 +32,44 @@ fn updates(bytes: &[u8]) -> Vec<Vec<u8>> {
     out
 }
 
-fn source_of(value: &[Value]) -> Option<String> {
-    let block = value.iter().find(|node| node["type"] == "mermaid")?;
-    if let Some(source) = block["source"].as_str() {
-        return Some(source.to_owned());
-    }
-    let child = block["children"]
-        .as_array()?
-        .iter()
-        .find(|child| child["type"] == "mermaid_source")?;
-    Some(
-        child["children"]
-            .as_array()?
-            .iter()
-            .filter_map(|leaf| leaf["text"].as_str())
-            .collect(),
-    )
+fn source_chars(value: &[serde_json::Value]) -> usize {
+    let block = value.iter().find(|node| node["type"] == "mermaid").unwrap();
+    block["source"].as_str().unwrap().chars().count()
 }
 
+/// Every keystroke goes in on the bound: one exact measure (the first, with
+/// no baseline yet), never a copy of the room per key. Without the bound's
+/// source case each insert copies the room (67 exact checks).
 #[test]
-#[ignore = "prototype measurement; needs LIVE_ITEMS_FIXTURES"]
-fn mermaid_shapes_through_the_note_room() {
-    let dir = std::path::PathBuf::from(std::env::var("LIVE_ITEMS_FIXTURES").unwrap());
-    for shape in ["string", "nested", "child"] {
-        let base = std::fs::read(dir.join(format!("{shape}.base.bin"))).unwrap();
-        let keys = updates(&std::fs::read(dir.join(format!("{shape}.updates.bin"))).unwrap());
-        let doc = common::doc(&base, 77);
-        let mut validator = Validator::default();
-        let (mut accepted, mut refused, mut first_refusal) = (0, 0, None);
-        let started = Instant::now();
-        for update in &keys {
-            match validator.admit_bytes(&doc, update) {
-                Ok(Admission::Accepted) => {
-                    accepted += 1;
-                    common::apply(&doc, update);
-                }
-                Ok(Admission::Unheld) => refused += 1,
-                Err(error) => {
-                    refused += 1;
-                    first_refusal.get_or_insert(error.to_string());
-                }
-            }
-        }
-        let admit_us = started.elapsed().as_secs_f64() * 1e6 / keys.len() as f64;
-        let txn = doc.transact();
-        let value = notes::plate::value(&txn);
-        let (source, canonical) = match &value {
-            Ok(value) => (
-                source_of(value).map(|source| source.len()),
-                notes::material::assert_canonical(value, "note")
-                    .map(|_| "ok".to_owned())
-                    .unwrap_or_else(|error| error.0),
-            ),
-            Err(error) => (None, format!("projection: {error}")),
-        };
-        println!(
-            "{}",
-            serde_json::json!({
-                "shape": shape,
-                "updates": keys.len(),
-                "accepted": accepted,
-                "refused": refused,
-                "firstRefusal": first_refusal,
-                "exactChecks": validator.exact_checks,
-                "admitAndApplyMicrosPerUpdate": (admit_us * 10.0).round() / 10.0,
-                "projectedSourceChars": source,
-                "storeCheck": canonical,
-            })
+fn typed_mermaid_source_keystrokes_stay_on_the_bound() {
+    let doc = common::doc(&fixture("nested.base.bin"), 77);
+    let before = source_chars(&plate::value(&doc.transact()).unwrap());
+    let keys = updates(&fixture("nested.updates.bin"));
+    assert_eq!(keys.len(), 77);
+    let mut validator = Validator::default();
+    for (n, update) in keys.iter().enumerate() {
+        let admitted = validator.admit_bytes(&doc, update);
+        assert!(
+            matches!(admitted, Ok(Admission::Accepted)),
+            "update {n}: {admitted:?}"
         );
+        common::apply(&doc, update);
     }
+    assert_eq!(validator.exact_checks, 1);
+    let txn = doc.transact();
+    let value = plate::value(&txn).unwrap();
+    // 67 characters typed, 10 deleted.
+    assert_eq!(source_chars(&value), before + 57);
+    notes::material::assert_canonical(&value, "note").unwrap();
+    // The source is still a text in the room, not a string.
+    let root = plate::content_root(&txn).unwrap();
+    let held = plate::insert_delta(&root).unwrap().into_iter().find_map(|op| match op.insert {
+        plate::Insert::Element(branch) => {
+            let element = XmlTextRef::from(branch);
+            matches!(element.get_attribute(&txn, "type"), Some(Out::Any(yrs::Any::String(kind))) if &*kind == "mermaid")
+                .then(|| element.get_attribute(&txn, "source"))
+        }
+        plate::Insert::Text(_) => None,
+    });
+    assert!(matches!(held, Some(Some(Out::YText(_)))), "{held:?}");
 }

@@ -238,21 +238,11 @@ fn validate_media(node: &Node, kind: &str) -> Check {
 fn validate_diagram(node: &Node) -> Check {
     reject_opaque(node)?;
     require_id(node)?;
-    let list = children(node);
-    let kind = |child: &Node| child.get("type").and_then(Value::as_str).map(str::to_owned);
-    // live-items prototype (DESIGN.md 6, shape B): the source as a hidden
-    // first text child, no `source` attribute.
-    if node.get("source").is_none()
-        && list.len() == 2
-        && kind(list[0]).as_deref() == Some("mermaid_source")
-        && kind(list[1]).as_deref() == Some("mermaid_caption")
-    {
-        return validate_width(node);
-    }
     if !node.get("source").is_some_and(Value::is_string) {
         return fail("source must be a string");
     }
     validate_width(node)?;
+    let list = children(node);
     if list.len() != 1 || list[0].get("type").and_then(Value::as_str) != Some("mermaid_caption") {
         return fail("diagram requires one mermaid_caption child");
     }
@@ -410,9 +400,7 @@ fn validate_node(node: &Node, depth: usize, policy: &Policy) -> Check {
         "chart" | "plot" | "graph" => validate_embed(node, kind, depth),
         "quiz_question" => validate_quiz_question(node, policy),
         HTML_EMBED_TYPE => validate_html_embed(node, depth),
-        "flashcard_front" | "flashcard_back" | "mermaid_caption" | "mermaid_source" => {
-            validate_text_element(node)
-        }
+        "flashcard_front" | "flashcard_back" | "mermaid_caption" => validate_text_element(node),
         "quiz_prompt" | "quiz_option" | "quiz_explanation" => fail("obsolete quiz child node"),
         "flashcards" => validate_flashcards(node),
         "flashcard" => validate_flashcard(node),

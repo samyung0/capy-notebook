@@ -2860,3 +2860,112 @@ async fn a_keys_room_refuses_a_read_token_at_refresh() {
         String::from_utf8_lossy(&closed)
     );
 }
+
+// ------------------------------------------------------------ live Mermaid
+
+/// A standalone diagram (one `mermaid` block) owned by a fresh user; returns
+/// (user, material).
+async fn diagram(env: &Env, source: &str) -> (String, String) {
+    let owner = user(env).await;
+    let material = format!("dg_it_{}", uuid_like());
+    let content = serde_json::json!({
+        "schemaVersion": 1,
+        "value": [{
+            "children": [{ "children": [{ "text": "" }], "type": "mermaid_caption" }],
+            "id": "d1",
+            "source": source,
+            "type": "mermaid",
+        }],
+    });
+    db(env)
+        .await
+        .execute(
+            "INSERT INTO materials (id, created_by, kind, title, content) VALUES ($1, $2, 'diagram', 'IT diagram', $3)",
+            &[&material, &owner, &content],
+        )
+        .await
+        .expect("diagram");
+    (owner, material)
+}
+
+/// The source text of the client's Mermaid block (shape A).
+fn mermaid_source(doc: &Doc) -> Option<yrs::TextRef> {
+    use yrs::Xml;
+    let root = doc.get_or_insert_text("content");
+    let txn = doc.transact();
+    root.diff(&txn, yrs::types::text::YChange::identity)
+        .into_iter()
+        .find_map(|chunk| match chunk.insert {
+            yrs::Out::YXmlText(block) => match block.get_attribute(&txn, "source") {
+                Some(yrs::Out::YText(text)) => Some(text),
+                _ => None,
+            },
+            _ => None,
+        })
+}
+
+impl Client {
+    fn source(&self) -> String {
+        mermaid_source(&self.doc)
+            .map(|text| text.get_string(&self.doc.transact()))
+            .unwrap_or_default()
+    }
+
+    /// What typing `text` at `index` of the source sends, made now against
+    /// the client's document but not sent yet.
+    fn type_source(&mut self, index: u32, text: &str) -> Vec<u8> {
+        let before = self.doc.transact().state_vector();
+        let source = mermaid_source(&self.doc).expect("a source text");
+        source.insert(&mut self.doc.transact_mut(), index, text);
+        self.doc.transact().encode_state_as_update_v1(&before)
+    }
+}
+
+/// Two writers typing into one Mermaid source at once both keep their
+/// characters (shape A merges per character), and an agent's `set_mermaid`
+/// (`set_property` of `source`) during typing is a text diff, so a writer's
+/// keystroke made before it and sent after it stays too.
+#[tokio::test]
+async fn two_writers_type_in_one_mermaid_source_and_an_agent_edit_keeps_both() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, material) = diagram(&env, "graph TD\n  A --> B").await;
+    let room = format!("material:{material}:schema:1");
+    let mut a = Client::open(server.port).await;
+    let mut b = Client::open(server.port).await;
+    assert_eq!(a.joined(&room, &token(&room, &owner, "write")).await, 1);
+    assert_eq!(b.joined(&room, &token(&room, &owner, "write")).await, 1);
+    assert!(a.settle(|c| c.source() == "graph TD\n  A --> B").await);
+    assert!(b.settle(|c| c.source() == "graph TD\n  A --> B").await);
+
+    // Both type before hearing the other.
+    let from_a = a.type_source(18, " --> C");
+    let from_b = b.type_source(0, "%% b\n");
+    a.send(5, &sync(2, &from_a)).await;
+    b.send(5, &sync(2, &from_b)).await;
+    let merged = "%% b\ngraph TD\n  A --> B --> C";
+    assert!(a.settle(|c| c.source() == merged).await, "{}", a.source());
+    assert!(b.settle(|c| c.source() == merged).await, "{}", b.source());
+
+    // A types; before it sends, an agent rewrites the head of the source.
+    let from_a = a.type_source(merged.len() as u32, " --> D");
+    let edit = serde_json::json!({
+        "actorUserId": owner,
+        "commands": [{
+            "type": "set_property",
+            "nodeType": "mermaid",
+            "property": "source",
+            "expectedValue": merged,
+            "value": "%% b\nflowchart TD\n  A --> B --> C",
+        }],
+        "operation": { "id": format!("op_{material}"), "requestHash": "h1", "toolVersion": 1 },
+        "room": room,
+        "target": { "id": material, "kind": "material" },
+    });
+    let (status, receipt) = internal(server.port, "/internal/documents/edit", &edit).await;
+    assert_eq!(status, 200, "{receipt}");
+    a.send(5, &sync(2, &from_a)).await;
+    let both = "%% b\nflowchart TD\n  A --> B --> C --> D";
+    assert!(a.settle(|c| c.source() == both).await, "{}", a.source());
+    assert!(b.settle(|c| c.source() == both).await, "{}", b.source());
+}

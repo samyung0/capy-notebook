@@ -1,0 +1,206 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index 58cc95c..78bbd64 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -210,10 +210,43 @@ function getProperties(node) {
+ }
+ 
+ // src/utils/convert.ts
++// Capy patch (live-items, Epo 2026-10-10): a `mermaid` element's `source`
++// is a nested Y.Text (per-character merge); Slate holds its string. Remote
++// edits of it become `set_node`, a local `set_node` edits it minimally, and
++// inserts and clones create one.
++function isSharedTextKey(type, key) {
++  return type === "mermaid" && key === "source";
++}
++function toSlateValue(value) {
++  return value instanceof Y.AbstractType ? value.toString() : value;
++}
++function slateAttributes(yText) {
++  const out = {};
++  for (const [key, value] of Object.entries(yText.getAttributes())) out[key] = toSlateValue(value);
++  return out;
++}
++function newSharedText(text) {
++  const shared = new Y.Text();
++  shared.insert(0, text);
++  return shared;
++}
++function editSharedText(yText, next) {
++  const current = yText.toString();
++  if (current === next) return;
++  let start = 0;
++  while (start < current.length && start < next.length && current[start] === next[start]) start++;
++  // Never between the halves of a surrogate pair.
++  if (start > 0 && (current.charCodeAt(start - 1) & 0xfc00) === 0xd800) start--;
++  let end = 0;
++  while (end < current.length - start && end < next.length - start && current[current.length - 1 - end] === next[next.length - 1 - end]) end++;
++  if (end > 0 && (current.charCodeAt(current.length - end) & 0xfc00) === 0xdc00) end--;
++  if (current.length - start - end > 0) yText.delete(start, current.length - start - end);
++  if (next.length - start - end > 0) yText.insert(start, next.slice(start, next.length - end));
++}
+ function yTextToSlateElement(yText) {
+   const delta = yTextToInsertDelta(yText);
+   const children = delta.length > 0 ? delta.map(deltaInsertToSlateNode) : [{ text: "" }];
+-  return __spreadProps(__spreadValues({}, yText.getAttributes()), { children });
++  return __spreadProps(__spreadValues({}, slateAttributes(yText)), { children });
+ }
+ function deltaInsertToSlateNode(insert) {
+   if (typeof insert.insert === "string") {
+@@ -237,7 +270,7 @@ function slateElementToYText(_a) {
+   ]);
+   const yElement = new Y.XmlText();
+   Object.entries(attributes).forEach(([key, value]) => {
+-    yElement.setAttribute(key, value);
++    yElement.setAttribute(key, isSharedTextKey(attributes.type, key) && typeof value === "string" ? newSharedText(value) : value);
+   });
+   yElement.applyDelta(slateNodesToInsertDelta(children), { sanitize: false });
+   return yElement;
+@@ -492,7 +525,14 @@ function translateYTextEvent(sharedRoot, editor, event) {
+   const { target, changes } = event;
+   const delta = event.delta;
+   if (!(target instanceof Y3.XmlText)) {
+-    throw new Error("Unexpected target node type");
++    const owner = target._item && target._item.parent;
++    const key = target._item && target._item.parentSub;
++    if (!(owner instanceof Y3.XmlText) || !key) {
++      throw new Error("Unexpected target node type");
++    }
++    const path = getSlatePath(sharedRoot, editor, owner);
++    const element = import_slate5.Node.get(editor, path);
++    return [{ type: "set_node", path, properties: { [key]: element[key] }, newProperties: { [key]: target.toString() } }];
+   }
+   const ops = [];
+   const slatePath = getSlatePath(sharedRoot, editor, target);
+@@ -504,7 +544,7 @@ function translateYTextEvent(sharedRoot, editor, event) {
+   if (slatePath.length > 0 && keyChanges.length > 0) {
+     const newProperties = Object.fromEntries(keyChanges.map(([key, info]) => [
+       key,
+-      info.action === "delete" ? null : target.getAttribute(key)
++      info.action === "delete" ? null : toSlateValue(target.getAttribute(key))
+     ]));
+     const properties = Object.fromEntries(keyChanges.map(([key]) => [key, targetElement[key]]));
+     ops.push({ type: "set_node", newProperties, properties, path: slatePath });
+@@ -559,7 +599,7 @@ function cloneDeep(yText) {
+   const clone = new Y5.XmlText();
+   const attributes = yText.getAttributes();
+   Object.entries(attributes).forEach(([key, value]) => {
+-    clone.setAttribute(key, value);
++    clone.setAttribute(key, value instanceof Y5.AbstractType ? newSharedText(value.toString()) : value);
+   });
+   clone.applyDelta(cloneInsertDeltaDeep(yTextToInsertDelta(yText)), {
+     sanitize: false
+@@ -783,6 +823,10 @@ function setNode(sharedRoot, slateRoot, op) {
+       if (value === null) {
+         return yTarget.removeAttribute(key);
+       }
++      const held = yTarget.getAttribute(key);
++      if (held instanceof Y.AbstractType && typeof value === "string") {
++        return editSharedText(held, value);
++      }
+       yTarget.setAttribute(key, value);
+     });
+     return Object.entries(op.properties).forEach(([key]) => {
+diff --git a/dist/index.js b/dist/index.js
+index c1ab935..d6349b6 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -174,10 +174,43 @@ function getProperties(node) {
+ }
+ 
+ // src/utils/convert.ts
++// Capy patch (live-items, Epo 2026-10-10): a `mermaid` element's `source`
++// is a nested Y.Text (per-character merge); Slate holds its string. Remote
++// edits of it become `set_node`, a local `set_node` edits it minimally, and
++// inserts and clones create one.
++function isSharedTextKey(type, key) {
++  return type === "mermaid" && key === "source";
++}
++function toSlateValue(value) {
++  return value instanceof Y.AbstractType ? value.toString() : value;
++}
++function slateAttributes(yText) {
++  const out = {};
++  for (const [key, value] of Object.entries(yText.getAttributes())) out[key] = toSlateValue(value);
++  return out;
++}
++function newSharedText(text) {
++  const shared = new Y.Text();
++  shared.insert(0, text);
++  return shared;
++}
++function editSharedText(yText, next) {
++  const current = yText.toString();
++  if (current === next) return;
++  let start = 0;
++  while (start < current.length && start < next.length && current[start] === next[start]) start++;
++  // Never between the halves of a surrogate pair.
++  if (start > 0 && (current.charCodeAt(start - 1) & 0xfc00) === 0xd800) start--;
++  let end = 0;
++  while (end < current.length - start && end < next.length - start && current[current.length - 1 - end] === next[next.length - 1 - end]) end++;
++  if (end > 0 && (current.charCodeAt(current.length - end) & 0xfc00) === 0xdc00) end--;
++  if (current.length - start - end > 0) yText.delete(start, current.length - start - end);
++  if (next.length - start - end > 0) yText.insert(start, next.slice(start, next.length - end));
++}
+ function yTextToSlateElement(yText) {
+   const delta = yTextToInsertDelta(yText);
+   const children = delta.length > 0 ? delta.map(deltaInsertToSlateNode) : [{ text: "" }];
+-  return __spreadProps(__spreadValues({}, yText.getAttributes()), { children });
++  return __spreadProps(__spreadValues({}, slateAttributes(yText)), { children });
+ }
+ function deltaInsertToSlateNode(insert) {
+   if (typeof insert.insert === "string") {
+@@ -201,7 +234,7 @@ function slateElementToYText(_a) {
+   ]);
+   const yElement = new Y.XmlText();
+   Object.entries(attributes).forEach(([key, value]) => {
+-    yElement.setAttribute(key, value);
++    yElement.setAttribute(key, isSharedTextKey(attributes.type, key) && typeof value === "string" ? newSharedText(value) : value);
+   });
+   yElement.applyDelta(slateNodesToInsertDelta(children), { sanitize: false });
+   return yElement;
+@@ -456,7 +489,14 @@ function translateYTextEvent(sharedRoot, editor, event) {
+   const { target, changes } = event;
+   const delta = event.delta;
+   if (!(target instanceof Y3.XmlText)) {
+-    throw new Error("Unexpected target node type");
++    const owner = target._item && target._item.parent;
++    const key = target._item && target._item.parentSub;
++    if (!(owner instanceof Y3.XmlText) || !key) {
++      throw new Error("Unexpected target node type");
++    }
++    const path = getSlatePath(sharedRoot, editor, owner);
++    const element = Node3.get(editor, path);
++    return [{ type: "set_node", path, properties: { [key]: element[key] }, newProperties: { [key]: target.toString() } }];
+   }
+   const ops = [];
+   const slatePath = getSlatePath(sharedRoot, editor, target);
+@@ -468,7 +508,7 @@ function translateYTextEvent(sharedRoot, editor, event) {
+   if (slatePath.length > 0 && keyChanges.length > 0) {
+     const newProperties = Object.fromEntries(keyChanges.map(([key, info]) => [
+       key,
+-      info.action === "delete" ? null : target.getAttribute(key)
++      info.action === "delete" ? null : toSlateValue(target.getAttribute(key))
+     ]));
+     const properties = Object.fromEntries(keyChanges.map(([key]) => [key, targetElement[key]]));
+     ops.push({ type: "set_node", newProperties, properties, path: slatePath });
+@@ -523,7 +563,7 @@ function cloneDeep(yText) {
+   const clone = new Y5.XmlText();
+   const attributes = yText.getAttributes();
+   Object.entries(attributes).forEach(([key, value]) => {
+-    clone.setAttribute(key, value);
++    clone.setAttribute(key, value instanceof Y5.AbstractType ? newSharedText(value.toString()) : value);
+   });
+   clone.applyDelta(cloneInsertDeltaDeep(yTextToInsertDelta(yText)), {
+     sanitize: false
+@@ -747,6 +787,10 @@ function setNode(sharedRoot, slateRoot, op) {
+       if (value === null) {
+         return yTarget.removeAttribute(key);
+       }
++      const held = yTarget.getAttribute(key);
++      if (held instanceof Y.AbstractType && typeof value === "string") {
++        return editSharedText(held, value);
++      }
+       yTarget.setAttribute(key, value);
+     });
+     return Object.entries(op.properties).forEach(([key]) => {
