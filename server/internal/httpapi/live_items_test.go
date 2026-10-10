@@ -1,0 +1,58 @@
+package httpapi_test
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"testing"
+
+	"github.com/samyung0/capy-notebook/server/internal/blob"
+	"github.com/samyung0/capy-notebook/server/internal/httpapi"
+	"github.com/samyung0/capy-notebook/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
+)
+
+// Signed-in viewers watch notes and live items through read-only rooms (Epo,
+// 2026-10-10): their token says read, an editor's write, and a stranger gets
+// none. The collaboration server closes a read channel that writes.
+func TestViewersGetReadOnlyCollaborationTokens(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.New(ctx, testdb.URL(t))
+	if err != nil {
+		t.Fatalf("db: %v", err)
+	}
+	t.Cleanup(st.Close)
+	h := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", httpapi.Config{
+		AuthDisabled:        true,
+		E2EAuth:             true,
+		E2ESecret:           "e2e-test-secret",
+		E2EUserIDs:          []string{"u_owner", "u_editor", "u_viewer", "u_other"},
+		CollaborationSecret: "collab-test-secret",
+	})
+	for _, material := range []string{"note_e2e_private", "dk_e2e_private"} {
+		for _, c := range []struct {
+			user   string
+			status int
+			access string
+		}{
+			{"u_viewer", http.StatusCreated, "read"},
+			{"u_editor", http.StatusCreated, "write"},
+			{"u_other", http.StatusNotFound, ""},
+		} {
+			rec := doReq(t, h, http.MethodPost, "/api/materials/"+material+"/collaboration-token", c.user, nil)
+			if rec.Code != c.status {
+				t.Fatalf("%s on %s = %d body=%s, want %d", c.user, material, rec.Code, rec.Body.String(), c.status)
+			}
+			if c.status != http.StatusCreated {
+				continue
+			}
+			var token struct {
+				Access string `json:"access"`
+				Room   string `json:"room"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &token); err != nil || token.Access != c.access {
+				t.Fatalf("%s on %s: access %q (%v), want %q", c.user, material, token.Access, err, c.access)
+			}
+		}
+	}
+}

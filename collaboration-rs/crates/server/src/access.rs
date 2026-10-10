@@ -141,6 +141,9 @@ pub fn full_sql(user: &str, storage: &str) -> String {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LiveAccess {
+    /// The actor may edit (role editor or owner); a viewer reads only
+    /// (signed-in viewers hold read channels, Epo 2026-10-10).
+    pub editor: bool,
     pub frozen: bool,
     pub full: bool,
     pub suspended: bool,
@@ -148,7 +151,7 @@ pub struct LiveAccess {
 
 impl LiveAccess {
     pub fn access(self) -> Access {
-        if self.suspended || self.frozen || self.full {
+        if !self.editor || self.suspended || self.frozen || self.full {
             Access::Read
         } else {
             Access::Write
@@ -166,12 +169,24 @@ fn rank(role: &str) -> u8 {
 }
 
 /// `liveCollaborationAccess`: the actor's role on the material and the
-/// read-only narrowing.
+/// read-only narrowing. An embedded item (a note's quiz or set) is reachable
+/// exactly as its note is (Go `materialEffectiveAccess`).
 pub async fn live_access<C: GenericClient>(
     client: &C,
     material_id: &str,
     actor: &str,
 ) -> Result<LiveAccess, AccessError> {
+    let parent = client
+        .query(
+            "SELECT parent_material_id FROM materials WHERE id=$1 AND trashed_at IS NULL",
+            &[&material_id],
+        )
+        .await?;
+    let Some(row) = parent.first() else {
+        return Err(AccessError::NotFound("material not found".into()));
+    };
+    let parent: Option<String> = row.get("parent_material_id");
+    let material_id = parent.as_deref().unwrap_or(material_id);
     let sql = format!(
         "SELECT m.owner_user_id, m.privacy, m.workspace_id,
            (owner.deleted_at IS NOT NULL OR owner.deletion_requested_at IS NOT NULL) AS owner_gone,
@@ -228,27 +243,41 @@ pub async fn live_access<C: GenericClient>(
             shared
         }
     };
-    // Viewers never hold a room.
-    if rank(&role) < rank("editor") {
+    // Viewers hold read channels only; anyone else holds nothing.
+    if rank(&role) < rank("viewer") {
         return Err(AccessError::Forbidden("material access was revoked".into()));
     }
     Ok(LiveAccess {
+        editor: rank(&role) >= rank("editor"),
         frozen: row.get::<_, bool>("owner_frozen") || row.get::<_, bool>("actor_frozen"),
         full: row.get("owner_full"),
         suspended: row.get("owner_suspended"),
     })
 }
 
-/// `assertLiveCollaborationAccess`.
+/// `assertLiveCollaborationAccess`; returns the access it checked.
 pub async fn assert_access<C: GenericClient>(
     client: &C,
     material_id: &str,
     actor: &str,
     requested: Access,
-) -> Result<(), AccessError> {
+) -> Result<LiveAccess, AccessError> {
     let live = live_access(client, material_id, actor).await?;
     if requested == Access::Write && live.access() != Access::Write {
         return Err(AccessError::ReadOnly("collaboration access changed".into()));
+    }
+    Ok(live)
+}
+
+/// A writer in a store's snapshot must still hold an editing role (frozen
+/// and full are enforced at admission, so their admitted updates save).
+pub async fn assert_editor<C: GenericClient>(
+    client: &C,
+    material_id: &str,
+    actor: &str,
+) -> Result<(), AccessError> {
+    if !live_access(client, material_id, actor).await?.editor {
+        return Err(AccessError::Forbidden("material access was revoked".into()));
     }
     Ok(())
 }
@@ -371,6 +400,7 @@ mod tests {
     #[test]
     fn read_only_narrowing() {
         let open = LiveAccess {
+            editor: true,
             frozen: false,
             full: false,
             suspended: false,
@@ -384,6 +414,10 @@ mod tests {
             LiveAccess { full: true, ..open },
             LiveAccess {
                 suspended: true,
+                ..open
+            },
+            LiveAccess {
+                editor: false,
                 ..open
             },
         ] {

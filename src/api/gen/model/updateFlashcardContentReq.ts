@@ -14,6 +14,4 @@ export interface UpdateFlashcardContentReq {
      * @nullable
      */
   cards: FlashcardContentInput[] | null;
-  /** @minimum 1 */
-  expectedRevision: number;
 }

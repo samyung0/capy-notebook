@@ -56,9 +56,10 @@ type collaborationTokenResponse struct {
 	Token string `json:"token"`
 	Room  string `json:"room"`
 	URL   string `json:"url"`
-	// read is the downgrade an editor gets when a frozen or locked account (their
-	// own, or the storage owner's) makes the material read-only, or the storage
-	// owner is at its limit (view-only).
+	// read is what a viewer gets (signed-in viewers watch the room live, Epo
+	// 2026-10-10), and the downgrade an editor gets when a frozen or locked
+	// account (their own, or the storage owner's) makes the material
+	// read-only, or the storage owner is at its limit (view-only).
 	Access    string `json:"access" enum:"write,read"`
 	ExpiresAt int64  `json:"expiresAt"`
 }
@@ -237,11 +238,11 @@ func (a *api) createMaterialCollaborationToken(
 	if err != nil {
 		return nil, collaborationError(err)
 	}
-	if !store.RoleCanEdit(role) {
-		// Viewers render statically and never join the room.
-		return nil, collaborationError(store.ErrForbidden)
-	}
 	access := "write"
+	if !store.RoleCanEdit(role) {
+		// Viewers join read-only: the server closes a read channel that writes.
+		access = "read"
+	}
 	// The room token is the collaboration server's only source of truth for what
 	// a connection may do, so lifecycle restrictions have to be resolved here.
 	// Tokens are short-lived, which bounds how long a stale grant survives.

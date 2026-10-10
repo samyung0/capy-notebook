@@ -359,8 +359,7 @@ type FlashcardImage struct {
 }
 
 type UpdateFlashcardContentReq struct {
-	ExpectedRevision int64                   `json:"expectedRevision" minimum:"1"`
-	Cards            []FlashcardContentInput `json:"cards" minItems:"1"`
+	Cards []FlashcardContentInput `json:"cards" minItems:"1"`
 }
 
 type CreateEventReq struct {

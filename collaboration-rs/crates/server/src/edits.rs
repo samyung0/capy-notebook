@@ -20,6 +20,7 @@ use crate::access::{self, AccessError};
 use crate::app::Shared;
 use crate::auth::RoomName;
 use crate::markers;
+use crate::model::Model;
 use crate::note_store;
 use crate::observe;
 use crate::projection;
@@ -264,10 +265,15 @@ pub async fn inspect_material(
         .await?;
     let found = tx
         .query(
-            "SELECT state, room_schema FROM material_yjs_documents WHERE material_id=$1",
+            "SELECT d.state, d.room_schema, m.kind FROM material_yjs_documents d
+             JOIN materials m ON m.id=d.material_id WHERE d.material_id=$1",
             &[&material_id],
         )
         .await?;
+    let mut kind = found
+        .first()
+        .map(|row| row.get::<_, String>("kind"))
+        .unwrap_or_default();
     let (base, rows) = match found.first() {
         Some(row) => {
             if i64::from(row.get::<_, i32>("room_schema")) != schema {
@@ -286,7 +292,7 @@ pub async fn inspect_material(
         None => {
             let found = tx
                 .query(
-                    "SELECT content FROM materials WHERE id=$1 AND trashed_at IS NULL",
+                    "SELECT content, kind FROM materials WHERE id=$1 AND trashed_at IS NULL",
                     &[&material_id],
                 )
                 .await?;
@@ -296,6 +302,7 @@ pub async fn inspect_material(
                     "material not found",
                 ));
             };
+            kind = row.get("kind");
             let content: Value = row.get("content");
             let value = note_store::envelope_value(&content).map_err(|_| {
                 DocumentError::edit(
@@ -303,7 +310,7 @@ pub async fn inspect_material(
                     "material content is not a valid Plate envelope",
                 )
             })?;
-            (notes::slate_yjs::state_from_value(value, 0), Vec::new())
+            (Model::of(&kind).state_from_value(value), Vec::new())
         }
     };
     tx.commit().await?;
@@ -311,6 +318,23 @@ pub async fn inspect_material(
         let doc = ydoc::scratch_doc();
         ydoc::replay(&doc, &base, &rows)
             .map_err(|error| DocumentError::Unknown(error.to_string()))?;
+        // A live item reads as the Plate value it projects to.
+        let doc = match Model::of(&kind) {
+            Model::Note => doc,
+            model => {
+                let value = model
+                    .value(&doc.transact())
+                    .map_err(DocumentError::Unknown)?;
+                let plate = ydoc::scratch_doc();
+                ydoc::replay(
+                    &plate,
+                    &notes::slate_yjs::state_from_value(&value, 0),
+                    &[] as &[Vec<u8>],
+                )
+                .map_err(|error| DocumentError::Unknown(error.to_string()))?;
+                plate
+            }
+        };
         let blocks = notes::edit::inspect_material(&doc.transact())?;
         Ok(serde_json::to_value(blocks).unwrap_or(Value::Null))
     })
@@ -376,8 +400,10 @@ fn compute(
         }
         None => None,
     };
-    let root = doc.get_or_insert_text(notes::plate::CONTENT_ROOT);
-    let (outcome, value) = {
+    let (outcome, value) = if let Model::Item(item) = Model::of(&kind) {
+        item_edit(&doc, item, &kind, &commands, guards.as_deref())?
+    } else {
+        let root = doc.get_or_insert_text(notes::plate::CONTENT_ROOT);
         let mut txn = doc.transact_mut();
         let previous = notes::limits::measure_value(
             &notes::plate::value(&txn).map_err(|error| unknown(error.to_string()))?,
@@ -407,6 +433,36 @@ fn compute(
         value,
         outcome,
     })
+}
+
+/// An agent edit (or its Undo) of a live item document: the items crate's
+/// commands, the caps, the shape of everything the document holds, and the
+/// limits (refused unless it shrank towards them).
+fn item_edit(
+    doc: &yrs::Doc,
+    item: items::Kind,
+    kind: &str,
+    commands: &[DocumentCommand],
+    guards: Option<&[GuardTarget]>,
+) -> Result<(EditOutcome, Vec<Value>), DocumentError> {
+    let mut txn = doc.transact_mut();
+    let previous = notes::limits::measure_value(&item.document_value(&txn));
+    if let Some(guards) = guards {
+        item.verify_guards(&txn, guards)?;
+    }
+    let outcome = item.apply_commands(&mut txn, commands)?;
+    item.check_caps(&txn)
+        .map_err(|error| DocumentError::edit("invalid_input", &error))?;
+    let document = item.document_value(&txn);
+    notes::material::assert_canonical(&document, kind)
+        .map_err(|error| DocumentError::edit("invalid_input", &error.0))?;
+    let metrics = notes::limits::measure_value(&document);
+    if let Some(code) = notes::limits::limit_code(&metrics)
+        && !notes::limits::recovers(&metrics, Some(&previous))
+    {
+        return Err(DocumentError::Quota(code.as_str().into()));
+    }
+    Ok((outcome, item.value(&txn)))
 }
 
 /// `receiptFromRow`.
@@ -911,21 +967,31 @@ fn replace_on(
         None => None,
     };
     let before = doc.transact().state_vector();
-    let previous = notes::limits::measure_value(
-        &notes::plate::value(&doc.transact()).map_err(|error| error.to_string())?,
-    );
-    let root = doc.get_or_insert_text(notes::plate::CONTENT_ROOT);
-    {
-        let mut txn = doc.transact_mut();
-        notes::commands::replace_block(&mut txn, &root, command)
-            .map_err(|error| error.to_string())?;
+    let model = Model::of(&kind);
+    let previous = notes::limits::measure_value(&model.document_value(&doc.transact())?);
+    match model {
+        Model::Note => {
+            let root = doc.get_or_insert_text(notes::plate::CONTENT_ROOT);
+            let mut txn = doc.transact_mut();
+            notes::commands::replace_block(&mut txn, &root, command)
+                .map_err(|error| error.to_string())?;
+        }
+        // The content save API: the fewest changes, no revision check (D7).
+        Model::Item(item) => {
+            let mut txn = doc.transact_mut();
+            item.replace_block(&mut txn, &command.replacement_block)?;
+        }
     }
     if doc.transact().state_vector() == before {
         return Ok(None);
     }
-    let value = notes::plate::value(&doc.transact()).map_err(|error| error.to_string())?;
-    notes::material::assert_canonical(&value, &kind).map_err(|error| error.0)?;
-    let metrics = notes::limits::measure_value(&value);
+    if let Model::Item(item) = model {
+        item.check_caps(&doc.transact())?;
+    }
+    let value = model.value(&doc.transact())?;
+    let document = model.document_value(&doc.transact())?;
+    notes::material::assert_canonical(&document, &kind).map_err(|error| error.0)?;
+    let metrics = notes::limits::measure_value(&document);
     if let Some(code) = notes::limits::limit_code(&metrics)
         && !notes::limits::recovers(&metrics, Some(&previous))
     {

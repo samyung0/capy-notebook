@@ -161,6 +161,9 @@ pub enum GuardTarget {
         range: Option<[u32; 2]>,
         runs: Vec<GuardRun>,
     },
+    /// A live item's entry (a card) as the edit left it, null when the edit
+    /// removed it: built and checked by the `items` crate.
+    Item { path: Vec<String>, value: Value },
 }
 
 /// An insert whose anchor block was gone, and where it landed instead: after
@@ -696,6 +699,7 @@ fn dedupe(guards: Vec<GuardTarget>) -> Vec<GuardTarget> {
                 ),
                 GuardTarget::Text { offset, length, .. } => format!("text:{offset}:{length}"),
                 GuardTarget::Office { id, .. } => format!("office:{id}"),
+                GuardTarget::Item { path, .. } => format!("item:{}", path.join("/")),
             };
             seen.insert(key)
         })
@@ -1147,10 +1151,12 @@ pub fn verify_material_guards(
                 after_node_id,
                 ..
             } => child_gap_guard(txn, &y_root, &editor, parent_id, after_node_id.as_deref()),
-            GuardTarget::Text { .. } | GuardTarget::Office { .. } => Ok(GuardTarget::Gap {
-                after_block_id: None,
-                runs: Vec::new(),
-            }),
+            GuardTarget::Text { .. } | GuardTarget::Office { .. } | GuardTarget::Item { .. } => {
+                Ok(GuardTarget::Gap {
+                    after_block_id: None,
+                    runs: Vec::new(),
+                })
+            }
         };
         let now = match now {
             Ok(target) => runs_of(&target).to_vec(),
@@ -1174,6 +1180,7 @@ fn runs_of(guard: &GuardTarget) -> &[GuardRun] {
         | GuardTarget::ChildGap { runs, .. }
         | GuardTarget::Text { runs, .. }
         | GuardTarget::Office { runs, .. } => runs,
+        GuardTarget::Item { .. } => &[],
     }
 }
 

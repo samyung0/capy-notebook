@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import type { Provenance } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
@@ -63,6 +63,14 @@ export function StudyBody({
   const stack = useCardStack();
   const shown = steps.current;
   const card = shown && cards.find((c) => c.id === shown.key);
+  // Cards change while studying (Epo 2026-10-10): a removed card leaves the
+  // session, an added one joins its end; edits show on the cards in place.
+  useEffect(() => {
+    const live = studyIds();
+    if (live.join('\u0000') === ids.join('\u0000')) return;
+    setIds(live);
+    steps.follow(live);
+  }, [cards]);
 
   function rate(rating: SrsRating) {
     if (!card) return;

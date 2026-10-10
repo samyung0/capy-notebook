@@ -249,7 +249,7 @@ async fn handle(app: &Shared, channel: &str, raw: String) {
                         // channels, only make what is pending durable.
                         persist_local(app, &room).await
                     } else {
-                        evict_material_epochs(
+                        match evict_material_epochs(
                             app,
                             &material_id,
                             &room,
@@ -258,6 +258,13 @@ async fn handle(app: &Shared, channel: &str, raw: String) {
                             eviction.as_deref(),
                         )
                         .await
+                        {
+                            Ok(()) => {
+                                evict_children(app, &material_id, drain, &raw, eviction.as_deref())
+                                    .await
+                            }
+                            Err(error) => Err(error),
+                        }
                     }
                 }
                 None => return,
@@ -269,6 +276,39 @@ async fn handle(app: &Shared, channel: &str, raw: String) {
         }
         _ => {}
     }
+}
+
+/// A note's embedded quizzes and sets are reachable exactly as the note is,
+/// so an access event of the note evicts their rooms too (live-items).
+async fn evict_children(
+    app: &Shared,
+    material_id: &str,
+    drain: bool,
+    raw: &str,
+    eviction: Option<&str>,
+) -> Result<(), String> {
+    let children: Vec<String> = {
+        let client = app.db.get().await.map_err(|error| error.to_string())?;
+        client
+            .query(
+                "SELECT id FROM materials WHERE parent_material_id=$1",
+                &[&material_id],
+            )
+            .await
+            .map_err(|error| error.to_string())?
+            .iter()
+            .map(|row| row.get(0))
+            .collect()
+    };
+    for child in children {
+        let current = note_store::current_room(&app.db, &child)
+            .await
+            .map_err(|error| error.to_string())?;
+        if let Some(room) = current {
+            evict_material_epochs(app, &child, &room, drain, raw, eviction).await?;
+        }
+    }
+    Ok(())
 }
 
 /// `evictMaterialRoomEpoch`: evicts the named room and any later epoch that

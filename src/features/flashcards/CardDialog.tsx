@@ -1,69 +1,60 @@
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useRef, useState } from 'react';
-import { Controller, useForm, useWatch } from 'react-hook-form';
-import {
-  UpdateFlashcardContentBody,
-  updateFlashcardContentBodyCardsItemBackMax,
-  updateFlashcardContentBodyCardsItemFrontMax,
-} from '@/api/gen/validators';
+import { useEffect, useRef, useState } from 'react';
+import type * as Y from 'yjs';
+import { editorImageMaxBytes, uploadEditorAsset } from '@/api/editorAssets';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/TextArea';
-import type { FlashcardContent } from '@/features/materials/blocks';
+import type { ItemRoomStatus } from '@/features/collaboration/itemRoom';
+import {
+  LiveStatus,
+  UndoButtons,
+} from '@/features/collaboration/LiveItemControls';
+import { useBoundText } from '@/features/collaboration/yText';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
-import { IMAGE_ACCEPT } from '@/lib/fitImage';
+import { fitImage, IMAGE_ACCEPT } from '@/lib/fitImage';
 import { textLength } from '@/lib/textLength';
 import { CardImage, CardSides } from './CardView';
+import {
+  cardFace,
+  MAX_BACK,
+  MAX_FRONT,
+  readCards,
+  setCardImage,
+  useCards,
+} from './liveSet';
 
-/** The faces the whole-set save accepts, reused for one card's form. */
-const cardSchema = UpdateFlashcardContentBody.shape.cards
-  .unwrap()
-  .element.pick({ back: true, front: true });
-
-export interface CardFaces {
-  back: string;
-  front: string;
-  image?: FlashcardContent['image'];
-}
-
-/** Edits one card of a set being edited. Save and Remove change only the set
- * on screen; the page's Save stores it. */
+/** Edits one card of a live set: every field writes to the set as you type
+ * and the picked image uploads at once (Epo 2026-10-10). No Save or Cancel:
+ * the dialog closes with its X or Esc; Undo and Redo undo this user's own
+ * edits to the set. */
 export function CardDialog({
-  card,
-  position,
-  total,
+  doc,
+  cardId,
+  setId,
   setTitle,
-  onSave,
+  status,
+  undo,
   onRemove,
   onClose,
-  pickImage,
 }: {
-  /** Null adds a new card. */
-  card: CardFaces | null;
-  position: number;
-  total: number;
+  doc: Y.Doc;
+  cardId: string;
+  /** Uploads go through the set's editor-asset route. */
+  setId: string;
   setTitle: string;
-  onSave: (faces: CardFaces) => void;
+  status: ItemRoomStatus;
+  undo: Y.UndoManager;
   onRemove?: () => void;
   onClose: () => void;
-  /** Shrinks a picked image and keeps it in the browser until the set is
-   * saved; returns the id the card refers to it by. */
-  pickImage: (file: File) => Promise<string>;
 }) {
-  const {
-    control,
-    handleSubmit,
-    formState: { errors, isValid },
-  } = useForm<Pick<CardFaces, 'front' | 'back'>>({
-    defaultValues: { back: card?.back ?? '', front: card?.front ?? '' },
-    mode: 'onChange',
-    resolver: zodResolver(cardSchema),
-  });
-  const [front, back] = useWatch({ control, name: ['front', 'back'] });
-  const [image, setImage] = useState(card?.image);
+  const cards = useCards(doc);
+  const index = cards.findIndex((card) => card.id === cardId);
+  const card = cards[index];
+  const front = useBoundText<HTMLInputElement>(cardFace(doc, cardId, 'front'));
+  const back = useBoundText<HTMLTextAreaElement>(cardFace(doc, cardId, 'back'));
   const [picking, setPicking] = useState(false);
   const [imageError, setImageError] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
@@ -72,7 +63,11 @@ export function CardDialog({
     setPicking(true);
     setImageError('');
     try {
-      setImage({ assetId: await pickImage(file) });
+      const fitted = await fitImage(file, await editorImageMaxBytes(setId));
+      const { assetId } = await uploadEditorAsset(setId, fitted, 'image');
+      // Someone may have removed the card while the image uploaded.
+      if (readCards(doc).some((c) => c.id === cardId))
+        setCardImage(doc, cardId, { assetId });
     } catch (error) {
       setImageError(errorCopy(error, m.question_ui_upload_failed()));
     } finally {
@@ -80,18 +75,19 @@ export function CardDialog({
     }
   }
 
+  // Removed by someone else (or Undo of its insert): nothing left to edit.
+  useEffect(() => {
+    if (!card) onClose();
+  }, [card, onClose]);
+  if (!card) return null;
   return (
     <SimpleDialog
       footer={
         <>
-          <Button
-            onClick={onClose}
-            size="lg"
-            type="button"
-            variant="ghost-hover"
-          >
-            {m.action_cancel()}
-          </Button>
+          <div className="mr-auto flex items-center gap-2">
+            <UndoButtons manager={undo} />
+            <LiveStatus status={status} />
+          </div>
           {onRemove && (
             <Button
               className="hidden md:inline-flex"
@@ -103,30 +99,17 @@ export function CardDialog({
               {m.editor_remove_card()}
             </Button>
           )}
-          <Button
-            disabled={!isValid || picking}
-            size="lg"
-            type="submit"
-            variant="accent"
-          >
-            {card ? m.action_save() : m.flashcards_add_card()}
-          </Button>
         </>
       }
       onClose={onClose}
-      onSubmit={handleSubmit((faces) => onSave({ ...faces, image }))}
       open
       title={
-        card ? (
-          <span className="flex items-baseline gap-2.5">
-            {m.flashcards_edit_card()}
-            <span className="font-medium text-fg-muted">
-              {position}/{total}
-            </span>
+        <span className="flex items-baseline gap-2.5">
+          {m.flashcards_edit_card()}
+          <span className="font-medium text-fg-muted">
+            {index + 1}/{cards.length}
           </span>
-        ) : (
-          m.flashcards_new_card()
-        )
+        </span>
       }
       width={920}
     >
@@ -157,34 +140,29 @@ export function CardDialog({
         <div className="flex flex-col gap-4">
           <label className="flex flex-col gap-1.5" htmlFor="card-front">
             <InputTitle
-              count={{
-                max: updateFlashcardContentBodyCardsItemFrontMax,
-                value: textLength(front),
-              }}
+              count={{ max: MAX_FRONT, value: textLength(front.value) }}
               required
             >
               {m.editor_card_front()}
             </InputTitle>
-            <Controller
-              control={control}
-              name="front"
-              render={({ field }) => (
-                <Input
-                  aria-invalid={!!errors.front}
-                  autoFocus
-                  id="card-front"
-                  {...field}
-                />
-              )}
+            <Input
+              autoFocus
+              id="card-front"
+              maxLength={MAX_FRONT}
+              onChange={front.onChange}
+              ref={front.ref}
+              value={front.value}
             />
-            <InputError errors={[errors.front]} />
           </label>
           <div className="flex flex-col gap-1.5">
             <InputTitle>{m.editor_image()}</InputTitle>
-            {image ? (
+            {card.image ? (
               <>
                 <div className="grid h-38 place-items-center rounded-card border border-line p-3">
-                  <CardImage assetId={image.assetId} className="max-h-31" />
+                  <CardImage
+                    assetId={card.image.assetId}
+                    className="max-h-31"
+                  />
                 </div>
                 <div className="flex justify-end gap-1">
                   <Button
@@ -201,7 +179,7 @@ export function CardDialog({
                   <Button
                     disabled={picking}
                     iconLeft="trash"
-                    onClick={() => setImage(undefined)}
+                    onClick={() => setCardImage(doc, cardId, undefined)}
                     rounded="large"
                     size="sm"
                     type="button"
@@ -241,31 +219,23 @@ export function CardDialog({
           </div>
           <label className="flex flex-col gap-1.5" htmlFor="card-back">
             <InputTitle
-              count={{
-                max: updateFlashcardContentBodyCardsItemBackMax,
-                value: textLength(back),
-              }}
+              count={{ max: MAX_BACK, value: textLength(back.value) }}
               required
             >
               {m.editor_card_back()}
             </InputTitle>
-            <Controller
-              control={control}
-              name="back"
-              render={({ field }) => (
-                <Textarea
-                  aria-invalid={!!errors.back}
-                  className="max-h-none min-h-42"
-                  id="card-back"
-                  {...field}
-                />
-              )}
+            <Textarea
+              className="max-h-none min-h-42"
+              id="card-back"
+              maxLength={MAX_BACK}
+              onChange={back.onChange}
+              ref={back.ref}
+              value={back.value}
             />
-            <InputError errors={[errors.back]} />
           </label>
         </div>
         <div className="hidden md:block">
-          <CardSides card={{ back, front, id: '', image }} />
+          <CardSides card={card} />
         </div>
       </div>
     </SimpleDialog>

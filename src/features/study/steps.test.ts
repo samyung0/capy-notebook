@@ -5,6 +5,7 @@ import {
   nextStep,
   previousStep,
   startSteps,
+  withKeys,
 } from './steps';
 
 it('keeps a rated item read only on Previous and lets a skipped one be answered', () => {
@@ -52,4 +53,16 @@ it('stays on a checked item until Next', () => {
   expect(currentStep(s)).toEqual({ key: 'a', past: true, record: 3 });
   s = nextStep(s);
   expect(currentStep(s)?.key).toBe('b');
+});
+
+// A live flashcard set changes under the session (Epo 2026-10-10).
+it('drops gone items and queues new ones, keeping the shown item', () => {
+  let s = startSteps<string>(['a', 'b', 'c']);
+  s = answerStep(s, 'good');
+  expect(currentStep(s)?.key).toBe('b');
+  s = withKeys(s, ['b', 'c', 'd']);
+  expect(s.timeline).toEqual([]);
+  expect(s.queue).toEqual(['b', 'c', 'd']);
+  expect(currentStep(s)?.key).toBe('b');
+  expect(withKeys(s, ['b', 'c', 'd'])).toBe(s);
 });

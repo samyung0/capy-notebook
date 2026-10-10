@@ -7,6 +7,7 @@ use deadpool_postgres::{Pool, Transaction};
 use serde_json::Value;
 
 use crate::access::{self, AccessError};
+use crate::model::Model;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -95,7 +96,7 @@ pub(crate) async fn bootstrap(
 ) -> Result<(), StoreError> {
     let rows = tx
         .query(
-            "SELECT content FROM materials WHERE id=$1 AND trashed_at IS NULL FOR UPDATE",
+            "SELECT content, kind FROM materials WHERE id=$1 AND trashed_at IS NULL FOR UPDATE",
             &[&material_id],
         )
         .await?;
@@ -104,7 +105,8 @@ pub(crate) async fn bootstrap(
         return Err(StoreError::Other("material not found".into()));
     };
     let content: Value = row.get("content");
-    let state = notes::slate_yjs::state_from_value(envelope_value(&content)?, 0);
+    let kind: String = row.get("kind");
+    let state = Model::of(&kind).state_from_value(envelope_value(&content)?);
     let schema = i32::try_from(schema)
         .map_err(|_| StoreError::Other("invalid collaboration room schema".into()))?;
     tx.execute(
@@ -189,7 +191,7 @@ pub async fn append(
     // Frozen is enforced at admission, so updates already admitted save even
     // if their writer froze since; a writer must still hold its role.
     for actor in actors {
-        access::live_access(&tx, material_id, actor).await?;
+        access::assert_editor(&tx, material_id, actor).await?;
     }
     if boundary.owner_locked() {
         return Err(AccessError::Forbidden("material owner account is locked".into()).into());
@@ -380,7 +382,7 @@ pub async fn pending_projections(
 pub async fn durable(
     pool: &Pool,
     material_id: &str,
-) -> Result<Option<(i64, i64, Vec<u8>, Vec<Vec<u8>>)>, StoreError> {
+) -> Result<Option<(i64, i64, Vec<u8>, Vec<Vec<u8>>, String)>, StoreError> {
     let mut client = pool.get().await?;
     // One snapshot: a fold committing between the base and the rows would
     // otherwise pair the old base with no rows.
@@ -392,7 +394,9 @@ pub async fn durable(
         .await?;
     let found = tx
         .query(
-            "SELECT room_schema, stored_version, state FROM material_yjs_documents WHERE material_id=$1",
+            "SELECT d.room_schema, d.stored_version, d.state, m.kind
+             FROM material_yjs_documents d JOIN materials m ON m.id=d.material_id
+             WHERE d.material_id=$1",
             &[&material_id],
         )
         .await?;
@@ -402,13 +406,14 @@ pub async fn durable(
     let schema = i64::from(row.get::<_, i32>("room_schema"));
     let version: i64 = row.get("stored_version");
     let base: Vec<u8> = row.get("state");
+    let kind: String = row.get("kind");
     let log = rows(&tx, material_id, Some(version))
         .await?
         .into_iter()
         .map(|(_, update)| update)
         .collect();
     tx.commit().await?;
-    Ok(Some((schema, version, base, log)))
+    Ok(Some((schema, version, base, log, kind)))
 }
 
 /// Idle rooms whose stored bytes (base + log) passed
@@ -474,15 +479,16 @@ pub async fn compact(
     }
     let content = tx
         .query(
-            "SELECT content FROM materials WHERE id=$1 FOR UPDATE",
+            "SELECT content, kind FROM materials WHERE id=$1 FOR UPDATE",
             &[&material_id],
         )
         .await?;
     let Some(content) = content.first() else {
         return Err(StoreError::Other("material not found".into()));
     };
+    let kind: String = content.get("kind");
     let content: Value = content.get("content");
-    let state = notes::slate_yjs::state_from_value(envelope_value(&content)?, 0);
+    let state = Model::of(&kind).state_from_value(envelope_value(&content)?);
     let next_schema = i32::try_from(schema + 1)
         .map_err(|_| StoreError::Other("invalid collaboration room schema".into()))?;
     tx.execute(

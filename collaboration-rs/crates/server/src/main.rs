@@ -16,6 +16,7 @@ mod health;
 mod http;
 mod incidents;
 mod markers;
+mod model;
 mod note_store;
 mod observe;
 mod projection;

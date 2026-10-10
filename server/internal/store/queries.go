@@ -2221,16 +2221,17 @@ func (s *Store) ListCards(ctx context.Context, flashcardSetID string) ([]Flashca
 	return out, nil
 }
 
-func (s *Store) UpdateFlashcardContent(ctx context.Context, actorID, id string, expectedRevision int64, cards []materialdoc.Card) ([]Flashcard, error) {
+// UpdateFlashcardContent writes the whole set as the fewest changes to its live
+// document (the collaboration server diffs it in), with no revision check:
+// editors edit the set live, so there is no stale form to refuse (Epo,
+// 2026-10-10, D7).
+func (s *Store) UpdateFlashcardContent(ctx context.Context, actorID, id string, cards []materialdoc.Card) ([]Flashcard, error) {
 	mt, err := s.GetMaterial(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	if mt.Kind != "flashcards" {
 		return nil, ErrNotFound
-	}
-	if expectedRevision < 1 || expectedRevision != mt.Revision {
-		return nil, ErrConflict
 	}
 	current, err := materialdoc.ExtractFlashcards(mt.Content)
 	if err != nil {
@@ -2251,7 +2252,7 @@ func (s *Store) UpdateFlashcardContent(ctx context.Context, actorID, id string, 
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.UpdateMaterial(ctx, id, MaterialPatch{Content: &content, UpdatedBy: actorID, ExpectedRevision: &expectedRevision}); err != nil {
+	if _, err := s.UpdateMaterial(ctx, id, MaterialPatch{Content: &content, UpdatedBy: actorID}); err != nil {
 		return nil, err
 	}
 	return s.ListCards(ctx, id)

@@ -130,6 +130,9 @@ struct Member {
     /// The handoff's name for this channel.
     channel_id: u64,
     read_only: bool,
+    /// A viewer's channel: no awareness either way (kept across refreshes;
+    /// a role change evicts the channel).
+    viewer: bool,
     /// The source handoff made this channel read-only until RestoreAccess;
     /// a token refresh keeps it so.
     held_read_only: bool,
@@ -153,7 +156,9 @@ struct Note {
     material_id: String,
     schema: i64,
     kind: String,
-    validator: notes::limits::Validator,
+    /// What the document is: Plate (notes) or a live item (live-items).
+    model: crate::model::Model,
+    validator: crate::model::RoomValidator,
     durable_metrics: Option<notes::limits::Metrics>,
     stored_version: i64,
     projected_version: i64,
@@ -353,6 +358,7 @@ async fn load(
                 .await
                 .map_err(|error| error.to_string())?;
             let kind = loaded.material_kind.clone();
+            let model = crate::model::Model::of(&kind);
             let (log_rows, base_bytes) = (loaded.rows.len() as i64, loaded.base.len() as i64);
             let (stored_version, projected_version, log_bytes) = (
                 loaded.stored_version,
@@ -375,10 +381,9 @@ async fn load(
                             .map_err(|error| error.to_string())?;
                     }
                     let txn = doc.transact();
-                    notes::validate::assert_roots(&txn).map_err(|error| error.to_string())?;
+                    model.assert_roots(&txn)?;
                     markers::contributors_in(&txn).map_err(|error| error.to_string())?;
-                    let metrics =
-                        notes::limits::measure(&txn).map_err(|error| error.to_string())?;
+                    let metrics = model.measure(&txn)?;
                     let durable = ydoc::Durable::of(&txn);
                     drop(txn);
                     Ok((doc, durable, metrics))
@@ -392,11 +397,8 @@ async fn load(
                 // The load measured the room exactly (off the room task), so
                 // the first update takes the growth bound instead of copying
                 // and measuring a near-limit note on the room task (~55 ms).
-                validator: notes::limits::Validator {
-                    bound: Some(metrics),
-                    metrics: Some(metrics),
-                    ..Default::default()
-                },
+                validator: model.validator(metrics),
+                model,
                 durable_metrics: Some(metrics),
                 stored_version,
                 projected_version,
@@ -707,7 +709,16 @@ impl Room {
                     self.start_projection().await;
                 }
             }
-            RoomCmd::Broadcast(payload) => self.broadcast_stateless(&payload),
+            // The API's comment relays reach editors only: viewers have no
+            // comments (Epo 2026-10-10).
+            RoomCmd::Broadcast(payload) => {
+                let text = protocol::text(&payload);
+                for (key, member) in &self.members {
+                    if !member.viewer {
+                        self.send(*key, Kind::Stateless, &text);
+                    }
+                }
+            }
             RoomCmd::Evict {
                 drain,
                 notification,
@@ -810,6 +821,11 @@ impl Room {
             self.child_passes.clear();
             return;
         };
+        // Item documents hold no note children (their images are the set's).
+        if note.model != crate::model::Model::Note {
+            self.child_passes.clear();
+            return;
+        }
         let material_id = note.material_id.clone();
         while let Some(pass) = self.child_passes.pop_front() {
             let plan = {
@@ -895,6 +911,7 @@ impl Room {
             expires_at: i64::MAX,
             token_id: "children-pass".into(),
             user_id: actor.to_owned(),
+            viewer: false,
         };
         if let Some(marker) = self.markers.write(&self.doc, &context) {
             self.broadcast_update(None, marker);
@@ -1165,9 +1182,11 @@ impl Room {
             &[u8::from(!read_only)],
         ));
         self.view_dirty = true;
+        let viewer = context.viewer;
         self.members.insert(
             key,
             Member {
+                viewer,
                 context,
                 channel_id: self.app.next_channel.fetch_add(1, Ordering::Relaxed),
                 read_only,
@@ -1182,7 +1201,7 @@ impl Room {
         let sv = self.doc.transact().state_vector();
         use yrs::updates::encoder::Encode;
         self.send(key, Kind::Sync, &sync::encode(sync::STEP1, &sv.encode_v1()));
-        if !self.awareness.is_empty() {
+        if !(viewer || self.awareness.is_empty()) {
             self.send_awareness_states(key);
         }
         Ok(())
@@ -1267,7 +1286,7 @@ impl Room {
             };
             let entries: Vec<&awareness::Entry> = changed
                 .iter()
-                .filter(|client| !member.clients.contains(client))
+                .filter(|client| !(member.viewer || member.clients.contains(client)))
                 .filter_map(|client| self.awareness.get(client).map(|state| &state.entry))
                 .collect();
             if !entries.is_empty() {
@@ -1475,9 +1494,10 @@ impl Room {
         };
         let mut admit = || match &mut self.kind {
             Kindly::Note(note) => match note.validator.admit(&self.doc, &update) {
-                Ok(notes::limits::Admission::Accepted) => Verdict::Accept,
-                Ok(notes::limits::Admission::Unheld) => Verdict::Unheld,
-                Err(refusal) => Verdict::Note(refusal),
+                crate::model::Admitted::Accepted => Verdict::Accept,
+                crate::model::Admitted::Unheld => Verdict::Unheld,
+                crate::model::Admitted::Limit(code, metrics) => Verdict::Limit(code, metrics),
+                crate::model::Admitted::Refused(message) => Verdict::Refused(message),
             },
             Kindly::Source(source) => {
                 match sources::admit_update(&self.doc, source.format, bytes, &mut source.estimate) {
@@ -1506,7 +1526,7 @@ impl Room {
                 self.source_update_refused(key, &context, &refusal, bytes.len());
                 return;
             }
-            Verdict::Note(notes::limits::Refusal::Limit { code, metrics }) => {
+            Verdict::Limit(code, metrics) => {
                 let payload = self.rejection_payload(code, metrics, None);
                 incidents::record(
                     &self.app,
@@ -1520,8 +1540,8 @@ impl Room {
                 self.refuse(key, &[payload], "invalid material document");
                 return;
             }
-            Verdict::Note(error) => {
-                self.refuse(key, &[], &error.to_string());
+            Verdict::Refused(error) => {
+                self.refuse(key, &[], &error);
                 return;
             }
         }
@@ -1562,7 +1582,7 @@ impl Room {
             self.broadcast_update(Some(key), content);
             // A paste, undo or replayed draft that wrote child ids gets a
             // children pass; typing writes none and costs a decode.
-            if matches!(self.kind, Kindly::Note(_))
+            if matches!(&self.kind, Kindly::Note(note) if note.model == crate::model::Model::Note)
                 && let Ok(update) = ydoc::decode(bytes)
                 && notes::children::child_writes(&self.doc.transact(), &update).is_some()
             {
@@ -1726,6 +1746,10 @@ impl Room {
         let Some(member) = self.members.get_mut(&key) else {
             return;
         };
+        // A viewer's channel sends no presence (live-items D1).
+        if member.viewer {
+            return;
+        }
         let mut entries = entries;
         if member.read_only {
             for entry in &mut entries {
@@ -1767,6 +1791,9 @@ impl Room {
     }
 
     fn send_awareness_states(&self, key: MemberKey) {
+        if self.members.get(&key).is_none_or(|member| member.viewer) {
+            return;
+        }
         let entries: Vec<&awareness::Entry> = self
             .awareness
             .values()
@@ -2537,7 +2564,7 @@ impl Room {
         let app = self.app.clone();
         // Read here, so the content is exactly the durable state at `version`;
         // the room waits for it as for a store's validation.
-        let content = projection::content_of(self.doc.clone()).await;
+        let content = projection::content_of(self.doc.clone(), note.model).await;
         let Some(handle) = self
             .app
             .rooms
@@ -2619,6 +2646,7 @@ impl Room {
         unlog_bytes(&self.app, note.log_bytes.max(0) as u64);
         let app = self.app.clone();
         let doc = self.doc.clone();
+        let model = note.model;
         let (material_id, schema, stored, projected) = (
             note.material_id.clone(),
             note.schema,
@@ -2637,7 +2665,7 @@ impl Room {
             let projecting = async {
                 if stored > projected
                     && let Err(error) =
-                        projection::project_doc(&app, &material_id, stored, doc).await
+                        projection::project_doc(&app, &material_id, stored, doc, model).await
                 {
                     log(
                         Level::Warn,
@@ -2665,7 +2693,10 @@ impl Room {
 enum Verdict {
     Accept,
     Unheld,
-    Note(notes::limits::Refusal),
+    /// A material room's limit (`document-rejected` with the code).
+    Limit(notes::limits::LimitCode, notes::limits::Metrics),
+    /// A material room's refusal for any other reason.
+    Refused(String),
     Source(sources::Refusal),
 }
 
@@ -2687,9 +2718,12 @@ fn validate(
     previous: Option<notes::limits::Metrics>,
 ) -> Result<(notes::limits::Metrics, Option<notes::limits::LimitCode>), StoreError> {
     let txn = doc.transact();
-    notes::validate::assert_roots(&txn).map_err(|error| StoreError::Invalid(error.to_string()))?;
-    let value =
-        notes::plate::value(&txn).map_err(|error| StoreError::Invalid(error.to_string()))?;
+    let model = crate::model::Model::of(kind);
+    model.assert_roots(&txn).map_err(StoreError::Invalid)?;
+    if let crate::model::Model::Item(item) = model {
+        item.check_caps(&txn).map_err(StoreError::Invalid)?;
+    }
+    let value = model.document_value(&txn).map_err(StoreError::Invalid)?;
     notes::material::assert_canonical(&value, kind)
         .map_err(|error| StoreError::Invalid(error.0))?;
     let metrics = notes::limits::measure_value(&value);

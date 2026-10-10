@@ -5991,12 +5991,7 @@ components:
           minItems: 1
           nullable: true
           type: array
-        expectedRevision:
-          format: int64
-          minimum: 1
-          type: integer
       required:
-        - expectedRevision
         - cards
       type: object
     UpdateFlashcardSetReq:

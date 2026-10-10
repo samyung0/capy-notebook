@@ -20,7 +20,7 @@ func setCards(t *testing.T, s *Store, actor, setID string, edit func([]materiald
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.UpdateFlashcardContent(ctx, actor, setID, set.Revision, edit(cards)); err != nil {
+	if _, err := s.UpdateFlashcardContent(ctx, actor, setID, edit(cards)); err != nil {
 		t.Fatal(err)
 	}
 }

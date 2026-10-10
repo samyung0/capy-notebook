@@ -151,7 +151,7 @@ func (a *api) updateFlashcardContent(ctx context.Context, in *updateFlashcardCon
 			cards[i].Image = &materialdoc.CardImage{AssetID: card.Image.AssetID}
 		}
 	}
-	res, err := a.s.UpdateFlashcardContent(ctx, userID(ctx), in.ID, in.Body.ExpectedRevision, cards)
+	res, err := a.s.UpdateFlashcardContent(ctx, userID(ctx), in.ID, cards)
 	if err != nil {
 		return nil, hErr(err)
 	}

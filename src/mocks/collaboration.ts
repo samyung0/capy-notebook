@@ -15,13 +15,21 @@ import { qk } from '@/api/client';
 import { queryClient } from '@/api/queryClient';
 import type { Material } from '@/api/types';
 import {
+  type ItemProvider,
+  registerMockItemProvider,
+} from '@/features/collaboration/itemRoom';
+import type { RoomProviderConfig } from '@/features/collaboration/roomProvider';
+import {
   registerMockSourceProvider,
   type SourceProvider,
   type SourceProviderConfig,
   sourceDocOptions,
 } from '@/features/files/sourceProvider';
+import { readCards, seedCards } from '@/features/flashcards/liveSet';
 import {
+  createMaterialDocument,
   createMaterialDocumentWithMetrics,
+  flashcardsNode,
   type MaterialValue,
 } from '@/features/materials/document';
 import * as db from './db';
@@ -48,7 +56,10 @@ export interface Room {
   /** Updates since the last checkpoint, which appends them. */
   pending: Uint8Array[];
   retired?: boolean;
-  target: { kind: 'material'; id: string } | { kind: 'source'; id: string };
+  target:
+    | { kind: 'material'; id: string }
+    | { kind: 'item'; id: string }
+    | { kind: 'source'; id: string };
   version: number;
 }
 
@@ -275,6 +286,7 @@ function persistMaterial(room: Room) {
  * and the last participant leaving before its editor's debounce fires. */
 export function checkpointRoom(room: Room) {
   if (room.retired) return;
+  if (room.target.kind === 'item') persistItem(room);
   const metrics =
     room.target.kind === 'material' ? persistMaterial(room) : undefined;
   if (room.dirty) room.version += 1;
@@ -848,7 +860,72 @@ export function resetScenarioRooms() {
   sessionStorage.removeItem(UNREACHABLE);
 }
 
+/** A live flashcard set's room (live-items): seeded from the mock row as the
+ * service bootstraps one, written back to it as the service projects. */
+function itemRoom(name: string): Room {
+  const existing = rooms.get(name);
+  if (existing) return existing;
+  const materialId = name.split(':')[1] ?? '';
+  const room = createRoom(name, { id: materialId, kind: 'item' });
+  const material = db.materials.find((row) => row.id === materialId);
+  if (!checkpoints.has(name) && material)
+    seedCards(room.document, db.cardsFromMaterial(material));
+  room.dirty = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  room.document.on('update', () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (rooms.get(name) === room) checkpointRoom(room);
+    }, 300);
+  });
+  return room;
+}
+
+function persistItem(room: Room) {
+  const material = db.materials.find((row) => row.id === room.target.id);
+  if (!(material && room.dirty)) return;
+  const cards = readCards(room.document);
+  material.content = createMaterialDocument([
+    flashcardsNode(cards, material.id),
+  ]) as Material['content'];
+  material.revision += 1;
+  material.updatedAt = new Date().toISOString();
+  db.refreshMaterialContentBytes(material);
+  for (const card of cards)
+    db.flashcardCards[card.id] ??= { materialId: material.id };
+  void queryClient.invalidateQueries({ queryKey: qk.material(material.id) });
+}
+
+class MockItemProvider implements ItemProvider {
+  private readonly leave: () => void;
+  private readonly config: RoomProviderConfig;
+  private joined = true;
+
+  constructor(config: RoomProviderConfig) {
+    this.config = config;
+    this.leave = join(itemRoom(config.name), {
+      document: config.document,
+      origin: this,
+    });
+    queueMicrotask(() => config.onSynced?.({ state: true }));
+  }
+
+  connect() {}
+
+  disconnect() {
+    if (!this.joined) return;
+    this.joined = false;
+    this.leave();
+    this.config.onDisconnect?.();
+  }
+
+  destroy() {
+    this.disconnect();
+  }
+}
+
 export function registerMockCollaborationProvider() {
   registerProviderType('mock', MockCollaborationProvider);
   registerMockSourceProvider((config) => new MockSourceProvider(config));
+  registerMockItemProvider((config) => new MockItemProvider(config));
 }

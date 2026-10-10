@@ -225,7 +225,7 @@ func TestViewOnlyAtTheStorageLimit(t *testing.T) {
 						t.Fatalf("%s by %s = %v, want the owner's storage limit", what, who, err)
 					}
 				}
-				_, err := s.UpdateFlashcardContent(ctx, who, set.ID, set.Revision, []materialdoc.Card{{Front: "c", Back: "d"}})
+				_, err := s.UpdateFlashcardContent(ctx, who, set.ID, []materialdoc.Card{{Front: "c", Back: "d"}})
 				want("card edit", err)
 				_, err = s.CreateCommentDiscussion(ctx, note.ID, who, nil, nil, nil, 1, "", rich)
 				want("comment", err)
@@ -423,7 +423,7 @@ func TestFrozenEdges(t *testing.T) {
 	if err := s.RateItem(ctx, frozenUser, Rating{MaterialID: set.ID, ItemID: cards[0].ID, Rating: &good}, time.Now()); err != nil {
 		t.Fatalf("frozen study progress: %v", err)
 	}
-	_, err = s.UpdateFlashcardContent(ctx, frozenUser, set.ID, cards[0].Revision, nil)
+	_, err = s.UpdateFlashcardContent(ctx, frozenUser, set.ID, nil)
 	wantOverQuotaLock(t, "removing every flashcard", err)
 	if _, err := s.TrashMaterial(ctx, frozenUser, set.ID, "", AgentOperation{}); err != nil {
 		t.Fatalf("trashing the whole set: %v", err)

@@ -19,13 +19,17 @@ import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
+import { useLiveSetCards } from '@/features/flashcards/liveReads';
 import { StudyBody } from '@/features/flashcards/StudyBody';
+import type { FlashcardContent } from '@/features/materials/blocks';
 import { blockHomeCrumb, blockKindCrumb } from '@/features/quizzes/crumbs';
 import { CloneItemDialog } from '@/features/workspace/CloneItemDialog';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { cardCountBucket, flashcardsStudySource, track } from '@/lib/analytics';
 import { SRS_RATINGS } from '@/lib/srs';
+
+const NO_CARDS: FlashcardContent[] = [];
 
 /** `/flashcards/$flashcardSetId`, inside the app. Shared links open the public
  * page instead (src/share/SharedFlashcards.tsx). */
@@ -48,6 +52,9 @@ function Study({ setId }: { setId: string }) {
     isFetchedAfterMount: cardsFetched,
     error: cardsError,
   } = useCards(setId, { errorBoundary: 'unlessMissing', fresh: true });
+  // The study session follows the set's live room (Epo 2026-10-10): edits
+  // show as they land, added cards join the end of the session.
+  const liveCards = useLiveSetCards(setId, cards ?? NO_CARDS, !!cards);
   const { mutateAsync: rateItem } = useRateReviewItem();
   const [cloning, setCloning] = useState(false);
   // In a workspace only its members and editors clone, and an embedded item
@@ -113,7 +120,7 @@ function Study({ setId }: { setId: string }) {
           </>
         )
       }
-      cards={cards}
+      cards={liveCards}
       frame={PanelWithInvertedRadius}
       name={set.name}
       onBack={() =>

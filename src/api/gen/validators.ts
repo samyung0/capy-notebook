@@ -2158,6 +2158,7 @@ export const GetSourceSessionResponse = zod.object({
   "sourceIdentity": zod.string(),
   "sourceURL": zod.string(),
   "state": zod.string().nullable(),
+  "stateRows": zod.array(zod.string()).nullish(),
   "stateSeedSHA256": zod.string().nullable(),
   "workspaceId": zod.string()
 })
@@ -2366,7 +2367,6 @@ export const updateFlashcardContentBodyCardsItemImageAssetIdMax = 128;
 
 
 
-
 export const UpdateFlashcardContentBody = zod.object({
   "cards": zod.array(zod.object({
   "back": zod.string().min(1).max(updateFlashcardContentBodyCardsItemBackMax),
@@ -2375,8 +2375,7 @@ export const UpdateFlashcardContentBody = zod.object({
   "image": zod.object({
   "assetId": zod.string().min(1).max(updateFlashcardContentBodyCardsItemImageAssetIdMax)
 }).optional()
-})).min(1).nullable(),
-  "expectedRevision": zod.int().min(1)
+})).min(1).nullable()
 })
 
 export const UpdateFlashcardContentResponseItem = zod.object({
@@ -7172,6 +7171,7 @@ export const BootstrapSourceDocumentResponse = zod.object({
   "sourceIdentity": zod.string(),
   "sourceURL": zod.string(),
   "state": zod.string().nullable(),
+  "stateRows": zod.array(zod.string()).nullish(),
   "stateSeedSHA256": zod.string().nullable(),
   "workspaceId": zod.string()
 })
@@ -7222,8 +7222,8 @@ export const CheckpointSourceDocumentBody = zod.object({
 }).optional(),
   "pendingEffects": zod.unknown(),
   "seedBytes": zod.int().min(checkpointSourceDocumentBodySeedBytesMin).optional(),
-  "state": zod.string(),
-  "stateSeedSHA256": zod.string().optional()
+  "stateSeedSHA256": zod.string().optional(),
+  "update": zod.string()
 })
 
 export const CheckpointSourceDocumentResponse = zod.object({
@@ -7345,6 +7345,7 @@ export const PublishSourceRefreshResponse = zod.object({
   "sourceIdentity": zod.string(),
   "sourceURL": zod.string(),
   "state": zod.string().nullable(),
+  "stateRows": zod.array(zod.string()).nullish(),
   "stateSeedSHA256": zod.string().nullable(),
   "workspaceId": zod.string()
 })
@@ -7456,8 +7457,6 @@ export const ClaimSourceRefreshResponse = zod.object({
   "jobId": zod.string(),
   "leaseToken": zod.string(),
   "sourceBlobPath": zod.string(),
-  "state": zod.string().nullable(),
-  "stateSeedSHA256": zod.string().nullable(),
   "uploadHeaders": zod.record(zod.string(), zod.string()),
   "uploadURL": zod.string()
 })
@@ -7481,7 +7480,9 @@ export const FinalizeSourceRefreshBody = zod.object({
   "leaseToken": zod.string(),
   "sizeBytes": zod.int(),
   "sourceETag": zod.string(),
-  "sourceSHA256": zod.string()
+  "sourceSHA256": zod.string(),
+  "state": zod.string().nullish(),
+  "stateSeedSHA256": zod.string().nullish()
 })
 
 export const FinalizeSourceRefreshResponse = zod.void()

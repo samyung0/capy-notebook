@@ -2092,6 +2092,56 @@ fn awareness_update(client: u64, clock: u64, state: &str) -> Vec<u8> {
     out
 }
 
+// ------------------------------------------------------------- live items
+
+/// A flashcard set owned by `owner` (live-items), embedded in `parent` when
+/// given; its cards are (id, front, back).
+async fn flashcard_set(
+    env: &Env,
+    owner: &str,
+    parent: Option<&str>,
+    cards: &[(&str, &str, &str)],
+) -> String {
+    let client = db(env).await;
+    let material = format!("dk_it_{}", uuid_like());
+    let children: Vec<serde_json::Value> = cards
+        .iter()
+        .map(|(id, front, back)| {
+            items::flashcards::card_node(&items::flashcards::Card {
+                id: (*id).into(),
+                order: String::new(),
+                front: (*front).into(),
+                back: (*back).into(),
+                image: None,
+            })
+        })
+        .collect();
+    let content = serde_json::json!({
+        "schemaVersion": 1,
+        "value": [{ "type": "flashcards", "id": "flashcards", "children": children }],
+    });
+    client
+        .execute(
+            "INSERT INTO materials (id, created_by, kind, title, content, parent_material_id)
+             VALUES ($1, $2, 'flashcards', 'IT set', $3, $4)",
+            &[&material, &owner, &content, &parent],
+        )
+        .await
+        .expect("flashcard set");
+    material
+}
+
+/// A fresh signed-in user with no role anywhere.
+async fn user(env: &Env) -> String {
+    let user = format!("u_it_{}", uuid_like());
+    db(env)
+        .await
+        .execute("INSERT INTO users (id, name) VALUES ($1, 'IT')", &[&user])
+        .await
+        .expect("user");
+    user
+}
+
 /// The entries of an awareness update, as (client, state).
 fn awareness_entries(payload: &[u8]) -> Vec<(u64, String)> {
     let mut at = 0;
@@ -2202,4 +2252,238 @@ async fn a_read_only_channel_names_no_uploads_in_presence() {
     assert_eq!(from_writer.unwrap()["uploads"][0], "block-a");
     let escaped_key = escaped_key.unwrap();
     assert!(escaped_key.get("uploads").is_none(), "{escaped_key}");
+}
+
+impl Client {
+    fn cards(&self) -> Vec<(String, String)> {
+        items::flashcards::cards(&self.doc.transact())
+            .into_iter()
+            .map(|card| (card.id, card.front))
+            .collect()
+    }
+
+    /// Runs `edit` on the client's document and sends what it wrote.
+    async fn write(&mut self, edit: impl FnOnce(&Doc)) {
+        let before = self.doc.transact().state_vector();
+        edit(&self.doc);
+        let update = self.doc.transact().encode_state_as_update_v1(&before);
+        self.send(5, &sync(2, &update)).await;
+    }
+
+    /// Whether a message of `kind` arrives within `ms` (syncs apply).
+    async fn hears(&mut self, kind: u8, ms: u64) -> bool {
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(ms);
+        loop {
+            if self.inbox.iter().any(|m| m.kind == kind) {
+                return true;
+            }
+            let Ok(Some(Ok(Ws::Binary(bytes)))) =
+                tokio::time::timeout_at(deadline, self.ws.next()).await
+            else {
+                return false;
+            };
+            let mut at = 0;
+            while at < bytes.len() {
+                let _channel = read_var(&bytes, &mut at);
+                let message_kind = bytes[at];
+                at += 1;
+                let len = read_var(&bytes, &mut at) as usize;
+                let payload = bytes[at..at + len].to_vec();
+                at += len;
+                if message_kind == 5 {
+                    self.on_sync(&payload).await;
+                } else {
+                    self.inbox.push(Msg {
+                        kind: message_kind,
+                        payload,
+                    });
+                }
+            }
+        }
+    }
+}
+
+fn card_face(doc: &Doc, id: &str, face: &str) -> Option<yrs::TextRef> {
+    use yrs::Map;
+    let root = doc.get_or_insert_map(items::flashcards::ROOT);
+    let txn = doc.transact();
+    match root.get(&txn, id)? {
+        yrs::Out::YMap(card) => match card.get(&txn, face)? {
+            yrs::Out::YText(text) => Some(text),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn add_card(doc: &Doc, id: &str, order: &str, front: &str) {
+    use yrs::{Map, MapPrelim, TextPrelim};
+    let root = doc.get_or_insert_map(items::flashcards::ROOT);
+    let mut txn = doc.transact_mut();
+    root.insert(
+        &mut txn,
+        id,
+        MapPrelim::from([
+            ("order", yrs::In::from(order)),
+            ("front", yrs::In::from(TextPrelim::new(front))),
+            ("back", yrs::In::from(TextPrelim::new(""))),
+        ]),
+    );
+}
+
+#[tokio::test]
+async fn two_writers_converge_in_a_flashcard_set_and_it_stores() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let owner = user(&env).await;
+    let set = flashcard_set(&env, &owner, None, &[("c1", "Cell", "unit of life")]).await;
+    let room = format!("material:{set}:schema:1");
+    let mut a = Client::open(server.port).await;
+    let mut b = Client::open(server.port).await;
+    assert_eq!(a.joined(&room, &token(&room, &owner, "write")).await, 1);
+    assert_eq!(b.joined(&room, &token(&room, &owner, "write")).await, 1);
+    let seeded = vec![("c1".to_owned(), "Cell".to_owned())];
+    assert!(a.settle(|c| c.cards() == seeded).await, "{:?}", a.cards());
+    assert!(b.settle(|c| c.cards() == seeded).await, "{:?}", b.cards());
+
+    a.write(|doc| {
+        let face = card_face(doc, "c1", "front").expect("front");
+        yrs::Text::insert(&face, &mut doc.transact_mut(), 4, " wall");
+    })
+    .await;
+    b.write(|doc| add_card(doc, "c2", "a1", "Nucleus")).await;
+    assert!(a.until(6).await.is_some(), "the first writer's ack");
+    assert!(b.until(6).await.is_some(), "the second writer's ack");
+    let both = vec![
+        ("c1".to_owned(), "Cell wall".to_owned()),
+        ("c2".to_owned(), "Nucleus".to_owned()),
+    ];
+    assert!(a.settle(|c| c.cards() == both).await, "{:?}", a.cards());
+    assert!(b.settle(|c| c.cards() == both).await, "{:?}", b.cards());
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let rows: i64 = db(&env)
+        .await
+        .query_one(
+            "SELECT count(*) FROM material_yjs_updates WHERE material_id=$1",
+            &[&set],
+        )
+        .await
+        .expect("rows")
+        .get(0);
+    assert!(rows >= 1);
+}
+
+#[tokio::test]
+async fn a_flashcard_set_closes_a_writer_that_writes_another_shape() {
+    use yrs::{Map, Text};
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let owner = user(&env).await;
+    let set = flashcard_set(&env, &owner, None, &[("c1", "Cell", "")]).await;
+    let room = format!("material:{set}:schema:1");
+    // A note's content root in a set.
+    let mut a = Client::open(server.port).await;
+    a.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(a.settle(|c| c.cards().len() == 1).await);
+    a.write(|doc| {
+        let content = doc.get_or_insert_text("content");
+        content.insert(&mut doc.transact_mut(), 0, "note text");
+    })
+    .await;
+    let closed = String::from_utf8_lossy(&a.until(4).await.expect("closed")).into_owned();
+    assert!(closed.contains("flashcard set cannot hold"), "{closed}");
+    // A key no card has.
+    let mut b = Client::open(server.port).await;
+    b.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(b.settle(|c| c.cards().len() == 1).await);
+    b.write(|doc| {
+        let root = doc.get_or_insert_map(items::flashcards::ROOT);
+        let mut txn = doc.transact_mut();
+        if let Some(yrs::Out::YMap(card)) = root.get(&txn, "c1") {
+            card.insert(&mut txn, "answer", "leaked");
+        }
+    })
+    .await;
+    let closed = String::from_utf8_lossy(&b.until(4).await.expect("closed")).into_owned();
+    assert!(closed.contains("flashcard set cannot hold"), "{closed}");
+}
+
+/// Security regression (live-items, Epo 2026-10-10): a signed-in viewer of
+/// a note reads its embedded set on a read channel and nothing more: no
+/// write token, no writes, no set of a note it cannot see, and no presence
+/// (it neither hears editors' awareness nor reaches them with its own).
+#[tokio::test]
+async fn a_viewer_reads_a_notes_set_without_writes_or_presence() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, note) = note(&env, "shared").await;
+    db(&env)
+        .await
+        .execute("UPDATE materials SET privacy='link' WHERE id=$1", &[&note])
+        .await
+        .expect("link share");
+    let set = flashcard_set(&env, &owner, Some(&note), &[("c1", "Cell", "")]).await;
+    let viewer = user(&env).await;
+    let set_room = format!("material:{set}:schema:1");
+
+    let mut refused = Client::open(server.port).await;
+    refused
+        .join(&set_room, &token(&set_room, &viewer, "write"))
+        .await;
+    let reason = text_payload(&refused.until(2).await.expect("refused"));
+    assert_eq!(reason, "collaboration-read-only");
+
+    let mut reader = Client::open(server.port).await;
+    assert_eq!(
+        reader
+            .joined(&set_room, &token(&set_room, &viewer, "read"))
+            .await,
+        0
+    );
+    assert!(reader.settle(|c| c.cards().len() == 1).await);
+    reader
+        .write(|doc| add_card(doc, "c9", "a5", "forged"))
+        .await;
+    let closed = String::from_utf8_lossy(&reader.until(4).await.expect("closed")).into_owned();
+    assert!(closed.contains("read-only"), "{closed}");
+
+    // A private note's set stays out of reach.
+    let (other_owner, private_note) = note_named(&env, "private", "m_it_private").await;
+    let private_set =
+        flashcard_set(&env, &other_owner, Some(&private_note), &[("c1", "x", "")]).await;
+    let private_room = format!("material:{private_set}:schema:1");
+    let mut stranger = Client::open(server.port).await;
+    stranger
+        .join(&private_room, &token(&private_room, &viewer, "read"))
+        .await;
+    let reason = text_payload(&stranger.until(2).await.expect("refused"));
+    assert_eq!(reason, "collaboration-forbidden");
+
+    // Presence: the owner's cursor never reaches the viewer, nor the viewer's
+    // the owner.
+    let note_room = format!("material:{note}:schema:1");
+    let mut editor = Client::open(server.port).await;
+    editor
+        .joined(&note_room, &token(&note_room, &owner, "write"))
+        .await;
+    editor
+        .send(7, &awareness_update(41, 1, r#"{"user":"owner"}"#))
+        .await;
+    let mut watcher = Client::open(server.port).await;
+    assert_eq!(
+        watcher
+            .joined(&note_room, &token(&note_room, &viewer, "read"))
+            .await,
+        0
+    );
+    assert!(watcher.settle(|c| c.block_text() == "shared").await);
+    editor
+        .send(7, &awareness_update(41, 2, r#"{"user":"owner2"}"#))
+        .await;
+    watcher
+        .send(7, &awareness_update(42, 1, r#"{"user":"viewer"}"#))
+        .await;
+    watcher.send(8, &[]).await;
+    assert!(!watcher.hears(7, 1500).await, "a viewer heard awareness");
+    assert!(!editor.hears(7, 500).await, "an editor heard a viewer");
 }

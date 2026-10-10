@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use yrs::Doc;
 
 use crate::app::Shared;
+use crate::model::Model;
 use crate::note_store;
 use crate::observe::{self, ERROR_EVENT_HEADER, RETRY_EVENT_HEADER};
 
@@ -36,11 +37,11 @@ impl Failures {
 }
 
 /// The Plate envelope of a document, off the room's thread.
-pub async fn content_of(doc: Doc) -> Result<Value, String> {
+pub async fn content_of(doc: Doc, model: Model) -> Result<Value, String> {
     tokio::task::spawn_blocking(move || {
         use yrs::Transact;
         let txn = doc.transact();
-        let value = notes::plate::value(&txn).map_err(|error| error.to_string())?;
+        let value = model.value(&txn)?;
         Ok(json!({ "schemaVersion": 1, "value": value }))
     })
     .await
@@ -53,8 +54,9 @@ pub async fn project_doc(
     material_id: &str,
     version: i64,
     doc: Doc,
+    model: Model,
 ) -> Result<(), String> {
-    let content = content_of(doc).await?;
+    let content = content_of(doc, model).await?;
     project(app, material_id, version, &content).await
 }
 
@@ -137,7 +139,7 @@ pub async fn project(
 
 /// Projects a material from its durable rows (a room loaded nowhere here).
 pub async fn project_durable(app: &Shared, material_id: &str) -> Result<i64, String> {
-    let Some((_, version, base, rows)) = note_store::durable(&app.db, material_id)
+    let Some((_, version, base, rows, kind)) = note_store::durable(&app.db, material_id)
         .await
         .map_err(|error| error.to_string())?
     else {
@@ -150,7 +152,7 @@ pub async fn project_durable(app: &Shared, material_id: &str) -> Result<i64, Str
     })
     .await
     .map_err(|error| error.to_string())??;
-    project_doc(app, material_id, version, doc).await?;
+    project_doc(app, material_id, version, doc, Model::of(&kind)).await?;
     Ok(version)
 }
 

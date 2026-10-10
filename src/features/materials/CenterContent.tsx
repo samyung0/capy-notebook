@@ -40,7 +40,8 @@ import {
 import { fileIsIngesting, IMAGE_MIN_ZOOM } from '@/features/files/fileUtils';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
 import { FlashcardGrid } from '@/features/flashcards/FlashcardGrid';
-import { FlashcardsEditor } from '@/features/flashcards/FlashcardsEditor';
+import { LiveFlashcards } from '@/features/flashcards/LiveFlashcards';
+import { useLiveSetCards } from '@/features/flashcards/liveReads';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { handOverLiveNote } from '@/features/notes/liveNoteHandover';
 import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
@@ -317,6 +318,33 @@ function MaterialBody({
   );
 }
 
+/** A set's View: the stored cards, then the room's as they change. */
+function LiveSetGrid({
+  material,
+  action,
+  openCardId,
+}: {
+  material: Material;
+  action: ReactNode;
+  /** A card to open at once (a link to it). */
+  openCardId?: string;
+}) {
+  const stored = flashcardsElementToCards(
+    material.content.value.find(
+      (node): node is FlashcardsElement => node.type === 'flashcards'
+    ) ?? { children: [], id: '', type: 'flashcards' }
+  );
+  const cards = useLiveSetCards(material.id, stored);
+  return (
+    <FlashcardGrid
+      action={action}
+      cards={cards}
+      openCardId={openCardId}
+      title={material.title}
+    />
+  );
+}
+
 export function MaterialContent({
   centerQuiz,
   materialId,
@@ -394,28 +422,21 @@ export function MaterialContent({
     );
   }
   if (material.kind === 'flashcards') {
-    const cards = flashcardsElementToCards(
-      material.content.value.find(
-        (node): node is FlashcardsElement => node.type === 'flashcards'
-      ) ?? { children: [], id: '', type: 'flashcards' }
-    );
     return (
       <div className="flex h-full min-h-0 flex-col">
         <div className="min-h-0 flex-1 overflow-auto">
           <TabContent centered={centerQuiz}>
             {activeMode === 'edit' ? (
-              <FlashcardsEditor
-                cards={cards}
-                revision={material.revision}
+              <LiveFlashcards
+                onStatusChange={onEditorStatusChange}
                 setId={materialId}
                 title={material.title}
               />
             ) : (
-              <FlashcardGrid
+              <LiveSetGrid
                 action={<StudySetLink setId={materialId} />}
-                cards={cards}
+                material={material}
                 openCardId={target}
-                title={material.title}
               />
             )}
             <SourcesLine

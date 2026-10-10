@@ -1,6 +1,9 @@
+import { useRef } from 'react';
 import { useMaterial, useQuiz, useSubmitAttempt } from '@/api/hooks';
 import type { Material } from '@/api/types';
-import { FlashcardsEditor } from '@/features/flashcards/FlashcardsEditor';
+import { useNearScreen } from '@/features/collaboration/useNearScreen';
+import { LiveFlashcards } from '@/features/flashcards/LiveFlashcards';
+import { useLiveSetCards } from '@/features/flashcards/liveReads';
 import { StudyBody } from '@/features/flashcards/StudyBody';
 import {
   type FlashcardsElement,
@@ -12,8 +15,9 @@ import { QuizEditor } from '@/features/quizzes/QuizEditor';
 import { EmbedLoading, type EmbedProps, EmbedUnavailable } from './EmbedView';
 
 /* A note's embedded quiz or flashcard set inside the app, read through the
-   account. View studies it in place (a quick check: nothing is recorded);
-   Edit edits it in place, each change saved at once. */
+   account. View studies it in place (a quick check: nothing is recorded); a
+   set follows its live room. Edit edits it in place: a set through its live
+   room (joined while the block is near the screen), a quiz saved at once. */
 
 type OwnedProps = EmbedProps & {
   /** In an editing note: the block waits as a skeleton until its item is the
@@ -40,17 +44,44 @@ export function AppEmbedView({ materialId, refKind, ownerId }: OwnedProps) {
     <QuizView materialId={materialId} ownerId={ownerId} />
   ) : (
     <SetGate materialId={materialId} ownerId={ownerId}>
-      {(material) => (
-        <StudyBody
-          cards={setCards(material)}
-          embedded
-          name=""
-          onRate={() => undefined}
-          provenance={material.provenance}
-          trail={[]}
-        />
-      )}
+      {(material) => <LiveSetStudy material={material} />}
     </SetGate>
+  );
+}
+
+function LiveSetStudy({ material }: { material: Material }) {
+  const cards = useLiveSetCards(material.id, setCards(material));
+  return (
+    <StudyBody
+      cards={cards}
+      embedded
+      name=""
+      onRate={() => undefined}
+      trail={[]}
+    />
+  );
+}
+
+function LiveSetEdit({
+  materialId,
+  onEmpty,
+}: {
+  materialId: string;
+  onEmpty: () => void;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  const near = useNearScreen(box);
+  return (
+    <div ref={box}>
+      <LiveFlashcards
+        enabled={near}
+        onEmpty={onEmpty}
+        setId={materialId}
+        showTitle={false}
+        showUndo={false}
+        title=""
+      />
+    </div>
   );
 }
 
@@ -79,20 +110,7 @@ export function AppEmbedEdit({
     </QuizGate>
   ) : (
     <SetGate materialId={materialId} ownerId={ownerId}>
-      {(material) => (
-        <>
-          <FlashcardsEditor
-            cards={setCards(material)}
-            onEmpty={onEmpty}
-            revision={material.revision}
-            saveEachChange
-            setId={materialId}
-            showTitle={false}
-            title=""
-          />
-          <SourcesLine className="mt-3" provenance={material.provenance} />
-        </>
-      )}
+      {() => <LiveSetEdit materialId={materialId} onEmpty={onEmpty} />}
     </SetGate>
   );
 }

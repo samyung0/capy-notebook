@@ -103,6 +103,27 @@ export function nextStep<R>(s: Steps<R>, options: StepOptions = {}) {
 export const previousStep = <R>(s: Steps<R>) =>
   s.cursor > 0 ? { ...s, cursor: s.cursor - 1 } : s;
 
+/** The items changed under the session (a live flashcard set, Epo
+ * 2026-10-10): gone ones leave the queue and the timeline, new ones join the
+ * end of the queue; the shown item stays shown. */
+export function withKeys<R>(s: Steps<R>, keys: string[]): Steps<R> {
+  const live = new Set(keys);
+  const timeline = s.timeline.filter((step) => live.has(step.key));
+  const queue = s.queue.filter((key) => live.has(key));
+  const seen = new Set([...queue, ...timeline.map((step) => step.key)]);
+  const added = keys.filter((key) => !seen.has(key));
+  if (
+    !added.length &&
+    queue.length === s.queue.length &&
+    timeline.length === s.timeline.length
+  )
+    return s;
+  const gone = s.timeline
+    .slice(0, s.cursor)
+    .filter((step) => !live.has(step.key)).length;
+  return { cursor: s.cursor - gone, queue: [...queue, ...added], timeline };
+}
+
 /** The steps as state. Each move returns the state it sets, so a caller can
  * tell at once whether it reached the end. */
 export function useSteps<R>(
@@ -122,6 +143,8 @@ export function useSteps<R>(
     current: currentStep(steps),
     next: () => set(nextStep(steps, options)),
     previous: () => set(previousStep(steps)),
+    /** The items changed (see `withKeys`). */
+    follow: (keys: string[]) => set(withKeys(steps, keys)),
     reset: (next: string[], done: Step<R>[] = []) =>
       set(startSteps(next, done)),
     steps,

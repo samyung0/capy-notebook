@@ -2071,11 +2071,10 @@ export const handlers = [
   http.post('/api/materials/:id/collaboration-token', async ({ params }) => {
     const material = db.materials.find((item) => item.id === params.id);
     if (!material) return new HttpResponse(null, { status: 404 });
-    if (!material.capabilities.canEdit)
-      return new HttpResponse(null, { status: 403 });
+    // Viewers get read channels (Epo 2026-10-10, D1).
     return HttpResponse.json(
       {
-        access: 'write',
+        access: material.capabilities.canEdit ? 'write' : 'read',
         expiresAt: Math.floor(Date.now() / 1000) + 5 * 60,
         room: mockMaterialRoom(material.id),
         token: 'mock-collaboration-token',
@@ -2935,40 +2934,6 @@ export const handlers = [
           author: db.mockAuthor,
         })
       : new HttpResponse(null, { status: 404 });
-  }),
-  http.patch('/api/flashcards/:id/content', async ({ params, request }) => {
-    const mt = db.materials.find(
-      (item) => item.id === params.id && item.kind === 'flashcards'
-    );
-    if (!mt) return new HttpResponse(null, { status: 404 });
-    const body = (await request.json()) as {
-      expectedRevision: number;
-      cards: { id?: string; front: string; back: string }[];
-    };
-    if (body.expectedRevision !== mt.revision)
-      return new HttpResponse(null, { status: 409 });
-    const current = materialCards(mt);
-    if (
-      body.cards.some(
-        (card) =>
-          card.id && !current.some((existing) => existing.id === card.id)
-      )
-    )
-      return new HttpResponse(null, { status: 409 });
-    const cards = body.cards.map((card) => ({
-      ...card,
-      id: card.id || uid('c'),
-    }));
-    mt.content = flashcardsDocument(cards, mt.id);
-    mt.revision += 1;
-    db.refreshMaterialContentBytes(mt);
-    for (const card of current)
-      if (!cards.some((next) => next.id === card.id))
-        delete db.flashcardCards[card.id];
-    for (const card of cards)
-      if (!db.flashcardCards[card.id])
-        db.flashcardCards[card.id] = { materialId: mt.id };
-    return HttpResponse.json(db.cardsFromMaterial(mt));
   }),
   http.patch('/api/flashcards/:id/metadata', async ({ params, request }) => {
     const material = db.materials.find(

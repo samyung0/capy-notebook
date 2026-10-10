@@ -62,11 +62,10 @@ func TestEmbeddedWritesPublishEmbedChanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	edit := func(id string, revision int64) {
+	edit := func(id string) {
 		t.Helper()
 		rec := doReq(t, h, http.MethodPatch, "/api/flashcards/"+id+"/content", "u_owner", map[string]any{
-			"expectedRevision": revision,
-			"cards":            []any{map[string]any{"front": "new front", "back": "new back"}},
+			"cards": []any{map[string]any{"front": "new front", "back": "new back"}},
 		})
 		if rec.Code != http.StatusOK {
 			t.Fatalf("edit %s: %d %s", id, rec.Code, rec.Body.String())
@@ -74,8 +73,8 @@ func TestEmbeddedWritesPublishEmbedChanged(t *testing.T) {
 	}
 
 	// The standalone set's write comes first: the only message is the embed's.
-	edit(standalone.ID, standalone.Revision)
-	edit(embedded.ID, embedded.Revision)
+	edit(standalone.ID)
+	edit(embedded.ID)
 	select {
 	case message := <-messages:
 		var got map[string]any

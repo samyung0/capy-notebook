@@ -49,6 +49,10 @@ pub struct Context {
     pub expires_at: i64,
     pub token_id: String,
     pub user_id: String,
+    /// A viewer (no editing role) reads only and has no presence: it neither
+    /// sends nor hears awareness (Epo 2026-10-10). Set at join from the
+    /// material's access, never from the token.
+    pub viewer: bool,
 }
 
 impl From<&Claims> for Context {
@@ -58,6 +62,7 @@ impl From<&Claims> for Context {
             expires_at: claims.exp,
             token_id: claims.jti.clone(),
             user_id: claims.sub.clone(),
+            viewer: false,
         }
     }
 }

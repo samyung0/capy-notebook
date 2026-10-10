@@ -2167,25 +2167,6 @@ export const flashcardSetQuery = (id: string) =>
     queryKey: qk.flashcardSet(id),
   });
 
-export function useUpdateFlashcardContent(id: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (body: {
-      expectedRevision: number;
-      cards: {
-        id?: string;
-        front: string;
-        back: string;
-        image?: { assetId: string };
-      }[];
-    }) => api.patch<Flashcard[]>(`/flashcards/${id}/content`, body),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.cards(id) });
-      qc.invalidateQueries({ queryKey: qk.flashcardSet(id) });
-      qc.invalidateQueries({ queryKey: qk.material(id) });
-    },
-  });
-}
 export const useFlashcardSet = (
   id: string,
   options?: QueryUiOptions & { fresh?: boolean }

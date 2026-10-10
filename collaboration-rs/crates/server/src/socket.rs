@@ -143,6 +143,7 @@ async fn authenticate(
     }
     let claims = auth::verify(&token, &app.config.secret, &room, auth::now_seconds())
         .map_err(|error| Refusal::plain(error.to_string()))?;
+    let mut viewer = false;
     match &name {
         RoomName::Material { material_id, .. } => {
             let client = app
@@ -150,9 +151,10 @@ async fn authenticate(
                 .get()
                 .await
                 .map_err(|error| Refusal::plain(error.to_string()))?;
-            access::assert_access(&client, material_id, &claims.sub, claims.access)
+            let live = access::assert_access(&client, material_id, &claims.sub, claims.access)
                 .await
                 .map_err(|error| Refusal::access(&error))?;
+            viewer = !live.editor;
         }
         RoomName::Source { .. } => {
             let source = name
@@ -181,7 +183,13 @@ async fn authenticate(
     if app.evictions.blocks(&room, false) {
         return Err(Refusal::plain("collaboration room is being reset"));
     }
-    Ok((name, Context::from(&claims)))
+    Ok((
+        name,
+        Context {
+            viewer,
+            ..Context::from(&claims)
+        },
+    ))
 }
 
 /// The writer recheck of `accessRecheck`.
@@ -193,7 +201,9 @@ async fn recheck(app: &Shared, name: &RoomName, context: &Context) -> Result<(),
                 .get()
                 .await
                 .map_err(|error| AccessError::Database(error.to_string()))?;
-            access::assert_access(&client, material_id, &context.user_id, Access::Write).await
+            access::assert_access(&client, material_id, &context.user_id, Access::Write)
+                .await
+                .map(|_| ())
         }
         RoomName::Source { .. } => {
             let Some(source) = name.source_room() else {
@@ -219,6 +229,7 @@ async fn token_access(
             let client = app.db.get().await.map_err(|error| error.to_string())?;
             access::assert_access(&client, material_id, user, access)
                 .await
+                .map(|_| ())
                 .map_err(|error| error.to_string())
         }
         RoomName::Source { .. } => {
