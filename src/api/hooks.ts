@@ -32,6 +32,7 @@ import type {
   AccountStatus,
   Attempt,
   AttemptDetail,
+  AttemptParams,
   BillingCheckoutReq,
   BillingInfo,
   CalendarEvent,
@@ -1968,12 +1969,31 @@ export const quizEditQuery = (id: string) =>
 export const useQuizEdit = (id: string) =>
   useQuery({ ...quizEditQuery(id), refetchOnMount: 'always' });
 
-export const attemptsQuery = () =>
-  queryOptions({
-    queryFn: () => api.get<Attempt[]>('/attempts'),
-    queryKey: qk.attempts,
-  });
-export const useAttempts = () => useQuery(attemptsQuery());
+const ATTEMPTS_PAGE = 30;
+/** Learning → All results: quiz attempts, newest first by default. */
+export const attemptsQuery = (params: AttemptParams = {}) => ({
+  getNextPageParam: (
+    last: { items: Attempt[]; more: boolean },
+    pages: unknown[]
+  ) => (last.more ? pages.length * ATTEMPTS_PAGE : undefined),
+  initialPageParam: 0,
+  queryFn: ({ pageParam }: { pageParam: number }) =>
+    api.get<{ items: Attempt[]; more: boolean }>(
+      `/attempts${listSearch(
+        {
+          dir: params.dir,
+          limit: String(ATTEMPTS_PAGE),
+          offset: pageParam ? String(pageParam) : undefined,
+          sort: params.sort,
+          workspaceId: params.workspaceIds,
+        },
+        ''
+      )}`
+    ),
+  queryKey: qk.attempts(params),
+});
+export const useAttempts = (params: AttemptParams = {}) =>
+  useInfiniteQuery(attemptsQuery(params));
 
 export const attemptQuery = (id: string) =>
   queryOptions({
@@ -2066,7 +2086,7 @@ export function useSubmitAttempt(options?: MutationUiOptions) {
       // An embedded quiz records nothing: its attempt comes back without an id.
       if (!attempt.id) return;
       qc.setQueryData(qk.attempt(attempt.id), attempt);
-      qc.invalidateQueries({ queryKey: qk.attempts });
+      qc.invalidateQueries({ queryKey: qk.attemptsRoot });
       void invalidateStudy(qc);
     },
   });

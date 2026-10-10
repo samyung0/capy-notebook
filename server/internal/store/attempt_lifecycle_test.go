@@ -111,22 +111,45 @@ func TestFileAndAccountDeletionDoNotWaitForWorkerHeldJobRows(t *testing.T) {
 	})
 }
 
-// All results filters attempts by the quiz's workspace.
-func TestListAttemptsCarriesWorkspaceID(t *testing.T) {
-	f := newStudyFixture(t, "u_attempt_workspace")
+// All results pages attempts sorted by score and filtered by the quiz's
+// workspace in SQL.
+func TestListAttemptsSortsFiltersAndPages(t *testing.T) {
+	f := newStudyFixture(t, "u_attempt_list")
 	ctx := context.Background()
-	quiz, err := f.s.CreateQuiz(ctx, Quiz{UserID: f.user, Name: "Quiz", WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name, Questions: json.RawMessage(studyQuestions), Privacy: PrivacyPrivate})
+	other, err := f.s.CreateWorkspace(ctx, f.user, WorkspaceCreate{Name: "Other", Tags: []TagRef{}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.s.CreateAttempt(ctx, f.user, quiz.ID, 1, 2, json.RawMessage(`{}`), json.RawMessage(studySnapshot)); err != nil {
-		t.Fatal(err)
+	attempt := func(wsID, wsName string, correct float64) string {
+		quiz, err := f.s.CreateQuiz(ctx, Quiz{UserID: f.user, Name: uid("Quiz "), WorkspaceID: wsID, WorkspaceName: wsName, Questions: json.RawMessage(studyQuestions), Privacy: PrivacyPrivate})
+		if err != nil {
+			t.Fatal(err)
+		}
+		a, err := f.s.CreateAttempt(ctx, f.user, quiz.ID, correct, 2, json.RawMessage(`{}`), json.RawMessage(studySnapshot))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return a.ID
 	}
-	list, err := f.s.ListAttempts(ctx, f.user)
+	high := attempt(f.ws.ID, f.ws.Name, 2)
+	low := attempt(f.ws.ID, f.ws.Name, 1)
+	attempt(other.ID, other.Name, 0)
+
+	list, more, err := f.s.ListAttempts(ctx, f.user, AttemptParams{Sort: "score", Ascending: true, Workspaces: []string{f.ws.ID}, Limit: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 1 || list[0].WorkspaceID == nil || *list[0].WorkspaceID != f.ws.ID {
-		t.Fatalf("attempts = %+v", list)
+	if len(list) != 1 || list[0].ID != low || !more || *list[0].WorkspaceID != f.ws.ID {
+		t.Fatalf("first page = %+v, more %v", list, more)
+	}
+	list, more, err = f.s.ListAttempts(ctx, f.user, AttemptParams{Sort: "score", Ascending: true, Workspaces: []string{f.ws.ID}, Offset: 1, Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].ID != high || more {
+		t.Fatalf("second page = %+v, more %v", list, more)
+	}
+	if list, _, err = f.s.ListAttempts(ctx, f.user, AttemptParams{Limit: 10}); err != nil || len(list) != 3 {
+		t.Fatalf("unfiltered = %d attempts, %v", len(list), err)
 	}
 }

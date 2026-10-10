@@ -6,6 +6,7 @@ import {
   ReportEditIncidentBody,
 } from '@/api/gen/validators';
 import type {
+  Attempt,
   Chapter,
   EditableQuiz,
   FlashcardSet,
@@ -2736,13 +2737,29 @@ export const handlers = [
     db.materials.unshift(material);
     return HttpResponse.json(db.quizFromMaterial(material), { status: 201 });
   }),
-  http.get('/api/attempts', async () =>
-    HttpResponse.json(
-      [...db.attempts]
-        .sort((a, b) => +new Date(b.takenAt) - +new Date(a.takenAt))
-        .map(db.attemptSummary)
-    )
-  ),
+  http.get('/api/attempts', ({ request }) => {
+    const params = new URL(request.url).searchParams;
+    const workspaces = params.get('workspaceId')?.split(',') ?? [];
+    const score = (a: Attempt) => (a.total ? a.correct / a.total : 0);
+    const list = db.attempts
+      .filter(
+        (a) =>
+          !workspaces.length ||
+          (a.workspaceId !== null && workspaces.includes(a.workspaceId))
+      )
+      .sort((a, b) =>
+        params.get('sort') === 'score'
+          ? score(b) - score(a)
+          : +new Date(b.takenAt) - +new Date(a.takenAt)
+      );
+    if (params.get('dir') === 'asc') list.reverse();
+    const offset = Number(params.get('offset') ?? 0);
+    const limit = Number(params.get('limit') ?? 30);
+    return HttpResponse.json({
+      items: list.slice(offset, offset + limit).map(db.attemptSummary),
+      more: list.length > offset + limit,
+    });
+  }),
   http.get('/api/attempts/:id', async ({ params }) => {
     const at = db.attempts.find((a) => a.id === params.id);
     if (!at) return new HttpResponse(null, { status: 404 });

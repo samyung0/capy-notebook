@@ -242,7 +242,7 @@ const appRoutes = [
     component: lazyRouteComponent(() => import('@/routes/Learning')),
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
-      void qc.prefetchQuery(attemptsQuery());
+      void qc.prefetchInfiniteQuery(attemptsQuery());
       void qc.prefetchQuery(learningProgressQuery());
       void qc.prefetchQuery(reviewOverviewQuery());
     },

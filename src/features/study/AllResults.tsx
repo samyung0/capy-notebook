@@ -1,33 +1,47 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { useAttempts } from '@/api/hooks';
-import type { Attempt } from '@/api/types';
+import { useMemo } from 'react';
+import { useAttempts, useWorkspaces } from '@/api/hooks';
+import type { Attempt, AttemptSort } from '@/api/types';
 import {
   ListToolbar,
   type SortOption,
   toggleValue,
 } from '@/components/app/ListToolbar';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
+import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
 import { BillingTable } from '@/features/billing/BillingTable';
 import { formatPoints } from '@/features/quizzes/grade';
 import { m } from '@/i18n';
-import { commaList, csv, sortSearch } from '@/lib/listSearch';
+import { csv, sortSearch } from '@/lib/listSearch';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import {
   RESULT_SORT_DEFAULT,
-  type ResultSort,
   type ResultsSearch,
+  resultParams,
 } from './reviewSearch';
 
 /** Learning → All results: quiz attempts with the list pages' sort menu and
- * workspace filter, applied here since the list arrives whole. */
+ * workspace filter, sorted, filtered and paged by the server. */
 export function AllResults() {
   const search = useSearch({ strict: false }) as ResultsSearch;
-  const { sort = RESULT_SORT_DEFAULT, dir } = search;
-  const workspaceIds = commaList(search.workspace);
-  const { data, fetchStatus, isLoading } = useAttempts();
+  const params = useMemo(() => resultParams(search), [search]);
+  const { sort = RESULT_SORT_DEFAULT, dir, workspaceIds = [] } = params;
+  const {
+    data,
+    fetchNextPage,
+    fetchStatus,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+  } = useAttempts(params);
+  const { data: workspaces = [] } = useWorkspaces(
+    { sort: 'accessed' },
+    { errorBoundary: false }
+  );
   const revealRef = useLoadingReveal(isLoading);
+  const rows = data?.pages.flatMap((page) => page.items) ?? [];
   const navigate = useNavigate();
   const setSearch = (patch: ResultsSearch) =>
     void navigate({
@@ -35,29 +49,10 @@ export function AllResults() {
       search: (prev: Record<string, unknown>) => ({ ...prev, ...patch }),
       to: '/learning',
     });
-  const sorts: SortOption<ResultSort>[] = [
+  const sorts: SortOption<AttemptSort>[] = [
     { icon: 'clock', label: m.past_sort_newest(), value: 'date' },
     { icon: 'quiz', label: m.quiz_col_score(), value: 'score' },
   ];
-  // The workspaces in the list, named as their newest attempt has them.
-  const workspaces = new Map<string, string>();
-  for (const a of data ?? [])
-    if (a.workspaceId && !workspaces.has(a.workspaceId))
-      workspaces.set(a.workspaceId, a.workspaceName);
-  const rows = (data ?? [])
-    .filter(
-      (a) =>
-        workspaceIds.length === 0 ||
-        (a.workspaceId !== null && workspaceIds.includes(a.workspaceId))
-    )
-    .sort((x, y) => {
-      const order =
-        sort === 'score'
-          ? ratio(y) - ratio(x)
-          : Date.parse(y.takenAt) - Date.parse(x.takenAt);
-      return dir === 'asc' ? -order : order;
-    });
-
   // Attempts of a deleted quiz have no quiz to redo.
   const redo = (quizId: string | null) =>
     quizId
@@ -103,9 +98,9 @@ export function AllResults() {
               label: m.files_filter_workspace(),
               onToggle: (value) =>
                 setSearch({ workspace: csv(toggleValue(workspaceIds, value)) }),
-              options: [...workspaces].map(([value, label]) => ({
-                label,
-                value,
+              options: workspaces.map((ws) => ({
+                label: ws.name,
+                value: ws.id,
               })),
               selected: workspaceIds,
             },
@@ -128,7 +123,7 @@ export function AllResults() {
             {m.quiz_no_attempts()}
           </p>
         ) : (
-          <div ref={revealRef}>
+          <div className="flex flex-col gap-3" ref={revealRef}>
             {/* Phones: Billing's plain table, scrolling sideways. */}
             <div className="md:hidden">
               <BillingTable
@@ -176,6 +171,17 @@ export function AllResults() {
                 </div>
               ))}
             </div>
+            {hasNextPage && (
+              <Button
+                className="self-center"
+                disabled={isFetchingNextPage}
+                onClick={() => fetchNextPage()}
+                size="sm"
+                variant="ghost-hover"
+              >
+                {m.list_load_more()}
+              </Button>
+            )}
           </div>
         )}
       </div>
@@ -183,7 +189,6 @@ export function AllResults() {
   );
 }
 
-const ratio = (a: Attempt) => (a.total ? a.correct / a.total : 0);
 const scoreText = (a: Attempt) =>
   `${formatPoints(a.correct)} / ${formatPoints(a.total)}`;
 const formatDate = (a: Attempt) => new Date(a.takenAt).toLocaleDateString();

@@ -339,7 +339,8 @@ export const api = {
 /** Central query-key registry for TanStack Query. */
 export const qk = {
   attempt: (id: string) => ['attempt', id] as const,
-  attempts: ['attempts'] as const,
+  attempts: (params?: unknown) => ['attempts', params ?? null] as const,
+  attemptsRoot: ['attempts'] as const,
   billing: ['billing'] as const,
   canvas: (id: string) => ['canvas', id] as const,
   cards: (flashcardSetId: string) =>

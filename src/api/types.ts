@@ -307,6 +307,12 @@ export interface ReviewStart {
   group: GenReviewSession['group'];
   mode?: ReviewMode;
 }
+export type AttemptSort = 'date' | 'score';
+export interface AttemptParams {
+  dir?: 'asc';
+  sort?: AttemptSort;
+  workspaceIds?: string[];
+}
 export type PastReviewSort = 'date' | 'quiz' | 'cards' | 'time';
 export type PastReviewHas = 'quiz' | 'flashcards';
 export interface PastReviewParams {

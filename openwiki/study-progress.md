@@ -344,11 +344,14 @@ their toolbar right under the tabs, as Files does.
 ### All results tab
 
 `src/features/study/AllResults.tsx`: quiz attempts (Quiz, Workspace, Score,
-Date, ⋮ with Check result and Redo), the same table switch below md. `GET
-/api/attempts` returns every attempt with `workspaceId` (the quiz's current
-workspace, null once the quiz is deleted), so sort (newest, score) and the
-workspace filter run in the browser and live in the URL
-(`parseResultsSearch`; the route picks the parser by `tab`).
+Date, ⋮ with Check result and Redo), the same table switch below md.
+`GET /api/attempts?sort=&dir=&workspaceId=&offset=&limit=` (`ListAttempts`)
+sorts (date, score as correct / total), filters by the quiz's current
+workspace and pages in SQL, thirty a page behind Load more; each attempt
+carries that `workspaceId`, null once the quiz is deleted, so a workspace
+filter leaves those out. The filter lists the user's workspaces as Files
+does. Sort and filter live in the URL (`parseResultsSearch`; the route picks
+the parser by `tab`).
 
 ### Progress tab
 

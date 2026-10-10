@@ -42,8 +42,18 @@ type createAttemptInput struct {
 	ID   string `path:"id"`
 	Body apimodel.CreateAttemptReq
 }
+type attemptsInput struct {
+	Sort        string `query:"sort" enum:"date,score" default:"date"`
+	Dir         string `query:"dir" enum:"asc,desc" default:"desc"`
+	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids; the quiz's current workspace"`
+	Offset      int    `query:"offset" minimum:"0"`
+	Limit       int    `query:"limit" minimum:"1" maximum:"100" default:"30"`
+}
 type attemptsOutput struct {
-	Body []apimodel.Attempt `nullable:"false"`
+	Body struct {
+		Items []apimodel.Attempt `json:"items" nullable:"false"`
+		More  bool               `json:"more"`
+	}
 }
 type attemptIDInput struct {
 	ID string `path:"id"`
@@ -216,12 +226,17 @@ func (a *api) deleteQuiz(ctx context.Context, in *quizDeleteInput) (*Empty, erro
 	return &Empty{}, nil
 }
 
-func (a *api) listAttempts(ctx context.Context, _ *struct{}) (*attemptsOutput, error) {
-	res, err := a.s.ListAttempts(ctx, userID(ctx))
+func (a *api) listAttempts(ctx context.Context, in *attemptsInput) (*attemptsOutput, error) {
+	list, more, err := a.s.ListAttempts(ctx, userID(ctx), store.AttemptParams{
+		Sort: in.Sort, Ascending: in.Dir == "asc", Workspaces: commaValues(in.WorkspaceID),
+		Offset: in.Offset, Limit: in.Limit,
+	})
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &attemptsOutput{Body: res}, nil
+	out := &attemptsOutput{}
+	out.Body.Items, out.Body.More = list, more
+	return out, nil
 }
 
 // createAttempt grades every part of a submitted attempt on the server, stores

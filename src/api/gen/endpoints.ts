@@ -13,8 +13,8 @@ import type {
   AnonymousFlashcards,
   AnonymousNote,
   AnonymousQuiz,
-  Attempt,
   AttemptDetail,
+  AttemptsOutputBody,
   BankAssetOutputBody,
   BankBatchBody,
   BankCommentInputBody,
@@ -86,6 +86,7 @@ import type {
   LLMCredentialsResponse,
   Label,
   LearningProgress,
+  ListAttemptsParams,
   ListModelsParams,
   ListNotificationsParams,
   ListOwnedFilesParams,
@@ -326,7 +327,7 @@ export const requestAccountDeletion = async (requestAccountDeletionReq: NonReado
 
 
 export type listAttemptsResponse200 = {
-  data: Attempt[]
+  data: AttemptsOutputBody
   status: 200
 }
 
@@ -344,20 +345,27 @@ export type listAttemptsResponseError = (listAttemptsResponseDefault) & {
 
 export type listAttemptsResponse = (listAttemptsResponseSuccess | listAttemptsResponseError)
 
-export const getListAttemptsUrl = () => {
+export const getListAttemptsUrl = (params?: ListAttemptsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/attempts`
+  return stringifiedParams.length > 0 ? `/api/attempts?${stringifiedParams}` : `/api/attempts`
 }
 
 /**
  * @summary List attempts
  */
-export const listAttempts = async ( options?: RequestInit): Promise<listAttemptsResponse> => {
+export const listAttempts = async (params?: ListAttemptsParams, options?: RequestInit): Promise<listAttemptsResponse> => {
 
-  const res = await fetch(getListAttemptsUrl(),
+  const res = await fetch(getListAttemptsUrl(params),
   {
     ...options,
     method: 'GET'

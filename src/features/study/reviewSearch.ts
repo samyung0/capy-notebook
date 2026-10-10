@@ -1,4 +1,6 @@
 import type {
+  AttemptParams,
+  AttemptSort,
   PastReviewHas,
   PastReviewParams,
   PastReviewSort,
@@ -80,13 +82,12 @@ export function pastReviewParams(search: PastReviewsSearch): PastReviewParams {
   };
 }
 
-/* Learning → All results: the same keys, sorted and filtered in the browser
- * since the attempts list arrives whole. */
-export const RESULT_SORTS = ['date', 'score'] as const;
-export type ResultSort = (typeof RESULT_SORTS)[number];
-export const RESULT_SORT_DEFAULT: ResultSort = 'date';
+/* Learning → All results keeps the same keys, the server sorting, filtering
+ * and paging. */
+export const RESULT_SORTS: readonly AttemptSort[] = ['date', 'score'];
+export const RESULT_SORT_DEFAULT: AttemptSort = 'date';
 export type ResultsSearch = {
-  sort?: ResultSort;
+  sort?: AttemptSort;
   dir?: 'asc';
   workspace?: string;
 };
@@ -102,3 +103,9 @@ export function parseResultsSearch(
   if (workspace.length) out.workspace = workspace.join(',');
   return out;
 }
+
+export const resultParams = (search: ResultsSearch): AttemptParams => ({
+  dir: search.dir,
+  sort: search.sort,
+  workspaceIds: commaList(search.workspace),
+});

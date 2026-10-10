@@ -1939,23 +1939,54 @@ func (s *Store) UpdateQuizMetadata(ctx context.Context, id string, p QuizMetadat
 	return s.GetQuiz(ctx, id)
 }
 
-func (s *Store) ListAttempts(ctx context.Context, userID string) ([]Attempt, error) {
-	rows, err := s.pool.Query(ctx, `SELECT a.id, a.material_id, m.workspace_id, a.quiz_name, a.workspace_name, a.chapters, a.correct, a.total, a.pct, a.taken_at
+type AttemptParams struct {
+	Sort       string // date, score
+	Ascending  bool
+	Workspaces []string
+	Offset     int
+	Limit      int
+}
+
+// ListAttempts pages the user's attempts, sorted and filtered by the quiz's
+// current workspace. The second value is whether more follow.
+func (s *Store) ListAttempts(ctx context.Context, userID string, p AttemptParams) ([]Attempt, bool, error) {
+	order := "a.taken_at"
+	if p.Sort == "score" {
+		order = "a.correct / NULLIF(a.total, 0)"
+	}
+	dir := "DESC"
+	if p.Ascending {
+		dir = "ASC"
+	}
+	var workspaces []string
+	if len(p.Workspaces) > 0 {
+		workspaces = p.Workspaces
+	}
+	rows, err := s.pool.Query(ctx, fmt.Sprintf(`SELECT a.id, a.material_id, m.workspace_id, a.quiz_name, a.workspace_name, a.chapters, a.correct, a.total, a.pct, a.taken_at
 		FROM attempts a LEFT JOIN materials m ON m.id=a.material_id
-		WHERE a.user_id=$1 ORDER BY a.taken_at DESC`, userID)
+		WHERE a.user_id=$1 AND ($2::text[] IS NULL OR m.workspace_id = ANY($2))
+		ORDER BY %s %s NULLS LAST, a.taken_at DESC, a.id
+		LIMIT $3 OFFSET $4`, order, dir), userID, workspaces, p.Limit+1, p.Offset)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer rows.Close()
 	out := []Attempt{}
 	for rows.Next() {
 		var a Attempt
 		if err := rows.Scan(&a.ID, &a.MaterialID, &a.WorkspaceID, &a.QuizName, &a.WorkspaceName, &a.Chapters, &a.Correct, &a.Total, &a.Pct, &a.TakenAt); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		out = append(out, a)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	more := len(out) > p.Limit
+	if more {
+		out = out[:p.Limit]
+	}
+	return out, more, nil
 }
 
 // CreateAttempt stores the attempt and, for a workspace quiz, rates each

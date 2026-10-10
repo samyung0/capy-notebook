@@ -154,7 +154,26 @@ export const RequestAccountDeletionResponse = zod.object({
 /**
  * @summary List attempts
  */
-export const ListAttemptsResponseItem = zod.object({
+export const listAttemptsQuerySortDefault = `date`;
+export const listAttemptsQueryDirDefault = `desc`;
+export const listAttemptsQueryOffsetMin = 0;
+
+export const listAttemptsQueryLimitDefault = 30;
+export const listAttemptsQueryLimitMax = 100;
+
+
+
+export const ListAttemptsQueryParams = zod.object({
+  "sort": zod.enum(['date', 'score']).default(listAttemptsQuerySortDefault),
+  "dir": zod.enum(['asc', 'desc']).default(listAttemptsQueryDirDefault),
+  "workspaceId": zod.string().optional().describe('Comma-separated workspace ids; the quiz\'s current workspace'),
+  "offset": zod.int().min(listAttemptsQueryOffsetMin).optional(),
+  "limit": zod.int().min(1).max(listAttemptsQueryLimitMax).default(listAttemptsQueryLimitDefault)
+})
+
+export const ListAttemptsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
   "chapters": zod.array(zod.string()),
   "correct": zod.number(),
   "id": zod.string(),
@@ -165,8 +184,9 @@ export const ListAttemptsResponseItem = zod.object({
   "total": zod.number(),
   "workspaceId": zod.string().nullable(),
   "workspaceName": zod.string()
+})),
+  "more": zod.boolean()
 })
-export const ListAttemptsResponse = zod.array(ListAttemptsResponseItem)
 
 
 /**
