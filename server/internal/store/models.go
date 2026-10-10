@@ -514,8 +514,7 @@ type MaterialRef struct {
 	NodeCount int   `json:"nodeCount"`
 	MaxDepth  int   `json:"maxDepth"`
 	// Provenance credits the library books a curated material was written from.
-	Provenance *Provenance     `json:"provenance,omitempty"`
-	Preview    MaterialPreview `json:"preview,omitempty"`
+	Provenance *Provenance `json:"provenance,omitempty"`
 }
 
 type ContentOrderItem struct {

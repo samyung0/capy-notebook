@@ -59,6 +59,9 @@ type Store interface {
 	// It is intended for bounded post-upload signature inspection.
 	ReadPrefix(ctx context.Context, path string, maxBytes int64) ([]byte, error)
 	Promote(ctx context.Context, from, to string) error
+	// Copy duplicates an object inside the bucket; no bytes pass through the
+	// gateway.
+	Copy(ctx context.Context, from, to string) error
 	Delete(ctx context.Context, path string) error
 	// DeleteObjects removes up to DeleteObjectsLimit keys in one request and
 	// returns the keys the bucket refused. A per-key refusal is not an error:

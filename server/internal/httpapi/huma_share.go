@@ -7,6 +7,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -78,10 +79,11 @@ func (a *api) assertFileEditor(ctx context.Context, fileID string) error {
 /* ------------------------------------------------------------------ cloning */
 
 func (a *api) cloneWorkspace(ctx context.Context, in *workspaceIDInput) (*cloneWorkspaceOutput, error) {
-	ws, err := a.s.CloneWorkspace(ctx, userID(ctx), in.ID)
+	ws, copies, err := a.s.CloneWorkspaceThumbnails(ctx, userID(ctx), in.ID)
 	if err != nil {
 		return nil, hErr(err)
 	}
+	a.copyCloneThumbnails(ctx, copies)
 	statuses, err := a.accountStatuses(ctx, ws.OwnerUserID)
 	if err != nil {
 		return nil, err
@@ -89,6 +91,24 @@ func (a *api) cloneWorkspace(ctx context.Context, in *workspaceIDInput) (*cloneW
 	return &cloneWorkspaceOutput{Body: apimodel.CloneWorkspaceResp{
 		Workspace: apimodel.FromWorkspace(ws, statuses[ws.OwnerUserID]),
 	}}, nil
+}
+
+// copyCloneThumbnails copies a clone's thumbnails under the clone's own file
+// ids, inside the bucket. A failed copy leaves the file
+// without a thumbnail until its next capture: logged, never retried.
+func (a *api) copyCloneThumbnails(ctx context.Context, copies []store.ThumbnailCopy) {
+	if a.blob == nil {
+		return
+	}
+	for _, c := range copies {
+		if err := a.blob.Copy(ctx, c.From, c.To); err != nil {
+			obs.Log(ctx).Warn("clone thumbnail copy failed", "file_id", c.FileID, "error", err)
+			continue
+		}
+		if err := a.s.SetCloneThumbnail(ctx, c.FileID, c.To); err != nil {
+			obs.Log(ctx).Warn("clone thumbnail not recorded", "file_id", c.FileID, "key", c.To, "error", err)
+		}
+	}
 }
 
 func (a *api) cloneQuiz(ctx context.Context, in *quizIDInput) (*quizOutput, error) {

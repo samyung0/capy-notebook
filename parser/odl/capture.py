@@ -10,7 +10,7 @@ THUMBNAIL_WIDTH = 200
 
 
 def page_thumbnail(pdf: bytes) -> bytes:
-    """Page 1 of a conversion already in hand, as a PNG THUMBNAIL_WIDTH wide;
+    """Page 1 of the PDF a parse already holds, as a PNG THUMBNAIL_WIDTH wide;
     ingest encodes the stored WebP."""
     with pymupdf.open(stream=pdf, filetype="pdf") as doc:
         page = doc[0]

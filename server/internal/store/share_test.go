@@ -86,7 +86,7 @@ func TestWorkspaceCloneRejectsAPathReapedAfterItsSnapshot(t *testing.T) {
 	proceed := make(chan struct{})
 	result := make(chan error, 1)
 	go func() {
-		_, cloneErr := s.cloneWorkspaceOnce(ctx, pausingCloneStarter{
+		_, _, cloneErr := s.cloneWorkspaceOnce(ctx, pausingCloneStarter{
 			starter: s.pool, reached: reached, proceed: proceed,
 			pauseOn: "FROM blobs",
 		}, targetID, source.ID)

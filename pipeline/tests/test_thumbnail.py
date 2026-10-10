@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import logging
+import secrets
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -35,58 +36,101 @@ def _pdf(width: float, height: float) -> bytes:
     return document.tobytes()
 
 
+_PDF = _pdf(595, 842)
+
+
+def _png(width: int, height: int) -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), "white").save(buffer, "PNG")
+    return buffer.getvalue()
+
+
 def _size(webp: bytes) -> tuple[int, int]:
     with Image.open(io.BytesIO(webp)) as image:
         assert image.format == "WEBP"
         return image.size
 
 
-def test_pdf_page_one_is_a_200px_wide_webp(tmp_path):
-    source = tmp_path / "source-1"  # spooled sources carry no extension
-    source.write_bytes(_pdf(595, 842))
+@pytest.fixture
+def no_document_rendering(monkeypatch):
+    """The worker neither converts (the parser's /capture_page is chat's) nor
+    renders a document: PyMuPDF is unusable during these tests."""
 
-    webp = thumbnail.render(_plan(ingest_plan.DOCUMENT_PARSE, "pdf"), source, None)
+    def refuse(*_args, **_kwargs):
+        raise AssertionError("a document thumbnail rendered or converted in the worker")
 
-    # PyMuPDF rounds the A4 height (283.03 px) up.
-    assert _size(webp) == (200, 284)
+    monkeypatch.setattr("requests.post", refuse)
+    monkeypatch.setattr(pymupdf, "open", refuse)
 
 
-def test_the_repaired_pdf_wins_over_the_source(tmp_path, monkeypatch):
+@pytest.mark.parametrize("format_name", ["pdf", "docx", "pptx", "xlsx"])
+def test_document_pages_come_from_the_parse_bundle(
+    tmp_path, monkeypatch, no_document_rendering, format_name
+):
     source = tmp_path / "source-1"
-    source.write_bytes(_pdf(595, 842))
+    source.write_bytes(b"document")
     seen = []
 
     def entry(artifact, name):
-        seen.append((artifact, name))
-        return _pdf(800, 400)
+        seen.append(name)
+        return _png(200, 283)
 
     monkeypatch.setattr(thumbnail.parser_client, "artifact_entry", entry)
     artifact = {"key": "artifacts/x.zip"}
 
-    webp = thumbnail.render(_plan(ingest_plan.DOCUMENT_PARSE, "pdf"), source, artifact)
+    plan = _plan(ingest_plan.DOCUMENT_PARSE, format_name)
+    webp = thumbnail.render(plan, source, artifact)
 
-    assert seen == [(artifact, "parsed.pdf")] and _size(webp) == (200, 100)
+    assert seen == ["page1.png"] and _size(webp) == (200, 283)
 
 
-def test_a_tall_page_is_cut_from_the_top(tmp_path):
+@pytest.mark.parametrize("artifact", [None, {"key": "artifacts/old.zip"}])
+def test_a_bundle_without_a_page_image_gets_no_thumbnail(
+    tmp_path, monkeypatch, no_document_rendering, artifact
+):
     source = tmp_path / "source-1"
-    source.write_bytes(_pdf(300, 3000))
+    source.write_bytes(_PDF)
+    monkeypatch.setattr(thumbnail.parser_client, "artifact_entry", lambda *_a: None)
 
-    webp = thumbnail.render(_plan(ingest_plan.DOCUMENT_PARSE, "pdf"), source, None)
+    for format_name in ("pdf", "pptx"):
+        plan = _plan(ingest_plan.DOCUMENT_PARSE, format_name)
+        assert thumbnail.render(plan, source, artifact) is None
 
-    assert _size(webp) == (200, 400)
+
+@pytest.mark.parametrize(
+    "page",
+    [_png(201, 100), _png(200, 401), _PDF],
+    ids=["too-wide", "too-tall", "not-a-png"],
+)
+def test_a_bundled_page_is_checked_before_it_is_decoded(monkeypatch, page):
+    decoded = []
+    monkeypatch.setattr(Image.Image, "load", lambda self: decoded.append(self))
+
+    with pytest.raises((ValueError, Image.UnidentifiedImageError)):
+        thumbnail.bundled_page(page)
+    assert decoded == []
 
 
-def test_an_image_is_oriented_flattened_and_shrunk(tmp_path):
+def test_an_image_is_oriented_shrunk_and_flattened(tmp_path, monkeypatch):
     source = tmp_path / "photo"
     image = Image.new("RGBA", (800, 400), (255, 0, 0, 0))
     exif = Image.Exif()
     exif[0x0112] = 6  # rotate 90 degrees for display
     image.save(source, "PNG", exif=exif)
+    flattened = []
+    paste = Image.Image.paste
+
+    def record(self, im, *args, **kwargs):
+        flattened.append(im.size)
+        return paste(self, im, *args, **kwargs)
+
+    monkeypatch.setattr(Image.Image, "paste", record)
 
     webp = thumbnail.render(_plan(ingest_plan.IMAGE_CAPTION, "png"), source, None)
 
     assert _size(webp) == (200, 400)
+    # Flattening worked on the thumbnail, not the 400 x 800 original.
+    assert flattened == [(200, 400)]
     with Image.open(io.BytesIO(webp)) as rendered:
         # The transparent pixels are flattened onto white, as for captions.
         assert rendered.convert("RGB").getpixel((100, 200))[1] > 200
@@ -106,47 +150,6 @@ def test_routes_without_a_page_have_no_thumbnail(tmp_path, route, format_name):
     source.write_text("<svg xmlns='http://www.w3.org/2000/svg'/>")
 
     assert thumbnail.render(_plan(route, format_name), source, None) is None
-
-
-@pytest.fixture
-def no_conversion(monkeypatch):
-    """Office thumbnails never reach the parser again: /capture_page is for chat."""
-
-    def refuse(*_args, **_kwargs):
-        raise AssertionError("an Office thumbnail called the parser")
-
-    monkeypatch.setattr("requests.post", refuse)
-
-
-def test_office_pages_come_from_the_parse_bundle(tmp_path, monkeypatch, no_conversion):
-    source = tmp_path / "source-1"
-    source.write_bytes(b"office")
-    png = io.BytesIO()
-    Image.new("RGB", (200, 283), "white").save(png, "PNG")
-    seen = []
-
-    def entry(artifact, name):
-        seen.append(name)
-        return png.getvalue()
-
-    monkeypatch.setattr(thumbnail.parser_client, "artifact_entry", entry)
-    artifact = {"key": "artifacts/x.zip"}
-
-    webp = thumbnail.render(_plan(ingest_plan.DOCUMENT_PARSE, "docx"), source, artifact)
-
-    assert seen == ["page1.png"] and _size(webp) == (200, 283)
-
-
-@pytest.mark.parametrize("artifact", [None, {"key": "artifacts/old.zip"}])
-def test_an_office_bundle_without_a_page_image_gets_no_thumbnail(
-    tmp_path, monkeypatch, no_conversion, artifact
-):
-    source = tmp_path / "source-1"
-    source.write_bytes(b"office")
-    monkeypatch.setattr(thumbnail.parser_client, "artifact_entry", lambda *_a: None)
-
-    plan = _plan(ingest_plan.DOCUMENT_PARSE, "pptx")
-    assert thumbnail.render(plan, source, artifact) is None
 
 
 class _Store:
@@ -206,7 +209,7 @@ class _Store:
         )
 
 
-def _capture(source: Path, route=ingest_plan.DOCUMENT_PARSE, format_name="pdf"):
+def _capture(source: Path, route=ingest_plan.IMAGE_CAPTION, format_name="png"):
     thumbnail.capture_source(
         file_id="f_1",
         workspace_id="ws_1",
@@ -219,7 +222,7 @@ def _capture(source: Path, route=ingest_plan.DOCUMENT_PARSE, format_name="pdf"):
 
 def test_a_capture_stores_a_content_addressed_key_once(tmp_path, monkeypatch):
     source = tmp_path / "source-1"
-    source.write_bytes(_pdf(595, 842))
+    source.write_bytes(_png(400, 300))
     store = _Store(monkeypatch)
 
     _capture(source)
@@ -242,7 +245,7 @@ def test_a_key_no_row_took_is_queued_for_deletion(
     tmp_path, monkeypatch, caplog, stored, fail_update
 ):
     source = tmp_path / "source-1"
-    source.write_bytes(_pdf(595, 842))
+    source.write_bytes(_png(400, 300))
     store = _Store(monkeypatch, stored=stored, fail_update=fail_update)
 
     with caplog.at_level(logging.WARNING, logger="capy.thumbnail"):
@@ -330,6 +333,7 @@ async def test_a_failed_capture_leaves_the_ingest_ready(monkeypatch, tmp_path, c
                 "sourceETag": "etag-a",
                 "actorUserId": "u_1",
                 "reservationId": "cr_1",
+                "parseArtifact": {"key": "artifacts/x.zip"},
             },
             "f_1",
             "ws_1",
@@ -381,3 +385,58 @@ def test_a_reuse_without_a_bundle_shares_the_identical_files_key(workspace, tmp_
     with workspace._connect() as conn:
         conn.execute("DELETE FROM files WHERE id=%s", (copy,))
     assert workspace.scalar(queued, (key,)) is True
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("same_owner", [False, True], ids=["other-owner", "same-owner"])
+def test_a_reuse_never_shares_a_key_from_another_workspace(
+    workspace, tmp_path, same_owner
+):
+    """Security regression (review 1 M1): a key names its file and a file id
+    leads to its workspace, so a reused file never takes the key of a file in
+    another workspace: another owner's link workspace, or the same owner's
+    other workspace (a link workspace's key would show in a public one)."""
+    sha = "cd" * 32
+    owner = workspace.user_id if same_owner else f"u_{secrets.token_hex(4)}"
+    other_workspace = f"ws_{secrets.token_hex(6)}"
+    donor = f"f_{secrets.token_hex(6)}"
+    key = f"thumbs/{donor}/{'d' * 64}.webp"
+    with workspace._connect() as conn:
+        if not same_owner:
+            conn.execute(
+                "INSERT INTO users (id, name, email) VALUES (%s, 'Other', %s)",
+                (owner, f"{owner}@capynotebook.test"),
+            )
+        conn.execute(
+            "INSERT INTO workspaces (id, user_id, name, privacy) VALUES (%s, %s, 'Shared', 'link')",
+            (other_workspace, owner),
+        )
+        conn.execute(
+            """INSERT INTO files (id, workspace_id, name, kind, size_bytes, status,
+                blob_path, source_sha256, thumbnail_key)
+            VALUES (%s, %s, 'deck.pdf', 'pdf', 1024, 'ready', %s, %s, %s)""",
+            (donor, other_workspace, f"sources/{donor}", sha, key),
+        )
+    copy = workspace.add_file("deck.pdf")
+    with workspace._connect() as conn:
+        conn.execute("UPDATE files SET source_sha256=%s WHERE id=%s", (sha, copy))
+    source = tmp_path / "source-1"
+    source.write_bytes(b"pdf")
+    try:
+        thumbnail.capture_source(
+            file_id=copy,
+            workspace_id=workspace.id,
+            plan=_plan(ingest_plan.DOCUMENT_PARSE, "pdf"),
+            local_path=str(source),
+            source_sha256=sha,
+            artifact=None,
+        )
+        shared = workspace.scalar(
+            "SELECT thumbnail_key FROM files WHERE id=%s", (copy,)
+        )
+        assert shared is None
+    finally:
+        with workspace._connect() as conn:
+            conn.execute("DELETE FROM workspaces WHERE id=%s", (other_workspace,))
+            if not same_owner:
+                conn.execute("DELETE FROM users WHERE id=%s", (owner,))

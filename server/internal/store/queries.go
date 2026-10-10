@@ -1799,7 +1799,7 @@ func (s *Store) MaterialIDsOwnedByUser(ctx context.Context, userID string) ([]st
 // Plate materials, newest first.
 func (s *Store) ListMaterialRefs(ctx context.Context, wsID string) ([]MaterialRef, error) {
 	out := []MaterialRef{}
-	rows, err := s.pool.Query(ctx, `SELECT id, kind, title, chapter_id, position, created_at, size_bytes, node_count, max_depth, provenance, preview
+	rows, err := s.pool.Query(ctx, `SELECT id, kind, title, chapter_id, position, created_at, size_bytes, node_count, max_depth, provenance
 		FROM materials WHERE workspace_id=$1 AND parent_material_id IS NULL AND trashed_at IS NULL
 		ORDER BY position, created_at DESC`, wsID)
 	if err != nil {
@@ -1821,7 +1821,6 @@ func (s *Store) ListMaterialRefs(ctx context.Context, wsID string) ([]MaterialRe
 			&r.NodeCount,
 			&r.MaxDepth,
 			&provenance,
-			&r.Preview,
 		); err != nil {
 			return nil, err
 		}

@@ -1,16 +1,18 @@
 """Page-1 thumbnail, or the opening text, of a source for its list card.
 
-A successful ingest ends here, before the local source is cleaned up: PDFs
-render page 1 with PyMuPDF (the bundle's font-repaired ``parsed.pdf`` when
-there is one), Office files use the ``page1.png`` the parser rendered from its
-own conversion during the parse (none in a bundle from an older parser, and
-then no thumbnail: Office is never converted a second time for it; a parse
-that reused identical indexed bytes has no bundle and shares that file's
-key instead), uploaded images go through Pillow. The 200 px wide WebP is stored content-addressed at
-``thumbs/{file id}/{sha256}.webp`` and ``files.thumbnail_key`` points at it;
-the blob triggers release the key it replaces. Text sources store their first
-600 characters in ``files.preview`` instead. A source refresh publishes and
-ingests again, so an edit replaces both.
+A successful ingest ends here, before the local source is cleaned up. PDF and
+Office files use the ``page1.png`` the parser rendered during the parse, in
+its bounded child, from the PDF it held (the repaired bytes, or an Office
+file's conversion): the worker never renders or converts a document itself. A
+bundle without the image (an older parser, a failed render) means no
+thumbnail. A parse that reused identical indexed bytes builds no bundle; the
+file then shares the key of a file with the same bytes in the same workspace
+only. Uploaded images go through Pillow. The 200 px wide WebP
+is stored content-addressed at ``thumbs/{file id}/{sha256}.webp`` and
+``files.thumbnail_key`` points at it; the blob triggers release the key it
+replaces. Text sources store their first 600 characters in ``files.preview``
+instead. A source refresh publishes and ingests again, so an edit replaces
+both.
 
 Thumbnails are a platform cost outside the storage quota. A capture is best
 effort: any failure is logged and dropped, never retried, and never fails the
@@ -43,7 +45,6 @@ CACHE_CONTROL = "public, max-age=31536000, immutable"
 # Cards crop pages from the top; a page taller than this is cut there (the
 # parser's page1.png follows the same rule, parser/odl/capture.py).
 _MAX_HEIGHT = 2 * WIDTH
-_OFFICE_FORMATS = frozenset({"docx", "pptx", "xlsx"})
 
 
 def capture_source(
@@ -63,9 +64,9 @@ def capture_source(
         if plan.route == ingest_plan.RAW_TEXT:
             _store_text_preview(file_id, source_sha256, Path(local_path))
             return
-        if artifact is None and plan.format in _OFFICE_FORMATS:
+        if artifact is None and plan.route == ingest_plan.DOCUMENT_PARSE:
             # Reused from identical indexed bytes inside the parse job: no
-            # bundle to render from, so the file shares that file's key.
+            # bundle to take the page from, so the file shares that file's key.
             with db.connect() as conn, conn.cursor() as cur:
                 db.share_file_thumbnail(cur, file_id, workspace_id, source_sha256)
                 conn.commit()
@@ -97,56 +98,34 @@ def render(
     artifact: Mapping[str, Any] | None,
 ) -> bytes | None:
     """The WebP of page 1, or None for a route without one (store-only, audio,
-    delimited text), an Office bundle without a page image, or an image format
-    this Pillow cannot decode."""
+    delimited text), a bundle without a page image, or an image format this
+    Pillow cannot decode."""
     if plan.route == ingest_plan.DOCUMENT_PARSE:
-        if plan.format in _OFFICE_FORMATS:
-            page = (
-                parser_client.artifact_entry(artifact, parser_client.PAGE_IMAGE)
-                if artifact
-                else None
-            )
-            if page is None:
-                return None
-            from PIL import Image
-
-            with Image.open(io.BytesIO(page)) as image:
-                if image.format != "PNG":
-                    raise ValueError("the bundled page image is not a PNG")
-                return _webp(image.convert("RGB"))
-        repaired = (
-            parser_client.artifact_entry(artifact, "parsed.pdf") if artifact else None
+        page = (
+            parser_client.artifact_entry(artifact, parser_client.PAGE_IMAGE)
+            if artifact
+            else None
         )
-        return render_pdf(repaired if repaired is not None else source)
+        return None if page is None else bundled_page(page)
     if plan.route == ingest_plan.IMAGE_CAPTION:
         return render_image(source, plan.format)
     return None
 
 
-def render_pdf(pdf: bytes | Path) -> bytes:
-    import pymupdf
+def bundled_page(png: bytes) -> bytes:
+    """The parser's page image as the stored WebP. Its header is checked
+    before any pixel is decoded: a PNG within the thumbnail's own size."""
     from PIL import Image
 
-    if isinstance(pdf, bytes):
-        doc = pymupdf.open(stream=pdf, filetype="pdf")
-    else:
-        doc = pymupdf.open(pdf, filetype="pdf")
-    with doc:
-        page = doc[0]
-        rect = page.rect
-        scale = WIDTH / rect.width
-        clip = pymupdf.Rect(
-            rect.x0, rect.y0, rect.x1, rect.y0 + min(rect.height, _MAX_HEIGHT / scale)
-        )
-        pix = page.get_pixmap(
-            matrix=pymupdf.Matrix(scale, scale), clip=clip, alpha=False
-        )
-        image = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
-    return _webp(image)
+    with Image.open(io.BytesIO(png)) as image:
+        if image.format != "PNG" or image.width > WIDTH or image.height > _MAX_HEIGHT:
+            raise ValueError(f"bundled page image is {image.format} {image.size}")
+        return _webp(image.convert("RGB"))
 
 
 def render_image(source: Path, format_name: str) -> bytes | None:
-    """The first frame, oriented and flattened like captioning does."""
+    """The first frame, oriented, shrunk, then flattened on white like
+    captioning does."""
     from PIL import Image, ImageOps
 
     # SVG has no rasterizer here, and HEIC only with a Pillow plugin.
@@ -160,9 +139,14 @@ def render_image(source: Path, format_name: str) -> bytes | None:
                 raise ValueError("image exceeds the decoded-pixel limit")
             # JPEG decodes at a reduced scale straight away.
             opened.draft("RGB", (2 * WIDTH, 2 * WIDTH))
-            frame = ImageOps.exif_transpose(opened).convert("RGBA")
-    flat = Image.new("RGB", frame.size, "white")
-    flat.paste(frame, mask=frame.getchannel("A"))
+            frame = ImageOps.exif_transpose(opened)
+    # Shrink first, so the colour conversion and flattening work on the
+    # thumbnail rather than the full image.
+    frame.thumbnail((WIDTH, frame.height), Image.Resampling.LANCZOS)
+    frame = frame.crop((0, 0, frame.width, min(frame.height, _MAX_HEIGHT)))
+    rgba = frame.convert("RGBA")
+    flat = Image.new("RGB", rgba.size, "white")
+    flat.paste(rgba, mask=rgba.getchannel("A"))
     return _webp(flat)
 
 

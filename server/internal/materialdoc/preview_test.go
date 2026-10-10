@@ -218,16 +218,16 @@ func TestPreview(t *testing.T) {
 			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"short","stem":"Answer?"}}`,
 		},
 		{
-			name:    "matching sorts each column on its own",
+			name:    "matching shows only its prompts",
 			kind:    "quiz",
 			content: quizDoc(t, "matching"),
-			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"matching","stem":"Answer?","pairs":[["A","unused"],["B","X"]]}}`,
+			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"matching","stem":"Answer?","prompts":["A","B"]}}`,
 		},
 		{
-			name:    "ordering sorts its items",
+			name:    "ordering shows only its item count",
 			kind:    "quiz",
 			content: quizDoc(t, "ordering"),
-			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"ordering","stem":"Answer?","items":["A","B"]}}`,
+			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"ordering","stem":"Answer?","itemCount":2}}`,
 		},
 		{
 			name:    "open",
@@ -302,6 +302,15 @@ func TestPreview(t *testing.T) {
 		})
 	}
 
+	// A row without cells (not storable, but read leniently) is a list, never
+	// null, so a client can map it.
+	emptyRow := []map[string]any{{"type": "table", "children": []any{
+		map[string]any{"type": "tr", "children": []any{}},
+	}}}
+	if got, err := preview("note", emptyRow); err != nil ||
+		string(got) != `{"kind":"note","blocks":[{"t":"table","rows":[[]]}]}` {
+		t.Fatalf("empty row preview = %s, %v", got, err)
+	}
 	if got, err := Preview("canvas", noteDoc(para("a", "x"))); err != nil || got != nil {
 		t.Fatalf("a kind without a preview = %s, %v", got, err)
 	}
@@ -310,48 +319,43 @@ func TestPreview(t *testing.T) {
 	}
 }
 
-// A matching or ordering question stored in its answer's order must not come
-// out in that order: the preview reaches readers who never get quiz keys.
+// No right-hand value of a matching question and no item of an ordering
+// question ever reaches a preview: readers of a list never get quiz keys, and
+// any order of the items could be the answer (security regression: review 1
+// M2).
 func TestPreviewHidesTheAnswerKey(t *testing.T) {
 	question := func(answer string) string {
 		return `{"id":"q1","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"q1:part:1",
 			"blocks":[{"type":"text","text":"Q"}],"marks":1,"solution":[],"answer":` + answer + `}]}`
 	}
-	first := func(answer string) questionPreview {
+	preview := func(answer string) string {
 		t.Helper()
 		raw, err := Preview("quiz", quizOf(t, question(answer)))
 		if err != nil {
 			t.Fatal(err)
 		}
-		var out struct{ First questionPreview }
-		if err := json.Unmarshal(raw, &out); err != nil {
-			t.Fatal(err)
-		}
-		return out.First
+		return string(raw)
 	}
 
-	stages := []string{"Prophase", "Metaphase", "Anaphase", "Telophase"}
-	encoded, _ := json.Marshal(stages)
-	items := first(`{"type":"ordering","items":` + string(encoded) + `}`).Items
-	if strings.Join(items, ",") == strings.Join(stages, ",") {
-		t.Fatalf("ordering items came out in the answer's order: %v", items)
-	}
-	if strings.Join(items, ",") != "Anaphase,Metaphase,Prophase,Telophase" {
-		t.Fatalf("ordering items = %v, want them sorted", items)
-	}
-
-	// Each left item's match sits at its own row in the stored options.
-	pairs := first(`{"type":"matching","options":["Feline","Insect"],
-		"pairs":[{"left":"Cat","right":0},{"left":"Bee","right":1}]}`).Pairs
-	if len(pairs) != 2 {
-		t.Fatalf("pairs = %v", pairs)
-	}
-	for _, row := range pairs {
-		if row == [2]string{"Cat", "Feline"} || row == [2]string{"Bee", "Insect"} {
-			t.Fatalf("matching rows reveal the key: %v", pairs)
+	// Alphabetical prompts and options whose sorted columns are the key.
+	matching := preview(`{"type":"matching","options":["Ca","Fe","Na"],
+		"pairs":[{"left":"Calcium","right":0},{"left":"Iron","right":1},{"left":"Sodium","right":2}]}`)
+	for _, right := range []string{"Ca", "Fe", "Na"} {
+		if strings.Contains(matching, `"`+right+`"`) {
+			t.Fatalf("matching preview carries the right-hand value %q: %s", right, matching)
 		}
 	}
-	if pairs[0] != [2]string{"Bee", "Feline"} || pairs[1] != [2]string{"Cat", "Insect"} {
-		t.Fatalf("pairs = %v, want each column sorted on its own", pairs)
+	if !strings.Contains(matching, `"prompts":["Calcium","Iron","Sodium"]`) {
+		t.Fatalf("matching preview = %s, want its prompts", matching)
+	}
+
+	ordering := preview(`{"type":"ordering","items":["Anaphase","Metaphase","Prophase","Telophase"]}`)
+	for _, item := range []string{"Anaphase", "Metaphase", "Prophase", "Telophase"} {
+		if strings.Contains(ordering, item) {
+			t.Fatalf("ordering preview carries the item %q: %s", item, ordering)
+		}
+	}
+	if !strings.Contains(ordering, `"itemCount":4`) {
+		t.Fatalf("ordering preview = %s, want its item count", ordering)
 	}
 }

@@ -551,38 +551,40 @@ func TestCloneThenDeleteKeepsTheSurvivingCopy(t *testing.T) {
 }
 
 // TestThumbnailKeyIsACountedReference pins the thumbnail lifecycle
-// (openwiki/thumbnails.md): a new capture releases the old key, a clone shares
-// the key and keeps it alive after the original goes, and clearing the key or
-// deleting the last holder queues it. The orphan sweep knows a live key.
+// (openwiki/thumbnails.md): a new capture releases the old key, a second file
+// of the same workspace sharing the key (a reuse without a bundle) keeps it
+// alive after the original goes, and clearing the key or deleting the last
+// holder queues it. The orphan sweep knows a live key. A clone shares nothing:
+// it asks for a copy under its own file id.
 func TestThumbnailKeyIsACountedReference(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_thumb")
-	clonerID := newBlobTestUser(t, s, "u_thumb_clone")
 	source, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Thumbnail source", Tags: []TagRef{}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public', share_role='editor' WHERE id=$1`,
-		source.ID); err != nil {
-		t.Fatal(err)
-	}
-	file, err := s.createReadyFile(ctx, source.ID, ownerID, "deck.pdf", "pdf", nil, "", 100,
-		"sources/"+uid("blob"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	key := func() string { return "thumbs/" + file.ID + "/" + uid("sha") + ".webp" }
-	setKey := func(where, id string, value any) {
+	newFile := func(name string) File {
 		t.Helper()
-		if _, err := s.pool.Exec(ctx, `UPDATE files SET thumbnail_key=$2 WHERE `+where+`=$1`,
+		file, err := s.createReadyFile(ctx, source.ID, ownerID, name, "pdf", nil, "", 100,
+			"sources/"+uid("blob"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return file
+	}
+	file, reused := newFile("deck.pdf"), newFile("deck again.pdf")
+	key := func() string { return "thumbs/" + file.ID + "/" + uid("sha") + ".webp" }
+	setKey := func(id string, value any) {
+		t.Helper()
+		if _, err := s.pool.Exec(ctx, `UPDATE files SET thumbnail_key=$2 WHERE id=$1`,
 			id, value); err != nil {
 			t.Fatal(err)
 		}
 	}
 	first, second, third := key(), key(), key()
 
-	setKey("id", file.ID, first)
+	setKey(file.ID, first)
 	if got := blobRefCount(t, s, first); got != 1 {
 		t.Fatalf("first key refs = %d, want 1", got)
 	}
@@ -594,37 +596,45 @@ func TestThumbnailKeyIsACountedReference(t *testing.T) {
 		t.Error("the orphan sweep does not know a live thumbnail key")
 	}
 
-	setKey("id", file.ID, second)
+	setKey(file.ID, second)
 	if got := blobRefCount(t, s, first); got != 0 || !blobQueued(t, s, first) {
 		t.Errorf("replaced key refs = %d queued = %v, want released", got, blobQueued(t, s, first))
 	}
 
-	clone, err := s.CloneWorkspace(ctx, clonerID, source.ID)
+	clone, copies, err := s.CloneWorkspaceThumbnails(ctx, ownerID, source.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var cloneKey string
-	if err := s.pool.QueryRow(ctx, `SELECT thumbnail_key FROM files WHERE workspace_id=$1`,
-		clone.ID).Scan(&cloneKey); err != nil {
+	if len(copies) != 1 || copies[0].From != second || strings.Contains(copies[0].To, file.ID) {
+		t.Fatalf("clone copies = %+v, want one copy of %s under the clone's file id", copies, second)
+	}
+	var cloneKeys int
+	if err := s.pool.QueryRow(ctx, `SELECT count(thumbnail_key) FROM files WHERE workspace_id=$1`,
+		clone.ID).Scan(&cloneKeys); err != nil {
 		t.Fatal(err)
 	}
-	if cloneKey != second || blobRefCount(t, s, second) != 2 {
-		t.Fatalf("clone key = %q with %d refs, want the shared key twice", cloneKey, blobRefCount(t, s, second))
+	if cloneKeys != 0 || blobRefCount(t, s, second) != 1 {
+		t.Fatalf("clone holds %d keys and the source key %d refs, want none shared", cloneKeys,
+			blobRefCount(t, s, second))
+	}
+
+	setKey(reused.ID, second)
+	if got := blobRefCount(t, s, second); got != 2 {
+		t.Fatalf("shared key refs = %d, want 2", got)
 	}
 	if err := trashAndPurgeFile(ctx, s, ownerID, file.ID); err != nil {
 		t.Fatal(err)
 	}
 	if got := blobRefCount(t, s, second); got != 1 || blobQueued(t, s, second) {
-		t.Errorf("shared key after purging the original: refs = %d queued = %v, want the clone's",
+		t.Errorf("shared key after purging the original: refs = %d queued = %v, want the copy's",
 			got, blobQueued(t, s, second))
 	}
-
-	setKey("workspace_id", clone.ID, nil)
+	setKey(reused.ID, nil)
 	if got := blobRefCount(t, s, second); got != 0 || !blobQueued(t, s, second) {
 		t.Errorf("cleared key refs = %d queued = %v, want released", got, blobQueued(t, s, second))
 	}
-	setKey("workspace_id", clone.ID, third)
-	if err := s.DeleteWorkspace(ctx, clonerID, clone.ID); err != nil {
+	setKey(reused.ID, third)
+	if err := s.DeleteWorkspace(ctx, ownerID, source.ID); err != nil {
 		t.Fatal(err)
 	}
 	if got := blobRefCount(t, s, third); got != 0 || !blobQueued(t, s, third) {

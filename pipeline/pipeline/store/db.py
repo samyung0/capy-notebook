@@ -1471,36 +1471,26 @@ def share_file_thumbnail(
     cur, file_id: str, workspace_id: str, source_sha256: str
 ) -> bool:
     """Give a file reused from identical indexed bytes, with no parse bundle to
-    render from, the thumbnail of a live file holding the same bytes. Holders
-    are those donor reuse may read (this workspace first, else a link or public
-    one), so a key never points into someone's private workspace. The blob
-    triggers count the shared key."""
+    take a page from, the thumbnail of a live file holding the same bytes in
+    the same workspace. A key names its file, and a file id leads to its
+    workspace, so a key from any other workspace, the same owner's included,
+    would hand that workspace to this file's readers. The blob triggers count
+    the shared key."""
     cur.execute(
         """
         UPDATE files f SET thumbnail_key = src.thumbnail_key
         FROM (
             SELECT s.thumbnail_key
             FROM files s
-            JOIN workspaces w ON w.id = s.workspace_id
-            JOIN users owner ON owner.id = w.user_id
-            WHERE s.source_sha256 = %s AND s.id <> %s AND s.thumbnail_key IS NOT NULL
-              AND s.trashed_at IS NULL
-              AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
-              AND (w.id = %s OR w.privacy IN ('link', 'public'))
-            ORDER BY (w.id = %s) DESC, s.added_at DESC
+            WHERE s.workspace_id = %s AND s.source_sha256 = %s AND s.id <> %s
+              AND s.thumbnail_key IS NOT NULL AND s.trashed_at IS NULL
+            ORDER BY s.added_at DESC
             LIMIT 1
         ) src
         WHERE f.id = %s AND f.source_sha256 = %s AND f.trashed_at IS NULL
           AND f.thumbnail_key IS DISTINCT FROM src.thumbnail_key
         """,
-        (
-            source_sha256,
-            file_id,
-            workspace_id,
-            workspace_id,
-            file_id,
-            source_sha256,
-        ),
+        (workspace_id, source_sha256, file_id, file_id, source_sha256),
     )
     return cur.rowcount == 1
 

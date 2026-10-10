@@ -244,15 +244,21 @@ func (s *B2) Promote(ctx context.Context, from, to string) error {
 	if from == to {
 		return nil
 	}
+	if err := s.Copy(ctx, from, to); err != nil {
+		return err
+	}
+	return s.Delete(ctx, from)
+}
+
+// Copy is a server-side CopyObject; the copy keeps the source's metadata
+// (content type, Cache-Control).
+func (s *B2) Copy(ctx context.Context, from, to string) error {
 	_, err := s.client.CopyObject(ctx, &s3.CopyObjectInput{
 		Bucket:     aws.String(s.bucket),
 		Key:        aws.String(to),
 		CopySource: aws.String(url.PathEscape(s.bucket + "/" + from)),
 	})
-	if err != nil {
-		return err
-	}
-	return s.Delete(ctx, from)
+	return err
 }
 
 func (s *B2) Delete(ctx context.Context, path string) error {
