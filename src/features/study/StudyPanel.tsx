@@ -154,7 +154,7 @@ export function StudyPanel({
               <>
                 {(next || study.reviewable > 0) && (
                   <Section title={m.study_quick_actions()}>
-                    <div className="flex flex-col gap-2 px-2">
+                    <div className="flex flex-col gap-4 px-2">
                       {next && (
                         <div className="flex items-center gap-2">
                           <ItemIcon item={next} />
@@ -190,28 +190,35 @@ export function StudyPanel({
                             />
                             {study.suggestion ? (
                               <span className="flex min-w-0 flex-1 translate-y-px flex-col">
-                                <span>{suggestionTitle(study.suggestion)}</span>
+                                <span>
+                                  {groupName(
+                                    study.suggestion.group,
+                                    study.suggestion.chapterName
+                                  ) || study.suggestion.workspaceName}
+                                </span>
                                 <span className="text-fg-muted text-xs">
                                   {reviewReason(study.suggestion)}
                                 </span>
                               </span>
                             ) : (
-                              <span className="flex-1 translate-y-px">
-                                {m.study_refresh_knowledge()}
-                              </span>
+                              <>
+                                <span className="flex-1 translate-y-px">
+                                  {m.study_refresh_knowledge()}
+                                </span>
+                                <span className="translate-y-px text-fg-secondary text-sm">
+                                  {m.study_of({
+                                    done: doneCount,
+                                    total: tracked.length,
+                                  })}
+                                </span>
+                              </>
                             )}
-                            <span className="translate-y-px text-fg-secondary text-sm">
-                              {m.study_of({
-                                done: doneCount,
-                                total: tracked.length,
-                              })}
-                            </span>
                           </div>
                           {/* Total progress, done of tracked: skipping items doesn't move it. */}
-                          <div className="flex items-center gap-4 pl-6">
+                          <div className="flex items-center justify-between gap-4 pl-6">
                             <div
                               className={cn(
-                                'min-w-0 flex-1',
+                                'min-w-0 max-w-[240px] flex-1',
                                 'rail-trail',
                                 cover && 'rail-colour'
                               )}
@@ -428,12 +435,4 @@ function QuickReview({
       </div>
     </Section>
   );
-}
-
-/** "Cell transport is tricky": the suggestion's group and mode in a line. */
-function suggestionTitle(s: ReviewSuggestion): string {
-  const name = groupName(s.group, s.chapterName) || s.workspaceName;
-  if (s.mode === 'tricky') return m.study_suggest_tricky({ name });
-  if (s.mode === 'learned') return m.study_suggest_learned({ name });
-  return m.study_suggest_fading({ name });
 }

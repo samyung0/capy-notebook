@@ -156,9 +156,7 @@ function SuggestionRow({
       }
       iconId={s.iconId}
       title={groupName(s.group, s.chapterName) || s.workspaceName}
-      titleSub={
-        s.group === 'workspace' ? m.review_whole_workspace() : s.workspaceName
-      }
+      titleSub={s.group === 'workspace' ? undefined : s.workspaceName}
     >
       <p className="text-fg-secondary text-sm">{reviewReason(s)}</p>
       <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
