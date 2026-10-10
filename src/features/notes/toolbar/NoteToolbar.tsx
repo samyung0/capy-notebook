@@ -142,7 +142,11 @@ export function NoteToolbar({ className }: { className?: string }) {
           ? await importDocxDocument(editor, await file.arrayBuffer())
           : kind === 'json'
             ? importJsonDocument(editor, await file.text())
-            : importMarkdownDocument(editor, await file.text());
+            : importMarkdownDocument(
+                editor,
+                await file.text(),
+                allowExternalAssets
+              );
       place.insert(document.value);
     } finally {
       place.release();

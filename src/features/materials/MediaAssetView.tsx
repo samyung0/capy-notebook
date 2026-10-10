@@ -113,10 +113,12 @@ export function openEditorAsset(assetId: string) {
  * static preview. Resolves the asset URL and renders by media type. Images get
  * the hover `toolbar`, optional resize handles and a `caption` slot.
  *
- * In an editable note (`ownerId`) a node waits as a skeleton until its asset is
- * the note's own: another note's (pasted) until the collaboration service
- * repoints it to a copy, a trashed one (undo, cut and paste) until the service
- * restores it and says so (childrenReady.ts). */
+ * A node is a skeleton while its asset resolves (so a finished upload's
+ * skeleton gives way to the image itself). In an editable note (`ownerId`) it
+ * also waits as one until its asset is the note's own: another note's
+ * (pasted) until the collaboration service repoints it to a copy, a trashed
+ * one (undo, cut and paste) until the service restores it and says so
+ * (childrenReady.ts). */
 export function MediaAssetView({
   caption,
   element,
@@ -164,15 +166,9 @@ export function MediaAssetView({
   };
   return (
     <figure className="group relative m-0" contentEditable={false}>
-      {asset.status === 'loading' && (
-        <div className="grid min-h-24 place-items-center rounded-card border border-line bg-surface-hover-bg">
-          <EditorIcon
-            className="size-5 animate-spin text-fg-muted"
-            name="loader"
-          />
-        </div>
+      {(asset.status === 'loading' || waiting) && (
+        <Skeleton className="h-24 w-full rounded-card" />
       )}
-      {waiting && <Skeleton className="h-24 w-full rounded-card" />}
       {asset.status === 'error' && !waiting && (
         <div className="rounded-card border border-solid-error/30 bg-tint-error px-3 py-4 text-sm text-solid-error">
           {asset.kind === 'missing'

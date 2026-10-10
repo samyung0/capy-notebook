@@ -88,6 +88,59 @@ fn markdown_matches_the_node_server() {
     );
 }
 
+/// Images in agent markdown become links showing their alt text (else the
+/// URL), as the browser's import does without asset uploads: notes keep
+/// assets only and the server fetches nothing (Epo, 2026-10-10). A URL that
+/// is not web goes; an image inside a link leaves its alt text there.
+#[test]
+fn agent_images_become_links() {
+    let converter = Converter::new(&bundle()).unwrap();
+    let source = [
+        "![Tangent figure](https://cdn.example/t.png)",
+        "![](https://cdn.example/plain.png)",
+        "![dot](data:image/png;base64,iVBORw0KGgo=) and ![x](javascript:alert(1))",
+        "[![badge](https://ci.example/b.svg)](https://ci.example)",
+    ]
+    .join("\n\n");
+    let converted = converter.convert(&source).unwrap();
+    notes::material::assert_canonical(&converted.document.value, "note").unwrap();
+    let mut value = serde_json::to_value(&converted.document.value).unwrap();
+    strip_ids(&mut value);
+    let link = |text: &str, url: &str| {
+        serde_json::json!({
+            "children": [
+                { "text": "" },
+                { "children": [{ "text": text }], "type": "a", "url": url },
+                { "text": "" },
+            ],
+            "type": "p",
+        })
+    };
+    assert_eq!(
+        value,
+        serde_json::json!([
+            link("Tangent figure", "https://cdn.example/t.png"),
+            link("https://cdn.example/plain.png", "https://cdn.example/plain.png"),
+            { "children": [{ "text": " and " }], "type": "p" },
+            {
+                "children": [{ "children": [{ "text": "badge" }], "type": "a", "url": "https://ci.example" }],
+                "type": "p",
+            },
+        ])
+    );
+}
+
+fn strip_ids(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            map.remove("id");
+            map.values_mut().for_each(strip_ids);
+        }
+        Value::Array(items) => items.iter_mut().for_each(strip_ids),
+        _ => {}
+    }
+}
+
 /// A stand-in import: `loop` runs forever, `grow` allocates without end,
 /// `throw` throws, anything else converts to an empty document.
 const LIMITS_BUNDLE: &str = r#"

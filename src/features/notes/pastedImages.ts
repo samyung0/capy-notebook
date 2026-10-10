@@ -1,63 +1,36 @@
 import { PlaceholderPlugin } from '@platejs/media/react';
-import {
-  createSlatePlugin,
-  type Descendant,
-  ElementApi,
-  KEYS,
-  type SlateEditor,
-} from 'platejs';
+import { type Descendant, ElementApi, KEYS, type SlateEditor } from 'platejs';
+import { createPlatePlugin } from 'platejs/react';
 import { uid } from '@/lib/id';
+import {
+  replaceUrlImages,
+  type UrlImage,
+  urlImageLink,
+} from './markdownImport';
 
 /**
  * Pasted images go through the editor's normal asset path (Epo, 2026-10-10):
  * clipboard image files become upload placeholders, as dropped files do;
- * an `<img>` in pasted HTML (which Plate's image parser turns into a URL-only
- * image node) becomes a placeholder in its place whose element fetches the
- * URL in the browser and uploads the bytes, or a link to the URL when the
- * browser cannot read it. Nothing is fetched by a server, and a media node
- * always names its asset. Without asset uploads (`allowExternalAssets` off)
- * a pasted image is a link and clipboard files are left to the default.
+ * an `<img>` in pasted HTML and a markdown image pasted as text or imported
+ * (which Plate's parsers turn into URL-only image nodes) become a placeholder
+ * in their place whose element fetches the URL in the browser and uploads the
+ * bytes, or a link to the URL when the browser cannot read it. Nothing is
+ * fetched by a server, and a media node always names its asset. Without asset
+ * uploads (`allowExternalAssets` off) a pasted image is a link and clipboard
+ * files are left to the default.
  */
 
-/** Pasted image URLs waiting for their placeholder, by placeholder id. Local
- * to this tab, as the placeholder plugin's uploading files: a peer seeing the
+/** Pasted images waiting for their placeholder, by placeholder id. Local to
+ * this tab, as the placeholder plugin's uploading files: a peer seeing the
  * placeholder must not fetch it too. */
-const pastedUrls = new Map<string, string>();
+const pastedImages = new Map<string, UrlImage>();
 
-export function pastedImageUrl(id: string): string | undefined {
-  return pastedUrls.get(id);
+export function pastedImage(id: string): UrlImage | undefined {
+  return pastedImages.get(id);
 }
 
 export function forgetPastedImage(id: string) {
-  pastedUrls.delete(id);
-}
-
-/** A link to an image the browser could not read, as its own paragraph;
- * none for a URL that is not web (`javascript:`, a broken `data:`). */
-export function pastedImageLink(
-  editor: SlateEditor,
-  url: string
-): Descendant | null {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return null;
-  }
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
-  // An inline element sits between text leaves, as Slate normalizes it.
-  return {
-    children: [
-      { text: '' },
-      {
-        children: [{ text: parsed.href }],
-        type: editor.getType(KEYS.link),
-        url: parsed.href,
-      },
-      { text: '' },
-    ],
-    type: editor.getType(KEYS.p),
-  } as Descendant;
+  pastedImages.delete(id);
 }
 
 /** The bytes of a pasted image the browser can read (a `data:` URL, a host
@@ -92,7 +65,7 @@ export async function readPastedImage(
 export async function settlePastedImage(
   editor: SlateEditor,
   id: string,
-  url: string,
+  image: UrlImage,
   {
     signal,
     upload,
@@ -100,7 +73,7 @@ export async function settlePastedImage(
 ) {
   let file: File | null;
   try {
-    file = await readPastedImage(url, signal);
+    file = await readPastedImage(image.url, signal);
   } catch {
     return;
   }
@@ -116,81 +89,68 @@ export async function settlePastedImage(
     match: (node) => ElementApi.isElement(node) && node.id === id,
   });
   if (!entry) return;
-  const link = pastedImageLink(editor, url);
+  const link = urlImageLink(editor, image);
   editor.tf.withoutSaving(() => {
     editor.tf.removeNodes({ at: entry[1] });
-    if (link) editor.tf.insertNodes(link, { at: entry[1] });
+    if (link.length) editor.tf.insertNodes(link, { at: entry[1] });
   });
 }
 
-/** A pasted fragment with each URL-only image node replaced: an upload
- * placeholder when assets can be created, else a link (or nothing). */
-export function replacePastedImages(
+/** What a URL image becomes in the browser: an upload placeholder whose
+ * element reads the URL, or a link when assets cannot be created. */
+export function uploadOrLink(
   editor: SlateEditor,
-  nodes: Descendant[],
   allowExternalAssets: boolean
-): Descendant[] {
-  const image = editor.getType(KEYS.img);
-  return nodes.flatMap((node): Descendant[] => {
-    if (!ElementApi.isElement(node)) return [node];
-    if (
-      node.type === image &&
-      typeof node.url === 'string' &&
-      typeof node.assetId !== 'string'
-    ) {
-      if (!allowExternalAssets) {
-        const link = pastedImageLink(editor, node.url);
-        return link ? [link] : [];
-      }
-      const id = uid('pasted');
-      pastedUrls.set(id, node.url);
-      return [
-        {
-          children: [{ text: '' }],
-          id,
-          mediaType: image,
-          type: editor.getType(KEYS.placeholder),
-        } as Descendant,
-      ];
-    }
+) {
+  return (image: UrlImage): Descendant[] => {
+    if (!allowExternalAssets) return urlImageLink(editor, image);
+    const id = uid('pasted');
+    pastedImages.set(id, image);
     return [
       {
-        ...node,
-        children: replacePastedImages(
-          editor,
-          node.children,
-          allowExternalAssets
-        ),
+        children: [{ text: '' }],
+        id,
+        mediaType: editor.getType(KEYS.img),
+        type: editor.getType(KEYS.placeholder),
       } as Descendant,
     ];
-  });
+  };
 }
 
-/** The note editor's paste handling for images (see the module comment). */
+/** The note editor's paste handling for images (see the module comment).
+ * Plate's placeholder plugin takes a paste of files alone; this takes image
+ * files that come with HTML (a browser's Copy image), which would otherwise
+ * paste the `<img>` URL. A paste only: a dropped file is the DnD plugin's
+ * (`onDropFiles`), so a drop makes one placeholder, not two. */
 export function pastedImagesPlugin(allowExternalAssets: boolean) {
-  return createSlatePlugin({ key: 'capy-pasted-images' }).overrideEditor(
-    ({ editor, tf: { insertData, insertFragment } }) => ({
-      transforms: {
-        insertData(data) {
-          const images = [...data.files].filter((file) =>
-            file.type.startsWith('image/')
-          );
-          if (allowExternalAssets && images.length) {
-            // insert.media reads its files with Array.from.
-            editor
-              .getTransforms(PlaceholderPlugin)
-              .insert.media(images as unknown as FileList);
-            return;
-          }
-          insertData(data);
-        },
-        insertFragment(fragment, options) {
-          insertFragment(
-            replacePastedImages(editor, fragment, allowExternalAssets),
-            options
-          );
-        },
+  return createPlatePlugin({
+    handlers: {
+      onPaste: ({ editor, event }) => {
+        const images = [...event.clipboardData.files].filter((file) =>
+          file.type.startsWith('image/')
+        );
+        if (!allowExternalAssets || !images.length) return false;
+        event.preventDefault();
+        // insert.media reads its files with Array.from.
+        editor
+          .getTransforms(PlaceholderPlugin)
+          .insert.media(images as unknown as FileList);
+        return true;
       },
-    })
-  );
+    },
+    key: 'capy-pasted-images',
+  }).overrideEditor(({ editor, tf: { insertFragment } }) => ({
+    transforms: {
+      insertFragment(fragment, options) {
+        insertFragment(
+          replaceUrlImages(
+            editor,
+            fragment,
+            uploadOrLink(editor, allowExternalAssets)
+          ),
+          options
+        );
+      },
+    },
+  }));
 }

@@ -16,6 +16,7 @@ import {
 import { questionAssetIds } from '@/features/questions/types';
 import type { ExportFormat } from './export/render';
 import { importMarkdownValue, sanitizeLinks } from './markdownImport';
+import { uploadOrLink } from './pastedImages';
 
 /** Loaded only when the user imports/exports a .docx — keeps mammoth/jszip/xml
  * out of the initial editor chunk. */
@@ -23,11 +24,16 @@ function loadDocxIo() {
   return import('@platejs/docx-io');
 }
 
+/** Markdown images upload like pasted ones, or are links without asset
+ * uploads (pastedImages.ts). */
 export function importMarkdownDocument(
   editor: PlateEditor,
-  source: string
+  source: string,
+  allowExternalAssets: boolean
 ): MaterialDocument {
-  return importMarkdownValue(editor, source);
+  return importMarkdownValue(editor, source, {
+    replaceImage: uploadOrLink(editor, allowExternalAssets),
+  });
 }
 
 export function importJsonDocument(

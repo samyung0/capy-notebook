@@ -22,6 +22,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFilePicker } from 'use-file-picker';
 import { isStorageQuotaError } from '@/api/client';
 import { uploadEditorAsset } from '@/api/editorAssets';
+import { Skeleton } from '@/components/ui/feedback';
 import type { IconName } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
 import {
@@ -56,7 +57,7 @@ import {
   type plateMediaType,
 } from './media';
 import { MEDIA_CAPTION_CLASS } from './nodeStyles';
-import { pastedImageUrl, settlePastedImage } from './pastedImages';
+import { pastedImage, settlePastedImage } from './pastedImages';
 import { ToolbarButton } from './toolbar/ToolbarButton';
 import { youtubeVideoId } from './youtube';
 
@@ -83,11 +84,17 @@ export const MediaPlaceholderElement = withHOC(
     props: PlateElementProps<TPlaceholderElement>
   ) {
     const { editor, element } = props;
+    const id = element.id as string;
     const { materialId, allowExternalAssets } = useEditorRuntime();
     const canCreateAssets = allowExternalAssets;
     const { api } = useEditorPlugin(PlaceholderPlugin);
     const [progress, setProgress] = useState(0);
-    const [uploading, setUploading] = useState<File | null>(null);
+    // A dropped or pasted file uploads from the first render, a pasted image
+    // URL is read first (pastedImages.ts): either way the block is busy.
+    const [uploading, setUploading] = useState<File | null>(
+      () => api.placeholder.getUploadingFile(id) ?? null
+    );
+    const [reading, setReading] = useState(() => !!pastedImage(id));
     const [error, setError] = useState<string | null>(null);
     const abortRef = useRef<AbortController | null>(null);
     const mediaType = (element.mediaType || KEYS.file) as MediaType;
@@ -120,7 +127,7 @@ export const MediaPlaceholderElement = withHOC(
         setUploading(file);
         setProgress(0);
         setError(null);
-        api.placeholder.addUploadingFile(element.id as string, file);
+        api.placeholder.addUploadingFile(id, file);
         try {
           const asset = await uploadEditorAsset(
             materialId,
@@ -133,16 +140,13 @@ export const MediaPlaceholderElement = withHOC(
           );
           const path = editor.api.findPath(element);
           if (!path) return;
-          const node = {
-            ...mediaNodeFromAsset(asset),
-            placeholderId: element.id as string,
-          };
+          const node = { ...mediaNodeFromAsset(asset), placeholderId: id };
           editor.tf.withoutSaving(() => {
             editor.tf.removeNodes({ at: path });
             editor.tf.insertNodes(node, { at: path });
             updateUploadHistory(editor, node);
           });
-          api.placeholder.removeUploadingFile(element.id as string);
+          api.placeholder.removeUploadingFile(id);
         } catch (cause) {
           if (!controller.signal.aborted && !deferStorageRefusal(cause)) {
             setError(
@@ -152,11 +156,23 @@ export const MediaPlaceholderElement = withHOC(
             );
           }
         } finally {
-          if (abortRef.current === controller) abortRef.current = null;
-          setUploading(null);
+          // A newer upload of this block (an effect run again, as React's
+          // strict mode does) owns the state now.
+          if (abortRef.current === controller) {
+            abortRef.current = null;
+            setUploading(null);
+          }
         }
       },
-      [api.placeholder, canCreateAssets, editor, element, materialId, purpose]
+      [
+        api.placeholder,
+        canCreateAssets,
+        editor,
+        element,
+        id,
+        materialId,
+        purpose,
+      ]
     );
 
     const { openFilePicker } = useFilePicker({
@@ -173,29 +189,46 @@ export const MediaPlaceholderElement = withHOC(
 
     useEffect(() => {
       if (!canCreateAssets) return;
-      const id = element.id as string;
       const dropped = api.placeholder.getUploadingFile(id);
       if (dropped) void replaceCurrentPlaceholder(dropped);
-      // A pasted <img>: the browser reads it and it uploads like a dropped
-      // file, or it becomes a link to its URL (pastedImages.ts).
-      const pasted = !dropped && pastedImageUrl(id);
-      const reading = new AbortController();
+      // A pasted <img> or markdown image: the browser reads it and it uploads
+      // like a dropped file, or it becomes a link to its URL (pastedImages.ts).
+      const pasted = !dropped && pastedImage(id);
+      const read = new AbortController();
       if (pasted)
         void settlePastedImage(editor, id, pasted, {
-          signal: reading.signal,
+          signal: read.signal,
           upload: replaceCurrentPlaceholder,
+        }).finally(() => {
+          if (!read.signal.aborted) setReading(false);
         });
       return () => {
-        reading.abort();
+        read.abort();
         abortRef.current?.abort();
       };
     }, [
       api.placeholder,
       canCreateAssets,
       editor,
-      element,
+      id,
       replaceCurrentPlaceholder,
     ]);
+
+    // Epo 2026-10-10: an uploading image is a skeleton until the asset id
+    // returns and the image takes its place.
+    if (mediaType === KEYS.img && !error && (uploading || reading))
+      return (
+        <PlateElement {...props} className="my-2">
+          <div
+            aria-label={m.a11y_loading()}
+            contentEditable={false}
+            role="status"
+          >
+            <Skeleton className="h-24 w-full rounded-card" />
+          </div>
+          {props.children}
+        </PlateElement>
+      );
 
     return (
       <PlateElement {...props} className="my-2">
