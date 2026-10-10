@@ -263,9 +263,18 @@ The same holds for every key the store requires (`required_keys`, REVIEW5 R2):
 an update that leaves an element it touches without a non-empty `type`, a
 top-level block without its `id`, or a block without its type's own keys (a
 reference's `materialId` and `refKind`, a diagram's `source`, a video's
-`provider` and `videoId`, ...) is refused on arrival, read from the room's
-entries and the update without a copy; a key the element already lacked is
-not held against an update that did not create or retype it.
+`provider` and `videoId`, ...) is refused on arrival; a key the element
+already lacked is not held against an update that did not create or retype
+it. Each key is read as the element holds it after the update, by lookup,
+not by scanning the element's attributes (REVIEW5 M3): with no entry written,
+the room's current entry unless the update deletes it; otherwise the last of
+the update's entries when they follow on from the room's current one (each
+written after the one before, as a writer's own sets are) unless the update
+deletes it (REVIEW5 R2b). Entries that do not follow on (a stale or concurrent
+write, writers merged into one update) are read on the room with the update
+applied, off the async workers: such an update is no small edit, so its trial
+copy serves. An update that writes or deletes only keys no element requires
+is not looked at.
 
 Pasted images take the same asset path (`pastedImages.ts`): clipboard image
 files become upload placeholders, as dropped files do. Plate's placeholder
@@ -322,7 +331,9 @@ entry, past which the room closes the channel), and a received list counts
 only its first 100 ids of up to 32 characters (REVIEW5 E1, E3). The room drops
 the list from a read-only channel's presence (`without_uploads` in
 `room.rs`), so a viewer cannot show blocks as uploading (REVIEW5 E2; it parses every
-such entry, so an escaped key cannot slip past, R1). Viewers
+such entry, so an escaped key cannot slip past, R1, and relays one it cannot
+parse as a removal, since a browser's `JSON.parse` takes some JSON serde_json
+refuses, R1b). Viewers
 that do not join the room (the static projection) do not see it.
 
 Each asset belongs to one note, and the server keeps it that way; the browser
