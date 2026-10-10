@@ -112,13 +112,16 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    `www` remain reserved for the future public site, whose implementation is
    deferred. Help and credits stay in the app until public pages exist.
    Coolify serves the backend, not the site. Rendered summaries are
-   `public, s-maxage=300, max-age=0, must-revalidate` and are held in the
-   Worker's Cache API keyed by workspace id and resolved locale (a cache hit
-   comes back with the zone's Browser Cache TTL as `max-age`, so the Worker
-   resets `Cache-Control` before returning it); failure pages
-   stay `no-store`, and link summaries are `noindex, nofollow`. The `/p/*`
-   routes serve signed-out shared quizzes, their images and flashcard sets under
-   the same signature check and five-minute edge cache. Anonymous grading skips
+   `public, s-maxage=300, max-age=0, must-revalidate`, and so are the
+   `/share/*` pages and `/p/*` images. Workers Cache (`cache.enabled` in
+   `wrangler.jsonc`) holds them for five minutes in front of the Worker,
+   keyed by path, query string and Worker version (each deploy starts cold),
+   never by cookies or headers, so a render must not read the request; hits
+   carry `CF-Cache-Status: HIT` and `Age`. Zone cache rules do not apply to it.
+   A query string makes its own entry, so each new one renders once. Failure
+   pages stay `no-store`, and link summaries are `noindex, nofollow`. The
+   `/p/*` routes serve signed-out shared quizzes', flashcards' and notes'
+   images under the same signature check. Anonymous grading skips
    the Worker and posts to `/api/public/quizzes/{token}/grade` directly, since
    Worker subrequests reach the API without the visitor's IP. There is no
    KV/R2 cache. Only the `run_worker_first` paths reach the Worker; every other

@@ -1,9 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-  DEV_SHARE_LINK_SECRET,
-  sharePath,
-  shareToken,
-} from '../../src/lib/shareLink';
+import { DEV_SHARE_LINK_SECRET, shareToken } from '../../src/lib/shareLink';
 import { handleSiteRequest } from './handler';
 
 const SHARE_TEMPLATE =
@@ -31,16 +27,6 @@ const quiz = {
 const TOKEN = await shareToken(DEV_SHARE_LINK_SECRET, 'mat_0123456789');
 const request = (path: string, init?: RequestInit) =>
   new Request(`https://app.example.test${path}`, init);
-const cacheStub = () => {
-  const store = new Map<string, Response>();
-  return {
-    match: vi.fn(async (key: Request) => store.get(key.url)?.clone()),
-    put: vi.fn(async (key: Request, response: Response) => {
-      store.set(key.url, response);
-    }),
-  };
-};
-
 describe('anonymous material routes', () => {
   it('stops forged, unsigned and data paths before the API', async () => {
     const fetcher = vi.fn<typeof fetch>();
@@ -57,14 +43,12 @@ describe('anonymous material routes', () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it('renders a shared page once and serves repeats from the edge', async () => {
+  it('renders a shared page from one API read', async () => {
     const fetcher = vi.fn<typeof fetch>(async () => Response.json(quiz));
-    const cache = cacheStub();
     const first = await handleSiteRequest(
       request(`/share/quizzes/${TOKEN}`),
       env,
-      fetcher,
-      cache
+      fetcher
     );
     expect(first.status).toBe(200);
     expect(first.headers.get('Cache-Control')).toBe(
@@ -79,18 +63,9 @@ describe('anonymous material routes', () => {
     expect(html).not.toContain('<link rel="stylesheet"');
     // The data the browser hydrates from, so it fetches nothing.
     expect(html).toContain('<script type="application/json" id="share-state">');
-    await handleSiteRequest(
-      request(`/share/quizzes/${TOKEN}`),
-      env,
-      fetcher,
-      cache
-    );
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect((fetcher.mock.calls[0][0] as Request).url).toBe(
       `https://api.example.test/api/public/quizzes/${TOKEN}`
-    );
-    expect(cache.put.mock.calls[0][0].url).toBe(
-      'https://app.example.test/share/quizzes/mat_0123456789'
     );
   });
 
@@ -106,37 +81,6 @@ describe('anonymous material routes', () => {
     expect(response.status).toBe(404);
     expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(await response.text()).not.toContain('PRIVATE');
-  });
-
-  it('keeps browsers revalidating when the edge returns a cached copy', async () => {
-    // Cloudflare stamps the zone's Browser Cache TTL onto Cache API hits.
-    const cache = {
-      match: vi.fn(
-        async () =>
-          new Response('{}', {
-            headers: {
-              'Cache-Control': 'public, max-age=14400, s-maxage=300',
-            },
-          })
-      ),
-      put: vi.fn(),
-    };
-    const summary = await sharePath(DEV_SHARE_LINK_SECRET, 'ws_0123456789');
-    for (const path of [
-      `/share/quizzes/${TOKEN}`,
-      `/p/quizzes/${TOKEN}/assets/asset_1`,
-      summary,
-    ]) {
-      const response = await handleSiteRequest(
-        request(path),
-        env,
-        vi.fn<typeof fetch>(),
-        cache
-      );
-      expect(response.headers.get('Cache-Control')).toBe(
-        'public, s-maxage=300, max-age=0, must-revalidate'
-      );
-    }
   });
 
   it.each(['quizzes', 'flashcards'])(

@@ -1,6 +1,7 @@
 # Performance and stress tests, dispatched by hand. Production promotion
 # calls this file for the editor budgets (job `perf`); the Office runtime
-# bench and the collaboration stress test run on dispatch only.
+# bench, the collaboration stress test and the shared page measurements on
+# UAT run on dispatch only.
 name: Performance
 
 on:
@@ -12,6 +13,10 @@ on:
         type: boolean
       stress:
         description: Also run the collaboration stress test
+        default: true
+        type: boolean
+      share_pages:
+        description: Also measure the shared pages deployed on UAT
         default: true
         type: boolean
   workflow_call:
@@ -26,6 +31,10 @@ on:
         type: boolean
       stress:
         description: Also run the collaboration stress test
+        default: false
+        type: boolean
+      share_pages:
+        description: Also measure the shared pages deployed on UAT
         default: false
         type: boolean
 
@@ -254,4 +263,49 @@ jobs:
           if-no-files-found: ignore
           name: collaboration-stress-results
           path: bench/collaboration/.results/
+          retention-days: 90
+
+  # Measures what UAT serves, not this checkout: Lighthouse runs against the
+  # deployed pages and the snapshot records the release they report.
+  share_pages:
+    if: inputs.share_pages
+    runs-on: ubuntu-24.04
+    environment: uat
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          cache: pnpm
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run e2e:install
+      # Exit 1: provisioning or a caching check failed. Lighthouse metrics are
+      # report-only until their budgets are signed off.
+      - name: Measure shared pages on UAT
+        run: pnpm bench:share-pages
+        env:
+          SHARE_PERF_OUT: bench/share-pages/.results
+          UAT_TARGET_AUTHORIZED: ${{ vars.UAT_TARGET_AUTHORIZED }}
+          UAT_ALLOWED_HOSTS: ${{ vars.UAT_ALLOWED_HOSTS }}
+          UAT_APP_URL: ${{ vars.DEPLOYMENT_APP_URL || vars.UAT_APP_URL }}
+          UAT_OWNER_EMAIL: ${{ vars.UAT_OWNER_EMAIL }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+      - name: Write shared page results
+        if: always()
+        run: |
+          file=bench/share-pages/.results/summary.md
+          if [ -f "$file" ]; then cat "$file"; else echo '### Shared pages on UAT'; echo '**FAILED: no results (see the log).**'; fi >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload shared page results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          if-no-files-found: ignore
+          name: share-pages-snapshot
+          path: bench/share-pages/.results/
           retention-days: 90

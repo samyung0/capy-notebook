@@ -1,0 +1,50 @@
+[
+  {
+    "front": "Mitochondrion",
+    "back": "Organelle where aerobic respiration releases most ATP"
+  },
+  {
+    "front": "Chloroplast",
+    "back": "Organelle that carries out photosynthesis"
+  },
+  {
+    "front": "Ribosome",
+    "back": "Site of protein synthesis"
+  },
+  {
+    "front": "Osmosis",
+    "back": "Net movement of water across a partially permeable membrane"
+  },
+  {
+    "front": "Diffusion",
+    "back": "Net movement of particles from high to low concentration"
+  },
+  {
+    "front": "Active transport",
+    "back": "Movement against a concentration gradient using ATP"
+  },
+  {
+    "front": "Enzyme",
+    "back": "Biological catalyst that lowers activation energy"
+  },
+  {
+    "front": "Mitosis",
+    "back": "Division giving two genetically identical cells"
+  },
+  {
+    "front": "Meiosis",
+    "back": "Division giving four genetically different gametes"
+  },
+  {
+    "front": "Cell wall",
+    "back": "Cellulose layer that supports plant cells"
+  },
+  {
+    "front": "Vacuole",
+    "back": "Sap-filled space that keeps plant cells turgid"
+  },
+  {
+    "front": "Nucleus",
+    "back": "Holds the cell’s DNA and controls its activity"
+  }
+]

@@ -1,9 +1,9 @@
 # Benchmarks
 
 Every performance, capacity, and model-quality measurement in the repository.
-Only the editor and collaboration suites run in CI (the `Performance` workflow,
-dispatched by hand); the rest are manual, and most need a VM or a downloaded
-model runtime.
+Only the editor, collaboration and shared page suites run in CI (the
+`Performance` workflow, dispatched by hand); the rest are manual, and most need
+a VM or a downloaded model runtime.
 
 Each family uses the same three buckets:
 
@@ -22,6 +22,7 @@ Raw run artifacts sit in a sibling `YYYY-MM-DD-<machine>/` directory.
 | -------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------- |
 | [`collaboration/`](collaboration/) | Collaboration stress: many peers typing with reconnects in one Office and one Plate room, then in a near-limit note and a text source; convergence, lost updates, latency | `pnpm bench:stress` (Docker)     |
 | [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle; DOCX, XLSX and PPTX open, View to Edit, typing at both ends, co-editor update timings and heap (workers from the typing on) in the Office runtime; Office size-ladder fixtures; formula View/Edit parity | `pnpm bench:editor`, `pnpm bench:office`, `pnpm bench:formula` |
+| [`share-pages/`](share-pages/) | Shared workspace, quiz, flashcard and note pages on the deployed UAT site: Lighthouse FCP, LCP, CLS, TBT and bytes, cold and warm at the edge; Workers Cache hits | `pnpm bench:share-pages` (UAT) |
 | [`parsers/`](parsers/)     | Ingest-host parser accuracy and capacity: OCR modes, concurrency, worker memory, OOM behavior    | `python bench/parsers/scripts/…` (needs VM) |
 | [`grading/`](grading/)     | Small local models against the production quiz-grading rubric, native and in-browser             | `python bench/grading/scripts/benchmark.py` |
 | [`rag/`](rag/scripts/)     | Retrieval and chat-agent quality: live diagnostic plus six frozen experiments                    | see below                                   |

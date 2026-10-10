@@ -1,6 +1,6 @@
 import { verifiedShareID, verifiedShareToken } from '../../src/lib/shareLink';
 import type { ShareKind } from '../../src/share/state';
-import { fromEdgeCache, handlePublicRequest, SHARED_CACHE } from './public';
+import { handlePublicRequest, SHARED_CACHE } from './public';
 import { renderFailure, renderSummary, summarySchema } from './summary';
 
 type SiteBindings = Pick<
@@ -9,7 +9,6 @@ type SiteBindings = Pick<
 > & {
   ASSETS: Pick<Cloudflare.Env['ASSETS'], 'fetch'>;
 };
-type SummaryCache = Pick<Cache, 'match' | 'put'>;
 const SHARE_PAGE = /^\/share\/(quizzes|flashcards|notes)\/([^/]+)$/;
 
 export function trustedOrigin(value: string): string {
@@ -104,8 +103,7 @@ const headers = (extra: HeadersInit = {}) => {
 export async function handleSiteRequest(
   request: Request,
   env: SiteBindings,
-  fetcher: typeof fetch = fetch,
-  cache?: SummaryCache
+  fetcher: typeof fetch = fetch
 ): Promise<Response> {
   const url = new URL(request.url);
   const failure = async (status: number) => {
@@ -167,10 +165,8 @@ export async function handleSiteRequest(
       return await handlePublicRequest(
         request,
         trustedOrigin(env.API_ORIGIN),
-        trustedOrigin(env.APP_ORIGIN),
         env.SHARE_LINK_SECRET,
-        fetcher,
-        cache
+        fetcher
       );
     const isShare = url.pathname.startsWith('/share/');
     if (!(isSummary || isShare)) return await env.ASSETS.fetch(request);
@@ -194,9 +190,6 @@ export async function handleSiteRequest(
       const id =
         kind && (await verifiedShareToken(env.SHARE_LINK_SECRET, token));
       if (!(kind && id)) return failure(404);
-      const cacheKey = new Request(`${appOrigin}/share/${kind}/${id}`);
-      const cached = await cache?.match(cacheKey);
-      if (cached) return head(fromEdgeCache(cached));
       const upstream = await fetcher(
         new Request(`${apiOrigin}/api/public/${kind}/${token}`, {
           headers: { Accept: 'application/json' },
@@ -250,15 +243,11 @@ export async function handleSiteRequest(
         ),
         { headers: responseHeaders }
       );
-      await cache?.put(cacheKey, rendered.clone());
       return head(rendered);
     }
     // Unsigned or forged links stop here, before any API or database work.
     const id = await verifiedShareID(env.SHARE_LINK_SECRET, url.pathname);
     if (!id) return failure(404);
-    const cacheKey = new Request(`${appOrigin}/w/${id}`);
-    const cached = await cache?.match(cacheKey);
-    if (cached) return head(fromEdgeCache(cached));
     const upstream = await fetcher(
       new Request(`${apiOrigin}/api/public/workspaces/${id}/summary`, {
         headers: { Accept: 'application/json' },
@@ -280,13 +269,11 @@ export async function handleSiteRequest(
     const responseHeaders = headers({
       'Content-Type': 'text/html; charset=utf-8',
     });
-    // Shared caches hold the render for five minutes; browsers revalidate every
-    // time, so a privacy change reaches a reloading reader once the edge entry
-    // expires. Failure pages stay no-store so publishing takes effect at once.
+    // Workers Cache holds the render for five minutes (SHARED_CACHE). Failure
+    // pages stay no-store so publishing takes effect at once.
     responseHeaders.set('Cache-Control', SHARED_CACHE);
     if (summary.privacy === 'link')
       responseHeaders.set('X-Robots-Tag', 'noindex, nofollow');
-    // HEAD renders and caches like GET so it cannot bypass the edge cache.
     const asset = await env.ASSETS.fetch(
       new Request(`${appOrigin}/summary.html`)
     );
@@ -308,7 +295,6 @@ export async function handleSiteRequest(
       ),
       { headers: responseHeaders }
     );
-    await cache?.put(cacheKey, rendered.clone());
     return head(rendered);
   } catch (error) {
     const isPublic = url.pathname.startsWith('/p/');

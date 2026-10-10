@@ -201,9 +201,12 @@ Clerk development instance. Point a local gateway at the UAT database only with
 - The site is Worker `capy-notebook-uat`, with `API_ORIGIN` and `APP_ORIGIN`
   matching UAT. `/w/{workspaceId}` contains the selected summary in the initial
   HTML with JavaScript disabled; the Open workspace link requires sign-in.
-- Public and link summaries return `Cache-Control: no-store`. Link summaries
-  include `X-Robots-Tag: noindex, nofollow`. Changing to private immediately
-  returns the same 404 as a missing workspace. Full file/material/quiz routes
+- Public and link summaries return
+  `Cache-Control: public, s-maxage=300, max-age=0, must-revalidate`; a repeat
+  request is `CF-Cache-Status: HIT` (Workers Cache). The `Performance`
+  workflow's `share_pages` job checks this for every share page. Link summaries
+  include `X-Robots-Tag: noindex, nofollow`. Changing to private returns the
+  same 404 as a missing workspace once the cached copy expires (five minutes). Full file/material/quiz routes
   reject anonymous requests.
 - GitHub configuration sync/readback passed before deployment. Managed Coolify
   variables are literal, non-preview and readable for verification; unset ones

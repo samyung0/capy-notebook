@@ -23,6 +23,12 @@
   "observability": {
     "enabled": true
   },
+  // Workers Cache sits in front of the Worker and honours each response's
+  // Cache-Control: shared pages (`s-maxage=300`) are served without running the
+  // Worker; everything else is `no-store`. Inherited by every environment.
+  "cache": {
+    "enabled": true
+  },
   // Signs /w/ summary links with the Go API's SHARE_LINK_SECRET. Not inherited,
   // so each environment repeats it; CI supplies it with --secrets-file.
   "secrets": { "required": ["SHARE_LINK_SECRET"] },

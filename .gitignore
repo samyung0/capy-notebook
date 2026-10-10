@@ -97,6 +97,7 @@ playwright-report-perf/
 test-results/
 bench/editor/.results/
 bench/collaboration/.results/
+bench/share-pages/.results/
 blob-report/
 playwright/.cache/
 e2e/uat/report/

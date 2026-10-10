@@ -100,6 +100,7 @@ changing any of them.
 | --------------- | -------------------------------------------------------------------------------- | ---------- |
 | `bench/collaboration` | Many peers typing with reconnects in one Office and one Plate room: convergence, lost updates, latency (`pnpm bench:stress`) | Yes, manual |
 | `bench/editor`  | Editor open cost, typing latency, save cycle, scroll FPS (`pnpm bench:editor`)    | Yes        |
+| `bench/share-pages` | Shared pages on deployed UAT: Lighthouse paint, shift, blocking and bytes; Workers Cache hits (`pnpm bench:share-pages`) | Yes, manual |
 | `bench/parsers` | Ingest-host parser accuracy, OCR modes, concurrency, worker memory and OOM        | No, VM     |
 | `bench/grading` | Small local models against the production quiz-grading rubric, native and browser | No         |
 | `bench/rag`     | Live retrieval diagnostic plus six frozen retrieval/agent experiments             | No, lab    |
@@ -107,7 +108,7 @@ changing any of them.
 Every family separates `scripts/` (runnable) from `fixtures/` (input data) and
 `reports/` (findings and raw run records, never executed). Reports are named
 `YYYY-MM-DD-<topic>.md`. Keep new benchmarks inside this layout rather than
-adding a fifth location.
+adding another location.
 
 ## Developer-local tools (`lab/`)
 

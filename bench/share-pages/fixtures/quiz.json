@@ -1,0 +1,218 @@
+[
+  {
+    "id": "q_1",
+    "labels": "letters",
+    "layout": "paper",
+    "stem": [],
+    "parts": [
+      {
+        "id": "q_1:part:1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Which organelle makes most of a cell’s ATP?"
+          }
+        ],
+        "answer": {
+          "type": "mcq",
+          "options": [
+            "Nucleus",
+            "Mitochondrion",
+            "Ribosome",
+            "Golgi apparatus"
+          ],
+          "correct": [
+            1
+          ]
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ]
+  },
+  {
+    "id": "q_2",
+    "labels": "letters",
+    "layout": "paper",
+    "stem": [],
+    "parts": [
+      {
+        "id": "q_2:part:1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Plant cells have a cell wall made mainly of cellulose."
+          }
+        ],
+        "answer": {
+          "type": "boolean",
+          "correct": true
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ]
+  },
+  {
+    "id": "q_3",
+    "labels": "letters",
+    "layout": "paper",
+    "stem": [],
+    "parts": [
+      {
+        "id": "q_3:part:1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Which molecule carries amino acids to the ribosome?"
+          }
+        ],
+        "answer": {
+          "type": "mcq",
+          "options": [
+            "mRNA",
+            "rRNA",
+            "tRNA",
+            "DNA polymerase"
+          ],
+          "correct": [
+            2
+          ]
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ]
+  },
+  {
+    "id": "q_4",
+    "labels": "letters",
+    "layout": "paper",
+    "stem": [],
+    "parts": [
+      {
+        "id": "q_4:part:1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Diffusion needs energy from ATP."
+          }
+        ],
+        "answer": {
+          "type": "boolean",
+          "correct": false
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ]
+  },
+  {
+    "id": "q_5",
+    "labels": "letters",
+    "layout": "paper",
+    "stem": [],
+    "parts": [
+      {
+        "id": "q_5:part:1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "What is the main role of chloroplasts?"
+          }
+        ],
+        "answer": {
+          "type": "mcq",
+          "options": [
+            "Protein synthesis",
+            "Photosynthesis",
+            "Lipid storage",
+            "Cell division"
+          ],
+          "correct": [
+            1
+          ]
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ]
+  },
+  {
+    "id": "q_6",
+    "labels": "letters",
+    "layout": "paper",
+    "stem": [],
+    "parts": [
+      {
+        "id": "q_6:part:1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Prokaryotic cells have a membrane-bound nucleus."
+          }
+        ],
+        "answer": {
+          "type": "boolean",
+          "correct": false
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ]
+  },
+  {
+    "id": "q_7",
+    "labels": "letters",
+    "layout": "paper",
+    "stem": [],
+    "parts": [
+      {
+        "id": "q_7:part:1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Which process makes two identical daughter cells?"
+          }
+        ],
+        "answer": {
+          "type": "mcq",
+          "options": [
+            "Meiosis",
+            "Mitosis",
+            "Fertilisation",
+            "Osmosis"
+          ],
+          "correct": [
+            1
+          ]
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ]
+  },
+  {
+    "id": "q_8",
+    "labels": "letters",
+    "layout": "paper",
+    "stem": [],
+    "parts": [
+      {
+        "id": "q_8:part:1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Enzymes lower the activation energy of a reaction."
+          }
+        ],
+        "answer": {
+          "type": "boolean",
+          "correct": true
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ]
+  }
+]

@@ -37,17 +37,6 @@ const upstream = (data: unknown = summary) =>
   vi.fn<typeof fetch>().mockResolvedValue(Response.json(data));
 const SHARED_CACHE = 'public, s-maxage=300, max-age=0, must-revalidate';
 
-const cacheStub = () => {
-  const store = new Map<string, Response>();
-  return {
-    match: vi.fn(async (key: Request) => store.get(key.url)?.clone()),
-    put: vi.fn(async (key: Request, response: Response) => {
-      store.set(key.url, response);
-    }),
-    store,
-  };
-};
-
 describe('public workspace SSR', () => {
   it('renders the selected single-column outline, trusted canonical and built entry without exposing other backend fields', async () => {
     const fetcher = upstream({
@@ -214,57 +203,27 @@ describe('public workspace SSR', () => {
 });
 
 describe('summary edge caching', () => {
-  it('serves repeat visits in any language from one cached copy', async () => {
-    const cache = cacheStub();
-    const fetcher = vi
-      .fn<typeof fetch>()
-      .mockImplementation(async () => Response.json(summary));
-    const first = await handleSiteRequest(request(), env, fetcher, cache);
-    expect(first.headers.get('Cache-Control')).toBe(SHARED_CACHE);
-    const repeat = await handleSiteRequest(request(), env, fetcher, cache);
-    expect(await repeat.text()).toContain('<h1>Biology</h1>');
-    expect(fetcher).toHaveBeenCalledTimes(1);
-    await handleSiteRequest(
-      new Request(`https://app.example.test${SHARED}`, {
-        headers: { 'Accept-Language': 'zh-CN' },
+  // Workers Cache keys on the path alone, so a cacheable render must not read
+  // anything from the visitor's request.
+  it('renders one cacheable copy whatever the visitor sends', async () => {
+    const plain = await handleSiteRequest(request(), env, upstream());
+    const visitor = await handleSiteRequest(
+      request(undefined, {
+        headers: {
+          'Accept-Language': 'zh-CN',
+          Cookie: '__session=abc; capy.theme=mocha',
+          'User-Agent': 'Mobile Safari',
+        },
       }),
       env,
-      fetcher,
-      cache
+      upstream()
     );
-    expect(fetcher).toHaveBeenCalledTimes(1);
-    expect([...cache.store.keys()]).toEqual([
-      'https://app.example.test/w/ws_0123456789',
-    ]);
-  });
-  it('answers HEAD from the cache GET filled', async () => {
-    const cache = cacheStub();
-    const fetcher = upstream();
-    await handleSiteRequest(request(), env, fetcher, cache);
-    const head = await handleSiteRequest(
-      request(undefined, { method: 'HEAD' }),
-      env,
-      fetcher,
-      cache
-    );
-    expect(head.status).toBe(200);
-    expect(head.headers.get('Cache-Control')).toBe(SHARED_CACHE);
-    expect(await head.text()).toBe('');
-    expect(fetcher).toHaveBeenCalledTimes(1);
-  });
-  it('leaves failures uncached so publishing takes effect at once', async () => {
-    const cache = cacheStub();
-    const fetcher = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(new Response(null, { status: 404 }));
-    const missing = await handleSiteRequest(request(), env, fetcher, cache);
-    expect(missing.status).toBe(404);
-    expect(missing.headers.get('Cache-Control')).toBe('no-store');
-    expect(cache.put).not.toHaveBeenCalled();
-    fetcher.mockResolvedValue(Response.json(summary));
-    const published = await handleSiteRequest(request(), env, fetcher, cache);
-    expect(published.status).toBe(200);
-    expect(await published.text()).toContain('<h1>Biology</h1>');
+    for (const response of [plain, visitor]) {
+      expect(response.headers.get('Cache-Control')).toBe(SHARED_CACHE);
+      expect(response.headers.get('Set-Cookie')).toBeNull();
+      expect(response.headers.get('Vary')).toBeNull();
+    }
+    expect(await visitor.text()).toBe(await plain.text());
   });
 });
 
