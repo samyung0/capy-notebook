@@ -967,6 +967,8 @@
   "editor_offline_limit": "You've reached the offline edit limit for this file. Reconnect to keep editing.",
   "editor_recovery_changed": "This file changed while your edits were waiting to sync. Copy anything you need, then reload.",
   "editor_drafts_lost": "Some unsaved edits from your last session couldn't be restored.",
+  "item_edits_refused": "Your latest changes couldn't be saved. They're shown read-only to copy until you reload.",
+  "item_leave_unsent": "Some changes haven't reached the server yet. Leave anyway?",
   "editor_save_failed_undone": "Your latest changes couldn't be saved and were undone.",
   "editor_access_lost": "You no longer have access",
   "editor_access_lost_body": "Ask the owner to share it with you again.",

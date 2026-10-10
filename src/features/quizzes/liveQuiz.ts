@@ -18,15 +18,15 @@ import { keyBetween } from '@/lib/orderKey';
  * 2026-10-10). The content document, which readers join too, holds
  * `questions`: question id -> {order, layout, labels, level?, stem, parts},
  * part id -> {order, marks, blocks, answer}. The answer map holds the type and
- * what a learner may see: mcq and multi options, a short answer's unit,
- * matching left items, and `copy`, the server-written reader copy of matching
- * options and ordering items (slot id -> {text}, read sorted by slot). The
- * keys document, which only editors with write access join, holds `keys`:
- * part id -> {type, solution, correct | accepted | hints | markscheme | gaps |
- * options | pairs | items}. Editors type ordering items and matching options
- * there, so their Yjs ids (typing order) never reach a reader. The server
- * checks both shapes (collaboration-rs/crates/items/src/quiz.rs) and projects
- * the complete questions to today's quiz JSON. */
+ * what a learner may see: mcq and multi options, a short answer's unit and
+ * matching left items. The keys document, which only editors with write
+ * access join, holds `keys`: part id -> {type, solution, correct | accepted |
+ * hints | markscheme | gaps | options | pairs | items}. Editors type ordering
+ * items and matching options there; readers get them outside Yjs, as the
+ * shuffled lists the content room pushes (`quiz-items`, D3 as revised
+ * 2026-10-10), so neither their typing order nor their ids reach a reader.
+ * The server checks both shapes (collaboration-rs/crates/items/src/quiz.rs)
+ * and projects the complete questions to today's quiz JSON. */
 
 export const QUESTIONS_ROOT = 'questions';
 export const KEYS_ROOT = 'keys';
@@ -265,19 +265,38 @@ export function readQuestions(content: Y.Doc, keys: Y.Doc | null): Question[] {
   });
 }
 
-/** The reader copy's texts, in slot order (a stable shuffle). */
-function copyTexts(answer: YMap | undefined): string[] {
-  const out: { slot: string; text: string }[] = [];
-  mapAt(answer, 'copy')?.forEach((value, slot) => {
-    if (value instanceof Y.Map) out.push({ slot, text: text(value, 'text') });
-  });
-  return out
-    .sort((a, b) => (a.slot < b.slot ? -1 : a.slot > b.slot ? 1 : 0))
-    .map((item) => item.text);
+/** A part's matching options or ordering items as readers get them: a plain
+ * shuffled list the content room pushes over its channels, never in Yjs. */
+export interface ReaderList {
+  items: string[];
+  kind: 'matching' | 'ordering';
+}
+export type ReaderLists = ReadonlyMap<string, ReaderList>;
+const NO_LISTS: ReaderLists = new Map();
+
+/** A `quiz-items` message applied: `full` replaces what the channel holds,
+ * otherwise the parts it names change (`null`: no list any more). */
+export function applyReaderMessage(
+  current: ReaderLists,
+  message: { full?: boolean; parts?: Record<string, ReaderList | null> }
+): ReaderLists {
+  const next = new Map(message.full ? [] : current);
+  for (const [part, list] of Object.entries(message.parts ?? {}))
+    if (list && Array.isArray(list.items)) next.set(part, list);
+    else next.delete(part);
+  return next;
 }
 
-/** Every question as a learner sees it, from the content document alone. */
-export function readLearnerQuestions(content: Y.Doc): LearnerQuestion[] {
+/** Every question as a learner sees it: the content document, with matching
+ * options and ordering items from the room's lists. */
+export function readLearnerQuestions(
+  content: Y.Doc,
+  lists: ReaderLists = NO_LISTS
+): LearnerQuestion[] {
+  const items = (partId: string, kind: ReaderList['kind']) => {
+    const list = lists.get(partId);
+    return list?.kind === kind ? list.items : [];
+  };
   return ordered(questionsScope(content) as YMap).map(({ entry, id }) => {
     const level = plain<Question['level']>(entry, 'level');
     return {
@@ -303,12 +322,12 @@ export function readLearnerQuestions(content: Y.Doc): LearnerQuestion[] {
             case 'matching':
               learner = {
                 left: texts(mapAt(answer, 'left')),
-                options: copyTexts(answer),
+                options: items(partId, 'matching'),
                 type,
               };
               break;
             case 'ordering':
-              learner = { items: copyTexts(answer), type };
+              learner = { items: items(partId, 'ordering'), type };
               break;
             case 'gaps':
               learner = { gaps: gapNumbers(blocks).length, type };
@@ -425,7 +444,7 @@ function writeList(map: YMap, next: ListItem[], prefix: string): string[] {
     sorted(was.map((item) => item.text)) ===
       sorted(will.map((item) => item.text))
   ) {
-    // A move: entries keep their texts (and, for ordering items, their slots).
+    // A move: entries keep their texts.
     const pool = [...was];
     const moved = will.map((item) => {
       const at = pool.findIndex((candidate) => candidate.text === item.text);
@@ -897,74 +916,34 @@ export function moveQuestion(
   content.transact(() => mapAt(questions, id)?.set('order', order), origin);
 }
 
-/* -------------------------------------------- the server's own writes */
+/* ------------------------------------------- what the server follows */
 
-/** The reader copies the server writes into the content document (D3): for
- * every matching or ordering part whose keys entries lack a slot, or whose
- * copy does not hold exactly their slots, a fresh shuffled copy under new
- * random slots; otherwise each slot's text mirrored as the fewest changes.
- * The collaboration server does this (`items::quiz::copy`); the MSW stand-in
- * and tests use this port. */
-export function writeReaderCopies(
-  content: Y.Doc,
-  keys: Y.Doc,
-  origin: unknown
-) {
-  const parts = new Map<string, YMap>();
-  for (const { entry } of ordered(questionsScope(content) as YMap))
-    for (const part of ordered(mapAt(entry, 'parts')))
-      parts.set(part.id, part.entry);
-  const slots: { key: YMap; slot: string }[] = [];
-  content.transact(() => {
-    keysScope(keys).forEach((key, partId) => {
-      const answer = mapAt(parts.get(partId), 'answer');
-      const type = plain<string>(answer, 'type');
-      if (!(answer && (type === 'matching' || type === 'ordering'))) return;
-      if (plain<string>(key, 'type') !== type) return;
-      const items = ordered(
-        mapAt(key, type === 'matching' ? 'options' : 'items')
-      );
-      const copy = child(answer, 'copy');
-      const held = new Set(copy.keys());
-      const intact =
-        items.length === held.size &&
-        items.every((item) => {
-          const slot = plain<string>(item.entry, 'slot');
-          return typeof slot === 'string' && held.has(slot);
-        });
-      if (intact) {
-        for (const item of items) {
-          const slot = mapAt(copy, plain<string>(item.entry, 'slot') ?? '');
-          if (slot) setText(slot, 'text', text(item.entry, 'text'));
-        }
-        return;
-      }
-      for (const slot of [...copy.keys()]) copy.delete(slot);
-      const shuffled = items
-        .map((item) => ({
-          item,
-          slot: crypto.randomUUID().replaceAll('-', ''),
-        }))
-        .sort(() => Math.random() - 0.5);
-      for (const { item, slot } of shuffled) {
-        const entry = new Y.Map<unknown>();
-        entry.set('text', new Y.Text(text(item.entry, 'text')));
-        copy.set(slot, entry);
-        slots.push({ key: item.entry, slot });
-      }
+/** Every matching and ordering part's entries in the keys document (id and
+ * text, in the keys' order): what the content room's lists follow. The MSW
+ * stand-in and tests use it. */
+export function itemParts(keys: Y.Doc) {
+  const out: {
+    entries: { id: string; text: string }[];
+    kind: ReaderList['kind'];
+    part: string;
+  }[] = [];
+  keysScope(keys).forEach((key, part) => {
+    const kind = plain<string>(key, 'type');
+    if (kind !== 'matching' && kind !== 'ordering') return;
+    out.push({
+      entries: ordered(
+        mapAt(key, kind === 'matching' ? 'options' : 'items')
+      ).map((item) => ({ id: item.id, text: text(item.entry, 'text') })),
+      kind,
+      part,
     });
-  }, origin);
-  if (slots.length)
-    keys.transact(() => {
-      for (const { key, slot } of slots) key.set('slot', slot);
-    }, origin);
+  });
+  return out;
 }
 
 /** Seeds both documents from stored questions, as the server bootstraps a
  * quiz (the MSW stand-in and tests use it). */
 export function seedQuiz(content: Y.Doc, keys: Y.Doc, questions: Question[]) {
-  const origin = 'seed';
   for (const question of questions)
-    writeQuestion(content, keys, question, origin);
-  writeReaderCopies(content, keys, origin);
+    writeQuestion(content, keys, question, 'seed');
 }

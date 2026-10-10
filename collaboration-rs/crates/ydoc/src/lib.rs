@@ -78,9 +78,12 @@ pub mod steps {
         /// The notes key checks' lookups of an element's entries, and their
         /// walk along the entries an update writes under one key.
         Entries,
+        /// An item room's exact check and counted bounds: each entry they
+        /// visit (live-items, REVIEW1 S2).
+        Exact,
     }
 
-    const WALKS: usize = Walk::Entries as usize + 1;
+    const WALKS: usize = Walk::Exact as usize + 1;
 
     thread_local!(static STEPS: [Cell<u64>; WALKS] = const { [const { Cell::new(0) }; WALKS] });
 

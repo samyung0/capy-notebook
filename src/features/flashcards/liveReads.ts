@@ -14,6 +14,8 @@ export function useLiveSetCards(
   enabled = true
 ): FlashcardContent[] {
   const [live, setLive] = useState<FlashcardContent[] | null>(null);
+  // A room that ended here (it moved to a new lineage) is joined afresh.
+  const [generation, setGeneration] = useState(0);
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
@@ -23,7 +25,9 @@ export function useLiveSetCards(
       import('./liveSet'),
     ]).then(([{ ItemRoom }, { readCards, setScope }]) => {
       if (cancelled) return;
-      const room = new ItemRoom(setId);
+      const room = new ItemRoom(setId, {
+        onReplace: () => setGeneration((value) => value + 1),
+      });
       const update = () => {
         if (room.getSnapshot().synced) setLive(readCards(room.doc));
       };
@@ -36,6 +40,6 @@ export function useLiveSetCards(
       cancelled = true;
       close?.();
     };
-  }, [setId, enabled]);
+  }, [setId, enabled, generation]);
   return live ?? stored;
 }

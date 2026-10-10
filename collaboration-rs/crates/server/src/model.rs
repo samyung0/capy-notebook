@@ -119,4 +119,27 @@ impl RoomValidator {
             RoomValidator::Item(validator) => validator.invalidate(),
         }
     }
+
+    /// A quiz document: the other document's metrics (see `items::combine`).
+    pub fn set_peer(&mut self, metrics: Metrics) {
+        if let RoomValidator::Item(validator) = self {
+            validator.peer = Some(metrics);
+        }
+    }
+
+    pub fn peer(&self) -> Option<Metrics> {
+        match self {
+            RoomValidator::Item(validator) => validator.peer,
+            RoomValidator::Note(_) => None,
+        }
+    }
+
+    /// This document's metrics as admission bounds them (none: unknown until
+    /// the next exact check).
+    pub fn bound(&self) -> Option<Metrics> {
+        match self {
+            RoomValidator::Item(validator) => validator.bound,
+            RoomValidator::Note(validator) => validator.bound,
+        }
+    }
 }

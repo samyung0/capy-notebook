@@ -17,6 +17,7 @@ import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { TabContent, TabHeader } from '@/components/app/tabPanel';
+import { SaveBanner } from '@/components/banners/SaveBanner';
 import { Skeleton } from '@/components/ui/feedback';
 import { Input, InputField } from '@/components/ui/Input';
 import { Tabs } from '@/components/ui/Tabs';
@@ -30,8 +31,12 @@ import {
   useQuizQuestions,
   useQuizRooms,
 } from '@/features/quizzes/liveQuizRooms';
-import { QuizForm } from '@/features/quizzes/QuizForm';
-import { blockHomeCrumb, QuizPageHeader } from '@/features/quizzes/QuizPage';
+import { QuizForm, QuizRecovery } from '@/features/quizzes/QuizForm';
+import {
+  blockHomeCrumb,
+  QuizPageHeader,
+  QuizQuestionList,
+} from '@/features/quizzes/QuizPage';
 import { m } from '@/i18n';
 import { textLength } from '@/lib/textLength';
 
@@ -175,16 +180,29 @@ function QuizEditor({ quizId }: { quizId: string }) {
             ) : (
               <>
                 <h2 className="t-card-title mb-7">{m.quiz_questions()}</h2>
-                {rooms.ready && rooms.content && rooms.keys && editable ? (
-                  <QuizForm
-                    content={rooms.content.doc}
-                    keys={rooms.keys.doc}
-                    name={name}
-                    questions={questions}
-                    quizId={quizId}
-                    status={rooms.status}
-                    undo={rooms.undo}
-                  />
+                {rooms.recovery ? (
+                  <QuizRecovery recovery={rooms.recovery} rooms={rooms} />
+                ) : rooms.ready && rooms.content && rooms.keys && editable ? (
+                  <div className="grid gap-6">
+                    {rooms.offline && <SaveBanner state={rooms.offline} />}
+                    {rooms.offline === 'offline-limit' ? (
+                      <QuizQuestionList
+                        disabled
+                        questions={questions}
+                        showAnswerKey
+                      />
+                    ) : (
+                      <QuizForm
+                        content={rooms.content.doc}
+                        keys={rooms.keys.doc}
+                        name={name}
+                        questions={questions}
+                        quizId={quizId}
+                        status={rooms.status}
+                        undo={rooms.undo}
+                      />
+                    )}
+                  </div>
                 ) : (
                   <Skeleton className="h-64 w-full" />
                 )}

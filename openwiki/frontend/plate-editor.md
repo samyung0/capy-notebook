@@ -33,8 +33,8 @@ token refresh). `@hocuspocus/provider` stays installed only because
 
 The collaboration server is Rust (`collaboration-rs/`) on yrs, the fork's
 patched copy in `vendor/betteroffice/third_party/yrs`. Each environment runs
-one instance; its Redis use (eviction delivery, comment and embed relays,
-source handoff and publication locks) does not sync documents. Each loaded
+one instance; its Redis use (eviction delivery, comment relays, source
+handoff and publication locks) does not sync documents. Each loaded
 room is one task that owns its document; Office engines run in child
 processes of the same binary (see [Office files](office-files.md)).
 `collaboration-rs/crates/server/tests/rooms.rs` drives the real binary over
@@ -1252,23 +1252,41 @@ and what a learner may see (mcq and multi options, a short answer's unit,
 matching left items). The keys document holds `keys`: part id to `{type,
 solution, correct | accepted | hints | markscheme | gaps | options | pairs |
 items}`. Editors type ordering items and matching options in the keys
-document; readers get them only from `answer.copy`, a reader copy the server
-writes (slot id to `{text}`, read sorted by slot): adding or removing an item
-rewrites that part's copy whole under fresh random slots, inserted in slot
-order, and a text edit mirrors into its slot as the fewest changes, so neither
-the keys' typing order nor their Yjs ids reach a reader (D3). The keys room
-sends its matching and ordering entries to the content room, which writes the
-copy and hands new slots back (`RoomCmd::Copy`/`Slots`); either room loading
-reconciles them. A client update writing `copy` or a `slot` is refused. Both
-documents are stored beside each other (`material_yjs_keys`,
-`material_yjs_key_updates` for the keys) and every append of either takes the
-next `material_yjs_documents.stored_version`, so the projection's version and
-Go's rules about it are unchanged; the projection reads both documents at one
-version and keeps only the questions that pass the strict validator (D4), so
-grading (`POST /api/quizzes/{id}/attempts` projects a lagging room first, D9)
-and fresh reads see what a Save would have stored. Admission checks structure
-and caps only (`collaboration-rs/crates/items/src/quiz.rs`): texts, lists,
-blocks, parts per question and per quiz, open parts, marking items, tables.
+document. Readers get them outside Yjs (D3 as revised 2026-10-10: a reader
+copy inside the content document leaked typing order through its tombstones):
+the content room keeps a plain list of texts per part (`items::quiz::
+ReaderLists`) and pushes it over its channels as a stateless `quiz-items`
+message, `{type, full, parts: {<part id>: {kind, items} | null}}`, the whole
+set to a channel that joins (`full`) and the parts that changed otherwise. A
+part whose entries change as a set is shuffled afresh (a uniform
+permutation); a text edit keeps the order. No ids and no history reach a
+reader, and neither document holds anything the server writes alone, so an
+editor's Undo never re-creates a server-only struct. A reader watching while
+items are added one at a time sees each new one appear (live mirroring); one
+who joins later gets only the shuffled list. The keys room sends its matching
+and ordering entries to the content room once per flush window
+(`RoomCmd::Items`); a content room loads the stored keys document for its
+lists, and reads it again after a server edit while the keys room is not
+loaded (`PeerReload`). Both documents are stored beside each other
+(`material_yjs_keys`, `material_yjs_key_updates` for the keys) and every
+append of either takes the next `material_yjs_documents.stored_version`, so
+the projection's version and Go's rules about it are unchanged; the
+projection reads both documents at one version and keeps only the questions
+that pass the strict validator (D4), so grading (`POST /api/quizzes/{id}/
+attempts` projects a lagging room first, D9) and fresh reads see what a Save
+would have stored. The projection also names every editor asset either
+document references (`assetIds`), so an image in an incomplete question stays
+in use. The two documents count together against the material's limits: each
+room holds the other's metrics (`PeerMetrics`), and Go refuses a quiz
+projection over a limit unless it shrank. Admission checks structure, value
+caps and counts only (`collaboration-rs/crates/items/src/quiz.rs`): texts,
+units, labels, whole marks, list and table counts, parts per question and per
+quiz, open parts, marking items. Everything the store's check refuses is
+refused at admission, so a store never discards a room for it. A list's count
+is bounded like a text's length (held plus added against its cap): only an
+update that may pass a cap copies the room for the exact check, whose walk the
+step counter counts (`Walk::Exact`). An image block waiting for its upload
+(blank) is structure; it only leaves its question incomplete.
 
 `QuestionDialog` edits a live question (`live` prop): its outline, part and
 block editors write through `writeQuestion`
@@ -1278,17 +1296,36 @@ the block's Done (one value per block, D8), and the footer holds Undo, Redo and
 the live state; there is no Save or Cancel and the dialog closes with its X or
 Esc. Undo spans both documents (`pairedUndo` in
 `src/features/collaboration/undo.ts`: the latest step of either, and steps of
-both made together, such as an answer type change, as one). The quiz edit page
-has no Save or Reset: the name saves on blur, the cloud status follows the
-title, Undo, Redo and the View switch sit at the header's right, and an
+both made together, such as an answer type change, as one). Inputs stop at
+their caps (`maxLength`; a text editor takes back an edit past its cap). The
+quiz edit page has no Save or Reset: the name saves on blur, the cloud status
+follows the title, Undo, Redo and the View switch sit at the header's right,
+Edit (ghost-hover) and Remove (danger-light) sit at each question's top right
+on desktop (`QuestionView`'s `actions`) and under it on phones, and an
 incomplete question shows a line under it saying what it lacks
 (`incomplete.ts`). Readers (the attempt page, the workspace quiz View, note
 embeds in View) paint the stored questions and then follow the content room
 (`liveQuizReads.ts`); a learner's answer that no longer points at what a part
 holds (a removed option, a changed set of ordering items) is dropped (D9). The
 save API (`PATCH /api/quizzes/{id}/content`) takes no revision (D7): it
-rewrites the questions that differ, whole, in both documents, and agent
-question commands work the same way, with inverses and question guards.
+writes what differs in the questions that differ, texts as the fewest changes
+and lists by position, so an editor typing in the same question keeps their
+characters; agent question commands work the same way, with inverses and
+question guards.
+
+Item rooms (`ItemRoom`, `src/features/collaboration/itemRoom.ts`) keep an
+editor's unsent edits on the device as notes do (`editDrafts`, Epo
+2026-10-04): restored and synced on the next open of the same room, the
+offline banner while the room cannot be reached, a receipt deleting what it
+covers. A quiz's keys document stores under its own key (`<key>:keys`). An
+update the server refuses (or a store refusal for the room) ends the room
+here: its edits become a refused draft, a toast says so, and a fresh room
+opens with the draft read-only for copying until Reload (`QuizRecovery`,
+`LiveFlashcards`); it never rejoins with what was refused. A fresh token
+naming another room (compaction, a discard) does the same with the edits as a
+draft of the old lineage. Leaving the tab or navigating in the app while an
+item room holds edits the server has not acknowledged asks first
+(`unsentItems.ts`).
 
 Flashcard sets edit live (live-items, Epo 2026-10-10). Each set has its own
 Yjs document, `material:<id>:schema:<n>` like a note's: the root map `cards`

@@ -127,10 +127,9 @@ pub(crate) async fn bootstrap(
     let content: Value = row.get("content");
     let kind: String = row.get("kind");
     let value = envelope_value(&content)?;
-    // A quiz's two documents seed together, so their reader-copy slots agree.
+    // A quiz's two documents seed together from the stored questions.
     let (state, keys) = if kind == "quiz" {
-        let mut slot = || uuid::Uuid::new_v4().simple().to_string();
-        let (content, keys) = items::quiz::states_from_value(value, 0, &mut slot);
+        let (content, keys) = items::quiz::states_from_value(value, 0);
         (content, Some(keys))
     } else {
         (Model::of(&kind).state_from_value(value), None)
@@ -637,8 +636,7 @@ pub async fn compact(
     let content: Value = content.get("content");
     let value = envelope_value(&content)?;
     let (state, keys) = if kind == "quiz" {
-        let mut slot = || uuid::Uuid::new_v4().simple().to_string();
-        let (content, keys) = items::quiz::states_from_value(value, 0, &mut slot);
+        let (content, keys) = items::quiz::states_from_value(value, 0);
         (content, Some(keys))
     } else {
         (Model::of(&kind).state_from_value(value), None)

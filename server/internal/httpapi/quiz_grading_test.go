@@ -138,8 +138,9 @@ func TestCreateAttemptGradesOnTheServer(t *testing.T) {
 	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"awarded":0,"blocks":[{"text":"Explain."`) || !strings.Contains(rec.Body.String(), `"itemAwards":[0,0]`) {
 		t.Fatalf("blank attempt → %d %s", rec.Code, rec.Body.String())
 	}
+	// An answer to a part the projection lacks comes back unmarked rather
+	// than refused (live-items D4; TestAttemptLeavesAnswersToUnprojectedPartsUnmarked).
 	for _, body := range []map[string]any{
-		{"missing": "x"},
 		{"open-a": strings.Repeat("a", 5001)},
 		{"open-a": 5},
 	} {

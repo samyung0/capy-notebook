@@ -3526,6 +3526,11 @@ components:
           format: uri
           readOnly: true
           type: string
+        assetIds:
+          items:
+            type: string
+          nullable: true
+          type: array
         content:
           $ref: "#/components/schemas/Envelope"
         yjsVersion:

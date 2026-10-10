@@ -35,9 +35,10 @@ import {
 } from '@/features/materials/document';
 import { validateQuestion } from '@/features/questions/validation';
 import {
+  itemParts,
+  type ReaderList,
   readQuestions,
   seedQuiz,
-  writeReaderCopies,
 } from '@/features/quizzes/liveQuiz';
 import * as db from './db';
 
@@ -883,19 +884,86 @@ function docOf(name: string): Y.Doc {
   return doc;
 }
 
-let copying = false;
-/** The service's reader copies after a keys change (D3), while both of a
- * quiz's rooms are loaded. */
-function syncCopies(name: string) {
-  const content = rooms.get(name.startsWith('keys:') ? peerName(name) : name);
-  const keys = rooms.get(name.startsWith('keys:') ? name : peerName(name));
-  if (!(content && keys) || copying) return;
-  copying = true;
-  try {
-    writeReaderCopies(content.document, keys.document, REMOTE);
-  } finally {
-    copying = false;
+/* The readers' lists of matching options and ordering items, outside Yjs
+ * (D3 as revised 2026-10-10), as the service keeps them: per quiz, part id to
+ * its kind and (entry id, text) in the readers' order. A set change shuffles
+ * afresh; a text change keeps the order. */
+type HeldList = { entries: { id: string; text: string }[]; kind: string };
+const readerLists = new Map<string, Map<string, HeldList>>();
+const readers = new Map<string, Set<MockItemProvider>>();
+
+function shuffled<T>(items: T[]): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
   }
+  return out;
+}
+
+const asList = (held: HeldList): ReaderList => ({
+  items: held.entries.map((entry) => entry.text),
+  kind: held.kind as ReaderList['kind'],
+});
+
+/** Follows the keys document; returns the parts whose list changed. */
+function followReaderLists(contentName: string) {
+  const held = readerLists.get(contentName) ?? new Map<string, HeldList>();
+  readerLists.set(contentName, held);
+  const parts = itemParts(docOf(peerName(contentName)));
+  const changed: Record<string, ReaderList | null> = {};
+  const present = new Set(parts.map((part) => part.part));
+  for (const id of [...held.keys()])
+    if (!present.has(id)) {
+      held.delete(id);
+      changed[id] = null;
+    }
+  for (const part of parts) {
+    const current = held.get(part.part);
+    const texts = new Map(part.entries.map((entry) => [entry.id, entry.text]));
+    const sameSet =
+      current?.kind === part.kind &&
+      current.entries.length === part.entries.length &&
+      current.entries.every((entry) => texts.has(entry.id));
+    const next: HeldList = {
+      entries: sameSet
+        ? (current as HeldList).entries.map((entry) => ({
+            id: entry.id,
+            text: texts.get(entry.id) ?? '',
+          }))
+        : shuffled(part.entries),
+      kind: part.kind,
+    };
+    if (JSON.stringify(next) === JSON.stringify(current)) continue;
+    held.set(part.part, next);
+    changed[part.part] = asList(next);
+  }
+  return changed;
+}
+
+/** The service's `quiz-items` push after a keys change. */
+function pushReaderLists(contentName: string) {
+  const changed = followReaderLists(contentName);
+  if (!Object.keys(changed).length) return;
+  const payload = JSON.stringify({
+    full: false,
+    parts: changed,
+    type: 'quiz-items',
+  });
+  for (const provider of readers.get(contentName) ?? [])
+    provider.stateless(payload);
+}
+
+/** The full lists a channel joining the content room hears. */
+function fullReaderLists(contentName: string) {
+  followReaderLists(contentName);
+  const parts = Object.fromEntries(
+    [...(readerLists.get(contentName) ?? [])].map(([id, held]) => [
+      id,
+      asList(held),
+    ])
+  );
+  return JSON.stringify({ full: true, parts, type: 'quiz-items' });
 }
 
 /** A live item's room (live-items): seeded from the mock row as the service
@@ -924,13 +992,13 @@ function itemRoom(name: string): Room {
   room.dirty = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   room.document.on('update', () => {
-    if (material?.kind === 'quiz') queueMicrotask(() => syncCopies(name));
+    if (material?.kind === 'quiz' && name.startsWith('keys:'))
+      queueMicrotask(() => pushReaderLists(peerName(name)));
     clearTimeout(timer);
     timer = setTimeout(() => {
       if (rooms.get(name) === room) checkpointRoom(room);
     }, 300);
   });
-  if (material?.kind === 'quiz') queueMicrotask(() => syncCopies(name));
   return room;
 }
 
@@ -982,11 +1050,39 @@ class MockItemProvider implements ItemProvider {
 
   constructor(config: RoomProviderConfig) {
     this.config = config;
-    this.leave = join(itemRoom(config.name), {
+    const room = itemRoom(config.name);
+    this.leave = join(room, {
       document: config.document,
       origin: this,
     });
-    queueMicrotask(() => config.onSynced?.({ state: true }));
+    const quiz =
+      config.name.startsWith('material:') &&
+      db.materials.find((row) => row.id === room.target.id)?.kind === 'quiz';
+    if (quiz) {
+      const listening = readers.get(config.name) ?? new Set();
+      listening.add(this);
+      readers.set(config.name, listening);
+    }
+    queueMicrotask(() => {
+      config.onSynced?.({ state: true });
+      if (quiz) this.stateless(fullReaderLists(config.name));
+    });
+  }
+
+  stateless(payload: string) {
+    if (this.joined) this.config.onStateless?.({ payload });
+  }
+
+  /** A checkpoint request: the in-page room holds every edit already. */
+  sendStateless(payload: string) {
+    const request = JSON.parse(payload) as { id?: string; type?: string };
+    if (request.type !== 'checkpoint-request' || !request.id) return;
+    const receipt = JSON.stringify({
+      checkpointIds: [request.id],
+      materialId: this.config.name.split(':')[1],
+      type: 'checkpoint-persisted',
+    });
+    queueMicrotask(() => this.stateless(receipt));
   }
 
   connect() {}
@@ -994,6 +1090,7 @@ class MockItemProvider implements ItemProvider {
   disconnect() {
     if (!this.joined) return;
     this.joined = false;
+    readers.get(this.config.name)?.delete(this);
     this.leave();
     this.config.onDisconnect?.();
   }

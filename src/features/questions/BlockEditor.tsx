@@ -307,6 +307,7 @@ export function BlockEditor({
     return (
       <div className="space-y-3">
         <TextEditor
+          maxLength={limits.QUESTION_TEXT_MAX}
           onChange={(text) => onChange({ ...block, text })}
           value={block.text}
         />
@@ -336,6 +337,7 @@ export function BlockEditor({
               label={m.question_ui_paragraph_label()}
             >
               <FieldInput
+                maxLength={limits.QUESTION_METADATA_MAX}
                 onChange={(event) =>
                   onChange({ ...block, label: event.target.value || undefined })
                 }
@@ -402,6 +404,7 @@ export function BlockEditor({
           label={m.question_ui_description()}
         >
           <FieldInput
+            maxLength={limits.QUESTION_TEXT_MAX}
             onChange={(event) =>
               onChange({ ...block, description: event.target.value })
             }
@@ -416,6 +419,7 @@ export function BlockEditor({
           label={m.question_ui_attribution()}
         >
           <FieldInput
+            maxLength={limits.QUESTION_METADATA_MAX}
             onChange={(event) =>
               onChange({
                 ...block,
@@ -529,6 +533,7 @@ export function BlockEditor({
                       {cell === id ? (
                         <TextEditor
                           compact
+                          maxLength={limits.QUESTION_TEXT_MAX}
                           onChange={(value) => updateCell(i, j, value)}
                           toolbarTarget={cellTools}
                           value={text}

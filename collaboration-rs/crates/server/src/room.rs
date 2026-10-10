@@ -106,12 +106,18 @@ pub enum RoomCmd {
         answer: Result<(notes::children::ChildAnswer, bool), String>,
     },
     /// A quiz's keys room to its content room: the matching and ordering
-    /// entries the reader copies follow (D3, live-items).
-    Copy(Vec<items::quiz::CopyPart>),
-    /// The content room's answer: the slots a copy rewrite assigned.
-    Slots(Vec<(String, String, String)>),
-    /// The content room loaded: the keys room sends its entries again.
-    CopyPull,
+    /// entries the readers' lists follow (D3 as revised 2026-10-10).
+    Items(Vec<items::quiz::ItemsPart>),
+    /// A quiz room loaded: the other one sends its entries and metrics again.
+    PeerLoaded,
+    /// The other document's metrics: a quiz's two documents count together
+    /// against the material's limits (REVIEW1 S3).
+    PeerMetrics(notes::limits::Metrics),
+    /// A server edit changed the other document while its room was not
+    /// loaded: read it from the store.
+    PeerReload,
+    /// What that read found (dropped when the other room loaded meanwhile).
+    PeerStored(notes::limits::Metrics, Vec<items::quiz::ItemsPart>),
 }
 
 /// An update that wrote child ids, the writer it is attributed to, and the
@@ -167,9 +173,14 @@ struct Note {
     model: crate::model::Model,
     /// The material's content document, or a quiz's keys document.
     doc: note_store::Doc,
-    /// A keys room: the reader-copy entries last sent to the content room
-    /// (none: send them at the next flush).
-    copy_sent: Option<Vec<items::quiz::CopyPart>>,
+    /// A keys room: the matching and ordering entries last sent to the
+    /// content room (none: send them at the next flush).
+    items_sent: Option<Vec<items::quiz::ItemsPart>>,
+    /// A quiz content room: the lists readers get, pushed over every channel
+    /// as `quiz-items` (none: not read yet).
+    reader: Option<items::quiz::ReaderLists>,
+    /// A quiz room: the metrics last sent to the other document's room.
+    metrics_sent: Option<notes::limits::Metrics>,
     validator: crate::model::RoomValidator,
     durable_metrics: Option<notes::limits::Metrics>,
     stored_version: i64,
@@ -415,6 +426,23 @@ async fn load(
                 })
                 .await
                 .map_err(|error| error.to_string())??;
+            // A quiz's other document as stored: its metrics count with this
+            // one's, and the content room's readers get the keys' items.
+            let mut validator = model.validator(metrics);
+            let mut reader = None;
+            if model.quiz() {
+                let other = match doc_kind {
+                    note_store::Doc::Content => note_store::Doc::Keys,
+                    note_store::Doc::Keys => note_store::Doc::Content,
+                };
+                let (peer, parts) = peer_state(app, material_id, *schema, other).await?;
+                validator.set_peer(peer);
+                if doc_kind == note_store::Doc::Content {
+                    let mut lists = items::quiz::ReaderLists::default();
+                    lists.follow(&parts, &mut random_pick);
+                    reader = Some(lists);
+                }
+            }
             let note = Note {
                 material_id: material_id.clone(),
                 schema: *schema,
@@ -422,10 +450,12 @@ async fn load(
                 // The load measured the room exactly (off the room task), so
                 // the first update takes the growth bound instead of copying
                 // and measuring a near-limit note on the room task (~55 ms).
-                validator: model.validator(metrics),
+                validator,
                 model,
                 doc: doc_kind,
-                copy_sent: None,
+                items_sent: None,
+                reader,
+                metrics_sent: None,
                 durable_metrics: Some(metrics),
                 stored_version,
                 projected_version,
@@ -479,6 +509,41 @@ async fn load(
             Ok((doc, Kindly::Source(Box::new(source)), durable))
         }
     }
+}
+
+/// A random index below `n` (the readers' shuffles).
+fn random_pick(n: usize) -> usize {
+    (uuid::Uuid::new_v4().as_u128() % n.max(1) as u128) as usize
+}
+
+/// A quiz's other document as stored: its metrics and, for the keys
+/// document, its matching and ordering entries.
+async fn peer_state(
+    app: &Shared,
+    material_id: &str,
+    schema: i64,
+    doc: note_store::Doc,
+) -> Result<(notes::limits::Metrics, Vec<items::quiz::ItemsPart>), String> {
+    let loaded = note_store::load(&app.db, material_id, schema, doc)
+        .await
+        .map_err(|error| error.to_string())?;
+    tokio::task::spawn_blocking(move || -> Result<_, String> {
+        let scratch = ydoc::scratch_doc();
+        ydoc::replay(&scratch, &loaded.base, &loaded.rows).map_err(|error| error.to_string())?;
+        let txn = scratch.transact();
+        Ok(match doc {
+            note_store::Doc::Keys => (
+                notes::limits::measure_value(&items::Kind::QuizKeys.document_value(&txn)),
+                items::quiz::item_parts(&txn),
+            ),
+            note_store::Doc::Content => (
+                notes::limits::measure_value(&items::Kind::Quiz.document_value(&txn)),
+                Vec::new(),
+            ),
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 async fn run(
@@ -558,12 +623,9 @@ async fn run(
         .stats
         .log_bytes
         .fetch_add(log_bytes.max(0) as u64, Ordering::Relaxed);
-    if let Kindly::Note(note) = &room.kind {
-        match (note.model, note.doc) {
-            (_, note_store::Doc::Keys) => room.schedule_flush(),
-            (crate::model::Model::Item(items::Kind::Quiz), _) => room.send_peer(RoomCmd::CopyPull),
-            _ => {}
-        }
+    if matches!(&room.kind, Kindly::Note(note) if note.model.quiz()) {
+        room.send_peer(RoomCmd::PeerLoaded);
+        room.schedule_flush();
     }
     room.serve(&mut rx).await;
 }
@@ -836,13 +898,27 @@ impl Room {
                 let _ = reply.send(state);
             }
             RoomCmd::ServiceEdit(edit) => self.service_edit(*edit),
-            RoomCmd::Copy(parts) => self.copy_from_keys(&parts),
-            RoomCmd::Slots(slots) => self.write_slots(&slots),
-            RoomCmd::CopyPull => {
+            RoomCmd::Items(parts) => self.follow_items(&parts),
+            RoomCmd::PeerLoaded => {
                 if let Kindly::Note(note) = &mut self.kind {
-                    note.copy_sent = None;
+                    note.items_sent = None;
+                    note.metrics_sent = None;
                 }
                 self.schedule_flush();
+            }
+            RoomCmd::PeerMetrics(metrics) => {
+                if let Kindly::Note(note) = &mut self.kind {
+                    note.validator.set_peer(metrics);
+                }
+            }
+            RoomCmd::PeerReload => self.reload_peer(),
+            RoomCmd::PeerStored(metrics, parts) => {
+                if self.peer().is_none() {
+                    if let Kindly::Note(note) = &mut self.kind {
+                        note.validator.set_peer(metrics);
+                    }
+                    self.follow_items(&parts);
+                }
             }
             RoomCmd::ChildPass(pass) => {
                 self.child_passes.push_back(*pass);
@@ -1002,65 +1078,106 @@ impl Room {
         }
     }
 
-    /// A keys room sends the content room its matching and ordering entries
-    /// whenever they changed (once per flush window at most).
-    fn send_copy(&mut self) {
+    /// Once per flush window at most: a quiz room sends the other room its
+    /// metrics when they changed, and a keys room its matching and ordering
+    /// entries.
+    fn send_to_peer(&mut self) {
+        if !matches!(&self.kind, Kindly::Note(note) if note.model.quiz()) {
+            return;
+        }
+        let Some(peer) = self.peer() else {
+            return;
+        };
+        let parts = match &self.kind {
+            Kindly::Note(note) if note.doc == note_store::Doc::Keys => {
+                Some(items::quiz::item_parts(&self.doc.transact()))
+            }
+            _ => None,
+        };
         let Kindly::Note(note) = &mut self.kind else {
             return;
         };
-        if note.doc != note_store::Doc::Keys {
-            return;
+        let mut commands = Vec::new();
+        let metrics = note.validator.bound();
+        if metrics.is_some() && metrics != note.metrics_sent {
+            note.metrics_sent = metrics;
+            commands.extend(metrics.map(RoomCmd::PeerMetrics));
         }
-        let parts = items::quiz::copy_parts(&self.doc.transact());
-        if note.copy_sent.as_ref() == Some(&parts) || self.peer().is_none() {
-            return;
-        }
-        if let Kindly::Note(note) = &mut self.kind {
-            note.copy_sent = Some(parts.clone());
-        }
-        self.send_peer(RoomCmd::Copy(parts));
-    }
-
-    /// The content room writes the reader copies the keys entries need (a
-    /// server write, stored with the room's next store) and hands new slots
-    /// back to the keys room.
-    fn copy_from_keys(&mut self, parts: &[items::quiz::CopyPart]) {
-        if !matches!(&self.kind, Kindly::Note(note) if note.model == crate::model::Model::Item(items::Kind::Quiz))
+        if let Some(parts) = parts
+            && note.items_sent.as_ref() != Some(&parts)
         {
-            return;
+            note.items_sent = Some(parts.clone());
+            commands.push(RoomCmd::Items(parts));
         }
-        let mut slot = || uuid::Uuid::new_v4().simple().to_string();
-        let mut txn = self.doc.transact_mut();
-        let slots = items::quiz::apply_copy(&mut txn, parts, &mut slot);
-        let update = ydoc::committed_update(txn);
-        if !update.is_empty() {
-            if let Kindly::Note(note) = &mut self.kind {
-                note.validator.invalidate();
-            }
-            self.content_changed();
-            self.broadcast_update(None, update);
-        }
-        if !slots.is_empty() {
-            self.send_peer(RoomCmd::Slots(slots));
+        if !commands.is_empty() {
+            tokio::spawn(async move {
+                for command in commands {
+                    let _ = peer.tx.send(command).await;
+                }
+            });
         }
     }
 
-    /// The keys room records the slots a copy rewrite assigned.
-    fn write_slots(&mut self, slots: &[(String, String, String)]) {
-        if !matches!(&self.kind, Kindly::Note(note) if note.doc == note_store::Doc::Keys) {
+    /// The content room's readers' lists follow the keys' entries; channels
+    /// hear what changed (D3 as revised 2026-10-10: plain lists outside Yjs,
+    /// no history).
+    fn follow_items(&mut self, parts: &[items::quiz::ItemsPart]) {
+        let Kindly::Note(note) = &mut self.kind else {
+            return;
+        };
+        if note.model != crate::model::Model::Item(items::Kind::Quiz) {
             return;
         }
-        let root = self.doc.get_or_insert_map(items::quiz::KEYS_ROOT);
-        let mut txn = self.doc.transact_mut();
-        items::quiz::apply_slots(&mut txn, &root, slots);
-        let update = ydoc::committed_update(txn);
-        if !update.is_empty() {
-            if let Kindly::Note(note) = &mut self.kind {
-                note.validator.invalidate();
-            }
-            self.content_changed();
-            self.broadcast_update(None, update);
+        let first = note.reader.is_none();
+        let reader = note.reader.get_or_insert_with(Default::default);
+        let changed = reader.follow(parts, &mut random_pick);
+        let message = if first {
+            let all: Vec<_> = reader
+                .all()
+                .into_iter()
+                .map(|(part, list)| (part, Some(list)))
+                .collect();
+            items::quiz::reader_message(true, &all)
+        } else if changed.is_empty() {
+            return;
+        } else {
+            items::quiz::reader_message(false, &changed)
+        };
+        self.broadcast_stateless(&message.to_string());
+    }
+
+    /// The other document changed in the store while its room was not loaded
+    /// here: its room sends again when it is, else the store is read.
+    fn reload_peer(&mut self) {
+        if self.peer().is_some() {
+            self.send_peer(RoomCmd::PeerLoaded);
+            return;
         }
+        let Kindly::Note(note) = &self.kind else {
+            return;
+        };
+        if !note.model.quiz() {
+            return;
+        }
+        let other = match note.doc {
+            note_store::Doc::Content => note_store::Doc::Keys,
+            note_store::Doc::Keys => note_store::Doc::Content,
+        };
+        let (app, material_id, schema) = (self.app.clone(), note.material_id.clone(), note.schema);
+        let Some(handle) = self.own_handle() else {
+            return;
+        };
+        let room = self.name.clone();
+        tokio::spawn(async move {
+            match peer_state(&app, &material_id, schema, other).await {
+                Ok((metrics, parts)) => {
+                    let _ = handle.tx.send(RoomCmd::PeerStored(metrics, parts)).await;
+                }
+                Err(error) => {
+                    observe::capture(&error, None, &[("room", &room), ("stage", "peer_reload")]);
+                }
+            }
+        });
     }
 
     fn broadcast_children_ready(&self, kept: &notes::children::KeptIds) {
@@ -1338,6 +1455,18 @@ impl Room {
         if !(viewer || self.awareness.is_empty()) {
             self.send_awareness_states(key);
         }
+        // A quiz's readers get the matching and ordering lists as they stand.
+        if let Kindly::Note(note) = &self.kind
+            && let Some(reader) = &note.reader
+        {
+            let all: Vec<_> = reader
+                .all()
+                .into_iter()
+                .map(|(part, list)| (part, Some(list)))
+                .collect();
+            let message = items::quiz::reader_message(true, &all).to_string();
+            self.send(key, Kind::Stateless, &protocol::text(&message));
+        }
         Ok(())
     }
 
@@ -1388,7 +1517,7 @@ impl Room {
     /// frame.
     fn flush(&mut self) {
         self.flush_at = None;
-        self.send_copy();
+        self.send_to_peer();
         let window = std::mem::take(&mut self.window);
         let senders: HashSet<MemberKey> = window.iter().filter_map(|(sender, _)| *sender).collect();
         let everyone = merge(window.iter().map(|(_, update)| update.as_slice()));
@@ -2108,9 +2237,11 @@ impl Room {
         let doc = self.doc.clone();
         let (kind, model, doc_kind) = (note.kind.clone(), note.model, note.doc);
         let previous = note.durable_metrics;
-        let validated = tokio::task::spawn_blocking(move || validate(&doc, model, &kind, previous))
-            .await
-            .unwrap_or_else(|error| Err(StoreError::Other(error.to_string())));
+        let peer = note.validator.peer();
+        let validated =
+            tokio::task::spawn_blocking(move || validate(&doc, model, &kind, previous, peer))
+                .await
+                .unwrap_or_else(|error| Err(StoreError::Other(error.to_string())));
         let (metrics, limit_code) = match validated {
             Ok(validated) => validated,
             Err(error) => {
@@ -2726,7 +2857,9 @@ impl Room {
         };
         tokio::spawn(async move {
             let result = match content {
-                Ok(content) => projection::project(&app, &material_id, version, &content).await,
+                Ok(content) => {
+                    projection::project(&app, &material_id, version, &content, None).await
+                }
                 Err(error) => Err(error),
             };
             let _ = handle.tx.send(RoomCmd::Projected(version, result)).await;
@@ -2870,11 +3003,13 @@ fn merge<'a>(updates: impl Iterator<Item = &'a [u8]>) -> Option<Vec<u8>> {
 
 /// The store's check of the whole document (DESIGN.md 3.2): the Plate value
 /// is canonical for the material's kind, and over a bound only if it shrank.
+/// A quiz document counts with its other document's metrics (`peer`).
 fn validate(
     doc: &Doc,
     model: crate::model::Model,
     kind: &str,
     previous: Option<notes::limits::Metrics>,
+    peer: Option<notes::limits::Metrics>,
 ) -> Result<(notes::limits::Metrics, Option<notes::limits::LimitCode>), StoreError> {
     let txn = doc.transact();
     model.assert_roots(&txn).map_err(StoreError::Invalid)?;
@@ -2889,11 +3024,16 @@ fn validate(
             .map_err(|error| StoreError::Invalid(error.0))?;
     }
     let metrics = notes::limits::measure_value(&value);
-    let code = notes::limits::limit_code(&metrics);
+    let combined = items::combine(&metrics, peer.as_ref());
+    let code = notes::limits::limit_code(&combined);
+    let previous = previous.map(|previous| items::combine(&previous, peer.as_ref()));
     if let Some(code) = code
-        && !notes::limits::recovers(&metrics, previous.as_ref())
+        && !notes::limits::recovers(&combined, previous.as_ref())
     {
-        return Err(StoreError::Limit { code, metrics });
+        return Err(StoreError::Limit {
+            code,
+            metrics: combined,
+        });
     }
     Ok((metrics, code))
 }

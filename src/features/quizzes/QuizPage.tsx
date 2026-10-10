@@ -40,6 +40,7 @@ export function QuizQuestionList<Q extends Question | LearnerQuestion>({
   review,
   disabled,
   showAnswerKey,
+  renderActions,
   renderAfter,
   credits,
   className,
@@ -50,7 +51,10 @@ export function QuizQuestionList<Q extends Question | LearnerQuestion>({
   review?: boolean;
   disabled?: boolean;
   showAnswerKey?: boolean;
-  /** Per-question actions under each question, e.g. Remove and Edit. */
+  /** Per-question actions in each question's header (Edit and Remove on
+   * desktop, Epo 2026-10-10). */
+  renderActions?: (question: Q, index: number) => ReactNode;
+  /** Per-question content under each question. */
   renderAfter?: (question: Q, index: number) => ReactNode;
   /** Bank credits of copied questions, by question id (the quiz's provenance). */
   credits?: Record<string, QuestionCredit> | null;
@@ -65,6 +69,7 @@ export function QuizQuestionList<Q extends Question | LearnerQuestion>({
           key={question.id}
         >
           <QuestionRunner
+            actions={renderActions?.(question, i)}
             answers={answers}
             disabled={disabled}
             onChange={onChange}

@@ -62,12 +62,15 @@ type ProjectedMaterial struct {
 // ProjectMaterialContent advances the validated JSON read model from a Y.Doc
 // version that the collaboration service has already durably stored. The
 // caller parsed the content once into the projection; everything here reads
-// it, and nothing reads the stored content back.
+// it, and nothing reads the stored content back. assetIDs are editor assets
+// the live documents reference beyond the projection (a quiz's incomplete
+// questions), which the asset prune keeps.
 func (s *Store) ProjectMaterialContent(
 	ctx context.Context,
 	materialID string,
 	projection materialdoc.Projection,
 	yjsVersion int64,
+	assetIDs []string,
 ) (ProjectedMaterial, error) {
 	if yjsVersion < 1 {
 		return ProjectedMaterial{}, fmt.Errorf("%w: invalid Yjs version", materialdoc.ErrInvalid)
@@ -168,7 +171,28 @@ func (s *Store) ProjectMaterialContent(
 			materialID, err.Error())
 		return ProjectedMaterial{}, err
 	}
-	// Deliberately no metrics.LimitError() here. The collaboration service is
+	// A quiz's two live documents count together against the limits in the
+	// collaboration service (live-items REVIEW1 S3). The backstop: a quiz
+	// projection over a limit is refused unless it shrank from the stored
+	// content.
+	if kind == "quiz" {
+		if limitErr := projection.Metrics.LimitError(); limitErr != nil {
+			var storedNodes, storedDepth, storedBytes int
+			if err := tx.QueryRow(ctx, `SELECT node_count, max_depth, octet_length(content::text)
+				FROM materials WHERE id=$1`, materialID).
+				Scan(&storedNodes, &storedDepth, &storedBytes); err != nil {
+				return ProjectedMaterial{}, err
+			}
+			m := projection.Metrics
+			if m.NodeCount > storedNodes || m.MaxDepth > storedDepth || m.SizeBytes > storedBytes {
+				_, _ = tx.Exec(ctx, `UPDATE material_yjs_documents
+					SET projection_error=$2, updated_at=now() WHERE material_id=$1`,
+					materialID, limitErr.Error())
+				return ProjectedMaterial{}, limitErr
+			}
+		}
+	}
+	// Otherwise deliberately no metrics.LimitError() here. The collaboration service is
 	// the write gate for room content and already refused every update that
 	// grows an over-limit document; what reaches this projection is either
 	// within the caps or a shrink that recovers towards them. Re-rejecting it
@@ -210,7 +234,8 @@ func (s *Store) ProjectMaterialContent(
 			return ProjectedMaterial{}, err
 		}
 	}
-	if err := pruneMaterialAssetsTx(ctx, tx, materialID, projection.EditorAssetIDs()); err != nil {
+	if err := pruneMaterialAssetsTx(ctx, tx, materialID,
+		append(projection.EditorAssetIDs(), assetIDs...)); err != nil {
 		return ProjectedMaterial{}, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE material_yjs_documents

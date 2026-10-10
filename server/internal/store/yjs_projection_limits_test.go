@@ -35,7 +35,7 @@ func TestProjectMaterialContentAllowsValidOverLimitRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	projected, err := s.ProjectMaterialContent(ctx, material.ID, projection, 1)
+	projected, err := s.ProjectMaterialContent(ctx, material.ID, projection, 1, nil)
 	if err != nil {
 		t.Fatalf("valid over-limit projection failed: %v", err)
 	}

@@ -8,7 +8,7 @@ import {
   useEditorRef,
   usePlateEditor,
 } from 'platejs/react';
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '@/components/ui/Icon';
 import { Toolbar, ToolbarGroup } from '@/components/ui/Toolbar';
@@ -16,6 +16,7 @@ import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { MathPreview } from '@/features/materials/MathPreview';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { textLength } from '@/lib/textLength';
 import { MathField, type MathFieldControls } from './MathField';
 import { mathTextToValue, valueToMathText } from './mathTextValue';
 
@@ -85,13 +86,17 @@ export function TextEditor({
   value,
   onChange,
   compact = false,
+  maxLength,
   toolbarTarget,
 }: {
   value: string;
   onChange: (value: string) => void;
   compact?: boolean;
+  /** Characters the text holds at most: an edit past it is taken back. */
+  maxLength?: number;
   toolbarTarget?: HTMLElement | null;
 }) {
+  const accepted = useRef(value);
   const [controls, setControls] = useState<MathFieldControls | null>(null);
   const editor = usePlateEditor({
     plugins: [
@@ -181,7 +186,17 @@ export function TextEditor({
     <FormulaControls.Provider value={setControls}>
       <Plate
         editor={editor}
-        onValueChange={({ value: next }) => onChange(valueToMathText(next))}
+        onValueChange={({ value: next }) => {
+          const text = valueToMathText(next);
+          if (maxLength !== undefined && textLength(text) > maxLength) {
+            // Past the cap the server refuses the text: the edit goes back.
+            editor.tf.setValue(mathTextToValue(accepted.current));
+            editor.tf.select(editor.api.end([]));
+            return;
+          }
+          accepted.current = text;
+          onChange(text);
+        }}
       >
         {toolbarTarget
           ? createPortal(tools, toolbarTarget)

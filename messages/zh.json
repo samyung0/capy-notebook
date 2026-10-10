@@ -967,6 +967,8 @@
   "editor_offline_limit": "你已达到此文件的离线编辑上限。请重新连接以继续编辑。",
   "editor_recovery_changed": "你的编辑在等待同步时，此文件已发生变化。请复制你需要的内容，然后重新加载。",
   "editor_drafts_lost": "上次会话中有部分未保存的编辑无法恢复。",
+  "item_edits_refused": "最近的更改无法保存。在重新加载之前，它们会以只读方式显示，方便复制。",
+  "item_leave_unsent": "部分更改尚未送达服务器。仍要离开吗？",
   "editor_save_failed_undone": "你最近的更改无法保存，已被撤销。",
   "editor_access_lost": "你已无权访问",
   "editor_access_lost_body": "请让所有者重新与你共享。",

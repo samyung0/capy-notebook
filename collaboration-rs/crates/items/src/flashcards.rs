@@ -26,8 +26,8 @@ pub const ROOT: &str = "cards";
 pub const BLOCK_ID: &str = "flashcards";
 /// Card fronts and backs, in characters: the card save API's 4,000 and the
 /// decided 2,000-character back (human/frontend/plate-editor.md 2026-10-06).
-pub const MAX_FRONT: usize = 4000;
-pub const MAX_BACK: usize = 2000;
+pub const MAX_FRONT: usize = notes::material::CARD_FRONT_MAX;
+pub const MAX_BACK: usize = notes::material::CARD_BACK_MAX;
 const MAX_ID: usize = 128;
 /// JSON a new card adds besides its id and texts:
 /// `{"type":"flashcard","id":"","children":[{"type":"flashcard_front","children":[{"text":""}]},…back…]},`
@@ -91,7 +91,10 @@ pub fn cards<T: ReadTxn>(txn: &T) -> Vec<Card> {
     let mut out: Vec<Card> = root
         .iter(txn)
         .filter_map(|(id, value)| match value {
-            Out::YMap(card) => Some(card_of(txn, id, &card)),
+            Out::YMap(card) => {
+                ydoc::steps::step(ydoc::steps::Walk::Exact);
+                Some(card_of(txn, id, &card))
+            }
             _ => None,
         })
         .collect();
@@ -392,24 +395,6 @@ pub fn admit_shapes<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Growth, 
         }
     }
     Ok(growth)
-}
-
-/// The caps over every card, exactly (the exact check's candidate, a server
-/// write's result).
-pub fn check_caps<T: ReadTxn>(txn: &T) -> Result<(), String> {
-    for card in cards(txn) {
-        if card.front.chars().count() > MAX_FRONT {
-            return Err(format!(
-                "a flashcard front holds at most {MAX_FRONT} characters"
-            ));
-        }
-        if card.back.chars().count() > MAX_BACK {
-            return Err(format!(
-                "a flashcard back holds at most {MAX_BACK} characters"
-            ));
-        }
-    }
-    Ok(())
 }
 
 /// Turns `text` into `next` with the fewest changes: the common prefix and

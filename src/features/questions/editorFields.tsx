@@ -118,11 +118,14 @@ export function StringList({
   values,
   onChange,
   onRemove,
+  maxLength = limits.QUESTION_TEXT_MAX,
 }: {
   label: string;
   values: string[];
   onChange: (values: string[]) => void;
   onRemove?: (index: number) => void;
+  /** Characters an item holds at most (its input stops there). */
+  maxLength?: number;
 }) {
   return (
     <div className="space-y-2">
@@ -134,6 +137,7 @@ export function StringList({
               label,
               number: index + 1,
             })}
+            maxLength={maxLength}
             onChange={(e) =>
               onChange(
                 values.map((item, i) => (i === index ? e.target.value : item))
@@ -194,6 +198,7 @@ export function MarkschemeList({
               label,
               number: index + 1,
             })}
+            maxLength={limits.QUESTION_MARK_ITEM_MAX}
             onChange={(e) => update(index, { text: e.target.value })}
             value={item.text}
           />
@@ -309,6 +314,7 @@ export function AnswerEditor({
               />
               <FieldInput
                 aria-label={m.question_ui_option_number({ number: i + 1 })}
+                maxLength={limits.QUESTION_TEXT_MAX}
                 onChange={(event) =>
                   onChange({
                     ...answer,
@@ -364,6 +370,11 @@ export function AnswerEditor({
       {(answer.type === 'short' || answer.type === 'open') && (
         <StringList
           label={m.question_ui_accepted_answers()}
+          maxLength={
+            answer.type === 'open'
+              ? limits.QUIZ_OPEN_ANSWER_MAX
+              : limits.QUESTION_TEXT_MAX
+          }
           onChange={(accepted) => onChange({ ...answer, accepted })}
           values={answer.accepted}
         />
@@ -377,6 +388,7 @@ export function AnswerEditor({
           label={m.question_ui_unit()}
         >
           <FieldInput
+            maxLength={limits.QUESTION_UNIT_MAX}
             onChange={(event) =>
               onChange({ ...answer, unit: event.target.value || undefined })
             }
@@ -475,6 +487,7 @@ export function AnswerEditor({
                 label={m.question_ui_item_number({ number: i + 1 })}
               >
                 <FieldInput
+                  maxLength={limits.QUESTION_TEXT_MAX}
                   onChange={(event) =>
                     onChange({
                       ...answer,

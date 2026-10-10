@@ -80,6 +80,9 @@ type collaborationTokenOutput struct {
 }
 
 type projectMaterialReq struct {
+	// A quiz: every editor asset its live documents reference, complete
+	// questions or not, kept from the asset prune (live-items REVIEW1 S4).
+	AssetIDs   []string             `json:"assetIds,omitempty"`
 	Content    materialdoc.Envelope `json:"content"`
 	YjsVersion int64                `json:"yjsVersion" minimum:"1"`
 }
@@ -331,7 +334,7 @@ func (a *api) projectMaterialYjsDocument(
 	if err != nil {
 		return nil, collaborationError(err)
 	}
-	material, err := a.s.ProjectMaterialContent(ctx, in.ID, projection, body.YjsVersion)
+	material, err := a.s.ProjectMaterialContent(ctx, in.ID, projection, body.YjsVersion, body.AssetIDs)
 	if err != nil {
 		return nil, collaborationError(err)
 	}
@@ -357,8 +360,9 @@ func decodeProjectionBody(raw []byte) (projectMaterialReq, error) {
 	// clears it, and a missing field leaves it to be refused like a null node.
 	nodes := []map[string]any{nil}
 	var body struct {
-		Schema  json.RawMessage `json:"$schema"`
-		Content struct {
+		Schema   json.RawMessage `json:"$schema"`
+		AssetIDs []string        `json:"assetIds"`
+		Content  struct {
 			SchemaVersion *int              `json:"schemaVersion"`
 			Value         *[]map[string]any `json:"value"`
 		} `json:"content"`
@@ -388,7 +392,7 @@ func decodeProjectionBody(raw []byte) (projectMaterialReq, error) {
 	if body.Content.SchemaVersion == nil {
 		return invalid("content.schemaVersion is required")
 	}
-	req := projectMaterialReq{YjsVersion: *body.YjsVersion}
+	req := projectMaterialReq{AssetIDs: body.AssetIDs, YjsVersion: *body.YjsVersion}
 	req.Content.SchemaVersion = *body.Content.SchemaVersion
 	if body.Content.Value != nil {
 		req.Content.Value = *body.Content.Value

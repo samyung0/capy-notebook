@@ -5,12 +5,13 @@ import { LOCAL_EDIT } from '@/features/collaboration/yText';
 import { exampleQuestions } from '@/features/questions/questionFixtures';
 import type { Question } from '@/features/questions/types';
 import {
+  applyReaderMessage,
+  itemParts,
   keysScope,
   readLearnerQuestions,
   readQuestions,
   seedQuiz,
   writeQuestion,
-  writeReaderCopies,
 } from './liveQuiz';
 
 const rich: Question = {
@@ -62,9 +63,25 @@ it('reads back what it was seeded with, keys and blocks included', () => {
   expect(readQuestions(content, keys)).toEqual(questions);
 });
 
-it('gives learners no key, and matching and ordering only from the reader copy', () => {
-  const { content } = quiz();
-  const learner = readLearnerQuestions(content);
+it('gives learners no key, and matching and ordering only from the pushed lists', () => {
+  const { content, keys } = quiz();
+  // Without the room's lists a learner sees no ordering items at all: the
+  // content document holds none (D3 as revised 2026-10-10).
+  const bare = readLearnerQuestions(content);
+  const orderingPart = bare.find((q) => q.parts[0].answer.type === 'ordering')
+    ?.parts[0].answer;
+  expect(orderingPart?.type === 'ordering' && orderingPart.items).toEqual([]);
+  // The lists as the room pushes them (kind and texts, no ids).
+  const lists = applyReaderMessage(new Map(), {
+    full: true,
+    parts: Object.fromEntries(
+      itemParts(keys).map((part) => [
+        part.part,
+        { items: part.entries.map((entry) => entry.text), kind: part.kind },
+      ])
+    ),
+  });
+  const learner = readLearnerQuestions(content, lists);
   const text = JSON.stringify(learner);
   for (const secret of [
     'correct',
@@ -101,7 +118,7 @@ it('writes one typed character as one small change and keeps option ids', () => 
   expect(updates).toHaveLength(1);
 });
 
-it('moves an ordering item by its order key, keeping its slot', () => {
+it('moves an ordering item by its order key, keeping its entry', () => {
   const { content, keys } = quiz();
   const ordering = questions.find((q) => q.parts[0].answer.type === 'ordering');
   if (!ordering) throw new Error('ordering fixture');
@@ -109,12 +126,12 @@ it('moves an ordering item by its order key, keeping its slot', () => {
     keysScope(keys).get(ordering.parts[0].id)?.get('items') as Y.Map<
       Y.Map<unknown>
     >;
-  const slots = () =>
-    [...items().values()].map((item) => [
+  const entries = () =>
+    [...items().entries()].map(([id, item]) => [
       item.get('text')?.toString(),
-      item.get('slot'),
+      id,
     ]);
-  const held = new Map(slots().map(([text, slot]) => [text, slot]));
+  const held = new Map(entries().map(([text, id]) => [text, id]));
   const next = structuredClone(ordering);
   const answer = next.parts[0].answer;
   if (answer.type !== 'ordering') throw new Error('ordering fixture');
@@ -123,7 +140,7 @@ it('moves an ordering item by its order key, keeping its slot', () => {
   expect(
     readQuestions(content, keys).find((q) => q.id === ordering.id)
   ).toEqual(next);
-  for (const [text, slot] of slots()) expect(slot).toBe(held.get(text));
+  for (const [text, id] of entries()) expect(id).toBe(held.get(text));
 });
 
 it('merges two editors typing into different options', () => {
@@ -166,11 +183,28 @@ it('undoes an answer type change in both documents as one step', () => {
   const next = structuredClone(questions[0]);
   next.parts[0].answer = { correct: false, type: 'boolean' };
   writeQuestion(content, keys, next);
-  writeReaderCopies(content, keys, 'server');
   expect(readQuestions(content, keys)[0]).toEqual(next);
   undo.undo();
   expect(readQuestions(content, keys)[0]).toEqual(questions[0]);
   expect(undo.canUndo()).toBe(false);
   undo.redo();
   expect(readQuestions(content, keys)[0]).toEqual(next);
+});
+
+it('applies pushed lists: a full one replaces, a partial one changes named parts', () => {
+  const ordering = { items: ['b', 'a'], kind: 'ordering' as const };
+  const matching = { items: ['x'], kind: 'matching' as const };
+  let lists = applyReaderMessage(new Map(), {
+    full: true,
+    parts: { m: matching, o: ordering },
+  });
+  lists = applyReaderMessage(lists, {
+    full: false,
+    parts: { m: null, o: { items: ['a', 'c', 'b'], kind: 'ordering' } },
+  });
+  expect([...lists]).toEqual([
+    ['o', { items: ['a', 'c', 'b'], kind: 'ordering' }],
+  ]);
+  lists = applyReaderMessage(lists, { full: true, parts: { m: matching } });
+  expect([...lists.keys()]).toEqual(['m']);
 });

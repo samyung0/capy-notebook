@@ -105,4 +105,31 @@ func TestQuizKeysTokensGoToEditorsOnly(t *testing.T) {
 			t.Fatalf("editor keys token: %+v", token)
 		}
 	}
+	// An editor narrowed to read (the owner suspended, the owner's storage
+	// full) is refused the keys too (live-items D1, REVIEW1 S5).
+	exec := func(query string) {
+		t.Helper()
+		if _, err := st.Pool().Exec(ctx, query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, narrow := range []struct{ name, set, reset string }{
+		{
+			"suspended owner",
+			`UPDATE users SET suspended_at=now(), suspended_reason='test' WHERE id='u_owner'`,
+			`UPDATE users SET suspended_at=NULL, suspended_reason=NULL WHERE id='u_owner'`,
+		},
+		{
+			"full owner",
+			`INSERT INTO user_storage_deltas (user_id, delta_bytes) VALUES ('u_owner', 1000000000000000)`,
+			`DELETE FROM user_storage_deltas WHERE user_id='u_owner' AND delta_bytes=1000000000000000`,
+		},
+	} {
+		exec(narrow.set)
+		rec := doReq(t, h, http.MethodPost, "/api/materials/qz_e2e_private/collaboration-token", "u_editor", keys)
+		exec(narrow.reset)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("%s: editor keys = %d body=%s, want 403", narrow.name, rec.Code, rec.Body.String())
+		}
+	}
 }

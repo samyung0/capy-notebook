@@ -57,15 +57,19 @@ pub async fn project_doc(
     model: Model,
 ) -> Result<(), String> {
     let content = content_of(doc, model).await?;
-    project(app, material_id, version, &content).await
+    project(app, material_id, version, &content, None).await
 }
 
-/// `POST /internal/collaboration/materials/{id}/projection`.
+/// `POST /internal/collaboration/materials/{id}/projection`. A quiz also
+/// names every editor asset its documents reference (`asset_ids`), complete
+/// questions or not, so an image in an incomplete one stays in use (REVIEW1
+/// S4).
 pub async fn project(
     app: &Shared,
     material_id: &str,
     version: i64,
     content: &Value,
+    asset_ids: Option<Vec<String>>,
 ) -> Result<(), String> {
     let url = format!(
         "{}/internal/collaboration/materials/{}/projection",
@@ -78,7 +82,10 @@ pub async fn project(
         .post(url)
         .header("x-collaboration-secret", &app.config.secret)
         .timeout(Duration::from_secs(15))
-        .json(&json!({ "content": content, "yjsVersion": version }));
+        .json(&match asset_ids {
+            Some(ids) => json!({ "assetIds": ids, "content": content, "yjsVersion": version }),
+            None => json!({ "content": content, "yjsVersion": version }),
+        });
     if let Some(event) = &previous {
         request = request.header(RETRY_EVENT_HEADER, event);
     }
@@ -148,26 +155,31 @@ pub async fn project_durable(app: &Shared, material_id: &str) -> Result<i64, Str
         return Err("material not found".into());
     };
     let version = durable.version;
-    let content = tokio::task::spawn_blocking(move || -> Result<Value, String> {
-        use yrs::Transact;
-        let replay = |base: &[u8], rows: &[Vec<u8>]| -> Result<Doc, String> {
-            let doc = ydoc::scratch_doc();
-            ydoc::replay(&doc, base, rows).map_err(|error| error.to_string())?;
-            Ok(doc)
-        };
-        let doc = replay(&durable.base, &durable.rows)?;
-        let value = match &durable.keys {
-            Some((base, rows)) => {
-                let keys = replay(base, rows)?;
-                items::quiz::value(&doc.transact(), &keys.transact())
-            }
-            None => Model::of(&durable.kind).value(&doc.transact())?,
-        };
-        Ok(json!({ "schemaVersion": 1, "value": value }))
-    })
-    .await
-    .map_err(|error| error.to_string())??;
-    project(app, material_id, version, &content).await?;
+    let (content, asset_ids) =
+        tokio::task::spawn_blocking(move || -> Result<(Value, Option<Vec<String>>), String> {
+            use yrs::Transact;
+            let replay = |base: &[u8], rows: &[Vec<u8>]| -> Result<Doc, String> {
+                let doc = ydoc::scratch_doc();
+                ydoc::replay(&doc, base, rows).map_err(|error| error.to_string())?;
+                Ok(doc)
+            };
+            let doc = replay(&durable.base, &durable.rows)?;
+            let (value, asset_ids) = match &durable.keys {
+                Some((base, rows)) => {
+                    let keys = replay(base, rows)?;
+                    let (content, keys) = (doc.transact(), keys.transact());
+                    (
+                        items::quiz::value(&content, &keys),
+                        Some(items::quiz::asset_ids(&content, &keys)),
+                    )
+                }
+                None => (Model::of(&durable.kind).value(&doc.transact())?, None),
+            };
+            Ok((json!({ "schemaVersion": 1, "value": value }), asset_ids))
+        })
+        .await
+        .map_err(|error| error.to_string())??;
+    project(app, material_id, version, &content, asset_ids).await?;
     Ok(version)
 }
 

@@ -2,6 +2,7 @@ import { lazy, Suspense, useState } from 'react';
 import type * as Y from 'yjs';
 import { editorImageMaxBytes, uploadEditorAsset } from '@/api/editorAssets';
 import type { Question } from '@/api/types';
+import { SaveBanner } from '@/components/banners/SaveBanner';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import type { ItemRoomStatus } from '@/features/collaboration/itemRoom';
@@ -13,6 +14,7 @@ import { m } from '@/i18n';
 import { fitImage } from '@/lib/fitImage';
 import { incompleteLine } from './incomplete';
 import { removeQuestion, writeQuestion } from './liveQuiz';
+import { type QuizRooms, useQuizQuestions } from './liveQuizRooms';
 import { QuizQuestionList } from './QuizPage';
 
 const QuestionDialog = lazy(() =>
@@ -77,6 +79,30 @@ export function QuizForm({
     if (questions.length <= 1 && onEmpty) return onEmpty();
     removeQuestion(content, keys, id);
   };
+  // Edit (ghost-hover) and Remove (danger-light), at each question's top
+  // right on desktop (Epo 2026-10-10).
+  const actions = (item: Question) => (
+    <>
+      <Button
+        iconLeft="pencil"
+        onClick={() => setEditing({ blank: false, id: item.id })}
+        size="sm"
+        type="button"
+        variant="ghost-hover"
+      >
+        {m.action_edit()}
+      </Button>
+      <Button
+        iconLeft="trash"
+        onClick={() => remove(item.id)}
+        size="sm"
+        type="button"
+        variant="danger-light"
+      >
+        {m.action_remove()}
+      </Button>
+    </>
+  );
   const close = () => {
     if (editing?.blank) removeQuestion(content, keys, editing.id);
     setEditing(null);
@@ -86,44 +112,25 @@ export function QuizForm({
       <QuizQuestionList
         disabled
         questions={questions}
+        renderActions={(item) => (
+          <div className="hidden gap-1 md:flex">{actions(item)}</div>
+        )}
         renderAfter={(item) => {
           const incomplete = incompleteLine(item);
           return (
-            <div className="flex flex-wrap items-center justify-end gap-2">
+            <>
               {incomplete && (
                 <p
-                  className="mr-auto flex items-start gap-1.5 text-sm text-tint-warning-fg"
+                  className="flex items-start gap-1.5 text-sm text-tint-warning-fg"
                   role="status"
                 >
                   <Icon className="mt-0.5 size-4 shrink-0" name="alert" />
                   {incomplete}
                 </p>
               )}
-              <Button
-                className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
-                iconLeft="pencil"
-                iconLeftClassName="size-3.5 sm:size-3.75"
-                onClick={() => setEditing({ blank: false, id: item.id })}
-                rounded="large"
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                {m.action_edit()}
-              </Button>
-              <Button
-                className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
-                iconLeft="trash"
-                iconLeftClassName="size-3.5 sm:size-3.75"
-                onClick={() => remove(item.id)}
-                rounded="large"
-                size="sm"
-                type="button"
-                variant="danger-outline"
-              >
-                {m.action_remove()}
-              </Button>
-            </div>
+              {/* Phones keep Edit and Remove under the question. */}
+              <div className="flex gap-1 md:hidden">{actions(item)}</div>
+            </>
           );
         }}
       />
@@ -165,6 +172,32 @@ export function QuizForm({
           />
         </Suspense>
       )}
+    </div>
+  );
+}
+
+/** A quiz's stored edits that cannot join its rooms (refused, or left
+ * behind by a room that moved on), read-only to copy until Reload, as a
+ * note's are (Epo 2026-10-04). A document without such edits reads live. */
+export function QuizRecovery({
+  recovery,
+  rooms,
+}: {
+  recovery: NonNullable<QuizRooms['recovery']>;
+  rooms: QuizRooms;
+}) {
+  const questions = useQuizQuestions(
+    recovery.content?.doc ?? rooms.content?.doc,
+    recovery.keys?.doc ?? rooms.keys?.doc
+  );
+  const refused = !!(recovery.content?.refused || recovery.keys?.refused);
+  return (
+    <div className="grid gap-6">
+      <SaveBanner
+        onReload={recovery.reload}
+        state={refused ? 'refused' : 'changed'}
+      />
+      <QuizQuestionList disabled questions={questions} showAnswerKey />
     </div>
   );
 }

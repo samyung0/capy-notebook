@@ -334,7 +334,8 @@ route (`AnonymousQuizAssetPath`) still checks the full content, so a solution's
 images resolve once an answer is checked. Live quizzes keep the rule by room
 (Epo 2026-10-10): answer keys live in a keys document only editors who can
 write join, readers join the content document, and matching options and
-ordering items reach them only through the server's shuffled reader copy.
+ordering items reach them only as shuffled lists the content room pushes
+outside Yjs (D3 as revised 2026-10-10).
 
 | Grading route | Request | Effect |
 | --- | --- | --- |

@@ -26,6 +26,7 @@ func TestProjectMaterialContentRejectsLockedOwner(t *testing.T) {
 		material.ID,
 		testProjection(t, materialTestContent(t, "must not project")),
 		1,
+		nil,
 	)
 	var locked *AccountLockedError
 	if !errors.As(err, &locked) || locked.State != AccountSuspended {
@@ -70,7 +71,7 @@ func TestProjectMaterialContentRevisesOnlyChangedContent(t *testing.T) {
 	changed := testProjection(t, materialTestContent(t, "changed"))
 	expect := func(version int64, projection materialdoc.Projection, revision int64) {
 		t.Helper()
-		projected, err := s.ProjectMaterialContent(ctx, material.ID, projection, version)
+		projected, err := s.ProjectMaterialContent(ctx, material.ID, projection, version, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

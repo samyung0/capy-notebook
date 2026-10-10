@@ -1,21 +1,23 @@
 #![allow(clippy::unwrap_used)] // Tests panic on a broken fixture.
 //! Quiz documents: the projection round trip over the shared question
-//! fixtures, incomplete questions left out, two writers merging, the admit's
-//! shape and cap refusals (work counted, never timed), the reader copies of
-//! ordering items and matching options (D3), and the server's own writes.
+//! fixtures, incomplete questions left out, two writers merging (an edit
+//! against a move, a type change against typing), the admit's shape, value
+//! and cap refusals (work counted, never timed), Undo of removals, the
+//! readers' lists of ordering items and matching options (D3 as revised
+//! 2026-10-10), the combined limits and the server's own writes.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use items::quiz::{self, CopyPart};
+use items::quiz::{self, ReaderLists};
 use items::{Admission, Kind, Refusal, Validator};
 use notes::edit::{DocumentCommand, EditError};
 use serde_json::{Value, json};
-use yrs::branch::{BranchID, BranchPtr};
+use yrs::branch::BranchPtr;
 use yrs::updates::decoder::Decode;
 use yrs::{
-    Any, Doc, GetString, Map, MapPrelim, MapRef, Out, ReadTxn, StateVector, Text, TextPrelim,
-    TextRef, Transact, Update,
+    Any, Doc, Map, MapPrelim, MapRef, Out, ReadTxn, StateVector, Text, TextPrelim, TextRef,
+    Transact, UndoManager, Update,
 };
 
 /// Every quiz-policy fixture the Go validator accepts, ids made unique.
@@ -62,17 +64,6 @@ fn quiz_value(questions: &[Value]) -> Vec<Value> {
     })]
 }
 
-/// A seeded slot source: the same shuffle every run.
-fn seeded(seed: u64) -> impl FnMut() -> String {
-    let mut state = seed;
-    move || {
-        state = state
-            .wrapping_mul(6_364_136_223_846_793_005)
-            .wrapping_add(1_442_695_040_888_963_407);
-        format!("{:016x}", state)
-    }
-}
-
 fn load(state: &[u8], client: u64) -> Doc {
     let doc = Doc::with_options(ydoc::doc_options(client));
     doc.transact_mut()
@@ -84,12 +75,21 @@ fn load(state: &[u8], client: u64) -> Doc {
 /// The room's content and keys documents for `questions`, plus a client
 /// copy of each.
 fn rooms(questions: &[Value]) -> (Doc, Doc, Doc, Doc) {
-    let (content, keys) = quiz::states_from_value(&quiz_value(questions), 0, &mut seeded(7));
+    let (content, keys) = quiz::states_from_value(&quiz_value(questions), 0);
     (
         load(&content, 1),
         load(&keys, 1),
         load(&content, 2),
         load(&keys, 2),
+    )
+}
+
+/// A copy of `doc` under client `client`.
+fn copy_of(doc: &Doc, client: u64) -> Doc {
+    load(
+        &doc.transact()
+            .encode_state_as_update_v1(&StateVector::default()),
+        client,
     )
 }
 
@@ -120,6 +120,11 @@ fn admit(validator: &mut Validator, doc: &Doc, update: &[u8]) -> (Result<Admissi
     (result, steps)
 }
 
+fn accepted(validator: &mut Validator, room: &Doc, client: &Doc) {
+    let (result, _) = admit(validator, room, &diff(client, room));
+    assert!(matches!(result, Ok(Admission::Accepted)), "{result:?}");
+}
+
 fn map_in(doc: &Doc, path: &[&str]) -> MapRef {
     let (root, rest) = path.split_first().unwrap();
     let txn = doc.transact();
@@ -139,6 +144,13 @@ fn text_in(doc: &Doc, path: &[&str], key: &str) -> TextRef {
         Some(Out::YText(text)) => text,
         other => panic!("no text {key}: {other:?}"),
     }
+}
+
+fn first_key(map: &MapRef, doc: &Doc) -> String {
+    let txn = doc.transact();
+    let mut keys: Vec<String> = map.keys(&txn).map(str::to_owned).collect();
+    keys.sort();
+    keys.remove(0)
 }
 
 /// The part id of the fixture whose first part has `kind`.
@@ -161,18 +173,42 @@ fn every_fixture_round_trips_through_both_documents() {
     let value = quiz::value(&content.transact(), &keys.transact());
     assert!(notes::material::assert_canonical(&value, "quiz").is_ok());
     // The content document alone holds no key: no correct options, accepted
-    // answers, marking schemes, solutions, pairs or ordering in the answer.
-    let alone = quiz::content_document_value(&content.transact()).to_vec();
-    let text = serde_json::to_string(&alone).unwrap();
+    // answers, marking schemes, solutions, pairs, matching options or
+    // ordering items.
+    let state = content
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    let held = String::from_utf8_lossy(&state);
     for question in &questions {
         for part in question["parts"].as_array().unwrap() {
+            let answer = &part["answer"];
+            let mut secrets: Vec<&str> = Vec::new();
             for solution in part["solution"].as_array().unwrap() {
-                if let Some(t) = solution["text"].as_str().filter(|t| t.len() > 8) {
-                    assert!(
-                        !text.contains(t),
-                        "a solution reached the content document: {t}"
-                    );
-                }
+                secrets.extend(solution["text"].as_str());
+            }
+            if answer["type"] == json!("ordering") {
+                secrets.extend(
+                    answer["items"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .filter_map(Value::as_str),
+                );
+            }
+            if answer["type"] == json!("matching") {
+                secrets.extend(
+                    answer["options"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .filter_map(Value::as_str),
+                );
+            }
+            for secret in secrets.into_iter().filter(|t| t.len() > 3) {
+                assert!(
+                    !held.contains(secret),
+                    "the content document holds {secret}"
+                );
             }
         }
     }
@@ -185,7 +221,6 @@ fn an_incomplete_question_stays_out_of_the_projection() {
     let (question, part) = part_of(&questions, "mcq");
     // An editor clears the correct option: readers still see the question
     // live, the projection (and so grading) leaves it out.
-    keys.transact_mut();
     map_in(&keys, &["keys", &part]).remove(&mut keys.transact_mut(), "correct");
     let ids: Vec<Value> = projected(&content, &keys)
         .iter()
@@ -201,43 +236,23 @@ fn an_incomplete_question_stays_out_of_the_projection() {
 #[test]
 fn two_editors_merge_an_option_and_its_correct_answer() {
     let questions = fixtures();
-    let (content, keys, content_b, keys_b) = rooms(&questions);
+    let (content, keys, _, keys_b) = rooms(&questions);
     let (question, part) = part_of(&questions, "mcq");
-    let options = [
-        "questions",
-        question.as_str(),
-        "parts",
-        part.as_str(),
-        "answer",
-        "options",
-    ];
+    let options = ["questions", &question, "parts", &part, "answer", "options"];
     // A types into option 0 in the content document; B, in the keys, makes
     // option 1 the correct one.
     let mut check = validator(Kind::Quiz, &content);
-    let a = Doc::with_options(ydoc::doc_options(3));
-    a.transact_mut()
-        .apply_update(
-            Update::decode_v1(
-                &content
-                    .transact()
-                    .encode_state_as_update_v1(&StateVector::default()),
-            )
-            .unwrap(),
-        )
-        .unwrap();
+    let a = copy_of(&content, 3);
     text_in(&a, &[&options[..], &["o0"]].concat(), "text").insert(
         &mut a.transact_mut(),
         0,
         "Very ",
     );
-    let (result, _) = admit(&mut check, &content, &diff(&a, &content));
-    assert!(matches!(result, Ok(Admission::Accepted)), "{result:?}");
+    accepted(&mut check, &content, &a);
     assert_eq!(check.exact_checks, 0, "typing takes the bound");
     let mut keys_check = validator(Kind::QuizKeys, &keys);
     map_in(&keys_b, &["keys", &part]).insert(&mut keys_b.transact_mut(), "correct", "o1");
-    let (result, _) = admit(&mut keys_check, &keys, &diff(&keys_b, &keys));
-    assert!(matches!(result, Ok(Admission::Accepted)), "{result:?}");
-    drop(content_b);
+    accepted(&mut keys_check, &keys, &keys_b);
     let after = projected(&content, &keys);
     let merged = after.iter().find(|q| q["id"] == json!(question)).unwrap();
     assert!(
@@ -247,6 +262,102 @@ fn two_editors_merge_an_option_and_its_correct_answer() {
             .starts_with("Very ")
     );
     assert_eq!(merged["parts"][0]["answer"]["correct"], json!([1]));
+}
+
+/// Both writers' updates go to the room in either order: each is admitted,
+/// and both orders end in the same document.
+fn converge(room: &Doc, kind: Kind, a: &Doc, b: &Doc) -> Doc {
+    let other = copy_of(room, 9);
+    for (first, second, target) in [(a, b, room), (b, a, &other)] {
+        let mut check = validator(kind, target);
+        accepted(&mut check, target, first);
+        accepted(&mut check, target, second);
+    }
+    assert_eq!(
+        room.transact()
+            .encode_state_as_update_v1(&StateVector::default())
+            .len(),
+        other
+            .transact()
+            .encode_state_as_update_v1(&StateVector::default())
+            .len()
+    );
+    assert_eq!(
+        quiz::content_document_value(&room.transact()),
+        quiz::content_document_value(&other.transact())
+    );
+    other
+}
+
+/// DESIGN 9.2: one editor moves a question while another types inside it;
+/// both land.
+#[test]
+fn a_move_during_an_edit_inside_the_question_keeps_both() {
+    let questions = fixtures();
+    let (content, keys, _, _) = rooms(&questions);
+    let moved = questions[0]["id"].as_str().unwrap().to_owned();
+    let last = questions.last().unwrap()["id"].as_str().unwrap().to_owned();
+    let a = copy_of(&content, 3);
+    let b = copy_of(&content, 4);
+    let after = {
+        let txn = a.transact();
+        match map_in(&a, &["questions", &last]).get(&txn, "order") {
+            Some(Out::Any(Any::String(order))) => items::order::after(Some(&order)),
+            other => panic!("{other:?}"),
+        }
+    };
+    map_in(&a, &["questions", &moved]).insert(&mut a.transact_mut(), "order", after.as_str());
+    let part = questions[0]["parts"][0]["id"].as_str().unwrap();
+    let blocks = map_in(&b, &["questions", &moved, "parts", part, "blocks"]);
+    let block = first_key(&blocks, &b);
+    text_in(
+        &b,
+        &["questions", &moved, "parts", part, "blocks", &block],
+        "text",
+    )
+    .insert(&mut b.transact_mut(), 0, "Typed: ");
+    converge(&content, Kind::Quiz, &a, &b);
+    let after = projected(&content, &keys);
+    assert_eq!(after.last().unwrap()["id"], json!(moved));
+    assert!(
+        after.last().unwrap()["parts"][0]["blocks"][0]["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("Typed: ")
+    );
+}
+
+/// DESIGN 9.2: one editor changes a part's type (the answer map replaced, as
+/// the dialog does) while another types into one of its options; both
+/// orders converge on the new type.
+#[test]
+fn a_type_change_during_an_edit_in_an_option_converges() {
+    let questions = fixtures();
+    let (content, _, _, _) = rooms(&questions);
+    let (question, part) = part_of(&questions, "mcq");
+    let path = ["questions", question.as_str(), "parts", part.as_str()];
+    let a = copy_of(&content, 3);
+    let b = copy_of(&content, 4);
+    {
+        let part_map = map_in(&a, &path);
+        let mut txn = a.transact_mut();
+        let answer = part_map.insert(&mut txn, "answer", MapPrelim::default());
+        answer.insert(&mut txn, "type", "ordering");
+    }
+    text_in(
+        &b,
+        &[&path[..], &["answer", "options", "o0"]].concat(),
+        "text",
+    )
+    .insert(&mut b.transact_mut(), 0, "Late ");
+    let other = converge(&content, Kind::Quiz, &a, &b);
+    for doc in [&content, &other] {
+        let txn = doc.transact();
+        let answer = map_in(doc, &[&path[..], &["answer"]].concat());
+        assert!(
+            matches!(answer.get(&txn, "type"), Some(Out::Any(Any::String(t))) if &*t == "ordering")
+        );
+    }
 }
 
 /// One crafted edit of the room's `kind` document, refused with `reason`,
@@ -280,48 +391,33 @@ fn refused(kind: Kind, edit: impl FnOnce(&Doc), reason: &str) {
 fn shapes_no_editor_writes_are_refused() {
     let questions = fixtures();
     let (question, ordering) = part_of(&questions, "ordering");
-    let answer = [
-        "questions",
-        question.as_str(),
-        "parts",
-        ordering.as_str(),
-        "answer",
-    ];
-    // Security regression (D3): the reader copy and its slots are the
-    // server's alone.
-    refused(
-        Kind::Quiz,
-        |doc| {
-            let copy = map_in(doc, &[&answer[..], &["copy"]].concat());
-            copy.insert(&mut doc.transact_mut(), "forged", MapPrelim::default());
-        },
-        "reader copy",
-    );
+    let answer = ["questions", &question, "parts", &ordering, "answer"];
+    // Security regression (D3): nothing derived from the keys' items goes in
+    // the content document, nor a server-only field in the keys.
     refused(
         Kind::Quiz,
         |doc| {
             map_in(doc, &answer).insert(&mut doc.transact_mut(), "copy", MapPrelim::default());
         },
-        "reader copy",
+        "outside its shape",
+    );
+    refused(
+        Kind::Quiz,
+        |doc| {
+            map_in(doc, &answer).insert(&mut doc.transact_mut(), "items", MapPrelim::default());
+        },
+        "outside its shape",
     );
     refused(
         Kind::QuizKeys,
         |doc| {
             let items = map_in(doc, &["keys", &ordering, "items"]);
-            let first = items.keys(&doc.transact()).next().unwrap().to_owned();
+            let first = first_key(&items, doc);
             map_in(doc, &["keys", &ordering, "items", &first]).insert(
                 &mut doc.transact_mut(),
                 "slot",
                 "mine",
             );
-        },
-        "slot",
-    );
-    // Keys never go in the content document, nor stray roots anywhere.
-    refused(
-        Kind::Quiz,
-        |doc| {
-            map_in(doc, &answer).insert(&mut doc.transact_mut(), "items", MapPrelim::default());
         },
         "outside its shape",
     );
@@ -343,17 +439,6 @@ fn shapes_no_editor_writes_are_refused() {
             stem.insert(&mut doc.transact_mut(), "bad id!", MapPrelim::default());
         },
         "an id that is not",
-    );
-    refused(
-        Kind::Quiz,
-        |doc| {
-            map_in(doc, &["questions", &question, "parts", &ordering]).insert(
-                &mut doc.transact_mut(),
-                "marks",
-                "two",
-            );
-        },
-        "outside its shape",
     );
     refused(
         Kind::Quiz,
@@ -391,14 +476,86 @@ fn shapes_no_editor_writes_are_refused() {
     );
 }
 
+/// REVIEW1 M4: every value the store's caps refuse is refused at admission,
+/// so the store never meets one (and never discards a room for it).
+#[test]
+fn values_past_their_caps_are_refused_at_admission() {
+    let questions = fixtures();
+    let (question, ordering) = part_of(&questions, "ordering");
+    let part = ["questions", question.as_str(), "parts", ordering.as_str()];
+    for marks in [0.0, 2.5, 21.0, 500.0] {
+        refused(
+            Kind::Quiz,
+            |doc| {
+                map_in(doc, &part).insert(&mut doc.transact_mut(), "marks", marks);
+            },
+            "whole marks",
+        );
+    }
+    refused(
+        Kind::Quiz,
+        |doc| {
+            map_in(doc, &part).insert(&mut doc.transact_mut(), "marks", "two");
+        },
+        "whole marks",
+    );
+    let (short_question, short) = part_of(&questions, "short");
+    refused(
+        Kind::Quiz,
+        |doc| {
+            map_in(
+                doc,
+                &["questions", &short_question, "parts", &short, "answer"],
+            )
+            .insert(&mut doc.transact_mut(), "unit", "m".repeat(101));
+        },
+        "outside its shape",
+    );
+    refused(
+        Kind::Quiz,
+        |doc| {
+            let stem = map_in(doc, &["questions", &question, "stem"]);
+            let block = stem.insert(&mut doc.transact_mut(), "b9", MapPrelim::default());
+            block.insert(&mut doc.transact_mut(), "label", "l".repeat(12_001));
+        },
+        "outside its shape",
+    );
+    let (open_question, open) = part_of(&questions, "open");
+    refused(
+        Kind::QuizKeys,
+        |doc| {
+            let scheme = map_in(doc, &["keys", &open, "markscheme"]);
+            let first = first_key(&scheme, doc);
+            map_in(doc, &["keys", &open, "markscheme", &first]).insert(
+                &mut doc.transact_mut(),
+                "marks",
+                21.0,
+            );
+        },
+        "whole marks",
+    );
+    // At the caps exactly, admitted.
+    let (content, _, client, _) = rooms(&questions);
+    map_in(
+        &client,
+        &["questions", &short_question, "parts", &short, "answer"],
+    )
+    .insert(&mut client.transact_mut(), "unit", "m".repeat(100));
+    map_in(&client, &part).insert(&mut client.transact_mut(), "marks", 20.0);
+    let mut check = validator(Kind::Quiz, &content);
+    accepted(&mut check, &content, &client);
+    assert!(items::quiz::check_content_caps(&content.transact()).is_ok());
+    let _ = open_question;
+}
+
 #[test]
 fn texts_and_counts_past_their_caps_are_refused() {
     let questions = fixtures();
     let (question, part) = part_of(&questions, "open");
-    // A part text past 12,000 characters, at once or bit by bit.
+    // A part text past 12,000 characters.
     let (content, _, client, _) = rooms(&questions);
     let blocks = map_in(&client, &["questions", &question, "parts", &part, "blocks"]);
-    let first = blocks.keys(&client.transact()).next().unwrap().to_owned();
+    let first = first_key(&blocks, &client);
     let text = text_in(
         &client,
         &["questions", &question, "parts", &part, "blocks", &first],
@@ -436,87 +593,240 @@ fn texts_and_counts_past_their_caps_are_refused() {
     );
 }
 
-/// The order the copy's entries were created in (their Yjs clocks), as texts.
-fn creation_order(content: &Doc, answer: &[&str]) -> Vec<String> {
-    let copy = map_in(content, &[answer, &["copy"]].concat());
-    let txn = content.transact();
-    let mut entries: Vec<(u32, String)> = copy
-        .iter(&txn)
-        .map(|(_, value)| {
-            let Out::YMap(entry) = value else {
-                panic!("a copy entry")
-            };
-            let BranchID::Nested(id) = BranchPtr::from(entry.as_ref()).id() else {
-                panic!("a nested entry")
-            };
-            let Some(Out::YText(text)) = entry.get(&txn, "text") else {
-                panic!("a text")
-            };
-            (id.clock, text.get_string(&txn))
-        })
-        .collect();
-    entries.sort();
-    entries.into_iter().map(|(_, text)| text).collect()
-}
-
-fn display_order(content: &Doc, answer: &[&str]) -> Vec<String> {
-    let copy = map_in(content, &[answer, &["copy"]].concat());
-    let txn = content.transact();
-    let mut entries: Vec<(String, String)> = copy
-        .iter(&txn)
-        .map(|(slot, value)| {
-            let Out::YMap(entry) = value else {
-                panic!("a copy entry")
-            };
-            let Some(Out::YText(text)) = entry.get(&txn, "text") else {
-                panic!("a text")
-            };
-            (slot.to_owned(), text.get_string(&txn))
-        })
-        .collect();
-    entries.sort();
-    entries.into_iter().map(|(_, text)| text).collect()
-}
-
-/// The server's copy pass after a keys change, as the keys room runs it.
-fn copy_pass(content: &Doc, keys: &Doc, slot: &mut dyn FnMut() -> String) -> Vec<CopyPart> {
-    let parts = quiz::copy_parts(&keys.transact());
-    let slots = quiz::apply_copy(&mut content.transact_mut(), &parts, slot);
-    let root = keys.get_or_insert_map(quiz::KEYS_ROOT);
-    quiz::apply_slots(&mut keys.transact_mut(), &root, &slots);
-    parts
-}
-
-/// Security regression (D3, Epo 2026-10-10): an editor typing ordering items
-/// one by one in answer order leaves a reader copy whose Yjs ids follow the
-/// server's shuffle, not the typing, and whose slot order is that shuffle.
-/// Fails if the server added copy entries one by one.
+/// REVIEW1 M3: an image block added before its upload returns is structure
+/// (D4): admitted, and the question stays out of the projection until the
+/// image names its asset.
 #[test]
-fn the_reader_copy_never_follows_typing_order() {
+fn a_blank_image_block_is_admitted_and_leaves_its_question_incomplete() {
+    let questions = fixtures();
+    let (content, keys, client, _) = rooms(&questions);
+    let (question, _) = part_of(&questions, "boolean");
+    let stem = map_in(&client, &["questions", &question, "stem"]);
+    {
+        let mut txn = client.transact_mut();
+        let block = stem.insert(&mut txn, "bimg", MapPrelim::default());
+        block.insert(&mut txn, "order", items::order::after(None).as_str());
+        block.insert(&mut txn, "type", "image");
+        let image = Any::Map(Arc::new(HashMap::from([(
+            "url".to_owned(),
+            Any::String(Arc::from("")),
+        )])));
+        block.insert(&mut txn, "image", image);
+        block.insert(&mut txn, "description", TextPrelim::new(""));
+    }
+    let mut check = validator(Kind::Quiz, &content);
+    accepted(&mut check, &content, &client);
+    assert!(
+        !projected(&content, &keys)
+            .iter()
+            .any(|q| q["id"] == json!(question))
+    );
+}
+
+/// REVIEW1 S2: a structural edit (Add option) on a large quiz takes the
+/// counted bound, not a copy and a walk of the whole quiz: no exact check,
+/// and the work follows the touched list.
+#[test]
+fn a_structural_edit_scales_with_the_touched_item() {
+    let mcq = fixtures()
+        .into_iter()
+        .find(|q| q["parts"][0]["answer"]["type"] == json!("mcq"))
+        .unwrap();
+    let quiz_of = |count: usize| -> Vec<Value> {
+        (0..count)
+            .map(|n| {
+                let mut q = mcq.clone();
+                q["id"] = json!(format!("q{n}"));
+                q["parts"][0]["id"] = json!(format!("q{n}-p"));
+                q
+            })
+            .collect()
+    };
+    let mut steps_of = Vec::new();
+    for count in [2, 90] {
+        let questions = quiz_of(count);
+        let (content, _, client, _) = rooms(&questions);
+        let options = map_in(
+            &client,
+            &["questions", "q1", "parts", "q1-p", "answer", "options"],
+        );
+        {
+            let mut txn = client.transact_mut();
+            let entry = options.insert(&mut txn, "added", MapPrelim::default());
+            entry.insert(&mut txn, "order", items::order::after(Some("a5")).as_str());
+            entry.insert(&mut txn, "text", TextPrelim::new("A new option"));
+        }
+        let mut check = validator(Kind::Quiz, &content);
+        let (result, steps) = admit(&mut check, &content, &diff(&client, &content));
+        assert!(matches!(result, Ok(Admission::Accepted)), "{result:?}");
+        assert_eq!(check.exact_checks, 0, "Add option copied the room");
+        steps_of.push(steps);
+    }
+    assert!(
+        steps_of[1] <= steps_of[0] + 8,
+        "steps grew with the quiz: {steps_of:?}"
+    );
+}
+
+/// REVIEW1 S3: the content and keys documents count together against the
+/// material's limits: an update the content document alone would fit is
+/// refused once the keys take the rest.
+#[test]
+fn both_documents_count_against_the_limits() {
+    let questions = fixtures();
+    let (content, _, client, _) = rooms(&questions);
+    let (question, part) = part_of(&questions, "open");
+    let blocks = map_in(&client, &["questions", &question, "parts", &part, "blocks"]);
+    let first = first_key(&blocks, &client);
+    text_in(
+        &client,
+        &["questions", &question, "parts", &part, "blocks", &first],
+        "text",
+    )
+    .insert(&mut client.transact_mut(), 0, &"y".repeat(5_000));
+    let update = diff(&client, &content);
+    let mut alone = validator(Kind::Quiz, &content);
+    let probe = copy_of(&content, 5);
+    let (result, _) = admit(&mut alone, &probe, &update);
+    assert!(matches!(result, Ok(Admission::Accepted)), "{result:?}");
+    let mut together = validator(Kind::Quiz, &content);
+    together.peer = Some(notes::limits::Metrics {
+        content_bytes: notes::limits::MAX_CONTENT_BYTES - 1_000,
+        max_depth: 1,
+        node_count: 1,
+    });
+    let (result, _) = admit(&mut together, &content, &update);
+    assert!(matches!(result, Err(Refusal::Limit { .. })), "{result:?}");
+}
+
+/// REVIEW1 M1: Undo of a removal re-creates only what an editor wrote, so the
+/// room admits it: a question, an ordering item, a matching option, a type
+/// change. Fails if the server writes into either document again (a reader
+/// copy, a slot), which an editor's Undo would re-create and the room refuse.
+#[test]
+fn undo_of_removals_and_type_changes_is_admitted() {
+    let questions = fixtures();
+    let (ordering_question, ordering) = part_of(&questions, "ordering");
+    let (_, matching) = part_of(&questions, "matching");
+    type Edit = Box<dyn Fn(&Doc)>;
+    let cases: Vec<(Kind, &str, Edit)> = vec![
+        (
+            Kind::Quiz,
+            "questions",
+            Box::new({
+                let q = ordering_question.clone();
+                move |doc| {
+                    doc.get_or_insert_map("questions")
+                        .remove(&mut doc.transact_mut(), &q);
+                }
+            }),
+        ),
+        (
+            Kind::QuizKeys,
+            "keys",
+            Box::new({
+                let part = ordering.clone();
+                move |doc| {
+                    doc.get_or_insert_map("keys")
+                        .remove(&mut doc.transact_mut(), &part);
+                }
+            }),
+        ),
+        (
+            Kind::QuizKeys,
+            "keys",
+            Box::new({
+                let part = ordering.clone();
+                move |doc| {
+                    let items = map_in(doc, &["keys", &part, "items"]);
+                    let first = first_key(&items, doc);
+                    items.remove(&mut doc.transact_mut(), &first);
+                }
+            }),
+        ),
+        (
+            Kind::QuizKeys,
+            "keys",
+            Box::new({
+                let part = matching.clone();
+                move |doc| {
+                    let options = map_in(doc, &["keys", &part, "options"]);
+                    let first = first_key(&options, doc);
+                    options.remove(&mut doc.transact_mut(), &first);
+                }
+            }),
+        ),
+        (
+            Kind::QuizKeys,
+            "keys",
+            Box::new({
+                let part = ordering.clone();
+                move |doc| {
+                    let root = doc.get_or_insert_map("keys");
+                    let mut txn = doc.transact_mut();
+                    let key = root.insert(&mut txn, part.as_str(), MapPrelim::default());
+                    key.insert(&mut txn, "type", "mcq");
+                }
+            }),
+        ),
+    ];
+    for (kind, root_name, edit) in cases {
+        let (content, keys, client_content, client_keys) = rooms(&questions);
+        let (room, client) = match kind {
+            Kind::QuizKeys => (keys, client_keys),
+            _ => (content, client_content),
+        };
+        let root = client.get_or_insert_map(root_name);
+        let mut undo: UndoManager = UndoManager::with_options(Default::default());
+        undo.expand_scope(&client, &root);
+        edit(&client);
+        let mut check = validator(kind, &room);
+        accepted(&mut check, &room, &client);
+        assert!(undo.undo_blocking(), "nothing to undo");
+        accepted(&mut check, &room, &client);
+    }
+}
+
+/// A seeded pick: the same shuffle every run.
+fn seeded(seed: u64) -> impl FnMut(usize) -> usize {
+    let mut state = seed;
+    move |n| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        ((state >> 33) % n as u64) as usize
+    }
+}
+
+/// Security regression (D3 as revised by Epo 2026-10-10): an editor typing
+/// ordering items one by one in answer order. The readers' lists are plain
+/// texts outside Yjs: every list a set change makes is a fresh shuffle (not
+/// the last list with the new item added), the content document never holds
+/// an item, and a reader who arrives afterwards gets one list whose order is
+/// not the typing order. Fails if the lists follow the keys' order or grow
+/// by appending.
+#[test]
+fn the_readers_lists_never_follow_typing_order() {
     let questions = fixtures();
     let (content, keys, _, _) = rooms(&questions);
-    let (question, part) = part_of(&questions, "ordering");
-    let answer = [
-        "questions",
-        question.as_str(),
-        "parts",
-        part.as_str(),
-        "answer",
-    ];
+    let (_, part) = part_of(&questions, "ordering");
     let items = map_in(&keys, &["keys", &part, "items"]);
     let held: Vec<String> = items.keys(&keys.transact()).map(str::to_owned).collect();
     for id in held {
         items.remove(&mut keys.transact_mut(), &id);
     }
-    let mut slot = seeded(42);
-    copy_pass(&content, &keys, &mut slot);
+    let mut lists = ReaderLists::default();
+    let mut pick = seeded(42);
+    lists.follow(&quiz::item_parts(&keys.transact()), &mut pick);
     let typed: Vec<String> = (1..=8).map(|n| format!("step {n}")).collect();
     let mut order: Option<String> = None;
-    for text in &typed {
+    let mut appended = 0;
+    let mut previous: Vec<String> = Vec::new();
+    for (n, text) in typed.iter().enumerate() {
         let next = items::order::after(order.as_deref());
         let entry = items.insert(
             &mut keys.transact_mut(),
-            format!("t{text}").replace(' ', ""),
+            format!("t{n}"),
             MapPrelim::default(),
         );
         entry.insert(&mut keys.transact_mut(), "order", next.as_str());
@@ -526,63 +836,95 @@ fn the_reader_copy_never_follows_typing_order() {
             TextPrelim::new(text.as_str()),
         );
         order = Some(next);
-        copy_pass(&content, &keys, &mut slot);
+        let changed = lists.follow(&quiz::item_parts(&keys.transact()), &mut pick);
+        let list = changed
+            .into_iter()
+            .find(|(id, _)| *id == part)
+            .and_then(|(_, list)| list)
+            .unwrap()
+            .items;
+        let mut sorted = list.clone();
+        sorted.sort();
+        let mut want = typed[..=n].to_vec();
+        want.sort();
+        assert_eq!(sorted, want, "each list holds the items once");
+        if n > 0 && list[..n] == previous[..] {
+            appended += 1;
+        }
+        previous = list;
     }
-    let created = creation_order(&content, &answer);
-    let shown = display_order(&content, &answer);
-    let mut sorted = created.clone();
-    sorted.sort();
-    assert_eq!(sorted, typed, "the copy holds every item once");
-    assert_ne!(created, typed, "the copy's Yjs ids follow the typing order");
-    assert_eq!(created, shown, "entries are created in slot order");
-    // A text edit mirrors in place: no new entry, the order unchanged.
-    let first = map_in(&keys, &["keys", &part, "items", "tstep1"]);
-    let Some(Out::YText(text)) = first.get(&keys.transact(), "text") else {
-        panic!()
-    };
-    text.insert(&mut keys.transact_mut(), 6, "!");
-    let before = content.transact().state_vector();
-    copy_pass(&content, &keys, &mut slot);
-    assert_eq!(creation_order(&content, &answer).len(), typed.len());
-    assert_eq!(
-        display_order(&content, &answer)
-            .iter()
-            .filter(|t| t.ends_with('!'))
-            .count(),
-        1
+    assert!(appended < typed.len() - 2, "the lists grew by appending");
+    // A reader arriving now gets one list, not in typing order, and the
+    // content document holds none of the items.
+    let (_, list) = lists.all().into_iter().find(|(id, _)| *id == part).unwrap();
+    assert_ne!(list.items, typed, "the list follows the typing order");
+    let state = content
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    let held = String::from_utf8_lossy(&state);
+    assert!(typed.iter().all(|t| !held.contains(t.as_str())));
+    // A text edit keeps the order and changes only that text.
+    let before = list.items.clone();
+    text_in(&keys, &["keys", &part, "items", "t0"], "text").insert(
+        &mut keys.transact_mut(),
+        6,
+        "!",
     );
-    let change = content.transact().encode_state_as_update_v1(&before);
-    let structs = Update::decode_v1(&change).unwrap().blocks().count();
-    assert!(structs <= 2, "{structs} structs for a one-character mirror");
+    let changed = lists.follow(&quiz::item_parts(&keys.transact()), &mut pick);
+    let after = changed[0].1.clone().unwrap().items;
+    let edited: Vec<String> = before
+        .iter()
+        .map(|t| {
+            if t == "step 1" {
+                "step 1!".to_owned()
+            } else {
+                t.clone()
+            }
+        })
+        .collect();
+    assert_eq!(after, edited);
+    // A part whose type changes away from ordering has no list any more.
+    map_in(&keys, &["keys", &part]).insert(&mut keys.transact_mut(), "type", "short");
+    let changed = lists.follow(&quiz::item_parts(&keys.transact()), &mut pick);
+    assert_eq!(changed, vec![(part.clone(), None)]);
 }
 
+/// REVIEW1 S6: the save API writes what differs, so an editor typing into
+/// the same question keeps their characters.
 #[test]
-fn a_copy_the_server_failed_to_write_is_rewritten() {
+fn the_save_api_keeps_concurrent_typing() {
     let questions = fixtures();
-    let (content, keys, _, _) = rooms(&questions);
-    let (question, part) = part_of(&questions, "matching");
-    let answer = [
+    let (content, keys, client, _) = rooms(&questions);
+    let (question, part) = part_of(&questions, "mcq");
+    let option = [
         "questions",
-        question.as_str(),
+        &question,
         "parts",
-        part.as_str(),
+        &part,
         "answer",
+        "options",
+        "o0",
     ];
-    // The copy lost an entry (a crash between the keys and content stores).
-    let copy = map_in(&content, &[&answer[..], &["copy"]].concat());
-    let gone = copy.keys(&content.transact()).next().unwrap().to_owned();
-    copy.remove(&mut content.transact_mut(), &gone);
-    copy_pass(&content, &keys, &mut seeded(3));
-    let options = projected(&content, &keys)
-        .into_iter()
-        .find(|q| q["id"] == json!(question))
-        .unwrap()["parts"][0]["answer"]["options"]
-        .clone();
-    let mut want: Vec<String> = serde_json::from_value(options).unwrap();
-    let mut got = display_order(&content, &answer);
-    want.sort();
-    got.sort();
-    assert_eq!(got, want);
+    text_in(&client, &option, "text").insert(&mut client.transact_mut(), 0, "Very ");
+    let mut next = questions.clone();
+    let at = next
+        .iter()
+        .position(|q| q["id"] == json!(question))
+        .unwrap();
+    next[at]["stem"] = json!([{ "type": "text", "text": "A rewritten stem" }]);
+    quiz::set_questions(&mut content.transact_mut(), &mut keys.transact_mut(), &next).unwrap();
+    let mut check = validator(Kind::Quiz, &content);
+    accepted(&mut check, &content, &client);
+    let after = projected(&content, &keys);
+    let merged = after.iter().find(|q| q["id"] == json!(question)).unwrap();
+    assert_eq!(merged["stem"][0]["text"], json!("A rewritten stem"));
+    assert!(
+        merged["parts"][0]["answer"]["options"][0]
+            .as_str()
+            .unwrap()
+            .starts_with("Very "),
+        "{merged}"
+    );
 }
 
 #[test]
@@ -601,13 +943,7 @@ fn the_save_api_rewrites_only_changed_questions() {
     let branch =
         |doc: &Doc, id: &str| BranchPtr::from(map_in(doc, &["questions", id]).as_ref()).id();
     let kept = branch(&content, &untouched);
-    quiz::set_questions(
-        &mut content.transact_mut(),
-        &mut keys.transact_mut(),
-        &next,
-        &mut seeded(9),
-    )
-    .unwrap();
+    quiz::set_questions(&mut content.transact_mut(), &mut keys.transact_mut(), &next).unwrap();
     assert_eq!(projected(&content, &keys), next);
     assert_eq!(
         branch(&content, &untouched),
@@ -615,13 +951,7 @@ fn the_save_api_rewrites_only_changed_questions() {
         "an unchanged question is not rewritten"
     );
     next.pop();
-    quiz::set_questions(
-        &mut content.transact_mut(),
-        &mut keys.transact_mut(),
-        &next,
-        &mut seeded(9),
-    )
-    .unwrap();
+    quiz::set_questions(&mut content.transact_mut(), &mut keys.transact_mut(), &next).unwrap();
     assert_eq!(projected(&content, &keys), next);
 }
 
@@ -642,7 +972,6 @@ fn agent_question_commands_apply_undo_and_refuse_a_changed_question() {
         &mut content.transact_mut(),
         &mut keys.transact_mut(),
         &commands,
-        &mut seeded(1),
     )
     .unwrap();
     assert_eq!(projected(&content, &keys)[0], replaced);
@@ -651,11 +980,38 @@ fn agent_question_commands_apply_undo_and_refuse_a_changed_question() {
         &mut content.transact_mut(),
         &mut keys.transact_mut(),
         &outcome.inverse,
-        &mut seeded(1),
     )
     .unwrap();
     assert_eq!(projected(&content, &keys), questions);
     // After someone changed it, the old guards refuse.
     let stale = quiz::verify_guards(&content.transact(), &keys.transact(), &outcome.guards);
     assert!(matches!(stale, Err(EditError::Edit { .. })));
+}
+
+/// The asset ids a projection names beside its value: every image, in
+/// complete questions or not.
+#[test]
+fn asset_ids_cover_incomplete_questions() {
+    let questions = fixtures();
+    let (content, keys, _, _) = rooms(&questions);
+    let with_asset = questions
+        .iter()
+        .find(|q| serde_json::to_string(q).unwrap().contains("assetId"))
+        .unwrap();
+    let ids = quiz::asset_ids(&content.transact(), &keys.transact());
+    assert!(!ids.is_empty());
+    // Incomplete now (no correct option on any mcq does not matter here):
+    // drop every key, the projection empties, the ids stay.
+    let root = keys.get_or_insert_map("keys");
+    let parts: Vec<String> = root.keys(&keys.transact()).map(str::to_owned).collect();
+    for part in parts {
+        let key = map_in(&keys, &["keys", &part]);
+        key.insert(&mut keys.transact_mut(), "type", "none");
+    }
+    assert!(
+        !projected(&content, &keys)
+            .iter()
+            .any(|q| q["id"] == with_asset["id"])
+    );
+    assert_eq!(quiz::asset_ids(&content.transact(), &keys.transact()), ids);
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMaterial, useQuiz, useSubmitAttempt } from '@/api/hooks';
 import type { Material } from '@/api/types';
+import { SaveBanner } from '@/components/banners/SaveBanner';
 import { useNearScreen } from '@/features/collaboration/useNearScreen';
 import { LiveFlashcards } from '@/features/flashcards/LiveFlashcards';
 import { useLiveSetCards } from '@/features/flashcards/liveReads';
@@ -16,7 +17,8 @@ import {
   useQuizQuestions,
   useQuizRooms,
 } from '@/features/quizzes/liveQuizRooms';
-import { QuizForm } from '@/features/quizzes/QuizForm';
+import { QuizForm, QuizRecovery } from '@/features/quizzes/QuizForm';
+import { QuizQuestionList } from '@/features/quizzes/QuizPage';
 import { EmbedLoading, type EmbedProps, EmbedUnavailable } from './EmbedView';
 
 /* A note's embedded quiz or flashcard set inside the app, read through the
@@ -222,17 +224,26 @@ function QuizEditor({
     <div ref={box}>
       {rooms.status === 'unavailable' ? (
         <EmbedUnavailable />
+      ) : rooms.recovery ? (
+        <QuizRecovery recovery={rooms.recovery} rooms={rooms} />
       ) : rooms.ready && rooms.content && rooms.keys ? (
-        <QuizForm
-          content={rooms.content.doc}
-          keys={rooms.keys.doc}
-          name=""
-          onEmpty={onEmpty}
-          questions={questions}
-          quizId={quizId}
-          status={rooms.status}
-          undo={rooms.undo}
-        />
+        <div className="grid gap-4">
+          {rooms.offline && <SaveBanner state={rooms.offline} />}
+          {rooms.offline === 'offline-limit' ? (
+            <QuizQuestionList disabled questions={questions} showAnswerKey />
+          ) : (
+            <QuizForm
+              content={rooms.content.doc}
+              keys={rooms.keys.doc}
+              name=""
+              onEmpty={onEmpty}
+              questions={questions}
+              quizId={quizId}
+              status={rooms.status}
+              undo={rooms.undo}
+            />
+          )}
+        </div>
       ) : (
         <EmbedLoading />
       )}

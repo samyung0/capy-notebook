@@ -2532,38 +2532,6 @@ fn map_at(doc: &Doc, path: &[&str]) -> Option<yrs::MapRef> {
     Some(map)
 }
 
-/// The reader copy of `part` as a reader holds it: (Yjs clock, client, text).
-fn reader_copy(doc: &Doc, question: &str, part: &str) -> Vec<(u32, u64, String)> {
-    use yrs::Map;
-    let Some(copy) = map_at(
-        doc,
-        &["questions", question, "parts", part, "answer", "copy"],
-    ) else {
-        return Vec::new();
-    };
-    let txn = doc.transact();
-    let mut entries: Vec<(u32, u64, String)> = copy
-        .iter(&txn)
-        .filter_map(|(_, value)| match value {
-            yrs::Out::YMap(entry) => {
-                let yrs::branch::BranchID::Nested(id) =
-                    yrs::branch::BranchPtr::from(entry.as_ref()).id()
-                else {
-                    return None;
-                };
-                let text = match entry.get(&txn, "text") {
-                    Some(yrs::Out::YText(text)) => text.get_string(&txn),
-                    _ => String::new(),
-                };
-                Some((id.clock, id.client.get(), text))
-            }
-            _ => None,
-        })
-        .collect();
-    entries.sort();
-    entries
-}
-
 #[tokio::test]
 async fn two_editors_converge_across_a_quizs_content_and_keys() {
     let Some(env) = env() else { return };
@@ -2656,13 +2624,77 @@ async fn two_editors_converge_across_a_quizs_content_and_keys() {
     assert!(key_rows >= 1);
 }
 
-/// Security regression (live-items D1/D3, Epo 2026-10-10): answer keys and
-/// typing order never reach a reader. A viewer is refused the keys room with
-/// any token; on the content room it holds no key field; and while an editor
-/// types ordering items one by one in answer order, the reader copy it sees
-/// is written by the server alone, its entries' Yjs ids following the
-/// server's shuffle rather than the typing (fails if the server appended
-/// entries one by one, or relayed a keys update to the content room).
+/// The `quiz-items` messages a channel heard so far (taken from its inbox),
+/// as JSON, in order.
+fn quiz_items(client: &mut Client) -> Vec<serde_json::Value> {
+    let mut out = Vec::new();
+    client.inbox.retain(|message| {
+        if message.kind != 9 {
+            return true;
+        }
+        let text = text_payload(&message.payload);
+        match serde_json::from_str::<serde_json::Value>(&text) {
+            Ok(value) if value["type"] == "quiz-items" => {
+                out.push(value);
+                false
+            }
+            _ => true,
+        }
+    });
+    out
+}
+
+/// A part's list after `messages` (a full one replaces, a partial one
+/// changes the parts it names).
+fn list_after(messages: &[serde_json::Value], part: &str) -> Option<Vec<String>> {
+    let mut list: Option<Vec<String>> = None;
+    for message in messages {
+        if message["full"] == true {
+            list = None;
+        }
+        match message["parts"].get(part) {
+            Some(serde_json::Value::Null) => list = None,
+            Some(value) => {
+                list = Some(serde_json::from_value(value["items"].clone()).expect("items"));
+            }
+            None => {}
+        }
+    }
+    list
+}
+
+/// Reads until the channel's lists for `part` hold `want` items.
+async fn hear_list(
+    client: &mut Client,
+    heard: &mut Vec<serde_json::Value>,
+    part: &str,
+    want: usize,
+) -> Vec<String> {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        heard.extend(quiz_items(client));
+        if let Some(list) = list_after(heard, part)
+            && list.len() == want
+        {
+            return list;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "no list of {want} for {part}: {heard:?}"
+        );
+        client.hears(9, 200).await;
+    }
+}
+
+/// Security regression (live-items D1, D3 as revised by Epo 2026-10-10):
+/// answer keys and typing order never reach a reader. A viewer is refused the
+/// keys room with any token. Ordering items reach readers only as plain lists
+/// the content room pushes, outside Yjs: while an editor types eight items
+/// one by one in answer order, each list a reader hears is a fresh shuffle
+/// of the items so far, never the last list with the new item appended; a
+/// reader who joins afterwards hears one list, not in typing order; and no
+/// reader's Yjs state holds an item or a key field. Fails if the copy goes
+/// back into the content document, or the lists follow the keys' order.
 #[tokio::test]
 async fn neither_keys_nor_typing_order_reach_a_reader() {
     let Some(env) = env() else { return };
@@ -2690,27 +2722,25 @@ async fn neither_keys_nor_typing_order_reach_a_reader() {
         "collaboration-read-only"
     );
 
-    let mut editor = Client::open(server.port).await;
-    let mut keys = Client::open(server.port).await;
+    // A reader joining before any editor hears the stored items' list.
     let mut reader = Client::open(server.port).await;
-    editor
-        .joined(&content_room, &token(&content_room, &owner, "write"))
-        .await;
-    keys.joined(&keys_room, &token(&keys_room, &owner, "write"))
-        .await;
     assert_eq!(
         reader
             .joined(&content_room, &token(&content_room, &viewer, "read"))
             .await,
         0
     );
+    let mut heard = Vec::new();
+    let first = hear_list(&mut reader, &mut heard, "q2-p", 2).await;
+    let mut sorted = first.clone();
+    sorted.sort();
+    assert_eq!(sorted, ["one", "two"]);
+
+    let mut keys = Client::open(server.port).await;
+    keys.joined(&keys_room, &token(&keys_room, &owner, "write"))
+        .await;
     assert!(
         keys.settle(|c| map_at(&c.doc, &["keys", "q2-p", "items"]).is_some())
-            .await
-    );
-    assert!(
-        reader
-            .settle(|c| reader_copy(&c.doc, "q2", "q2-p").len() == 2)
             .await
     );
     // The editor clears the items, then types eight in answer order.
@@ -2723,8 +2753,10 @@ async fn neither_keys_nor_typing_order_reach_a_reader() {
         }
     })
     .await;
+    assert!(keys.until(6).await.is_some(), "keys ack");
     let typed: Vec<String> = (1..=8).map(|n| format!("step {n}")).collect();
     let mut order: Option<String> = None;
+    let mut lists: Vec<Vec<String>> = Vec::new();
     for (n, text) in typed.iter().enumerate() {
         let next = items::order::after(order.as_deref());
         let next_key = next.clone();
@@ -2747,44 +2779,84 @@ async fn neither_keys_nor_typing_order_reach_a_reader() {
         .await;
         order = Some(next);
         assert!(keys.until(6).await.is_some(), "keys ack {n}");
+        lists.push(hear_list(&mut reader, &mut heard, "q2-p", n + 1).await);
     }
-    let mut sorted_typed = typed.clone();
-    sorted_typed.sort();
-    assert!(
-        reader
-            .settle(|c| {
-                let mut texts: Vec<String> = reader_copy(&c.doc, "q2", "q2-p")
-                    .into_iter()
-                    .map(|e| e.2)
-                    .collect();
-                texts.sort();
-                texts == sorted_typed
-            })
-            .await,
-        "{:?}",
-        reader_copy(&reader.doc, "q2", "q2-p")
+    for (n, list) in lists.iter().enumerate() {
+        let mut sorted = list.clone();
+        sorted.sort();
+        let mut want = typed[..=n].to_vec();
+        want.sort();
+        assert_eq!(sorted, want, "list {n} holds the items so far once");
+    }
+    let appended = lists
+        .windows(2)
+        .filter(|pair| pair[1][..pair[0].len()] == pair[0][..])
+        .count();
+    assert!(appended < 6, "the lists grew by appending: {lists:?}");
+    assert_ne!(
+        lists.last().expect("lists"),
+        &typed,
+        "the list follows the typing order"
     );
-    let copy = reader_copy(&reader.doc, "q2", "q2-p");
-    let created: Vec<String> = copy.iter().map(|e| e.2.clone()).collect();
-    assert_ne!(created, typed, "the reader copy follows the typing order");
-    let writers: std::collections::HashSet<u64> = copy.iter().map(|e| e.1).collect();
-    assert_eq!(writers.len(), 1, "one server rewrite wrote the copy");
-    // Nothing of the keys document reached the reader.
-    let state = reader
-        .doc
-        .transact()
-        .encode_state_as_update_v1(&StateVector::default());
-    let held = String::from_utf8_lossy(&state);
-    for key in [
-        "correct",
-        "accepted",
-        "markscheme",
-        "solution",
-        "pairs",
-        "slot",
-        "items",
-        "keys",
-    ] {
-        assert!(!held.contains(key), "a reader holds {key}");
+
+    // A reader arriving afterwards hears one list, not in typing order.
+    let mut late = Client::open(server.port).await;
+    late.joined(&content_room, &token(&content_room, &viewer, "read"))
+        .await;
+    let mut late_heard = Vec::new();
+    let late_list = hear_list(&mut late, &mut late_heard, "q2-p", 8).await;
+    assert_eq!(late_heard.len(), 1, "a late reader hears one full list");
+    assert_ne!(late_list, typed, "the late list follows the typing order");
+
+    // Nothing of the keys document is in any reader's Yjs state.
+    for client in [&reader, &late] {
+        let state = client
+            .doc
+            .transact()
+            .encode_state_as_update_v1(&StateVector::default());
+        let held = String::from_utf8_lossy(&state);
+        for secret in typed.iter().map(String::as_str).chain([
+            "correct",
+            "accepted",
+            "markscheme",
+            "solution",
+            "pairs",
+            "slot",
+            "items",
+            "keys",
+            "copy",
+        ]) {
+            assert!(!held.contains(secret), "a reader holds {secret}");
+        }
     }
+}
+
+/// Security regression (live-items D1, REVIEW1 S5): a keys room refuses a
+/// read token at a refresh too, so a demoted editor's channel closes at its
+/// write token's expiry instead of reading on (fails if the refresh check
+/// goes: the read token re-arms the channel).
+#[tokio::test]
+async fn a_keys_room_refuses_a_read_token_at_refresh() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let owner = user(&env).await;
+    let quiz = quiz_material(&env, &owner, "private").await;
+    let keys_room = format!("keys:{quiz}:schema:1");
+    let mut keys = Client::open(server.port).await;
+    assert_eq!(
+        keys.joined(&keys_room, &token_for(&keys_room, &owner, "write", 3))
+            .await,
+        1
+    );
+    // The short token asks for a refresh at once; a read token answers.
+    assert!(keys.until(10).await.is_some(), "a token request");
+    let mut refresh = Vec::new();
+    varbytes(&mut refresh, token(&keys_room, &owner, "read").as_bytes());
+    keys.send(11, &refresh).await;
+    let closed = keys.until(4).await.expect("the channel closes at expiry");
+    assert!(
+        String::from_utf8_lossy(&closed).contains("expired"),
+        "{}",
+        String::from_utf8_lossy(&closed)
+    );
 }

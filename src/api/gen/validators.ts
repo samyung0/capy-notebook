@@ -7605,6 +7605,7 @@ export const ProjectMaterialYjsDocumentHeader = zod.object({
 
 
 export const ProjectMaterialYjsDocumentBody = zod.object({
+  "assetIds": zod.array(zod.string()).nullish(),
   "content": zod.object({
   "schemaVersion": zod.int(),
   "value": zod.array(zod.record(zod.string(), zod.unknown())).nullable()

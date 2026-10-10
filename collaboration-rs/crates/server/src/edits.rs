@@ -316,7 +316,7 @@ pub async fn inspect_material(
                 )
             })?;
             if kind == "quiz" {
-                let (content, quiz_keys) = items::quiz::states_from_value(value, 0, &mut new_slot);
+                let (content, quiz_keys) = items::quiz::states_from_value(value, 0);
                 keys = Some((quiz_keys, Vec::new()));
                 (content, Vec::new())
             } else {
@@ -386,6 +386,8 @@ struct Computed {
     /// One per changed document (a quiz may change both).
     writes: Vec<Write>,
     value: Vec<Value>,
+    /// A quiz: every editor asset its documents reference (REVIEW1 S4).
+    asset_ids: Option<Vec<String>>,
     outcome: EditOutcome,
 }
 
@@ -457,11 +459,6 @@ impl Scratch {
     }
 }
 
-/// A fresh random reader-copy slot (D3).
-fn new_slot() -> String {
-    uuid::Uuid::new_v4().simple().to_string()
-}
-
 /// A quiz's keys document base and log, under the caller's snapshot.
 async fn quiz_keys(
     tx: &deadpool_postgres::Transaction<'_>,
@@ -491,8 +488,8 @@ struct QuizInput {
 }
 
 /// A server write of a quiz (an agent edit, its Undo, the save API): `edit`
-/// runs on both documents; caps and limits hold for each; the projection is
-/// the complete questions.
+/// runs on both documents; caps hold for each and the limits for both
+/// together (REVIEW1 S3); the projection is the complete questions.
 fn compute_quiz(
     content: &Scratch,
     keys: &Scratch,
@@ -501,35 +498,39 @@ fn compute_quiz(
         &mut yrs::TransactionMut,
     ) -> Result<EditOutcome, DocumentError>,
 ) -> Result<Computed, DocumentError> {
-    let measure = |kind: items::Kind, doc: &yrs::Doc| {
-        notes::limits::measure_value(&kind.document_value(&doc.transact()))
+    let measure = || {
+        let one = |kind: items::Kind, doc: &yrs::Doc| {
+            notes::limits::measure_value(&kind.document_value(&doc.transact()))
+        };
+        items::combine(
+            &one(items::Kind::Quiz, &content.doc),
+            Some(&one(items::Kind::QuizKeys, &keys.doc)),
+        )
     };
-    let previous = [
-        measure(items::Kind::Quiz, &content.doc),
-        measure(items::Kind::QuizKeys, &keys.doc),
-    ];
+    let previous = measure();
     let outcome = {
         let mut content_txn = content.doc.transact_mut();
         let mut keys_txn = keys.doc.transact_mut();
         edit(&mut content_txn, &mut keys_txn)?
     };
-    for ((kind, doc), previous) in [
+    for (kind, doc) in [
         (items::Kind::Quiz, &content.doc),
         (items::Kind::QuizKeys, &keys.doc),
-    ]
-    .into_iter()
-    .zip(previous)
-    {
+    ] {
         kind.check_caps(&doc.transact())
             .map_err(|error| DocumentError::edit("invalid_input", &error))?;
-        let metrics = measure(kind, doc);
-        if let Some(code) = notes::limits::limit_code(&metrics)
-            && !notes::limits::recovers(&metrics, Some(&previous))
-        {
-            return Err(DocumentError::Quota(code.as_str().into()));
-        }
+    }
+    let metrics = measure();
+    if let Some(code) = notes::limits::limit_code(&metrics)
+        && !notes::limits::recovers(&metrics, Some(&previous))
+    {
+        return Err(DocumentError::Quota(code.as_str().into()));
     }
     let value = items::quiz::value(&content.doc.transact(), &keys.doc.transact());
+    let asset_ids = Some(items::quiz::asset_ids(
+        &content.doc.transact(),
+        &keys.doc.transact(),
+    ));
     let writes = [
         content.write(note_store::Doc::Content),
         keys.write(note_store::Doc::Keys),
@@ -540,6 +541,7 @@ fn compute_quiz(
     Ok(Computed {
         writes,
         value,
+        asset_ids,
         outcome,
     })
 }
@@ -564,12 +566,7 @@ fn compute(
             if let Some(guards) = &guards {
                 items::quiz::verify_guards(content, keys, guards)?;
             }
-            Ok(items::quiz::apply_commands(
-                content,
-                keys,
-                &commands,
-                &mut new_slot,
-            )?)
+            Ok(items::quiz::apply_commands(content, keys, &commands)?)
         });
     }
     let doc = &scratch.doc;
@@ -611,6 +608,7 @@ fn compute(
             live_update,
         }],
         value,
+        asset_ids: None,
         outcome,
     })
 }
@@ -931,7 +929,7 @@ pub async fn edit_material(
     // The committed changes go to the live rooms, whose durable covers take them.
     send_writes(app, &room, &keys_room, computed.writes, &versions).await;
     let content = json!({ "schemaVersion": 1, "value": computed.value });
-    match projection::project(app, &material_id, version, &content).await {
+    match projection::project(app, &material_id, version, &content, computed.asset_ids).await {
         Ok(()) => {
             if let Ok(client) = app.db.get().await {
                 let _ = client
@@ -1096,7 +1094,7 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
     drop(client);
     send_writes(app, &room, &keys_room, computed.writes, &versions).await;
     let content = json!({ "schemaVersion": 1, "value": computed.value });
-    projection::project(app, &material_id, version, &content).await?;
+    projection::project(app, &material_id, version, &content, computed.asset_ids).await?;
     if let Some(handle) = app.rooms.get(&room) {
         let _ = handle.tx.send(RoomCmd::Projected(version, Ok(()))).await;
     }
@@ -1113,18 +1111,27 @@ async fn send_writes(
     versions: &[i64],
 ) {
     for (write, version) in writes.into_iter().zip(versions) {
-        let name = match write.doc {
-            note_store::Doc::Content => room,
-            note_store::Doc::Keys => keys_room,
+        let (name, other) = match write.doc {
+            note_store::Doc::Content => (room, keys_room),
+            note_store::Doc::Keys => (keys_room, room),
         };
-        if let Some(handle) = app.rooms.get(name) {
-            let edit = ServiceEdit {
-                update: write.live_update.unwrap_or_else(|| write.row.clone()),
-                durable: write.durable,
-                version: *version as u64,
-                row_bytes: write.row.len(),
-            };
-            let _ = handle.tx.send(RoomCmd::ServiceEdit(Box::new(edit))).await;
+        match app.rooms.get(name) {
+            Some(handle) => {
+                let edit = ServiceEdit {
+                    update: write.live_update.unwrap_or_else(|| write.row.clone()),
+                    durable: write.durable,
+                    version: *version as u64,
+                    row_bytes: write.row.len(),
+                };
+                let _ = handle.tx.send(RoomCmd::ServiceEdit(Box::new(edit))).await;
+            }
+            // A quiz document whose room is not loaded changed: the other
+            // one's room reads it (its metrics; the keys' readers' lists).
+            None => {
+                if let Some(handle) = app.rooms.get(other) {
+                    let _ = handle.tx.send(RoomCmd::PeerReload).await;
+                }
+            }
         }
     }
 }
@@ -1144,7 +1151,7 @@ fn replace_on(
         let keys = Scratch::new(&quiz.keys.0, &quiz.keys.1, quiz.live_keys.as_deref())?;
         let questions = items::quiz::block_questions(&command.replacement_block)?;
         let computed = compute_quiz(&scratch, &keys, |content, keys| {
-            items::quiz::set_questions(content, keys, &questions, &mut new_slot)
+            items::quiz::set_questions(content, keys, &questions)
                 .map_err(|error| DocumentError::edit("invalid_input", error))?;
             Ok(EditOutcome::default())
         })
@@ -1189,6 +1196,7 @@ fn replace_on(
             .into_iter()
             .collect(),
         value,
+        asset_ids: None,
         outcome: EditOutcome::default(),
     }))
 }

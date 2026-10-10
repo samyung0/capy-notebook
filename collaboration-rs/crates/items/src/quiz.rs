@@ -6,15 +6,15 @@
 //! Content: `questions`, question id to `{order, layout, labels, level?,
 //! stem, parts}`; part id to `{order, marks, blocks, answer}`; the answer map
 //! holds the type and what a learner may see: mcq and multi `options`, a
-//! short answer's `unit`, matching `left` items, and `copy`, the reader copy
-//! of matching options and ordering items, which only the server writes
-//! (slot id to `{text}`, read sorted by slot: a stable shuffle).
+//! short answer's `unit` and matching `left` items.
 //!
 //! Keys: `keys`, part id to `{type, solution, correct | accepted | hints |
 //! markscheme | gaps | options | pairs | items}`. Editors type ordering items
 //! and matching options here, where their Yjs ids record typing order (for
-//! ordering, usually the answer); each such entry's `slot` (server-written)
-//! names its entry in the reader copy.
+//! ordering, usually the answer). Readers get those items outside Yjs, as a
+//! plain shuffled list per part the content room pushes ([ReaderLists];
+//! D3 as revised 2026-10-10), so the content document holds nothing derived
+//! from them and nothing in either document is written by the server alone.
 //!
 //! The projection is today's quiz block with only the questions that pass
 //! the strict validator (D4), so grading and fresh reads see what a Save
@@ -52,10 +52,6 @@ const ANSWER_TYPES: &[&str] = &[
 const BLOCK_TYPES: &[&str] = &["text", "table", "image", "chart", "graph"];
 /// Whole marks a part or a marking item carries.
 const MAX_MARKS: f64 = q::QUESTION_MARKS_MAX;
-
-/// A slot id for a reader copy entry: random, so its sort order says
-/// nothing about the answer (the server passes uuids; tests a seeded source).
-pub type SlotSource<'a> = &'a mut dyn FnMut() -> String;
 
 pub fn valid_id(id: &str) -> bool {
     !id.is_empty()
@@ -118,6 +114,7 @@ fn ordered<T: ReadTxn>(txn: &T, map: Option<&MapRef>) -> Vec<Entry> {
         .iter(txn)
         .filter_map(|(id, value)| match value {
             Out::YMap(entry) => {
+                step(Walk::Exact);
                 let order = match entry.get(txn, "order") {
                     Some(Out::Any(Any::String(order))) => order.to_string(),
                     _ => String::new(),
@@ -135,14 +132,15 @@ fn ordered<T: ReadTxn>(txn: &T, map: Option<&MapRef>) -> Vec<Entry> {
     out
 }
 
-/// A table's row or column ids (id to order key), in order.
-fn ordered_keys<T: ReadTxn>(txn: &T, map: Option<&MapRef>) -> Vec<String> {
+/// A table's row or column ids with their order keys, in order.
+fn ordered_pairs<T: ReadTxn>(txn: &T, map: Option<&MapRef>) -> Vec<(String, String)> {
     let Some(map) = map else {
         return Vec::new();
     };
     let mut out: Vec<(String, String)> = map
         .iter(txn)
         .map(|(id, value)| {
+            step(Walk::Exact);
             let order = match value {
                 Out::Any(Any::String(order)) => order.to_string(),
                 _ => String::new(),
@@ -151,7 +149,15 @@ fn ordered_keys<T: ReadTxn>(txn: &T, map: Option<&MapRef>) -> Vec<String> {
         })
         .collect();
     out.sort();
-    out.into_iter().map(|(_, id)| id).collect()
+    out.into_iter().map(|(order, id)| (id, order)).collect()
+}
+
+/// A table's row or column ids, in order.
+fn ordered_keys<T: ReadTxn>(txn: &T, map: Option<&MapRef>) -> Vec<String> {
+    ordered_pairs(txn, map)
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect()
 }
 
 /// JSON of a plain value: whole numbers print as integers, as the JSON the
@@ -546,6 +552,36 @@ pub fn value<C: ReadTxn, K: ReadTxn>(content: &C, keys: &K) -> Vec<Value> {
     quiz_block(children)
 }
 
+/// Every editor asset the quiz's documents reference, complete questions or
+/// not: an image in a question still being written stays in use (REVIEW1 S4).
+pub fn asset_ids<C: ReadTxn, K: ReadTxn>(content: &C, keys: &K) -> Vec<String> {
+    fn walk(value: &Value, ids: &mut std::collections::BTreeSet<String>) {
+        match value {
+            Value::Object(map) => {
+                if let Some(Value::String(id)) = map.get("assetId")
+                    && !id.trim().is_empty()
+                {
+                    ids.insert(id.clone());
+                }
+                for value in map.values() {
+                    walk(value, ids);
+                }
+            }
+            Value::Array(items) => {
+                for value in items {
+                    walk(value, ids);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut ids = std::collections::BTreeSet::new();
+    for question in questions_json(content, Some(&KeysRead::new(keys))) {
+        walk(&question, &mut ids);
+    }
+    ids.into_iter().collect()
+}
+
 /// Every question as typed with its keys, complete or not: what an editor
 /// (and the agent's inspect) reads.
 pub fn editor_value<C: ReadTxn, K: ReadTxn>(content: &C, keys: &K) -> Vec<Value> {
@@ -607,17 +643,227 @@ pub fn assert_keys_roots<T: ReadTxn>(txn: &T) -> Result<(), String> {
 
 /* ------------------------------------------------------------- writing */
 
+// Every server write of a question (the first open, the save API, the
+// agent's commands) goes through `sync_question`: it writes only what
+// differs from what the documents hold, texts as the fewest changes and
+// lists by position, so an editor typing into the same question keeps every
+// character (D7: no revision check; REVIEW1 S6). On empty documents it
+// writes the question whole.
+
 fn order_any(key: &str) -> Any {
     Any::String(Arc::from(key))
 }
 
-/// A fresh map under `key`, replacing whatever was there.
-fn insert_map(txn: &mut TransactionMut, parent: &MapRef, key: &str) -> MapRef {
-    parent.insert(txn, key, MapPrelim::default())
+fn string_any(value: &str) -> Any {
+    Any::String(Arc::from(value))
 }
 
-fn insert_text(txn: &mut TransactionMut, parent: &MapRef, key: &str, text: &str) {
-    parent.insert(txn, key, TextPrelim::new(text));
+/// The map under `key`, created when missing (or holding something else).
+fn child_map(txn: &mut TransactionMut, parent: &MapRef, key: &str) -> MapRef {
+    match parent.get(txn, key) {
+        Some(Out::YMap(map)) => map,
+        _ => parent.insert(txn, key, MapPrelim::default()),
+    }
+}
+
+/// Sets a plain value (none removes it), writing only a change.
+fn sync_plain(txn: &mut TransactionMut, map: &MapRef, key: &str, value: Option<Any>) {
+    match value {
+        Some(value) => {
+            if any_at(txn, map, key).as_ref() != Some(&value) {
+                map.insert(txn, key, value);
+            }
+        }
+        None => {
+            if map.contains_key(txn, key) {
+                map.remove(txn, key);
+            }
+        }
+    }
+}
+
+/// The text under `key` reads `text` afterwards, changed as little as can be.
+fn sync_text(txn: &mut TransactionMut, map: &MapRef, key: &str, text: &str) {
+    match map.get(txn, key) {
+        Some(Out::YText(current)) => crate::flashcards::edit_text(txn, &current, text),
+        _ => {
+            map.insert(txn, key, TextPrelim::new(text));
+        }
+    }
+}
+
+/// Removes every field of `map` but its order key.
+fn clear(txn: &mut TransactionMut, map: &MapRef) {
+    let fields: Vec<String> = map
+        .keys(txn)
+        .filter(|key| *key != "order")
+        .map(str::to_owned)
+        .collect();
+    for field in fields {
+        map.remove(txn, &field);
+    }
+}
+
+/// An id `prefix<n>` (from `n` up) the map does not hold.
+fn fresh_id<T: ReadTxn>(txn: &T, map: &MapRef, prefix: &str, n: &mut usize) -> String {
+    loop {
+        let id = format!("{prefix}{n}");
+        *n += 1;
+        if !map.contains_key(txn, &id) {
+            return id;
+        }
+    }
+}
+
+/// An order key after `last` for an entry whose key is `held`: the held one
+/// while it still sorts after `last`.
+fn next_order(held: Option<&str>, last: Option<&str>) -> String {
+    match held {
+        Some(held) if !held.is_empty() && last.is_none_or(|last| last < held) => held.to_owned(),
+        _ => order::after(last),
+    }
+}
+
+/// The list of entries under `key` holds one entry per item afterwards, by
+/// position: the i-th entry is filled from the i-th item, extra items get
+/// fresh entries after the last, extra entries go. The entry ids, in order.
+fn sync_entries<I>(
+    txn: &mut TransactionMut,
+    parent: &MapRef,
+    key: &str,
+    prefix: &str,
+    items: &[I],
+    mut fill: impl FnMut(&mut TransactionMut, &MapRef, &I),
+) -> Vec<String> {
+    let list = child_map(txn, parent, key);
+    let held = ordered(txn, Some(&list));
+    let mut ids = Vec::with_capacity(items.len());
+    let mut last: Option<String> = None;
+    let mut n = 0;
+    for (i, item) in items.iter().enumerate() {
+        let entry = match held.get(i) {
+            Some(entry) => {
+                ids.push(entry.id.clone());
+                entry.map.clone()
+            }
+            None => {
+                let id = fresh_id(txn, &list, prefix, &mut n);
+                ids.push(id.clone());
+                list.insert(txn, id, MapPrelim::default())
+            }
+        };
+        let held_order = held.get(i).map(|entry| entry.order.as_str());
+        let order = next_order(held_order, last.as_deref());
+        sync_plain(txn, &entry, "order", Some(order_any(&order)));
+        last = Some(order);
+        fill(txn, &entry, item);
+    }
+    for entry in held.iter().skip(items.len()) {
+        list.remove(txn, &entry.id);
+    }
+    ids
+}
+
+// `sync_entries` hands each item by reference; a list of texts is Strings.
+#[allow(clippy::ptr_arg)]
+fn text_fill(txn: &mut TransactionMut, entry: &MapRef, text: &String) {
+    sync_text(txn, entry, "text", text);
+}
+
+/// A table's row or column ids (id to order key) for `count` of them, by
+/// position, in order.
+fn sync_keys(
+    txn: &mut TransactionMut,
+    parent: &MapRef,
+    key: &str,
+    prefix: &str,
+    count: usize,
+) -> Vec<String> {
+    let map = child_map(txn, parent, key);
+    let held = ordered_pairs(txn, Some(&map));
+    let mut ids = Vec::with_capacity(count);
+    let mut last: Option<String> = None;
+    let mut n = 0;
+    for i in 0..count {
+        let id = match held.get(i) {
+            Some((id, _)) => id.clone(),
+            None => fresh_id(txn, &map, prefix, &mut n),
+        };
+        let held_order = held.get(i).map(|(_, order)| order.as_str());
+        let order = next_order(held_order, last.as_deref());
+        sync_plain(txn, &map, &id, Some(order_any(&order)));
+        last = Some(order);
+        ids.push(id);
+    }
+    for (id, _) in held.iter().skip(count) {
+        map.remove(txn, id);
+    }
+    ids
+}
+
+fn sync_block(txn: &mut TransactionMut, map: &MapRef, block: &Value) {
+    let kind = str_of(block, "type");
+    if str_at(txn, map, "type").as_deref() != Some(kind) {
+        clear(txn, map);
+        map.insert(txn, "type", string_any(kind));
+    }
+    let plain_str = |key: &str| block.get(key).and_then(Value::as_str).map(string_any);
+    match kind {
+        "text" => {
+            sync_text(txn, map, "text", str_of(block, "text"));
+            sync_plain(txn, map, "label", plain_str("label"));
+        }
+        "table" => {
+            let header = block.get("header").and_then(Value::as_bool) == Some(true);
+            sync_plain(txn, map, "header", Some(Any::Bool(header)));
+            let grid = array_of(block, "rows");
+            let width = grid
+                .iter()
+                .map(|row| row.as_array().map_or(0, Vec::len))
+                .max()
+                .unwrap_or(0);
+            let columns = sync_keys(txn, map, "columns", "c", width);
+            let rows = sync_keys(txn, map, "rows", "r", grid.len());
+            let cells = child_map(txn, map, "cells");
+            let mut kept = HashSet::new();
+            for (row, row_id) in grid.iter().zip(&rows) {
+                for (c, column_id) in columns.iter().enumerate() {
+                    let cell = format!("{row_id}/{column_id}");
+                    let text = row.get(c).and_then(Value::as_str).unwrap_or_default();
+                    sync_text(txn, &cells, &cell, text);
+                    kept.insert(cell);
+                }
+            }
+            let stale: Vec<String> = cells
+                .keys(txn)
+                .filter(|cell| !kept.contains(*cell))
+                .map(str::to_owned)
+                .collect();
+            for cell in stale {
+                cells.remove(txn, &cell);
+            }
+        }
+        "image" => {
+            sync_plain(txn, map, "image", block.get("image").map(json_any));
+            for field in ["width", "height"] {
+                let value = block.get(field).and_then(Value::as_f64).map(Any::Number);
+                sync_plain(txn, map, field, value);
+            }
+            sync_text(txn, map, "description", str_of(block, "description"));
+            sync_plain(txn, map, "attribution", plain_str("attribution"));
+        }
+        _ => {
+            let mut value = block.clone();
+            if let Some(object) = value.as_object_mut() {
+                object.remove("type");
+            }
+            sync_plain(txn, map, "value", Some(json_any(&value)));
+        }
+    }
+}
+
+fn sync_blocks(txn: &mut TransactionMut, parent: &MapRef, key: &str, blocks: &[Value]) {
+    sync_entries(txn, parent, key, "b", blocks, sync_block);
 }
 
 fn str_of<'v>(value: &'v Value, key: &str) -> &'v str {
@@ -631,111 +877,6 @@ fn array_of<'v>(value: &'v Value, key: &str) -> &'v [Value] {
         .map_or(&[], Vec::as_slice)
 }
 
-fn write_block(txn: &mut TransactionMut, parent: &MapRef, id: &str, order: &str, block: &Value) {
-    let map = insert_map(txn, parent, id);
-    map.insert(txn, "order", order_any(order));
-    let kind = str_of(block, "type").to_owned();
-    map.insert(txn, "type", Any::String(Arc::from(kind.as_str())));
-    match kind.as_str() {
-        "text" => {
-            insert_text(txn, &map, "text", str_of(block, "text"));
-            if let Some(label) = block.get("label").and_then(Value::as_str) {
-                map.insert(txn, "label", Any::String(Arc::from(label)));
-            }
-        }
-        "table" => {
-            map.insert(
-                txn,
-                "header",
-                Any::Bool(block.get("header").and_then(Value::as_bool) == Some(true)),
-            );
-            let rows = insert_map(txn, &map, "rows");
-            let columns = insert_map(txn, &map, "columns");
-            let cells = insert_map(txn, &map, "cells");
-            let grid = array_of(block, "rows");
-            let width = grid
-                .iter()
-                .map(|row| row.as_array().map_or(0, Vec::len))
-                .max()
-                .unwrap_or(0);
-            let mut key: Option<String> = None;
-            for c in 0..width {
-                let next = order::after(key.as_deref());
-                columns.insert(txn, format!("c{c}"), order_any(&next));
-                key = Some(next);
-            }
-            key = None;
-            for (r, row) in grid.iter().enumerate() {
-                let next = order::after(key.as_deref());
-                rows.insert(txn, format!("r{r}"), order_any(&next));
-                key = Some(next);
-                for c in 0..width {
-                    let text = row
-                        .get(c)
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_owned();
-                    insert_text(txn, &cells, &format!("r{r}/c{c}"), &text);
-                }
-            }
-        }
-        "image" => {
-            if let Some(image) = block.get("image") {
-                map.insert(txn, "image", json_any(image));
-            }
-            for field in ["width", "height"] {
-                if let Some(value) = block.get(field).and_then(Value::as_f64) {
-                    map.insert(txn, field, Any::Number(value));
-                }
-            }
-            insert_text(txn, &map, "description", str_of(block, "description"));
-            if let Some(attribution) = block.get("attribution").and_then(Value::as_str) {
-                map.insert(txn, "attribution", Any::String(Arc::from(attribution)));
-            }
-        }
-        _ => {
-            let mut value = block.clone();
-            if let Some(object) = value.as_object_mut() {
-                object.remove("type");
-            }
-            map.insert(txn, "value", json_any(&value));
-        }
-    }
-}
-
-fn write_blocks(txn: &mut TransactionMut, parent: &MapRef, key: &str, blocks: &[Value]) {
-    let map = insert_map(txn, parent, key);
-    let mut order: Option<String> = None;
-    for (i, block) in blocks.iter().enumerate() {
-        let next = order::after(order.as_deref());
-        write_block(txn, &map, &format!("b{i}"), &next, block);
-        order = Some(next);
-    }
-}
-
-/// A list of `{order, text}` entries under fresh ids `prefix0`, `prefix1`, ...
-fn write_texts(
-    txn: &mut TransactionMut,
-    parent: &MapRef,
-    key: &str,
-    prefix: &str,
-    items: &[String],
-) -> Vec<(String, MapRef)> {
-    let map = insert_map(txn, parent, key);
-    let mut order: Option<String> = None;
-    let mut out = Vec::new();
-    for (i, item) in items.iter().enumerate() {
-        let next = order::after(order.as_deref());
-        let id = format!("{prefix}{i}");
-        let entry = insert_map(txn, &map, &id);
-        entry.insert(txn, "order", order_any(&next));
-        insert_text(txn, &entry, "text", item);
-        out.push((id, entry));
-        order = Some(next);
-    }
-    out
-}
-
 fn strings(value: &Value, key: &str) -> Vec<String> {
     array_of(value, key)
         .iter()
@@ -743,8 +884,168 @@ fn strings(value: &Value, key: &str) -> Vec<String> {
         .collect()
 }
 
-/// Writes one question (the shared JSON) into both documents under `order`.
-fn write_question(
+/// Removes the keys of `map` that `keep` refuses.
+fn remove_keys(txn: &mut TransactionMut, map: &MapRef, keep: impl Fn(&str) -> bool) {
+    let stale: Vec<String> = map
+        .keys(txn)
+        .filter(|key| !keep(key))
+        .map(str::to_owned)
+        .collect();
+    for key in stale {
+        map.remove(txn, &key);
+    }
+}
+
+/// A part's answer in both documents: the learner's side in the content
+/// document's answer map, the keys in the part's keys entry. Another answer
+/// type starts both over.
+fn sync_answer(
+    content: &mut TransactionMut,
+    part_map: &MapRef,
+    keys: &mut TransactionMut,
+    key_root: &MapRef,
+    part: &Value,
+) {
+    let answer = part.get("answer").cloned().unwrap_or(Value::Null);
+    let kind = str_of(&answer, "type").to_owned();
+    let answer_map = child_map(content, part_map, "answer");
+    let key = child_map(keys, key_root, str_of(part, "id"));
+    if str_at(content, &answer_map, "type").as_deref() != Some(kind.as_str()) {
+        clear(content, &answer_map);
+    }
+    if str_at(keys, &key, "type").as_deref() != Some(kind.as_str()) {
+        clear(keys, &key);
+    }
+    sync_plain(content, &answer_map, "type", Some(string_any(&kind)));
+    sync_plain(keys, &key, "type", Some(string_any(&kind)));
+    sync_blocks(keys, &key, "solution", array_of(part, "solution"));
+    let indexes: Vec<usize> = array_of(&answer, "correct")
+        .iter()
+        .filter_map(|i| i.as_u64().map(|i| i as usize))
+        .collect();
+    match kind.as_str() {
+        "mcq" | "multi" => {
+            let options = strings(&answer, "options");
+            let ids = sync_entries(content, &answer_map, "options", "o", &options, text_fill);
+            let correct: Vec<&String> = indexes.iter().filter_map(|i| ids.get(*i)).collect();
+            if kind == "mcq" {
+                let first = correct.first().map(|id| string_any(id));
+                sync_plain(keys, &key, "correct", first);
+            } else {
+                let ticks = child_map(keys, &key, "correct");
+                let wanted: HashSet<&str> = correct.iter().map(|id| id.as_str()).collect();
+                remove_keys(keys, &ticks, |id| wanted.contains(id));
+                for id in wanted {
+                    sync_plain(keys, &ticks, id, Some(Any::Bool(true)));
+                }
+            }
+        }
+        "boolean" => {
+            let correct = answer.get("correct").and_then(Value::as_bool) == Some(true);
+            sync_plain(keys, &key, "correct", Some(Any::Bool(correct)));
+        }
+        "short" => {
+            let unit = answer.get("unit").and_then(Value::as_str).map(string_any);
+            sync_plain(content, &answer_map, "unit", unit);
+            sync_entries(
+                keys,
+                &key,
+                "accepted",
+                "a",
+                &strings(&answer, "accepted"),
+                text_fill,
+            );
+        }
+        "open" => {
+            sync_entries(
+                keys,
+                &key,
+                "accepted",
+                "a",
+                &strings(&answer, "accepted"),
+                text_fill,
+            );
+            sync_entries(
+                keys,
+                &key,
+                "hints",
+                "h",
+                &strings(&answer, "hints"),
+                text_fill,
+            );
+            sync_entries(
+                keys,
+                &key,
+                "markscheme",
+                "m",
+                array_of(part, "markscheme"),
+                |txn, entry, item| {
+                    sync_text(txn, entry, "text", str_of(item, "text"));
+                    let marks = item.get("marks").and_then(Value::as_f64).unwrap_or(1.0);
+                    sync_plain(txn, entry, "marks", Some(Any::Number(marks)));
+                },
+            );
+        }
+        "gaps" => {
+            let gaps = child_map(keys, &key, "gaps");
+            let accepted = array_of(&answer, "accepted");
+            for (n, list) in accepted.iter().enumerate() {
+                let items: Vec<String> = list
+                    .as_array()
+                    .map(|items| {
+                        items
+                            .iter()
+                            .map(|item| item.as_str().unwrap_or_default().to_owned())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                sync_entries(keys, &gaps, &(n + 1).to_string(), "g", &items, text_fill);
+            }
+            let count = accepted.len();
+            remove_keys(keys, &gaps, |number| {
+                number
+                    .parse::<usize>()
+                    .is_ok_and(|n| (1..=count).contains(&n))
+            });
+        }
+        "matching" => {
+            let pairs_json = array_of(&answer, "pairs");
+            let left: Vec<String> = pairs_json
+                .iter()
+                .map(|pair| str_of(pair, "left").to_owned())
+                .collect();
+            let left_ids = sync_entries(content, &answer_map, "left", "l", &left, text_fill);
+            let options = strings(&answer, "options");
+            let option_ids = sync_entries(keys, &key, "options", "o", &options, text_fill);
+            let pairs = child_map(keys, &key, "pairs");
+            for (pair, left_id) in pairs_json.iter().zip(&left_ids) {
+                let option = pair
+                    .get("right")
+                    .and_then(Value::as_u64)
+                    .and_then(|i| option_ids.get(i as usize))
+                    .map(|id| string_any(id));
+                sync_plain(keys, &pairs, left_id, option);
+            }
+            let kept: HashSet<&str> = left_ids.iter().map(String::as_str).collect();
+            remove_keys(keys, &pairs, |left| kept.contains(left));
+        }
+        "ordering" => {
+            sync_entries(
+                keys,
+                &key,
+                "items",
+                "i",
+                &strings(&answer, "items"),
+                text_fill,
+            );
+        }
+        _ => {}
+    }
+}
+
+/// One question (the shared JSON) in both documents under `order`, written
+/// as what differs from what they hold.
+fn sync_question(
     content: &mut TransactionMut,
     questions: &MapRef,
     keys: &mut TransactionMut,
@@ -752,134 +1053,36 @@ fn write_question(
     question: &Value,
     order: &str,
 ) {
-    let id = str_of(question, "id").to_owned();
-    let map = insert_map(content, questions, &id);
-    map.insert(content, "order", order_any(order));
+    let map = child_map(content, questions, str_of(question, "id"));
+    sync_plain(content, &map, "order", Some(order_any(order)));
     for field in ["layout", "labels", "level"] {
-        if let Some(value) = question.get(field).and_then(Value::as_str) {
-            map.insert(content, field, Any::String(Arc::from(value)));
-        }
+        let value = question.get(field).and_then(Value::as_str).map(string_any);
+        sync_plain(content, &map, field, value);
     }
-    write_blocks(content, &map, "stem", array_of(question, "stem"));
-    let parts = insert_map(content, &map, "parts");
-    let mut part_order: Option<String> = None;
-    for part in array_of(question, "parts") {
-        let part_id = str_of(part, "id").to_owned();
-        let next = order::after(part_order.as_deref());
-        let entry = insert_map(content, &parts, &part_id);
-        entry.insert(content, "order", order_any(&next));
-        part_order = Some(next);
-        if let Some(marks) = part.get("marks").and_then(Value::as_f64) {
-            entry.insert(content, "marks", Any::Number(marks));
-        }
-        write_blocks(content, &entry, "blocks", array_of(part, "blocks"));
-        let answer = part.get("answer").cloned().unwrap_or(Value::Null);
-        let kind = str_of(&answer, "type").to_owned();
-        let answer_map = insert_map(content, &entry, "answer");
-        answer_map.insert(content, "type", Any::String(Arc::from(kind.as_str())));
-        let key = insert_map(keys, key_root, &part_id);
-        key.insert(keys, "type", Any::String(Arc::from(kind.as_str())));
-        write_blocks(keys, &key, "solution", array_of(part, "solution"));
-        match kind.as_str() {
-            "mcq" | "multi" => {
-                let options = write_texts(
-                    content,
-                    &answer_map,
-                    "options",
-                    "o",
-                    &strings(&answer, "options"),
-                );
-                let correct: Vec<usize> = array_of(&answer, "correct")
-                    .iter()
-                    .filter_map(|i| i.as_u64().map(|i| i as usize))
-                    .collect();
-                if kind == "mcq" {
-                    if let Some((id, _)) = correct.first().and_then(|i| options.get(*i)) {
-                        key.insert(keys, "correct", Any::String(Arc::from(id.as_str())));
-                    }
-                } else {
-                    let ticks = insert_map(keys, &key, "correct");
-                    for i in correct {
-                        if let Some((id, _)) = options.get(i) {
-                            ticks.insert(keys, id.as_str(), Any::Bool(true));
-                        }
-                    }
-                }
-            }
-            "boolean" => {
-                key.insert(
-                    keys,
-                    "correct",
-                    Any::Bool(answer.get("correct").and_then(Value::as_bool) == Some(true)),
-                );
-            }
-            "short" => {
-                if let Some(unit) = answer.get("unit").and_then(Value::as_str) {
-                    answer_map.insert(content, "unit", Any::String(Arc::from(unit)));
-                }
-                write_texts(keys, &key, "accepted", "a", &strings(&answer, "accepted"));
-            }
-            "open" => {
-                write_texts(keys, &key, "accepted", "a", &strings(&answer, "accepted"));
-                write_texts(keys, &key, "hints", "h", &strings(&answer, "hints"));
-                let scheme = insert_map(keys, &key, "markscheme");
-                let mut item_order: Option<String> = None;
-                for (i, item) in array_of(part, "markscheme").iter().enumerate() {
-                    let next = order::after(item_order.as_deref());
-                    let entry = insert_map(keys, &scheme, &format!("m{i}"));
-                    entry.insert(keys, "order", order_any(&next));
-                    insert_text(keys, &entry, "text", str_of(item, "text"));
-                    entry.insert(
-                        keys,
-                        "marks",
-                        Any::Number(item.get("marks").and_then(Value::as_f64).unwrap_or(1.0)),
-                    );
-                    item_order = Some(next);
-                }
-            }
-            "gaps" => {
-                let gaps = insert_map(keys, &key, "gaps");
-                for (n, accepted) in array_of(&answer, "accepted").iter().enumerate() {
-                    let items: Vec<String> = accepted
-                        .as_array()
-                        .map(|items| {
-                            items
-                                .iter()
-                                .map(|item| item.as_str().unwrap_or_default().to_owned())
-                                .collect()
-                        })
-                        .unwrap_or_default();
-                    write_texts(keys, &gaps, &(n + 1).to_string(), "g", &items);
-                }
-            }
-            "matching" => {
-                let pairs_json = array_of(&answer, "pairs");
-                let left: Vec<String> = pairs_json
-                    .iter()
-                    .map(|pair| str_of(pair, "left").to_owned())
-                    .collect();
-                let left_ids = write_texts(content, &answer_map, "left", "l", &left);
-                let options = write_texts(keys, &key, "options", "o", &strings(&answer, "options"));
-                let pairs = insert_map(keys, &key, "pairs");
-                for (pair, (left_id, _)) in pairs_json.iter().zip(&left_ids) {
-                    if let Some((option, _)) = pair
-                        .get("right")
-                        .and_then(Value::as_u64)
-                        .and_then(|i| options.get(i as usize))
-                    {
-                        pairs.insert(
-                            keys,
-                            left_id.as_str(),
-                            Any::String(Arc::from(option.as_str())),
-                        );
-                    }
-                }
-            }
-            "ordering" => {
-                write_texts(keys, &key, "items", "i", &strings(&answer, "items"));
-            }
-            _ => {}
-        }
+    sync_blocks(content, &map, "stem", array_of(question, "stem"));
+    let parts_map = child_map(content, &map, "parts");
+    let parts = array_of(question, "parts");
+    let wanted: HashSet<&str> = parts.iter().map(|part| str_of(part, "id")).collect();
+    let gone: Vec<String> = parts_map
+        .keys(content)
+        .filter(|id| !wanted.contains(*id))
+        .map(str::to_owned)
+        .collect();
+    for id in gone {
+        parts_map.remove(content, &id);
+        key_root.remove(keys, &id);
+    }
+    let mut last: Option<String> = None;
+    for part in parts {
+        let entry = child_map(content, &parts_map, str_of(part, "id"));
+        let held = str_at(content, &entry, "order");
+        let order = next_order(held.as_deref(), last.as_deref());
+        sync_plain(content, &entry, "order", Some(order_any(&order)));
+        last = Some(order);
+        let marks = part.get("marks").and_then(Value::as_f64).map(Any::Number);
+        sync_plain(content, &entry, "marks", marks);
+        sync_blocks(content, &entry, "blocks", array_of(part, "blocks"));
+        sync_answer(content, &entry, keys, key_root, part);
     }
 }
 
@@ -895,12 +1098,8 @@ pub fn questions_from_value(value: &[Value]) -> Vec<Value> {
 }
 
 /// Both documents seeded from a stored quiz value (first open, a clone's
-/// first open, a lineage rebuild), reader copies included.
-pub fn states_from_value(
-    value: &[Value],
-    client_id: u64,
-    slot: SlotSource<'_>,
-) -> (Vec<u8>, Vec<u8>) {
+/// first open, a lineage rebuild).
+pub fn states_from_value(value: &[Value], client_id: u64) -> (Vec<u8>, Vec<u8>) {
     let content = Doc::with_options(ydoc::doc_options(client_id));
     let keys = Doc::with_options(ydoc::doc_options(client_id));
     let questions = content.get_or_insert_map(QUESTIONS_ROOT);
@@ -916,7 +1115,7 @@ pub fn states_from_value(
                 continue;
             }
             let next = order::after(order.as_deref());
-            write_question(
+            sync_question(
                 &mut content_txn,
                 &questions,
                 &mut keys_txn,
@@ -926,9 +1125,6 @@ pub fn states_from_value(
             );
             order = Some(next);
         }
-        let parts = copy_parts(&keys_txn);
-        let slots = apply_copy(&mut content_txn, &parts, slot);
-        apply_slots(&mut keys_txn, &key_root, &slots);
     }
     let encode = |doc: &Doc| {
         doc.transact()
@@ -937,23 +1133,23 @@ pub fn states_from_value(
     (encode(&content), encode(&keys))
 }
 
-/* --------------------------------------------------- the reader copy */
+/* ------------------------------------------- the readers' item lists */
 
-/// One matching or ordering part's entries as the keys document holds them.
+/// One matching or ordering part's entries as the keys document holds them:
+/// (entry id, text) in the keys' order.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CopyPart {
+pub struct ItemsPart {
     pub part: String,
     pub kind: String,
-    /// (entry id, text, slot) in the keys' order.
-    pub entries: Vec<(String, String, Option<String>)>,
+    pub entries: Vec<(String, String)>,
 }
 
-/// Every matching and ordering part's copyable entries.
-pub fn copy_parts<K: ReadTxn>(keys: &K) -> Vec<CopyPart> {
+/// Every matching and ordering part's entries, by part id.
+pub fn item_parts<K: ReadTxn>(keys: &K) -> Vec<ItemsPart> {
     let Some(root) = keys.get_map(KEYS_ROOT) else {
         return Vec::new();
     };
-    let mut out: Vec<CopyPart> = root
+    let mut out: Vec<ItemsPart> = root
         .iter(keys)
         .filter_map(|(part, value)| {
             let Out::YMap(key) = value else { return None };
@@ -965,15 +1161,9 @@ pub fn copy_parts<K: ReadTxn>(keys: &K) -> Vec<CopyPart> {
             };
             let entries = ordered(keys, map_at(keys, &key, list).as_ref())
                 .iter()
-                .map(|entry| {
-                    (
-                        entry.id.clone(),
-                        text_at(keys, &entry.map, "text"),
-                        str_at(keys, &entry.map, "slot"),
-                    )
-                })
+                .map(|entry| (entry.id.clone(), text_at(keys, &entry.map, "text")))
                 .collect();
-            Some(CopyPart {
+            Some(ItemsPart {
                 part: part.to_owned(),
                 kind,
                 entries,
@@ -984,96 +1174,129 @@ pub fn copy_parts<K: ReadTxn>(keys: &K) -> Vec<CopyPart> {
     out
 }
 
-/// The content document's answer map of every part, by part id.
-fn answers<T: ReadTxn>(txn: &T) -> HashMap<String, MapRef> {
-    let mut out = HashMap::new();
-    let root = txn.get_map(QUESTIONS_ROOT);
-    for question in ordered(txn, root.as_ref()) {
-        for part in ordered(txn, map_at(txn, &question.map, "parts").as_ref()) {
-            if let Some(answer) = map_at(txn, &part.map, "answer") {
-                out.insert(part.id, answer);
-            }
-        }
-    }
-    out
+/// A random index below its argument (the server draws from the OS; tests
+/// seed it).
+pub type Pick<'a> = &'a mut dyn FnMut(usize) -> usize;
+
+/// One part's list as readers get it: its kind and its texts.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReaderList {
+    pub kind: String,
+    pub items: Vec<String>,
 }
 
-/// Writes the reader copies (D3, decided 2026-10-10): a part whose keys
-/// entries all carry slots its copy holds exactly gets each slot's text
-/// mirrored as the fewest changes (a text edit reveals no order); any other
-/// part's copy is rewritten whole, under fresh random slots inserted in slot
-/// order, so neither the slot order nor the copy's Yjs ids follow the keys'.
-/// Returns the new slots to write into the keys entries: (part, entry, slot).
-pub fn apply_copy(
-    content: &mut TransactionMut,
-    parts: &[CopyPart],
-    slot: SlotSource<'_>,
-) -> Vec<(String, String, String)> {
-    let answers = answers(content);
-    let mut slots = Vec::new();
-    for part in parts {
-        let Some(answer) = answers.get(&part.part) else {
-            continue;
-        };
-        if str_at(content, answer, "type").as_deref() != Some(part.kind.as_str()) {
-            continue;
+/// What readers get of matching options and ordering items (D3, revised by
+/// Epo 2026-10-10): not Yjs, which keeps every deleted struct, but a plain
+/// list of texts per part that the content room pushes over its channels
+/// whenever the keys change, keeping no history. A part whose entries
+/// changed as a set is shuffled afresh (a uniform permutation, so the list
+/// says nothing about the order the keys hold or were typed in); one whose
+/// entries kept their ids keeps its order and takes the new texts.
+#[derive(Debug, Default)]
+pub struct ReaderLists {
+    /// Part id to its kind and (entry id, text) in the readers' order.
+    parts: HashMap<String, (String, Vec<(String, String)>)>,
+}
+
+impl ReaderLists {
+    /// Follows the keys' parts; returns the parts whose list changed (none:
+    /// the part has no list any more), by part id.
+    pub fn follow(
+        &mut self,
+        parts: &[ItemsPart],
+        pick: Pick<'_>,
+    ) -> Vec<(String, Option<ReaderList>)> {
+        let present: HashSet<&str> = parts.iter().map(|part| part.part.as_str()).collect();
+        let mut changed: Vec<(String, Option<ReaderList>)> = Vec::new();
+        let gone: Vec<String> = self
+            .parts
+            .keys()
+            .filter(|id| !present.contains(id.as_str()))
+            .cloned()
+            .collect();
+        for id in gone {
+            self.parts.remove(&id);
+            changed.push((id, None));
         }
-        let copy = match map_at(content, answer, "copy") {
-            Some(copy) => copy,
-            None => insert_map(content, answer, "copy"),
-        };
-        let held: HashSet<String> = copy.keys(content).map(str::to_owned).collect();
-        let intact = part.entries.len() == held.len()
-            && part
+        for part in parts {
+            let texts: HashMap<&str, &str> = part
                 .entries
                 .iter()
-                .all(|(_, _, slot)| slot.as_ref().is_some_and(|slot| held.contains(slot)));
-        if intact {
-            for (_, text, slot) in &part.entries {
-                let Some(slot) = slot else { continue };
-                if let Some(Out::YMap(entry)) = copy.get(content, slot)
-                    && let Some(Out::YText(current)) = entry.get(content, "text")
-                {
-                    crate::flashcards::edit_text(content, &current, text);
+                .map(|(id, text)| (id.as_str(), text.as_str()))
+                .collect();
+            let held = self.parts.get(&part.part);
+            let same_set = held.is_some_and(|(kind, entries)| {
+                *kind == part.kind
+                    && entries.len() == part.entries.len()
+                    && entries
+                        .iter()
+                        .all(|(id, _)| texts.contains_key(id.as_str()))
+            });
+            let next: Vec<(String, String)> = match held {
+                Some((_, entries)) if same_set => entries
+                    .iter()
+                    .map(|(id, _)| (id.clone(), texts[id.as_str()].to_owned()))
+                    .collect(),
+                _ => {
+                    let mut entries = part.entries.clone();
+                    for i in (1..entries.len()).rev() {
+                        entries.swap(i, pick(i + 1).min(i));
+                    }
+                    entries
                 }
+            };
+            if held.is_some_and(|(kind, entries)| *kind == part.kind && *entries == next) {
+                continue;
             }
-            continue;
+            changed.push((
+                part.part.clone(),
+                Some(ReaderList {
+                    kind: part.kind.clone(),
+                    items: next.iter().map(|(_, text)| text.clone()).collect(),
+                }),
+            ));
+            self.parts
+                .insert(part.part.clone(), (part.kind.clone(), next));
         }
-        for held in held {
-            copy.remove(content, &held);
-        }
-        let mut fresh: Vec<(String, &str, &str)> = part
-            .entries
-            .iter()
-            .map(|(id, text, _)| (slot(), id.as_str(), text.as_str()))
-            .collect();
-        fresh.sort();
-        for (slot, id, text) in fresh {
-            let entry = insert_map(content, &copy, &slot);
-            insert_text(content, &entry, "text", text);
-            slots.push((part.part.clone(), id.to_owned(), slot));
-        }
+        changed.sort_by(|a, b| a.0.cmp(&b.0));
+        changed
     }
-    slots
+
+    /// Every part's list, for a channel that joins.
+    pub fn all(&self) -> Vec<(String, ReaderList)> {
+        let mut out: Vec<(String, ReaderList)> = self
+            .parts
+            .iter()
+            .map(|(part, (kind, entries))| {
+                (
+                    part.clone(),
+                    ReaderList {
+                        kind: kind.clone(),
+                        items: entries.iter().map(|(_, text)| text.clone()).collect(),
+                    },
+                )
+            })
+            .collect();
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        out
+    }
 }
 
-/// Writes the slots a copy rewrite assigned into the keys entries.
-pub fn apply_slots(keys: &mut TransactionMut, root: &MapRef, slots: &[(String, String, String)]) {
-    for (part, entry, slot) in slots {
-        let Some(key) = map_at(keys, root, part) else {
-            continue;
-        };
-        let list = match str_at(keys, &key, "type").as_deref() {
-            Some("matching") => "options",
-            Some("ordering") => "items",
-            _ => continue,
-        };
-        if let Some(list) = map_at(keys, &key, list)
-            && let Some(item) = map_at(keys, &list, entry)
-        {
-            item.insert(keys, "slot", Any::String(Arc::from(slot.as_str())));
-        }
-    }
+/// The `quiz-items` message (DESIGN.md 2.6): `full` replaces what the
+/// channel holds (a join), otherwise the listed parts change and a `null`
+/// part has no list any more.
+pub fn reader_message(full: bool, parts: &[(String, Option<ReaderList>)]) -> Value {
+    let parts: serde_json::Map<String, Value> = parts
+        .iter()
+        .map(|(part, list)| {
+            let value = match list {
+                Some(list) => json!({ "kind": list.kind, "items": list.items }),
+                None => Value::Null,
+            };
+            (part.clone(), value)
+        })
+        .collect();
+    json!({ "type": "quiz-items", "full": full, "parts": parts })
 }
 
 /* ------------------------------------------------- shape and caps */
@@ -1117,8 +1340,9 @@ fn one_of(content: &ItemContent, allowed: &[&str]) -> bool {
     matches!(one_any(content), Some(Any::String(value)) if allowed.contains(&value.as_ref()))
 }
 
-fn a_string(content: &ItemContent) -> bool {
-    matches!(one_any(content), Some(Any::String(_)))
+/// A string of at most `cap` characters.
+fn a_string(content: &ItemContent, cap: usize) -> bool {
+    matches!(one_any(content), Some(Any::String(value)) if value.chars().count() <= cap)
 }
 
 fn a_number(content: &ItemContent) -> bool {
@@ -1129,19 +1353,35 @@ fn a_bool(content: &ItemContent) -> bool {
     matches!(one_any(content), Some(Any::Bool(_)))
 }
 
-/// What one update adds, and which texts it types into.
+/// Whole marks a part or a marking item may carry (the store's caps, REVIEW1
+/// M4: nothing the store refuses gets past admission).
+fn whole_marks(content: &ItemContent) -> bool {
+    matches!(one_any(content), Some(Any::Number(value))
+        if value.fract() == 0.0 && (1.0..=MAX_MARKS).contains(value))
+}
+
+/// What one update adds, which texts it types into and which lists it grows.
 struct Tally {
     growth: Growth,
     /// Full path of a text (its container keys) to the UTF-16 units added.
     typed: HashMap<Vec<Arc<str>>, u64>,
+    /// A list's (or table axis's) path to the entries the update adds there.
+    added: HashMap<Vec<Arc<str>>, u64>,
+    /// Answer types the update sets to `open`.
+    open: u64,
 }
 
 impl Tally {
     fn structure(&mut self, bytes: u64) {
-        // A new map, text or list entry: the exact check counts the caps.
         self.growth.bytes += bytes;
         self.growth.nodes += 1;
-        self.growth.over_cap = true;
+    }
+
+    /// A new entry in the list at `path`: its count is bounded like a text's
+    /// length (held plus added against the list's cap, REVIEW1 S2).
+    fn entry(&mut self, path: &[Arc<str>], bytes: u64) {
+        self.structure(bytes);
+        *self.added.entry(path.to_vec()).or_default() += 1;
     }
 
     fn value(&mut self, content: &ItemContent) {
@@ -1162,13 +1402,17 @@ fn block_shape(
     match (rest, key) {
         ([], Some("order")) if order_key(content) => tally.value(content),
         ([], Some("type")) if one_of(content, BLOCK_TYPES) => tally.value(content),
-        ([], Some("label" | "attribution")) if a_string(content) => tally.value(content),
+        ([], Some("label" | "attribution")) if a_string(content, q::QUESTION_TEXT_MAX) => {
+            tally.value(content)
+        }
         ([], Some("header")) if a_bool(content) => tally.value(content),
         ([], Some("width" | "height")) if a_number(content) => tally.value(content),
+        // An image waiting for its upload is structure, not a refused value
+        // (D4, REVIEW1 M3): blank, it only leaves the question incomplete.
         ([], Some("image")) => match one_any(content) {
             Some(Any::Map(image))
                 if image.len() == 1
-                    && matches!(image.get("assetId").or(image.get("url")), Some(Any::String(value)) if !value.trim().is_empty() && value.len() <= q::QUESTION_ASSET_URL_MAX) =>
+                    && matches!(image.get("assetId").or(image.get("url")), Some(Any::String(value)) if value.len() <= q::QUESTION_ASSET_URL_MAX) =>
             {
                 tally.value(content)
             }
@@ -1182,13 +1426,13 @@ fn block_shape(
         ([], Some("text" | "description")) if is_text(content) => tally.structure(32),
         ([], Some("rows" | "columns" | "cells")) if is_map(content) => tally.structure(8),
         (["rows" | "columns"], Some(id)) if valid_id(id) && order_key(content) => {
-            tally.structure(8);
+            tally.entry(path, 8);
         }
         (["cells"], Some(cell)) if is_text(content) => {
             let mut ids = cell.split('/');
             match (ids.next(), ids.next(), ids.next()) {
                 (Some(row), Some(column), None) if valid_id(row) && valid_id(column) => {
-                    tally.structure(8);
+                    tally.entry(path, 8);
                 }
                 _ => return refuse("a table cell keyed otherwise than row/column"),
             }
@@ -1217,9 +1461,13 @@ fn entry_shape(
 ) -> Result<(), String> {
     match (rest, key) {
         ([], Some("order")) if order_key(content) => tally.value(content),
-        ([], Some("marks")) if marks && a_number(content) => tally.value(content),
+        ([], Some("marks")) if marks && whole_marks(content) => tally.value(content),
+        ([], Some("marks")) if marks => {
+            return refuse(format!(
+                "a marking item outside 1 to {MAX_MARKS} whole marks"
+            ));
+        }
         ([], Some("text")) if is_text(content) => tally.structure(24),
-        ([], Some("slot")) => return refuse("a reader copy slot, which only the server writes"),
         (["text"], None) => match content {
             ItemContent::String(text) => {
                 tally.growth.bytes += notes::json::escaped_len(text.as_str()) as u64;
@@ -1232,14 +1480,19 @@ fn entry_shape(
     Ok(())
 }
 
-fn new_entry(content: &ItemContent, id: &str, tally: &mut Tally) -> Result<(), String> {
+fn new_entry(
+    content: &ItemContent,
+    id: &str,
+    path: &[Arc<str>],
+    tally: &mut Tally,
+) -> Result<(), String> {
     if !valid_id(id) {
         return refuse("an id that is not 1-128 letters, digits, - or _");
     }
     if !is_map(content) {
         return refuse("an entry that is not a map");
     }
-    tally.structure(id.len() as u64 + 16);
+    tally.entry(path, id.len() as u64 + 16);
     Ok(())
 }
 
@@ -1259,7 +1512,7 @@ fn content_shape(
 ) -> Result<(), String> {
     const R: &str = QUESTIONS_ROOT;
     match (path, key) {
-        ([R], Some(id)) => new_entry(content, id, tally),
+        ([R], Some(id)) => new_entry(content, id, full, tally),
         ([R, _], Some("order")) if order_key(content) => {
             tally.value(content);
             Ok(())
@@ -1281,17 +1534,20 @@ fn content_shape(
             Ok(())
         }
         ([R, _, "stem"], Some(id)) | ([R, _, "parts", _, "blocks"], Some(id)) => {
-            new_entry(content, id, tally)
+            new_entry(content, id, full, tally)
         }
         ([R, _, "stem", _, rest @ ..], key) => block_shape(rest, key, content, full, tally),
-        ([R, _, "parts"], Some(id)) => new_entry(content, id, tally),
+        ([R, _, "parts"], Some(id)) => new_entry(content, id, full, tally),
         ([R, _, "parts", _], Some("order")) if order_key(content) => {
             tally.value(content);
             Ok(())
         }
-        ([R, _, "parts", _], Some("marks")) if a_number(content) => {
+        ([R, _, "parts", _], Some("marks")) if whole_marks(content) => {
             tally.value(content);
             Ok(())
+        }
+        ([R, _, "parts", _], Some("marks")) => {
+            refuse(format!("a part outside 1 to {MAX_MARKS} whole marks"))
         }
         ([R, _, "parts", _], Some("blocks" | "answer")) if is_map(content) => {
             tally.structure(16);
@@ -1301,10 +1557,13 @@ fn content_shape(
             block_shape(rest, key, content, full, tally)
         }
         ([R, _, "parts", _, "answer"], Some("type")) if one_of(content, ANSWER_TYPES) => {
+            if one_of(content, &["open"]) {
+                tally.open += 1;
+            }
             tally.value(content);
             Ok(())
         }
-        ([R, _, "parts", _, "answer"], Some("unit")) if a_string(content) => {
+        ([R, _, "parts", _, "answer"], Some("unit")) if a_string(content, q::QUESTION_UNIT_MAX) => {
             tally.value(content);
             Ok(())
         }
@@ -1312,12 +1571,8 @@ fn content_shape(
             tally.structure(16);
             Ok(())
         }
-        ([R, _, "parts", _, "answer", "copy", ..], _)
-        | ([R, _, "parts", _, "answer"], Some("copy")) => {
-            refuse("a reader copy, which only the server writes")
-        }
         ([R, _, "parts", _, "answer", "options" | "left"], Some(id)) => {
-            new_entry(content, id, tally)
+            new_entry(content, id, full, tally)
         }
         ([R, _, "parts", _, "answer", "options" | "left", _, rest @ ..], key) => {
             entry_shape(rest, key, content, full, false, tally)
@@ -1337,13 +1592,15 @@ fn keys_shape(
     const K: &str = KEYS_ROOT;
     const LISTS: &[&str] = &["accepted", "hints", "markscheme", "options", "items"];
     match (path, key) {
-        ([K], Some(id)) => new_entry(content, id, tally),
+        ([K], Some(id)) => new_entry(content, id, full, tally),
         ([K, _], Some("type")) if one_of(content, ANSWER_TYPES) => {
             tally.value(content);
             Ok(())
         }
         // mcq: an option id; boolean: true or false; multi: a map of ticks.
-        ([K, _], Some("correct")) if a_string(content) || a_bool(content) || is_map(content) => {
+        ([K, _], Some("correct"))
+            if a_string(content, MAX_ID) || a_bool(content) || is_map(content) =>
+        {
             tally.structure(16);
             Ok(())
         }
@@ -1361,7 +1618,7 @@ fn keys_shape(
             tally.structure(16);
             Ok(())
         }
-        ([K, _, "solution"], Some(id)) => new_entry(content, id, tally),
+        ([K, _, "solution"], Some(id)) => new_entry(content, id, full, tally),
         ([K, _, "solution", _, rest @ ..], key) => block_shape(rest, key, content, full, tally),
         ([K, _, "pairs"], Some(left)) if valid_id(left) => match one_any(content) {
             Some(Any::String(option)) if valid_id(option) => {
@@ -1372,16 +1629,16 @@ fn keys_shape(
         },
         ([K, _, "gaps"], Some(number)) => match number.parse::<u32>() {
             Ok(n) if (1..=q::QUESTION_ANSWERS_MAX as u32).contains(&n) && is_map(content) => {
-                tally.structure(8);
+                tally.entry(full, 8);
                 Ok(())
             }
             _ => refuse("a gap that is not numbered 1 to 100"),
         },
-        ([K, _, "gaps", _], Some(id)) => new_entry(content, id, tally),
+        ([K, _, "gaps", _], Some(id)) => new_entry(content, id, full, tally),
         ([K, _, "gaps", _, _, rest @ ..], key) => {
             entry_shape(rest, key, content, full, false, tally)
         }
-        ([K, _, list], Some(id)) if LISTS.contains(list) => new_entry(content, id, tally),
+        ([K, _, list], Some(id)) if LISTS.contains(list) => new_entry(content, id, full, tally),
         ([K, _, list, _, rest @ ..], key) if LISTS.contains(list) => {
             entry_shape(rest, key, content, full, *list == "markscheme", tally)
         }
@@ -1399,24 +1656,99 @@ fn text_cap(path: &[&str], open_part: bool) -> usize {
     }
 }
 
-/// The text at `path` (keys from a root), when the document holds it.
-fn text_by_path<T: ReadTxn>(txn: &T, path: &[Arc<str>]) -> Option<TextRef> {
+/// A list's (or table axis's) cap by its path, as the exact check counts it.
+fn list_cap(path: &[&str]) -> Option<usize> {
+    const R: &str = QUESTIONS_ROOT;
+    const K: &str = KEYS_ROOT;
+    let table = match path {
+        [R, _, "stem", _, field]
+        | [R, _, "parts", _, "blocks", _, field]
+        | [K, _, "solution", _, field] => Some(*field),
+        _ => None,
+    };
+    if let Some(field) = table {
+        return match field {
+            "rows" => Some(q::QUESTION_TABLE_ROWS_MAX),
+            "columns" => Some(q::QUESTION_TABLE_COLUMNS_MAX),
+            "cells" => Some(q::QUESTION_TABLE_ROWS_MAX * q::QUESTION_TABLE_COLUMNS_MAX),
+            _ => None,
+        };
+    }
+    Some(match path {
+        [R, _, "stem"] | [R, _, "parts", _, "blocks"] | [K, _, "solution"] => {
+            q::QUESTION_BLOCKS_MAX
+        }
+        [R, _, "parts"] => q::QUIZ_QUESTION_PARTS_MAX,
+        [R, _, "parts", _, "answer", "options" | "left"] => q::QUESTION_ANSWERS_MAX,
+        [K] => q::QUIZ_PARTS_MAX * 2,
+        [K, _, "accepted" | "hints" | "options" | "items"] => q::QUESTION_ANSWERS_MAX,
+        [K, _, "markscheme"] => q::QUIZ_MARKSCHEME_MAX,
+        [K, _, "gaps"] | [K, _, "gaps", _] => q::QUESTION_ANSWERS_MAX,
+        _ => return None,
+    })
+}
+
+/// The map at `path` (keys from a root), when the document holds it.
+fn map_by_path<T: ReadTxn>(txn: &T, path: &[Arc<str>]) -> Option<MapRef> {
     let (root, rest) = path.split_first()?;
-    let (last, between) = rest.split_last()?;
     let mut map = txn.get_map(&**root)?;
-    for key in between {
+    for key in rest {
         map = map_at(txn, &map, key)?;
     }
-    match map.get(txn, last) {
+    Some(map)
+}
+
+/// The text at `path` (keys from a root), when the document holds it.
+fn text_by_path<T: ReadTxn>(txn: &T, path: &[Arc<str>]) -> Option<TextRef> {
+    let (last, container) = path.split_last()?;
+    match map_by_path(txn, container)?.get(txn, last) {
         Some(Out::YText(text)) => Some(text),
         _ => None,
     }
+}
+
+/// Entries a map holds, each counted as a step of the walk.
+fn counted_len<T: ReadTxn>(txn: &T, map: &MapRef) -> u64 {
+    let len = u64::from(map.len(txn));
+    for _ in 0..len.max(1) {
+        step(Walk::Exact);
+    }
+    len
 }
 
 fn open_part<T: ReadTxn>(txn: &T, part: &str) -> bool {
     txn.get_map(KEYS_ROOT)
         .and_then(|root| map_at(txn, &root, part))
         .is_some_and(|key| str_at(txn, &key, "type").as_deref() == Some("open"))
+}
+
+/// The quiz's parts and open parts, counted (only for an update that adds a
+/// part or sets an answer type to `open`).
+fn part_counts<T: ReadTxn>(txn: &T) -> (u64, u64) {
+    let (mut parts, mut open) = (0, 0);
+    let Some(root) = txn.get_map(QUESTIONS_ROOT) else {
+        return (0, 0);
+    };
+    for (_, question) in root.iter(txn) {
+        step(Walk::Exact);
+        let Out::YMap(question) = question else {
+            continue;
+        };
+        let Some(list) = map_at(txn, &question, "parts") else {
+            continue;
+        };
+        for (_, part) in list.iter(txn) {
+            step(Walk::Exact);
+            let Out::YMap(part) = part else { continue };
+            parts += 1;
+            if map_at(txn, &part, "answer")
+                .is_some_and(|answer| str_at(txn, &answer, "type").as_deref() == Some("open"))
+            {
+                open += 1;
+            }
+        }
+    }
+    (parts, open)
 }
 
 /// One document's shape table: a struct's container path, its key, its
@@ -1429,6 +1761,8 @@ fn admit<T: ReadTxn>(txn: &T, incoming: &Incoming, shape: Shape) -> Result<Growt
     let mut tally = Tally {
         growth: Growth::default(),
         typed: HashMap::new(),
+        added: HashMap::new(),
+        open: 0,
     };
     for item in incoming.items() {
         step(Walk::Content);
@@ -1448,6 +1782,9 @@ fn admit<T: ReadTxn>(txn: &T, incoming: &Incoming, shape: Shape) -> Result<Growt
         let keys: Vec<&str> = path.iter().map(|k| &**k).collect();
         shape(&keys, key.as_deref(), content, &path, &mut tally)?;
     }
+    // A text, a list or the quiz's part counts that may pass a cap send the
+    // update to the exact check; the held count is read only for what the
+    // update grows, so the work follows the touched item.
     for (path, units) in &tally.typed {
         let keys: Vec<&str> = path.iter().map(|k| &**k).collect();
         let open =
@@ -1457,13 +1794,33 @@ fn admit<T: ReadTxn>(txn: &T, incoming: &Incoming, shape: Shape) -> Result<Growt
             tally.growth.over_cap = true;
         }
     }
+    let mut new_parts = 0;
+    for (path, added) in &tally.added {
+        let keys: Vec<&str> = path.iter().map(|k| &**k).collect();
+        if matches!(keys.as_slice(), [QUESTIONS_ROOT, _, "parts"]) {
+            new_parts += added;
+        }
+        let Some(cap) = list_cap(&keys) else { continue };
+        let held = map_by_path(txn, path).map_or(0, |map| counted_len(txn, &map));
+        if held + added > cap as u64 {
+            tally.growth.over_cap = true;
+        }
+    }
+    if new_parts > 0 || tally.open > 0 {
+        let (parts, open) = part_counts(txn);
+        if parts + new_parts > q::QUIZ_PARTS_MAX as u64
+            || open + tally.open > q::QUIZ_OPEN_PARTS_MAX as u64
+        {
+            tally.growth.over_cap = true;
+        }
+    }
     Ok(tally.growth)
 }
 
 /// Checks each struct a writer's update adds to the content document against
-/// its shape, and bounds what it adds. A new structure (a question, part,
-/// block, entry or text) goes to the exact check, which counts the caps;
-/// typing into an existing text takes the bound unless it may pass the cap.
+/// its shape and its value caps, and bounds what it adds: a text's length and
+/// a list's count are held plus added against their caps, and only one that
+/// may pass its cap goes to the exact check.
 pub fn admit_content<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Growth, String> {
     admit(txn, incoming, content_shape)
 }
@@ -1687,36 +2044,26 @@ fn remove_question(content: &mut TransactionMut, keys: &mut TransactionMut, id: 
     }
 }
 
-/// Replaces (or inserts) one question wholesale under `order`.
+/// Writes (or inserts) one question under `order`, as what differs.
 fn put_question(
     content: &mut TransactionMut,
     keys: &mut TransactionMut,
     question: &Value,
     order: &str,
 ) {
-    let id = str_of(question, "id").to_owned();
-    remove_question(content, keys, &id);
     let questions = content.get_or_insert_map(QUESTIONS_ROOT);
     let key_root = keys.get_or_insert_map(KEYS_ROOT);
-    write_question(content, &questions, keys, &key_root, question, order);
-}
-
-fn sync_copies(content: &mut TransactionMut, keys: &mut TransactionMut, slot: SlotSource<'_>) {
-    let parts = copy_parts(keys);
-    let slots = apply_copy(content, &parts, slot);
-    let root = keys.get_or_insert_map(KEYS_ROOT);
-    apply_slots(keys, &root, &slots);
+    sync_question(content, &questions, keys, &key_root, question, order);
 }
 
 /// The quiz holds exactly `questions` afterwards (the content save API, D7,
 /// no revision): a question that reads the same stays untouched, a changed
-/// one is rewritten whole in both documents (its ids kept), new ones go in,
-/// missing ones go, and the order follows the list. Reader copies follow.
+/// one is written as what differs (REVIEW1 S6), new ones go in, missing
+/// ones go, and the order follows the list.
 pub fn set_questions(
     content: &mut TransactionMut,
     keys: &mut TransactionMut,
     questions: &[Value],
-    slot: SlotSource<'_>,
 ) -> Result<(), String> {
     let mut seen = HashSet::new();
     for question in questions {
@@ -1754,7 +2101,6 @@ pub fn set_questions(
         }
         previous = Some(key);
     }
-    sync_copies(content, keys, slot);
     Ok(())
 }
 
@@ -1799,7 +2145,6 @@ pub fn apply_commands(
     content: &mut TransactionMut,
     keys: &mut TransactionMut,
     commands: &[DocumentCommand],
-    slot: SlotSource<'_>,
 ) -> Result<EditOutcome, EditError> {
     let mut outcome = EditOutcome::default();
     let mut touched: Vec<String> = Vec::new();
@@ -1893,7 +2238,6 @@ pub fn apply_commands(
             }
         }
     }
-    sync_copies(content, keys, slot);
     touched.dedup();
     outcome.guards = touched
         .iter()

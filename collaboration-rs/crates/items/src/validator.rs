@@ -34,6 +34,9 @@ pub struct Validator {
     pub bound: Option<Metrics>,
     /// The last exact metrics (the shrink baseline).
     pub metrics: Option<Metrics>,
+    /// A quiz document: the other document's metrics, which count with
+    /// this one's against the material's limits (REVIEW1 S3).
+    pub peer: Option<Metrics>,
     /// Exact checks taken (a copy of the room each).
     pub exact_checks: u64,
 }
@@ -45,6 +48,7 @@ impl Validator {
             kind,
             bound: metrics,
             metrics,
+            peer: None,
             exact_checks: 0,
         }
     }
@@ -69,7 +73,7 @@ impl Validator {
                 max_depth: bound.max_depth,
                 node_count: bound.node_count + growth.nodes,
             };
-            if limit_code(&next).is_none() {
+            if limit_code(&crate::combine(&next, self.peer.as_ref())).is_none() {
                 self.bound = Some(next);
                 return Ok(Admission::Accepted);
             }
@@ -102,7 +106,8 @@ impl Validator {
             self.metrics = Some(notes::limits::measure_value(&value));
         }
         let value = self.kind.document_value(&candidate_txn);
-        let metrics = crate::check_value(self.kind, &value, self.metrics.as_ref())?;
+        let metrics =
+            crate::check_value(self.kind, &value, self.metrics.as_ref(), self.peer.as_ref())?;
         self.bound = Some(metrics);
         self.metrics = Some(metrics);
         Ok(Admission::Accepted)

@@ -85,21 +85,22 @@ impl Kind {
         }
     }
 
-    /// The document seeded from a Plate value. A quiz's two documents seed
-    /// together (`quiz::states_from_value`), so their slots agree.
+    /// The document seeded from a Plate value (a quiz's two documents seed
+    /// from the same questions, `quiz::states_from_value`).
     pub fn state_from_value(self, value: &[serde_json::Value], client_id: u64) -> Vec<u8> {
-        let mut slot = || yrs::uuid_v4().replace('-', "");
         match self {
             Kind::Flashcards => flashcards::state_from_value(value, client_id),
-            Kind::Quiz => quiz::states_from_value(value, client_id, &mut slot).0,
-            Kind::QuizKeys => quiz::states_from_value(value, client_id, &mut slot).1,
+            Kind::Quiz => quiz::states_from_value(value, client_id).0,
+            Kind::QuizKeys => quiz::states_from_value(value, client_id).1,
         }
     }
 
     /// The whole document's caps, exactly.
     pub fn check_caps<T: yrs::ReadTxn>(self, txn: &T) -> Result<(), String> {
         match self {
-            Kind::Flashcards => flashcards::check_caps(txn),
+            // A set's caps are `notes::material::validate_flashcard`'s, which
+            // every path runs on the document value after this.
+            Kind::Flashcards => Ok(()),
             Kind::Quiz => quiz::check_content_caps(txn),
             Kind::QuizKeys => quiz::check_keys_caps(txn),
         }
@@ -174,12 +175,30 @@ impl Kind {
     }
 }
 
+/// A quiz document's metrics with its other document's (`peer`): the two
+/// count together against the material's limits.
+pub fn combine(
+    metrics: &notes::limits::Metrics,
+    peer: Option<&notes::limits::Metrics>,
+) -> notes::limits::Metrics {
+    match peer {
+        Some(peer) => notes::limits::Metrics {
+            content_bytes: metrics.content_bytes + peer.content_bytes,
+            max_depth: metrics.max_depth.max(peer.max_depth),
+            node_count: metrics.node_count + peer.node_count,
+        },
+        None => *metrics,
+    }
+}
+
 /// The projected value checked as the material kind and measured: refused
-/// past a limit unless it shrank towards it (`notes::limits::recovers`).
+/// past a limit (with `peer`, a quiz's other document, counted in) unless it
+/// shrank towards it (`notes::limits::recovers`).
 pub fn check_value(
     kind: Kind,
     value: &[serde_json::Value],
     previous: Option<&notes::limits::Metrics>,
+    peer: Option<&notes::limits::Metrics>,
 ) -> Result<notes::limits::Metrics, Refusal> {
     // A live quiz admits structure and caps only; its projection holds the
     // complete questions (D4, Epo 2026-10-10).
@@ -188,10 +207,15 @@ pub fn check_value(
             .map_err(|error| Refusal::Shape(error.0))?;
     }
     let metrics = notes::limits::measure_value(value);
-    if let Some(code) = notes::limits::limit_code(&metrics)
-        && !notes::limits::recovers(&metrics, previous)
+    let combined = combine(&metrics, peer);
+    let previous = previous.map(|previous| combine(previous, peer));
+    if let Some(code) = notes::limits::limit_code(&combined)
+        && !notes::limits::recovers(&combined, previous.as_ref())
     {
-        return Err(Refusal::Limit { code, metrics });
+        return Err(Refusal::Limit {
+            code,
+            metrics: combined,
+        });
     }
     Ok(metrics)
 }
