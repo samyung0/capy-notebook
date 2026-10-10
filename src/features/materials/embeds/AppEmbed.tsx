@@ -13,6 +13,7 @@ import {
   type FlashcardsElement,
   flashcardsElementToCards,
 } from '@/features/materials/document';
+import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { AssetUrlContext } from '@/features/materials/MediaAssetView';
 import { AttemptBody } from '@/features/quizzes/AttemptBody';
 import { QuizForm } from '@/features/quizzes/QuizForm';
@@ -54,6 +55,7 @@ export function AppEmbedView({ materialId, refKind, ownerId }: OwnedProps) {
           embedded
           name=""
           onRate={() => undefined}
+          provenance={material.provenance}
           trail={[]}
         />
       )}
@@ -72,20 +74,28 @@ export function AppEmbedEdit({
 }) {
   return refKind === 'quiz' ? (
     <QuizGate materialId={materialId} ownerId={ownerId}>
-      {() => <QuizEditor onEmpty={onEmpty} quizId={materialId} />}
+      {(quiz) => (
+        <>
+          <QuizEditor onEmpty={onEmpty} quizId={materialId} />
+          <MaterialAttributionFooter provenance={quiz.provenance} />
+        </>
+      )}
     </QuizGate>
   ) : (
     <SetGate materialId={materialId} ownerId={ownerId}>
       {(material) => (
-        <FlashcardsEditor
-          cards={setCards(material)}
-          onEmpty={onEmpty}
-          revision={material.revision}
-          saveEachChange
-          setId={materialId}
-          showTitle={false}
-          title=""
-        />
+        <>
+          <FlashcardsEditor
+            cards={setCards(material)}
+            onEmpty={onEmpty}
+            revision={material.revision}
+            saveEachChange
+            setId={materialId}
+            showTitle={false}
+            title=""
+          />
+          <MaterialAttributionFooter provenance={material.provenance} />
+        </>
       )}
     </SetGate>
   );

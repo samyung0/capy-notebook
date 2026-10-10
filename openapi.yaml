@@ -236,6 +236,8 @@ components:
             - quiz
             - flashcards
           type: string
+        provenance:
+          $ref: "#/components/schemas/Provenance"
         questions: {}
       required:
         - id

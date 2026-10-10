@@ -24,13 +24,15 @@ func embeddedName() string { return uuid.NewString() }
 
 // EmbeddedDraft is the authored content of a quiz or flashcard set inserted
 // into a note; card ids are minted here. ID is set only when the note and its
-// embedded rows are created together (an agent note).
+// embedded rows are created together (an agent note). Provenance is what an
+// agent wrote the item from, recorded on the item itself.
 type EmbeddedDraft struct {
 	ID           string
 	Kind         MaterialKind
 	Questions    json.RawMessage
 	TimeLimitMin *int
 	Cards        [][2]string
+	Provenance   *Provenance
 }
 
 // CreateEmbeddedMaterial creates a quiz or flashcard set under noteID. The caller has checked edit access on
@@ -59,7 +61,7 @@ func (s *Store) CreateEmbeddedMaterial(
 	return s.CreateMaterial(ctx, Material{
 		ID: draft.ID, CreatedBy: actorID, WorkspaceID: workspaceID, WorkspaceName: workspaceName,
 		Kind: draft.Kind, Title: embeddedName(), Content: content, Privacy: "private",
-		ParentMaterialID: noteID,
+		ParentMaterialID: noteID, Provenance: draft.Provenance,
 	})
 }
 
@@ -234,6 +236,17 @@ func (s *Store) copyEmbeddedTx(
 	if err != nil {
 		return "", err
 	}
+	// The credits travel with the copy, outside the storage gate like any
+	// clone's (createMaterialTx would count them).
+	if src.Provenance != nil {
+		provenance, err := json.Marshal(src.Provenance)
+		if err != nil {
+			return "", err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE materials SET provenance=$2 WHERE id=$1`, id, provenance); err != nil {
+			return "", err
+		}
+	}
 	if err := s.gateStorageTx(ctx, tx, payerID, assetBytes); err != nil {
 		return "", err
 	}
@@ -275,12 +288,51 @@ func (s *Store) createEmbeddedTx(ctx context.Context, tx pgx.Tx, note Material, 
 		if _, err := s.createMaterialTx(ctx, tx, Material{
 			ID: draft.ID, CreatedBy: note.CreatedBy, WorkspaceID: note.WorkspaceID,
 			WorkspaceName: note.WorkspaceName, Kind: draft.Kind, Title: embeddedName(), Content: content,
-			Privacy: "private", ParentMaterialID: note.ID,
+			Privacy: "private", ParentMaterialID: note.ID, Provenance: draft.Provenance,
 		}); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// EmbedSources reads the credits of the note's live embeds: its own quiz and
+// flashcard rows that are not trashed and that content references, in the
+// order content references them. A note is parsed only when one of its rows
+// has credits.
+func (s *Store) EmbedSources(ctx context.Context, noteID, content string) ([]*Provenance, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id, provenance FROM materials
+		WHERE parent_material_id=$1 AND trashed_at IS NULL AND provenance IS NOT NULL`, noteID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	credited := map[string]*Provenance{}
+	for rows.Next() {
+		var id string
+		var raw []byte
+		if err := rows.Scan(&id, &raw); err != nil {
+			return nil, err
+		}
+		if credited[id], err = decodeProvenance(raw); err != nil {
+			return nil, err
+		}
+	}
+	if err := rows.Err(); err != nil || len(credited) == 0 {
+		return nil, err
+	}
+	refs, err := materialdoc.ExtractMaterialRefs(content)
+	if err != nil {
+		return nil, err
+	}
+	sources := []*Provenance{}
+	for _, ref := range refs {
+		if p, ok := credited[ref.MaterialID]; ok {
+			sources = append(sources, p)
+			delete(credited, ref.MaterialID) // a row referenced twice counts once
+		}
+	}
+	return sources, nil
 }
 
 // DiscardEmbeddedDrafts trashes the rows a refused agent edit created under

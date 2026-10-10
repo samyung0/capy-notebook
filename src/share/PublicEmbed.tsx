@@ -33,6 +33,7 @@ export function PublicEmbed({ materialId }: EmbedProps) {
           })
         }
         name=""
+        provenance={embed.provenance}
         questions={embed.questions ?? []}
         trail={[]}
       />
@@ -43,6 +44,7 @@ export function PublicEmbed({ materialId }: EmbedProps) {
       embedded
       name=""
       onRate={() => undefined}
+      provenance={embed.provenance}
       trail={[]}
     />
   );

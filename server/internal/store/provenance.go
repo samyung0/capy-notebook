@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -168,4 +169,39 @@ func validateSources(books []ProvenanceBook, web []ProvenanceWeb) (string, strin
 		}
 	}
 	return chosen, "", nil
+}
+
+// WithEmbedSources is a note's attribution as its footer reads it: its own
+// record plus the books and web pages of its live embeds (EmbedSources), each
+// source once and the note's own first. It is computed for each read and never
+// stored, so an embed removed or trashed drops out and returns on restore. The
+// licence and question credits stay the note's own; each embed shows its own
+// inside it.
+func WithEmbedSources(own *Provenance, embeds []*Provenance) *Provenance {
+	if len(embeds) == 0 {
+		return own
+	}
+	merged := &Provenance{Books: []ProvenanceBook{}}
+	if own != nil {
+		merged.Books = slices.Clone(own.Books)
+		merged.Web = slices.Clone(own.Web)
+		merged.License = own.License
+		merged.Questions = own.Questions
+	}
+	for _, embed := range embeds {
+		for _, book := range embed.Books {
+			if !slices.ContainsFunc(merged.Books, func(b ProvenanceBook) bool { return b.ID == book.ID }) {
+				merged.Books = append(merged.Books, book)
+			}
+		}
+		for _, page := range embed.Web {
+			if !slices.ContainsFunc(merged.Web, func(p ProvenanceWeb) bool { return p.URL == page.URL }) {
+				merged.Web = append(merged.Web, page)
+			}
+		}
+	}
+	if own == nil && len(merged.Books) == 0 && len(merged.Web) == 0 {
+		return nil // embeds credited only through copied bank questions
+	}
+	return merged
 }

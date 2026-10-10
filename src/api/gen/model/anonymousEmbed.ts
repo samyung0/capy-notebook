@@ -6,10 +6,12 @@
  */
 import type { AnonymousEmbedKind } from './anonymousEmbedKind.ts';
 import type { Card } from './card.ts';
+import type { Provenance } from './provenance.ts';
 
 export interface AnonymousEmbed {
   cards?: Card[];
   id: string;
   kind: AnonymousEmbedKind;
+  provenance?: Provenance;
   questions?: unknown;
 }

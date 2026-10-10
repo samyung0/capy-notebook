@@ -88,6 +88,9 @@ func TestInternalBankListsReadsAndCopiesWithCredits(t *testing.T) {
 
 	// The collaboration service applies an append; this one records what it was handed.
 	var sent struct {
+		Target struct {
+			ID string `json:"id"`
+		} `json:"target"`
 		Commands   []map[string]any  `json:"commands"`
 		Provenance *store.Provenance `json:"provenance"`
 	}
@@ -242,6 +245,52 @@ func TestInternalBankListsReadsAndCopiesWithCredits(t *testing.T) {
 	}
 	if reused := chapterOf("Same chapter", "BANK PICKS"); reused != created {
 		t.Fatalf("same-named chapter: %s, want %s", reused, created)
+	}
+
+	// Copied into a quiz a note embeds, the credits join that quiz's own record
+	// only: never the note's, never another embed's.
+	bookOf := func(id string) *store.Provenance {
+		return &store.Provenance{Books: []store.ProvenanceBook{{ID: id, Title: id, Authors: []string{}, License: "CC BY 4.0", ExcerptIDs: []string{"e_" + id}, Version: 1}}}
+	}
+	ctx := context.Background()
+	note, err := st.CreateMaterial(ctx, store.Material{CreatedBy: "u_editor", WorkspaceID: "ws_e2e_private",
+		Kind: "note", Title: "Embeds " + msg, Content: "# Embeds\n\nbody", Provenance: bookOf("note")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	embedded := func(book string) store.Material {
+		mt, err := st.CreateEmbeddedMaterial(ctx, "u_editor", note.ID, store.EmbeddedDraft{Kind: "quiz", Provenance: bookOf(book),
+			Questions: json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1p","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]`)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return mt
+	}
+	child, sibling := embedded("child"), embedded("sibling")
+	intoChild := func() {
+		t.Helper()
+		if sent.Target.ID != child.ID || len(sent.Provenance.Books) != 1 || sent.Provenance.Books[0].ID != "child" ||
+			sent.Provenance.Questions["bq3"].License != "CC BY-SA 4.0" {
+			t.Fatalf("copy into an embedded quiz reached %s with %#v", sent.Target.ID, sent.Provenance)
+		}
+	}
+	if code, receipt := post("/api/internal/bank/copy", copyBody("c4", []string{"bq3"}, map[string]any{"quizId": child.ID})); code != 200 {
+		t.Fatalf("copy into an embedded quiz: %d %v", code, receipt)
+	}
+	intoChild()
+	sent.Target.ID = ""
+	if code, out := pageCopy("u_editor", map[string]any{"questionIds": []string{"bq3"}, "workspaceId": "ws_e2e_private", "quizId": child.ID}); code != 200 {
+		t.Fatalf("page copy into an embedded quiz: %d %v", code, out)
+	}
+	intoChild()
+	for id, book := range map[string]string{note.ID: "note", sibling.ID: "sibling"} {
+		mt, err := st.GetMaterial(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(mt.Provenance.Books) != 1 || mt.Provenance.Books[0].ID != book || len(mt.Provenance.Questions) != 0 {
+			t.Fatalf("%s provenance = %#v, want its own record untouched", id, mt.Provenance)
+		}
 	}
 
 	// The model's own writes still may not claim a question credit.
