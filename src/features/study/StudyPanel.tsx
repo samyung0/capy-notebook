@@ -154,7 +154,7 @@ export function StudyPanel({
               <>
                 {(next || study.reviewable > 0) && (
                   <Section title={m.study_quick_actions()}>
-                    <div className="flex flex-col gap-4 px-2">
+                    <div className="flex flex-col gap-4 px-2 pt-1.5">
                       {next && (
                         <div className="flex items-center gap-2">
                           <ItemIcon item={next} />
@@ -189,7 +189,7 @@ export function StudyPanel({
                               size={15}
                             />
                             {study.suggestion ? (
-                              <span className="flex min-w-0 flex-1 translate-y-px flex-col">
+                              <span className="flex min-w-0 flex-1 translate-y-px flex-col gap-1">
                                 <span>
                                   {groupName(
                                     study.suggestion.group,
@@ -215,7 +215,7 @@ export function StudyPanel({
                             )}
                           </div>
                           {/* Total progress, done of tracked: skipping items doesn't move it. */}
-                          <div className="flex items-center justify-between gap-4 pl-6">
+                          <div className="mt-1.5 flex items-center justify-between gap-4 pl-6">
                             <div
                               className={cn(
                                 'min-w-0 max-w-[240px] flex-1',
