@@ -126,7 +126,8 @@ function DialogTitle({
   return (
     <DialogPrimitive.Title
       className={cn(
-        't-large-card-title flex items-center justify-between pt-0 pb-6',
+        // Phones: keep long titles clear of the corner close button.
+        't-large-card-title flex items-center justify-between pt-0 pr-10 pb-6 sm:pr-0',
         className
       )}
       data-slot="dialog-title"
