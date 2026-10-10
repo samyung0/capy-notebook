@@ -31,6 +31,7 @@ vi.mock('@/api/hooks', () => ({
 }));
 const drafts = vi.hoisted(() => ({
   discarded: 0,
+  disposed: 0,
   refused: 0,
   rows: [] as unknown[],
 }));
@@ -56,7 +57,9 @@ vi.mock('@/lib/editDrafts', () => ({
       drafts.discarded += 1;
     },
     disconnected() {},
-    dispose: async () => undefined,
+    dispose: async () => {
+      drafts.disposed += 1;
+    },
     refuse() {
       drafts.refused += 1;
     },
@@ -76,6 +79,7 @@ beforeEach(() => {
   drafts.rows = [];
   drafts.refused = 0;
   drafts.discarded = 0;
+  drafts.disposed = 0;
 });
 afterEach(() => vi.useRealTimers());
 
@@ -169,5 +173,53 @@ it('discards unsaved edits when the room turns read-only', async () => {
   });
   expect(room.getSnapshot().access).toBe('read');
   expect(drafts.discarded).toBe(1);
+  room.destroy();
+});
+
+const evicted = (mode: 'drain' | 'discard') =>
+  [
+    {
+      payload: JSON.stringify({
+        evictionId: 'cev_1',
+        materialId: 'q',
+        mode,
+        room: 'material:q:schema:1',
+        type: 'access-changed',
+      }),
+    },
+    { code: 0, reason: 'collaboration room evicted' },
+  ] as const;
+
+// REVIEW2 M1: a drain eviction (access widened) stored the room first, so the
+// room rejoins with its document, edits in flight included, and nothing goes
+// to copy-only recovery.
+it('rejoins after a drain eviction, keeping its edits', async () => {
+  const { onReplace, room } = await started();
+  const [provider] = providers;
+  provider.config.onSynced?.({ state: true });
+  const [notice, close] = evicted('drain');
+  provider.config.onStateless?.(notice);
+  provider.config.onClose?.(close);
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(provider.connects).toBe(2);
+  expect(onReplace).not.toHaveBeenCalled();
+  expect(drafts.refused).toBe(0);
+  room.destroy();
+});
+
+// A discard threw the room's unsaved state away (its lineage moves): this
+// room ends, its unsent edits stay stored, and a fresh room opens them for
+// copying when the room moved.
+it('ends after a discard eviction, keeping its edits stored', async () => {
+  const { onReplace, room } = await started();
+  const [provider] = providers;
+  const [notice, close] = evicted('discard');
+  provider.config.onStateless?.(notice);
+  provider.config.onClose?.(close);
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(onReplace).toHaveBeenCalledTimes(1);
+  expect(provider.connects).toBe(1);
+  expect(drafts.disposed).toBe(1);
+  expect(drafts.refused).toBe(0);
   room.destroy();
 });

@@ -97,12 +97,13 @@ function createItemProvider(config: RoomProviderConfig): ItemProvider {
 const RETRY_MS = 1500;
 const RESTORE_ORIGIN = Symbol('restore');
 /** Closes a client rejoins after with a fresh token; any other close
- * refused this channel's update. */
+ * refused this channel's update (an eviction goes by its mode). */
 const TRANSIENT_CLOSES = new Set([
   'socket closed',
   'collaboration token expired',
   'collaboration room is being reset',
 ]);
+const EVICTED = 'collaboration room evicted';
 
 export interface ItemRoomOptions {
   /** A quiz's keys document instead of the material's own. */
@@ -143,6 +144,8 @@ export class ItemRoom {
   private overLimit = false;
   /** Checkpoint requests waiting for a receipt: id -> local edit count. */
   private readonly pending = new Map<string, number>();
+  /** The mode of the eviction notice that came before a close. */
+  private eviction: string | null = null;
 
   constructor(materialId: string, options: ItemRoomOptions = {}) {
     this.materialId = materialId;
@@ -233,6 +236,17 @@ export class ItemRoom {
         }
         if (reason === 'read-only connection sent a document update') {
           this.readOnly();
+          return;
+        }
+        if (reason === EVICTED) {
+          // A drain (access widened) stored the room first: rejoin, and
+          // anything in flight goes again. A discard (or a compaction)
+          // threw the room's unsaved state away and moves its lineage, so a
+          // fresh room opens, with this tab's unsent edits to copy.
+          const drain = this.eviction === 'drain';
+          this.eviction = null;
+          if (drain) this.rejoin();
+          else this.moved();
           return;
         }
         if (TRANSIENT_CLOSES.has(reason)) {
@@ -362,6 +376,9 @@ export class ItemRoom {
     } catch {
       return;
     }
+    // An eviction notice precedes its close; the close acts on its mode.
+    if (typeof event.evictionId === 'string')
+      this.eviction = typeof event.mode === 'string' ? event.mode : 'discard';
     switch (event.type) {
       case 'quiz-items':
         this.lists = applyReaderMessage(

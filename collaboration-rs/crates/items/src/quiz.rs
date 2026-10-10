@@ -1189,9 +1189,11 @@ pub struct ReaderList {
 /// Epo 2026-10-10): not Yjs, which keeps every deleted struct, but a plain
 /// list of texts per part that the content room pushes over its channels
 /// whenever the keys change, keeping no history. A part whose entries
-/// changed as a set is shuffled afresh (a uniform permutation, so the list
-/// says nothing about the order the keys hold or were typed in); one whose
-/// entries kept their ids keeps its order and takes the new texts.
+/// changed as a set, or changed more than one text at once (a server write
+/// reordering by position), is shuffled afresh (a uniform permutation, so
+/// the list says nothing about the order the keys hold or were typed in or
+/// which text replaced which); one where a single text changed in place
+/// keeps its order.
 #[derive(Debug, Default)]
 pub struct ReaderLists {
     /// Part id to its kind and (entry id, text) in the readers' order.
@@ -1225,15 +1227,25 @@ impl ReaderLists {
                 .map(|(id, text)| (id.as_str(), text.as_str()))
                 .collect();
             let held = self.parts.get(&part.part);
-            let same_set = held.is_some_and(|(kind, entries)| {
+            // The order stays only for one entry's text changing in place
+            // (typing). A server write fills lists by position, so a
+            // reorder changes several texts under the same ids: keeping the
+            // order would show readers which old text each new one replaced
+            // (REVIEW2 M2), so that, too, shuffles afresh.
+            let in_place = held.is_some_and(|(kind, entries)| {
                 *kind == part.kind
                     && entries.len() == part.entries.len()
                     && entries
                         .iter()
                         .all(|(id, _)| texts.contains_key(id.as_str()))
+                    && entries
+                        .iter()
+                        .filter(|(id, text)| texts[id.as_str()] != text.as_str())
+                        .count()
+                        <= 1
             });
             let next: Vec<(String, String)> = match held {
-                Some((_, entries)) if same_set => entries
+                Some((_, entries)) if in_place => entries
                     .iter()
                     .map(|(id, _)| (id.clone(), texts[id.as_str()].to_owned()))
                     .collect(),

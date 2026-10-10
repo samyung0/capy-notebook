@@ -889,6 +889,81 @@ fn the_readers_lists_never_follow_typing_order() {
     assert_eq!(changed, vec![(part.clone(), None)]);
 }
 
+/// Security regression (REVIEW2 M2): a server write (the save API, the
+/// agent's `replace_question`, bank copy) fills lists by position, so a
+/// reorder keeps the item ids and moves texts between them. The readers'
+/// list must then be a fresh shuffle, not the last list with each text
+/// replaced by its new neighbour, which would show a reader old position to
+/// new. Fails if the list keeps its order whenever the ids stay.
+#[test]
+fn a_server_reorder_reshuffles_the_readers_list() {
+    let questions = fixtures();
+    let (content, keys, _, _) = rooms(&questions);
+    let (question, part) = part_of(&questions, "ordering");
+    let at = questions
+        .iter()
+        .position(|q| q["id"] == json!(question))
+        .unwrap();
+    let periods = ["Permian", "Triassic", "Jurassic", "Cretaceous", "Paleogene"];
+    let mut next = questions.clone();
+    next[at]["parts"][0]["answer"]["items"] = json!(periods);
+    quiz::set_questions(&mut content.transact_mut(), &mut keys.transact_mut(), &next).unwrap();
+    let mut lists = ReaderLists::default();
+    let mut pick = seeded(7);
+    lists.follow(&quiz::item_parts(&keys.transact()), &mut pick);
+    let before = lists
+        .all()
+        .into_iter()
+        .find(|(id, _)| *id == part)
+        .unwrap()
+        .1
+        .items;
+    // What each reader slot would show if the order stayed: the id behind a
+    // text before carries the text now at its keys position.
+    let ids_before: Vec<(String, String)> = quiz::item_parts(&keys.transact())
+        .into_iter()
+        .find(|p| p.part == part)
+        .unwrap()
+        .entries;
+    let mut reversed = periods;
+    reversed.reverse();
+    next[at]["parts"][0]["answer"]["items"] = json!(reversed);
+    quiz::set_questions(&mut content.transact_mut(), &mut keys.transact_mut(), &next).unwrap();
+    let ids_after: Vec<(String, String)> = quiz::item_parts(&keys.transact())
+        .into_iter()
+        .find(|p| p.part == part)
+        .unwrap()
+        .entries;
+    assert_eq!(
+        ids_before.iter().map(|(id, _)| id).collect::<Vec<_>>(),
+        ids_after.iter().map(|(id, _)| id).collect::<Vec<_>>(),
+        "the server write kept the ids (it fills by position)"
+    );
+    let text_of = |id: &str| ids_after.iter().find(|(i, _)| i == id).unwrap().1.clone();
+    let id_of = |text: &str| {
+        ids_before
+            .iter()
+            .find(|(_, t)| t == text)
+            .unwrap()
+            .0
+            .clone()
+    };
+    let leaky: Vec<String> = before.iter().map(|text| text_of(&id_of(text))).collect();
+    let changed = lists.follow(&quiz::item_parts(&keys.transact()), &mut pick);
+    let after = changed
+        .into_iter()
+        .find(|(id, _)| *id == part)
+        .and_then(|(_, list)| list)
+        .expect("a push")
+        .items;
+    let mut sorted = after.clone();
+    sorted.sort();
+    let mut want: Vec<String> = periods.iter().map(|p| (*p).to_owned()).collect();
+    want.sort();
+    assert_eq!(sorted, want);
+    assert_ne!(after, leaky, "the push maps old positions to new");
+}
+
 /// REVIEW1 S6: the save API writes what differs, so an editor typing into
 /// the same question keeps their characters.
 #[test]

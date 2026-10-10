@@ -1259,7 +1259,9 @@ ReaderLists`) and pushes it over its channels as a stateless `quiz-items`
 message, `{type, full, parts: {<part id>: {kind, items} | null}}`, the whole
 set to a channel that joins (`full`) and the parts that changed otherwise. A
 part whose entries change as a set is shuffled afresh (a uniform
-permutation); a text edit keeps the order. No ids and no history reach a
+permutation); a single text edit keeps the order, and a change of several
+texts at once (a server write reorders lists by position) shuffles too, so a
+reader never sees which text replaced which. No ids and no history reach a
 reader, and neither document holds anything the server writes alone, so an
 editor's Undo never re-creates a server-only struct. A reader watching while
 items are added one at a time sees each new one appear (live mirroring); one
@@ -1301,7 +1303,8 @@ their caps (`maxLength`; a text editor takes back an edit past its cap). The
 quiz edit page has no Save or Reset: the name saves on blur, the cloud status
 follows the title, Undo, Redo and the View switch sit at the header's right,
 Edit (ghost-hover) and Remove (danger-light) sit at each question's top right
-on desktop (`QuestionView`'s `actions`) and under it on phones, and an
+on desktop (`QuestionView`'s `actions`) and on their own line under it at the
+right on phones, and an
 incomplete question shows a line under it saying what it lacks
 (`incomplete.ts`). Readers (the attempt page, the workspace quiz View, note
 embeds in View) paint the stored questions and then follow the content room
@@ -1323,7 +1326,10 @@ here: its edits become a refused draft, a toast says so, and a fresh room
 opens with the draft read-only for copying until Reload (`QuizRecovery`,
 `LiveFlashcards`); it never rejoins with what was refused. A fresh token
 naming another room (compaction, a discard) does the same with the edits as a
-draft of the old lineage. Leaving the tab or navigating in the app while an
+draft of the old lineage. An eviction notice's `mode` decides its close: a
+drain (access widened; the room stored first) rejoins with the document as
+it is, a discard (or compaction) replaces the room as a moved one. Leaving
+the tab or navigating in the app while an
 item room holds edits the server has not acknowledged asks first
 (`unsentItems.ts`).
 

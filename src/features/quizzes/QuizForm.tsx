@@ -80,7 +80,8 @@ export function QuizForm({
     removeQuestion(content, keys, id);
   };
   // Edit (ghost-hover) and Remove (danger-light), at each question's top
-  // right on desktop (Epo 2026-10-10).
+  // right on desktop and on their own line at the right on phones (Epo
+  // 2026-10-10).
   const actions = (item: Question) => (
     <>
       <Button
@@ -128,8 +129,11 @@ export function QuizForm({
                   {incomplete}
                 </p>
               )}
-              {/* Phones keep Edit and Remove under the question. */}
-              <div className="flex gap-1 md:hidden">{actions(item)}</div>
+              {/* Phones: Edit and Remove on their own line under the
+                  question, at the right (Epo 2026-10-10). */}
+              <div className="flex justify-end gap-3 md:hidden">
+                {actions(item)}
+              </div>
             </>
           );
         }}
