@@ -1,6 +1,7 @@
 import { type DisplayList, paintDisplayList } from '@betteroffice/xlsx/viewer';
 import type { OfficeRenderedPage } from '@/features/files/officeProtocol';
 import { canvasPage } from './runtimeMenus';
+import { thumbnailCanvas, thumbnailPage } from './thumbnail';
 
 interface Viewport {
   height: number;
@@ -57,6 +58,22 @@ function canvas(width: number, height: number) {
   context.fillStyle = '#ffffff';
   context.fillRect(0, 0, element.width, element.height);
   return { context, element };
+}
+
+/**
+ * The top-left of a sheet a list-card capture shows, in sheet px: an A4
+ * page's shape, at the quarter scale the ingest render prints a page at.
+ */
+export const THUMBNAIL_AREA = { height: 1132, width: 800, x: 0, y: 0 };
+
+/** The first sheet's top-left as a list-card capture (`thumbnail.ts`). */
+export async function sheetThumbnail(frame: DisplayList) {
+  const { context, element, scale } = thumbnailCanvas(
+    THUMBNAIL_AREA.width,
+    THUMBNAIL_AREA.height
+  );
+  paintDisplayList(context, frame, scale);
+  return thumbnailPage(element, context);
 }
 
 /** An image of the given part of the sheet, as on screen, for "PNG image". */

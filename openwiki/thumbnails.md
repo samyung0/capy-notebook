@@ -7,8 +7,9 @@ mindmap, diagram) gets a live preview drawn in the browser from a small JSON
 summary of its content. Decisions: `human/authorization-permissions-lifecycles.md`
 and `human/backend-storage-quota.md` (2026-10-11).
 
-Phase 1 (this page) renders file thumbnails at ingest only. Browser captures of
-edited Office files and agent-edit captures are phase 2 (see the end).
+Ingest renders file thumbnails (phase 1). Edited PPTX and XLSX files are
+captured in the browser and posted to Go ([Browser captures](#browser-captures-phase-2a),
+phase 2a). DOCX captures and agent-edit captures come later (see the end).
 
 ## Storage and lifecycle
 
@@ -160,12 +161,82 @@ Sources: [extractor](../server/internal/materialdoc/preview.go),
 [table test](../server/internal/materialdoc/preview_test.go),
 [writers test](../server/internal/store/material_preview_test.go).
 
+## Browser captures (phase 2a)
+
+An edit frame of a PPTX or XLSX file redraws the file's thumbnail as it is
+edited and Capy posts it to Go, which writes it to B2 itself (no upload
+session, no quota).
+
+**Endpoint.** `POST /api/files/{id}/thumbnail`, raw body `image/webp`, `204` on
+success ([handler](../server/internal/httpapi/huma_thumbnails.go)):
+
+- Edit role only (`assertFileEditor`; anyone else gets `404`), and only for
+  files that open in an Office editor (`store.SourceEditFormat` is docx, xlsx
+  or pptx; anything else `422`).
+- At most 64 KB (`413` past it). The body must be one RIFF WebP whose RIFF size
+  equals its length (nothing trailing), at most 200 x 400 by its header, and it
+  must decode in full with `golang.org/x/image/webp` (pure Go; the header's
+  size is checked first and x/image holds the frame to it). Otherwise `422`.
+- The key is `thumbs/{file id}/{sha256}.webp`. The current key answers `204`
+  and writes nothing.
+- One accepted capture per file per 60 s: `files.thumbnail_captured_at`
+  (migration 0074) is claimed by one conditional update, so racing captures
+  cannot both pass; a capture inside the interval gets `429`
+  (`thumbnail_too_soon`) before anything is written. Per user, 60 captures an
+  hour through the Redis limiter (`ratelimit` class `thumbnail`, Epo's number).
+- Then the B2 put (`Cache-Control: public, max-age=31536000, immutable`,
+  `blob.Store.PutObject`) and `SetFileThumbnail`: the key change releases the
+  old key through the phase 1 triggers; a file trashed or deleted meanwhile
+  takes nothing and the new key is queued for deletion at once, as it is when
+  the update fails (an enqueue that fails too leaves it to the orphan sweep).
+- Nothing retries: a failed put is a `503`, and the browser drops it.
+
+**Browser** ([scheduler](../src/features/files/thumbnailCapture.ts), wired in
+`useOfficeRuntime`):
+
+- Only in an edit frame of PPTX or XLSX, and only where a canvas encodes WebP
+  (`OffscreenCanvas.convertToBlob` answers `image/webp`; Safari answers PNG and
+  captures nothing).
+- A local edit (the runtime's `update`) starts a cycle. 5 s after the last
+  edit Capy asks the runtime for the capture (`render` {kind: 'thumbnail'},
+  `rendered` with one WebP page, none when there is nothing to capture) and
+  keeps the bytes. 60 s after the last edit, or 10 minutes after the cycle's
+  first edit while editing goes on, it uploads them (drawing again first when
+  edits came after the drawing). `pagehide`, or the page turning hidden,
+  uploads what was drawn with `fetch(…, {keepalive: true})`.
+- An upload needs the room to have every edit (the session reads `saved`) and
+  the user to be able to edit (not paused, handoff, recovery or offline at its
+  bound). Remote edits start nothing: the peer who edits captures.
+- Failures are logged once (`Thumbnail capture failed`) and never retried: a
+  failed drawing ends its cycle, a refused upload (a `429` included) is
+  dropped, and the card keeps its image until the next capture.
+- Leaving the file inside the app (View, another file, another page) drops a
+  cycle that has not uploaded yet.
+
+**Drawing** ([runtime](../src/office-runtime/thumbnail.ts)): in the runtime
+frame, when its main thread is next idle (`requestIdleCallback`), never on the
+keystroke or save path, from what the engine holds (pending input is not
+flushed). 200 px wide, cut at 400 px tall, on white, WebP at quality 60; the
+canvas is released after encoding.
+
+- PPTX: slide 1 (`layoutSlide(0)` and `paintSlide`, as Print, with its
+  pictures decoded once for the drawing).
+- XLSX: the first sheet's top-left 800 x 1132 sheet px (an A4 page's shape at
+  a quarter scale), drawn from the workbook worker's display list. The engine
+  draws only the active sheet, so the request names the first sheet
+  (`onSheet`): while another sheet is active there is nothing to capture.
+
+The new key raises the tree event like any thumbnail change, so open lists
+refetch and show it.
+
+Sources: [endpoint test](../server/internal/httpapi/thumbnail_capture_test.go),
+[store test](../server/internal/store/thumbnail_capture_test.go),
+[scheduler test](../src/features/files/thumbnailCapture.test.ts),
+[e2e](../e2e/editor/thumbnail-capture.spec.ts).
+
 ## Phase 2
 
-- `POST` capture endpoint in Go for browser captures: WebP only, about 64 KB,
-  editors only, a minimum interval per item, the same key, hash skip and outbox
-  on failure; PPTX and XLSX captured in the browser, DOCX after the lean
-  editing work lands.
+- DOCX browser captures after the lean editing work lands.
 - Captures after an agent's `edit_document` on Office files need an export of
   the current Office state; an open design question.
 - Note preview images and flashcard image fronts need a small copy of editor

@@ -1,3 +1,4 @@
+import { SheetGoneError } from '@betteroffice/xlsx/editor';
 import { analyzeOpenWorkbook } from '@betteroffice/xlsx/viewer';
 import {
   type XlsxCommandState,
@@ -14,10 +15,19 @@ import type {
   OfficeExporter,
   OfficeFlusher,
 } from './officeCollaboration';
-import type { OfficeMenuReporter, OfficeRenderer } from './runtimeMenus';
+import type {
+  OfficeMenuReporter,
+  OfficeRenderer,
+  OfficeThumbnailer,
+} from './runtimeMenus';
 import { xlsxIcons } from './xlsxIcons';
 import { runXlsxMenuItem, xlsxEditMenus, xlsxStrings } from './xlsxMenus';
-import { sheetPages, viewportPage } from './xlsxRender';
+import {
+  sheetPages,
+  sheetThumbnail,
+  THUMBNAIL_AREA,
+  viewportPage,
+} from './xlsxRender';
 import './xlsx-runtime.css';
 
 export function XlsxEditorHost({
@@ -34,6 +44,7 @@ export function XlsxEditorHost({
   fileName,
   initialZoom,
   onSave,
+  onThumbnailer,
   onZoomChange,
   readOnly,
 }: {
@@ -53,6 +64,7 @@ export function XlsxEditorHost({
   onPendingChange: (pending: boolean) => void;
   fileName: string;
   onSave: () => void;
+  onThumbnailer: (thumbnailer: OfficeThumbnailer | null) => void;
   onZoomChange: (zoom: number) => void;
   /** Recovery: selection and copy only. */
   readOnly: boolean;
@@ -104,6 +116,25 @@ export function XlsxEditorHost({
     });
     return () => onRenderer(null);
   }, [onRenderer]);
+  // The first sheet's top-left for the list cards, drawn by the workbook
+  // worker only while that sheet is the active one (the engine draws no
+  // other); on another sheet there is nothing to capture.
+  useEffect(() => {
+    onThumbnailer(async () => {
+      const api = apiRef.current;
+      const first = api?.sheetInfo()?.sheetIds[0];
+      if (!(api && first)) throw new Error('Editor is still loading');
+      try {
+        return await sheetThumbnail(
+          await api.handle.onSheet(first, 'displayList', THUMBNAIL_AREA)
+        );
+      } catch (error) {
+        if (error instanceof SheetGoneError) return null;
+        throw error;
+      }
+    });
+    return () => onThumbnailer(null);
+  }, [onThumbnailer]);
 
   return (
     <div className="office-editor-host">

@@ -37,9 +37,11 @@ import { handOverPresenterWindow, PRESENTER_VIEW } from './presenterWindow';
 import {
   type OfficeMenuSource,
   type OfficeRenderer,
+  type OfficeThumbnailer,
   pausedMenus,
   runsWhilePaused,
 } from './runtimeMenus';
+import { idle } from './thumbnail';
 import '../../vendor/betteroffice/packages/docx-react/dist/styles.css';
 // After docx-react's styles: its variables are overridden with Capy's.
 import './office-runtime.css';
@@ -92,6 +94,7 @@ function OfficeRuntime() {
   const [locale, setLocaleState] = useState<OfficeLocale>('en');
   const menuSourceRef = useRef<OfficeMenuSource | null>(null);
   const rendererRef = useRef<OfficeRenderer | null>(null);
+  const thumbnailerRef = useRef<OfficeThumbnailer | null>(null);
   const revisionRef = useRef<number | null>(null);
   // PPTX Presenter view: Capy opens the notes window, even from a click here.
   const askPresenter = useCallback(() => {
@@ -186,6 +189,12 @@ function OfficeRuntime() {
   const reportRenderer = useCallback((renderer: OfficeRenderer | null) => {
     rendererRef.current = renderer;
   }, []);
+  const reportThumbnailer = useCallback(
+    (thumbnailer: OfficeThumbnailer | null) => {
+      thumbnailerRef.current = thumbnailer;
+    },
+    []
+  );
   // Editors re-report their menus as selection state changes: the host gets
   // the latest once things settle, and only when it differs.
   const menusSent = useRef('');
@@ -376,11 +385,21 @@ function OfficeRuntime() {
         // A failed print is its own reply: the document stays open and usable.
         let rendered: Awaited<ReturnType<OfficeRenderer>>;
         try {
-          const renderer = rendererRef.current;
-          if (!renderer) throw new Error('Nothing to render yet');
-          // As export: what is being typed reaches the pages first.
-          await flush();
-          rendered = await renderer(message.kind);
+          if (message.kind === 'thumbnail') {
+            // A list-card capture: drawn when the frame is next idle, from
+            // what the engine holds (pending input stays the user's).
+            const thumbnailer = thumbnailerRef.current;
+            if (!thumbnailer) throw new Error('Nothing to capture');
+            await idle();
+            const page = await thumbnailer();
+            rendered = page ? [page] : [];
+          } else {
+            const renderer = rendererRef.current;
+            if (!renderer) throw new Error('Nothing to render yet');
+            // As export: what is being typed reaches the pages first.
+            await flush();
+            rendered = await renderer(message.kind);
+          }
         } catch {
           post({ id: message.id, revision, type: 'render-failed' });
           return;
@@ -638,6 +657,7 @@ function OfficeRuntime() {
               onPendingChange={reportHostPending}
               onRenderer={reportRenderer}
               onSave={save}
+              onThumbnailer={reportThumbnailer}
               onZoomChange={reportZoom}
               readOnly={readOnly}
             />
@@ -659,6 +679,7 @@ function OfficeRuntime() {
               onPresentingChange={reportPresenting}
               onRenderer={reportRenderer}
               onSave={save}
+              onThumbnailer={reportThumbnailer}
               onZoomChange={reportZoom}
               readOnly={readOnly}
             />

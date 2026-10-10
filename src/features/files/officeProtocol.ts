@@ -11,7 +11,10 @@ export const OFFICE_PROTOCOL_VERSION = 8 as const;
 /** Capy's UI locales; the runtime draws its chrome and menus in the same one. */
 export type OfficeLocale = 'en' | 'zh';
 
-/** One page or image from `render`: PNG bytes and its CSS size in px. */
+/**
+ * One page or image from `render`: PNG bytes and its CSS size in px (a
+ * `thumbnail`'s WebP bytes and its size in pixels).
+ */
 export interface OfficeRenderedPage {
   bytes: ArrayBuffer;
   height: number;
@@ -129,12 +132,16 @@ export type OfficeHostMessage =
       mimeType: string;
       bytes: ArrayBuffer;
     }
-  /** Pages to print, or one image to save as PNG; answered by `rendered`. */
+  /**
+   * Pages to print, one image to save as PNG, or an editor's list-card
+   * capture (no page when there is nothing to capture); answered by
+   * `rendered`. A runtime without captures drops `thumbnail`.
+   */
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;
       type: 'render';
       id: string;
-      kind: 'print' | 'png';
+      kind: 'print' | 'png' | 'thumbnail';
     };
 
 /**
@@ -302,7 +309,9 @@ export function isOfficeHostMessage(
   if (candidate.type === 'render')
     return (
       typeof candidate.id === 'string' &&
-      (candidate.kind === 'print' || candidate.kind === 'png')
+      (candidate.kind === 'print' ||
+        candidate.kind === 'png' ||
+        candidate.kind === 'thumbnail')
     );
   return (
     candidate.version === OFFICE_PROTOCOL_VERSION &&

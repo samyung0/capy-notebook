@@ -809,7 +809,10 @@ runtime cannot draw answers `render-failed`, not
 pending flushes are untouched. Edit-mode rendering flushes pending input first,
 as export does. Pages are drawn, encoded and released one at a time (DOCX
 `renderPages`/`rasterizeDisplayPage`, as PPTX), and a page whose canvas has no
-2D context fails the print. The host drops a submenu longer than 80 entries
+2D context fails the print. PPTX and XLSX edit frames also answer
+`render` {kind: 'thumbnail'}, the list-card capture Capy uploads after edits
+settle: drawn when the frame is idle, without flushing pending input
+([thumbnails.md](../thumbnails.md#browser-captures-phase-2a)). The host drops a submenu longer than 80 entries
 rather than the whole bar; DOCX Format › Paragraph styles lists the first 40
 styles (the toolbar's style picker keeps all).
 

@@ -21,9 +21,13 @@ import { editorMenus, splitCommand } from './pptxEditorMenus';
 import { loadPptxFonts } from './pptxFonts';
 import { pptxIcons } from './pptxIcons';
 import { pptxStrings, presentAction } from './pptxMenus';
-import { renderSlides } from './pptxRender';
+import { renderSlides, slideThumbnail } from './pptxRender';
 import { PRESENTER_VIEW } from './presenterWindow';
-import type { OfficeMenuReporter, OfficeRenderer } from './runtimeMenus';
+import type {
+  OfficeMenuReporter,
+  OfficeRenderer,
+  OfficeThumbnailer,
+} from './runtimeMenus';
 import {
   readNotesSize,
   readViewToggle,
@@ -49,6 +53,7 @@ export function PptxEditorHost({
   onPresentingChange,
   onRenderer,
   onSave,
+  onThumbnailer,
   onZoomChange,
   readOnly,
 }: {
@@ -72,6 +77,7 @@ export function PptxEditorHost({
   onPresentingChange: (presenting: boolean) => void;
   onRenderer: (renderer: OfficeRenderer | null) => void;
   onSave: () => void;
+  onThumbnailer: (thumbnailer: OfficeThumbnailer | null) => void;
   onZoomChange: (zoom: OfficeZoom) => void;
   /** Recovery: selection and copy only. */
   readOnly: boolean;
@@ -141,6 +147,15 @@ export function PptxEditorHost({
     });
     return () => onRenderer(null);
   }, [commandState, onRenderer]);
+  // Slide 1 for the list cards; Capy asks after edits settle.
+  useEffect(() => {
+    onThumbnailer(async () => {
+      const api = apiRef.current;
+      if (!api) throw new Error('Editor is still loading');
+      return slideThumbnail(api.handle);
+    });
+    return () => onThumbnailer(null);
+  }, [onThumbnailer]);
   useEffect(() => {
     onExporter(async () => {
       const api = apiRef.current;
