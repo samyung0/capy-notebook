@@ -59,6 +59,11 @@ import {
 import { MEDIA_CAPTION_CLASS } from './nodeStyles';
 import { pastedImage, settlePastedImage } from './pastedImages';
 import { ToolbarButton } from './toolbar/ToolbarButton';
+import {
+  announceUpload,
+  editorAwareness,
+  useUploadingElsewhere,
+} from './uploadPresence';
 import { youtubeVideoId } from './youtube';
 
 type MediaType = ReturnType<typeof plateMediaType>;
@@ -215,8 +220,15 @@ export const MediaPlaceholderElement = withHOC(
     ]);
 
     // Epo 2026-10-10: an uploading image is a skeleton until the asset id
-    // returns and the image takes its place.
-    if (mediaType === KEYS.img && !error && (uploading || reading))
+    // returns and the image takes its place, here and, through this tab's
+    // presence, in every other client of the room (uploadPresence.ts).
+    const awareness = editorAwareness(editor);
+    const busy = mediaType === KEYS.img && !error && (!!uploading || reading);
+    useEffect(() => {
+      if (busy) return announceUpload(awareness, id);
+    }, [awareness, busy, id]);
+    const elsewhere = useUploadingElsewhere(awareness, id);
+    if (busy || (mediaType === KEYS.img && elsewhere))
       return (
         <PlateElement {...props} className="my-2">
           <div

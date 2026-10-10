@@ -242,3 +242,114 @@ test.describe('upload placeholder', () => {
     });
   });
 });
+
+// Epo 2026-10-10: other editors see an upload's skeleton through the
+// uploader's presence (src/features/notes/uploadPresence.ts), and the empty
+// placeholder again once the uploader leaves; nothing of it is stored.
+type Peer = ReturnType<
+  typeof import('../../src/mocks/collaboration').mockNotePeer
+>;
+
+/** Another editor of the note, headless in the note's mock room. */
+async function joinPeer(page: Page) {
+  await page.evaluate(async (id) => {
+    const modulePath = '/src/mocks/collaboration.ts';
+    const { mockNotePeer } = (await import(
+      modulePath
+    )) as typeof import('../../src/mocks/collaboration');
+    Object.assign(window, { peer: mockNotePeer(id) });
+  }, EDITOR_NOTE.id);
+}
+
+/** The peer starts uploading into a new image placeholder `id`. */
+const peerUploads = (page: Page, id: string) =>
+  page.evaluate((id) => {
+    const peer = (window as unknown as { peer: Peer }).peer;
+    peer.awareness.setLocalStateField('uploads', [id]);
+    peer.append([
+      { children: [{ text: '' }], id, mediaType: 'img', type: 'placeholder' },
+    ]);
+  }, id);
+
+test.describe('upload presence', () => {
+  test("another editor's upload is a skeleton here until it lands, and empty once that editor leaves", async ({
+    page,
+  }) => {
+    const editor = await openEditorNote(
+      page,
+      EDITOR_NOTE.id,
+      EDITOR_NOTE.thirdParagraph
+    );
+    await joinPeer(page);
+    await peerUploads(page, 'peer-upload');
+    const uploading = editor.locator('[data-block-id="peer-upload"]');
+    await expect(
+      uploading.getByRole('status', { name: m.a11y_loading() })
+    ).toBeVisible();
+    await expect(uploading).not.toContainText(m.editor_add_image());
+    await page.screenshot({
+      path: test.info().outputPath('peer-uploading.png'),
+    });
+
+    // The peer's upload lands: the image takes the block.
+    await page.evaluate(() => {
+      const peer = (window as unknown as { peer: Peer }).peer;
+      peer.replace('peer-upload', {
+        assetId: 'asset_mock_cell_diagram',
+        children: [{ text: '' }],
+        id: 'peer-upload',
+        type: 'img',
+      });
+      peer.awareness.setLocalStateField('uploads', undefined);
+    });
+    await expect(
+      editor.getByRole('img', { name: 'animal-cell.svg' })
+    ).toBeVisible();
+    await expect(editor.locator('.slate-placeholder')).toHaveCount(0);
+
+    // Another upload, and the peer leaves before it lands.
+    await peerUploads(page, 'peer-left');
+    const left = editor.locator('[data-block-id="peer-left"]');
+    await expect(left.getByRole('status')).toBeVisible();
+    await page.evaluate(() =>
+      (window as unknown as { peer: Peer }).peer.leave()
+    );
+    await expect(left).toContainText(m.editor_add_image());
+    await expect(left.getByRole('status')).toHaveCount(0);
+    await left.scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: test.info().outputPath('peer-left.png'),
+    });
+  });
+
+  test('this tab names its upload in its presence until the asset id returns', async ({
+    page,
+  }) => {
+    await holdUploads(page);
+    const editor = await openEmptyLine(page);
+    await joinPeer(page);
+    await paste(editor, { 'text/plain': '' }, 'shot.png');
+    const placeholder = editor.locator('.slate-placeholder');
+    await expect(placeholder.getByRole('status')).toBeVisible();
+    const id = await placeholder.getAttribute('data-block-id');
+    expect(id).toBeTruthy();
+    // What the peer sees of this tab's presence.
+    const named = () =>
+      page.evaluate((id) => {
+        const { awareness } = (window as unknown as { peer: Peer }).peer;
+        return [...awareness.getStates()].some(
+          ([client, state]) =>
+            client !== awareness.clientID &&
+            Array.isArray(state.uploads) &&
+            state.uploads.includes(id)
+        );
+      }, id);
+    await expect.poll(named).toBe(true);
+
+    await page.evaluate(() =>
+      window.dispatchEvent(new Event('release-uploads'))
+    );
+    await expect(editor.getByRole('img', { name: 'shot.png' })).toBeVisible();
+    await expect.poll(named).toBe(false);
+  });
+});

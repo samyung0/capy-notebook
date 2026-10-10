@@ -5,7 +5,7 @@ import {
 } from '@platejs/yjs';
 import { slateNodesToInsertDelta, yTextToSlateElement } from '@slate-yjs/core';
 import {
-  type Awareness,
+  Awareness,
   applyAwarenessUpdate,
   encodeAwarenessUpdate,
   removeAwarenessStates,
@@ -449,6 +449,42 @@ function reachable() {
     (navigator.onLine && sessionStorage.getItem(UNREACHABLE) !== 'true')
   );
 }
+/** Another editor of a note, headless (e2e): its own document and presence in
+ * the note's mock room, to write blocks and set awareness as a peer would. */
+export function mockNotePeer(materialId: string) {
+  const room = rooms.get(mockMaterialRoom(materialId));
+  if (!room) throw new Error(`Mock room for ${materialId} is not open`);
+  const document = new Y.Doc();
+  const awareness = new Awareness(document);
+  const leave = join(room, { awareness, document, origin: {} });
+  const root = document.get('content', Y.XmlText);
+  const indexOf = (id: string) =>
+    (root.toDelta() as Array<{ insert: unknown }>).findIndex(
+      (op) =>
+        op.insert instanceof Y.XmlText && op.insert.getAttribute('id') === id
+    );
+  return {
+    append: (blocks: MaterialValue) =>
+      root.applyDelta([
+        { retain: root.length },
+        ...slateNodesToInsertDelta(blocks),
+      ]),
+    awareness,
+    leave,
+    /** Puts `block` where the top-level block `id` is. */
+    replace: (id: string, block: MaterialValue[number]) => {
+      const index = indexOf(id);
+      document.transact(() => {
+        root.delete(index, 1);
+        root.applyDelta([
+          { retain: index },
+          ...slateNodesToInsertDelta([block]),
+        ]);
+      });
+    },
+  };
+}
+
 export function setCollaborationReachable(value: boolean) {
   if (value) sessionStorage.removeItem(UNREACHABLE);
   else sessionStorage.setItem(UNREACHABLE, 'true');
