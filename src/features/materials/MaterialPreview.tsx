@@ -17,19 +17,23 @@ import { StaticMaterialKit } from './staticPlugins';
  * Markdown files convert first (files/MarkdownPreview.tsx); the renderer
  * itself carries no markdown parser. Memoized: a material refetch that brings
  * equal content (structurally shared, so the same object) must not re-render
- * the document. */
+ * the document. A note's live View passes its parsed `value` instead (the
+ * room's, block by block): PlateStatic re-renders a top-level block only when
+ * its object changes. */
 export const MaterialPreview = memo(function MaterialPreview({
   content,
   isStandalone,
   kind,
   className,
   title,
+  value: given,
 }: {
   content: MaterialDocument;
   isStandalone?: boolean;
   kind?: MaterialKind;
   className?: string;
   title?: string;
+  value?: MaterialValue;
 }) {
   const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
   const editor = useMemo(
@@ -41,10 +45,12 @@ export const MaterialPreview = memo(function MaterialPreview({
     []
   );
 
-  const value = useMemo<MaterialValue>(
-    () => parseMaterialDocument(content)?.value ?? content.value,
-    [content]
+  const parsed = useMemo<MaterialValue | null>(
+    () =>
+      given ? null : (parseMaterialDocument(content)?.value ?? content.value),
+    [content, given]
   );
+  const value = given ?? parsed ?? content.value;
   const renderContext = useMemo(
     () =>
       kind && title ? { isStandalone: !!isStandalone, kind, title } : null,

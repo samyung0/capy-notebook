@@ -559,6 +559,14 @@ export function normalizeMaterialValue(value: MaterialValue): MaterialValue {
   return normalizeMaterialValueInternal(value);
 }
 
+/** One top-level block normalized as `normalizeMaterialValue` would (a live
+ * note View rebuilds only the blocks its room changed). */
+export function normalizeMaterialBlock(
+  block: MaterialElement
+): MaterialElement {
+  return normalizeMaterialValueInternal([block])[0];
+}
+
 export function emptyMaterialDocument(): MaterialDocument {
   return createMaterialDocument([{ children: [{ text: '' }], type: 'p' }]);
 }

@@ -1262,6 +1262,23 @@ embedded quiz loses its answer). The refetch reads through `ProjectLiveNote`,
 which has a live room store and project first, so it is never older than the
 live copy.
 
+A signed-in reader's note View follows the room (Epo 2026-10-10;
+`LiveNotePreview` in `CenterContent.tsx`). The projection paints first; then
+the live-read module (`notes/liveNoteRead.ts`, a lazy chunk no other path
+imports) joins the note room on the tab's socket with the API's token, read
+for a viewer (the server refuses a viewer's write token, closes a read channel
+that writes and sends it no presence). Once the room syncs, its value is
+handed over block by block (`notes/liveNoteBlocks.ts`): a block equal to the
+painted one keeps the painted object, so the switch redraws only what differs,
+and after each remote change only the top-level blocks the events touched are
+read again (normalized as the projection is, comment marks left out). The
+static renderer re-renders a top-level block only when its object changes
+(PlateStatic's memo), so a keystroke redraws one block; Mermaid sources come
+through the note document, quizzes and sets through their own content rooms
+(`AppEmbed`), never keys. A room that ends (moved, reset) is joined again; one
+the reader cannot open leaves the painted projection. Public share pages and
+signed-out visitors stay fresh-on-open: the share renderer has no room code.
+
 Server-origin content mutations use the collaboration server's command
 endpoint (`POST /internal/commands`). Commands load the durable document with
 the live room's unsaved state and replace one stable custom block through the

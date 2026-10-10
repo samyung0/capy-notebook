@@ -2969,3 +2969,90 @@ async fn two_writers_type_in_one_mermaid_source_and_an_agent_edit_keeps_both() {
     assert!(a.settle(|c| c.source() == both).await, "{}", a.source());
     assert!(b.settle(|c| c.source() == both).await, "{}", b.source());
 }
+
+// ---------------------------------------------------------- live note View
+
+/// Security regression (live note View, Epo 2026-10-10): a signed-in viewer
+/// watches a note live on a read channel. An editor's typing reaches it, its
+/// write token is refused, and a write on its read channel closes the
+/// channel and reaches neither the editor nor the stored rows. Fails with the
+/// read-only check of `room.rs` removed.
+#[tokio::test]
+async fn a_viewer_watches_a_note_live_and_its_writes_never_land() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, note) = note(&env, "watched").await;
+    db(&env)
+        .await
+        .execute("UPDATE materials SET privacy='link' WHERE id=$1", &[&note])
+        .await
+        .expect("link share");
+    let viewer = user(&env).await;
+    let room = format!("material:{note}:schema:1");
+
+    let mut refused = Client::open(server.port).await;
+    refused.join(&room, &token(&room, &viewer, "write")).await;
+    let reason = text_payload(&refused.until(2).await.expect("refused"));
+    assert_eq!(reason, "collaboration-read-only");
+
+    let mut editor = Client::open(server.port).await;
+    assert_eq!(
+        editor.joined(&room, &token(&room, &owner, "write")).await,
+        1
+    );
+    let mut watcher = Client::open(server.port).await;
+    assert_eq!(
+        watcher.joined(&room, &token(&room, &viewer, "read")).await,
+        0
+    );
+    assert!(editor.settle(|c| c.block_text() == "watched").await);
+    assert!(watcher.settle(|c| c.block_text() == "watched").await);
+    editor.type_text(" live").await;
+    assert!(
+        watcher.settle(|c| c.block_text() == "watched live").await,
+        "{}",
+        watcher.block_text()
+    );
+
+    watcher.type_text(" forged").await;
+    let closed = String::from_utf8_lossy(&watcher.until(4).await.expect("closed")).into_owned();
+    assert!(closed.contains("read-only"), "{closed}");
+    editor.type_text("!").await;
+    assert!(
+        editor.settle(|c| c.block_text() == "watched live!").await,
+        "{}",
+        editor.block_text()
+    );
+    // The editor's receipt answers once the store committed: no stored row
+    // holds the viewer's write.
+    let request = serde_json::json!({ "id": "r1", "type": "checkpoint-request" }).to_string();
+    let mut payload = Vec::new();
+    varbytes(&mut payload, request.as_bytes());
+    editor.send(9, &payload).await;
+    loop {
+        let message = text_payload(&editor.until(9).await.expect("stateless"));
+        if message.contains("checkpoint-persisted") {
+            break;
+        }
+    }
+    let client = db(&env).await;
+    let mut stored = Vec::new();
+    for sql in [
+        "SELECT state AS bytes FROM material_yjs_documents WHERE material_id=$1",
+        "SELECT update AS bytes FROM material_yjs_updates WHERE material_id=$1",
+    ] {
+        for row in client.query(sql, &[&note]).await.expect("rows") {
+            stored.extend(row.get::<_, Vec<u8>>("bytes"));
+        }
+    }
+    let stored = String::from_utf8_lossy(&stored);
+    assert!(
+        stored.contains(" live"),
+        "the store holds the editor's typing"
+    );
+    assert!(
+        !stored.contains("forged"),
+        "the store holds the viewer's write"
+    );
+    assert!(!editor.block_text().contains("forged"));
+}

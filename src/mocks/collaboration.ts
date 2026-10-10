@@ -966,10 +966,14 @@ function fullReaderLists(contentName: string) {
   return JSON.stringify({ full: true, parts, type: 'quiz-items' });
 }
 
+/** Kinds whose room holds a Plate note document: a note a live View reads,
+ * a standalone diagram's editor. */
+const plateKind = (kind: Material['kind']) =>
+  kind === 'note' || kind === 'mindmap' || kind === 'diagram';
+
 /** A live item's room (live-items): seeded from the mock row as the service
- * bootstraps one (a quiz's two documents together; a standalone diagram's
- * note document, its source a text), written back to it as the service
- * projects. */
+ * bootstraps one (a quiz's two documents together; a note document, a
+ * Mermaid source a text), written back to it as the service projects. */
 function itemRoom(name: string): Room {
   const existing = rooms.get(name);
   if (existing) return existing;
@@ -978,10 +982,7 @@ function itemRoom(name: string): Room {
   const material = db.materials.find((row) => row.id === materialId);
   if (!checkpoints.has(name) && material?.kind === 'flashcards')
     seedCards(room.document, db.cardsFromMaterial(material));
-  if (
-    !checkpoints.has(name) &&
-    (material?.kind === 'mindmap' || material?.kind === 'diagram')
-  )
+  if (!checkpoints.has(name) && material && plateKind(material.kind))
     room.document
       .get('content', Y.XmlText)
       .applyDelta(slateNodesToInsertDelta(material.content.value));
@@ -1014,7 +1015,7 @@ function itemRoom(name: string): Room {
 function persistItem(room: Room) {
   const material = db.materials.find((row) => row.id === room.target.id);
   if (!(material && room.dirty)) return;
-  if (material.kind === 'mindmap' || material.kind === 'diagram') {
+  if (plateKind(material.kind)) {
     persistMaterial(room);
     return;
   }

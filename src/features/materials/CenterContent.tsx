@@ -64,6 +64,8 @@ import {
   type FlashcardsElement,
   flashcardsElementToCards,
   type MaterialDocument,
+  type MaterialValue,
+  parseMaterialDocument,
   type QuizElement,
 } from './document';
 import { HeavyMaterialGate } from './HeavyMaterialGate';
@@ -524,12 +526,19 @@ export function MaterialContent({
               />
             ) : (
               <Suspense fallback={<FileLoading />}>
-                <MaterialPreview
-                  content={material.content}
-                  isStandalone={!material.workspaceId}
-                  kind={material.kind}
-                  title={material.title}
-                />
+                {material.kind === 'note' ? (
+                  <LiveNotePreview
+                    material={material}
+                    Preview={MaterialPreview}
+                  />
+                ) : (
+                  <MaterialPreview
+                    content={material.content}
+                    isStandalone={!material.workspaceId}
+                    kind={material.kind}
+                    title={material.title}
+                  />
+                )}
                 <DocumentAttribution material={material} />
               </Suspense>
             )}
@@ -576,6 +585,52 @@ function DocumentAttribution({ material }: { material: Material }) {
       )}
       inline
       provenance={provenance}
+    />
+  );
+}
+
+/** A note's View (Epo 2026-10-10): the projection paints first; then the
+ * live-read module loads, outside the first paint and every other bundle, and
+ * the note follows its room on a read channel. The room's value replaces the
+ * painted one block by block, keeping each block the room has not changed, so
+ * nothing flashes and a remote keystroke redraws one block. */
+function LiveNotePreview({
+  material,
+  Preview,
+}: {
+  material: Material;
+  Preview: PreviewComponent;
+}) {
+  const painted = useMemo<MaterialValue>(
+    () =>
+      parseMaterialDocument(material.content)?.value ?? material.content.value,
+    [material.content]
+  );
+  const [live, setLive] = useState<MaterialValue | null>(null);
+  const first = useRef(painted);
+  first.current = painted;
+  useEffect(() => {
+    setLive(null);
+    let leave: (() => void) | undefined;
+    let gone = false;
+    const timer = setTimeout(() => {
+      void import('@/features/notes/liveNoteRead').then(({ readNoteLive }) => {
+        if (!gone) leave = readNoteLive(material.id, first.current, setLive);
+      });
+    });
+    return () => {
+      gone = true;
+      clearTimeout(timer);
+      leave?.();
+    };
+  }, [material.id]);
+  return (
+    <Preview
+      content={material.content}
+      isStandalone={!material.workspaceId}
+      kind={material.kind}
+      title={material.title}
+      value={live ?? painted}
     />
   );
 }
