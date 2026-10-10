@@ -208,7 +208,7 @@ function Row({
       <p className="whitespace-nowrap py-3 pr-4">
         <ScoreText score={r.cards} />
       </p>
-      <p className="whitespace-nowrap py-3 pr-4 text-fg-muted">
+      <p className="whitespace-nowrap py-3 pr-4">
         {m.past_minutes({ count: minutes })}
       </p>
       <div className="min-w-0 whitespace-nowrap py-3 pr-4">
