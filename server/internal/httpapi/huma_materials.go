@@ -128,6 +128,14 @@ func (a *api) materialResponse(
 	if err != nil {
 		return nil, materialContentError(err)
 	}
+	// A note's footer also credits its live embeds, read now (never stored).
+	if material.Kind == "note" {
+		embeds, err := a.s.EmbedSources(ctx, material.ID, material.Content)
+		if err != nil {
+			return nil, hErr(err)
+		}
+		body.Provenance = store.WithEmbedSources(material.Provenance, embeds)
+	}
 	if body.ImageMaxBytes, err = a.s.ImageMaxBytes(ctx, material.OwnerUserID); err != nil {
 		return nil, hErr(err)
 	}

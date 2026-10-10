@@ -13,7 +13,7 @@ import { TabContent } from '@/components/app/tabPanel';
 import { ErrorAction } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
-import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
+import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
 import type { Answer } from '@/features/quizzes/grade';
 import {
   QuizPageHeader,
@@ -150,7 +150,7 @@ export default function AttemptResult() {
         ) : (
           <p className="text-fg-muted">{m.quiz_no_breakdown()}</p>
         )}
-        <MaterialAttributionFooter inline provenance={quiz?.provenance} />
+        <SourcesLine className="mt-16 pb-4" provenance={quiz?.provenance} />
       </TabContent>
     </PanelWithInvertedRadius>
   );

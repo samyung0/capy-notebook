@@ -2447,10 +2447,60 @@ build, and the knowledge library is one more source while the switch is on.
   outside the editable document so a user cannot delete the credit: one line per
   book with its edition and version, licence and source link (a licence or
   source reference becomes a link only when it parses as an `http:` or `https:`
-  URL), on the open material, the quiz attempt page, the attempt result page
-  (which reads the quiz the attempt names, because the attempt snapshot carries
-  no provenance), the standalone quiz editor and the flashcard study page,
-  which the public share routes reuse.
+  URL). A note or diagram ends its document with the full footer
+  (`MaterialAttributionFooter` `inline`, in the reading column, scrolling with
+  the document): after the note's content in View and in the editor, where it
+  sits in the editor's scroll area after the editable content and outside the
+  Yjs document (`NoteAttribution`, memoized against save re-renders), after
+  the diagram, and at the end of the diagram editor's preview pane. A quiz or
+  flashcard set shows the same credits behind one collapsed "Sources (n)" line
+  (`SourcesLine`, Epo 2026-10-11 mock B: a button with `aria-expanded` and the
+  count in its label, controlling the list it expands; memoized): under the
+  item where a note embeds it, in View and Edit, and at the end of its own
+  pages, namely the workspace view (flashcard grid or editor, quiz preview),
+  the attempt and result pages (the result page reads the quiz the attempt
+  names, because the attempt snapshot carries no provenance), the study page,
+  the standalone editors and the public share pages. Mini views that show part
+  of an item or mix items (the Study tab's Quick review, review sessions)
+  show no credits; they link to the item's own page, which does. The space above it is the
+  document's own bottom padding plus the footer's, so a block inserted at the
+  end does not move it (Epo 2026-10-11); below it there is room above the
+  page's end (`pb-12`), and room under the workspace's floating tools bar
+  where that shows (`FloatingBarContext`, provided by `WorkspaceOpen` while the
+  bar is on screen; `pb-28`). In the editor the stats footer, when shown,
+  follows it and keeps that room instead.
+  **Embedded quizzes and flashcard sets** keep their own provenance (Epo
+  2026-10-10): every fence of an agent write (above), `copy_questions` or the
+  bank page's copy into an embedded quiz (credits under `provenance.questions`
+  of that quiz only), and agent edits that target the embedded row's id all
+  write the row's own record, which only grows like a note's. A pasted block's
+  copy (`AdoptEmbeddedMaterials`) and every clone carry the row's record,
+  outside the storage gate. The embed shows its credits inside the note behind
+  its Sources line, in View (`AttemptBody`/`StudyBody` `embedded`) and in Edit
+  (under the embedded editor), on the shared note (`AnonymousEmbed.provenance`)
+  and on the item's own pages. A note read credits its own sources plus its
+  live embeds', computed for each read and never stored
+  (`store.EmbedSources`, `store.WithEmbedSources`): the rows of the note (its
+  own children only, whatever else its content names) that are not trashed and
+  that its content references, in reference order, each book (by id) and web
+  page (by URL) once after the note's own, the embeds' copied bank questions'
+  sources included. Its licence line is computed over that whole union
+  (`store.FooterLicence`, Epo 2026-10-11), so a plain note embedding a
+  ShareAlike quiz reads as ShareAlike, and every write that can grow the union
+  keeps it to one copyleft family as a single record is kept
+  (`CheckFooterLicence`): an agent write to the note or one of its embeds and
+  a bank copy into an embed are refused with `lifecycle_rejected` (409 on the
+  bank page), and a pasted copy that would add a second family is left out
+  (its block goes, as for an unreadable source). Clones copy a union that
+  already passed. A union that still has two families (an embed restored by
+  undo after a conflicting write) has no single licence, so its footer states
+  none and each embed shows its own. `materialResponse` adds the union for
+  every note response (one indexed query for the note's credited rows; the
+  content is parsed only when one exists) and `AnonymousNote` for the shared
+  note, so a removed or trashed embed drops out and returns on restore. The
+  open editor reads the note again when a save changes which embeds it stores
+  (`NoteEditorCore`'s per-checkpoint embed key), so pasting or removing an
+  embed updates the footer once that save lands.
 - **Answer.** A build turn ends like any turn: an OpenUI Lang answer
   (`LangRenderer`) listing the materials made, cited under the usual rules. The
   attribution the user sees for library content is the provenance footer on
@@ -2627,9 +2677,16 @@ DOCX and PPTX sources; `set_cell` for XLSX) and applied by the collaboration
 service on an isolated Y.Doc. `insert_markdown` converts its markdown like a
 created note and inserts the resulting blocks, and `replace_block` converts
 the same way and puts the blocks in place of one block; their fences' rows are
-created under the note first (`EnsureEmbeddedMaterial`, ids derived from call
-and command, so a retried edit finds them), the order the editor uses. When the authority
-refuses the edit, or a later command fails before it is sent, Go trashes the
+created under the note once every command has converted and before the edit is
+sent (`EnsureEmbeddedMaterial`, ids derived from call and command, so a retried
+edit finds them), the order the editor uses. A write cannot say which of its
+sources went into which fence, so every fence's row records the call's whole
+`provenance` (Epo 2026-10-11: over-credit), and the note's record merges it
+too only when the call wrote anything besides fences (prose, another command);
+a call of fences alone leaves the note's record untouched. `create_material`
+gives each fence's row the call's provenance as well, beside the note's own (a
+note always has text). When the authority
+refuses the edit, or the edit fails before reaching it, Go trashes the
 rows that edit created and no projection has referenced
 (`DiscardEmbeddedDrafts`), so no hidden rows stay charged to the owner; a lost
 answer keeps them, since the edit may have committed. A discarded row that a

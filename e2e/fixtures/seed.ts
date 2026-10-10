@@ -17,6 +17,14 @@ export const seed = {
     id: 'note_e2e_comment',
     name: 'E2E Comment Highlight Note',
   },
+  creditedNote: {
+    body: 'Adapted from the note source',
+    id: 'note_e2e_credits',
+    noteBook: 'Note Source Book',
+    quizBook: 'Quiz Source Book',
+    quizId: 'qz_e2e_credits',
+    quizPrompt: 'Credited quiz prompt?',
+  },
   editableNote: {
     body: 'Signed-in editors can change this text',
     id: 'note_e2e_edit',

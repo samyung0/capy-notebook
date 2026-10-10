@@ -15,6 +15,24 @@ export function toggleEditorBlock(editor: SlateEditor, type: string) {
   editor.tf.toggleBlock(type);
 }
 
+/**
+ * The range the user sees selected. Slate copies the native selection on a
+ * 100ms throttle, so a click or shortcut can arrive before its stored
+ * selection catches up; when the native selection is outside this editor the
+ * stored one stands.
+ */
+export function liveSelection(editor: SlateEditor) {
+  const native = editor.api.getWindow()?.getSelection();
+  return native &&
+    editor.api.hasSelectableTarget(native.anchorNode) &&
+    editor.api.hasTarget(native.focusNode)
+    ? editor.api.toSlateRange(native, {
+        exactMatch: false,
+        suppressThrow: true,
+      })
+    : editor.selection;
+}
+
 /** Every leaf mark the editor can produce; "Clear formatting" strips them all. */
 export const CLEARABLE_MARK_KEYS = [
   KEYS.bold,

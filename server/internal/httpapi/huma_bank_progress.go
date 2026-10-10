@@ -261,6 +261,13 @@ func (a *api) bankCopyIntoQuiz(ctx context.Context, workspaceID, quizID string, 
 		if provenance, code, err = mergeProvenance(quiz.Provenance, provenance); err != nil {
 			return conflictError(code, err.Error())
 		}
+		// A quiz a note embeds shares the note's footer.
+		if code, err = a.checkFooterLicence(ctx, quiz, provenance, nil); err != nil {
+			if code == "" {
+				return hErr(err)
+			}
+			return conflictError(code, err.Error())
+		}
 	}
 	hash, err := store.RequestHash(map[string]any{"target": quizID, "commands": normalized, "provenance": provenance})
 	if err != nil {

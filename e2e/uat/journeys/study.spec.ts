@@ -248,10 +248,13 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
     );
     await expect(page.getByText(m.question_ui_your_answer())).toBeVisible();
     await page
-      .getByRole('button', { exact: true, name: m.review_next() })
+      .getByRole('button', { exact: true, name: m.action_next() })
       .click();
   }
-  await expect(page.getByText(m.review_done({ count: 2 }))).toBeVisible();
+  // The summary: both items reviewed, each a right square.
+  await expect(
+    page.getByText(m.review_legend_full({ count: 2 }), { exact: true })
+  ).toBeVisible();
 
   // The deployed database holds each record.
   const materials = [finishedQuiz, set, nextQuiz];

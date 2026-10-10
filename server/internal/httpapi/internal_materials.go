@@ -277,6 +277,12 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 		if content, embedded, ok = a.convertAgentNote(w, r, req); !ok {
 			return
 		}
+		// A note always has text beside its fences and cannot say which
+		// sources went where: each fence's item records all of them, and so
+		// does the note (Epo 2026-10-10: over-credit).
+		for i := range embedded {
+			embedded[i].Provenance = req.Provenance
+		}
 	}
 	op, err := a.s.CreateMaterialOperation(ctx, store.MaterialDraft{
 		ID: store.ChatMaterialID(req.AssistantMessageID, req.ToolCallID), ActorUserID: req.UserID,

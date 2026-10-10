@@ -1525,14 +1525,21 @@ func (s *Store) cloneMaterialKindOnce(
 		return Material{}, err
 	}
 	for _, clone := range clones {
+		// An embed's own credits travel with it, like the note's.
+		var childProvenance []byte
+		if clone.src.Provenance != nil {
+			if childProvenance, err = json.Marshal(clone.src.Provenance); err != nil {
+				return Material{}, err
+			}
+		}
 		if _, err := tx.Exec(ctx, `INSERT INTO materials
 			(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
 			 scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by,
-			 parent_material_id, preview)
-			VALUES ($1,$2,$2,NULL,'',$3,$4,$5,'{}','{}','private',$6,$7,$8,$9,$10,$2,$11,$12)`,
+			 parent_material_id, provenance, preview)
+			VALUES ($1,$2,$2,NULL,'',$3,$4,$5,'{}','{}','private',$6,$7,$8,$9,$10,$2,$11,$12,$13)`,
 			clone.newID, userID, clone.src.Kind, embeddedName(), json.RawMessage(clone.content),
 			clone.src.Color, clone.metrics.NodeCount, clone.metrics.MaxDepth, clone.src.UpdatedAt,
-			clone.src.Revision, nid, clone.preview); err != nil {
+			clone.src.Revision, nid, childProvenance, clone.preview); err != nil {
 			return Material{}, err
 		}
 		for _, cid := range clone.cardIDs {

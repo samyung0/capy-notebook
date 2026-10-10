@@ -422,12 +422,32 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 			a.fail(w, err)
 			return
 		}
+		var drafts []store.EmbeddedDraft
+		written, markdownCommands := 0, 0
 		normalized, err = normalizeMaterialCommands(string(mt.Kind), req.Commands, func(i int, markdown string) ([]any, error) {
-			return a.noteBlocksFromMarkdown(ctx, req, i, markdown, &embedded)
+			blocks, fences, err := a.noteBlocksFromMarkdown(ctx, req, i, markdown)
+			drafts = append(drafts, fences...)
+			written += len(blocks)
+			markdownCommands++
+			return blocks, err
 		})
 		if err != nil {
 			a.failDocument(w, err)
 			return
+		}
+		// A write cannot say which of its sources went into which quiz or
+		// flashcards fence, so every fence's item records all of them (Epo
+		// 2026-10-10: over-credit), and the note keeps them only when the write
+		// put anything else in it.
+		var fence *store.Provenance
+		if req.Provenance != nil && len(drafts) > 0 {
+			fence = req.Provenance
+			for i := range drafts {
+				drafts[i].Provenance = fence
+			}
+			if markdownCommands == len(req.Commands) && written == len(drafts) {
+				req.Provenance = nil
+			}
 		}
 		if req.Provenance != nil {
 			var code string
@@ -436,6 +456,24 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 				writeJSON(w, http.StatusBadRequest, map[string]string{"code": code, "message": err.Error()})
 				return
 			}
+		}
+		if code, err := a.checkFooterLicence(ctx, mt, provenance, fence); err != nil {
+			if code == "" {
+				a.fail(w, err)
+			} else {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"code": code, "message": err.Error()})
+			}
+			return
+		}
+		for _, draft := range drafts {
+			if err := a.s.EnsureEmbeddedMaterial(ctx, req.UserID, req.Target.ID, draft); err != nil {
+				if errors.Is(err, materialdoc.ErrInvalid) {
+					err = refusal(agenttools.ErrInvalidInput, "%s", err.Error())
+				}
+				a.failDocument(w, err)
+				return
+			}
+			embedded = append(embedded, draft.ID)
 		}
 	case agenttools.KindSourceFile:
 		if req.Provenance != nil {
@@ -480,15 +518,41 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 	writeJSON(w, http.StatusOK, receipt)
 }
 
+// checkFooterLicence refuses an agent or bank write that would put two
+// copyleft families in a note's footer, which credits the note's own sources
+// with its live embeds': a write to the note (merged, its record after the
+// write, and fence, the record of the items the write embeds) or to one of
+// its embeds (merged, that embed's record after the write). The code is empty
+// for a failure other than the refusal.
+func (a *api) checkFooterLicence(ctx context.Context, mt store.Material, merged, fence *store.Provenance) (string, error) {
+	switch {
+	case mt.Kind == "note" && (merged != nil || fence != nil):
+		if merged != nil {
+			mt.Provenance = merged
+		}
+		if fence == nil {
+			return a.s.CheckFooterLicence(ctx, mt)
+		}
+		return a.s.CheckFooterLicence(ctx, mt, fence)
+	case mt.ParentMaterialID != "" && merged != nil:
+		note, err := a.s.GetMaterial(ctx, mt.ParentMaterialID)
+		if err != nil {
+			return "", err
+		}
+		return a.s.CheckFooterLicence(ctx, note, merged)
+	}
+	return "", nil
+}
+
 // noteBlocksFromMarkdown converts an insert_markdown command through the
-// collaboration service. Its quiz and flashcards fences become rows under the
-// note first, the order the editor uses, with ids derived from the tool call
-// and command so a retried edit finds them instead of creating them again.
-// Each row is added to created as soon as it exists.
-func (a *api) noteBlocksFromMarkdown(ctx context.Context, req internalDocumentsEditReq, command int, markdown string, created *[]string) ([]any, error) {
+// collaboration service. Its quiz and flashcards fences come back as drafts
+// with ids derived from the tool call and command, so a retried edit finds
+// their rows instead of creating them again; the caller creates the rows
+// before the reference blocks are inserted, the order the editor uses.
+func (a *api) noteBlocksFromMarkdown(ctx context.Context, req internalDocumentsEditReq, command int, markdown string) ([]any, []store.EmbeddedDraft, error) {
 	converted, err := a.s.ConvertAgentMarkdown(ctx, markdown)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	ids := make([]string, len(converted.Embedded))
 	for i := range ids {
@@ -496,29 +560,20 @@ func (a *api) noteBlocksFromMarkdown(ctx context.Context, req internalDocumentsE
 	}
 	content, err := materialdoc.ResolvePendingRefs(string(converted.Document), ids)
 	if err != nil {
-		return nil, refusal(agenttools.ErrInvalidInput, "%s", strings.TrimPrefix(err.Error(), materialdoc.ErrInvalid.Error()+": "))
-	}
-	for _, draft := range converted.EmbeddedDrafts(ids) {
-		if err := a.s.EnsureEmbeddedMaterial(ctx, req.UserID, req.Target.ID, draft); err != nil {
-			if errors.Is(err, materialdoc.ErrInvalid) {
-				return nil, refusal(agenttools.ErrInvalidInput, "%s", err.Error())
-			}
-			return nil, err
-		}
-		*created = append(*created, draft.ID)
+		return nil, nil, refusal(agenttools.ErrInvalidInput, "%s", strings.TrimPrefix(err.Error(), materialdoc.ErrInvalid.Error()+": "))
 	}
 	doc, err := materialdoc.Parse(content)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	blocks := make([]any, len(doc.Value))
 	for i, node := range doc.Value {
 		blocks[i] = node
 	}
 	if len(blocks) == 0 {
-		return nil, refusal(agenttools.ErrInvalidInput, "insert_markdown needs markdown")
+		return nil, nil, refusal(agenttools.ErrInvalidInput, "insert_markdown needs markdown")
 	}
-	return blocks, nil
+	return blocks, converted.EmbeddedDrafts(ids), nil
 }
 
 type rawCommand struct {

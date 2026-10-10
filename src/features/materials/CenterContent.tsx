@@ -3,16 +3,24 @@ import {
   lazy,
   type ReactNode,
   Suspense,
+  useContext,
   useEffect,
   useRef,
   useState,
 } from 'react';
 import { isMaterialContentUnreadable } from '@/api/client';
 import { useFile, useMaterial, useMaterials } from '@/api/hooks';
-import type { Chapter, Region, UserColor } from '@/api/types';
+import type {
+  Chapter,
+  MaterialKind,
+  Provenance,
+  Region,
+  UserColor,
+} from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { TabContent } from '@/components/app/tabPanel';
 import { BannerStack, FileBanner } from '@/components/banners/FileBanner';
+import { FloatingBarContext } from '@/components/ui/floatingBarContext';
 import { Icon } from '@/components/ui/Icon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import {
@@ -34,6 +42,7 @@ import { FlashcardGrid } from '@/features/flashcards/FlashcardGrid';
 import { FlashcardsEditor } from '@/features/flashcards/FlashcardsEditor';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { handOverLiveNote } from '@/features/notes/liveNoteHandover';
+import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import type { LearnerQuestion } from '@/features/questions/types';
 import { QuizQuestionList } from '@/features/quizzes/QuizPage';
 import { quizEditSearch } from '@/features/quizzes/quizNavigation';
@@ -52,7 +61,10 @@ import {
 } from './document';
 import { HeavyMaterialGate } from './HeavyMaterialGate';
 import { type HeavyMaterialChoice, heavyMaterial } from './heavyDocument';
-import { MaterialAttributionFooter } from './MaterialAttributionFooter';
+import {
+  MaterialAttributionFooter,
+  SourcesLine,
+} from './MaterialAttributionFooter';
 import { MermaidMaterialView } from './MermaidMaterialView';
 import {
   type MaterialMode,
@@ -331,6 +343,7 @@ export function MaterialContent({
   // The open room turned read-only (a frozen account or an owner at its storage
   // limit): view mode under a grey strip; unsaved edits are discarded.
   const [readOnly, setReadOnly] = useState(false);
+  const overBar = useContext(FloatingBarContext);
   useEffect(() => {
     if (mode === 'edit') void loadPreview();
   }, [mode]);
@@ -389,9 +402,12 @@ export function MaterialContent({
                 title={material.title}
               />
             )}
+            <SourcesLine
+              className={cn('mt-16 pb-4', overBar && 'pb-20')}
+              provenance={material.provenance}
+            />
           </TabContent>
         </div>
-        <MaterialAttributionFooter provenance={material.provenance} />
       </div>
     );
   }
@@ -412,8 +428,11 @@ export function MaterialContent({
               title: material.title,
             }}
           />
+          <DocumentAttribution
+            kind={material.kind}
+            provenance={material.provenance}
+          />
         </div>
-        <MaterialAttributionFooter provenance={material.provenance} />
       </div>
     );
 
@@ -427,6 +446,7 @@ export function MaterialContent({
               <QuizPreview
                 centered={centerQuiz}
                 content={material.content}
+                provenance={material.provenance}
                 quizId={materialId}
                 target={target}
                 title={material.title}
@@ -438,6 +458,10 @@ export function MaterialContent({
                   isStandalone={!material.workspaceId}
                   kind={material.kind}
                   title={material.title}
+                />
+                <DocumentAttribution
+                  kind={material.kind}
+                  provenance={material.provenance}
                 />
               </Suspense>
             )}
@@ -457,8 +481,33 @@ export function MaterialContent({
           </AppErrorBoundary>
         )}
       </div>
-      <MaterialAttributionFooter provenance={material.provenance} />
     </div>
+  );
+}
+
+/** A material's credits after its document, in the reading column the static
+ * renderer uses for it, so View and Edit (NoteEditorCore) end alike. Like
+ * every footer ending a view here, it keeps room under the workspace's
+ * floating bar where that shows, and some space above the page's end. */
+function DocumentAttribution({
+  kind,
+  provenance,
+}: {
+  kind: MaterialKind;
+  provenance: Provenance | undefined;
+}) {
+  const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
+  const overBar = useContext(FloatingBarContext);
+  return (
+    <MaterialAttributionFooter
+      className={cn(
+        'mx-auto w-full px-5 sm:px-10',
+        overBar ? 'pb-28' : 'pb-12',
+        (kind !== 'note' || displayWidth === 'half') && 'md:max-w-3xl'
+      )}
+      inline
+      provenance={provenance}
+    />
   );
 }
 
@@ -469,18 +518,21 @@ export function MaterialContent({
 function QuizPreview({
   centered,
   content,
+  provenance,
   quizId,
   target,
   title,
 }: {
   centered: boolean;
   content: MaterialDocument;
+  provenance: Provenance | undefined;
   quizId: string;
   /** A question to scroll to, e.g. from a review summary. */
   target?: string;
   title: string;
 }) {
   const navigate = useNavigate();
+  const overBar = useContext(FloatingBarContext);
   useEffect(() => {
     if (!target) return;
     document
@@ -507,6 +559,10 @@ function QuizPreview({
         />
       </div>
       <QuizQuestionList disabled questions={questions} />
+      <SourcesLine
+        className={cn('mt-16 pb-4', overBar && 'pb-20')}
+        provenance={provenance}
+      />
     </TabContent>
   );
 }

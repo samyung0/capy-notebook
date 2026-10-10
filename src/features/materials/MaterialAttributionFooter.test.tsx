@@ -1,9 +1,11 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { Provenance } from '@/api/types';
+import { m } from '@/i18n';
 import {
   MaterialAttributionFooter,
   QuestionCreditNote,
+  SourcesLine,
 } from './MaterialAttributionFooter';
 
 const provenance: Provenance = {
@@ -137,5 +139,52 @@ describe('QuestionCreditNote', () => {
     expect(
       renderToStaticMarkup(<MaterialAttributionFooter provenance={credits} />)
     ).toBe('');
+  });
+});
+
+const CONTROLS = /aria-controls="([^"]+)"/;
+
+// A quiz's or flashcard set's credits: one collapsed line naming the count,
+// a button that controls the list it expands.
+describe('SourcesLine', () => {
+  it('starts collapsed, counts the sources and controls the hidden list', () => {
+    const html = renderToStaticMarkup(
+      <SourcesLine
+        provenance={{
+          ...provenance,
+          web: [
+            {
+              authors: [],
+              license: 'CC BY 4.0',
+              retrievedAt: '2026-10-02',
+              title: 'An essay',
+              url: 'https://open.example/essay',
+            },
+          ],
+        }}
+      />
+    );
+    expect(html).toContain(m.material_attribution_sources({ count: 2 }));
+    expect(html).toContain('aria-expanded="false"');
+    const controls = html.match(CONTROLS)?.[1];
+    expect(controls).toBeTruthy();
+    expect(html).toMatch(
+      new RegExp(
+        `<div[^>]*hidden=""[^>]*id="${controls}"|<div[^>]*id="${controls}"[^>]*hidden=""`
+      )
+    );
+    // The list is there for the button to show: both sources and the licence.
+    expect(html).toContain('Advanced High School Statistics');
+    expect(html).toContain('An essay');
+    expect(html).toContain('This material is licensed CC BY-SA 4.0.');
+  });
+
+  it('renders nothing without sources', () => {
+    expect(
+      renderToStaticMarkup(<SourcesLine provenance={{ books: [] }} />)
+    ).toBe('');
+    expect(renderToStaticMarkup(<SourcesLine provenance={undefined} />)).toBe(
+      ''
+    );
   });
 });

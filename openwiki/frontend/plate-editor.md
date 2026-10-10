@@ -1051,7 +1051,11 @@ including an empty block, without text anchors or a quote. The browser captures
 the block ID when the comment dialog opens. It reads the current native range
 when both endpoints belong to that editor, so a fast Comment click does not
 capture an older range while Slate's throttled selection sync is pending.
-Commands opened outside the editor retain its stored Slate selection.
+Commands opened outside the editor retain its stored Slate selection; the
+command palette first stores the same live native range when Ctrl+K opens
+it, before its search input takes focus (`liveSelection` in
+`editorTransforms.ts`), so a shortcut pressed before that sync still acts
+on what is selected.
 
 The block's comment count opens a popover (`BlockDiscussionThreads`) listing
 its threads, divided by rules. A thread is a flat list of comments in creation
@@ -1258,7 +1262,12 @@ validation and are not rendered.
   actions) must be identity-stable; the `decorate` and `onKeyDown` props of
   `PlateContent` must be stable, because Plate treats new editable props as a
   full re-render; and save/footer state must not reach `NoteEditorContent`,
-  which is memoized for that reason. The save status is not React state
+  which is memoized for that reason. The attribution footer is its sibling in
+  the scroll area, after the editable content and outside the Yjs document
+  (`NoteAttribution`, memoized on the material's provenance, so neither
+  keystrokes nor save acknowledgements render it). A save acknowledgement whose
+  checkpoint stored a different set of embeds invalidates the note's material
+  query, which brings the footer's computed credits up to date. The save status is not React state
   above the note either: `NoteEditorCore` keeps only "still handshaking", and
   `CenterContent` passes a per-pane store (`createEditorStatusStore`) that only
   the header's status icon subscribes to. Saved to Syncing happens on the first
@@ -1376,7 +1385,17 @@ MathPreview's own box (question views, question-editor and note equation
 previews, note View); the inert field leaves wheel and touch to that box, which
 is `relative` so MathLive's absolutely positioned screen-reader node cannot widen
 the page. Inline formulas stay capped at their line's width. A shared note's
-server markup scrolls in the equation block's own `overflow-auto` box.
+server markup scrolls in the static equation block's own `overflow-auto` box.
+Both boxes carry `scroll-fade-x` (as Tabs do): while more of the formula is
+hidden at an edge, that edge fades over 28px, driven by the box's own scroll
+timeline with no script. The utility's mask exists only while that timeline
+is active (its keyframes turn `--scroll-fade-on` to 1, read by an `if()` on
+`mask-image`), so a formula that fits has no mask at all and its text keeps
+subpixel antialiasing; this holds for every `scroll-fade-x` user, and
+HoverActions holds the mask on with `--scroll-fade-on: 1` for its fixed edge.
+A box that grows to fit while scrolled keeps its last fade until it scrolls
+again (Chromium and WebKit). The note editor's equation wrapper has no mask,
+which would break its formula menu.
 
 Block formula previews and MathLive share 16px vertical padding and the same
 math font size. Opening an existing block reserves its preview height while

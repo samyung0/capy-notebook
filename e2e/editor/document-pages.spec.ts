@@ -274,7 +274,9 @@ test('PDF tools persist private marks, undo restores IDs, and narrow tools scrol
   await expect(undo).toBeDisabled();
   await expect(redo).toBeDisabled();
 
-  await page.setViewportSize({ height: 844, width: 320 });
+  // Phone toolbars use compact buttons (2026-10-10), so at 320px wide the
+  // tools just fit; 280px (a folded phone) is narrow enough to overflow.
+  await page.setViewportSize({ height: 844, width: 280 });
   await expect(
     page.getByRole('button', { exact: true, name: m.material_zoom_in() })
   ).toHaveCount(0);

@@ -833,6 +833,7 @@
   "material_attribution_book": "{title} by {authors}",
   "material_attribution_license": "This material is licensed {license}.",
   "question_attribution_license": "This question is licensed {license}.",
+  "material_attribution_sources": "Sources ({count})",
   "material_attribution_source": "Source",
   "material_attribution_version": "version {version}",
   "material_attribution_retrieved": "retrieved {date}",

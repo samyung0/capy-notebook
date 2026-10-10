@@ -146,12 +146,13 @@ type AnonymousNote struct {
 // AnonymousEmbed is a quiz or flashcard set embedded in a visible note, in the
 // order the note references it. Questions hold the keys here, like
 // AnonymousQuiz; the share handler sends learner views. Cards are written
-// cards only.
+// cards only. Provenance is the item's own, shown inside the embed.
 type AnonymousEmbed struct {
-	ID        string             `json:"id"`
-	Kind      string             `json:"kind" enum:"quiz,flashcards"`
-	Questions json.RawMessage    `json:"questions,omitempty"`
-	Cards     []materialdoc.Card `json:"cards,omitempty" nullable:"false"`
+	ID         string             `json:"id"`
+	Kind       string             `json:"kind" enum:"quiz,flashcards"`
+	Questions  json.RawMessage    `json:"questions,omitempty"`
+	Cards      []materialdoc.Card `json:"cards,omitempty" nullable:"false"`
+	Provenance *Provenance        `json:"provenance,omitempty"`
 }
 
 func (s *Store) AnonymousNote(ctx context.Context, id string) (AnonymousNote, error) {
@@ -163,7 +164,14 @@ func (s *Store) AnonymousNote(ctx context.Context, id string) (AnonymousNote, er
 	if err != nil {
 		return AnonymousNote{}, err
 	}
-	return AnonymousNote{ID: mt.ID, Name: mt.Title, Privacy: mt.Privacy, Content: json.RawMessage(mt.Content), UpdatedAt: mt.UpdatedAt, Author: mt.Author, Provenance: mt.Provenance, Embeds: embeds}, nil
+	sources := []*Provenance{}
+	for _, embed := range embeds {
+		if embed.Provenance != nil {
+			sources = append(sources, embed.Provenance)
+		}
+	}
+	return AnonymousNote{ID: mt.ID, Name: mt.Title, Privacy: mt.Privacy, Content: json.RawMessage(mt.Content), UpdatedAt: mt.UpdatedAt, Author: mt.Author,
+		Provenance: WithEmbedSources(mt.Provenance, sources), Embeds: embeds}, nil
 }
 
 // anonymousEmbeds reads the note's own live embedded rows that its current
@@ -182,7 +190,7 @@ func (s *Store) anonymousEmbeds(ctx context.Context, noteID, content string) ([]
 	for i, ref := range refs {
 		ids[i] = ref.MaterialID
 	}
-	rows, err := s.pool.Query(ctx, `SELECT id, kind, content FROM materials
+	rows, err := s.pool.Query(ctx, `SELECT id, kind, content, provenance FROM materials
 		WHERE parent_material_id=$1 AND id = ANY($2) AND trashed_at IS NULL AND kind IN ('quiz','flashcards')`, noteID, ids)
 	if err != nil {
 		return nil, err
@@ -192,7 +200,11 @@ func (s *Store) anonymousEmbeds(ctx context.Context, noteID, content string) ([]
 	for rows.Next() {
 		var embed AnonymousEmbed
 		var content string
-		if err := rows.Scan(&embed.ID, &embed.Kind, &content); err != nil {
+		var provenance []byte
+		if err := rows.Scan(&embed.ID, &embed.Kind, &content, &provenance); err != nil {
+			return nil, err
+		}
+		if embed.Provenance, err = decodeProvenance(provenance); err != nil {
 			return nil, err
 		}
 		if embed.Kind == "quiz" {

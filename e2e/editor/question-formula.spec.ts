@@ -145,7 +145,7 @@ test('question formula accepts physical digits and retains them after commit', a
   await expect(formula).toHaveJSProperty('value', '5');
 });
 
-test('a wide display formula scrolls in its own box and the page does not', async ({
+test('a wide display formula scrolls in its own box with an edge fade, a fitting one has no mask, and the page does not scroll', async ({
   page,
 }) => {
   await page.setViewportSize({ height: 844, width: 390 });
@@ -158,14 +158,17 @@ test('a wide display formula scrolls in its own box and the page does not', asyn
     .first();
   await expect(formula.locator('.ML__base')).toBeVisible({ timeout: 30_000 });
   await formula.scrollIntoViewIfNeeded();
-  // The formula's nearest horizontal scroller, and any scroller around it
-  // that overflows sideways (the page must not).
-  const measure = () =>
-    formula.evaluate((element) => {
+  // The formula's nearest horizontal scroller with its scroll-fade-x edges
+  // (start and end), and any scroller around it that overflows sideways (the
+  // page must not). `toEnd` first scrolls the box to its end.
+  const measure = (toEnd = false) =>
+    formula.evaluate((element, end) => {
       const scrolls = (el: Element) =>
         ['auto', 'scroll'].includes(getComputedStyle(el).overflowX);
       let box: Element | null = element.querySelector('math-field');
       while (box && !scrolls(box)) box = box.parentElement;
+      if (box && end) box.scrollLeft = box.scrollWidth;
+      const style = box && getComputedStyle(box);
       const outer: string[] = [];
       for (let el = box?.parentElement; el; el = el.parentElement)
         if (scrolls(el) && el.scrollWidth > el.clientWidth)
@@ -173,16 +176,20 @@ test('a wide display formula scrolls in its own box and the page does not', asyn
       const page = document.documentElement;
       return {
         client: box?.clientWidth ?? 0,
+        fade: `${style?.getPropertyValue('--scroll-fade-start')} ${style?.getPropertyValue('--scroll-fade-end')}`,
         left: box?.scrollLeft ?? 0,
+        mask: style?.maskImage,
         outer,
         pageOverflow: page.scrollWidth - page.clientWidth + window.scrollX,
         scroll: box?.scrollWidth ?? 0,
       };
-    });
+    }, toEnd);
   const before = await measure();
   expect(before.scroll).toBeGreaterThan(before.client);
   expect(before.outer).toEqual([]);
   expect(before.pageOverflow).toBe(0);
+  // At rest only the hidden end fades.
+  await expect.poll(async () => (await measure()).fade).toBe('0px 28px');
   // The field is inert, so the wheel over it reaches the box.
   const bounds = (await formula.boundingBox())!;
   await page.mouse.move(bounds.x + 40, bounds.y + bounds.height / 2);
@@ -191,4 +198,18 @@ test('a wide display formula scrolls in its own box and the page does not', asyn
   const after = await measure();
   expect(after.outer).toEqual([]);
   expect(after.pageOverflow).toBe(0);
+  // Scrolled to the end, the end fade is gone and the hidden start fades.
+  await expect.poll(async () => (await measure(true)).fade).toBe('28px 0px');
+  // Opened on a wide screen the same formula fits: no fade and no mask at
+  // all, so its text keeps subpixel antialiasing. (Reloaded: a box that grows
+  // to fit while scrolled keeps its last fade until it scrolls again.)
+  await page.setViewportSize({ height: 844, width: 1440 });
+  await page.reload();
+  await expect(formula.locator('.ML__base')).toBeVisible({ timeout: 30_000 });
+  await expect
+    .poll(async () => {
+      const { client, fade, mask, scroll } = await measure();
+      return { fade, fits: scroll <= client, mask };
+    })
+    .toEqual({ fade: '0px 0px', fits: true, mask: 'none' });
 });

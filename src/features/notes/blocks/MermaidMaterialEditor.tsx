@@ -1,10 +1,12 @@
 import { NodeApi, type TElement } from 'platejs';
 import { useEditorRef, useEditorSelector } from 'platejs/react';
 import { useEffect, useState } from 'react';
+import type { Provenance } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import type { MermaidElement } from '@/features/materials/document';
+import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { MediaFrame } from '@/features/materials/MediaFrame';
 import { MermaidPreview } from '@/features/materials/MediaPreview';
 import { Mermaid, mermaidFailureMessage } from '@/features/materials/Mermaid';
@@ -36,7 +38,13 @@ const PREVIEW_DELAY_MS = 250;
  * mounted editor, the same transforms the note block's dialog uses; Cancel
  * drops them. Live per-keystroke editing is planned in todo-office.md.
  */
-export function MermaidMaterialEditor({ title }: { title: string }) {
+export function MermaidMaterialEditor({
+  provenance,
+  title,
+}: {
+  provenance: Provenance | undefined;
+  title: string;
+}) {
   const editor = useEditorRef();
   const node = useEditorSelector(
     (current) =>
@@ -170,6 +178,7 @@ export function MermaidMaterialEditor({ title }: { title: string }) {
             placeholder={m.editor_caption_placeholder()}
             value={shown.caption}
           />
+          <MaterialAttributionFooter inline provenance={provenance} />
         </div>
       </div>
       <MermaidPreview

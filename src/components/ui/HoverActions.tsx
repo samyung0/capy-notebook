@@ -26,7 +26,9 @@ export function HoverActions({
         'opacity-0 transition-opacity ease-(--motion-ease-smooth-out) group-hover:opacity-100 has-focus-visible:opacity-100',
         // keep the trigger visible while its popover/menu is open
         'has-data-[state=open]:opacity-100',
-        'scroll-fade-x animate-none! bg-surface pl-2 [--scroll-fade-start:8px] group-hover:bg-surface-hover-bg',
+        // Tabs' mask held on without its scroll animation: a fixed left edge
+        // over the row it covers (lists set --scroll-fade-start to 0px).
+        'scroll-fade-x animate-none! bg-surface pl-2 [--scroll-fade-on:1] [--scroll-fade-start:8px] group-hover:bg-surface-hover-bg',
         className
       )}
       data-slot="hover-actions"

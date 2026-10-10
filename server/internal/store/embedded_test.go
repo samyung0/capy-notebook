@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -480,4 +481,280 @@ func TestAdoptEmbeddedMaterials(t *testing.T) {
 		list[0] != own.ID || list[1] != "" {
 		t.Fatalf("adopt over quota = %v refused %v, %v", list, refused, err)
 	}
+}
+
+func bookCredit(id string) *Provenance {
+	return &Provenance{Books: []ProvenanceBook{{
+		ID: id, Title: "Book " + id, Authors: []string{}, License: "CC BY 4.0", ExcerptIDs: []string{"e_" + id}, Version: 1,
+	}}}
+}
+
+// A note's footer credits its live embeds as read now: the rows its content
+// references and that are not trashed, in reference order, each source once
+// after the note's own. A removed or trashed embed drops out and comes back
+// with its row; nothing is copied into the note's record.
+func TestEmbedSourcesFollowLiveEmbeds(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "u_embed_sources")
+	ws, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Embed sources", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	own := bookCredit("own")
+	own.Books[0].License, own.License = "CC BY-SA 4.0", "CC BY-SA 4.0"
+	note, err := s.CreateMaterial(ctx, Material{
+		CreatedBy: ownerID, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Sourced",
+		Content: "# Sourced\n\nbody", Provenance: own,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	quizCredit := bookCredit("quiz")
+	quizCredit.Web = []ProvenanceWeb{{URL: "https://example.org/page", Title: "Page", Authors: []string{}, License: "CC BY 4.0", RetrievedAt: "2026-10-10"}}
+	quiz, err := s.CreateEmbeddedMaterial(ctx, ownerID, note.ID, EmbeddedDraft{
+		Kind: "quiz", Provenance: quizCredit,
+		Questions: json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cardsCredit := bookCredit("cards")
+	cardsCredit.Books = append(cardsCredit.Books, bookCredit("own").Books...)
+	cards, err := s.CreateEmbeddedMaterial(ctx, ownerID, note.ID, EmbeddedDraft{
+		Kind: "flashcards", Cards: [][2]string{{"front", "back"}}, Provenance: cardsCredit,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Created but never referenced: not part of the note yet.
+	if _, err := s.CreateEmbeddedMaterial(ctx, ownerID, note.ID, EmbeddedDraft{
+		Kind: "flashcards", Cards: [][2]string{{"f", "b"}}, Provenance: bookCredit("stray"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if stored, err := s.GetMaterial(ctx, quiz.ID); err != nil || stored.Provenance == nil || stored.Provenance.Books[0].ID != "quiz" {
+		t.Fatalf("embedded quiz provenance = %+v, %v; want its own credit", stored.Provenance, err)
+	}
+	footer := func() []string {
+		t.Helper()
+		current, err := s.GetMaterial(ctx, note.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		embeds, err := s.EmbedSources(ctx, note.ID, current.Content)
+		if err != nil {
+			t.Fatal(err)
+		}
+		merged := WithEmbedSources(current.Provenance, embeds)
+		if merged.License != "CC BY-SA 4.0" {
+			t.Fatalf("licence = %q, want the note's own", merged.License)
+		}
+		if len(current.Provenance.Books) != 1 {
+			t.Fatalf("note record = %+v, want its own book only", current.Provenance)
+		}
+		ids := []string{}
+		for _, book := range merged.Books {
+			ids = append(ids, book.ID)
+		}
+		for _, page := range merged.Web {
+			ids = append(ids, page.URL)
+		}
+		return ids
+	}
+	set := func(refs ...Material) {
+		t.Helper()
+		content := noteWithRefs(t, refs...)
+		if _, err := s.UpdateMaterial(ctx, note.ID, MaterialPatch{Content: &content, UpdatedBy: ownerID}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := func(got []string, ids ...string) {
+		t.Helper()
+		if strings.Join(got, " ") != strings.Join(ids, " ") {
+			t.Fatalf("footer = %v, want %v", got, ids)
+		}
+	}
+	want(footer(), "own")
+	set(cards, quiz)
+	want(footer(), "own", "cards", "quiz", "https://example.org/page")
+
+	// The block removed: out at once, and trashed by a later save.
+	set(quiz)
+	want(footer(), "own", "quiz", "https://example.org/page")
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET created_at=now()-interval '2 minutes' WHERE parent_material_id=$1`, note.ID); err != nil {
+		t.Fatal(err)
+	}
+	set(quiz)
+	if _, err := s.GetMaterial(ctx, cards.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unreferenced set should be trashed, got %v", err)
+	}
+	set(cards, quiz) // undo brings the row and its credit back
+	want(footer(), "own", "cards", "quiz", "https://example.org/page")
+
+	// A trashed row stays out even while its block is in the note.
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET trashed_at=now(), trash_episode_id=$2,
+		purge_after=now() + interval '1 day' WHERE id=$1`, quiz.ID, uid("trash")); err != nil {
+		t.Fatal(err)
+	}
+	want(footer(), "own", "cards")
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET trashed_at=NULL, trash_episode_id=NULL, purge_after=NULL WHERE id=$1`, quiz.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// The note trashed and restored brings its embeds' credits back with them.
+	trashed, err := s.TrashMaterial(ctx, ownerID, note.ID, "", AgentOperation{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if embeds, err := s.EmbedSources(ctx, note.ID, noteWithRefs(t, cards, quiz)); err != nil || len(embeds) != 0 {
+		t.Fatalf("a trashed note's embeds = %v, %v; want none", embeds, err)
+	}
+	if _, err := s.RestoreTrashed(ctx, ownerID, agenttools.KindMaterial, note.ID, trashed.Effect.TrashEpisodeID, AgentOperation{}); err != nil {
+		t.Fatal(err)
+	}
+	want(footer(), "own", "cards", "quiz", "https://example.org/page")
+
+	if got := WithEmbedSources(nil, nil); got != nil {
+		t.Fatalf("no sources = %+v, want none", got)
+	}
+
+	// An embed's copied bank questions are its sources too; the licence is
+	// computed over the whole footer, so a plain note embedding a ShareAlike
+	// quiz reads as ShareAlike.
+	banked := &Provenance{Books: []ProvenanceBook{}, Questions: map[string]QuestionCredit{"q1": {
+		Books: []ProvenanceBook{}, License: "CC BY-SA 4.0",
+		Web: []ProvenanceWeb{{URL: "https://example.org/essay", Title: "Essay", Authors: []string{}, License: "CC BY-SA 4.0", RetrievedAt: "2026-10-10"}},
+	}}}
+	got := WithEmbedSources(bookCredit("plain"), []*Provenance{banked})
+	if len(got.Books) != 1 || len(got.Web) != 1 || got.Web[0].URL != "https://example.org/essay" || got.License != "CC BY-SA 4.0" {
+		t.Fatalf("footer with a banked embed = %+v, want its question's page and the ShareAlike licence", got)
+	}
+	// Two copyleft families have no single licence: writes refuse them, and a
+	// footer that still has both (an undo restoring an embed) states none.
+	ncsa := bookCredit("ncsa")
+	ncsa.Books[0].License = "CC BY-NC-SA 4.0"
+	if _, err := FooterLicence(own, []*Provenance{ncsa}); err == nil {
+		t.Fatal("CC BY-SA beside CC BY-NC-SA should be refused")
+	}
+	if got := WithEmbedSources(own, []*Provenance{ncsa}); got.License != "" || len(got.Books) != 2 {
+		t.Fatalf("conflicting footer = %+v, want both books and no licence line", got)
+	}
+}
+
+// Only the note's own rows count: a reference in the note's content to a
+// credited quiz under another user's note credits nothing (the content is the
+// user's to write; the parent is the server's).
+func TestEmbedSourcesIgnoreOtherNotesRows(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "u_embed_forger")
+	otherID := newBlobTestUser(t, s, "u_embed_victim")
+	note, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "Forger", Content: "# Forger\n\nbody", Provenance: bookCredit("own")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := s.CreateMaterial(ctx, Material{CreatedBy: otherID, Kind: "note", Title: "Victim", Content: "# Victim\n\nbody"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign, err := s.CreateEmbeddedMaterial(ctx, otherID, other.ID, EmbeddedDraft{
+		Kind: "flashcards", Cards: [][2]string{{"f", "b"}}, Provenance: bookCredit("foreign"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateEmbeddedMaterial(ctx, ownerID, note.ID, EmbeddedDraft{
+		Kind: "flashcards", Cards: [][2]string{{"f", "b"}}, Provenance: bookCredit("mine"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	forged := noteWithRefs(t, foreign)
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET content=$2 WHERE id=$1`, note.ID, forged); err != nil {
+		t.Fatal(err)
+	}
+	embeds, err := s.EmbedSources(ctx, note.ID, forged)
+	if err != nil || len(embeds) != 0 {
+		t.Fatalf("forged reference credits = %+v, %v; want none", embeds, err)
+	}
+}
+
+// Every copy of an embedded row keeps its credits: a pasted block's copy and
+// the standalone clone of its note.
+func TestEmbeddedCopiesKeepTheirCredits(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "u_embed_credit_owner")
+	readerID := newBlobTestUser(t, s, "u_embed_credit_reader")
+	note, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "Credited", Content: "# Credited\n\nbody"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	quiz, err := s.CreateEmbeddedMaterial(ctx, ownerID, note.ID, EmbeddedDraft{
+		Kind: "quiz", Provenance: bookCredit("quiz"),
+		Questions: json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := noteWithRefs(t, quiz)
+	if _, err := s.UpdateMaterial(ctx, note.ID, MaterialPatch{Content: &content, UpdatedBy: ownerID}); err != nil {
+		t.Fatal(err)
+	}
+	credited := func(id string) {
+		t.Helper()
+		copied, err := s.GetMaterial(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if id == quiz.ID || copied.Provenance == nil || len(copied.Provenance.Books) != 1 || copied.Provenance.Books[0].ID != "quiz" {
+			t.Fatalf("copy %s provenance = %+v, want the source's credit", id, copied.Provenance)
+		}
+	}
+
+	other, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "Pasted into", Content: "# Pasted\n\nbody"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adopted, refused, err := s.AdoptEmbeddedMaterials(ctx, ownerID, other.ID, []EmbeddedAdoption{{SourceID: quiz.ID}})
+	if err != nil || refused || len(adopted) != 1 {
+		t.Fatal(adopted, refused, err)
+	}
+	credited(adopted[0])
+
+	// A copy whose credits would put a second copyleft family in the note's
+	// footer is left out (its block goes), as an agent write is refused.
+	nc := bookCredit("nc")
+	nc.Books[0].License, nc.License = "CC BY-NC-SA 4.0", "CC BY-NC-SA 4.0"
+	ncNote, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "NC", Content: "# NC\n\nbody"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ncQuiz, err := s.CreateEmbeddedMaterial(ctx, ownerID, ncNote.ID, EmbeddedDraft{Kind: "flashcards", Cards: [][2]string{{"f", "b"}}, Provenance: nc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sa := bookCredit("sa")
+	sa.Books[0].License, sa.License = "CC BY-SA 4.0", "CC BY-SA 4.0"
+	saNote, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "SA", Content: "# SA\n\nbody", Provenance: sa})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adopted, refused, err = s.AdoptEmbeddedMaterials(ctx, ownerID, saNote.ID, []EmbeddedAdoption{{SourceID: ncQuiz.ID}, {SourceID: quiz.ID}})
+	if err != nil || refused || len(adopted) != 2 || adopted[0] != "" || adopted[1] == "" {
+		t.Fatalf("adopted = %v refused %v, %v; want the NonCommercial copy left out and the other copied", adopted, refused, err)
+	}
+
+	if _, err := s.UpdateStandaloneMaterialPrivacy(ctx, ownerID, note.ID, "", PrivacyLink); err != nil {
+		t.Fatal(err)
+	}
+	clone, err := s.CloneMaterial(ctx, readerID, note.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs, err := materialdoc.ExtractMaterialRefs(clone.Content)
+	if err != nil || len(refs) != 1 {
+		t.Fatal(refs, err)
+	}
+	credited(refs[0].MaterialID)
 }

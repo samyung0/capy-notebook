@@ -16,6 +16,7 @@ import { Panel } from '@/components/app/layout';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/Drawer';
+import { FloatingBarContext } from '@/components/ui/floatingBarContext';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
@@ -450,7 +451,11 @@ export default function WorkspaceOpen() {
             minSize={layout === 'one' ? undefined : '400px'}
           >
             <div className="relative h-full">
-              {viewer}
+              <FloatingBarContext.Provider
+                value={layout === 'one' && !officeOpen}
+              >
+                {viewer}
+              </FloatingBarContext.Provider>
               {layout === 'one' && officeOpen && (
                 <div
                   // Above an open PPTX notes box (PptxView's data-office-notes-open).

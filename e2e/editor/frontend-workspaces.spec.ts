@@ -211,11 +211,13 @@ test('invitations are standalone and transfer previews open only one dialog', as
   await page
     .getByRole('button', { name: 'Transfer ownership confirmation' })
     .click();
-  await expect(page.getByRole('dialog')).toHaveCount(1);
   const transfer = page.getByRole('dialog', {
     name: m.workspace_transfer_title(),
   });
-  await expect(transfer).toBeVisible();
+  // The preview first loads the scenarios page and the dialog previews,
+  // which the panel imports on first use: a scenario's budget, as in launch().
+  await expect(transfer).toBeVisible({ timeout: 40_000 });
+  await expect(page.getByRole('dialog')).toHaveCount(1);
   await transfer
     .getByRole('button', { exact: true, name: m.action_cancel() })
     .click();

@@ -4,6 +4,12 @@ No explict roadmap items or planning. Current application is unfinished and not 
 
 ## Undecided Items
 
+**Agent shell.** A Linux-like shell (just-bash) for the chat agent, discussed
+2026-10-11 in `agent-shell-discussion.md`. Parked: notes, parsed sources,
+Office files and decks stay behind the citing and editing tools, so only text
+sources, scratch files and Python would be left. Revisit when users keep
+multi-file code projects in Capy or agents visibly need Python to count and check.
+
 **Ops suspend / unsuspend controls.** Add explicit suspend and unsuspend user
 actions to the Ops dashboard, including an audit entry and immediate session,
 stream, and collaboration eviction. Account-state enforcement already treats a

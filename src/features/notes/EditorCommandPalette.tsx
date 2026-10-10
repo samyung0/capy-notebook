@@ -14,6 +14,7 @@ import {
   type EditorCommand,
 } from './editorCommands';
 import { isEditorCommandAllowed } from './editorMode';
+import { liveSelection } from './editorTransforms';
 import { useNoteEditorPrefs } from './noteEditorPrefs';
 
 export function EditorCommandPalette() {
@@ -31,6 +32,13 @@ export function EditorCommandPalette() {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
+        if (!open) {
+          // The search input takes focus and commands run on the stored
+          // selection: store what the user selected, even if Slate's
+          // throttled sync has not caught up yet.
+          const selection = liveSelection(editor);
+          if (selection) editor.tf.select(selection);
+        }
         setOpen(!open);
         if (open) editor.tf.focus();
       }

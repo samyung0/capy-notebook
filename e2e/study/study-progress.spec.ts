@@ -624,12 +624,38 @@ test.describe('study progress', () => {
     await expect(
       ownerPage.getByText(m.question_ui_your_answer())
     ).toBeVisible();
+    // Next after the last item opens the summary: a right square for each
+    // item, then by kind the question's marks and the card's rating.
     await ownerPage
-      .getByRole('button', { exact: true, name: m.review_next() })
+      .getByRole('button', { exact: true, name: m.action_next() })
       .click();
 
+    const squares = ownerPage.getByRole('list', {
+      name: m.quiz_question_results(),
+    });
+    await expect(squares.getByRole('button')).toHaveCount(2);
     await expect(
-      ownerPage.getByText(m.review_done({ count: 2 }))
+      squares.getByRole('button', {
+        exact: true,
+        name: m.quiz_question_right({ number: 1 }),
+      })
+    ).toBeVisible();
+    await expect(
+      squares.getByRole('button', {
+        exact: true,
+        name: m.quiz_question_right({ number: 2 }),
+      })
+    ).toBeVisible();
+    await expect(
+      ownerPage.getByText(m.result_type_marks({ awarded: '1', max: '1' }), {
+        exact: true,
+      })
+    ).toBeVisible();
+    await expect(
+      ownerPage.getByText(
+        m.review_summary_rating_count({ count: 1, rating: m.srs_good() }),
+        { exact: true }
+      )
     ).toBeVisible();
     await expect(
       ownerPage.getByRole('button', { name: m.review_more() })
@@ -643,9 +669,9 @@ test.describe('study progress', () => {
       session: { id: checkBody.session.id },
     });
 
-    // Done returns to where the session started.
+    // Back returns to where the session started.
     await ownerPage
-      .getByRole('button', { exact: true, name: m.review_finish() })
+      .getByRole('button', { exact: true, name: m.review_back() })
       .click();
     await expect(ownerPage).toHaveURL(new RegExp(`/workspaces/${ws.id}$`));
 
