@@ -39,6 +39,7 @@ import type {
   UserModelSlot as GeneratedModelSlot,
   File as GenFile,
   FilePage as GenFilePage,
+  FilePreview as GenFilePreview,
   GradedQuestion as GenGradedQuestion,
   GradedQuiz as GenGradedQuiz,
   Material as GenMaterial,
@@ -219,15 +220,12 @@ export type GradedQuestion = Omit<GenGradedQuestion, 'question'> & {
   question: Question;
 };
 
-/* Thumbnails phase 1 (harness 2026-10-11-thumbnails PLAN.md contract):
-   frontend extensions until `src/api/gen` carries these fields. The lander
-   folds `thumbnailUrl` and `preview` into the generated File,
-   MaterialListItem, MaterialRef and TrashItem types. */
+/* List-card thumbnails and live previews (openwiki/thumbnails.md). The wire
+   types `thumbnailUrl` and the text-file `preview`; material previews arrive
+   as open JSON objects, so the union below narrows them. */
 
 /** Opening characters of an md, txt or other text-kind file. */
-export interface FileTextPreview {
-  text: string;
-}
+export type FileTextPreview = GenFilePreview;
 /** One block of a note's live preview. */
 export type PreviewBlock =
   | { t: 'h'; text: string; level: number }
@@ -260,20 +258,16 @@ export type MaterialPreview =
   | { kind: 'mindmap' | 'diagram'; source: string };
 
 /** `ingestPct` is transient upload progress, never persisted.
- * `thumbnailUrl` is an hour-stable presigned page-1 image (thumbnails
- * extension). */
-export type SourceFile = GenFile & {
-  ingestPct?: number;
-  thumbnailUrl?: string;
-  preview?: FileTextPreview;
-};
-export type MaterialListItem = GenMaterialListItem & {
+ * `thumbnailUrl` is an hour-stable presigned page-1 image. */
+export type SourceFile = GenFile & { ingestPct?: number };
+export type MaterialListItem = Omit<GenMaterialListItem, 'preview'> & {
   preview?: MaterialPreview;
 };
-export type MaterialRef = GenMaterialRef & { preview?: MaterialPreview };
+export type MaterialRef = Omit<GenMaterialRef, 'preview'> & {
+  preview?: MaterialPreview;
+};
 /** File rows carry the File thumbnail fields, material rows a MaterialPreview. */
-export type TrashItem = GenTrashItem & {
-  thumbnailUrl?: string;
+export type TrashItem = Omit<GenTrashItem, 'preview'> & {
   preview?: FileTextPreview | MaterialPreview;
 };
 /** A file the viewer has resolved through GET /files/{id}/links: `url` is a
@@ -581,7 +575,7 @@ export type Material = Omit<GenMaterial, 'content'> & {
 
 /* Owner-scoped, paginated listings behind the Create and Files pages. */
 export type { FileKind } from './gen/model';
-/** Pages of the thumbnail-extended rows (see SourceFile). */
+/** Pages whose rows carry the narrowed preview types above. */
 export type FilePage = Omit<GenFilePage, 'items'> & { items: SourceFile[] };
 export type MaterialPage = Omit<GenMaterialPage, 'items'> & {
   items: MaterialListItem[];

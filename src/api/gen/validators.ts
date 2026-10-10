@@ -1525,6 +1525,9 @@ export const ListOwnedFilesResponse = zod.object({
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.int(),
+  "preview": zod.object({
+  "text": zod.string()
+}).optional(),
   "previewUrl": zod.string().optional(),
   "provenance": zod.object({
   "books": zod.array(zod.object({
@@ -1575,6 +1578,7 @@ export const ListOwnedFilesResponse = zod.object({
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
   "workspaceId": zod.string()
 })),
   "nextCursor": zod.string().optional()
@@ -1617,6 +1621,9 @@ export const GetFileResponse = zod.object({
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.int(),
+  "preview": zod.object({
+  "text": zod.string()
+}).optional(),
   "previewUrl": zod.string().optional(),
   "provenance": zod.object({
   "books": zod.array(zod.object({
@@ -1667,6 +1674,7 @@ export const GetFileResponse = zod.object({
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
   "workspaceId": zod.string()
 })
 
@@ -1698,6 +1706,9 @@ export const UpdateFileResponse = zod.object({
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.int(),
+  "preview": zod.object({
+  "text": zod.string()
+}).optional(),
   "previewUrl": zod.string().optional(),
   "provenance": zod.object({
   "books": zod.array(zod.object({
@@ -1748,6 +1759,7 @@ export const UpdateFileResponse = zod.object({
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
   "workspaceId": zod.string()
 })
 
@@ -2706,6 +2718,7 @@ export const ListOwnedMaterialsResponse = zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
   "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
+  "preview": zod.record(zod.string(), zod.unknown()).optional().describe('List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki\/thumbnails.md'),
   "privacy": zod.enum(['private', 'public', 'link']),
   "questionCount": zod.int().optional(),
   "sharePath": zod.string().optional(),
@@ -5162,8 +5175,10 @@ export const ListTrashResponse = zod.object({
   "id": zod.string(),
   "kind": zod.enum(['source_file', 'material']),
   "materialKind": zod.string().optional(),
+  "preview": zod.record(zod.string(), zod.unknown()).optional().describe('A material\'s list-card preview, or {text} for a text source file; see openwiki\/thumbnails.md'),
   "purgeAfter": zod.iso.datetime({"offset":true}),
   "sizeBytes": zod.int(),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of a source file\'s page-1 thumbnail'),
   "title": zod.string(),
   "trashedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string().optional(),
@@ -5877,6 +5892,9 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.int(),
+  "preview": zod.object({
+  "text": zod.string()
+}).optional(),
   "previewUrl": zod.string().optional(),
   "provenance": zod.object({
   "books": zod.array(zod.object({
@@ -5927,6 +5945,7 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
   "workspaceId": zod.string()
 })
 export const ListWorkspaceFilesResponse = zod.array(ListWorkspaceFilesResponseItem)
@@ -5996,6 +6015,7 @@ export const ListMaterialsResponseItem = zod.object({
   "maxDepth": zod.int(),
   "nodeCount": zod.int(),
   "position": zod.int(),
+  "preview": zod.record(zod.string(), zod.unknown()).optional().describe('List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki\/thumbnails.md'),
   "provenance": zod.object({
   "books": zod.array(zod.object({
   "authors": zod.array(zod.string()),
@@ -6493,6 +6513,9 @@ export const CompleteSourceUploadResponse = zod.object({
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.int(),
+  "preview": zod.object({
+  "text": zod.string()
+}).optional(),
   "previewUrl": zod.string().optional(),
   "provenance": zod.object({
   "books": zod.array(zod.object({
@@ -6543,6 +6566,7 @@ export const CompleteSourceUploadResponse = zod.object({
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
   "workspaceId": zod.string()
 })
 

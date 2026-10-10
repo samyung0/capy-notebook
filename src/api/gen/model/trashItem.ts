@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { TrashItemKind } from './trashItemKind.ts';
+import type { TrashItemPreview } from './trashItemPreview.ts';
 
 export interface TrashItem {
   episodeId: string;
@@ -12,8 +13,12 @@ export interface TrashItem {
   id: string;
   kind: TrashItemKind;
   materialKind?: string;
+  /** A material's list-card preview, or {text} for a text source file; see openwiki/thumbnails.md */
+  preview?: TrashItemPreview;
   purgeAfter: string;
   sizeBytes: number;
+  /** Hour-stable presigned GET of a source file's page-1 thumbnail */
+  thumbnailUrl?: string;
   title: string;
   trashedAt: string;
   workspaceId?: string;

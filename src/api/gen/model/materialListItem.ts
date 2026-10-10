@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { MaterialKind } from './materialKind.ts';
+import type { MaterialListItemPreview } from './materialListItemPreview.ts';
 import type { Privacy } from './privacy.ts';
 
 export interface MaterialListItem {
@@ -15,6 +16,8 @@ export interface MaterialListItem {
   createdAt: string;
   id: string;
   kind: MaterialKind;
+  /** List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki/thumbnails.md */
+  preview?: MaterialListItemPreview;
   privacy: Privacy;
   questionCount?: number;
   sharePath?: string;

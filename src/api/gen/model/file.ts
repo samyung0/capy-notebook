@@ -6,6 +6,7 @@
  */
 import type { FileIndexLimit } from './fileIndexLimit.ts';
 import type { FileKind } from './fileKind.ts';
+import type { FilePreview } from './filePreview.ts';
 import type { FileStatus } from './fileStatus.ts';
 import type { Provenance } from './provenance.ts';
 
@@ -22,10 +23,13 @@ export interface File {
   kind: FileKind;
   name: string;
   position: number;
+  preview?: FilePreview;
   previewUrl?: string;
   provenance?: Provenance;
   revision: number;
   sizeBytes: number;
   status?: FileStatus;
+  /** Hour-stable presigned GET of the page-1 thumbnail; list rows only */
+  thumbnailUrl?: string;
   workspaceId: string;
 }
