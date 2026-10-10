@@ -2709,10 +2709,10 @@ async fn sleep_until(deadline: Option<Instant>) {
 
 /// A read-only channel names no uploads in presence (REVIEW5 E2): only a
 /// writer uploads, and a listed id shows that block as uploading to every
-/// editor. Entries mentioning `uploads` are parsed (others pass untouched)
-/// and lose the field.
+/// editor. Every entry is parsed (a key may be escaped, REVIEW5 R1), within
+/// the 64 KiB entry cap and serde_json's nesting limit, and loses the field.
 fn without_uploads(entry: &mut awareness::Entry) {
-    if entry.removed() || !entry.state.contains("\"uploads\"") {
+    if entry.removed() {
         return;
     }
     if let Ok(serde_json::Value::Object(mut state)) = serde_json::from_str(&entry.state)

@@ -2052,10 +2052,11 @@ fn awareness_entries(payload: &[u8]) -> Vec<(u64, String)> {
         .collect()
 }
 
-/// Security regression (REVIEW5 E2): a read-only channel cannot show blocks
-/// as uploading to editors. Its presence reaches the room without an
-/// `uploads` list, the rest of it (a cursor) intact; a writer's list goes
-/// through.
+/// Security regression (REVIEW5 E2, R1): a read-only channel cannot show
+/// blocks as uploading to editors. Its presence reaches the room without an
+/// `uploads` list, the rest of it (a cursor) intact, even under an escaped
+/// key (`upl\u006fads`, which a peer's JSON.parse reads as `uploads`); a
+/// writer's list goes through.
 #[tokio::test]
 async fn a_read_only_channel_names_no_uploads_in_presence() {
     let Some(env) = env() else { return };
@@ -2070,15 +2071,18 @@ async fn a_read_only_channel_names_no_uploads_in_presence() {
     observer.joined(&room, &token(&room, &user, "write")).await;
     let state = r#"{"cursor":{"anchor":1},"uploads":["block-a"]}"#;
     viewer.send(7, &awareness_update(9001, 1, state)).await;
+    let escaped = r#"{"cursor":null,"upl\u006fads":["block-b"]}"#;
+    viewer.send(7, &awareness_update(9003, 1, escaped)).await;
     writer.send(7, &awareness_update(9002, 1, state)).await;
-    let (mut from_viewer, mut from_writer) = (None, None);
-    while from_viewer.is_none() || from_writer.is_none() {
+    let (mut from_viewer, mut from_writer, mut escaped_key) = (None, None, None);
+    while from_viewer.is_none() || from_writer.is_none() || escaped_key.is_none() {
         let payload = observer.until(7).await.expect("awareness");
         for (client, state) in awareness_entries(&payload) {
             let state: serde_json::Value = serde_json::from_str(&state).expect("json");
             match client {
                 9001 => from_viewer = Some(state),
                 9002 => from_writer = Some(state),
+                9003 => escaped_key = Some(state),
                 _ => {}
             }
         }
@@ -2087,4 +2091,6 @@ async fn a_read_only_channel_names_no_uploads_in_presence() {
     assert!(from_viewer.get("uploads").is_none(), "{from_viewer}");
     assert_eq!(from_viewer["cursor"]["anchor"], 1);
     assert_eq!(from_writer.unwrap()["uploads"][0], "block-a");
+    let escaped_key = escaped_key.unwrap();
+    assert!(escaped_key.get("uploads").is_none(), "{escaped_key}");
 }
