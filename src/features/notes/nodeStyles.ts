@@ -76,11 +76,6 @@ export const STUDY_BLOCK_LIST_CLASS = 'flex flex-col gap-4 my-3';
 export const QUIZ_REVIEW_QUESTION_CLASS =
   'grid grid-cols-[auto_minmax(0,1fr)] gap-x-1 gap-y-1 rounded-card border border-line bg-surface p-4 pt-6';
 export const QUIZ_REVIEW_PROMPT_CLASS = 't-subtitle min-w-0 text-fg mb-3';
-export const QUIZ_REVIEW_OPTION_CLASS =
-  'flex flex-col gap-1.5 rounded-button px-4 py-3 text-sm transition-colors';
-export const QUIZ_REVIEW_OPTION_CORRECT_CLASS =
-  'border-solid-success bg-tint-success text-tint-success-fg';
-export const QUIZ_REVIEW_OPTION_NEUTRAL_CLASS = 'bg-surface text-fg';
 export const FLASHCARD_CLASS =
   'grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-start gap-3 rounded-card border border-line bg-surface p-3 text-sm';
 export const FLASHCARD_FRONT_CLASS = 'font-medium text-fg';

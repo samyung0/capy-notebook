@@ -73,8 +73,11 @@ Ratings:
   ([question-bank.md](question-bank.md#answer-keys-and-server-grading)): a
   review check rates `correct / total` of the one question, and an attempt's
   `QuestionScore` sums the graded snapshot's part `awarded` over part `marks`
-  (half marks included); a question carrying no marks is not rated. The
-  browser sends answers only, never scores.
+  (half marks included); a question carrying no marks is not rated, nor is
+  one the learner left wholly blank (`questions.Blank`: it still scores 0 in
+  the attempt, but a skip says nothing about recall). A question with an
+  ordering part is never blank, because the shown order is itself an answer.
+  The browser sends answers only, never scores.
 
 ## Items, hashes and resets
 
@@ -265,21 +268,43 @@ green closed book once read) and the same items in its ⋮ menu, for every role.
 (`src/routes/ReviewSession.tsx`), a full page scoped to one workspace. The
 session is the batch fetched when it began, so it does not reshuffle as
 ratings land; the browser mints its id and every answer carries it with the
-served items, so the first answer records the session. Cards use the study
-card (`CardStack`, below) without Previous/Next: every item is rated to move
-on, and a rated card swipes away only over another card. Review items carry
-the card's image, shown under the front. Questions use the quiz page's `QuestionRunner` on the
-answer-free question; Check posts the answers to `POST /api/review/check`,
-which grades (open parts with Jev), rates, records and returns the question
-with its key, then shows the marked answer. A failed check shows an error and
-the learner checks again. Card ratings save in the background; a failed one
-shows a toast. The end screen says how many were reviewed and offers Done
-(back to where the session started) and Review more, which waits for every
-pending rating, refreshes, and starts a new session on the same group. At the
-end the session is finished once its answers are saved, so a continued
-session whose items left their material still ends. Leaving early keeps it
-unfinished for Continue review. Leaving the page refreshes progress once the
-pending ratings settle.
+served items, so the first answer records the session. Items come one at a time
+with small Previous and Next buttons (`StepNav`), the stepper shared with
+flashcard study and Quick review (`src/features/study/steps.ts`). Next skips an
+item without rating it: it waits at the end of the session, and a second skip
+leaves it behind so the session still reaches its end. A skip records nothing,
+neither rating nor `review_log` row, so a skipped item keeps fading and
+resurfaces as Fading rather than Tricky. Previous walks back through the items
+shown: one already rated or checked is read only (a card's rating ringed, the
+other ratings disabled; a question's graded result), so nothing is recorded
+twice, while a skipped one can still be answered there. Cards use the study
+card (`CardStack`, below), and a rated card swipes away only over another card.
+Review items carry the card's image, shown under the front. Questions use the
+quiz page's `QuestionRunner` on the answer-free question; Check posts the
+answers to `POST /api/review/check`, which grades (open parts with Jev), rates,
+records and returns the question with its key, and the item stays on its
+marked answer until Next. A failed check shows an error and the learner checks
+again. Card ratings save in the background; a failed one shows a toast.
+
+Continuing a session (`GET /api/review/sessions/{id}`) returns `done`, the
+items already answered in answer order with what was recorded (a card's
+rating, or a question's rating, marks, answers and graded question), ahead of
+the items still to answer, so Previous reaches them read only.
+
+The last item opens the review summary (`src/features/study/ReviewSummary.tsx`),
+in the bank's topic summary style and built from the same `ResultSummary`
+pieces: "N reviewed" and the skips, one square per item (questions by marks;
+cards Good and Easy green, Hard amber, Again red; skipped grey), a by-kind row
+for questions (marks) and flashcards (rating counts), the misses to look at
+again with Open, the skipped items as numbers, and the next suggestion with
+Start. Open goes to the item in its material
+(`/workspaces/$id?material=&item=&mode=view`): a quiz scrolls to the question
+and a set opens that card in its preview. Review more waits for every pending
+rating, refreshes, and starts a new session on the same group; Back returns to
+where the session started. The session is finished once its answers are saved,
+skipped items or not, so a continued session whose items left their material
+still ends. Leaving early keeps it unfinished for Continue review. Leaving the
+page refreshes progress once the pending ratings settle.
 
 The per-set Study page (`src/routes/FlashcardStudy.tsx`) takes every written
 card in document order; Again sends a card to the end. It uses the quiz pages'
@@ -291,9 +316,11 @@ review's card; note embeds and Quick review use its shorter compact size):
 "Card 1 of 6" centred above the card, which flips
 on a click (the text swaps in place, old face up and out, new face in from
 below, the ratings rising in one after another) and carries the text rating buttons
-(`src/features/study/RatingTiles.tsx`) on its back; Previous and Next sit under
-it at the right. Next skips without rating (the card goes to the session's
-end), Previous brings back the card shown before, to rate again. Moving on
+(`src/features/study/RatingTiles.tsx`) on its back; small Previous and Next
+(`StepNav`) sit under it at the right. Next skips without rating (the card goes
+to the session's end), Previous shows the cards before it: a rated one read
+only with its rating ringed, a skipped one still to rate. Quick review steps
+the same way through its round. Moving on
 swipes the top card off to the top left over the next one (no motion under
 reduced motion). Signed in, each rating
 posts to `/api/review/ratings`; a shared link opened signed out renders the same

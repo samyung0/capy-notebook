@@ -294,6 +294,21 @@
   }
 }
 
+/* Exam-paper lines under a written answer: one rule per text line, which
+   scroll with the text. Pair with the same line height. */
+@utility ruled-lines {
+  --ruled-line: 1.9rem;
+  line-height: var(--ruled-line);
+  background-attachment: local;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(var(--ruled-line) - 1px),
+    var(--color-line) calc(var(--ruled-line) - 1px),
+    var(--color-line) var(--ruled-line)
+  );
+}
+
 @layer components {
   .inverted-radius-large-panel-container {
     position: relative;

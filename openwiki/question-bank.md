@@ -347,7 +347,9 @@ the bank's Check answer its `/check` route; both show the returned question.
 `QuestionRunner`'s review shows the server's grading as it is: each part's
 `awarded`, the key's correct options and accepted answers, matching and gap
 results from `itemResults`, and an ordering row is right when its text sits at
-that stored position. Nothing in the app scores answers: `grade.ts` keeps the
+that stored position. Grading refuses (422) an ordering part sent without an
+order: the shown order is always an answer, which clients send as soon as the
+part renders, and an untouched order counts as answered. Nothing in the app scores answers: `grade.ts` keeps the
 answer types and a scorer only the MSW mocks use (`src/mocks/answerKeys.ts`
 also mirrors `LearnerView` and stands in for Jev), and `grade.test.ts` runs it
 over the shared scoring fixtures. A pre-2026-10-06 attempt still shows its
@@ -355,15 +357,25 @@ score and awards, but its matching letters and ordering rows show as
 unanswered and its gaps as wrong.
 
 Answer areas span the text and marks columns of a part row; phones use 16px
-pane padding and a 1.5rem number column. Every answer item is a fully rounded
-bordered row keyed by a dotted letter or number (A., 1.); matching items stay
-borderless because their shared `Select` carries the border. Selected and result
-rows reuse the editor callout variants (tip, success, danger, warning). True /
-false and text inputs span the row. After checking, choices tag "Your answer"
-and "Correct answer", true/false shows two result rows, a short answer marks its
-field and lists every accepted answer with its unit, matching rows show the chosen
-letter and the correct one beside the option list, and wrong ordering rows show
-their right position.
+pane padding and a 1.5rem number column. Answers use the underline variant: no
+boxes, one bottom rule per item (`answerRowClass` in `QuestionView.tsx`), its
+key a letter or number in a small square badge (`OptionKey`, 6px corners). A
+state thickens and colours the rule: chosen is the accent with a filled badge;
+after checking, right is green and wrong red with a ✓/✗ badge and a "Your
+answer" tag, and a correct option not chosen sits on a dashed green rule tagged
+"Correct answer". Choices take two columns on wide paper answer areas; true /
+false sits side by side from a 28rem answer area and stacks below it. Text
+answers are underlined `Input`s, written answers sit on ruled lines
+(`ruled-lines`), and each gap is a blank in the sentence that grows with what is
+typed up to the line (a hidden copy of the value in `data-value` sizes it),
+punctuation after it kept on its line. Matching picks with an underlined
+`Select` letter in a wide answer area and with a row of letter buttons under
+each item below 28rem, the options listed above. After checking, a short answer
+lists every accepted answer with its unit; a gaps part with a miss and an
+ordering part out of order list the key under the learner's own answer
+("Correct answers", "Correct order"), noting what the learner wrote or where
+they put each misplaced item; matching shows the chosen letter and the correct
+one.
 Matching dropdowns letter the options in the order the read sent them (shuffled
 for learners) and store the chosen option's text. Ordering lists the items in
 that order and commits their texts as the answer as soon as it renders; editors'

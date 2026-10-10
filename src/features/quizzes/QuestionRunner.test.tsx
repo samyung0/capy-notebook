@@ -65,7 +65,9 @@ it('answers matching by option text and reviews it against the stored letters', 
     />
   );
   expect(taking).toContain('aria-label="Mitochondria"');
-  for (const letter of ['A.', 'B.', 'C.']) expect(taking).toContain(letter);
+  // Phones pick from the letters themselves, the chosen one pressed.
+  expect(taking).toContain('aria-pressed="true"');
+  for (const letter of ['>A<', '>B<', '>C<']) expect(taking).toContain(letter);
   const reviewed = renderToStaticMarkup(
     <QuestionRunner answers={answers} question={question} review />
   );
@@ -88,12 +90,15 @@ it('reviews an ordering answered by item text against the stored order', () => {
       review
     />
   );
+  // The learner's order first, then the correct order with where each
+  // misplaced item was put.
   expect(html.indexOf('Second event')).toBeLessThan(
     html.indexOf('First event')
   );
-  expect(html).toContain('Should be 2');
-  expect(html).toContain('Should be 1');
-  expect(html).not.toContain('Should be 3');
+  expect(html).toContain('Correct order');
+  expect(html).toContain('you put it at 2');
+  expect(html).toContain('you put it at 1');
+  expect(html).not.toContain('you put it at 3');
 });
 
 it('shows an open part with one mark per marking item', () => {

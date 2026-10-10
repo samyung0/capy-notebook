@@ -19,11 +19,13 @@ import {
   MatchingLayout,
   OptionKey,
   optionColumns,
+  optionKeyClass,
   optionLetter,
   QuestionBlockView,
   QuestionReview,
   QuestionView,
   type QuestionViewProps,
+  type RowState,
   TextView,
 } from '@/features/questions/QuestionView';
 import {
@@ -59,6 +61,7 @@ export function isAnswered(value: Answer | undefined): boolean {
  * read-only view (quiz preview, quiz editor, question bank, question dialog).
  */
 export function QuestionRunner({
+  actions,
   question,
   answers,
   onChange,
@@ -68,6 +71,8 @@ export function QuestionRunner({
   questionNumber,
   renderBlock,
 }: {
+  /** Controls at the question's top right (QuestionView `actions`). */
+  actions?: ReactNode;
   /** Learner questions (no answer key) only render without `review`, which
    * shows a question graded on the server: its key and each part's `awarded`. */
   question: Question | LearnerQuestion;
@@ -123,6 +128,7 @@ export function QuestionRunner({
   if (!review)
     return (
       <QuestionView
+        actions={actions}
         question={question}
         questionNumber={questionNumber}
         renderAnswer={answer}
@@ -132,6 +138,7 @@ export function QuestionRunner({
     );
   return (
     <QuestionReview
+      actions={actions}
       question={question as Question}
       questionNumber={questionNumber}
       renderAnswer={answer}
@@ -140,8 +147,14 @@ export function QuestionRunner({
   );
 }
 
-/** A gaps part's text with a small field at each "(n) ______" blank; on review
- * each field shows right or wrong, with the accepted answers after a wrong one. */
+// Punctuation right after a blank stays on the blank's line.
+const LEADING_PUNCTUATION = /^[.,;:!?)\]”’]+/;
+
+/** A gaps part's text with a blank at each "(n) ______" that grows with what
+ * is typed, up to the line: a hidden copy of the value (data-value) sizes it,
+ * which every browser supports. On review each blank shows the learner's
+ * answer right or wrong under its number; the correct answers list under the
+ * part (PartRunner). */
 function GapText({
   block,
   part,
@@ -159,49 +172,62 @@ function GapText({
 }) {
   const answer = part.answer;
   if (answer.type !== 'gaps') return null;
-  const count = 'gaps' in answer ? answer.gaps : answer.accepted.length;
-  const typed = Array.from({ length: count }, (_, i) => {
-    const item = Array.isArray(value) ? value[i] : undefined;
-    return typeof item === 'string' ? item : '';
-  });
+  const typed = gapValues(answer, value);
   // The server's verdict per gap.
   const results =
     review && isAuthoredPart(part) ? (part.itemResults ?? []) : undefined;
   // split() with a capture group alternates text and blank numbers.
   const pieces = block.text.split(new RegExp(GAP_MARKER.source));
   return (
-    <div className="leading-[2.4]">
+    <div className="leading-[2.1]">
       {block.label && <strong className="mr-3">{block.label}</strong>}
       {pieces.map((piece, i) => {
-        if (i % 2 === 0) return <TextView key={i} text={piece} />;
+        if (i % 2 === 0) {
+          const text = i > 0 ? piece.replace(LEADING_PUNCTUATION, '') : piece;
+          return text && <TextView key={i} text={text} />;
+        }
         const gap = Number(piece) - 1;
+        const tail = pieces[i + 1]?.match(LEADING_PUNCTUATION)?.[0] ?? '';
+        const right = results?.[gap];
         return (
           <span className="whitespace-nowrap" key={i}>
-            <Input
-              aria-label={m.question_ui_gap({ number: gap + 1 })}
-              className="py-0.5 text-center"
-              disabled={review || disabled}
-              maxLength={SHORT_ANSWER_MAX}
-              onChange={(event) =>
-                onChange(
-                  typed.map((item, j) =>
-                    j === gap ? event.target.value : item
-                  )
-                )
-              }
-              placeholder={String(gap + 1)}
-              value={typed[gap] ?? ''}
-              wrapperClassName={cn(
-                'mx-1 inline-flex w-36 align-middle',
+            <span
+              className={cn(
+                'mx-1 inline-grid min-w-[7ch] max-w-[calc(100%-2ch)] border-line-strong border-b align-baseline focus-within:border-solid-accent-1 focus-within:border-b-2',
+                'after:invisible after:col-start-1 after:row-start-1 after:overflow-hidden after:whitespace-pre after:px-0.5 after:content-[attr(data-value)]',
                 results &&
-                  (results[gap] ? 'border-solid-success' : 'border-solid-error')
+                  (right
+                    ? 'border-solid-success border-b-2'
+                    : 'border-solid-error border-b-2')
               )}
-            />
-            {results && !results[gap] && 'accepted' in answer && (
-              <span className="mr-1 font-bold text-tint-success-fg text-xs">
-                {answer.accepted[gap]?.join(' / ')}
-              </span>
+              data-value={typed[gap]}
+            >
+              <input
+                aria-label={m.question_ui_gap({ number: gap + 1 })}
+                className={cn(
+                  'col-start-1 row-start-1 w-full min-w-0 bg-transparent px-0.5 text-center text-[length:inherit] text-fg outline-none placeholder:text-placeholder placeholder:text-xs',
+                  results &&
+                    !right &&
+                    'text-tint-error-fg line-through decoration-1'
+                )}
+                disabled={review || disabled}
+                maxLength={SHORT_ANSWER_MAX}
+                onChange={(event) =>
+                  onChange(
+                    typed.map((item, j) =>
+                      j === gap ? event.target.value : item
+                    )
+                  )
+                }
+                placeholder={review ? undefined : String(gap + 1)}
+                size={1}
+                value={typed[gap] ?? ''}
+              />
+            </span>
+            {review && (
+              <sup className="text-[0.65rem] text-fg-muted">{gap + 1}</sup>
             )}
+            {tail}
           </span>
         );
       })}
@@ -209,7 +235,22 @@ function GapText({
   );
 }
 
-/** A choice as a bordered row: tip when selected; after checking, success or danger with a tag. */
+/** A gaps answer as one typed string per gap. */
+function gapValues(
+  answer: QuestionPart['answer'] | LearnerPart['answer'],
+  value: Answer
+) {
+  if (answer.type !== 'gaps') return [];
+  const count = 'gaps' in answer ? answer.gaps : answer.accepted.length;
+  return Array.from({ length: count }, (_, i) => {
+    const item = Array.isArray(value) ? value[i] : undefined;
+    return typeof item === 'string' ? item : '';
+  });
+}
+
+/** A choice as an underlined row: chosen while answering; after checking,
+ * right or wrong with a tag, and a correct answer that was not chosen marked
+ * on a dashed rule. */
 function ChoiceRow({
   label,
   text,
@@ -227,47 +268,47 @@ function ChoiceRow({
   disabled: boolean;
   onClick?: () => void;
 }) {
-  const result = review && (selected || correct);
-  const icon = review && selected;
+  const state: RowState | undefined = review
+    ? selected
+      ? correct
+        ? 'right'
+        : 'wrong'
+      : correct
+        ? 'missed'
+        : undefined
+    : selected
+      ? 'selected'
+      : undefined;
+  const marked = state === 'right' || state === 'wrong';
   return (
     <button
       aria-pressed={selected}
       className={cn(
-        answerRowClass(
-          review && selected
-            ? correct
-              ? 'success'
-              : 'danger'
-            : !review && selected
-              ? 'tip'
-              : undefined
-        ),
+        answerRowClass(state),
         'w-full text-left disabled:cursor-default',
-        review && !selected && correct && 'border-solid-success/45',
-        !(review || disabled || selected) && 'hover:bg-surface-hover-bg'
+        !(review || disabled || selected) && 'hover:border-line-strong',
+        review && !state && 'text-fg-muted'
       )}
       disabled={review || disabled}
       onClick={onClick}
       type="button"
     >
-      <OptionKey
-        className={cn(
-          !review && selected && 'text-tint-accent-1-fg',
-          icon &&
-            cn(
-              'rounded-full text-surface',
-              correct ? 'bg-tint-success-fg' : 'bg-tint-error-fg'
-            ),
-          review && !selected && correct && 'text-tint-success-fg'
-        )}
-      >
-        {icon ? <Icon name={correct ? 'check' : 'x'} size={13} /> : label}
-      </OptionKey>
-      <span className="min-w-0 flex-1 text-fg">{text}</span>
-      {result && (
+      {(label !== null || review) && (
+        <OptionKey className={optionKeyClass(state)}>
+          {marked ? (
+            <Icon name={state === 'right' ? 'check' : 'x'} size={13} />
+          ) : state === 'missed' && label === null ? (
+            <Icon name="check" size={13} />
+          ) : (
+            label
+          )}
+        </OptionKey>
+      )}
+      <span className="min-w-0 flex-1">{text}</span>
+      {review && (selected || correct) && (
         <span
           className={cn(
-            'inline-flex shrink-0 items-center gap-1 whitespace-nowrap font-bold text-xs',
+            'shrink-0 whitespace-nowrap font-bold text-xs',
             correct ? 'text-tint-success-fg' : 'text-tint-error-fg'
           )}
         >
@@ -277,6 +318,37 @@ function ChoiceRow({
         </span>
       )}
     </button>
+  );
+}
+
+/** The answer key under a checked gaps or ordering part, apart from the
+ * learner's own answer so it reads plainly: the title in green, each entry
+ * with a note where the learner differed. */
+function KeyList({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: { key: number; text: string; note?: string }[];
+}) {
+  return (
+    <div className="mt-3.5 border-divider border-t pt-2.5">
+      <h4 className="mb-1 font-bold text-tint-success-fg text-xs">{title}</h4>
+      <ol className="grid">
+        {rows.map((row) => (
+          <li
+            className="flex min-h-7.5 items-baseline gap-3 py-1"
+            key={row.key}
+          >
+            <OptionKey className="h-auto">{row.key}</OptionKey>
+            <TextView className="min-w-0 flex-1" text={row.text} />
+            {row.note && (
+              <span className="shrink-0 text-fg-muted text-xs">{row.note}</span>
+            )}
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 
@@ -314,7 +386,7 @@ function PartRunner({
     : null;
   if (answer.type === 'mcq' || answer.type === 'multi')
     return (
-      <div className={cn('grid gap-2', twoColumns && '@xl:grid-cols-2')}>
+      <div className={cn('grid', twoColumns && '@xl:grid-cols-2 @xl:gap-x-7')}>
         {answer.options.map((option, i) => {
           const selected = indices?.includes(i) ?? false;
           return (
@@ -322,7 +394,7 @@ function PartRunner({
               correct={key?.type === answer.type && key.correct.includes(i)}
               disabled={disabled}
               key={i}
-              label={`${optionLetter(i)}.`}
+              label={optionLetter(i)}
               onClick={() =>
                 onChange(
                   answer.type === 'mcq'
@@ -340,9 +412,10 @@ function PartRunner({
         })}
       </div>
     );
+  // True and False sit side by side, stacked on phones like other choices.
   if (answer.type === 'boolean')
     return review ? (
-      <div className="grid gap-2">
+      <div className="grid @md:grid-cols-2 @md:gap-x-7">
         {[true, false].map((option) => (
           <ChoiceRow
             correct={key?.type === 'boolean' && key.correct === option}
@@ -356,14 +429,14 @@ function PartRunner({
         ))}
       </div>
     ) : (
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid @md:grid-cols-2 @md:gap-x-7">
         {[true, false].map((option) => (
           <button
             aria-pressed={value === option}
             className={cn(
-              answerRowClass(value === option ? 'tip' : undefined),
-              'justify-center font-semibold disabled:cursor-default',
-              value !== option && !disabled && 'hover:bg-surface-hover-bg'
+              answerRowClass(value === option ? 'selected' : undefined),
+              '@md:justify-center font-semibold disabled:cursor-default',
+              value !== option && !disabled && 'hover:border-line-strong'
             )}
             disabled={disabled}
             key={String(option)}
@@ -375,8 +448,28 @@ function PartRunner({
         ))}
       </div>
     );
-  // Gap fields sit inside the part's text (GapText), not under it.
-  if (answer.type === 'gaps') return null;
+  // Gap fields sit inside the part's text (GapText); a review with a miss
+  // lists the key.
+  if (answer.type === 'gaps') {
+    if (!review || !('accepted' in answer)) return null;
+    const typed = gapValues(answer, value);
+    const results = isAuthoredPart(part) ? (part.itemResults ?? []) : [];
+    if (answer.accepted.every((_, i) => results[i])) return null;
+    return (
+      <KeyList
+        rows={answer.accepted.map((accepted, i) => ({
+          key: i + 1,
+          note: results[i]
+            ? undefined
+            : typed[i]?.trim()
+              ? m.question_ui_you_wrote({ answer: typed[i] })
+              : m.question_ui_not_answered(),
+          text: accepted.join(' / '),
+        }))}
+        title={m.question_ui_correct_answers()}
+      />
+    );
+  }
   if (answer.type === 'short') {
     const right = 'awarded' in part && part.awarded === part.marks;
     return (
@@ -385,6 +478,7 @@ function PartRunner({
           <div className="relative min-w-0 flex-1">
             <Input
               aria-label={m.question_ui_your_answer()}
+              className="disabled:bg-transparent disabled:text-fg"
               disabled={review || disabled}
               maxLength={SHORT_ANSWER_MAX}
               onBlur={() =>
@@ -408,18 +502,20 @@ function PartRunner({
               }}
               placeholder={m.question_ui_type_answer()}
               value={typeof value === 'string' ? value : ''}
+              variant="underline"
               wrapperClassName={cn(
-                'w-full',
+                'w-full border-line-strong px-0.5 focus-within:border-b-2 has-disabled:bg-transparent',
+                unitError && 'border-solid-error border-b-2',
                 review &&
                   (right
-                    ? 'border-solid-success pr-10'
-                    : 'border-solid-error pr-10')
+                    ? 'border-solid-success border-b-2 pr-9'
+                    : 'border-solid-error border-b-2 pr-9')
               )}
             />
             {review && (
               <span
                 className={cn(
-                  'absolute top-1/2 right-3 grid size-5 -translate-y-1/2 place-items-center rounded-full text-surface',
+                  'absolute top-1/2 right-1 grid size-5 -translate-y-1/2 place-items-center rounded-md text-surface',
                   right ? 'bg-tint-success-fg' : 'bg-tint-error-fg'
                 )}
               >
@@ -447,12 +543,14 @@ function PartRunner({
       </div>
     );
   }
+  // A written answer sits on ruled lines, like exam paper.
   if (answer.type === 'open') {
     const text = typeof value === 'string' ? value : '';
     return (
       <div className="flex flex-col gap-1">
         <Textarea
           aria-label={m.question_ui_your_answer()}
+          className="ruled-lines max-h-[calc(var(--ruled-line)*8)] min-h-[calc(var(--ruled-line)*3)] rounded-none border-0 bg-transparent px-0.5 py-0 focus:border-0 disabled:bg-transparent disabled:text-fg"
           disabled={review || disabled}
           maxLength={QUIZ_OPEN_ANSWER_MAX}
           onChange={(event) => onChange(event.target.value)}
@@ -474,9 +572,10 @@ function PartRunner({
       value !== null && typeof value === 'object' && !Array.isArray(value)
         ? value
         : {};
-    // Borderless rows: the Select carries the only border.
+    const choose = (i: number, index: number) =>
+      onChange({ ...choices, [String(i)]: answer.options[index] });
     const rows = (
-      <ol className="grid content-start gap-2">
+      <ol className="grid content-start">
         {('left' in answer
           ? answer.left
           : answer.pairs.map((pair) => pair.left)
@@ -490,38 +589,48 @@ function PartRunner({
           const correct =
             isAuthoredPart(part) && part.itemResults?.[i] === true;
           return (
-            <li className="flex min-h-11 items-center gap-3" key={i}>
-              <OptionKey>{i + 1}.</OptionKey>
-              <TextView className="min-w-0 flex-1 text-fg" text={left} />
+            <li
+              className="grid @md:min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 @md:py-0 py-1.5"
+              key={i}
+            >
+              <OptionKey>{i + 1}</OptionKey>
+              <TextView className="min-w-0 text-fg" text={left} />
+              {/* Wider screens: an underlined letter that opens the options. */}
               {review ? (
-                <span
-                  className={cn(
-                    'flex shrink-0 items-center gap-2 whitespace-nowrap font-bold text-xs',
-                    correct ? 'text-tint-success-fg' : 'text-tint-error-fg'
-                  )}
-                >
-                  {letter < 0 ? '–' : optionLetter(letter)}
+                <span className="@md:flex hidden items-center gap-3">
                   {!correct && right !== undefined && (
-                    <span className="text-tint-success-fg">
+                    <span className="whitespace-nowrap font-bold text-tint-success-fg text-xs">
                       {m.question_ui_correct_letter({
                         letter: optionLetter(right),
                       })}
                     </span>
                   )}
+                  <span
+                    className={cn(
+                      'w-16 border-b-2 px-1.5 py-1.5 font-bold',
+                      correct
+                        ? 'border-solid-success text-tint-success-fg'
+                        : 'border-solid-error text-tint-error-fg'
+                    )}
+                  >
+                    {letter < 0 ? '–' : optionLetter(letter)}
+                  </span>
                 </span>
               ) : (
-                <div className="w-22 shrink-0">
+                <div className="@md:block hidden w-16">
                   <Select
                     disabled={disabled}
-                    onValueChange={(next) =>
-                      onChange({
-                        ...choices,
-                        [String(i)]: answer.options[Number(next)],
-                      })
-                    }
+                    onValueChange={(next) => choose(i, Number(next))}
                     value={letter < 0 ? '' : String(letter)}
                   >
-                    <SelectTrigger aria-label={left} className="h-auto py-1.5">
+                    <SelectTrigger
+                      aria-label={left}
+                      className={cn(
+                        'h-auto border-line-strong bg-transparent px-1.5 py-1.5 font-bold data-[state=open]:border-solid-accent-1 data-[state=open]:border-b-2',
+                        letter >= 0 && 'text-tint-accent-1-fg'
+                      )}
+                      variant="underline"
+                    >
                       <SelectValue placeholder="–" />
                     </SelectTrigger>
                     <SelectContent>
@@ -543,6 +652,55 @@ function PartRunner({
                   </Select>
                 </div>
               )}
+              {/* Phones: the letters themselves under the item, with the
+                  options listed above; no menu to open. */}
+              <div
+                aria-label={left}
+                className="col-span-3 flex @md:hidden flex-wrap gap-1.5 pl-8.5"
+                role="group"
+              >
+                {answer.options.map((_, index) => {
+                  const here = index === letter;
+                  const state: RowState | undefined = review
+                    ? here
+                      ? correct
+                        ? 'right'
+                        : 'wrong'
+                      : !correct && index === right
+                        ? 'missed'
+                        : undefined
+                    : here
+                      ? 'selected'
+                      : undefined;
+                  return (
+                    <button
+                      aria-pressed={here}
+                      className={cn(
+                        'grid size-10 place-items-center border-b font-bold disabled:cursor-default',
+                        state
+                          ? 'border-b-2'
+                          : 'border-line-strong text-fg-muted',
+                        state === 'selected' &&
+                          'border-solid-accent-1 text-tint-accent-1-fg',
+                        state === 'right' &&
+                          'border-solid-success text-tint-success-fg',
+                        state === 'wrong' &&
+                          'border-solid-error text-tint-error-fg',
+                        state === 'missed' &&
+                          'border-solid-success border-dashed text-tint-success-fg',
+                        review && !state && 'opacity-45',
+                        !(review || disabled || state) && 'hover:text-fg'
+                      )}
+                      disabled={review || disabled}
+                      key={index}
+                      onClick={() => choose(i, index)}
+                      type="button"
+                    >
+                      {optionLetter(index)}
+                    </button>
+                  );
+                })}
+              </div>
             </li>
           );
         })}
@@ -555,7 +713,7 @@ function PartRunner({
     const ordered = Array.isArray(value)
       ? value.filter((item) => typeof item === 'string')
       : null;
-    const current = ordered ?? answer.items;
+    const current = ordered?.length ? ordered : answer.items;
     // On review the items are the key's stored order.
     const right = (item: string, i: number) => answer.items[i] === item;
     // Rows keep their identity while moving, so focus stays on the button;
@@ -575,14 +733,14 @@ function PartRunner({
       onChange(next);
     }
     return (
-      <div className="grid gap-2">
+      <div className="grid">
         {current.map((item, i) => (
           <div
             className={cn(
               answerRowClass(
-                review ? (right(item, i) ? 'success' : 'danger') : undefined
+                review ? (right(item, i) ? 'right' : 'wrong') : undefined
               ),
-              !review && 'py-1 pr-1.5'
+              !review && 'py-1 pr-0'
             )}
             key={keys[i]}
           >
@@ -594,18 +752,10 @@ function PartRunner({
                     : 'text-tint-error-fg')
               )}
             >
-              {i + 1}.
+              {i + 1}
             </OptionKey>
             <TextView className="min-w-0 flex-1 text-fg" text={item} />
-            {review ? (
-              !right(item, i) && (
-                <span className="shrink-0 whitespace-nowrap font-bold text-tint-error-fg text-xs">
-                  {m.question_ui_should_be({
-                    position: answer.items.indexOf(item) + 1,
-                  })}
-                </span>
-              )
-            ) : (
+            {!review && (
               <span className="flex shrink-0 items-center">
                 <IconButton
                   disabled={disabled || i === 0}
@@ -627,6 +777,22 @@ function PartRunner({
             )}
           </div>
         ))}
+        {review && current.some((item, i) => !right(item, i)) && (
+          <KeyList
+            rows={answer.items.map((item, i) => {
+              const at = current.indexOf(item);
+              return {
+                key: i + 1,
+                note:
+                  at === i
+                    ? undefined
+                    : m.question_ui_you_put({ position: at + 1 }),
+                text: item,
+              };
+            })}
+            title={m.question_ui_correct_order()}
+          />
+        )}
       </div>
     );
   }

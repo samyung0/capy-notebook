@@ -2,10 +2,6 @@ import type { ReactNode } from 'react';
 import { CategoryChart } from '@/components/charts/CategoryChart';
 import { Icon } from '@/components/ui/Icon';
 import { useResolvedAsset } from '@/features/materials/MediaAssetView';
-import {
-  CALLOUT_VARIANT_CLASS,
-  type CalloutVariant,
-} from '@/features/notes/richBlockConfig';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { TextView } from './TextView';
@@ -221,7 +217,8 @@ export const optionLetter = (index: number) => String.fromCharCode(65 + index);
 export const optionColumns = (question: Question | LearnerQuestion) =>
   question.layout === 'paper';
 
-/** Option label column: a dotted letter or number (A., 1.), or a result icon. */
+/** Option label column: a letter or number in a small square badge, filled
+ * when chosen, or a result icon. */
 export function OptionKey({
   className,
   children,
@@ -232,7 +229,7 @@ export function OptionKey({
   return (
     <span
       className={cn(
-        'grid size-6 shrink-0 place-items-center font-bold text-fg-secondary leading-none',
+        'grid size-5.5 shrink-0 place-items-center rounded-md font-bold text-[0.8rem] text-fg-muted leading-none',
         className
       )}
     >
@@ -241,13 +238,32 @@ export function OptionKey({
   );
 }
 
-/** Answer item: a fully rounded bordered row. tip marks a selection;
- * success/danger/warning a result, tinted like editor callouts. Row content
- * keeps `text-fg` itself. */
-export function answerRowClass(variant?: CalloutVariant) {
+/** How an answer row reads: chosen while answering, then right, wrong or the
+ * correct answer the learner missed once checked. */
+export type RowState = 'selected' | 'right' | 'wrong' | 'missed';
+
+/** Answer item: a row over one bottom rule instead of a box. A state thickens
+ * and colours the rule; the row's height stays put. */
+export function answerRowClass(state?: RowState) {
   return cn(
-    'flex min-h-11 items-center gap-3 rounded-input border px-3.5 py-2',
-    variant ? CALLOUT_VARIANT_CLASS[variant] : 'border-line'
+    'flex min-h-11 items-center gap-3 border-b px-0.5 py-2',
+    state ? 'border-b-2 pb-[7px]' : 'border-line',
+    state === 'selected' && 'border-solid-accent-1 text-tint-accent-1-fg',
+    state === 'right' && 'border-solid-success',
+    state === 'wrong' && 'border-solid-error',
+    state === 'missed' && 'border-solid-success border-dashed'
+  );
+}
+
+/** A key badge's colours for a row state: filled when chosen or marked,
+ * outlined in green for a missed correct answer. */
+export function optionKeyClass(state?: RowState) {
+  return cn(
+    state === 'selected' && 'bg-solid-accent-1 text-surface',
+    state === 'right' && 'bg-tint-success-fg text-surface',
+    state === 'wrong' && 'bg-tint-error-fg text-surface',
+    state === 'missed' &&
+      'text-tint-success-fg ring-[1.5px] ring-tint-success-fg ring-inset'
   );
 }
 
@@ -269,7 +285,7 @@ export function MatchingLayout({
         <ol className="@min-[50rem]:order-none order-first grid content-start gap-2 @min-[50rem]:pt-2.5">
           {options.map((text, i) => (
             <li className="flex items-baseline gap-3" key={i}>
-              <OptionKey className="h-auto">{optionLetter(i)}.</OptionKey>
+              <OptionKey className="h-auto">{optionLetter(i)}</OptionKey>
               <TextView className="min-w-0" text={text} />
             </li>
           ))}
@@ -291,10 +307,10 @@ function Choices({
   if (answer.type === 'mcq' || answer.type === 'multi')
     return (
       <div className="@container col-[2/-1] min-w-0">
-        <ol className={cn('grid gap-2', twoColumns && '@xl:grid-cols-2')}>
+        <ol className={cn('grid', twoColumns && '@xl:grid-cols-2 @xl:gap-x-7')}>
           {answer.options.map((text, i) => (
             <li className={answerRowClass()} key={i}>
-              <OptionKey>{optionLetter(i)}.</OptionKey>
+              <OptionKey>{optionLetter(i)}</OptionKey>
               <TextView className="min-w-0 flex-1" text={text} />
             </li>
           ))}
@@ -312,7 +328,7 @@ function Choices({
               : answer.pairs.map((pair) => pair.left)
             ).map((text, i) => (
               <li className="flex min-h-11 items-center gap-3" key={i}>
-                <OptionKey>{i + 1}.</OptionKey>
+                <OptionKey>{i + 1}</OptionKey>
                 <TextView className="min-w-0" text={text} />
               </li>
             ))}
@@ -323,10 +339,10 @@ function Choices({
     );
   if (answer.type === 'ordering')
     return (
-      <ol className="col-[2/-1] grid min-w-0 gap-2">
+      <ol className="col-[2/-1] grid min-w-0">
         {answer.items.map((text, i) => (
           <li className={answerRowClass()} key={i}>
-            <OptionKey>{i + 1}.</OptionKey>
+            <OptionKey>{i + 1}</OptionKey>
             <TextView className="min-w-0 flex-1" text={text} />
           </li>
         ))}
@@ -336,6 +352,9 @@ function Choices({
 }
 
 export interface QuestionViewProps {
+  /** Controls at the question's top right, before its marks (an editor's
+   * Edit and Remove). */
+  actions?: ReactNode;
   question: Question | LearnerQuestion;
   questionNumber?: number;
   /** Returns grid items for the part row; an answer spans `col-[2/-1]`. */
@@ -351,6 +370,7 @@ export interface QuestionViewProps {
 }
 
 export function QuestionView({
+  actions,
   question,
   questionNumber,
   review = false,
@@ -396,19 +416,22 @@ export function QuestionView({
               merged ? { partId: question.parts[0].id } : {}
             )}
         </div>
-        {lone && renderMarks ? (
-          <span className="whitespace-nowrap text-fg-muted text-xs">
-            {renderMarks(question.parts[0])}
-          </span>
-        ) : (
-          showTotalMarks && (
+        <div className="flex items-baseline justify-end gap-3">
+          {actions}
+          {lone && renderMarks ? (
             <span className="whitespace-nowrap text-fg-muted text-xs">
-              {total === 1
-                ? m.question_ui_one_mark()
-                : m.question_ui_marks({ count: total })}
+              {renderMarks(question.parts[0])}
             </span>
-          )
-        )}
+          ) : (
+            showTotalMarks && (
+              <span className="whitespace-nowrap text-fg-muted text-xs">
+                {total === 1
+                  ? m.question_ui_one_mark()
+                  : m.question_ui_marks({ count: total })}
+              </span>
+            )
+          )}
+        </div>
       </header>
       <div
         className={cn(
@@ -511,6 +534,7 @@ export function QuestionView({
 }
 
 export function QuestionReview({
+  actions,
   question,
   renderAnswer,
   renderBlock,
@@ -518,6 +542,7 @@ export function QuestionReview({
 }: Omit<QuestionViewProps, 'question' | 'review'> & { question: Question }) {
   return (
     <QuestionView
+      actions={actions}
       question={question}
       questionNumber={questionNumber}
       renderAnswer={(part) => {
