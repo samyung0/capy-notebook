@@ -45,7 +45,6 @@ import type {
   Material as GenMaterial,
   MaterialListItem as GenMaterialListItem,
   MaterialPage as GenMaterialPage,
-  MaterialRef as GenMaterialRef,
   Message as GenMessage,
   PublicQuiz as GenPublicQuiz,
   Quiz as GenQuiz,
@@ -115,6 +114,7 @@ export type {
   LLMCredentialProvider,
   LLMCredentialsResponse,
   LocaleInputBody,
+  MaterialRef,
   MaterialUpdateResult,
   MicrosoftDriveHost,
   ModelOption,
@@ -263,9 +263,6 @@ export type MaterialPreview =
  * `thumbnailUrl` is an hour-stable presigned page-1 image. */
 export type SourceFile = GenFile & { ingestPct?: number };
 export type MaterialListItem = Omit<GenMaterialListItem, 'preview'> & {
-  preview?: MaterialPreview;
-};
-export type MaterialRef = Omit<GenMaterialRef, 'preview'> & {
   preview?: MaterialPreview;
 };
 /** File rows carry the File thumbnail fields, material rows a MaterialPreview. */

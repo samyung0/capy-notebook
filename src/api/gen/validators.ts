@@ -6015,7 +6015,6 @@ export const ListMaterialsResponseItem = zod.object({
   "maxDepth": zod.int(),
   "nodeCount": zod.int(),
   "position": zod.int(),
-  "preview": zod.record(zod.string(), zod.unknown()).optional().describe('List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki\/thumbnails.md'),
   "provenance": zod.object({
   "books": zod.array(zod.object({
   "authors": zod.array(zod.string()),

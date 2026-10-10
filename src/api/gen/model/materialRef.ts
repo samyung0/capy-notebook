@@ -4,7 +4,6 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { MaterialRefPreview } from './materialRefPreview.ts';
 import type { MaterialRefType } from './materialRefType.ts';
 import type { Provenance } from './provenance.ts';
 
@@ -16,8 +15,6 @@ export interface MaterialRef {
   maxDepth: number;
   nodeCount: number;
   position: number;
-  /** List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki/thumbnails.md */
-  preview?: MaterialRefPreview;
   provenance?: Provenance;
   sizeBytes: number;
   title: string;

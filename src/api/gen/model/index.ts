@@ -186,7 +186,6 @@ export * from './materialListItem.ts';
 export * from './materialListItemPreview.ts';
 export * from './materialPage.ts';
 export * from './materialRef.ts';
-export * from './materialRefPreview.ts';
 export * from './materialRefType.ts';
 export * from './materialUpdateResult.ts';
 export * from './message.ts';
