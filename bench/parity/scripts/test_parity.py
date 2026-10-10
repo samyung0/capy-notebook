@@ -134,11 +134,9 @@ class ReportTests(unittest.TestCase):
 
 
 class RunTests(unittest.TestCase):
-    def test_check_fails_and_writes_nothing_when_a_test_is_renamed(self):
-        with (
-            tempfile.TemporaryDirectory() as tmp,
-            contextlib.redirect_stdout(io.StringIO()),
-        ):
+    def test_check_fails_on_a_stale_report_or_a_renamed_test(self):
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(output):
             capy, fork, family = (
                 Path(tmp, name) for name in ("capy", "fork", "family")
             )
@@ -162,9 +160,16 @@ class RunTests(unittest.TestCase):
                 (family / "fixtures" / f"{fmt}.tsv").write_text(
                     f"{HEADER}\n{body}\n", "utf-8"
                 )
-            self.assertEqual(parity.run(capy, fork, family, check_only=True), 0)
+            # No reports yet: stale, and the check writes nothing.
+            self.assertEqual(parity.run(capy, fork, family, check_only=True), 1)
             self.assertEqual(list((family / "reports").iterdir()), [])
             self.assertEqual(parity.run(capy, fork, family, check_only=False), 0)
+            self.assertEqual(parity.run(capy, fork, family, check_only=True), 0)
+            checklist = family / "fixtures/xlsx.tsv"
+            text = checklist.read_text("utf-8").replace("Feature", "Cell")
+            checklist.write_text(text, "utf-8")
+            self.assertEqual(parity.run(capy, fork, family, check_only=True), 1)
+            self.assertIn("reports/PARITY-XLSX.md is stale", output.getvalue())
             report = (family / "reports/PARITY-DOCX.md").read_text("utf-8")
             pin = subprocess.run(
                 [*git, "rev-parse", "--short=8", "HEAD"],

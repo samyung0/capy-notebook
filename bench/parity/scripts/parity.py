@@ -11,7 +11,10 @@ a test behind every Y, and writes ../reports/PARITY-<FORMAT>.md.
     python3 bench/parity/scripts/parity.py --check --fork <fork worktree>
 
 Any problem (a malformed row, a reference that does not resolve, a Y without a
-test) is printed, nothing is written, and the exit code is 1.
+test) is printed, nothing is written, and the exit code is 1. --check also fails
+when a committed report differs from what the script would write: the output
+depends only on the checklists, the fork tree and fixtures/fidelity.md, so a pin
+bump or a checklist edit has to regenerate.
 
 Test names come from scanning the source, not from the runners: `cargo test --
 --list` needs the workspace built, `bun test` cannot list, and vitest or
@@ -30,6 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 CAPY = Path(__file__).resolve().parents[3]
+SCRIPT = "bench/parity/scripts/parity.py"
 FAMILY = Path(__file__).resolve().parents[1]
 FORMATS = ("docx", "xlsx", "pptx")
 DIMS = ("view", "edit", "save", "collab")
@@ -227,17 +231,10 @@ def matrix_facts(fork):
     return out
 
 
-def test_counts(fmt, trees):
+def fork_test_count(fmt, trees):
+    """Fork tests naming the format in their path; only a pin bump changes it."""
     in_path = re.compile(rf"(^|[/_-]){fmt}([/_.-]|$)", re.IGNORECASE)
-    in_title = re.compile(rf"\b{fmt}\b", re.IGNORECASE)
-    fork = sum(len(v) for k, v in trees.fork_tests.items() if in_path.search(k))
-    capy = sum(
-        1
-        for k, names in trees.capy_tests.items()
-        for n in names
-        if in_path.search(k) or in_title.search(n)
-    )
-    return fork, capy
+    return sum(len(v) for k, v in trees.fork_tests.items() if in_path.search(k))
 
 
 def parity(rows, values):
@@ -302,11 +299,10 @@ def render(fmt, rows, trees, pin, fidelity):
             f"- Weighted parity, {label}: **{total:.0f}%** ({prios}). A row scores the mean of "
             f"its aspects (Y 1, P 0.5, N 0, U {u}); rows weigh P0 3, P1 2, P2 1."
         )
-    fork_n, capy_n = test_counts(fmt, trees)
     refs = sum(len(row["refs"]) for row in rows)
     out.append(
-        f"- {len(rows)} features, {refs} evidence references, all resolving. Tests naming "
-        f"{fmt} in their path or title: {fork_n} in the fork, {capy_n} in Capy."
+        f"- {len(rows)} features, {refs} evidence references, all resolving; "
+        f"{fork_test_count(fmt, trees)} fork tests name {fmt} in their path."
     )
     if fmt == "docx":
         for name, total, classes in matrix_facts(trees.fork):
@@ -319,7 +315,7 @@ def render(fmt, rows, trees, pin, fidelity):
     if commit is None:
         out.append(
             "No benchmark result yet. The fork's Benchmarks workflow (`visual-fidelity.yml`, "
-            "upstream's real-file corpus) runs on every push to capy-ci; copy its "
+            "upstream's real-file corpus) is dispatched on capy-ci at each pin bump; copy its "
             "`visual-fidelity` artifact's `section.md` to `bench/parity/fixtures/fidelity.md` "
             "and regenerate."
         )
@@ -434,17 +430,19 @@ def run(capy, fork, family, check_only):
         print(problem)
     if problems:
         return 1
-    pin = None if check_only else git_head(fork)
+    pin, stale = git_head(fork), []
     for fmt, rows in checklists.items():
-        if pin:
-            report = family / "reports" / f"PARITY-{fmt.upper()}.md"
-            report.write_text(
-                render(fmt, rows, trees, pin, fidelity), "utf-8", newline="\n"
-            )
-        print(
-            f"{fmt}: {len(rows)} features, {sum(len(r['refs']) for r in rows)} references, ok"
-        )
-    return 0
+        report = family / "reports" / f"PARITY-{fmt.upper()}.md"
+        text = render(fmt, rows, trees, pin, fidelity)
+        if not check_only:
+            report.write_text(text, "utf-8", newline="\n")
+        elif not report.exists() or report.read_text("utf-8") != text:
+            stale.append(f"reports/{report.name} is stale: run python3 {SCRIPT}")
+        refs = sum(len(r["refs"]) for r in rows)
+        print(f"{fmt}: {len(rows)} features, {refs} references, ok")
+    for problem in stale:
+        print(problem)
+    return 1 if stale else 0
 
 
 def main():

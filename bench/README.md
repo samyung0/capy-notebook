@@ -137,12 +137,17 @@ and the untested claims.
 
 - `python3 bench/parity/scripts/parity.py --check` runs in CI's `office_pin` job
   (a depth-1 submodule fetch, no builds). It prints each problem and exits 1 on
-  a malformed row, a reference that does not resolve on the pin, or a Y without
-  a test, writing nothing. `--fork <worktree>` checks a fork branch before it is
-  pinned.
-- `python3 bench/parity/scripts/parity.py` regenerates the reports. Run it in
-  every pin bump commit and after editing a checklist; the output depends only
-  on the checklists, the two trees and `fixtures/fidelity.md`.
+  a malformed row, a reference that does not resolve on the pin, a Y without a
+  test, or a committed report that differs from what the script would write
+  (the output depends only on the checklists, the fork tree and
+  `fixtures/fidelity.md`). It writes nothing. `--fork <worktree>` checks a fork
+  branch before it is pinned.
+- `python3 bench/parity/scripts/parity.py` regenerates the reports after a
+  checklist edit.
+- **Pin bump:** with `vendor/betteroffice` at the new pin, run
+  `python3 bench/parity/scripts/parity.py`, fix any checklist row it names (a
+  renamed or removed test), and commit the regenerated reports in the bump
+  commit; then dispatch the fork's benchmark on capy-ci (below).
 - Test names are read from source text, not from the runners (`cargo test --
   --list` needs the workspace built, `bun test` cannot list, vitest and
   Playwright list modes need installed dependencies): Rust `#[test]`-style
@@ -153,8 +158,10 @@ and the untested claims.
   file or a literal part of its title.
 - Fidelity: the fork's Benchmarks workflow (`visual-fidelity.yml`, upstream's
   real-file corpus scored against Office's own renders, next to upstream's
-  latest release and LibreOffice) runs on every push to capy-ci, without the
-  README commit or render publishing. When a run of the pinned commit succeeds,
+  latest release and LibreOffice; about 54 jobs, 50 minutes) runs by hand only,
+  without the README commit or render publishing:
+  `gh workflow run visual-fidelity.yml -R samyung0/betteroffice --ref capy-ci -f branch=capy-ci -f publish_renders=false`
+  at each pin bump. When it succeeds,
   `gh run download <run> -R samyung0/betteroffice -n visual-fidelity`, copy its
   `section.md` to `parity/fixtures/fidelity.md` and regenerate; each report
   names the measured commit and says when it is not the pin.

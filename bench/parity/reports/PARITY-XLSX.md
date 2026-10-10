@@ -15,11 +15,11 @@ Legend: **Y** works and a test shows it; **P** partial (see notes); **N** missin
 
 - Weighted parity, verified: **59%** (P0 70% (19 rows), P1 36% (15 rows), P2 62% (4 rows)). A row scores the mean of its aspects (Y 1, P 0.5, N 0, U 0); rows weigh P0 3, P1 2, P2 1.
 - Weighted parity, claimed: **63%** (P0 74% (19 rows), P1 40% (15 rows), P2 75% (4 rows)). A row scores the mean of its aspects (Y 1, P 0.5, N 0, U 1); rows weigh P0 3, P1 2, P2 1.
-- 38 features, 91 evidence references, all resolving. Tests naming xlsx in their path or title: 1288 in the fork, 11 in Capy.
+- 38 features, 91 evidence references, all resolving; 1288 fork tests name xlsx in their path.
 
 ## Fidelity against Office
 
-No benchmark result yet. The fork's Benchmarks workflow (`visual-fidelity.yml`, upstream's real-file corpus) runs on every push to capy-ci; copy its `visual-fidelity` artifact's `section.md` to `bench/parity/fixtures/fidelity.md` and regenerate.
+No benchmark result yet. The fork's Benchmarks workflow (`visual-fidelity.yml`, upstream's real-file corpus) is dispatched on capy-ci at each pin bump; copy its `visual-fidelity` artifact's `section.md` to `bench/parity/fixtures/fidelity.md` and regenerate.
 
 ## Features
 
