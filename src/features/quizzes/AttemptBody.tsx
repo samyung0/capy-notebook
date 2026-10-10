@@ -184,7 +184,10 @@ export function AttemptBody({
             {m.quiz_redo()}
           </Button>
           {footer}
-          <MaterialAttributionFooter provenance={provenance} />
+          <MaterialAttributionFooter
+            inline={!embedded}
+            provenance={provenance}
+          />
         </Body>
       </Shell>
     );
@@ -224,7 +227,7 @@ export function AttemptBody({
           </Button>
         </div>
         {footer}
-        <MaterialAttributionFooter provenance={provenance} />
+        <MaterialAttributionFooter inline={!embedded} provenance={provenance} />
       </Body>
     </Shell>
   );

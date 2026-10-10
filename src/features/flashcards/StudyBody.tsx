@@ -162,7 +162,10 @@ export function StudyBody({
             </div>
           )}
           {footer}
-          <MaterialAttributionFooter provenance={provenance} />
+          <MaterialAttributionFooter
+            inline={!embedded}
+            provenance={provenance}
+          />
         </div>
       </div>
     </Shell>

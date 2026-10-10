@@ -150,7 +150,7 @@ export default function AttemptResult() {
         ) : (
           <p className="text-fg-muted">{m.quiz_no_breakdown()}</p>
         )}
-        <MaterialAttributionFooter provenance={quiz?.provenance} />
+        <MaterialAttributionFooter inline provenance={quiz?.provenance} />
       </TabContent>
     </PanelWithInvertedRadius>
   );

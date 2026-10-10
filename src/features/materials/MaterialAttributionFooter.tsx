@@ -1,5 +1,6 @@
 import type { Provenance, QuestionCredit } from '@/api/types';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 
 /** A licence or source reference is only a link when it is a web address; a
  * plain name such as "CC BY-SA 4.0" renders as text. */
@@ -113,15 +114,26 @@ function Credits({ books, web }: Pick<QuestionCredit, 'books' | 'web'>) {
  *
  * It renders outside the editable document and is not part of the Yjs state,
  * so the attribution survives every edit of the material itself.
+ *
+ * Pinned under a scrolling panel it is a bordered strip; `inline` is for the
+ * end of a page's own content (quiz attempt, flashcard study), set apart by
+ * space alone and aligned with the content column.
  */
 export function MaterialAttributionFooter({
   provenance,
+  inline = false,
 }: {
   provenance: Provenance | undefined;
+  inline?: boolean;
 }) {
   if (!(provenance?.books.length || provenance?.web?.length)) return null;
   return (
-    <footer className="border-divider border-t px-5 py-3 text-fg-muted text-xs">
+    <footer
+      className={cn(
+        'text-fg-muted text-xs',
+        inline ? 'mt-16 pb-4' : 'border-divider border-t px-5 py-3'
+      )}
+    >
       <p className="font-medium">{m.material_attribution_title()}</p>
       <Credits books={provenance.books} web={provenance.web} />
       {provenance.license && (
