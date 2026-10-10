@@ -195,6 +195,10 @@ INSERT INTO materials (
 ON CONFLICT (id) DO UPDATE SET
   content = EXCLUDED.content,
   provenance = EXCLUDED.provenance,
+  trashed_at = NULL,
+  trashed_by = NULL,
+  trash_episode_id = NULL,
+  purge_after = NULL,
   revision = 1;
 
 COMMIT;
