@@ -259,6 +259,13 @@ collaboration server refuse it otherwise. The server refuses it when the
 update arrives (`media_assets` in `collaboration-rs/crates/notes/src/limits.rs`,
 on the elements whose `type`, `assetId`, `url` or `src` the update set or
 deleted), so only that writer's update is lost, and its store checks it again.
+The same holds for every key the store requires (`required_keys`, REVIEW5 R2):
+an update that leaves an element it touches without a non-empty `type`, a
+top-level block without its `id`, or a block without its type's own keys (a
+reference's `materialId` and `refKind`, a diagram's `source`, a video's
+`provider` and `videoId`, ...) is refused on arrival, read from the room's
+entries and the update without a copy; a key the element already lacked is
+not held against an update that did not create or retype it.
 
 Pasted images take the same asset path (`pastedImages.ts`): clipboard image
 files become upload placeholders, as dropped files do. Plate's placeholder
@@ -314,7 +321,8 @@ is at most 21 characters, so under 3 KiB of the server's 64 KiB awareness
 entry, past which the room closes the channel), and a received list counts
 only its first 100 ids of up to 32 characters (REVIEW5 E1, E3). The room drops
 the list from a read-only channel's presence (`without_uploads` in
-`room.rs`), so a viewer cannot show blocks as uploading (REVIEW5 E2). Viewers
+`room.rs`), so a viewer cannot show blocks as uploading (REVIEW5 E2; it parses every
+such entry, so an escaped key cannot slip past, R1). Viewers
 that do not join the room (the static projection) do not see it.
 
 Each asset belongs to one note, and the server keeps it that way; the browser
