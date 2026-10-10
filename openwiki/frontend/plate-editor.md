@@ -1261,7 +1261,9 @@ validation and are not rendered.
   which is memoized for that reason. The attribution footer is its sibling in
   the scroll area, after the editable content and outside the Yjs document
   (`NoteAttribution`, memoized on the material's provenance, so neither
-  keystrokes nor save acknowledgements render it). The save status is not React state
+  keystrokes nor save acknowledgements render it). A save acknowledgement whose
+  checkpoint stored a different set of embeds invalidates the note's material
+  query, which brings the footer's computed credits up to date. The save status is not React state
   above the note either: `NoteEditorCore` keeps only "still handshaking", and
   `CenterContent` passes a per-pane store (`createEditorStatusStore`) that only
   the header's status icon subscribes to. Saved to Syncing happens on the first
