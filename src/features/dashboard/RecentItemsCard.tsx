@@ -14,6 +14,7 @@ import {
   ThumbnailPanel,
 } from '@/components/app/ThumbnailPanel';
 import { SkeletonList } from '@/components/ui/feedback';
+import { materialDetails } from '@/features/materials/MaterialListCard';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import {
   toFileActionTarget,
@@ -48,7 +49,10 @@ function recentThumbnail(item: RecentItem): Thumbnail {
         preview: item.file.preview,
         thumbnailUrl: item.file.thumbnailUrl,
       }
-    : { preview: item.material.preview };
+    : {
+        pill: materialDetails(item.material) || undefined,
+        preview: item.material.preview,
+      };
 }
 
 /** Move is left out: the list spans workspaces, so there is no single

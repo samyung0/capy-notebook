@@ -1010,6 +1010,8 @@
   "material_ref_minutes": "{count} 分钟",
   "material_ref_cards_one": "1 张卡片",
   "material_ref_cards": "{count} 张卡片",
+  "material_preview_items_one": "1 项",
+  "material_preview_items": "{count} 项",
   "action_study": "学习",
   "editor_mermaid": "Mermaid 图表",
   "editor_cmd_turn_into": "将当前块转换为{label}",

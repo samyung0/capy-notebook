@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { MaterialPreview, QuizPreviewQuestion } from '@/api/types';
 import { type Thumbnail, ThumbnailPanel } from './ThumbnailPanel';
 
-const render = (thumbnail: Thumbnail) =>
+const render = (thumbnail: Thumbnail & { small?: boolean }) =>
   renderToStaticMarkup(<ThumbnailPanel icon="pdf" {...thumbnail} />);
 const count = (html: string, needle: string) => html.split(needle).length - 1;
 const ICON = '#pdf"';
@@ -53,38 +53,29 @@ describe('ThumbnailPanel', () => {
     expect(render({ preview: { blocks: [], kind: 'note' } })).toContain(ICON);
   });
 
-  it('lays out each first-question type under the count pill', () => {
-    const quiz = (first: QuizPreviewQuestion, questionCount = 12) =>
-      render({ preview: { first, kind: 'quiz', questionCount } });
+  it('lays out each first-question type without the answer key', () => {
+    const quiz = (first: QuizPreviewQuestion) =>
+      render({ preview: { first, kind: 'quiz', questionCount: 12 } });
     const mcq = quiz({ options: ['A1', 'B1'], stem: 'Pick', type: 'mcq' });
-    expect(mcq).toContain('12 questions');
     expect(count(mcq, 'pv-opt')).toBe(2);
-    expect(quiz({ stem: 'Q', type: 'boolean' }, 1)).toContain('1 question');
     expect(quiz({ stem: 'Q', type: 'boolean' })).toContain('False');
     expect(
       count(quiz({ options: ['x'], stem: 'Q', type: 'multi' }), 'pv-box')
     ).toBe(1);
     expect(quiz({ stem: 'Q', type: 'short' })).toContain('pv-input');
     expect(count(quiz({ stem: 'Q', type: 'open' }), '<i></i>')).toBe(3);
-    expect(
-      count(
-        quiz({
-          pairs: [
-            ['a', 'b'],
-            ['c', 'd'],
-          ],
-          stem: 'Q',
-          type: 'matching',
-        }),
-        'pv-pair'
-      )
-    ).toBe(2);
-    expect(
-      count(
-        quiz({ items: ['1', '2', '3'], stem: 'Q', type: 'ordering' }),
-        'pv-ord'
-      )
-    ).toBe(3);
+    const matching = quiz({
+      prompts: ['Iron', 'Zinc'],
+      stem: 'Q',
+      type: 'matching',
+    });
+    expect(matching).toContain('<span>Iron</span><span>Zinc</span>');
+    const ordering = quiz({ itemCount: 5, stem: 'Q', type: 'ordering' });
+    expect(count(ordering, 'pv-ord')).toBe(1);
+    expect(ordering).toContain('5 items');
+    expect(quiz({ itemCount: 1, stem: 'Q', type: 'ordering' })).toContain(
+      '1 item<'
+    );
     expect(
       count(quiz({ stem: 'a\u0001b\u0001c', type: 'gaps' }), '<u></u>')
     ).toBe(2);
@@ -93,7 +84,14 @@ describe('ThumbnailPanel', () => {
     );
   });
 
-  it('stacks back cards by count and names the count', () => {
+  it('shows the row’s count pill, with the icon when there is no preview', () => {
+    const html = render({ pill: '12 questions' });
+    expect(html).toContain('12 questions');
+    expect(html).toContain(ICON);
+    expect(render({ pill: '3 cards', small: true })).not.toContain('3 cards');
+  });
+
+  it('stacks back cards by count', () => {
     const cards = (cardCount: number, hasImage = false) =>
       render({
         preview: {
@@ -103,10 +101,8 @@ describe('ThumbnailPanel', () => {
         },
       });
     expect(count(cards(1), 'pv-back-')).toBe(0);
-    expect(cards(1)).toContain('1 card');
     expect(count(cards(2), 'pv-back-')).toBe(1);
     expect(count(cards(24), 'pv-back-')).toBe(2);
-    expect(cards(24)).toContain('24 cards');
     expect(cards(12, true)).toContain('pv-img');
   });
 
@@ -115,6 +111,10 @@ describe('ThumbnailPanel', () => {
       render({ preview: { kind: 'diagram', source } });
     expect(diagram('pie\n  "Fat" : 30\n  "Protein" : 70')).toContain('pv-svg');
     expect(diagram('classDiagram\n  A <|-- B')).toContain(ICON);
+    // Previews arrive as open JSON: a diagram without its source keeps the icon.
+    expect(
+      render({ preview: { kind: 'diagram' } as unknown as MaterialPreview })
+    ).toContain(ICON);
   });
 
   it('shows a text file’s opening lines', () => {

@@ -205,7 +205,7 @@
 .pv-tf span,
 .pv-input,
 .pv-lines,
-.pv-pair span {
+.pv-match span {
   background: var(--surface-card-bg);
   border: 1px solid var(--border-default);
 }
@@ -233,25 +233,19 @@
   height: 12px;
   border-bottom: 1px solid var(--divider);
 }
+/* Matching shows its prompts only, one chip per line. */
 .pv-match {
   display: grid;
   gap: 4px;
+  justify-items: start;
 }
-.pv-pair {
-  display: grid;
-  grid-template-columns: 1fr 24px 1fr;
-  align-items: center;
-}
-.pv-pair span {
-  padding: 3px 6px;
+.pv-match span {
+  max-width: 100%;
+  padding: 3px 8px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   border-radius: 6px;
-}
-.pv-pair i {
-  margin: 0 2px;
-  border-top: 1px dashed var(--border-default);
 }
 .pv-gaps {
   font-size: 10.5px;

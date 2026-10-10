@@ -63,7 +63,10 @@ export function MaterialCard({
       icon={materialIconName(item.kind)}
       link={link}
       meta={relativeTime(item.updatedAt)}
-      thumbnail={{ preview: item.preview }}
+      thumbnail={{
+        pill: materialDetails(item) || undefined,
+        preview: item.preview,
+      }}
       title={item.title}
       view={view}
       workspace={item.workspaceName}

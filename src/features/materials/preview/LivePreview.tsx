@@ -5,6 +5,7 @@ import type {
   QuestionType,
   QuizPreviewQuestion,
 } from '@/api/types';
+import { orderItemsLabel } from '@/features/materials/countLabels';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import './livePreview.css';
@@ -95,7 +96,7 @@ export const QuizLive = memo(function QuizLive({
 }: {
   question: QuizPreviewQuestion;
 }) {
-  const { type, stem, options = [], pairs = [], items = [] } = question;
+  const { type, stem, options = [], prompts = [], itemCount } = question;
   const label = typeLabel(type);
   return (
     <div className="pv-live pv-quiz">
@@ -141,22 +142,17 @@ export const QuizLive = memo(function QuizLive({
       )}
       {type === 'matching' && (
         <p className="pv-match">
-          {pairs.map(([left, right], i) => (
-            <span className="pv-pair" key={i}>
-              <span>{left}</span>
-              <i />
-              <span>{right}</span>
-            </span>
+          {prompts.map((prompt, i) => (
+            <span key={i}>{prompt}</span>
           ))}
         </p>
       )}
-      {type === 'ordering' &&
-        items.map((item, i) => (
-          <p className="pv-ord" key={i}>
-            <span>⋮⋮</span>
-            {item}
-          </p>
-        ))}
+      {type === 'ordering' && itemCount !== undefined && (
+        <p className="pv-ord">
+          <span>⋮⋮</span>
+          {orderItemsLabel(itemCount)}
+        </p>
+      )}
     </div>
   );
 });
