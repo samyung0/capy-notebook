@@ -13,7 +13,7 @@ import pytest
 from PIL import Image
 
 from pipeline.ingest import plan as ingest_plan
-from pipeline.ingest import thumbnail, worker
+from pipeline.ingest import thumbnail
 
 
 def _plan(route: str, format_name: str) -> ingest_plan.ProcessingPlan:
@@ -209,6 +209,7 @@ class _Store:
 def _capture(source: Path, route=ingest_plan.DOCUMENT_PARSE, format_name="pdf"):
     thumbnail.capture_source(
         file_id="f_1",
+        workspace_id="ws_1",
         plan=_plan(route, format_name),
         local_path=str(source),
         source_sha256="aa" * 32,
@@ -265,6 +266,8 @@ def test_a_text_source_stores_its_first_600_characters(tmp_path, monkeypatch):
 
 async def test_a_failed_capture_leaves_the_ingest_ready(monkeypatch, tmp_path, caplog):
     """The capture runs after the job committed and never reaches it."""
+    from pipeline.ingest import worker  # imports fcntl: Linux only
+
     source = tmp_path / "source-1"
     source.write_bytes(b"%PDF broken")
     cleaned: list[str] = []
@@ -336,3 +339,45 @@ async def test_a_failed_capture_leaves_the_ingest_ready(monkeypatch, tmp_path, c
 
     assert cleaned == ["source"]
     assert "thumbnail capture failed" in caplog.text
+
+
+@pytest.mark.integration
+def test_a_reuse_without_a_bundle_shares_the_identical_files_key(workspace, tmp_path):
+    """A parse that reused identical indexed bytes builds no bundle, so the new
+    Office file takes the original's key; the blob outlives the original while
+    the copy still references it."""
+    sha = "ab" * 32
+    original = workspace.add_file("deck.pptx")
+    copy = workspace.add_file("deck again.pptx")
+    key = f"thumbs/{original}/{'c' * 64}.webp"
+    with workspace._connect() as conn:
+        conn.execute(
+            "UPDATE files SET kind='slides', source_sha256=%s WHERE id IN (%s, %s)",
+            (sha, original, copy),
+        )
+        conn.execute("UPDATE files SET thumbnail_key=%s WHERE id=%s", (key, original))
+    source = tmp_path / "source-1"
+    source.write_bytes(b"office")
+
+    thumbnail.capture_source(
+        file_id=copy,
+        workspace_id=workspace.id,
+        plan=_plan(ingest_plan.DOCUMENT_PARSE, "pptx"),
+        local_path=str(source),
+        source_sha256=sha,
+        artifact=None,
+    )
+
+    refs = "SELECT COALESCE((SELECT ref_count FROM blobs WHERE object_path=%s), 0)"
+    queued = "SELECT EXISTS (SELECT 1 FROM pending_blob_deletions WHERE object_path=%s)"
+    assert (
+        workspace.scalar("SELECT thumbnail_key FROM files WHERE id=%s", (copy,)) == key
+    )
+    assert workspace.scalar(refs, (key,)) == 2
+    with workspace._connect() as conn:
+        conn.execute("DELETE FROM files WHERE id=%s", (original,))
+    assert workspace.scalar(refs, (key,)) == 1
+    assert workspace.scalar(queued, (key,)) is False
+    with workspace._connect() as conn:
+        conn.execute("DELETE FROM files WHERE id=%s", (copy,))
+    assert workspace.scalar(queued, (key,)) is True

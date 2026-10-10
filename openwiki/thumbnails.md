@@ -95,9 +95,15 @@ the donor-reuse, content-reuse and indexed exits all reach it.
   update fails after the B2 write.
 - A source refresh (an edited text or Office source) publishes and ingests
   again, so the new bytes replace the thumbnail or text preview.
-- An Office file reused from a donor inside the parse job (identical bytes
-  already indexed with the same embedding model) has no bundle, so it gets no
-  thumbnail.
+- An Office file the parse job reused from identical indexed bytes (the
+  donor path, `_reuse_donor` called from the parse job in
+  `pipeline/ingest/worker.py`) has no bundle to render from, so it takes the
+  thumbnail key of a live file holding the same bytes
+  (`db.share_file_thumbnail`): one in the same workspace first, else one in a
+  link or public workspace, the files donor reuse itself may read, so a key
+  never points into a private workspace. The key is shared like a clone's and
+  outlives the original while the copy references it. Text sources need no
+  copy: their preview is read from the reused bytes, which are identical.
 - The parser's page render is optional too: a failure prints `page thumbnail
   skipped` and the parse goes on without `page1.png`. Its time is the
   `thumbnail` phase of the parse receipt. The worker accepts a `page1.png` of

@@ -2169,7 +2169,7 @@ async def _process_ingest_job(
         )
         if reused:
             await _capture_thumbnail(
-                payload, file_id, processing_plan, local_path, source_sha256
+                payload, ws, file_id, processing_plan, local_path, source_sha256
             )
             await asyncio.to_thread(cleanup_source)
             await asyncio.to_thread(_release_parse_artifact, payload)
@@ -2311,7 +2311,7 @@ async def _process_ingest_job(
             ws, file_id, "done", 100, status="ready", message=note, indexed=True
         )
         await _capture_thumbnail(
-            payload, file_id, processing_plan, local_path, source_sha256
+            payload, ws, file_id, processing_plan, local_path, source_sha256
         )
         await asyncio.to_thread(cleanup_source)
         await asyncio.to_thread(_release_parse_artifact, payload)
@@ -2358,7 +2358,7 @@ async def _process_ingest_job(
         return
     _publish_progress(ws, file_id, "done", 100, status="ready", indexed=True)
     await _capture_thumbnail(
-        payload, file_id, processing_plan, local_path, source_sha256
+        payload, ws, file_id, processing_plan, local_path, source_sha256
     )
     await asyncio.to_thread(cleanup_source)
     await asyncio.to_thread(_release_parse_artifact, payload)
@@ -2367,6 +2367,7 @@ async def _process_ingest_job(
 
 async def _capture_thumbnail(
     payload: dict,
+    ws: str,
     file_id: str,
     processing_plan: ingest_plan.ProcessingPlan,
     local_path: str | None,
@@ -2378,6 +2379,7 @@ async def _capture_thumbnail(
     await asyncio.to_thread(
         thumbnail.capture_source,
         file_id=file_id,
+        workspace_id=ws,
         plan=processing_plan,
         local_path=local_path,
         source_sha256=source_sha256,
