@@ -8060,6 +8060,35 @@ paths:
       summary: Read source editing session
       tags:
         - Source collaboration
+  /api/files/{id}/thumbnail:
+    post:
+      operationId: captureFileThumbnail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          image/webp:
+            schema:
+              format: binary
+              type: string
+              x-contentMediaType: application/octet-stream
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Store a browser capture of an edited Office file as its thumbnail
+      tags:
+        - Content
   /api/flashcards:
     post:
       operationId: createFlashcardSet

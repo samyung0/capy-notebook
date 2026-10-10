@@ -42,6 +42,18 @@ func (s *Memory) Put(id string, r io.Reader) (string, int64, error) {
 	return id, int64(len(data)), nil
 }
 
+// PutObject keeps the content type; Memory has no cache headers to keep.
+func (s *Memory) PutObject(_ context.Context, key string, body io.Reader, contentType, _ string) error {
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.objects[key] = memoryObject{data: data, contentType: contentType, etag: "mem"}
+	return nil
+}
+
 func (s *Memory) PresignGet(_ context.Context, path string) (string, error) {
 	req, err := s.PresignGetWithExpiry(context.Background(), path)
 	return req.URL, err
@@ -237,6 +249,12 @@ func (s *Disk) Put(id string, r io.Reader) (string, int64, error) {
 		return "", 0, err
 	}
 	return id, n, nil
+}
+
+// PutObject writes the bytes; Disk keeps no headers.
+func (s *Disk) PutObject(_ context.Context, key string, body io.Reader, _, _ string) error {
+	_, _, err := s.Put(key, body)
+	return err
 }
 
 func (s *Disk) PresignGet(ctx context.Context, path string) (string, error) {
