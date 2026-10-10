@@ -35,6 +35,30 @@ export interface FilterSection {
 
 export type ListView = 'grid' | 'list';
 
+/** The page's grid or list choice, remembered per viewer under `key`. */
+export function useListView(
+  key: string,
+  fallback: ListView
+): [ListView, (view: ListView) => void] {
+  const [view, setView] = useState<ListView>(() => {
+    try {
+      const saved = localStorage.getItem(key);
+      return saved === 'grid' || saved === 'list' ? saved : fallback;
+    } catch {
+      return fallback;
+    }
+  });
+  function changeView(next: ListView) {
+    setView(next);
+    try {
+      localStorage.setItem(key, next);
+    } catch {
+      // per-viewer convenience only
+    }
+  }
+  return [view, changeView];
+}
+
 export function ListToolbar<V extends string>({
   sorts,
   sort,

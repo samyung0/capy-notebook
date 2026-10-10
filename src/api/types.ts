@@ -38,9 +38,13 @@ import type {
   Discussion as GenDiscussion,
   UserModelSlot as GeneratedModelSlot,
   File as GenFile,
+  FilePage as GenFilePage,
   GradedQuestion as GenGradedQuestion,
   GradedQuiz as GenGradedQuiz,
   Material as GenMaterial,
+  MaterialListItem as GenMaterialListItem,
+  MaterialPage as GenMaterialPage,
+  MaterialRef as GenMaterialRef,
   Message as GenMessage,
   PublicQuiz as GenPublicQuiz,
   Quiz as GenQuiz,
@@ -50,6 +54,8 @@ import type {
   ReviewSession as GenReviewSession,
   SearchResult as GenSearchResult,
   StudySummary as GenStudySummary,
+  TrashItem as GenTrashItem,
+  TrashPage as GenTrashPage,
   UpdateCommentReq as GenUpdateCommentReq,
   UpdateQuizContentReq as GenUpdateQuizContentReq,
   UpdateWorkspaceMemberReq as GenUpdateWorkspaceMemberReq,
@@ -108,7 +114,6 @@ export type {
   LLMCredentialProvider,
   LLMCredentialsResponse,
   LocaleInputBody,
-  MaterialRef,
   MaterialUpdateResult,
   MicrosoftDriveHost,
   ModelOption,
@@ -214,8 +219,63 @@ export type GradedQuestion = Omit<GenGradedQuestion, 'question'> & {
   question: Question;
 };
 
-/** `ingestPct` is transient upload progress, never persisted. */
-export type SourceFile = GenFile & { ingestPct?: number };
+/* Thumbnails phase 1 (harness 2026-10-11-thumbnails PLAN.md contract):
+   frontend extensions until `src/api/gen` carries these fields. The lander
+   folds `thumbnailUrl` and `preview` into the generated File,
+   MaterialListItem, MaterialRef and TrashItem types. */
+
+/** Opening characters of an md, txt or other text-kind file. */
+export interface FileTextPreview {
+  text: string;
+}
+/** One block of a note's live preview. */
+export type PreviewBlock =
+  | { t: 'h'; text: string; level: number }
+  | { t: 'p'; text: string }
+  | { t: 'ul'; items: string[] }
+  | { t: 'todo'; items: { done: boolean; text: string }[] }
+  | { t: 'table'; rows: string[][] }
+  | { t: 'math'; tex: string }
+  | { t: 'code'; text: string; lang?: string }
+  | { t: 'quote'; text: string }
+  | { t: 'image' };
+/** A quiz's first question; a `gaps` stem marks each blank with U+0001. */
+export interface QuizPreviewQuestion {
+  hasChart?: boolean;
+  items?: string[];
+  options?: string[];
+  pairs?: [string, string][];
+  stem: string;
+  type: QuestionType;
+}
+/** Live card preview stored with a material, at most about 1 KB of JSON. */
+export type MaterialPreview =
+  | { kind: 'note'; blocks: PreviewBlock[] }
+  | { kind: 'quiz'; questionCount: number; first?: QuizPreviewQuestion }
+  | {
+      kind: 'flashcards';
+      cardCount: number;
+      first?: { front: string; hasImage: boolean };
+    }
+  | { kind: 'mindmap' | 'diagram'; source: string };
+
+/** `ingestPct` is transient upload progress, never persisted.
+ * `thumbnailUrl` is an hour-stable presigned page-1 image (thumbnails
+ * extension). */
+export type SourceFile = GenFile & {
+  ingestPct?: number;
+  thumbnailUrl?: string;
+  preview?: FileTextPreview;
+};
+export type MaterialListItem = GenMaterialListItem & {
+  preview?: MaterialPreview;
+};
+export type MaterialRef = GenMaterialRef & { preview?: MaterialPreview };
+/** File rows carry the File thumbnail fields, material rows a MaterialPreview. */
+export type TrashItem = GenTrashItem & {
+  thumbnailUrl?: string;
+  preview?: FileTextPreview | MaterialPreview;
+};
 /** A file the viewer has resolved through GET /files/{id}/links: `url` is a
  * short-lived presigned read, the only URL the browser ever holds for file
  * bytes; `previewUrl` is a presence marker for PDF sources. */
@@ -398,8 +458,6 @@ export type {
   ResourceRef,
   ToolError,
   TrashActionReq,
-  TrashItem,
-  TrashPage,
   UndoEditReq,
   UndoRef,
 } from './gen/model';
@@ -522,12 +580,13 @@ export type Material = Omit<GenMaterial, 'content'> & {
 };
 
 /* Owner-scoped, paginated listings behind the Create and Files pages. */
-export type {
-  FileKind,
-  FilePage,
-  MaterialListItem,
-  MaterialPage,
-} from './gen/model';
+export type { FileKind } from './gen/model';
+/** Pages of the thumbnail-extended rows (see SourceFile). */
+export type FilePage = Omit<GenFilePage, 'items'> & { items: SourceFile[] };
+export type MaterialPage = Omit<GenMaterialPage, 'items'> & {
+  items: MaterialListItem[];
+};
+export type TrashPage = Omit<GenTrashPage, 'items'> & { items: TrashItem[] };
 export type MaterialListKind = 'note' | 'quiz' | 'flashcards';
 export type MaterialListLocation = 'workspace' | 'standalone';
 export type MaterialListSort = 'updated' | 'created' | 'title' | 'kind';

@@ -5,9 +5,14 @@ import {
   recentMaterialsQuery,
   useWorkspaces,
 } from '@/api/hooks';
+import { ItemCard } from '@/components/app/ItemCard';
+import { ListViewToggle, useListView } from '@/components/app/ListToolbar';
 import { PanelHeader } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
-import { FileIcon } from '@/components/ui/FileIcon';
+import {
+  type Thumbnail,
+  ThumbnailPanel,
+} from '@/components/app/ThumbnailPanel';
 import { SkeletonList } from '@/components/ui/feedback';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import {
@@ -24,6 +29,48 @@ function formatRecentDate(iso: string): string {
     day: 'numeric',
     month: 'short',
   }).format(new Date(iso));
+}
+
+function recentIcon(item: RecentItem) {
+  return item.kind === 'file'
+    ? fileIconName({ kind: item.fileKind, name: item.title })
+    : materialIconName(item.type);
+}
+
+function recentThumbnail(item: RecentItem): Thumbnail {
+  return item.kind === 'file'
+    ? {
+        fileKind: item.fileKind,
+        preview: item.file.preview,
+        thumbnailUrl: item.file.thumbnailUrl,
+      }
+    : { preview: item.material.preview };
+}
+
+/** Move is left out: the list spans workspaces, so there is no single
+ * chapter list to move within. */
+function RecentActions({
+  item,
+  display,
+}: {
+  item: RecentItem;
+  display: 'hover' | 'menu';
+}) {
+  return (
+    <ContentActions
+      chapters={[]}
+      content={
+        item.kind === 'file'
+          ? toFileActionTarget(item.file)
+          : toMaterialActionTarget(item.material)
+      }
+      display={display}
+      hoverClassName="mr-1.5"
+      readOnly={!item.canEdit}
+      showMove={false}
+      workspaceId={item.workspaceId}
+    />
+  );
 }
 
 function recentLink(item: RecentItem) {
@@ -44,6 +91,7 @@ function recentLink(item: RecentItem) {
 /** Newest files and materials across the caller's member workspaces plus
  * their standalone materials. Renders once all three lists have loaded. */
 export function RecentItemsCard() {
+  const [view, setView] = useListView('capy.recents.view', 'list');
   const meta = { errorBoundary: false as const };
   const {
     data: files,
@@ -75,40 +123,50 @@ export function RecentItemsCard() {
 
   return (
     <div className="flex min-h-full shrink-0 flex-col gap-3">
-      <PanelHeader title={m.dashboard_recent()} />
+      <PanelHeader
+        actions={<ListViewToggle onViewChange={setView} view={view} />}
+        title={m.dashboard_recent()}
+      />
       {paused ? (
         <QueryPausedState className="h-full min-h-full flex-1" />
       ) : isLoading ? (
-        <SkeletonList className="px-3" count={8} rowHeight={52} />
+        <SkeletonList className="px-3" count={8} rowHeight={60} />
       ) : items.length === 0 ? (
         <p className="px-1 pt-2 pb-4 text-center text-fg-muted">
           {m.dashboard_recent_empty()}
         </p>
+      ) : view === 'grid' ? (
+        <div className="grid grid-cols-2 gap-2.5 px-2">
+          {items.map((item) => (
+            <ItemCard
+              actions={<RecentActions display="menu" item={item} />}
+              icon={recentIcon(item)}
+              key={`${item.kind}-${item.id}`}
+              link={{ ...recentLink(item), preload: 'intent' }}
+              meta={formatRecentDate(item.createdAt)}
+              thumbnail={recentThumbnail(item)}
+              title={item.title}
+              view="grid"
+            />
+          ))}
+        </div>
       ) : (
         <div className="flex -translate-x-0.5 flex-col gap-1 px-2">
           {items.map((item) => (
             <div
-              className="group relative flex items-start justify-between rounded-button hover:bg-surface-hover-bg"
+              className="group relative flex items-center justify-between rounded-button hover:bg-surface-hover-bg"
               key={`${item.kind}-${item.id}`}
             >
               <Link
-                className="flex flex-1 items-start gap-3 rounded-button px-1 py-2"
+                className="flex min-w-0 flex-1 items-center gap-3 rounded-button px-1.5 py-2"
                 preload="intent"
                 {...recentLink(item)}
               >
-                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-button">
-                  <FileIcon
-                    className="size-5"
-                    name={
-                      item.kind === 'file'
-                        ? fileIconName({
-                            kind: item.fileKind,
-                            name: item.title,
-                          })
-                        : materialIconName(item.type)
-                    }
-                  />
-                </span>
+                <ThumbnailPanel
+                  icon={recentIcon(item)}
+                  small
+                  {...recentThumbnail(item)}
+                />
                 <span className="min-w-0 flex-1 leading-tight">
                   <span className="line-clamp-2 font-semibold text-fg">
                     {item.title}
@@ -120,21 +178,7 @@ export function RecentItemsCard() {
                   </span>
                 </span>
               </Link>
-              {/* Move is left out: the list spans workspaces, so there is no
-               * single chapter list to move within. */}
-              <ContentActions
-                chapters={[]}
-                content={
-                  item.kind === 'file'
-                    ? toFileActionTarget(item.file)
-                    : toMaterialActionTarget(item.material)
-                }
-                display="hover"
-                hoverClassName="mt-2 mr-1.5"
-                readOnly={!item.canEdit}
-                showMove={false}
-                workspaceId={item.workspaceId}
-              />
+              <RecentActions display="hover" item={item} />
             </div>
           ))}
         </div>

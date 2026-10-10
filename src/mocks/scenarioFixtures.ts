@@ -153,7 +153,8 @@ export function seedScenarioFixtures() {
     title: 'Scenario task',
   });
   const textURL = db.textUrl('A source for trying application errors.\n');
-  const template = db.files.find((file) => file.id === 'f_2')!;
+  // Scenario files take f_2's shape but not its opening-text preview.
+  const { preview, ...template } = db.files.find((file) => file.id === 'f_2')!;
   for (const [id, name, kind, url] of [
     [scenarioText, 'Scenario source.txt', 'txt', textURL],
     ['mock-scenario-pdf', 'Scenario annotations.pdf', 'pdf', pdfURL],
@@ -186,9 +187,12 @@ export function seedScenarioFixtures() {
   db.trash.unshift({
     file: archived,
     item: {
-      ...structuredClone(db.trash[0].item),
+      // A source-file row; the bin also holds material rows.
+      ...structuredClone(db.trash.find((entry) => entry.file)!.item),
       episodeId: 'mock-scenario-trash-episode',
       id: archived.id,
+      preview: undefined,
+      thumbnailUrl: undefined,
       title: archived.name,
       trashedAt: new Date().toISOString(),
       workspaceId: scenarioWorkspace,

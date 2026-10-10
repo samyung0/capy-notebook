@@ -21,6 +21,7 @@ import {
   ListViewToggle,
   type SortOption,
   toggleValue,
+  useListView,
 } from '@/components/app/ListToolbar';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
@@ -54,30 +55,11 @@ import {
 import type { FilesTab } from '@/lib/tabSearch';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
-const VIEW_KEY = 'capy.files.view';
-
-function readView(): ListView {
-  try {
-    return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'grid';
-  } catch {
-    return 'grid';
-  }
-}
-
 export default function Files() {
   const navigate = useNavigate();
   const { tab = 'files' } = useSearch({ from: '/auth-shell/files' });
-  const [view, setView] = useState<ListView>(readView);
+  const [view, changeView] = useListView('capy.files.view', 'grid');
   const [busy, setBusy] = useState(false);
-
-  function changeView(next: ListView) {
-    setView(next);
-    try {
-      localStorage.setItem(VIEW_KEY, next);
-    } catch {
-      // per-viewer convenience only
-    }
-  }
 
   return (
     <PanelWithInvertedRadius
@@ -344,6 +326,11 @@ function ActiveFiles({
                         }
                       : undefined
                   }
+                  thumbnail={{
+                    fileKind: file.kind,
+                    preview: file.preview,
+                    thumbnailUrl: file.thumbnailUrl,
+                  }}
                   title={file.name}
                   view={view}
                   workspace={
@@ -585,6 +572,11 @@ function TrashTab({
                         }
                       : undefined
                   }
+                  thumbnail={{
+                    fileKind: trashFileKind(item),
+                    preview: item.preview,
+                    thumbnailUrl: item.thumbnailUrl,
+                  }}
                   title={item.title}
                   view={view}
                   workspace={item.workspaceName || m.trash_standalone()}
@@ -649,6 +641,13 @@ function trashIconName(item: TrashItem) {
         return materialIconName('note');
     }
   }
-  const kind = FILE_KINDS.find((value) => value === item.fileKind) ?? 'unknown';
-  return fileIconName({ kind, name: item.title });
+  return fileIconName({
+    kind: trashFileKind(item) ?? 'unknown',
+    name: item.title,
+  });
+}
+
+function trashFileKind(item: TrashItem): FileKind | undefined {
+  if (item.kind === 'material') return;
+  return FILE_KINDS.find((value) => value === item.fileKind) ?? 'unknown';
 }

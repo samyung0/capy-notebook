@@ -1,0 +1,414 @@
+/*
+ * Card previews (approved mock 2026-10-10-file-thumbnail-mocks.html, card A).
+ * HTML previews lay out at the 240x165 design size and one transform scales
+ * them to the thumbnail panel, which is an inline-size container:
+ * tan(atan2(a, b)) turns the length ratio 100cqw / 240px into a number.
+ * The 44px recents tile covers its square box instead.
+ */
+.pv-live {
+  --pv-shadow: 0 1px 2px #00000014, 0 2px 8px #0000000f;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 240px;
+  height: 165px;
+  overflow: hidden;
+  font-size: 9px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  text-align: left;
+  transform: scale(tan(atan2(100cqw, 240px)));
+  transform-origin: 0 0;
+}
+.dark .pv-live {
+  --pv-shadow: 0 1px 2px #0008, 0 2px 10px #0006;
+}
+.pv-small .pv-live {
+  transform: translateX(-9.5px) scale(calc(42 / 165));
+}
+
+/* note */
+.pv-paper {
+  position: absolute;
+  inset: 14px 14px -6px;
+  padding: 13px 14px;
+  overflow: hidden;
+  background: var(--surface-card-bg);
+  border-radius: 6px 6px 0 0;
+  box-shadow: var(--pv-shadow);
+}
+.pv-paper > * {
+  margin: 0 0 5px;
+}
+.pv-h1 {
+  font-size: 12.5px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+.pv-h2 {
+  margin-top: 6px;
+  font-size: 10px;
+  font-weight: 800;
+}
+.pv-p,
+.pv-ul,
+.pv-todo {
+  color: var(--text-muted);
+}
+.pv-big {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.pv-ul {
+  padding-left: 12px;
+  list-style: disc;
+}
+.pv-todo {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  margin: 0;
+  line-height: 1.6;
+}
+.pv-todo i {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border: 1.2px solid var(--border-default);
+  border-radius: 2px;
+}
+.pv-done i {
+  background: var(--action-accent-bg);
+  border-color: var(--action-accent-bg);
+}
+.pv-done span {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+.pv-table {
+  width: 100%;
+  font-size: 8px;
+  border-collapse: collapse;
+}
+.pv-table :is(td, th) {
+  padding: 2px 4px;
+  font-weight: 400;
+  color: var(--text-muted);
+  text-align: left;
+  border: 1px solid var(--border-default);
+}
+.pv-table th {
+  font-weight: 700;
+  color: var(--text-primary);
+  background: var(--surface-canvas);
+}
+.pv-math {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font:
+    italic 11px / 1.4 "Cambria Math",
+    "Times New Roman",
+    serif;
+  text-align: center;
+  white-space: nowrap;
+}
+.pv-code {
+  padding: 6px 7px;
+  overflow: hidden;
+  font: 8px / 1.5 var(--font-mono);
+  white-space: pre;
+  background: var(--surface-canvas);
+  border-radius: 5px;
+}
+.pv-quote {
+  padding: 5px 8px;
+  line-height: 1.45;
+  color: var(--tint-accent-1-fg);
+  background: var(--tint-accent-1-bg);
+  border-left: 3px solid var(--action-accent-bg);
+  border-radius: 0 5px 5px 0;
+}
+.pv-img {
+  flex-shrink: 0;
+  height: 58px;
+  background: var(--surface-canvas);
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px var(--border-default);
+}
+
+/* quiz */
+.pv-quiz {
+  padding: 36px 16px 16px;
+}
+.pv-quiz > * {
+  margin: 0;
+}
+.pv-lab {
+  margin-bottom: 4px;
+  font-size: 8.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.pv-q {
+  margin-bottom: 8px;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.pv-q b {
+  margin-right: 4px;
+  color: var(--tint-accent-1-fg);
+}
+.pv-opt,
+.pv-ord {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  padding: 4px 8px;
+  margin-bottom: 4px;
+  font-size: 9.5px;
+  white-space: nowrap;
+  background: var(--surface-card-bg);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+}
+.pv-opt i {
+  width: 8px;
+  font-size: 8.5px;
+  font-style: normal;
+  font-weight: 800;
+  color: var(--text-muted);
+}
+.pv-box {
+  flex-shrink: 0;
+  width: 9px;
+  height: 9px;
+  border: 1.3px solid var(--border-default);
+  border-radius: 2px;
+}
+.pv-ord {
+  gap: 6px;
+  padding: 4px 7px;
+}
+.pv-ord span {
+  color: var(--text-muted);
+  letter-spacing: -2px;
+}
+.pv-tf {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.pv-tf span,
+.pv-input,
+.pv-lines,
+.pv-pair span {
+  background: var(--surface-card-bg);
+  border: 1px solid var(--border-default);
+}
+.pv-tf span {
+  flex: 1;
+  padding: 6px 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-align: center;
+  border-radius: 999px;
+}
+.pv-input {
+  height: 26px;
+  padding: 6px 9px;
+  font-size: 9.5px;
+  color: var(--text-muted);
+  border-radius: 8px;
+}
+.pv-lines {
+  padding: 8px 9px 2px;
+  border-radius: 8px;
+}
+.pv-lines i {
+  display: block;
+  height: 12px;
+  border-bottom: 1px solid var(--divider);
+}
+.pv-match {
+  display: grid;
+  gap: 4px;
+}
+.pv-pair {
+  display: grid;
+  grid-template-columns: 1fr 24px 1fr;
+  align-items: center;
+}
+.pv-pair span {
+  padding: 3px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 6px;
+}
+.pv-pair i {
+  margin: 0 2px;
+  border-top: 1px dashed var(--border-default);
+}
+.pv-gaps {
+  font-size: 10.5px;
+  line-height: 2;
+}
+.pv-gaps u {
+  display: inline-block;
+  min-width: 44px;
+  height: 12px;
+  margin: 0 2px;
+  vertical-align: baseline;
+  text-decoration: none;
+  border-bottom: 1.5px solid var(--action-accent-bg);
+}
+.pv-chart {
+  display: block;
+  width: 208px;
+  height: 62px;
+  margin-bottom: 6px;
+  fill: none;
+}
+.pv-axis {
+  stroke: var(--text-muted);
+}
+.pv-curve {
+  stroke: var(--action-accent-bg);
+  stroke-width: 2;
+}
+.pv-curve-2 {
+  stroke: var(--ctp-peach);
+  stroke-dasharray: 4 3;
+}
+
+/* flashcards */
+.pv-card {
+  position: absolute;
+  top: 30px;
+  left: 44px;
+  width: 152px;
+  height: 100px;
+  background: var(--surface-card-bg);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+}
+.pv-back-1 {
+  background: color-mix(in srgb, var(--ctp-mauve) 18%, var(--surface-card-bg));
+  transform: rotate(-7deg) translate(-6px, 4px);
+}
+.pv-back-2 {
+  background: color-mix(in srgb, var(--ctp-sky) 18%, var(--surface-card-bg));
+  transform: rotate(5deg) translate(6px, 2px);
+}
+.pv-front {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 12px;
+  overflow: hidden;
+  text-align: center;
+  box-shadow: var(--pv-shadow);
+}
+.pv-front .pv-img {
+  width: 100%;
+  border-radius: 7px;
+}
+.pv-t {
+  font-size: 12.5px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+.pv-t.pv-long {
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: left;
+}
+.pv-s {
+  color: var(--text-muted);
+}
+
+/* text file */
+.pv-text {
+  padding: 14px;
+  margin: 0;
+  font: 10px / 1.55 var(--font-mono);
+  color: var(--text-muted);
+  white-space: pre;
+}
+.pv-mdh {
+  font-weight: 700;
+  color: var(--ctp-mauve);
+}
+
+/* Mermaid drawings: the viewBox scales them, slicing to cover the box. */
+.pv-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.pv-svg text {
+  font-weight: 700;
+  fill: var(--text-primary);
+}
+.pv-svg .pv-muted {
+  font-weight: 400;
+  fill: var(--text-muted);
+}
+.pv-svg .pv-caption {
+  fill: var(--text-muted);
+}
+.pv-svg .pv-strong {
+  font-weight: 800;
+}
+.pv-node {
+  fill: var(--surface-card-bg);
+  stroke-width: 1.4;
+}
+.pv-thick {
+  stroke-width: 1.8;
+}
+.pv-branch {
+  opacity: 0.7;
+  fill: none;
+  stroke-width: 1.8;
+}
+.pv-edge {
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 1.2;
+}
+.pv-head {
+  fill: var(--text-muted);
+}
+.pv-rule {
+  fill: none;
+  stroke: var(--border-default);
+  stroke-width: 1.3;
+}
+.pv-rule.pv-thick {
+  stroke-width: 2;
+}
+.pv-dashed {
+  stroke-dasharray: 3 3;
+}
+.pv-root,
+.pv-dot {
+  fill: var(--action-accent-bg);
+}
+.pv-svg .pv-root-text {
+  font-weight: 800;
+  fill: var(--action-accent-fg);
+}
+.pv-slice {
+  opacity: 0.85;
+  stroke: var(--surface-canvas);
+  stroke-width: 2;
+}
