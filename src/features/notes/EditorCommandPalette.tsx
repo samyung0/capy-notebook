@@ -53,7 +53,7 @@ export function EditorCommandPalette() {
               return m.editor_comment();
             },
             run: () => collaboration.openComment(),
-            shortcut: 'Ctrl/Cmd+Shift+M',
+            shortcut: 'Ctrl+Shift+M',
           }
         : null;
     return [...EDITOR_COMMANDS, ...(comment ? [comment] : [])].filter(

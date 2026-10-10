@@ -191,7 +191,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     'heading1',
     'general',
     ['title', 'h1'],
-    'Ctrl/Cmd+Alt+1'
+    'Ctrl+Alt+1'
   ),
   blockCommand(
     'heading-2',
@@ -200,7 +200,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     'heading2',
     'general',
     ['subtitle', 'h2'],
-    'Ctrl/Cmd+Alt+2'
+    'Ctrl+Alt+2'
   ),
   blockCommand(
     'heading-3',
@@ -209,7 +209,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     'heading3',
     'general',
     ['section', 'h3'],
-    'Ctrl/Cmd+Alt+3'
+    'Ctrl+Alt+3'
   ),
   blockCommand(
     'heading-4',
@@ -242,7 +242,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     'quote',
     'general',
     ['quote', 'citation'],
-    'Ctrl/Cmd+Shift+.'
+    'Ctrl+Shift+.'
   ),
   blockCommand(
     'code-block',
@@ -251,7 +251,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     'braces',
     'general',
     ['code', 'pre'],
-    'Ctrl/Cmd+Alt+8'
+    'Ctrl+Alt+8'
   ),
   {
     get description() {

@@ -163,8 +163,9 @@ export function EditorSettingsDialog() {
             ) : (
               <>
                 <p className="mb-2.5">{m.editor_prefs_body()}</p>
-                <div className="mb-2.5 flex justify-end">
+                <div className="mb-1.5 flex justify-end">
                   <Button
+                    className="h-6"
                     onClick={() => setAll(true)}
                     size="sm"
                     type="button"
@@ -173,6 +174,7 @@ export function EditorSettingsDialog() {
                     {m.action_all()}
                   </Button>
                   <Button
+                    className="h-6"
                     onClick={() => setAll(false)}
                     size="sm"
                     type="button"
@@ -181,7 +183,8 @@ export function EditorSettingsDialog() {
                     {m.action_none()}
                   </Button>
                 </div>
-                <div className="grid max-h-[52vh] grid-cols-1 gap-2 overflow-auto pr-1 sm:grid-cols-2">
+                {/* Phones scroll with the dialog; a nested scroller there fights it. */}
+                <div className="grid grid-cols-1 gap-2 sm:max-h-[52vh] sm:grid-cols-2 sm:overflow-auto sm:pr-1">
                   {WIDGET_GROUPS.map((group) => (
                     <label
                       className="flex items-center justify-between gap-3 rounded-card border border-line p-4 py-2.5"

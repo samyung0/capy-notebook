@@ -86,7 +86,7 @@ export function ToolbarAllBlocksMenu({
                     setMoreOpen(false);
                     collaboration.openComment();
                   }}
-                  shortcut="Ctrl/Cmd+Shift+M"
+                  shortcut="Ctrl+Shift+M"
                 />
               )}
               {hasInlineMarks && (

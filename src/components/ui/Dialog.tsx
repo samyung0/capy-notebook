@@ -95,7 +95,8 @@ function DialogContent({
         >
           <div
             className={cn(
-              'flex h-full max-h-[88dvh] w-full flex-col items-stretch gap-0 overflow-auto px-4 py-5 sm:px-5.5 sm:py-6.5',
+              // relative: the close button scrolls away with the content instead of covering it.
+              'relative flex h-full max-h-[88dvh] w-full flex-col items-stretch gap-0 overflow-auto px-4 py-5 sm:px-5.5 sm:py-6.5',
               cardScrollContainerClassName
             )}
           >
@@ -327,7 +328,12 @@ function ConfirmDialog({
       }
       onClose={onClose}
       open={open}
-      title={title}
+      title={
+        // Phones: titles often carry a long name, so set them a little tighter.
+        <span className="text-[0.875em] leading-tight sm:text-[1em] sm:leading-[inherit]">
+          {title}
+        </span>
+      }
     >
       {/* t-body is slightly too small to draw user's attention */}
       {body && <p className="text-[0.9375rem] sm:text-base">{body}</p>}

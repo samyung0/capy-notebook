@@ -128,7 +128,7 @@ export function SlashInputElement(
               return m.editor_comment();
             },
             run: () => collaboration.openComment(),
-            shortcut: 'Ctrl/Cmd+Shift+M',
+            shortcut: 'Ctrl+Shift+M',
           }
         : null;
     const availableCommands = collaborationCommand
