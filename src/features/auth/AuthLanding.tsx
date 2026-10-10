@@ -27,12 +27,14 @@ export function AuthPage({ children }: { children: React.ReactNode }) {
         className="h-full w-full"
         sectionClassName="h-full w-full min-h-full flex flex-row"
       >
-        <div className="flex flex-1 flex-col gap-4 p-6 md:p-8">
-          <div className="self-start">
+        <div className="flex min-h-fit flex-1 flex-col gap-4 p-6 md:p-8">
+          {/* Single column: right edge of the form, nudged out to balance the icon's weight. */}
+          <div className="mx-auto flex w-full max-w-sm translate-x-0.5 justify-end xl:mx-0 xl:max-w-none xl:translate-x-0 xl:justify-start">
             <PublicThemeToggle />
           </div>
-          <div className="flex flex-1 items-center justify-center">
-            <div className="w-sm">{children}</div>
+          {/* Auto margins center the form but keep it scrollable when it outgrows a short screen. */}
+          <div className="flex flex-1">
+            <div className="m-auto w-full max-w-sm">{children}</div>
           </div>
         </div>
         <div className="relative hidden flex-1 xl:block">
