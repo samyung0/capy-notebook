@@ -1,10 +1,13 @@
 import { Link, type LinkProps } from '@tanstack/react-router';
-import type { ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import { Card } from '@/components/ui/Card';
 import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
+import { Skeleton } from '@/components/ui/feedback';
 import { FileSelectionMark } from '@/features/files/FileSelectionActions';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import type { ListView } from './ListToolbar';
+import { type Thumbnail, ThumbnailPanel } from './ThumbnailPanel';
 
 /** Grid card and list row shared by the Create, Files and Trash pages.
  * Presentation only: the page owns navigation, actions and dialogs. */
@@ -28,15 +31,19 @@ export function ItemCard({
   link,
   actions,
   selection,
+  thumbnail,
 }: {
   view: ListView;
   icon: FileIconName;
   title: string;
+  /** List view only, like `details`. */
   workspace?: string;
   /** Question or card count, file size. */
   details?: string;
-  /** Updated, added or expiry line. */
+  /** Updated, added or expiry line: the grid card's one hint line. */
   meta: string;
+  /** Grid view only. */
+  thumbnail?: Thumbnail;
   link?: LinkProps;
   actions?: ReactNode;
   selection?: ItemSelection;
@@ -80,39 +87,44 @@ export function ItemCard({
       </div>
     );
   }
-  const secondary = [workspace, details].filter(Boolean).join(' · ');
+  // Card A: the thumbnail on top, then the icon and title, then one hint
+  // line. Below 200px wide (phones, the dashboard's two columns) the title
+  // wraps to two lines and the spacing tightens.
   return (
     <Card
       border="solid"
       className={cn(
-        'relative gap-3 p-4 leading-tight xl:px-5',
+        '@container relative gap-0 p-1.5',
         selected && 'ring-2 ring-accent'
       )}
       interactive={!!link || !!selection}
     >
       {overlay}
-      <FileIcon className="size-5" name={icon} />
-      {selection ? (
-        <span className="absolute top-3 right-3">
-          <FileSelectionMark selected={selected} />
-        </span>
-      ) : (
-        actions && <div className="absolute top-2 right-2 z-10">{actions}</div>
-      )}
-      <div className="flex flex-1 flex-col gap-1">
+      <ThumbnailPanel icon={icon} {...thumbnail} />
+      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center @min-[200px]:gap-x-[9px] gap-x-[7px] gap-y-px @min-[200px]:pt-2.5 pt-2 @min-[200px]:pr-[34px] pr-[30px] @min-[200px]:pb-2 pb-1.5 @min-[200px]:pl-2.5 pl-2">
+        <FileIcon
+          className="@min-[200px]:mt-0 mt-0.5 size-4 self-start @min-[200px]:self-center"
+          name={icon}
+        />
         <Title
-          className="t-body line-clamp-2 font-semibold after:rounded-card"
+          className="wrap-anywhere @min-[200px]:line-clamp-1 line-clamp-2 font-semibold @min-[200px]:text-[14.5px] text-[13.5px] leading-tight after:rounded-card"
           link={selection ? undefined : link}
         >
           {title}
         </Title>
-        {secondary && (
-          <p className="t-meta mt-0.5 truncate text-fg-secondary text-xs">
-            {secondary}
-          </p>
-        )}
-        <p className="text-fg-muted text-xs">{meta}</p>
+        <p className="col-start-2 truncate text-fg-muted text-xs">{meta}</p>
       </div>
+      {selection ? (
+        <span className="absolute @min-[200px]:right-3.5 right-2.5 @min-[200px]:bottom-4 bottom-3">
+          <FileSelectionMark selected={selected} />
+        </span>
+      ) : (
+        actions && (
+          <div className="absolute @min-[200px]:right-1.5 right-0.5 @min-[200px]:bottom-2 bottom-1 z-10">
+            {actions}
+          </div>
+        )
+      )}
     </Card>
   );
 }
@@ -152,13 +164,7 @@ export function ItemList({
   columns: [string, string, string, string];
   children: ReactNode;
 }) {
-  if (view === 'grid') {
-    return (
-      <div className="grid w-full grid-cols-[repeat(auto-fill,minmax(min(100%,250px),1fr))] gap-3">
-        {children}
-      </div>
-    );
-  }
+  if (view === 'grid') return <ItemGrid>{children}</ItemGrid>;
   return (
     <div className="overflow-hidden rounded-card border border-line">
       <div className="hidden bg-surface-hover-bg px-4 py-2.5 font-bold text-fg-muted text-xs uppercase tracking-wide md:grid md:grid-cols-[minmax(200px,2.4fr)_minmax(160px,2fr)_1.5fr_1fr_40px] md:gap-3">
@@ -169,5 +175,47 @@ export function ItemList({
       </div>
       {children}
     </div>
+  );
+}
+
+/** Card A's grid: two columns on phones, 220px columns from `sm`. */
+function ItemGrid({ className, ...rest }: ComponentProps<'div'>) {
+  return (
+    <div
+      className={cn(
+        'grid w-full grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(220px,1fr))] sm:gap-3',
+        className
+      )}
+      {...rest}
+    />
+  );
+}
+
+/** Loading cards the size of card A, so the grid does not shift when rows
+ * arrive. The title bar takes two lines below 200px wide, as titles wrap
+ * there. */
+export function ItemSkeletonGrid({
+  count,
+  className,
+}: {
+  count: number;
+  className?: string;
+}) {
+  return (
+    <ItemGrid aria-label={m.a11y_loading()} className={className} role="status">
+      {Array.from({ length: count }, (_, i) => (
+        <div
+          className="@container rounded-card border border-line bg-surface p-1.5"
+          key={i}
+        >
+          <Skeleton className="aspect-[16/11] rounded-[13px]" />
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center @min-[200px]:gap-x-[9px] gap-x-[7px] gap-y-px @min-[200px]:pt-2.5 pt-2 @min-[200px]:pr-[34px] pr-[30px] @min-[200px]:pb-2 pb-1.5 @min-[200px]:pl-2.5 pl-2">
+            <Skeleton className="@min-[200px]:mt-0 mt-0.5 size-4 self-start @min-[200px]:self-center" />
+            <Skeleton className="@min-[200px]:h-[1lh] h-[2lh] @min-[200px]:text-[14.5px] text-[13.5px] leading-tight" />
+            <Skeleton className="col-start-2 h-[1lh] w-2/3 text-xs" />
+          </div>
+        </div>
+      ))}
+    </ItemGrid>
   );
 }

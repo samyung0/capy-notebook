@@ -18,6 +18,7 @@ import type {
   Material,
   MaterialDiscussion,
   MaterialListItem,
+  MaterialPreview,
   NotificationPrefs,
   PublicFlashcardSet,
   PublicQuiz,
@@ -80,6 +81,15 @@ import {
   PERF_SMALL_NOTE,
   PERF_WORKSPACE_ID,
 } from './perfSeed';
+import {
+  FILE_TEXT,
+  FILE_THUMBNAILS,
+  flashcardsPreview,
+  GALLERY,
+  mermaidPreview,
+  notePreview,
+  quizPreview,
+} from './thumbnails';
 
 export const uid = (p = 'id') =>
   `${p}_${Math.random().toString(36).slice(2, 9)}`;
@@ -702,6 +712,7 @@ for (const [index, chapter] of [
       kind: 'md',
       name: `${title}.md`,
       position,
+      preview: { text: body },
       revision: 1,
       sizeBytes: new TextEncoder().encode(body).byteLength,
       workspaceId: 'ws_hist',
@@ -716,6 +727,11 @@ for (const [index, chapter] of [
     order: index,
     workspaceId: 'ws_hist',
   });
+}
+
+for (const file of files) {
+  if (FILE_THUMBNAILS[file.id]) file.thumbnailUrl = FILE_THUMBNAILS[file.id];
+  if (FILE_TEXT[file.id]) file.preview = { text: FILE_TEXT[file.id] };
 }
 
 for (const workspace of workspaces) {
@@ -1849,6 +1865,29 @@ for (let index = 1; index <= 85; index++) {
   );
 }
 
+/* Card preview gallery: standalone, older than the seeds above so it never
+ * displaces them from the first page or the dashboard's recents. */
+const galleryMaterials = GALLERY.map((item, index) => ({
+  material: makeMaterial({
+    capabilities: ownerCapabilities,
+    chapterId: null,
+    content: createMaterialDocument(item.value),
+    createdAt: days(2 + index / 4),
+    id: item.id,
+    kind: item.kind,
+    privacy: 'private',
+    role: 'owner',
+    scopeChapters: [],
+    scopeFileNames: [],
+    title: item.title,
+    workspaceId: '',
+    workspaceName: '',
+  }),
+  trashed: item.trashed,
+}));
+for (const { material, trashed } of galleryMaterials)
+  if (!trashed) materials.push(material);
+
 /* ---------------- chat: conversations + messages ---------------- */
 export const conversations: Conversation[] = [
   {
@@ -1887,8 +1926,10 @@ files
         fileKind: file.kind,
         id: file.id,
         kind: 'source_file',
+        preview: file.preview,
         purgeAfter: hours(index + 1 - 30 * 24),
         sizeBytes: file.sizeBytes,
+        thumbnailUrl: file.thumbnailUrl,
         title: file.name,
         trashedAt: hours(index + 1),
         workspaceId: file.workspaceId,
@@ -1898,6 +1939,26 @@ files
       },
     });
   });
+
+// Trashed diagrams lead the bin, where their previews are on show.
+trash.unshift(
+  ...galleryMaterials
+    .filter(({ trashed }) => trashed)
+    .map(({ material }) => ({
+      item: {
+        episodeId: `episode_${material.id}`,
+        id: material.id,
+        kind: 'material' as const,
+        materialKind: material.kind,
+        preview: materialPreview(material),
+        purgeAfter: days(-29),
+        sizeBytes: material.contentBytes,
+        title: material.title,
+        trashedAt: hours(0.5),
+      },
+      material,
+    }))
+);
 
 export const chatMessages: WireMessage[] = [
   {
@@ -2414,6 +2475,7 @@ export function materialListItem(mt: Material): MaterialListItem {
     createdAt: mt.createdAt,
     id: mt.id,
     kind: mt.kind,
+    preview: materialPreview(mt),
     privacy: mt.privacy,
     sharePath: mockSharePath(mt),
     sizeBytes: mt.contentBytes,
@@ -2432,6 +2494,22 @@ export function materialListItem(mt: Material): MaterialListItem {
         }
       : {}),
   };
+}
+
+/** The card preview the server stores with each material write. */
+export function materialPreview(mt: Material): MaterialPreview | undefined {
+  if (typeof mt.content === 'string') return;
+  switch (mt.kind) {
+    case 'quiz':
+      return quizPreview(quizFromMaterial(mt).questions);
+    case 'flashcards':
+      return flashcardsPreview(cardsFromMaterial(mt));
+    case 'mindmap':
+    case 'diagram':
+      return mermaidPreview(mt.kind, mt.content.value);
+    default:
+      return notePreview(mt.content.value);
+  }
 }
 
 /** Convenience accessors for the two derived material kinds. */

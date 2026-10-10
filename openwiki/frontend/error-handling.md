@@ -561,6 +561,11 @@ Workspace invitations render in the auth main/Panel layout outside `AppShell`.
 The ownership-transfer developer preview renders the shared confirmation alone.
 Workspace statistics are a settings tab, reachable from owner/editor card menus.
 
+Card thumbnails (`ThumbnailPanel`) have no error surface: a page image that
+fails to load shows the kind icon once and is not retried until the list
+brings a different URL. A diagram whose Mermaid source the card's light
+reader cannot draw keeps the icon too.
+
 File previews use `FileError` for Office, CSV/TSV, text/Markdown/JSON, image,
 audio and PDF failures. Manual retry refreshes signed links and restarts only
 the preview, even when the URL is unchanged. CSV/text retries retain their

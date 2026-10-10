@@ -5,6 +5,7 @@ import type { ListView } from '@/components/app/ListToolbar';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { getLocale, m } from '@/i18n';
 import { materialIconName } from '@/lib/fileIcons';
+import { cardCountLabel, questionCountLabel } from './countLabels';
 
 /** Create page item mapped onto the shared ItemCard. The page owns navigation,
  * the action menu and every dialog. */
@@ -39,12 +40,8 @@ export function materialKindLabel(kind: MaterialListItem['kind']): string {
 
 /** The per-kind detail line: question or card count, or nothing. */
 export function materialDetails(item: MaterialListItem): string {
-  if (item.kind === 'quiz') {
-    return m.material_ref_questions({ count: item.questionCount ?? 0 });
-  }
-  if (item.kind === 'flashcards') {
-    return m.material_ref_cards({ count: item.cardCount ?? 0 });
-  }
+  if (item.kind === 'quiz') return questionCountLabel(item.questionCount ?? 0);
+  if (item.kind === 'flashcards') return cardCountLabel(item.cardCount ?? 0);
   return '';
 }
 
@@ -66,6 +63,7 @@ export function MaterialCard({
       icon={materialIconName(item.kind)}
       link={link}
       meta={relativeTime(item.updatedAt)}
+      thumbnail={{ preview: item.preview }}
       title={item.title}
       view={view}
       workspace={item.workspaceName}

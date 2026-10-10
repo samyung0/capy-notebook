@@ -18,7 +18,6 @@ export type RecentItem =
       kind: 'file';
       title: string;
       workspaceId: string;
-      workspaceName: string;
     }
   | {
       canEdit: boolean;
@@ -29,12 +28,11 @@ export type RecentItem =
       title: string;
       type: MaterialKind;
       workspaceId: string;
-      workspaceName: string;
     };
 
 /** Merges the newest files and materials into one list. Each input is a
  * newest-first page of at least `limit` rows, so the merged top `limit` is
- * exact. Workspaces supply file workspace names and edit rights. */
+ * exact. Workspaces supply edit rights. */
 export function mergeRecentItems(
   files: SourceFile[],
   materials: MaterialListItem[],
@@ -55,7 +53,6 @@ export function mergeRecentItems(
       kind: 'file' as const,
       title: file.name,
       workspaceId: file.workspaceId,
-      workspaceName: workspaceById.get(file.workspaceId)?.name ?? '',
     })),
     ...materials.map((material) => ({
       canEdit: canEdit(material.workspaceId),
@@ -66,7 +63,6 @@ export function mergeRecentItems(
       title: material.title,
       type: material.kind,
       workspaceId: material.workspaceId,
-      workspaceName: material.workspaceName,
     })),
   ];
   items.sort((a, b) => {
