@@ -84,9 +84,12 @@ func TestPreview(t *testing.T) {
 	}
 	longOption := strings.Repeat("o", 70)
 	longStem := strings.Repeat("s", 250)
-	clippedQuestion := fmt.Sprintf(`{"id":"q1","stem":[{"type":"text","text":%q}],"layout":"paper","labels":"letters",
-		"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"Pick"}],"marks":1,"solution":[],
+	clippedQuestion := fmt.Sprintf(`{"id":"q1","stem":[{"type":"text","text":"Context"}],"layout":"paper","labels":"letters",
+		"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":%q}],"marks":1,"solution":[],
 		"answer":{"type":"mcq","options":["%s","b","c","d","e","f"],"correct":[0]}}]}`, longStem, longOption)
+	stemOnlyQuestion := `{"id":"q1","stem":[{"type":"text","text":"Read the table."}],"layout":"paper","labels":"letters",
+		"parts":[{"id":"q1:part:1","blocks":[{"type":"table","header":true,"rows":[["x","y"]]}],"marks":1,"solution":[],
+		"answer":{"type":"short","accepted":["1"]}}]}`
 	cards, err := FlashcardsDocument([]Card{
 		{ID: "c1", Front: "  Mitosis  ", Back: "Division", Image: &CardImage{AssetID: "asset_1"}},
 		{ID: "c2", Front: "Meiosis", Back: "Halving"},
@@ -194,61 +197,67 @@ func TestPreview(t *testing.T) {
 			name:    "mcq shows its options without the key",
 			kind:    "quiz",
 			content: quizDoc(t, "mcq", "boolean", "short"),
-			want:    `{"kind":"quiz","questionCount":3,"first":{"type":"mcq","stem":"Shared $x$ context. Answer?","options":["A","B"]}}`,
+			want:    `{"kind":"quiz","questionCount":3,"first":{"type":"mcq","stem":"Answer?","options":["A","B"]}}`,
 		},
 		{
 			name:    "multi",
 			kind:    "quiz",
 			content: quizDoc(t, "multi"),
-			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"multi","stem":"Shared $x$ context. Answer?","options":["A","B"]}}`,
+			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"multi","stem":"Answer?","options":["A","B"]}}`,
 		},
 		{
 			name:    "boolean",
 			kind:    "quiz",
 			content: quizDoc(t, "boolean"),
-			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"boolean","stem":"Shared $x$ context. Answer?"}}`,
+			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"boolean","stem":"Answer?"}}`,
 		},
 		{
 			name:    "short",
 			kind:    "quiz",
 			content: quizDoc(t, "short"),
-			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"short","stem":"Shared $x$ context. Answer?"}}`,
+			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"short","stem":"Answer?"}}`,
 		},
 		{
-			name:    "matching leaves out its pairs",
+			name:    "matching sorts each column on its own",
 			kind:    "quiz",
 			content: quizDoc(t, "matching"),
-			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"matching","stem":"Shared $x$ context. Answer?"}}`,
+			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"matching","stem":"Answer?","pairs":[["A","unused"],["B","X"]]}}`,
 		},
 		{
-			name:    "ordering leaves out its items",
+			name:    "ordering sorts its items",
 			kind:    "quiz",
 			content: quizDoc(t, "ordering"),
-			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"ordering","stem":"Shared $x$ context. Answer?"}}`,
+			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"ordering","stem":"Answer?","items":["A","B"]}}`,
 		},
 		{
 			name:    "open",
 			kind:    "quiz",
 			content: quizDoc(t, "open"),
-			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"open","stem":"Shared $x$ context. Answer?"}}`,
+			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"open","stem":"Answer?"}}`,
 		},
 		{
 			name:    "gaps mark each blank",
 			kind:    "quiz",
 			content: quizDoc(t, "gaps"),
-			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"gaps","stem":"Shared $x$ context. Steel bands use \u0001 drums and \u0001 pans."}}`,
+			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"gaps","stem":"Steel bands use \u0001 drums and \u0001 pans."}}`,
 		},
 		{
 			name:    "a chart or graph in the stem",
 			kind:    "quiz",
 			content: quizDoc(t, "rich-blocks"),
-			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"short","stem":"Shared $x$ context. Answer?","hasChart":true}}`,
+			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"short","stem":"Answer?","hasChart":true}}`,
 		},
 		{
 			name:    "stem and options are clipped",
 			kind:    "quiz",
 			content: quizOf(t, clippedQuestion),
 			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"mcq","stem":"` + longStem[:200] + `","options":["` + longOption[:60] + `","b","c","d"]}}`,
+		},
+		{
+			name:    "a part without text shows the stem",
+			kind:    "quiz",
+			content: quizOf(t, stemOnlyQuestion),
+			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"short","stem":"Read the table."}}`,
 		},
 		{
 			name:    "an empty quiz",
@@ -298,5 +307,51 @@ func TestPreview(t *testing.T) {
 	}
 	if len(clipped) > previewSourceBytes || strings.HasSuffix(clipped, "node_") {
 		t.Fatalf("clipped source is %d bytes", len(clipped))
+	}
+}
+
+// A matching or ordering question stored in its answer's order must not come
+// out in that order: the preview reaches readers who never get quiz keys.
+func TestPreviewHidesTheAnswerKey(t *testing.T) {
+	question := func(answer string) string {
+		return `{"id":"q1","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"q1:part:1",
+			"blocks":[{"type":"text","text":"Q"}],"marks":1,"solution":[],"answer":` + answer + `}]}`
+	}
+	first := func(answer string) questionPreview {
+		t.Helper()
+		raw, err := Preview("quiz", quizOf(t, question(answer)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out struct{ First questionPreview }
+		if err := json.Unmarshal(raw, &out); err != nil {
+			t.Fatal(err)
+		}
+		return out.First
+	}
+
+	stages := []string{"Prophase", "Metaphase", "Anaphase", "Telophase"}
+	encoded, _ := json.Marshal(stages)
+	items := first(`{"type":"ordering","items":` + string(encoded) + `}`).Items
+	if strings.Join(items, ",") == strings.Join(stages, ",") {
+		t.Fatalf("ordering items came out in the answer's order: %v", items)
+	}
+	if strings.Join(items, ",") != "Anaphase,Metaphase,Prophase,Telophase" {
+		t.Fatalf("ordering items = %v, want them sorted", items)
+	}
+
+	// Each left item's match sits at its own row in the stored options.
+	pairs := first(`{"type":"matching","options":["Feline","Insect"],
+		"pairs":[{"left":"Cat","right":0},{"left":"Bee","right":1}]}`).Pairs
+	if len(pairs) != 2 {
+		t.Fatalf("pairs = %v", pairs)
+	}
+	for _, row := range pairs {
+		if row == [2]string{"Cat", "Feline"} || row == [2]string{"Bee", "Insect"} {
+			t.Fatalf("matching rows reveal the key: %v", pairs)
+		}
+	}
+	if pairs[0] != [2]string{"Bee", "Feline"} || pairs[1] != [2]string{"Cat", "Insect"} {
+		t.Fatalf("pairs = %v, want each column sorted on its own", pairs)
 	}
 }

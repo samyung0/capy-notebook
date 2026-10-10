@@ -2,6 +2,7 @@ package materialdoc
 
 import (
 	"encoding/json"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -53,13 +54,17 @@ type quizPreview struct {
 	First         *questionPreview `json:"first,omitempty"`
 }
 
-// questionPreview carries no answer keys: matching pairs and ordering items
-// are left out because their stored order is the key.
+// questionPreview carries no answer key. A matching question's stored pairs
+// and an ordering question's stored items are its key, so Pairs puts the left
+// items and the options side by side, each column sorted on its own (rows are
+// not matches), and Items are sorted.
 type questionPreview struct {
-	Type     string   `json:"type"`
-	Stem     string   `json:"stem"`
-	Options  []string `json:"options,omitempty"`
-	HasChart bool     `json:"hasChart,omitempty"`
+	Type     string      `json:"type"`
+	Stem     string      `json:"stem"`
+	Options  []string    `json:"options,omitempty"`
+	Pairs    [][2]string `json:"pairs,omitempty"`
+	Items    []string    `json:"items,omitempty"`
+	HasChart bool        `json:"hasChart,omitempty"`
 }
 
 type flashcardsPreview struct {
@@ -247,45 +252,90 @@ func quizPreviewOf(nodes []map[string]any) quizPreview {
 	return out
 }
 
-// questionPreviewOf reads the stem and the first part, as a card shows them.
+// questionPreviewOf reads the first part as a card shows it: its text, or the
+// question stem when the part has none.
 func questionPreviewOf(q map[string]any) *questionPreview {
 	stem, _ := q["stem"].([]any)
-	blocks := append([]any{}, stem...)
+	var partBlocks []any
 	var answer map[string]any
 	if parts, _ := q["parts"].([]any); len(parts) > 0 {
 		part, _ := parts[0].(map[string]any)
-		partBlocks, _ := part["blocks"].([]any)
-		blocks = append(blocks, partBlocks...)
+		partBlocks, _ = part["blocks"].([]any)
 		answer, _ = part["answer"].(map[string]any)
 	}
 	typ, _ := answer["type"].(string)
 	out := &questionPreview{Type: typ}
-	var texts []string
-	for _, raw := range blocks {
-		block, _ := raw.(map[string]any)
-		switch block["type"] {
-		case "text":
-			if text, _ := block["text"].(string); strings.TrimSpace(text) != "" {
-				texts = append(texts, strings.TrimSpace(text))
-			}
-		case "chart", "graph":
-			out.HasChart = true
-		}
+	text := blocksPlainText(partBlocks)
+	if text == "" {
+		text = blocksPlainText(stem)
 	}
-	text := strings.Join(texts, " ")
 	if typ == "gaps" {
 		text = questions.GapMarker.ReplaceAllLiteralString(text, previewGap)
 	}
 	out.Stem = clipRunes(text, previewStemRunes)
-	if typ == "mcq" || typ == "multi" {
-		options, _ := answer["options"].([]any)
-		for _, raw := range options {
-			if len(out.Options) == previewChoices {
-				break
-			}
-			option, _ := raw.(string)
-			out.Options = append(out.Options, clipRunes(option, previewChoiceRunes))
+	for _, raw := range append(append([]any{}, stem...), partBlocks...) {
+		if block, _ := raw.(map[string]any); block["type"] == "chart" || block["type"] == "graph" {
+			out.HasChart = true
 		}
+	}
+	switch typ {
+	case "mcq", "multi":
+		out.Options = previewChoiceList(answer["options"], false)
+	case "matching":
+		var lefts []any
+		pairs, _ := answer["pairs"].([]any)
+		for _, raw := range pairs {
+			pair, _ := raw.(map[string]any)
+			lefts = append(lefts, pair["left"])
+		}
+		left := previewChoiceList(lefts, true)
+		right := previewChoiceList(answer["options"], true)
+		for i := 0; i < len(left) && i < len(right); i++ {
+			out.Pairs = append(out.Pairs, [2]string{left[i], right[i]})
+		}
+	case "ordering":
+		out.Items = previewChoiceList(answer["items"], true)
+	}
+	return out
+}
+
+// blocksPlainText joins a question's text blocks.
+func blocksPlainText(blocks []any) string {
+	var texts []string
+	for _, raw := range blocks {
+		block, _ := raw.(map[string]any)
+		if text, _ := block["text"].(string); block["type"] == "text" && strings.TrimSpace(text) != "" {
+			texts = append(texts, strings.TrimSpace(text))
+		}
+	}
+	return strings.Join(texts, " ")
+}
+
+// previewChoiceList keeps the first previewChoices strings, sorted
+// alphabetically first when their stored order could be an answer key.
+func previewChoiceList(value any, sorted bool) []string {
+	raw, _ := value.([]any)
+	all := make([]string, 0, len(raw))
+	for _, item := range raw {
+		if text, ok := item.(string); ok {
+			all = append(all, text)
+		}
+	}
+	if sorted {
+		sort.SliceStable(all, func(i, j int) bool {
+			a, b := strings.ToLower(all[i]), strings.ToLower(all[j])
+			if a != b {
+				return a < b
+			}
+			return all[i] < all[j]
+		})
+	}
+	var out []string
+	for _, text := range all {
+		if len(out) == previewChoices {
+			break
+		}
+		out = append(out, clipRunes(text, previewChoiceRunes))
 	}
 	return out
 }
