@@ -56,6 +56,7 @@ import { BaseTocPlugin } from '@platejs/toc';
 import { common, createLowlight } from 'lowlight';
 import { BaseParagraphPlugin, createSlatePlugin, KEYS } from 'platejs';
 import { createElement } from 'react';
+import { FONT_SIZE_NODE_PROPS } from '@/features/notes/nodeStyles';
 
 // Plugin-derived types are intentionally wider than Plate's base tuple.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -258,7 +259,9 @@ export const StaticMaterialKit: AnyPlugin[] = [
   BaseMentionPlugin,
   BaseFontColorPlugin,
   BaseFontBackgroundColorPlugin,
-  BaseFontSizePlugin,
+  BaseFontSizePlugin.configure({
+    inject: { nodeProps: FONT_SIZE_NODE_PROPS },
+  }),
   BaseFontFamilyPlugin.configure({ inject: { targetPlugins: [KEYS.p] } }),
   BaseTextAlignPlugin.configure({
     inject: {

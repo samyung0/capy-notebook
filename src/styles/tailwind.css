@@ -288,6 +288,19 @@
   line-height: var(--meta-line-height);
 }
 
+/* A note font size, unitless in --note-fs, that shrinks on narrow screens: at
+   360px wide it keeps 16px plus half of what it has above 16px, growing
+   linearly to its full size at 768px. Sizes up to 16px render as written. */
+@utility note-fs {
+  --note-fs-over: max(var(--note-fs) - 16, 0);
+  --note-fs-min: calc((var(--note-fs) - var(--note-fs-over) / 2) * 1px);
+  font-size: clamp(
+    var(--note-fs-min),
+    calc(var(--note-fs-min) + var(--note-fs-over) / 2 * (100vw - 360px) / 408),
+    calc(var(--note-fs) * 1px)
+  );
+}
+
 @utility non-scaling-svg {
   & * {
     vector-effect: non-scaling-stroke;
@@ -459,6 +472,13 @@ math-field {
 
 :root {
   --tag-dropdown-height: calc(var(--spacing) * 56);
+  /* ToolbarButton size and icon: compact on phones. */
+  --toolbar-button: 28px;
+  --toolbar-icon: 14px;
+  @variant sm {
+    --toolbar-button: 32px;
+    --toolbar-icon: 16px;
+  }
 }
 
 .workspace-form [data-slot="dialog-footer"] {

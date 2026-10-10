@@ -22,7 +22,7 @@ export function PageFloatingBar({
   return (
     <FloatingToolbar
       aria-label={label}
-      className="min-w-40 justify-center gap-1.5 rounded-full! px-2.5 py-1 sm:gap-0 sm:px-2"
+      className="min-w-40 justify-center gap-0.5 rounded-full! px-1.5 py-0.5 sm:gap-0 sm:px-2 sm:py-1"
       open={open}
       positionClassName={cn(
         'absolute bottom-4 left-1/2 z-10 -translate-x-1/2',
@@ -50,7 +50,7 @@ export function PageFloatingBarButton({
 }) {
   return (
     <ToolbarButton
-      className="h-12 w-auto min-w-14 flex-col gap-1.5 rounded-card-xl px-2 text-[0.6875rem] leading-none sm:h-10 sm:min-w-0 sm:flex-row sm:gap-2 sm:px-3 sm:text-[1em] sm:leading-normal [&_svg]:size-5"
+      className="h-11 w-auto min-w-13 flex-col gap-1 rounded-card-xl px-2 text-[0.6875rem] leading-none sm:h-10 sm:min-w-0 sm:flex-row sm:gap-2 sm:px-3 sm:text-[1em] sm:leading-normal [&_svg]:size-4.5 sm:[&_svg]:size-5"
       tooltipSide="top"
       {...rest}
     >

@@ -190,7 +190,7 @@ export function NoteToolbar({ className }: { className?: string }) {
           ref={scrollRef}
         >
           {enabled.general && (
-            <ToolbarGroup className="gap-1">
+            <ToolbarGroup className="gap-0.5 sm:gap-1">
               {canEdit && collaboration && (
                 <ToolbarButton
                   disabled={collaboration.mutationPending}
@@ -211,7 +211,7 @@ export function NoteToolbar({ className }: { className?: string }) {
           )}
           {enabled.history && <ToolbarHistory />}
           {enabled.fileOperations && (
-            <ToolbarGroup className="gap-1">
+            <ToolbarGroup className="gap-0.5 sm:gap-1">
               {canCreateAssets && <MediaUploadMenu editor={editor} />}
               {canCreateAssets && <ImportMenu importFile={importFile} />}
               <ExportMenu editor={editor} />
@@ -429,7 +429,7 @@ export function NoteToolbar({ className }: { className?: string }) {
             </ToolbarGroup>
           )}
         </div>
-        <div className="ml-auto flex shrink-0 items-center pl-2">
+        <div className="ml-auto flex shrink-0 items-center pl-1 sm:pl-2">
           {editorAiEnabled(allowExternalAssets) && (
             <ToolbarButton
               label={m.editor_ai_commands()}

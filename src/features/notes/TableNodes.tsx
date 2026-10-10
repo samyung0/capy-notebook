@@ -299,11 +299,11 @@ export function TableCellElement({
       }}
       className={cn(
         isHeader ? TH_CLASS : TD_CLASS,
-        'relative p-0 data-[table-cell-selected=true]:bg-tint-accent-1'
+        'relative p-0 data-[table-cell-selected=true]:bg-tint-accent-1 sm:p-0'
       )}
     >
       <div
-        className="box-border min-h-12 px-3 py-2"
+        className="box-border min-h-12 px-2 py-1.5 sm:px-3 sm:py-2"
         style={{ minHeight: Math.max(DEFAULT_ROW_HEIGHT, minHeight ?? 0) }}
       >
         {props.children}

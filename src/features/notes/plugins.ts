@@ -128,6 +128,7 @@ import { MediaPlaceholderElement, YouTubeEmbedElement } from './MediaNodes';
 import { MentionInputElement } from './MentionInput';
 import { noteMarkdownPlugin } from './markdown';
 import { navigationFeedbackPlugin } from './navigationFeedback';
+import { FONT_SIZE_NODE_PROPS } from './nodeStyles';
 import {
   NoteParagraphPlugin,
   VoidBlockPastePlugin,
@@ -591,7 +592,7 @@ export const MaterialKit: AnyPlugin[] = [
   MentionInputPlugin.withComponent(MentionInputElement),
   FontColorPlugin,
   FontBackgroundColorPlugin,
-  FontSizePlugin,
+  FontSizePlugin.configure({ inject: { nodeProps: FONT_SIZE_NODE_PROPS } }),
   FontFamilyPlugin.configure({ inject: { targetPlugins: [KEYS.p] } }),
   TextAlignPlugin.configure({
     inject: {

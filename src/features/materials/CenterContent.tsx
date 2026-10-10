@@ -570,7 +570,7 @@ function EmptyCenter({
 }) {
   return (
     <>
-      <div className="flex h-14 items-center gap-2 border-divider border-b px-4 py-4">
+      <div className="flex h-12 items-center gap-1 border-divider border-b pr-1 pl-2 sm:h-14 sm:gap-2 sm:px-4">
         {leading ?? (
           <>
             <Icon className="size-5.5" name="files" />

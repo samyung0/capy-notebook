@@ -33,7 +33,7 @@ export function ToolbarButton({
         aria-pressed={active}
         className={cn(
           BASE_BUTTON_STYLE,
-          'size-8 shrink-0 gap-1 px-0.5 text-fg [&_svg]:size-4',
+          'size-(--toolbar-button) shrink-0 gap-1 px-0.5 text-fg [&_svg]:size-(--toolbar-icon)',
           'focus-visible:ring-focus disabled:opacity-40',
           !variant &&
             'hover:bg-surface-hover-bg hover:text-fg [[data-floating-toolbar]_&]:hover:bg-overlay-hover',

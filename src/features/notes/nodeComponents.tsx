@@ -384,7 +384,7 @@ function Callout(props: PlateElementProps) {
         CALLOUT_CLASS,
         CALLOUT_CONTAINER_CLASS,
         CALLOUT_VARIANT_CLASS[variant],
-        !readOnly && 'pr-20'
+        !readOnly && 'pr-17 sm:pr-20'
       )}
       data-callout-variant={variant}
     >

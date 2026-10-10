@@ -1072,11 +1072,26 @@ invalidate the discussion query.
 
 Plate and PDF toolbar icons use `size-4` (16px) and the shared `Icon` default
 stroke width of 1.8, including dropdown chevrons and floating toolbar actions.
-`EditorIcon` re-exports `Icon` without a separate stroke override.
+`EditorIcon` re-exports `Icon` without a separate stroke override. Below `sm`
+(640px) `ToolbarButton` shrinks to 28px with 14px icons through the
+`--toolbar-button` / `--toolbar-icon` variables in `tailwind.css`, so every
+toolbar, floating toolbar and header action follows while a caller's own size
+classes still win.
 
 `components/ui/Toolbar` shares the fixed toolbar row and groups: 40px height,
 8px horizontal padding, zero default button gap, and 28px dividers with 6px
-margins. Plate keeps its sticky placement and scrolls enabled groups horizontally with
+margins; below `sm` 36px height, 4px padding and 20px dividers with 4px
+margins. The file header drops from 56px to 48px below `sm` with tighter gaps,
+and the workspace bottom bar (`PageFloatingBar`) uses 44px buttons with 18px
+icons there.
+
+Note text sizes above 16px shrink on narrow screens through the `note-fs`
+utility: a size keeps 16px plus half its excess at 360px and grows linearly to
+its full size at 768px; 16px and below render as written. Headings set their
+size as `--note-fs`, and `FONT_SIZE_NODE_PROPS` renders px font-size marks the
+same way in the editor and static views (other units render as written). The
+font-size control reads a heading's authored size, not the rendered one.
+Callout, code block, table cell and column padding also tighten below `sm`. Plate keeps its sticky placement and scrolls enabled groups horizontally with
 the shared tabs scroll fade, while settings stay pinned and group preferences
 still control visibility. PDF keeps its centered annotation tools, page count,
 zoom controls and horizontal scrolling on narrow screens.

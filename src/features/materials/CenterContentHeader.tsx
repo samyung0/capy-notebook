@@ -125,7 +125,10 @@ function EditorSaveStatus({
         render={<span role="status" />}
         tabIndex={0}
       >
-        <Icon className="size-4.5" name={STATUS_ICON[editorStatus.saveState]} />
+        <Icon
+          className="size-4 sm:size-4.5"
+          name={STATUS_ICON[editorStatus.saveState]}
+        />
         <span className="sr-only">{statusLabel}</span>
       </TooltipTrigger>
       <TooltipContent side="bottom">{statusLabel}</TooltipContent>
@@ -428,11 +431,11 @@ export function Header({
     );
   return (
     <div
-      className="flex h-14 items-center gap-2 border-divider border-b py-4 pr-2 pl-4"
+      className="flex h-12 items-center gap-1 border-divider border-b pr-1 pl-2 sm:h-14 sm:gap-2 sm:pr-2 sm:pl-4"
       data-testid="content-header"
     >
       {leading}
-      <div className="-ml-2 flex min-w-0 items-center gap-2 sm:-ml-0.5 lg:ml-2">
+      <div className="-ml-0.5 flex min-w-0 items-center gap-1.5 sm:gap-2 lg:ml-2">
         <FileIcon
           className="size-4 shrink-0 -translate-y-px md:size-5"
           name={icon}

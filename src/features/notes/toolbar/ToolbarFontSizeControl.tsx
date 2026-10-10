@@ -36,7 +36,11 @@ export function FontSizeControl() {
     const [block] = editor.api.block() ?? [];
     const domNode = block && editor.api.toDOMNode(block);
     if (domNode) {
-      const size = Number.parseFloat(window.getComputedStyle(domNode).fontSize);
+      // A heading's authored size; the rendered one shrinks on phones.
+      const style = window.getComputedStyle(domNode);
+      const size = Number.parseFloat(
+        style.getPropertyValue('--note-fs') || style.fontSize
+      );
       if (Number.isFinite(size)) return clampFontSize(size);
     }
 
@@ -73,7 +77,7 @@ export function FontSizeControl() {
                 size: String(cursorFontSize),
               })}
               className={cn(
-                'h-8 w-10 shrink-0 text-center font-semibold text-sm outline-none',
+                'h-(--toolbar-button) w-9 shrink-0 text-center font-semibold text-sm outline-none sm:w-10',
                 'bg-surface-hover-bg text-fg hover:bg-surface-dark focus-visible:ring-2 focus-visible:ring-focus'
               )}
               data-plate-prevent-deselect

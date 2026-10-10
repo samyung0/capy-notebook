@@ -90,7 +90,8 @@ describe('static study-block renderers', () => {
       },
     ]);
 
-    expect(html).toContain('font-size:24px');
+    expect(html).toContain('class="note-fs"');
+    expect(html).toContain('--note-fs:24');
     expect(html).toContain('color:#dc2626');
     expect(html).toContain('background-color:#fef9c3');
     expect(html).toContain('Styled text');

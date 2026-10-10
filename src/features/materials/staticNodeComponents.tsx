@@ -133,7 +133,7 @@ function CodeBlock(props: SlateElementProps) {
       as="pre"
       className={cn(
         CODE_BLOCK_CLASS,
-        !(typeof language === 'string' && language) && 'pt-3'
+        !(typeof language === 'string' && language) && 'pt-3 sm:pt-3'
       )}
     >
       {typeof language === 'string' && language && (
