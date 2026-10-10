@@ -142,9 +142,16 @@ const textOf = (blocks: QuestionBlock[]) =>
     .join(' ');
 const cut = (items: string[]) =>
   items.slice(0, CHOICES).map((item) => item.slice(0, CHOICE));
+/** Ordering items and each matching column are sorted by code unit (Go's
+ * `slices.Sort` for BMP text) before the cut to four, so neither the order
+ * nor which four are shown gives the answer away. */
+const sortedCut = (items: string[]) => cut([...items].sort());
+const zip = (left: string[], right: string[]) =>
+  left.map((text, i): [string, string] => [text, right[i] ?? '']);
 
 /** A quiz's first question: its prompt (the first part's text, else the
- * stem's), with gaps marked U+0001, and up to four short choices. */
+ * stem's), with gaps marked U+0001, and up to four short choices. Matching
+ * pairs are the two columns sorted apart, so rows no longer pair up. */
 export function questionPreview(question: Question): QuizPreviewQuestion {
   const part = question.parts[0];
   const { answer } = part;
@@ -161,14 +168,12 @@ export function questionPreview(question: Question): QuizPreviewQuestion {
     ...((answer.type === 'mcq' || answer.type === 'multi') && {
       options: cut(answer.options),
     }),
-    ...(answer.type === 'ordering' && { items: cut(answer.items) }),
+    ...(answer.type === 'ordering' && { items: sortedCut(answer.items) }),
     ...(answer.type === 'matching' && {
-      pairs: answer.pairs
-        .slice(0, CHOICES)
-        .map((pair): [string, string] => [
-          pair.left.slice(0, CHOICE),
-          (answer.options[pair.right] ?? '').slice(0, CHOICE),
-        ]),
+      pairs: zip(
+        sortedCut(answer.pairs.map((pair) => pair.left)),
+        sortedCut(answer.pairs.map((pair) => answer.options[pair.right] ?? ''))
+      ),
     }),
   };
 }

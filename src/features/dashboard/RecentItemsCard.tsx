@@ -5,7 +5,7 @@ import {
   recentMaterialsQuery,
   useWorkspaces,
 } from '@/api/hooks';
-import { ItemCard } from '@/components/app/ItemCard';
+import { ItemCard, ItemSkeletonGrid } from '@/components/app/ItemCard';
 import { ListViewToggle, useListView } from '@/components/app/ListToolbar';
 import { PanelHeader } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
@@ -23,12 +23,16 @@ import { getLocale, m } from '@/i18n';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { mergeRecentItems, type RecentItem } from './recentItems';
 
-function formatRecentDate(iso: string): string {
+/** The row's one hint line: when it was last added or edited. Materials
+ * carry `updatedAt`; file rows carry only `addedAt`. */
+function recentHint(item: RecentItem): string {
   const locale = getLocale() === 'zh' ? 'zh-CN' : 'en';
   return new Intl.DateTimeFormat(locale, {
     day: 'numeric',
     month: 'short',
-  }).format(new Date(iso));
+  }).format(
+    new Date(item.kind === 'file' ? item.file.addedAt : item.material.updatedAt)
+  );
 }
 
 function recentIcon(item: RecentItem) {
@@ -130,7 +134,14 @@ export function RecentItemsCard() {
       {paused ? (
         <QueryPausedState className="h-full min-h-full flex-1" />
       ) : isLoading ? (
-        <SkeletonList className="px-3" count={8} rowHeight={60} />
+        view === 'grid' ? (
+          <ItemSkeletonGrid
+            className="px-2 sm:grid-cols-2 sm:gap-2.5"
+            count={6}
+          />
+        ) : (
+          <SkeletonList className="px-3" count={8} rowHeight={60} />
+        )
       ) : items.length === 0 ? (
         <p className="px-1 pt-2 pb-4 text-center text-fg-muted">
           {m.dashboard_recent_empty()}
@@ -143,7 +154,7 @@ export function RecentItemsCard() {
               icon={recentIcon(item)}
               key={`${item.kind}-${item.id}`}
               link={{ ...recentLink(item), preload: 'intent' }}
-              meta={formatRecentDate(item.createdAt)}
+              meta={recentHint(item)}
               thumbnail={recentThumbnail(item)}
               title={item.title}
               view="grid"
@@ -172,9 +183,7 @@ export function RecentItemsCard() {
                     {item.title}
                   </span>
                   <span className="line-clamp-1 text-fg-muted text-sm">
-                    {[item.workspaceName, formatRecentDate(item.createdAt)]
-                      .filter(Boolean)
-                      .join(' · ')}
+                    {recentHint(item)}
                   </span>
                 </span>
               </Link>

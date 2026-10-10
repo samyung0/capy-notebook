@@ -21,7 +21,7 @@ import type {
   MaterialListLocation,
   MaterialListSort,
 } from '@/api/types';
-import { ItemList } from '@/components/app/ItemCard';
+import { ItemList, ItemSkeletonGrid } from '@/components/app/ItemCard';
 import {
   type FilterSection,
   ListToolbar,
@@ -392,7 +392,11 @@ export function MaterialsTab({
         {fetchStatus === 'paused' && !data ? (
           <QueryPausedState />
         ) : isLoading ? (
-          <SkeletonCardGrid cardHeight={150} count={16} />
+          view === 'grid' ? (
+            <ItemSkeletonGrid count={16} />
+          ) : (
+            <SkeletonCardGrid cardHeight={150} count={16} />
+          )
         ) : items.length === 0 ? (
           <p className="py-10 text-center text-fg-muted">{m.create_empty()}</p>
         ) : (

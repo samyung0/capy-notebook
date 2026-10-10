@@ -14,7 +14,11 @@ import type {
   SourceFile,
   TrashItem,
 } from '@/api/types';
-import { ItemCard, ItemList } from '@/components/app/ItemCard';
+import {
+  ItemCard,
+  ItemList,
+  ItemSkeletonGrid,
+} from '@/components/app/ItemCard';
 import {
   ListToolbar,
   type ListView,
@@ -284,7 +288,11 @@ function ActiveFiles({
         {fetchStatus === 'paused' && !data ? (
           <QueryPausedState />
         ) : isLoading ? (
-          <SkeletonCardGrid cardHeight={72} count={6} />
+          view === 'grid' ? (
+            <ItemSkeletonGrid count={8} />
+          ) : (
+            <SkeletonCardGrid cardHeight={72} count={6} />
+          )
         ) : files.length === 0 ? (
           <p className="py-10 text-center text-fg-muted">{m.files_empty()}</p>
         ) : (
@@ -423,10 +431,6 @@ function TrashTab({
   }
 
   if (fetchStatus === 'paused' && !data) return <QueryPausedState />;
-  if (isLoading)
-    return (
-      <SkeletonCardGrid cardHeight={view === 'grid' ? 150 : 72} count={3} />
-    );
   if (isError && !data) {
     return (
       <div
@@ -523,10 +527,17 @@ function TrashTab({
           <p className="t-meta text-fg-muted" role="note">
             {m.trash_notice()}
           </p>
-          {items.length === 0 ? (
+          {/* The bar and notice render while loading, so the cards land
+           * where the skeletons were. */}
+          {isLoading ? (
+            view === 'grid' ? (
+              <ItemSkeletonGrid count={8} />
+            ) : (
+              <SkeletonCardGrid cardHeight={72} count={3} />
+            )
+          ) : items.length === 0 ? (
             <p className="text-fg-muted">{m.trash_empty()}</p>
-          ) : null}
-          {items.length > 0 && (
+          ) : (
             <ItemList
               columns={[
                 m.list_col_name(),

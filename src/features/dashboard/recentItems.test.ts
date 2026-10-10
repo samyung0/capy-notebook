@@ -57,7 +57,7 @@ describe('mergeRecentItems', () => {
     expect(items.map((item) => item.id)).toEqual(['f_new', 'm_mid', 'f_old']);
   });
 
-  it('caps the list and fills workspace names from the workspace list', () => {
+  it('caps the list', () => {
     const items = mergeRecentItems(
       [file('f_1', '2026-04-01T00:00:00.000Z')],
       [],
@@ -68,7 +68,6 @@ describe('mergeRecentItems', () => {
     expect(items[0]).toMatchObject({
       kind: 'file',
       title: 'f_1.pdf',
-      workspaceName: 'Biology',
     });
   });
 

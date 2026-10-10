@@ -1,8 +1,10 @@
 import { Link, type LinkProps } from '@tanstack/react-router';
-import type { ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import { Card } from '@/components/ui/Card';
 import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
+import { Skeleton } from '@/components/ui/feedback';
 import { FileSelectionMark } from '@/features/files/FileSelectionActions';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import type { ListView } from './ListToolbar';
 import { type Thumbnail, ThumbnailPanel } from './ThumbnailPanel';
@@ -162,13 +164,7 @@ export function ItemList({
   columns: [string, string, string, string];
   children: ReactNode;
 }) {
-  if (view === 'grid') {
-    return (
-      <div className="grid w-full grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(220px,1fr))] sm:gap-3">
-        {children}
-      </div>
-    );
-  }
+  if (view === 'grid') return <ItemGrid>{children}</ItemGrid>;
   return (
     <div className="overflow-hidden rounded-card border border-line">
       <div className="hidden bg-surface-hover-bg px-4 py-2.5 font-bold text-fg-muted text-xs uppercase tracking-wide md:grid md:grid-cols-[minmax(200px,2.4fr)_minmax(160px,2fr)_1.5fr_1fr_40px] md:gap-3">
@@ -179,5 +175,47 @@ export function ItemList({
       </div>
       {children}
     </div>
+  );
+}
+
+/** Card A's grid: two columns on phones, 220px columns from `sm`. */
+function ItemGrid({ className, ...rest }: ComponentProps<'div'>) {
+  return (
+    <div
+      className={cn(
+        'grid w-full grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(220px,1fr))] sm:gap-3',
+        className
+      )}
+      {...rest}
+    />
+  );
+}
+
+/** Loading cards the size of card A, so the grid does not shift when rows
+ * arrive. The title bar takes two lines below 200px wide, as titles wrap
+ * there. */
+export function ItemSkeletonGrid({
+  count,
+  className,
+}: {
+  count: number;
+  className?: string;
+}) {
+  return (
+    <ItemGrid aria-label={m.a11y_loading()} className={className} role="status">
+      {Array.from({ length: count }, (_, i) => (
+        <div
+          className="@container rounded-card border border-line bg-surface p-1.5"
+          key={i}
+        >
+          <Skeleton className="aspect-[16/11] rounded-[13px]" />
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center @min-[200px]:gap-x-[9px] gap-x-[7px] gap-y-px @min-[200px]:pt-2.5 pt-2 @min-[200px]:pr-[34px] pr-[30px] @min-[200px]:pb-2 pb-1.5 @min-[200px]:pl-2.5 pl-2">
+            <Skeleton className="@min-[200px]:mt-0 mt-0.5 size-4 self-start @min-[200px]:self-center" />
+            <Skeleton className="@min-[200px]:h-[1lh] h-[2lh] @min-[200px]:text-[14.5px] text-[13.5px] leading-tight" />
+            <Skeleton className="col-start-2 h-[1lh] w-2/3 text-xs" />
+          </div>
+        </div>
+      ))}
+    </ItemGrid>
   );
 }
