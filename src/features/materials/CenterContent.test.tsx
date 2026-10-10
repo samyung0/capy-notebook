@@ -117,8 +117,8 @@ function scrollArea(html: string) {
   throw new Error('the scroll area does not close');
 }
 
-// The attribution footer scrolls with the material, at the end of its
-// document, rather than staying pinned under the panel.
+// The credits scroll with the material, at the end of its document, rather
+// than staying pinned under the panel.
 describe('material attribution placement', () => {
   it.each([
     ['note', 'Note body'],
@@ -137,8 +137,14 @@ describe('material attribution placement', () => {
       />
     );
     const area = scrollArea(html);
-    expect(area).toContain('Credited source book');
-    expect(area.indexOf('<footer')).toBeGreaterThan(area.indexOf(content));
-    expect(html.indexOf('<footer')).toBe(html.lastIndexOf('<footer'));
+    expect(area.indexOf('Credited source book')).toBeGreaterThan(
+      area.indexOf(content)
+    );
+    expect(html.indexOf('Credited source book')).toBe(
+      html.lastIndexOf('Credited source book')
+    );
+    // A note or diagram ends with the full footer; a quiz or flashcard set
+    // with its collapsed Sources line.
+    expect(area.includes('<footer')).toBe(id === 'note' || id === 'diagram');
   });
 });

@@ -27,7 +27,7 @@ import { ConfirmDialog } from '@/components/ui/Dialog';
 import { Skeleton, Spinner } from '@/components/ui/feedback';
 import { Input, InputField } from '@/components/ui/Input';
 import { Tabs } from '@/components/ui/Tabs';
-import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
+import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
 import { AssetUrlContext } from '@/features/materials/MediaAssetView';
 import { QuizForm } from '@/features/quizzes/QuizForm';
 import { blockHomeCrumb, QuizPageHeader } from '@/features/quizzes/QuizPage';
@@ -252,7 +252,7 @@ function QuizEditor({ quizId }: { quizId: string }) {
               open={confirm === 'save'}
               title={m.edit_save_confirm_title()}
             />
-            <MaterialAttributionFooter provenance={quiz.provenance} />
+            <SourcesLine className="mt-16 pb-4" provenance={quiz.provenance} />
           </>
         ) : (
           <p className="py-8 text-center text-fg-muted">{m.quiz_not_found()}</p>

@@ -13,7 +13,7 @@ import {
   type FlashcardsElement,
   flashcardsElementToCards,
 } from '@/features/materials/document';
-import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
+import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
 import { AssetUrlContext } from '@/features/materials/MediaAssetView';
 import { AttemptBody } from '@/features/quizzes/AttemptBody';
 import { QuizForm } from '@/features/quizzes/QuizForm';
@@ -77,7 +77,7 @@ export function AppEmbedEdit({
       {(quiz) => (
         <>
           <QuizEditor onEmpty={onEmpty} quizId={materialId} />
-          <MaterialAttributionFooter provenance={quiz.provenance} />
+          <SourcesLine className="mt-3" provenance={quiz.provenance} />
         </>
       )}
     </QuizGate>
@@ -94,7 +94,7 @@ export function AppEmbedEdit({
             showTitle={false}
             title=""
           />
-          <MaterialAttributionFooter provenance={material.provenance} />
+          <SourcesLine className="mt-3" provenance={material.provenance} />
         </>
       )}
     </SetGate>

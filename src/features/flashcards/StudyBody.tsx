@@ -3,7 +3,7 @@ import type { Provenance } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import type { FlashcardContent } from '@/features/materials/blocks';
-import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
+import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
 import { type Frame, NoFrame } from '@/features/quizzes/AttemptBody';
 import { type Crumb, QuizPageHeader } from '@/features/quizzes/QuizPage';
 import { StepNav } from '@/features/study/StepNav';
@@ -162,8 +162,8 @@ export function StudyBody({
             </div>
           )}
           {footer}
-          <MaterialAttributionFooter
-            inline={!embedded}
+          <SourcesLine
+            className={embedded ? 'mt-3' : 'mt-16 pb-4'}
             provenance={provenance}
           />
         </div>

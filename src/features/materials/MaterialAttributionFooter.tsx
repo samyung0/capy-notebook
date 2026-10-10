@@ -1,4 +1,6 @@
+import { memo, useId, useState } from 'react';
 import type { Provenance, QuestionCredit } from '@/api/types';
+import { Icon } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
@@ -115,10 +117,10 @@ function Credits({ books, web }: Pick<QuestionCredit, 'books' | 'web'>) {
  * It renders outside the editable document and is not part of the Yjs state,
  * so the attribution survives every edit of the material itself.
  *
- * `inline` ends a page's or document's own content (an open material, quiz
- * attempt, flashcard study), set apart by space alone; `className` puts it in
- * the document's reading column. Otherwise it is a bordered strip closing a
- * block, such as an embedded quiz or flashcard set.
+ * `inline` ends a document's own content (a note, a diagram), set apart by
+ * space alone; `className` puts it in the document's reading column.
+ * Otherwise it is a bordered strip closing a block (a bank question). Quizzes
+ * and flashcard sets show `SourcesLine` instead.
  */
 export function MaterialAttributionFooter({
   provenance,
@@ -148,6 +150,52 @@ export function MaterialAttributionFooter({
     </footer>
   );
 }
+
+/**
+ * A quiz's or flashcard set's credits as one collapsed "Sources (n)" line that
+ * expands: under the item where a note embeds it, and at the end of its own
+ * pages (Epo 2026-10-11). A note's footer lists them too. Memoized on the
+ * provenance record, which a re-read only replaces when it changed.
+ */
+export const SourcesLine = memo(function SourcesLine({
+  provenance,
+  className,
+}: {
+  provenance: Provenance | undefined;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  const count =
+    (provenance?.books.length ?? 0) + (provenance?.web?.length ?? 0);
+  if (!(provenance && count)) return null;
+  return (
+    <div className={cn('text-fg-muted text-xs', className)}>
+      <button
+        aria-controls={id}
+        aria-expanded={open}
+        className="-ml-0.5 inline-flex cursor-pointer items-center gap-1 rounded-sm px-0.5 outline-none hover:text-fg-secondary focus-visible:ring-2 focus-visible:ring-focus"
+        onClick={() => setOpen((value) => !value)}
+        type="button"
+      >
+        <Icon
+          className={cn('size-3.5 transition-transform', open && 'rotate-90')}
+          name="chevronRight"
+        />
+        {m.material_attribution_sources({ count })}
+      </button>
+      <div className="mt-1 pl-4.5" hidden={!open} id={id}>
+        <p className="font-medium">{m.material_attribution_title()}</p>
+        <Credits books={provenance.books} web={provenance.web} />
+        {provenance.license && (
+          <p className="mt-1">
+            {m.material_attribution_license({ license: provenance.license })}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+});
 
 /**
  * Credit for one question copied from the question bank, shown under it: its

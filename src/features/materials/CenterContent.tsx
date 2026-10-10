@@ -61,7 +61,10 @@ import {
 } from './document';
 import { HeavyMaterialGate } from './HeavyMaterialGate';
 import { type HeavyMaterialChoice, heavyMaterial } from './heavyDocument';
-import { MaterialAttributionFooter } from './MaterialAttributionFooter';
+import {
+  MaterialAttributionFooter,
+  SourcesLine,
+} from './MaterialAttributionFooter';
 import { MermaidMaterialView } from './MermaidMaterialView';
 import {
   type MaterialMode,
@@ -399,9 +402,8 @@ export function MaterialContent({
                 title={material.title}
               />
             )}
-            <MaterialAttributionFooter
-              className={cn(overBar && 'pb-20')}
-              inline
+            <SourcesLine
+              className={cn('mt-16 pb-4', overBar && 'pb-20')}
               provenance={material.provenance}
             />
           </TabContent>
@@ -557,9 +559,8 @@ function QuizPreview({
         />
       </div>
       <QuizQuestionList disabled questions={questions} />
-      <MaterialAttributionFooter
-        className={cn(overBar && 'pb-20')}
-        inline
+      <SourcesLine
+        className={cn('mt-16 pb-4', overBar && 'pb-20')}
         provenance={provenance}
       />
     </TabContent>

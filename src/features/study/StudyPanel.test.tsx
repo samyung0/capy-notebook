@@ -3,6 +3,8 @@ import { expect, it, vi } from 'vitest';
 import { m } from '@/i18n';
 import { StudyPanel } from './StudyPanel';
 
+const study = vi.hoisted(() => ({ enabled: false }));
+
 vi.mock('@/api/hooks', () => ({
   useChapters: () => ({ data: [] }),
   useFiles: () => ({ data: [] }),
@@ -23,7 +25,7 @@ vi.mock('@/api/hooks', () => ({
   useWorkspace: () => ({ data: undefined }),
   useWorkspaceStudy: () => ({
     data: {
-      enabled: false,
+      enabled: study.enabled,
       items: [{ materialId: 'qz', state: 'started' }],
       quickReview: [
         {
@@ -57,4 +59,26 @@ it('shows only the off line and the switch while progress is off', () => {
     'Golgi',
   ])
     expect(html).not.toContain(hidden);
+});
+
+// Mini views show part of an item or mix items, so they credit nothing
+// (Epo 2026-10-11): the item's own pages and its note do.
+it('shows Quick review cards without credits', () => {
+  study.enabled = true;
+  try {
+    const html = renderToStaticMarkup(
+      <StudyPanel
+        onOpenItem={() => {}}
+        renderTabRow={() => null}
+        workspaceId="ws"
+      />
+    );
+    expect(html).toContain('Golgi');
+    expect(html).not.toContain(m.material_attribution_title());
+    expect(html).not.toContain(
+      m.material_attribution_sources({ count: 1 }).split('(')[0]
+    );
+  } finally {
+    study.enabled = false;
+  }
 });

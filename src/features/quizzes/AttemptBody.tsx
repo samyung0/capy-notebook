@@ -4,7 +4,7 @@ import type { Provenance, Question } from '@/api/types';
 import { TabContent } from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
 import { userToast } from '@/components/ui/userToast';
-import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
+import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
 import type {
   LearnerPart,
   LearnerQuestion,
@@ -188,8 +188,8 @@ export function AttemptBody({
             </Button>
           </div>
           {footer}
-          <MaterialAttributionFooter
-            inline={!embedded}
+          <SourcesLine
+            className={embedded ? 'mt-3' : 'mt-16 pb-4'}
             provenance={provenance}
           />
         </Body>
@@ -239,7 +239,10 @@ export function AttemptBody({
           </Button>
         </div>
         {footer}
-        <MaterialAttributionFooter inline={!embedded} provenance={provenance} />
+        <SourcesLine
+          className={embedded ? 'mt-3' : 'mt-16 pb-4'}
+          provenance={provenance}
+        />
       </Body>
     </Shell>
   );

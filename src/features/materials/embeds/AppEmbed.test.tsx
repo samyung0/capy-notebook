@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { Provenance } from '@/api/types';
+import { m } from '@/i18n';
 import { AppEmbedEdit, AppEmbedView } from './AppEmbed';
 
 const credit = (title: string): Provenance => ({
@@ -82,32 +83,50 @@ const render = (node: ReactNode) =>
     <QueryClientProvider client={new QueryClient()}>{node}</QueryClientProvider>
   );
 
+/** The embed's own credits, behind a collapsed "Sources (1)" line. */
+const credited = (html: string, book: string) =>
+  html.includes(book) &&
+  html.includes(m.material_attribution_sources({ count: 1 })) &&
+  html.includes('aria-expanded="false"');
+
 // An embedded quiz or flashcard set shows its own credits inside the note,
-// in View and in Edit.
+// in View and in Edit, behind one collapsed "Sources (n)" line.
 describe('embed credits', () => {
   it('shows the credits of an embedded quiz and set in View', () => {
-    expect(render(<AppEmbedView materialId="quiz" refKind="quiz" />)).toContain(
-      'Quiz source book'
-    );
     expect(
-      render(<AppEmbedView materialId="set" refKind="flashcards" />)
-    ).toContain('Set source book');
+      credited(
+        render(<AppEmbedView materialId="quiz" refKind="quiz" />),
+        'Quiz source book'
+      )
+    ).toBe(true);
+    expect(
+      credited(
+        render(<AppEmbedView materialId="set" refKind="flashcards" />),
+        'Set source book'
+      )
+    ).toBe(true);
   });
 
   it('shows them under the embedded editors in Edit', () => {
     expect(
-      render(
-        <AppEmbedEdit materialId="quiz" onEmpty={() => {}} refKind="quiz" />
+      credited(
+        render(
+          <AppEmbedEdit materialId="quiz" onEmpty={() => {}} refKind="quiz" />
+        ),
+        'Quiz source book'
       )
-    ).toContain('Quiz source book');
+    ).toBe(true);
     expect(
-      render(
-        <AppEmbedEdit
-          materialId="set"
-          onEmpty={() => {}}
-          refKind="flashcards"
-        />
+      credited(
+        render(
+          <AppEmbedEdit
+            materialId="set"
+            onEmpty={() => {}}
+            refKind="flashcards"
+          />
+        ),
+        'Set source book'
       )
-    ).toContain('Set source book');
+    ).toBe(true);
   });
 });

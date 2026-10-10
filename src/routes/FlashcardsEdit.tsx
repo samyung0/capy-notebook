@@ -16,7 +16,7 @@ import {
   type FlashcardsElement,
   flashcardsElementToCards,
 } from '@/features/materials/document';
-import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
+import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
 import { blockHomeCrumb, QuizPageHeader } from '@/features/quizzes/QuizPage';
 import { m } from '@/i18n';
 
@@ -82,7 +82,10 @@ export default function FlashcardsEdit() {
               showTitle={false}
               title={material.parentMaterialId ? '' : material.title}
             />
-            <MaterialAttributionFooter provenance={material.provenance} />
+            <SourcesLine
+              className="mt-16 pb-4"
+              provenance={material.provenance}
+            />
           </>
         ) : (
           <Skeleton className="h-64 w-full" />

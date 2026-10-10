@@ -833,6 +833,7 @@
   "material_attribution_book": "{title}，作者：{authors}",
   "material_attribution_license": "本材料以 {license} 授权。",
   "question_attribution_license": "此题目采用 {license} 许可。",
+  "material_attribution_sources": "参考来源（{count}）",
   "material_attribution_source": "来源",
   "material_attribution_version": "版本 {version}",
   "material_attribution_retrieved": "{date} 取用",
