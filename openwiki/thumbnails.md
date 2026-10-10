@@ -143,8 +143,11 @@ answer-free and about 1 KB at most. `MaterialListItem` and trash rows return it
 as `preview`; the client types the union by hand. The workspace tree's
 `MaterialRef` carries none (nothing there draws it, and the tree refetches
 often). Materials written before migration 0073 get theirs from the one-shot,
-idempotent `go run ./cmd/previewbackfill` (rows still NULL, in batches; run by
-hand, never at startup), or from their next content write.
+idempotent `previewbackfill` (rows still NULL, in batches, so an interrupted
+run is simply rerun; run by hand, never at startup), or from their next
+content write. The server image carries it:
+`docker exec server-<resource-uuid> /app/previewbackfill` (the container
+already has `DATABASE_URL`).
 
 | Kind | Preview |
 | ---- | ------- |
