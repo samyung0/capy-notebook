@@ -103,6 +103,7 @@ export function ReviewTab() {
               action={
                 <UnderlineLink
                   disabled={!ws.reviewable}
+                  noArrow
                   onClick={() => review(ws.workspaceId, { group: 'workspace' })}
                 >
                   {ws.lastReviewedAt

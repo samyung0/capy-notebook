@@ -105,7 +105,10 @@ function Progress() {
               <div className="hidden text-right text-fg-secondary text-sm sm:block">
                 {m.study_of({ done: ws.done, total: ws.total })}
               </div>
-              <UnderlineLink onClick={() => openWorkspace(ws.workspaceId)}>
+              <UnderlineLink
+                noArrow
+                onClick={() => openWorkspace(ws.workspaceId)}
+              >
                 {m.learning_open()}
               </UnderlineLink>
             </div>
