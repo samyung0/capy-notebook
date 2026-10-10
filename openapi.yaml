@@ -2769,6 +2769,21 @@ components:
         - materials
         - storageRefused
       type: object
+    MaterialCollaborationTokenBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/MaterialCollaborationTokenBody.json
+          format: uri
+          readOnly: true
+          type: string
+        document:
+          enum:
+            - content
+            - keys
+          type: string
+      type: object
     MaterialIndexOutputBody:
       additionalProperties: false
       properties:
@@ -6081,17 +6096,11 @@ components:
           format: uri
           readOnly: true
           type: string
-        expectedRevision:
-          format: int64
-          minimum: 1
-          type: integer
         questions:
           items:
             additionalProperties: {}
             type: object
           type: array
-      required:
-        - expectedRevision
       type: object
     UpdateQuizMetadataReq:
       additionalProperties: false
@@ -8748,6 +8757,11 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MaterialCollaborationTokenBody"
       responses:
         "201":
           content:

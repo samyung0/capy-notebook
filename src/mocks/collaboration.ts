@@ -31,7 +31,14 @@ import {
   createMaterialDocumentWithMetrics,
   flashcardsNode,
   type MaterialValue,
+  quizNode,
 } from '@/features/materials/document';
+import { validateQuestion } from '@/features/questions/validation';
+import {
+  readQuestions,
+  seedQuiz,
+  writeReaderCopies,
+} from '@/features/quizzes/liveQuiz';
 import * as db from './db';
 
 /** In-page stand-in for the collaboration sidecar. A room is one Y.Doc that
@@ -860,30 +867,102 @@ export function resetScenarioRooms() {
   sessionStorage.removeItem(UNREACHABLE);
 }
 
-/** A live flashcard set's room (live-items): seeded from the mock row as the
- * service bootstraps one, written back to it as the service projects. */
+/** A quiz's other document's room name (`keys:` for `material:`, and back). */
+const peerName = (name: string) =>
+  name.startsWith('keys:')
+    ? `material:${name.slice(5)}`
+    : `keys:${name.slice('material:'.length)}`;
+
+/** A document's state from its live room or its checkpoint. */
+function docOf(name: string): Y.Doc {
+  const live = rooms.get(name);
+  if (live) return live.document;
+  const doc = new Y.Doc();
+  const checkpoint = checkpoints.get(name);
+  if (checkpoint) Y.applyUpdate(doc, checkpointState(checkpoint));
+  return doc;
+}
+
+let copying = false;
+/** The service's reader copies after a keys change (D3), while both of a
+ * quiz's rooms are loaded. */
+function syncCopies(name: string) {
+  const content = rooms.get(name.startsWith('keys:') ? peerName(name) : name);
+  const keys = rooms.get(name.startsWith('keys:') ? name : peerName(name));
+  if (!(content && keys) || copying) return;
+  copying = true;
+  try {
+    writeReaderCopies(content.document, keys.document, REMOTE);
+  } finally {
+    copying = false;
+  }
+}
+
+/** A live item's room (live-items): seeded from the mock row as the service
+ * bootstraps one (a quiz's two documents together), written back to it as
+ * the service projects. */
 function itemRoom(name: string): Room {
   const existing = rooms.get(name);
   if (existing) return existing;
   const materialId = name.split(':')[1] ?? '';
   const room = createRoom(name, { id: materialId, kind: 'item' });
   const material = db.materials.find((row) => row.id === materialId);
-  if (!checkpoints.has(name) && material)
+  if (!checkpoints.has(name) && material?.kind === 'flashcards')
     seedCards(room.document, db.cardsFromMaterial(material));
+  if (!checkpoints.has(name) && material?.kind === 'quiz') {
+    const content = new Y.Doc();
+    const keys = new Y.Doc();
+    seedQuiz(content, keys, db.quizFromMaterial(material).questions);
+    const own = name.startsWith('keys:') ? keys : content;
+    Y.applyUpdate(room.document, Y.encodeStateAsUpdate(own));
+    const other = name.startsWith('keys:') ? content : keys;
+    checkpoints.set(peerName(name), {
+      updates: [Y.encodeStateAsUpdate(other)],
+      version: 0,
+    });
+  }
   room.dirty = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   room.document.on('update', () => {
+    if (material?.kind === 'quiz') queueMicrotask(() => syncCopies(name));
     clearTimeout(timer);
     timer = setTimeout(() => {
       if (rooms.get(name) === room) checkpointRoom(room);
     }, 300);
   });
+  if (material?.kind === 'quiz') queueMicrotask(() => syncCopies(name));
   return room;
 }
 
+/** The projection: a set's cards, or a quiz's complete questions (D4). */
 function persistItem(room: Room) {
   const material = db.materials.find((row) => row.id === room.target.id);
   if (!(material && room.dirty)) return;
+  if (material.kind === 'quiz') {
+    const contentName = room.name.startsWith('keys:')
+      ? peerName(room.name)
+      : room.name;
+    const complete = readQuestions(
+      docOf(contentName),
+      docOf(peerName(contentName))
+    ).filter((question) => {
+      try {
+        validateQuestion(question);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    material.content = createMaterialDocument([
+      quizNode({ questions: complete }, material.id),
+    ]) as Material['content'];
+    material.revision += 1;
+    material.updatedAt = new Date().toISOString();
+    db.refreshMaterialContentBytes(material);
+    void queryClient.invalidateQueries({ queryKey: qk.material(material.id) });
+    void queryClient.invalidateQueries({ queryKey: qk.quiz(material.id) });
+    return;
+  }
   const cards = readCards(room.document);
   material.content = createMaterialDocument([
     flashcardsNode(cards, material.id),

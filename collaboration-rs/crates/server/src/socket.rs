@@ -145,7 +145,16 @@ async fn authenticate(
         .map_err(|error| Refusal::plain(error.to_string()))?;
     let mut viewer = false;
     match &name {
-        RoomName::Material { material_id, .. } => {
+        RoomName::Material {
+            material_id, keys, ..
+        } => {
+            // A quiz's keys go only to editors who can write (Epo 2026-10-10):
+            // a read token, a viewer, a narrowed editor are refused.
+            if *keys && claims.access != Access::Write {
+                return Err(Refusal::access(&AccessError::ReadOnly(
+                    "a quiz's keys need write access".into(),
+                )));
+            }
             let client = app
                 .db
                 .get()
@@ -225,7 +234,12 @@ async fn token_access(
     access: Access,
 ) -> Result<(), String> {
     match name {
-        RoomName::Material { material_id, .. } => {
+        RoomName::Material {
+            material_id, keys, ..
+        } => {
+            if *keys && access != Access::Write {
+                return Err("a quiz's keys need write access".into());
+            }
             let client = app.db.get().await.map_err(|error| error.to_string())?;
             access::assert_access(&client, material_id, user, access)
                 .await

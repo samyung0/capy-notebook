@@ -12,7 +12,6 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/copytext"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
-	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -277,14 +276,11 @@ func (a *api) getMaterial(ctx context.Context, in *materialIDInput) (*materialOu
 	if err != nil {
 		return nil, hErr(err)
 	}
-	// View reads a note while its room may hold edits the idle projection has
-	// not written yet: the room projects them now. A failed projection serves
-	// the stored one and is reported.
-	if res.Kind == "note" {
-		projected, err := a.s.ProjectLiveNote(ctx, in.ID)
-		if err != nil {
-			obs.CaptureErr(ctx, err, map[string]string{"stage": "live_note_projection"})
-		} else if projected {
+	// View reads a note (or a live quiz or set) while its room may hold
+	// edits the idle projection has not written yet: the room projects them
+	// now. A failed projection serves the stored one and is reported.
+	if res.Kind == "note" || res.Kind == store.MaterialQuiz || res.Kind == store.MaterialFlashcards {
+		if a.projectLive(ctx, in.ID) {
 			if res, err = a.s.GetMaterial(ctx, in.ID); err != nil {
 				return nil, hErr(err)
 			}
@@ -343,7 +339,6 @@ func (a *api) updateMaterial(
 		}
 		return nil, hErr(err)
 	}
-	a.publishEmbedChanged(ctx, res.ID, res.Kind, res.ParentMaterialID)
 	return &materialUpdateOutput{Body: apimodel.MaterialUpdateResult{
 		ID:           res.ID,
 		Revision:     res.Revision,

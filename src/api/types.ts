@@ -57,7 +57,6 @@ import type {
   TrashItem as GenTrashItem,
   TrashPage as GenTrashPage,
   UpdateCommentReq as GenUpdateCommentReq,
-  UpdateQuizContentReq as GenUpdateQuizContentReq,
   UpdateWorkspaceMemberReq as GenUpdateWorkspaceMemberReq,
   MaterialKind,
   ResourceEffect,
@@ -393,12 +392,6 @@ export interface PastReviewParams {
    Same wire contract with the UI-facing shape restored: the Question union,
    Plate values, and roles that cannot be granted through a normal write. */
 export type CreateQuizReq = Omit<GenCreateQuizReq, 'questions'> & {
-  questions?: Question[];
-};
-export type UpdateQuizContentReq = Omit<
-  GenUpdateQuizContentReq,
-  'questions'
-> & {
   questions?: Question[];
 };
 export type { CreateAttemptReq } from './gen/model';

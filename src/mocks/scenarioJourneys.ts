@@ -948,15 +948,6 @@ export async function runJourney(
       return id === 'ai-context'
         ? 'The application currently shows its generic validation error for this response.'
         : undefined;
-    case 'quiz-save':
-      await go(`/materials/${scenarioQuiz}?mode=edit`);
-      await ui.fill(
-        `input[placeholder="${m.quiz_prompt_placeholder()}"]`,
-        'Edited scenario question?'
-      );
-      fail();
-      await formSave();
-      return;
     case 'quiz-submit':
       // Submitting grades on the server, so one request covers grading too.
       await go(`/quizzes/${scenarioQuiz}/attempt`);

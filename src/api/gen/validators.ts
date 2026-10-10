@@ -3218,6 +3218,10 @@ export const CreateMaterialCollaborationTokenParams = zod.object({
   "id": zod.string()
 })
 
+export const CreateMaterialCollaborationTokenBody = zod.object({
+  "document": zod.enum(['content', 'keys']).optional()
+})
+
 export const CreateMaterialCollaborationTokenResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "access": zod.enum(['write', 'read']),
@@ -4638,11 +4642,7 @@ export const UpdateQuizContentParams = zod.object({
   "id": zod.string()
 })
 
-
-
-
 export const UpdateQuizContentBody = zod.object({
-  "expectedRevision": zod.int().min(1),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())).optional()
 })
 

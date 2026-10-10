@@ -23,8 +23,6 @@ pub const EVICT_ACK: &str = "capy:collaboration:evict-ack";
 pub const USER_EVICT: &str = "capy:collaboration:user-evict";
 pub const DELIVERED: &str = "capy:collaboration:eviction-delivered";
 pub const COMMENTS: &str = "capy:collaboration:comments";
-/// The API's "an embedded quiz or flashcard set changed" (Epo 2026-10-07).
-pub const EMBEDS: &str = "capy:collaboration:embeds";
 pub const INSTANCES: &str = "capy:collaboration:instances";
 const EVICTING_PREFIX: &str = "capy:collaboration:evicting:";
 /// An instance whose heartbeat is older than this is gone.
@@ -109,7 +107,6 @@ async fn listen(app: &Shared) -> Result<(), String> {
         EVICT_ACK,
         USER_EVICT,
         COMMENTS,
-        EMBEDS,
         sources::handoff::SOURCE_HANDOFF_CHANNEL,
     ] {
         pubsub
@@ -215,15 +212,11 @@ async fn handle(app: &Shared, channel: &str, raw: String) {
             delivered(app, text("evictionId").as_deref(), true).await;
         }
         // Relayed to the named note room's editors as the API sent them.
-        COMMENTS | EMBEDS => {
+        COMMENTS => {
             let Some(room) = text("room") else { return };
             if let Some(handle) = app.rooms.get(&room) {
                 let mut payload = event.clone();
-                payload["type"] = json!(if channel == COMMENTS {
-                    "comments-invalidated"
-                } else {
-                    "embed-changed"
-                });
+                payload["type"] = json!("comments-invalidated");
                 let _ = handle
                     .tx
                     .send(RoomCmd::Broadcast(payload.to_string()))
@@ -332,6 +325,20 @@ async fn evict_material_epochs(
             eviction.map(|id| format!("{id}:{room}")).as_deref(),
         )
         .await?;
+        // A quiz's keys room goes with its content room (live-items).
+        if let Some(keys) = room
+            .strip_prefix("material:")
+            .map(|rest| format!("keys:{rest}"))
+        {
+            evict_local(
+                app,
+                &keys,
+                drain,
+                Some(raw.to_owned()),
+                eviction.map(|id| format!("{id}:{keys}")).as_deref(),
+            )
+            .await?;
+        }
         done.insert(room.clone());
         let current = note_store::current_room(&app.db, material_id)
             .await

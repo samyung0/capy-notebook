@@ -49,7 +49,6 @@ export type CollaborationEvent =
    * editor drops its copy and reloads the last saved version. */
   | { room: string; type: 'authorization-revoked' }
   | { materialId: string; type: 'comments-invalidated' }
-  | { id: string; kind: 'flashcards' | 'quiz'; type: 'embed-changed' }
   | { materialId: string; type: 'projection-updated' }
   | {
       materialId?: string;
@@ -144,11 +143,6 @@ export function parseCollaborationEvent(
     case 'comments-invalidated':
     case 'projection-updated':
       return materialId ? { materialId, type: raw.type } : null;
-    case 'embed-changed':
-      return typeof raw.id === 'string' &&
-        (raw.kind === 'quiz' || raw.kind === 'flashcards')
-        ? { id: raw.id, kind: raw.kind, type: 'embed-changed' }
-        : null;
     case 'room-read-only':
       return typeof raw.room === 'string'
         ? { room: raw.room, type: 'room-read-only' }

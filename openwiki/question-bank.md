@@ -154,11 +154,13 @@ nodes and old question JSON are rejected, without a compatibility converter.
 ## Editing and assets
 
 A quiz is edited where it is open, like a flashcard set: the material
-page's Edit mode (`CenterContent.tsx`) renders `QuizEditor`, which loads the
-answer key, stages changes until Save (Reset drops them) and keeps the page.
-Files' Edit and New quiz open `/materials/{id}?mode=edit`; there is no
-standalone quiz edit page, and renaming goes through the item's Rename. A
-note's quiz embed uses the same editor with each change saved at once.
+page's Edit mode (`CenterContent.tsx`) renders `QuizEditor`, which joins the
+quiz's content and keys rooms and edits live (live-items, Epo 2026-10-10; see
+[plate-editor.md](frontend/plate-editor.md)): there is no Save or Reset, and
+the View switch leaves editing. Files' Edit and New quiz open
+`/materials/{id}?mode=edit`; there is no standalone quiz edit page, and
+renaming goes through the item's Rename. A note's quiz embed uses the same
+editor.
 
 `QuestionDialog` is shared by the bank and the quiz editor. Its outline
 column (min 15rem, nudged 4px left to line up with the dialog title) keeps
@@ -234,10 +236,9 @@ server or publisher. Existing private workspace editor assets are separate.
 
 ## Revisions and grading
 
-Every authored quiz/flashcard form write carries `expectedRevision` from the
-loaded draft. The collaboration service compares it under the material lock,
-including pending projection state and the current live block. A rejected write
-keeps the draft. Opening an embedded material to view or edit fetches fresh
+Quiz and flashcard content writes carry no revision (D7, 2026-10-10): editors
+edit them live, and the content endpoints rewrite what differs in the live
+documents. Opening an embedded material to view or edit fetches fresh
 content; merely opening its parent note does not fetch every embedded body.
 
 Bank saves use the exact `updatedAt` string as their optimistic token. A 409
@@ -330,8 +331,10 @@ malformed question loses fields instead of failing the read.
 Copies keep keys because their owner edits them: clones, Copy to quiz
 (`POST /api/bank/copy`) and the chat's `copy_questions`. The signed-out image
 route (`AnonymousQuizAssetPath`) still checks the full content, so a solution's
-images resolve once an answer is checked. Collaboration needs no change:
-viewers never get a room token and quizzes are edited through the form route.
+images resolve once an answer is checked. Live quizzes keep the rule by room
+(Epo 2026-10-10): answer keys live in a keys document only editors who can
+write join, readers join the content document, and matching options and
+ordering items reach them only through the server's shuffled reader copy.
 
 | Grading route | Request | Effect |
 | --- | --- | --- |

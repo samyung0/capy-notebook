@@ -67,6 +67,26 @@ impl StoreError {
     }
 }
 
+/// Which of a material's documents: its content, or a quiz's keys document
+/// (live-items), stored in its own tables beside the content's. Both share
+/// the material's `stored_version` (each append takes the next version), so
+/// the projection's version and every Go rule about it stay as they were.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Doc {
+    Content,
+    Keys,
+}
+
+impl Doc {
+    /// The base state's table and the log's.
+    fn tables(self) -> (&'static str, &'static str) {
+        match self {
+            Doc::Content => ("material_yjs_documents", "material_yjs_updates"),
+            Doc::Keys => ("material_yjs_keys", "material_yjs_key_updates"),
+        }
+    }
+}
+
 /// A note's durable state as a room loads it.
 pub struct Loaded {
     pub base: Vec<u8>,
@@ -106,17 +126,35 @@ pub(crate) async fn bootstrap(
     };
     let content: Value = row.get("content");
     let kind: String = row.get("kind");
-    let state = Model::of(&kind).state_from_value(envelope_value(&content)?);
+    let value = envelope_value(&content)?;
+    // A quiz's two documents seed together, so their reader-copy slots agree.
+    let (state, keys) = if kind == "quiz" {
+        let mut slot = || uuid::Uuid::new_v4().simple().to_string();
+        let (content, keys) = items::quiz::states_from_value(value, 0, &mut slot);
+        (content, Some(keys))
+    } else {
+        (Model::of(&kind).state_from_value(value), None)
+    };
     let schema = i32::try_from(schema)
         .map_err(|_| StoreError::Other("invalid collaboration room schema".into()))?;
-    tx.execute(
-        "INSERT INTO material_yjs_documents
-           (material_id, room_schema, state, stored_version, projected_version, projected_at)
-         VALUES ($1,$2,$3,1,1,now())
-         ON CONFLICT (material_id) DO NOTHING",
-        &[&material_id, &schema, &state],
-    )
-    .await?;
+    let inserted = tx
+        .execute(
+            "INSERT INTO material_yjs_documents
+               (material_id, room_schema, state, stored_version, projected_version, projected_at)
+             VALUES ($1,$2,$3,1,1,now())
+             ON CONFLICT (material_id) DO NOTHING",
+            &[&material_id, &schema, &state],
+        )
+        .await?;
+    if let Some(keys) = keys
+        && inserted > 0
+    {
+        tx.execute(
+            "INSERT INTO material_yjs_keys (material_id, state) VALUES ($1,$2)",
+            &[&material_id, &keys],
+        )
+        .await?;
+    }
     Ok(())
 }
 
@@ -125,11 +163,23 @@ pub(crate) async fn rows(
     material_id: &str,
     through: Option<i64>,
 ) -> Result<Vec<(i64, Vec<u8>)>, StoreError> {
+    doc_rows(tx, Doc::Content, material_id, through).await
+}
+
+pub(crate) async fn doc_rows(
+    tx: &Transaction<'_>,
+    doc: Doc,
+    material_id: &str,
+    through: Option<i64>,
+) -> Result<Vec<(i64, Vec<u8>)>, StoreError> {
+    let (_, log) = doc.tables();
     let found = tx
         .query(
-            "SELECT seq, update FROM material_yjs_updates
-             WHERE material_id=$1 AND ($2::bigint IS NULL OR seq <= $2)
-             ORDER BY seq",
+            &format!(
+                "SELECT seq, update FROM {log}
+                 WHERE material_id=$1 AND ($2::bigint IS NULL OR seq <= $2)
+                 ORDER BY seq"
+            ),
             &[&material_id, &through],
         )
         .await?;
@@ -140,14 +190,29 @@ pub(crate) async fn rows(
 }
 
 /// Loads a room's base and log, bootstrapping the row on first open.
-pub async fn load(pool: &Pool, material_id: &str, schema: i64) -> Result<Loaded, StoreError> {
+pub async fn load(
+    pool: &Pool,
+    material_id: &str,
+    schema: i64,
+    doc: Doc,
+) -> Result<Loaded, StoreError> {
     let mut client = pool.get().await?;
     let tx = client.transaction().await?;
     access::lock_material(&tx, material_id).await?;
-    let select =
-        "SELECT d.state, d.room_schema, d.stored_version, d.projected_version, d.log_bytes, m.kind
-                  FROM material_yjs_documents d JOIN materials m ON m.id=d.material_id
-                  WHERE d.material_id=$1 FOR UPDATE OF d";
+    let select = match doc {
+        Doc::Content => {
+            "SELECT d.state, d.room_schema, d.stored_version, d.projected_version, d.log_bytes, m.kind
+             FROM material_yjs_documents d JOIN materials m ON m.id=d.material_id
+             WHERE d.material_id=$1 FOR UPDATE OF d"
+        }
+        Doc::Keys => {
+            "SELECT k.state, d.room_schema, d.stored_version, d.projected_version, k.log_bytes, m.kind
+             FROM material_yjs_keys k
+             JOIN material_yjs_documents d ON d.material_id=k.material_id
+             JOIN materials m ON m.id=k.material_id
+             WHERE k.material_id=$1 FOR UPDATE OF d"
+        }
+    };
     let mut found = tx.query(select, &[&material_id]).await?;
     if found.is_empty() {
         bootstrap(&tx, material_id, schema).await?;
@@ -161,7 +226,7 @@ pub async fn load(pool: &Pool, material_id: &str, schema: i64) -> Result<Loaded,
     }
     let loaded = Loaded {
         base: row.get("state"),
-        rows: rows(&tx, material_id, None)
+        rows: doc_rows(&tx, doc, material_id, None)
             .await?
             .into_iter()
             .map(|(_, update)| update)
@@ -181,6 +246,7 @@ pub async fn append(
     pool: &Pool,
     material_id: &str,
     schema: i64,
+    doc: Doc,
     row: &[u8],
     actors: &[String],
 ) -> Result<i64, StoreError> {
@@ -209,21 +275,56 @@ pub async fn append(
         return Err(StoreError::Other("stale collaboration room schema".into()));
     }
     let version = current.get::<_, i64>("stored_version") + 1;
+    append_row(&tx, doc, material_id, version, row).await?;
+    tx.commit().await?;
+    Ok(version)
+}
+
+/// Appends `row` as version `version` of `doc` under the caller's lock: the
+/// material's version moves for either document, the log counters are the
+/// document's own.
+pub(crate) async fn append_row(
+    tx: &Transaction<'_>,
+    doc: Doc,
+    material_id: &str,
+    version: i64,
+    row: &[u8],
+) -> Result<(), StoreError> {
+    let (_, log) = doc.tables();
     tx.execute(
-        "INSERT INTO material_yjs_updates (material_id, seq, update) VALUES ($1,$2,$3)",
+        &format!("INSERT INTO {log} (material_id, seq, update) VALUES ($1,$2,$3)"),
         &[&material_id, &version, &row],
     )
     .await?;
-    tx.execute(
-        "UPDATE material_yjs_documents
-         SET stored_version=$2, log_bytes=log_bytes+$3, log_rows=log_rows+1,
-             projection_error=NULL, updated_at=now()
-         WHERE material_id=$1",
-        &[&material_id, &version, &(row.len() as i64)],
-    )
-    .await?;
-    tx.commit().await?;
-    Ok(version)
+    let bytes = row.len() as i64;
+    match doc {
+        Doc::Content => {
+            tx.execute(
+                "UPDATE material_yjs_documents
+                 SET stored_version=$2, log_bytes=log_bytes+$3, log_rows=log_rows+1,
+                     projection_error=NULL, updated_at=now()
+                 WHERE material_id=$1",
+                &[&material_id, &version, &bytes],
+            )
+            .await?;
+        }
+        Doc::Keys => {
+            tx.execute(
+                "UPDATE material_yjs_documents
+                 SET stored_version=$2, projection_error=NULL, updated_at=now()
+                 WHERE material_id=$1",
+                &[&material_id, &version],
+            )
+            .await?;
+            tx.execute(
+                "UPDATE material_yjs_keys SET log_bytes=log_bytes+$2, log_rows=log_rows+1
+                 WHERE material_id=$1",
+                &[&material_id, &bytes],
+            )
+            .await?;
+        }
+    }
+    Ok(())
 }
 
 /// What a fold removed from the log, and the new base size.
@@ -239,16 +340,22 @@ pub async fn fold(
     pool: &Pool,
     material_id: &str,
     schema: i64,
+    doc: Doc,
     through: Option<i64>,
 ) -> Result<Option<Folded>, StoreError> {
     let mut client = pool.get().await?;
     let tx = client.transaction().await?;
     access::lock_material(&tx, material_id).await?;
+    let (state_table, log) = doc.tables();
     let current = tx
         .query(
-            "SELECT d.state, d.room_schema, m.kind
-             FROM material_yjs_documents d JOIN materials m ON m.id=d.material_id
-             WHERE d.material_id=$1 FOR UPDATE OF d",
+            &format!(
+                "SELECT s.state, d.room_schema, m.kind
+                 FROM {state_table} s
+                 JOIN material_yjs_documents d ON d.material_id=s.material_id
+                 JOIN materials m ON m.id=s.material_id
+                 WHERE s.material_id=$1 FOR UPDATE OF d"
+            ),
             &[&material_id],
         )
         .await?;
@@ -259,16 +366,19 @@ pub async fn fold(
         return Ok(None);
     }
     let base: Vec<u8> = current.get("state");
-    let model = Model::of(current.get("kind"));
-    let log = rows(&tx, material_id, through).await?;
-    let Some(&(last, _)) = log.last() else {
+    let model = match doc {
+        Doc::Content => Model::of(current.get("kind")),
+        Doc::Keys => Model::Item(items::Kind::QuizKeys),
+    };
+    let rows = doc_rows(&tx, doc, material_id, through).await?;
+    let Some(&(last, _)) = rows.last() else {
         return Ok(None);
     };
-    let folded_bytes: i64 = log.iter().map(|(_, row)| row.len() as i64).sum();
-    let count = log.len();
+    let folded_bytes: i64 = rows.iter().map(|(_, row)| row.len() as i64).sum();
+    let count = rows.len();
     let state = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, StoreError> {
         let doc = ydoc::scratch_doc();
-        let updates: Vec<Vec<u8>> = log.into_iter().map(|(_, row)| row).collect();
+        let updates: Vec<Vec<u8>> = rows.into_iter().map(|(_, row)| row).collect();
         ydoc::replay(&doc, &base, &updates)
             .map_err(|error| StoreError::Other(error.to_string()))?;
         use yrs::{ReadTxn, Transact};
@@ -280,14 +390,16 @@ pub async fn fold(
     .map_err(|error| StoreError::Other(error.to_string()))??;
     let after_bytes = state.len() as i64;
     tx.execute(
-        "UPDATE material_yjs_documents
-         SET state=$2, log_bytes=log_bytes-$3, log_rows=log_rows-$4
-         WHERE material_id=$1",
+        &format!(
+            "UPDATE {state_table}
+             SET state=$2, log_bytes=log_bytes-$3, log_rows=log_rows-$4
+             WHERE material_id=$1"
+        ),
         &[&material_id, &state, &folded_bytes, &(count as i32)],
     )
     .await?;
     tx.execute(
-        "DELETE FROM material_yjs_updates WHERE material_id=$1 AND seq <= $2",
+        &format!("DELETE FROM {log} WHERE material_id=$1 AND seq <= $2"),
         &[&material_id, &last],
     )
     .await?;
@@ -379,12 +491,19 @@ pub async fn pending_projections(
         .collect())
 }
 
+/// A material's durable documents: the content's base and log, and a
+/// quiz's keys base and log.
+pub struct Durable {
+    pub version: i64,
+    pub base: Vec<u8>,
+    pub rows: Vec<Vec<u8>>,
+    pub kind: String,
+    pub keys: Option<(Vec<u8>, Vec<Vec<u8>>)>,
+}
+
 /// The base and the whole log of a material, for a projection or an edit of
 /// a room not loaded here. `None` when the material has no Yjs row.
-pub async fn durable(
-    pool: &Pool,
-    material_id: &str,
-) -> Result<Option<(i64, i64, Vec<u8>, Vec<Vec<u8>>, String)>, StoreError> {
+pub async fn durable(pool: &Pool, material_id: &str) -> Result<Option<Durable>, StoreError> {
     let mut client = pool.get().await?;
     // One snapshot: a fold committing between the base and the rows would
     // otherwise pair the old base with no rows.
@@ -405,7 +524,6 @@ pub async fn durable(
     let Some(row) = found.first() else {
         return Ok(None);
     };
-    let schema = i64::from(row.get::<_, i32>("room_schema"));
     let version: i64 = row.get("stored_version");
     let base: Vec<u8> = row.get("state");
     let kind: String = row.get("kind");
@@ -414,8 +532,35 @@ pub async fn durable(
         .into_iter()
         .map(|(_, update)| update)
         .collect();
+    let keys = if kind == "quiz" {
+        let found = tx
+            .query(
+                "SELECT state FROM material_yjs_keys WHERE material_id=$1",
+                &[&material_id],
+            )
+            .await?;
+        match found.first() {
+            Some(row) => Some((
+                row.get::<_, Vec<u8>>("state"),
+                doc_rows(&tx, Doc::Keys, material_id, Some(version))
+                    .await?
+                    .into_iter()
+                    .map(|(_, update)| update)
+                    .collect(),
+            )),
+            None => return Err(StoreError::Other("quiz keys document missing".into())),
+        }
+    } else {
+        None
+    };
     tx.commit().await?;
-    Ok(Some((schema, version, base, log, kind)))
+    Ok(Some(Durable {
+        version,
+        base,
+        rows: log,
+        kind,
+        keys,
+    }))
 }
 
 /// Idle rooms whose stored bytes (base + log) passed
@@ -490,7 +635,14 @@ pub async fn compact(
     };
     let kind: String = content.get("kind");
     let content: Value = content.get("content");
-    let state = Model::of(&kind).state_from_value(envelope_value(&content)?);
+    let value = envelope_value(&content)?;
+    let (state, keys) = if kind == "quiz" {
+        let mut slot = || uuid::Uuid::new_v4().simple().to_string();
+        let (content, keys) = items::quiz::states_from_value(value, 0, &mut slot);
+        (content, Some(keys))
+    } else {
+        (Model::of(&kind).state_from_value(value), None)
+    };
     let next_schema = i32::try_from(schema + 1)
         .map_err(|_| StoreError::Other("invalid collaboration room schema".into()))?;
     tx.execute(
@@ -506,6 +658,18 @@ pub async fn compact(
         &[&material_id],
     )
     .await?;
+    if let Some(keys) = keys {
+        tx.execute(
+            "UPDATE material_yjs_keys SET state=$2, log_bytes=0, log_rows=0 WHERE material_id=$1",
+            &[&material_id, &keys],
+        )
+        .await?;
+        tx.execute(
+            "DELETE FROM material_yjs_key_updates WHERE material_id=$1",
+            &[&material_id],
+        )
+        .await?;
+    }
     tx.execute(
         "UPDATE agent_edit_inverses
          SET undo_status='unavailable', undo_reason='compacted', inverse='[]'::jsonb,

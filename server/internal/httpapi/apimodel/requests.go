@@ -197,9 +197,10 @@ type CreateQuizReq struct {
 	Privacy     store.Privacy    `json:"privacy,omitempty"`
 }
 
+// UpdateQuizContentReq takes no revision: editors edit a quiz live, so
+// there is no stale form to refuse (Epo 2026-10-10, D7).
 type UpdateQuizContentReq struct {
-	ExpectedRevision int64             `json:"expectedRevision" minimum:"1"`
-	Questions        *[]map[string]any `json:"questions,omitempty"`
+	Questions *[]map[string]any `json:"questions,omitempty"`
 }
 
 type UpdateQuizMetadataReq struct {

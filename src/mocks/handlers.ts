@@ -2068,21 +2068,34 @@ export const handlers = [
       ? HttpResponse.json(db.learnerMaterial(mt))
       : new HttpResponse(null, { status: 404 });
   }),
-  http.post('/api/materials/:id/collaboration-token', async ({ params }) => {
-    const material = db.materials.find((item) => item.id === params.id);
-    if (!material) return new HttpResponse(null, { status: 404 });
-    // Viewers get read channels (Epo 2026-10-10, D1).
-    return HttpResponse.json(
-      {
-        access: material.capabilities.canEdit ? 'write' : 'read',
-        expiresAt: Math.floor(Date.now() / 1000) + 5 * 60,
-        room: mockMaterialRoom(material.id),
-        token: 'mock-collaboration-token',
-        url: 'mock://collaboration',
-      },
-      { status: 201 }
-    );
-  }),
+  http.post(
+    '/api/materials/:id/collaboration-token',
+    async ({ params, request }) => {
+      const material = db.materials.find((item) => item.id === params.id);
+      if (!material) return new HttpResponse(null, { status: 404 });
+      const body = (await request.json().catch(() => null)) as {
+        document?: string;
+      } | null;
+      const keys = body?.document === 'keys';
+      if (keys && material.kind !== 'quiz')
+        return new HttpResponse(null, { status: 404 });
+      // A quiz's keys go to editors who can write only (Epo 2026-10-10).
+      if (keys && !material.capabilities.canEdit)
+        return new HttpResponse(null, { status: 403 });
+      const room = mockMaterialRoom(material.id);
+      // Viewers get read channels (Epo 2026-10-10, D1).
+      return HttpResponse.json(
+        {
+          access: material.capabilities.canEdit ? 'write' : 'read',
+          expiresAt: Math.floor(Date.now() / 1000) + 5 * 60,
+          room: keys ? `keys:${room.slice('material:'.length)}` : room,
+          token: 'mock-collaboration-token',
+          url: 'mock://collaboration',
+        },
+        { status: 201 }
+      );
+    }
+  ),
   http.patch('/api/materials/:id/metadata', async ({ params, request }) => {
     const mt = db.materials.find((x) => x.id === params.id);
     if (!mt) return new HttpResponse(null, { status: 404 });
@@ -2736,23 +2749,6 @@ export const handlers = [
     // Without edit access the quiz's key does not exist for the caller.
     if (!mt?.capabilities.canEditContent)
       return new HttpResponse(null, { status: 404 });
-    return HttpResponse.json(db.quizFromMaterial(mt));
-  }),
-  http.patch('/api/quizzes/:id/content', async ({ params, request }) => {
-    const mt = db.materials.find(
-      (x) => x.id === params.id && x.kind === 'quiz'
-    );
-    if (!mt) return new HttpResponse(null, { status: 404 });
-    const body = (await request.json()) as Partial<EditableQuiz> & {
-      expectedRevision: number;
-    };
-    if (body.expectedRevision !== mt.revision)
-      return new HttpResponse(null, { status: 409 });
-    const cur = db.quizFromMaterial(mt);
-    const questions = body.questions ?? cur.questions;
-    mt.content = quizDocument(questions, mt.id);
-    mt.revision += 1;
-    db.refreshMaterialContentBytes(mt);
     return HttpResponse.json(db.quizFromMaterial(mt));
   }),
   http.patch('/api/quizzes/:id/metadata', async ({ params, request }) => {

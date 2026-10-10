@@ -47,6 +47,7 @@ import { handOverLiveNote } from '@/features/notes/liveNoteHandover';
 import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import type { LearnerQuestion } from '@/features/questions/types';
 import { QuizEditor } from '@/features/quizzes/QuizEditor';
+import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
 import { QuizQuestionList } from '@/features/quizzes/QuizPage';
 import {
   OfflineStatus,
@@ -574,11 +575,13 @@ function QuizPreview({
   const quiz = content.value.find(
     (node): node is QuizElement => node.type === 'quiz'
   );
-  const questions = (quiz?.children ?? []).flatMap((node) =>
+  const stored = (quiz?.children ?? []).flatMap((node) =>
     'type' in node && node.type === 'quiz_question'
       ? [node.question as unknown as LearnerQuestion]
       : []
   );
+  // The stored questions paint first; the live room follows (live-items).
+  const questions = useLiveQuizQuestions(quizId, stored);
   return (
     <TabContent centered={centered}>
       <div className="mb-7 flex items-baseline gap-4">

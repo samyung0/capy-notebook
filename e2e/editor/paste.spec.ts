@@ -1,10 +1,21 @@
-import { expect, type Locator, type Page, test } from '@playwright/test';
+import {
+  expect,
+  type Locator,
+  type Page,
+  type Request,
+  test,
+} from '@playwright/test';
 import { EDITOR_NOTE } from '../../src/mocks/editorSeed';
 import { m } from '../i18n';
 import { clickTextEnd, openEditorNote } from './helpers';
 
-/** The embedded quiz editor's read of a quiz it edits. */
-const QUIZ_EDIT_READ = /^\/api\/quizzes\/([^/]+)\/edit$/;
+const TOKEN = /^\/api\/materials\/([^/]+)\/collaboration-token$/;
+/** The quiz an embedded quiz editor edits: it joins that quiz's keys room
+ * (live-items), which only an editor asks for. */
+function quizEdited(request: Request) {
+  const id = new URL(request.url()).pathname.match(TOKEN)?.[1];
+  return id && request.postData()?.includes('"keys"') ? id : undefined;
+}
 
 /**
  * Paste through the same events a real clipboard fires. Slate handles a
@@ -148,7 +159,7 @@ test.describe('paste', () => {
   }) => {
     const edited = new Set<string>();
     page.on('request', (request) => {
-      const id = new URL(request.url()).pathname.match(QUIZ_EDIT_READ)?.[1];
+      const id = quizEdited(request);
       if (id) edited.add(id);
     });
     const editor = await openEmptyLine(page);
@@ -190,7 +201,7 @@ test.describe('paste', () => {
   }) => {
     const edited: string[] = [];
     page.on('request', (request) => {
-      const id = new URL(request.url()).pathname.match(QUIZ_EDIT_READ)?.[1];
+      const id = quizEdited(request);
       if (id && !edited.includes(id)) edited.push(id);
     });
     const editor = await openEmptyLine(page);
@@ -247,7 +258,7 @@ test.describe('paste', () => {
   }) => {
     const edited: string[] = [];
     page.on('request', (request) => {
-      const id = new URL(request.url()).pathname.match(QUIZ_EDIT_READ)?.[1];
+      const id = quizEdited(request);
       if (id && !edited.includes(id)) edited.push(id);
     });
     const editor = await openEmptyLine(page);

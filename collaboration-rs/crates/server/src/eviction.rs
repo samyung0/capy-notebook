@@ -32,6 +32,7 @@ pub async fn move_lineage(app: &Shared, room: &str, cause: Cause) {
                 Some(RoomName::Material {
                     material_id,
                     schema,
+                    ..
                 }) => note_store::reset_lineage(&app.db, &material_id, schema)
                     .await
                     .map_err(|error| error.to_string()),

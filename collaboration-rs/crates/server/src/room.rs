@@ -105,6 +105,13 @@ pub enum RoomCmd {
         plan: notes::children::ChildPlan,
         answer: Result<(notes::children::ChildAnswer, bool), String>,
     },
+    /// A quiz's keys room to its content room: the matching and ordering
+    /// entries the reader copies follow (D3, live-items).
+    Copy(Vec<items::quiz::CopyPart>),
+    /// The content room's answer: the slots a copy rewrite assigned.
+    Slots(Vec<(String, String, String)>),
+    /// The content room loaded: the keys room sends its entries again.
+    CopyPull,
 }
 
 /// An update that wrote child ids, the writer it is attributed to, and the
@@ -158,6 +165,11 @@ struct Note {
     kind: String,
     /// What the document is: Plate (notes) or a live item (live-items).
     model: crate::model::Model,
+    /// The material's content document, or a quiz's keys document.
+    doc: note_store::Doc,
+    /// A keys room: the reader-copy entries last sent to the content room
+    /// (none: send them at the next flush).
+    copy_sent: Option<Vec<items::quiz::CopyPart>>,
     validator: crate::model::RoomValidator,
     durable_metrics: Option<notes::limits::Metrics>,
     stored_version: i64,
@@ -345,6 +357,7 @@ async fn load(
         RoomName::Material {
             material_id,
             schema,
+            keys,
         } => {
             // Debug builds only: the integration tests' panic during a load,
             // outside the room's own steps (once, so the next join loads).
@@ -354,11 +367,23 @@ async fn load(
             {
                 panic!("integration test panic during a load");
             }
-            let loaded = note_store::load(&app.db, material_id, *schema)
+            let doc_kind = if *keys {
+                note_store::Doc::Keys
+            } else {
+                note_store::Doc::Content
+            };
+            let loaded = note_store::load(&app.db, material_id, *schema, doc_kind)
                 .await
                 .map_err(|error| error.to_string())?;
             let kind = loaded.material_kind.clone();
-            let model = crate::model::Model::of(&kind);
+            let model = if *keys {
+                if kind != "quiz" {
+                    return Err("only a quiz has a keys document".into());
+                }
+                crate::model::Model::Item(items::Kind::QuizKeys)
+            } else {
+                crate::model::Model::of(&kind)
+            };
             let (log_rows, base_bytes) = (loaded.rows.len() as i64, loaded.base.len() as i64);
             let (stored_version, projected_version, log_bytes) = (
                 loaded.stored_version,
@@ -399,6 +424,8 @@ async fn load(
                 // and measuring a near-limit note on the room task (~55 ms).
                 validator: model.validator(metrics),
                 model,
+                doc: doc_kind,
+                copy_sent: None,
                 durable_metrics: Some(metrics),
                 stored_version,
                 projected_version,
@@ -531,6 +558,13 @@ async fn run(
         .stats
         .log_bytes
         .fetch_add(log_bytes.max(0) as u64, Ordering::Relaxed);
+    if let Kindly::Note(note) = &room.kind {
+        match (note.model, note.doc) {
+            (_, note_store::Doc::Keys) => room.schedule_flush(),
+            (crate::model::Model::Item(items::Kind::Quiz), _) => room.send_peer(RoomCmd::CopyPull),
+            _ => {}
+        }
+    }
     room.serve(&mut rx).await;
 }
 
@@ -802,6 +836,14 @@ impl Room {
                 let _ = reply.send(state);
             }
             RoomCmd::ServiceEdit(edit) => self.service_edit(*edit),
+            RoomCmd::Copy(parts) => self.copy_from_keys(&parts),
+            RoomCmd::Slots(slots) => self.write_slots(&slots),
+            RoomCmd::CopyPull => {
+                if let Kindly::Note(note) = &mut self.kind {
+                    note.copy_sent = None;
+                }
+                self.schedule_flush();
+            }
             RoomCmd::ChildPass(pass) => {
                 self.child_passes.push_back(*pass);
                 self.next_child_pass();
@@ -929,6 +971,90 @@ impl Room {
         }
         if !update.is_empty() {
             // Content the validator did not admit: its growth bound is stale.
+            if let Kindly::Note(note) = &mut self.kind {
+                note.validator.invalidate();
+            }
+            self.content_changed();
+            self.broadcast_update(None, update);
+        }
+    }
+
+    /// The other document's room of a quiz (`keys:` for `material:`, and
+    /// back), when it is loaded here.
+    fn peer(&self) -> Option<crate::app::RoomHandle> {
+        let Kindly::Note(note) = &self.kind else {
+            return None;
+        };
+        let name = match note.doc {
+            note_store::Doc::Content => format!("keys:{}:schema:{}", note.material_id, note.schema),
+            note_store::Doc::Keys => {
+                format!("material:{}:schema:{}", note.material_id, note.schema)
+            }
+        };
+        self.app.rooms.get(&name)
+    }
+
+    fn send_peer(&self, cmd: RoomCmd) {
+        if let Some(peer) = self.peer() {
+            tokio::spawn(async move {
+                let _ = peer.tx.send(cmd).await;
+            });
+        }
+    }
+
+    /// A keys room sends the content room its matching and ordering entries
+    /// whenever they changed (once per flush window at most).
+    fn send_copy(&mut self) {
+        let Kindly::Note(note) = &mut self.kind else {
+            return;
+        };
+        if note.doc != note_store::Doc::Keys {
+            return;
+        }
+        let parts = items::quiz::copy_parts(&self.doc.transact());
+        if note.copy_sent.as_ref() == Some(&parts) || self.peer().is_none() {
+            return;
+        }
+        if let Kindly::Note(note) = &mut self.kind {
+            note.copy_sent = Some(parts.clone());
+        }
+        self.send_peer(RoomCmd::Copy(parts));
+    }
+
+    /// The content room writes the reader copies the keys entries need (a
+    /// server write, stored with the room's next store) and hands new slots
+    /// back to the keys room.
+    fn copy_from_keys(&mut self, parts: &[items::quiz::CopyPart]) {
+        if !matches!(&self.kind, Kindly::Note(note) if note.model == crate::model::Model::Item(items::Kind::Quiz))
+        {
+            return;
+        }
+        let mut slot = || uuid::Uuid::new_v4().simple().to_string();
+        let mut txn = self.doc.transact_mut();
+        let slots = items::quiz::apply_copy(&mut txn, parts, &mut slot);
+        let update = ydoc::committed_update(txn);
+        if !update.is_empty() {
+            if let Kindly::Note(note) = &mut self.kind {
+                note.validator.invalidate();
+            }
+            self.content_changed();
+            self.broadcast_update(None, update);
+        }
+        if !slots.is_empty() {
+            self.send_peer(RoomCmd::Slots(slots));
+        }
+    }
+
+    /// The keys room records the slots a copy rewrite assigned.
+    fn write_slots(&mut self, slots: &[(String, String, String)]) {
+        if !matches!(&self.kind, Kindly::Note(note) if note.doc == note_store::Doc::Keys) {
+            return;
+        }
+        let root = self.doc.get_or_insert_map(items::quiz::KEYS_ROOT);
+        let mut txn = self.doc.transact_mut();
+        items::quiz::apply_slots(&mut txn, &root, slots);
+        let update = ydoc::committed_update(txn);
+        if !update.is_empty() {
             if let Kindly::Note(note) = &mut self.kind {
                 note.validator.invalidate();
             }
@@ -1128,14 +1254,22 @@ impl Room {
             return;
         }
         note.folding = true;
-        let (app, material_id, schema, through) = (
+        let (app, material_id, schema, through, doc_kind) = (
             self.app.clone(),
             note.material_id.clone(),
             note.schema,
             note.stored_version,
+            note.doc,
         );
         tokio::spawn(async move {
-            let folded = match note_store::fold(&app.db, &material_id, schema, Some(through)).await
+            let folded = match note_store::fold(
+                &app.db,
+                &material_id,
+                schema,
+                doc_kind,
+                Some(through),
+            )
+            .await
             {
                 Ok(folded) => folded.map(|f| (f.rows as i64, f.log_bytes, f.base_bytes)),
                 Err(error) => {
@@ -1254,6 +1388,7 @@ impl Room {
     /// frame.
     fn flush(&mut self) {
         self.flush_at = None;
+        self.send_copy();
         let window = std::mem::take(&mut self.window);
         let senders: HashSet<MemberKey> = window.iter().filter_map(|(sender, _)| *sender).collect();
         let everyone = merge(window.iter().map(|(_, update)| update.as_slice()));
@@ -1971,9 +2106,9 @@ impl Room {
             return;
         };
         let doc = self.doc.clone();
-        let kind = note.kind.clone();
+        let (kind, model, doc_kind) = (note.kind.clone(), note.model, note.doc);
         let previous = note.durable_metrics;
-        let validated = tokio::task::spawn_blocking(move || validate(&doc, &kind, previous))
+        let validated = tokio::task::spawn_blocking(move || validate(&doc, model, &kind, previous))
             .await
             .unwrap_or_else(|error| Err(StoreError::Other(error.to_string())));
         let (metrics, limit_code) = match validated {
@@ -2003,7 +2138,7 @@ impl Room {
         self.view_dirty = true;
         let app = self.app.clone();
         tokio::spawn(async move {
-            let result = note_store::append(&app.db, &material_id, schema, &row, &actors)
+            let result = note_store::append(&app.db, &material_id, schema, doc_kind, &row, &actors)
                 .await
                 .map_err(StoreFailure::Note);
             let done = StoreDone {
@@ -2551,7 +2686,10 @@ impl Room {
         if note.projecting {
             return;
         }
-        if note.stored_version <= note.projected_version || self.store.dirty {
+        // A quiz's other document may have stored since this room last did:
+        // an on-demand request projects both from the store.
+        let asked = note.model.quiz() && !note.project_waiters.is_empty();
+        if (note.stored_version <= note.projected_version && !asked) || self.store.dirty {
             let version = note.projected_version;
             for waiter in note.project_waiters.drain(..) {
                 let _ = waiter.send(Ok(version));
@@ -2562,6 +2700,19 @@ impl Room {
         let version = note.stored_version;
         let material_id = note.material_id.clone();
         let app = self.app.clone();
+        if note.model.quiz() {
+            let Some(handle) = self.own_handle() else {
+                return;
+            };
+            tokio::spawn(async move {
+                let projected = match projection::project_durable(&app, &material_id).await {
+                    Ok(projected) => RoomCmd::Projected(projected, Ok(())),
+                    Err(error) => RoomCmd::Projected(version, Err(error)),
+                };
+                let _ = handle.tx.send(projected).await;
+            });
+            return;
+        }
         // Read here, so the content is exactly the durable state at `version`;
         // the room waits for it as for a store's validation.
         let content = projection::content_of(self.doc.clone(), note.model).await;
@@ -2646,7 +2797,7 @@ impl Room {
         unlog_bytes(&self.app, note.log_bytes.max(0) as u64);
         let app = self.app.clone();
         let doc = self.doc.clone();
-        let model = note.model;
+        let (model, doc_kind) = (note.model, note.doc);
         let (material_id, schema, stored, projected) = (
             note.material_id.clone(),
             note.schema,
@@ -2664,8 +2815,13 @@ impl Room {
             // neither waits for the other.
             let projecting = async {
                 if stored > projected
-                    && let Err(error) =
+                    && let Err(error) = if model.quiz() {
+                        projection::project_durable(&app, &material_id)
+                            .await
+                            .map(|_| ())
+                    } else {
                         projection::project_doc(&app, &material_id, stored, doc, model).await
+                    }
                 {
                     log(
                         Level::Warn,
@@ -2676,7 +2832,9 @@ impl Room {
             };
             // Compaction while the room is empty (DESIGN.md 3.5).
             let folding = async {
-                if let Err(error) = note_store::fold(&app.db, &material_id, schema, None).await {
+                if let Err(error) =
+                    note_store::fold(&app.db, &material_id, schema, doc_kind, None).await
+                {
                     observe::capture(
                         &error.to_string(),
                         None,
@@ -2714,18 +2872,22 @@ fn merge<'a>(updates: impl Iterator<Item = &'a [u8]>) -> Option<Vec<u8>> {
 /// is canonical for the material's kind, and over a bound only if it shrank.
 fn validate(
     doc: &Doc,
+    model: crate::model::Model,
     kind: &str,
     previous: Option<notes::limits::Metrics>,
 ) -> Result<(notes::limits::Metrics, Option<notes::limits::LimitCode>), StoreError> {
     let txn = doc.transact();
-    let model = crate::model::Model::of(kind);
     model.assert_roots(&txn).map_err(StoreError::Invalid)?;
     if let crate::model::Model::Item(item) = model {
         item.check_caps(&txn).map_err(StoreError::Invalid)?;
     }
     let value = model.document_value(&txn).map_err(StoreError::Invalid)?;
-    notes::material::assert_canonical(&value, kind)
-        .map_err(|error| StoreError::Invalid(error.0))?;
+    // A live quiz holds questions as typed; its projection keeps the
+    // complete ones (D4), so only the limits apply here.
+    if !model.quiz() {
+        notes::material::assert_canonical(&value, kind)
+            .map_err(|error| StoreError::Invalid(error.0))?;
+    }
     let metrics = notes::limits::measure_value(&value);
     let code = notes::limits::limit_code(&metrics);
     if let Some(code) = code

@@ -103,6 +103,7 @@ import type {
   Material,
   MaterialChildrenInputBody,
   MaterialChildrenOutputBody,
+  MaterialCollaborationTokenBody,
   MaterialIndexOutputBody,
   MaterialPage,
   MaterialRef,
@@ -4058,14 +4059,15 @@ export const getCreateMaterialCollaborationTokenUrl = (id: string,) => {
 /**
  * @summary Create a short-lived material room token
  */
-export const createMaterialCollaborationToken = async (id: string, options?: RequestInit): Promise<createMaterialCollaborationTokenResponse> => {
+export const createMaterialCollaborationToken = async (id: string,
+    materialCollaborationTokenBody?: NonReadonly<MaterialCollaborationTokenBody>, options?: RequestInit): Promise<createMaterialCollaborationTokenResponse> => {
 
   const res = await fetch(getCreateMaterialCollaborationTokenUrl(id),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(materialCollaborationTokenBody)
   }
 )
 

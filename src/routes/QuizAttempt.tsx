@@ -14,11 +14,15 @@ import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
+import type { LearnerQuestion } from '@/features/questions/types';
 import { AttemptBody } from '@/features/quizzes/AttemptBody';
 import { blockHomeCrumb, blockKindCrumb } from '@/features/quizzes/crumbs';
+import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
 import { CloneItemDialog } from '@/features/workspace/CloneItemDialog';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
+
+const NO_QUESTIONS: LearnerQuestion[] = [];
 
 /** `/quizzes/$quizId/attempt`, inside the app. Shared links open the public
  * page instead (src/share/SharedQuiz.tsx). */
@@ -41,6 +45,12 @@ function Attempt({ quizId }: { quizId: string }) {
     fresh: true,
   });
   const { mutateAsync: submit } = useSubmitAttempt({ errorToast: false });
+  // The questions follow the quiz's live room as editors change them (D9).
+  const questions = useLiveQuizQuestions(
+    quizId,
+    quiz?.questions ?? NO_QUESTIONS,
+    !!quiz
+  );
   const [cloning, setCloning] = useState(false);
   // In a workspace only its members and editors clone, and an embedded item
   // goes with its note.
@@ -131,7 +141,7 @@ function Attempt({ quizId }: { quizId: string }) {
           : void navigate({ search: { tab: 'blocks' }, to: '/files' })
       }
       provenance={quiz.provenance}
-      questions={quiz.questions}
+      questions={questions}
       topBar={<TopInsetBar className="hidden shrink-0 lg:flex" />}
       trail={[blockHomeCrumb(quiz), blockKindCrumb(m.quiz_quizzes(), 'quiz')]}
     />

@@ -70,8 +70,17 @@ impl From<&Claims> for Context {
 /// `material:<id>:schema:<n>` or `source:<id>:epoch:<n>`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum RoomName {
-    Material { material_id: String, schema: i64 },
-    Source { file_id: String, epoch: i64 },
+    /// A material's document, or with `keys` a quiz's keys document
+    /// (`keys:<id>:schema:<n>`, editors with write access only; live-items).
+    Material {
+        material_id: String,
+        schema: i64,
+        keys: bool,
+    },
+    Source {
+        file_id: String,
+        epoch: i64,
+    },
 }
 
 fn id_ok(id: &str) -> bool {
@@ -103,9 +112,10 @@ impl RoomName {
         }
         let number: i64 = number.parse().ok()?;
         match (*kind, *label) {
-            ("material", "schema") => Some(RoomName::Material {
+            ("material" | "keys", "schema") => Some(RoomName::Material {
                 material_id: (*id).to_owned(),
                 schema: number,
+                keys: *kind == "keys",
             }),
             ("source", "epoch") => Some(RoomName::Source {
                 file_id: (*id).to_owned(),
@@ -130,7 +140,11 @@ impl std::fmt::Display for RoomName {
             RoomName::Material {
                 material_id,
                 schema,
-            } => write!(f, "material:{material_id}:schema:{schema}"),
+                keys,
+            } => {
+                let kind = if *keys { "keys" } else { "material" };
+                write!(f, "{kind}:{material_id}:schema:{schema}")
+            }
             RoomName::Source { file_id, epoch } => write!(f, "source:{file_id}:epoch:{epoch}"),
         }
     }

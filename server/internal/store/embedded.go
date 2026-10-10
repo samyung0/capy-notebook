@@ -23,17 +23,6 @@ import (
 // embeddedName is the stored name of a new or copied embedded row.
 func embeddedName() string { return uuid.NewString() }
 
-// EmbedParent is the note a quiz or flashcard set is embedded in ("" for a
-// standalone one).
-func (s *Store) EmbedParent(ctx context.Context, materialID string) (string, error) {
-	var parent string
-	err := s.pool.QueryRow(ctx, `SELECT COALESCE(parent_material_id,'') FROM materials WHERE id=$1`, materialID).Scan(&parent)
-	if isNoRows(err) {
-		return "", ErrNotFound
-	}
-	return parent, err
-}
-
 // EmbeddedDraft is the authored content of a quiz or flashcard set inserted
 // into a note; card ids are minted here. ID is set only when the note and its
 // embedded rows are created together (an agent note). Provenance is what an

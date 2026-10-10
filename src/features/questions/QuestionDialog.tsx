@@ -19,6 +19,13 @@ import {
   ToolbarPopoverGroup,
 } from '@/components/ui/ToolbarPopover';
 import { userToast } from '@/components/ui/userToast';
+import type { ItemRoomStatus } from '@/features/collaboration/itemRoom';
+import {
+  LiveStatus,
+  UndoButtons,
+} from '@/features/collaboration/LiveItemControls';
+import type { UndoTarget } from '@/features/collaboration/undo';
+import { incompleteLine } from '@/features/quizzes/incomplete';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -103,12 +110,23 @@ type Row =
 type Editing =
   | { kind: 'block'; location: Location; block: QuestionBlock }
   | { kind: 'part'; part: QuestionPart };
+/** A live quiz question (Epo 2026-10-10): every change writes to the quiz's
+ * documents at once; there is no Save, Cancel or Done, the dialog closes with
+ * its X or Esc, and the footer holds Undo, Redo and the live state. */
+export interface LiveQuestion {
+  status: ItemRoomStatus;
+  undo: UndoTarget | null;
+  write: (question: Question) => void;
+}
+
 export interface QuestionDialogProps {
   bankAssetsUrl?: string;
   context?: string;
+  live?: LiveQuestion;
   onClose: () => void;
   onReload?: () => Promise<Question>;
-  onSave: (question: Question) => void | Promise<void>;
+  /** Staged editing (the bank): the dialog's Save. */
+  onSave?: (question: Question) => void | Promise<void>;
   open: boolean;
   policy?: 'quiz' | 'bank';
   question: Question;
@@ -204,6 +222,7 @@ function QuestionDialogSession({
   policy = 'quiz',
   bankAssetsUrl,
   uploadAsset,
+  live,
 }: QuestionDialogProps) {
   const {
     control,
@@ -215,9 +234,12 @@ function QuestionDialogSession({
     defaultValues: { draft: structuredClone(question) },
     resolver: zodResolver(z.object({ draft: questionSchema })),
   });
-  const draft = useWatch({ control, name: 'draft' });
+  const staged = useWatch({ control, name: 'draft' });
+  // Live: the question as the documents hold it now, and each change written
+  // at once; staged: the form's draft until Save.
+  const draft = live ? question : staged;
   const setDraft = (next: Question) =>
-    setValue('draft', next, { shouldDirty: true });
+    live ? live.write(next) : setValue('draft', next, { shouldDirty: true });
   const [editing, setEditing] = useState<Editing | null>(null);
   const [selected, setSelected] = useState<Row | null>(null);
   const [mobileTab, setMobileTab] = useState('outline');
@@ -415,7 +437,7 @@ function QuestionDialogSession({
         return;
       }
       try {
-        await onSave(question);
+        await onSave?.(question);
         onClose();
         if (policy === 'quiz') void warnComputationalOpenParts(question);
       } catch (error) {
@@ -478,6 +500,58 @@ function QuestionDialogSession({
       setSelected({ kind: 'block', location: { ...target.location, index } });
     }
   };
+  // Live, the open editor shows the documents' current part or block (a
+  // co-editor's typing included); a chart or graph stays staged until Done
+  // (one value per block, D8).
+  const stagedBlock = (block: QuestionBlock) =>
+    block.type === 'chart' || block.type === 'graph';
+  const shown: Editing | null =
+    live && editing
+      ? editing.kind === 'part'
+        ? {
+            kind: 'part',
+            part:
+              draft.parts.find((part) => part.id === editing.part.id) ??
+              editing.part,
+          }
+        : stagedBlock(editing.block)
+          ? editing
+          : {
+              ...editing,
+              block:
+                sectionBlocks(draft, editing.location)[
+                  editing.location.index
+                ] ?? editing.block,
+            }
+      : editing;
+  const editPart = (part: QuestionPart) => {
+    setEditing({ kind: 'part', part });
+    if (live) changePart(part);
+  };
+  const editBlock = (location: Location, block: QuestionBlock) => {
+    setEditing((current) =>
+      current?.kind === 'block' &&
+      rowKey({ kind: 'block', location: current.location }) ===
+        rowKey({ kind: 'block', location })
+        ? { ...current, block }
+        : current
+    );
+    if (live && !stagedBlock(block))
+      setDraft(
+        changeBlocks(
+          draft,
+          location,
+          sectionBlocks(draft, location).map((item, i) =>
+            i === location.index ? block : item
+          )
+        )
+      );
+  };
+  const close = () => {
+    if (live && policy === 'quiz') void warnComputationalOpenParts(draft);
+    onClose();
+  };
+  const incomplete = live ? incompleteLine(draft) : null;
   // Part labels only mean something when a question has several parts.
   const labelled = draft.parts.length > 1;
   const row = (
@@ -809,7 +883,47 @@ function QuestionDialogSession({
       cardScrollContainerClassName="max-h-[92dvh] overflow-hidden sm:max-h-[88dvh] md:h-[88dvh] [&>[data-slot=dialog-title]]:shrink-0 [&>[data-slot=dialog-footer]]:shrink-0"
       className="top-auto bottom-0 left-0 max-h-[92dvh] translate-x-0 translate-y-0 grid-rows-[minmax(0,1fr)_auto] px-0 sm:top-(--dialog-center,50%) sm:bottom-auto sm:left-(--dialog-center,50%) sm:max-h-[88dvh] sm:translate-x-(--dialog-offset,-50%) sm:translate-y-(--dialog-offset,-50%) sm:px-4 [&>.ML\_\_keyboard.is-visible]:h-[var(--_keyboard-height)]! [&>.ML\_\_keyboard]:h-0!"
       footer={
-        editing ? (
+        live ? (
+          <>
+            <div className="mr-auto flex items-center gap-2">
+              {live.undo && <UndoButtons manager={live.undo} />}
+              <LiveStatus status={live.status} />
+            </div>
+            {editing && (
+              <Button
+                disabled={
+                  pending ||
+                  (editing.kind === 'part' && draft.parts.length <= 1)
+                }
+                onClick={() =>
+                  editing.kind === 'block'
+                    ? removeBlock(editing.location)
+                    : removePart(editing.part.id)
+                }
+                rounded="large"
+                size="lg"
+                type="button"
+                variant="danger-outline"
+              >
+                {editing.kind === 'part'
+                  ? m.question_ui_remove_part()
+                  : m.question_ui_remove_block()}
+              </Button>
+            )}
+            {editing?.kind === 'block' && stagedBlock(editing.block) && (
+              <Button
+                disabled={pending}
+                onClick={() => void saveInner()}
+                rounded="large"
+                size="lg"
+                type="button"
+                variant="accent"
+              >
+                {m.question_ui_done()}
+              </Button>
+            )}
+          </>
+        ) : editing ? (
           <>
             <Button
               disabled={
@@ -866,7 +980,7 @@ function QuestionDialogSession({
         )
       }
       onClose={() => {
-        if (!pending) onClose();
+        if (!pending) close();
       }}
       open={open}
       title={
@@ -920,7 +1034,7 @@ function QuestionDialogSession({
             )}
           </div>
         )}
-        {editing ? (
+        {shown ? (
           <div className="space-y-4">
             <Button
               disabled={pending}
@@ -936,53 +1050,39 @@ function QuestionDialogSession({
               {m.question_ui_back_to_question()}
             </Button>
             <h3 className="t-large-card-title">
-              {editing.kind === 'part'
-                ? answerTitle(editing.part)
-                : blockLabels[editing.block.type]()}
+              {shown.kind === 'part'
+                ? answerTitle(shown.part)
+                : blockLabels[shown.block.type]()}
             </h3>
-            {editing.kind === 'block' ? (
+            {shown.kind === 'block' ? (
               <BlockEditor
-                block={editing.block}
+                block={shown.block}
                 onBusyChange={setSavingBlock}
-                onChange={(block) =>
-                  setEditing((current) =>
-                    current?.kind === 'block' &&
-                    rowKey({ kind: 'block', location: current.location }) ===
-                      rowKey({ kind: 'block', location: editing.location })
-                      ? { ...current, block }
-                      : current
-                  )
-                }
+                onChange={(block) => editBlock(shown.location, block)}
                 uploadAsset={uploadAsset}
               />
             ) : (
               <div className="space-y-5">
                 <AnswerEditor
-                  answer={editing.part.answer}
+                  answer={shown.part.answer}
                   onChange={(answer) =>
-                    setEditing({
-                      ...editing,
-                      part: withAnswer(editing.part, answer),
-                    })
+                    editPart(withAnswer(shown.part, answer))
                   }
                 />
-                {editing.part.markscheme ? (
+                {shown.part.markscheme ? (
                   <MarkschemeList
-                    items={editing.part.markscheme}
+                    items={shown.part.markscheme}
                     label={m.question_ui_scheme_marks({
-                      marks: marksLabel(editing.part.marks),
+                      marks: marksLabel(shown.part.marks),
                     })}
                     onChange={(markscheme) =>
-                      setEditing({
-                        ...editing,
-                        part: {
-                          ...editing.part,
-                          marks: markscheme.reduce(
-                            (sum, item) => sum + item.marks,
-                            0
-                          ),
-                          markscheme,
-                        },
+                      editPart({
+                        ...shown.part,
+                        marks: markscheme.reduce(
+                          (sum, item) => sum + item.marks,
+                          0
+                        ),
+                        markscheme,
                       })
                     }
                   />
@@ -990,13 +1090,10 @@ function QuestionDialogSession({
                   <SelectField
                     label={m.question_ui_part_marks()}
                     onChange={(value) =>
-                      setEditing({
-                        ...editing,
-                        part: { ...editing.part, marks: Number(value) },
-                      })
+                      editPart({ ...shown.part, marks: Number(value) })
                     }
                     options={markOptions}
-                    value={String(editing.part.marks)}
+                    value={String(shown.part.marks)}
                   />
                 )}
               </div>
@@ -1156,6 +1253,15 @@ function QuestionDialogSession({
               )}
               ref={setBodyColumn}
             >
+              {incomplete && (
+                <p
+                  className="mb-4 flex items-start gap-1.5 text-sm text-tint-warning-fg"
+                  role="status"
+                >
+                  <Icon className="mt-0.5 size-4 shrink-0" name="alert" />
+                  {incomplete}
+                </p>
+              )}
               <QuestionRunner
                 answers={{}}
                 disabled

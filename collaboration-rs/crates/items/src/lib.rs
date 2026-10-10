@@ -1,6 +1,6 @@
 //! Pure functions over the live item documents (track live-items, DESIGN.md
-//! in capy-harness/2026-10-06-rust-round/live-items): flashcard sets now,
-//! quizzes and their keys documents next. No I/O: the server owns rooms,
+//! in capy-harness/2026-10-06-rust-round/live-items): flashcard sets, and
+//! quizzes with their keys documents. No I/O: the server owns rooms,
 //! Postgres and timers, as with the notes crate.
 //!
 //! An item room admits only the shapes its editors write (Epo, 2026-10-08,
@@ -13,6 +13,7 @@
 pub mod flashcards;
 pub mod locate;
 pub mod order;
+pub mod quiz;
 pub mod validator;
 
 pub use validator::{Admission, Refusal, Validator};
@@ -32,6 +33,10 @@ pub struct Growth {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Flashcards,
+    /// A quiz's content document (readers and editors).
+    Quiz,
+    /// A quiz's keys document (editors with write access only).
+    QuizKeys,
 }
 
 impl Kind {
@@ -39,6 +44,7 @@ impl Kind {
     pub fn of_material(kind: &str) -> Option<Kind> {
         match kind {
             "flashcards" => Some(Kind::Flashcards),
+            "quiz" => Some(Kind::Quiz),
             _ => None,
         }
     }
@@ -47,19 +53,25 @@ impl Kind {
     pub fn material_kind(self) -> &'static str {
         match self {
             Kind::Flashcards => "flashcards",
+            Kind::Quiz | Kind::QuizKeys => "quiz",
         }
     }
 
     pub fn assert_roots<T: yrs::ReadTxn>(self, txn: &T) -> Result<(), String> {
         match self {
             Kind::Flashcards => flashcards::assert_roots(txn),
+            Kind::Quiz => quiz::assert_content_roots(txn),
+            Kind::QuizKeys => quiz::assert_keys_roots(txn),
         }
     }
 
-    /// The Plate value the document projects to (`materials.content`).
+    /// The Plate value the document projects to (`materials.content`). A
+    /// quiz projects from both its documents (`quiz::value`); one alone gives
+    /// what it holds.
     pub fn value<T: yrs::ReadTxn>(self, txn: &T) -> Vec<serde_json::Value> {
         match self {
             Kind::Flashcards => flashcards::value(txn),
+            Kind::Quiz | Kind::QuizKeys => self.document_value(txn),
         }
     }
 
@@ -68,13 +80,19 @@ impl Kind {
     pub fn document_value<T: yrs::ReadTxn>(self, txn: &T) -> Vec<serde_json::Value> {
         match self {
             Kind::Flashcards => flashcards::document_value(txn),
+            Kind::Quiz => quiz::content_document_value(txn),
+            Kind::QuizKeys => quiz::keys_document_value(txn),
         }
     }
 
-    /// The document seeded from a Plate value.
+    /// The document seeded from a Plate value. A quiz's two documents seed
+    /// together (`quiz::states_from_value`), so their slots agree.
     pub fn state_from_value(self, value: &[serde_json::Value], client_id: u64) -> Vec<u8> {
+        let mut slot = || yrs::uuid_v4().replace('-', "");
         match self {
             Kind::Flashcards => flashcards::state_from_value(value, client_id),
+            Kind::Quiz => quiz::states_from_value(value, client_id, &mut slot).0,
+            Kind::QuizKeys => quiz::states_from_value(value, client_id, &mut slot).1,
         }
     }
 
@@ -82,6 +100,8 @@ impl Kind {
     pub fn check_caps<T: yrs::ReadTxn>(self, txn: &T) -> Result<(), String> {
         match self {
             Kind::Flashcards => flashcards::check_caps(txn),
+            Kind::Quiz => quiz::check_content_caps(txn),
+            Kind::QuizKeys => quiz::check_keys_caps(txn),
         }
     }
 
@@ -92,6 +112,8 @@ impl Kind {
     ) -> Result<Growth, String> {
         match self {
             Kind::Flashcards => flashcards::admit_shapes(txn, incoming),
+            Kind::Quiz => quiz::admit_content(txn, incoming),
+            Kind::QuizKeys => quiz::admit_keys(txn, incoming),
         }
     }
 
@@ -103,6 +125,11 @@ impl Kind {
     ) -> Result<notes::edit::EditOutcome, notes::edit::EditError> {
         match self {
             Kind::Flashcards => flashcards::apply_commands(txn, commands),
+            Kind::Quiz | Kind::QuizKeys => Err(notes::edit::EditError::Edit {
+                code: notes::edit::EditErrorCode::UnsupportedOperation,
+                message: "a quiz edits both its documents (quiz::apply_commands)".into(),
+                details: None,
+            }),
         }
     }
 
@@ -113,6 +140,11 @@ impl Kind {
     ) -> Result<(), notes::edit::EditError> {
         match self {
             Kind::Flashcards => flashcards::verify_guards(txn, guards),
+            Kind::Quiz | Kind::QuizKeys => Err(notes::edit::EditError::Edit {
+                code: notes::edit::EditErrorCode::UnsupportedOperation,
+                message: "a quiz checks both its documents (quiz::verify_guards)".into(),
+                details: None,
+            }),
         }
     }
 
@@ -135,6 +167,9 @@ impl Kind {
                 flashcards::set_cards(txn, &cards);
                 Ok(())
             }
+            Kind::Quiz | Kind::QuizKeys => {
+                Err("a quiz saves both its documents (quiz::set_questions)".into())
+            }
         }
     }
 }
@@ -146,8 +181,12 @@ pub fn check_value(
     value: &[serde_json::Value],
     previous: Option<&notes::limits::Metrics>,
 ) -> Result<notes::limits::Metrics, Refusal> {
-    notes::material::assert_canonical(value, kind.material_kind())
-        .map_err(|error| Refusal::Shape(error.0))?;
+    // A live quiz admits structure and caps only; its projection holds the
+    // complete questions (D4, Epo 2026-10-10).
+    if kind == Kind::Flashcards {
+        notes::material::assert_canonical(value, kind.material_kind())
+            .map_err(|error| Refusal::Shape(error.0))?;
+    }
     let metrics = notes::limits::measure_value(value);
     if let Some(code) = notes::limits::limit_code(&metrics)
         && !notes::limits::recovers(&metrics, previous)

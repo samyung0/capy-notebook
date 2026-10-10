@@ -83,6 +83,7 @@ func (a *api) getQuiz(ctx context.Context, in *quizIDInput) (*quizOutput, error)
 	if _, err := a.materialRead(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
+	a.projectLive(ctx, in.ID)
 	res, err := a.s.GetQuiz(ctx, in.ID)
 	if err != nil {
 		return nil, hErr(err)
@@ -149,10 +150,7 @@ func (a *api) updateQuizContent(ctx context.Context, in *updateQuizContentInput)
 	if err := a.assertMaterialOwner(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	p := store.QuizContentPatch{
-		ExpectedRevision: in.Body.ExpectedRevision,
-		TimeLimitMin:     nil, UpdatedBy: userID(ctx),
-	}
+	p := store.QuizContentPatch{TimeLimitMin: nil, UpdatedBy: userID(ctx)}
 	if in.Body.Questions != nil {
 		raw := apimodel.EncodeQuestions(*in.Body.Questions)
 		p.Questions = &raw
@@ -161,7 +159,6 @@ func (a *api) updateQuizContent(ctx context.Context, in *updateQuizContentInput)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	a.publishEmbedChanged(ctx, in.ID, store.MaterialQuiz, res.ParentMaterialID)
 	return a.quizOutputWithAccess(ctx, in.ID, res)
 }
 
@@ -175,7 +172,6 @@ func (a *api) updateQuizMetadata(ctx context.Context, in *updateQuizMetadataInpu
 	if err != nil {
 		return nil, hErr(err)
 	}
-	a.publishEmbedChanged(ctx, in.ID, store.MaterialQuiz, res.ParentMaterialID)
 	return a.quizOutputWithAccess(ctx, in.ID, res)
 }
 
@@ -252,6 +248,8 @@ func (a *api) createAttempt(ctx context.Context, in *createAttemptInput) (*attem
 	if _, err := a.materialRead(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
+	// Grading uses the current projection (D9): live edits project first.
+	a.projectLive(ctx, in.ID)
 	quiz, err := a.s.GetQuiz(ctx, in.ID)
 	if err != nil {
 		return nil, hErr(err)
@@ -260,7 +258,8 @@ func (a *api) createAttempt(ctx context.Context, in *createAttemptInput) (*attem
 	if err != nil {
 		return nil, hErr(err)
 	}
-	plan, err := planGrading(qs, in.Body.Answers)
+	answers := projectedAnswers(qs, in.Body.Answers)
+	plan, err := planGrading(qs, answers)
 	if err != nil {
 		return nil, gradeRequestError(err)
 	}
@@ -269,11 +268,35 @@ func (a *api) createAttempt(ctx context.Context, in *createAttemptInput) (*attem
 		return nil, err
 	}
 	res, err := a.s.CreateAttempt(ctx, userID(ctx), in.ID, correct, total,
-		apimodel.EncodeRaw(in.Body.Answers), apimodel.EncodeQuestions(graded))
+		apimodel.EncodeRaw(answers), apimodel.EncodeQuestions(graded))
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &attemptDetailOutput{Body: apimodel.AttemptDetail{Attempt: res, Answers: in.Body.Answers, Questions: graded}}, nil
+	return &attemptDetailOutput{Body: apimodel.AttemptDetail{Attempt: res, Answers: answers, Questions: graded}}, nil
+}
+
+// projectedAnswers keeps the answers to parts the projection holds. A live
+// quiz shows learners every question as typed, but only complete ones are
+// projected and marked (D4, Epo 2026-10-10): an answer to an unprojected
+// question comes back not marked instead of refusing the attempt.
+func projectedAnswers(qs []map[string]any, answers map[string]any) map[string]any {
+	known := map[string]bool{}
+	for _, q := range qs {
+		parts, _ := q["parts"].([]any)
+		for _, raw := range parts {
+			p, _ := raw.(map[string]any)
+			if id, ok := p["id"].(string); ok {
+				known[id] = true
+			}
+		}
+	}
+	kept := make(map[string]any, len(answers))
+	for id, answer := range answers {
+		if known[id] {
+			kept[id] = answer
+		}
+	}
+	return kept
 }
 
 func (a *api) getAttempt(ctx context.Context, in *attemptIDInput) (*attemptDetailOutput, error) {

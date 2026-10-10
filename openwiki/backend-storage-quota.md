@@ -316,12 +316,12 @@ reserved; the material response carries it as `imageMaxBytes`. The browser
 uploads an image under the cap unchanged and shrinks a larger one first
 (`src/lib/fitImage.ts`, called from `uploadEditorAsset`: long side to 2000 px,
 WebP at falling quality, JPEG or PNG where the browser has no WebP encoder,
-animated GIFs refused). The quiz and flashcard editors shrink at pick time and hold the image in
-the browser under a local id, previewed from an object URL, until Save
-uploads the referenced ones and swaps in their asset ids
-(`src/features/quizzes/QuizEditor.tsx`, `src/features/flashcards/FlashcardsEditor.tsx`; a
-card's image is `image: {assetId}` on its `flashcard` node); a picked image the user abandons never reaches
-storage, and a failed upload fails the save. Bank figures have a flat 4 MiB
+animated GIFs refused). Quizzes and flashcard sets edit live (Epo
+2026-10-10, D6): a picked image is shrunk and uploads at once, and the block
+or card takes its asset id (`quizImageUpload` in
+`src/features/quizzes/QuizForm.tsx`, `src/features/flashcards/CardDialog.tsx`;
+a card's image is `image: {assetId}` on its `flashcard` node); an image the
+user abandons is trashed, hidden, by the next projection, as below. Bank figures have a flat 4 MiB
 cap ([question-bank.md](question-bank.md)). Every material content
 write (the PATCH and the collaboration projection behind live editing, agent
 and bank-copy edits) trashes, in its transaction, the material's `ready`

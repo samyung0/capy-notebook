@@ -119,7 +119,7 @@ import type {
   UpdateLabelReq,
   UpdateMaterialReq,
   UpdateMeReq,
-  UpdateQuizContentReq,
+  UpdateQuizMetadataReq,
   UpdateStandaloneSharingReq,
   UpdateTaskReq,
   UpdateWorkspaceMemberReq,
@@ -1946,9 +1946,15 @@ export function useDeleteMaterialDiscussion(materialId: string) {
   });
 }
 
-export const getMaterialCollaborationToken = (materialId: string) =>
+/** A room token; `keys` asks for a quiz's keys document (editors who can
+ * write only, live-items). */
+export const getMaterialCollaborationToken = (
+  materialId: string,
+  document?: 'keys'
+) =>
   api.post<MaterialCollaborationToken>(
-    `/materials/${materialId}/collaboration-token`
+    `/materials/${materialId}/collaboration-token`,
+    document ? { document } : undefined
   );
 
 export function useMaterialCollaborationToken(
@@ -2098,14 +2104,12 @@ function invalidateQuiz(qc: ReturnType<typeof useQueryClient>, id: string) {
   invalidateAllMaterials(qc);
 }
 
-export function useUpdateQuizContent() {
+export function useUpdateQuizMetadata() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...body }: UpdateQuizContentReq & { id: string }) =>
-      api.patch<EditableQuiz>(`/quizzes/${id}/content`, body),
-    onSuccess: (_d, v) => {
-      invalidateQuiz(qc, v.id);
-    },
+    mutationFn: ({ id, ...body }: UpdateQuizMetadataReq & { id: string }) =>
+      api.patch<EditableQuiz>(`/quizzes/${id}/metadata`, body),
+    onSuccess: (_d, v) => invalidateQuiz(qc, v.id),
   });
 }
 export function useUpdateQuizSharing() {

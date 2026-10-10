@@ -52,6 +52,17 @@ type collaborationTokenInput struct {
 	ID string `path:"id"`
 }
 
+// MaterialCollaborationTokenBody names the document: a quiz's keys document
+// goes to editors who can write only (live-items, Epo 2026-10-10).
+type MaterialCollaborationTokenBody struct {
+	Document string `json:"document,omitempty" enum:"content,keys"`
+}
+
+type materialCollaborationTokenInput struct {
+	ID   string                          `path:"id"`
+	Body *MaterialCollaborationTokenBody `required:"false"`
+}
+
 type collaborationTokenResponse struct {
 	Token string `json:"token"`
 	Room  string `json:"room"`
@@ -231,7 +242,7 @@ func (a *api) requestMaterialIndex(ctx context.Context, in *materialIndexInput) 
 
 func (a *api) createMaterialCollaborationToken(
 	ctx context.Context,
-	in *collaborationTokenInput,
+	in *materialCollaborationTokenInput,
 ) (*collaborationTokenOutput, error) {
 	uid := userID(ctx)
 	role, err := a.s.MaterialEffectiveRole(ctx, uid, in.ID)
@@ -271,6 +282,21 @@ func (a *api) createMaterialCollaborationToken(
 	if err != nil {
 		return nil, collaborationError(err)
 	}
+	if in.Body != nil && in.Body.Document == "keys" {
+		// A quiz's keys go to editors who can write, never to a reader
+		// (Epo 2026-10-10): the per-room access check is the key filter.
+		mt, err := a.s.GetMaterial(ctx, in.ID)
+		if err != nil {
+			return nil, collaborationError(err)
+		}
+		if mt.Kind != store.MaterialQuiz {
+			return nil, huma.Error404NotFound("not found")
+		}
+		if access != "write" {
+			return nil, huma.Error403Forbidden("collaboration-read-only")
+		}
+		room = "keys:" + strings.TrimPrefix(room, "material:")
+	}
 	schema := 1
 	if _, _, found := strings.Cut(room, ":schema:"); found {
 		if parsed, parseErr := strconv.Atoi(room[strings.LastIndex(room, ":")+1:]); parseErr == nil {
@@ -308,11 +334,6 @@ func (a *api) projectMaterialYjsDocument(
 	material, err := a.s.ProjectMaterialContent(ctx, in.ID, projection, body.YjsVersion)
 	if err != nil {
 		return nil, collaborationError(err)
-	}
-	// An agent's edit of an embedded quiz or set lands here (only a projection
-	// that changed the content names the kind).
-	if material.Kind != "" {
-		a.publishEmbedChanged(ctx, material.ID, material.Kind, material.ParentMaterialID)
 	}
 	return &projectMaterialOutput{Body: apimodel.MaterialUpdateResult{
 		ID: material.ID, Revision: material.Revision, ContentBytes: int(material.SizeBytes),
@@ -499,27 +520,17 @@ func (a *api) deleteMaterialComment(ctx context.Context, in *discussionIDInput) 
 	return &Empty{}, nil
 }
 
-// embedChangedChannel carries "an embedded quiz or flashcard set changed" to
-// the collaboration service, which tells the open editors of its note.
-const embedChangedChannel = "capy:collaboration:embeds"
-
-// publishEmbedChanged tells the open editors of the note an embedded quiz or
-// flashcard set sits in that it changed, after any write to it (Epo
-// 2026-10-07); they refetch that one item. Best effort, as comment
-// invalidations: a lost message leaves an editor on its cached copy until it
-// refetches. A standalone item (no parent) sends nothing.
-func (a *api) publishEmbedChanged(ctx context.Context, id string, kind store.MaterialKind, parentID string) {
-	if a.rdb == nil || parentID == "" {
-		return
-	}
-	room, err := a.s.MaterialRoom(ctx, parentID)
+// projectLive asks a live material's room to project edits its idle
+// projection has not written yet (notes, quizzes, sets; Epo 2026-10-07/10).
+// Reports whether materials.content moved; a failure serves the stored
+// projection and is reported.
+func (a *api) projectLive(ctx context.Context, materialID string) bool {
+	projected, err := a.s.ProjectLiveNote(ctx, materialID)
 	if err != nil {
-		return
+		obs.CaptureErr(ctx, err, map[string]string{"stage": "live_projection"})
+		return false
 	}
-	payload, _ := json.Marshal(map[string]any{
-		"id": id, "kind": kind, "materialId": parentID, "room": room, "type": "embed-changed",
-	})
-	_ = a.rdb.Publish(ctx, embedChangedChannel, payload).Err()
+	return projected
 }
 
 func (a *api) publishCommentInvalidation(ctx context.Context, materialID string) {

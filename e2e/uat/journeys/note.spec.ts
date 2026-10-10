@@ -20,7 +20,7 @@ import {
   notesWorkspace,
   openNote,
   pastedQuizCopies,
-  quizImageOnSave,
+  quizImageOnPick,
   quizImageRemoved,
   readView,
   refBlocks,
@@ -174,7 +174,7 @@ test('note: created in the browser, two editors converge, every block type impor
   await noProviderCalls(run, workspaceId);
 });
 
-test('note embedded blocks: quiz and flashcards inserted under the note, a removed quiz block trashed hidden and back on Undo, a quiz image shrunk and uploaded on Save, pasted quiz blocks copied per block', async ({
+test('note embedded blocks: quiz and flashcards inserted under the note, a removed quiz block trashed hidden and back on Undo, a quiz image shrunk and uploaded on pick, pasted quiz blocks copied per block', async ({
   run,
 }) => {
   test.setTimeout(1_200_000);
@@ -213,9 +213,9 @@ test('note embedded blocks: quiz and flashcards inserted under the note, a remov
       )
   );
 
-  // 2. Quiz image (a quiz embedded in note A), shrunk and uploaded on Save.
+  // 2. Quiz image (a quiz embedded in note A), shrunk and uploaded on pick.
   const quiz = await apiEmbeddedQuiz(run, notes.a);
-  const quizImage = await quizImageOnSave(run, quiz);
+  const quizImage = await quizImageOnPick(run, quiz);
 
   // 3. Pasted quiz blocks: kept in its own note, copied per block elsewhere.
   const copies = await pastedQuizCopies(

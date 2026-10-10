@@ -46,10 +46,9 @@ type ChapterPatch struct {
 	Order *int    `json:"order"`
 }
 type QuizContentPatch struct {
-	ExpectedRevision int64
-	Questions        *json.RawMessage `json:"questions"`
-	TimeLimitMin     *int             `json:"timeLimitMin"`
-	UpdatedBy        string           `json:"-"`
+	Questions    *json.RawMessage `json:"questions"`
+	TimeLimitMin *int             `json:"timeLimitMin"`
+	UpdatedBy    string           `json:"-"`
 }
 type QuizMetadataPatch struct {
 	Name      *string   `json:"name"`
@@ -1927,9 +1926,6 @@ func (s *Store) UpdateQuizContent(ctx context.Context, id string, p QuizContentP
 	if mt.Kind != "quiz" {
 		return Quiz{}, ErrNotFound
 	}
-	if p.ExpectedRevision < 1 || p.ExpectedRevision != mt.Revision {
-		return Quiz{}, ErrConflict
-	}
 	cur, err := s.quizFromMaterial(mt)
 	if err != nil {
 		return Quiz{}, err
@@ -1945,8 +1941,9 @@ func (s *Store) UpdateQuizContent(ctx context.Context, id string, p QuizContentP
 	if err != nil {
 		return Quiz{}, err
 	}
+	// The collaboration server diffs the questions into the live documents.
 	if _, err := s.UpdateMaterial(ctx, id, MaterialPatch{
-		Content: &content, UpdatedBy: p.UpdatedBy, ExpectedRevision: &p.ExpectedRevision,
+		Content: &content, UpdatedBy: p.UpdatedBy,
 	}); err != nil {
 		return Quiz{}, err
 	}

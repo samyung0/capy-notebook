@@ -40,7 +40,7 @@ export function FlashcardsEditor({
   /** Off inside a note (the card dialog carries them). */
   showUndo?: boolean;
 }) {
-  const { doc, undo } = room;
+  const { doc, history: undo } = room;
   const cards = useCards(doc);
   // On a set's own page Undo and Redo sit in the header beside View, where
   // the mock places them; inside a note the card dialog carries them.

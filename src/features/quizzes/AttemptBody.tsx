@@ -1,4 +1,11 @@
-import { type ReactNode, useCallback, useState } from 'react';
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { isAnonymousGradingLimit } from '@/api/anonymous';
 import type { Provenance, Question } from '@/api/types';
 import { TabContent } from '@/components/app/tabPanel';
@@ -29,6 +36,42 @@ import {
    no router or session: callers pass the frame, the top bar and how to grade. */
 
 type Answers = Record<string, Answer>;
+type AnyPart = LearnerPart | QuestionPart;
+
+/** Whether an answer still means what the learner chose after an editor
+ * changed the part live (D9, Epo 2026-10-10): a chosen option, ordering item
+ * or matching option that is gone, or a changed number of gaps, drops it. */
+function stillAnswers(before: AnyPart, after: AnyPart, value: Answer): boolean {
+  const a = before.answer;
+  const b = after.answer;
+  if (a.type !== b.type) return false;
+  if ((a.type === 'mcq' || a.type === 'multi') && 'options' in b)
+    return (
+      Array.isArray(value) &&
+      value.every(
+        (i) =>
+          typeof i === 'number' &&
+          'options' in a &&
+          a.options[i] === b.options[i]
+      )
+    );
+  if (a.type === 'ordering' && 'items' in a && 'items' in b)
+    return (
+      [...a.items].sort().join('\u0000') === [...b.items].sort().join('\u0000')
+    );
+  if (
+    b.type === 'matching' &&
+    'options' in b &&
+    value &&
+    typeof value === 'object'
+  )
+    return Object.values(value).every((option) =>
+      b.options.includes(option as string)
+    );
+  if (a.type === 'gaps' && b.type === 'gaps')
+    return JSON.stringify(a) === JSON.stringify(b);
+  return true;
+}
 const EmbeddedBody = ({ children }: { children: ReactNode }) => (
   <div>{children}</div>
 );
@@ -88,6 +131,35 @@ export function AttemptBody({
       setAnswers((current) => ({ ...current, [partId]: value })),
     []
   );
+  // Questions update live under the learner (D9): answers that no longer
+  // point at what the part holds go.
+  const partsById = useMemo(
+    () =>
+      new Map<string, AnyPart>(
+        questions.flatMap((question) =>
+          question.parts.map((part) => [part.id, part] as const)
+        )
+      ),
+    [questions]
+  );
+  const previousParts = useRef(partsById);
+  useEffect(() => {
+    const before = previousParts.current;
+    previousParts.current = partsById;
+    if (before === partsById) return;
+    setAnswers((current) => {
+      const kept = Object.fromEntries(
+        Object.entries(current).filter(([id, value]) => {
+          const was = before.get(id);
+          const now = partsById.get(id);
+          return !!(was && now && stillAnswers(was, now, value));
+        })
+      );
+      return Object.keys(kept).length === Object.keys(current).length
+        ? current
+        : kept;
+    });
+  }, [partsById]);
 
   // Public pages keep their ⋮ on every state; the app page shows Clone only
   // while taking the quiz.

@@ -995,111 +995,54 @@ async function pasteQuizBlock(
   );
 }
 
-/** Waits for the quiz editor's Save: the picked images upload, then the content. */
-async function saveQuiz(page: Page, quizId: string) {
-  const saved = page.waitForResponse(
-    (response) =>
-      new URL(response.url()).pathname === `/api/quizzes/${quizId}/content` &&
-      response.request().method() === 'PATCH'
-  );
-  await pageSave(page);
-  assert.equal((await saved).status(), 200);
-}
-
 /**
- * The edit page's Save, confirmed when the page asks "Save your changes?"
- * (the confirmation is in flight on 2026-10-06; without it Save saves at once).
+ * Quiz editor: quizzes edit live (Epo 2026-10-10), so a picked image over
+ * 2 MB is shrunk to WebP in the browser and uploads at once (D6); the content
+ * names the new asset once the quiz projects. The owner's charge grows by the
+ * asset plus the content. Returns the asset row.
  */
-async function pageSave(page: Page) {
-  await page
-    .getByRole('button', { exact: true, name: m.action_save() })
-    .click();
-  const confirm = page
-    .getByRole('dialog', { name: m.edit_save_confirm_title() })
-    .getByRole('button', { exact: true, name: m.action_save() });
-  if (
-    await confirm.waitFor({ timeout: 5000 }).then(
-      () => true,
-      () => false
-    )
-  )
-    await confirm.click();
-}
-
-/**
- * Quiz editor: a picked image over 2 MB is shrunk to WebP in the browser,
- * nothing reserves or uploads until Save, Save uploads it and the content
- * names the new asset; the owner's charge grows by the asset plus the
- * content. Returns the asset row.
- */
-export async function quizImageOnSave(run: UatRun, quizId: string) {
+export async function quizImageOnPick(run: UatRun, quizId: string) {
   const png = noisePng(2400, 1600);
   assert(png.length > QUIZ_IMAGE_MAX_BYTES);
   const before = await charge(run);
   const quizSize = Number((await materialRow(run, quizId)).size_bytes);
   const page = run.owner.page;
-  const uploads: string[] = [];
-  const watch = (request: { url(): string; method(): string }) => {
-    const url = new URL(request.url());
-    if (
-      url.pathname.includes('/editor-assets/') ||
-      (request.method() === 'PUT' && url.host !== new URL(run.env.apiUrl).host)
-    )
-      uploads.push(`${request.method()} ${url.pathname}`);
-  };
-  page.on('request', watch);
-  try {
-    await page.goto(`${run.env.appUrl}/materials/${quizId}?mode=edit`);
-    await page
-      .getByRole('button', { exact: true, name: m.action_edit() })
-      .click();
-    const dialog = page.getByRole('dialog');
-    await dialog
-      .getByRole('button', { name: m.question_ui_add_block_or_part() })
-      .click();
-    await page
-      .getByRole('button', { exact: true, name: m.question_ui_image() })
-      .click();
-    await dialog.locator('input[type="file"]').setInputFiles({
-      buffer: png,
-      mimeType: 'image/png',
-      name: 'field-photo.png',
-    });
-    // The shrunk copy previews from a browser object URL.
-    await expect(dialog.locator('img[src^="blob:"]').first()).toBeVisible({
-      timeout: 60_000,
-    });
-    await dialog
-      .getByRole('textbox', { name: m.question_ui_description() })
-      .fill('Field photo');
-    // The block's Save, then, back in the question, the question's Save.
-    await dialog
-      .getByRole('button', { exact: true, name: m.question_ui_save() })
-      .click();
-    await expect(dialog.locator('input[type="file"]')).toHaveCount(0);
-    await dialog
-      .getByRole('button', { exact: true, name: m.question_ui_save() })
-      .click();
-    await expect(dialog).toBeHidden();
-    // Picked and placed, yet nothing reserved or uploaded.
-    assert.deepEqual(uploads, []);
-    assert.deepEqual(await materialAssets(run, quizId), []);
-    const sessions = await run.query(
-      'SELECT id FROM upload_sessions WHERE material_id=%s',
-      [quizId]
-    );
-    assert.deepEqual(sessions, []);
-    const completed = page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname.startsWith(
-          `/api/materials/${quizId}/editor-assets/uploads/`
-        ) && new URL(response.url()).pathname.endsWith('/complete')
-    );
-    await saveQuiz(page, quizId);
-    assert.equal((await completed).status(), 201);
-  } finally {
-    page.off('request', watch);
-  }
+  await page.goto(`${run.env.appUrl}/materials/${quizId}?mode=edit`);
+  await page
+    .getByRole('button', { exact: true, name: m.action_edit() })
+    .click();
+  const dialog = page.getByRole('dialog');
+  await dialog
+    .getByRole('button', { name: m.question_ui_add_block_or_part() })
+    .click();
+  await page
+    .getByRole('button', { exact: true, name: m.question_ui_image() })
+    .click();
+  await dialog.locator('input[type="file"]').setInputFiles({
+    buffer: png,
+    mimeType: 'image/png',
+    name: 'field-photo.png',
+  });
+  await run.poll(
+    'quiz image uploaded on pick',
+    () => materialAssets(run, quizId),
+    (rows) => rows.length === 1 && rows[0].status === 'ready'
+  );
+  await dialog
+    .getByRole('textbox', { name: m.question_ui_description() })
+    .fill('Field photo');
+  // No Save: back to the question, then the dialog closes with Esc.
+  await dialog
+    .getByRole('button', { name: m.question_ui_back_to_question() })
+    .click();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  const [uploaded] = await materialAssets(run, quizId);
+  await run.poll(
+    'quiz image projected',
+    () => contentText(run, quizId),
+    (text) => text.includes(uploaded.id) && text.includes('Field photo')
+  );
   const [asset, ...rest] = await materialAssets(run, quizId);
   assert.deepEqual(rest, []);
   assert.equal(asset.status, 'ready');
@@ -1219,8 +1162,9 @@ export async function pastedQuizCopies(
   return copies;
 }
 
-/** Quiz editor: select the image block, delete it, save the question and quiz. */
-async function removeQuizImage(run: UatRun, quizId: string) {
+/** Quiz editor: select the image block and delete it; the edit is live, so
+ * the dialog just closes. */
+async function removeQuizImage(run: UatRun, quizId: string, assetId: string) {
   const page = run.owner.page;
   await page.goto(`${run.env.appUrl}/materials/${quizId}?mode=edit`);
   await page
@@ -1242,16 +1186,18 @@ async function removeQuizImage(run: UatRun, quizId: string) {
       name: m.question_ui_select_block({ type: m.question_ui_image() }),
     })
   ).toHaveCount(0);
-  await dialog
-    .getByRole('button', { exact: true, name: m.question_ui_save() })
-    .click();
+  await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
-  await saveQuiz(page, quizId);
+  await run.poll(
+    'quiz projected without its image',
+    () => contentText(run, quizId),
+    (text) => !text.includes(assetId)
+  );
 }
 
 /**
- * Removing the original quiz's image (over a minute old) and saving trashes
- * its row (charged and holding the shared object until the purge); the copies
+ * Removing the original quiz's image (over a minute old) trashes its row once
+ * the quiz projects (charged and holding the shared object until the purge); the copies
  * keep theirs.
  */
 export async function quizImageRemoved(
@@ -1264,7 +1210,7 @@ export async function quizImageRemoved(
   const refs = await blobRefs(run, quizImage.object_path);
   const before = await charge(run);
   const sizeBefore = Number((await materialRow(run, quiz)).size_bytes);
-  await removeQuizImage(run, quiz);
+  await removeQuizImage(run, quiz, quizImage.id);
   assert.deepEqual(
     (await materialAssets(run, quiz)).map((row) => [row.id, row.trashed]),
     [[quizImage.id, true]]

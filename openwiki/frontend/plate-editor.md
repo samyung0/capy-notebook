@@ -13,12 +13,13 @@ durable authority for material content after a room is initialized.
 - Yjs owns live material content.
 - Go/PostgreSQL own metadata, permissions, comments, and content projections.
 - `materials.content` is an eventually consistent Plate JSON read projection.
-- Note View, quiz study and signed-out or public pages render that projection
-  without joining Yjs.
+- Note View and signed-out or public pages render that projection without
+  joining Yjs.
 - Editors edit and comment in Edit mode; View is a static preview without comments.
-- Flashcard sets are live everywhere (live-items, Epo 2026-10-10): their edit
-  grid, View, study page and note embeds join the set's own room; signed-in
-  viewers join read-only, with no presence and no comment relays.
+- Flashcard sets and quizzes are live everywhere (live-items, Epo 2026-10-10):
+  their editors, View, study and attempt pages and note embeds join the item's
+  own rooms; signed-in viewers join read-only, with no presence and no comment
+  relays, and never a quiz's keys document.
 
 ## Package boundary
 
@@ -426,12 +427,12 @@ any materials list), and the note stores a void `material_ref` block
 (`{materialId, refKind}`) that renders the item itself, with no title row
 (`src/features/materials/embeds/`): View (note View and the public note page)
 shows the study component in the note's flow (`AttemptBody` / `StudyBody` in
-embedded mode: Submit grades in place, a flashcard flips when clicked), Edit shows the editors in place (`QuizForm`'s Edit and
-Remove per question and Add question, each change saved at once through the
-quiz content endpoint, one save at a time; the live `FlashcardsEditor` grid with
-its hover toolbar and Add card, editing the set's own room). A set embed joins
-its room only while within about a viewport of the screen, stays joined 30 s
-after it leaves (`useNearScreen.ts`) and while it holds unacknowledged edits. Removing the last question or card removes the
+embedded mode: Submit grades in place, a flashcard flips when clicked), Edit shows the live editors in place (`QuizForm`'s Edit and
+Remove per question and Add question, editing the quiz's content and keys
+rooms; the `FlashcardsEditor` grid with its hover toolbar and Add card, editing
+the set's room). An embed joins its rooms only while within about a viewport
+of the screen, stays joined 30 s after it leaves (`useNearScreen.ts`) and while
+it holds unacknowledged edits. Removing the last question or card removes the
 block itself (the item follows the removed-block trash rule; Undo restores both). The static renderer takes the page's embed renderer from
 `EmbedViewContext` (the app's reads through the account and loads on demand; the
 share page feeds the note's public data). Blocks that need the browser in a read-only
@@ -452,14 +453,11 @@ nested (a paste) is lifted to the top level by the plugin's normalizer. Blocks
 pasted while the caret is on a void block (a quiz, an image, an embed) go in
 right after that block with the caret following them (`VoidBlockPastePlugin`
 in `pastePlugins.ts`); Slate alone drops a fragment inserted into a void. Quiz
-edits save through the quiz content endpoint and set edits go to the set's
-room, so note undo covers only inserting and removing the reference (a set's
-card dialog has its own Undo and Redo). After any API write to an embedded quiz
-or set (UI, agent or API) Go publishes `capy:collaboration:embeds` and the
-collaboration server sends the parent note's room a stateless `embed-changed`
-(`{id, kind}`); every open editor of the note refetches that one item
-(Epo, 2026-10-07). Quizzes move to live documents of their own next (live-items
-phase 2), which removes this broadcast. Go and the collaboration server reject inline `quiz`/`flashcards`
+and set edits go to the item's own rooms, so note undo covers only inserting
+and removing the reference (the question and card dialogs have their own Undo
+and Redo). An agent or API write to an embedded item lands in its rooms, which
+every open editor and reader holds, so nothing refetches: the `embed-changed`
+broadcast of 2026-10-07 is gone (live-items). Go and the collaboration server reject inline `quiz`/`flashcards`
 nodes in a note and references anywhere but the top level. A markdown fence
 imports as a pending reference (`materialId: ''` plus the fence body in
 `pending`); the mounted editor claims it in the shared document
@@ -1242,10 +1240,55 @@ the live room's unsaved state and replace one stable custom block through the
 whole document. If the authority is unavailable, Go returns 503 instead of
 falling back to SQL.
 
-Quiz authoring sends `expectedRevision` from the loaded draft.
-The server locks the material row and checks that revision and completed
-projection before committing a replacement; its block precondition also checks
-the live Yjs content. Rejected saves retain the local draft.
+Quizzes edit live (live-items, Epo 2026-10-10) through two Yjs documents:
+the content document (`material:<id>:schema:<n>`), which readers join too, and
+the keys document (`keys:<id>:schema:<n>`), which only editors who can write
+join (`POST /api/materials/{id}/collaboration-token` with `{document: 'keys'}`;
+a viewer or a read-only editor gets 403, and the collaboration server refuses a
+read token for a keys room at JOIN and at refresh). The content document holds
+`questions`: question id to `{order, layout, labels, level?, stem, parts}`,
+part id to `{order, marks, blocks, answer}`, the answer map holding the type
+and what a learner may see (mcq and multi options, a short answer's unit,
+matching left items). The keys document holds `keys`: part id to `{type,
+solution, correct | accepted | hints | markscheme | gaps | options | pairs |
+items}`. Editors type ordering items and matching options in the keys
+document; readers get them only from `answer.copy`, a reader copy the server
+writes (slot id to `{text}`, read sorted by slot): adding or removing an item
+rewrites that part's copy whole under fresh random slots, inserted in slot
+order, and a text edit mirrors into its slot as the fewest changes, so neither
+the keys' typing order nor their Yjs ids reach a reader (D3). The keys room
+sends its matching and ordering entries to the content room, which writes the
+copy and hands new slots back (`RoomCmd::Copy`/`Slots`); either room loading
+reconciles them. A client update writing `copy` or a `slot` is refused. Both
+documents are stored beside each other (`material_yjs_keys`,
+`material_yjs_key_updates` for the keys) and every append of either takes the
+next `material_yjs_documents.stored_version`, so the projection's version and
+Go's rules about it are unchanged; the projection reads both documents at one
+version and keeps only the questions that pass the strict validator (D4), so
+grading (`POST /api/quizzes/{id}/attempts` projects a lagging room first, D9)
+and fresh reads see what a Save would have stored. Admission checks structure
+and caps only (`collaboration-rs/crates/items/src/quiz.rs`): texts, lists,
+blocks, parts per question and per quiz, open parts, marking items, tables.
+
+`QuestionDialog` edits a live question (`live` prop): its outline, part and
+block editors write through `writeQuestion`
+(`src/features/quizzes/liveQuiz.ts`: the fewest changes, lists by their common
+head and tail, a move as a new order key), a chart or graph stays staged until
+the block's Done (one value per block, D8), and the footer holds Undo, Redo and
+the live state; there is no Save or Cancel and the dialog closes with its X or
+Esc. Undo spans both documents (`pairedUndo` in
+`src/features/collaboration/undo.ts`: the latest step of either, and steps of
+both made together, such as an answer type change, as one). The quiz edit page
+has no Save or Reset: the name saves on blur, the cloud status follows the
+title, Undo, Redo and the View switch sit at the header's right, and an
+incomplete question shows a line under it saying what it lacks
+(`incomplete.ts`). Readers (the attempt page, the workspace quiz View, note
+embeds in View) paint the stored questions and then follow the content room
+(`liveQuizReads.ts`); a learner's answer that no longer points at what a part
+holds (a removed option, a changed set of ordering items) is dropped (D9). The
+save API (`PATCH /api/quizzes/{id}/content`) takes no revision (D7): it
+rewrites the questions that differ, whole, in both documents, and agent
+question commands work the same way, with inverses and question guards.
 
 Flashcard sets edit live (live-items, Epo 2026-10-10). Each set has its own
 Yjs document, `material:<id>:schema:<n>` like a note's: the root map `cards`

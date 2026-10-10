@@ -800,7 +800,7 @@ async fn a_note_room_caps_a_sync_message_at_4_mib_and_takes_a_near_2_mib_reconne
 }
 
 #[tokio::test]
-async fn redis_comments_embeds_and_user_evictions_reach_the_room() {
+async fn redis_comments_and_user_evictions_reach_the_room() {
     let Some(env) = env() else { return };
     let server = start(&env).await;
     let (user, material) = note(&env, "c").await;
@@ -827,28 +827,6 @@ async fn redis_comments_embeds_and_user_evictions_reach_the_room() {
         }
     };
     assert!(message.contains("t1"));
-    // The API's embed-changed reaches the parent note's room as sent.
-    let embed = serde_json::json!({
-        "id": "m_quiz",
-        "kind": "quiz",
-        "materialId": material,
-        "room": room,
-        "type": "embed-changed",
-    })
-    .to_string();
-    let _: i64 = redis::cmd("PUBLISH")
-        .arg("capy:collaboration:embeds")
-        .arg(&embed)
-        .query_async(&mut connection)
-        .await
-        .expect("publish");
-    let message = loop {
-        let message = text_payload(&client.until(9).await.expect("stateless"));
-        if message.contains("embed-changed") {
-            break message;
-        }
-    };
-    assert!(message.contains("m_quiz"));
     let evict = serde_json::json!({ "mode": "discard", "userId": user }).to_string();
     let _: i64 = redis::cmd("PUBLISH")
         .arg("capy:collaboration:user-evict")
@@ -2500,4 +2478,313 @@ async fn a_viewer_reads_a_notes_set_without_writes_or_presence() {
     watcher.send(8, &[]).await;
     assert!(!watcher.hears(7, 1500).await, "a viewer heard awareness");
     assert!(!editor.hears(7, 500).await, "an editor heard a viewer");
+}
+
+/// A quiz owned by `owner` (live-items) with an mcq and an ordering
+/// question; `privacy` link lets any signed-in user read it.
+async fn quiz_material(env: &Env, owner: &str, privacy: &str) -> String {
+    let material = format!("qz_it_{}", uuid_like());
+    let question = |id: &str, answer: serde_json::Value| {
+        serde_json::json!({
+            "type": "quiz_question",
+            "id": id,
+            "children": [{ "text": "" }],
+            "question": {
+                "id": id, "layout": "paper", "labels": "letters", "stem": [],
+                "parts": [{
+                    "id": format!("{id}-p"),
+                    "blocks": [{ "type": "text", "text": "Put these in sequence." }],
+                    "answer": answer, "marks": 1, "solution": [],
+                }],
+            },
+        })
+    };
+    let content = serde_json::json!({
+        "schemaVersion": 1,
+        "value": [{ "type": "quiz", "id": "quiz", "children": [
+            question("q1", serde_json::json!({ "type": "mcq", "options": ["Nucleus", "Ribosome"], "correct": [0] })),
+            question("q2", serde_json::json!({ "type": "ordering", "items": ["one", "two"] })),
+        ] }],
+    });
+    db(env)
+        .await
+        .execute(
+            "INSERT INTO materials (id, created_by, kind, title, content, privacy)
+             VALUES ($1, $2, 'quiz', 'IT quiz', $3, $4)",
+            &[&material, &owner, &content, &privacy],
+        )
+        .await
+        .expect("quiz");
+    material
+}
+
+fn map_at(doc: &Doc, path: &[&str]) -> Option<yrs::MapRef> {
+    use yrs::Map;
+    let (root, rest) = path.split_first()?;
+    let txn = doc.transact();
+    let mut map = txn.get_map(*root)?;
+    for key in rest {
+        map = match map.get(&txn, key)? {
+            yrs::Out::YMap(next) => next,
+            _ => return None,
+        };
+    }
+    Some(map)
+}
+
+/// The reader copy of `part` as a reader holds it: (Yjs clock, client, text).
+fn reader_copy(doc: &Doc, question: &str, part: &str) -> Vec<(u32, u64, String)> {
+    use yrs::Map;
+    let Some(copy) = map_at(
+        doc,
+        &["questions", question, "parts", part, "answer", "copy"],
+    ) else {
+        return Vec::new();
+    };
+    let txn = doc.transact();
+    let mut entries: Vec<(u32, u64, String)> = copy
+        .iter(&txn)
+        .filter_map(|(_, value)| match value {
+            yrs::Out::YMap(entry) => {
+                let yrs::branch::BranchID::Nested(id) =
+                    yrs::branch::BranchPtr::from(entry.as_ref()).id()
+                else {
+                    return None;
+                };
+                let text = match entry.get(&txn, "text") {
+                    Some(yrs::Out::YText(text)) => text.get_string(&txn),
+                    _ => String::new(),
+                };
+                Some((id.clock, id.client.get(), text))
+            }
+            _ => None,
+        })
+        .collect();
+    entries.sort();
+    entries
+}
+
+#[tokio::test]
+async fn two_editors_converge_across_a_quizs_content_and_keys() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let owner = user(&env).await;
+    let quiz = quiz_material(&env, &owner, "private").await;
+    let content_room = format!("material:{quiz}:schema:1");
+    let keys_room = format!("keys:{quiz}:schema:1");
+    let mut a = Client::open(server.port).await;
+    let mut keys = Client::open(server.port).await;
+    assert_eq!(
+        a.joined(&content_room, &token(&content_room, &owner, "write"))
+            .await,
+        1
+    );
+    assert_eq!(
+        keys.joined(&keys_room, &token(&keys_room, &owner, "write"))
+            .await,
+        1
+    );
+    assert!(
+        a.settle(|c| map_at(
+            &c.doc,
+            &["questions", "q1", "parts", "q1-p", "answer", "options"]
+        )
+        .is_some())
+            .await
+    );
+    assert!(
+        keys.settle(|c| map_at(&c.doc, &["keys", "q1-p"]).is_some())
+            .await
+    );
+    // A types into the first option; the keys editor makes the second correct.
+    a.write(|doc| {
+        use yrs::Map;
+        let option = map_at(
+            doc,
+            &[
+                "questions",
+                "q1",
+                "parts",
+                "q1-p",
+                "answer",
+                "options",
+                "o0",
+            ],
+        )
+        .expect("option");
+        let Some(yrs::Out::YText(text)) = option.get(&doc.transact(), "text") else {
+            panic!("text")
+        };
+        text.insert(&mut doc.transact_mut(), 7, " envelope");
+    })
+    .await;
+    keys.write(|doc| {
+        use yrs::Map;
+        let key = map_at(doc, &["keys", "q1-p"]).expect("key");
+        key.insert(&mut doc.transact_mut(), "correct", "o1");
+    })
+    .await;
+    assert!(a.until(6).await.is_some(), "content ack");
+    assert!(keys.until(6).await.is_some(), "keys ack");
+    // Both documents store against the one material version, and the on-demand
+    // projection holds both edits.
+    let (status, body) = internal(
+        server.port,
+        &format!("/internal/materials/{quiz}/project"),
+        &serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    let stored: serde_json::Value = db(&env)
+        .await
+        .query_one("SELECT content FROM materials WHERE id=$1", &[&quiz])
+        .await
+        .expect("content")
+        .get(0);
+    let q1 = &stored["value"][0]["children"][0]["question"]["parts"][0]["answer"];
+    assert_eq!(q1["options"][0], "Nucleus envelope", "{stored}");
+    assert_eq!(q1["correct"], serde_json::json!([1]), "{stored}");
+    let key_rows: i64 = db(&env)
+        .await
+        .query_one(
+            "SELECT count(*) FROM material_yjs_key_updates WHERE material_id=$1",
+            &[&quiz],
+        )
+        .await
+        .expect("rows")
+        .get(0);
+    assert!(key_rows >= 1);
+}
+
+/// Security regression (live-items D1/D3, Epo 2026-10-10): answer keys and
+/// typing order never reach a reader. A viewer is refused the keys room with
+/// any token; on the content room it holds no key field; and while an editor
+/// types ordering items one by one in answer order, the reader copy it sees
+/// is written by the server alone, its entries' Yjs ids following the
+/// server's shuffle rather than the typing (fails if the server appended
+/// entries one by one, or relayed a keys update to the content room).
+#[tokio::test]
+async fn neither_keys_nor_typing_order_reach_a_reader() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let owner = user(&env).await;
+    let viewer = user(&env).await;
+    let quiz = quiz_material(&env, &owner, "link").await;
+    let content_room = format!("material:{quiz}:schema:1");
+    let keys_room = format!("keys:{quiz}:schema:1");
+    for access in ["read", "write"] {
+        let mut refused = Client::open(server.port).await;
+        refused
+            .join(&keys_room, &token(&keys_room, &viewer, access))
+            .await;
+        let reason = text_payload(&refused.until(2).await.expect("refused"));
+        assert_eq!(reason, "collaboration-read-only", "{access}");
+    }
+    // An editor's read token for the keys room is refused too.
+    let mut narrowed = Client::open(server.port).await;
+    narrowed
+        .join(&keys_room, &token(&keys_room, &owner, "read"))
+        .await;
+    assert_eq!(
+        text_payload(&narrowed.until(2).await.expect("refused")),
+        "collaboration-read-only"
+    );
+
+    let mut editor = Client::open(server.port).await;
+    let mut keys = Client::open(server.port).await;
+    let mut reader = Client::open(server.port).await;
+    editor
+        .joined(&content_room, &token(&content_room, &owner, "write"))
+        .await;
+    keys.joined(&keys_room, &token(&keys_room, &owner, "write"))
+        .await;
+    assert_eq!(
+        reader
+            .joined(&content_room, &token(&content_room, &viewer, "read"))
+            .await,
+        0
+    );
+    assert!(
+        keys.settle(|c| map_at(&c.doc, &["keys", "q2-p", "items"]).is_some())
+            .await
+    );
+    assert!(
+        reader
+            .settle(|c| reader_copy(&c.doc, "q2", "q2-p").len() == 2)
+            .await
+    );
+    // The editor clears the items, then types eight in answer order.
+    keys.write(|doc| {
+        use yrs::Map;
+        let items = map_at(doc, &["keys", "q2-p", "items"]).expect("items");
+        let held: Vec<String> = items.keys(&doc.transact()).map(str::to_owned).collect();
+        for id in held {
+            items.remove(&mut doc.transact_mut(), &id);
+        }
+    })
+    .await;
+    let typed: Vec<String> = (1..=8).map(|n| format!("step {n}")).collect();
+    let mut order: Option<String> = None;
+    for (n, text) in typed.iter().enumerate() {
+        let next = items::order::after(order.as_deref());
+        let next_key = next.clone();
+        let text = text.clone();
+        keys.write(move |doc| {
+            use yrs::{Map, MapPrelim, TextPrelim};
+            let items = map_at(doc, &["keys", "q2-p", "items"]).expect("items");
+            let entry = items.insert(
+                &mut doc.transact_mut(),
+                format!("t{n}"),
+                MapPrelim::default(),
+            );
+            entry.insert(&mut doc.transact_mut(), "order", next_key.as_str());
+            entry.insert(
+                &mut doc.transact_mut(),
+                "text",
+                TextPrelim::new(text.as_str()),
+            );
+        })
+        .await;
+        order = Some(next);
+        assert!(keys.until(6).await.is_some(), "keys ack {n}");
+    }
+    let mut sorted_typed = typed.clone();
+    sorted_typed.sort();
+    assert!(
+        reader
+            .settle(|c| {
+                let mut texts: Vec<String> = reader_copy(&c.doc, "q2", "q2-p")
+                    .into_iter()
+                    .map(|e| e.2)
+                    .collect();
+                texts.sort();
+                texts == sorted_typed
+            })
+            .await,
+        "{:?}",
+        reader_copy(&reader.doc, "q2", "q2-p")
+    );
+    let copy = reader_copy(&reader.doc, "q2", "q2-p");
+    let created: Vec<String> = copy.iter().map(|e| e.2.clone()).collect();
+    assert_ne!(created, typed, "the reader copy follows the typing order");
+    let writers: std::collections::HashSet<u64> = copy.iter().map(|e| e.1).collect();
+    assert_eq!(writers.len(), 1, "one server rewrite wrote the copy");
+    // Nothing of the keys document reached the reader.
+    let state = reader
+        .doc
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    let held = String::from_utf8_lossy(&state);
+    for key in [
+        "correct",
+        "accepted",
+        "markscheme",
+        "solution",
+        "pairs",
+        "slot",
+        "items",
+        "keys",
+    ] {
+        assert!(!held.contains(key), "a reader holds {key}");
+    }
 }

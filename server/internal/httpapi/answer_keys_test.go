@@ -156,3 +156,27 @@ func TestAgentInspectionHidesQuizKeysFromReaders(t *testing.T) {
 		}
 	}
 }
+
+// A live quiz shows learners every question as typed, but only complete ones
+// are projected (D4, Epo 2026-10-10): an answer to a part the projection
+// lacks comes back not marked instead of refusing the attempt.
+func TestAttemptLeavesAnswersToUnprojectedPartsUnmarked(t *testing.T) {
+	h, st, _ := openGradingAPI(t, "full")
+	t.Cleanup(func() {
+		for _, q := range []string{
+			`DELETE FROM attempts WHERE user_id='u_viewer' AND material_id='qz_e2e_private'`,
+			`DELETE FROM review_log WHERE user_id='u_viewer' AND material_id='qz_e2e_private'`,
+			`DELETE FROM review_states WHERE user_id='u_viewer' AND material_id='qz_e2e_private'`,
+			`DELETE FROM study_progress WHERE user_id='u_viewer' AND material_id='qz_e2e_private'`,
+		} {
+			_, _ = st.Pool().Exec(context.Background(), q)
+		}
+	})
+	rec := doReq(t, h, http.MethodPost, "/api/quizzes/qz_e2e_private/attempts", "u_viewer", map[string]any{
+		"answers": map[string]any{"q_priv_1:part:1": true, "typed-not-projected:part": "x"},
+	})
+	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"total":1,`) ||
+		strings.Contains(rec.Body.String(), "typed-not-projected") {
+		t.Fatalf("attempt with an unprojected part → %d %s", rec.Code, rec.Body.String())
+	}
+}

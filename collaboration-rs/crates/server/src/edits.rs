@@ -237,6 +237,7 @@ fn material_room(request: &DocumentRequest) -> Result<(String, String, i64), Doc
         Some(RoomName::Material {
             material_id,
             schema,
+            keys: false,
         }) => Ok((room, material_id, schema)),
         _ => Err(DocumentError::edit(
             "invalid_input",
@@ -274,6 +275,7 @@ pub async fn inspect_material(
         .first()
         .map(|row| row.get::<_, String>("kind"))
         .unwrap_or_default();
+    let mut keys: Option<(Vec<u8>, Vec<Vec<u8>>)> = None;
     let (base, rows) = match found.first() {
         Some(row) => {
             if i64::from(row.get::<_, i32>("room_schema")) != schema {
@@ -287,6 +289,9 @@ pub async fn inspect_material(
                 .into_iter()
                 .map(|(_, row)| row)
                 .collect();
+            if kind == "quiz" {
+                keys = Some(quiz_keys(&tx, &material_id).await?);
+            }
             (row.get::<_, Vec<u8>>("state"), rows)
         }
         None => {
@@ -310,7 +315,13 @@ pub async fn inspect_material(
                     "material content is not a valid Plate envelope",
                 )
             })?;
-            (Model::of(&kind).state_from_value(value), Vec::new())
+            if kind == "quiz" {
+                let (content, quiz_keys) = items::quiz::states_from_value(value, 0, &mut new_slot);
+                keys = Some((quiz_keys, Vec::new()));
+                (content, Vec::new())
+            } else {
+                (Model::of(&kind).state_from_value(value), Vec::new())
+            }
         }
     };
     tx.commit().await?;
@@ -318,13 +329,23 @@ pub async fn inspect_material(
         let doc = ydoc::scratch_doc();
         ydoc::replay(&doc, &base, &rows)
             .map_err(|error| DocumentError::Unknown(error.to_string()))?;
-        // A live item reads as the Plate value it projects to.
+        // A live item reads as the Plate value it projects to; a quiz as
+        // every question with its keys (its editors' view, incomplete ones
+        // too).
         let doc = match Model::of(&kind) {
             Model::Note => doc,
             model => {
-                let value = model
-                    .value(&doc.transact())
-                    .map_err(DocumentError::Unknown)?;
+                let value = match &keys {
+                    Some((base, rows)) => {
+                        let keys = ydoc::scratch_doc();
+                        ydoc::replay(&keys, base, rows)
+                            .map_err(|error| DocumentError::Unknown(error.to_string()))?;
+                        items::quiz::editor_value(&doc.transact(), &keys.transact())
+                    }
+                    None => model
+                        .value(&doc.transact())
+                        .map_err(DocumentError::Unknown)?,
+                };
                 let plate = ydoc::scratch_doc();
                 ydoc::replay(
                     &plate,
@@ -351,17 +372,180 @@ async fn live_state(app: &Shared, room: &str) -> Option<Vec<u8>> {
     tokio::time::timeout(SNAPSHOT_WAIT, answer).await.ok()?.ok()
 }
 
-/// What an edit computed on its isolated document.
-struct Computed {
+/// One document a server edit changed: its row, the cover it makes, what
+/// its live room lacks of it.
+struct Write {
+    doc: note_store::Doc,
     row: Vec<u8>,
     durable: ydoc::Durable,
-    /// What the live room lacks of the result.
     live_update: Option<Vec<u8>>,
+}
+
+/// What an edit computed on its isolated documents.
+struct Computed {
+    /// One per changed document (a quiz may change both).
+    writes: Vec<Write>,
     value: Vec<Value>,
     outcome: EditOutcome,
 }
 
-/// The edit itself, on a document of the durable state plus the live room.
+/// A document for a server edit: the durable state, then the live room
+/// merged in, under a client the stored document does not hold.
+struct Scratch {
+    doc: yrs::Doc,
+    durable: ydoc::Durable,
+    live: Option<StateVector>,
+    before: StateVector,
+}
+
+impl Scratch {
+    fn new(base: &[u8], rows: &[Vec<u8>], live: Option<&[u8]>) -> Result<Scratch, String> {
+        let stored = ydoc::scratch_doc();
+        ydoc::replay(&stored, base, rows).map_err(|error| error.to_string())?;
+        let held = stored.transact().state_vector();
+        let doc = loop {
+            let doc = ydoc::scratch_doc();
+            if held.get(&doc.client_id()) == 0 {
+                break doc;
+            }
+        };
+        let whole = stored
+            .transact()
+            .encode_state_as_update_v1(&StateVector::default());
+        ydoc::apply(
+            &doc,
+            ydoc::decode(&whole).map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())?;
+        let durable = ydoc::Durable::of(&doc.transact());
+        let live = match live {
+            Some(live) => {
+                let update = yrs::Update::decode_v1(live).map_err(|error| error.to_string())?;
+                let vector = update.state_vector();
+                ydoc::apply(&doc, update).map_err(|error| error.to_string())?;
+                Some(vector)
+            }
+            None => None,
+        };
+        let before = doc.transact().state_vector();
+        Ok(Scratch {
+            doc,
+            durable,
+            live,
+            before,
+        })
+    }
+
+    /// The document's write, or none when the edit left it as it was.
+    fn write(&self, doc: note_store::Doc) -> Option<Write> {
+        if self.doc.transact().state_vector() == self.before {
+            return None;
+        }
+        let hidden = markers::live_items(&self.doc);
+        let txn = self.doc.transact();
+        let (row, durable) = ydoc::delta_update(&txn, &self.durable, &hidden);
+        let live_update = self
+            .live
+            .as_ref()
+            .map(|vector| txn.encode_state_as_update_v1(vector));
+        Some(Write {
+            doc,
+            row,
+            durable,
+            live_update,
+        })
+    }
+}
+
+/// A fresh random reader-copy slot (D3).
+fn new_slot() -> String {
+    uuid::Uuid::new_v4().simple().to_string()
+}
+
+/// A quiz's keys document base and log, under the caller's snapshot.
+async fn quiz_keys(
+    tx: &deadpool_postgres::Transaction<'_>,
+    material_id: &str,
+) -> Result<(Vec<u8>, Vec<Vec<u8>>), DocumentError> {
+    let found = tx
+        .query(
+            "SELECT state FROM material_yjs_keys WHERE material_id=$1",
+            &[&material_id],
+        )
+        .await?;
+    let Some(row) = found.first() else {
+        return Err(DocumentError::Unknown("quiz keys document missing".into()));
+    };
+    let rows = note_store::doc_rows(tx, note_store::Doc::Keys, material_id, None)
+        .await?
+        .into_iter()
+        .map(|(_, row)| row)
+        .collect();
+    Ok((row.get("state"), rows))
+}
+
+/// A quiz's two documents for a server edit.
+struct QuizInput {
+    keys: (Vec<u8>, Vec<Vec<u8>>),
+    live_keys: Option<Vec<u8>>,
+}
+
+/// A server write of a quiz (an agent edit, its Undo, the save API): `edit`
+/// runs on both documents; caps and limits hold for each; the projection is
+/// the complete questions.
+fn compute_quiz(
+    content: &Scratch,
+    keys: &Scratch,
+    edit: impl FnOnce(
+        &mut yrs::TransactionMut,
+        &mut yrs::TransactionMut,
+    ) -> Result<EditOutcome, DocumentError>,
+) -> Result<Computed, DocumentError> {
+    let measure = |kind: items::Kind, doc: &yrs::Doc| {
+        notes::limits::measure_value(&kind.document_value(&doc.transact()))
+    };
+    let previous = [
+        measure(items::Kind::Quiz, &content.doc),
+        measure(items::Kind::QuizKeys, &keys.doc),
+    ];
+    let outcome = {
+        let mut content_txn = content.doc.transact_mut();
+        let mut keys_txn = keys.doc.transact_mut();
+        edit(&mut content_txn, &mut keys_txn)?
+    };
+    for ((kind, doc), previous) in [
+        (items::Kind::Quiz, &content.doc),
+        (items::Kind::QuizKeys, &keys.doc),
+    ]
+    .into_iter()
+    .zip(previous)
+    {
+        kind.check_caps(&doc.transact())
+            .map_err(|error| DocumentError::edit("invalid_input", &error))?;
+        let metrics = measure(kind, doc);
+        if let Some(code) = notes::limits::limit_code(&metrics)
+            && !notes::limits::recovers(&metrics, Some(&previous))
+        {
+            return Err(DocumentError::Quota(code.as_str().into()));
+        }
+    }
+    let value = items::quiz::value(&content.doc.transact(), &keys.doc.transact());
+    let writes = [
+        content.write(note_store::Doc::Content),
+        keys.write(note_store::Doc::Keys),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    Ok(Computed {
+        writes,
+        value,
+        outcome,
+    })
+}
+
+/// The edit itself, on a document of the durable state plus the live room
+/// (a quiz: on both its documents).
 fn compute(
     base: Vec<u8>,
     rows: Vec<Vec<u8>>,
@@ -369,39 +553,28 @@ fn compute(
     kind: String,
     commands: Vec<DocumentCommand>,
     guards: Option<Vec<GuardTarget>>,
+    quiz: Option<QuizInput>,
 ) -> Result<Computed, DocumentError> {
     let unknown = |error: String| DocumentError::Unknown(error);
-    // Server edits go under a client the stored document does not hold.
-    let stored = ydoc::scratch_doc();
-    ydoc::replay(&stored, &base, &rows).map_err(|error| unknown(error.to_string()))?;
-    let held = stored.transact().state_vector();
-    let doc = loop {
-        let doc = ydoc::scratch_doc();
-        if held.get(&doc.client_id()) == 0 {
-            break doc;
-        }
-    };
-    let whole = stored
-        .transact()
-        .encode_state_as_update_v1(&StateVector::default());
-    ydoc::apply(
-        &doc,
-        ydoc::decode(&whole).map_err(|error| unknown(error.to_string()))?,
-    )
-    .map_err(|error| unknown(error.to_string()))?;
-    let durable = ydoc::Durable::of(&doc.transact());
-    let live_vector = match &live {
-        Some(live) => {
-            let update =
-                yrs::Update::decode_v1(live).map_err(|error| unknown(error.to_string()))?;
-            let vector = update.state_vector();
-            ydoc::apply(&doc, update).map_err(|error| unknown(error.to_string()))?;
-            Some(vector)
-        }
-        None => None,
-    };
+    let scratch = Scratch::new(&base, &rows, live.as_deref()).map_err(unknown)?;
+    if let Some(quiz) = quiz {
+        let keys =
+            Scratch::new(&quiz.keys.0, &quiz.keys.1, quiz.live_keys.as_deref()).map_err(unknown)?;
+        return compute_quiz(&scratch, &keys, |content, keys| {
+            if let Some(guards) = &guards {
+                items::quiz::verify_guards(content, keys, guards)?;
+            }
+            Ok(items::quiz::apply_commands(
+                content,
+                keys,
+                &commands,
+                &mut new_slot,
+            )?)
+        });
+    }
+    let doc = &scratch.doc;
     let (outcome, value) = if let Model::Item(item) = Model::of(&kind) {
-        item_edit(&doc, item, &kind, &commands, guards.as_deref())?
+        item_edit(doc, item, &kind, &commands, guards.as_deref())?
     } else {
         let root = doc.get_or_insert_text(notes::plate::CONTENT_ROOT);
         let mut txn = doc.transact_mut();
@@ -422,14 +595,21 @@ fn compute(
         }
         (outcome, value)
     };
-    let hidden = markers::live_items(&doc);
+    // An agent edit always writes (its markers at least), as before.
+    let hidden = markers::live_items(doc);
     let txn = doc.transact();
-    let (row, durable) = ydoc::delta_update(&txn, &durable, &hidden);
-    let live_update = live_vector.map(|vector| txn.encode_state_as_update_v1(&vector));
+    let (row, durable) = ydoc::delta_update(&txn, &scratch.durable, &hidden);
+    let live_update = scratch
+        .live
+        .as_ref()
+        .map(|vector| txn.encode_state_as_update_v1(vector));
     Ok(Computed {
-        row,
-        durable,
-        live_update,
+        writes: vec![Write {
+            doc: note_store::Doc::Content,
+            row,
+            durable,
+            live_update,
+        }],
         value,
         outcome,
     })
@@ -581,29 +761,33 @@ pub async fn edit_material(
     }
     let base: Vec<u8> = current.get("state");
     let kind: String = current.get("kind");
-    let version = current.get::<_, i64>("stored_version") + 1;
+    let stored = current.get::<_, i64>("stored_version");
     let rows: Vec<Vec<u8>> = note_store::rows(&tx, &material_id, None)
         .await?
         .into_iter()
         .map(|(_, row)| row)
         .collect();
-    let computed =
-        tokio::task::spawn_blocking(move || compute(base, rows, live, kind, commands, guards))
-            .await
-            .map_err(|error| DocumentError::Unknown(error.to_string()))??;
-    tx.execute(
-        "INSERT INTO material_yjs_updates (material_id, seq, update) VALUES ($1,$2,$3)",
-        &[&material_id, &version, &computed.row],
-    )
-    .await?;
-    tx.execute(
-        "UPDATE material_yjs_documents
-         SET stored_version=$2, log_bytes=log_bytes+$3, log_rows=log_rows+1,
-             projection_error=NULL, updated_at=now()
-         WHERE material_id=$1",
-        &[&material_id, &version, &(computed.row.len() as i64)],
-    )
-    .await?;
+    let keys_room = format!("keys:{material_id}:schema:{schema}");
+    let quiz = if kind == "quiz" {
+        Some(QuizInput {
+            keys: quiz_keys(&tx, &material_id).await?,
+            live_keys: live_state(app, &keys_room).await,
+        })
+    } else {
+        None
+    };
+    let computed = tokio::task::spawn_blocking(move || {
+        compute(base, rows, live, kind, commands, guards, quiz)
+    })
+    .await
+    .map_err(|error| DocumentError::Unknown(error.to_string()))??;
+    let mut version = stored;
+    let mut versions = Vec::new();
+    for write in &computed.writes {
+        version += 1;
+        note_store::append_row(&tx, write.doc, &material_id, version, &write.row).await?;
+        versions.push(version);
+    }
     // The gateway merged this edit's books into the stored record; writing it
     // here keeps the credit and the content in one transaction.
     if let Some(provenance) = &request.provenance {
@@ -735,22 +919,17 @@ pub async fn edit_material(
     if let Some(workspace) = &workspace {
         receipt["workspaceId"] = json!(workspace);
     }
-    // The committed change goes to the live room, whose durable cover takes it.
-    if let Some(handle) = app.rooms.get(&room) {
-        let edit = ServiceEdit {
-            update: computed
-                .live_update
-                .clone()
-                .unwrap_or_else(|| computed.row.clone()),
-            durable: computed.durable,
-            version: version as u64,
-            row_bytes: computed.row.len(),
-        };
-        let _ = handle.tx.send(RoomCmd::ServiceEdit(Box::new(edit))).await;
-    }
     // An AI edit or its Undo can bring back a quiz or image the note had
     // trashed (restored) or one purged since (dropped).
-    crate::children::queue(app, &room, &actor, computed.row.clone());
+    if let Some(write) = computed
+        .writes
+        .iter()
+        .find(|write| write.doc == note_store::Doc::Content)
+    {
+        crate::children::queue(app, &room, &actor, write.row.clone());
+    }
+    // The committed changes go to the live rooms, whose durable covers take them.
+    send_writes(app, &room, &keys_room, computed.writes, &versions).await;
     let content = json!({ "schemaVersion": 1, "value": computed.value });
     match projection::project(app, &material_id, version, &content).await {
         Ok(()) => {
@@ -791,6 +970,7 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
     let Some(RoomName::Material {
         material_id,
         schema,
+        keys: false,
     }) = RoomName::parse(&command.room)
     else {
         return Err("collaboration command room does not match material".into());
@@ -881,8 +1061,20 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
         .into_iter()
         .map(|(_, row)| row)
         .collect();
+    let room = format!("material:{material_id}:schema:{schema}");
+    let keys_room = format!("keys:{material_id}:schema:{schema}");
+    let quiz = if kind == "quiz" {
+        Some(QuizInput {
+            keys: quiz_keys(&tx, &material_id)
+                .await
+                .map_err(|error| error.message().to_owned())?,
+            live_keys: live_state(app, &keys_room).await,
+        })
+    } else {
+        None
+    };
     let computed = tokio::task::spawn_blocking(move || -> Result<Option<Computed>, String> {
-        replace_on(base, rows, live, kind, &command)
+        replace_on(base, rows, live, kind, &command, quiz)
     })
     .await
     .map_err(|error| error.to_string())??;
@@ -891,34 +1083,18 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
         tx.commit().await.map_err(|error| error.to_string())?;
         return Ok(());
     };
-    let version = stored + 1;
-    tx.execute(
-        "INSERT INTO material_yjs_updates (material_id, seq, update) VALUES ($1,$2,$3)",
-        &[&material_id, &version, &computed.row],
-    )
-    .await
-    .map_err(|error| error.to_string())?;
-    tx.execute(
-        "UPDATE material_yjs_documents
-         SET stored_version=$2, log_bytes=log_bytes+$3, log_rows=log_rows+1,
-             projection_error=NULL, updated_at=now()
-         WHERE material_id=$1",
-        &[&material_id, &version, &(computed.row.len() as i64)],
-    )
-    .await
-    .map_err(|error| error.to_string())?;
+    let mut version = stored;
+    let mut versions = Vec::new();
+    for write in &computed.writes {
+        version += 1;
+        note_store::append_row(&tx, write.doc, &material_id, version, &write.row)
+            .await
+            .map_err(|error| error.to_string())?;
+        versions.push(version);
+    }
     tx.commit().await.map_err(|error| error.to_string())?;
     drop(client);
-    let room = format!("material:{material_id}:schema:{schema}");
-    if let Some(handle) = app.rooms.get(&room) {
-        let edit = ServiceEdit {
-            update: computed.live_update.unwrap_or_else(|| computed.row.clone()),
-            durable: computed.durable,
-            version: version as u64,
-            row_bytes: computed.row.len(),
-        };
-        let _ = handle.tx.send(RoomCmd::ServiceEdit(Box::new(edit))).await;
-    }
+    send_writes(app, &room, &keys_room, computed.writes, &versions).await;
     let content = json!({ "schemaVersion": 1, "value": computed.value });
     projection::project(app, &material_id, version, &content).await?;
     if let Some(handle) = app.rooms.get(&room) {
@@ -927,46 +1103,56 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
     Ok(())
 }
 
-/// The replace-block command on an isolated document; `None` when the block
-/// already holds the replacement.
+/// Each write to its live room (the content room, or a quiz's keys room)
+/// with the version its row took.
+async fn send_writes(
+    app: &Shared,
+    room: &str,
+    keys_room: &str,
+    writes: Vec<Write>,
+    versions: &[i64],
+) {
+    for (write, version) in writes.into_iter().zip(versions) {
+        let name = match write.doc {
+            note_store::Doc::Content => room,
+            note_store::Doc::Keys => keys_room,
+        };
+        if let Some(handle) = app.rooms.get(name) {
+            let edit = ServiceEdit {
+                update: write.live_update.unwrap_or_else(|| write.row.clone()),
+                durable: write.durable,
+                version: *version as u64,
+                row_bytes: write.row.len(),
+            };
+            let _ = handle.tx.send(RoomCmd::ServiceEdit(Box::new(edit))).await;
+        }
+    }
+}
+
+/// The replace-block command on an isolated document (a quiz: both its
+/// documents); `None` when the block already holds the replacement.
 fn replace_on(
     base: Vec<u8>,
     rows: Vec<Vec<u8>>,
     live: Option<Vec<u8>>,
     kind: String,
     command: &notes::commands::ReplaceBlock,
+    quiz: Option<QuizInput>,
 ) -> Result<Option<Computed>, String> {
-    let doc = ydoc::scratch_doc();
-    ydoc::replay(&doc, &base, &rows).map_err(|error| error.to_string())?;
-    let held = doc.transact().state_vector();
-    let doc = {
-        let fresh = loop {
-            let fresh = ydoc::scratch_doc();
-            if held.get(&fresh.client_id()) == 0 {
-                break fresh;
-            }
-        };
-        let whole = doc
-            .transact()
-            .encode_state_as_update_v1(&StateVector::default());
-        ydoc::apply(
-            &fresh,
-            ydoc::decode(&whole).map_err(|error| error.to_string())?,
-        )
-        .map_err(|error| error.to_string())?;
-        fresh
-    };
-    let durable = ydoc::Durable::of(&doc.transact());
-    let live_vector = match &live {
-        Some(live) => {
-            let update = yrs::Update::decode_v1(live).map_err(|error| error.to_string())?;
-            let vector = update.state_vector();
-            ydoc::apply(&doc, update).map_err(|error| error.to_string())?;
-            Some(vector)
-        }
-        None => None,
-    };
-    let before = doc.transact().state_vector();
+    let scratch = Scratch::new(&base, &rows, live.as_deref())?;
+    if let Some(quiz) = quiz {
+        let keys = Scratch::new(&quiz.keys.0, &quiz.keys.1, quiz.live_keys.as_deref())?;
+        let questions = items::quiz::block_questions(&command.replacement_block)?;
+        let computed = compute_quiz(&scratch, &keys, |content, keys| {
+            items::quiz::set_questions(content, keys, &questions, &mut new_slot)
+                .map_err(|error| DocumentError::edit("invalid_input", error))?;
+            Ok(EditOutcome::default())
+        })
+        .map_err(|error| error.message().to_owned())?;
+        return Ok((!computed.writes.is_empty()).then_some(computed));
+    }
+    let doc = &scratch.doc;
+    let before = scratch.before.clone();
     let model = Model::of(&kind);
     let previous = notes::limits::measure_value(&model.document_value(&doc.transact())?);
     match model {
@@ -997,14 +1183,11 @@ fn replace_on(
     {
         return Err(format!("invalid material document: {}", code.as_str()));
     }
-    let hidden = markers::live_items(&doc);
-    let txn = doc.transact();
-    let (row, durable) = ydoc::delta_update(&txn, &durable, &hidden);
-    let live_update = live_vector.map(|vector| txn.encode_state_as_update_v1(&vector));
     Ok(Some(Computed {
-        row,
-        durable,
-        live_update,
+        writes: scratch
+            .write(note_store::Doc::Content)
+            .into_iter()
+            .collect(),
         value,
         outcome: EditOutcome::default(),
     }))

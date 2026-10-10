@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
 import { getMaterialCollaborationToken } from '@/api/hooks';
 import { RoomProvider, type RoomProviderConfig } from './roomProvider';
+import { type UndoTarget, undoTarget } from './undo';
 import { LOCAL_EDIT } from './yText';
 
 /* A live item's room (a flashcard set; live-items DESIGN.md): its own Y.Doc
@@ -52,6 +53,8 @@ const RETRY_MS = 1500;
 export class ItemRoom {
   readonly doc = new Y.Doc();
   readonly undo: Y.UndoManager;
+  /** What the item's Undo and Redo buttons act on. */
+  readonly history: UndoTarget;
   private provider: ItemProvider | null = null;
   private snapshot: ItemRoomSnapshot = {
     access: null,
@@ -63,15 +66,19 @@ export class ItemRoom {
   private retry: ReturnType<typeof setTimeout> | undefined;
   private readonly listeners = new Set<() => void>();
   private readonly materialId: string;
+  /** A quiz's keys document instead of the material's own. */
+  private readonly document?: 'keys';
 
-  constructor(materialId: string) {
+  constructor(materialId: string, document?: 'keys') {
     this.materialId = materialId;
+    this.document = document;
     // The document holds only this item: Undo covers this user's own edits
     // to it, never others' or the server's.
     this.undo = new Y.UndoManager(this.doc, {
       captureTimeout: 500,
       trackedOrigins: new Set([LOCAL_EDIT]),
     });
+    this.history = undoTarget(this.undo);
   }
 
   readonly subscribe = (listener: () => void) => {
@@ -100,7 +107,10 @@ export class ItemRoom {
   async start() {
     let first: Awaited<ReturnType<typeof getMaterialCollaborationToken>>;
     try {
-      first = await getMaterialCollaborationToken(this.materialId);
+      first = await getMaterialCollaborationToken(
+        this.materialId,
+        this.document
+      );
     } catch {
       if (!this.destroyed) this.set({ status: 'unavailable' });
       return;
@@ -156,7 +166,10 @@ export class ItemRoom {
           cached = null;
           return token;
         }
-        const fresh = await getMaterialCollaborationToken(this.materialId);
+        const fresh = await getMaterialCollaborationToken(
+          this.materialId,
+          this.document
+        );
         this.set({ access: fresh.access === 'write' ? 'write' : 'read' });
         return fresh.token;
       },
@@ -193,18 +206,22 @@ export class ItemRoom {
  * The item's room while `enabled`: created on mount, joined once the token
  * arrives, left on unmount.
  */
-export function useItemRoom(materialId: string | null, enabled = true) {
+export function useItemRoom(
+  materialId: string | null,
+  enabled = true,
+  document?: 'keys'
+) {
   const [room, setRoom] = useState<ItemRoom | null>(null);
   useEffect(() => {
     if (!(materialId && enabled)) return;
-    const created = new ItemRoom(materialId);
+    const created = new ItemRoom(materialId, document);
     setRoom(created);
     void created.start();
     return () => {
       created.destroy();
       setRoom((current) => (current === created ? null : current));
     };
-  }, [materialId, enabled]);
+  }, [materialId, enabled, document]);
   const snapshot = useSyncExternalStore(
     room?.subscribe ?? noSubscribe,
     room?.getSnapshot ?? initialSnapshot

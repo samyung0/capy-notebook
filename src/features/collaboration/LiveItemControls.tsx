@@ -1,11 +1,11 @@
-import { useCallback, useSyncExternalStore } from 'react';
-import type * as Y from 'yjs';
+import { useSyncExternalStore } from 'react';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import type { NoteEditorSaveState } from '@/features/notes/editorMode';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import type { ItemRoomStatus } from './itemRoom';
+import type { UndoTarget } from './undo';
 
 /** A live item's room state as the note header's save status reads it. */
 export function itemSaveState(
@@ -25,8 +25,15 @@ const STATUS: Record<
   unavailable: null,
 };
 
-/** The live status in an item dialog's footer: the note header's icons. */
-export function LiveStatus({ status }: { status: ItemRoomStatus }) {
+/** The live status in an item dialog's footer: the note header's icons.
+ * `compact` (after a page title, as on notes) shows the icon alone. */
+export function LiveStatus({
+  status,
+  compact,
+}: {
+  status: ItemRoomStatus;
+  compact?: boolean;
+}) {
   const shown = STATUS[status];
   if (!shown) return null;
   return (
@@ -37,36 +44,18 @@ export function LiveStatus({ status }: { status: ItemRoomStatus }) {
       )}
       data-save-state={status}
       role="status"
+      title={compact ? shown.label() : undefined}
     >
-      <Icon className="size-4" name={shown.icon} />
-      {shown.label()}
+      <Icon className={cn(compact ? 'size-4.5' : 'size-4')} name={shown.icon} />
+      <span className={cn(compact && 'sr-only')}>{shown.label()}</span>
     </span>
   );
 }
 
 /** Undo and Redo of this user's own edits to one live item. */
-export function UndoButtons({ manager }: { manager: Y.UndoManager }) {
-  const subscribe = useCallback(
-    (notify: () => void) => {
-      manager.on('stack-item-added', notify);
-      manager.on('stack-item-popped', notify);
-      manager.on('stack-cleared', notify);
-      return () => {
-        manager.off('stack-item-added', notify);
-        manager.off('stack-item-popped', notify);
-        manager.off('stack-cleared', notify);
-      };
-    },
-    [manager]
-  );
-  const canUndo = useSyncExternalStore(
-    subscribe,
-    () => manager.undoStack.length > 0
-  );
-  const canRedo = useSyncExternalStore(
-    subscribe,
-    () => manager.redoStack.length > 0
-  );
+export function UndoButtons({ manager }: { manager: UndoTarget }) {
+  const canUndo = useSyncExternalStore(manager.subscribe, manager.canUndo);
+  const canRedo = useSyncExternalStore(manager.subscribe, manager.canRedo);
   return (
     <span className="flex items-center">
       <ToolbarButton

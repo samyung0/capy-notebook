@@ -10,6 +10,7 @@ import {
   LiveStatus,
   UndoButtons,
 } from '@/features/collaboration/LiveItemControls';
+import type { UndoTarget } from '@/features/collaboration/undo';
 import { useBoundText } from '@/features/collaboration/yText';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -46,7 +47,7 @@ export function CardDialog({
   setId: string;
   setTitle: string;
   status: ItemRoomStatus;
-  undo: Y.UndoManager;
+  undo: UndoTarget;
   onRemove?: () => void;
   onClose: () => void;
 }) {

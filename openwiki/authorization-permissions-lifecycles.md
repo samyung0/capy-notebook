@@ -422,7 +422,10 @@ and [material editor checks](../server/internal/store/share.go#L209).
 - Signed-in viewers get read-only collaboration tokens for content documents
   (never quiz keys): the collaboration server joins them read-only, relays no
   awareness to or from them and sends them no comment relays (Epo 2026-10-10).
-  The app uses them for flashcard sets today; note View stays static. An
+  The app uses them for flashcard sets and quizzes; note View stays static. A
+  quiz's keys document (`{document: 'keys'}`) goes only to editors who can
+  write: Go refuses the token otherwise (403), and the collaboration server
+  refuses a read token for a keys room. An
   embedded item's room is reachable exactly as its note is (the server resolves
   `parent_material_id` first), and a note's access event also evicts its
   embedded items' rooms. Anonymous visitors must sign in to read materials.

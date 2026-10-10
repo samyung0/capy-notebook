@@ -391,15 +391,30 @@ async fn project(
             json!({ "message": "invalid material id" }),
         );
     }
-    let prefix = format!("material:{id}:");
-    let loaded = app
-        .rooms
-        .names()
-        .into_iter()
-        .find(|room| room.starts_with(&prefix));
+    let names = app.rooms.names();
+    let loaded = |prefix: String| {
+        names
+            .iter()
+            .find(|room| room.starts_with(&prefix))
+            .and_then(|room| app.rooms.get(room))
+    };
+    // A quiz's keys room stores first, so the projection reads both
+    // documents' edits (live-items).
+    let keys = loaded(format!("keys:{id}:"));
+    if let Some(keys) = &keys {
+        let (reply, answer) = tokio::sync::oneshot::channel();
+        if keys.tx.send(RoomCmd::Persist(reply)).await.is_ok()
+            && let Ok(Err(message)) = answer.await
+        {
+            return json_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                json!({ "message": message }),
+            );
+        }
+    }
     // A room no instance has loaded here projected when it unloaded (or the
     // pending scan does): nothing to do.
-    let Some(handle) = loaded.and_then(|room| app.rooms.get(&room)) else {
+    let Some(handle) = loaded(format!("material:{id}:")).or(keys) else {
         return json_response(StatusCode::OK, json!({ "projected": false }));
     };
     let (reply, answer) = tokio::sync::oneshot::channel();

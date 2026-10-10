@@ -114,13 +114,13 @@ func TestRequestBodyValidation(t *testing.T) {
 			name:   "save cards empty front",
 			method: http.MethodPatch,
 			path:   "/api/flashcards/dk_1/content",
-			body:   `{"cards":[{"front":"","back":"answer"}],"expectedRevision":1}`,
+			body:   `{"cards":[{"front":"","back":"answer"}]}`,
 		},
 		{
 			name:   "save cards back over 2000 characters",
 			method: http.MethodPatch,
 			path:   "/api/flashcards/dk_1/content",
-			body:   `{"cards":[{"front":"term","back":"` + strings.Repeat("a", 2001) + `"}],"expectedRevision":1}`,
+			body:   `{"cards":[{"front":"term","back":"` + strings.Repeat("a", 2001) + `"}]}`,
 		},
 		{
 			name:   "create event missing title",

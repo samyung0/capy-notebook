@@ -137,22 +137,37 @@ pub async fn project(
     }
 }
 
-/// Projects a material from its durable rows (a room loaded nowhere here).
+/// Projects a material from its durable rows: a room loaded nowhere here,
+/// the cadence, and every quiz projection (a quiz projects from both its
+/// documents, read together at one version).
 pub async fn project_durable(app: &Shared, material_id: &str) -> Result<i64, String> {
-    let Some((_, version, base, rows, kind)) = note_store::durable(&app.db, material_id)
+    let Some(durable) = note_store::durable(&app.db, material_id)
         .await
         .map_err(|error| error.to_string())?
     else {
         return Err("material not found".into());
     };
-    let doc = tokio::task::spawn_blocking(move || -> Result<Doc, String> {
-        let doc = ydoc::scratch_doc();
-        ydoc::replay(&doc, &base, &rows).map_err(|error| error.to_string())?;
-        Ok(doc)
+    let version = durable.version;
+    let content = tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        use yrs::Transact;
+        let replay = |base: &[u8], rows: &[Vec<u8>]| -> Result<Doc, String> {
+            let doc = ydoc::scratch_doc();
+            ydoc::replay(&doc, base, rows).map_err(|error| error.to_string())?;
+            Ok(doc)
+        };
+        let doc = replay(&durable.base, &durable.rows)?;
+        let value = match &durable.keys {
+            Some((base, rows)) => {
+                let keys = replay(base, rows)?;
+                items::quiz::value(&doc.transact(), &keys.transact())
+            }
+            None => Model::of(&durable.kind).value(&doc.transact())?,
+        };
+        Ok(json!({ "schemaVersion": 1, "value": value }))
     })
     .await
     .map_err(|error| error.to_string())??;
-    project_doc(app, material_id, version, doc, Model::of(&kind)).await?;
+    project(app, material_id, version, &content).await?;
     Ok(version)
 }
 
@@ -177,8 +192,15 @@ pub async fn run_pending(app: Shared) {
         };
         let loaded: Vec<String> = app.rooms.names();
         for (material_id, _) in pending {
-            let prefix = format!("material:{material_id}:");
-            if loaded.iter().any(|room| room.starts_with(&prefix)) {
+            let prefixes = [
+                format!("material:{material_id}:"),
+                format!("keys:{material_id}:"),
+            ];
+            if loaded.iter().any(|room| {
+                prefixes
+                    .iter()
+                    .any(|prefix| room.starts_with(prefix.as_str()))
+            }) {
                 continue;
             }
             // project() records and reports its own failure.

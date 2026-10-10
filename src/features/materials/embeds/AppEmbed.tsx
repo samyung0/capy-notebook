@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMaterial, useQuiz, useSubmitAttempt } from '@/api/hooks';
 import type { Material } from '@/api/types';
 import { useNearScreen } from '@/features/collaboration/useNearScreen';
@@ -11,13 +11,18 @@ import {
 } from '@/features/materials/document';
 import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
 import { AttemptBody } from '@/features/quizzes/AttemptBody';
-import { QuizEditor } from '@/features/quizzes/QuizEditor';
+import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
+import {
+  useQuizQuestions,
+  useQuizRooms,
+} from '@/features/quizzes/liveQuizRooms';
+import { QuizForm } from '@/features/quizzes/QuizForm';
 import { EmbedLoading, type EmbedProps, EmbedUnavailable } from './EmbedView';
 
 /* A note's embedded quiz or flashcard set inside the app, read through the
-   account. View studies it in place (a quick check: nothing is recorded); a
-   set follows its live room. Edit edits it in place: a set through its live
-   room (joined while the block is near the screen), a quiz saved at once. */
+   account. View studies it in place (a quick check: nothing is recorded) and
+   follows the item's live room. Edit edits it in place through its live
+   rooms, joined while the block is near the screen (live-items). */
 
 type OwnedProps = EmbedProps & {
   /** In an editing note: the block waits as a skeleton until its item is the
@@ -98,12 +103,7 @@ export function AppEmbedEdit({
     <QuizGate materialId={materialId} ownerId={ownerId}>
       {(quiz) => (
         <>
-          <QuizEditor
-            onEmpty={onEmpty}
-            quizId={materialId}
-            saveEachChange
-            title=""
-          />
+          <QuizEditor onEmpty={onEmpty} quizId={materialId} />
           <SourcesLine className="mt-3" provenance={quiz.provenance} />
         </>
       )}
@@ -164,8 +164,7 @@ function QuizView({
   return (
     <QuizGate materialId={materialId} ownerId={ownerId}>
       {(quiz) => (
-        <AttemptBody
-          embedded
+        <LiveQuizStudy
           grade={async (answers) => {
             const attempt = await submit({ answers, quizId: materialId });
             return {
@@ -174,12 +173,69 @@ function QuizView({
               questions: attempt.questions,
             };
           }}
-          name=""
-          provenance={quiz.provenance}
-          questions={quiz.questions}
-          trail={[]}
+          quiz={quiz}
         />
       )}
     </QuizGate>
+  );
+}
+
+function LiveQuizStudy({
+  quiz,
+  grade,
+}: {
+  quiz: NonNullable<ReturnType<typeof useQuiz>['data']>;
+  grade: Parameters<typeof AttemptBody>[0]['grade'];
+}) {
+  const questions = useLiveQuizQuestions(quiz.id, quiz.questions);
+  return (
+    <AttemptBody
+      embedded
+      grade={grade}
+      name=""
+      provenance={quiz.provenance}
+      questions={questions}
+      trail={[]}
+    />
+  );
+}
+
+/** A note's quiz in Edit: its live rooms while the block is near the screen
+ * (and while edits wait for the server); removing the last question removes
+ * the block. Undo and Redo are in the question dialog. */
+function QuizEditor({
+  quizId,
+  onEmpty,
+}: {
+  quizId: string;
+  onEmpty: () => void;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  const near = useNearScreen(box);
+  const [held, setHeld] = useState(false);
+  const rooms = useQuizRooms(quizId, { edit: true, enabled: near || held });
+  useEffect(() => {
+    setHeld(rooms.status === 'syncing' || rooms.status === 'offline');
+  }, [rooms.status]);
+  const questions = useQuizQuestions(rooms.content?.doc, rooms.keys?.doc);
+  return (
+    <div ref={box}>
+      {rooms.status === 'unavailable' ? (
+        <EmbedUnavailable />
+      ) : rooms.ready && rooms.content && rooms.keys ? (
+        <QuizForm
+          content={rooms.content.doc}
+          keys={rooms.keys.doc}
+          name=""
+          onEmpty={onEmpty}
+          questions={questions}
+          quizId={quizId}
+          status={rooms.status}
+          undo={rooms.undo}
+        />
+      ) : (
+        <EmbedLoading />
+      )}
+    </div>
   );
 }

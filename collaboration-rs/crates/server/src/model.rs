@@ -22,6 +22,11 @@ impl Model {
         }
     }
 
+    /// A quiz's content or keys document: it projects from both.
+    pub fn quiz(self) -> bool {
+        matches!(self, Model::Item(items::Kind::Quiz | items::Kind::QuizKeys))
+    }
+
     pub fn assert_roots<T: ReadTxn>(self, txn: &T) -> Result<(), String> {
         match self {
             Model::Note => notes::validate::assert_roots(txn).map_err(|error| error.to_string()),

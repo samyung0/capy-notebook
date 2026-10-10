@@ -424,32 +424,19 @@ func TestQuizAndFlashcardCapabilitiesSeparateEditorsFromOwners(t *testing.T) {
 
 func TestStudyToolMutationPathsSeparateContentMetadataAndSharing(t *testing.T) {
 	h := openShareHTTP(t)
-	revision := func(id string) float64 {
-		rec := doReq(t, h, http.MethodGet, "/api/materials/"+id, "u_editor", nil)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("read revision = %d %s", rec.Code, rec.Body.String())
-		}
-		var material map[string]any
-		if err := json.Unmarshal(rec.Body.Bytes(), &material); err != nil {
-			t.Fatal(err)
-		}
-		return material["revision"].(float64)
-	}
 
 	quizQuestions := []map[string]any{{
 		"id": "q_mut_2", "stem": []any{}, "layout": "paper", "labels": "letters",
 		"parts": []any{map[string]any{"id": "q_mut_2:part:1", "blocks": []any{map[string]any{"type": "text", "text": "Updated workspace question?"}}, "answer": map[string]any{"type": "boolean", "correct": true}, "marks": 1, "solution": []any{}}},
 	}}
 	rec := doReq(t, h, http.MethodPatch, "/api/quizzes/qz_e2e_private/content", "u_editor", map[string]any{
-		"expectedRevision": revision("qz_e2e_private"),
-		"questions":        quizQuestions,
+		"questions": quizQuestions,
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("workspace quiz content update = %d body=%s", rec.Code, rec.Body.String())
 	}
 	rec = doReq(t, h, http.MethodPatch, "/api/quizzes/qz_e2e_private/content", "u_editor", map[string]any{
-		"expectedRevision": revision("qz_e2e_private"),
-		"questions":        quizQuestions, "privacy": "public",
+		"questions": quizQuestions, "privacy": "public",
 	})
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("privacy on quiz content path = %d body=%s", rec.Code, rec.Body.String())
@@ -485,7 +472,6 @@ func TestStudyToolMutationPathsSeparateContentMetadataAndSharing(t *testing.T) {
 		t.Fatalf("workspace flashcard sharing update = %d body=%s", rec.Code, rec.Body.String())
 	}
 	rec = doReq(t, h, http.MethodPatch, "/api/flashcards/dk_e2e_private/content", "u_editor", map[string]any{
-		"expectedRevision": revision("dk_e2e_private"),
 		"cards": []map[string]any{{
 			"id": "c_e2e_priv_1", "front": "Updated front", "back": "Updated back", "known": true,
 		}},
