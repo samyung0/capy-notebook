@@ -6,6 +6,8 @@
  * server's HTML at first paint (the theme script in the head still runs);
  * after load the page applies the full stylesheets anyway.
  */
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import type { Browser, Page } from '@playwright/test';
 import { pageClasses, usedCss } from '../../../workers/site/usedCss';
 
@@ -60,10 +62,20 @@ async function open(
       return route.abort();
     return route.continue();
   });
-  await page.goto(url, { waitUntil: 'load' });
-  await page.evaluate(() => document.fonts.ready);
+  await page.goto(url, { waitUntil: 'networkidle' });
+  // Lazy images would load while the full-page screenshot scrolls, at a
+  // different moment in each page; load them all first.
+  await page.evaluate(SETTLE);
   return page;
 }
+
+// A string, so tsx's helpers never reach the page.
+const SETTLE = `(async () => {
+  const images = [...document.images];
+  for (const image of images) image.loading = 'eager';
+  await Promise.all(images.map((image) => image.decode().catch(() => {})));
+  await document.fonts.ready;
+})()`;
 
 /** A hash of every element's and ::before/::after's computed style; the
  * styles themselves stay in the page for `style`. */
@@ -118,8 +130,14 @@ async function difference(full: Page, subset: Page, index: number) {
 /** Differences between the subset and the full stylesheets, if any. */
 export async function compareStyles(
   browser: Browser,
-  url: string
-): Promise<{ checked: number; differences: string[]; subsetBytes: number; fullBytes: number }> {
+  url: string,
+  out: string
+): Promise<{
+  checked: number;
+  differences: string[];
+  fullBytes: number;
+  subsetBytes: number;
+}> {
   const served = await (await fetch(url)).text();
   const { full, subset } = await variants(served, new URL(url).origin);
   const differences: string[] = [];
@@ -142,12 +160,25 @@ export async function compareStyles(
         for (let i = 0; i < expected.length && differences.length < 20; i++)
           if (expected[i] !== actual[i])
             differences.push(`${label} ${await difference(a, b, i)}`);
-        const [fullShot, subsetShot] = await Promise.all([
-          a.screenshot({ animations: 'disabled', fullPage: true }),
-          b.screenshot({ animations: 'disabled', fullPage: true }),
-        ]);
-        if (!fullShot.equals(subsetShot))
-          differences.push(`${label}: the screenshots differ`);
+        // A second try rules out a frame caught mid-decode; a difference that
+        // stays is saved for a look.
+        let shots: Buffer[] = [];
+        for (let attempt = 0; attempt < 2; attempt++) {
+          shots = await Promise.all(
+            [a, b].map((page) =>
+              page.screenshot({ animations: 'disabled', fullPage: true })
+            )
+          );
+          if (shots[0].equals(shots[1])) break;
+          await a.waitForTimeout(1000);
+        }
+        if (!shots[0].equals(shots[1])) {
+          const name = `${new URL(url).pathname.split('/').at(-2)}-${colorScheme}-${viewport.width}`;
+          await mkdir(out, { recursive: true });
+          await writeFile(path.join(out, `${name}-full.png`), shots[0]);
+          await writeFile(path.join(out, `${name}-inlined.png`), shots[1]);
+          differences.push(`${label}: the screenshots differ (${name}-*.png)`);
+        }
       } finally {
         await a.close();
         await b.close();

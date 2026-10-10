@@ -543,7 +543,11 @@ async function run(page: Page) {
   const styles = [];
   for (const item of shared)
     styles.push(
-      await compareStyles(page.context().browser()!, `${appUrl}${item.path}`)
+      await compareStyles(
+        page.context().browser()!,
+        `${appUrl}${item.path}`,
+        out
+      )
     );
 
   const chrome = await chromium.launch({
