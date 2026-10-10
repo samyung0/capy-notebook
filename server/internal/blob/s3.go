@@ -7,24 +7,30 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go/encoding/httpbinding"
 )
 
 // PresignTTL bounds an upload: the PUT and the reservation deadline that
 // completion is checked against, so it must cover a slow full-size upload.
 // LinkTTL bounds a read link, which the browser fetches as soon as it lands.
+// StableLinkTTL bounds an hour-stable link from the hour it was signed in, so
+// one minted late in the hour still has an hour to load.
 const (
 	defaultPresignTTL = 15 * time.Minute
 	defaultLinkTTL    = 5 * time.Minute
+	StableLinkTTL     = 2 * time.Hour
 )
 
 // B2Config contains the B2 S3 endpoint and application-key credentials.
@@ -46,6 +52,13 @@ type B2 struct {
 	bucket     string
 	presignTTL time.Duration
 	linkTTL    time.Duration
+	// Hour-stable links sign outside the SDK stack; see PresignStableGet.
+	signer    *v4.Signer
+	creds     aws.Credentials
+	region    string
+	endpoint  url.URL
+	pathStyle bool
+	now       func() time.Time
 }
 
 func NewB2(cfg B2Config) (*B2, error) {
@@ -83,6 +96,13 @@ func NewB2(cfg B2Config) (*B2, error) {
 		bucket:     cfg.Bucket,
 		presignTTL: ttl,
 		linkTTL:    linkTTL,
+		// The SDK's S3 signer settings: S3 keys are escaped once, not twice.
+		signer:    v4.NewSigner(func(o *v4.SignerOptions) { o.DisableURIPathEscaping = true }),
+		creds:     aws.Credentials{AccessKeyID: cfg.KeyID, SecretAccessKey: cfg.AppKey},
+		region:    cfg.Region,
+		endpoint:  url.URL{Scheme: endpoint.Scheme, Host: endpoint.Host},
+		pathStyle: cfg.UsePathStyle,
+		now:       time.Now,
 	}, nil
 }
 
@@ -138,6 +158,30 @@ func (s *B2) PresignGetWithExpiry(ctx context.Context, path string) (PresignedGe
 	}
 	return PresignedGet{URL: req.URL, ExpiresAt: time.Now().UTC().Add(s.linkTTL)}, nil
 }
+
+// PresignStableGet signs with the v4 signer directly. The SDK's presign
+// stack costs about 130 µs and 550 allocations per URL, and a list signs one
+// per row; here the signer's cached signing key leaves one SHA-256 of the
+// canonical request and one HMAC. The URL addresses the object the way the
+// SDK resolves it (TestPresignStableGetAddressesTheSDKObject).
+func (s *B2) PresignStableGet(ctx context.Context, path string) (string, error) {
+	u := s.endpoint
+	key := httpbinding.EscapePath(path, false)
+	if s.pathStyle {
+		u.Path = "/" + s.bucket + "/" + path
+		u.RawPath = "/" + s.bucket + "/" + key
+	} else {
+		u.Host = s.bucket + "." + u.Host
+		u.Path, u.RawPath = "/"+path, "/"+key
+	}
+	u.RawQuery = stableExpiresQuery
+	req := &http.Request{Method: http.MethodGet, URL: &u, Host: u.Host, Header: http.Header{}}
+	signed, _, err := s.signer.PresignHTTP(ctx, s.creds, req, "UNSIGNED-PAYLOAD", "s3",
+		s.region, s.now().UTC().Truncate(time.Hour))
+	return signed, err
+}
+
+var stableExpiresQuery = "X-Amz-Expires=" + strconv.Itoa(int(StableLinkTTL/time.Second))
 
 func (s *B2) PresignPut(ctx context.Context, path, contentType string, size int64) (PresignedPut, error) {
 	expiresAt := time.Now().UTC().Add(s.presignTTL)

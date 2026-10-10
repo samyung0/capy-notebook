@@ -174,6 +174,10 @@ func (s *Store) ProjectMaterialContent(
 	// within the caps or a shrink that recovers towards them. Re-rejecting it
 	// would strand materials.content behind the authoritative Y.Doc for exactly
 	// the documents that are trying to get back under the limit.
+	preview, err := projection.Preview(kind)
+	if err != nil {
+		return ProjectedMaterial{}, err
+	}
 	projected := ProjectedMaterial{
 		ID:        materialID,
 		Revision:  revision + 1,
@@ -182,10 +186,10 @@ func (s *Store) ProjectMaterialContent(
 		UpdatedAt: time.Now().UTC(),
 	}
 	if err := tx.QueryRow(ctx, `UPDATE materials
-		SET content=$2, node_count=$3, max_depth=$4, revision=$5, updated_at=$6, `+noteIndexDirtySQL+`
+		SET content=$2, node_count=$3, max_depth=$4, revision=$5, updated_at=$6, preview=$7, `+noteIndexDirtySQL+`
 		WHERE id=$1 AND trashed_at IS NULL RETURNING size_bytes, updated_at`, materialID,
 		json.RawMessage(projection.Raw), projected.NodeCount, projected.MaxDepth,
-		projected.Revision, projected.UpdatedAt).Scan(&projected.SizeBytes, &projected.UpdatedAt); err != nil {
+		projected.Revision, projected.UpdatedAt, preview).Scan(&projected.SizeBytes, &projected.UpdatedAt); err != nil {
 		return ProjectedMaterial{}, err
 	}
 	if kind == "flashcards" {

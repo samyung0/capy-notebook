@@ -161,6 +161,60 @@ type File struct {
 	// Provenance credits the library books a generated file was written from;
 	// nil for an upload.
 	Provenance *Provenance `json:"provenance,omitempty"`
+	// ThumbnailKey is the page-1 WebP object; list handlers sign it into
+	// ThumbnailURL for rows the caller can already read.
+	ThumbnailKey string  `json:"-"`
+	ThumbnailURL *string `json:"thumbnailUrl,omitempty" doc:"Hour-stable presigned GET of the page-1 thumbnail; list rows only"`
+	// Preview is a text source's opening characters.
+	Preview FilePreview `json:"preview,omitempty"`
+}
+
+// FilePreview is {"text": ...}, a text source's first ~600 characters written
+// at ingest (openwiki/thumbnails.md). Rows pass the stored JSON through.
+type FilePreview json.RawMessage
+
+func (p FilePreview) MarshalJSON() ([]byte, error) { return rawOrNull(p), nil }
+
+// UnmarshalJSON keeps the bytes, which is how pgx scans the jsonb column.
+func (p *FilePreview) UnmarshalJSON(b []byte) error {
+	*p = append((*p)[:0], b...)
+	return nil
+}
+
+func (FilePreview) Schema(huma.Registry) *huma.Schema {
+	return &huma.Schema{
+		Type:       huma.TypeObject,
+		Properties: map[string]*huma.Schema{"text": {Type: huma.TypeString}},
+		Required:   []string{"text"},
+	}
+}
+
+// MaterialPreview is a material's list-card preview, the union on kind that
+// materialdoc.Preview writes to materials.preview (openwiki/thumbnails.md).
+// Rows pass the stored JSON through; the client types the union by hand.
+type MaterialPreview json.RawMessage
+
+func (p MaterialPreview) MarshalJSON() ([]byte, error) { return rawOrNull(p), nil }
+
+// UnmarshalJSON keeps the bytes, which is how pgx scans the jsonb column.
+func (p *MaterialPreview) UnmarshalJSON(b []byte) error {
+	*p = append((*p)[:0], b...)
+	return nil
+}
+
+func (MaterialPreview) Schema(huma.Registry) *huma.Schema {
+	return &huma.Schema{
+		Type:                 huma.TypeObject,
+		AdditionalProperties: true,
+		Description:          "List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki/thumbnails.md",
+	}
+}
+
+func rawOrNull(raw []byte) []byte {
+	if len(raw) == 0 {
+		return []byte("null")
+	}
+	return raw
 }
 
 type Quiz struct {
@@ -460,7 +514,8 @@ type MaterialRef struct {
 	NodeCount int   `json:"nodeCount"`
 	MaxDepth  int   `json:"maxDepth"`
 	// Provenance credits the library books a curated material was written from.
-	Provenance *Provenance `json:"provenance,omitempty"`
+	Provenance *Provenance     `json:"provenance,omitempty"`
+	Preview    MaterialPreview `json:"preview,omitempty"`
 }
 
 type ContentOrderItem struct {

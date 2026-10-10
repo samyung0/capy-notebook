@@ -517,6 +517,8 @@ type workspaceCloneFile struct {
 	parseMode                   string
 	indexLimit                  *string
 	provenance                  []byte
+	thumbnailKey                *string
+	preview                     []byte
 }
 
 type workspaceCloneAsset struct {
@@ -535,6 +537,7 @@ type workspaceCloneMaterial struct {
 	newID     string
 	content   string
 	metrics   materialdoc.DocumentMetrics
+	preview   json.RawMessage
 	sizeBytes int64
 	cardIDs   []string
 }
@@ -592,6 +595,9 @@ func workspaceCloneBlobPaths(snapshot workspaceCloneSnapshot) []string {
 	for _, file := range snapshot.files {
 		if file.blobPath != nil {
 			paths = append(paths, *file.blobPath)
+		}
+		if file.thumbnailKey != nil {
+			paths = append(paths, *file.thumbnailKey)
 		}
 	}
 	for _, asset := range snapshot.assets {
@@ -678,7 +684,7 @@ func (s *Store) snapshotWorkspaceForClone(
 			)),
 			parser, blob_path, source_etag,
 			content_hash, source_sha256, parse_mode, ever_parsed_successfully,
-			index_limit, provenance
+			index_limit, provenance, thumbnail_key, preview
 		 FROM files
 		 WHERE workspace_id=$1 AND status='ready' AND trashed_at IS NULL
 		 ORDER BY added_at`,
@@ -707,6 +713,8 @@ func (s *Store) snapshotWorkspaceForClone(
 			&file.everParsed,
 			&file.indexLimit,
 			&file.provenance,
+			&file.thumbnailKey,
+			&file.preview,
 		); err != nil {
 			rows.Close()
 			return workspaceCloneSnapshot{}, err
@@ -785,6 +793,13 @@ func (s *Store) snapshotWorkspaceForClone(
 			return workspaceCloneSnapshot{}, err
 		}
 		if err := materialSnapshot.metrics.LimitError(); err != nil {
+			return workspaceCloneSnapshot{}, err
+		}
+		// Recomputed: the clone may have dropped media the source showed.
+		materialSnapshot.preview, err = materialdoc.Preview(
+			string(materialSnapshot.material.Kind), materialSnapshot.content,
+		)
+		if err != nil {
 			return workspaceCloneSnapshot{}, err
 		}
 		sizeBytes, err := storageJSONSizeTx(
@@ -989,10 +1004,12 @@ func (s *Store) cloneWorkspaceOnce(
 			// Attribution travels with the copy, as it does for materials.
 			if _, err := tx.Exec(ctx, `INSERT INTO files
 				(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, parser, blob_path,
-				 source_etag, content_hash, source_sha256, parse_mode, ever_parsed_successfully, index_limit, provenance)
-				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+				 source_etag, content_hash, source_sha256, parse_mode, ever_parsed_successfully, index_limit, provenance,
+				 thumbnail_key, preview)
+				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
 				nid, newID, userID, chapterID, f.position, f.name, f.kind, f.sizeBytes, time.Now().UTC(), f.status, f.indexed, f.parser, f.blobPath,
-				f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.everParsed, f.indexLimit, f.provenance); err != nil {
+				f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.everParsed, f.indexLimit, f.provenance,
+				f.thumbnailKey, f.preview); err != nil {
 				return Workspace{}, err
 			}
 		}
@@ -1053,11 +1070,11 @@ func (s *Store) cloneWorkspaceOnce(
 			if _, err := tx.Exec(ctx, `INSERT INTO materials
 				(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
 					 chapter_id, position, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by, provenance,
-					 parent_material_id)
-				VALUES ($1,$2,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$16,$2,$17,$18)`,
+					 parent_material_id, preview)
+				VALUES ($1,$2,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$16,$2,$17,$18,$19)`,
 				nid, userID, newID, name, mt.Kind, title, json.RawMessage(content), chapterID,
 				mt.Position, mt.ScopeChapters, mt.ScopeFileNames, mt.Color, metrics.NodeCount,
-				metrics.MaxDepth, createdAt, mt.Revision, provenance, parentID); err != nil {
+				metrics.MaxDepth, createdAt, mt.Revision, provenance, parentID, materialSnapshot.preview); err != nil {
 				return Workspace{}, err
 			}
 			for _, cid := range materialSnapshot.cardIDs {
@@ -1379,6 +1396,7 @@ func (s *Store) cloneMaterialKindOnce(
 		newID   string
 		content string
 		metrics materialdoc.DocumentMetrics
+		preview json.RawMessage
 		cardIDs []string
 	}
 	embeddedIDs := map[string]string{}
@@ -1399,6 +1417,9 @@ func (s *Store) cloneMaterialKindOnce(
 			return Material{}, err
 		}
 		if err := clone.metrics.LimitError(); err != nil {
+			return Material{}, err
+		}
+		if clone.preview, err = materialdoc.Preview(string(child.Kind), clone.content); err != nil {
 			return Material{}, err
 		}
 		size, err := storageJSONSizeTx(ctx, tx, clone.content)
@@ -1423,6 +1444,10 @@ func (s *Store) cloneMaterialKindOnce(
 	if err := metrics.LimitError(); err != nil {
 		return Material{}, err
 	}
+	preview, err := materialdoc.Preview(string(src.Kind), content)
+	if err != nil {
+		return Material{}, err
+	}
 
 	storedSize, err := storageJSONSizeTx(ctx, tx, content)
 	if err != nil {
@@ -1441,22 +1466,22 @@ func (s *Store) cloneMaterialKindOnce(
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO materials
 		(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
-		 scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by, provenance)
-		VALUES ($1,$2,$2,NULL,'',$3,$4,$5,$6,'{}','private',$7,$8,$9,$10,$11,$2,$12)`,
+		 scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by, provenance, preview)
+		VALUES ($1,$2,$2,NULL,'',$3,$4,$5,$6,'{}','private',$7,$8,$9,$10,$11,$2,$12,$13)`,
 		nid, userID, src.Kind, src.Title, json.RawMessage(content), src.ScopeChapters,
 		src.Color, metrics.NodeCount, metrics.MaxDepth, src.UpdatedAt, src.Revision,
-		provenance); err != nil {
+		provenance, preview); err != nil {
 		return Material{}, err
 	}
 	for _, clone := range clones {
 		if _, err := tx.Exec(ctx, `INSERT INTO materials
 			(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
 			 scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by,
-			 parent_material_id)
-			VALUES ($1,$2,$2,NULL,'',$3,$4,$5,'{}','{}','private',$6,$7,$8,$9,$10,$2,$11)`,
+			 parent_material_id, preview)
+			VALUES ($1,$2,$2,NULL,'',$3,$4,$5,'{}','{}','private',$6,$7,$8,$9,$10,$2,$11,$12)`,
 			clone.newID, userID, clone.src.Kind, embeddedName(), json.RawMessage(clone.content),
 			clone.src.Color, clone.metrics.NodeCount, clone.metrics.MaxDepth, clone.src.UpdatedAt,
-			clone.src.Revision, nid); err != nil {
+			clone.src.Revision, nid, clone.preview); err != nil {
 			return Material{}, err
 		}
 		for _, cid := range clone.cardIDs {

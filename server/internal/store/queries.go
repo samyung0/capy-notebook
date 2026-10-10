@@ -939,18 +939,18 @@ func (s *Store) DeleteChapter(ctx context.Context, actorID, id string) error {
 const fileCols = `id, workspace_id, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, COALESCE(blob_path, '') <> '',
 	CASE WHEN status='ready' AND (kind='pdf' AND blob_path IS NOT NULL)
 		THEN '/api/files/' || id || '/preview' END,
-	revision, provenance, index_limit`
+	revision, provenance, index_limit, COALESCE(thumbnail_key, ''), preview`
 
 // fileListCols is fileCols qualified for joins.
 const fileListCols = `f.id, f.workspace_id, f.chapter_id, f.position, f.name, f.kind, f.size_bytes, f.added_at, f.status, f.indexed, COALESCE(f.blob_path, '') <> '',
 	CASE WHEN f.status='ready' AND (f.kind='pdf' AND f.blob_path IS NOT NULL)
 		THEN '/api/files/' || f.id || '/preview' END,
-	f.revision, f.provenance, f.index_limit`
+	f.revision, f.provenance, f.index_limit, COALESCE(f.thumbnail_key, ''), f.preview`
 
 func scanFile(row pgx.Row) (File, error) {
 	var f File
 	var provenance []byte
-	err := row.Scan(&f.ID, &f.WorkspaceID, &f.ChapterID, &f.Position, &f.Name, &f.Kind, &f.SizeBytes, &f.AddedAt, &f.Status, &f.Indexed, &f.HasBytes, &f.PreviewURL, &f.Revision, &provenance, &f.IndexLimit)
+	err := row.Scan(&f.ID, &f.WorkspaceID, &f.ChapterID, &f.Position, &f.Name, &f.Kind, &f.SizeBytes, &f.AddedAt, &f.Status, &f.Indexed, &f.HasBytes, &f.PreviewURL, &f.Revision, &provenance, &f.IndexLimit, &f.ThumbnailKey, &f.Preview)
 	if err == nil {
 		f.Provenance, err = decodeProvenance(provenance)
 	}
@@ -1156,6 +1156,10 @@ func (s *Store) createMaterialTx(ctx context.Context, tx pgx.Tx, mt Material) (s
 	if err := metrics.LimitError(); err != nil {
 		return "", err
 	}
+	preview, err := materialdoc.Preview(string(mt.Kind), content)
+	if err != nil {
+		return "", err
+	}
 	var cardIDs []string
 	if mt.Kind == "flashcards" {
 		cards, err := materialdoc.ExtractFlashcards(content)
@@ -1220,12 +1224,12 @@ func (s *Store) createMaterialTx(ctx context.Context, tx pgx.Tx, mt Material) (s
 	_, err = tx.Exec(ctx, `INSERT INTO materials
 		(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
 		 chapter_id, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_by, provenance,
-		 parent_material_id, index_dirty_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+		 parent_material_id, index_dirty_at, preview)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
 		mt.ID, creatorID, ownerID, nullStr(mt.WorkspaceID), mt.WorkspaceName, mt.Kind,
 		mt.Title, json.RawMessage(mt.Content), mt.ChapterID, mt.ScopeChapters,
 		mt.ScopeFileNames, mt.Privacy, mt.Color, metrics.NodeCount, metrics.MaxDepth, creatorID,
-		provenance, nullStr(mt.ParentMaterialID), indexDirtyAt)
+		provenance, nullStr(mt.ParentMaterialID), indexDirtyAt, preview)
 	if err != nil {
 		if uniqueConstraintName(err) == "materials_pkey" {
 			return "", ErrMaterialIDTaken
@@ -1587,9 +1591,14 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 		if err := contentMetrics.LimitError(); err != nil {
 			return Material{}, err
 		}
+		preview, err := materialdoc.Preview(contentKind, *p.Content)
+		if err != nil {
+			return Material{}, err
+		}
 		add("content", json.RawMessage(*p.Content))
 		add("node_count", contentMetrics.NodeCount)
 		add("max_depth", contentMetrics.MaxDepth)
+		add("preview", preview)
 	}
 	if p.ChapterID != nil {
 		add("chapter_id", *p.ChapterID)
@@ -1790,7 +1799,7 @@ func (s *Store) MaterialIDsOwnedByUser(ctx context.Context, userID string) ([]st
 // Plate materials, newest first.
 func (s *Store) ListMaterialRefs(ctx context.Context, wsID string) ([]MaterialRef, error) {
 	out := []MaterialRef{}
-	rows, err := s.pool.Query(ctx, `SELECT id, kind, title, chapter_id, position, created_at, size_bytes, node_count, max_depth, provenance
+	rows, err := s.pool.Query(ctx, `SELECT id, kind, title, chapter_id, position, created_at, size_bytes, node_count, max_depth, provenance, preview
 		FROM materials WHERE workspace_id=$1 AND parent_material_id IS NULL AND trashed_at IS NULL
 		ORDER BY position, created_at DESC`, wsID)
 	if err != nil {
@@ -1812,6 +1821,7 @@ func (s *Store) ListMaterialRefs(ctx context.Context, wsID string) ([]MaterialRe
 			&r.NodeCount,
 			&r.MaxDepth,
 			&provenance,
+			&r.Preview,
 		); err != nil {
 			return nil, err
 		}

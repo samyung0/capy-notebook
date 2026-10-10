@@ -42,6 +42,12 @@ type TrashItem struct {
 	TrashedAt     time.Time               `json:"trashedAt"`
 	PurgeAfter    time.Time               `json:"purgeAfter"`
 	EpisodeID     string                  `json:"episodeId"`
+	// ThumbnailKey is a source file's page-1 WebP; the handler signs it into
+	// ThumbnailURL.
+	ThumbnailKey string  `json:"-"`
+	ThumbnailURL *string `json:"thumbnailUrl,omitempty" doc:"Hour-stable presigned GET of a source file's page-1 thumbnail"`
+	// Preview is a material's list-card preview, or {text} for a text file.
+	Preview MaterialPreview `json:"preview,omitempty" doc:"A material's list-card preview, or {text} for a text source file; see openwiki/thumbnails.md"`
 }
 
 type TrashPage struct {
@@ -255,15 +261,16 @@ func (s *Store) ListTrash(ctx context.Context, ownerID, workspaceID string, limi
 		return TrashPage{}, err
 	}
 	rows, err := s.pool.Query(ctx, `SELECT kind, id, title, sub_kind, workspace_id, workspace_name, size_bytes,
-			trashed_at, purge_after, trash_episode_id
+			trashed_at, purge_after, trash_episode_id, thumbnail_key, preview
 		FROM (
 			SELECT 'source_file' AS kind, f.id, f.name AS title, f.kind AS sub_kind, f.workspace_id,
-				w.name AS workspace_name, f.size_bytes, f.trashed_at, f.purge_after, f.trash_episode_id
+				w.name AS workspace_name, f.size_bytes, f.trashed_at, f.purge_after, f.trash_episode_id,
+				COALESCE(f.thumbnail_key, '') AS thumbnail_key, f.preview
 			FROM files f JOIN workspaces w ON w.id=f.workspace_id
 			WHERE f.trashed_at IS NOT NULL AND f.user_id=$1 AND ($2='' OR f.workspace_id=$2)
 			UNION ALL
 			SELECT 'material', m.id, m.title, m.kind, COALESCE(m.workspace_id,''), m.workspace_name,
-				m.size_bytes, m.trashed_at, m.purge_after, m.trash_episode_id
+				m.size_bytes, m.trashed_at, m.purge_after, m.trash_episode_id, '', m.preview
 			FROM materials m
 			WHERE m.trashed_at IS NOT NULL AND m.owner_user_id=$1 AND m.parent_material_id IS NULL
 				AND ($2='' OR m.workspace_id=$2)
@@ -280,7 +287,8 @@ func (s *Store) ListTrash(ctx context.Context, ownerID, workspaceID string, limi
 		var item TrashItem
 		var subKind string
 		if err := rows.Scan(&item.Kind, &item.ID, &item.Title, &subKind, &item.WorkspaceID, &item.WorkspaceName,
-			&item.SizeBytes, &item.TrashedAt, &item.PurgeAfter, &item.EpisodeID); err != nil {
+			&item.SizeBytes, &item.TrashedAt, &item.PurgeAfter, &item.EpisodeID,
+			&item.ThumbnailKey, &item.Preview); err != nil {
 			return TrashPage{}, err
 		}
 		if item.Kind == agenttools.KindMaterial {
