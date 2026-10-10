@@ -8,7 +8,7 @@ import (
 )
 
 // TestMaterialWritersStorePreview: each Go writer of materials.content stores
-// the list-card preview with it, and the workspace list returns it.
+// the list-card preview with it, and the material list returns it.
 func TestMaterialWritersStorePreview(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -57,12 +57,12 @@ func TestMaterialWritersStorePreview(t *testing.T) {
 	if got := previewText(material.ID); got != "Updated" {
 		t.Fatalf("updated preview = %q", got)
 	}
-	refs, err := s.ListMaterialRefs(ctx, ws.ID)
+	page, err := s.ListOwnedMaterials(ctx, ownerID, MaterialListFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(refs) != 1 || string(refs[0].Preview) == "" {
-		t.Fatalf("material refs = %+v, want the stored preview", refs)
+	if len(page.Items) != 1 || string(page.Items[0].Preview) == "" {
+		t.Fatalf("material list = %+v, want the stored preview", page.Items)
 	}
 	clone, err := s.CloneMaterial(ctx, ownerID, material.ID)
 	if err != nil {
@@ -70,5 +70,38 @@ func TestMaterialWritersStorePreview(t *testing.T) {
 	}
 	if got := previewText(clone.ID); got != "Updated" {
 		t.Fatalf("cloned preview = %q", got)
+	}
+}
+
+// TestBackfillMaterialPreviews: the one-shot backfill fills a material written
+// without a preview, and a rerun finds nothing left to fill.
+func TestBackfillMaterialPreviews(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "u_backfill")
+	material, err := s.CreateMaterial(ctx, Material{
+		CreatedBy: ownerID, Kind: "note", Title: "Old note", Privacy: "private",
+		Content: `{"schemaVersion":1,"value":[{"type":"p","id":"p1","children":[{"text":"Before 0073"}]}]}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET preview=NULL WHERE id=$1`, material.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := s.BackfillMaterialPreviews(ctx, 2); err != nil {
+		t.Fatal(err)
+	}
+	var text string
+	if err := s.pool.QueryRow(ctx, `SELECT COALESCE(preview->'blocks'->0->>'text', '')
+		FROM materials WHERE id=$1`, material.ID).Scan(&text); err != nil {
+		t.Fatal(err)
+	}
+	if text != "Before 0073" {
+		t.Fatalf("backfilled preview text = %q", text)
+	}
+	if filled, _, err := s.BackfillMaterialPreviews(ctx, 2); err != nil || filled != 0 {
+		t.Fatalf("rerun filled %d, %v; want nothing left", filled, err)
 	}
 }

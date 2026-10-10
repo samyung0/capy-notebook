@@ -2,7 +2,6 @@ package materialdoc
 
 import (
 	"encoding/json"
-	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -54,17 +53,16 @@ type quizPreview struct {
 	First         *questionPreview `json:"first,omitempty"`
 }
 
-// questionPreview carries no answer key. A matching question's stored pairs
-// and an ordering question's stored items are its key, so Pairs puts the left
-// items and the options side by side, each column sorted on its own (rows are
-// not matches), and Items are sorted.
+// questionPreview carries no answer key. Matching shows only its left-hand
+// prompts (the right-hand options and the pairing are the key) and ordering
+// only how many items it has (any order of them could be the answer).
 type questionPreview struct {
-	Type     string      `json:"type"`
-	Stem     string      `json:"stem"`
-	Options  []string    `json:"options,omitempty"`
-	Pairs    [][2]string `json:"pairs,omitempty"`
-	Items    []string    `json:"items,omitempty"`
-	HasChart bool        `json:"hasChart,omitempty"`
+	Type      string   `json:"type"`
+	Stem      string   `json:"stem"`
+	Options   []string `json:"options,omitempty"`
+	Prompts   []string `json:"prompts,omitempty"`
+	ItemCount int      `json:"itemCount,omitempty"`
+	HasChart  bool     `json:"hasChart,omitempty"`
 }
 
 type flashcardsPreview struct {
@@ -185,7 +183,7 @@ func (b *noteBuilder) add(node map[string]any) {
 			if len(rows) == previewTableRows || b.runes <= 0 {
 				break
 			}
-			var cells []string
+			cells := []string{}
 			for _, td := range children(tr) {
 				if len(cells) == previewTableCells {
 					break
@@ -280,21 +278,19 @@ func questionPreviewOf(q map[string]any) *questionPreview {
 	}
 	switch typ {
 	case "mcq", "multi":
-		out.Options = previewChoiceList(answer["options"], false)
+		options, _ := answer["options"].([]any)
+		out.Options = clippedChoices(options)
 	case "matching":
-		var lefts []any
+		var prompts []any
 		pairs, _ := answer["pairs"].([]any)
 		for _, raw := range pairs {
 			pair, _ := raw.(map[string]any)
-			lefts = append(lefts, pair["left"])
+			prompts = append(prompts, pair["left"])
 		}
-		left := previewChoiceList(lefts, true)
-		right := previewChoiceList(answer["options"], true)
-		for i := 0; i < len(left) && i < len(right); i++ {
-			out.Pairs = append(out.Pairs, [2]string{left[i], right[i]})
-		}
+		out.Prompts = clippedChoices(prompts)
 	case "ordering":
-		out.Items = previewChoiceList(answer["items"], true)
+		items, _ := answer["items"].([]any)
+		out.ItemCount = len(items)
 	}
 	return out
 }
@@ -311,31 +307,16 @@ func blocksPlainText(blocks []any) string {
 	return strings.Join(texts, " ")
 }
 
-// previewChoiceList keeps the first previewChoices strings, sorted
-// alphabetically first when their stored order could be an answer key.
-func previewChoiceList(value any, sorted bool) []string {
-	raw, _ := value.([]any)
-	all := make([]string, 0, len(raw))
-	for _, item := range raw {
-		if text, ok := item.(string); ok {
-			all = append(all, text)
-		}
-	}
-	if sorted {
-		sort.SliceStable(all, func(i, j int) bool {
-			a, b := strings.ToLower(all[i]), strings.ToLower(all[j])
-			if a != b {
-				return a < b
-			}
-			return all[i] < all[j]
-		})
-	}
+// clippedChoices keeps the first previewChoices strings, each clipped.
+func clippedChoices(values []any) []string {
 	var out []string
-	for _, text := range all {
+	for _, value := range values {
 		if len(out) == previewChoices {
 			break
 		}
-		out = append(out, clipRunes(text, previewChoiceRunes))
+		if text, ok := value.(string); ok {
+			out = append(out, clipRunes(text, previewChoiceRunes))
+		}
 	}
 	return out
 }

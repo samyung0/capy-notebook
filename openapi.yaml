@@ -2815,10 +2815,6 @@ components:
         position:
           format: int64
           type: integer
-        preview:
-          additionalProperties: true
-          description: List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki/thumbnails.md
-          type: object
         provenance:
           $ref: "#/components/schemas/Provenance"
         sizeBytes:
