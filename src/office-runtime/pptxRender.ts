@@ -6,7 +6,7 @@ import {
 import type { OfficeRenderedPage } from '@/features/files/officeProtocol';
 import { PptxImageCache } from './pptxImageCache';
 import { canvasPage } from './runtimeMenus';
-import { thumbnailCanvas, thumbnailPage } from './thumbnail';
+import { encodeThumbnail, thumbnailCanvas } from './thumbnail';
 
 /** What rendering needs from a deck: the editor's or the viewer's handle. */
 interface SlideSource {
@@ -57,21 +57,25 @@ export async function renderSlides(
   }
 }
 
-/** Slide 1 as a list-card capture (`thumbnail.ts`). */
+/**
+ * Slide 1 as a list-card capture (`thumbnail.ts`), on the main thread where
+ * the slide's fonts are: 2-3 ms for a Latin slide; rasterizing a slide of
+ * Japanese text at its new size took one 20 ms task (measured 2026-10-11).
+ */
 export async function slideThumbnail(
   source: SlideSource
 ): Promise<OfficeRenderedPage> {
   const images = slideImages(source);
   try {
     const frame = source.layoutSlide(0);
-    const { context, element, scale } = thumbnailCanvas(
+    const { canvas, context, scale } = thumbnailCanvas(
       frame.width,
       frame.height
     );
     await paintSlide(context, frame, 1, scale, {
       resolveImage: images.resolveImage,
     });
-    return await thumbnailPage(element, context);
+    return await encodeThumbnail(canvas, context);
   } finally {
     images.clear();
   }

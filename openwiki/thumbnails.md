@@ -216,15 +216,27 @@ success ([handler](../server/internal/httpapi/huma_thumbnails.go)):
 **Drawing** ([runtime](../src/office-runtime/thumbnail.ts)): in the runtime
 frame, when its main thread is next idle (`requestIdleCallback`), never on the
 keystroke or save path, from what the engine holds (pending input is not
-flushed). 200 px wide, cut at 400 px tall, on white, WebP at quality 60; the
-canvas is released after encoding.
+flushed). 200 px wide, cut at 400 px tall, on white, WebP at quality 60
+(`OffscreenCanvas.convertToBlob`); the canvas is released after encoding.
 
 - PPTX: slide 1 (`layoutSlide(0)` and `paintSlide`, as Print, with its
-  pictures decoded once for the drawing).
-- XLSX: the first sheet's top-left 800 x 1132 sheet px (an A4 page's shape at
-  a quarter scale), drawn from the workbook worker's display list. The engine
-  draws only the active sheet, so the request names the first sheet
-  (`onSheet`): while another sheet is active there is nothing to capture.
+  pictures decoded once for the drawing), on the main thread, where the
+  slide's fonts are.
+- XLSX: the first sheet's top-left 800 x 550 sheet px at a quarter scale
+  (200 x 138, the cards' 16:11 panel: cards crop pages from the top, and
+  painting cells is the main cost). The workbook worker builds the display
+  list and a thumbnail worker of its own (`thumbnail.worker.ts`, ended with the
+  capture) paints and encodes it, with the system fonts it falls back to (the
+  same at that scale). The engine draws only the active sheet, so the request
+  names the first sheet (`onSheet`): while another sheet is active there is
+  nothing to capture.
+
+Main-thread cost of one capture (production build, developer PC, 2026-10-11,
+three runs): XLSX at most about 1 ms in one task (the worker's own paint and
+encode take about 350 ms of wall time); PPTX `lecture.pptx` 2-3 ms; slide 1 of
+`jp_llm2.pptx` (Japanese text) one task of 19-23 ms, the canvas
+rasterizing its glyphs at the new size when it is encoded. Painted on the main
+thread, the XLSX cells were one 40-55 ms task.
 
 The new key raises the tree event like any thumbnail change, so open lists
 refetch and show it.
