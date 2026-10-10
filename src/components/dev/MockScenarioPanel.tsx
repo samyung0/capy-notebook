@@ -51,10 +51,11 @@ export default function MockScenarioPanel() {
     setDialogVersion((value) => value + 1);
   };
 
+  // No cancelMockAuthRequests() here: StrictMode runs this cleanup when the
+  // lazy panel mounts, which can land while an auth form's request is pending.
   useEffect(
     () => () => {
       controller.current?.abort();
-      cancelMockAuthRequests();
       setChaosPeers(false);
       onlineManager.setOnline(true);
     },
