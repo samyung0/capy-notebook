@@ -53,8 +53,7 @@ if (
   throw new Error('UAT_APP_URL host is not present in UAT_ALLOWED_HOSTS');
 
 type Json = Record<string, unknown>;
-type Kind = 'workspace' | 'quizzes' | 'flashcards' | 'notes';
-type Shared = { kind: Kind; path: string; publicApi: string };
+type Shared = { kind: string; path: string; publicApi: string };
 
 /** An authenticated API call with a fresh Clerk session token. */
 async function api(
@@ -177,7 +176,9 @@ async function provision(page: Page, run: string): Promise<Shared[]> {
 
   // Only standalone notes have links: write the every-block note in the
   // workspace, then clone it out. Uploaded asset blocks and links to other
-  // materials are left out, as in the UAT note journey.
+  // materials are left out, as in the UAT note journey. A second note also
+  // leaves out the blocks only the browser can draw (Mermaid diagrams and
+  // interactive HTML frames), to tell their layout shift from the rest.
   const everyBlock = JSON.parse(
     await readFile(
       path.join(
@@ -187,37 +188,43 @@ async function provision(page: Page, run: string): Promise<Shared[]> {
       'utf8'
     )
   ) as { value: Json[] };
-  const value = everyBlock.value.filter(
-    (node) => !['img', 'audio', 'file'].includes(String(node.type))
-  );
-  const stripRefs = (nodes: Json[]): Json[] =>
+  const without = (nodes: Json[], types: string[]): Json[] =>
     nodes
-      .filter((node) => node.type !== 'material_ref')
+      .filter((node) => !types.includes(String(node.type)))
       .map((node) =>
         Array.isArray(node.children)
-          ? { ...node, children: stripRefs(node.children as Json[]) }
+          ? { ...node, children: without(node.children as Json[], types) }
           : node
       );
-  const note = await api(
-    page,
-    `/api/workspaces/${workspace.id}/materials`,
-    'POST',
-    {
-      content: { schemaVersion: 1, value: stripRefs(value) },
-      kind: 'note',
-      title: `${PREFIX} ${run} note`,
-    }
+  const sharedNote = async (types: string[], title: string) => {
+    const note = await api(
+      page,
+      `/api/workspaces/${workspace.id}/materials`,
+      'POST',
+      {
+        content: { schemaVersion: 1, value: without(everyBlock.value, types) },
+        kind: 'note',
+        title: `${PREFIX} ${run} ${title}`,
+      }
+    );
+    const clone = await api(page, `/api/materials/${note.id}/clone`, 'POST');
+    await api(page, `/api/materials/${clone.id}/sharing`, 'PATCH', {
+      privacy: 'link',
+    });
+    const { items } = (await api(
+      page,
+      '/api/materials?kind=note&location=standalone&scope=owned&limit=100'
+    )) as { items: Json[] };
+    const sharePath = items.find((item) => item.id === clone.id)?.sharePath;
+    if (typeof sharePath !== 'string') throw new Error(`${title} has no link`);
+    return sharePath;
+  };
+  const UNSHAREABLE = ['img', 'audio', 'file', 'material_ref'];
+  const notePath = await sharedNote(UNSHAREABLE, 'note');
+  const serverOnlyPath = await sharedNote(
+    [...UNSHAREABLE, 'mermaid', 'html_embed'],
+    'server-only note'
   );
-  const clone = await api(page, `/api/materials/${note.id}/clone`, 'POST');
-  await api(page, `/api/materials/${clone.id}/sharing`, 'PATCH', {
-    privacy: 'link',
-  });
-  const { items } = (await api(
-    page,
-    '/api/materials?kind=note&location=standalone&scope=owned&limit=100'
-  )) as { items: Json[] };
-  const notePath = items.find((item) => item.id === clone.id)?.sharePath;
-  if (typeof notePath !== 'string') throw new Error('The note has no link');
 
   const token = (sharePath: unknown) => String(sharePath).split('/').pop();
   return [
@@ -240,6 +247,11 @@ async function provision(page: Page, run: string): Promise<Shared[]> {
       kind: 'notes',
       path: notePath,
       publicApi: `/api/public/notes/${token(notePath)}`,
+    },
+    {
+      kind: 'notes-server-only',
+      path: serverOnlyPath,
+      publicApi: `/api/public/notes/${token(serverOnlyPath)}`,
     },
   ];
 }
@@ -299,11 +311,10 @@ async function checkCaching(shared: Shared) {
     failures.push('another visitor got different bytes');
   return {
     failures,
-    first: { age: first.headers.get('age'), status: status(first) },
+    hit: status(second) === 'HIT',
     release: /<meta content="([0-9a-f]{40})" name="capy-release">/.exec(
       firstBody
     )?.[1],
-    second: { age: second.headers.get('age'), status: status(second) },
   };
 }
 
@@ -327,11 +338,16 @@ type Metrics = {
   cls: number;
   fcp: number;
   lcp: number;
+  /** Unthrottled: what the runner's Chromium actually painted. */
+  observedFcp: number;
+  observedLcp: number;
   requests: number;
   score: number;
   tbt: number;
   ttfb: number;
 };
+
+type Shift = { score: number; selector?: string; snippet?: string };
 
 async function audit(port: number, url: string) {
   const result = await lighthouse(url, {
@@ -348,6 +364,30 @@ async function audit(port: number, url: string) {
       items: { requestCount: number; resourceType: string; transferSize: number }[];
     }
   ).items;
+  const [observed] = (
+    audits.metrics.details as unknown as {
+      items: {
+        observedFirstContentfulPaint: number;
+        observedLargestContentfulPaint: number;
+      }[];
+    }
+  ).items;
+  const shifts = (
+    audits['layout-shifts'].details as unknown as
+      | {
+          items: {
+            node?: { selector?: string; snippet?: string };
+            score: number;
+          }[];
+        }
+      | undefined
+  )?.items.map(
+    (item): Shift => ({
+      score: item.score,
+      selector: item.node?.selector,
+      snippet: item.node?.snippet?.slice(0, 200),
+    })
+  );
   const metrics: Metrics = {
     bytes: Object.fromEntries(
       items.map((item) => [item.resourceType, item.transferSize])
@@ -355,12 +395,21 @@ async function audit(port: number, url: string) {
     cls: audits['cumulative-layout-shift'].numericValue!,
     fcp: audits['first-contentful-paint'].numericValue!,
     lcp: audits['largest-contentful-paint'].numericValue!,
+    observedFcp: observed.observedFirstContentfulPaint,
+    observedLcp: observed.observedLargestContentfulPaint,
     requests: items.find((item) => item.resourceType === 'total')!.requestCount,
     score: categories.performance.score!,
     tbt: audits['total-blocking-time'].numericValue!,
     ttfb: audits['server-response-time'].numericValue!,
   };
-  return { metrics, report: result.report as string };
+  return {
+    lhr: result.lhr,
+    metrics,
+    report: result.report as string,
+    shifts: shifts ?? [],
+    // The DevTools trace, which opens in the Performance panel.
+    trace: result.artifacts.Trace,
+  };
 }
 
 const median = (values: number[]) =>
@@ -384,13 +433,18 @@ async function measure(port: number, url: (index: number) => string) {
       cls: pick((m) => m.cls),
       fcp: pick((m) => m.fcp),
       lcp: pick((m) => m.lcp),
+      observedFcp: pick((m) => m.observedFcp),
+      observedLcp: pick((m) => m.observedLcp),
       requests: pick((m) => m.requests),
       score: pick((m) => m.score),
       tbt: pick((m) => m.tbt),
       ttfb: pick((m) => m.ttfb),
     } satisfies Metrics,
+    lhr: middle.lhr,
     report: middle.report,
     runs: runs.map(({ metrics }) => metrics),
+    shifts: middle.shifts,
+    trace: middle.trace,
   };
 }
 
@@ -402,20 +456,28 @@ function summary(results: Awaited<ReturnType<typeof run>>) {
     '',
     `Release \`${results.release ?? 'unknown'}\` · Lighthouse ${results.lighthouse} (mobile, simulated throttling) · ${results.chromium} · median of ${RUNS}`,
     '',
-    '| Page | Edge | FCP ms | LCP ms | CLS | TBT ms | TTFB ms | Total KB | Document KB | Script KB | Requests | Score |',
-    '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+    'FCP and LCP are simulated (slow 4G, 4x slower CPU); observed is what the runner painted unthrottled.',
+    '',
+    '| Page | Edge | FCP ms | LCP ms | Observed FCP / LCP ms | CLS | TBT ms | TTFB ms | Total KB | Document KB | Script KB | Requests | Score |',
+    '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
   ];
   for (const page of results.pages)
     for (const edge of ['cold', 'warm'] as const) {
       const m = page[edge].median;
       lines.push(
-        `| ${page.kind} | ${edge} | ${ms(m.fcp)} | ${ms(m.lcp)} | ${m.cls.toFixed(3)} | ${ms(m.tbt)} | ${ms(m.ttfb)} | ${kb(m.bytes.total)} | ${kb(m.bytes.document)} | ${kb(m.bytes.script)} | ${m.requests} | ${Math.round(m.score * 100)} |`
+        `| ${page.kind} | ${edge} | ${ms(m.fcp)} | ${ms(m.lcp)} | ${ms(m.observedFcp)} / ${ms(m.observedLcp)} | ${m.cls.toFixed(3)} | ${ms(m.tbt)} | ${ms(m.ttfb)} | ${kb(m.bytes.total)} | ${kb(m.bytes.document)} | ${kb(m.bytes.script)} | ${m.requests} | ${Math.round(m.score * 100)} |`
       );
     }
-  lines.push('', '**Caching**', '');
+  lines.push('', '**Layout shifts** (the median-LCP warm run)', '');
+  for (const page of results.pages)
+    for (const shift of page.warm.shifts)
+      lines.push(
+        `- ${page.kind}: ${shift.score.toFixed(3)} \`${shift.selector ?? 'unknown element'}\``
+      );
+  lines.push('', '**Cache hit for a second visitor**', '');
   for (const page of results.pages)
     lines.push(
-      `- ${page.kind}: first ${page.cache.first.status}, another visitor ${page.cache.second.status} (Age ${page.cache.second.age ?? '-'})${page.cache.failures.length ? ` — **FAILED:** ${page.cache.failures.join('; ')}` : ''}`
+      `- ${page.kind}: ${page.cache.hit ? 'hit' : '**miss**'}${page.cache.failures.length ? ` — **FAILED:** ${page.cache.failures.join('; ')}` : ''}`
     );
   if (results.forged.length)
     lines.push(`- **FAILED:** ${results.forged.join('; ')}`);
@@ -485,18 +547,21 @@ try {
   await signIn(page, 'owner');
   const results = await run(page);
   await mkdir(out, { recursive: true });
+  // Per page and edge state, the median-LCP run's report, its full Lighthouse
+  // result and its DevTools trace (load it in the Performance panel).
   for (const item of results.pages)
-    for (const edge of ['cold', 'warm'] as const)
-      await writeFile(
-        path.join(out, `${item.kind}-${edge}.report.html`),
-        item[edge].report
-      );
+    for (const edge of ['cold', 'warm'] as const) {
+      const name = path.join(out, `${item.kind}-${edge}`);
+      await writeFile(`${name}.report.html`, item[edge].report);
+      await writeFile(`${name}.lhr.json`, JSON.stringify(item[edge].lhr));
+      await writeFile(`${name}.trace.json`, JSON.stringify(item[edge].trace));
+    }
   const snapshot = {
     ...results,
     pages: results.pages.map(({ cold, warm, ...item }) => ({
       ...item,
-      cold: { median: cold.median, runs: cold.runs },
-      warm: { median: warm.median, runs: warm.runs },
+      cold: { median: cold.median, runs: cold.runs, shifts: cold.shifts },
+      warm: { median: warm.median, runs: warm.runs, shifts: warm.shifts },
     })),
     runs: RUNS,
   };

@@ -22,8 +22,10 @@ It needs `UAT_TARGET_AUTHORIZED=true`, `UAT_ALLOWED_HOSTS`, `UAT_APP_URL`,
    (`fixtures/quiz.json`), a flashcard set (`fixtures/cards.json`) and a
    standalone note: the every-block note
    (`server/internal/materialdoc/testdata/every-block-note.json`) without its
-   uploaded assets and material links. Nothing is parsed, embedded or sent to
-   a model.
+   uploaded assets and material links, plus a second copy that also leaves
+   out the blocks only the browser can draw (Mermaid diagrams and interactive
+   HTML frames), so their layout shift shows apart from the rest. Nothing is
+   parsed, embedded or sent to a model.
 3. Waits until each item's public API answers 200. It never requests the
    page itself, so the first page request is a real miss.
 4. Caching checks (these fail the run): each page answers
@@ -40,11 +42,14 @@ It needs `UAT_TARGET_AUTHORIZED=true`, `UAT_ALLOWED_HOSTS`, `UAT_APP_URL`,
    - **warm**: the clean URL, served from Workers Cache.
 6. Deletes what it created.
 
-Reported per page and edge state (the median of the runs): FCP, LCP, CLS
-(load only, before any scroll), TBT, the document's server response time,
-transfer bytes by type, request count and the performance score. Results land
-in the gitignored `.results/`: `share-pages.json`, `summary.md` (the job
-summary) and the median-LCP run's HTML report per page and state.
+Reported per page and edge state (the median of the runs): simulated and
+observed (unthrottled) FCP and LCP, CLS (load only, before any scroll) with the
+shifting elements, TBT, the document's server response time, transfer bytes by
+type, request count and the performance score, and whether a second visitor
+hit the cache. Results land in the gitignored `.results/`: `share-pages.json`,
+`summary.md` (the job summary) and, for the median-LCP run of each page and
+state, the HTML report, the full Lighthouse result (`.lhr.json`) and the
+DevTools trace (`.trace.json`, opens in the Performance panel).
 
 Lighthouse budgets are report-only until a developer signs them off from a
 few runs' numbers.
