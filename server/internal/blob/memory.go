@@ -113,6 +113,17 @@ func (s *Memory) Promote(_ context.Context, from, to string) error {
 	return nil
 }
 
+func (s *Memory) Copy(_ context.Context, from, to string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	obj, ok := s.objects[from]
+	if !ok {
+		return errors.New("blob: object not found")
+	}
+	s.objects[to] = obj
+	return nil
+}
+
 func (s *Memory) Delete(_ context.Context, path string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -315,6 +326,25 @@ func (s *Disk) Promote(_ context.Context, from, to string) error {
 		_ = os.Remove(src)
 	}
 	return nil
+}
+
+func (s *Disk) Copy(_ context.Context, from, to string) error {
+	src, err := s.resolve(from)
+	if err != nil {
+		return err
+	}
+	dst, err := s.resolve(to)
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, 0o644)
 }
 
 func (s *Disk) Delete(_ context.Context, path string) error {

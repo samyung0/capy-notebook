@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"path"
 	"sort"
 	"time"
 	"unicode/utf8"
@@ -590,13 +591,15 @@ func lockCloneBlobPathsTx(
 	return nil
 }
 
-func workspaceCloneBlobPaths(snapshot workspaceCloneSnapshot) []string {
+// workspaceCloneBlobPaths lists the paths the clone will reference; only an
+// owner's clone shares thumbnail keys.
+func workspaceCloneBlobPaths(snapshot workspaceCloneSnapshot, sharesThumbnails bool) []string {
 	paths := make([]string, 0, len(snapshot.files)*2+len(snapshot.assets))
 	for _, file := range snapshot.files {
 		if file.blobPath != nil {
 			paths = append(paths, *file.blobPath)
 		}
-		if file.thumbnailKey != nil {
+		if file.thumbnailKey != nil && sharesThumbnails {
 			paths = append(paths, *file.thumbnailKey)
 		}
 	}
@@ -823,22 +826,62 @@ func (s *Store) snapshotWorkspaceForClone(
 // longer leaks or destroys the other's bytes. The clone lands private regardless
 // of the source's visibility.
 func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Workspace, error) {
+	workspace, _, err := s.CloneWorkspaceThumbnails(ctx, userID, srcID)
+	return workspace, err
+}
+
+// ThumbnailCopy is a thumbnail a cross-owner clone must copy under its own
+// file id once it has committed (openwiki/thumbnails.md): sharing the source
+// key would show the source file's id, and so its workspace link, to the
+// clone's readers.
+type ThumbnailCopy struct {
+	FileID string // the clone's file
+	From   string // the source file's key
+	To     string // thumbs/{FileID}/{same hash}.webp
+}
+
+// CloneWorkspaceThumbnails is CloneWorkspace, also returning the thumbnails
+// the caller copies after the commit. A clone by the source owner shares the
+// keys instead and returns none.
+func (s *Store) CloneWorkspaceThumbnails(ctx context.Context, userID, srcID string) (Workspace, []ThumbnailCopy, error) {
 	// A workspace snapshot owns the hierarchy fence so contained material
 	// deletion cannot race its counter and blob-reference copy.
 	conn, unlock, err := s.lockWorkspaceCloneSource(ctx, srcID, false)
 	if err != nil {
-		return Workspace{}, err
+		return Workspace{}, nil, err
 	}
 	defer unlock()
 	for attempt := 0; ; attempt++ {
-		workspace, err := s.cloneWorkspaceOnce(ctx, conn, userID, srcID)
+		workspace, copies, err := s.cloneWorkspaceOnce(ctx, conn, userID, srcID)
 		if !isRetryableTransactionError(err) {
-			return workspace, err
+			return workspace, copies, err
 		}
 		if err := waitCloneRetry(ctx, attempt); err != nil {
-			return Workspace{}, err
+			return Workspace{}, nil, err
 		}
 	}
+}
+
+// SetCloneThumbnail points a cloned file at its copied thumbnail. A file that
+// is gone, trashed or already captured takes nothing, and the copy is queued
+// for deletion at once.
+func (s *Store) SetCloneThumbnail(ctx context.Context, fileID, key string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, `UPDATE files SET thumbnail_key=$2
+		WHERE id=$1 AND thumbnail_key IS NULL AND trashed_at IS NULL`, fileID, key)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		if err := s.EnqueueBlobDeletionTx(ctx, tx, 0, key); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 type cloneTxStarter interface {
@@ -861,10 +904,10 @@ func (s *Store) cloneWorkspaceOnce(
 	ctx context.Context,
 	starter cloneTxStarter,
 	userID, srcID string,
-) (Workspace, error) {
+) (Workspace, []ThumbnailCopy, error) {
 	tx, err := starter.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
 	if err != nil {
-		return Workspace{}, err
+		return Workspace{}, nil, err
 	}
 	defer tx.Rollback(ctx)
 
@@ -878,17 +921,17 @@ func (s *Store) cloneWorkspaceOnce(
 		  AND source_owner.deleted_at IS NULL
 		  AND source_owner.deletion_requested_at IS NULL`, srcID))
 	if isNoRows(err) {
-		return Workspace{}, ErrNotFound
+		return Workspace{}, nil, ErrNotFound
 	}
 	if err != nil {
-		return Workspace{}, err
+		return Workspace{}, nil, err
 	}
 	if err := lockCloneAccountsTx(ctx, tx, src.OwnerUserID, userID); err != nil {
 		var locked *AccountLockedError
 		if errors.As(err, &locked) && locked.UserID == src.OwnerUserID {
-			return Workspace{}, ErrNotFound
+			return Workspace{}, nil, ErrNotFound
 		}
-		return Workspace{}, err
+		return Workspace{}, nil, err
 	}
 	isOwner := src.OwnerUserID == userID
 	if !isOwner {
@@ -896,18 +939,18 @@ func (s *Store) cloneWorkspaceOnce(
 		// a link/public viewer may read it but not clone it.
 		member, effective, err := workspaceRoles(ctx, tx, userID, srcID)
 		if err != nil {
-			return Workspace{}, err
+			return Workspace{}, nil, err
 		}
 		if effective == "" {
-			return Workspace{}, ErrNotFound
+			return Workspace{}, nil, ErrNotFound
 		}
 		if member == "" && !RoleCanEdit(effective) {
-			return Workspace{}, ErrForbidden
+			return Workspace{}, nil, ErrForbidden
 		}
 	}
 	limits, err := s.gateOwnedWorkspacesTx(ctx, tx, userID, 1)
 	if err != nil {
-		return Workspace{}, err
+		return Workspace{}, nil, err
 	}
 	// The target account lock above freezes both its current plan and its
 	// history-retention limit before we select any source revisions. Otherwise a
@@ -915,16 +958,16 @@ func (s *Store) cloneWorkspaceOnce(
 	// the larger pre-downgrade snapshot afterward.
 	snapshot, err := s.snapshotWorkspaceForClone(ctx, tx, srcID)
 	if err != nil {
-		return Workspace{}, err
+		return Workspace{}, nil, err
 	}
 	// Physical paths are shared, so keep the refcount rows locked until the clone
 	// references commit. A concurrent last-reference delete then happens either
 	// before this repeatable-read snapshot or after the clone is durable.
-	if err := lockCloneBlobPathsTx(ctx, tx, workspaceCloneBlobPaths(snapshot)); err != nil {
-		return Workspace{}, err
+	if err := lockCloneBlobPathsTx(ctx, tx, workspaceCloneBlobPaths(snapshot, isOwner)); err != nil {
+		return Workspace{}, nil, err
 	}
 	if len(snapshot.files) > limits.FilesPerWorkspace {
-		return Workspace{}, &FileLimitExceededError{
+		return Workspace{}, nil, &FileLimitExceededError{
 			WorkspaceID: srcID,
 			Used:        0,
 			Requested:   len(snapshot.files),
@@ -933,7 +976,7 @@ func (s *Store) cloneWorkspaceOnce(
 		}
 	}
 	if err := s.gateStorageTx(ctx, tx, userID, snapshot.bytes); err != nil {
-		return Workspace{}, err
+		return Workspace{}, nil, err
 	}
 
 	newID := uid("ws")
@@ -953,7 +996,7 @@ func (s *Store) cloneWorkspaceOnce(
 		`SELECT embedding_provider_slug, embedding_model_slug, embedding_model_version, embedding_dim
 		   FROM workspaces WHERE id = $1`, srcID,
 	).Scan(&srcEmbed.Pin.ProviderSlug, &srcEmbed.Pin.ModelSlug, &srcEmbed.Pin.Version, &srcEmbed.Dim); err != nil {
-		return Workspace{}, err
+		return Workspace{}, nil, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO workspaces
 			(id, user_id, name, description, privacy, icon_id, cover,
@@ -961,18 +1004,18 @@ func (s *Store) cloneWorkspaceOnce(
 		VALUES ($1,$2,$3,$8,'private',$9,$10,$4,$5,$6,$7)`,
 		newID, userID, name,
 		srcEmbed.Pin.ProviderSlug, srcEmbed.Pin.ModelSlug, srcEmbed.Pin.Version, srcEmbed.Dim, src.Description, src.IconID, src.Cover); err != nil {
-		return Workspace{}, err
+		return Workspace{}, nil, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'owner')`,
 		newID, userID); err != nil {
-		return Workspace{}, err
+		return Workspace{}, nil, err
 	}
 	tagRefs := make([]TagRef, len(src.Tags))
 	for i, tag := range src.Tags {
 		tagRefs[i] = TagRef{Value: tag.Value}
 	}
 	if err := syncEntityTags(ctx, tx, userID, "workspace", newID, tagRefs); err != nil {
-		return Workspace{}, err
+		return Workspace{}, nil, err
 	}
 
 	// Chapters (old id -> new id).
@@ -983,7 +1026,7 @@ func (s *Store) cloneWorkspaceOnce(
 			chapterMap[c.id] = nid
 			if _, err := tx.Exec(ctx, `INSERT INTO chapters (id, workspace_id, name, position) VALUES ($1,$2,$3,$4)`,
 				nid, newID, c.name, c.position); err != nil {
-				return Workspace{}, err
+				return Workspace{}, nil, err
 			}
 		}
 	}
@@ -991,10 +1034,21 @@ func (s *Store) cloneWorkspaceOnce(
 	// Files. Parse-zip and caption object keys are owned by artifact_cache and
 	// are not copied; native Office viewers use the source and saved checkpoint.
 	fileMap := map[string]string{}
+	var thumbnailCopies []ThumbnailCopy
 	{
 		for _, f := range snapshot.files {
 			nid := uid("f")
 			fileMap[f.id] = nid
+			// The owner's own copy shares the thumbnail; anyone else's gets a
+			// copy under its own file id once this commits.
+			thumbnailKey := f.thumbnailKey
+			if f.thumbnailKey != nil && !isOwner {
+				thumbnailKey = nil
+				thumbnailCopies = append(thumbnailCopies, ThumbnailCopy{
+					FileID: nid, From: *f.thumbnailKey,
+					To: "thumbs/" + nid + "/" + path.Base(*f.thumbnailKey),
+				})
+			}
 			var chapterID *string
 			if f.chapterID != nil {
 				if mapped, ok := chapterMap[*f.chapterID]; ok {
@@ -1009,15 +1063,15 @@ func (s *Store) cloneWorkspaceOnce(
 				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
 				nid, newID, userID, chapterID, f.position, f.name, f.kind, f.sizeBytes, time.Now().UTC(), f.status, f.indexed, f.parser, f.blobPath,
 				f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.everParsed, f.indexLimit, f.provenance,
-				f.thumbnailKey, f.preview); err != nil {
-				return Workspace{}, err
+				thumbnailKey, f.preview); err != nil {
+				return Workspace{}, nil, err
 			}
 		}
 	}
 
 	for oldID, newID := range fileMap {
 		if err := cloneImageCaptionAssociations(ctx, tx, oldID, newID); err != nil {
-			return Workspace{}, err
+			return Workspace{}, nil, err
 		}
 	}
 
@@ -1064,7 +1118,7 @@ func (s *Store) cloneWorkspaceOnce(
 			if mt.Provenance != nil {
 				provenance, err = json.Marshal(mt.Provenance)
 				if err != nil {
-					return Workspace{}, err
+					return Workspace{}, nil, err
 				}
 			}
 			if _, err := tx.Exec(ctx, `INSERT INTO materials
@@ -1075,12 +1129,12 @@ func (s *Store) cloneWorkspaceOnce(
 				nid, userID, newID, name, mt.Kind, title, json.RawMessage(content), chapterID,
 				mt.Position, mt.ScopeChapters, mt.ScopeFileNames, mt.Color, metrics.NodeCount,
 				metrics.MaxDepth, createdAt, mt.Revision, provenance, parentID, materialSnapshot.preview); err != nil {
-				return Workspace{}, err
+				return Workspace{}, nil, err
 			}
 			for _, cid := range materialSnapshot.cardIDs {
 				if _, err := tx.Exec(ctx, `INSERT INTO flashcard_cards (card_id, material_id) VALUES ($1,$2)`,
 					cid, nid); err != nil {
-					return Workspace{}, err
+					return Workspace{}, nil, err
 				}
 			}
 		}
@@ -1098,30 +1152,31 @@ func (s *Store) cloneWorkspaceOnce(
 			asset.newID, newID, nullStr(snapshot.materialIDs[asset.materialID]), userID, asset.name, asset.purpose,
 			asset.objectPath, asset.contentType, asset.sizeBytes, asset.etag,
 			asset.createdAt, asset.completedAt); err != nil {
-			return Workspace{}, err
+			return Workspace{}, nil, err
 		}
 	}
 
 	// The index follows files and notes; a note the source had not indexed yet
 	// starts dirty so the scheduler builds its index in the clone.
 	if err := cloneRetrievalIndex(ctx, tx, srcID, newID, srcEmbed.Pin, fileMap, snapshot.materialIDs); err != nil {
-		return Workspace{}, err
+		return Workspace{}, nil, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE materials m SET index_dirty_at=now()
 		WHERE m.workspace_id=$1 AND m.kind='note'
 		  AND NOT EXISTS (SELECT 1 FROM rag_material_contents mc WHERE mc.material_id=m.id)`, newID); err != nil {
-		return Workspace{}, err
+		return Workspace{}, nil, err
 	}
 
 	if _, err := tx.Exec(ctx, `INSERT INTO workspace_clone_counts (workspace_id, clone_count)
 		VALUES ($1,1) ON CONFLICT (workspace_id) DO UPDATE
 		SET clone_count=workspace_clone_counts.clone_count+1`, srcID); err != nil {
-		return Workspace{}, err
+		return Workspace{}, nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return Workspace{}, err
+		return Workspace{}, nil, err
 	}
-	return s.GetWorkspace(ctx, userID, newID, false)
+	workspace, err := s.GetWorkspace(ctx, userID, newID, false)
+	return workspace, thumbnailCopies, err
 }
 
 // cloneRetrievalIndex copies a workspace's chunks and file summaries into

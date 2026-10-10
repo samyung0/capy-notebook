@@ -551,20 +551,17 @@ func TestCloneThenDeleteKeepsTheSurvivingCopy(t *testing.T) {
 }
 
 // TestThumbnailKeyIsACountedReference pins the thumbnail lifecycle
-// (openwiki/thumbnails.md): a new capture releases the old key, a clone shares
-// the key and keeps it alive after the original goes, and clearing the key or
-// deleting the last holder queues it. The orphan sweep knows a live key.
+// (openwiki/thumbnails.md): a new capture releases the old key, the owner's
+// own clone shares the key and keeps it alive after the original goes, and
+// clearing the key or deleting the last holder queues it. The orphan sweep
+// knows a live key. (A clone by anyone else copies the object instead:
+// TestCrossOwnerCloneCopiesThumbnails.)
 func TestThumbnailKeyIsACountedReference(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_thumb")
-	clonerID := newBlobTestUser(t, s, "u_thumb_clone")
 	source, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Thumbnail source", Tags: []TagRef{}})
 	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public', share_role='editor' WHERE id=$1`,
-		source.ID); err != nil {
 		t.Fatal(err)
 	}
 	file, err := s.createReadyFile(ctx, source.ID, ownerID, "deck.pdf", "pdf", nil, "", 100,
@@ -599,9 +596,12 @@ func TestThumbnailKeyIsACountedReference(t *testing.T) {
 		t.Errorf("replaced key refs = %d queued = %v, want released", got, blobQueued(t, s, first))
 	}
 
-	clone, err := s.CloneWorkspace(ctx, clonerID, source.ID)
+	clone, copies, err := s.CloneWorkspaceThumbnails(ctx, ownerID, source.ID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(copies) != 0 {
+		t.Fatalf("the owner's clone asked for copies %v", copies)
 	}
 	var cloneKey string
 	if err := s.pool.QueryRow(ctx, `SELECT thumbnail_key FROM files WHERE workspace_id=$1`,
@@ -624,7 +624,7 @@ func TestThumbnailKeyIsACountedReference(t *testing.T) {
 		t.Errorf("cleared key refs = %d queued = %v, want released", got, blobQueued(t, s, second))
 	}
 	setKey("workspace_id", clone.ID, third)
-	if err := s.DeleteWorkspace(ctx, clonerID, clone.ID); err != nil {
+	if err := s.DeleteWorkspace(ctx, ownerID, clone.ID); err != nil {
 		t.Fatal(err)
 	}
 	if got := blobRefCount(t, s, third); got != 0 || !blobQueued(t, s, third) {
