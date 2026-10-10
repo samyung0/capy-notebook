@@ -65,9 +65,10 @@ const stylesheets = new Map<string, Promise<ReturnType<typeof usedCss>>>();
 /** Puts the rules the page uses from its stylesheets in the HTML: the browser
  * paints from the document alone instead of waiting a round trip per
  * stylesheet, without the bytes of the whole Tailwind build. Each full
- * stylesheet is preloaded; the page script applies it before anything renders
- * in the browser (src/lib/fullStyles.ts). The edge caches the result with the
- * page. */
+ * stylesheet is preloaded at low priority, so it never competes with the
+ * document or fonts before first paint; the page script applies it before
+ * anything renders in the browser (src/lib/fullStyles.ts). The edge caches
+ * the result with the page. */
 async function inlineStylesheets(
   html: string,
   assets: SiteBindings['ASSETS'],
@@ -96,7 +97,7 @@ async function inlineStylesheets(
   return html.replace(
     STYLESHEET,
     (_, before: string, href: string, after: string) =>
-      `<style>${css.get(href)}</style><link rel="preload" as="style"${before}href="${href}"${after} data-full-css>`
+      `<style>${css.get(href)}</style><link rel="preload" as="style" fetchpriority="low"${before}href="${href}"${after} data-full-css>`
   );
 }
 

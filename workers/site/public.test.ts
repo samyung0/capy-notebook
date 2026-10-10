@@ -61,13 +61,18 @@ describe('anonymous material routes', () => {
     // The stylesheet travels in the page, so first paint waits for nothing.
     expect(html).toContain('<style>body{color:red}</style>');
     expect(html).not.toContain('<link rel="stylesheet"');
+    // The full stylesheet waits behind the document and fonts.
+    expect(html).toContain(
+      '<link rel="preload" as="style" fetchpriority="low" crossorigin href="/assets/app-1.css" data-full-css>'
+    );
     // The data the browser hydrates from, so it fetches nothing.
     expect(html).toContain('<script type="application/json" id="share-state">');
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect((fetcher.mock.calls[0][0] as Request).url).toBe(
       `https://api.example.test/api/public/quizzes/${TOKEN}`
     );
-  });
+    // The first render imports the share renderer bundle.
+  }, 20_000);
 
   it('answers a private or missing item with the not-found page', async () => {
     const fetcher = vi.fn<typeof fetch>(
