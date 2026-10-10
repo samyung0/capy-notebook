@@ -93,8 +93,8 @@ func (a *api) cloneWorkspace(ctx context.Context, in *workspaceIDInput) (*cloneW
 	}}, nil
 }
 
-// copyCloneThumbnails copies a cross-owner clone's thumbnails under the
-// clone's own file ids, inside the bucket. A failed copy leaves the file
+// copyCloneThumbnails copies a clone's thumbnails under the clone's own file
+// ids, inside the bucket. A failed copy leaves the file
 // without a thumbnail until its next capture: logged, never retried.
 func (a *api) copyCloneThumbnails(ctx context.Context, copies []store.ThumbnailCopy) {
 	if a.blob == nil {

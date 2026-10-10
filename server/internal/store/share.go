@@ -591,16 +591,13 @@ func lockCloneBlobPathsTx(
 	return nil
 }
 
-// workspaceCloneBlobPaths lists the paths the clone will reference; only an
-// owner's clone shares thumbnail keys.
-func workspaceCloneBlobPaths(snapshot workspaceCloneSnapshot, sharesThumbnails bool) []string {
-	paths := make([]string, 0, len(snapshot.files)*2+len(snapshot.assets))
+// workspaceCloneBlobPaths lists the paths the clone will reference. Thumbnail
+// keys are not among them: a clone copies those objects after it commits.
+func workspaceCloneBlobPaths(snapshot workspaceCloneSnapshot) []string {
+	paths := make([]string, 0, len(snapshot.files)+len(snapshot.assets))
 	for _, file := range snapshot.files {
 		if file.blobPath != nil {
 			paths = append(paths, *file.blobPath)
-		}
-		if file.thumbnailKey != nil && sharesThumbnails {
-			paths = append(paths, *file.thumbnailKey)
 		}
 	}
 	for _, asset := range snapshot.assets {
@@ -830,10 +827,11 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 	return workspace, err
 }
 
-// ThumbnailCopy is a thumbnail a cross-owner clone must copy under its own
-// file id once it has committed (openwiki/thumbnails.md): sharing the source
-// key would show the source file's id, and so its workspace link, to the
-// clone's readers.
+// ThumbnailCopy is a thumbnail a clone copies under its own file id once it
+// has committed (openwiki/thumbnails.md): a key's path may only name a file of
+// the same workspace, since sharing the source key would show the source
+// file's id, and so its workspace, to the clone's readers (the owner's own
+// clone too: a link workspace cloned into a public one).
 type ThumbnailCopy struct {
 	FileID string // the clone's file
 	From   string // the source file's key
@@ -841,8 +839,7 @@ type ThumbnailCopy struct {
 }
 
 // CloneWorkspaceThumbnails is CloneWorkspace, also returning the thumbnails
-// the caller copies after the commit. A clone by the source owner shares the
-// keys instead and returns none.
+// the caller copies after the commit.
 func (s *Store) CloneWorkspaceThumbnails(ctx context.Context, userID, srcID string) (Workspace, []ThumbnailCopy, error) {
 	// A workspace snapshot owns the hierarchy fence so contained material
 	// deletion cannot race its counter and blob-reference copy.
@@ -963,7 +960,7 @@ func (s *Store) cloneWorkspaceOnce(
 	// Physical paths are shared, so keep the refcount rows locked until the clone
 	// references commit. A concurrent last-reference delete then happens either
 	// before this repeatable-read snapshot or after the clone is durable.
-	if err := lockCloneBlobPathsTx(ctx, tx, workspaceCloneBlobPaths(snapshot, isOwner)); err != nil {
+	if err := lockCloneBlobPathsTx(ctx, tx, workspaceCloneBlobPaths(snapshot)); err != nil {
 		return Workspace{}, nil, err
 	}
 	if len(snapshot.files) > limits.FilesPerWorkspace {
@@ -1039,11 +1036,10 @@ func (s *Store) cloneWorkspaceOnce(
 		for _, f := range snapshot.files {
 			nid := uid("f")
 			fileMap[f.id] = nid
-			// The owner's own copy shares the thumbnail; anyone else's gets a
-			// copy under its own file id once this commits.
-			thumbnailKey := f.thumbnailKey
-			if f.thumbnailKey != nil && !isOwner {
-				thumbnailKey = nil
+			// A key's path names a file of the row's own workspace, so the
+			// clone gets a copy under its own file id once this commits.
+			var thumbnailKey *string
+			if f.thumbnailKey != nil {
 				thumbnailCopies = append(thumbnailCopies, ThumbnailCopy{
 					FileID: nid, From: *f.thumbnailKey,
 					To: "thumbs/" + nid + "/" + path.Base(*f.thumbnailKey),

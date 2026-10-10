@@ -135,12 +135,12 @@ func TestListThumbnailsFollowReadAccess(t *testing.T) {
 	want(get("u_owner", "/api/trash", http.StatusOK), trashed)
 }
 
-// TestCrossOwnerCloneCopiesThumbnails (security regression: review 1 S1): a
-// thumbnail key names its file, and the file id leads to the file's workspace,
-// so a clone by anyone but the source owner never shares the source key. It
-// gets a copy under its own file id after the clone commits, or nothing when
-// the copy fails. The owner's own clone shares the key.
-func TestCrossOwnerCloneCopiesThumbnails(t *testing.T) {
+// TestCloneCopiesThumbnails (security regression: review 1 S1): a thumbnail
+// key names its file, and the file id leads to the file's workspace, so no
+// clone shares the source key, the owner's own included (a link workspace
+// cloned into a public one). Each gets a copy under its own file id after the
+// clone commits, or nothing when the copy fails.
+func TestCloneCopiesThumbnails(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.New(ctx, testdb.URL(t))
 	if err != nil {
@@ -214,20 +214,18 @@ func TestCrossOwnerCloneCopiesThumbnails(t *testing.T) {
 		return key
 	}
 
-	theirs := clone("u_editor")
-	copied := keyOf(theirs, "f_thumb_clone_src.pdf")
-	if copied == "" || strings.Contains(copied, "f_thumb_clone_src") || !strings.HasSuffix(copied, "/0123abcd.webp") {
-		t.Fatalf("cross-owner clone key = %q, want a copy under the clone's own file id", copied)
-	}
-	if _, err := bucket.Head(ctx, copied); err != nil {
-		t.Fatalf("copied object %s: %v", copied, err)
-	}
-	if gone := keyOf(theirs, "f_thumb_clone_gone.pdf"); gone != "" {
-		t.Fatalf("a failed copy left key %q", gone)
-	}
-
-	ours := clone("u_owner")
-	if shared := keyOf(ours, "f_thumb_clone_src.pdf"); shared != sourceKey {
-		t.Fatalf("owner clone key = %q, want the shared %s", shared, sourceKey)
+	for _, user := range []string{"u_editor", "u_owner"} {
+		cloned := clone(user)
+		copied := keyOf(cloned, "f_thumb_clone_src.pdf")
+		if copied == "" || copied == sourceKey || strings.Contains(copied, "f_thumb_clone_src") ||
+			!strings.HasSuffix(copied, "/0123abcd.webp") {
+			t.Fatalf("%s clone key = %q, want a copy under the clone's own file id", user, copied)
+		}
+		if _, err := bucket.Head(ctx, copied); err != nil {
+			t.Fatalf("%s copied object %s: %v", user, copied, err)
+		}
+		if gone := keyOf(cloned, "f_thumb_clone_gone.pdf"); gone != "" {
+			t.Fatalf("%s: a failed copy left key %q", user, gone)
+		}
 	}
 }
