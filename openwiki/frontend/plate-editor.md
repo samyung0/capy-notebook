@@ -1258,7 +1258,10 @@ validation and are not rendered.
   actions) must be identity-stable; the `decorate` and `onKeyDown` props of
   `PlateContent` must be stable, because Plate treats new editable props as a
   full re-render; and save/footer state must not reach `NoteEditorContent`,
-  which is memoized for that reason. The save status is not React state
+  which is memoized for that reason. The attribution footer is its sibling in
+  the scroll area, after the editable content and outside the Yjs document
+  (`NoteAttribution`, memoized on the material's provenance, so neither
+  keystrokes nor save acknowledgements render it). The save status is not React state
   above the note either: `NoteEditorCore` keeps only "still handshaking", and
   `CenterContent` passes a per-pane store (`createEditorStatusStore`) that only
   the header's status icon subscribes to. Saved to Syncing happens on the first

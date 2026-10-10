@@ -2443,7 +2443,33 @@ build, and the knowledge library is one more source while the switch is on.
   URL), on the open material, the quiz attempt page, the attempt result page
   (which reads the quiz the attempt names, because the attempt snapshot carries
   no provenance), the standalone quiz editor and the flashcard study page,
-  which the public share routes reuse.
+  which the public share routes reuse. On the open material it ends the
+  document and scrolls with it (`MaterialAttributionFooter` `inline`, in the
+  reading column, with room below `lg` for the workspace's floating bar): after
+  the note's content in View and in the editor, where it sits in the editor's
+  scroll area after the editable content and outside the Yjs document
+  (`NoteAttribution`, memoized against save re-renders), after the flashcard
+  grid or editor, the diagram and the quiz preview, and at the end of the
+  diagram editor's preview pane.
+  **Embedded quizzes and flashcard sets** keep their own provenance (Epo
+  2026-10-10): the single-fence agent edit above, `copy_questions` or the bank
+  page's copy into an embedded quiz (credits under `provenance.questions` of
+  that quiz only), and agent edits that target the embedded row's id all
+  write the row's own record, which only grows like a note's. A pasted block's
+  copy (`AdoptEmbeddedMaterials`) and every clone carry the row's record,
+  outside the storage gate. The embed shows its credits inside the note, in
+  View (`AttemptBody`/`StudyBody` `embedded`, the bordered strip) and in Edit
+  (under the embedded editor), on the shared note (`AnonymousEmbed.provenance`)
+  and on the item's own pages. A note read credits its own sources plus its
+  live embeds', computed for each read and never stored
+  (`store.EmbedSources`, `store.WithEmbedSources`): the rows of the note that
+  are not trashed and that its content references, in reference order, each
+  book (by id) and web page (by URL) once after the note's own; the licence
+  line and question credits stay the note's own, since each embed shows its
+  own. `materialResponse` adds them for every note response (one indexed query
+  for the note's credited rows; the content is parsed only when one exists)
+  and `AnonymousNote` for the shared note, so a removed or trashed embed drops
+  out and returns on restore.
 - **Answer.** A build turn ends like any turn: an OpenUI Lang answer
   (`LangRenderer`) listing the materials made, cited under the usual rules. The
   attribution the user sees for library content is the provenance footer on
@@ -2620,9 +2646,16 @@ DOCX and PPTX sources; `set_cell` for XLSX) and applied by the collaboration
 service on an isolated Y.Doc. `insert_markdown` converts its markdown like a
 created note and inserts the resulting blocks, and `replace_block` converts
 the same way and puts the blocks in place of one block; their fences' rows are
-created under the note first (`EnsureEmbeddedMaterial`, ids derived from call
-and command, so a retried edit finds them), the order the editor uses. When the authority
-refuses the edit, or a later command fails before it is sent, Go trashes the
+created under the note once every command has converted and before the edit is
+sent (`EnsureEmbeddedMaterial`, ids derived from call and command, so a retried
+edit finds them), the order the editor uses. An edit that is one such command
+writing nothing but one quiz or flashcards fence records its `provenance` on
+that row (embedded rows keep their own credits) and leaves the note's record
+alone; any other edit (prose beside the fence, several fences, other
+commands) cannot say which sources went where, so its provenance merges into
+the note as before, and `create_material` always does (a note needs text).
+When the authority
+refuses the edit, or the edit fails before reaching it, Go trashes the
 rows that edit created and no projection has referenced
 (`DiscardEmbeddedDrafts`), so no hidden rows stay charged to the owner; a lost
 answer keeps them, since the edit may have committed. A discarded row that a

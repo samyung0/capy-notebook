@@ -473,7 +473,9 @@ otherwise). `chapterName` reuses the workspace's chapter of that name in any
 case or creates it in the quiz's transaction (`Store.CreateMaterialDraft` with
 the upload path's `resolveUploadChapterID`, which locks the workspace row);
 `quizId` appends after an existing workspace quiz's last question through the
-document authority, which writes the merged credits with the content. The
+document authority, which writes the merged credits with the content. A quiz a
+note embeds is such a quiz: the credits join that quiz's own record and its
+embed shows them, never the note's record or another embed's. The
 caller needs the bank's read access and edit access to the workspace (viewers
 get 404); frozen accounts and storage owners at their limit are refused like
 other content writes.
