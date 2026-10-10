@@ -238,7 +238,9 @@ generation prompt and agent tool descriptions state them.
 Attempts retain graded snapshots. Mistakes strip the attempt-only awards.
 Taking, reviewing and every read-only view (quiz preview, quiz editor, bank,
 question dialog preview) use `QuestionRunner`; a quiz shows all its questions on
-one page (`QuizQuestionList`) with one Submit. Completion and saved attempt pages
+one page (`QuizQuestionList`) with one Submit; inside a note Submit is a small
+accent button beside the answered count, and a checked quiz there and on the
+completion page ends with a small outline Redo quiz on the right. Completion and saved attempt pages
 share the part review renderer. The saved attempt page has Redo quiz as an
 accent link beside the title; both pages lead with the score (`ResultSummary`,
 shared with the /qb topic summary): "awarded / max" large with "marks" and the
@@ -375,7 +377,9 @@ lists every accepted answer with its unit; a gaps part with a miss and an
 ordering part out of order list the key under the learner's own answer
 ("Correct answers", "Correct order"), noting what the learner wrote or where
 they put each misplaced item; matching shows the chosen letter and the correct
-one.
+one. A checked open answer opens with a verdict counted over its marking points
+("Partially correct: 1 of 3 points answered correctly", "Skipped: Question not
+answered").
 Matching dropdowns letter the options in the order the read sent them (shuffled
 for learners) and store the chosen option's text. Ordering lists the items in
 that order and commits their texts as the answer as soon as it renders; editors'

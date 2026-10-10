@@ -170,19 +170,23 @@ export function AttemptBody({
             questions={graded.questions}
             review
           />
-          <Button
-            className="mt-12"
-            iconLeft="refresh"
-            onClick={() => {
-              setAnswers({});
-              setGraded(null);
-            }}
-            rounded="large"
-            size="lg"
-            variant="outline"
-          >
-            {m.quiz_redo()}
-          </Button>
+          {/* Sized like the quiz editor's Edit and Remove. */}
+          <div className="mt-12 flex justify-end">
+            <Button
+              className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
+              iconLeft="refresh"
+              iconLeftClassName="size-3.5 sm:size-3.75"
+              onClick={() => {
+                setAnswers({});
+                setGraded(null);
+              }}
+              rounded="large"
+              size="sm"
+              variant="outline"
+            >
+              {m.quiz_redo()}
+            </Button>
+          </div>
           {footer}
           <MaterialAttributionFooter
             inline={!embedded}
@@ -212,16 +216,24 @@ export function AttemptBody({
           onChange={setAnswer}
           questions={questions}
         />
-        <div className="mt-12 grid gap-3">
+        {/* Inside a note Submit is a small accent button beside the count,
+            sized like the flashcards' Previous and Next. */}
+        <div
+          className={cn(
+            'mt-12',
+            embedded ? 'flex items-center justify-between gap-3' : 'grid gap-3'
+          )}
+        >
           <p className="t-meta text-fg-muted">
             {m.quiz_answered_count({ answered, total: parts.length })}
           </p>
           <Button
             disabled={grading}
-            fullWidth
+            fullWidth={!embedded}
             onClick={() => void finish()}
-            rounded="large"
-            size="lg"
+            rounded={embedded ? undefined : 'large'}
+            size={embedded ? 'sm' : 'lg'}
+            variant={embedded ? 'accent' : 'dark'}
           >
             {grading ? m.quiz_grading() : m.quiz_submit()}
           </Button>

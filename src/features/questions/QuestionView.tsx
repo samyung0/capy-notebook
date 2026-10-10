@@ -617,7 +617,7 @@ export function QuestionReview({
         return (
           <span
             className={cn(
-              'font-semibold',
+              'font-bold',
               awarded == null
                 ? 'text-fg-muted'
                 : awarded === max

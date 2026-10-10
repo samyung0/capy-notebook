@@ -193,8 +193,8 @@ function GapText({
           <span className="whitespace-nowrap" key={i}>
             <span
               className={cn(
-                'mx-1 inline-grid min-w-[7ch] max-w-[calc(100%-2ch)] border-line-strong border-b align-baseline focus-within:border-solid-accent-1 focus-within:border-b-2',
-                'after:invisible after:col-start-1 after:row-start-1 after:overflow-hidden after:whitespace-pre after:px-0.5 after:content-[attr(data-value)]',
+                'mx-1 inline-grid min-w-[7ch] max-w-[calc(100%-2ch)] border-line-strong border-b align-baseline focus-within:-mb-px focus-within:border-solid-accent-1 focus-within:border-b-2',
+                'after:invisible after:col-start-1 after:row-start-1 after:overflow-hidden after:whitespace-pre after:px-0.5 after:leading-none after:content-[attr(data-value)]',
                 results &&
                   (right
                     ? 'border-solid-success border-b-2'
@@ -205,7 +205,7 @@ function GapText({
               <input
                 aria-label={m.question_ui_gap({ number: gap + 1 })}
                 className={cn(
-                  'col-start-1 row-start-1 w-full min-w-0 bg-transparent px-0.5 text-center text-[length:inherit] text-fg outline-none placeholder:text-placeholder placeholder:text-xs',
+                  'col-start-1 row-start-1 w-full min-w-0 bg-transparent px-0.5 text-center text-[length:inherit] text-fg outline-none placeholder:text-placeholder',
                   results &&
                     !right &&
                     'text-tint-error-fg line-through decoration-1'
@@ -349,6 +349,59 @@ function KeyList({
         ))}
       </ol>
     </div>
+  );
+}
+
+/** A checked open answer's verdict, counted over its marking points (the
+ * scheme's items) so a glance tells right from wrong. */
+function OpenVerdict({
+  answered,
+  part,
+}: {
+  answered: boolean;
+  part: QuestionPart;
+}) {
+  const { awarded, itemAwards = [], markscheme = [], marks } = part;
+  if (awarded == null) return null;
+  const count = markscheme.length;
+  const got = markscheme.filter(
+    (item, i) => itemAwards[i] === item.marks
+  ).length;
+  const one = count === 1;
+  const [tone, label, detail] = answered
+    ? awarded >= marks
+      ? [
+          'text-tint-success-fg',
+          m.question_ui_verdict_correct(),
+          one
+            ? m.question_ui_point_right()
+            : m.question_ui_points_all({ count }),
+        ]
+      : awarded > 0
+        ? [
+            'text-tint-warning-fg',
+            m.question_ui_verdict_partial(),
+            one
+              ? m.question_ui_point_partly()
+              : m.question_ui_points_some({ count, got }),
+          ]
+        : [
+            'text-tint-error-fg',
+            m.question_ui_verdict_incorrect(),
+            one
+              ? m.question_ui_point_wrong()
+              : m.question_ui_points_none({ count }),
+          ]
+    : [
+        'text-fg-muted',
+        m.question_ui_verdict_skipped(),
+        m.question_ui_question_not_answered(),
+      ];
+  return (
+    <p className="mb-2 text-fg-secondary text-sm">
+      <strong className={cn('mr-1.5 font-bold', tone)}>{label}</strong>
+      {detail}
+    </p>
   );
 }
 
@@ -548,6 +601,9 @@ function PartRunner({
     const text = typeof value === 'string' ? value : '';
     return (
       <div className="flex flex-col gap-1">
+        {review && isAuthoredPart(part) && (
+          <OpenVerdict answered={text.trim() !== ''} part={part} />
+        )}
         <Textarea
           aria-label={m.question_ui_your_answer()}
           className="ruled-lines max-h-[calc(var(--ruled-line)*8)] min-h-[calc(var(--ruled-line)*3)] rounded-none border-0 bg-transparent px-0.5 py-0 focus:border-0 disabled:bg-transparent disabled:text-fg"

@@ -101,25 +101,31 @@ it('reviews an ordering answered by item text against the stored order', () => {
   expect(html).not.toContain('you put it at 3');
 });
 
-it('shows an open part with one mark per marking item', () => {
-  const question = exampleQuestion('open', {
-    accepted: ['Supporting evidence'],
-    hints: [],
-    type: 'open',
-  });
-  question.parts[0].marks = 2;
-  question.parts[0].markscheme = [
-    { marks: 1, text: 'States the claim.' },
-    { marks: 1, text: 'Gives evidence.' },
-  ];
-  question.parts[0] = applyItemAwards(question.parts[0], [1, 0.5]);
-  const html = renderToStaticMarkup(
-    <QuestionRunner
-      answers={{ 'open-part': 'Some evidence' }}
-      question={question}
-      review
-    />
-  );
-  expect(html).toContain('1.5 / 2');
-  expect(html).toContain('text-tint-warning-fg');
+it('shows an open part with its marks and a verdict over its marking points', () => {
+  const graded = (awards: number[], answer: string) => {
+    const question = exampleQuestion('open', {
+      accepted: ['Supporting evidence'],
+      hints: [],
+      type: 'open',
+    });
+    question.parts[0].marks = 2;
+    question.parts[0].markscheme = [
+      { marks: 1, text: 'States the claim.' },
+      { marks: 1, text: 'Gives evidence.' },
+    ];
+    question.parts[0] = applyItemAwards(question.parts[0], awards);
+    return renderToStaticMarkup(
+      <QuestionRunner
+        answers={{ 'open-part': answer }}
+        question={question}
+        review
+      />
+    );
+  };
+  const partial = graded([1, 0.5], 'Some evidence');
+  expect(partial).toContain('1.5 / 2');
+  expect(partial).toContain('Partially correct:');
+  expect(partial).toContain('1 of 2 points answered correctly');
+  expect(graded([1, 1], 'Both')).toContain('All 2 points answered correctly');
+  expect(graded([0, 0], ' ')).toContain('Question not answered');
 });
