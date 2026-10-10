@@ -80,3 +80,96 @@ test('editors edit a set together and a viewer reads it as it changes', async ({
     .toContain('Water crosses a membrane by diffusion');
   await ownerApi.delete(`/api/materials/${setId}`);
 });
+
+// REVIEW3 N6 through StudyBody (REVIEW4 S3): an editor blanking the card a
+// learner is studying while retyping it leaves that card where it is, blank,
+// then retyped; it neither leaves the session nor comes back at its end.
+test('a card blanked while retyped keeps its place in a study session', async ({
+  editorPage,
+  ownerApi,
+  ownerPage,
+  seed,
+}) => {
+  const workspaceId = seed.privateWorkspace.id;
+  const faces = [
+    ['Osmosis', 'Water crosses a membrane'],
+    ['Golgi', 'Packages proteins'],
+    ['Ribosome', 'Builds proteins'],
+  ];
+  const created = await ownerApi.post(
+    `/api/workspaces/${workspaceId}/materials`,
+    {
+      data: {
+        content: {
+          schemaVersion: 1,
+          value: [
+            {
+              children: faces.map(([front, back]) => ({
+                children: [
+                  { children: [{ text: front }], type: 'flashcard_front' },
+                  { children: [{ text: back }], type: 'flashcard_back' },
+                ],
+                id: `c_e2e_${randomUUID()}`,
+                type: 'flashcard',
+              })),
+              id: 'cards_root',
+              type: 'flashcards',
+            },
+          ],
+        },
+        kind: 'flashcards',
+        title: `E2E Blank Card ${randomUUID()}`,
+      },
+    }
+  );
+  expect(created.status()).toBe(201);
+  const setId = ((await created.json()) as { id: string }).id;
+  try {
+    await openWorkspaceMaterial(ownerPage, workspaceId, setId);
+    await editorPage.goto(`/flashcards/${setId}`);
+    const first = m.flashcards_card_of_total({ position: 1, total: 3 });
+    await expect(editorPage.getByText(first)).toBeVisible();
+    await expect(
+      editorPage.getByText('Osmosis', { exact: true })
+    ).toBeVisible();
+
+    await ownerPage.getByText('Osmosis', { exact: true }).click();
+    const dialog = ownerPage.getByRole('dialog', {
+      name: m.flashcards_edit_card(),
+    });
+    await dialog.getByRole('textbox', { name: m.editor_card_front() }).fill('');
+    await dialog.getByRole('textbox', { name: m.editor_card_back() }).fill('');
+    // The learner still studies that card, now blank.
+    await expect(editorPage.getByText('Osmosis', { exact: true })).toHaveCount(
+      0
+    );
+    await expect(editorPage.getByText('Golgi', { exact: true })).toHaveCount(0);
+    await expect(editorPage.getByText(first)).toBeVisible();
+    await dialog
+      .getByRole('textbox', { name: m.editor_card_front() })
+      .fill('Osmosis, retyped');
+    await dialog
+      .getByRole('textbox', { name: m.editor_card_back() })
+      .fill('Water crosses again');
+    await expect(
+      editorPage.getByText('Osmosis, retyped', { exact: true })
+    ).toBeVisible();
+    await expect(editorPage.getByText(first)).toBeVisible();
+
+    // Three ratings end the session: the card did not come back at its end.
+    const showAnswer = editorPage.getByRole('button', {
+      name: m.flashcards_show_answer(),
+    });
+    for (let i = 0; i < 3; i++) {
+      await showAnswer.click();
+      await editorPage
+        .getByRole('button', { exact: true, name: m.srs_good() })
+        .click();
+    }
+    await expect(
+      editorPage.getByRole('heading', { name: m.flashcards_session_done() })
+    ).toBeVisible();
+  } finally {
+    await ownerApi.delete(`/api/materials/${setId}`);
+  }
+});
