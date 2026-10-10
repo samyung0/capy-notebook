@@ -558,7 +558,7 @@ async fn a_trashed_file_waits_for_no_rebuild() {
     assert!(h.sources.rebuild_pending(&room.file_id).await.unwrap());
     client
         .execute(
-            "UPDATE files SET trashed_at=now() WHERE id=$1",
+            "UPDATE files SET trashed_at=now(),trash_episode_id='te_'||id,purge_after=now()+interval '30 days' WHERE id=$1",
             &[&room.file_id],
         )
         .await
