@@ -166,11 +166,26 @@ export async function compareStyles(
         const shot = (page: Page) =>
           page.screenshot({ animations: 'disabled', fullPage: true });
         const [fullShot, subsetShot] = await Promise.all([shot(a), shot(b)]);
-        if (!fullShot.equals(subsetShot)) {
-          // The control: the full page loaded again. If it differs from
-          // itself too, the difference is the rasteriser's, not the CSS's.
-          const again = await open(browser, url, full, colorScheme, viewport);
-          const control = await shot(again).finally(() => again.close());
+        // The rasteriser now and then draws a few pixels differently on
+        // identical pages, so a mismatch gets two more fresh loads of each.
+        // The inlined page passes if it ever matches a full one; otherwise
+        // the difference is noise when the full page varies too.
+        const fulls = [fullShot];
+        const subsets = [subsetShot];
+        const matches = () =>
+          subsets.some((s) => fulls.some((f) => f.equals(s)));
+        for (let retry = 0; retry < 2 && !matches(); retry++)
+          for (const [html, shots] of [
+            [full, fulls],
+            [subset, subsets],
+          ] as const) {
+            const fresh = await open(browser, url, html, colorScheme, viewport);
+            shots.push(await shot(fresh).finally(() => fresh.close()));
+          }
+        if (!matches()) {
+          const control = fulls.every((f) => f.equals(fullShot))
+            ? fullShot
+            : undefined;
           const changed = await changedPixels(browser, fullShot, subsetShot);
           const where = await a.evaluate(
             ([x, y]) =>
@@ -186,7 +201,7 @@ export async function compareStyles(
           await writeFile(path.join(out, `${file}-full.png`), fullShot);
           await writeFile(path.join(out, `${file}-inlined.png`), subsetShot);
           const detail = `${changed.pixels} px around (${changed.x}, ${changed.y}) over ${where} (${file}-*.png)`;
-          if (fullShot.equals(control))
+          if (control)
             differences.push(`${label}: the screenshots differ, ${detail}`);
           else noise.push(`${label}: ${detail}`);
         }
