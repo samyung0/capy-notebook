@@ -109,6 +109,9 @@ bridge with the editor. The React editor and editor WASM are imported only after
 the user presses Edit. DOCX lowering runs in a disposable worker that terminates
 as soon as it transfers the immutable display list, so its parser, transient
 Yrs projection, and viewer linear memory are absent during ordinary reading.
+The DOCX viewer builds that list from the engine's typed state eight pages at a
+time, parsing the display extras once, with measured text as the editor's
+joined glyph runs, and frees its WASM before posting.
 Every editor and viewer WASM module grows its linear memory in steps as large
 as the memory already is, at most 64 MiB (`vendor/betteroffice/crates/wasm-alloc`):
 Rust's allocator alone grows it by the 64 KiB a request needs, and each grow
@@ -126,7 +129,13 @@ editor's signal is `docx-pages-presented`, the XLSX and PPTX editors'
 `onFirstPaint`, once per opened file. An edit frame's `ready` leaves the host's
 error state alone.
 
-The DOCX editor lays pages out in a resident engine worker. A request's timeout
+The DOCX editor lays pages out in a resident engine worker. A peer's update
+reaches the worker as it arrives; after the main thread's next layout the
+worker lays the updates out as it lays out a keystroke (changed paragraphs
+re-measured, changed pages rebuilt) and answers with a delta of the changed
+pages. Frame requests run one at a time and a burst costs one request in flight
+plus one more; every reply is applied in place, only the newest is rendered,
+and a page whose positions shifted rebuilds its mirror. A request's timeout
 starts when the worker begins it; a request the worker never starts gives up
 after 60 s. Either way the main thread then takes over, and editing continues on
 the main thread's frames rather than failing the editor. Range and caret queries
@@ -470,7 +479,9 @@ both direct and rebased saves. Empty-comment behavior is the same in body text,
 table cells, header cells and endnotes when tested with the same session ids.
 
 BetterOffice builds with a patched yrs 0.27.3 (`third_party/yrs`, through
-`[patch.crates-io]`) carrying two fixes until a fixed yrs release exists. Its
+`[patch.crates-io]`) carrying fixes until a fixed yrs release exists; the
+fork's `THIRD-PARTY-NOTICES.md` and the root `Cargo.toml` patch comment list
+every patch. Its
 `clean_format_gap` counts a map embed (a field, paragraph mark or break) as
 content, as JS Yjs does, so a delete before a field no longer spreads the
 deleted text's link and field marker onto the field. Without it, one Backspace
@@ -478,7 +489,11 @@ at the end of a table of contents' first entry removed the whole TOC field from
 the saved file. Its `follow_redone` keeps the offset into an item Undo or Redo
 restored, as Yjs's `followRedone` does, so a position inside restored text
 stays on its unit and an Undo after delete, Undo, Redo removes only its own
-step. The native viewer,
+step. One edit writes its format items in key order (the attribute map's hash
+order differs per replica, so concurrent edits beside them integrated
+differently), and a transaction's update and events read its insert set
+instead of before and after state vectors, so applying a peer's keystroke
+costs the same however many clients wrote the document. The native viewer,
 Python bindings and fuzz workspaces use that same copy, including the native
 viewer's UTF-8 validation in both update decoders. WASM fingerprints include
 the vendored source so changes rebuild the engines.
@@ -538,15 +553,22 @@ first half that id. After applying a peer's update, every peer renames the
 duplicates the same way (`applying_peer_update` and
 `rename_duplicate_para_ids` in `ops/paragraph.rs`, run by the session's
 `applyUpdate`): it looks only at the ids of paragraph marks the update
-inserted or re-identified (a merge's survivor), in their stories, so typing
-and other updates cost nothing extra; the mark whose yrs item has the lowest
-`(client, clock)` keeps the id and every other takes `{client}.{clock}` of
-its own item, as a system edit outside Undo, so typing, clicks and AI edits
-reach both halves. A client loading a stored state renames once after the
-load (`seedYrsSession`), so a state stored before both splitting peers
-exchanged does not keep the duplicate for a later session. If the peer whose
-split kept the id undoes it after the rename, the survivor keeps the other
-half's renamed id and no paragraph carries the source id any more. Exports
+inserted or re-identified (a merge's survivor), in their stories, reading
+past any garbage-collected run a catch-up update holds, so typing and other
+updates cost nothing extra; the mark that owns the id (an earlier rename gave
+it `{client}.{clock}` of its own item) keeps it, else the mark whose yrs item
+has the lowest `(client, clock)` (a source mark, seeded under client 0), and
+every other takes `{client}.{clock}` of its own item, as a system edit outside
+Undo, so typing, clicks and AI edits reach both halves. When another mark
+carries an owned id (a split's new mark takes it, and the split's Undo gives
+it back), that mark is renamed once and peers settle; ranking by
+`(client, clock)` alone renamed the owner to the id it had, and every
+receiving peer renamed again without end. A client loading a stored state
+renames once after the load (`seedYrsSession`), so a state stored before both
+splitting peers exchanged does not keep the duplicate for a later session. If
+the peer whose split kept the id undoes it after the rename, the survivor
+keeps the other half's renamed id and no paragraph carries the source id any
+more. Exports
 from a stored state that still holds the duplicate (office-checkpoint loads
 without renaming) take the save's backstop: a source `w14:paraId` stays on
 the first paragraph and each repeat gets a hex id, as for editor ids, in
@@ -651,16 +673,20 @@ stays in the field, which shows it, until the next publication reads it as
 text after the field (no tail move, so concurrent deletes converge without
 duplicates); until then Backspace at that paragraph's end deletes the whole
 field. After a peer's delete that ends at a field projecting links or simple
-fields, each receiving editor re-reads that field's shown text and writes it
-into the room as a system edit (outside Undo; all peers compute the same
-value), so two peers each deleting half of the last link both show what one
-peer deleting all of it shows. The lookup steps right from the delete's last
-item (a read-only `Store::next_live_item` added to the vendored yrs), so other
-deletes cost no story walk. Undo by one of them then restores its half
-without the link and child marks, before the field (accepted 2026-10-05, also
-for a plain hyperlink); after deletes made one after the other, that Undo can
-leave the editor's shown text stale (`REF=` where the save shows `REF=7`)
-until publication.
+fields, and after an Undo or Redo step or a peer's update that puts such a
+field's content back (a REF field's link an Undo restores), the editor
+applying it re-reads that field's shown text and writes it into the room as a
+system edit (outside Undo; all peers compute the same value), so two peers
+each deleting half of the last link both show what one peer deleting all of
+it shows, and one or both peers' Undo of their halves shows the field with its
+link again, as the save does (Epo 2026-10-10; with yrs's formatting cleanup
+off the restored text keeps its link and child marks). The lookup steps right
+from each deleted range's last item and from each item the update or step
+inserts (a read-only `Store::next_live_item` added to the vendored yrs). A
+walk stops where another range's or another inserted item's walk starts, so a
+run of deleted items costs one step per item however it arrives, and an
+insert re-reads only a field whose shown text is not empty, so typing at the
+end of a cross-reference's link reads no story.
 
 The plain runs (text, plain line breaks, comment references, and tabs or
 positional tabs without their own formatting) that end the first paragraph's
@@ -690,7 +716,13 @@ bookmark start saves before its end (also when a join collapses several to one
 point), and after Undo or Redo a bookmark, comment range or continued field
 end whose own text the step restored is re-anchored onto it (one beside
 restored text keeps its anchor until the Undo that restores its own), so the
-editor, peers and the save agree. Generated comment paragraph ids reserve the ids already used by the
+editor, peers and the save agree. Undo links each original item to its
+restored copy only on the restoring replica (yrs sends no redone links), so
+that replica re-anchors every boundary whose item has a live copy, after each
+Undo or Redo step and after a peer's update that writes a comment or bookmark:
+a comment another peer removed and restored, or a bookmark start set again on
+restored text, then resolves alike on every peer, and a marker whose text
+stays deleted keeps its anchor. Generated comment paragraph ids reserve the ids already used by the
 document, headers, footers and notes.
 
 Seeds changed with the break and field-container rules, bookmark anchors,
