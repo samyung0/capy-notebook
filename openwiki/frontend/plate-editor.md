@@ -288,6 +288,22 @@ upload leaves the empty placeholder (pick again, or delete it) with the
 storage notice or the error under it; audio and file placeholders keep the
 name, progress and cancel.
 
+Other clients see the same skeleton through the uploader's presence
+(`uploadPresence.ts`, Epo 2026-10-10): while an image uploads, the uploading
+tab's awareness names its placeholder by node id (`uploads: [id, ...]`), and
+drops the id when the upload finishes, fails or is cancelled (the block's
+effect cleanup). Every other client of the room, editable or read-only,
+renders a placeholder named in any other client's awareness as the skeleton;
+each placeholder subscribes to awareness on its own
+(`useUploadingElsewhere`, `useSyncExternalStore` with a boolean snapshot), so
+a presence change re-renders only the placeholders whose answer changed, not
+the editor. When the uploader disconnects (the room nulls its presence) or
+its awareness times out, the block is the empty placeholder again; nothing
+about an upload is stored in the note. An id (at most 21 characters) costs
+~24 bytes of the server's 64 KiB awareness entry, so one tab can name about
+2,500 uploads at once.
+Viewers that do not join the room (the static projection) do not see it.
+
 Each asset belongs to one note, and the server keeps it that way; the browser
 does nothing but render. A save that stops using an asset (once it was
 completed more than 60 s ago) puts it in a hidden trash for a day, still
