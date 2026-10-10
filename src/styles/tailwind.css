@@ -2,6 +2,7 @@
    no cross-origin stylesheet blocks the first paint. */
 @import "@fontsource-variable/fustat";
 @import "@fontsource-variable/jetbrains-mono";
+@import "./fontFallbacks.css";
 @import "tailwindcss" source("../");
 @import "./tokens/themes/classroom.css";
 @import "./tokens/themes/notion.css";
@@ -467,7 +468,7 @@ math-field {
 /* Code font for every style (the @theme entry only forwards it). */
 [data-style] {
   --font-mono:
-    "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    "JetBrains Mono Variable", "JetBrains Mono Fallback", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 :root {

@@ -351,11 +351,29 @@ type Metrics = {
 
 type Shift = { score: number; selector?: string; snippet?: string };
 
-/** Lighthouse's mobile preset (a mid-range phone on slow 4G: 150 ms RTT,
- * 1.6 Mbps, 4x slower CPU) is the worst case; its desktop preset (40 ms RTT,
- * 10 Mbps, no CPU slowdown) is closer to most visitors. Both are simulated,
- * so the runner's own network and CPU barely move them. */
-const PROFILES = { desktop: desktopConfig, mobile: undefined } as const;
+/** Desktop is closer to most visitors: 40 ms RTT and 10 Mbps applied to the
+ * browser's real requests (DevTools throttling), full-speed CPU. Applied
+ * throttling keeps the document's real server time in FCP and LCP, so a
+ * Worker render shows against a cached copy; simulated throttling estimates
+ * server time per origin and hides it. Mobile is the worst case and stays
+ * simulated for steady numbers: a mid-range phone on slow 4G (150 ms RTT,
+ * 1.6 Mbps, 4x slower CPU); its uncached cost shows only in TTFB. */
+const DESKTOP_APPLIED = {
+  ...desktopConfig,
+  settings: {
+    ...desktopConfig.settings,
+    throttling: {
+      ...desktopConfig.settings!.throttling,
+      // Lighthouse's own factors for turning RTT and throughput into the
+      // request latency and bandwidth DevTools applies.
+      downloadThroughputKbps: 10 * 1024 * 0.9,
+      requestLatencyMs: 40 * 3.75,
+      uploadThroughputKbps: 10 * 1024 * 0.9,
+    },
+    throttlingMethod: 'devtools' as const,
+  },
+};
+const PROFILES = { desktop: DESKTOP_APPLIED, mobile: undefined } as const;
 type Profile = keyof typeof PROFILES;
 const EDGES = ['uncached', 'cached'] as const;
 type Edge = (typeof EDGES)[number];
@@ -421,7 +439,18 @@ async function audit(port: number, url: string, profile: Profile) {
     tbt: audits['total-blocking-time'].numericValue!,
     ttfb: audits['server-response-time'].numericValue!,
   };
+  // What the edge said about this run's own document.
+  const document = result.artifacts.DevtoolsLog.find(
+    (event) =>
+      event.method === 'Network.responseReceived' &&
+      event.params.type === 'Document'
+  ) as { params: { response: { headers: Record<string, string> } } } | undefined;
+  const edge =
+    Object.entries(document?.params.response.headers ?? {}).find(
+      ([name]) => name.toLowerCase() === 'cf-cache-status'
+    )?.[1] ?? 'none';
   return {
+    edge,
     lhr: result.lhr,
     metrics,
     report: result.report as string,
@@ -439,11 +468,16 @@ const median = (values: number[]) =>
 async function measure(
   port: number,
   url: (index: number) => string,
-  profile: Profile
+  profile: Profile,
+  warm: boolean
 ) {
   const runs: Awaited<ReturnType<typeof audit>>[] = [];
-  for (let index = 0; index < RUNS; index++)
+  for (let index = 0; index < RUNS; index++) {
+    // A cached run asks right after a request that fills the edge, since the
+    // five-minute entry may have lapsed while earlier pages were measured.
+    if (warm) await (await fetch(url(index))).body?.cancel();
     runs.push(await audit(port, url(index), profile));
+  }
   const pick = (get: (m: Metrics) => number) =>
     median(runs.map(({ metrics }) => get(metrics)));
   const middle = runs.find(
@@ -465,6 +499,8 @@ async function measure(
       tbt: pick((m) => m.tbt),
       ttfb: pick((m) => m.ttfb),
     } satisfies Metrics,
+    /** Each run's CF-Cache-Status for its document. */
+    edges: runs.map(({ edge }) => edge),
     lhr: middle.lhr,
     report: middle.report,
     runs: runs.map(({ metrics }) => metrics),
@@ -479,13 +515,19 @@ function summary(results: Awaited<ReturnType<typeof run>>) {
   const lines = [
     '### Shared pages on UAT',
     '',
-    `Release \`${results.release ?? 'unknown'}\` · Lighthouse ${results.lighthouse}, simulated throttling · ${results.chromium} · median of ${RUNS}`,
+    `Release \`${results.release ?? 'unknown'}\` · Lighthouse ${results.lighthouse} · ${results.chromium} · median of ${RUNS}`,
     '',
-    'Uncached: a unique query string, so the Worker renders the page. Cached: served by Workers Cache. TTFB is the document\'s server response time as the runner saw it.',
+    "Uncached: a unique query string, so the Worker renders the page. Cached: the clean URL, requested just before. Edge is each run's own CF-Cache-Status. TTFB is the document's server response time. Every run is a first visit: the browser's cache is empty.",
   ];
   for (const [profile, label] of [
-    ['desktop', 'Desktop (40 ms RTT, 10 Mbps, full-speed CPU)'],
-    ['mobile', 'Mobile, worst case (slow 4G, 4x slower CPU)'],
+    [
+      'desktop',
+      'Desktop, applied throttling (40 ms RTT, 10 Mbps, full-speed CPU): server time counts',
+    ],
+    [
+      'mobile',
+      'Mobile, simulated worst case (slow 4G, 4x slower CPU): server time shows only in TTFB',
+    ],
   ] as const) {
     lines.push(
       '',
@@ -496,9 +538,15 @@ function summary(results: Awaited<ReturnType<typeof run>>) {
     );
     for (const page of results.pages)
       for (const edge of EDGES) {
-        const m = page[profile][edge].median;
+        const measured = page[profile][edge];
+        const m = measured.median;
+        // A run the edge answered against the plan is called out.
+        const expected = edge === 'cached' ? 'HIT' : 'MISS';
+        const statuses = measured.edges
+          .map((status) => (status === expected ? status : `**${status}**`))
+          .join(' ');
         lines.push(
-          `| ${page.kind} | ${edge} | ${ms(m.ttfb)} | ${ms(m.fcp)} | ${ms(m.lcp)} | ${m.cls.toFixed(3)} | ${ms(m.tbt)} | ${kb(m.bytes.total)} | ${kb(m.bytes.document)} | ${kb(m.bytes.script)} | ${m.requests} | ${Math.round(m.score * 100)} |`
+          `| ${page.kind} | ${edge} (${statuses}) | ${ms(m.ttfb)} | ${ms(m.fcp)} | ${ms(m.lcp)} | ${m.cls.toFixed(3)} | ${ms(m.tbt)} | ${kb(m.bytes.total)} | ${kb(m.bytes.document)} | ${kb(m.bytes.script)} | ${m.requests} | ${Math.round(m.score * 100)} |`
         );
       }
   }
@@ -570,9 +618,10 @@ async function run(page: Page) {
           uncached: await measure(
             LIGHTHOUSE_PORT,
             (i) => `${url}?perf=${id}-${profile}-${i}`,
-            profile
+            profile,
+            false
           ),
-          cached: await measure(LIGHTHOUSE_PORT, () => url, profile),
+          cached: await measure(LIGHTHOUSE_PORT, () => url, profile, true),
         };
       pages.push({
         cache: caches[index],
@@ -620,6 +669,7 @@ try {
         await writeFile(`${name}.trace.json`, JSON.stringify(measured.trace));
       }
   const keep = (measured: Awaited<ReturnType<typeof measure>>) => ({
+    edges: measured.edges,
     median: measured.median,
     runs: measured.runs,
     shifts: measured.shifts,

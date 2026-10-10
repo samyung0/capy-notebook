@@ -1,0 +1,63 @@
+/* Stand-ins for Fustat and JetBrains Mono while they load (font-display:
+   swap): Arial and Courier New, or their metric twins Liberation Sans and
+   Liberation Mono on Linux, scaled to the web fonts' widths and given their
+   ascent and descent, so text keeps its lines and height when the web font
+   swaps in. Widths are the mean Fustat/Arial ratio of English titles and
+   prose measured in Chromium per weight (single strings vary by about 3%,
+   so a line can still break differently; the share pages preload Fustat so
+   it is usually in before first paint). Fustat's width depends on its
+   weight, so each weight range scales Arial or Arial Bold on its own.
+   Overrides are the web font's metric divided by size-adjust (Fustat:
+   1000/420/0 per 1000 em, JetBrains Mono: 1020/300/0). */
+
+@font-face {
+  font-family: "Fustat Fallback";
+  src: local("Arial"), local("ArialMT"), local("Liberation Sans");
+  font-weight: 100 549;
+  size-adjust: 99.3%;
+  ascent-override: 100.7%;
+  descent-override: 42.3%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: "Fustat Fallback";
+  src:
+    local("Arial Bold"), local("Arial-BoldMT"), local("Liberation Sans Bold");
+  font-weight: 550 749;
+  size-adjust: 95.3%;
+  ascent-override: 104.93%;
+  descent-override: 44.07%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: "Fustat Fallback";
+  src:
+    local("Arial Bold"), local("Arial-BoldMT"), local("Liberation Sans Bold");
+  font-weight: 750 900;
+  size-adjust: 98.1%;
+  ascent-override: 101.94%;
+  descent-override: 42.81%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: "JetBrains Mono Fallback";
+  src: local("Courier New"), local("CourierNewPSMT"), local("Liberation Mono");
+  font-weight: 100 549;
+  ascent-override: 102%;
+  descent-override: 30%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: "JetBrains Mono Fallback";
+  src:
+    local("Courier New Bold"), local("CourierNewPS-BoldMT"),
+    local("Liberation Mono Bold");
+  font-weight: 550 900;
+  ascent-override: 102%;
+  descent-override: 30%;
+  line-gap-override: 0%;
+}

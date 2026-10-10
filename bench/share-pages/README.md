@@ -45,14 +45,26 @@ It needs `UAT_TARGET_AUTHORIZED=true`, `UAT_ALLOWED_HOSTS`, `UAT_APP_URL`,
    cookies, language and user agent gets the same bytes with
    `CF-Cache-Status: HIT`, and so does `HEAD`; a forged link gets the 404 page,
    `no-store`, and is not served from the cache.
-6. Lighthouse 13 with simulated throttling, `SHARE_PERF_RUNS` times (3 by
-   default) per page, profile and edge state, in a Chromium separate from the
-   signed-in one. Profiles: **desktop** (40 ms RTT, 10 Mbps, full-speed CPU),
-   closer to most visitors, and **mobile** (slow 4G, 4x slower CPU), the
-   worst case. Edge states:
+6. Lighthouse 13, `SHARE_PERF_RUNS` times (3 by default) per page, profile
+   and edge state, in a Chromium separate from the signed-in one. Profiles:
+   **desktop**, closer to most visitors: 40 ms RTT and 10 Mbps applied to
+   the real requests (DevTools throttling), full-speed CPU, so the
+   document's real server time is in FCP and LCP; and **mobile**, the worst
+   case: a phone on slow 4G with a 4x slower CPU, simulated for steady
+   numbers. Simulation estimates server time per origin, so there an
+   uncached render shows only in TTFB. Edge states:
    - **uncached**: the URL with a unique `?perf=…`. Workers Cache keys on the
-     query string, so the Worker renders the page from the API.
-   - **cached**: the clean URL, served from Workers Cache.
+     query string and the Worker ignores it, so this is the clean page's full
+     cold render (token check, API read, render, CSS cut). An entry cannot be
+     dropped from outside (purging is only `ctx.cache.purge` inside the
+     Worker, and a deploy resets them all), so a fresh key is how a miss is
+     forced.
+   - **cached**: the clean URL, requested just before each run so its
+     five-minute entry is fresh.
+   Each run records its own document's `CF-Cache-Status`; the summary marks a
+   run the edge answered against the plan. Every run is a first visit
+   (Lighthouse empties the browser cache). A cold Worker isolate is not
+   forced: the measured render runs in a warm isolate, as most do.
 7. Deletes what it created.
 
 Reported per page, profile and edge state (the median of the runs): the

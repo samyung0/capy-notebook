@@ -7,10 +7,11 @@
    ============================================================ */
 
 [data-style="classroom"] {
-  /* "Fustat" is the Office frame's own static faces (office-runtime.css). */
+  /* "Fustat" is the Office frame's own static faces (office-runtime.css);
+     "Fustat Fallback" is Arial sized to Fustat (fontFallbacks.css). */
   --font-sans:
-    "Fustat Variable", "Fustat", system-ui, -apple-system, "Segoe UI",
-    sans-serif;
+    "Fustat Variable", "Fustat", "Fustat Fallback", system-ui, -apple-system,
+    "Segoe UI", sans-serif;
 
   --display-font-size: 3.125rem;
   --display-font-weight: 800;
