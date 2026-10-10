@@ -153,7 +153,7 @@ export function OnboardingDialog() {
       )}
       <div>
         {/* Phones stack the buttons under the avatar; wider dialogs keep them beside it. */}
-        <div className="mb-5 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-5">
+        <div className="mb-5 flex flex-col items-center gap-3 sm:flex-row sm:gap-5">
           <Avatar
             className="size-20"
             name={me.name}
