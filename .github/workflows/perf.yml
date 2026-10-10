@@ -308,4 +308,6 @@ jobs:
           if-no-files-found: ignore
           name: share-pages-snapshot
           path: bench/share-pages/.results/
+          # `.results` is a dot directory, which upload-artifact skips by default.
+          include-hidden-files: true
           retention-days: 90
