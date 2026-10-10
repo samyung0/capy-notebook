@@ -48,7 +48,34 @@ async function openEmptyLine(page: Page) {
   return editor;
 }
 
+/** A 1x1 PNG, as a page copies a small image inline. */
+const PNG_DATA_URL =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+
 test.describe('paste', () => {
+  // Epo 2026-10-10: a pasted <img> the browser can read uploads through the
+  // editor's asset path in its place in the pasted content; no URL-only
+  // image node is made.
+  test('uploads a pasted image the browser can read where it sat', async ({
+    page,
+  }) => {
+    const editor = await openEmptyLine(page);
+
+    await paste(editor, {
+      'text/html': `<p>Pasted before</p><img src="${PNG_DATA_URL}"><p>Pasted after</p>`,
+      'text/plain': 'Pasted before Pasted after',
+    });
+
+    const image = editor.getByRole('img', { name: 'pasted-image.png' });
+    await expect(image).toBeVisible();
+    const before = editor.locator('.slate-p', { hasText: /^Pasted before$/ });
+    const after = editor.locator('.slate-p', { hasText: /^Pasted after$/ });
+    const top = async (locator: Locator) =>
+      (await locator.boundingBox())?.y ?? Number.NaN;
+    expect(await top(before)).toBeLessThan(await top(image));
+    expect(await top(image)).toBeLessThan(await top(after));
+  });
+
   test('keeps one paragraph per copied <div> line', async ({ page }) => {
     const editor = await openEmptyLine(page);
 

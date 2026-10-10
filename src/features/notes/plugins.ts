@@ -129,6 +129,7 @@ import { MentionInputElement } from './MentionInput';
 import { noteMarkdownPlugin } from './markdown';
 import { navigationFeedbackPlugin } from './navigationFeedback';
 import { FONT_SIZE_NODE_PROPS } from './nodeStyles';
+import { pastedImagesPlugin } from './pastedImages';
 import {
   NoteParagraphPlugin,
   VoidBlockPastePlugin,
@@ -435,7 +436,11 @@ const SlashKit = [
 ];
 
 const MediaKit = [
-  ImagePlugin.configure({ options: { disableUploadInsert: true } }),
+  // Pasted image files and URLs go through pastedImagesPlugin's asset path
+  // instead: no URL-only image node is ever made.
+  ImagePlugin.configure({
+    options: { disableEmbedInsert: true, disableUploadInsert: true },
+  }),
   createPlatePlugin({
     key: 'video',
     node: { isElement: true, isVoid: true, type: 'video' },
@@ -635,6 +640,7 @@ export function buildPlugins(options: BuildPluginsOptions): AnyPlugin[] {
     remoteNormalizationPlugin,
     remoteCursorDecorationPlugin,
     ...MaterialKit,
+    pastedImagesPlugin(options.allowExternalAssets),
     ...buildCollaborationPlugins(options),
     ...SlashKit,
     AutoformatPlugin,

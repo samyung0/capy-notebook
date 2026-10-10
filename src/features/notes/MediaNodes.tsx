@@ -56,6 +56,7 @@ import {
   type plateMediaType,
 } from './media';
 import { MEDIA_CAPTION_CLASS } from './nodeStyles';
+import { pastedImageUrl, settlePastedImage } from './pastedImages';
 import { ToolbarButton } from './toolbar/ToolbarButton';
 import { youtubeVideoId } from './youtube';
 
@@ -172,13 +173,27 @@ export const MediaPlaceholderElement = withHOC(
 
     useEffect(() => {
       if (!canCreateAssets) return;
-      const dropped = api.placeholder.getUploadingFile(element.id as string);
+      const id = element.id as string;
+      const dropped = api.placeholder.getUploadingFile(id);
       if (dropped) void replaceCurrentPlaceholder(dropped);
-      return () => abortRef.current?.abort();
+      // A pasted <img>: the browser reads it and it uploads like a dropped
+      // file, or it becomes a link to its URL (pastedImages.ts).
+      const pasted = !dropped && pastedImageUrl(id);
+      const reading = new AbortController();
+      if (pasted)
+        void settlePastedImage(editor, id, pasted, {
+          signal: reading.signal,
+          upload: replaceCurrentPlaceholder,
+        });
+      return () => {
+        reading.abort();
+        abortRef.current?.abort();
+      };
     }, [
       api.placeholder,
       canCreateAssets,
-      element.id,
+      editor,
+      element,
       replaceCurrentPlaceholder,
     ]);
 
