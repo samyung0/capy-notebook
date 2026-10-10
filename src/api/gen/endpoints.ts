@@ -2945,6 +2945,57 @@ export const getSourceSession = async (id: string,
 
 
 
+export type captureFileThumbnailResponse204 = {
+  data: void
+  status: 204
+}
+
+export type captureFileThumbnailResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type captureFileThumbnailResponseSuccess = (captureFileThumbnailResponse204) & {
+  headers: Headers;
+};
+export type captureFileThumbnailResponseError = (captureFileThumbnailResponseDefault) & {
+  headers: Headers;
+};
+
+export type captureFileThumbnailResponse = (captureFileThumbnailResponseSuccess | captureFileThumbnailResponseError)
+
+export const getCaptureFileThumbnailUrl = (id: string,) => {
+
+
+
+
+  return `/api/files/${id}/thumbnail`
+}
+
+/**
+ * @summary Store a browser capture of an edited Office file as its thumbnail
+ */
+export const captureFileThumbnail = async (id: string,
+    captureFileThumbnailBody: Blob, options?: RequestInit): Promise<captureFileThumbnailResponse> => {
+
+  const res = await fetch(getCaptureFileThumbnailUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'image/webp', ...options?.headers },
+    body: captureFileThumbnailBody
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: captureFileThumbnailResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as captureFileThumbnailResponse
+}
+
+
+
 export type createFlashcardSetResponse201 = {
   data: FlashcardSet
   status: 201

@@ -2070,6 +2070,16 @@ export const GetSourceSessionResponse = zod.object({
 
 
 /**
+ * @summary Store a browser capture of an edited Office file as its thumbnail
+ */
+export const CaptureFileThumbnailParams = zod.object({
+  "id": zod.string()
+})
+
+export const CaptureFileThumbnailResponse = zod.void()
+
+
+/**
  * @summary Create flashcards
  */
 export const createFlashcardSetBodyColorDefault = `green`;
