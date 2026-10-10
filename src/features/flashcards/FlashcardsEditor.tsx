@@ -2,6 +2,7 @@ import { useContext, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BlockToolbar } from '@/components/ui/BlockToolbar';
 import { Card } from '@/components/ui/Card';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 import { Icon } from '@/components/ui/Icon';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import type {
@@ -48,6 +49,8 @@ export function FlashcardsEditor({
   const [editing, setEditing] = useState<{ id: string; added: boolean } | null>(
     null
   );
+  // The card waiting on the remove confirmation (main 621c3dd0).
+  const [removing, setRemoving] = useState<string | null>(null);
 
   function remove(id: string) {
     if (cards.length <= 1) {
@@ -99,7 +102,7 @@ export function FlashcardsEditor({
               <ToolbarButton
                 disabled={cards.length <= 1 && !onEmpty}
                 label={m.editor_remove_card()}
-                onClick={() => remove(card.id)}
+                onClick={() => setRemoving(card.id)}
                 tooltipSide="top"
                 variant="danger-light"
               >
@@ -137,10 +140,7 @@ export function FlashcardsEditor({
           onClose={close}
           onRemove={
             cards.length > 1 || onEmpty
-              ? () => {
-                  setEditing(null);
-                  remove(editing.id);
-                }
+              ? () => setRemoving(editing.id)
               : undefined
           }
           setId={setId}
@@ -149,6 +149,18 @@ export function FlashcardsEditor({
           undo={undo}
         />
       )}
+      <ConfirmDialog
+        body={m.editor_remove_card_confirm_body()}
+        confirmLabel={m.action_remove()}
+        onClose={() => setRemoving(null)}
+        onConfirm={() => {
+          if (!removing) return;
+          if (editing?.id === removing) setEditing(null);
+          remove(removing);
+        }}
+        open={removing !== null}
+        title={m.editor_remove_card_confirm_title()}
+      />
     </div>
   );
 }

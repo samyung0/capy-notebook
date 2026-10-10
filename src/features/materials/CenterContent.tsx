@@ -481,11 +481,11 @@ export function MaterialContent({
               materialId={materialId}
               onReadOnly={() => setReadOnly(true)}
               onStatusChange={onEditorStatusChange}
+              provenance={material.provenance}
               title={material.title}
             />
           </Suspense>
         </AppErrorBoundary>
-        <MaterialAttributionFooter provenance={material.provenance} />
       </div>
     );
   if (

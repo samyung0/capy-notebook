@@ -25,7 +25,7 @@ import {
   LiveStatus,
   UndoButtons,
 } from '@/features/collaboration/LiveItemControls';
-import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
+import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
 import { MaterialModeToggle } from '@/features/materials/MaterialModeToggle';
 import {
   useQuizQuestions,
@@ -208,7 +208,7 @@ function QuizEditor({ quizId }: { quizId: string }) {
                 )}
               </>
             )}
-            <MaterialAttributionFooter provenance={quiz.provenance} />
+            <SourcesLine className="mt-16 pb-4" provenance={quiz.provenance} />
           </>
         ) : (
           <p className="py-8 text-center text-fg-muted">{m.quiz_not_found()}</p>

@@ -4,6 +4,7 @@ import { editorImageMaxBytes, uploadEditorAsset } from '@/api/editorAssets';
 import type { Question } from '@/api/types';
 import { SaveBanner } from '@/components/banners/SaveBanner';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 import { Icon } from '@/components/ui/Icon';
 import type { ItemRoomStatus } from '@/features/collaboration/itemRoom';
 import type { UndoTarget } from '@/features/collaboration/undo';
@@ -75,6 +76,8 @@ export function QuizForm({
     id: string;
   } | null>(null);
   const question = editing && questions.find((q) => q.id === editing.id);
+  // The question waiting on the remove confirmation (main 621c3dd0).
+  const [removing, setRemoving] = useState<string | null>(null);
   const remove = (id: string) => {
     if (questions.length <= 1 && onEmpty) return onEmpty();
     removeQuestion(content, keys, id);
@@ -95,7 +98,7 @@ export function QuizForm({
       </Button>
       <Button
         iconLeft="trash"
-        onClick={() => remove(item.id)}
+        onClick={() => setRemoving(item.id)}
         size="sm"
         type="button"
         variant="danger-light"
@@ -152,6 +155,16 @@ export function QuizForm({
       >
         {m.quiz_add_question()}
       </Button>
+      <ConfirmDialog
+        body={m.quiz_remove_question_confirm_body()}
+        confirmLabel={m.action_remove()}
+        onClose={() => setRemoving(null)}
+        onConfirm={() => {
+          if (removing) remove(removing);
+        }}
+        open={removing !== null}
+        title={m.quiz_remove_question_confirm_title()}
+      />
       {question && (
         <Suspense fallback={null}>
           <QuestionDialog

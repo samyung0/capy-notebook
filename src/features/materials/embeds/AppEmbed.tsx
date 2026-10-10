@@ -64,6 +64,7 @@ function LiveSetStudy({ material }: { material: Material }) {
       embedded
       name=""
       onRate={() => undefined}
+      provenance={material.provenance}
       trail={[]}
     />
   );
@@ -112,7 +113,12 @@ export function AppEmbedEdit({
     </QuizGate>
   ) : (
     <SetGate materialId={materialId} ownerId={ownerId}>
-      {() => <LiveSetEdit materialId={materialId} onEmpty={onEmpty} />}
+      {(material) => (
+        <>
+          <LiveSetEdit materialId={materialId} onEmpty={onEmpty} />
+          <SourcesLine className="mt-3" provenance={material.provenance} />
+        </>
+      )}
     </SetGate>
   );
 }

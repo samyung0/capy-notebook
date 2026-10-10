@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import * as Y from 'yjs';
 import { qk } from '@/api/client';
 import { useMe } from '@/api/hooks';
-import type { Material } from '@/api/types';
+import type { Material, Provenance } from '@/api/types';
 import { SaveBanner } from '@/components/banners/SaveBanner';
 import { Icon } from '@/components/ui/Icon';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
@@ -28,6 +28,7 @@ import {
   useMermaid,
   withMermaid,
 } from '@/features/materials/liveMermaid';
+import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { MediaFrame } from '@/features/materials/MediaFrame';
 import { MermaidPreview } from '@/features/materials/MediaPreview';
 import {
@@ -62,10 +63,12 @@ export default function MermaidMaterialEditor({
   materialId,
   onReadOnly,
   onStatusChange,
+  provenance,
   title,
 }: {
   kind: 'mindmap' | 'diagram';
   materialId: string;
+  provenance: Provenance | undefined;
   /** The room turned read-only: the caller drops to View. */
   onReadOnly: () => void;
   onStatusChange: (status: NoteEditorStatus | null) => void;
@@ -128,6 +131,7 @@ export default function MermaidMaterialEditor({
       <LiveDiagram
         history={room.history}
         live={live}
+        provenance={provenance}
         readOnly={snapshot.offline === 'offline-limit'}
         title={title}
       />
@@ -159,11 +163,13 @@ function ReadOnlyDiagram({
 function LiveDiagram({
   history,
   live,
+  provenance,
   readOnly,
   title,
 }: {
   history: UndoTarget;
   live: LiveMermaid;
+  provenance: Provenance | undefined;
   readOnly: boolean;
   title: string;
 }) {
@@ -268,6 +274,7 @@ function LiveDiagram({
               value={caption.value}
             />
           )}
+          <MaterialAttributionFooter inline provenance={provenance} />
         </div>
       </div>
       <MermaidPreview
