@@ -1353,6 +1353,11 @@ exists; the local bundle is gone once the first ingest finished.
    builds answering across the documents. See `human/agentic-retrieval.md`
    for the decision and the telemetry that would reopen it.
 
+Once the job has committed, before the local source is cleaned up, the worker
+captures the file's list-card thumbnail (page 1 as a small WebP) or, for a text
+source, its opening characters; best effort, never retried, never failing the
+ingest ([thumbnails.md](thumbnails.md)).
+
 Concurrent duplicate jobs coordinate on the canonical content row. The creator
 indexes it; other workers wait for its ready marker. A failed creator removes
 the processing claim so a waiting upload can retry.
