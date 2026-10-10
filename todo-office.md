@@ -127,6 +127,18 @@ check); it applies at the first promotion.
 
 ## Queued tracks (each needs its own decisions and a visual checkpoint)
 
+- **After the rust round, Office gaps in this order (Epo 2026-10-10;
+  evidence in `capy-harness/2026-10-06-rust-round/parity-survey/`, then
+  `bench/parity/`):** (1) XLSX column/row resize, sheet-tab rename/delete and
+  fill down (engine operations exist); (2) XLSX sort and fill handle; (3) PPTX
+  SmartArt from the cached drawing, duplicate slide and object; (4) DOCX rich
+  paste; (5) co-editor cursors in all three formats (the Rust server already
+  relays presence per room; the client bridge passes document changes only);
+  then conditional formatting and equations. Open behaviour questions for
+  those tracks: XLSX filters per person or shared; honour XLSX sheet
+  protection or let Capy permissions replace it; PPTX cut; spell-check
+  languages and dictionaries.
+
 - **Order after the 2026-10-05 batch:** one optimization round (Yjs save
   latency, typing latency, memory; Office and Plate), then heap/latency
   ceilings from the largest allowed files, then a prod-box stress run for the
