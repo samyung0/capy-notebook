@@ -104,10 +104,7 @@ function Row({
     <Link
       className={cn(
         BASE_BUTTON_STYLE,
-        // Only the press animates. Chrome runs a background-color transition on
-        // the compositor but text color needs main-thread paints, which the
-        // incoming route's render blocks, so the bg would land long before the text.
-        'flex h-fit justify-start px-0 py-0 leading-(--body-line-height) transition-transform active:-rotate-1',
+        'flex h-fit justify-start px-0 py-0 leading-(--body-line-height) active:-rotate-1',
         collapsed ? 'h-10 w-10 justify-center' : 'w-full gap-3 px-3 py-2',
         active
           ? 'bg-action font-bold text-action-fg'
