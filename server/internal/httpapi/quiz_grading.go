@@ -32,7 +32,7 @@ import (
 // answers plus every closed answer of a 100-part quiz.
 const answersMaxBytes = 2 << 20
 
-var errGradeRequest = errors.New("answers must name parts of these questions, and an open answer is text of at most 5,000 characters")
+var errGradeRequest = errors.New("answers must name parts of these questions, give every ordering part an order, and keep an open answer to text of at most 5,000 characters")
 
 type openPart struct {
 	question   string
@@ -49,9 +49,10 @@ type gradePlan struct {
 	open      map[string]openPart
 }
 
-// planGrading refuses answers to parts the questions do not have and open
-// answers that are not text or are too long. Blank open answers earn 0
-// without a Jev call.
+// planGrading refuses answers to parts the questions do not have, ordering
+// parts with no order (the shown order is always an answer, so a client sends
+// it), and open answers that are not text or are too long. Blank open answers
+// earn 0 without a Jev call.
 func planGrading(qs []map[string]any, answers map[string]any) (gradePlan, error) {
 	plan := gradePlan{questions: qs, answers: answers, open: map[string]openPart{}}
 	known := map[string]bool{}
@@ -61,7 +62,11 @@ func planGrading(qs []map[string]any, answers map[string]any) (gradePlan, error)
 			p, _ := raw.(map[string]any)
 			id, _ := p["id"].(string)
 			known[id] = true
-			if a, _ := p["answer"].(map[string]any); a["type"] != "open" || answers[id] == nil {
+			a, _ := p["answer"].(map[string]any)
+			if a["type"] == "ordering" && answers[id] == nil {
+				return gradePlan{}, errGradeRequest
+			}
+			if a["type"] != "open" || answers[id] == nil {
 				continue
 			}
 			text, ok := answers[id].(string)

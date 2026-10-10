@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/questions"
 	"github.com/samyung0/capy-notebook/server/internal/review"
 )
 
@@ -504,7 +505,10 @@ func lockRating(ctx context.Context, tx pgx.Tx, userID, materialID string) error
 	return err
 }
 
-func rateAttemptTx(ctx context.Context, tx pgx.Tx, userID string, mt Material, snapshot json.RawMessage, now time.Time) error {
+// rateAttemptTx rates each question of a workspace quiz attempt from its
+// awarded marks. A question the learner left wholly blank is not rated: it
+// still scores 0 in the attempt, but a skip says nothing about recall.
+func rateAttemptTx(ctx context.Context, tx pgx.Tx, userID string, mt Material, answers, snapshot json.RawMessage, now time.Time) error {
 	if mt.Kind != "quiz" || mt.WorkspaceID == "" || mt.ParentMaterialID != "" {
 		return nil
 	}
@@ -523,6 +527,10 @@ func rateAttemptTx(ctx context.Context, tx pgx.Tx, userID string, mt Material, s
 	if err := json.Unmarshal(snapshot, &qs); err != nil {
 		return err
 	}
+	var given map[string]any
+	if err := json.Unmarshal(answers, &given); err != nil {
+		return err
+	}
 	prev, err := reviewStates(ctx, tx, userID, mt.ID)
 	if err != nil {
 		return err
@@ -531,7 +539,7 @@ func rateAttemptTx(ctx context.Context, tx pgx.Tx, userID string, mt Material, s
 		id, _ := q["id"].(string)
 		it, ok := byID[id]
 		score, scored := review.QuestionScore(q)
-		if !ok || !scored {
+		if !ok || !scored || questions.Blank(q, given) {
 			continue
 		}
 		if err := rateTx(ctx, tx, userID, it, prev, review.ScoreRating(score), now); err != nil {

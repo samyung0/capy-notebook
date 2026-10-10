@@ -24,6 +24,10 @@ const studySnapshot = `[
  {"id":"q2","stem":[],"parts":[{"id":"q2:part:1","blocks":[],"answer":{"type":"boolean","correct":false},"marks":1,"awarded":0,"solution":[]}],"layout":"paper","labels":"letters"}
 ]`
 
+// studyAnswers answers both studySnapshot questions; a wholly blank question
+// is not rated.
+const studyAnswers = `{"q1:part:1":true,"q2:part:1":true}`
+
 type studyFixture struct {
 	s    *Store
 	user string
@@ -100,7 +104,7 @@ func TestPracticeRecordsStudyProgress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.s.CreateAttempt(ctx, f.user, quiz.ID, 1, 2, json.RawMessage(`{}`), json.RawMessage(studySnapshot)); err != nil {
+	if _, err := f.s.CreateAttempt(ctx, f.user, quiz.ID, 1, 2, json.RawMessage(studyAnswers), json.RawMessage(studySnapshot)); err != nil {
 		t.Fatal(err)
 	}
 	if got := f.progress(t, quiz.ID); got != "done" {
@@ -121,7 +125,7 @@ func TestPracticeRecordsStudyProgress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if attempt, err := f.s.CreateAttempt(ctx, f.user, embedded.ID, 1, 2, json.RawMessage(`{}`), json.RawMessage(studySnapshot)); err != nil || attempt.ID != "" || attempt.Correct != 1 {
+	if attempt, err := f.s.CreateAttempt(ctx, f.user, embedded.ID, 1, 2, json.RawMessage(studyAnswers), json.RawMessage(studySnapshot)); err != nil || attempt.ID != "" || attempt.Correct != 1 {
 		t.Fatalf("embedded attempt %+v %v", attempt, err)
 	}
 	if n := f.count(t, `SELECT count(*) FROM attempts WHERE material_id=$1`, embedded.ID); n != 0 {
@@ -282,7 +286,8 @@ func TestQuizAttemptRatesHalfMarks(t *testing.T) {
 		t.Fatal(err)
 	}
 	snapshot, _ := json.Marshal([]any{question("a", 0.5), question("b", 1), question("c", 1.5)})
-	if _, err := f.s.CreateAttempt(ctx, f.user, quiz.ID, 3, 6, json.RawMessage(`{}`), snapshot); err != nil {
+	answers := json.RawMessage(`{"a:part:1":"x","b:part:1":"x","c:part:1":"x"}`)
+	if _, err := f.s.CreateAttempt(ctx, f.user, quiz.ID, 3, 6, answers, snapshot); err != nil {
 		t.Fatal(err)
 	}
 	if got := f.progress(t, quiz.ID); got != "done" {
@@ -292,6 +297,26 @@ func TestQuizAttemptRatesHalfMarks(t *testing.T) {
 		if n := f.count(t, `SELECT rating FROM review_log WHERE user_id=$1 AND material_id=$2 AND item_id=$3`, f.user, quiz.ID, item); n != want {
 			t.Errorf("question %s rated %d, want %d", item, n, want)
 		}
+	}
+}
+
+// A question left wholly blank scores 0 in the attempt but is not rated: a
+// skip says nothing about recall.
+func TestQuizAttemptSkipsBlankQuestions(t *testing.T) {
+	f := newStudyFixture(t, "u_study_blank")
+	ctx := context.Background()
+	quiz, err := f.s.CreateQuiz(ctx, Quiz{UserID: f.user, Name: "Quiz", WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name, Questions: json.RawMessage(studyQuestions), Privacy: PrivacyPrivate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.CreateAttempt(ctx, f.user, quiz.ID, 1, 2, json.RawMessage(`{"q1:part:1":true}`), json.RawMessage(studySnapshot)); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count(t, `SELECT count(*) FROM review_log WHERE user_id=$1 AND material_id=$2 AND item_id='q1'`, f.user, quiz.ID); n != 1 {
+		t.Fatalf("answered question ratings = %d, want 1", n)
+	}
+	if n := f.count(t, `SELECT count(*) FROM review_log WHERE user_id=$1 AND material_id=$2 AND item_id='q2'`, f.user, quiz.ID); n != 0 {
+		t.Fatalf("blank question ratings = %d, want 0", n)
 	}
 }
 

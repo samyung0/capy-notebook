@@ -555,7 +555,6 @@ function PartRunner({
     const ordered = Array.isArray(value)
       ? value.filter((item) => typeof item === 'string')
       : null;
-    if (review && !ordered?.length) return <p>—</p>;
     const current = ordered ?? answer.items;
     // On review the items are the key's stored order.
     const right = (item: string, i: number) => answer.items[i] === item;

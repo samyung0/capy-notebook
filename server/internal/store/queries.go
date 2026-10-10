@@ -2038,7 +2038,7 @@ func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, co
 	if err != nil {
 		return Attempt{}, err
 	}
-	if err := rateAttemptTx(ctx, tx, userID, mt, questions, a.TakenAt); err != nil {
+	if err := rateAttemptTx(ctx, tx, userID, mt, answers, questions, a.TakenAt); err != nil {
 		return Attempt{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {

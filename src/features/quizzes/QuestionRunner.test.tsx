@@ -96,7 +96,7 @@ it('reviews an ordering answered by item text against the stored order', () => {
   expect(html).not.toContain('Should be 3');
 });
 
-it('shows an open part with one mark per marking item and an unanswered ordering response', () => {
+it('shows an open part with one mark per marking item', () => {
   const question = exampleQuestion('open', {
     accepted: ['Supporting evidence'],
     hints: [],
@@ -117,15 +117,4 @@ it('shows an open part with one mark per marking item and an unanswered ordering
   );
   expect(html).toContain('1.5 / 2');
   expect(html).toContain('text-tint-warning-fg');
-  const ordering = exampleQuestion('ordering', {
-    items: ['First event', 'Second event'],
-    type: 'ordering',
-  });
-  ordering.parts[0].awarded = 0;
-  const unanswered = renderToStaticMarkup(
-    <QuestionRunner answers={{}} question={ordering} review />
-  );
-  expect(unanswered).toContain('0 / 1');
-  expect(unanswered).toContain('<p>—</p>');
-  expect(unanswered).not.toContain('First event');
 });

@@ -162,6 +162,32 @@ func TestCreateAttemptGradesOnTheServer(t *testing.T) {
 	}
 }
 
+// An ordering part always has an answer, the order the learner was shown, so
+// grading refuses one sent without it rather than marking it wrong.
+func TestAttemptNeedsAnOrder(t *testing.T) {
+	h, _, _ := openGradingAPI(t, "full")
+	rec := doReq(t, h, http.MethodPost, "/api/quizzes", "u_owner", map[string]any{
+		"name": "Order", "privacy": "private",
+		"questions": []any{map[string]any{
+			"id": "q1", "stem": []any{}, "layout": "paper", "labels": "letters",
+			"parts": []any{map[string]any{"id": "order-a", "blocks": []any{map[string]any{"type": "text", "text": "Order them."}},
+				"answer": map[string]any{"type": "ordering", "items": []any{"One", "Two", "Three"}}, "marks": 1, "solution": []any{}}},
+		}},
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create quiz → %d %s", rec.Code, rec.Body.String())
+	}
+	var quiz struct{ ID string }
+	_ = json.Unmarshal(rec.Body.Bytes(), &quiz)
+	if rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+quiz.ID+"/attempts", "u_owner", map[string]any{"answers": map[string]any{}}); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("attempt without an order → %d, want 422", rec.Code)
+	}
+	rec = doReq(t, h, http.MethodPost, "/api/quizzes/"+quiz.ID+"/attempts", "u_owner", map[string]any{"answers": map[string]any{"order-a": []any{"One", "Two", "Three"}}})
+	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"correct":1`) {
+		t.Fatalf("attempt with the shown order → %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 // Jev's partial credit is half of each item's own marks.
 func TestCreateAttemptScalesPartialCreditByItemMarks(t *testing.T) {
 	h, _, _ := openGradingAPI(t, "partial")

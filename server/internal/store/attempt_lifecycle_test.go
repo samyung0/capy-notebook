@@ -125,7 +125,7 @@ func TestListAttemptsSortsFiltersAndPages(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		a, err := f.s.CreateAttempt(ctx, f.user, quiz.ID, correct, 2, json.RawMessage(`{}`), json.RawMessage(studySnapshot))
+		a, err := f.s.CreateAttempt(ctx, f.user, quiz.ID, correct, 2, json.RawMessage(studyAnswers), json.RawMessage(studySnapshot))
 		if err != nil {
 			t.Fatal(err)
 		}
