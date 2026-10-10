@@ -20,6 +20,7 @@ vi.mock('@/api/hooks', () => ({
   }),
   useRateReviewItem: () => ({ mutateAsync: vi.fn() }),
   useSetWorkspaceStudyEnabled: () => ({ mutate: vi.fn() }),
+  useWorkspace: () => ({ data: undefined }),
   useWorkspaceStudy: () => ({
     data: {
       enabled: false,

@@ -820,6 +820,26 @@ export const BankQuestionsResponse = zod.object({
 
 
 /**
+ * @summary A topic's questions with the learner's latest results, for its summary page
+ */
+export const BankTopicSummaryParams = zod.object({
+  "topicId": zod.string()
+})
+
+export const BankTopicSummaryResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "questions": zod.array(zod.object({
+  "answerTypes": zod.array(zod.string()).describe('The distinct answer types of the question\'s parts, in part order'),
+  "id": zod.string(),
+  "marks": zod.int(),
+  "position": zod.int(),
+  "preview": zod.string(),
+  "score": zod.number().nullable().describe('The latest answer\'s score for the current content, 0 to 1; null when not answered')
+})).describe('The topic\'s current questions in topic order, with the learner\'s latest results')
+})
+
+
+/**
  * @summary Billing info
  */
 export const GetBillingResponse = zod.object({
@@ -2558,6 +2578,79 @@ export const UpdateLabelResponse = zod.object({
 
 
 /**
+ * @summary Learning's Progress tab: workspaces in progress and finished, the leading one's items
+ */
+export const getLearningProgressResponseActiveItemCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
+export const getLearningProgressResponseActiveItemCoverLineMax = 40;
+
+export const getLearningProgressResponseActiveItemCoverSeedMax = 16;
+
+
+export const getLearningProgressResponseActiveItemCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
+export const getLearningProgressResponseFinishedItemCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
+export const getLearningProgressResponseFinishedItemCoverLineMax = 40;
+
+export const getLearningProgressResponseFinishedItemCoverSeedMax = 16;
+
+
+export const getLearningProgressResponseFinishedItemCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
+
+
+export const GetLearningProgressResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "active": zod.array(zod.object({
+  "cover": zod.object({
+  "color": zod.string().regex(getLearningProgressResponseActiveItemCoverColorRegExp),
+  "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
+  "line": zod.string().max(getLearningProgressResponseActiveItemCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
+  "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
+  "seed": zod.string().max(getLearningProgressResponseActiveItemCoverSeedMax).regex(getLearningProgressResponseActiveItemCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
+  "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
+}).optional(),
+  "done": zod.int(),
+  "iconId": zod.string(),
+  "lastStudiedAt": zod.iso.datetime({"offset":true}),
+  "name": zod.string(),
+  "total": zod.int(),
+  "workspaceId": zod.string()
+})),
+  "finished": zod.array(zod.object({
+  "cover": zod.object({
+  "color": zod.string().regex(getLearningProgressResponseFinishedItemCoverColorRegExp),
+  "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
+  "line": zod.string().max(getLearningProgressResponseFinishedItemCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
+  "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
+  "seed": zod.string().max(getLearningProgressResponseFinishedItemCoverSeedMax).regex(getLearningProgressResponseFinishedItemCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
+  "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
+}).optional(),
+  "done": zod.int(),
+  "iconId": zod.string(),
+  "lastStudiedAt": zod.iso.datetime({"offset":true}),
+  "name": zod.string(),
+  "total": zod.int(),
+  "workspaceId": zod.string()
+})),
+  "lead": zod.object({
+  "chapters": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "order": zod.int()
+})),
+  "items": zod.array(zod.object({
+  "chapterId": zod.string().nullable(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "position": zod.int(),
+  "state": zod.enum(['started', 'done']).optional(),
+  "title": zod.string(),
+  "type": zod.enum(['file', 'material'])
+})),
+  "workspaceId": zod.string()
+}).optional()
+})
+
+
+/**
  * @summary List notes, quizzes and flashcard sets across the caller's owned or member workspaces
  */
 export const listOwnedMaterialsQueryScopeDefault = `owned`;
@@ -3279,6 +3372,9 @@ export const GetMeResponse = zod.object({
   "miniChecks": zod.boolean().optional(),
   "practice": zod.enum(['none', 'quiz', 'flashcards', 'both']).optional(),
   "quizLength": zod.int().min(1).max(getMeResponseStudyPreferencesQuizLengthMax).optional(),
+  "reviewFocus": zod.enum(['balanced', 'tricky', 'fading', 'learned']).optional(),
+  "reviewItems": zod.enum(['both', 'quiz', 'flashcards']).optional(),
+  "reviewSize": zod.union([zod.literal(10),zod.literal(20),zod.literal(30),zod.literal(50)]).optional(),
   "visualAids": zod.enum(['fewer', 'more']).optional()
 }),
   "studyProgress": zod.boolean(),
@@ -3345,6 +3441,9 @@ export const UpdateMeResponse = zod.object({
   "miniChecks": zod.boolean().optional(),
   "practice": zod.enum(['none', 'quiz', 'flashcards', 'both']).optional(),
   "quizLength": zod.int().min(1).max(updateMeResponseStudyPreferencesQuizLengthMax).optional(),
+  "reviewFocus": zod.enum(['balanced', 'tricky', 'fading', 'learned']).optional(),
+  "reviewItems": zod.enum(['both', 'quiz', 'flashcards']).optional(),
+  "reviewSize": zod.union([zod.literal(10),zod.literal(20),zod.literal(30),zod.literal(50)]).optional(),
   "visualAids": zod.enum(['fewer', 'more']).optional()
 }),
   "studyProgress": zod.boolean(),
@@ -3451,6 +3550,9 @@ export const SetStudyPreferencesBody = zod.object({
   "miniChecks": zod.boolean().optional(),
   "practice": zod.enum(['none', 'quiz', 'flashcards', 'both']).optional(),
   "quizLength": zod.int().min(1).max(setStudyPreferencesBodyQuizLengthMax).optional(),
+  "reviewFocus": zod.enum(['balanced', 'tricky', 'fading', 'learned']).optional(),
+  "reviewItems": zod.enum(['both', 'quiz', 'flashcards']).optional(),
+  "reviewSize": zod.union([zod.literal(10),zod.literal(20),zod.literal(30),zod.literal(50)]).optional(),
   "visualAids": zod.enum(['fewer', 'more']).optional()
 })
 
@@ -4576,10 +4678,33 @@ export const UpdateQuizSharingResponse = zod.object({
 
 
 
+export const checkReviewItemBodySessionItemsMax = 50;
+
+
+
+
 export const CheckReviewItemBody = zod.object({
   "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers by part id'),
   "itemId": zod.string().min(1),
+  "materialId": zod.string().min(1),
+  "session": zod.object({
+  "chapterId": zod.string().optional(),
+  "evidence": zod.object({
+  "forgotten": zod.int(),
+  "lastPractisedAt": zod.iso.datetime({"offset":true}),
+  "missed": zod.int(),
+  "repeated": zod.int(),
+  "young": zod.int()
+}).optional(),
+  "group": zod.enum(['chapter', 'others', 'workspace']),
+  "id": zod.uuid().describe('Minted by the browser when the session starts'),
+  "items": zod.array(zod.object({
+  "itemId": zod.string().min(1),
   "materialId": zod.string().min(1)
+})).min(1).max(checkReviewItemBodySessionItemsMax),
+  "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('Omitted for a review started from the workspace list'),
+  "workspaceId": zod.string().min(1)
+}).optional().describe('The review session the answer belongs to; the first answer records it')
 })
 
 export const CheckReviewItemResponse = zod.object({
@@ -4587,6 +4712,49 @@ export const CheckReviewItemResponse = zod.object({
   "correct": zod.number(),
   "question": zod.record(zod.string(), zod.unknown()),
   "total": zod.number()
+})
+
+
+/**
+ * @summary Learning's Review tab: suggested reviews, sessions to continue, every workspace
+ */
+export const GetReviewOverviewResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "suggestions": zod.array(zod.object({
+  "chapterId": zod.string().optional(),
+  "chapterName": zod.string().optional(),
+  "evidence": zod.object({
+  "forgotten": zod.int(),
+  "lastPractisedAt": zod.iso.datetime({"offset":true}),
+  "missed": zod.int(),
+  "repeated": zod.int(),
+  "young": zod.int()
+}),
+  "group": zod.enum(['chapter', 'others', 'workspace']),
+  "iconId": zod.string(),
+  "items": zod.int(),
+  "mode": zod.enum(['tricky', 'fading', 'learned']),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string()
+})),
+  "unfinished": zod.array(zod.object({
+  "answered": zod.int(),
+  "chapterName": zod.string().optional(),
+  "group": zod.enum(['chapter', 'others', 'workspace']),
+  "iconId": zod.string(),
+  "id": zod.string(),
+  "lastAnswerAt": zod.iso.datetime({"offset":true}),
+  "total": zod.int(),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string()
+})),
+  "workspaces": zod.array(zod.object({
+  "iconId": zod.string(),
+  "lastReviewedAt": zod.iso.datetime({"offset":true}).optional(),
+  "name": zod.string(),
+  "reviewable": zod.int(),
+  "workspaceId": zod.string()
+}))
 })
 
 
@@ -4599,28 +4767,129 @@ export const rateReviewItemBodyRatingMax = 4;
 
 
 
+export const rateReviewItemBodySessionItemsMax = 50;
+
+
+
+
 export const RateReviewItemBody = zod.object({
   "itemId": zod.string().min(1),
   "materialId": zod.string().min(1),
-  "rating": zod.int().min(1).max(rateReviewItemBodyRatingMax).describe('A flashcard\'s button: 1 Again .. 4 Easy; questions are rated by POST \/api\/review\/check')
+  "rating": zod.int().min(1).max(rateReviewItemBodyRatingMax).describe('A flashcard\'s button: 1 Again .. 4 Easy; questions are rated by POST \/api\/review\/check'),
+  "session": zod.object({
+  "chapterId": zod.string().optional(),
+  "evidence": zod.object({
+  "forgotten": zod.int(),
+  "lastPractisedAt": zod.iso.datetime({"offset":true}),
+  "missed": zod.int(),
+  "repeated": zod.int(),
+  "young": zod.int()
+}).optional(),
+  "group": zod.enum(['chapter', 'others', 'workspace']),
+  "id": zod.uuid().describe('Minted by the browser when the session starts'),
+  "items": zod.array(zod.object({
+  "itemId": zod.string().min(1),
+  "materialId": zod.string().min(1)
+})).min(1).max(rateReviewItemBodySessionItemsMax),
+  "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('Omitted for a review started from the workspace list'),
+  "workspaceId": zod.string().min(1)
+}).optional().describe('The review session the rating belongs to; the first answer records it')
 })
 
 export const RateReviewItemResponse = zod.void()
 
 
 /**
- * @summary Workspaces with study progress, for Learning's Review tab
+ * @summary Finished review sessions with their quiz and flashcard results
  */
-export const ListReviewWorkspacesResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "workspaces": zod.array(zod.object({
-  "done": zod.int(),
-  "name": zod.string(),
-  "reviewable": zod.int(),
-  "total": zod.int(),
-  "workspaceId": zod.string()
-}))
+export const listPastReviewsQuerySortDefault = `date`;
+export const listPastReviewsQueryDirDefault = `desc`;
+export const listPastReviewsQueryOffsetMin = 0;
+
+export const listPastReviewsQueryLimitDefault = 30;
+export const listPastReviewsQueryLimitMax = 100;
+
+
+
+export const ListPastReviewsQueryParams = zod.object({
+  "sort": zod.enum(['date', 'quiz', 'cards', 'time']).default(listPastReviewsQuerySortDefault),
+  "dir": zod.enum(['asc', 'desc']).default(listPastReviewsQueryDirDefault),
+  "workspaceId": zod.string().optional().describe('Comma-separated workspace ids'),
+  "has": zod.string().optional().describe('Comma-separated: quiz, flashcards; a session with either passes'),
+  "offset": zod.int().min(listPastReviewsQueryOffsetMin).optional(),
+  "limit": zod.int().min(1).max(listPastReviewsQueryLimitMax).default(listPastReviewsQueryLimitDefault)
 })
+
+export const ListPastReviewsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
+  "answered": zod.int(),
+  "cards": zod.object({
+  "correct": zod.number(),
+  "total": zod.number()
+}).optional(),
+  "chapterId": zod.string().optional(),
+  "chapterName": zod.string().optional(),
+  "finishedAt": zod.iso.datetime({"offset":true}),
+  "group": zod.enum(['chapter', 'others', 'workspace']),
+  "iconId": zod.string(),
+  "id": zod.string(),
+  "lastAnswerAt": zod.iso.datetime({"offset":true}),
+  "mode": zod.enum(['tricky', 'fading', 'learned']).optional(),
+  "quiz": zod.object({
+  "correct": zod.number(),
+  "total": zod.number()
+}).optional(),
+  "startedAt": zod.iso.datetime({"offset":true}),
+  "total": zod.int(),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string()
+})),
+  "more": zod.boolean()
+})
+
+
+/**
+ * @summary An unfinished review session's items still to answer
+ */
+export const ResumeReviewSessionParams = zod.object({
+  "id": zod.uuid()
+})
+
+export const ResumeReviewSessionResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "answered": zod.int(),
+  "chapterId": zod.string().optional(),
+  "evidence": zod.object({
+  "forgotten": zod.int(),
+  "lastPractisedAt": zod.iso.datetime({"offset":true}),
+  "missed": zod.int(),
+  "repeated": zod.int(),
+  "young": zod.int()
+}).optional(),
+  "group": zod.enum(['chapter', 'others', 'workspace']),
+  "items": zod.array(zod.object({
+  "back": zod.string().optional(),
+  "front": zod.string().optional(),
+  "itemId": zod.string(),
+  "kind": zod.enum(['card', 'question']),
+  "materialId": zod.string(),
+  "materialTitle": zod.string(),
+  "question": zod.record(zod.string(), zod.unknown()).optional()
+})),
+  "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('Omitted for a review started from the workspace list'),
+  "total": zod.int()
+})
+
+
+/**
+ * @summary End a review session before its last item
+ */
+export const FinishReviewSessionParams = zod.object({
+  "id": zod.uuid()
+})
+
+export const FinishReviewSessionResponse = zod.void()
 
 
 /**
@@ -5880,14 +6149,32 @@ export const UpdateWorkspaceMemberResponse = zod.void()
 
 
 /**
- * @summary Next mixed review session
+ * @summary A new review session: a suggestion's items, or the whole workspace's
  */
 export const GetWorkspaceReviewParams = zod.object({
   "id": zod.string()
 })
 
+export const getWorkspaceReviewQueryGroupDefault = `workspace`;
+
+export const GetWorkspaceReviewQueryParams = zod.object({
+  "group": zod.enum(['chapter', 'others', 'workspace']).default(getWorkspaceReviewQueryGroupDefault),
+  "chapterId": zod.string().optional().describe('The chapter of a chapter group'),
+  "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('A suggestion\'s mode; omitted for a review from the workspace list')
+})
+
 export const GetWorkspaceReviewResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "answered": zod.int(),
+  "chapterId": zod.string().optional(),
+  "evidence": zod.object({
+  "forgotten": zod.int(),
+  "lastPractisedAt": zod.iso.datetime({"offset":true}),
+  "missed": zod.int(),
+  "repeated": zod.int(),
+  "young": zod.int()
+}).optional(),
+  "group": zod.enum(['chapter', 'others', 'workspace']),
   "items": zod.array(zod.object({
   "back": zod.string().optional(),
   "front": zod.string().optional(),
@@ -5896,7 +6183,9 @@ export const GetWorkspaceReviewResponse = zod.object({
   "materialId": zod.string(),
   "materialTitle": zod.string(),
   "question": zod.record(zod.string(), zod.unknown()).optional()
-}))
+})),
+  "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('Omitted for a review started from the workspace list'),
+  "total": zod.int()
 })
 
 
@@ -6247,7 +6536,24 @@ export const GetWorkspaceStudyResponse = zod.object({
   "total": zod.number(),
   "workspaceName": zod.string()
 })),
-  "reviewable": zod.int()
+  "reviewable": zod.int(),
+  "suggestion": zod.object({
+  "chapterId": zod.string().optional(),
+  "chapterName": zod.string().optional(),
+  "evidence": zod.object({
+  "forgotten": zod.int(),
+  "lastPractisedAt": zod.iso.datetime({"offset":true}),
+  "missed": zod.int(),
+  "repeated": zod.int(),
+  "young": zod.int()
+}),
+  "group": zod.enum(['chapter', 'others', 'workspace']),
+  "iconId": zod.string(),
+  "items": zod.int(),
+  "mode": zod.enum(['tricky', 'fading', 'learned']),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string()
+}).optional()
 })
 
 

@@ -240,7 +240,7 @@ export function MermaidError({
             <div className={cn('flex', bad && 'bg-tint-error')} key={index}>
               <span
                 className={cn(
-                  'w-11 shrink-0 select-none pr-3.5 text-right text-fg-muted tabular-nums',
+                  'w-11 shrink-0 select-none pr-3.5 text-right text-fg-muted',
                   bad && 'font-bold text-solid-error'
                 )}
               >

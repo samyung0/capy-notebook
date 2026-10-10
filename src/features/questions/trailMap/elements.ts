@@ -5,6 +5,7 @@
  */
 import {
   catmull,
+  escapeText,
   fill,
   hatch,
   line,
@@ -1309,6 +1310,3 @@ export function lake(cx: number, cy: number, rx: number, ry: number, rng: Rng) {
     s += `<path class="tm-water" d="M${n(cx + dx * rx)} ${n(cy + dy * ry)} l${n(w * rx)} 0"/>`;
   return s;
 }
-
-const escapeText = (text: string) =>
-  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

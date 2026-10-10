@@ -35,8 +35,8 @@ func (e *WorkspaceLimitExceededError) Unwrap() error {
 }
 
 // gateOwnedWorkspacesTx serializes finite ownership limits on the recipient's
-// user row. OwnedWorkspaces == 0 is the in-memory representation of SQL NULL,
-// so current free and Pro plans pass without a lock or count query.
+// user row. OwnedWorkspaces == 0 is the in-memory representation of SQL NULL
+// (unlimited), which passes without a count query.
 func (s *Store) gateOwnedWorkspacesTx(
 	ctx context.Context,
 	tx pgx.Tx,

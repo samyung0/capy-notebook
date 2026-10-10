@@ -26,6 +26,7 @@ import type {
   BankQuestionsParams,
   BankReviewInputBody,
   BankSaveInputBody,
+  BankSummaryOutputBody,
   BillingCheckoutReq,
   BillingInfo,
   BootstrapSourceDocumentParams,
@@ -71,6 +72,7 @@ import type {
   GenerateReq,
   GetSourceSessionParams,
   GetSourceUploadPolicyParams,
+  GetWorkspaceReviewParams,
   GradeAnonymousQuizReq,
   GradedQuestion,
   GradedQuiz,
@@ -83,10 +85,12 @@ import type {
   InvoiceList,
   LLMCredentialsResponse,
   Label,
+  LearningProgress,
   ListModelsParams,
   ListNotificationsParams,
   ListOwnedFilesParams,
   ListOwnedMaterialsParams,
+  ListPastReviewsParams,
   ListTagsParams,
   ListTrashParams,
   ListUsageEventsParams,
@@ -108,6 +112,7 @@ import type {
   NotificationPrefs,
   PDFAnnotation,
   PDFAnnotationBody,
+  PastReviewsOutputBody,
   ProjectMaterialReq,
   PublicFlashcardSet,
   PublicQuiz,
@@ -121,8 +126,8 @@ import type {
   ReportEditIncidentReq,
   RequestAccountDeletionReq,
   RetryProcessingInputBody,
+  ReviewOverview,
   ReviewSession,
-  ReviewWorkspacesOutputBody,
   SaveCanvasReq,
   SearchParams,
   SearchResult,
@@ -1090,6 +1095,56 @@ export const bankQuestions = async (topicId: string,
 
   const data: bankQuestionsResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as bankQuestionsResponse
+}
+
+
+
+export type bankTopicSummaryResponse200 = {
+  data: BankSummaryOutputBody
+  status: 200
+}
+
+export type bankTopicSummaryResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type bankTopicSummaryResponseSuccess = (bankTopicSummaryResponse200) & {
+  headers: Headers;
+};
+export type bankTopicSummaryResponseError = (bankTopicSummaryResponseDefault) & {
+  headers: Headers;
+};
+
+export type bankTopicSummaryResponse = (bankTopicSummaryResponseSuccess | bankTopicSummaryResponseError)
+
+export const getBankTopicSummaryUrl = (topicId: string,) => {
+
+
+
+
+  return `/api/bank/topics/${topicId}/summary`
+}
+
+/**
+ * @summary A topic's questions with the learner's latest results, for its summary page
+ */
+export const bankTopicSummary = async (topicId: string, options?: RequestInit): Promise<bankTopicSummaryResponse> => {
+
+  const res = await fetch(getBankTopicSummaryUrl(topicId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: bankTopicSummaryResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as bankTopicSummaryResponse
 }
 
 
@@ -3582,6 +3637,56 @@ export const updateLabel = async (id: string,
 
   const data: updateLabelResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateLabelResponse
+}
+
+
+
+export type getLearningProgressResponse200 = {
+  data: LearningProgress
+  status: 200
+}
+
+export type getLearningProgressResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getLearningProgressResponseSuccess = (getLearningProgressResponse200) & {
+  headers: Headers;
+};
+export type getLearningProgressResponseError = (getLearningProgressResponseDefault) & {
+  headers: Headers;
+};
+
+export type getLearningProgressResponse = (getLearningProgressResponseSuccess | getLearningProgressResponseError)
+
+export const getGetLearningProgressUrl = () => {
+
+
+
+
+  return `/api/learning/progress`
+}
+
+/**
+ * @summary Learning's Progress tab: workspaces in progress and finished, the leading one's items
+ */
+export const getLearningProgress = async ( options?: RequestInit): Promise<getLearningProgressResponse> => {
+
+  const res = await fetch(getGetLearningProgressUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getLearningProgressResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getLearningProgressResponse
 }
 
 
@@ -6143,6 +6248,56 @@ export const checkReviewItem = async (checkReviewItemReq: NonReadonly<CheckRevie
 
 
 
+export type getReviewOverviewResponse200 = {
+  data: ReviewOverview
+  status: 200
+}
+
+export type getReviewOverviewResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getReviewOverviewResponseSuccess = (getReviewOverviewResponse200) & {
+  headers: Headers;
+};
+export type getReviewOverviewResponseError = (getReviewOverviewResponseDefault) & {
+  headers: Headers;
+};
+
+export type getReviewOverviewResponse = (getReviewOverviewResponseSuccess | getReviewOverviewResponseError)
+
+export const getGetReviewOverviewUrl = () => {
+
+
+
+
+  return `/api/review/overview`
+}
+
+/**
+ * @summary Learning's Review tab: suggested reviews, sessions to continue, every workspace
+ */
+export const getReviewOverview = async ( options?: RequestInit): Promise<getReviewOverviewResponse> => {
+
+  const res = await fetch(getGetReviewOverviewUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getReviewOverviewResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getReviewOverviewResponse
+}
+
+
+
 export type rateReviewItemResponse204 = {
   data: void
   status: 204
@@ -6193,39 +6348,46 @@ export const rateReviewItem = async (rateReviewItemReq: NonReadonly<RateReviewIt
 
 
 
-export type listReviewWorkspacesResponse200 = {
-  data: ReviewWorkspacesOutputBody
+export type listPastReviewsResponse200 = {
+  data: PastReviewsOutputBody
   status: 200
 }
 
-export type listReviewWorkspacesResponseDefault = {
+export type listPastReviewsResponseDefault = {
   data: ErrorModel
   status: Exclude<HTTPStatusCodes, 200>
 }
 
-export type listReviewWorkspacesResponseSuccess = (listReviewWorkspacesResponse200) & {
+export type listPastReviewsResponseSuccess = (listPastReviewsResponse200) & {
   headers: Headers;
 };
-export type listReviewWorkspacesResponseError = (listReviewWorkspacesResponseDefault) & {
+export type listPastReviewsResponseError = (listPastReviewsResponseDefault) & {
   headers: Headers;
 };
 
-export type listReviewWorkspacesResponse = (listReviewWorkspacesResponseSuccess | listReviewWorkspacesResponseError)
+export type listPastReviewsResponse = (listPastReviewsResponseSuccess | listPastReviewsResponseError)
 
-export const getListReviewWorkspacesUrl = () => {
+export const getListPastReviewsUrl = (params?: ListPastReviewsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/review/workspaces`
+  return stringifiedParams.length > 0 ? `/api/review/sessions?${stringifiedParams}` : `/api/review/sessions`
 }
 
 /**
- * @summary Workspaces with study progress, for Learning's Review tab
+ * @summary Finished review sessions with their quiz and flashcard results
  */
-export const listReviewWorkspaces = async ( options?: RequestInit): Promise<listReviewWorkspacesResponse> => {
+export const listPastReviews = async (params?: ListPastReviewsParams, options?: RequestInit): Promise<listPastReviewsResponse> => {
 
-  const res = await fetch(getListReviewWorkspacesUrl(),
+  const res = await fetch(getListPastReviewsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -6237,8 +6399,108 @@ export const listReviewWorkspaces = async ( options?: RequestInit): Promise<list
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: listReviewWorkspacesResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listReviewWorkspacesResponse
+  const data: listPastReviewsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listPastReviewsResponse
+}
+
+
+
+export type resumeReviewSessionResponse200 = {
+  data: ReviewSession
+  status: 200
+}
+
+export type resumeReviewSessionResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type resumeReviewSessionResponseSuccess = (resumeReviewSessionResponse200) & {
+  headers: Headers;
+};
+export type resumeReviewSessionResponseError = (resumeReviewSessionResponseDefault) & {
+  headers: Headers;
+};
+
+export type resumeReviewSessionResponse = (resumeReviewSessionResponseSuccess | resumeReviewSessionResponseError)
+
+export const getResumeReviewSessionUrl = (id: string,) => {
+
+
+
+
+  return `/api/review/sessions/${id}`
+}
+
+/**
+ * @summary An unfinished review session's items still to answer
+ */
+export const resumeReviewSession = async (id: string, options?: RequestInit): Promise<resumeReviewSessionResponse> => {
+
+  const res = await fetch(getResumeReviewSessionUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: resumeReviewSessionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as resumeReviewSessionResponse
+}
+
+
+
+export type finishReviewSessionResponse204 = {
+  data: void
+  status: 204
+}
+
+export type finishReviewSessionResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type finishReviewSessionResponseSuccess = (finishReviewSessionResponse204) & {
+  headers: Headers;
+};
+export type finishReviewSessionResponseError = (finishReviewSessionResponseDefault) & {
+  headers: Headers;
+};
+
+export type finishReviewSessionResponse = (finishReviewSessionResponseSuccess | finishReviewSessionResponseError)
+
+export const getFinishReviewSessionUrl = (id: string,) => {
+
+
+
+
+  return `/api/review/sessions/${id}/finish`
+}
+
+/**
+ * @summary End a review session before its last item
+ */
+export const finishReviewSession = async (id: string, options?: RequestInit): Promise<finishReviewSessionResponse> => {
+
+  const res = await fetch(getFinishReviewSessionUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: finishReviewSessionResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as finishReviewSessionResponse
 }
 
 
@@ -8183,20 +8445,29 @@ export type getWorkspaceReviewResponseError = (getWorkspaceReviewResponseDefault
 
 export type getWorkspaceReviewResponse = (getWorkspaceReviewResponseSuccess | getWorkspaceReviewResponseError)
 
-export const getGetWorkspaceReviewUrl = (id: string,) => {
+export const getGetWorkspaceReviewUrl = (id: string,
+    params?: GetWorkspaceReviewParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/workspaces/${id}/review`
+  return stringifiedParams.length > 0 ? `/api/workspaces/${id}/review?${stringifiedParams}` : `/api/workspaces/${id}/review`
 }
 
 /**
- * @summary Next mixed review session
+ * @summary A new review session: a suggestion's items, or the whole workspace's
  */
-export const getWorkspaceReview = async (id: string, options?: RequestInit): Promise<getWorkspaceReviewResponse> => {
+export const getWorkspaceReview = async (id: string,
+    params?: GetWorkspaceReviewParams, options?: RequestInit): Promise<getWorkspaceReviewResponse> => {
 
-  const res = await fetch(getGetWorkspaceReviewUrl(id),
+  const res = await fetch(getGetWorkspaceReviewUrl(id,params),
   {
     ...options,
     method: 'GET'

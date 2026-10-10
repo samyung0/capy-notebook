@@ -26,10 +26,19 @@ bottom-left corner (a darker one on light covers). Picking one sets
 `/qb?exam=<id>` and shows that exam: `ExamPicker` draws it as a taller strip
 with subject and question counts and opens a list of every exam (the same
 strips) with a Find an exam search. A topic URL opens its own exam unless
-`exam` names another, and a back arrow (only without an open topic) returns to
-the list. Subjects start collapsed except the one holding the current topic; a
+`exam` names another, and a back arrow returns to the list, also while a topic
+is open. Subjects start collapsed except the one holding the current topic; a
 collapsed subject shows its question count, and an open one indents its topics
-under a guide line. The header search (`searchSyllabus` in
+under a guide line. Levels with one entry are hidden (`soleSubject`,
+`soleTopic` and `topicPath` in `src/features/questions/bank.ts`): an exam with
+one subject lists its topics without a subject header, and an exam with one
+subject and one topic (a single paper, like a driving test) has no tree:
+picking it opens `/qb/<topicId>` titled with the exam's name, its strip counts
+questions instead of topics, search lists only the exam, and its open topic's
+panel shows the exam list. Page trails, search hits and the landing's progress
+rows drop the hidden labels too. Above a topic's title the trail's segments
+link to the bank and to the exam (the subject opens its exam too), and the back
+arrow goes to the nearest one. The header search (`searchSyllabus` in
 `src/features/questions/bankSearch.ts`) lists exams and topics together, best
 first: the name exactly, at its start, at a later word's start, anywhere (an
 exam's full name or description counts from the word-start rank), then topics
@@ -230,9 +239,14 @@ Attempts retain graded snapshots. Mistakes strip the attempt-only awards.
 Taking, reviewing and every read-only view (quiz preview, quiz editor, bank,
 question dialog preview) use `QuestionRunner`; a quiz shows all its questions on
 one page (`QuizQuestionList`) with one Submit. Completion and saved attempt pages
-share the part review renderer: "You scored" with one green/red square per
-question (blank answers are wrong; grey is reserved for a future Skip), marks in
-tint-fg colours, the submitted answer, then one collapsed disclosure holding the
+share the part review renderer. The saved attempt page has Redo quiz as an
+accent link beside the title; both pages lead with the score (`ResultSummary`,
+shared with the /qb topic summary): "awarded / max" large with "marks" and the
+percentage small, one numbered square per question (green full marks, amber
+partial, red none, blank answers are wrong; grey only for an unanswered bank
+question; a square scrolls to its question) with a legend of the colours
+present, marks by answer type (a question counts under its first part's type),
+then every question with marks in tint-fg colours, the submitted answer, then one collapsed disclosure holding the
 worked solution, and for open parts the marking scheme with Jev's marks beside
 each item. Matching pairs and `gaps` score item by item: each right item earns its
 share of the part's marks, rounded down to a half mark; other closed parts are
@@ -419,6 +433,7 @@ storage.
 | --- | --- |
 | `POST /api/bank/questions/{id}/check` | `{answers}`, the learner's answers by part id. Grades them on the server (open parts with Jev), upserts the question's topic, hash, score (`correct / total`, 0 to 1) and time, and returns `{correct, total, question}`, that one question with its key and awards; 404 when unknown or retracted. |
 | `GET /api/bank/topics/{topicId}/marks` | `{marks: {questionId: score}}` for the topic list: the latest score of each answered current question. |
+| `GET /api/bank/topics/{topicId}/summary` | `{questions: [{id, position, preview, marks, answerTypes, score}]}`: every current question in topic order, unpaged, with the latest score for its current content (null when not answered); the summary page. |
 | `GET /api/bank/progress` | `{topics}`: every topic with at least one answered current question, most recent answer first. Each carries exam, subject and topic ids and labels, `total` (current questions), `answered`, `correct` (score 1), `lastAnsweredAt`, `nextQuestionId`: the first unanswered question after the most recently answered one in topic order, wrapping to the start, or null when every question is answered, `questionIds` (the topic's current questions in order), `answeredPositions` (1-based places of the answered ones) and `lastAnsweredPosition` (the place of the most recent answer), which the landing's progress map draws and links. |
 | `POST /api/bank/copy` | `{questionIds (1–20), workspaceId, quizId \| quizName, chapterId? \| chapterName?}` returns `{workspaceId, quizId}`. Below. |
 
@@ -491,18 +506,37 @@ lists newest first) as a hand-drawn progress map (`TrailMap`), with its exam
 and subject above, then its name, "answered of total · correct" and an accent
 "Continue at question N" link (opens `nextQuestionId`); the other started
 topics follow as rows with a small trail (`MiniTrail`) and a Continue link.
-Finished: a divider list with the score, the date of the last answer and a
-Summary link (the topic at its top). With none, or in Edit mode, it keeps
+The small trail fills its box (150px at least) with more seeded waves rather
+than stretching: on phones it runs the row's full width under the name, wider
+it takes the space between the name and the count. Learning's Progress rows
+and the Study tab use the same trail.
+Finished: a divider list with the date of the last answer and a
+Summary link to the topic's summary page. With none, or in Edit mode, it keeps
 Choose a topic; phones list the topics in the page under it. Continue exists
 only on the landing (Epo, 2026-10-06); there is no review session.
+
+The summary (`/qb/$topicId/summary`, `TopicSummary`, inside the /qb page) has
+the topic page's header, one level down: the trail ends on the topic (Question
+bank / exam / subject / topic, the topic linking to its page, where Back also
+goes), the title is Summary, and the meta "Finished <date> · n questions" comes
+from the landing's progress. Every breadcrumb trail ends on the visible page's
+parent; the page's own name is its title with an accent Go
+through again (the topic from question 1; new answers replace results, there
+is no reset). Below: the score, squares (each opens its question) and marks by
+type as on the quiz result page, then Worth another look: up to seven wrong or
+partial questions in topic order with their preview, type, marks, score and
+Retry, the rest as numbered squares, and Copy to quiz with those questions (up
+to 20); last, Next in <subject>: the first topic after this one in its subject,
+wrapping, that has questions and is not finished (Start, or Continue at its next
+question once started), hidden when none.
 
 The map (`src/features/questions/trailMap/`) is generated in the browser from
 the topic id and question count, so a topic looks the same on every visit and
 device and adding questions only extends its end: each part (biome order,
 each landmark, each question-width of scatter, sky, horizon) has its own
 seeded stream. One stop per question, 60 map units apart, then a summit. The
-map is a run of biomes 7 to 12 questions long (forest, meadow, farm, village,
-lake, river, hills, camp) whose borders blend over 80 units; each scatters
+map is a run of biomes 4 to 7 questions long (forest, meadow, farm, village,
+lake, river, hills, camp) whose borders blend over 60 units; each scatters
 drawn element templates (placed with `<use>`) by its own mix and has at most
 one landmark (windmill with fields, cabins and a well, lake, river with a
 bridge, lookout tower, tent with a campfire). Every question-width holds at

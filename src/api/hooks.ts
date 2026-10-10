@@ -63,6 +63,7 @@ import type {
   IntegrationsStatus,
   InvoiceList,
   Label,
+  LearningProgress,
   LLMCredentialsResponse,
   Material,
   MaterialCollaborationToken,
@@ -78,6 +79,8 @@ import type {
   NotificationPage,
   NotificationPrefs,
   OperationReceipt,
+  PastReview,
+  PastReviewParams,
   Privacy,
   PublicFlashcardSet,
   PublicQuiz,
@@ -86,8 +89,9 @@ import type {
   RateReviewItemReq,
   RequestAccountDeletionReq,
   RetryProcessingReq,
+  ReviewOverview,
   ReviewSession,
-  ReviewWorkspace,
+  ReviewStart,
   SaveCanvasReq,
   SearchResult,
   SetModelPrefsReq,
@@ -2158,7 +2162,8 @@ export function invalidateStudy(
         (!workspaceId || id === workspaceId) &&
         (kind === 'study' || kind === 'review'),
     }),
-    qc.invalidateQueries({ queryKey: qk.reviewWorkspaces }),
+    qc.invalidateQueries({ queryKey: qk.reviewRoot }),
+    qc.invalidateQueries({ queryKey: qk.learningProgress }),
   ]);
 }
 
@@ -2238,33 +2243,100 @@ export function useSetStudyProgressDefault() {
         Promise.all([
           qc.invalidateQueries({ queryKey: qk.me }),
           qc.invalidateQueries({ queryKey: ['workspace'] }),
-          qc.invalidateQueries({ queryKey: qk.reviewWorkspaces }),
+          qc.invalidateQueries({ queryKey: qk.reviewRoot }),
         ])
       ),
   });
 }
 
-/** The next mixed session; fetched fresh for each session. */
-export const workspaceReviewQuery = (workspaceId: string) =>
+/** A new review session: a suggestion's items, or the whole workspace's
+ * without a mode. Fetched fresh for each session. */
+export const workspaceReviewQuery = (workspaceId: string, start: ReviewStart) =>
   queryOptions({
-    queryFn: () => api.get<ReviewSession>(`/workspaces/${workspaceId}/review`),
-    queryKey: qk.workspaceReview(workspaceId),
+    queryFn: () =>
+      api.get<ReviewSession>(
+        `/workspaces/${workspaceId}/review${listSearch({ ...start }, '')}`
+      ),
+    queryKey: qk.workspaceReview(workspaceId, start),
     staleTime: 0,
   });
 export const useWorkspaceReview = (
   workspaceId: string,
-  options?: QueryUiOptions
+  start: ReviewStart,
+  options?: QueryUiOptions & { enabled?: boolean }
 ) =>
-  useQuery({ ...workspaceReviewQuery(workspaceId), meta: queryMeta(options) });
-
-export const reviewWorkspacesQuery = () =>
-  queryOptions({
-    queryFn: () =>
-      api.get<{ workspaces: ReviewWorkspace[] }>('/review/workspaces'),
-    queryKey: qk.reviewWorkspaces,
+  useQuery({
+    ...workspaceReviewQuery(workspaceId, start),
+    enabled: options?.enabled,
+    meta: queryMeta(options),
   });
-export const useReviewWorkspaces = (options?: QueryUiOptions) =>
-  useQuery({ ...reviewWorkspacesQuery(), meta: queryMeta(options) });
+
+/** An unfinished session's items still to answer, for Continue. */
+export const useResumeReviewSession = (
+  sessionId: string,
+  options?: QueryUiOptions & { enabled?: boolean }
+) =>
+  useQuery({
+    enabled: options?.enabled,
+    meta: queryMeta(options),
+    queryFn: () => api.get<ReviewSession>(`/review/sessions/${sessionId}`),
+    queryKey: qk.reviewSession(sessionId),
+    staleTime: 0,
+  });
+
+/** Ends a session before its last item (Done). */
+export function useFinishReviewSession() {
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: (sessionId: string) =>
+      api.post<void>(`/review/sessions/${sessionId}/finish`),
+  });
+}
+
+/** Learning → Review: suggestions, sessions to continue, every workspace. */
+export const reviewOverviewQuery = () =>
+  queryOptions({
+    queryFn: () => api.get<ReviewOverview>('/review/overview'),
+    queryKey: qk.reviewOverview,
+  });
+export const useReviewOverview = (options?: QueryUiOptions) =>
+  useQuery({ ...reviewOverviewQuery(), meta: queryMeta(options) });
+
+const PAST_REVIEWS_PAGE = 30;
+/** Learning → Past reviews: finished sessions, newest first by default. */
+export const pastReviewsQuery = (params: PastReviewParams = {}) => ({
+  getNextPageParam: (
+    last: { items: PastReview[]; more: boolean },
+    pages: unknown[]
+  ) => (last.more ? pages.length * PAST_REVIEWS_PAGE : undefined),
+  initialPageParam: 0,
+  queryFn: ({ pageParam }: { pageParam: number }) =>
+    api.get<{ items: PastReview[]; more: boolean }>(
+      `/review/sessions${listSearch(
+        {
+          dir: params.dir,
+          has: params.has,
+          limit: String(PAST_REVIEWS_PAGE),
+          offset: pageParam ? String(pageParam) : undefined,
+          sort: params.sort,
+          workspaceId: params.workspaceIds,
+        },
+        ''
+      )}`
+    ),
+  queryKey: qk.pastReviews(params),
+});
+export const usePastReviews = (params: PastReviewParams = {}) =>
+  useInfiniteQuery(pastReviewsQuery(params));
+
+/** Learning → Progress: workspaces in progress and finished, the leading one's items. */
+export const learningProgressQuery = () =>
+  queryOptions({
+    queryFn: () => api.get<LearningProgress>('/learning/progress'),
+    queryKey: qk.learningProgress,
+  });
+export const useLearningProgress = (options?: QueryUiOptions) =>
+  useQuery({ ...learningProgressQuery(), meta: queryMeta(options) });
 
 /** Records one rating; the study page toasts a failure once. Each rating
  * refreshes `workspaceId`'s progress, or every workspace's when omitted; a

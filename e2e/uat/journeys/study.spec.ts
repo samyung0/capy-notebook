@@ -218,7 +218,7 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
     .getByRole('button', { exact: true, name: m.study_review_button() })
     .click();
   await expect(page).toHaveURL(
-    new RegExp(`/learning/review/${workspaceId}\\?from=workspace$`)
+    new RegExp(`/learning/review/${workspaceId}\\?.*from=workspace`)
   );
   await expect(page.getByText(m.review_left({ count: 2 }))).toBeVisible();
   const showAnswer = page.getByRole('button', {

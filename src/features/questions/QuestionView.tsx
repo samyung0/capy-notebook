@@ -232,7 +232,7 @@ export function OptionKey({
   return (
     <span
       className={cn(
-        'grid size-6 shrink-0 place-items-center font-bold text-fg-secondary tabular-nums leading-none',
+        'grid size-6 shrink-0 place-items-center font-bold text-fg-secondary leading-none',
         className
       )}
     >
@@ -477,7 +477,7 @@ export function QuestionView({
                               className="min-w-0 flex-1"
                               text={item.text}
                             />
-                            <span className="shrink-0 text-fg-muted text-xs tabular-nums">
+                            <span className="shrink-0 text-fg-muted text-xs">
                               [{item.marks}]
                             </span>
                           </li>
@@ -546,13 +546,13 @@ export function QuestionReview({
                       <li className="flex items-baseline gap-4" key={i}>
                         <TextView className="min-w-0 flex-1" text={item.text} />
                         {award == null ? (
-                          <span className="shrink-0 text-fg-muted text-xs tabular-nums">
+                          <span className="shrink-0 text-fg-muted text-xs">
                             [{item.marks}]
                           </span>
                         ) : (
                           <span
                             className={cn(
-                              'inline-flex shrink-0 items-center gap-1 font-semibold text-xs tabular-nums',
+                              'inline-flex shrink-0 items-center gap-1 font-semibold text-xs',
                               award === item.marks
                                 ? 'text-tint-success-fg'
                                 : award > 0
@@ -592,7 +592,7 @@ export function QuestionReview({
         return (
           <span
             className={cn(
-              'font-semibold tabular-nums',
+              'font-semibold',
               awarded == null
                 ? 'text-fg-muted'
                 : awarded === max

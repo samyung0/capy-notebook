@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"math"
 	"time"
 
 	fsrs "github.com/open-spaced-repetition/go-fsrs/v3"
@@ -137,4 +138,67 @@ func hash(v any) string {
 	b, _ := json.Marshal(v) // map keys marshal sorted, so equal content hashes equal
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
+}
+
+// Suggested reviews (human/study-progress.md, 2026-10-10) weigh each item by
+// how likely it is forgotten (1 - R) and by its answer history: a miss rate
+// over the last answers, newest weighted most, pulled towards "probably not
+// known yet" until enough answers are in.
+const (
+	historyLen   = 8    // answers that count, newest first
+	historyDecay = 0.9  // weight of each older answer
+	priorMiss    = 2    // pseudo-answers assumed missed
+	priorKnown   = 0.75 // pseudo-answers assumed known
+	weightScale  = 2    // the most a history adds over a never-missed item
+)
+
+// Weights are an item's two history parts on top of the base 1 (fading): Tricky
+// is the misses seen, Learned the "not known yet" assumption that answers have
+// not worn down. Eight straight correct answers give zero for both.
+type Weights struct {
+	Tricky  float64
+	Learned float64
+}
+
+// historyFloor is the miss rate after historyLen straight correct answers.
+var historyFloor = func() float64 {
+	var w float64
+	for k := range historyLen {
+		w += math.Pow(historyDecay, float64(k))
+	}
+	return priorMiss / (w + priorMiss + priorKnown)
+}()
+
+// missOf is how much a rating counts as a miss: Again fully, Hard half.
+func missOf(r Rating) float64 {
+	switch r {
+	case Again:
+		return 1
+	case Hard:
+		return 0.5
+	}
+	return 0
+}
+
+// HistoryWeights weighs ratings given newest first; only the first historyLen
+// count. An empty history is all assumption.
+func HistoryWeights(newestFirst []Rating) Weights {
+	if len(newestFirst) > historyLen {
+		newestFirst = newestFirst[:historyLen]
+	}
+	var w, missed float64
+	for k, r := range newestFirst {
+		dw := math.Pow(historyDecay, float64(k))
+		w += dw
+		missed += dw * missOf(r)
+	}
+	// The miss rate is (missed + priorMiss) / (w + prior); split into what was
+	// seen and what is still assumed, less the floor, scaled to weightScale.
+	prior := priorMiss + priorKnown
+	scale := weightScale / (1 - historyFloor)
+	return Weights{
+		Tricky: scale * missed / (w + prior),
+		// Rounding can leave a hair below zero after a full window.
+		Learned: max(scale*(priorMiss/(w+prior)-historyFloor), 0),
+	}
 }

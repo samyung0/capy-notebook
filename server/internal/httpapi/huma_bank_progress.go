@@ -38,6 +38,21 @@ type bankProgressOutput struct {
 		Topics []bank.TopicProgress `json:"topics" nullable:"false" doc:"Topics with at least one answered current question, the most recently answered first"`
 	}
 }
+
+// bankSummaryQuestion is one current question on a topic's summary page.
+type bankSummaryQuestion struct {
+	ID          string   `json:"id"`
+	Position    int      `json:"position"`
+	Preview     string   `json:"preview"`
+	Marks       int      `json:"marks"`
+	AnswerTypes []string `json:"answerTypes" nullable:"false" doc:"The distinct answer types of the question's parts, in part order"`
+	Score       *float64 `json:"score" doc:"The latest answer's score for the current content, 0 to 1; null when not answered"`
+}
+type bankSummaryOutput struct {
+	Body struct {
+		Questions []bankSummaryQuestion `json:"questions" nullable:"false" doc:"The topic's current questions in topic order, with the learner's latest results"`
+	}
+}
 type bankCopyInput struct {
 	Body struct {
 		QuestionIDs []string               `json:"questionIds" nullable:"false" minItems:"1" maxItems:"20" uniqueItems:"true" doc:"Bank questions to copy, in this order"`
@@ -59,6 +74,7 @@ func (a *api) registerBankProgress(api huma.API) {
 	tag := "Question bank"
 	regWithMaxBody(api, http.MethodPost, "/api/bank/questions/{id}/check", "checkBankQuestion", tag, "Grade and record one question's answers", http.StatusOK, answersMaxBytes, a.bankCheck)
 	reg(api, http.MethodGet, "/api/bank/topics/{topicId}/marks", "bankTopicMarks", tag, "Latest scores for a topic's questions", http.StatusOK, a.bankMarks)
+	reg(api, http.MethodGet, "/api/bank/topics/{topicId}/summary", "bankTopicSummary", tag, "A topic's questions with the learner's latest results, for its summary page", http.StatusOK, a.bankSummary)
 	reg(api, http.MethodGet, "/api/bank/progress", "bankProgress", tag, "Topics the learner has answered questions in", http.StatusOK, a.bankProgress)
 	reg(api, http.MethodPost, "/api/bank/copy", "copyBankQuestions", tag, "Copy bank questions into a workspace quiz", http.StatusOK, a.bankCopy)
 }
@@ -102,6 +118,36 @@ func (a *api) bankMarks(ctx context.Context, in *bankTopicInput) (*bankMarksOutp
 	out := &bankMarksOutput{}
 	out.Body.Marks, err = a.s.BankMarks(ctx, userID(ctx), in.TopicID, hashes)
 	return out, hErr(err)
+}
+
+// bankSummary lists every current question of a topic, unpaged, with the
+// learner's latest score where it matches the question's current content.
+func (a *api) bankSummary(ctx context.Context, in *bankTopicInput) (*bankSummaryOutput, error) {
+	if _, err := a.bankAccess(ctx, false); err != nil {
+		return nil, err
+	}
+	rows, err := a.cfg.Bank.List(ctx, in.TopicID)
+	if err != nil {
+		return nil, bankHTTPError(err)
+	}
+	hashes := map[string]string{}
+	for _, r := range rows {
+		hashes[r.ID] = r.Hash
+	}
+	marks, err := a.s.BankMarks(ctx, userID(ctx), in.TopicID, hashes)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	out := &bankSummaryOutput{}
+	out.Body.Questions = make([]bankSummaryQuestion, 0, len(rows))
+	for _, r := range rows {
+		q := bankSummaryQuestion{ID: r.ID, Position: r.Position, Preview: r.Preview, Marks: r.Marks, AnswerTypes: r.AnswerTypes}
+		if score, ok := marks[r.ID]; ok {
+			q.Score = &score
+		}
+		out.Body.Questions = append(out.Body.Questions, q)
+	}
+	return out, nil
 }
 
 func (a *api) bankProgress(ctx context.Context, _ *struct{}) (*bankProgressOutput, error) {

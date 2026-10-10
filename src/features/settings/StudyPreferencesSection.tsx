@@ -23,23 +23,69 @@ const DEFAULTS: Required<Omit<StudyPreferences, '$schema'>> = {
   miniChecks: true,
   practice: 'quiz',
   quizLength: 8,
+  // Review defaults mirror reviewPrefsOf in server/internal/store/review_sessions.go.
+  reviewFocus: 'balanced',
+  reviewItems: 'both',
+  reviewSize: 20,
   visualAids: 'more',
 };
 
+/** Fields saved as numbers. */
+const NUMERIC = new Set(['quizLength', 'flashcardsPerChapter', 'reviewSize']);
+
 type Choice = { label: () => string; value: string };
 
-const ROWS: {
+type Row = {
   field:
     | 'mainFormat'
     | 'explainerStyle'
     | 'practice'
     | 'quizLength'
     | 'flashcardsPerChapter'
-    | 'visualAids';
+    | 'visualAids'
+    | 'reviewSize'
+    | 'reviewItems'
+    | 'reviewFocus';
   title: () => string;
   hint: () => string;
   choices: Choice[];
-}[] = [
+};
+
+/** How review sessions are put together (human/study-progress.md, 2026-10-10). */
+const REVIEW_ROWS: Row[] = [
+  {
+    choices: [10, 20, 30, 50].map((n) => ({
+      label: () => m.review_items({ count: n }),
+      value: String(n),
+    })),
+    field: 'reviewSize',
+    hint: m.study_pref_review_size_hint,
+    title: m.study_pref_review_size,
+  },
+  {
+    choices: [
+      { label: m.study_pref_review_items_both, value: 'both' },
+      { label: m.study_pref_review_items_quiz, value: 'quiz' },
+      { label: m.study_pref_review_items_cards, value: 'flashcards' },
+    ],
+    field: 'reviewItems',
+    hint: m.study_pref_review_items_hint,
+    title: m.study_pref_review_items,
+  },
+  {
+    choices: [
+      { label: m.study_pref_review_focus_balanced, value: 'balanced' },
+      { label: m.review_mode_fading, value: 'fading' },
+      { label: m.review_mode_tricky, value: 'tricky' },
+      { label: m.review_mode_learned, value: 'learned' },
+    ],
+    field: 'reviewFocus',
+    hint: m.study_pref_review_focus_hint,
+    title: m.study_pref_review_focus,
+  },
+];
+
+const ROWS: Row[] = [
   {
     choices: [
       { label: m.study_pref_main_auto, value: 'auto' },
@@ -100,7 +146,8 @@ const ROWS: {
   },
 ];
 
-/** The learner's study preferences: how the chat builds notes and practice. */
+/** Settings → Study: progress tracking, how reviews are put together, and
+ * how the chat builds notes and practice. */
 export function StudyPreferencesSection() {
   const { data: me } = useMe();
   const { mutate: save } = useSetStudyPreferences();
@@ -110,11 +157,22 @@ export function StudyPreferencesSection() {
   const set = (patch: StudyPreferences) => {
     if (saved) save({ ...saved, ...patch });
   };
+  const choiceRow = (row: Row) => (
+    <ChoiceRow
+      current={String(current[row.field])}
+      disabled={!saved}
+      key={row.field}
+      onChange={(value) =>
+        set({ [row.field]: NUMERIC.has(row.field) ? Number(value) : value })
+      }
+      row={row}
+    />
+  );
   return (
-    <div>
+    <>
       <TabHeader
-        description={m.study_prefs_hint()}
-        title={m.study_prefs_title()}
+        description={m.settings_study_hint()}
+        title={m.settings_tab_study()}
       />
       <div className="flex flex-col gap-6">
         <SettingRow
@@ -128,6 +186,17 @@ export function StudyPreferencesSection() {
             onCheckedChange={(checked) => setProgressDefault(checked)}
           />
         </SettingRow>
+        <div className="border-divider border-t" />
+        <TabHeader
+          description={m.study_pref_review_hint()}
+          title={m.study_pref_review_title()}
+        />
+        {REVIEW_ROWS.map(choiceRow)}
+        <div className="border-divider border-t" />
+        <TabHeader
+          description={m.study_prefs_hint()}
+          title={m.study_prefs_title()}
+        />
         <SettingRow
           hint={m.study_pref_checks_hint()}
           title={m.study_pref_checks()}
@@ -139,25 +208,9 @@ export function StudyPreferencesSection() {
             onCheckedChange={(checked) => set({ miniChecks: checked })}
           />
         </SettingRow>
-        {ROWS.map((row) => (
-          <ChoiceRow
-            current={String(current[row.field])}
-            disabled={!saved}
-            key={row.field}
-            onChange={(value) =>
-              set({
-                [row.field]:
-                  row.field === 'quizLength' ||
-                  row.field === 'flashcardsPerChapter'
-                    ? Number(value)
-                    : value,
-              })
-            }
-            row={row}
-          />
-        ))}
+        {ROWS.map(choiceRow)}
       </div>
-    </div>
+    </>
   );
 }
 
@@ -167,7 +220,7 @@ function ChoiceRow({
   disabled,
   onChange,
 }: {
-  row: (typeof ROWS)[number];
+  row: Row;
   current: string;
   disabled: boolean;
   onChange: (value: string) => void;

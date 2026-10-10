@@ -14,6 +14,7 @@ import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { AttemptBody } from '@/features/quizzes/AttemptBody';
+import { blockHomeCrumb, blockKindCrumb } from '@/features/quizzes/QuizPage';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { toastCloneError } from '@/lib/authToasts';
@@ -130,7 +131,7 @@ function Attempt({ quizId }: { quizId: string }) {
       provenance={quiz.provenance}
       questions={quiz.questions}
       topBar={<TopInsetBar className="hidden shrink-0 lg:flex" />}
-      trail={[quiz.workspaceName || m.files_tab_blocks(), m.quiz_quizzes()]}
+      trail={[blockHomeCrumb(quiz), blockKindCrumb(m.quiz_quizzes(), 'quiz')]}
     />
   );
 }

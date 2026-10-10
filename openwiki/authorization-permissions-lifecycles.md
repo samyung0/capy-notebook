@@ -331,8 +331,10 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   bill. The old owner remains as an editor. Transfer is refused if the recipient
   cannot fit the workspace's used and reserved bytes or file count.
 - Workspace creation, clone, and transfer-to-recipient all run the owned-workspace
-  plan gate. Both current plans are unlimited (`owned_workspace_limit IS NULL`),
-  but the gate is ready for a finite catalog value without changing those flows.
+  plan gate: Free owns at most 10 workspaces and Pro 50 (migration
+  `0070_owned_workspace_cap.sql`); past it the request fails with
+  `workspace_limit_exceeded` and the browser toasts "Workspace limit reached".
+  Workspaces already over the cap (after a downgrade) are kept.
 - An over-quota owner (grace or frozen) may still transfer because giving away
   bytes is a recovery action; the recipient must be able to edit.
 - Invite email delivery is intentionally independent of later workspace

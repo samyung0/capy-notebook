@@ -86,7 +86,7 @@ export function MediaPreview({
                   </button>
                   <button
                     aria-label={m.media_zoom_reset()}
-                    className="min-w-14 rounded-button px-2 py-1.5 text-white/75 text-xs tabular-nums hover:bg-white/10 hover:text-white"
+                    className="min-w-14 rounded-button px-2 py-1.5 text-white/75 text-xs hover:bg-white/10 hover:text-white"
                     onClick={() => resetTransform()}
                     type="button"
                   >

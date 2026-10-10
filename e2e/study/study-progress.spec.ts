@@ -428,23 +428,48 @@ test.describe('study progress', () => {
       new RegExp(`[?&]material=${startedQuiz.id}(&|$)`)
     );
 
-    // Learning → Review: five to review, 2 of 4 done, and its Review opens
-    // the session.
+    // Learning → Progress leads with this workspace: its map and Continue
+    // on the quiz that was only started.
     await ownerPage.goto('/learning');
+    await expect(
+      ownerPage.getByRole('heading', { exact: true, name: ws.name })
+    ).toBeVisible();
+    await expect(
+      ownerPage.getByText(m.learning_done_of({ done: 2, total: 4 }))
+    ).toBeVisible();
+    await ownerPage
+      .getByRole('button', {
+        exact: true,
+        name: m.learning_continue_item({ title: startedQuiz.title }),
+      })
+      .click();
+    await expect(ownerPage).toHaveURL(
+      new RegExp(`[?&]material=${startedQuiz.id}(&|$)`)
+    );
+
+    // Learning → Review: All workspaces lists five items to review, and its
+    // Review opens a whole-workspace session.
+    await ownerPage.goto('/learning?tab=review');
     const row = ownerPage
+      .locator('section', {
+        has: ownerPage.getByRole('heading', {
+          name: m.review_all_workspaces(),
+        }),
+      })
       .getByText(ws.name, { exact: true })
       .locator(
         `xpath=ancestor::div[.//button[normalize-space()="${m.study_review_button()}"]][1]`
       );
-    await expect(row.getByText('5', { exact: true })).toBeVisible();
     await expect(
-      row.getByText(m.study_of({ done: 2, total: 4 }), { exact: true })
+      row.getByText(m.review_items({ count: 5 }), { exact: true })
     ).toBeVisible();
     await row
       .getByRole('button', { exact: true, name: m.study_review_button() })
       .click();
     await expect(ownerPage).toHaveURL(
-      `/learning/review/${ws.id}?from=learning`
+      new RegExp(
+        `/learning/review/${ws.id}\\?(?=.*group=workspace)(?=.*from=review)`
+      )
     );
     await expect(
       ownerPage.getByText(m.review_left({ count: 5 }))
@@ -540,8 +565,12 @@ test.describe('study progress', () => {
     await ownerPage
       .getByRole('button', { exact: true, name: m.study_review_button() })
       .click();
+    // Both items were rated a moment ago, so nothing is suggested and
+    // Review opens the whole workspace.
     await expect(ownerPage).toHaveURL(
-      `/learning/review/${ws.id}?from=workspace`
+      new RegExp(
+        `/learning/review/${ws.id}\\?(?=.*group=workspace)(?=.*from=workspace)`
+      )
     );
     await expect(
       ownerPage.getByText(m.review_left({ count: 2 }))
@@ -584,11 +613,14 @@ test.describe('study progress', () => {
       .click();
     const checked = await questionChecked;
     expect(checked.status()).toBe(200);
-    expect(checked.request().postDataJSON()).toEqual({
+    const checkBody = checked.request().postDataJSON();
+    expect(checkBody).toMatchObject({
       answers: { [`${questionId}:part:1`]: true },
       itemId: questionId,
       materialId: quiz.id,
+      session: { group: 'workspace', workspaceId: ws.id },
     });
+    expect(checkBody.session.items).toHaveLength(2);
     await expect(
       ownerPage.getByText(m.question_ui_your_answer())
     ).toBeVisible();
@@ -602,14 +634,32 @@ test.describe('study progress', () => {
     await expect(
       ownerPage.getByRole('button', { name: m.review_more() })
     ).toBeVisible();
-    expect(ratings).toEqual([
-      { itemId: cardId, materialId: cards.id, rating: 3 },
-    ]);
+    // Both answers carry the same session, recorded with the first one.
+    expect(ratings).toHaveLength(1);
+    expect(ratings[0]).toMatchObject({
+      itemId: cardId,
+      materialId: cards.id,
+      rating: 3,
+      session: { id: checkBody.session.id },
+    });
 
     // Done returns to where the session started.
     await ownerPage
       .getByRole('button', { exact: true, name: m.review_finish() })
       .click();
     await expect(ownerPage).toHaveURL(new RegExp(`/workspaces/${ws.id}$`));
+
+    // The finished session is in Past reviews with one card and one question.
+    const past = await ownerApi.get('/api/review/sessions');
+    expect(past.status()).toBe(200);
+    const [recorded] = (await past.json()).items;
+    expect(recorded).toMatchObject({
+      answered: 2,
+      cards: { correct: 1, total: 1 },
+      id: checkBody.session.id,
+      quiz: { correct: 1, total: 1 },
+      total: 2,
+      workspaceId: ws.id,
+    });
   });
 });

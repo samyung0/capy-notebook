@@ -73,3 +73,32 @@ func TestQuestionScoreUsesPartMarks(t *testing.T) {
 		t.Fatal("a question without marks scored")
 	}
 }
+
+// The order Epo signed off (2026-10-10), least to most in need of review.
+func TestHistoryWeightsOrder(t *testing.T) {
+	order := []string{"✓✓✓✓✓", "✗✓✓✓", "✓✓✓✗", "✓", "✗✓✗✓", "✗✓", "✗", "✗✗", "✗✗✗✗"}
+	total := func(oldestFirst string) float64 {
+		var newest []Rating
+		for _, c := range oldestFirst {
+			r := Good
+			if c == '✗' {
+				r = Again
+			}
+			newest = append([]Rating{r}, newest...)
+		}
+		w := HistoryWeights(newest)
+		return w.Tricky + w.Learned
+	}
+	for i := 1; i < len(order); i++ {
+		if total(order[i-1]) >= total(order[i]) {
+			t.Errorf("%s (%.2f) should weigh less than %s (%.2f)", order[i-1], total(order[i-1]), order[i], total(order[i]))
+		}
+	}
+	if w := HistoryWeights([]Rating{Good, Good, Good, Good, Good, Good, Good, Good}); w.Tricky != 0 || w.Learned > 1e-9 {
+		t.Errorf("eight correct answers should weigh nothing extra: %+v", w)
+	}
+	// A single first miss leans on the assumption more than on the miss.
+	if w := HistoryWeights([]Rating{Again}); w.Learned <= w.Tricky {
+		t.Errorf("one miss: %+v", w)
+	}
+}

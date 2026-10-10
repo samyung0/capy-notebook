@@ -226,7 +226,7 @@ export function CharCount({
   return (
     <span
       className={cn(
-        't-meta whitespace-nowrap font-normal tabular-nums',
+        't-meta whitespace-nowrap font-normal',
         value >= max ? 'text-solid-error' : 'text-fg-muted',
         className
       )}

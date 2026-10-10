@@ -35,7 +35,9 @@ const exams = [
   ]),
   exam('ielts', 'IELTS', 'English test for study and work.', [
     'Matching headings',
+    'Summary completion',
   ]),
+  exam('drive', 'Driving', 'One paper on road rules.', ['Theory paper']),
 ];
 const order = (needle: string) =>
   searchSyllabus(exams, needle).map((hit) =>
@@ -48,6 +50,15 @@ describe('searchSyllabus', () => {
     // English is a description word start; Arc length only contains "eng".
     expect(order('eng')).toEqual(['ielts', 'Arc length']);
     // The exam itself first, then its topics through the exam's name.
-    expect(order('ielts')).toEqual(['ielts', 'Matching headings']);
+    expect(order('ielts')).toEqual([
+      'ielts',
+      'Matching headings',
+      'Summary completion',
+    ]);
+  });
+
+  it('lists a single-topic exam without its topic', () => {
+    expect(order('driving')).toEqual(['drive']);
+    expect(order('theory')).toEqual([]);
   });
 });

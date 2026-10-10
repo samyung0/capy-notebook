@@ -614,6 +614,54 @@ components:
         - question
         - updatedAt
       type: object
+    BankSummaryOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/BankSummaryOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        questions:
+          description: The topic's current questions in topic order, with the learner's latest results
+          items:
+            $ref: "#/components/schemas/BankSummaryQuestion"
+          type: array
+      required:
+        - questions
+      type: object
+    BankSummaryQuestion:
+      additionalProperties: false
+      properties:
+        answerTypes:
+          description: The distinct answer types of the question's parts, in part order
+          items:
+            type: string
+          type: array
+        id:
+          type: string
+        marks:
+          format: int64
+          type: integer
+        position:
+          format: int64
+          type: integer
+        preview:
+          type: string
+        score:
+          description: The latest answer's score for the current content, 0 to 1; null when not answered
+          format: double
+          nullable: true
+          type: number
+      required:
+        - id
+        - position
+        - preview
+        - marks
+        - answerTypes
+        - score
+      type: object
     BillingCheckoutReq:
       additionalProperties: false
       properties:
@@ -802,6 +850,9 @@ components:
         materialId:
           minLength: 1
           type: string
+        session:
+          $ref: "#/components/schemas/ReviewSessionRef"
+          description: The review session the answer belongs to; the first answer records it
       required:
         - materialId
         - itemId
@@ -2397,6 +2448,29 @@ components:
         - name
         - color
       type: object
+    LearningProgress:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/LearningProgress.json
+          format: uri
+          readOnly: true
+          type: string
+        active:
+          items:
+            $ref: "#/components/schemas/ProgressWorkspace"
+          type: array
+        finished:
+          items:
+            $ref: "#/components/schemas/ProgressWorkspace"
+          type: array
+        lead:
+          $ref: "#/components/schemas/ProgressMap"
+      required:
+        - active
+        - finished
+      type: object
     LocaleInputBody:
       additionalProperties: false
       properties:
@@ -3125,6 +3199,83 @@ components:
         - width
         - height
       type: object
+    PastReview:
+      additionalProperties: false
+      properties:
+        answered:
+          format: int64
+          type: integer
+        cards:
+          $ref: "#/components/schemas/SessionScore"
+        chapterId:
+          type: string
+        chapterName:
+          type: string
+        finishedAt:
+          format: date-time
+          type: string
+        group:
+          enum:
+            - chapter
+            - others
+            - workspace
+          type: string
+        iconId:
+          type: string
+        id:
+          type: string
+        lastAnswerAt:
+          format: date-time
+          type: string
+        mode:
+          enum:
+            - tricky
+            - fading
+            - learned
+          type: string
+        quiz:
+          $ref: "#/components/schemas/SessionScore"
+        startedAt:
+          format: date-time
+          type: string
+        total:
+          format: int64
+          type: integer
+        workspaceId:
+          type: string
+        workspaceName:
+          type: string
+      required:
+        - id
+        - workspaceId
+        - workspaceName
+        - iconId
+        - group
+        - startedAt
+        - finishedAt
+        - lastAnswerAt
+        - answered
+        - total
+      type: object
+    PastReviewsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/PastReviewsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/PastReview"
+          type: array
+        more:
+          type: boolean
+      required:
+        - items
+        - more
+      type: object
     PlanTier:
       enum:
         - free
@@ -3136,6 +3287,101 @@ components:
         - public
         - link
       type: string
+    ProgressChapter:
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        order:
+          format: int64
+          type: integer
+      required:
+        - id
+        - name
+        - order
+      type: object
+    ProgressItem:
+      additionalProperties: false
+      properties:
+        chapterId:
+          nullable: true
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        position:
+          format: int64
+          type: integer
+        state:
+          enum:
+            - started
+            - done
+          type: string
+        title:
+          type: string
+        type:
+          enum:
+            - file
+            - material
+          type: string
+      required:
+        - id
+        - type
+        - title
+        - chapterId
+        - position
+        - createdAt
+      type: object
+    ProgressMap:
+      additionalProperties: false
+      properties:
+        chapters:
+          items:
+            $ref: "#/components/schemas/ProgressChapter"
+          type: array
+        items:
+          items:
+            $ref: "#/components/schemas/ProgressItem"
+          type: array
+        workspaceId:
+          type: string
+      required:
+        - workspaceId
+        - chapters
+        - items
+      type: object
+    ProgressWorkspace:
+      additionalProperties: false
+      properties:
+        cover:
+          $ref: "#/components/schemas/Cover"
+        done:
+          format: int64
+          type: integer
+        iconId:
+          type: string
+        lastStudiedAt:
+          format: date-time
+          type: string
+        name:
+          type: string
+        total:
+          format: int64
+          type: integer
+        workspaceId:
+          type: string
+      required:
+        - workspaceId
+        - name
+        - iconId
+        - done
+        - total
+        - lastStudiedAt
+      type: object
     ProjectMaterialReq:
       additionalProperties: false
       properties:
@@ -3528,6 +3774,9 @@ components:
           maximum: 4
           minimum: 1
           type: integer
+        session:
+          $ref: "#/components/schemas/ReviewSessionRef"
+          description: The review session the rating belongs to; the first answer records it
       required:
         - materialId
         - itemId
@@ -3766,6 +4015,31 @@ components:
       required:
         - parseMode
       type: object
+    ReviewEvidence:
+      additionalProperties: false
+      properties:
+        forgotten:
+          format: int64
+          type: integer
+        lastPractisedAt:
+          format: date-time
+          type: string
+        missed:
+          format: int64
+          type: integer
+        repeated:
+          format: int64
+          type: integer
+        young:
+          format: int64
+          type: integer
+      required:
+        - missed
+        - repeated
+        - forgotten
+        - young
+        - lastPractisedAt
+      type: object
     ReviewItem:
       additionalProperties: false
       properties:
@@ -3793,6 +4067,32 @@ components:
         - itemId
         - kind
       type: object
+    ReviewOverview:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ReviewOverview.json
+          format: uri
+          readOnly: true
+          type: string
+        suggestions:
+          items:
+            $ref: "#/components/schemas/ReviewSuggestion"
+          type: array
+        unfinished:
+          items:
+            $ref: "#/components/schemas/UnfinishedSession"
+          type: array
+        workspaces:
+          items:
+            $ref: "#/components/schemas/ReviewWorkspace"
+          type: array
+      required:
+        - suggestions
+        - unfinished
+        - workspaces
+      type: object
     ReviewSession:
       additionalProperties: false
       properties:
@@ -3802,25 +4102,128 @@ components:
           format: uri
           readOnly: true
           type: string
+        answered:
+          format: int64
+          type: integer
+        chapterId:
+          type: string
+        evidence:
+          $ref: "#/components/schemas/ReviewEvidence"
+        group:
+          enum:
+            - chapter
+            - others
+            - workspace
+          type: string
         items:
           items:
             $ref: "#/components/schemas/ReviewItem"
           type: array
+        mode:
+          description: Omitted for a review started from the workspace list
+          enum:
+            - tricky
+            - fading
+            - learned
+          type: string
+        total:
+          format: int64
+          type: integer
       required:
         - items
+        - answered
+        - total
+        - group
+      type: object
+    ReviewSessionRef:
+      additionalProperties: false
+      properties:
+        chapterId:
+          type: string
+        evidence:
+          $ref: "#/components/schemas/ReviewEvidence"
+        group:
+          enum:
+            - chapter
+            - others
+            - workspace
+          type: string
+        id:
+          description: Minted by the browser when the session starts
+          format: uuid
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/SessionItem"
+          maxItems: 50
+          minItems: 1
+          type: array
+        mode:
+          description: Omitted for a review started from the workspace list
+          enum:
+            - tricky
+            - fading
+            - learned
+          type: string
+        workspaceId:
+          minLength: 1
+          type: string
+      required:
+        - id
+        - workspaceId
+        - items
+        - group
+      type: object
+    ReviewSuggestion:
+      additionalProperties: false
+      properties:
+        chapterId:
+          type: string
+        chapterName:
+          type: string
+        evidence:
+          $ref: "#/components/schemas/ReviewEvidence"
+        group:
+          enum:
+            - chapter
+            - others
+            - workspace
+          type: string
+        iconId:
+          type: string
+        items:
+          format: int64
+          type: integer
+        mode:
+          enum:
+            - tricky
+            - fading
+            - learned
+          type: string
+        workspaceId:
+          type: string
+        workspaceName:
+          type: string
+      required:
+        - workspaceId
+        - workspaceName
+        - iconId
+        - group
+        - mode
+        - items
+        - evidence
       type: object
     ReviewWorkspace:
       additionalProperties: false
       properties:
-        done:
-          format: int64
-          type: integer
+        iconId:
+          type: string
+        lastReviewedAt:
+          format: date-time
+          type: string
         name:
           type: string
         reviewable:
-          format: int64
-          type: integer
-        total:
           format: int64
           type: integer
         workspaceId:
@@ -3828,25 +4231,8 @@ components:
       required:
         - workspaceId
         - name
+        - iconId
         - reviewable
-        - done
-        - total
-      type: object
-    ReviewWorkspacesOutputBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/ReviewWorkspacesOutputBody.json
-          format: uri
-          readOnly: true
-          type: string
-        workspaces:
-          items:
-            $ref: "#/components/schemas/ReviewWorkspace"
-          type: array
-      required:
-        - workspaces
       type: object
     Row:
       additionalProperties: false
@@ -3935,6 +4321,32 @@ components:
         - kind
         - title
         - href
+      type: object
+    SessionItem:
+      additionalProperties: false
+      properties:
+        itemId:
+          minLength: 1
+          type: string
+        materialId:
+          minLength: 1
+          type: string
+      required:
+        - materialId
+        - itemId
+      type: object
+    SessionScore:
+      additionalProperties: false
+      properties:
+        correct:
+          format: double
+          type: number
+        total:
+          format: double
+          type: number
+      required:
+        - correct
+        - total
       type: object
     SetModelPrefsReq:
       additionalProperties: false
@@ -4811,6 +5223,27 @@ components:
           maximum: 50
           minimum: 1
           type: integer
+        reviewFocus:
+          enum:
+            - balanced
+            - tricky
+            - fading
+            - learned
+          type: string
+        reviewItems:
+          enum:
+            - both
+            - quiz
+            - flashcards
+          type: string
+        reviewSize:
+          enum:
+            - 10
+            - 20
+            - 30
+            - 50
+          format: int64
+          type: integer
         visualAids:
           enum:
             - fewer
@@ -4843,6 +5276,8 @@ components:
         reviewable:
           format: int64
           type: integer
+        suggestion:
+          $ref: "#/components/schemas/ReviewSuggestion"
       required:
         - enabled
         - items
@@ -5225,6 +5660,44 @@ components:
       required:
         - operationId
         - status
+      type: object
+    UnfinishedSession:
+      additionalProperties: false
+      properties:
+        answered:
+          format: int64
+          type: integer
+        chapterName:
+          type: string
+        group:
+          enum:
+            - chapter
+            - others
+            - workspace
+          type: string
+        iconId:
+          type: string
+        id:
+          type: string
+        lastAnswerAt:
+          format: date-time
+          type: string
+        total:
+          format: int64
+          type: integer
+        workspaceId:
+          type: string
+        workspaceName:
+          type: string
+      required:
+        - id
+        - workspaceId
+        - workspaceName
+        - iconId
+        - group
+        - answered
+        - total
+        - lastAnswerAt
       type: object
     UpdateChapterReq:
       additionalProperties: false
@@ -6469,6 +6942,31 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: List topic questions
+      tags:
+        - Question bank
+  /api/bank/topics/{topicId}/summary:
+    get:
+      operationId: bankTopicSummary
+      parameters:
+        - in: path
+          name: topicId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BankSummaryOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: A topic's questions with the learner's latest results, for its summary page
       tags:
         - Question bank
   /api/billing:
@@ -7753,6 +8251,25 @@ paths:
       summary: Update a label
       tags:
         - Schedule
+  /api/learning/progress:
+    get:
+      operationId: getLearningProgress
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LearningProgress"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "Learning's Progress tab: workspaces in progress and finished, the leading one's items"
+      tags:
+        - Study
   /api/materials:
     get:
       operationId: listOwnedMaterials
@@ -9111,6 +9628,25 @@ paths:
       summary: Grade and rate one question of a review session
       tags:
         - Study
+  /api/review/overview:
+    get:
+      operationId: getReviewOverview
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewOverview"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "Learning's Review tab: suggested reviews, sessions to continue, every workspace"
+      tags:
+        - Study
   /api/review/ratings:
     post:
       operationId: rateReviewItem
@@ -9132,15 +9668,66 @@ paths:
       summary: Record a flashcard's review rating
       tags:
         - Study
-  /api/review/workspaces:
+  /api/review/sessions:
     get:
-      operationId: listReviewWorkspaces
+      operationId: listPastReviews
+      parameters:
+        - explode: false
+          in: query
+          name: sort
+          schema:
+            default: date
+            enum:
+              - date
+              - quiz
+              - cards
+              - time
+            type: string
+        - explode: false
+          in: query
+          name: dir
+          schema:
+            default: desc
+            enum:
+              - asc
+              - desc
+            type: string
+        - description: Comma-separated workspace ids
+          explode: false
+          in: query
+          name: workspaceId
+          schema:
+            description: Comma-separated workspace ids
+            type: string
+        - description: "Comma-separated: quiz, flashcards; a session with either passes"
+          explode: false
+          in: query
+          name: has
+          schema:
+            description: "Comma-separated: quiz, flashcards; a session with either passes"
+            type: string
+        - explode: false
+          in: query
+          name: offset
+          schema:
+            format: int64
+            minimum: 0
+            type: integer
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 30
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ReviewWorkspacesOutputBody"
+                $ref: "#/components/schemas/PastReviewsOutputBody"
           description: OK
         default:
           content:
@@ -9148,7 +9735,55 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Workspaces with study progress, for Learning's Review tab
+      summary: Finished review sessions with their quiz and flashcard results
+      tags:
+        - Study
+  /api/review/sessions/{id}:
+    get:
+      operationId: resumeReviewSession
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewSession"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: An unfinished review session's items still to answer
+      tags:
+        - Study
+  /api/review/sessions/{id}/finish:
+    post:
+      operationId: finishReviewSession
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: End a review session before its last item
       tags:
         - Study
   /api/search:
@@ -10209,6 +10844,34 @@ paths:
           required: true
           schema:
             type: string
+        - explode: false
+          in: query
+          name: group
+          schema:
+            default: workspace
+            enum:
+              - chapter
+              - others
+              - workspace
+            type: string
+        - description: The chapter of a chapter group
+          explode: false
+          in: query
+          name: chapterId
+          schema:
+            description: The chapter of a chapter group
+            type: string
+        - description: A suggestion's mode; omitted for a review from the workspace list
+          explode: false
+          in: query
+          name: mode
+          schema:
+            description: A suggestion's mode; omitted for a review from the workspace list
+            enum:
+              - tricky
+              - fading
+              - learned
+            type: string
       responses:
         "200":
           content:
@@ -10222,7 +10885,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Next mixed review session
+      summary: "A new review session: a suggestion's items, or the whole workspace's"
       tags:
         - Study
   /api/workspaces/{id}/sharing:

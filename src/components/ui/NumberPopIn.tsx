@@ -1,7 +1,7 @@
 /** Staggered digit entrance from transitions.dev/number-pop-in. */
 export function NumberPopIn({ value }: { value: string }) {
   return (
-    <span className="inline-flex tabular-nums">
+    <span className="inline-flex">
       <span className="sr-only">{value}</span>
       <span aria-hidden key={value}>
         {Array.from(value, (digit, index) => (

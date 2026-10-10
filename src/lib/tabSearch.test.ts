@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  parseBillingSearch,
-  parseFilesSearch,
-  parseSettingsSearch,
-} from './tabSearch';
+import { parseBillingSearch, parseSettingsSearch } from './tabSearch';
 
 describe('tab search', () => {
   it('keeps known tabs and drops anything else', () => {
@@ -13,7 +9,5 @@ describe('tab search', () => {
       tab: 'subscription',
     });
     expect(parseBillingSearch({})).toEqual({});
-    expect(parseFilesSearch({ tab: 'blocks' })).toEqual({ tab: 'blocks' });
-    expect(parseFilesSearch({ tab: 'llm' })).toEqual({});
   });
 });

@@ -50,6 +50,10 @@ export const lastOf = (pts: readonly Pt[]) => pts.at(-1) as Pt;
 /** One decimal is plenty at map scale and keeps the markup small. */
 export const n = (v: number) => String(Math.round(v * 10) / 10);
 
+/** Text placed in the map's markup. */
+export const escapeText = (text: string) =>
+  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
 export const polyD = (pts: readonly Pt[]) =>
   `M${pts.map(([x, y]) => `${n(x)} ${n(y)}`).join(' ')}`;
 

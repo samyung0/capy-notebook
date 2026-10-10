@@ -18,6 +18,7 @@ import { errorCopy } from '@/lib/errors';
 import type { Answer } from './grade';
 import { isAnswered } from './QuestionRunner';
 import {
+  type Crumb,
   QuizPageHeader,
   QuizQuestionList,
   QuizScore,
@@ -81,7 +82,7 @@ export function AttemptBody({
   /** The app's top bar. Public pages pass none: their ⋮ stays on every state
    * and the title sits higher, with no label row above it. */
   topBar?: ReactNode;
-  trail: string[];
+  trail: Crumb[];
 }) {
   const Shell = frame ?? NoFrame;
   const Body = embedded ? EmbeddedBody : TabContent;

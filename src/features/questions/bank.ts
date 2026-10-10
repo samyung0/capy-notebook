@@ -9,6 +9,7 @@ import type {
   BankCopyResult,
   BankProgress,
   BankTopicMarks,
+  BankTopicSummary,
   CheckBankQuestionReq,
   CoverConfig,
   GradedQuestion,
@@ -34,6 +35,26 @@ export type BankExam = {
   cover: CoverConfig;
   subjects: BankSubject[];
 };
+/**
+ * Levels with a single entry are hidden: an exam with one subject lists its
+ * topics directly, and one with a single topic opens on its questions.
+ */
+export const soleSubject = (exam: BankExam) => exam.subjects.length === 1;
+export const soleTopic = (exam: BankExam) =>
+  soleSubject(exam) && exam.subjects[0].topics.length === 1
+    ? exam.subjects[0].topics[0]
+    : undefined;
+/** A topic's visible names, outermost first, without hidden levels. */
+export const topicPath = (
+  exam: BankExam,
+  subject: { label: string },
+  topic: { label: string }
+) =>
+  soleTopic(exam)
+    ? [exam.label]
+    : soleSubject(exam)
+      ? [exam.label, topic.label]
+      : [exam.label, subject.label, topic.label];
 export type BankSyllabus = {
   exams: BankExam[];
   editor: boolean;
@@ -210,6 +231,16 @@ export const bankMarksQuery = (topicId: string) =>
         '/bank/topics/' + encodeURIComponent(topicId) + '/marks'
       ),
     queryKey: ['bank', 'marks', topicId],
+    retry: false,
+  });
+/** A topic's summary page: every current question with its latest score. */
+export const bankSummaryQuery = (topicId: string) =>
+  queryOptions({
+    queryFn: () =>
+      api.get<BankTopicSummary>(
+        '/bank/topics/' + encodeURIComponent(topicId) + '/summary'
+      ),
+    queryKey: ['bank', 'summary', topicId],
     retry: false,
   });
 /** The /qb landing: topics with an answered question, latest first. */

@@ -4,6 +4,7 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { ReviewSessionRef } from './reviewSessionRef.ts';
 
 export interface RateReviewItemReq {
   /** A URL to the JSON Schema for this object. */
@@ -18,4 +19,6 @@ export interface RateReviewItemReq {
      * @maximum 4
      */
   rating: number;
+  /** The review session the rating belongs to; the first answer records it */
+  session?: ReviewSessionRef;
 }

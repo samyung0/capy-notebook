@@ -7,6 +7,9 @@
 import type { StudyPreferencesExplainerStyle } from './studyPreferencesExplainerStyle.ts';
 import type { StudyPreferencesMainFormat } from './studyPreferencesMainFormat.ts';
 import type { StudyPreferencesPractice } from './studyPreferencesPractice.ts';
+import type { StudyPreferencesReviewFocus } from './studyPreferencesReviewFocus.ts';
+import type { StudyPreferencesReviewItems } from './studyPreferencesReviewItems.ts';
+import type { StudyPreferencesReviewSize } from './studyPreferencesReviewSize.ts';
 import type { StudyPreferencesVisualAids } from './studyPreferencesVisualAids.ts';
 
 export interface StudyPreferences {
@@ -26,5 +29,8 @@ export interface StudyPreferences {
      * @maximum 50
      */
   quizLength?: number;
+  reviewFocus?: StudyPreferencesReviewFocus;
+  reviewItems?: StudyPreferencesReviewItems;
+  reviewSize?: StudyPreferencesReviewSize;
   visualAids?: StudyPreferencesVisualAids;
 }

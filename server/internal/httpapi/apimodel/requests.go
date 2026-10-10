@@ -196,9 +196,19 @@ type GradeAnonymousQuizReq struct {
 
 // CheckReviewItemReq checks one question of a review session.
 type CheckReviewItemReq struct {
-	MaterialID string  `json:"materialId" minLength:"1"`
-	ItemID     string  `json:"itemId" minLength:"1"`
-	Answers    Answers `json:"answers" nullable:"false" doc:"The learner's answers by part id"`
+	MaterialID string            `json:"materialId" minLength:"1"`
+	ItemID     string            `json:"itemId" minLength:"1"`
+	Answers    Answers           `json:"answers" nullable:"false" doc:"The learner's answers by part id"`
+	Session    *ReviewSessionRef `json:"session,omitempty" doc:"The review session the answer belongs to; the first answer records it"`
+}
+
+// ReviewSessionRef is the session an answer belongs to: what it drew from and
+// every item it served, written with its first answer.
+type ReviewSessionRef struct {
+	ID          string `json:"id" format:"uuid" doc:"Minted by the browser when the session starts"`
+	WorkspaceID string `json:"workspaceId" minLength:"1"`
+	store.ReviewSessionInfo
+	Items []store.SessionItem `json:"items" minItems:"1" maxItems:"50" nullable:"false"`
 }
 
 // CheckBankQuestionReq checks one bank question.
@@ -463,9 +473,10 @@ type SetStudyItemReq struct {
 // RateReviewItemReq rates a flashcard (rating) or a question answered in
 // review (score).
 type RateReviewItemReq struct {
-	MaterialID string `json:"materialId" minLength:"1"`
-	ItemID     string `json:"itemId" minLength:"1"`
-	Rating     int    `json:"rating" minimum:"1" maximum:"4" doc:"A flashcard's button: 1 Again .. 4 Easy; questions are rated by POST /api/review/check"`
+	MaterialID string            `json:"materialId" minLength:"1"`
+	ItemID     string            `json:"itemId" minLength:"1"`
+	Rating     int               `json:"rating" minimum:"1" maximum:"4" doc:"A flashcard's button: 1 Again .. 4 Easy; questions are rated by POST /api/review/check"`
+	Session    *ReviewSessionRef `json:"session,omitempty" doc:"The review session the rating belongs to; the first answer records it"`
 }
 
 // ReportEditIncidentReq is one editing incident only the browser sees, where

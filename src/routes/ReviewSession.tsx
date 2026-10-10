@@ -4,7 +4,9 @@ import { useEffect, useState } from 'react';
 import { api } from '@/api/client';
 import {
   invalidateStudy,
+  useFinishReviewSession,
   useRateReviewItem,
+  useResumeReviewSession,
   useWorkspace,
   useWorkspaceReview,
 } from '@/api/hooks';
@@ -13,6 +15,8 @@ import type {
   GradedQuestion,
   RateReviewItemReq,
   ReviewItem,
+  ReviewSessionRef,
+  ReviewStart,
 } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
@@ -26,7 +30,7 @@ import {
   RATING_STYLE,
   ratingQueue,
 } from '@/features/study/ratings';
-import type { ReviewFrom } from '@/features/study/reviewSearch';
+import type { ReviewSearch } from '@/features/study/reviewSearch';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { SRS_RATINGS, type SrsRating } from '@/lib/srs';
@@ -39,29 +43,72 @@ function ratingFailed() {
   });
 }
 
-/** A mixed review of one workspace: its least retained cards and questions,
- * one at a time, twenty per session. Back returns to where it started. */
+/** A review of one workspace: a suggestion's items, the whole workspace's,
+ * or an unfinished session continued. The session is recorded with its first
+ * answer; Back returns to where it started. */
 export default function ReviewSession() {
   const { workspaceId } = useParams({ strict: false }) as {
     workspaceId: string;
   };
-  const { from } = useSearch({ strict: false }) as { from?: ReviewFrom };
+  const search = useSearch({ strict: false }) as ReviewSearch;
   const navigate = useNavigate();
   const { data: ws } = useWorkspace(workspaceId);
+  // Continue reads the recorded session; Review more starts a new one on
+  // the same group.
+  const [source, setSource] = useState<
+    { resume: string } | { start: ReviewStart }
+  >(() =>
+    search.session
+      ? { resume: search.session }
+      : {
+          start: {
+            chapterId: search.chapterId,
+            group: search.group ?? 'workspace',
+            mode: search.reviewMode,
+          },
+        }
+  );
+  const fresh = useWorkspaceReview(
+    workspaceId,
+    'start' in source ? source.start : { group: 'workspace' },
+    { enabled: 'start' in source }
+  );
+  const resumed = useResumeReviewSession(
+    'resume' in source ? source.resume : '',
+    { enabled: 'resume' in source }
+  );
   const { data, isFetching, isError, refetch } =
-    useWorkspaceReview(workspaceId);
+    'resume' in source ? resumed : fresh;
   // The session is the batch fetched when it began: ratings change the order
   // the server would give, and the learner should not see it reshuffle.
-  const [session, setSession] = useState<ReviewItem[] | null>(null);
+  const [session, setSession] = useState<{
+    ref: ReviewSessionRef;
+    items: ReviewItem[];
+  } | null>(null);
   const [index, setIndex] = useState(0);
   if (session === null && data && !isFetching && !isError)
-    setSession(data.items);
+    setSession({
+      items: data.items,
+      ref: {
+        chapterId: data.chapterId,
+        evidence: data.evidence,
+        group: data.group,
+        id: 'resume' in source ? source.resume : crypto.randomUUID(),
+        items: data.items.map(({ itemId, materialId }) => ({
+          itemId,
+          materialId,
+        })),
+        mode: data.mode,
+        workspaceId,
+      },
+    });
   const [loadingMore, setLoadingMore] = useState(false);
 
   // Ratings save in the background and refresh progress once, when the
   // session is left or Review more asks for the next batch.
   const qc = useQueryClient();
   const { mutateAsync: rateItem } = useRateReviewItem(null);
+  const { mutate: finish } = useFinishReviewSession();
   const [ratings] = useState(() => ratingQueue(rateItem, ratingFailed));
   useEffect(
     () => () => {
@@ -69,9 +116,19 @@ export default function ReviewSession() {
     },
     [qc, ratings, workspaceId]
   );
+  const item = session?.items[index];
+  const ended = !!session && !item;
+  // At the end every item is answered; a continued session whose items left
+  // their material is finished here, once its answers are saved.
+  const sessionId = session?.ref.id;
+  const answeredAny = index > 0;
+  useEffect(() => {
+    if (!ended || !answeredAny || !sessionId) return;
+    void ratings.saved().then(() => finish(sessionId));
+  }, [ended, answeredAny, sessionId, ratings, finish]);
 
   function back() {
-    if (from === 'learning')
+    if (search.from === 'review')
       navigate({ search: { tab: 'review' }, to: '/learning' });
     else navigate({ params: { workspaceId }, to: '/workspaces/$workspaceId' });
   }
@@ -81,6 +138,14 @@ export default function ReviewSession() {
     try {
       await ratings.saved();
       await invalidateStudy(qc, workspaceId);
+      if (session)
+        setSource({
+          start: {
+            chapterId: session.ref.chapterId,
+            group: session.ref.group,
+            mode: session.ref.mode,
+          },
+        });
       setSession(null);
       setIndex(0);
     } finally {
@@ -88,7 +153,6 @@ export default function ReviewSession() {
     }
   }
 
-  const item = session?.[index];
   return (
     <PanelWithInvertedRadius
       header={
@@ -109,7 +173,7 @@ export default function ReviewSession() {
           </Button>
           {item && session && (
             <span className="t-meta text-fg-muted">
-              {m.review_left({ count: session.length - index })}
+              {m.review_left({ count: session.items.length - index })}
             </span>
           )}
         </div>
@@ -133,27 +197,28 @@ export default function ReviewSession() {
               item={item}
               key={`${item.materialId}/${item.itemId}`}
               onNext={() => setIndex(index + 1)}
-              onRate={ratings.rate}
+              onRate={(body) => ratings.rate({ ...body, session: session.ref })}
             />
           ) : (
             <QuestionItem
               item={item}
               key={`${item.materialId}/${item.itemId}`}
               onNext={() => setIndex(index + 1)}
+              session={session.ref}
             />
           )
         ) : (
           <div className="m-auto flex flex-col items-center gap-4 text-center">
             <p className="t-card-title">
-              {session.length
-                ? m.review_done({ count: session.length })
+              {session.items.length
+                ? m.review_done({ count: session.items.length })
                 : m.review_nothing()}
             </p>
             <div className="flex gap-2">
               <Button onClick={back} variant="outline">
                 {m.review_finish()}
               </Button>
-              {session.length > 0 && (
+              {session.items.length > 0 && (
                 <Button disabled={loadingMore} onClick={() => void more()}>
                   {m.review_more()}
                 </Button>
@@ -224,9 +289,11 @@ function CardItem({
 function QuestionItem({
   item,
   onNext,
+  session,
 }: {
   item: ReviewItem;
   onNext: () => void;
+  session: ReviewSessionRef;
 }) {
   const [answers, setAnswers] = useState<Answers>({});
   const {
@@ -240,6 +307,7 @@ function QuestionItem({
         answers,
         itemId: item.itemId,
         materialId: item.materialId,
+        session,
       } satisfies CheckReviewItemReq),
     onError: () =>
       userToast({

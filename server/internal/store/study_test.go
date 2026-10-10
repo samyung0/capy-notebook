@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const studyQuestions = `[
@@ -55,6 +57,15 @@ func (f studyFixture) rate(t *testing.T, c Flashcard, rating int) {
 	if err := f.s.RateItem(context.Background(), f.user, Rating{MaterialID: c.MaterialID, ItemID: c.ID, Rating: &rating}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// session is a whole-workspace session serving the given cards.
+func (f studyFixture) session(cards ...Flashcard) *SessionAnswer {
+	a := &SessionAnswer{ID: uuid.NewString(), WorkspaceID: f.ws.ID, Info: ReviewSessionInfo{Group: GroupWorkspace}}
+	for _, c := range cards {
+		a.Items = append(a.Items, SessionItem{MaterialID: c.MaterialID, ItemID: c.ID})
+	}
+	return a
 }
 
 func (f studyFixture) progress(t *testing.T, materialID string) string {
@@ -185,7 +196,7 @@ func TestWorkspaceReviewSelection(t *testing.T) {
 	// Editing a card makes it new: it leaves mixed review until it is rated again.
 	editCardFront(t, f.s, f.user, kept[1].MaterialID, kept[1].ID, "Golgi apparatus")
 
-	mixed, err := f.s.WorkspaceReview(ctx, f.user, f.ws.ID, time.Now())
+	mixed, err := f.s.WorkspaceReview(ctx, f.user, f.ws.ID, ReviewSessionInfo{Group: GroupWorkspace}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,12 +213,11 @@ func TestWorkspaceReviewSelection(t *testing.T) {
 	if summary.Reviewable != 1 || len(summary.QuickReview) != 1 || summary.QuickReview[0].Front != "Golgi" || summary.QuickReview[0].Back != "Ships proteins" {
 		t.Fatalf("quick review = %+v", summary)
 	}
-	listed, err := f.s.ReviewWorkspaces(ctx, f.user, time.Now())
+	overview, err := f.s.ReviewOverview(ctx, f.user, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The removed set counts toward neither done nor total.
-	if len(listed) != 1 || listed[0].WorkspaceID != f.ws.ID || listed[0].Reviewable != 1 || listed[0].Total != 1 {
+	if listed := overview.Workspaces; len(listed) != 1 || listed[0].WorkspaceID != f.ws.ID || listed[0].Reviewable != 1 || listed[0].LastReviewedAt != nil {
 		t.Fatalf("review workspaces = %+v", listed)
 	}
 
@@ -224,8 +234,12 @@ func TestWorkspaceReviewSelection(t *testing.T) {
 		t.Fatalf("review log after reset = %d", n)
 	}
 
-	// Account purge deletes every per-user study row.
-	f.rate(t, kept[0], 3)
+	// Account purge deletes every per-user study row, sessions included.
+	good := 3
+	if err := f.s.RateItem(ctx, f.user, Rating{MaterialID: kept[0].MaterialID, ItemID: kept[0].ID, Rating: &good,
+		Session: f.session(kept[0])}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
 	if err := f.s.SetWorkspaceStudy(ctx, f.user, f.ws.ID, false); err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +249,7 @@ func TestWorkspaceReviewSelection(t *testing.T) {
 	if err := f.s.PurgeUser(ctx, f.user); err != nil {
 		t.Fatal(err)
 	}
-	for _, table := range []string{"study_progress", "workspace_study", "review_states", "review_log"} {
+	for _, table := range []string{"study_progress", "workspace_study", "review_states", "review_log", "review_sessions"} {
 		if n := f.count(t, `SELECT count(*) FROM `+table+` WHERE user_id=$1`, f.user); n != 0 {
 			t.Fatalf("%s after account purge = %d", table, n)
 		}
@@ -308,7 +322,7 @@ func TestReviewSkipsEmbeddedOrphanedAndEditedItems(t *testing.T) {
 
 	removeCard(t, f.s, f.user, cards[0].MaterialID, cards[1].ID)
 	editCardFront(t, f.s, f.user, cards[0].MaterialID, cards[2].ID, "Nucleus envelope")
-	mixed, err := f.s.WorkspaceReview(ctx, f.user, f.ws.ID, time.Now())
+	mixed, err := f.s.WorkspaceReview(ctx, f.user, f.ws.ID, ReviewSessionInfo{Group: GroupWorkspace}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

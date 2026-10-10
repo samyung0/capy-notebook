@@ -1,5 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
+import {
+  linkOptions,
+  useNavigate,
+  useParams,
+  useSearch,
+} from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
@@ -25,7 +30,7 @@ import { Tabs } from '@/components/ui/Tabs';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { AssetUrlContext } from '@/features/materials/MediaAssetView';
 import { QuizForm } from '@/features/quizzes/QuizForm';
-import { QuizPageHeader } from '@/features/quizzes/QuizPage';
+import { blockHomeCrumb, QuizPageHeader } from '@/features/quizzes/QuizPage';
 import { usePickedImages } from '@/features/quizzes/usePickedImages';
 import { m } from '@/i18n';
 import { textLength } from '@/lib/textLength';
@@ -144,7 +149,16 @@ function QuizEditor({ quizId }: { quizId: string }) {
           topBar={<TopInsetBar className="hidden shrink-0 lg:flex" />}
           trail={
             quiz
-              ? [quiz.workspaceName || m.files_tab_blocks(), name || quiz.name]
+              ? [
+                  blockHomeCrumb(quiz),
+                  {
+                    label: name || quiz.name,
+                    link: linkOptions({
+                      params: { quizId },
+                      to: '/quizzes/$quizId/attempt',
+                    }),
+                  },
+                ]
               : []
           }
         />

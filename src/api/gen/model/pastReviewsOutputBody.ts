@@ -4,10 +4,11 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { ReviewWorkspace } from './reviewWorkspace.ts';
+import type { PastReview } from './pastReview.ts';
 
-export interface ReviewWorkspacesOutputBody {
+export interface PastReviewsOutputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  workspaces: ReviewWorkspace[];
+  items: PastReview[];
+  more: boolean;
 }

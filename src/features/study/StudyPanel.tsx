@@ -1,21 +1,24 @@
 import { Link, useNavigate } from '@tanstack/react-router';
-import { type ReactNode, useState } from 'react';
+import { type CSSProperties, type ReactNode, useState } from 'react';
 import {
   useChapters,
   useFiles,
   useMaterials,
   useRateReviewItem,
   useSetWorkspaceStudyEnabled,
+  useWorkspace,
   useWorkspaceStudy,
 } from '@/api/hooks';
-import type { ReviewItem } from '@/api/types';
-import { Button } from '@/components/ui/Button';
+import type { ReviewItem, ReviewSuggestion } from '@/api/types';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Switch } from '@/components/ui/Switch';
 import { userToast } from '@/components/ui/userToast';
 import type { OpenItem } from '@/features/materials/openItem';
+import { MiniTrail } from '@/features/questions/trailMap/TrailMap';
+import '@/features/study/railMap/railMap.css';
+import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import type { TabAction } from '@/features/workspace/PanelTabRow';
 import {
   readingOrder,
@@ -23,9 +26,11 @@ import {
 } from '@/features/workspace/workspaceContent';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { coverInk } from '@/lib/coverInk';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { SRS_RATINGS, type SrsRating } from '@/lib/srs';
 import { RATING_LABEL, RATING_STYLE } from './ratings';
+import { groupName, REVIEW_MODE, reviewReason } from './reviewText';
 
 function itemTitle(item: WorkspaceContentItem): string {
   return item.type === 'file' ? item.data.name : item.data.title;
@@ -76,6 +81,7 @@ export function StudyPanel({
   renderTabRow: (actions: TabAction[]) => ReactNode;
   onOpenItem: (item: OpenItem) => void;
 }) {
+  const { data: workspace } = useWorkspace(workspaceId);
   const { data: study } = useWorkspaceStudy(workspaceId);
   const { data: chapters } = useChapters(workspaceId);
   const { data: files } = useFiles(workspaceId);
@@ -93,6 +99,8 @@ export function StudyPanel({
     return state !== 'done' && state !== 'removed';
   });
   const tracked = ordered.filter((it) => states.get(it.id) !== 'removed');
+  const doneCount = tracked.filter((it) => states.get(it.id) === 'done').length;
+  const cover = coverInk(workspace?.cover);
   const nothingYet =
     !study?.items.length && !study?.recentAttempts.length && !study?.reviewable;
 
@@ -150,28 +158,73 @@ export function StudyPanel({
                           <span className="line-clamp-1 flex-1 translate-y-px">
                             {itemTitle(next)}
                           </span>
-                          <Button
-                            iconRight="arrowRight"
+                          <UnderlineLink
+                            accent
                             onClick={() =>
                               onOpenItem({ id: next.id, kind: next.type })
                             }
-                            size="sm"
                           >
                             {m.study_continue()}
-                          </Button>
+                          </UnderlineLink>
                         </div>
                       )}
                       {study.reviewable > 0 && (
-                        <div className="flex items-center gap-2">
-                          <Icon
-                            className="shrink-0 text-fg-muted"
-                            name="refresh"
-                            size={15}
-                          />
-                          <span className="flex-1 translate-y-px">
-                            {m.study_refresh_knowledge()}
-                          </span>
-                          <ReviewButton workspaceId={workspaceId} />
+                        <div>
+                          <div className="flex items-start gap-2">
+                            <Icon
+                              className={cn(
+                                'mt-1 shrink-0 -translate-y-px',
+                                study.suggestion
+                                  ? REVIEW_MODE[study.suggestion.mode].className
+                                  : 'text-fg-muted'
+                              )}
+                              name={
+                                study.suggestion
+                                  ? REVIEW_MODE[study.suggestion.mode].icon
+                                  : 'refresh'
+                              }
+                              size={15}
+                            />
+                            {study.suggestion ? (
+                              <span className="flex min-w-0 flex-1 translate-y-px flex-col">
+                                <span>{suggestionTitle(study.suggestion)}</span>
+                                <span className="text-fg-muted text-xs">
+                                  {reviewReason(study.suggestion)}
+                                </span>
+                              </span>
+                            ) : (
+                              <span className="flex-1 translate-y-px">
+                                {m.study_refresh_knowledge()}
+                              </span>
+                            )}
+                            <span className="translate-y-px text-fg-secondary text-sm">
+                              {m.study_of({
+                                done: doneCount,
+                                total: tracked.length,
+                              })}
+                            </span>
+                          </div>
+                          {/* Total progress, done of tracked: skipping items doesn't move it. */}
+                          <div className="flex items-center gap-4 pl-6">
+                            <div
+                              className={cn(
+                                'min-w-0 flex-1',
+                                'rail-trail',
+                                cover && 'rail-colour'
+                              )}
+                              style={{ '--cover-ink': cover } as CSSProperties}
+                            >
+                              <MiniTrail
+                                answered={doneCount}
+                                topicId={workspaceId}
+                                total={Math.max(tracked.length, 1)}
+                              />
+                            </div>
+                            <ReviewLink
+                              suggestion={study.suggestion}
+                              workspaceId={workspaceId}
+                            />
+                          </div>
                         </div>
                       )}
                     </div>
@@ -263,29 +316,33 @@ export function StudyPanel({
   );
 }
 
-/** Opens this workspace's review session; Back returns to the workspace. */
-export function ReviewButton({
+/** Opens the suggested review, or the whole workspace's without one; Back
+ * returns to the workspace. */
+function ReviewLink({
   workspaceId,
-  variant = 'outline',
+  suggestion,
 }: {
   workspaceId: string;
-  variant?: 'outline' | 'dark';
+  suggestion?: ReviewSuggestion;
 }) {
   const navigate = useNavigate();
   return (
-    <Button
+    <UnderlineLink
       onClick={() =>
         navigate({
           params: { workspaceId },
-          search: { from: 'workspace' },
+          search: {
+            chapterId: suggestion?.chapterId,
+            from: 'workspace',
+            group: suggestion?.group ?? 'workspace',
+            reviewMode: suggestion?.mode,
+          },
           to: '/learning/review/$workspaceId',
         })
       }
-      size="sm"
-      variant={variant}
     >
       {m.study_review_button()}
-    </Button>
+    </UnderlineLink>
   );
 }
 
@@ -367,4 +424,12 @@ function QuickReview({
       </div>
     </Section>
   );
+}
+
+/** "Cell transport is tricky": the suggestion's group and mode in a line. */
+function suggestionTitle(s: ReviewSuggestion): string {
+  const name = groupName(s.group, s.chapterName) || s.workspaceName;
+  if (s.mode === 'tricky') return m.study_suggest_tricky({ name });
+  if (s.mode === 'learned') return m.study_suggest_learned({ name });
+  return m.study_suggest_fading({ name });
 }

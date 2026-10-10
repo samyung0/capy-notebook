@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CheckReviewItemReqAnswers } from './checkReviewItemReqAnswers.ts';
+import type { ReviewSessionRef } from './reviewSessionRef.ts';
 
 export interface CheckReviewItemReq {
   /** A URL to the JSON Schema for this object. */
@@ -15,4 +16,6 @@ export interface CheckReviewItemReq {
   itemId: string;
   /** @minLength 1 */
   materialId: string;
+  /** The review session the answer belongs to; the first answer records it */
+  session?: ReviewSessionRef;
 }

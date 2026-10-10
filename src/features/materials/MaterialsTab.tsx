@@ -1,4 +1,4 @@
-import { linkOptions, useNavigate } from '@tanstack/react-router';
+import { linkOptions, useNavigate, useSearch } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { updateMaterialBodyTitleMax } from '@/api/gen/validators';
 import {
@@ -18,9 +18,7 @@ import {
 } from '@/api/hooks';
 import type {
   MaterialListItem,
-  MaterialListKind,
   MaterialListLocation,
-  MaterialListParams,
   MaterialListSort,
 } from '@/api/types';
 import { ItemList } from '@/components/app/ItemCard';
@@ -47,10 +45,16 @@ import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { trackItemCloned } from '@/lib/analytics';
 import { toastCloneError } from '@/lib/authToasts';
+import {
+  csv,
+  type FilesSearch,
+  MATERIAL_KINDS,
+  MATERIAL_LOCATIONS,
+  MATERIAL_SORT_DEFAULT,
+  materialListParams,
+  sortSearch,
+} from '@/lib/listSearch';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
-
-const KINDS: MaterialListKind[] = ['note', 'quiz', 'flashcards'];
-const LOCATIONS: MaterialListLocation[] = ['workspace', 'standalone'];
 
 function locationLabel(location: MaterialListLocation): string {
   switch (location) {
@@ -99,23 +103,20 @@ export function MaterialsTab({
       value: 'kind',
     },
   ];
-  const [sort, setSort] = useState<MaterialListSort>('updated');
-  const [ascending, setAscending] = useState(false);
-  const [kinds, setKinds] = useState<string[]>([]);
-  const [location, setLocation] = useState<MaterialListLocation | ''>('');
-  const [workspaceIds, setWorkspaceIds] = useState<string[]>([]);
-  const navigate = useNavigate();
+  // Sort and filters live in the URL; picks replace the entry.
+  const search = useSearch({ from: '/auth-shell/files' });
+  const navigate = useNavigate({ from: '/files' });
+  const setSearch = (patch: FilesSearch) =>
+    void navigate({ replace: true, search: (prev) => ({ ...prev, ...patch }) });
+  const params = useMemo(() => materialListParams(search), [search]);
+  const {
+    sort = MATERIAL_SORT_DEFAULT,
+    kinds = [],
+    workspaceIds = [],
+  } = params;
+  const ascending = params.dir === 'asc';
+  const location = search.location;
 
-  const params = useMemo<MaterialListParams>(
-    () => ({
-      dir: ascending ? 'asc' : 'desc',
-      sort,
-      ...(kinds.length ? { kinds: kinds as MaterialListKind[] } : {}),
-      ...(location ? { locations: [location] } : {}),
-      ...(workspaceIds.length ? { workspaceIds } : {}),
-    }),
-    [ascending, kinds, location, sort, workspaceIds]
-  );
   const {
     data,
     fetchNextPage,
@@ -136,8 +137,8 @@ export function MaterialsTab({
     {
       key: 'kind',
       label: m.create_filter_kind(),
-      onToggle: (value) => setKinds((prev) => toggleValue(prev, value)),
-      options: KINDS.map((kind) => ({
+      onToggle: (value) => setSearch({ kind: csv(toggleValue(kinds, value)) }),
+      options: MATERIAL_KINDS.map((kind) => ({
         label: materialKindLabel(kind),
         value: kind,
       })),
@@ -147,10 +148,11 @@ export function MaterialsTab({
       key: 'location',
       label: m.create_filter_location(),
       onToggle: (value) =>
-        setLocation((prev) =>
-          prev === value ? '' : (value as MaterialListLocation)
-        ),
-      options: LOCATIONS.map((value) => ({
+        setSearch({
+          location:
+            location === value ? undefined : (value as MaterialListLocation),
+        }),
+      options: MATERIAL_LOCATIONS.map((value) => ({
         label: locationLabel(value),
         value,
       })),
@@ -160,7 +162,8 @@ export function MaterialsTab({
       emptyLabel: m.create_filter_no_workspaces(),
       key: 'workspace',
       label: m.create_filter_workspace(),
-      onToggle: (value) => setWorkspaceIds((prev) => toggleValue(prev, value)),
+      onToggle: (value) =>
+        setSearch({ workspace: csv(toggleValue(workspaceIds, value)) }),
       options: owned.map((ws) => ({ label: ws.name, value: ws.id })),
       selected: workspaceIds,
     },
@@ -370,15 +373,16 @@ export function MaterialsTab({
         }
         ascending={ascending}
         filters={filters}
-        onResetFilters={() => {
-          setKinds([]);
-          setLocation('');
-          setWorkspaceIds([]);
-        }}
-        onSortChange={(next, asc) => {
-          setSort(next);
-          setAscending(asc);
-        }}
+        onResetFilters={() =>
+          setSearch({
+            kind: undefined,
+            location: undefined,
+            workspace: undefined,
+          })
+        }
+        onSortChange={(next, asc) =>
+          setSearch(sortSearch(next, asc, MATERIAL_SORT_DEFAULT))
+        }
         onViewChange={onViewChange}
         sort={sort}
         sorts={sorts}

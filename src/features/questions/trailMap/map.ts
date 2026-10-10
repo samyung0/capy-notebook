@@ -31,7 +31,9 @@ const TRAIL_Y = 156;
 export const STEP = 60;
 const FIRST_X = 70;
 const SUMMIT_W = 300;
-const BLEND = 80;
+const BLEND = 60;
+/** Biome length in map units: about 4 to 7 questions each. */
+const BIOME_LENGTH = [260, 440] as const;
 
 /** Per question-width ceilings for every biome: elements (small ground marks count half) and visual weight. */
 const COUNT_CAP = 5;
@@ -373,7 +375,7 @@ class Builder {
         at = bag.indexOf(biome);
         if (at >= 0) bag.splice(at, 1);
       }
-      const length = rng.uniform(420, 720);
+      const length = rng.uniform(...BIOME_LENGTH);
       this.segments.push({ a: x, b: x + length, biome });
       x += length;
     }

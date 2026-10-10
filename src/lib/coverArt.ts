@@ -42,6 +42,7 @@ import {
   zigZag,
 } from 'hero-patterns';
 import type { CoverConfig } from '@/api/types';
+import { GENKO_LINE, PAPER_INK } from '@/lib/coverInk';
 
 /** How a cover strip paints its background and label. */
 export type CoverPaint = {
@@ -367,8 +368,6 @@ export const PAPER_COLORS = [
   '#f8efc9',
 ] as const;
 const PAPER_LINE = '#6f8fbf';
-const GENKO_LINE = '#b98a6a';
-export const PAPER_INK = '#2f4f86';
 
 function paper(color: string, kind: Kind, line: string) {
   let lines = '';

@@ -1174,6 +1174,16 @@ export const handlers = [
     const body = (await request.json()) as Partial<Workspace> & {
       tags?: TagInput[];
     };
+    // The plan's owned-workspace cap, as the gateway enforces it.
+    const cap = PLAN_LIMITS[db.user.planTier].ownedWorkspaceLimit;
+    if (cap !== null && db.workspaces.filter((w) => w.isOwner).length >= cap)
+      return HttpResponse.json(
+        {
+          code: 'workspace_limit_exceeded',
+          message: 'owned workspace limit reached',
+        },
+        { status: 403 }
+      );
     const id = uid('ws');
     const ws: Workspace = {
       autoProcess: true,

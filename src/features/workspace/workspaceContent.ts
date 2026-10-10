@@ -48,12 +48,38 @@ export function contentFor(
         type: 'material',
       })
     ),
-  ].sort((a, b) => {
-    const positionDiff = a.position - b.position;
-    if (positionDiff) return positionDiff;
-    if (a.type !== b.type) return a.type === 'file' ? -1 : 1;
-    return +new Date(b.createdAt) - +new Date(a.createdAt);
-  });
+  ].sort(treeOrder);
+}
+
+interface Ordered {
+  createdAt: string;
+  position: number;
+  type: 'file' | 'material';
+}
+
+/** Inside one chapter: by position, files first on ties, then newest. */
+function treeOrder(a: Ordered, b: Ordered) {
+  const positionDiff = a.position - b.position;
+  if (positionDiff) return positionDiff;
+  if (a.type !== b.type) return a.type === 'file' ? -1 : 1;
+  return +new Date(b.createdAt) - +new Date(a.createdAt);
+}
+
+/**
+ * readingOrder for items that carry their chapter (Learning's progress map):
+ * chapters by order, then unfiled; items of an unknown chapter are left out,
+ * as the tree leaves them out.
+ */
+export function inReadingOrder<
+  T extends Ordered & { chapterId: string | null },
+>(
+  chapters: readonly { id: string; order: number }[],
+  items: readonly T[]
+): T[] {
+  return [
+    ...[...chapters].sort((a, b) => a.order - b.order).map((ch) => ch.id),
+    null,
+  ].flatMap((id) => items.filter((it) => it.chapterId === id).sort(treeOrder));
 }
 
 /** Every item in reading order: chapters by position, then unfiled. */

@@ -122,3 +122,28 @@ test('bank continues, filters and copies to a quiz', async ({ page }) => {
   await expect(page.getByText(m.question_ui_copied())).toBeVisible();
   await expect(dialog).toHaveCount(0);
 });
+
+// Summary on a finished topic opens its summary page under the topic: the
+// score, the missed questions to retry, and a square that opens its question.
+test('a finished topic opens its summary', async ({ page }) => {
+  await page.goto('/qb/circles/summary');
+  await expect(page.getByText('7 / 10', { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByText(m.result_wrong({ count: 3 }))).toBeVisible();
+  // The trail ends on the topic, which opens the topic page.
+  await expect(
+    page
+      .getByRole('navigation', { name: m.quiz_breadcrumb() })
+      .getByRole('link')
+      .last()
+  ).toHaveAttribute('href', /\/qb\/circles$/);
+  await expect(
+    page.getByRole('button', { name: m.question_ui_retry() })
+  ).toHaveCount(3);
+  await page
+    .getByRole('button', { name: m.quiz_question_wrong({ number: 3 }) })
+    .click();
+  await expect(page).toHaveURL(/\/qb\/circles\/[^/]+$/);
+  await expect(page).not.toHaveURL(/summary$/);
+});

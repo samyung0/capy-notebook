@@ -123,12 +123,6 @@ builder writes under the ignored `data/` and keeps the committed
 
 paraglide is used for internationalization. use paraglide functions to support i18n when appropriate.
 
-## Pull Request
-
-- Do not make a PR unless requested.
-- Capy Notebook current stage dont make new branches, work on main directly.
-- BetterOffice PRs follow the workflow below.
-
 ## BetterOffice workflow
 
 - BetterOffice's `main` tracks upstream changes. `capy-ci` is the Capy integration branch used for pinning `vendor/betteroffice`.
@@ -147,6 +141,8 @@ paraglide is used for internationalization. use paraglide functions to support i
 - DO NOT use template strings NOR variables just to hold classNames for tailwind, use `cn()` to inject conditional themes
 - DO NOT use chevron icon for navigational links icon, use navigationback and navigationForward
 - Always let larger screens override smaller screen styles, phones are usually less powerful and need to run longer if it needs to pplay more styles
+- Never use `tabular-nums`
+- Use buttons with borders when its an action which stays on the same page, for links/spa links use buttons/links with underline and potentially a navigationForward icon
 
 ## Final Remarks
 

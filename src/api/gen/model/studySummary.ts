@@ -6,6 +6,7 @@
  */
 import type { Attempt } from './attempt.ts';
 import type { ReviewItem } from './reviewItem.ts';
+import type { ReviewSuggestion } from './reviewSuggestion.ts';
 import type { StudyItem } from './studyItem.ts';
 
 export interface StudySummary {
@@ -16,4 +17,5 @@ export interface StudySummary {
   quickReview: ReviewItem[];
   recentAttempts: Attempt[];
   reviewable: number;
+  suggestion?: ReviewSuggestion;
 }

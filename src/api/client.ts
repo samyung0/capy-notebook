@@ -362,6 +362,7 @@ export const qk = {
   integrations: ['integrations'] as const,
   invoices: ['billing', 'invoices'] as const,
   labels: ['labels'] as const,
+  learningProgress: ['learning', 'progress'] as const,
   llmCredentials: ['llm-credentials'] as const,
   material: (id: string) => ['material', id] as const,
   materialDiscussions: (id: string) => ['material', id, 'discussions'] as const,
@@ -377,8 +378,13 @@ export const qk = {
   ownedMaterials: (params?: unknown) =>
     ['materials', 'owned', params ?? null] as const,
   ownedMaterialsRoot: ['materials', 'owned'] as const,
+  pastReviews: (params?: unknown) =>
+    ['review', 'past', params ?? null] as const,
   quiz: (id: string) => ['quiz', id] as const,
-  reviewWorkspaces: ['review', 'workspaces'] as const,
+  reviewOverview: ['review', 'overview'] as const,
+  /** Everything under Learning's Review and Past reviews tabs. */
+  reviewRoot: ['review'] as const,
+  reviewSession: (id: string) => ['review', 'session', id] as const,
   search: (q: string) => ['search', q] as const,
   sourceUploadPolicy: (wsId?: string) =>
     ['source-upload-policy', wsId ?? null] as const,
@@ -393,7 +399,8 @@ export const qk = {
   workspaceCollaborators: (id: string) =>
     ['workspace', id, 'collaborators'] as const,
   workspaceMembers: (id: string) => ['workspace', id, 'members'] as const,
-  workspaceReview: (wsId: string) => ['workspace', wsId, 'review'] as const,
+  workspaceReview: (wsId: string, params?: unknown) =>
+    ['workspace', wsId, 'review', params ?? null] as const,
   workspaceStats: (id: string) => ['workspace', id, 'stats'] as const,
   workspaces: (params?: unknown) => ['workspaces', params ?? null] as const,
 };

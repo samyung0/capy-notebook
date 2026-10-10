@@ -101,10 +101,7 @@ function Values({
           {rows.map((row, index) => (
             <tr key={index}>
               {row.map((cell, cellIndex) => (
-                <td
-                  className="px-1 py-0.5 tabular-nums first:font-semibold"
-                  key={cellIndex}
-                >
+                <td className="px-1 py-0.5 first:font-semibold" key={cellIndex}>
                   {typeof cell === 'number' ? format(cell) : cell}
                 </td>
               ))}

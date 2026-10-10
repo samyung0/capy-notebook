@@ -23,7 +23,7 @@ catalog for every numeric limit that may vary by subscription plan:
 | Monthly credits                 |                      1,000 |                     20,000 |
 | Source file                     |                     10 MiB |                     30 MiB |
 | Material daily-history entries  |                          3 |                         30 |
-| Owned workspaces                |         Unlimited (`NULL`) |         Unlimited (`NULL`) |
+| Owned workspaces                |                         10 |                         50 |
 | Files per workspace             |                        100 |                        100 |
 | Files per upload/import request |                         20 |                         20 |
 | One uploaded image              |                      2 MiB |                      5 MiB |

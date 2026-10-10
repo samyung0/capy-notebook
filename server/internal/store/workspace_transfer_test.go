@@ -256,6 +256,7 @@ func TestOwnerColumnsAreCoveredByTransfer(t *testing.T) {
 		"workspace_invites.user_id": "the invited party, resolved before acceptance",
 		"study_progress.user_id":    "per-user study progress, not billable bytes",
 		"workspace_study.user_id":   "per-user study setting, not billable bytes",
+		"review_sessions.user_id":   "per-user review history, not billable bytes",
 		"conversations.user_id":     "who held the chat; history stays with them",
 		"source_batches.user_id":    "who started the upload, the notification recipient",
 	}

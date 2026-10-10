@@ -61,9 +61,7 @@ export function ProgressBar({
         )}
       </div>
       {showLabel && (
-        <span className="t-label text-fg-muted tabular-nums">
-          {Math.round(pct)}%
-        </span>
+        <span className="t-label text-fg-muted">{Math.round(pct)}%</span>
       )}
     </div>
   );

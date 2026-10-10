@@ -47,6 +47,12 @@ type StudyPreferences struct {
 	// MainFormat is each chapter's main explainer; auto lets the agent choose
 	// from the explainer style.
 	MainFormat string `json:"mainFormat,omitempty" enum:"note,deck,auto"`
+	// Review sessions (human/study-progress.md, 2026-10-10): items per
+	// session (default 20), which items reviews draw from (default both) and
+	// which mode suggestions favour (default balanced). The chat ignores them.
+	ReviewSize  int    `json:"reviewSize,omitempty" enum:"10,20,30,50"`
+	ReviewItems string `json:"reviewItems,omitempty" enum:"both,quiz,flashcards"`
+	ReviewFocus string `json:"reviewFocus,omitempty" enum:"balanced,tricky,fading,learned"`
 }
 
 type Workspace struct {

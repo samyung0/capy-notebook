@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/Input';
 import { Popover, PopoverContent } from '@/components/ui/Popover';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import type { BankExam } from './bank';
+import { type BankExam, soleSubject, soleTopic } from './bank';
 
 // A soft corner fade keeps white text readable on dark art without the strip
 // standing out against a light page; light covers take dark text and no fade,
@@ -20,13 +20,25 @@ import type { BankExam } from './bank';
 const FADE =
   'radial-gradient(ellipse 130% 190% at 0% 100%, rgb(0 0 0 / 0.42), rgb(0 0 0 / 0.18) 60%, transparent 95%)';
 
+const questionCount = (exam: BankExam) => {
+  const count = exam.subjects.reduce(
+    (sum, subject) =>
+      sum + subject.topics.reduce((total, topic) => total + topic.total, 0),
+    0
+  );
+  return count === 1
+    ? m.question_ui_one_question()
+    : m.question_ui_question_count({ count });
+};
+
+/** The exam's topic count, or its question count when it has one topic. */
 const topicCount = (exam: BankExam) => {
   const count = exam.subjects.reduce(
     (sum, subject) => sum + subject.topics.length,
     0
   );
   return count === 1
-    ? m.question_ui_one_topic()
+    ? questionCount(exam)
     : m.question_ui_topic_count({ count });
 };
 
@@ -114,21 +126,18 @@ export function ExamStrip({
   );
 }
 
-const examCounts = (exam: BankExam) => {
-  const questions = exam.subjects.reduce(
-    (sum, subject) =>
-      sum + subject.topics.reduce((total, topic) => total + topic.total, 0),
-    0
-  );
-  return [
-    exam.subjects.length === 1
-      ? m.question_ui_one_subject()
-      : m.question_ui_subject_count({ count: exam.subjects.length }),
-    questions === 1
-      ? m.question_ui_one_question()
-      : m.question_ui_question_count({ count: questions }),
-  ].join(' · ');
-};
+/** Subjects, or topics when the subject level is hidden, then questions. */
+const examCounts = (exam: BankExam) =>
+  [
+    soleTopic(exam)
+      ? undefined
+      : soleSubject(exam)
+        ? topicCount(exam)
+        : m.question_ui_subject_count({ count: exam.subjects.length }),
+    questionCount(exam),
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
 /**
  * The picked exam as a cover strip; it opens a searchable list of every exam.

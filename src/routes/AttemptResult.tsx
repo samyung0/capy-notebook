@@ -1,12 +1,18 @@
-import { Link, useNavigate, useParams } from '@tanstack/react-router';
+import {
+  Link,
+  linkOptions,
+  useNavigate,
+  useParams,
+} from '@tanstack/react-router';
 import { useAttempt, useQuiz } from '@/api/hooks';
 import { ErrorState } from '@/components/app/ErrorState';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { TabContent } from '@/components/app/tabPanel';
-import { Button, ErrorAction } from '@/components/ui/Button';
+import { ErrorAction } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
+import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import type { Answer } from '@/features/quizzes/grade';
 import {
@@ -83,6 +89,19 @@ export default function AttemptResult() {
     <PanelWithInvertedRadius
       header={
         <QuizPageHeader
+          actions={
+            attempt.materialId && (
+              <UnderlineLink accent asChild>
+                <Link
+                  params={{ quizId: attempt.materialId }}
+                  preload="intent"
+                  to="/quizzes/$quizId/attempt"
+                >
+                  {m.quiz_redo()}
+                </Link>
+              </UnderlineLink>
+            )
+          }
           meta={[
             new Date(attempt.takenAt).toLocaleDateString(getLocale(), {
               day: 'numeric',
@@ -93,10 +112,21 @@ export default function AttemptResult() {
           ]
             .filter(Boolean)
             .join(' · ')}
-          onBack={() => void navigate({ to: '/learning' })}
+          onBack={() =>
+            void navigate({ search: { tab: 'results' }, to: '/learning' })
+          }
           title={attempt.quizName}
           topBar={<TopInsetBar className="hidden shrink-0 lg:flex" />}
-          trail={[m.nav_learning(), m.learning_tab_results()]}
+          trail={[
+            { label: m.nav_learning(), link: linkOptions({ to: '/learning' }) },
+            {
+              label: m.learning_tab_results(),
+              link: linkOptions({
+                search: { tab: 'results' },
+                to: '/learning',
+              }),
+            },
+          ]}
         />
       }
     >
@@ -119,24 +149,6 @@ export default function AttemptResult() {
           </>
         ) : (
           <p className="text-fg-muted">{m.quiz_no_breakdown()}</p>
-        )}
-        {attempt.materialId && (
-          <Button
-            asChild
-            className="mt-12"
-            iconLeft="refresh"
-            rounded="large"
-            size="lg"
-            variant="outline"
-          >
-            <Link
-              params={{ quizId: attempt.materialId }}
-              preload="intent"
-              to="/quizzes/$quizId/attempt"
-            >
-              {m.quiz_redo()}
-            </Link>
-          </Button>
         )}
         <MaterialAttributionFooter provenance={quiz?.provenance} />
       </TabContent>

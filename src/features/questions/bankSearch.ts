@@ -1,4 +1,9 @@
-import type { BankExam, BankSubject, BankTopic } from './bank';
+import {
+  type BankExam,
+  type BankSubject,
+  type BankTopic,
+  soleTopic,
+} from './bank';
 
 const WORD_BREAK = /[^\p{L}\p{N}]+/u;
 
@@ -27,8 +32,8 @@ export type SyllabusHit =
 /**
  * Exams and topics matching a search, best first. An exam ranks by its name,
  * or at best 3 by its full name or description; a topic by its own name, or 5
- * when only its subject or exam matches. Ties keep exams first, then syllabus
- * order. The syllabus is already loaded, so search needs no request.
+ * when only its subject or exam matches; a single-topic exam lists only
+ * itself. Ties keep exams first, then syllabus order. The syllabus is already loaded, so search needs no request.
  */
 export function searchSyllabus(exams: BankExam[], needle: string) {
   const hits: SyllabusHit[] = [];
@@ -41,6 +46,7 @@ export function searchSyllabus(exams: BankExam[], needle: string) {
     const examRank = Math.min(...[own, ...more].filter(Boolean));
     if (examRank !== Number.POSITIVE_INFINITY)
       hits.push({ exam, kind: 'exam', rank: examRank });
+    if (soleTopic(exam)) continue;
     for (const subject of exam.subjects)
       for (const item of subject.topics) {
         const rank =

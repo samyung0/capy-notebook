@@ -14,6 +14,7 @@ import {
 } from './map';
 import { catmull, lastOf, n, type Pt, polyD, Rng, wobble } from './sketch';
 import './trailMap.css';
+import { useVisibleRange } from './useVisibleRange';
 
 /** Map units to CSS pixels. */
 const SCALE = 0.92;
@@ -55,44 +56,19 @@ export function TrailMap({
   );
   const clip = useId().replace(/:/g, '');
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [range, setRange] = useState<[number, number]>([0, 0]);
   const next = map.stops[nextPosition - 1];
   // Full ink up to a few questions past the next one or the last attempted
   // one, whichever is later, so going back to an earlier question pulls it back.
   const inkedTo = Math.max(nextPosition, lastAnsweredPosition) + AHEAD;
   const reveal =
     inkedTo >= total ? map.width : map.stops[inkedTo - 1][0] + STEP / 2;
-
   // Open on the next question, a third of the way in, then follow scrolling.
-  useLayoutEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const track = () => {
-      const lo = Math.floor((el.scrollLeft / SCALE - MARGIN) / STEP);
-      const hi = Math.ceil(
-        ((el.scrollLeft + el.clientWidth) / SCALE + MARGIN) / STEP
-      );
-      setRange((prev) => (prev[0] === lo && prev[1] === hi ? prev : [lo, hi]));
-    };
-    el.scrollLeft = next[0] * SCALE - el.clientWidth * 0.38;
-    track();
-    let frame = 0;
-    const onScroll = () => {
-      if (!frame)
-        frame = requestAnimationFrame(() => {
-          frame = 0;
-          track();
-        });
-    };
-    el.addEventListener('scroll', onScroll, { passive: true });
-    const resize = new ResizeObserver(track);
-    resize.observe(el);
-    return () => {
-      el.removeEventListener('scroll', onScroll);
-      resize.disconnect();
-      cancelAnimationFrame(frame);
-    };
-  }, [next]);
+  const range = useVisibleRange(scrollRef, {
+    focus: next[0],
+    margin: MARGIN,
+    scale: SCALE,
+    step: STEP,
+  });
 
   const art = useMemo(() => trailArt(topicId, map.trail), [topicId, map]);
   const done = useMemo(() => {
@@ -271,18 +247,31 @@ function trailArt(topicId: string, trail: Pt[]) {
   );
 }
 
-const MINI: Pt[] = catmull(
-  [
-    [4, 14],
-    [40, 8],
-    [80, 16],
-    [120, 8],
-    [150, 12],
-  ],
-  8
-);
+/** Drawing units per CSS pixel, so strokes, dot and flag keep one size however wide the trail runs. */
+const MINI_UNIT = 176 / 150;
+/** The narrowest trail, in drawing units: 150px. */
+const MINI_MIN = 176;
 
-/** A short trail for the other started topics: solid up to the share answered, a dot, a small flag. */
+/** The trail's line across a drawing this wide: a wave every 72 units or so, of seeded heights, ending before the flag. */
+function miniLine(width: number, rng: Rng): Pt[] {
+  const end = width - 26;
+  const count = Math.max(2, Math.round((end - 4) / 36));
+  return catmull(
+    Array.from({ length: count + 1 }, (_, i): Pt => {
+      const x = 4 + ((end - 4) * i) / count;
+      if (i === 0) return [x, 14];
+      if (i === count) return [x, 12];
+      return [x, i % 2 ? rng.uniform(7, 10) : rng.uniform(14, 17)];
+    }),
+    8
+  );
+}
+
+/**
+ * A short trail for the other started topics and workspaces: solid up to the
+ * share done, a dot, a small flag. It fills its box (150px at least), drawing
+ * more waves rather than stretching them.
+ */
 export function MiniTrail({
   topicId,
   answered,
@@ -292,30 +281,53 @@ export function MiniTrail({
   answered: number;
   total: number;
 }) {
+  const ref = useRef<SVGSVGElement>(null);
+  const [width, setWidth] = useState(MINI_MIN);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () =>
+      setWidth(
+        Math.max(
+          MINI_MIN,
+          Math.round(el.getBoundingClientRect().width * MINI_UNIT)
+        )
+      );
+    measure();
+    const resize = new ResizeObserver(measure);
+    resize.observe(el);
+    return () => resize.disconnect();
+  }, []);
   const { done, rest, at } = useMemo(() => {
     const rng = new Rng(`${topicId}|mini`);
-    const [head, tail, point] = splitAt(MINI, answered / total);
+    const [head, tail, point] = splitAt(
+      miniLine(width, new Rng(`${topicId}|mini-line`)),
+      answered / total
+    );
     return {
       at: point,
       done: polyD(wobble(head, rng, 0.6)),
       rest: polyD(wobble(tail, rng, 0.6)),
     };
-  }, [topicId, answered, total]);
+  }, [topicId, answered, total, width]);
   return (
     <svg
       aria-hidden
-      className="trail-mini block h-6 w-[150px] shrink-0 overflow-visible"
-      viewBox="0 0 176 24"
+      className="trail-mini block h-6 w-full min-w-[150px] overflow-visible"
+      ref={ref}
+      viewBox={`0 0 ${width} 24`}
     >
       <path className="tm-trail-rest" d={rest} />
       <path className="tm-trail-done" d={done} />
       <circle className="tm-you-dot" cx={n(at[0])} cy={n(at[1])} r={4} />
-      <path className="tm-mini-ground" d="M156 20 164 20" />
-      <path className="tm-mini-pole" d="M160 20 160 1" />
-      <path
-        className="tm-flag"
-        d="M160.6 1C165 -0.5 168 2.5 172 1.5L169 5 172 8.5C168 9.5 165 6.5 160.6 8Z"
-      />
+      <g transform={`translate(${width - MINI_MIN} 0)`}>
+        <path className="tm-mini-ground" d="M156 20 164 20" />
+        <path className="tm-mini-pole" d="M160 20 160 1" />
+        <path
+          className="tm-flag"
+          d="M160.6 1C165 -0.5 168 2.5 172 1.5L169 5 172 8.5C168 9.5 165 6.5 160.6 8Z"
+        />
+      </g>
     </svg>
   );
 }

@@ -275,15 +275,46 @@ export type {
   BankCopyOutputBody as BankCopyResult,
   BankMarksOutputBody as BankTopicMarks,
   BankProgressOutputBody as BankProgress,
+  BankSummaryOutputBody as BankTopicSummary,
+  BankSummaryQuestion,
   Cover as CoverConfig,
+  LearningProgress,
+  PastReview,
+  ProgressItem,
+  ProgressMap,
+  ProgressWorkspace,
   RateReviewItemReq,
+  ReviewEvidence,
+  ReviewOverview,
+  ReviewSessionRef,
+  ReviewSuggestion,
   ReviewWorkspace,
   Row as BankListRow,
+  SessionScore,
   SetStudyEnabledReq,
   SetStudyItemReq,
   StudyItem,
   TopicProgress as BankTopicProgress,
+  UnfinishedSession,
 } from './gen/model';
+
+/** A suggested review's leading mode. */
+export type ReviewMode = NonNullable<GenReviewSession['mode']>;
+/** What a new review session draws from: a suggestion's group and mode, or
+ * the whole workspace without a mode. */
+export interface ReviewStart {
+  chapterId?: string;
+  group: GenReviewSession['group'];
+  mode?: ReviewMode;
+}
+export type PastReviewSort = 'date' | 'quiz' | 'cards' | 'time';
+export type PastReviewHas = 'quiz' | 'flashcards';
+export interface PastReviewParams {
+  dir?: 'asc';
+  has?: PastReviewHas[];
+  sort?: PastReviewSort;
+  workspaceIds?: string[];
+}
 
 /* ---------------- overridden request bodies ----------------
    Same wire contract with the UI-facing shape restored: the Question union,

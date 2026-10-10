@@ -156,7 +156,7 @@ function FileChanges({
       )}
       <div className="mt-3 flex justify-between border-line border-t pt-3">
         <span>{m.workspace_pending_notes()}</span>
-        <span className="tabular-nums">{pendingNotes}</span>
+        <span>{pendingNotes}</span>
       </div>
     </div>
   );

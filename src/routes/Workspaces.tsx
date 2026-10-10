@@ -1,3 +1,4 @@
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useCreateWorkspace, useTags, useWorkspaces } from '@/api/hooks';
 import {
@@ -19,9 +20,15 @@ import {
 } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { track } from '@/lib/analytics';
+import {
+  csv,
+  sortSearch,
+  WORKSPACE_SORT_DEFAULT,
+  type WorkspaceSort,
+  type WorkspacesSearch,
+  workspaceListParams,
+} from '@/lib/listSearch';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
-
-type WorkspaceSort = 'accessed' | 'created' | 'chapters' | 'files';
 
 export default function Workspaces() {
   const sorts: SortOption<WorkspaceSort>[] = [
@@ -46,9 +53,13 @@ export default function Workspaces() {
       value: 'files',
     },
   ];
-  const [sort, setSort] = useState<WorkspaceSort>('created');
-  const [ascending, setAscending] = useState(false);
-  const [tagFilters, setTagFilters] = useState<string[]>([]);
+  // Sort and tags live in the URL; picks replace the entry, not add to it.
+  const search = useSearch({ from: '/auth-shell/workspaces' });
+  const navigate = useNavigate({ from: '/workspaces' });
+  const setSearch = (patch: WorkspacesSearch) =>
+    void navigate({ replace: true, search: (prev) => ({ ...prev, ...patch }) });
+  const { sort, tag: tagFilters } = workspaceListParams(search);
+  const ascending = search.dir === 'asc';
   const [createOpen, setCreateOpen] = useState(false);
 
   const { data, fetchStatus, isLoading } = useWorkspaces({
@@ -90,16 +101,15 @@ export default function Workspaces() {
             key: 'tags',
             label: m.workspaces_filter_tags(),
             onToggle: (value) =>
-              setTagFilters((prev) => toggleValue(prev, value)),
+              setSearch({ tag: csv(toggleValue(tagFilters, value)) }),
             options: tags.map((t) => ({ label: t.value, value: t.value })),
             selected: tagFilters,
           },
         ]}
-        onResetFilters={() => setTagFilters([])}
-        onSortChange={(next, asc) => {
-          setSort(next);
-          setAscending(asc);
-        }}
+        onResetFilters={() => setSearch({ tag: undefined })}
+        onSortChange={(next, asc) =>
+          setSearch(sortSearch(next, asc, WORKSPACE_SORT_DEFAULT))
+        }
         sort={sort}
         sorts={sorts}
       />

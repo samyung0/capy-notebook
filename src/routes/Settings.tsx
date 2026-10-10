@@ -92,8 +92,6 @@ function CustomizationsTab() {
             </SelectContent>
           </Select>
         </SettingRow>
-        <div className="border-divider border-t" />
-        <StudyPreferencesSection />
       </div>
     </>
   );
@@ -227,6 +225,7 @@ export default function Settings() {
             label: m.settings_tab_customizations(),
             value: 'customizations',
           },
+          { label: m.settings_tab_study(), value: 'study' },
           { label: m.settings_tab_notifications(), value: 'notifications' },
           { label: m.settings_tab_llm(), value: 'llm' },
           {
@@ -240,6 +239,8 @@ export default function Settings() {
       <TabContent>
         {tab === 'customizations' ? (
           <CustomizationsTab />
+        ) : tab === 'study' ? (
+          <StudyPreferencesSection />
         ) : tab === 'notifications' ? (
           <NotificationsTab />
         ) : tab === 'llm' ? (

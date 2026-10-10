@@ -1,4 +1,9 @@
-import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
+import {
+  linkOptions,
+  useNavigate,
+  useParams,
+  useSearch,
+} from '@tanstack/react-router';
 import { useMaterial } from '@/api/hooks';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
@@ -10,7 +15,7 @@ import {
   flashcardsElementToCards,
 } from '@/features/materials/document';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
-import { QuizPageHeader } from '@/features/quizzes/QuizPage';
+import { blockHomeCrumb, QuizPageHeader } from '@/features/quizzes/QuizPage';
 import { m } from '@/i18n';
 
 /** `/flashcards/$flashcardSetId/edit`: the card grid on its own page, where a
@@ -41,7 +46,16 @@ export default function FlashcardsEdit() {
           topBar={<TopInsetBar className="hidden shrink-0 lg:flex" />}
           trail={
             material
-              ? [material.workspaceName || m.files_tab_blocks(), material.title]
+              ? [
+                  blockHomeCrumb(material),
+                  {
+                    label: material.title,
+                    link: linkOptions({
+                      params: { flashcardSetId: setId },
+                      to: '/flashcards/$flashcardSetId',
+                    }),
+                  },
+                ]
               : []
           }
         />

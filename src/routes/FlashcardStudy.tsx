@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
 import { StudyBody } from '@/features/flashcards/StudyBody';
+import { blockHomeCrumb, blockKindCrumb } from '@/features/quizzes/QuizPage';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { cardCountBucket, flashcardsStudySource, track } from '@/lib/analytics';
@@ -146,7 +147,10 @@ function Study({ setId }: { setId: string }) {
       }
       provenance={set.provenance}
       topBar={<TopInsetBar className="hidden shrink-0 lg:flex" />}
-      trail={[set.workspaceName || m.files_tab_blocks(), m.editor_flashcards()]}
+      trail={[
+        blockHomeCrumb(set),
+        blockKindCrumb(m.editor_flashcards(), 'flashcards'),
+      ]}
     />
   );
 }

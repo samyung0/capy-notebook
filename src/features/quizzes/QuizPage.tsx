@@ -1,3 +1,4 @@
+import { Link, type LinkOptions, linkOptions } from '@tanstack/react-router';
 import type { CSSProperties, ReactNode } from 'react';
 import type { Question, QuestionCredit } from '@/api/types';
 import { Icon } from '@/components/ui/Icon';
@@ -9,8 +10,14 @@ import {
 } from '@/features/questions/types';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { type Answers, formatPoints } from './grade';
+import type { Answers } from './grade';
 import { QuestionRunner } from './QuestionRunner';
+import {
+  type QuestionResult,
+  ResultScore,
+  ResultSquares,
+  ResultsByType,
+} from './ResultSummary';
 
 /** "10 questions · 12 marks". */
 export function quizMeta(questions: (Question | LearnerQuestion)[]) {
@@ -26,6 +33,36 @@ export function quizMeta(questions: (Question | LearnerQuestion)[]) {
   }`;
 }
 
+/** A breadcrumb segment; with a link it opens that page. */
+export type Crumb = { label: string; link?: LinkOptions };
+
+/** A block's first crumb: its workspace, or the Blocks tab when standalone. */
+export const blockHomeCrumb = (block: {
+  workspaceId: string;
+  workspaceName: string;
+}): Crumb =>
+  block.workspaceId && block.workspaceName
+    ? {
+        label: block.workspaceName,
+        link: linkOptions({
+          params: { workspaceId: block.workspaceId },
+          to: '/workspaces/$workspaceId',
+        }),
+      }
+    : {
+        label: m.files_tab_blocks(),
+        link: linkOptions({ search: { tab: 'blocks' }, to: '/files' }),
+      };
+
+/** The Blocks tab filtered to one kind, e.g. every quiz. */
+export const blockKindCrumb = (
+  label: string,
+  kind: 'quiz' | 'flashcards'
+): Crumb => ({
+  label,
+  link: linkOptions({ search: { kind, tab: 'blocks' }, to: '/files' }),
+});
+
 /** Back arrow and breadcrumb above the page title; `actions` sit on the title line. */
 export function QuizPageHeader({
   className,
@@ -39,7 +76,7 @@ export function QuizPageHeader({
 }: {
   className?: string;
   onBack?: () => void;
-  trail: string[];
+  trail: Crumb[];
   title: ReactNode;
   meta?: ReactNode;
   /** The owner on public pages, between the title and the meta line. */
@@ -84,14 +121,26 @@ export function QuizPageHeader({
               {trail.map((item, i) => (
                 <span className="flex min-w-0 items-center gap-1.5" key={i}>
                   {i > 0 && <span aria-hidden>/</span>}
-                  <span
-                    className={cn(
-                      'truncate',
-                      i === trail.length - 1 && 'text-fg-secondary'
-                    )}
-                  >
-                    {item}
-                  </span>
+                  {item.link ? (
+                    <Link
+                      {...item.link}
+                      className={cn(
+                        'truncate underline-offset-2 hover:text-fg hover:underline',
+                        i === trail.length - 1 && 'text-fg-secondary'
+                      )}
+                    >
+                      {item.label}
+                    </Link>
+                  ) : (
+                    <span
+                      className={cn(
+                        'truncate',
+                        i === trail.length - 1 && 'text-fg-secondary'
+                      )}
+                    >
+                      {item.label}
+                    </span>
+                  )}
                 </span>
               ))}
             </nav>
@@ -206,8 +255,8 @@ function Confetti() {
 }
 
 /**
- * "You scored" at title size with the score beside it; the confetti follows
- * on a fresh result. Below lg the score takes its own line.
+ * A graded quiz's score, one square per question (each scrolls to its
+ * question below) and marks by type; the confetti follows a fresh result.
  */
 export function QuizScore({
   questions,
@@ -221,47 +270,35 @@ export function QuizScore({
   max: number;
   confetti?: boolean;
 }) {
-  return (
-    <div className="grid gap-3">
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
-        <h2 className="t-page-title">{m.quiz_you_scored_title()}</h2>
-        <p className="order-last w-full font-bold text-2xl text-fg-secondary tabular-nums lg:order-none lg:w-auto">
-          {formatPoints(awarded)}
-          <span className="text-fg-muted"> / {formatPoints(max)}</span>
-        </p>
-        {confetti && <Confetti />}
-      </div>
-      <ResultSquares questions={questions} />
-    </div>
+  const results = questions.map(
+    (question, i): QuestionResult => ({
+      awarded: question.parts.reduce(
+        (sum, part) => sum + (part.awarded ?? 0),
+        0
+      ),
+      id: question.id,
+      marks: questionMarks(question),
+      number: i + 1,
+      type: question.parts[0].answer.type,
+    })
   );
-}
-
-/** One square per question: green for full marks, red otherwise (blank answers are wrong). */
-function ResultSquares({ questions }: { questions: Question[] }) {
   return (
-    <ol aria-label={m.quiz_question_results()} className="flex flex-wrap gap-1">
-      {questions.map((question, i) => {
-        const max = questionMarks(question);
-        const awarded = question.parts.reduce(
-          (sum, part) => sum + (part.awarded ?? 0),
-          0
-        );
-        const right = max > 0 && awarded === max;
-        const label = right
-          ? m.quiz_question_right({ number: i + 1 })
-          : m.quiz_question_wrong({ number: i + 1 });
-        return (
-          <li
-            aria-label={label}
-            className={cn(
-              'size-3.5 rounded-[4px]',
-              right ? 'bg-solid-success' : 'bg-solid-error'
-            )}
-            key={question.id}
-            title={label}
-          />
-        );
-      })}
-    </ol>
+    <div className="grid gap-8">
+      <div className="grid gap-3">
+        <div className="flex items-center gap-4">
+          <ResultScore awarded={awarded} max={max} />
+          {confetti && <Confetti />}
+        </div>
+        <ResultSquares
+          onOpen={(id) =>
+            document
+              .querySelector(`[data-question-id="${CSS.escape(id)}"]`)
+              ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          }
+          results={results}
+        />
+      </div>
+      <ResultsByType results={results} />
+    </div>
   );
 }

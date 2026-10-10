@@ -5,7 +5,7 @@ import { Icon } from '@/components/ui/Icon';
 import type { FlashcardContent } from '@/features/materials/blocks';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { type Frame, NoFrame } from '@/features/quizzes/AttemptBody';
-import { QuizPageHeader } from '@/features/quizzes/QuizPage';
+import { type Crumb, QuizPageHeader } from '@/features/quizzes/QuizPage';
 import { RatingTiles } from '@/features/study/RatingTiles';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -48,7 +48,7 @@ export function StudyBody({
   provenance?: Provenance;
   /** The app's top bar; public pages have their own header and pass none. */
   topBar?: ReactNode;
-  trail: string[];
+  trail: Crumb[];
 }) {
   const Shell = frame ?? NoFrame;
   const studyIds = () =>

@@ -72,7 +72,6 @@ const theme = EditorView.theme({
   },
   '.cm-line': { padding: '0 16px 0 0' },
   '.cm-lineNumbers .cm-gutterElement': {
-    fontVariantNumeric: 'tabular-nums',
     minWidth: '44px',
     padding: '0 14px 0 0',
   },

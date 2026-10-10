@@ -48,6 +48,7 @@ func TestReviewSessionChecksQuestionsOnTheServer(t *testing.T) {
 	h, st, _ := openGradingAPI(t, "full")
 	t.Cleanup(func() {
 		for _, q := range []string{
+			`DELETE FROM review_sessions WHERE user_id='u_viewer'`,
 			`DELETE FROM attempts WHERE user_id='u_viewer' AND material_id='qz_e2e_private'`,
 			`DELETE FROM review_log WHERE user_id='u_viewer' AND material_id='qz_e2e_private'`,
 			`DELETE FROM review_states WHERE user_id='u_viewer' AND material_id='qz_e2e_private'`,
@@ -69,7 +70,12 @@ func TestReviewSessionChecksQuestionsOnTheServer(t *testing.T) {
 	check := func(user string, body map[string]any) *httptest.ResponseRecorder {
 		return doReq(t, h, http.MethodPost, "/api/review/check", user, body)
 	}
-	rec = check("u_viewer", map[string]any{"materialId": "qz_e2e_private", "itemId": "q_priv_1", "answers": map[string]any{part: true}})
+	// The check carries its session, which records the answer and the graded
+	// question; the session stays the viewer's own.
+	const sessionID = "6f1c2b3a-0d4e-4f5a-8b6c-7d8e9f0a1b2c"
+	rec = check("u_viewer", map[string]any{"materialId": "qz_e2e_private", "itemId": "q_priv_1", "answers": map[string]any{part: true},
+		"session": map[string]any{"id": sessionID, "workspaceId": "ws_e2e_private", "group": "workspace",
+			"items": []any{map[string]any{"materialId": "qz_e2e_private", "itemId": "q_priv_1"}}}})
 	var graded struct {
 		Correct, Total float64
 		Question       map[string]any
@@ -80,6 +86,18 @@ func TestReviewSessionChecksQuestionsOnTheServer(t *testing.T) {
 	}
 	if p := graded.Question["parts"].([]any)[0].(map[string]any); p["awarded"] != 1.0 || p["answer"].(map[string]any)["correct"] != true {
 		t.Fatalf("checked question = %v", graded.Question)
+	}
+	var awarded float64
+	if err := st.Pool().QueryRow(context.Background(), `SELECT (graded->'parts'->0->>'awarded')::float FROM review_answers
+		WHERE session_id=$1 AND item_id='q_priv_1'`, sessionID).Scan(&awarded); err != nil || awarded != 1 {
+		t.Fatalf("recorded answer awarded = %v %v", awarded, err)
+	}
+	if rec := doReq(t, h, http.MethodGet, "/api/review/sessions/"+sessionID, "u_other", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("another user's resume → %d", rec.Code)
+	}
+	if rec := doReq(t, h, http.MethodGet, "/api/review/sessions", "u_viewer", nil); rec.Code != http.StatusOK ||
+		!strings.Contains(rec.Body.String(), `"quiz":{"correct":1,"total":1}`) {
+		t.Fatalf("past reviews → %d %s", rec.Code, rec.Body.String())
 	}
 	var ratings int
 	if err := st.Pool().QueryRow(context.Background(), `SELECT count(*) FROM review_log

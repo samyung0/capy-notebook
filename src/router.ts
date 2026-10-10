@@ -23,6 +23,7 @@ import {
   filesQuery,
   flashcardSetQuery,
   labelsQuery,
+  learningProgressQuery,
   llmCredentialsQuery,
   materialQuery,
   materialsQuery,
@@ -35,7 +36,7 @@ import {
   quizQuery,
   recentFilesQuery,
   recentMaterialsQuery,
-  reviewWorkspacesQuery,
+  reviewOverviewQuery,
   tasksQuery,
   usageQuery,
   workspaceQuery,
@@ -52,11 +53,20 @@ import {
   parseWorkspaceOpenSearch,
 } from '@/features/materials/openItem';
 import { parseQuizEditSearch } from '@/features/quizzes/quizNavigation';
-import { parseReviewSearch } from '@/features/study/reviewSearch';
+import {
+  parsePastReviewsSearch,
+  parseReviewSearch,
+} from '@/features/study/reviewSearch';
 import { features } from '@/lib/features';
 import {
-  parseBillingSearch,
+  fileListParams,
+  materialListParams,
   parseFilesSearch,
+  parseWorkspacesSearch,
+  workspaceListParams,
+} from '@/lib/listSearch';
+import {
+  parseBillingSearch,
   parseLearningSearch,
   parseSettingsSearch,
 } from '@/lib/tabSearch';
@@ -191,12 +201,17 @@ const appRoutes = [
     },
     path: '/',
   }),
-  page(
-    '/workspaces',
-    () => import('@/routes/Workspaces'),
-    ({ context: { queryClient: qc } }) =>
-      qc.prefetchQuery(workspacesQuery({ sort: 'created', tag: [] }))
-  ),
+  // biome-ignore assist/source/useSortedKeys: TanStack types `deps` in the loader from `loaderDeps`, which must come first.
+  createRoute({
+    component: lazyRouteComponent(() => import('@/routes/Workspaces')),
+    getParentRoute: () => authShellRoute,
+    loaderDeps: ({ search }) => search,
+    loader: ({ context: { queryClient: qc }, deps }) => {
+      qc.prefetchQuery(workspacesQuery(workspaceListParams(deps)));
+    },
+    path: '/workspaces',
+    validateSearch: parseWorkspacesSearch,
+  }),
   // biome-ignore assist/source/useSortedKeys: TanStack types `deps` in the loader from `loaderDeps`, which must come first.
   createRoute({
     component: lazyRouteComponent(() => import('@/routes/WorkspaceOpen')),
@@ -227,10 +242,14 @@ const appRoutes = [
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
       void qc.prefetchQuery(attemptsQuery());
-      void qc.prefetchQuery(reviewWorkspacesQuery());
+      void qc.prefetchQuery(learningProgressQuery());
+      void qc.prefetchQuery(reviewOverviewQuery());
     },
     path: '/learning',
-    validateSearch: parseLearningSearch,
+    validateSearch: (search: Record<string, unknown>) => ({
+      ...parseLearningSearch(search),
+      ...parsePastReviewsSearch(search),
+    }),
   }),
   createRoute({
     component: lazyRouteComponent(() => import('@/routes/ReviewSession')),
@@ -255,6 +274,7 @@ const appRoutes = [
   }),
   bankRoute.addChildren([
     bankChild('$topicId'),
+    bankChild('$topicId/summary'),
     bankChild('$topicId/$questionId'),
   ]),
   page(
@@ -314,16 +334,12 @@ const appRoutes = [
   createRoute({
     component: lazyRouteComponent(() => import('@/routes/Files')),
     getParentRoute: () => authShellRoute,
-    loaderDeps: ({ search }) => ({ tab: search.tab }),
+    loaderDeps: ({ search }) => search,
     loader: ({ context: { queryClient: qc }, deps }) => {
       if (deps.tab === 'blocks') {
-        qc.prefetchInfiniteQuery(
-          ownedMaterialsQuery({ dir: 'desc', sort: 'updated' })
-        );
+        qc.prefetchInfiniteQuery(ownedMaterialsQuery(materialListParams(deps)));
       } else if (deps.tab !== 'trash') {
-        qc.prefetchInfiniteQuery(
-          ownedFilesQuery({ dir: 'desc', sort: 'added' })
-        );
+        qc.prefetchInfiniteQuery(ownedFilesQuery(fileListParams(deps)));
       }
     },
     path: '/files',

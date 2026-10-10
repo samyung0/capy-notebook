@@ -44,6 +44,7 @@ function general(): NavItem[] {
   return [
     { exact: true, icon: 'dashboard', label: m.nav_dashboard(), to: '/' },
     { icon: 'workspaces', label: m.nav_workspaces(), to: '/workspaces' },
+    { icon: 'circleCheck', label: m.nav_learning(), to: '/learning' },
     ...(features.schedule
       ? [
           {
@@ -67,7 +68,6 @@ function general(): NavItem[] {
 
 function tools(): NavItem[] {
   return [
-    { icon: 'circleCheck', label: m.nav_learning(), to: '/learning' },
     { icon: 'files', label: m.nav_files(), to: '/files' },
     ...(features.tasks
       ? [{ icon: 'todo' as IconName, label: m.nav_tasks(), to: '/tasks' }]

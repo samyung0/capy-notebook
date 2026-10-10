@@ -6,6 +6,7 @@ import (
 	"maps"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -63,6 +64,34 @@ func TestBankProgressAndRetraction(t *testing.T) {
 			t.Fatalf("marks: %d %s", rec.Code, rec.Body.String())
 		}
 		return out.Marks
+	}
+	// The summary's scores in topic order, "-" where not answered.
+	summary := func(user string) []string {
+		t.Helper()
+		rec := doReq(t, h, http.MethodGet, "/api/bank/topics/t/summary", user, nil)
+		var out struct {
+			Questions []struct {
+				ID          string
+				Marks       int
+				AnswerTypes []string
+				Score       *float64
+			}
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || rec.Code != 200 {
+			t.Fatalf("summary: %d %s", rec.Code, rec.Body.String())
+		}
+		got := []string{}
+		for _, q := range out.Questions {
+			if q.Marks != 1 || !slices.Equal(q.AnswerTypes, []string{"mcq"}) {
+				t.Fatalf("summary question = %+v", q)
+			}
+			score := "-"
+			if q.Score != nil {
+				score = strconv.FormatFloat(*q.Score, 'f', -1, 64)
+			}
+			got = append(got, q.ID+"="+score)
+		}
+		return got
 	}
 	progress := func(user string) []bank.TopicProgress {
 		t.Helper()
@@ -128,6 +157,9 @@ func TestBankProgressAndRetraction(t *testing.T) {
 	if got := marks("u_editor"); len(got) != 0 {
 		t.Fatalf("another learner's marks = %v", got)
 	}
+	if got := summary(learner); !slices.Equal(got, []string{"bp1=0", "bp2=1", "bp3=0", "bp4=-"}) {
+		t.Fatalf("summary = %v", got)
+	}
 	if got := progress(learner); len(got) != 1 || got[0].TopicID != "t" || got[0].TopicLabel != "Topic" || got[0].ExamID != "e" ||
 		got[0].Total != 4 || got[0].Answered != 3 || got[0].Correct != 1 || got[0].NextQuestionID == nil || *got[0].NextQuestionID != "bp4" {
 		t.Fatalf("progress = %+v", got)
@@ -139,6 +171,9 @@ func TestBankProgressAndRetraction(t *testing.T) {
 	if code := doReq(t, h, http.MethodGet, "/api/bank/topics/missing/marks", learner, nil).Code; code != 404 {
 		t.Fatalf("unknown topic marks = %d", code)
 	}
+	if code := doReq(t, h, http.MethodGet, "/api/bank/topics/missing/summary", learner, nil).Code; code != 404 {
+		t.Fatalf("unknown topic summary = %d", code)
+	}
 
 	// A new prompt makes bp2 a new question; retracting bp1 removes it.
 	if _, err := pool.Exec(ctx, `UPDATE questions SET content=jsonb_set(content,'{parts,0,blocks,0,text}','"Which one?"') WHERE id='bp2';
@@ -147,6 +182,9 @@ func TestBankProgressAndRetraction(t *testing.T) {
 	}
 	if got := marks(learner); !maps.Equal(got, map[string]float64{"bp3": 0}) {
 		t.Fatalf("marks after edit and retraction = %v", got)
+	}
+	if got := summary(learner); !slices.Equal(got, []string{"bp2=-", "bp3=0", "bp4=-"}) {
+		t.Fatalf("summary after edit and retraction = %v", got)
 	}
 	// bp2 counts as unanswered again; after the latest answer (bp3) comes bp4.
 	if got := progress(learner); len(got) != 1 || got[0].Total != 3 || got[0].Answered != 1 || got[0].Correct != 0 || *got[0].NextQuestionID != "bp4" {

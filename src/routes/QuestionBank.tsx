@@ -7,9 +7,14 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import {
-  type ComponentProps,
+  linkOptions,
+  useMatchRoute,
+  useNavigate,
+  useParams,
+  useSearch,
+} from '@tanstack/react-router';
+import {
   lazy,
   type ReactNode,
   type RefObject,
@@ -49,12 +54,14 @@ import {
 import { Tabs } from '@/components/ui/Tabs';
 import { Textarea } from '@/components/ui/TextArea';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
+import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { userToast } from '@/components/ui/userToast';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import {
   BANK_STATUSES,
   type BankDetail,
+  type BankExam,
   type BankListFilters,
   type BankMode,
   type BankRow,
@@ -65,10 +72,14 @@ import {
   bankMarksQuery,
   bankProgressQuery,
   bankQuestionQuery,
+  bankSummaryQuery,
   bankSyllabusQuery,
   bankTopicKey,
   checkBankQuestion,
+  soleSubject,
+  soleTopic,
   storeBankEdit,
+  topicPath,
   uploadBankAsset,
 } from '@/features/questions/bank';
 import {
@@ -82,6 +93,7 @@ import {
   QuestionListRow,
   statusLabels,
 } from '@/features/questions/QuestionListRow';
+import { TopicSummary } from '@/features/questions/TopicSummary';
 import { MiniTrail, TrailMap } from '@/features/questions/trailMap/TrailMap';
 import {
   type LearnerQuestion,
@@ -90,7 +102,7 @@ import {
 } from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
-import { QuizPageHeader } from '@/features/quizzes/QuizPage';
+import { type Crumb, QuizPageHeader } from '@/features/quizzes/QuizPage';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { CopyError, describeError } from '@/lib/errors';
@@ -123,6 +135,9 @@ export default function QuestionBank() {
   const navigate = useNavigate();
   const client = useQueryClient();
   const search = useSearch({ strict: false });
+  const matchRoute = useMatchRoute();
+  // A finished topic's Summary opens /qb/$topicId/summary in the same page.
+  const summary = Boolean(matchRoute({ to: '/qb/$topicId/summary' }));
   const [showTopics, setShowTopics] = useState(!topicId);
   const [navOpen, setNavOpen] = useState(false);
   // From lg the side panel shows the same nav, so a sheet left open while
@@ -145,9 +160,12 @@ export default function QuestionBank() {
   const [picked, setPicked] = useState<BankRow[]>([]);
   const selected = picked.map((row) => row.id);
   const [copying, setCopying] = useState(false);
+  // The panel's back arrow lists every exam even while a topic is open.
+  const [allExams, setAllExams] = useState(false);
   const [shownTopic, setShownTopic] = useState(topicId);
   if (shownTopic !== topicId) {
     setShownTopic(topicId);
+    setAllExams(false);
     setFilter('');
     setTypes([]);
     setStatuses([]);
@@ -173,6 +191,21 @@ export default function QuestionBank() {
     meta: { errorBoundary: false },
   });
   const marks = mode === 'view' && !resultsError ? results?.marks : undefined;
+  const {
+    data: topicSummary,
+    error: summaryError,
+    isPending: summaryPending,
+  } = useQuery({
+    ...bankSummaryQuery(topicId),
+    enabled: summary,
+    meta: { errorBoundary: false },
+  });
+  // The summary's finished date and next topic come from the landing's list.
+  const { data: progress } = useQuery({
+    ...bankProgressQuery(),
+    enabled: summary,
+    meta: { errorBoundary: false },
+  });
   const searchText = useDebounced(filter);
   // The server filters with the learner's results at request time; loaded
   // pages keep a question answered while filtered until a filter changes.
@@ -302,7 +335,7 @@ export default function QuestionBank() {
       to: '/qb/$topicId',
     });
   }
-  /** From the landing: Continue opens the next question, Summary the top. */
+  /** From the landing: Continue opens the next question, Summary the topic's summary. */
   function openProgress(id: string, next: string | null) {
     setShowTopics(false);
     if (next)
@@ -316,7 +349,7 @@ export default function QuestionBank() {
       void navigate({
         params: { topicId: id },
         search: modeSearch,
-        to: '/qb/$topicId',
+        to: '/qb/$topicId/summary',
       });
     }
   }
@@ -341,9 +374,76 @@ export default function QuestionBank() {
     )
     .find(({ item }) => item.id === topicId);
 
-  /** Opens an exam in the side panel, or the exam list, on the current page. */
+  // The names shown above the open topic; the last one titles the page
+  // (the summary is titled Summary, under the topic).
+  const path = place && topicPath(place.exam, place.subject, place.item);
+  // The trail above the title ends on the page's parent: the bank, then the
+  // exam and subject, which both open the exam in the panel, and on the
+  // summary the topic itself; Back goes to the last one.
+  const bankLink = linkOptions({ search: modeSearch, to: '/qb' });
+  const trail: Crumb[] =
+    place && path
+      ? [
+          { label: m.question_ui_question_bank(), link: bankLink },
+          ...path.slice(0, -1).map((label) => ({
+            label,
+            link: linkOptions({
+              search: { ...modeSearch, exam: place.exam.id },
+              to: '/qb',
+            }),
+          })),
+          ...(summary
+            ? [
+                {
+                  // What the topic page is titled (an exam's sole topic
+                  // takes the exam's name).
+                  label: path.at(-1) ?? place.item.label,
+                  link: linkOptions({
+                    params: { topicId },
+                    search: modeSearch,
+                    to: '/qb/$topicId',
+                  }),
+                },
+              ]
+            : []),
+        ]
+      : [];
+
+  // The summary's next topic: the first unfinished one after this topic in its
+  // subject, wrapping to the start.
+  const progressById = new Map(
+    progress?.topics.map((item) => [item.topicId, item])
+  );
+  const finished = progressById.get(topicId);
+  const nextTopic = (() => {
+    if (!(summary && place && progress)) return null;
+    const topics = place.subject.topics;
+    const at = topics.findIndex((item) => item.id === topicId);
+    const found = [...topics.slice(at + 1), ...topics.slice(0, at)].find(
+      (item) =>
+        item.total > 0 && progressById.get(item.id)?.nextQuestionId !== null
+    );
+    return found
+      ? {
+          id: found.id,
+          label: found.label,
+          started: progressById.has(found.id),
+          subjectLabel: place.subject.label,
+          total: found.total,
+        }
+      : null;
+  })();
+
+  /**
+   * Opens an exam in the side panel, or the exam list, on the current page.
+   * A single-topic exam opens straight on its questions.
+   */
   function openExam(exam: string | undefined) {
-    void navigate({ search: { ...modeSearch, exam }, to: '.' });
+    const picked = syllabus?.exams.find((item) => item.id === exam);
+    const only = picked && soleTopic(picked);
+    setAllExams(!exam);
+    if (only) topic(only.id);
+    else void navigate({ search: { ...modeSearch, exam }, to: '.' });
   }
 
   const topicsShown = showTopics || !topicId;
@@ -367,9 +467,16 @@ export default function QuestionBank() {
       topicsShown ? (
         <TopicTree
           edit={mode === 'edit'}
-          examId={search.exam ?? place?.exam.id}
+          // A single-topic exam has no tree of its own, so its topic shows
+          // the exam list.
+          examId={
+            allExams
+              ? undefined
+              : (search.exam ??
+                (place && !soleTopic(place.exam) ? place.exam.id : undefined))
+          }
           filter={topicFilter}
-          onAllExams={topicId ? undefined : () => openExam(undefined)}
+          onAllExams={() => openExam(undefined)}
           onExam={openExam}
           onFilter={setTopicFilter}
           onTopic={topic}
@@ -386,7 +493,7 @@ export default function QuestionBank() {
           // ends stop loading until then.
           hasEarlier={hasPreviousPage && !listError}
           hasMore={hasNextPage && !listError}
-          label={place?.item.label ?? ''}
+          label={path?.at(-1) ?? ''}
           loadingEarlier={isFetchingPreviousPage}
           loadingMore={isFetchingNextPage}
           onBack={() => setShowTopics(true)}
@@ -446,8 +553,50 @@ export default function QuestionBank() {
       />
     );
   else if (!topicId)
-    body = <BankLanding onOpen={openProgress} view={mode === 'view'} />;
-  else if (listError)
+    body = (
+      <BankLanding
+        exams={syllabus.exams}
+        onOpen={openProgress}
+        view={mode === 'view'}
+      />
+    );
+  else if (summary) {
+    if (summaryError)
+      body = (
+        <BankError
+          error={summaryError}
+          onRetry={() =>
+            void client.invalidateQueries({
+              queryKey: bankSummaryQuery(topicId).queryKey,
+            })
+          }
+        />
+      );
+    else if (summaryPending) body = <Skeleton className="h-64 w-full" />;
+    else
+      body = (
+        <TopicSummary
+          next={nextTopic}
+          onNext={(next) =>
+            next.started
+              ? openProgress(
+                  next.id,
+                  progressById.get(next.id)?.nextQuestionId ?? null
+                )
+              : topic(next.id)
+          }
+          onOpen={(id) =>
+            void navigate({
+              params: { questionId: id, topicId },
+              search: modeSearch,
+              to: '/qb/$topicId/$questionId',
+            })
+          }
+          questions={topicSummary.questions}
+          topicLabel={place?.item.label ?? ''}
+        />
+      );
+  } else if (listError)
     body = (
       <BankError
         error={listError}
@@ -510,22 +659,41 @@ export default function QuestionBank() {
             <>
               <QuizPageHeader
                 actions={
-                  syllabus?.editor && (
-                    <Button
-                      iconLeft={mode === 'edit' ? 'view' : 'pencil'}
-                      onClick={() => setMode(mode === 'edit' ? 'view' : 'edit')}
-                      rounded="large"
-                      size="sm"
-                    >
-                      {mode === 'edit'
-                        ? m.question_ui_view_mode()
-                        : m.question_ui_edit_mode()}
-                    </Button>
+                  summary ? (
+                    <UnderlineLink accent onClick={() => topic(topicId)}>
+                      {m.question_ui_go_through_again()}
+                    </UnderlineLink>
+                  ) : (
+                    syllabus?.editor && (
+                      <Button
+                        iconLeft={mode === 'edit' ? 'view' : 'pencil'}
+                        onClick={() =>
+                          setMode(mode === 'edit' ? 'view' : 'edit')
+                        }
+                        rounded="large"
+                        size="sm"
+                      >
+                        {mode === 'edit'
+                          ? m.question_ui_view_mode()
+                          : m.question_ui_edit_mode()}
+                      </Button>
+                    )
                   )
                 }
                 meta={
                   place &&
                   [
+                    summary &&
+                      finished &&
+                      !finished.nextQuestionId &&
+                      m.question_ui_finished_on({
+                        date: new Date(
+                          finished.lastAnsweredAt
+                        ).toLocaleDateString(getLocale(), {
+                          day: 'numeric',
+                          month: 'short',
+                        }),
+                      }),
                     place.item.total === 1
                       ? m.question_ui_one_question()
                       : m.question_ui_question_count({
@@ -539,19 +707,13 @@ export default function QuestionBank() {
                     .filter(Boolean)
                     .join(' · ')
                 }
-                onBack={() =>
-                  void navigate({ search: { tab: 'blocks' }, to: '/files' })
+                onBack={() => void navigate(trail.at(-1)?.link ?? bankLink)}
+                title={
+                  summary
+                    ? m.question_ui_summary()
+                    : (path?.at(-1) ?? m.question_ui_question_bank())
                 }
-                title={place?.item.label ?? m.question_ui_question_bank()}
-                trail={
-                  place
-                    ? [
-                        m.question_ui_question_bank(),
-                        place.exam.label,
-                        place.subject.label,
-                      ]
-                    : []
-                }
+                trail={trail}
               />
               <div className="px-4 pt-8 pb-28 sm:px-6 lg:px-10 lg:pb-10 xl:px-16">
                 <div className="max-w-3xl">{body}</div>
@@ -970,6 +1132,9 @@ function CheckableQuestion({
         queryKey: bankMarksQuery(topicId).queryKey,
       });
       void client.invalidateQueries({ queryKey: bankProgressQuery().queryKey });
+      void client.invalidateQueries({
+        queryKey: bankSummaryQuery(topicId).queryKey,
+      });
     },
   });
   return (
@@ -1166,8 +1331,8 @@ function TopicTree({
   filter: string;
   onFilter: (value: string) => void;
   onExam: (id: string) => void;
-  /** Back to the exam list; only offered without an open topic. */
-  onAllExams?: () => void;
+  /** Back to the exam list. */
+  onAllExams: () => void;
   onTopic: (id: string) => void;
   tabs?: ReactNode;
 }) {
@@ -1185,9 +1350,36 @@ function TopicTree({
     : [];
   const away = exam ? hits.filter((hit) => hit.exam.id !== exam.id) : hits;
   const count = (item: BankTopic) => (
-    <span className="shrink-0 font-semibold text-fg-muted text-xs tabular-nums">
+    <span className="shrink-0 font-semibold text-fg-muted text-xs">
       {edit ? `${item.reviewed}/${item.total}` : item.total}
     </span>
+  );
+  // A topic hit's exam (unless it is the open one) and subject, unless the
+  // exam hides its one subject.
+  const hitTrail = (hit: SyllabusHit & { kind: 'topic' }) =>
+    [
+      hit.exam.id !== exam?.id && hit.exam.label,
+      !soleSubject(hit.exam) && hit.subject.label,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+  const topicRow = (item: BankTopic) => (
+    <li key={item.id}>
+      <button
+        aria-current={item.id === topicId ? 'page' : undefined}
+        className={cn(
+          'flex w-full items-center gap-2 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg',
+          item.id === topicId && 'bg-surface-hover-bg font-bold'
+        )}
+        onClick={() => onTopic(item.id)}
+        type="button"
+      >
+        <span className="min-w-0 flex-1 translate-y-px truncate">
+          {item.label}
+        </span>
+        {count(item)}
+      </button>
+    </li>
   );
   const hitRow = (hit: SyllabusHit) =>
     hit.kind === 'exam' ? (
@@ -1222,11 +1414,11 @@ function TopicTree({
           <span className="block truncate">
             <Highlight needle={needle} text={hit.item.label} />
           </span>
-          <span className="t-meta block truncate text-fg-muted">
-            {hit.exam.id === exam?.id
-              ? hit.subject.label
-              : `${hit.exam.label} · ${hit.subject.label}`}
-          </span>
+          {hitTrail(hit) && (
+            <span className="t-meta block truncate text-fg-muted">
+              {hitTrail(hit)}
+            </span>
+          )}
         </span>
         {count(hit.item)}
       </button>
@@ -1239,8 +1431,7 @@ function TopicTree({
       <PanelHeading
         filter={filter}
         leading={
-          exam &&
-          onAllExams && (
+          exam && (
             <ToolbarButton
               label={m.question_ui_all_exams()}
               onClick={onAllExams}
@@ -1269,6 +1460,10 @@ function TopicTree({
           )}
           {away.map(hitRow)}
         </div>
+      ) : exam && soleSubject(exam) ? (
+        <ul className="flex flex-col gap-0.5">
+          {exam.subjects[0].topics.map(topicRow)}
+        </ul>
       ) : exam ? (
         <div className="flex flex-col gap-0.5">
           {exam.subjects.map((subject) => {
@@ -1299,7 +1494,7 @@ function TopicTree({
                     {subject.label}
                   </span>
                   {!expanded && (
-                    <span className="shrink-0 font-semibold text-fg-muted text-xs tabular-nums">
+                    <span className="shrink-0 font-semibold text-fg-muted text-xs">
                       {subject.topics.reduce(
                         (sum, item) => sum + item.total,
                         0
@@ -1311,27 +1506,7 @@ function TopicTree({
                   // A guide line under the subject's chevron; topics sit
                   // right of it, indented past the subject's name.
                   <ul className="ml-3.5 flex flex-col border-line border-l pl-3">
-                    {subject.topics.map((item) => (
-                      <li key={item.id}>
-                        <button
-                          aria-current={
-                            item.id === topicId ? 'page' : undefined
-                          }
-                          className={cn(
-                            'flex w-full items-center gap-2 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg',
-                            item.id === topicId &&
-                              'bg-surface-hover-bg font-bold'
-                          )}
-                          onClick={() => onTopic(item.id)}
-                          type="button"
-                        >
-                          <span className="min-w-0 flex-1 translate-y-px truncate">
-                            {item.label}
-                          </span>
-                          {count(item)}
-                        </button>
-                      </li>
-                    ))}
+                    {subject.topics.map(topicRow)}
                   </ul>
                 )}
               </div>
@@ -1657,9 +1832,11 @@ function ReviewBar({
  * the page.
  */
 function BankLanding({
+  exams,
   view,
   onOpen,
 }: {
+  exams: BankExam[];
   view: boolean;
   onOpen: (topicId: string, next: string | null) => void;
 }) {
@@ -1679,22 +1856,18 @@ function BankLanding({
     // Flex, not grid: a grid track would widen to the scrolling map's full width.
     progress = (
       <div className="flex flex-col gap-12">
-        {going.length > 0 && <ContinueSection onOpen={onOpen} topics={going} />}
+        {going.length > 0 && (
+          <ContinueSection exams={exams} onOpen={onOpen} topics={going} />
+        )}
         {finished.length > 0 && (
           <section>
             <h2 className="t-card-title mb-3">{m.question_ui_finished()}</h2>
             {finished.map((topic) => (
               <div
-                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-0.5 border-divider border-t py-3 last:border-b sm:grid-cols-[minmax(0,1fr)_9rem_4.5rem_auto]"
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 border-divider border-t py-3 last:border-b sm:grid-cols-[minmax(0,1fr)_4.5rem_auto]"
                 key={topic.topicId}
               >
-                <TopicName topic={topic} />
-                <div className="col-start-1 row-start-2 text-fg-secondary text-sm sm:col-start-auto sm:row-start-auto">
-                  {m.question_ui_finished_score({
-                    correct: topic.correct,
-                    total: topic.total,
-                  })}
-                </div>
+                <TopicName exams={exams} topic={topic} />
                 <time
                   className="hidden text-fg-muted text-sm sm:block"
                   dateTime={topic.lastAnsweredAt}
@@ -1707,12 +1880,12 @@ function BankLanding({
                     }
                   )}
                 </time>
-                <ProgressLink
-                  className="col-start-2 row-span-2 row-start-1 sm:col-start-auto sm:row-span-1 sm:row-start-auto"
+                <UnderlineLink
+                  iconRight={undefined}
                   onClick={() => onOpen(topic.topicId, null)}
                 >
                   {m.question_ui_summary()}
-                </ProgressLink>
+                </UnderlineLink>
               </div>
             ))}
           </section>
@@ -1734,18 +1907,33 @@ type StartedTopic = BankTopicProgress & { nextQuestionId: string };
 const isStarted = (topic: BankTopicProgress): topic is StartedTopic =>
   topic.nextQuestionId !== null;
 
+/** A progress row's visible names by its exam's shape, the topic last. */
+function progressPath(exams: BankExam[], topic: BankTopicProgress) {
+  const exam = exams.find((item) => item.id === topic.examId);
+  const labels = {
+    subject: { label: topic.subjectLabel },
+    topic: { label: topic.topicLabel },
+  };
+  return exam
+    ? topicPath(exam, labels.subject, labels.topic)
+    : [topic.examLabel, topic.subjectLabel, topic.topicLabel];
+}
+
 function ContinueSection({
+  exams,
   topics: [latest, ...others],
   onOpen,
 }: {
+  exams: BankExam[];
   topics: StartedTopic[];
   onOpen: (topicId: string, next: string | null) => void;
 }) {
+  const latestPath = progressPath(exams, latest);
   return (
     <section>
       <h2 className="t-card-title">{m.question_ui_continue()}</h2>
       <p className="t-meta mb-1 text-fg-muted">
-        {latest.examLabel} · {latest.subjectLabel}
+        {latestPath.slice(0, -1).join(' · ')}
       </p>
       <TrailMap
         answeredPositions={latest.answeredPositions}
@@ -1757,7 +1945,7 @@ function ContinueSection({
       />
       <div className="mt-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
         <div className="min-w-0">
-          <h3 className="t-large-card-title">{latest.topicLabel}</h3>
+          <h3 className="t-large-card-title">{latestPath.at(-1)}</h3>
           <p className="mt-1 text-fg-muted text-sm">
             {m.question_ui_progress_line({
               answered: latest.answered,
@@ -1766,14 +1954,14 @@ function ContinueSection({
             })}
           </p>
         </div>
-        <ProgressLink
+        <UnderlineLink
           accent
           onClick={() => onOpen(latest.topicId, latest.nextQuestionId)}
         >
           {m.question_ui_continue_at({
             position: latest.questionIds.indexOf(latest.nextQuestionId) + 1,
           })}
-        </ProgressLink>
+        </UnderlineLink>
       </div>
       {others.length > 0 && (
         <div className="mt-8">
@@ -1782,11 +1970,11 @@ function ContinueSection({
           </h3>
           {others.map((topic) => (
             <div
-              className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 border-divider border-t py-3 sm:grid-cols-[minmax(0,1fr)_150px_4.5rem_auto]"
+              className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 border-divider border-t py-3 sm:grid-cols-[minmax(0,1fr)_minmax(150px,240px)_4.5rem_auto]"
               key={topic.topicId}
             >
-              <TopicName topic={topic} />
-              <div className="col-span-2 row-start-2 sm:col-span-1 sm:row-start-auto">
+              <TopicName exams={exams} topic={topic} />
+              <div className="col-span-2 row-start-2 max-w-[240px] sm:col-span-1 sm:row-start-auto">
                 <MiniTrail
                   answered={topic.answered}
                   topicId={topic.topicId}
@@ -1796,12 +1984,13 @@ function ContinueSection({
               <div className="hidden text-right text-fg-secondary text-sm sm:block">
                 {m.study_of({ done: topic.answered, total: topic.total })}
               </div>
-              <ProgressLink
+              <UnderlineLink
                 className="col-start-2 row-start-1 sm:col-start-auto sm:row-start-auto"
+                iconRight={undefined}
                 onClick={() => onOpen(topic.topicId, topic.nextQuestionId)}
               >
                 {m.question_ui_continue()}
-              </ProgressLink>
+              </UnderlineLink>
             </div>
           ))}
         </div>
@@ -1810,35 +1999,23 @@ function ContinueSection({
   );
 }
 
-function TopicName({ topic }: { topic: BankTopicProgress }) {
+function TopicName({
+  exams,
+  topic,
+}: {
+  exams: BankExam[];
+  topic: BankTopicProgress;
+}) {
+  const path = progressPath(exams, topic);
   return (
     <div className="min-w-0">
-      <div className="truncate font-semibold text-fg">{topic.topicLabel}</div>
-      <div className="truncate text-fg-muted text-xs">
-        {topic.examLabel} · {topic.subjectLabel}
-      </div>
-    </div>
-  );
-}
-
-/** Continue and Summary as underlined links, so they don't outweigh the page. */
-function ProgressLink({
-  accent,
-  className,
-  ...props
-}: ComponentProps<'button'> & { accent?: boolean }) {
-  return (
-    <Button
-      className={cn(
-        'justify-self-end underline decoration-[1.5px] underline-offset-4',
-        !accent && 'text-fg-secondary hover:text-fg',
-        className
+      <div className="truncate font-semibold text-fg">{path.at(-1)}</div>
+      {path.length > 1 && (
+        <div className="truncate text-fg-muted text-xs">
+          {path.slice(0, -1).join(' · ')}
+        </div>
       )}
-      iconRight="navigationForward"
-      size="xs"
-      variant={accent ? 'ghost-link' : 'ghost'}
-      {...props}
-    />
+    </div>
   );
 }
 

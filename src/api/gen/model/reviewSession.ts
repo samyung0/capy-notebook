@@ -4,10 +4,20 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { ReviewEvidence } from './reviewEvidence.ts';
 import type { ReviewItem } from './reviewItem.ts';
+import type { ReviewSessionGroup } from './reviewSessionGroup.ts';
+import type { ReviewSessionMode } from './reviewSessionMode.ts';
 
 export interface ReviewSession {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  answered: number;
+  chapterId?: string;
+  evidence?: ReviewEvidence;
+  group: ReviewSessionGroup;
   items: ReviewItem[];
+  /** Omitted for a review started from the workspace list */
+  mode?: ReviewSessionMode;
+  total: number;
 }

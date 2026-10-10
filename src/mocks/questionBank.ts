@@ -3,6 +3,7 @@ import type {
   BankCopyReq,
   BankTopicMarks,
   BankTopicProgress,
+  BankTopicSummary,
 } from '@/api/types';
 import {
   createMaterialDocument,
@@ -181,6 +182,40 @@ const DRILLS = [
     label: 'Coordinate geometry',
     size: 8,
     subject: 'Mathematics',
+  },
+  // ABRSM has one subject, so its topics are the panel's first level.
+  {
+    answered: 4,
+    exam: 'ABRSM',
+    id: 'rhythm',
+    label: 'Rhythm and time signatures',
+    size: 10,
+    subject: 'Music Theory',
+  },
+  {
+    answered: 0,
+    exam: 'ABRSM',
+    id: 'keys-and-scales',
+    label: 'Keys and scales',
+    size: 8,
+    subject: 'Music Theory',
+  },
+  {
+    answered: 0,
+    exam: 'ABRSM',
+    id: 'intervals',
+    label: 'Intervals',
+    size: 6,
+    subject: 'Music Theory',
+  },
+  // The driving test is one paper: one subject with one topic.
+  {
+    answered: 7,
+    exam: 'Driving',
+    id: 'driving-theory',
+    label: 'Theory paper',
+    size: 25,
+    subject: 'Theory',
   },
 ];
 const drillQuestions = DRILLS.flatMap((drill) =>
@@ -420,6 +455,36 @@ export const questionBankHandlers = [
             },
           ],
         },
+        {
+          cover: { color: '#2f6f5e', kind: 'latin', style: 'doodles' },
+          description:
+            'Graded music exams; Grade 5 theory is needed before the higher practical grades.',
+          fullLabel: 'Associated Board of the Royal Schools of Music',
+          id: 'abrsm',
+          label: 'ABRSM',
+          subjects: [
+            {
+              id: 'music-theory',
+              label: 'Music Theory',
+              topics: drillTopics('ABRSM', 'Music Theory'),
+            },
+          ],
+        },
+        {
+          cover: { color: '#c2410c', style: 'type' },
+          description:
+            'The written test for a private car licence: one paper on rules, signs and safe driving.',
+          fullLabel: 'Private car driving theory test',
+          id: 'driving',
+          label: 'Driving',
+          subjects: [
+            {
+              id: 'theory',
+              label: 'Theory',
+              topics: drillTopics('Driving', 'Theory'),
+            },
+          ],
+        },
       ],
     };
     return HttpResponse.json(syllabus);
@@ -563,6 +628,21 @@ export const questionBankHandlers = [
           return answer ? [[row.id, answer.score]] : [];
         })
       ),
+    };
+    return HttpResponse.json(body);
+  }),
+  http.get('/api/bank/topics/:topicId/summary', ({ params }) => {
+    const body: BankTopicSummary = {
+      questions: topicRows(String(params.topicId))
+        .sort((a, b) => a.position - b.position)
+        .map((row) => ({
+          answerTypes: row.answerTypes,
+          id: row.id,
+          marks: row.marks,
+          position: row.position,
+          preview: row.preview,
+          score: answersById.get(row.id)?.score ?? null,
+        })),
     };
     return HttpResponse.json(body);
   }),

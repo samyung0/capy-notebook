@@ -22,9 +22,9 @@ describe('billing formatters', () => {
     expect(storageLimitLabel(PLAN_LIMITS.pro.storageLimitBytes)).toBe('1 GB');
   });
 
-  it('keeps both plans unlimited for owned workspaces', () => {
-    expect(PLAN_LIMITS.free.ownedWorkspaceLimit).toBeNull();
-    expect(PLAN_LIMITS.pro.ownedWorkspaceLimit).toBeNull();
+  it('caps owned workspaces at 10 on Free and 50 on Pro', () => {
+    expect(PLAN_LIMITS.free.ownedWorkspaceLimit).toBe(10);
+    expect(PLAN_LIMITS.pro.ownedWorkspaceLimit).toBe(50);
   });
 
   it('formats micro-credits as whole credits once the number is large', () => {

@@ -6,9 +6,9 @@
  */
 
 export interface ReviewWorkspace {
-  done: number;
+  iconId: string;
+  lastReviewedAt?: string;
   name: string;
   reviewable: number;
-  total: number;
   workspaceId: string;
 }

@@ -1,0 +1,71 @@
+/*
+ * Learning's railway map: the question bank map's tm- classes plus the town
+ * and industry fills. The trail takes the workspace cover's colour, lifted
+ * towards white in dark themes; without a cover, the theme's link colour.
+ */
+:is(.rail-map, .rail-trail) :is(.trail-map, .trail-mini) {
+  --map-trail: var(--text-link);
+}
+.rail-colour :is(.trail-map, .trail-mini) {
+  --map-trail: var(--cover-ink);
+}
+.dark .rail-colour :is(.trail-map, .trail-mini) {
+  --map-trail: color-mix(in oklab, var(--cover-ink) 62%, #fff);
+}
+
+/* Plain class selectors: elements placed with <use> do not match ancestor-scoped ones. */
+.tm-brick {
+  fill: color-mix(in oklab, #c8734f 38%, var(--wash));
+}
+.tm-metal {
+  fill: color-mix(in oklab, #8aa0b4 32%, var(--wash));
+}
+.tm-glass,
+.tm-pane {
+  fill: color-mix(in oklab, #9fd3e8 30%, var(--wash));
+}
+.tm-glassline {
+  fill: color-mix(in oklab, #9fd3e8 45%, var(--wash));
+}
+.tm-roof2 {
+  fill: color-mix(in oklab, #5d6f86 40%, var(--wash));
+}
+.tm-leaf2 {
+  fill: color-mix(in oklab, #6fb05f 55%, var(--wash));
+}
+.tm-board {
+  fill: color-mix(in oklab, #2f4f7a 85%, var(--wash));
+}
+.tm-board-t {
+  font-size: 9.5px;
+  font-weight: 800;
+  fill: #fff;
+}
+.tm-card {
+  fill: var(--wash);
+}
+.tm-awning {
+  opacity: 0.8;
+  stroke: var(--wash);
+  stroke-width: 1.2;
+}
+.tm-wheel {
+  fill: var(--wash);
+  stroke: var(--map-ink);
+  stroke-width: 1.3;
+}
+.tm-puff {
+  fill: color-mix(in oklab, var(--text-muted) 18%, var(--wash));
+  stroke: var(--map-ink-soft);
+  stroke-width: 0.9;
+}
+.tm-half {
+  fill: var(--map-trail);
+}
+/* Numbers sit over the scenery here, so they get a halo. */
+.rail-map .tm-num {
+  stroke: var(--surface-card-bg);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}

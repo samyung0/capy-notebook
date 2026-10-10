@@ -10,7 +10,6 @@ import {
 } from '@/api/hooks';
 import type {
   FileKind,
-  FileListParams,
   FileListSort,
   SourceFile,
   TrashItem,
@@ -44,6 +43,14 @@ import { AccountStatusButton } from '@/features/workspace/WorkspaceHealth';
 import { getLocale, m } from '@/i18n';
 import { describeError } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
+import {
+  csv,
+  FILE_KINDS,
+  FILE_SORT_DEFAULT,
+  type FilesSearch,
+  fileListParams,
+  sortSearch,
+} from '@/lib/listSearch';
 import type { FilesTab } from '@/lib/tabSearch';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
@@ -115,19 +122,6 @@ export default function Files() {
   );
 }
 
-const FILE_KINDS: FileKind[] = [
-  'pdf',
-  'doc',
-  'md',
-  'image',
-  'txt',
-  'sheet',
-  'slides',
-  'audio',
-  'json',
-  'unknown',
-];
-
 function fileKindLabel(kind: FileKind): string {
   switch (kind) {
     case 'pdf':
@@ -184,19 +178,14 @@ function ActiveFiles({
       value: 'kind',
     },
   ];
-  const [sort, setSort] = useState<FileListSort>('added');
-  const [ascending, setAscending] = useState(false);
-  const [kinds, setKinds] = useState<string[]>([]);
-  const [workspaceIds, setWorkspaceIds] = useState<string[]>([]);
-  const params = useMemo<FileListParams>(
-    () => ({
-      dir: ascending ? 'asc' : 'desc',
-      sort,
-      ...(kinds.length ? { kinds: kinds as FileKind[] } : {}),
-      ...(workspaceIds.length ? { workspaceIds } : {}),
-    }),
-    [ascending, kinds, sort, workspaceIds]
-  );
+  // Sort and filters live in the URL; picks replace the entry.
+  const search = useSearch({ from: '/auth-shell/files' });
+  const navigate = useNavigate({ from: '/files' });
+  const setSearch = (patch: FilesSearch) =>
+    void navigate({ replace: true, search: (prev) => ({ ...prev, ...patch }) });
+  const params = useMemo(() => fileListParams(search), [search]);
+  const { sort = FILE_SORT_DEFAULT, kinds = [], workspaceIds = [] } = params;
+  const ascending = params.dir === 'asc';
   const {
     data,
     fetchNextPage,
@@ -263,7 +252,8 @@ function ActiveFiles({
           {
             key: 'kind',
             label: m.files_filter_kind(),
-            onToggle: (value) => setKinds((prev) => toggleValue(prev, value)),
+            onToggle: (value) =>
+              setSearch({ kind: csv(toggleValue(kinds, value)) }),
             options: FILE_KINDS.map((kind) => ({
               label: fileKindLabel(kind),
               value: kind,
@@ -275,21 +265,19 @@ function ActiveFiles({
             key: 'workspace',
             label: m.files_filter_workspace(),
             onToggle: (value) =>
-              setWorkspaceIds((prev) => toggleValue(prev, value)),
+              setSearch({ workspace: csv(toggleValue(workspaceIds, value)) }),
             options: workspaces
               .filter((ws) => ws.isOwner)
               .map((ws) => ({ label: ws.name, value: ws.id })),
             selected: workspaceIds,
           },
         ]}
-        onResetFilters={() => {
-          setKinds([]);
-          setWorkspaceIds([]);
-        }}
-        onSortChange={(next, asc) => {
-          setSort(next);
-          setAscending(asc);
-        }}
+        onResetFilters={() =>
+          setSearch({ kind: undefined, workspace: undefined })
+        }
+        onSortChange={(next, asc) =>
+          setSearch(sortSearch(next, asc, FILE_SORT_DEFAULT))
+        }
         onViewChange={onViewChange}
         selectionActions={
           selection.selecting ? (
