@@ -1459,9 +1459,12 @@ def file_thumbnail_key(cur, file_id: str) -> str:
 
 def set_file_thumbnail(cur, file_id: str, source_sha256: str, key: str) -> bool:
     """Point a live file at the thumbnail of the bytes it still holds. The
-    blob triggers reference the key and release the one it replaces."""
+    blob triggers reference the key and release the one it replaces. Once an
+    editor's browser captured the file (thumbnail_captured_at), the browser
+    owns its thumbnail and ingest writes none."""
     cur.execute(
-        "UPDATE files SET thumbnail_key=%s WHERE id=%s AND source_sha256=%s AND trashed_at IS NULL",
+        """UPDATE files SET thumbnail_key=%s WHERE id=%s AND source_sha256=%s
+            AND trashed_at IS NULL AND thumbnail_captured_at IS NULL""",
         (key, file_id, source_sha256),
     )
     return cur.rowcount == 1
@@ -1475,7 +1478,7 @@ def share_file_thumbnail(
     the same workspace. A key names its file, and a file id leads to its
     workspace, so a key from any other workspace, the same owner's included,
     would hand that workspace to this file's readers. The blob triggers count
-    the shared key."""
+    the shared key. A file a browser captured keeps its own (set_file_thumbnail)."""
     cur.execute(
         """
         UPDATE files f SET thumbnail_key = src.thumbnail_key
@@ -1488,6 +1491,7 @@ def share_file_thumbnail(
             LIMIT 1
         ) src
         WHERE f.id = %s AND f.source_sha256 = %s AND f.trashed_at IS NULL
+          AND f.thumbnail_captured_at IS NULL
           AND f.thumbnail_key IS DISTINCT FROM src.thumbnail_key
         """,
         (workspace_id, source_sha256, file_id, file_id, source_sha256),

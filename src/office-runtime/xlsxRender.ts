@@ -1,6 +1,7 @@
 import { type DisplayList, paintDisplayList } from '@betteroffice/xlsx/viewer';
 import type { OfficeRenderedPage } from '@/features/files/officeProtocol';
 import { canvasPage } from './runtimeMenus';
+import type { ThumbnailRequest, ThumbnailResponse } from './thumbnail';
 
 interface Viewport {
   height: number;
@@ -57,6 +58,55 @@ function canvas(width: number, height: number) {
   context.fillStyle = '#ffffff';
   context.fillRect(0, 0, element.width, element.height);
   return { context, element };
+}
+
+/**
+ * The top-left of a sheet a list-card capture shows, in sheet px, drawn at a
+ * quarter scale (about the scale the ingest render prints a page at): the
+ * cards' 16:11 panel and no more, since cards crop pages from the top and
+ * painting cells is the capture's main cost.
+ */
+export const THUMBNAIL_AREA = { height: 550, width: 800, x: 0, y: 0 };
+
+/**
+ * How long the thumbnail worker may take, inside the host's 60 s wait for a
+ * `render` (it takes about 350 ms): past it the worker is ended.
+ */
+const THUMBNAIL_WORKER_MS = 30_000;
+
+/**
+ * The first sheet's top-left as a list-card capture (`thumbnail.ts`), painted
+ * and encoded in a thumbnail worker of its own, which ends with it: on its
+ * answer, an error, a message it cannot read, or the time limit.
+ */
+export function sheetThumbnail(frame: DisplayList) {
+  return new Promise<OfficeRenderedPage>((resolve, reject) => {
+    const worker = new Worker(
+      new URL('./thumbnail.worker.ts', import.meta.url),
+      { type: 'module' }
+    );
+    const end = (error?: Error) => {
+      clearTimeout(timer);
+      worker.terminate();
+      if (error) reject(error);
+    };
+    const timer = setTimeout(
+      () => end(new Error('The thumbnail worker took too long')),
+      THUMBNAIL_WORKER_MS
+    );
+    worker.onmessage = (event: MessageEvent<ThumbnailResponse>) => {
+      end();
+      if ('page' in event.data) resolve(event.data.page);
+      else reject(new Error(event.data.message));
+    };
+    worker.onerror = (event) => end(new Error(event.message));
+    worker.onmessageerror = () =>
+      end(new Error('The thumbnail worker answered unreadably'));
+    worker.postMessage({
+      area: THUMBNAIL_AREA,
+      frame,
+    } satisfies ThumbnailRequest);
+  });
 }
 
 /** An image of the given part of the sheet, as on screen, for "PNG image". */

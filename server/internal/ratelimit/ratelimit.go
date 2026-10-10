@@ -59,6 +59,9 @@ type Config struct {
 	// Incident applies to the browser's editing incident reports, a few an
 	// hour from a working client; each one is a row kept 90 days.
 	Incident Rule
+	// Thumbnail applies to browser thumbnail captures of edited Office files,
+	// on top of the per-file minimum interval the handler enforces.
+	Thumbnail Rule
 }
 
 // DefaultConfig is tuned for a single-seat free tier: generous enough that
@@ -74,6 +77,8 @@ func DefaultConfig() Config {
 		Editor:        Rule{Limit: 120, Window: time.Minute, Burst: 30},
 		Upload:        Rule{Limit: 120, Window: time.Hour, Burst: 20},
 		Incident:      Rule{Limit: 60, Window: time.Hour, Burst: 20},
+		// Epo 2026-10-11: 60 captures an hour per user.
+		Thumbnail: Rule{Limit: 60, Window: time.Hour},
 	}
 }
 

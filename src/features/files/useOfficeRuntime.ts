@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
+import { authHeaders } from '@/api/auth';
 import { api } from '@/api/client';
 import type { SourceFile, SourceSession, ViewableFile } from '@/api/types';
 import { userToast } from '@/components/ui/userToast';
@@ -33,6 +34,12 @@ import {
   openPresenterWindow,
 } from './officeRuntimeConfig';
 import { printPages } from './printPages';
+import {
+  canEncodeWebp,
+  createThumbnailCapture,
+  type ThumbnailCapture,
+  uploadThumbnail,
+} from './thumbnailCapture';
 import {
   decodeSourceState,
   SOURCE_IFRAME_ORIGIN,
@@ -156,6 +163,8 @@ export function useOfficeRuntime({
       { resolve: (bytes: ArrayBuffer) => void; reject: (error: Error) => void }
     >()
   );
+  // An edit frame's list-card capture (PPTX and XLSX), fed its local edits.
+  const captureRef = useRef<ThumbnailCapture | null>(null);
   const renderRequests = useRef(
     new Map<
       string,
@@ -419,6 +428,9 @@ export function useOfficeRuntime({
     // only from then (each session start clears it), and the first save
     // receipt is not waited for.
     (mode !== 'edit' || (!!source.doc && !source.discarding));
+  // A capture uploads only what the room has (saved) while the user may edit.
+  const captureAllowed = useRef<() => boolean>(() => false);
+  captureAllowed.current = () => editable && source.status === 'saved';
   // After the load above, and again whenever the runtime document boots. A
   // paused editor shows its content read-only, for selecting and copying.
   useEffect(() => {
@@ -565,6 +577,7 @@ export function useOfficeRuntime({
           return;
         const replicaUpdate = new Uint8Array(message.bytes);
         Y.applyUpdate(active.doc, replicaUpdate, SOURCE_IFRAME_ORIGIN);
+        if (message.type === 'update') captureRef.current?.edited();
         if (message.type === 'collaboration-ready') {
           const bytes = replicaCatchUp(active.doc, replicaUpdate).slice()
             .buffer;
@@ -604,7 +617,7 @@ export function useOfficeRuntime({
   }, [file.name, request]);
 
   const render = useCallback(
-    (kind: 'print' | 'png') =>
+    (kind: 'print' | 'png' | 'thumbnail') =>
       new Promise<Rendered>((resolve, reject) => {
         const id = crypto.randomUUID();
         const timeout = setTimeout(() => {
@@ -625,6 +638,45 @@ export function useOfficeRuntime({
       }),
     [post]
   );
+
+  // Browsers that cannot encode WebP (Safari) capture nothing; DOCX waits
+  // for its lean editing work.
+  useEffect(() => {
+    if (mode !== 'edit' || format === 'docx') return;
+    let cancelled = false;
+    void canEncodeWebp().then((supported) => {
+      if (!supported || cancelled) return;
+      captureRef.current = createThumbnailCapture({
+        allowed: () => captureAllowed.current(),
+        draw: async () => {
+          const [rendered, headers] = await Promise.all([
+            render('thumbnail'),
+            authHeaders(),
+          ]);
+          const bytes = rendered.pages[0]?.bytes;
+          return bytes ? { bytes, headers } : null;
+        },
+        upload: (drawn, keepalive) =>
+          uploadThumbnail(file.id, drawn, keepalive),
+      });
+    });
+    const leave = () => captureRef.current?.leave();
+    const hidden = () => {
+      if (document.visibilityState === 'hidden') leave();
+    };
+    window.addEventListener('pagehide', leave);
+    document.addEventListener('visibilitychange', hidden);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('pagehide', leave);
+      document.removeEventListener('visibilitychange', hidden);
+      // Leaving the file in the app (View, another file, another page)
+      // uploads what was drawn, as the page hiding does.
+      leave();
+      captureRef.current?.dispose();
+      captureRef.current = null;
+    };
+  }, [file.id, format, mode, render]);
 
   /** A menu item or header action: Capy's own commands run here. */
   const runMenuCommand = useCallback(

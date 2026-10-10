@@ -96,6 +96,7 @@ describe('office host protocol', () => {
       },
       { id: 'r1', kind: 'print', type: 'render', version },
       { id: 'r2', kind: 'png', type: 'render', version },
+      { id: 'r4', kind: 'thumbnail', type: 'render', version },
     ];
     for (const message of accepted)
       expect(isOfficeHostMessage(message)).toBe(true);

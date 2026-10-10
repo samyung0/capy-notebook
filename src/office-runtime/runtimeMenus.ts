@@ -29,6 +29,12 @@ export type OfficeRenderer = (
   OfficeRenderedPage[] | { pages: OfficeRenderedPage[]; truncated: boolean }
 >;
 
+/**
+ * An editor's list-card capture as WebP (`render` {kind: 'thumbnail'}), or
+ * null when there is nothing to capture now.
+ */
+export type OfficeThumbnailer = () => Promise<OfficeRenderedPage | null>;
+
 /** The menu item an id names, if any. */
 function findItem(
   entries: readonly OfficeMenuEntry[],

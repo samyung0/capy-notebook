@@ -1712,6 +1712,16 @@ export const handlers = [
     }
     return HttpResponse.json(f);
   }),
+  // A browser capture of an edited Office file: the cards show it from here.
+  http.post('/api/files/:id/thumbnail', async ({ params, request }) => {
+    const f = db.files.find((x) => x.id === params.id);
+    if (!f) return new HttpResponse(null, { status: 404 });
+    const bytes = await request.arrayBuffer();
+    f.thumbnailUrl = URL.createObjectURL(
+      new Blob([bytes], { type: 'image/webp' })
+    );
+    return new HttpResponse(null, { status: 204 });
+  }),
   http.delete('/api/files/:id', async ({ params }) => {
     const i = db.files.findIndex((x) => x.id === params.id);
     if (i >= 0) {

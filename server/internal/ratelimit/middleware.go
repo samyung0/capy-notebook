@@ -22,6 +22,7 @@ const (
 	classEditor
 	classUpload
 	classIncident
+	classThumbnail
 )
 
 // aiSuffixes are the model-backed routes. Matching by suffix rather than exact
@@ -83,6 +84,9 @@ func classify(path string) class {
 	}
 	if path == "/api/edit-incidents" {
 		return classIncident
+	}
+	if strings.HasPrefix(path, "/api/files/") && strings.HasSuffix(path, "/thumbnail") {
+		return classThumbnail
 	}
 	for _, suffix := range editorSuffixes {
 		if strings.HasSuffix(path, suffix) {
@@ -161,6 +165,11 @@ func Middleware(l *Limiter, userFunc func(*http.Request) string) func(http.Handl
 				}
 			case classIncident:
 				if ok, retry := l.Allow(ctx, "incident:"+subject, l.cfg.Incident); !ok {
+					reject(w, r, retry, "rate_limited")
+					return
+				}
+			case classThumbnail:
+				if ok, retry := l.Allow(ctx, "thumbnail:"+subject, l.cfg.Thumbnail); !ok {
 					reject(w, r, retry, "rate_limited")
 					return
 				}

@@ -21,6 +21,7 @@ require (
 	github.com/resend/resend-go/v3 v3.12.0
 	github.com/stripe/stripe-go/v82 v82.5.1
 	github.com/svix/svix-webhooks v1.96.1
+	golang.org/x/image v0.44.0
 	golang.org/x/sync v0.22.0
 	golang.org/x/text v0.40.0
 )

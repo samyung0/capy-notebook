@@ -25,6 +25,7 @@ func TestClassifySplitsEditorFromChat(t *testing.T) {
 		"/api/workspaces/ws_1/sources/import-content": classUpload,
 		"/api/workspaces":                             classDefault,
 		"/api/edit-incidents":                         classIncident,
+		"/api/files/f_1/thumbnail":                    classThumbnail,
 	}
 	for path, want := range cases {
 		if got := classify(path); got != want {
@@ -46,5 +47,8 @@ func TestDefaultConfigRaisesAIAndAddsBurst(t *testing.T) {
 	}
 	if cfg.Incident.Limit != 60 || cfg.Incident.Window != time.Hour || cfg.Incident.Burst != 20 {
 		t.Fatalf("incident = %+v", cfg.Incident)
+	}
+	if cfg.Thumbnail.Limit != 60 || cfg.Thumbnail.Window != time.Hour || cfg.Thumbnail.burst() != 60 {
+		t.Fatalf("thumbnail = %+v", cfg.Thumbnail)
 	}
 }

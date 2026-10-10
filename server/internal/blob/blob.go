@@ -45,6 +45,11 @@ type Store interface {
 	// Put writes r under a key derived from id and returns the storage path
 	// and number of bytes written.
 	Put(id string, r io.Reader) (path string, size int64, err error)
+	// PutObjectOnce writes key with the given Content-Type and Cache-Control
+	// in one attempt, without the SDK's retries, for objects the browser
+	// reads straight from the bucket and whose writer never retries
+	// (thumbnail captures).
+	PutObjectOnce(ctx context.Context, key string, body []byte, contentType, cacheControl string) error
 	PresignGet(ctx context.Context, path string) (url string, err error)
 	PresignGetWithExpiry(ctx context.Context, path string) (PresignedGet, error)
 	// PresignStableGet signs a GET that is identical for every call within one

@@ -3,6 +3,7 @@
 package blob
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -138,6 +139,18 @@ func (s *B2) PutObject(ctx context.Context, key string, body io.Reader, contentT
 		Bucket: aws.String(s.bucket), Key: aws.String(key), Body: body,
 		ContentType: aws.String(contentType), CacheControl: aws.String(cacheControl),
 	})
+	return err
+}
+
+// PutObjectOnce is one PutObject request: the client's retryer is limited to
+// a single attempt for this call only (the shared client keeps its retries
+// for everything else). The checksum is the CRC32 transfermanager sends.
+func (s *B2) PutObjectOnce(ctx context.Context, key string, body []byte, contentType, cacheControl string) error {
+	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(s.bucket), Key: aws.String(key), Body: bytes.NewReader(body),
+		ContentType: aws.String(contentType), CacheControl: aws.String(cacheControl),
+		ChecksumAlgorithm: s3types.ChecksumAlgorithmCrc32,
+	}, func(o *s3.Options) { o.RetryMaxAttempts = 1 })
 	return err
 }
 
