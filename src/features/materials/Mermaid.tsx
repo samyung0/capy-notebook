@@ -35,17 +35,28 @@ const VIEW_BOX = /<svg[^>]*\sviewBox="[\d.-]+ [\d.-]+ ([\d.]+) ([\d.]+)"/;
 let queue: Promise<unknown> = Promise.resolve();
 let renderSeq = 0;
 
+/** How long typing settles before a live source redraws: a full render per
+ * keystroke falls behind on a large diagram (REVIEW4 S2). */
+export const MERMAID_TYPING_DELAY_MS = 250;
+
+/** A queued render whose diagram changed again before its turn. */
+export const SUPERSEDED = new Error('superseded mermaid render');
+
 /**
  * Renders one diagram in a theme. mermaid.initialize is global, so renders run
  * one at a time and each sets its own preset; the output CSS is scoped to the
- * SVG's id, so blocks with different themes coexist on a page.
+ * SVG's id, so blocks with different themes coexist on a page. A render whose
+ * `wanted` says no when its turn comes is skipped (rejects with SUPERSEDED):
+ * a newer source is queued behind it.
  */
 export function renderMermaid(
   code: string,
   theme?: MermaidTheme,
-  container?: Element
+  container?: Element,
+  wanted?: () => boolean
 ) {
   const run = queue.then(async () => {
+    if (wanted && !wanted()) throw SUPERSEDED;
     const [{ default: mermaid }, { MERMAID_PRESETS, roughenFilters }] =
       await Promise.all([import('mermaid'), import('./mermaidPresets')]);
     const preset = MERMAID_PRESETS[mermaidTheme(theme)];
@@ -80,6 +91,7 @@ export function renderMermaid(
 export function Mermaid({
   className,
   code,
+  delay = 0,
   fill = false,
   theme,
   onDrawn,
@@ -97,6 +109,9 @@ export function Mermaid({
   onError?: (failure: MermaidFailure | null) => void;
   /** CSS height for the SVG from its natural (viewBox) size. */
   svgHeight?: (width: number, height: number) => string;
+  /** Typing settles this long before a changed source redraws (the first
+   * draw is at once): a live source changes per keystroke. */
+  delay?: number;
 }) {
   const [result, setResult] = useState<{
     background: string;
@@ -108,46 +123,53 @@ export function Mermaid({
   onErrorRef.current = onError;
   const onDrawnRef = useRef(onDrawn);
   onDrawnRef.current = onDrawn;
+  // Whether a draw was asked for already: later changes wait for `delay`.
+  const started = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
-    const container = containerRef.current;
-    if (!container) return;
-    // Same text styles as the display box, so measured labels fit when shown.
-    const renderHost = document.createElement('div');
-    renderHost.className = MERMAID_TEXT_CLASS;
-    Object.assign(renderHost.style, {
-      height: '0',
-      left: '0',
-      overflow: 'hidden',
-      position: 'fixed',
-      top: '0',
-      visibility: 'hidden',
-      width: `${container.clientWidth || window.innerWidth}px`,
-    });
-    document.body.append(renderHost);
-
-    renderMermaid(code, theme, renderHost)
-      .then((next) => {
-        if (cancelled) return;
-        setResult(next);
-        setError(null);
-        onErrorRef.current?.(null);
-        onDrawnRef.current?.(true);
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        const failure = mermaidFailure(e, code);
-        setError(failure);
-        onErrorRef.current?.(failure);
-        onDrawnRef.current?.(false);
-      })
-      .finally(() => renderHost.remove());
-
+    const draw = () => {
+      const container = containerRef.current;
+      if (!container) return;
+      // Same text styles as the display box, so measured labels fit when shown.
+      const renderHost = document.createElement('div');
+      renderHost.className = MERMAID_TEXT_CLASS;
+      Object.assign(renderHost.style, {
+        height: '0',
+        left: '0',
+        overflow: 'hidden',
+        position: 'fixed',
+        top: '0',
+        visibility: 'hidden',
+        width: `${container.clientWidth || window.innerWidth}px`,
+      });
+      document.body.append(renderHost);
+      renderMermaid(code, theme, renderHost, () => !cancelled)
+        .then((next) => {
+          if (cancelled) return;
+          setResult(next);
+          setError(null);
+          onErrorRef.current?.(null);
+          onDrawnRef.current?.(true);
+        })
+        .catch((e: unknown) => {
+          if (cancelled || e === SUPERSEDED) return;
+          const failure = mermaidFailure(e, code);
+          setError(failure);
+          onErrorRef.current?.(failure);
+          onDrawnRef.current?.(false);
+        })
+        .finally(() => renderHost.remove());
+    };
+    const wait = started.current ? delay : 0;
+    started.current = true;
+    const timer = wait ? setTimeout(draw, wait) : undefined;
+    if (!wait) draw();
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
-  }, [code, theme]);
+  }, [code, theme, delay]);
 
   if (error != null && !onError) {
     return (

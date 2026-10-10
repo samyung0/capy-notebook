@@ -520,7 +520,10 @@ The source is a trimmed CodeMirror 6 (`MermaidCodeEditor.tsx`: state,
 view and history only, ~78 KB gzipped, loaded with the dialog or the editor,
 ligatures off) with line numbers; the line mermaid blames gets a tinted
 background, a wavy underline and a red number, while the preview keeps the last
-diagram that parsed. `mermaidFailure` reads that line out of the parser message
+diagram that parsed. A live source redraws once typing settles for 250 ms
+(`MERMAID_TYPING_DELAY_MS`: the note block, its dialog and a live View's
+block; the first draw is at once), and a queued render whose source changed
+before its turn is skipped, so only the latest text draws. `mermaidFailure` reads that line out of the parser message
 (blank lines trimmed off the top added back, an end-of-source error clamped onto
 the last line); a failure with no line says "This diagram could not be drawn".
 Wherever a diagram is only read (View, note blocks, shared pages) a failure

@@ -6,7 +6,11 @@ import {
   EditorSaveStatus,
   EditorStatusStoreContext,
 } from '@/features/materials/CenterContentHeader';
-import { Mermaid, mermaidFailureMessage } from '@/features/materials/Mermaid';
+import {
+  MERMAID_TYPING_DELAY_MS,
+  Mermaid,
+  mermaidFailureMessage,
+} from '@/features/materials/Mermaid';
 import {
   editorHistory,
   MermaidCodeEditor,
@@ -70,7 +74,12 @@ export default function MermaidSourceDialog({
           )}
         </div>
         <div className="min-w-0">
-          <Mermaid code={code} onError={setFailure} theme={theme} />
+          <Mermaid
+            code={code}
+            delay={MERMAID_TYPING_DELAY_MS}
+            onError={setFailure}
+            theme={theme}
+          />
         </div>
       </div>
     </SimpleDialog>

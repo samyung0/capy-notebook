@@ -42,7 +42,11 @@ import { HtmlEmbed } from '@/features/materials/HtmlEmbed';
 import { StandaloneMaterialTitle } from '@/features/materials/MaterialRenderContext';
 import { MediaFrame } from '@/features/materials/MediaFrame';
 import { MermaidPreview } from '@/features/materials/MediaPreview';
-import { Mermaid, MermaidSwatch } from '@/features/materials/Mermaid';
+import {
+  MERMAID_TYPING_DELAY_MS,
+  Mermaid,
+  MermaidSwatch,
+} from '@/features/materials/Mermaid';
 import {
   MERMAID_THEME_LABEL,
   MERMAID_THEMES,
@@ -684,6 +688,8 @@ export function MermaidElement(props: PlateElementProps) {
         >
           <Mermaid
             code={element.source}
+            // A live source changes per keystroke, here and for every peer.
+            delay={MERMAID_TYPING_DELAY_MS}
             fill={element.width !== undefined}
             onDrawn={setDrawn}
             theme={theme}

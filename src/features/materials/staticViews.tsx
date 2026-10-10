@@ -27,7 +27,7 @@ import {
   openEditorAsset,
 } from './MediaAssetView';
 import { MediaFrame } from './MediaFrame';
-import { Mermaid } from './Mermaid';
+import { MERMAID_TYPING_DELAY_MS, Mermaid } from './Mermaid';
 import { previewHeight } from './previewHeight';
 
 /* The read-only blocks that need the browser, apart from their Slate
@@ -142,6 +142,8 @@ export function MermaidView({
       >
         <Mermaid
           code={source}
+          // A live note View follows a source typed elsewhere.
+          delay={MERMAID_TYPING_DELAY_MS}
           fill={width !== undefined}
           onDrawn={setDrawn}
           theme={theme}

@@ -30,7 +30,11 @@ import {
 } from '@/features/materials/liveMermaid';
 import { MediaFrame } from '@/features/materials/MediaFrame';
 import { MermaidPreview } from '@/features/materials/MediaPreview';
-import { Mermaid, mermaidFailureMessage } from '@/features/materials/Mermaid';
+import {
+  MERMAID_TYPING_DELAY_MS,
+  Mermaid,
+  mermaidFailureMessage,
+} from '@/features/materials/Mermaid';
 import { MermaidCodeEditor } from '@/features/materials/MermaidCodeEditor';
 import { MermaidMaterialView } from '@/features/materials/MermaidMaterialView';
 import { MermaidThemeSelect } from '@/features/materials/MermaidThemeSelect';
@@ -44,9 +48,6 @@ import { registerLiveNote } from '@/features/notes/liveNoteHandover';
 import { MERMAID_CAPTION_CLASS } from '@/features/notes/nodeStyles';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-
-/** Typing settles this long before the preview redraws. */
-const PREVIEW_DELAY_MS = 250;
 
 /**
  * Edit mode of a standalone mindmap or diagram, without Plate (Epo
@@ -183,7 +184,10 @@ function LiveDiagram({
   // (a broken diagram opened in Edit), nothing opens.
   const [drawnCode, setDrawnCode] = useState<string | null>(null);
   useEffect(() => {
-    const timer = setTimeout(() => setPreviewCode(code), PREVIEW_DELAY_MS);
+    const timer = setTimeout(
+      () => setPreviewCode(code),
+      MERMAID_TYPING_DELAY_MS
+    );
     return () => clearTimeout(timer);
   }, [code]);
   const setTheme = (next: MermaidTheme) =>
