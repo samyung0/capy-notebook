@@ -71,7 +71,8 @@ export function PastReviews() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="-mx-4 sm:-mx-6">
+      {/* Lifted so the toolbar's centred labels start where Settings' headings do. */}
+      <div className="-mx-4 -mt-3 sm:-mx-6">
         <ListToolbar
           ascending={params.dir === 'asc'}
           filters={[
@@ -118,7 +119,7 @@ export function PastReviews() {
       ) : (
         <div className="flex flex-col gap-3" ref={revealRef}>
           <div className="overflow-hidden rounded-card border border-line">
-            <div className="hidden bg-surface-hover-bg px-4 py-2.5 font-bold text-fg-muted text-xs uppercase tracking-wide md:grid md:grid-cols-[6.5rem_minmax(0,1.4fr)_minmax(0,1.1fr)_8rem_8rem_4rem_40px] md:gap-3">
+            <div className="hidden bg-surface-hover-bg px-4 py-2.5 font-bold text-fg-muted text-xs uppercase tracking-wide md:grid md:grid-cols-[8.5rem_minmax(0,1.2fr)_minmax(0,1.1fr)_8rem_8rem_4rem_40px] md:gap-3">
               <div>{m.quiz_col_date()}</div>
               <div>{m.quiz_col_workspace()}</div>
               <div>{m.past_col_chapter()}</div>
@@ -170,7 +171,7 @@ function Row({
     r.answered < r.total &&
     m.past_stopped({ answered: r.answered, total: r.total });
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto_40px] items-center gap-x-3 gap-y-0.5 border-divider border-t py-2.5 pr-2 pl-4 md:grid-cols-[6.5rem_minmax(0,1.4fr)_minmax(0,1.1fr)_8rem_8rem_4rem_40px] md:gap-3">
+    <div className="grid grid-cols-[minmax(0,1fr)_auto_40px] items-center gap-x-3 gap-y-0.5 border-divider border-t py-2.5 pr-2 pl-4 md:grid-cols-[8.5rem_minmax(0,1.2fr)_minmax(0,1.1fr)_8rem_8rem_4rem_40px] md:gap-3">
       {/* Phones: what, where and when, then both scores at the right. */}
       <div className="min-w-0 md:hidden">
         <p className="truncate font-semibold text-fg">
