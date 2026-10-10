@@ -26,10 +26,20 @@ thumbs/{file id}/{sha256 of the WebP}.webp
   its workspace and purging the account release it the same way (the cascades
   fire the row trigger).
 - A trashed file keeps its thumbnail until the 30-day purge.
-- A workspace clone copies `thumbnail_key` and shares the object; the reaper
-  re-checks references before every delete, so the clone keeps it alive after
-  the original goes. A later capture of the clone writes under the clone's own
-  file id and releases the shared key.
+- A key names its file, and a file id leads to the file's workspace (a link
+  workspace's id is its share link), so a key is shared only where its file id
+  is no secret:
+  - The owner's own workspace clone copies `thumbnail_key` and shares the
+    object; the reaper re-checks references before every delete, so the clone
+    keeps it alive after the original goes. A later capture of the clone writes
+    under the clone's own file id and releases the shared key.
+  - Anyone else's clone gets no shared key: the clone leaves it empty, and after
+    the clone commits the gateway copies the object inside the bucket
+    (`blob.Copy`, S3 CopyObject) to `thumbs/{clone file id}/{same hash}.webp`
+    and records it (`SetCloneThumbnail`; a file gone or captured meanwhile takes
+    nothing and the copy is queued for deletion). A failed copy leaves the file
+    without a thumbnail until its next capture: logged, never retried. The
+    copies run in the clone request, one CopyObject per thumbnail.
 - An unchanged capture (same key) skips the upload and the update.
 - Thumbnails are a platform cost: no storage quota, no reservation, and
   `size_bytes` and the storage triggers ignore them (about 1-8 KB each).
@@ -42,7 +52,9 @@ thumbs/{file id}/{sha256 of the WebP}.webp
 
 Sources: [migration](../server/migrations/0073_thumbnails.sql),
 [reference-count test](../server/internal/store/blobs_test.go)
-(`TestThumbnailKeyIsACountedReference`).
+(`TestThumbnailKeyIsACountedReference`),
+[clone copies](../server/internal/httpapi/huma_share.go)
+(`TestCrossOwnerCloneCopiesThumbnails`, a security regression test).
 
 ## Links and access
 
@@ -80,9 +92,8 @@ the donor-reuse, content-reuse and indexed exits all reach it.
 
 | Route | Thumbnail |
 | ----- | --------- |
-| PDF (`document_parse`) | PyMuPDF page 1, from the bundle's font-repaired `parsed.pdf` when present, else the spooled source |
-| Office (docx, pptx, xlsx) | the bundle's `page1.png`: the parse job renders page 1 of the PDF its LibreOffice conversion already produced (`odl.capture.page_thumbnail`, 200 px wide, cut at 400 px) and the ingest encodes it as WebP. A bundle without one (from an older parser, or a failed render) means no thumbnail; ingest never calls `/capture_page` for thumbnails (chat keeps using it) |
-| Image (`image_caption`) | Pillow: first frame, EXIF orientation, transparency flattened on white; refused over `CAPY_IMAGE_MAX_PIXELS` or Pillow's decompression-bomb limit; SVG gets none (no rasterizer), HEIC only with a Pillow plugin |
+| PDF and Office (`document_parse`) | the bundle's `page1.png`: the parse job renders page 1 of the PDF it holds, in its bounded child (the font-repaired bytes when there are any, an Office file's LibreOffice conversion; `odl.capture.page_thumbnail`, 200 px wide, cut at 400 px), and the ingest encodes it as WebP after checking from its header that it is a PNG of at most 200 x 400. The worker never renders a document (no PyMuPDF in it for thumbnails) and never calls `/capture_page` for them (chat keeps using it). A bundle without the image (an older parser, a failed render) means no thumbnail |
+| Image (`image_caption`) | Pillow: first frame, EXIF orientation, shrunk to 200 px wide and cut at 400 px before it is converted and flattened on white; refused over `CAPY_IMAGE_MAX_PIXELS` or Pillow's decompression-bomb limit; SVG gets none (no rasterizer), HEIC only with a Pillow plugin |
 | Text (`raw_text`) | no image: `files.preview = {"text": ...}`, the first 600 characters (a text-mode read, never cut mid-character; NUL removed) |
 | Store-only, audio, delimited text | none |
 
@@ -95,31 +106,32 @@ the donor-reuse, content-reuse and indexed exits all reach it.
   update fails after the B2 write.
 - A source refresh (an edited text or Office source) publishes and ingests
   again, so the new bytes replace the thumbnail or text preview.
-- An Office file the parse job reused from identical indexed bytes (the
+- A PDF or Office file the parse job reused from identical indexed bytes (the
   donor path, `_reuse_donor` called from the parse job in
-  `pipeline/ingest/worker.py`) has no bundle to render from, so it takes the
-  thumbnail key of a live file holding the same bytes
-  (`db.share_file_thumbnail`): one in the same workspace first, else one in a
-  link or public workspace, the files donor reuse itself may read, so a key
-  never points into a private workspace. The key is shared like a clone's and
-  outlives the original while the copy references it. Text sources need no
-  copy: their preview is read from the reused bytes, which are identical.
+  `pipeline/ingest/worker.py`) has no bundle, so it takes the thumbnail key of
+  a live file holding the same bytes in the same workspace or owned by the
+  same owner (`db.share_file_thumbnail`; this workspace first). Another
+  owner's file never lends its key, link or public workspace or not
+  (`test_a_reuse_never_shares_another_owners_key`, a security regression
+  test). The key is shared like the owner's clone's and outlives the original
+  while the copy references it. Text sources need no copy: their preview is
+  read from the reused bytes, which are identical.
 - The parser's page render is optional too: a failure prints `page thumbnail
   skipped` and the parse goes on without `page1.png`. Its time is the
-  `thumbnail` phase of the parse receipt. The worker accepts a `page1.png` of
-  at most 1 MiB and checks it is a PNG.
+  `thumbnail` phase of the parse receipt. The worker's bundle check refuses a
+  `page1.png` over 1 MiB.
 - Failure policy: any error is logged (`thumbnail capture failed`, structured,
   with the trace id) and dropped. No retry, the job is already committed, and
   the card keeps its icon or its previous thumbnail until the next capture.
 
-Measured on the developer PC (2026-10-11, three runs, median): PDF page 1
-12-58 ms (a 27 MB textbook 41 ms; the first call in a process also pays about
-2.8 s of PyMuPDF start-up), a 12 MP JPEG 132 ms. Office: the page render adds
-1.7-20 ms to the parse (the `thumbnail` phase of a real parse: 2-23 ms; the
-LibreOffice conversion it reuses takes 2.2-28 s) and the ingest's PNG to WebP
-step 4-28 ms. A second conversion through `/capture_page`, the first version
-of this, took 3.2-8 s per small document and 28.5 s for a 24 MB deck. Raw
-numbers: `C:/WEB/capy-harness/2026-10-11-thumbnails/t1-bench/`.
+Measured on the developer PC (2026-10-11, three runs, median): the parse-side
+page render adds 3.4-37 ms to a PDF parse (a 27 MB textbook 21.5 ms) and
+1.7-20 ms to an Office parse (the `thumbnail` phase of a real parse: 2-23 ms;
+the LibreOffice conversion it reuses takes 2.2-28 s); the ingest's PNG to WebP
+step takes 4-28 ms and a 12 MP JPEG photo 132 ms. A second conversion through
+`/capture_page`, the first version of this, took 3.2-8 s per small Office
+document and 28.5 s for a 24 MB deck. Raw numbers:
+`C:/WEB/capy-harness/2026-10-11-thumbnails/t1-bench/`.
 
 ## Material previews
 
@@ -127,13 +139,17 @@ Every Go writer of `materials.content` stores `materials.preview` in the same
 statement: `createMaterialTx`, `UpdateMaterial`, `ProjectMaterialContent` (the
 Yjs projection) and the workspace and material clones (recomputed, since a
 clone drops media it could not copy). `materialdoc.Preview` derives it; it is
-answer-free and about 1 KB at most. `MaterialListItem`, `MaterialRef` and trash
-rows return it as `preview`; the client types the union by hand.
+answer-free and about 1 KB at most. `MaterialListItem` and trash rows return it
+as `preview`; the client types the union by hand. The workspace tree's
+`MaterialRef` carries none (nothing there draws it, and the tree refetches
+often). Materials written before migration 0073 get theirs from the one-shot,
+idempotent `go run ./cmd/previewbackfill` (rows still NULL, in batches; run by
+hand, never at startup), or from their next content write.
 
 | Kind | Preview |
 | ---- | ------- |
-| `note` | `{kind, blocks}`: up to 8 blocks and 600 characters of text in total. Blocks: `{t:'h', text, level}`, `{t:'p', text}`, `{t:'ul', items}` (consecutive list items of any bullet style), `{t:'todo', items:[{done, text}]}`, `{t:'table', rows}` (4 x 4 at most), `{t:'math', tex}`, `{t:'code', text, lang?}` (6 lines at most), `{t:'quote', text}`, `{t:'image'}` (a marker). Callouts, columns and toggles are read through; dividers, tables of contents, media, embeds, diagrams, charts and study blocks are skipped. An empty note has `blocks: []`. |
-| `quiz` | `{kind, questionCount, first?}` with `first = {type, stem, options?, pairs?, items?, hasChart?}` (orchestrator decision 2026-10-11): `type` is the first question's first part answer type; `stem` is that part's text, or the question stem when the part has none, cut to 200 characters (a gaps blank becomes `\u0001`); mcq and multi `options` keep their stored order; `hasChart` when the stem or the part holds a chart or graph. The stored order of matching pairs and ordering items is the answer key, which readers never get: matching `pairs` puts the left items and the options side by side with each column sorted alphabetically on its own (rows are not matches), ordering `items` are sorted alphabetically. Options, pairs and items keep at most 4 entries of 60 characters. |
+| `note` | `{kind, blocks}`: up to 8 blocks and 600 characters of text in total. Blocks: `{t:'h', text, level}`, `{t:'p', text}`, `{t:'ul', items}` (consecutive list items of any bullet style), `{t:'todo', items:[{done, text}]}`, `{t:'table', rows}` (4 x 4 at most; a row without cells is `[]`, never null), `{t:'math', tex}`, `{t:'code', text, lang?}` (6 lines at most), `{t:'quote', text}`, `{t:'image'}` (a marker). Callouts, columns and toggles are read through; dividers, tables of contents, media, embeds, diagrams, charts and study blocks are skipped. An empty note has `blocks: []`. |
+| `quiz` | `{kind, questionCount, first?}` with `first = {type, stem, options?, prompts?, itemCount?, hasChart?}`: `type` is the first question's first part answer type; `stem` is that part's text, or the question stem when the part has none, cut to 200 characters (a gaps blank becomes `\u0001`); mcq and multi `options` keep their stored order (they carry no key); `hasChart` when the stem or the part holds a chart or graph. Readers of a list never get quiz keys, so a matching question shows only its left-hand `prompts` (stored order) and an ordering question only its `itemCount`: the right-hand values with any pairing, and the items in any order, could be the answer. Interim, pending Epo's sign-off (`TestPreviewHidesTheAnswerKey`, a security regression test). Options and prompts keep at most 4 entries of 60 characters. |
 | `flashcards` | `{kind, cardCount, first?: {front, hasImage}}`, the front clipped to 200 characters |
 | `mindmap`, `diagram` | `{kind, source}`, the Mermaid source cut to 1 KB on a line boundary |
 
