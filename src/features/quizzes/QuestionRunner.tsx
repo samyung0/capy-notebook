@@ -618,7 +618,7 @@ function PartRunner({
         )}
         <Textarea
           aria-label={m.question_ui_your_answer()}
-          className="ruled-lines max-h-[calc(var(--ruled-line)*8)] min-h-[calc(var(--ruled-line)*3)] rounded-none border-0 bg-transparent px-0.5 py-0 focus:border-0 disabled:bg-transparent disabled:text-fg"
+          className="ruled-lines max-h-[calc(var(--ruled-line)*8)] min-h-[calc(var(--ruled-line)*3)] rounded-none border-0 bg-transparent px-0.5 py-0 focus:border-0 disabled:cursor-default disabled:bg-transparent disabled:text-fg"
           disabled={review || disabled}
           maxLength={QUIZ_OPEN_ANSWER_MAX}
           onChange={(event) => onChange(event.target.value)}
@@ -694,7 +694,7 @@ function PartRunner({
                     <SelectTrigger
                       aria-label={left}
                       className={cn(
-                        'h-auto border-line-strong bg-transparent px-1.5 py-1.5 font-bold data-[state=open]:border-solid-accent-1 data-[state=open]:border-b-2',
+                        'h-auto border-line-strong bg-transparent px-1.5 py-1.5 font-bold disabled:cursor-default disabled:bg-transparent data-[state=open]:border-solid-accent-1 data-[state=open]:border-b-2',
                         letter >= 0 && 'text-tint-accent-1-fg'
                       )}
                       variant="underline"
