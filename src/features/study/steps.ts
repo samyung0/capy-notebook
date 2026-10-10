@@ -141,10 +141,10 @@ export function useSteps<R>(
     answer: (record: R, answer?: AnswerOptions) =>
       set(answerStep(steps, record, answer)),
     current: currentStep(steps),
-    next: () => set(nextStep(steps, options)),
-    previous: () => set(previousStep(steps)),
     /** The items changed (see `withKeys`). */
     follow: (keys: string[]) => set(withKeys(steps, keys)),
+    next: () => set(nextStep(steps, options)),
+    previous: () => set(previousStep(steps)),
     reset: (next: string[], done: Step<R>[] = []) =>
       set(startSteps(next, done)),
     steps,

@@ -31,7 +31,9 @@ it('a live quiz reader joins only the content document', async () => {
     () => undefined,
     () => undefined
   );
-  await vi.waitFor(() => expect(opened).toHaveLength(1));
+  // readLive imports the room and the quiz model lazily, which takes over a
+  // second when the whole suite loads at once.
+  await vi.waitFor(() => expect(opened).toHaveLength(1), { timeout: 10_000 });
   leave();
   expect(opened[0].id).toBe('qz_1');
   expect(opened[0].options).not.toHaveProperty('document');

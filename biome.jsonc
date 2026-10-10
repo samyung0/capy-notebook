@@ -25,6 +25,8 @@
       "!!bench",
       "!!lab",
       "!!artifacts",
+      // Written byte for byte by the live-items parity tests (PARITY_WRITE=1).
+      "!!collaboration-rs/crates/items/tests/parity",
       // Prompt text: the deck style's reference slides and its str.format template.
       "!!pipeline/pipeline/prompts/deck_styles"
     ]
