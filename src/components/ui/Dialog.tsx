@@ -143,8 +143,13 @@ function DialogFooter({
   return (
     <div
       className={cn(
-        // Phones split a multi-button footer: the first (secondary) action to the left edge.
-        '-mx-4 -mb-3 flex flex-row justify-end gap-2 px-4 pt-5.5 pb-3 [&>:first-child:not(:only-child)]:mr-auto sm:[&>:first-child:not(:only-child)]:mr-0',
+        '-mx-4 -mb-3 flex flex-row justify-end gap-2 px-4 pt-5.5 pb-3',
+        // Phones split a multi-button footer: the first (secondary) action goes
+        // to the left edge, and a borderless one sheds its padding so its label
+        // lines up with the content above.
+        '[&>:first-child:not(:only-child)]:mr-auto sm:[&>:first-child:not(:only-child)]:mr-0',
+        '[&>[data-variant=ghost-hover][data-size=lg]:first-child:not(:only-child)]:-ml-6.5 sm:[&>[data-variant=ghost-hover][data-size=lg]:first-child:not(:only-child)]:ml-0',
+        '[&>[data-variant=ghost-hover][data-size=md]:first-child:not(:only-child)]:-ml-5 sm:[&>[data-variant=ghost-hover][data-size=md]:first-child:not(:only-child)]:ml-0',
         className
       )}
       data-slot="dialog-footer"

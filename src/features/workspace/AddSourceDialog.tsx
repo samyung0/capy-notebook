@@ -799,8 +799,9 @@ function SourceFooter({
         nameTooLong(source.name)
     );
   return (
-    <DialogFooter className="shrink-0 items-center sm:justify-between">
-      <div className="t-meta flex-1 text-fg-muted">
+    <DialogFooter className="shrink-0 flex-wrap items-center">
+      {/* Phones give the cost summary its own line so the buttons can split. */}
+      <div className="t-meta basis-full text-fg-muted empty:hidden sm:flex-1 sm:basis-0">
         {analysisTotals.pages > 0 &&
           m.source_analysis_summary({
             cost: (estimatedCreditMicros / 1_000_000).toLocaleString(),
@@ -808,9 +809,9 @@ function SourceFooter({
             text: analysisTotals.textPages,
           })}
       </div>
-      <div className="flex gap-2">
+      <div className="flex flex-1 justify-between gap-2 sm:flex-none">
         <DialogClose asChild>
-          <Button size="lg" variant="ghost-hover">
+          <Button className="-ml-6.5 sm:ml-0" size="lg" variant="ghost-hover">
             {m.action_cancel()}
           </Button>
         </DialogClose>
