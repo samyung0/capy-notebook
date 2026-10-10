@@ -398,6 +398,40 @@ impl Client {
         self.send(5, &sync(2, &update)).await;
     }
 
+    /// Inserts Slate blocks at `index` of the note, as a paste does.
+    async fn insert_blocks(&mut self, index: u32, blocks: &[serde_json::Value]) {
+        let before = self.doc.transact().state_vector();
+        {
+            let root = self.doc.get_or_insert_text("content");
+            let root = yrs::branch::BranchPtr::from(root.as_ref() as &yrs::branch::Branch);
+            notes::slate_yjs::insert_nodes(&mut self.doc.transact_mut(), root, index, blocks);
+        }
+        let update = self.doc.transact().encode_state_as_update_v1(&before);
+        self.send(5, &sync(2, &update)).await;
+    }
+
+    /// The top-level block with this id, as Slate JSON.
+    fn block(&self, id: &str) -> Option<serde_json::Value> {
+        notes::plate::value(&self.doc.transact())
+            .expect("projection")
+            .into_iter()
+            .find(|block| block["id"] == id)
+    }
+
+    /// The next stateless message of `kind`, and the others read before it.
+    async fn stateless(&mut self, kind: &str) -> (serde_json::Value, Vec<serde_json::Value>) {
+        let mut before = Vec::new();
+        loop {
+            let message: serde_json::Value =
+                serde_json::from_str(&text_payload(&self.until(9).await.expect("stateless")))
+                    .expect("json");
+            if message["type"] == kind {
+                return (message, before);
+            }
+            before.push(message);
+        }
+    }
+
     fn block_text(&self) -> String {
         let root = self.doc.get_or_insert_text("content");
         let txn = self.doc.transact();
@@ -1603,6 +1637,33 @@ async fn internal_routes_refuse_a_missing_or_wrong_service_secret() {
     }
 }
 
+/// An owner over the Free limit that never had Pro is full, not frozen (Go
+/// gives it no quota state): a viewer joins read-only. The frozen check was
+/// NULL for it and the access check panicked, so the join (and every store
+/// of its notes) failed.
+#[tokio::test]
+async fn a_never_pro_owner_over_the_free_limit_is_full_not_frozen() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "over").await;
+    let client = db(&env).await;
+    client
+        .execute("SELECT ensure_user_storage_row($1)", &[&user])
+        .await
+        .expect("storage row");
+    client
+        .execute(
+            "UPDATE user_storage SET used_bytes=1000000000000 WHERE user_id=$1",
+            &[&user],
+        )
+        .await
+        .expect("fill");
+    let room = format!("material:{material}:schema:1");
+    let mut viewer = Client::open(server.port).await;
+    assert_eq!(viewer.joined(&room, &token(&room, &user, "read")).await, 0);
+    assert!(viewer.settle(|c| c.block_text() == "over").await);
+}
+
 /// Security regression (rust-core REVIEW1 S2): a room whose task panics
 /// outside its own steps (here its first load) leaves no dead handle in the
 /// registry, so the join's retry loads the room afresh and joins.
@@ -1615,4 +1676,269 @@ async fn a_room_whose_load_panics_loads_afresh_on_the_next_join() {
     let mut client = Client::open(server.port).await;
     assert_eq!(client.joined(&room, &token(&room, &user, "write")).await, 1);
     assert!(client.settle(|c| c.block_text() == "panics once").await);
+}
+
+// ------------------------------------------------------------ pasted children
+
+/// The Go API's children route behind a gate: the pass's call waits until
+/// the test opens it, then goes to the real API, so a test sees the pasted
+/// blocks while they are pending.
+#[derive(Clone)]
+struct HeldChildren {
+    api: String,
+    open: std::sync::Arc<tokio::sync::Semaphore>,
+}
+
+async fn held_children(
+    axum::extract::State(held): axum::extract::State<HeldChildren>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let _open = held.open.acquire().await.expect("gate");
+    let mut request = reqwest::Client::new()
+        .post(format!(
+            "{}/internal/collaboration/materials/{id}/children",
+            held.api
+        ))
+        .header("content-type", "application/json")
+        .body(body.to_vec());
+    if let Some(secret) = headers.get("x-collaboration-secret") {
+        request = request.header("x-collaboration-secret", secret.as_bytes());
+    }
+    let response = request.send().await.expect("api");
+    let status = axum::http::StatusCode::from_u16(response.status().as_u16()).expect("status");
+    (status, response.bytes().await.expect("answer")).into_response()
+}
+
+/// Listens; returns the gate's URL and the semaphore that opens it.
+async fn hold_children(api: &str) -> (String, std::sync::Arc<tokio::sync::Semaphore>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("listen");
+    let url = format!("http://{}", listener.local_addr().expect("address"));
+    let open = std::sync::Arc::new(tokio::sync::Semaphore::new(0));
+    let app = axum::Router::new()
+        .route(
+            "/internal/collaboration/materials/{id}/children",
+            axum::routing::post(held_children),
+        )
+        .with_state(HeldChildren {
+            api: api.to_owned(),
+            open: open.clone(),
+        });
+    tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+    (url, open)
+}
+
+/// A user's charged bytes: the folded total and the deltas not folded yet.
+async fn charged(client: &tokio_postgres::Client, user: &str) -> i64 {
+    client
+        .query_one(
+            "SELECT (COALESCE((SELECT used_bytes FROM user_storage WHERE user_id=$1), 0)
+                + COALESCE((SELECT sum(delta_bytes) FROM user_storage_deltas WHERE user_id=$1), 0))::bigint",
+            &[&user],
+        )
+        .await
+        .expect("charged")
+        .get(0)
+}
+
+/// A ready image asset of `material`, 100 bytes, completed two minutes ago.
+async fn image_asset(client: &tokio_postgres::Client, user: &str, id: &str, material: &str) {
+    client
+        .execute(
+            "INSERT INTO editor_assets (id, material_id, user_id, created_by, name, purpose, object_path, content_type, size_bytes, status, completed_at)
+             VALUES ($1, $2, $3, $3, 'fig.png', 'image', $4, 'image/png', 100, 'ready', now() - interval '2 minutes')",
+            &[&id, &material, &user, &format!("it/{id}.png")],
+        )
+        .await
+        .expect("asset");
+}
+
+fn image_block(id: &str, asset: &str) -> serde_json::Value {
+    serde_json::json!({ "type": "img", "id": id, "assetId": asset, "children": [{ "text": "" }] })
+}
+
+/// Pasted children (Node `children.ts`, `server.ts` childrenPass): a block
+/// pasted from another note names that note's image or flashcard set, and
+/// both peers hold it so while the children pass asks the API; then the pass
+/// repoints it to the note's own copy for both (a new asset row on the same
+/// object and a new set under the note, charged to the note's payer). The
+/// note's own trashed image (a cut whose save trashed it, then the paste or
+/// an undo) keeps its id, comes out of the trash, and every editor hears
+/// `children-ready` naming it. Over the payer's quota the copy is refused:
+/// the block goes for both peers and only the writer hears
+/// `children-refused`.
+#[tokio::test]
+async fn pasted_children_become_the_notes_own_for_both_peers() {
+    let Some(env) = env() else { return };
+    let Some(api) = env.api.clone() else { return };
+    let (gate, open) = hold_children(&api).await;
+    let server = start_with(&env, Some(&gate)).await;
+    let (user, target) = note(&env, "target").await;
+    let client = db(&env).await;
+    let suffix = uuid_like();
+    let source = format!("m_it_src_{suffix}");
+    let content = serde_json::json!({
+        "schemaVersion": 1,
+        "value": [{ "type": "p", "id": "s1", "children": [{ "text": "source" }] }],
+    });
+    client
+        .execute(
+            "INSERT INTO materials (id, created_by, kind, title, content) VALUES ($1, $2, 'note', 'Source', $3)",
+            &[&source, &user, &content],
+        )
+        .await
+        .expect("source note");
+    let set = format!("m_it_set_{suffix}");
+    let cards = serde_json::json!({
+        "schemaVersion": 1,
+        "value": [{ "type": "flashcards", "id": "f1", "children": [{
+            "type": "flashcard", "id": "c1", "children": [
+                { "type": "flashcard_front", "children": [{ "text": "Front" }] },
+                { "type": "flashcard_back", "children": [{ "text": "Back" }] },
+            ],
+        }] }],
+    });
+    client
+        .execute(
+            "INSERT INTO materials (id, created_by, kind, title, content, parent_material_id) VALUES ($1, $2, 'flashcards', 'Set', $3, $4)",
+            &[&set, &user, &cards, &source],
+        )
+        .await
+        .expect("source set");
+    let foreign = format!("asset_it_foreign_{suffix}");
+    let own = format!("asset_it_own_{suffix}");
+    let over = format!("asset_it_over_{suffix}");
+    image_asset(&client, &user, &foreign, &source).await;
+    image_asset(&client, &user, &over, &source).await;
+    image_asset(&client, &user, &own, &target).await;
+    client
+        .execute(
+            "UPDATE editor_assets SET trashed_at=now() WHERE id=$1",
+            &[&own],
+        )
+        .await
+        .expect("trash own");
+    let charged_before = charged(&client, &user).await;
+
+    let room = format!("material:{target}:schema:1");
+    let mut a = Client::open(server.port).await;
+    let mut b = Client::open(server.port).await;
+    a.joined(&room, &token(&room, &user, "write")).await;
+    b.joined(&room, &token(&room, &user, "write")).await;
+    assert!(a.settle(|c| c.block_text() == "target").await);
+    assert!(b.settle(|c| c.block_text() == "target").await);
+    a.insert_blocks(
+        1,
+        &[
+            image_block("img-pasted", &foreign),
+            serde_json::json!({
+                "type": "material_ref", "id": "set-pasted", "materialId": set,
+                "refKind": "flashcards", "children": [{ "text": "" }],
+            }),
+            image_block("img-own", &own),
+        ],
+    )
+    .await;
+
+    // Pending: the other peer holds the blocks as pasted, naming the source.
+    assert!(b.settle(|c| c.block("img-own").is_some()).await);
+    assert_eq!(b.block("img-pasted").unwrap()["assetId"], foreign.as_str());
+    assert_eq!(b.block("set-pasted").unwrap()["materialId"], set.as_str());
+
+    open.add_permits(1);
+    let moved = |c: &Client| {
+        c.block("img-pasted")
+            .is_some_and(|block| block["assetId"] != foreign.as_str())
+            && c.block("set-pasted")
+                .is_some_and(|block| block["materialId"] != set.as_str())
+    };
+    assert!(a.settle(moved).await, "{:?}", a.block("img-pasted"));
+    assert!(b.settle(moved).await, "{:?}", b.block("img-pasted"));
+    let copy = b.block("img-pasted").unwrap()["assetId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let set_copy = b.block("set-pasted").unwrap()["materialId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(a.block("img-pasted").unwrap()["assetId"], copy.as_str());
+    assert_eq!(b.block("img-own").unwrap()["assetId"], own.as_str());
+    for peer in [&mut a, &mut b] {
+        let (ready, _) = peer.stateless("children-ready").await;
+        assert_eq!(ready["assetIds"], serde_json::json!([own]), "{ready}");
+    }
+
+    // The copies: the note's own rows, the image on the source's object.
+    let row = client
+        .query_one(
+            "SELECT material_id, object_path, status, user_id FROM editor_assets WHERE id=$1",
+            &[&copy],
+        )
+        .await
+        .expect("asset copy");
+    assert_eq!(row.get::<_, String>(0), target);
+    assert_eq!(row.get::<_, String>(1), format!("it/{foreign}.png"));
+    assert_eq!(row.get::<_, String>(2), "ready");
+    assert_eq!(row.get::<_, String>(3), user);
+    let row = client
+        .query_one(
+            "SELECT parent_material_id, kind, size_bytes FROM materials WHERE id=$1",
+            &[&set_copy],
+        )
+        .await
+        .expect("set copy");
+    assert_eq!(row.get::<_, String>(0), target);
+    assert_eq!(row.get::<_, String>(1), "flashcards");
+    let set_bytes: i64 = row.get(2);
+    let restored: bool = client
+        .query_one(
+            "SELECT trashed_at IS NULL FROM editor_assets WHERE id=$1",
+            &[&own],
+        )
+        .await
+        .expect("own")
+        .get(0);
+    assert!(restored, "the note's own image left the trash");
+    assert_eq!(
+        charged(&client, &user).await - charged_before,
+        100 + set_bytes
+    );
+
+    // 50 bytes short of the payer's quota (under it, so the owner still
+    // writes): the copy is refused and the block goes for both peers.
+    let limit: i64 = client
+        .query_one(
+            "SELECT storage_limit_bytes FROM plan_limits WHERE plan_tier='free'",
+            &[],
+        )
+        .await
+        .expect("limit")
+        .get(0);
+    let fill = limit - 50 - charged(&client, &user).await;
+    client
+        .execute(
+            "UPDATE user_storage SET used_bytes=used_bytes + $2 WHERE user_id=$1",
+            &[&user, &fill],
+        )
+        .await
+        .expect("fill");
+    let held = open.clone().acquire_owned().await.expect("gate");
+    a.insert_blocks(1, &[image_block("img-over", &over)]).await;
+    assert!(b.settle(|c| c.block("img-over").is_some()).await);
+    drop(held);
+    a.stateless("children-refused").await;
+    assert!(a.settle(|c| c.block("img-over").is_none()).await);
+    assert!(b.settle(|c| c.block("img-over").is_none()).await);
+    let (_, before) = b.stateless("children-ready").await;
+    assert!(
+        before
+            .iter()
+            .all(|message| message["type"] != "children-refused"),
+        "{before:?}"
+    );
 }

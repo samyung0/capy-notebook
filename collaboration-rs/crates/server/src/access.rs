@@ -78,7 +78,9 @@ impl From<tokio_postgres::Error> for AccessError {
 
 /// Go's over_quota_frozen: no live Pro period, the latest Pro period ended or
 /// closed at least 14 days ago, and stored plus reserved bytes over the Free
-/// limit.
+/// limit. An account that never had Pro has no such period, so it is not
+/// frozen (the comparison is NULL there; Node read it as false, a `bool`
+/// column cannot hold it).
 pub fn frozen_sql(user: &str, storage: &str) -> String {
     format!(
         "NOT EXISTS(SELECT 1 FROM user_subscriptions live_sub
@@ -87,7 +89,7 @@ pub fn frozen_sql(user: &str, storage: &str) -> String {
           AND live_sub.status IN ('active','trialing','past_due')
           AND (live_sub.current_period_end IS NULL
             OR live_sub.current_period_end > now()))
-      AND GREATEST(
+      AND COALESCE(GREATEST(
         (SELECT max(expired_sub.current_period_end)
           FROM user_subscriptions expired_sub
           WHERE expired_sub.user_id={user}.id
@@ -106,7 +108,7 @@ pub fn frozen_sql(user: &str, storage: &str) -> String {
           WHERE closed_sub.user_id={user}.id
             AND closed_sub.plan_tier='pro'
             AND closed_sub.status NOT IN ('active','trialing','past_due'))
-      ) <= now() - interval '14 days'
+      ) <= now() - interval '14 days', false)
       AND COALESCE({storage}.used_bytes, 0)
         + COALESCE({storage}.reserved_bytes, 0)
         + COALESCE((SELECT sum(delta_bytes) FROM user_storage_deltas delta
