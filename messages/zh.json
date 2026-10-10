@@ -1420,7 +1420,6 @@
   "photo_editor_zoom": "缩放",
   "photo_editor_rotate": "旋转",
   "onboarding_upload": "上传照片",
-  "onboarding_upload_hint": "PNG、JPG 或 WebP，最大 10 MB。保存在你的账户中。",
   "onboarding_name": "显示名称",
   "onboarding_skip": "暂时跳过",
   "onboarding_image_too_large": "请选择小于 10 MB 的图片。",

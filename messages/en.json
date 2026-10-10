@@ -1420,7 +1420,6 @@
   "photo_editor_zoom": "Zoom",
   "photo_editor_rotate": "Rotate",
   "onboarding_upload": "Upload photo",
-  "onboarding_upload_hint": "PNG, JPG, or WebP, up to 10 MB. Stored with your account.",
   "onboarding_name": "Display name",
   "onboarding_skip": "Skip for now",
   "onboarding_image_too_large": "Choose an image under 10 MB.",

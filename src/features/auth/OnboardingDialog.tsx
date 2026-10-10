@@ -152,7 +152,8 @@ export function OnboardingDialog() {
         </p>
       )}
       <div>
-        <div className="mb-5 flex items-center gap-5">
+        {/* Phones stack the buttons under the avatar; wider dialogs keep them beside it. */}
+        <div className="mb-5 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-5">
           <Avatar
             className="size-20"
             name={me.name}
@@ -161,38 +162,35 @@ export function OnboardingDialog() {
               (avatarIconId ? iconUrl(avatarIconId) : me.avatarUrl)
             }
           />
-          <div className="translate-y-1">
-            <div className="flex flex-wrap gap-2">
-              <Controller
-                control={control}
-                name="avatarIconId"
-                render={({ field }) => (
-                  <IconPicker
-                    disabled={busy}
-                    onChange={(id) => {
-                      field.onChange(id);
-                      photo.clear();
-                    }}
-                    value={field.value}
-                  />
-                )}
-              />
-              <Button
-                disabled={busy}
-                iconLeft="upload"
-                onClick={photo.open}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                {m.onboarding_upload()}
-              </Button>
-            </div>
-            <p className="mt-1.5 text-fg-muted">{m.onboarding_upload_hint()}</p>
-            <input {...photo.inputProps} disabled={busy} />
-            <PhotoEditorDialog {...photo.editor} />
+          <div className="flex flex-wrap gap-2">
+            <Controller
+              control={control}
+              name="avatarIconId"
+              render={({ field }) => (
+                <IconPicker
+                  disabled={busy}
+                  onChange={(id) => {
+                    field.onChange(id);
+                    photo.clear();
+                  }}
+                  value={field.value}
+                />
+              )}
+            />
+            <Button
+              disabled={busy}
+              iconLeft="upload"
+              onClick={photo.open}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {m.onboarding_upload()}
+            </Button>
           </div>
         </div>
+        <input {...photo.inputProps} disabled={busy} />
+        <PhotoEditorDialog {...photo.editor} />
         {photo.error && <InputError errors={[{ message: photo.error }]} />}
       </div>
       <Controller
