@@ -1,6 +1,7 @@
 package blob
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -42,15 +43,11 @@ func (s *Memory) Put(id string, r io.Reader) (string, int64, error) {
 	return id, int64(len(data)), nil
 }
 
-// PutObject keeps the content type; Memory has no cache headers to keep.
-func (s *Memory) PutObject(_ context.Context, key string, body io.Reader, contentType, _ string) error {
-	data, err := io.ReadAll(body)
-	if err != nil {
-		return err
-	}
+// PutObjectOnce keeps the content type; Memory has no cache headers to keep.
+func (s *Memory) PutObjectOnce(_ context.Context, key string, body []byte, contentType, _ string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.objects[key] = memoryObject{data: data, contentType: contentType, etag: "mem"}
+	s.objects[key] = memoryObject{data: append([]byte(nil), body...), contentType: contentType, etag: "mem"}
 	return nil
 }
 
@@ -251,9 +248,9 @@ func (s *Disk) Put(id string, r io.Reader) (string, int64, error) {
 	return id, n, nil
 }
 
-// PutObject writes the bytes; Disk keeps no headers.
-func (s *Disk) PutObject(_ context.Context, key string, body io.Reader, _, _ string) error {
-	_, _, err := s.Put(key, body)
+// PutObjectOnce writes the bytes; Disk keeps no headers.
+func (s *Disk) PutObjectOnce(_ context.Context, key string, body []byte, _, _ string) error {
+	_, _, err := s.Put(key, bytes.NewReader(body))
 	return err
 }
 

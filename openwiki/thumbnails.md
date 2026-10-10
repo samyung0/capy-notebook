@@ -185,11 +185,14 @@ success ([handler](../server/internal/httpapi/huma_thumbnails.go)):
   (`thumbnail_too_soon`) before anything is written. Per user, 60 captures an
   hour through the Redis limiter (`ratelimit` class `thumbnail`, Epo's number).
 - Then the B2 put (`Cache-Control: public, max-age=31536000, immutable`,
-  `blob.Store.PutObject`) and `SetFileThumbnail`: the key change releases the
+  `blob.Store.PutObjectOnce`) and `SetFileThumbnail`: the key change releases the
   old key through the phase 1 triggers; a file trashed or deleted meanwhile
   takes nothing and the new key is queued for deletion at once, as it is when
   the update fails (an enqueue that fails too leaves it to the orphan sweep).
-- Nothing retries: a failed put is a `503`, and the browser drops it.
+- Nothing retries: the put is one request (`blob.Store.PutObjectOnce`, the S3
+  client's retryer limited to one attempt for this call only; the shared
+  client keeps its retries elsewhere), a failed put is a `503`, and the
+  browser drops it.
 
 **Browser** ([scheduler](../src/features/files/thumbnailCapture.ts), wired in
 `useOfficeRuntime`):
@@ -210,8 +213,8 @@ success ([handler](../server/internal/httpapi/huma_thumbnails.go)):
 - Failures are logged once (`Thumbnail capture failed`) and never retried: a
   failed drawing ends its cycle, a refused upload (a `429` included) is
   dropped, and the card keeps its image until the next capture.
-- Leaving the file inside the app (View, another file, another page) drops a
-  cycle that has not uploaded yet.
+- Leaving the file inside the app (View, another file, another page) uploads
+  what was drawn the same way, from the capture's effect cleanup.
 
 **Drawing** ([runtime](../src/office-runtime/thumbnail.ts)): in the runtime
 frame, when its main thread is next idle (`requestIdleCallback`), never on the
@@ -230,6 +233,11 @@ flushed). 200 px wide, cut at 400 px tall, on white, WebP at quality 60
   same at that scale). The engine draws only the active sheet, so the request
   names the first sheet (`onSheet`): while another sheet is active there is
   nothing to capture.
+- Known limit (deferred 2026-10-11): a cycle whose drawing finds another
+  sheet active ends with nothing, so the card keeps its image until an edit is
+  captured with the first sheet active. Drawing a sheet that is not the active
+  one needs the engine's `display_list_for(sheet, viewport)` exposed by the
+  fork.
 
 Main-thread cost of one capture (production build, developer PC, 2026-10-11,
 three runs): XLSX at most about 1 ms in one task (the worker's own paint and

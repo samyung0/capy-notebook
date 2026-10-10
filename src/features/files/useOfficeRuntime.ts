@@ -662,6 +662,9 @@ export function useOfficeRuntime({
       cancelled = true;
       window.removeEventListener('pagehide', leave);
       document.removeEventListener('visibilitychange', hidden);
+      // Leaving the file in the app (View, another file, another page)
+      // uploads what was drawn, as the page hiding does.
+      leave();
       captureRef.current?.dispose();
       captureRef.current = null;
     };

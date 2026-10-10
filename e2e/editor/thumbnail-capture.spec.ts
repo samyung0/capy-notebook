@@ -3,7 +3,7 @@ import { officeEditMenu } from '../helpers/office';
 import { m } from '../i18n';
 
 // openwiki/thumbnails.md, phase 2a: an edit is drawn after 5 s idle, and the
-// page hiding uploads that capture, once.
+// page hiding uploads that capture, once; so does leaving the editor for View.
 test('a PPTX edit sends one thumbnail capture', async ({ page }) => {
   test.setTimeout(120_000);
   const captures: string[] = [];
@@ -25,12 +25,15 @@ test('a PPTX edit sends one thumbnail capture', async ({ page }) => {
     .frames()
     .find((item) => item.url().includes('office-runtime'));
   if (!runtime) throw new Error('Missing the Office runtime frame');
-  await runtime.evaluate(() =>
-    window.dispatchEvent(
-      new CustomEvent('capy-scenario-edit-slide', { detail: 'Captured ' })
-    )
-  );
-  await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
+  const edit = async () => {
+    await runtime.evaluate(() =>
+      window.dispatchEvent(
+        new CustomEvent('capy-scenario-edit-slide', { detail: 'Captured ' })
+      )
+    );
+    await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
+  };
+  await edit();
   const hide = () =>
     page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
   // Nothing is drawn for 5 s after the edit; then the page hiding sends it.
@@ -47,4 +50,11 @@ test('a PPTX edit sends one thumbnail capture', async ({ page }) => {
   await hide();
   await page.waitForTimeout(1000);
   expect(captures).toEqual(['/api/files/bio-office-pptx/thumbnail']);
+
+  // A later edit, drawn after 5 s, goes up when the editor closes for View.
+  await edit();
+  await page.waitForTimeout(8000);
+  await mode.click();
+  await expect(mode).toHaveAttribute('aria-pressed', 'false');
+  await expect.poll(() => captures.length, { timeout: 15_000 }).toBe(2);
 });

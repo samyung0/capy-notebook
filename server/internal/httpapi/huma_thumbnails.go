@@ -77,7 +77,7 @@ func (a *api) captureFileThumbnail(ctx context.Context, in *captureThumbnailInpu
 	if a.blob == nil {
 		return nil, huma.Error503ServiceUnavailable("thumbnail storage is not configured")
 	}
-	if err := a.blob.PutObject(ctx, key, bytes.NewReader(in.RawBody), "image/webp", thumbnailCacheControl); err != nil {
+	if err := a.blob.PutObjectOnce(ctx, key, in.RawBody, "image/webp", thumbnailCacheControl); err != nil {
 		obs.Log(ctx).Warn("thumbnail capture upload failed", "file_id", in.ID, "error", err)
 		return nil, huma.Error503ServiceUnavailable("thumbnail storage is unavailable")
 	}
