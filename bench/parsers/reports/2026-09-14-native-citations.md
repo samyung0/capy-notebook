@@ -259,11 +259,10 @@ Runnable sources are in `bench/parsers/scripts/`:
   inputs midway through a joined run; generated ZIP timestamps change hashes.
 - `probe_office_pdf.py --parser-root PARSER_DIR --output NEW_DIR --timeout 180
   --input SOURCE ...` runs current normalization and ODL in the parser image.
-- `bun bench/parsers/scripts/probe_native_citations.ts SOURCE ...` captures
-  native geometry and checkpoint mutations. Built BetterOffice WASM is needed.
-  `--browser` runs the actual-worker/render proof; `--cell-edit SOURCE.xlsx`
-  runs the alternative spreadsheet cell mutation. Its output location is the
-  frozen experiment's `native/` directory.
+- `probe_native_citations.ts` captured native geometry, checkpoint mutations
+  and the actual-worker render proof for this run. It was deleted on
+  2026-10-11: the DOCX viewer API it called changed on 2026-09-25 and nothing
+  ran it since; its outputs stay in the frozen `native/` directory.
 - `probe_preview_regeneration.py --root PROBE_ROOT --output NEW_DIR
   --parser-root PARSER_DIR` reconverts the six frozen baseline files.
 - `python3 bench/parsers/scripts/evaluate_native_citations.py
