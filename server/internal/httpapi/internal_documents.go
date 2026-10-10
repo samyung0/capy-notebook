@@ -423,23 +423,47 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 			return
 		}
 		var drafts []store.EmbeddedDraft
-		written := 0
+		written, markdownCommands := 0, 0
 		normalized, err = normalizeMaterialCommands(string(mt.Kind), req.Commands, func(i int, markdown string) ([]any, error) {
 			blocks, fences, err := a.noteBlocksFromMarkdown(ctx, req, i, markdown)
 			drafts = append(drafts, fences...)
 			written += len(blocks)
+			markdownCommands++
 			return blocks, err
 		})
 		if err != nil {
 			a.failDocument(w, err)
 			return
 		}
-		// A write that is one quiz or flashcards fence and nothing else says
-		// whose its sources are: that item records them and the note's own
-		// record is left alone. Any other write cannot tell them apart and
-		// keeps them on the note.
-		if req.Provenance != nil && len(drafts) == 1 && len(req.Commands) == 1 && written == 1 {
-			drafts[0].Provenance, req.Provenance = req.Provenance, nil
+		// A write cannot say which of its sources went into which quiz or
+		// flashcards fence, so every fence's item records all of them (Epo
+		// 2026-10-10: over-credit), and the note keeps them only when the write
+		// put anything else in it.
+		var fence *store.Provenance
+		if req.Provenance != nil && len(drafts) > 0 {
+			fence = req.Provenance
+			for i := range drafts {
+				drafts[i].Provenance = fence
+			}
+			if markdownCommands == len(req.Commands) && written == len(drafts) {
+				req.Provenance = nil
+			}
+		}
+		if req.Provenance != nil {
+			var code string
+			provenance, code, err = mergeProvenance(mt.Provenance, req.Provenance)
+			if err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"code": code, "message": err.Error()})
+				return
+			}
+		}
+		if code, err := a.checkFooterLicence(ctx, mt, provenance, fence); err != nil {
+			if code == "" {
+				a.fail(w, err)
+			} else {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"code": code, "message": err.Error()})
+			}
+			return
 		}
 		for _, draft := range drafts {
 			if err := a.s.EnsureEmbeddedMaterial(ctx, req.UserID, req.Target.ID, draft); err != nil {
@@ -450,14 +474,6 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 				return
 			}
 			embedded = append(embedded, draft.ID)
-		}
-		if req.Provenance != nil {
-			var code string
-			provenance, code, err = mergeProvenance(mt.Provenance, req.Provenance)
-			if err != nil {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"code": code, "message": err.Error()})
-				return
-			}
 		}
 	case agenttools.KindSourceFile:
 		if req.Provenance != nil {
@@ -500,6 +516,32 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 		return
 	}
 	writeJSON(w, http.StatusOK, receipt)
+}
+
+// checkFooterLicence refuses an agent or bank write that would put two
+// copyleft families in a note's footer, which credits the note's own sources
+// with its live embeds': a write to the note (merged, its record after the
+// write, and fence, the record of the items the write embeds) or to one of
+// its embeds (merged, that embed's record after the write). The code is empty
+// for a failure other than the refusal.
+func (a *api) checkFooterLicence(ctx context.Context, mt store.Material, merged, fence *store.Provenance) (string, error) {
+	switch {
+	case mt.Kind == "note" && (merged != nil || fence != nil):
+		if merged != nil {
+			mt.Provenance = merged
+		}
+		if fence == nil {
+			return a.s.CheckFooterLicence(ctx, mt)
+		}
+		return a.s.CheckFooterLicence(ctx, mt, fence)
+	case mt.ParentMaterialID != "" && merged != nil:
+		note, err := a.s.GetMaterial(ctx, mt.ParentMaterialID)
+		if err != nil {
+			return "", err
+		}
+		return a.s.CheckFooterLicence(ctx, note, merged)
+	}
+	return "", nil
 }
 
 // noteBlocksFromMarkdown converts an insert_markdown command through the

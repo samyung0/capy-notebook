@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -114,14 +115,18 @@ func (s *Store) AdoptEmbeddedMaterials(
 	}
 	defer tx.Rollback(ctx)
 	note := Material{ID: noteID}
-	err = tx.QueryRow(ctx, `SELECT COALESCE(m.workspace_id,''), m.workspace_name
+	var noteProvenance []byte
+	err = tx.QueryRow(ctx, `SELECT COALESCE(m.workspace_id,''), m.workspace_name, m.content, m.provenance
 		FROM materials m
 		WHERE m.id=$1 AND m.kind='note' AND m.parent_material_id IS NULL AND m.trashed_at IS NULL`,
-		noteID).Scan(&note.WorkspaceID, &note.WorkspaceName)
+		noteID).Scan(&note.WorkspaceID, &note.WorkspaceName, &note.Content, &noteProvenance)
 	if isNoRows(err) {
 		return nil, false, ErrNotFound
 	}
 	if err != nil {
+		return nil, false, err
+	}
+	if note.Provenance, err = decodeProvenance(noteProvenance); err != nil {
 		return nil, false, err
 	}
 	payerID, err := s.lockEditorAssetScopeTx(ctx, tx, note.WorkspaceID, noteID, actorID)
@@ -151,6 +156,10 @@ func (s *Store) AdoptEmbeddedMaterials(
 	}
 
 	adopted = make([]string, len(blocks))
+	// The note's footer credits each copy, so a copy whose credits would put
+	// two copyleft families in it is left out, as an agent write would be.
+	var embeds, added []*Provenance
+	loaded := false
 	for i, block := range blocks {
 		src, ok := sources[block.SourceID]
 		if !ok || src.ParentMaterialID == "" || (src.Kind != "quiz" && src.Kind != "flashcards") {
@@ -173,6 +182,17 @@ func (s *Store) AdoptEmbeddedMaterials(
 				return nil, false, err
 			}
 		}
+		if src.Provenance != nil {
+			if !loaded {
+				if embeds, err = embedSources(ctx, tx, noteID, note.Content); err != nil {
+					return nil, false, err
+				}
+				loaded = true
+			}
+			if _, err := FooterLicence(note.Provenance, append(append(slices.Clone(embeds), added...), src.Provenance)); err != nil {
+				continue
+			}
+		}
 		// Each copy in a savepoint: one over the quota is left out (refused)
 		// while the others land.
 		copyTx, err := tx.Begin(ctx)
@@ -193,6 +213,9 @@ func (s *Store) AdoptEmbeddedMaterials(
 		}
 		if err := copyTx.Commit(ctx); err != nil {
 			return nil, false, err
+		}
+		if src.Provenance != nil {
+			added = append(added, src.Provenance)
 		}
 		adopted[i] = id
 	}
@@ -301,7 +324,26 @@ func (s *Store) createEmbeddedTx(ctx context.Context, tx pgx.Tx, note Material, 
 // order content references them. A note is parsed only when one of its rows
 // has credits.
 func (s *Store) EmbedSources(ctx context.Context, noteID, content string) ([]*Provenance, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id, provenance FROM materials
+	return embedSources(ctx, s.pool, noteID, content)
+}
+
+// CheckFooterLicence refuses a write that would put two copyleft families in a
+// note's footer (FooterLicence): note's own record as the write leaves it, its
+// live embeds' and the records the write adds to an embed. The code is the
+// tool error code (lifecycle_rejected).
+func (s *Store) CheckFooterLicence(ctx context.Context, note Material, added ...*Provenance) (string, error) {
+	embeds, err := s.EmbedSources(ctx, note.ID, note.Content)
+	if err != nil {
+		return "", err
+	}
+	if _, err := FooterLicence(note.Provenance, append(embeds, added...)); err != nil {
+		return "lifecycle_rejected", err
+	}
+	return "", nil
+}
+
+func embedSources(ctx context.Context, q rowsQueryer, noteID, content string) ([]*Provenance, error) {
+	rows, err := q.Query(ctx, `SELECT id, provenance FROM materials
 		WHERE parent_material_id=$1 AND trashed_at IS NULL AND provenance IS NOT NULL`, noteID)
 	if err != nil {
 		return nil, err

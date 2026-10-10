@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strconv"
@@ -145,6 +146,13 @@ func validateSources(books []ProvenanceBook, web []ProvenanceWeb) (string, strin
 		}
 		licenses = append(licenses, page.License)
 	}
+	return familyLicence(licenses)
+}
+
+// familyLicence is the licence a work written from sources under these
+// licences carries: empty unless one is copyleft, then the newest version of
+// that family written exactly as its source wrote it; two families refuse.
+func familyLicence(licenses []string) (string, string, error) {
 	var (
 		family string
 		newest float64
@@ -172,36 +180,78 @@ func validateSources(books []ProvenanceBook, web []ProvenanceWeb) (string, strin
 }
 
 // WithEmbedSources is a note's attribution as its footer reads it: its own
-// record plus the books and web pages of its live embeds (EmbedSources), each
-// source once and the note's own first. It is computed for each read and never
-// stored, so an embed removed or trashed drops out and returns on restore. The
-// licence and question credits stay the note's own; each embed shows its own
-// inside it.
+// record plus every source of its live embeds (EmbedSources), their copied
+// bank questions' included, each source once and the note's own first, with
+// the licence computed over all of them. It is computed for each read and
+// never stored, so an embed removed or trashed drops out and returns on
+// restore. Writes keep the union to one copyleft family (FooterLicence); a
+// union that still has two (an embed restored by undo after a conflicting
+// write) has no single licence, so it gets no licence line and each embed
+// shows its own.
 func WithEmbedSources(own *Provenance, embeds []*Provenance) *Provenance {
 	if len(embeds) == 0 {
 		return own
 	}
-	merged := &Provenance{Books: []ProvenanceBook{}}
+	books, web := footerSources(own, embeds)
+	if own == nil && len(books) == 0 && len(web) == 0 {
+		return nil
+	}
+	merged := &Provenance{Books: books, Web: web}
 	if own != nil {
-		merged.Books = slices.Clone(own.Books)
-		merged.Web = slices.Clone(own.Web)
-		merged.License = own.License
 		merged.Questions = own.Questions
 	}
-	for _, embed := range embeds {
-		for _, book := range embed.Books {
-			if !slices.ContainsFunc(merged.Books, func(b ProvenanceBook) bool { return b.ID == book.ID }) {
-				merged.Books = append(merged.Books, book)
-			}
-		}
-		for _, page := range embed.Web {
-			if !slices.ContainsFunc(merged.Web, func(p ProvenanceWeb) bool { return p.URL == page.URL }) {
-				merged.Web = append(merged.Web, page)
-			}
-		}
-	}
-	if own == nil && len(merged.Books) == 0 && len(merged.Web) == 0 {
-		return nil // embeds credited only through copied bank questions
-	}
+	merged.License, _ = FooterLicence(own, embeds)
 	return merged
+}
+
+// FooterLicence is the licence of a note's footer over its own record and its
+// embeds' (with what a write is about to add), refused with lifecycle_rejected
+// when two copyleft families meet, as on one material's record.
+func FooterLicence(own *Provenance, embeds []*Provenance) (string, error) {
+	books, web := footerSources(own, embeds)
+	licenses := make([]string, 0, len(books)+len(web))
+	for _, book := range books {
+		licenses = append(licenses, book.License)
+	}
+	for _, page := range web {
+		licenses = append(licenses, page.License)
+	}
+	license, _, err := familyLicence(licenses)
+	if err != nil {
+		return "", fmt.Errorf("with its note and the note's other embedded quizzes and flashcard sets, %w", err)
+	}
+	return license, nil
+}
+
+// footerSources lists a note footer's sources: the note's own books and web
+// pages, then each embed's own and its copied bank questions', each book (by
+// id) and page (by URL) once.
+func footerSources(own *Provenance, embeds []*Provenance) ([]ProvenanceBook, []ProvenanceWeb) {
+	books, web := []ProvenanceBook{}, []ProvenanceWeb{}
+	add := func(b []ProvenanceBook, w []ProvenanceWeb) {
+		for _, book := range b {
+			if !slices.ContainsFunc(books, func(x ProvenanceBook) bool { return x.ID == book.ID }) {
+				books = append(books, book)
+			}
+		}
+		for _, page := range w {
+			if !slices.ContainsFunc(web, func(x ProvenanceWeb) bool { return x.URL == page.URL }) {
+				web = append(web, page)
+			}
+		}
+	}
+	for _, p := range append([]*Provenance{own}, embeds...) {
+		if p == nil {
+			continue
+		}
+		add(p.Books, p.Web)
+		ids := slices.Sorted(maps.Keys(p.Questions))
+		for _, id := range ids {
+			add(p.Questions[id].Books, p.Questions[id].Web)
+		}
+	}
+	if len(web) == 0 {
+		web = nil
+	}
+	return books, web
 }

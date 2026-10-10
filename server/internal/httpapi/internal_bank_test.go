@@ -292,6 +292,25 @@ func TestInternalBankListsReadsAndCopiesWithCredits(t *testing.T) {
 			t.Fatalf("%s provenance = %#v, want its own record untouched", id, mt.Provenance)
 		}
 	}
+	// The embed shares its note's footer: a ShareAlike question copied into a
+	// quiz under a NonCommercial-ShareAlike note is refused, from either route.
+	ncNote, err := st.CreateMaterial(ctx, store.Material{CreatedBy: "u_editor", WorkspaceID: "ws_e2e_private",
+		Kind: "note", Title: "NC embeds " + msg, Content: "# NC\n\nbody",
+		Provenance: &store.Provenance{Books: []store.ProvenanceBook{{ID: "nc", Title: "nc", Authors: []string{}, License: "CC BY-NC-SA 4.0", ExcerptIDs: []string{"e_nc"}, Version: 1}}, License: "CC BY-NC-SA 4.0"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ncQuiz, err := st.CreateEmbeddedMaterial(ctx, "u_editor", ncNote.ID, store.EmbeddedDraft{Kind: "quiz",
+		Questions: json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1p","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code, out := post("/api/internal/bank/copy", copyBody("c5", []string{"bq3"}, map[string]any{"quizId": ncQuiz.ID})); code != 400 || out["code"] != "lifecycle_rejected" {
+		t.Fatalf("ShareAlike copy into a NonCommercial note's quiz: %d %v", code, out)
+	}
+	if code, out := pageCopy("u_editor", map[string]any{"questionIds": []string{"bq3"}, "workspaceId": "ws_e2e_private", "quizId": ncQuiz.ID}); code != 409 {
+		t.Fatalf("page copy into a NonCommercial note's quiz: %d %v", code, out)
+	}
 
 	// The model's own writes still may not claim a question credit.
 	forged := noteBody(msg, "f1", "Forged", "text")
