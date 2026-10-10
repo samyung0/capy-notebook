@@ -1,6 +1,5 @@
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { type ReactNode, useState } from 'react';
-import { isApiError } from '@/api/client';
 import { addChapterBodyNameMax } from '@/api/gen/validators';
 import {
   useAddChapter,
@@ -77,11 +76,10 @@ export default function WorkspaceOpen() {
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as WorkspaceOpenSearch;
 
-  const {
-    data: ws,
-    isLoading: wsLoading,
-    error: wsErr,
-  } = useWorkspace(workspaceId, { errorBoundary: false });
+  // Other failures without data go to the error boundary.
+  const { data: ws, isLoading: wsLoading } = useWorkspace(workspaceId, {
+    errorBoundary: 'unlessMissing',
+  });
   const { data: chapters } = useChapters(workspaceId);
   const { data: files } = useFiles(workspaceId);
   const readOnly = isWorkspaceReadOnly(ws?.capabilities);
@@ -191,20 +189,10 @@ export default function WorkspaceOpen() {
     );
   }
 
-  if (!ws) {
-    const denied =
-      isApiError(wsErr) && (wsErr.status === 404 || wsErr.status === 401);
+  if (!ws)
     return (
-      <WorkspaceError
-        backLabel={m.workspace_back_to()}
-        backTo="/workspaces"
-        description={
-          denied ? m.error_private_body() : m.workspace_missing_body()
-        }
-        title={denied ? m.error_private_title() : m.workspace_unable_load()}
-      />
+      <WorkspaceError backLabel={m.workspace_back_to()} backTo="/workspaces" />
     );
-  }
 
   // Every role that can read the workspace studies, browses and chats; AI
   // generate lives in the Add file dialog.

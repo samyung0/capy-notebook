@@ -29,7 +29,10 @@ test.describe('standardized error surfaces', () => {
 
     const surface = await expectErrorSurface(ownerPage, 'page');
     await expect(surface).toHaveCount(1);
-    await expect(surface.getByText(m.workspace_unable_load())).toBeVisible();
+    await expect(surface.getByText(m.error_server_title())).toBeVisible();
+    await expect(
+      surface.getByRole('button', { name: m.error_action_retry() })
+    ).toBeVisible();
   });
 
   test('private and missing workspace summaries stay non-disclosing', async ({

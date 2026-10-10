@@ -53,7 +53,6 @@ function QuizEditor({ quizId }: { quizId: string }) {
     fetchStatus,
     isLoading,
     isFetchedAfterMount,
-    isError,
   } = useQuizEdit(quizId);
   const { isPending: contentIsPending, mutateAsync: updateContent } =
     useUpdateQuizContent();
@@ -86,14 +85,16 @@ function QuizEditor({ quizId }: { quizId: string }) {
   const revision = useRef<number | null>(null);
 
   // Seed local editor state once the quiz loads (subsequent edits stay local).
+  // A failed refresh seeds from the cached quiz; without one the error went
+  // to the boundary.
   useEffect(() => {
-    if (quiz && isFetchedAfterMount && !isError && !seeded.current) {
+    if (quiz && isFetchedAfterMount && !seeded.current) {
       reset({ name: quiz.name });
       setQuestions(structuredClone(quiz.questions));
       revision.current = quiz.revision;
       seeded.current = true;
     }
-  }, [quiz, isFetchedAfterMount, isError, reset]);
+  }, [quiz, isFetchedAfterMount, reset]);
 
   function back() {
     void navigate({ href: returnTo ?? '/files?tab=blocks' });
@@ -176,8 +177,6 @@ function QuizEditor({ quizId }: { quizId: string }) {
       <TabContent>
         {fetchStatus === 'paused' ? (
           <QueryPausedState />
-        ) : isError ? (
-          <p role="alert">{m.quiz_unable_load()}</p>
         ) : isLoading || !seeded.current ? (
           <Skeleton className="h-64 w-full" />
         ) : quiz?.canEditContent ? (
