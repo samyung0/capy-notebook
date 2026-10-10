@@ -127,6 +127,12 @@ check); it applies at the first promotion.
 
 ## Queued tracks (each needs its own decisions and a visual checkpoint)
 
+- **Upstream BetterOffice sync after the rust round (Epo 2026-10-10):** merge
+  upstream main into a branch from capy-ci per the BetterOffice workflow (brings
+  Bun 1.4.2 and upstream's rendering gains: DOCX SSIM 0.845 vs our 0.836, PPTX
+  0.911 vs 0.899 on the 374-file benchmark); the six audit fixes were
+  cherry-picked ahead of it.
+
 - **After the rust round, Office gaps in this order (Epo 2026-10-10;
   evidence in `capy-harness/2026-10-06-rust-round/parity-survey/`, then
   `bench/parity/`):** (1) XLSX column/row resize, sheet-tab rename/delete and
