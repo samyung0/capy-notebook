@@ -527,7 +527,7 @@ function QuestionDialogSession({
             <span className="min-w-0 truncate">
               {block?.type === 'text' ? (
                 <TextView
-                  className="whitespace-nowrap [&>span]:inline"
+                  className="whitespace-nowrap [&_span]:inline"
                   text={label}
                 />
               ) : (

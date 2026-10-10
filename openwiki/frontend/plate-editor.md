@@ -1371,6 +1371,12 @@ using the same fonts and layout as editing and a spoken-math accessible label. T
 preserves native placeholders, accents and fractions in notes, question editors and
 question/quiz views. KaTeX remains confined to export figures, where empty slots map
 to `\square`; saved editable formulas retain their original placeholders.
+A display formula wider than its column keeps its size and scrolls sideways in
+MathPreview's own box (question views, question-editor and note equation
+previews, note View); the inert field leaves wheel and touch to that box, which
+is `relative` so MathLive's absolutely positioned screen-reader node cannot widen
+the page. Inline formulas stay capped at their line's width. A shared note's
+server markup scrolls in the equation block's own `overflow-auto` box.
 
 Block formula previews and MathLive share 16px vertical padding and the same
 math font size. Opening an existing block reserves its preview height while

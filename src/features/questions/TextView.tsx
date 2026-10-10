@@ -34,8 +34,7 @@ export function TextView({
           <span
             className={cn(
               trailing[index] && 'whitespace-nowrap',
-              token.type === 'display' &&
-                'my-3 block overflow-x-auto text-center'
+              token.type === 'display' && 'my-3 block text-center'
             )}
             key={index}
           >

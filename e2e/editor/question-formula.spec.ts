@@ -144,3 +144,51 @@ test('question formula accepts physical digits and retains them after commit', a
     .click();
   await expect(formula).toHaveJSProperty('value', '5');
 });
+
+test('a wide display formula scrolls in its own box and the page does not', async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 844, width: 390 });
+  await page.goto('/quizzes/qz_1/edit');
+  // The first question's reaction equation is wider than a 390 px column.
+  const formula = page
+    .locator('[data-question-id]')
+    .first()
+    .getByRole('math')
+    .first();
+  await expect(formula.locator('.ML__base')).toBeVisible({ timeout: 30_000 });
+  await formula.scrollIntoViewIfNeeded();
+  // The formula's nearest horizontal scroller, and any scroller around it
+  // that overflows sideways (the page must not).
+  const measure = () =>
+    formula.evaluate((element) => {
+      const scrolls = (el: Element) =>
+        ['auto', 'scroll'].includes(getComputedStyle(el).overflowX);
+      let box: Element | null = element.querySelector('math-field');
+      while (box && !scrolls(box)) box = box.parentElement;
+      const outer: string[] = [];
+      for (let el = box?.parentElement; el; el = el.parentElement)
+        if (scrolls(el) && el.scrollWidth > el.clientWidth)
+          outer.push(el.className);
+      const page = document.documentElement;
+      return {
+        client: box?.clientWidth ?? 0,
+        left: box?.scrollLeft ?? 0,
+        outer,
+        pageOverflow: page.scrollWidth - page.clientWidth + window.scrollX,
+        scroll: box?.scrollWidth ?? 0,
+      };
+    });
+  const before = await measure();
+  expect(before.scroll).toBeGreaterThan(before.client);
+  expect(before.outer).toEqual([]);
+  expect(before.pageOverflow).toBe(0);
+  // The field is inert, so the wheel over it reaches the box.
+  const bounds = (await formula.boundingBox())!;
+  await page.mouse.move(bounds.x + 40, bounds.y + bounds.height / 2);
+  await page.mouse.wheel(200, 0);
+  await expect.poll(async () => (await measure()).left).toBeGreaterThan(0);
+  const after = await measure();
+  expect(after.outer).toEqual([]);
+  expect(after.pageOverflow).toBe(0);
+});
