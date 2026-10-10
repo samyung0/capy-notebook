@@ -964,6 +964,49 @@ fn a_server_reorder_reshuffles_the_readers_list() {
     assert_ne!(after, leaky, "the push maps old positions to new");
 }
 
+/// Security regression (REVIEW3 N1): an editor retyping two items in
+/// separate windows (A to B, then B to A) changes one text each time. Kept
+/// in place, a watching reader would see A's place become B and then B's
+/// become A, so the two swapped places in the answer. A text retyped into
+/// one another entry shows reshuffles the list. Fails if a single changed
+/// text always keeps the order.
+#[test]
+fn a_text_retyped_into_another_entrys_reshuffles_the_readers_list() {
+    let part = |texts: [&str; 4]| {
+        vec![quiz::ItemsPart {
+            part: "p1".to_owned(),
+            kind: "ordering".to_owned(),
+            entries: texts
+                .iter()
+                .enumerate()
+                .map(|(n, text)| (format!("i{n}"), (*text).to_owned()))
+                .collect(),
+        }]
+    };
+    let draws = std::cell::Cell::new(0);
+    let mut rng = seeded(3);
+    let mut pick = |n: usize| {
+        draws.set(draws.get() + 1);
+        rng(n)
+    };
+    let mut lists = ReaderLists::default();
+    lists.follow(&part(["Alpha", "Beta", "Gamma", "Delta"]), &mut pick);
+    assert!(draws.get() > 0, "the first list is a shuffle");
+    // Typing a text no other entry shows keeps the order.
+    draws.set(0);
+    lists.follow(&part(["Alphas", "Beta", "Gamma", "Delta"]), &mut pick);
+    assert_eq!(draws.get(), 0, "typing keeps the order");
+    // Retyping it into the text the second entry shows reshuffles.
+    lists.follow(&part(["Beta", "Beta", "Gamma", "Delta"]), &mut pick);
+    assert!(
+        draws.get() > 0,
+        "a retype into another entry's text keeps the order"
+    );
+    let mut held = lists.all().remove(0).1.items;
+    held.sort();
+    assert_eq!(held, ["Beta", "Beta", "Delta", "Gamma"]);
+}
+
 /// REVIEW1 S6: the save API writes what differs, so an editor typing into
 /// the same question keeps their characters.
 #[test]

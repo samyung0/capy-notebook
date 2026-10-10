@@ -4,6 +4,11 @@ import { USE_MSW } from '@/api/auth';
 import { getMaterialCollaborationToken } from '@/api/hooks';
 import type { SaveBannerState } from '@/components/banners/SaveBanner';
 import { userToast } from '@/components/ui/userToast';
+import {
+  type RoomReconnector,
+  roomReconnector,
+  roomRefusal,
+} from '@/features/notes/roomConnection';
 import { toastDraftsLost, toastSaveUndone } from '@/features/notes/saveFailure';
 import {
   applyReaderMessage,
@@ -94,7 +99,6 @@ function createItemProvider(config: RoomProviderConfig): ItemProvider {
   return new RoomProvider(config);
 }
 
-const RETRY_MS = 1500;
 const RESTORE_ORIGIN = Symbol('restore');
 /** Closes a client rejoins after with a fresh token; any other close
  * refused this channel's update (an eviction goes by its mode). */
@@ -134,7 +138,12 @@ export class ItemRoom {
   private unsynced = 0;
   private destroyed = false;
   private ended = false;
-  private retry: ReturnType<typeof setTimeout> | undefined;
+  /** Rejoins with a fresh token, backing off while it keeps failing (as a
+   * note's room does). */
+  private readonly reconnector: RoomReconnector;
+  /** The token request that failed, if one did: the provider reports only
+   * its own "Failed to get token" text. */
+  private tokenError: unknown = null;
   private readonly listeners = new Set<() => void>();
   private readonly materialId: string;
   private readonly options: ItemRoomOptions;
@@ -157,6 +166,11 @@ export class ItemRoom {
       trackedOrigins: new Set([LOCAL_EDIT]),
     });
     this.history = undoTarget(this.undo);
+    this.reconnector = roomReconnector({
+      // Still not back after the grace period: the room is offline.
+      onStuck: () => this.goOffline(),
+      provider: () => (this.destroyed || this.ended ? null : this.provider),
+    });
   }
 
   readonly subscribe = (listener: () => void) => {
@@ -197,7 +211,7 @@ export class ItemRoom {
         this.options.document
       );
     } catch {
-      if (!this.destroyed) this.set({ status: 'unavailable' });
+      this.unavailable();
       return;
     }
     if (this.destroyed) return;
@@ -212,12 +226,12 @@ export class ItemRoom {
       document: this.doc,
       name: first.room,
       onAuthenticationFailed: ({ reason }) => {
-        if (
-          reason === 'collaboration-not-found' ||
-          reason === 'collaboration-forbidden'
-        ) {
-          this.set({ status: 'unavailable' });
-          this.provider?.disconnect();
+        // Gone or no longer this user's (the server's reason, or the API's
+        // 404/403 for the token): no retry (REVIEW3 N2).
+        const refusal = roomRefusal(reason, this.tokenError);
+        this.tokenError = null;
+        if (refusal === 'notFound' || refusal === 'forbidden') {
+          this.unavailable();
           return;
         }
         if (reason.includes('collaboration room moved')) return;
@@ -227,7 +241,7 @@ export class ItemRoom {
       },
       onClose: ({ code, reason }) => {
         if (code === 4403) {
-          this.set({ status: 'unavailable' });
+          this.unavailable();
           return;
         }
         if (reason === 'socket closed') {
@@ -259,6 +273,7 @@ export class ItemRoom {
       onSynced: ({ state }) => {
         if (state) {
           if (this.snapshot.offline) this.recorder?.connected();
+          this.reconnector.connected();
           this.set({ offline: null, status: this.live(), synced: true });
           this.markUnsent();
           this.requestReceipt();
@@ -280,10 +295,16 @@ export class ItemRoom {
           cached = null;
           return token;
         }
-        const fresh = await getMaterialCollaborationToken(
-          this.materialId,
-          this.options.document
-        );
+        let fresh: Awaited<ReturnType<typeof getMaterialCollaborationToken>>;
+        try {
+          fresh = await getMaterialCollaborationToken(
+            this.materialId,
+            this.options.document
+          );
+        } catch (error) {
+          this.tokenError = error;
+          throw error;
+        }
         // Compacted or discarded while this tab was away: the room's
         // lineage moved, and a fresh room joins it (REVIEW1 M5).
         if (fresh.room !== this.room) {
@@ -478,13 +499,18 @@ export class ItemRoom {
     this.markUnsent(false);
   }
 
+  /** Joins again with a fresh token, after a growing delay while joins
+   * keep failing. */
   private rejoin() {
-    if (this.destroyed || this.ended || this.retry) return;
+    this.reconnector.refused();
+  }
+
+  /** The item is gone or no longer this user's: the room stops for good. */
+  private unavailable() {
+    if (this.destroyed) return;
+    this.reconnector.dispose();
     this.provider?.disconnect();
-    this.retry = setTimeout(() => {
-      this.retry = undefined;
-      if (!(this.destroyed || this.ended)) this.provider?.connect();
-    }, RETRY_MS);
+    this.set({ status: 'unavailable' });
   }
 
   /** Leaves recovery: the stored edits go and a fresh room opens. */
@@ -502,7 +528,7 @@ export class ItemRoom {
 
   destroy() {
     this.destroyed = true;
-    clearTimeout(this.retry);
+    this.reconnector.dispose();
     markUnsent(this, false);
     void this.recorder?.dispose();
     this.provider?.destroy();

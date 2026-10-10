@@ -1261,7 +1261,8 @@ set to a channel that joins (`full`) and the parts that changed otherwise. A
 part whose entries change as a set is shuffled afresh (a uniform
 permutation); a single text edit keeps the order, and a change of several
 texts at once (a server write reorders lists by position) shuffles too, so a
-reader never sees which text replaced which. No ids and no history reach a
+reader never sees which text replaced which. So does a text retyped into one
+another entry shows, so two retypes in separate windows show no swap. No ids and no history reach a
 reader, and neither document holds anything the server writes alone, so an
 editor's Undo never re-creates a server-only struct. A reader watching while
 items are added one at a time sees each new one appear (live mirroring); one

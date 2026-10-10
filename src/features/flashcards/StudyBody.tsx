@@ -20,6 +20,16 @@ import { CardStack, useCardStack } from './CardStack';
 /* Studying a flashcard set, shared by the app page and the public /share page.
    It knows no router or session: callers pass the frame and where ratings go. */
 
+/** The cards a study session holds, in set order: those with a face, and
+ * any the session holds already (`held`) even while blank, so a card an
+ * editor retypes keeps its place and is not rated twice (REVIEW3 N6). */
+export function studyIds(cards: FlashcardContent[], held: string[] = []) {
+  const kept = new Set(held);
+  return cards
+    .filter((c) => kept.has(c.id) || c.front.trim() || c.back.trim())
+    .map((c) => c.id);
+}
+
 /** One study session over every card in order: Again sends a card to the end,
  * the others move on. A card with both faces blank (a new set's placeholder)
  * takes no rating. */
@@ -56,9 +66,7 @@ export function StudyBody({
   trail: Crumb[];
 }) {
   const Shell = frame ?? NoFrame;
-  const studyIds = () =>
-    cards.filter((c) => c.front.trim() || c.back.trim()).map((c) => c.id);
-  const [ids, setIds] = useState(studyIds);
+  const [ids, setIds] = useState(() => studyIds(cards));
   const steps = useSteps<SrsRating>(ids);
   const stack = useCardStack();
   const shown = steps.current;
@@ -66,7 +74,7 @@ export function StudyBody({
   // Cards change while studying (Epo 2026-10-10): a removed card leaves the
   // session, an added one joins its end; edits show on the cards in place.
   useEffect(() => {
-    const live = studyIds();
+    const live = studyIds(cards, ids);
     if (live.join('\u0000') === ids.join('\u0000')) return;
     setIds(live);
     steps.follow(live);
@@ -92,7 +100,7 @@ export function StudyBody({
   }
 
   function studyAgain() {
-    const fresh = studyIds();
+    const fresh = studyIds(cards);
     setIds(fresh);
     steps.reset(fresh);
     stack.reset();

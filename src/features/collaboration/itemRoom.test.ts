@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
+import { ApiError } from '@/api/client';
 import type { RoomProviderConfig } from './roomProvider';
 
 // The room's provider, token and draft storage, recorded instead of real.
@@ -19,13 +20,15 @@ vi.mock('./roomProvider', () => ({
     sendStateless() {}
   },
 }));
-const tokens: { access: string; room: string }[] = [];
+// The next token requests' answers: a token, or an error thrown.
+const tokens: ({ access: string; room: string } | Error)[] = [];
 vi.mock('@/api/hooks', () => ({
   getMaterialCollaborationToken: vi.fn(async () => {
     const next = tokens.shift() ?? {
       access: 'write',
       room: 'material:q:schema:1',
     };
+    if (next instanceof Error) throw next;
     return { ...next, token: 't', url: 'ws://x' };
   }),
 }));
@@ -81,7 +84,10 @@ beforeEach(() => {
   drafts.discarded = 0;
   drafts.disposed = 0;
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 async function started(onReplace = vi.fn()) {
   const room = new ItemRoom('q', { drafts: { actorId: 'u' }, onReplace });
@@ -221,5 +227,41 @@ it('ends after a discard eviction, keeping its edits stored', async () => {
   expect(provider.connects).toBe(1);
   expect(drafts.disposed).toBe(1);
   expect(drafts.refused).toBe(0);
+  room.destroy();
+});
+
+// REVIEW3 N2: a token request the API refuses (403, 404) ends the room as
+// unavailable with no retry; one that fails (a 5xx, the network) retries
+// with a note room's growing delay, not every 1.5 s forever.
+it('stops on a refused token and backs off on a failing one', async () => {
+  // No jitter: the delays are 500 ms, then 1 s, 2 s...
+  vi.spyOn(Math, 'random').mockReturnValue(0.5);
+  const { room } = await started();
+  const [provider] = providers;
+  await provider.config.token();
+  provider.config.onSynced?.({ state: true });
+  // What the provider does when a join's token request throws.
+  const join = async (error: Error) => {
+    tokens.push(error);
+    await provider.config.token().catch((thrown: Error) =>
+      provider.config.onAuthenticationFailed?.({
+        reason: `Failed to get token: ${thrown.message}`,
+      })
+    );
+  };
+  await join(new ApiError(503, 'Service Unavailable'));
+  await vi.advanceTimersByTimeAsync(499);
+  expect(provider.connects).toBe(1);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(provider.connects).toBe(2);
+  await join(new TypeError('Failed to fetch'));
+  await vi.advanceTimersByTimeAsync(999);
+  expect(provider.connects).toBe(2);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(provider.connects).toBe(3);
+  await join(new ApiError(403, 'Forbidden'));
+  await vi.advanceTimersByTimeAsync(120_000);
+  expect(provider.connects).toBe(3);
+  expect(room.getSnapshot().status).toBe('unavailable');
   room.destroy();
 });

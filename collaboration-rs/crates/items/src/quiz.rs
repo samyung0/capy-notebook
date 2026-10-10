@@ -1190,10 +1190,10 @@ pub struct ReaderList {
 /// list of texts per part that the content room pushes over its channels
 /// whenever the keys change, keeping no history. A part whose entries
 /// changed as a set, or changed more than one text at once (a server write
-/// reordering by position), is shuffled afresh (a uniform permutation, so
-/// the list says nothing about the order the keys hold or were typed in or
-/// which text replaced which); one where a single text changed in place
-/// keeps its order.
+/// reordering by position), or took a text another entry shows, is
+/// shuffled afresh (a uniform permutation, so the list says nothing about
+/// the order the keys hold or were typed in or which text replaced which);
+/// one where a single text changed in place keeps its order.
 #[derive(Debug, Default)]
 pub struct ReaderLists {
     /// Part id to its kind and (entry id, text) in the readers' order.
@@ -1231,18 +1231,31 @@ impl ReaderLists {
             // (typing). A server write fills lists by position, so a
             // reorder changes several texts under the same ids: keeping the
             // order would show readers which old text each new one replaced
-            // (REVIEW2 M2), so that, too, shuffles afresh.
+            // (REVIEW2 M2), so that, too, shuffles afresh. So does a text
+            // retyped into one another entry shows: two retypes in separate
+            // windows would otherwise show a swap (REVIEW3 N1).
             let in_place = held.is_some_and(|(kind, entries)| {
-                *kind == part.kind
-                    && entries.len() == part.entries.len()
-                    && entries
+                if *kind != part.kind
+                    || entries.len() != part.entries.len()
+                    || !entries
                         .iter()
                         .all(|(id, _)| texts.contains_key(id.as_str()))
-                    && entries
-                        .iter()
-                        .filter(|(id, text)| texts[id.as_str()] != text.as_str())
-                        .count()
-                        <= 1
+                {
+                    return false;
+                }
+                let mut edited = entries
+                    .iter()
+                    .filter(|(id, text)| texts[id.as_str()] != text.as_str());
+                match (edited.next(), edited.next()) {
+                    (None, _) => true,
+                    (Some((id, _)), None) => {
+                        let now = texts[id.as_str()];
+                        !entries
+                            .iter()
+                            .any(|(other, text)| other != id && text == now)
+                    }
+                    _ => false,
+                }
             });
             let next: Vec<(String, String)> = match held {
                 Some((_, entries)) if in_place => entries
