@@ -2440,16 +2440,22 @@ build, and the knowledge library is one more source while the switch is on.
   outside the editable document so a user cannot delete the credit: one line per
   book with its edition and version, licence and source link (a licence or
   source reference becomes a link only when it parses as an `http:` or `https:`
-  URL), on the open material, the quiz attempt page, the attempt result page
-  (which reads the quiz the attempt names, because the attempt snapshot carries
-  no provenance), the standalone quiz editor and the flashcard study page,
-  which the public share routes reuse. On the open material it ends the
-  document and scrolls with it (`MaterialAttributionFooter` `inline`, in the
-  reading column): after the note's content in View and in the editor, where
-  it sits in the editor's scroll area after the editable content and outside
-  the Yjs document (`NoteAttribution`, memoized against save re-renders),
-  after the flashcard grid or editor, the diagram and the quiz preview, and at
-  the end of the diagram editor's preview pane. The space above it is the
+  URL). A note or diagram ends its document with the full footer
+  (`MaterialAttributionFooter` `inline`, in the reading column, scrolling with
+  the document): after the note's content in View and in the editor, where it
+  sits in the editor's scroll area after the editable content and outside the
+  Yjs document (`NoteAttribution`, memoized against save re-renders), after
+  the diagram, and at the end of the diagram editor's preview pane. A quiz or
+  flashcard set shows the same credits behind one collapsed "Sources (n)" line
+  (`SourcesLine`, Epo 2026-10-11 mock B: a button with `aria-expanded` and the
+  count in its label, controlling the list it expands; memoized): under the
+  item where a note embeds it, in View and Edit, and at the end of its own
+  pages, namely the workspace view (flashcard grid or editor, quiz preview),
+  the attempt and result pages (the result page reads the quiz the attempt
+  names, because the attempt snapshot carries no provenance), the study page,
+  the standalone editors and the public share pages. Mini views that show part
+  of an item or mix items (the Study tab's Quick review, review sessions)
+  show no credits; they link to the item's own page, which does. The space above it is the
   document's own bottom padding plus the footer's, so a block inserted at the
   end does not move it (Epo 2026-10-11); below it there is room above the
   page's end (`pb-12`), and room under the workspace's floating tools bar
@@ -2462,8 +2468,8 @@ build, and the knowledge library is one more source while the switch is on.
   of that quiz only), and agent edits that target the embedded row's id all
   write the row's own record, which only grows like a note's. A pasted block's
   copy (`AdoptEmbeddedMaterials`) and every clone carry the row's record,
-  outside the storage gate. The embed shows its credits inside the note, in
-  View (`AttemptBody`/`StudyBody` `embedded`, the bordered strip) and in Edit
+  outside the storage gate. The embed shows its credits inside the note behind
+  its Sources line, in View (`AttemptBody`/`StudyBody` `embedded`) and in Edit
   (under the embedded editor), on the shared note (`AnonymousEmbed.provenance`)
   and on the item's own pages. A note read credits its own sources plus its
   live embeds', computed for each read and never stored
