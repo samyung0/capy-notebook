@@ -2,6 +2,7 @@ import { verifiedShareID, verifiedShareToken } from '../../src/lib/shareLink';
 import type { ShareKind } from '../../src/share/state';
 import { handlePublicRequest, SHARED_CACHE } from './public';
 import { renderFailure, renderSummary, summarySchema } from './summary';
+import { pageClasses, usedCss } from './usedCss';
 
 type SiteBindings = Pick<
   Cloudflare.Env,
@@ -56,40 +57,46 @@ async function boundedText(response: Response, limit: number): Promise<string> {
   );
 }
 
-const STYLESHEET = /<link rel="stylesheet"[^>]*href="(\/[^"]+\.css)"[^>]*>/g;
-// Hashed or deploy-scoped files, so an isolate keeps what it read.
-const stylesheets = new Map<string, Promise<string>>();
+const STYLESHEET =
+  /<link rel="stylesheet"([^>]*)href="(\/[^"]+\.css)"([^>]*)>/g;
+// Hashed or deploy-scoped files, so an isolate keeps what it parsed.
+const stylesheets = new Map<string, Promise<ReturnType<typeof usedCss>>>();
 
-/** Puts the page's own stylesheets in the HTML: the browser paints from the
- * document alone instead of waiting a round trip per stylesheet. The edge
- * caches the result with the page. */
+/** Puts the rules the page uses from its stylesheets in the HTML: the browser
+ * paints from the document alone instead of waiting a round trip per
+ * stylesheet, without the bytes of the whole Tailwind build. Each full
+ * stylesheet is preloaded; the page script applies it before anything renders
+ * in the browser (src/lib/fullStyles.ts). The edge caches the result with the
+ * page. */
 async function inlineStylesheets(
   html: string,
   assets: SiteBindings['ASSETS'],
   origin: string
 ): Promise<string> {
-  const hrefs = [...new Set([...html.matchAll(STYLESHEET)].map((m) => m[1]))];
+  const hrefs = [...new Set([...html.matchAll(STYLESHEET)].map((m) => m[2]))];
+  const classes = pageClasses(html);
   const css = new Map(
     await Promise.all(
       hrefs.map(async (href) => {
-        let text = stylesheets.get(href);
-        if (!text) {
-          text = assets
+        let subset = stylesheets.get(href);
+        if (!subset) {
+          subset = assets
             .fetch(new Request(new URL(href, origin)))
-            .then((asset) => {
+            .then(async (asset) => {
               if (!asset.ok) throw new Error(`Stylesheet ${href} unavailable`);
-              return boundedText(asset, 1024 * 1024);
+              return usedCss(await boundedText(asset, 1024 * 1024));
             });
-          stylesheets.set(href, text);
-          text.catch(() => stylesheets.delete(href));
+          stylesheets.set(href, subset);
+          subset.catch(() => stylesheets.delete(href));
         }
-        return [href, await text] as const;
+        return [href, (await subset)(classes)] as const;
       })
     )
   );
   return html.replace(
     STYLESHEET,
-    (_, href: string) => `<style>${css.get(href)}</style>`
+    (_, before: string, href: string, after: string) =>
+      `<style>${css.get(href)}</style><link rel="preload" as="style"${before}href="${href}"${after} data-full-css>`
   );
 }
 

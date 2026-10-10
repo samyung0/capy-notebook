@@ -28,27 +28,37 @@ It needs `UAT_TARGET_AUTHORIZED=true`, `UAT_ALLOWED_HOSTS`, `UAT_APP_URL`,
    parsed, embedded or sent to a model.
 3. Waits until each item's public API answers 200. It never requests the
    page itself, so the first page request is a real miss.
-4. Caching checks (these fail the run): each page answers
+4. Inlined CSS check (fails the run): the Worker inlines only the rules a
+   page's HTML uses (`workers/site/usedCss.ts`). Each page is loaded with only
+   those rules and with the full stylesheets instead, page scripts blocked,
+   in light and dark, 412 px and 1366 px wide; every element's and
+   pseudo-element's computed style and the full-page screenshots must match
+   (`scripts/styles.ts`). A page served from before the Worker cut its CSS is
+   cut by the bench with the same code, so the check can run before a deploy.
+5. Caching checks (these fail the run): each page answers
    `public, s-maxage=300, max-age=0, must-revalidate` with no `Set-Cookie` and
    no `Vary` (other than `Accept-Encoding`); a second visitor with other
    cookies, language and user agent gets the same bytes with
    `CF-Cache-Status: HIT`, and so does `HEAD`; a forged link gets the 404 page,
    `no-store`, and is not served from the cache.
-5. Lighthouse 13 (mobile preset, simulated throttling), `SHARE_PERF_RUNS`
-   times (3 by default) per page and edge state, in a Chromium separate from
-   the signed-in one:
-   - **cold**: the URL with a unique `?perf=…`. Workers Cache keys on the
+6. Lighthouse 13 with simulated throttling, `SHARE_PERF_RUNS` times (3 by
+   default) per page, profile and edge state, in a Chromium separate from the
+   signed-in one. Profiles: **desktop** (40 ms RTT, 10 Mbps, full-speed CPU),
+   closer to most visitors, and **mobile** (slow 4G, 4x slower CPU), the
+   worst case. Edge states:
+   - **uncached**: the URL with a unique `?perf=…`. Workers Cache keys on the
      query string, so the Worker renders the page from the API.
-   - **warm**: the clean URL, served from Workers Cache.
-6. Deletes what it created.
+   - **cached**: the clean URL, served from Workers Cache.
+7. Deletes what it created.
 
-Reported per page and edge state (the median of the runs): simulated and
-observed (unthrottled) FCP and LCP, CLS (load only, before any scroll) with the
-shifting elements, TBT, the document's server response time, transfer bytes by
+Reported per page, profile and edge state (the median of the runs): the
+document's TTFB, simulated FCP and LCP (and the unthrottled ones the runner
+observed, in the JSON), CLS (load only, before any scroll) with the
+shifting elements, TBT, transfer bytes by
 type, request count and the performance score, and whether a second visitor
-hit the cache. Results land in the gitignored `.results/`: `share-pages.json`,
-`summary.md` (the job summary) and, for the median-LCP run of each page and
-state, the HTML report, the full Lighthouse result (`.lhr.json`) and the
+hit the cache, and the inlined CSS's size and comparison. Results land in the gitignored `.results/`: `share-pages.json`,
+`summary.md` (the job summary) and, for the median-LCP run of each page,
+profile and state, the HTML report, the full Lighthouse result (`.lhr.json`) and the
 DevTools trace (`.trace.json`, opens in the Performance panel).
 
 Lighthouse budgets are report-only until a developer signs them off from a

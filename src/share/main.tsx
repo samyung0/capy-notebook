@@ -6,6 +6,7 @@ import {
 } from '@/features/materials/youtubeUrl';
 // @ts-expect-error generated at build time by the Paraglide Vite plugin
 import { overwriteGetLocale } from '@/i18n/paraglide/runtime';
+import { applyFullStyles } from '@/lib/fullStyles';
 import { SHARE_STATE_ID, type ShareState } from './state';
 import '@/styles/tailwind.css';
 
@@ -22,6 +23,9 @@ const state = JSON.parse(
 overwriteGetLocale(() => 'en');
 
 bindPublicChrome();
+// The page arrives with only the CSS its HTML uses; anything rendered here
+// waits for the full stylesheets.
+const styled = applyFullStyles();
 
 // Analytics loads after the page, never ahead of it. Public pages carry no
 // error reporting (Sentry stays in the app).
@@ -56,9 +60,11 @@ if (state.kind === 'notes') {
   // scrolls past it.
   const islands = [...document.querySelectorAll<HTMLElement>('[data-island]')];
   if (islands.length)
-    void import('./islands').then(({ hydrateIslands }) =>
-      hydrateIslands(state, islands)
+    void Promise.all([import('./islands'), styled]).then(
+      ([{ hydrateIslands }]) => hydrateIslands(state, islands)
     );
 } else {
-  void import('./hydrateStudy').then(({ hydrateStudy }) => hydrateStudy(state));
+  void Promise.all([import('./hydrateStudy'), styled]).then(
+    ([{ hydrateStudy }]) => hydrateStudy(state)
+  );
 }

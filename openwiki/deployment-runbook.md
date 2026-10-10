@@ -121,7 +121,9 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    A query string makes its own entry, so each new one renders once. Failure
    pages stay `no-store`, and link summaries are `noindex, nofollow`. The
    `/p/*` routes serve signed-out shared quizzes', flashcards' and notes'
-   images under the same signature check. Anonymous grading skips
+   images under the same signature check. The Worker inlines only the CSS
+   rules a page's HTML uses (`workers/site/usedCss.ts`) and preloads the full
+   stylesheets, which the page applies before it hydrates. Anonymous grading skips
    the Worker and posts to `/api/public/quizzes/{token}/grade` directly, since
    Worker subrequests reach the API without the visitor's IP. There is no
    KV/R2 cache. Only the `run_worker_first` paths reach the Worker; every other

@@ -24,7 +24,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, type Page } from '@playwright/test';
 import lighthouse from 'lighthouse';
+import desktopConfig from 'lighthouse/core/config/desktop-config.js';
 import { signIn } from '../../../e2e/uat/support';
+import { compareStyles } from './styles';
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const fixtures = path.join(directory, '../fixtures');
@@ -349,19 +351,36 @@ type Metrics = {
 
 type Shift = { score: number; selector?: string; snippet?: string };
 
-async function audit(port: number, url: string) {
-  const result = await lighthouse(url, {
-    logLevel: 'error',
-    onlyCategories: ['performance'],
-    output: 'html',
-    port,
-  });
+/** Lighthouse's mobile preset (a mid-range phone on slow 4G: 150 ms RTT,
+ * 1.6 Mbps, 4x slower CPU) is the worst case; its desktop preset (40 ms RTT,
+ * 10 Mbps, no CPU slowdown) is closer to most visitors. Both are simulated,
+ * so the runner's own network and CPU barely move them. */
+const PROFILES = { desktop: desktopConfig, mobile: undefined } as const;
+type Profile = keyof typeof PROFILES;
+const EDGES = ['uncached', 'cached'] as const;
+type Edge = (typeof EDGES)[number];
+
+async function audit(port: number, url: string, profile: Profile) {
+  const result = await lighthouse(
+    url,
+    {
+      logLevel: 'error',
+      onlyCategories: ['performance'],
+      output: 'html',
+      port,
+    },
+    PROFILES[profile]
+  );
   if (!result) throw new Error(`Lighthouse returned nothing for ${url}`);
   const { audits, categories, runtimeError } = result.lhr;
   if (runtimeError) throw new Error(`${url}: ${runtimeError.message}`);
   const items = (
     audits['resource-summary'].details as unknown as {
-      items: { requestCount: number; resourceType: string; transferSize: number }[];
+      items: {
+        requestCount: number;
+        resourceType: string;
+        transferSize: number;
+      }[];
     }
   ).items;
   const [observed] = (
@@ -416,14 +435,20 @@ const median = (values: number[]) =>
   [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
 
 /** Runs Lighthouse RUNS times and keeps the median of each metric, plus the
- * report of the run whose LCP is the median. */
-async function measure(port: number, url: (index: number) => string) {
+ * run whose LCP is the median. */
+async function measure(
+  port: number,
+  url: (index: number) => string,
+  profile: Profile
+) {
   const runs: Awaited<ReturnType<typeof audit>>[] = [];
   for (let index = 0; index < RUNS; index++)
-    runs.push(await audit(port, url(index)));
+    runs.push(await audit(port, url(index), profile));
   const pick = (get: (m: Metrics) => number) =>
     median(runs.map(({ metrics }) => get(metrics)));
-  const middle = runs.find(({ metrics }) => metrics.lcp === pick((m) => m.lcp))!;
+  const middle = runs.find(
+    ({ metrics }) => metrics.lcp === pick((m) => m.lcp)
+  )!;
   const types = Object.keys(runs[0].metrics.bytes);
   return {
     median: {
@@ -454,26 +479,40 @@ function summary(results: Awaited<ReturnType<typeof run>>) {
   const lines = [
     '### Shared pages on UAT',
     '',
-    `Release \`${results.release ?? 'unknown'}\` · Lighthouse ${results.lighthouse} (mobile, simulated throttling) · ${results.chromium} · median of ${RUNS}`,
+    `Release \`${results.release ?? 'unknown'}\` · Lighthouse ${results.lighthouse}, simulated throttling · ${results.chromium} · median of ${RUNS}`,
     '',
-    'FCP and LCP are simulated (slow 4G, 4x slower CPU); observed is what the runner painted unthrottled.',
-    '',
-    '| Page | Edge | FCP ms | LCP ms | Observed FCP / LCP ms | CLS | TBT ms | TTFB ms | Total KB | Document KB | Script KB | Requests | Score |',
-    '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+    'Uncached: a unique query string, so the Worker renders the page. Cached: served by Workers Cache. TTFB is the document\'s server response time as the runner saw it.',
   ];
+  for (const [profile, label] of [
+    ['desktop', 'Desktop (40 ms RTT, 10 Mbps, full-speed CPU)'],
+    ['mobile', 'Mobile, worst case (slow 4G, 4x slower CPU)'],
+  ] as const) {
+    lines.push(
+      '',
+      `**${label}**`,
+      '',
+      '| Page | Edge | TTFB ms | FCP ms | LCP ms | CLS | TBT ms | Total KB | Document KB | Script KB | Requests | Score |',
+      '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |'
+    );
+    for (const page of results.pages)
+      for (const edge of EDGES) {
+        const m = page[profile][edge].median;
+        lines.push(
+          `| ${page.kind} | ${edge} | ${ms(m.ttfb)} | ${ms(m.fcp)} | ${ms(m.lcp)} | ${m.cls.toFixed(3)} | ${ms(m.tbt)} | ${kb(m.bytes.total)} | ${kb(m.bytes.document)} | ${kb(m.bytes.script)} | ${m.requests} | ${Math.round(m.score * 100)} |`
+        );
+      }
+  }
+  lines.push('', '**Layout shifts** (mobile, cached, the median-LCP run)', '');
   for (const page of results.pages)
-    for (const edge of ['cold', 'warm'] as const) {
-      const m = page[edge].median;
-      lines.push(
-        `| ${page.kind} | ${edge} | ${ms(m.fcp)} | ${ms(m.lcp)} | ${ms(m.observedFcp)} / ${ms(m.observedLcp)} | ${m.cls.toFixed(3)} | ${ms(m.tbt)} | ${ms(m.ttfb)} | ${kb(m.bytes.total)} | ${kb(m.bytes.document)} | ${kb(m.bytes.script)} | ${m.requests} | ${Math.round(m.score * 100)} |`
-      );
-    }
-  lines.push('', '**Layout shifts** (the median-LCP warm run)', '');
-  for (const page of results.pages)
-    for (const shift of page.warm.shifts)
+    for (const shift of page.mobile.cached.shifts)
       lines.push(
         `- ${page.kind}: ${shift.score.toFixed(3)} \`${shift.selector ?? 'unknown element'}\``
       );
+  lines.push('', '**Inlined CSS** (the page with only it against the full stylesheets)', '');
+  for (const page of results.pages)
+    lines.push(
+      `- ${page.kind}: ${kb(page.styles.subsetBytes)} of ${kb(page.styles.fullBytes)} KB, ${page.styles.checked} computed styles compared${page.styles.differences.length ? ` — **FAILED:** ${page.styles.differences.join('; ')}` : ', no difference'}`
+    );
   lines.push('', '**Cache hit for a second visitor**', '');
   for (const page of results.pages)
     lines.push(
@@ -483,7 +522,7 @@ function summary(results: Awaited<ReturnType<typeof run>>) {
     lines.push(`- **FAILED:** ${results.forged.join('; ')}`);
   lines.push(
     '',
-    'Budgets are report-only until signed off; caching failures fail the run.'
+    'Budgets are report-only until signed off; caching and inlined CSS failures fail the run.'
   );
   return `${lines.join('\n')}\n`;
 }
@@ -500,6 +539,12 @@ async function run(page: Page) {
   const forged = await checkForged();
   const caches = [];
   for (const item of shared) caches.push(await checkCaching(item));
+  // Fresh contexts of the signed-in browser carry no session.
+  const styles = [];
+  for (const item of shared)
+    styles.push(
+      await compareStyles(page.context().browser()!, `${appUrl}${item.path}`)
+    );
 
   const chrome = await chromium.launch({
     args: [`--remote-debugging-port=${LIGHTHOUSE_PORT}`],
@@ -510,12 +555,25 @@ async function run(page: Page) {
     const pages = [];
     for (const [index, item] of shared.entries()) {
       const url = `${appUrl}${item.path}`;
+      const profiles = {} as Record<
+        Profile,
+        Record<Edge, Awaited<ReturnType<typeof measure>>>
+      >;
+      for (const profile of ['desktop', 'mobile'] as const)
+        profiles[profile] = {
+          // A unique query string is its own Workers Cache entry: a render.
+          uncached: await measure(
+            LIGHTHOUSE_PORT,
+            (i) => `${url}?perf=${id}-${profile}-${i}`,
+            profile
+          ),
+          cached: await measure(LIGHTHOUSE_PORT, () => url, profile),
+        };
       pages.push({
         cache: caches[index],
-        // A unique query string is its own Workers Cache entry: a render.
-        cold: await measure(LIGHTHOUSE_PORT, (i) => `${url}?perf=${id}-${i}`),
         kind: item.kind,
-        warm: await measure(LIGHTHOUSE_PORT, () => url),
+        styles: styles[index],
+        ...profiles,
       });
     }
     return {
@@ -524,10 +582,7 @@ async function run(page: Page) {
       lighthouse: (
         JSON.parse(
           await readFile(
-            path.join(
-              directory,
-              '../../../node_modules/lighthouse/package.json'
-            ),
+            path.join(directory, '../../../node_modules/lighthouse/package.json'),
             'utf8'
           )
         ) as { version: string }
@@ -547,21 +602,29 @@ try {
   await signIn(page, 'owner');
   const results = await run(page);
   await mkdir(out, { recursive: true });
-  // Per page and edge state, the median-LCP run's report, its full Lighthouse
-  // result and its DevTools trace (load it in the Performance panel).
+  // Per page, profile and edge state, the median-LCP run's report, its full
+  // Lighthouse result and its DevTools trace (load it in the Performance
+  // panel).
   for (const item of results.pages)
-    for (const edge of ['cold', 'warm'] as const) {
-      const name = path.join(out, `${item.kind}-${edge}`);
-      await writeFile(`${name}.report.html`, item[edge].report);
-      await writeFile(`${name}.lhr.json`, JSON.stringify(item[edge].lhr));
-      await writeFile(`${name}.trace.json`, JSON.stringify(item[edge].trace));
-    }
+    for (const profile of ['desktop', 'mobile'] as const)
+      for (const edge of EDGES) {
+        const measured = item[profile][edge];
+        const name = path.join(out, `${item.kind}-${profile}-${edge}`);
+        await writeFile(`${name}.report.html`, measured.report);
+        await writeFile(`${name}.lhr.json`, JSON.stringify(measured.lhr));
+        await writeFile(`${name}.trace.json`, JSON.stringify(measured.trace));
+      }
+  const keep = (measured: Awaited<ReturnType<typeof measure>>) => ({
+    median: measured.median,
+    runs: measured.runs,
+    shifts: measured.shifts,
+  });
   const snapshot = {
     ...results,
-    pages: results.pages.map(({ cold, warm, ...item }) => ({
+    pages: results.pages.map(({ desktop, mobile, ...item }) => ({
       ...item,
-      cold: { median: cold.median, runs: cold.runs, shifts: cold.shifts },
-      warm: { median: warm.median, runs: warm.runs, shifts: warm.shifts },
+      desktop: { cached: keep(desktop.cached), uncached: keep(desktop.uncached) },
+      mobile: { cached: keep(mobile.cached), uncached: keep(mobile.uncached) },
     })),
     runs: RUNS,
   };
@@ -574,7 +637,10 @@ try {
   console.log(markdown);
   failed =
     results.forged.length > 0 ||
-    results.pages.some((item) => item.cache.failures.length > 0);
+    results.pages.some(
+      (item) =>
+        item.cache.failures.length > 0 || item.styles.differences.length > 0
+    );
 } finally {
   await cleanUp(page).catch((error) => {
     console.error('Cleanup failed:', error);

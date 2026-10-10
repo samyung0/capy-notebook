@@ -271,7 +271,9 @@ jobs:
     if: inputs.share_pages
     runs-on: ubuntu-24.04
     environment: uat
-    timeout-minutes: 30
+    # Five pages, two Lighthouse profiles, uncached and cached, three runs
+    # each, plus the inlined CSS comparison: about 20 minutes.
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
