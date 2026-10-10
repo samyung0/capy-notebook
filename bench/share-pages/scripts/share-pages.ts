@@ -511,7 +511,7 @@ function summary(results: Awaited<ReturnType<typeof run>>) {
   lines.push('', '**Inlined CSS** (the page with only it against the full stylesheets)', '');
   for (const page of results.pages)
     lines.push(
-      `- ${page.kind}: ${kb(page.styles.subsetBytes)} of ${kb(page.styles.fullBytes)} KB, ${page.styles.checked} computed styles compared${page.styles.differences.length ? ` — **FAILED:** ${page.styles.differences.join('; ')}` : ', no difference'}`
+      `- ${page.kind}: ${kb(page.styles.subsetBytes)} of ${kb(page.styles.fullBytes)} KB, ${page.styles.checked} computed styles compared${page.styles.differences.length ? ` — **FAILED:** ${page.styles.differences.join('; ')}` : ', no difference'}${page.styles.noise.length ? ` (rendering noise, the full page differs from itself too: ${page.styles.noise.join('; ')})` : ''}`
     );
   lines.push('', '**Cache hit for a second visitor**', '');
   for (const page of results.pages)
@@ -546,6 +546,7 @@ async function run(page: Page) {
       await compareStyles(
         page.context().browser()!,
         `${appUrl}${item.path}`,
+        item.kind,
         out
       )
     );

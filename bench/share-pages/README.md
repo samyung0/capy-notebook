@@ -33,7 +33,10 @@ It needs `UAT_TARGET_AUTHORIZED=true`, `UAT_ALLOWED_HOSTS`, `UAT_APP_URL`,
    those rules and with the full stylesheets instead, page scripts blocked,
    in light and dark, 412 px and 1366 px wide; every element's and
    pseudo-element's computed style and the full-page screenshots must match
-   (`scripts/styles.ts`). A page served from before the Worker cut its CSS is
+   (`scripts/styles.ts`). When the screenshots differ, the full-CSS page is
+   loaded again as a control: if it also differs from itself, the difference
+   is the rasteriser's and is reported as noise (pixel count, place, element);
+   otherwise the run fails. Both screenshots are saved either way. A page served from before the Worker cut its CSS is
    cut by the bench with the same code, so the check can run before a deploy.
 5. Caching checks (these fail the run): each page answers
    `public, s-maxage=300, max-age=0, must-revalidate` with no `Set-Cookie` and

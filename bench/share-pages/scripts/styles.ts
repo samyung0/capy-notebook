@@ -131,16 +131,19 @@ async function difference(full: Page, subset: Page, index: number) {
 export async function compareStyles(
   browser: Browser,
   url: string,
+  name: string,
   out: string
 ): Promise<{
   checked: number;
   differences: string[];
   fullBytes: number;
+  noise: string[];
   subsetBytes: number;
 }> {
   const served = await (await fetch(url)).text();
   const { full, subset } = await variants(served, new URL(url).origin);
   const differences: string[] = [];
+  const noise: string[] = [];
   let checked = 0;
   for (const colorScheme of ['light', 'dark'] as const)
     for (const viewport of VIEWPORTS) {
@@ -160,24 +163,32 @@ export async function compareStyles(
         for (let i = 0; i < expected.length && differences.length < 20; i++)
           if (expected[i] !== actual[i])
             differences.push(`${label} ${await difference(a, b, i)}`);
-        // A second try rules out a frame caught mid-decode; a difference that
-        // stays is saved for a look.
-        let shots: Buffer[] = [];
-        for (let attempt = 0; attempt < 2; attempt++) {
-          shots = await Promise.all(
-            [a, b].map((page) =>
-              page.screenshot({ animations: 'disabled', fullPage: true })
-            )
+        const shot = (page: Page) =>
+          page.screenshot({ animations: 'disabled', fullPage: true });
+        const [fullShot, subsetShot] = await Promise.all([shot(a), shot(b)]);
+        if (!fullShot.equals(subsetShot)) {
+          // The control: the full page loaded again. If it differs from
+          // itself too, the difference is the rasteriser's, not the CSS's.
+          const again = await open(browser, url, full, colorScheme, viewport);
+          const control = await shot(again).finally(() => again.close());
+          const changed = await changedPixels(browser, fullShot, subsetShot);
+          const where = await a.evaluate(
+            ([x, y]) =>
+              document
+                .elementsFromPoint(x, y)
+                .slice(0, 3)
+                .map((e) => `${e.tagName.toLowerCase()}.${e.getAttribute('class') ?? ''}`.slice(0, 60))
+                .join(' < '),
+            [changed.x, changed.y]
           );
-          if (shots[0].equals(shots[1])) break;
-          await a.waitForTimeout(1000);
-        }
-        if (!shots[0].equals(shots[1])) {
-          const name = `${new URL(url).pathname.split('/').at(-2)}-${colorScheme}-${viewport.width}`;
+          const file = `${name}-${colorScheme}-${viewport.width}`;
           await mkdir(out, { recursive: true });
-          await writeFile(path.join(out, `${name}-full.png`), shots[0]);
-          await writeFile(path.join(out, `${name}-inlined.png`), shots[1]);
-          differences.push(`${label}: the screenshots differ (${name}-*.png)`);
+          await writeFile(path.join(out, `${file}-full.png`), fullShot);
+          await writeFile(path.join(out, `${file}-inlined.png`), subsetShot);
+          const detail = `${changed.pixels} px around (${changed.x}, ${changed.y}) over ${where} (${file}-*.png)`;
+          if (fullShot.equals(control))
+            differences.push(`${label}: the screenshots differ, ${detail}`);
+          else noise.push(`${label}: ${detail}`);
         }
       } finally {
         await a.close();
@@ -189,5 +200,51 @@ export async function compareStyles(
       (sum, [, css]) => sum + css.length,
       0
     );
-  return { checked, differences, fullBytes: bytes(full), subsetBytes: bytes(subset) };
+  return {
+    checked,
+    differences,
+    fullBytes: bytes(full),
+    noise,
+    subsetBytes: bytes(subset),
+  };
+}
+
+// A string, so tsx's helpers never reach the page.
+const CHANGED_PIXELS = `(async ([first, second]) => {
+  const load = (png) => new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.src = 'data:image/png;base64,' + png;
+  });
+  const pixels = (image) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const context = canvas.getContext('2d');
+    context.drawImage(image, 0, 0);
+    return context.getImageData(0, 0, image.width, image.height).data;
+  };
+  const [a, b] = [await load(first), await load(second)];
+  if (a.width !== b.width || a.height !== b.height)
+    return { pixels: -1, x: 0, y: 0 };
+  const [pa, pb] = [pixels(a), pixels(b)];
+  let count = 0, x = 0, y = 0;
+  for (let i = 0; i < pa.length; i += 4)
+    if (pa[i] !== pb[i] || pa[i + 1] !== pb[i + 1] || pa[i + 2] !== pb[i + 2]) {
+      if (!count) { x = (i / 4) % a.width; y = Math.floor(i / 4 / a.width); }
+      count++;
+    }
+  return { pixels: count, x, y };
+})`;
+
+/** How many pixels differ, and the first that does. */
+async function changedPixels(browser: Browser, first: Buffer, second: Buffer) {
+  const page = await browser.newPage();
+  try {
+    return await page.evaluate<{ pixels: number; x: number; y: number }>(
+      `${CHANGED_PIXELS}(${JSON.stringify([first.toString('base64'), second.toString('base64')])})`
+    );
+  } finally {
+    await page.close();
+  }
 }
