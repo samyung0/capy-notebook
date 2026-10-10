@@ -2016,8 +2016,6 @@
   "past_col_cards": "抽认卡",
   "past_col_time": "用时",
   "past_stopped": "答了 {answered} / {total} 后结束",
-  "past_phone_quiz": "测验 {score}",
-  "past_phone_cards": "抽认卡 {score}",
   "past_minutes": "{count} 分钟",
   "past_col_status": "状态",
   "past_status_completed": "已完成",

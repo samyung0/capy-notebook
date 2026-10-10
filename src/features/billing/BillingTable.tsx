@@ -10,8 +10,9 @@ export interface BillingColumn {
   muted?: boolean;
 }
 
-/** The one table design on Billing & usage: muted header, divider rows.
- * Detailed usage and Invoices both use it. */
+/** The one table design on Billing & usage: muted header, divider rows,
+ * scrolling sideways. Detailed usage and Invoices use it, and Learning's Past
+ * reviews and All results on smaller screens. */
 export function BillingTable({
   columns,
   rows,

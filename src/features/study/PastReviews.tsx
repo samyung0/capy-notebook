@@ -11,6 +11,7 @@ import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
+import { BillingTable } from '@/features/billing/BillingTable';
 import { formatPoints } from '@/features/quizzes/grade';
 import { getLocale, m } from '@/i18n';
 import { iconUrl } from '@/lib/icon-catalog';
@@ -118,8 +119,33 @@ export function PastReviews() {
         <p className="py-8 text-center text-fg-muted">{m.past_empty()}</p>
       ) : (
         <div className="flex flex-col gap-3" ref={revealRef}>
-          <div className="overflow-hidden rounded-card border border-line">
-            <div className="hidden bg-surface-hover-bg px-4 py-2.5 font-bold text-fg-muted text-xs uppercase tracking-wide xl:grid xl:grid-cols-[7rem_minmax(0,1fr)_minmax(0,1.1fr)_6rem_6rem_5rem_8.5rem_40px] xl:gap-3">
+          {/* Phones and tablets: Billing's plain table, scrolling sideways,
+           * without Time and Status. */}
+          <div className="xl:hidden">
+            <BillingTable
+              columns={[
+                { id: 'date', label: m.quiz_col_date(), muted: true },
+                { id: 'workspace', label: m.quiz_col_workspace() },
+                { id: 'chapter', label: m.past_col_chapter() },
+                { id: 'quiz', label: m.past_col_quiz() },
+                { id: 'cards', label: m.past_col_cards() },
+                { align: 'right', id: 'menu', label: '' },
+              ]}
+              rows={rows.map((r) => ({
+                cells: {
+                  cards: <ScoreText score={r.cards} />,
+                  chapter: groupName(r.group, r.chapterName),
+                  date: formatDate(r.startedAt),
+                  menu: <AgainMenu onAgain={() => again(r)} />,
+                  quiz: <ScoreText score={r.quiz} />,
+                  workspace: <WorkspaceCell review={r} />,
+                },
+                key: r.id,
+              }))}
+            />
+          </div>
+          <div className="hidden overflow-hidden rounded-card border border-line xl:block">
+            <div className="grid grid-cols-[7rem_minmax(0,1fr)_minmax(0,1.1fr)_6rem_6rem_5rem_8.5rem_40px] gap-3 bg-surface-hover-bg px-4 py-2.5 font-bold text-fg-muted text-xs uppercase tracking-wide">
               <div>{m.quiz_col_date()}</div>
               <div>{m.quiz_col_workspace()}</div>
               <div>{m.past_col_chapter()}</div>
@@ -157,10 +183,6 @@ function Row({
   review: PastReview;
   onAgain: () => void;
 }) {
-  const group = groupName(r.group, r.chapterName);
-  const date = new Intl.DateTimeFormat(getLocale(), {
-    dateStyle: 'medium',
-  }).format(new Date(r.startedAt));
   const minutes = Math.max(
     1,
     Math.round(
@@ -172,67 +194,64 @@ function Row({
     r.answered < r.total &&
     m.past_stopped({ answered: r.answered, total: r.total });
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto_40px] items-center gap-x-3 gap-y-0.5 border-divider border-t py-2.5 pr-2 pl-4 xl:grid-cols-[7rem_minmax(0,1fr)_minmax(0,1.1fr)_6rem_6rem_5rem_8.5rem_40px] xl:gap-3">
-      {/* Phones and tablets: what, where, when and whether it was finished,
-       * then both scores at the right. */}
-      <div className="min-w-0 xl:hidden">
-        <p className="truncate font-semibold text-fg">
-          {group || r.workspaceName}
-        </p>
-        <p className="truncate text-fg-muted text-xs">
-          {group ? `${r.workspaceName} · ${date}` : date}
-        </p>
-        {stopped && <p className="truncate text-fg-muted text-xs">{stopped}</p>}
-      </div>
-      <div className="flex flex-col items-end text-fg-secondary text-sm xl:hidden">
-        {r.quiz && (
-          <span>{m.past_phone_quiz({ score: scoreText(r.quiz) })}</span>
-        )}
-        {r.cards && (
-          <span>{m.past_phone_cards({ score: scoreText(r.cards) })}</span>
-        )}
-      </div>
-      <p className="t-meta hidden text-fg-secondary xl:block">{date}</p>
-      <div className="hidden min-w-0 items-center gap-2.5 xl:flex">
-        <img
-          alt=""
-          className="size-4 shrink-0 rounded-[4px]"
-          height={16}
-          src={iconUrl(r.iconId)}
-          width={16}
-        />
-        <span className="truncate">{r.workspaceName}</span>
-      </div>
-      <p className="t-meta hidden truncate text-fg-secondary xl:block">
-        {group}
+    <div className="grid grid-cols-[7rem_minmax(0,1fr)_minmax(0,1.1fr)_6rem_6rem_5rem_8.5rem_40px] items-center gap-3 border-divider border-t py-2.5 pr-2 pl-4">
+      <p className="t-meta text-fg-secondary">{formatDate(r.startedAt)}</p>
+      <WorkspaceCell review={r} />
+      <p className="t-meta truncate text-fg-secondary">
+        {groupName(r.group, r.chapterName)}
       </p>
-      <ScoreCell score={r.quiz} />
-      <ScoreCell score={r.cards} />
-      <p className="t-meta hidden text-fg-muted xl:block">
+      <p>
+        <ScoreText score={r.quiz} />
+      </p>
+      <p>
+        <ScoreText score={r.cards} />
+      </p>
+      <p className="t-meta text-fg-muted">
         {m.past_minutes({ count: minutes })}
       </p>
-      <div className="hidden min-w-0 xl:block">
+      <div className="min-w-0">
         <p className="t-meta text-fg-secondary">
           {stopped ? m.past_status_incomplete() : m.past_status_completed()}
         </p>
         {stopped && <p className="truncate text-fg-muted text-xs">{stopped}</p>}
       </div>
-      <div className="relative z-10 -my-2 flex justify-self-end">
-        <Menu
-          items={[
-            { icon: 'refresh', label: m.review_again(), onClick: onAgain },
-          ]}
-        />
-      </div>
+      <AgainMenu onAgain={onAgain} />
     </div>
   );
 }
 
-const scoreText = (s: SessionScore) =>
-  `${formatPoints(s.correct)} / ${formatPoints(s.total)}`;
+const formatDate = (iso: string) =>
+  new Intl.DateTimeFormat(getLocale(), { dateStyle: 'medium' }).format(
+    new Date(iso)
+  );
+
+function WorkspaceCell({ review: r }: { review: PastReview }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2.5">
+      <img
+        alt=""
+        className="size-4 shrink-0 rounded-[4px]"
+        height={16}
+        src={iconUrl(r.iconId)}
+        width={16}
+      />
+      <span className="truncate">{r.workspaceName}</span>
+    </div>
+  );
+}
+
+function AgainMenu({ onAgain }: { onAgain: () => void }) {
+  return (
+    <div className="relative z-10 -my-2 flex justify-end">
+      <Menu
+        items={[{ icon: 'refresh', label: m.review_again(), onClick: onAgain }]}
+      />
+    </div>
+  );
+}
 
 /** A quiz or flashcard result: marks, or cards rated Good or Easy. */
-function ScoreCell({ score }: { score?: SessionScore }) {
-  if (!score) return <p className="t-meta hidden text-fg-muted xl:block">-</p>;
-  return <p className="hidden font-bold xl:block">{scoreText(score)}</p>;
+function ScoreText({ score }: { score?: SessionScore }) {
+  if (!score) return <span className="text-fg-muted">-</span>;
+  return `${formatPoints(score.correct)} / ${formatPoints(score.total)}`;
 }

@@ -4,11 +4,11 @@ import { useAttempts, useLearningProgress } from '@/api/hooks';
 import type { Attempt, ProgressMap, ProgressWorkspace } from '@/api/types';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
-import { Badge } from '@/components/ui/Badge';
 import { Skeleton, SkeletonList } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
 import { Tabs } from '@/components/ui/Tabs';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
+import { BillingTable } from '@/features/billing/BillingTable';
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import { MiniTrail } from '@/features/questions/trailMap/TrailMap';
 import { formatPoints } from '@/features/quizzes/grade';
@@ -22,10 +22,6 @@ import { coverInk } from '@/lib/coverInk';
 import { iconUrl } from '@/lib/icon-catalog';
 import type { LearningTab } from '@/lib/tabSearch';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
-
-function scoreTone(pct: number): 'success' | 'warning' | 'error' {
-  return pct >= 70 ? 'success' : pct >= 55 ? 'warning' : 'error';
-}
 
 function PastAttempts() {
   const { data, fetchStatus, isLoading } = useAttempts();
@@ -50,54 +46,73 @@ function PastAttempts() {
       <p className="py-8 text-center text-fg-muted">{m.quiz_no_attempts()}</p>
     );
 
-  // Phones keep the table with Quiz, Score and the action menu; md adds
-  // Workspace and Date.
+  const score = (a: Attempt) =>
+    `${formatPoints(a.correct)} / ${formatPoints(a.total)}`;
+  const date = (a: Attempt) => new Date(a.takenAt).toLocaleDateString();
+  const menu = (a: Attempt) => (
+    <Menu
+      items={[
+        {
+          icon: 'list',
+          label: m.quiz_check_result(),
+          onClick: () =>
+            navigate({
+              params: { attemptId: a.id },
+              to: '/quizzes/attempts/$attemptId',
+            }),
+        },
+        ...redo(a.materialId),
+      ]}
+    />
+  );
+
   return (
-    <div
-      className="overflow-hidden rounded-card border border-line"
-      ref={revealRef}
-    >
-      <div className="grid grid-cols-[minmax(0,1fr)_auto_2.25rem] items-center gap-3 bg-surface-hover-bg px-4 py-3 font-bold text-fg-muted text-xs uppercase tracking-wide md:grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_7rem_7rem_2.25rem]">
-        <div>{m.quiz_col_quiz()}</div>
-        <div className="hidden md:block">{m.quiz_col_workspace()}</div>
-        <div className="md:text-center">{m.quiz_col_score()}</div>
-        <div className="hidden md:block">{m.quiz_col_date()}</div>
-        <div />
+    <div ref={revealRef}>
+      {/* Phones: Billing's plain table, scrolling sideways. */}
+      <div className="md:hidden">
+        <BillingTable
+          columns={[
+            { id: 'quiz', label: m.quiz_col_quiz() },
+            { id: 'workspace', label: m.quiz_col_workspace() },
+            { id: 'score', label: m.quiz_col_score() },
+            { id: 'date', label: m.quiz_col_date(), muted: true },
+            { align: 'right', id: 'menu', label: '' },
+          ]}
+          rows={data.map((a) => ({
+            cells: {
+              date: date(a),
+              menu: <div className="-my-2 flex justify-end">{menu(a)}</div>,
+              quiz: a.quizName,
+              score: score(a),
+              workspace: a.workspaceName,
+            },
+            key: a.id,
+          }))}
+        />
       </div>
-      {data.map((a: Attempt) => (
-        <div
-          className="grid grid-cols-[minmax(0,1fr)_auto_2.25rem] items-center gap-3 border-divider border-t py-2 pr-2 pl-4 first:border-t-0 md:grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_7rem_7rem_2.25rem]"
-          key={a.id}
-        >
-          <div className="truncate font-semibold text-fg">{a.quizName}</div>
-          <div className="hidden truncate text-fg-secondary text-sm md:block">
-            {a.workspaceName}
-          </div>
-          <div className="md:text-center">
-            <Badge tone={scoreTone(a.pct)}>
-              {formatPoints(a.correct)}/{formatPoints(a.total)}
-              <span className="hidden sm:inline"> · {a.pct}%</span>
-            </Badge>
-          </div>
-          <div className="hidden text-fg-muted text-sm md:block">
-            {new Date(a.takenAt).toLocaleDateString()}
-          </div>
-          <Menu
-            items={[
-              {
-                icon: 'list',
-                label: m.quiz_check_result(),
-                onClick: () =>
-                  navigate({
-                    params: { attemptId: a.id },
-                    to: '/quizzes/attempts/$attemptId',
-                  }),
-              },
-              ...redo(a.materialId),
-            ]}
-          />
+      <div className="hidden overflow-hidden rounded-card border border-line md:block">
+        <div className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_7rem_7rem_2.25rem] items-center gap-3 bg-surface-hover-bg px-4 py-3 font-bold text-fg-muted text-xs uppercase tracking-wide">
+          <div>{m.quiz_col_quiz()}</div>
+          <div>{m.quiz_col_workspace()}</div>
+          <div>{m.quiz_col_score()}</div>
+          <div>{m.quiz_col_date()}</div>
+          <div />
         </div>
-      ))}
+        {data.map((a: Attempt) => (
+          <div
+            className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_7rem_7rem_2.25rem] items-center gap-3 border-divider border-t py-2 pr-2 pl-4"
+            key={a.id}
+          >
+            <div className="truncate font-semibold text-fg">{a.quizName}</div>
+            <div className="truncate text-fg-secondary text-sm">
+              {a.workspaceName}
+            </div>
+            <div>{score(a)}</div>
+            <div className="text-fg-muted text-sm">{date(a)}</div>
+            {menu(a)}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

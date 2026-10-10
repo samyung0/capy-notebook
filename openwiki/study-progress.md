@@ -335,8 +335,10 @@ with the list pages' sort menu (newest, quiz score, flashcard score, time
 spent) and filter (workspace, has quiz questions or flashcards) kept in the URL
 (`parsePastReviewsSearch`). Quiz is marks of the questions answered, Flashcards
 cards rated Good or Easy. A session ended early shows "Stopped after
-N of M" under its date. Phones show two-line rows with both scores at the
-right. Thirty rows a page.
+N of M" under Status. Scores are plain "x / y" text. Below xl the Files table
+gives way to Billing's plain table (`BillingTable`, no border, scrolls
+sideways) without Time and Status. All results does the same below md (Quiz,
+Workspace, Score, Date, ⋮) with the same plain scores. Thirty rows a page.
 
 ### Progress tab
 

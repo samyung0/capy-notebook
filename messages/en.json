@@ -2016,8 +2016,6 @@
   "past_col_cards": "Flashcards",
   "past_col_time": "Time",
   "past_stopped": "Stopped after {answered} of {total}",
-  "past_phone_quiz": "Quiz {score}",
-  "past_phone_cards": "Cards {score}",
   "past_minutes": "{count} min",
   "past_col_status": "Status",
   "past_status_completed": "Completed",
