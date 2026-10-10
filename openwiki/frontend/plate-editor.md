@@ -261,14 +261,32 @@ on the elements whose `type`, `assetId`, `url` or `src` the update set or
 deleted), so only that writer's update is lost, and its store checks it again.
 
 Pasted images take the same asset path (`pastedImages.ts`): clipboard image
-files become upload placeholders, as dropped files do; an `<img>` in pasted
-HTML, which Plate's image parser turns into a URL-only node, becomes a
-placeholder in its place whose element fetches the URL in the browser (a
-`data:` URL, a host that allows CORS) and uploads the bytes, or a link to the
-URL when the browser cannot read it. Nothing is fetched by a server. Without
-asset uploads (`allowExternalAssets` off) a pasted image is a link. The image
-plugin's URL embed (`disableEmbedInsert`) is off, so no URL-only image node is
-made.
+files become upload placeholders, as dropped files do (Plate's placeholder
+plugin takes files pasted alone, `pastedImagesPlugin`'s `onPaste` those that
+come with HTML, as a browser's Copy image gives; a drop stays with the DnD
+plugin's `onDropFiles`, so it makes one placeholder); an `<img>` in pasted
+HTML and a markdown image pasted as text (VS Code's markdown included) or
+imported from a `.md` file, which Plate's parsers turn into URL-only nodes,
+become a placeholder in their place whose element fetches the URL in the
+browser (a `data:` URL, a host that allows CORS) and uploads the bytes, or a
+link to the URL showing the image's alt text when the browser cannot read it
+(a non-web URL goes). Nothing is fetched by a server: markdown images in
+agent-written notes become those links in the converter (`urlImageLink` in
+`markdownImport.ts`, shared by the browser's import and the server's V8
+bundle), and an image inside a link leaves its alt text there. Without asset
+uploads (`allowExternalAssets` off) a pasted or imported image is a link. The
+image plugin's URL embed (`disableEmbedInsert`) is off, so no URL-only image
+node is made.
+
+An uploading image is a skeleton (`MediaPlaceholderElement`), from the first
+render of a dropped or pasted file and while a pasted URL is read, and the
+image takes its place when the asset id returns; a media node is the same
+skeleton while its asset resolves (`MediaAssetView`), so nothing flashes in
+between (Epo, 2026-10-10). An upload superseded by a newer one of the same
+block (its effect run again) leaves the block's state to that one. A refused
+upload leaves the empty placeholder (pick again, or delete it) with the
+storage notice or the error under it; audio and file placeholders keep the
+name, progress and cancel.
 
 Each asset belongs to one note, and the server keeps it that way; the browser
 does nothing but render. A save that stops using an asset (once it was
