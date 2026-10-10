@@ -1,11 +1,11 @@
-import { slateNodesToInsertDelta } from '@slate-yjs/core';
+import { slateNodesToInsertDelta, yTextToSlateElement } from '@slate-yjs/core';
 import { expect, it } from 'vitest';
 import * as Y from 'yjs';
 import {
   type MaterialValue,
   normalizeMaterialValue,
 } from '@/features/materials/document';
-import { NoteBlocks } from './liveNoteBlocks';
+import { NoteBlocks, yTextElement } from './liveNoteBlocks';
 
 /* A live note View's value (live-items DESIGN.md 3): handed over from the
  * painted projection, then rebuilt block by block. */
@@ -107,4 +107,39 @@ it('reads a Mermaid source typed in as its string and leaves comment marks out',
     'graph TD\n  A --> B'
   );
   expect(blocks.value[1].children).toEqual([{ text: 'rem' }, { text: 'ark' }]);
+});
+
+it('reads blocks exactly as the patched slate-yjs does, without slate', () => {
+  const value = [
+    {
+      children: [
+        { bold: true, text: 'bold ' },
+        { bold: true, text: 'still bold' },
+        { text: ' plain' },
+        { code: true, italic: true, text: 'mixed' },
+      ],
+      id: 'p1',
+      type: 'p',
+    },
+    { children: [{ text: '' }], id: 'empty', type: 'p' },
+    {
+      children: [
+        { children: [{ text: 'cell' }], type: 'td' },
+        { children: [{ children: [{ text: 'deep' }], type: 'p' }], type: 'td' },
+      ],
+      id: 't1',
+      type: 'tr',
+    },
+    {
+      children: [{ children: [{ text: 'caption' }], type: 'mermaid_caption' }],
+      id: 'd1',
+      source: 'graph TD',
+      type: 'mermaid',
+    },
+  ];
+  const doc = new Y.Doc();
+  const root = doc.get('content', Y.XmlText);
+  root.applyDelta(slateNodesToInsertDelta(value as never));
+  for (const { insert } of root.toDelta() as { insert: Y.XmlText }[])
+    expect(yTextElement(insert)).toEqual(yTextToSlateElement(insert));
 });

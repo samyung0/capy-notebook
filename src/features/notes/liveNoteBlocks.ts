@@ -1,4 +1,3 @@
-import { yTextToSlateElement } from '@slate-yjs/core';
 import * as Y from 'yjs';
 import {
   type MaterialElement,
@@ -36,11 +35,69 @@ function same(a: unknown, b: unknown): boolean {
   );
 }
 
+type Attributes = Record<string, unknown>;
+
+/** Slate's `deepEquals`, as slate-yjs merges text runs with it: plain objects
+ * deeply, arrays item by item with `===`. */
+function slateEquals(a: Attributes, b: Attributes): boolean {
+  const equal = (x: unknown, y: unknown) => {
+    if (Array.isArray(x) && Array.isArray(y))
+      return x.length === y.length && x.every((item, i) => item === y[i]);
+    if (x && y && typeof x === 'object' && typeof y === 'object')
+      return slateEquals(x as Attributes, y as Attributes);
+    return x === y;
+  };
+  return (
+    Object.keys(a).every((key) => equal(a[key], b[key])) &&
+    Object.keys(b).every((key) => key in a)
+  );
+}
+
+/**
+ * `yTextToSlateElement` of @slate-yjs/core 1.0.2 with Capy's shape-A patch
+ * (a Mermaid source text reads as its string), without loading slate: the
+ * element's attributes, then its delta as children, empty strings dropped and
+ * neighbouring strings of equal attributes merged; no children reads as the
+ * placeholder leaf.
+ */
+export function yTextElement(yText: Y.XmlText): Attributes {
+  const node: Attributes = {};
+  for (const [key, value] of Object.entries(yText.getAttributes()))
+    node[key] = value instanceof Y.AbstractType ? value.toString() : value;
+  const children: Attributes[] = [];
+  let run: { attributes?: Attributes; leaf: Attributes } | null = null;
+  for (const op of yText.toDelta() as {
+    attributes?: Attributes;
+    insert: unknown;
+  }[]) {
+    if (typeof op.insert !== 'string') {
+      children.push(yTextElement(op.insert as Y.XmlText));
+      run = null;
+      continue;
+    }
+    if (!op.insert) continue;
+    if (
+      run &&
+      (run.attributes === op.attributes ||
+        (!run.attributes === !op.attributes &&
+          slateEquals(run.attributes ?? {}, op.attributes ?? {})))
+    ) {
+      run.leaf.text = `${run.leaf.text as string}${op.insert}`;
+      continue;
+    }
+    const leaf = { ...op.attributes, text: op.insert };
+    children.push(leaf);
+    run = { attributes: op.attributes, leaf };
+  }
+  node.children = children.length ? children : [{ text: '' }];
+  return node;
+}
+
 /** A top-level entry of the room's root as a normalized Plate block. */
 function blockOf(insert: unknown): MaterialElement {
   const node =
     insert instanceof Y.XmlText
-      ? yTextToSlateElement(insert)
+      ? yTextElement(insert)
       : { text: typeof insert === 'string' ? insert : '' };
   return normalizeMaterialBlock(node as unknown as MaterialElement);
 }

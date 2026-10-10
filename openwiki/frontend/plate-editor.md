@@ -1271,7 +1271,7 @@ that writes and sends it no presence). Once the room syncs, its value is
 handed over block by block (`notes/liveNoteBlocks.ts`): a block equal to the
 painted one keeps the painted object, so the switch redraws only what differs,
 and after each remote change only the top-level blocks the events touched are
-read again (normalized as the projection is, comment marks left out). The
+read again (normalized as the projection is, comment marks left out; read as the patched slate-yjs reads them, without loading slate, so the chunk adds about 1.4 KB gzipped to a View). The
 static renderer re-renders a top-level block only when its object changes
 (PlateStatic's memo), so a keystroke redraws one block; Mermaid sources come
 through the note document, quizzes and sets through their own content rooms
