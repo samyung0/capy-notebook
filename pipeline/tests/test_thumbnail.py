@@ -56,16 +56,16 @@ def test_the_repaired_pdf_wins_over_the_source(tmp_path, monkeypatch):
     source.write_bytes(_pdf(595, 842))
     seen = []
 
-    def repaired(artifact):
-        seen.append(artifact)
+    def entry(artifact, name):
+        seen.append((artifact, name))
         return _pdf(800, 400)
 
-    monkeypatch.setattr(thumbnail.parser_client, "repaired_pdf", repaired)
+    monkeypatch.setattr(thumbnail.parser_client, "artifact_entry", entry)
     artifact = {"key": "artifacts/x.zip"}
 
     webp = thumbnail.render(_plan(ingest_plan.DOCUMENT_PARSE, "pdf"), source, artifact)
 
-    assert seen == [artifact] and _size(webp) == (200, 100)
+    assert seen == [(artifact, "parsed.pdf")] and _size(webp) == (200, 100)
 
 
 def test_a_tall_page_is_cut_from_the_top(tmp_path):
@@ -108,23 +108,45 @@ def test_routes_without_a_page_have_no_thumbnail(tmp_path, route, format_name):
     assert thumbnail.render(_plan(route, format_name), source, None) is None
 
 
-def test_office_pages_come_from_the_parser_capture(tmp_path, monkeypatch):
+@pytest.fixture
+def no_conversion(monkeypatch):
+    """Office thumbnails never reach the parser again: /capture_page is for chat."""
+
+    def refuse(*_args, **_kwargs):
+        raise AssertionError("an Office thumbnail called the parser")
+
+    monkeypatch.setattr("requests.post", refuse)
+
+
+def test_office_pages_come_from_the_parse_bundle(tmp_path, monkeypatch, no_conversion):
     source = tmp_path / "source-1"
     source.write_bytes(b"office")
-    jpeg = io.BytesIO()
-    Image.new("RGB", (283, 400), "white").save(jpeg, "JPEG")
-    calls = []
+    png = io.BytesIO()
+    Image.new("RGB", (200, 283), "white").save(png, "PNG")
+    seen = []
 
-    def office(path, name, page, bbox, max_edge):
-        calls.append((path, name, page, bbox, max_edge))
-        return jpeg.getvalue(), [0, 0, 1000, 1000], (283, 400)
+    def entry(artifact, name):
+        seen.append(name)
+        return png.getvalue()
 
-    monkeypatch.setattr(thumbnail.capture, "office_capture_file", office)
+    monkeypatch.setattr(thumbnail.parser_client, "artifact_entry", entry)
+    artifact = {"key": "artifacts/x.zip"}
 
-    webp = thumbnail.render(_plan(ingest_plan.DOCUMENT_PARSE, "docx"), source, None)
+    webp = thumbnail.render(_plan(ingest_plan.DOCUMENT_PARSE, "docx"), source, artifact)
 
-    assert calls == [(source, "source.docx", 1, None, 400)]
-    assert _size(webp) == (200, 283)
+    assert seen == ["page1.png"] and _size(webp) == (200, 283)
+
+
+@pytest.mark.parametrize("artifact", [None, {"key": "artifacts/old.zip"}])
+def test_an_office_bundle_without_a_page_image_gets_no_thumbnail(
+    tmp_path, monkeypatch, no_conversion, artifact
+):
+    source = tmp_path / "source-1"
+    source.write_bytes(b"office")
+    monkeypatch.setattr(thumbnail.parser_client, "artifact_entry", lambda *_a: None)
+
+    plan = _plan(ingest_plan.DOCUMENT_PARSE, "pptx")
+    assert thumbnail.render(plan, source, artifact) is None
 
 
 class _Store:

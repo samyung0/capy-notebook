@@ -275,6 +275,20 @@ def run_document(document: Document, ocr_path: Path | None = None) -> dict[str, 
         "_repaired_fonts": output.repaired_fonts,
         "_furniture": output.furniture,
     }
+    if normalized.preview_pdf is not None:
+        # The list-card thumbnail comes from this conversion, so ingest never
+        # converts the file again for it. Optional: it never fails the parse.
+        from odl.capture import page_thumbnail
+
+        started = time.perf_counter()
+        try:
+            result["_page_image"] = page_thumbnail(normalized.data)
+        except Exception as exc:  # noqa: BLE001 - a missing thumbnail is fine
+            print(f"page thumbnail skipped: {type(exc).__name__}: {exc}", flush=True)
+        result["_phases"] = {
+            **output.phases,
+            "thumbnail": time.perf_counter() - started,
+        }
     pending = ocr_path is not None and bool(output.ocr_pages)
     if pending:
         # The bytes of the work-dir PDF every repair read.
@@ -1188,13 +1202,20 @@ def _bounded_utf8(value: object, limit: int, label: str) -> bytes:
     return encoded
 
 
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+# A 200 x 400 page is under 240 KB even uncompressed; ingest's
+# parser_client._entry_limit refuses a page1.png over the same bound.
+PAGE_IMAGE_MAX_BYTES = 1 << 20
+
+
 def _bundle_bytes(
     result: dict[str, Any],
     fingerprint: str,
     request_id: str,
     measurements: dict[str, Any],
 ) -> bytes:
-    """Only what ingest reads: the receipt, blocks, refinement and a repaired PDF.
+    """Only what ingest reads: the receipt, blocks, refinement, a repaired PDF
+    and an Office file's page-1 thumbnail (``page1.png``).
 
     Figures are reached at question time by rendering the source page, so image
     files and the ODL Markdown stay in the parse work directory.
@@ -1250,7 +1271,17 @@ def _bundle_bytes(
         parsed_size = len(parsed_pdf)
         if parsed_size > MAX_ARTIFACT_ENTRY_BYTES:
             raise ValueError("repaired PDF exceeds configured byte limit")
-    expanded_size = len(manifest) + len(content) + len(refinement) + parsed_size
+    # Optional, like the render: anything but a bounded PNG is left out.
+    page_image = result.get("_page_image")
+    if not (
+        isinstance(page_image, bytes)
+        and page_image.startswith(_PNG_SIGNATURE)
+        and len(page_image) <= PAGE_IMAGE_MAX_BYTES
+    ):
+        page_image = b""
+    expanded_size = (
+        len(manifest) + len(content) + len(refinement) + parsed_size + len(page_image)
+    )
     if expanded_size > MAX_ARTIFACT_EXPANDED_BYTES:
         raise ValueError("parse artifact expands beyond configured byte limit")
 
@@ -1261,6 +1292,8 @@ def _bundle_bytes(
         archive.writestr("refinement.json", refinement)
         if parsed_size:
             archive.writestr("parsed.pdf", parsed_pdf)
+        if page_image:
+            archive.writestr("page1.png", page_image)
     return output.getvalue()
 
 
@@ -1557,6 +1590,7 @@ async def file_parse(request: Request) -> JSONResponse:
     # The multipart compatibility route returns JSON. Repaired PDFs belong
     # only in the versioned artifact zip used by ingest.
     result.pop("_parsed_pdf", None)
+    result.pop("_page_image", None)
     result.pop("_phases", None)
     result["_server_parse_s"] = round(measurements["_server_parse_ms"] / 1000, 3)
     return JSONResponse(result)

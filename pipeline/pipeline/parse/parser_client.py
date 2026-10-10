@@ -380,11 +380,16 @@ def _entry_limit(info: zipfile.ZipInfo) -> int:
         return min(cfg.parse_artifact_max_entry_bytes, 64 << 10)
     if info.filename == "refinement.json":
         return min(cfg.parse_artifact_max_entry_bytes, cfg.parse_content_max_bytes)
+    if info.filename == PAGE_IMAGE:
+        return min(cfg.parse_artifact_max_entry_bytes, 1 << 20)
     return cfg.parse_artifact_max_entry_bytes
 
 
+# An Office bundle's page-1 thumbnail, rendered from the parser's own
+# conversion (openwiki/thumbnails.md); bundles from older parsers lack it.
+PAGE_IMAGE = "page1.png"
 _REQUIRED_ENTRIES = frozenset({"manifest.json", "content_list.json", "refinement.json"})
-_ENTRIES = _REQUIRED_ENTRIES | {"parsed.pdf"}
+_ENTRIES = _REQUIRED_ENTRIES | {"parsed.pdf", PAGE_IMAGE}
 
 
 def _validated_entries(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
@@ -608,13 +613,13 @@ def extract_artifact(
     return content_list
 
 
-def repaired_pdf(artifact: Mapping[str, Any]) -> bytes | None:
-    """The bundle's font-repaired ``parsed.pdf``, or None when the parser left
-    the source bytes as they were. Read after ``extract_artifact`` verified the
-    same bundle in this job, within the same per-entry byte limit."""
+def artifact_entry(artifact: Mapping[str, Any], name: str) -> bytes | None:
+    """One optional bundle entry (``parsed.pdf``, ``page1.png``), or None when
+    the bundle has none. Read after ``extract_artifact`` verified the same
+    bundle in this job, within the same per-entry byte limit."""
     with zipfile.ZipFile(_shared_path(str(artifact["key"]))) as archive:
         for info in _validated_entries(archive):
-            if info.filename == "parsed.pdf":
+            if info.filename == name:
                 with archive.open(info) as entry:
                     return entry.read(_entry_limit(info))
     return None

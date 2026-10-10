@@ -760,8 +760,10 @@ The parser reads that local key and atomically writes
 file directly. That local atomic ZIP is the required parser-to-ingest handoff
 (`capy-parser-bundle-v5`: `manifest.json` with the receipt, `content_list.json`,
 `refinement.json` with frozen furniture and Office page evidence, and
-`parsed.pdf` only for repaired native PDF sources). The bundle carries only what
-ingest reads: no image files, no ODL Markdown, and image blocks keep their
+`parsed.pdf` only for repaired native PDF sources, and for Office sources an
+optional `page1.png`, page 1 of the conversion 200 px wide for the file's
+thumbnail, [thumbnails.md](thumbnails.md)). The bundle carries only what
+ingest reads: no figure image files, no ODL Markdown, and image blocks keep their
 geometry and caption but no `img_path`, since figures are reached at question
 time by rendering the source page (`capture_page`). The worker rejects any
 other entry. Office bundles contain no PDF. The parser freezes page text and visible-heading proofs before

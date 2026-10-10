@@ -81,7 +81,7 @@ the donor-reuse, content-reuse and indexed exits all reach it.
 | Route | Thumbnail |
 | ----- | --------- |
 | PDF (`document_parse`) | PyMuPDF page 1, from the bundle's font-repaired `parsed.pdf` when present, else the spooled source |
-| Office (docx, pptx, xlsx) | the parser's `POST /capture_page`, page 1 at a 400 px long edge, reduced here |
+| Office (docx, pptx, xlsx) | the bundle's `page1.png`: the parse job renders page 1 of the PDF its LibreOffice conversion already produced (`odl.capture.page_thumbnail`, 200 px wide, cut at 400 px) and the ingest encodes it as WebP. A bundle without one (from an older parser, or a failed render) means no thumbnail; ingest never calls `/capture_page` for thumbnails (chat keeps using it) |
 | Image (`image_caption`) | Pillow: first frame, EXIF orientation, transparency flattened on white; refused over `CAPY_IMAGE_MAX_PIXELS` or Pillow's decompression-bomb limit; SVG gets none (no rasterizer), HEIC only with a Pillow plugin |
 | Text (`raw_text`) | no image: `files.preview = {"text": ...}`, the first 600 characters (a text-mode read, never cut mid-character; NUL removed) |
 | Store-only, audio, delimited text | none |
@@ -95,16 +95,25 @@ the donor-reuse, content-reuse and indexed exits all reach it.
   update fails after the B2 write.
 - A source refresh (an edited text or Office source) publishes and ingests
   again, so the new bytes replace the thumbnail or text preview.
+- An Office file reused from a donor inside the parse job (identical bytes
+  already indexed with the same embedding model) has no bundle, so it gets no
+  thumbnail.
+- The parser's page render is optional too: a failure prints `page thumbnail
+  skipped` and the parse goes on without `page1.png`. Its time is the
+  `thumbnail` phase of the parse receipt. The worker accepts a `page1.png` of
+  at most 1 MiB and checks it is a PNG.
 - Failure policy: any error is logged (`thumbnail capture failed`, structured,
   with the trace id) and dropped. No retry, the job is already committed, and
   the card keeps its icon or its previous thumbnail until the next capture.
 
 Measured on the developer PC (2026-10-11, three runs, median): PDF page 1
 12-58 ms (a 27 MB textbook 41 ms; the first call in a process also pays about
-2.8 s of PyMuPDF start-up), a 12 MP JPEG 132 ms, Office 3.2-8 s for small
-documents and 28.5 s for a 24 MB deck, almost all of it the parser's full
-LibreOffice conversion. Raw numbers:
-`C:/WEB/capy-harness/2026-10-11-thumbnails/t1-bench/`.
+2.8 s of PyMuPDF start-up), a 12 MP JPEG 132 ms. Office: the page render adds
+1.7-20 ms to the parse (the `thumbnail` phase of a real parse: 2-23 ms; the
+LibreOffice conversion it reuses takes 2.2-28 s) and the ingest's PNG to WebP
+step 4-28 ms. A second conversion through `/capture_page`, the first version
+of this, took 3.2-8 s per small document and 28.5 s for a 24 MB deck. Raw
+numbers: `C:/WEB/capy-harness/2026-10-11-thumbnails/t1-bench/`.
 
 ## Material previews
 
@@ -139,5 +148,3 @@ Sources: [extractor](../server/internal/materialdoc/preview.go),
   the current Office state; an open design question.
 - Note preview images and flashcard image fronts need a small copy of editor
   assets.
-- Office ingest captures convert the whole document a second time; the parse
-  job already holds the converted PDF.

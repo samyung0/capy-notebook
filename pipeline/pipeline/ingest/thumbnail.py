@@ -2,8 +2,10 @@
 
 A successful ingest ends here, before the local source is cleaned up: PDFs
 render page 1 with PyMuPDF (the bundle's font-repaired ``parsed.pdf`` when
-there is one), Office files through the parser's ``/capture_page``, uploaded
-images with Pillow. The 200 px wide WebP is stored content-addressed at
+there is one), Office files use the ``page1.png`` the parser rendered from its
+own conversion during the parse (none in a bundle from an older parser, and
+then no thumbnail: Office is never converted a second time for it), uploaded
+images go through Pillow. The 200 px wide WebP is stored content-addressed at
 ``thumbs/{file id}/{sha256}.webp`` and ``files.thumbnail_key`` points at it;
 the blob triggers release the key it replaces. Text sources store their first
 600 characters in ``files.preview`` instead. A source refresh publishes and
@@ -28,7 +30,6 @@ from typing import Any
 
 from ..config import cfg
 from ..parse import parser_client
-from ..retrieval import capture
 from ..store import blobstore, db
 from . import plan as ingest_plan
 
@@ -38,11 +39,9 @@ WIDTH = 200
 WEBP_QUALITY = 60
 TEXT_PREVIEW_CHARS = 600
 CACHE_CONTROL = "public, max-age=31536000, immutable"
-# Cards crop pages from the top; a page taller than this is cut there.
+# Cards crop pages from the top; a page taller than this is cut there (the
+# parser's page1.png follows the same rule, parser/odl/capture.py).
 _MAX_HEIGHT = 2 * WIDTH
-# The parser scales the longer edge to this; a portrait page comes back about
-# 280 px wide and is reduced to WIDTH here.
-_OFFICE_MAX_EDGE = 400
 _OFFICE_FORMATS = frozenset({"docx", "pptx", "xlsx"})
 
 
@@ -89,17 +88,26 @@ def render(
     artifact: Mapping[str, Any] | None,
 ) -> bytes | None:
     """The WebP of page 1, or None for a route without one (store-only, audio,
-    delimited text) or an image format this Pillow cannot decode."""
+    delimited text), an Office bundle without a page image, or an image format
+    this Pillow cannot decode."""
     if plan.route == ingest_plan.DOCUMENT_PARSE:
         if plan.format in _OFFICE_FORMATS:
-            jpeg, _box, _size = capture.office_capture_file(
-                source, f"source.{plan.format}", 1, None, _OFFICE_MAX_EDGE
+            page = (
+                parser_client.artifact_entry(artifact, parser_client.PAGE_IMAGE)
+                if artifact
+                else None
             )
+            if page is None:
+                return None
             from PIL import Image
 
-            with Image.open(io.BytesIO(jpeg)) as page:
-                return _webp(page.convert("RGB"))
-        repaired = parser_client.repaired_pdf(artifact) if artifact else None
+            with Image.open(io.BytesIO(page)) as image:
+                if image.format != "PNG":
+                    raise ValueError("the bundled page image is not a PNG")
+                return _webp(image.convert("RGB"))
+        repaired = (
+            parser_client.artifact_entry(artifact, "parsed.pdf") if artifact else None
+        )
         return render_pdf(repaired if repaired is not None else source)
     if plan.route == ingest_plan.IMAGE_CAPTION:
         return render_image(source, plan.format)
