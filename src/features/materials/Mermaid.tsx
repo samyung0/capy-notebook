@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { type MermaidFailure, mermaidFailure } from './mermaidError';
@@ -30,6 +30,7 @@ function loadFont({ family, url, weight = '400' }: MermaidFont) {
 }
 
 const SVG_OPEN = /<svg[^>]*>/;
+const VIEW_BOX = /<svg[^>]*\sviewBox="[\d.-]+ [\d.-]+ ([\d.]+) ([\d.]+)"/;
 
 let queue: Promise<unknown> = Promise.resolve();
 let renderSeq = 0;
@@ -83,6 +84,7 @@ export function Mermaid({
   theme,
   onDrawn,
   onError,
+  svgHeight,
 }: {
   /** Extra classes for the rendered diagram box. */
   className?: string;
@@ -93,6 +95,8 @@ export function Mermaid({
   /** Whether the current code drew; a failed one has nothing to preview. */
   onDrawn?: (drawn: boolean) => void;
   onError?: (failure: MermaidFailure | null) => void;
+  /** CSS height for the SVG from its natural (viewBox) size. */
+  svgHeight?: (width: number, height: number) => string;
 }) {
   const [result, setResult] = useState<{
     background: string;
@@ -165,6 +169,7 @@ export function Mermaid({
       </div>
     );
   }
+  const viewBox = svgHeight && VIEW_BOX.exec(result.svg);
   return (
     <div
       className={cn(
@@ -173,13 +178,21 @@ export function Mermaid({
         '[&>svg]:max-h-[min(70vh,48rem)]',
         // Mermaid caps the SVG at its natural width with an inline style.
         fill && '[&>svg]:max-w-none!',
+        viewBox && '[&>svg]:h-(--svg-height)',
         className,
         MERMAID_TEXT_CLASS
       )}
       // eslint-disable-next-line react/no-danger -- mermaid returns sanitized SVG (securityLevel: strict)
       dangerouslySetInnerHTML={{ __html: result.svg }}
       ref={containerRef}
-      style={{ background: result.background }}
+      style={
+        {
+          '--svg-height': viewBox
+            ? svgHeight(Number(viewBox[1]), Number(viewBox[2]))
+            : undefined,
+          background: result.background,
+        } as CSSProperties
+      }
     />
   );
 }

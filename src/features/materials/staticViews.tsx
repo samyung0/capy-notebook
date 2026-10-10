@@ -1,4 +1,11 @@
-import { lazy, type ReactNode, Suspense, useContext, useState } from 'react';
+import {
+  type CSSProperties,
+  lazy,
+  type ReactNode,
+  Suspense,
+  useContext,
+  useState,
+} from 'react';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { MEDIA_CAPTION_CLASS } from '@/features/notes/nodeStyles';
@@ -20,7 +27,7 @@ import {
   openEditorAsset,
 } from './MediaAssetView';
 import { MediaFrame } from './MediaFrame';
-import { MediaPreview, MermaidPreview } from './MediaPreview';
+import { MediaPreview, MermaidPreview, previewHeight } from './MediaPreview';
 import { Mermaid } from './Mermaid';
 
 /* The read-only blocks that need the browser, apart from their Slate
@@ -170,7 +177,14 @@ export function FigureView({
             <QuestionBlockView block={block} />
           </div>
         ) : (
-          <div className="max-h-full max-w-full [&_img]:h-[calc(100dvh-10rem)] [&_img]:w-auto [&_img]:max-w-full">
+          <div
+            className="[&_img]:h-(--preview-height) [&_img]:w-auto"
+            style={
+              {
+                '--preview-height': previewHeight(block.width, block.height),
+              } as CSSProperties
+            }
+          >
             <QuestionBlockView block={block} />
           </div>
         )}

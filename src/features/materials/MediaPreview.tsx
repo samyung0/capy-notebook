@@ -8,10 +8,23 @@ import { Mermaid } from './Mermaid';
 import type { MermaidTheme } from './mermaidThemes';
 
 const MAX_SCALE = 8;
+/** Media with a known size opens at most this many times it: small diagrams
+ * stay readable without filling the screen. */
+const MAX_UPSCALE = 2;
 /** Pointer travel past which a press is a pan, not a click on the backdrop. */
 const CLICK_SLOP = 4;
 const ZOOM_BUTTON_CLASS =
   'rounded-button p-2 text-white/75 hover:bg-white/10 hover:text-white disabled:opacity-35 disabled:hover:bg-transparent';
+
+/**
+ * CSS height that opens `width`×`height` media as large as the preview fits,
+ * up to MAX_UPSCALE× its size. Set only the height (width auto) so the width
+ * follows the aspect ratio. `inset` is the media's own horizontal and
+ * vertical padding.
+ */
+export function previewHeight(width: number, height: number, inset = '0px') {
+  return `min(100cqh - ${inset}, ${height * MAX_UPSCALE}px, (100cqw - ${inset}) * ${height / width})`;
+}
 
 /**
  * Full-screen look at an image or diagram on a deep backdrop: name on top,
@@ -109,7 +122,8 @@ export function MediaPreview({
                   </DialogPrimitive.Close>
                 </header>
                 <TransformComponent
-                  contentClass="size-full! flex items-center justify-center px-4 sm:px-12"
+                  // A size container: previewHeight measures the space inside the padding.
+                  contentClass="size-full! flex items-center justify-center p-4! [container-type:size] sm:px-12!"
                   wrapperClass="min-h-0 w-full! flex-1 h-auto! cursor-grab active:cursor-grabbing"
                 >
                   <div className="contents" data-preview-media>
@@ -156,9 +170,11 @@ export function MermaidPreview({
     >
       {/* Height drives the size; the width follows from the SVG's viewBox. */}
       <Mermaid
-        className="max-h-full max-w-full [&>svg]:h-[calc(100dvh-10rem)] [&>svg]:max-h-none [&>svg]:w-auto [&>svg]:max-w-full"
+        className="[&>svg]:max-h-none [&>svg]:w-auto"
         code={code}
         fill
+        // Mermaid's own p-3 on each side.
+        svgHeight={(width, height) => previewHeight(width, height, '1.5rem')}
         theme={theme}
       />
     </MediaPreview>
