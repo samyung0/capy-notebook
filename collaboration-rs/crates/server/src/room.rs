@@ -1459,13 +1459,18 @@ impl Room {
         // S1, REVIEW3 S1): a trial on a copy, a source's exact measure near
         // its cap, or a large update of what the room holds already would
         // hold a worker. This room's messages queue; every other room and
-        // socket keeps its thread.
-        let heavy = !ydoc::applies_inline(
-            &self.doc.transact(),
-            &ydoc::Incoming::new(&update),
-            bytes.len(),
-        ) || matches!(&self.kind, Kindly::Source(source)
-            if source.estimate + bytes.len() as u64 > sources::MAX_SOURCE_STATE_BYTES as u64);
+        // socket keeps its thread. A note update touching a media block's
+        // attributes is checked on a copy of the room (REVIEW5 M1).
+        let heavy = match &self.kind {
+            Kindly::Note(_) => notes::limits::heavy(&self.doc.transact(), &update, bytes.len()),
+            Kindly::Source(source) => {
+                !ydoc::applies_inline(
+                    &self.doc.transact(),
+                    &ydoc::Incoming::new(&update),
+                    bytes.len(),
+                ) || source.estimate + bytes.len() as u64 > sources::MAX_SOURCE_STATE_BYTES as u64
+            }
+        };
         let mut admit = || match &mut self.kind {
             Kindly::Note(note) => match note.validator.admit(&self.doc, &update) {
                 Ok(notes::limits::Admission::Accepted) => Verdict::Accept,
@@ -1719,6 +1724,12 @@ impl Room {
         let Some(member) = self.members.get_mut(&key) else {
             return;
         };
+        let mut entries = entries;
+        if member.read_only {
+            for entry in &mut entries {
+                without_uploads(entry);
+            }
+        }
         for entry in entries {
             let current = self.awareness.get(&entry.client);
             // y-protocols: a newer clock wins; at the same clock a removal wins.
@@ -2693,5 +2704,20 @@ async fn sleep_until(deadline: Option<Instant>) {
     match deadline {
         Some(deadline) => tokio::time::sleep_until(deadline.into()).await,
         None => std::future::pending().await,
+    }
+}
+
+/// A read-only channel names no uploads in presence (REVIEW5 E2): only a
+/// writer uploads, and a listed id shows that block as uploading to every
+/// editor. Entries mentioning `uploads` are parsed (others pass untouched)
+/// and lose the field.
+fn without_uploads(entry: &mut awareness::Entry) {
+    if entry.removed() || !entry.state.contains("\"uploads\"") {
+        return;
+    }
+    if let Ok(serde_json::Value::Object(mut state)) = serde_json::from_str(&entry.state)
+        && state.remove("uploads").is_some()
+    {
+        entry.state = serde_json::Value::Object(state).to_string();
     }
 }

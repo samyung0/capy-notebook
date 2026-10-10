@@ -298,6 +298,16 @@ func TestCollaborationFrozenSQLMatchesGo(t *testing.T) {
 				t.Fatal(err)
 			}
 		},
+		// Security regression (REVIEW5 N2): never Pro, over the Free limit.
+		// No quota state in Go; Rust's frozen check was NULL here and its
+		// access check panicked.
+		"never pro over the free limit": func(user, _ string) {
+			if _, err := s.pool.Exec(ctx, `INSERT INTO user_storage (user_id, used_bytes) VALUES ($1, $2)
+				ON CONFLICT (user_id) DO UPDATE SET used_bytes=EXCLUDED.used_bytes`,
+				user, mustPlanLimits(t, s, PlanFree).StorageBytes+1); err != nil {
+				t.Fatal(err)
+			}
+		},
 		"grace":  func(user, ws string) { pushOverQuota(t, s, user, ws) },
 		"frozen": func(user, ws string) { pushFrozen(t, s, user, ws) },
 		"frozen by a closed subscription": func(user, ws string) {

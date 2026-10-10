@@ -1637,8 +1637,10 @@ async fn internal_routes_refuse_a_missing_or_wrong_service_secret() {
     }
 }
 
-/// An owner over the Free limit that never had Pro is full, not frozen (Go
-/// gives it no quota state): a viewer joins read-only. The frozen check was
+/// Security regression (REVIEW5 N1: an access check that panicked failed
+/// every join and store of the owner's notes). An owner over the Free limit
+/// that never had Pro is full, not frozen (Go gives it no quota state): a
+/// viewer joins read-only. The frozen check was
 /// NULL for it and the access check panicked, so the join (and every store
 /// of its notes) failed.
 #[tokio::test]
@@ -1941,4 +1943,148 @@ async fn pasted_children_become_the_notes_own_for_both_peers() {
             .all(|message| message["type"] != "children-refused"),
         "{before:?}"
     );
+}
+
+/// Pasted children are adopted as the writer (REVIEW5 N3): a second editor
+/// of a workspace note who cannot read the source note pastes its image, and
+/// the pass drops the block (the owner could read the source; passing the
+/// owner instead of the writer would copy it).
+#[tokio::test]
+async fn a_pasted_image_the_writer_cannot_read_is_dropped() {
+    let Some(env) = env() else { return };
+    let Some(api) = env.api.clone() else { return };
+    let server = start_with(&env, Some(&api)).await;
+    let client = db(&env).await;
+    let suffix = uuid_like();
+    let (owner, writer) = (
+        format!("u_it_owner_{suffix}"),
+        format!("u_it_writer_{suffix}"),
+    );
+    for user in [&owner, &writer] {
+        client
+            .execute("INSERT INTO users (id, name) VALUES ($1, 'IT')", &[user])
+            .await
+            .expect("user");
+    }
+    let workspace = format!("ws_it_{suffix}");
+    client
+        .execute(
+            "INSERT INTO workspaces (id,user_id,name,privacy) VALUES ($1,$2,'IT','private')",
+            &[&workspace, &owner],
+        )
+        .await
+        .expect("workspace");
+    client
+        .execute(
+            "INSERT INTO workspace_members (workspace_id,user_id,role) VALUES ($1,$2,'editor')",
+            &[&workspace, &writer],
+        )
+        .await
+        .expect("member");
+    let content = serde_json::json!({
+        "schemaVersion": 1,
+        "value": [{ "type": "p", "id": "b1", "children": [{ "text": "target" }] }],
+    });
+    let (target, source) = (format!("m_it_t_{suffix}"), format!("m_it_s_{suffix}"));
+    client
+        .execute(
+            "INSERT INTO materials (id, created_by, workspace_id, workspace_name, kind, title, content) VALUES ($1, $2, $3, 'IT', 'note', 'Target', $4)",
+            &[&target, &owner, &workspace, &content],
+        )
+        .await
+        .expect("target");
+    client
+        .execute(
+            "INSERT INTO materials (id, created_by, kind, title, content) VALUES ($1, $2, 'note', 'Source', $3)",
+            &[&source, &owner, &content],
+        )
+        .await
+        .expect("source");
+    let foreign = format!("asset_it_private_{suffix}");
+    image_asset(&client, &owner, &foreign, &source).await;
+
+    let room = format!("material:{target}:schema:1");
+    let mut peer = Client::open(server.port).await;
+    assert_eq!(peer.joined(&room, &token(&room, &writer, "write")).await, 1);
+    assert!(peer.settle(|c| c.block_text() == "target").await);
+    peer.insert_blocks(1, &[image_block("img-private", &foreign)])
+        .await;
+    assert!(peer.block("img-private").is_some());
+    assert!(
+        peer.settle(|c| c.block("img-private").is_none()).await,
+        "{:?}",
+        peer.block("img-private")
+    );
+    let copies: i64 = client
+        .query_one(
+            "SELECT count(*) FROM editor_assets WHERE material_id=$1",
+            &[&target],
+        )
+        .await
+        .expect("copies")
+        .get(0);
+    assert_eq!(copies, 0);
+}
+
+/// An awareness update: one client's entry.
+fn awareness_update(client: u64, clock: u64, state: &str) -> Vec<u8> {
+    let mut out = Vec::new();
+    var(&mut out, 1);
+    var(&mut out, client);
+    var(&mut out, clock);
+    varbytes(&mut out, state.as_bytes());
+    out
+}
+
+/// The entries of an awareness update, as (client, state).
+fn awareness_entries(payload: &[u8]) -> Vec<(u64, String)> {
+    let mut at = 0;
+    let count = read_var(payload, &mut at);
+    (0..count)
+        .map(|_| {
+            let client = read_var(payload, &mut at);
+            let _clock = read_var(payload, &mut at);
+            let len = read_var(payload, &mut at) as usize;
+            let state = String::from_utf8(payload[at..at + len].to_vec()).expect("utf8");
+            at += len;
+            (client, state)
+        })
+        .collect()
+}
+
+/// Security regression (REVIEW5 E2): a read-only channel cannot show blocks
+/// as uploading to editors. Its presence reaches the room without an
+/// `uploads` list, the rest of it (a cursor) intact; a writer's list goes
+/// through.
+#[tokio::test]
+async fn a_read_only_channel_names_no_uploads_in_presence() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "presence").await;
+    let room = format!("material:{material}:schema:1");
+    let mut writer = Client::open(server.port).await;
+    let mut viewer = Client::open(server.port).await;
+    let mut observer = Client::open(server.port).await;
+    writer.joined(&room, &token(&room, &user, "write")).await;
+    viewer.joined(&room, &token(&room, &user, "read")).await;
+    observer.joined(&room, &token(&room, &user, "write")).await;
+    let state = r#"{"cursor":{"anchor":1},"uploads":["block-a"]}"#;
+    viewer.send(7, &awareness_update(9001, 1, state)).await;
+    writer.send(7, &awareness_update(9002, 1, state)).await;
+    let (mut from_viewer, mut from_writer) = (None, None);
+    while from_viewer.is_none() || from_writer.is_none() {
+        let payload = observer.until(7).await.expect("awareness");
+        for (client, state) in awareness_entries(&payload) {
+            let state: serde_json::Value = serde_json::from_str(&state).expect("json");
+            match client {
+                9001 => from_viewer = Some(state),
+                9002 => from_writer = Some(state),
+                _ => {}
+            }
+        }
+    }
+    let from_viewer = from_viewer.unwrap();
+    assert!(from_viewer.get("uploads").is_none(), "{from_viewer}");
+    assert_eq!(from_viewer["cursor"]["anchor"], 1);
+    assert_eq!(from_writer.unwrap()["uploads"][0], "block-a");
 }

@@ -494,10 +494,12 @@ fn media(kind: &str, extra: Value) -> Value {
     node
 }
 
-/// Media blocks name their file (Epo, 2026-10-10): an image, audio or file
-/// element without its asset id, or with a URL, is refused when the update
-/// arrives, whether it brings the element, sets the URL, changes a block's
-/// type or deletes the asset id; one with its asset id goes in.
+/// Security regression (REVIEW5 N1: an update the store would refuse, so
+/// the room would be discarded). Media blocks name their file (Epo,
+/// 2026-10-10): an image, audio or file element without its asset id, or
+/// with a URL, is refused when the update arrives, whether it brings the
+/// element, sets the URL, changes a block's type or deletes the asset id; one
+/// with its asset id goes in.
 #[test]
 fn a_media_block_without_its_asset_id_is_refused_at_admit() {
     let room = document(&[paragraph("intro"), media("img", json!({ "assetId": "a1" }))]);
@@ -559,4 +561,52 @@ fn a_media_block_without_its_asset_id_is_refused_at_admit() {
         Admission::Accepted,
         "an image's asset replaced"
     );
+}
+
+/// Security regression (REVIEW5 M1, resource exhaustion): a small update
+/// touching a media attribute must not copy the room on an async worker. A
+/// `src` set on a held paragraph is decided from the room, with no copy, and
+/// stays inline; one that touches an image is checked on a copy, and only off
+/// the async workers (`limits::heavy`).
+#[test]
+fn a_media_key_update_copies_the_room_only_off_the_async_workers() {
+    let room = document(&[paragraph("intro"), media("img", json!({ "assetId": "a1" }))]);
+    let typed = edit(&room, 2, |peer| {
+        block(peer, 0).insert(&mut peer.transact_mut(), 5, "!");
+    });
+    let paragraph_src = edit(&room, 3, |peer| {
+        block(peer, 0).insert_attribute(&mut peer.transact_mut(), "src", Any::Null);
+    });
+    let image_url = edit(&room, 4, |peer| {
+        block(peer, 1).insert_attribute(&mut peer.transact_mut(), "url", "https://x.test/a.png");
+    });
+    for (name, update, heavy) in [
+        ("typing", &typed, false),
+        ("a src on a paragraph", &paragraph_src, false),
+        ("a url on an image", &image_url, true),
+    ] {
+        let decoded = ydoc::decode(update).unwrap();
+        assert_eq!(
+            limits::heavy(&room.transact(), &decoded, update.len()),
+            heavy,
+            "{name}"
+        );
+    }
+    // With the room's bound in place, as on the room task.
+    let mut validator = Validator::default();
+    let nothing = room
+        .transact()
+        .encode_state_as_update_v1(&room.transact().state_vector());
+    validator.admit_bytes(&room, &nothing).unwrap();
+    let copies = validator.exact_checks;
+    assert_eq!(
+        validator.admit_bytes(&room, &paragraph_src).unwrap(),
+        Admission::Accepted
+    );
+    assert_eq!(
+        (validator.media_copies, validator.exact_checks),
+        (0, copies)
+    );
+    assert!(validator.admit_bytes(&room, &image_url).is_err());
+    assert_eq!(validator.media_copies, 1);
 }

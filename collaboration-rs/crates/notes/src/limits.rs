@@ -256,7 +256,9 @@ enum Place {
 /// attribute, mark or marker entry a plain value. Only what the room does not
 /// hold yet counts (Yjs skips the rest). Returns the elements whose media
 /// attributes the update sets or deletes (`type` to a media type, `assetId`,
-/// `url`, `src`), for [media_assets] to check on the result.
+/// `url`, `src`), for [media_assets] to check on the result, less those the
+/// room shows are not media: held, of a non-media `type` the update leaves
+/// alone (REVIEW5 M1: a `src` on a paragraph needs no copy of the room).
 fn plain_content<T: ReadTxn>(
     txn: &T,
     incoming: &ydoc::Incoming,
@@ -330,6 +332,7 @@ fn plain_content<T: ReadTxn>(
         found
     };
     let mut media = HashSet::new();
+    let mut typed = HashSet::new();
     for item in incoming.items() {
         let id = item.id();
         if id.clock + item.len() <= state.get(&id.client) {
@@ -360,6 +363,9 @@ fn plain_content<T: ReadTxn>(
                 matches!(values.last(), Some(Any::String(kind))
                     if crate::material::MEDIA_TYPES.contains(&&**kind))
             };
+            if &**key == "type" {
+                typed.insert(parent.clone());
+            }
             if matches!(&**key, "assetId" | "url" | "src") || (&**key == "type" && media_type()) {
                 media.insert(parent.clone());
             }
@@ -388,7 +394,30 @@ fn plain_content<T: ReadTxn>(
             }
         }
     }
+    media.retain(|id| {
+        typed.contains(id)
+            || id.get_branch(txn).is_none_or(|branch| {
+                branch
+                    .map_items()
+                    .find(|(key, item)| &***key == "type" && !item.is_deleted())
+                    .is_none_or(|(_, item)| match item.content() {
+                        ItemContent::Any(values) => matches!(values.last(),
+                            Some(Any::String(kind)) if crate::material::MEDIA_TYPES.contains(&&**kind)),
+                        _ => true,
+                    })
+            })
+    });
     Ok(media)
+}
+
+/// Whether admitting `update` takes the room's thread off the async workers
+/// (`block_in_place`): a large update ([ydoc::applies_inline]), or one that
+/// touches a media block's attributes, which [Validator::admit] checks on a
+/// copy of the room (REVIEW5 M1).
+pub fn heavy<T: ReadTxn>(txn: &T, update: &Update, bytes: usize) -> bool {
+    let incoming = ydoc::Incoming::new(update);
+    !ydoc::applies_inline(txn, &incoming, bytes)
+        || plain_content(txn, &incoming).is_ok_and(|media| !media.is_empty())
 }
 
 /// Media blocks name their file (Epo, 2026-10-10): an `img`, `image`,
@@ -454,6 +483,8 @@ pub struct Validator {
     pub metrics: Option<Metrics>,
     /// Exact measurements taken (a copy of the room each).
     pub exact_checks: u64,
+    /// Copies of the room taken for the media check alone.
+    pub media_copies: u64,
 }
 
 impl Validator {
@@ -482,7 +513,10 @@ impl Validator {
                 // only when inspect did not already.
                 let candidate = match trial.take() {
                     Some(trial) => trial,
-                    None => candidate_of(&txn, update)?,
+                    None => {
+                        self.media_copies += 1;
+                        candidate_of(&txn, update)?
+                    }
                 };
                 media_assets(&candidate, &media)?;
                 trial = Some(candidate);
