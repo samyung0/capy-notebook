@@ -342,7 +342,7 @@ pub fn admit_shapes<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Growth, 
                     Any::Map(image)
                         if image.len() == 1
                             && matches!(image.get("assetId"),
-                                Some(Any::String(asset)) if !asset.is_empty() && asset.len() <= MAX_ID) =>
+                                Some(Any::String(asset)) if !asset.trim().is_empty() && asset.len() <= MAX_ID) =>
                     {
                         growth.bytes += IMAGE_BYTES + MAX_ID as u64;
                     }

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useContext, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { BlockToolbar } from '@/components/ui/BlockToolbar';
 import { Card } from '@/components/ui/Card';
 import { Icon } from '@/components/ui/Icon';
@@ -8,6 +9,7 @@ import type {
   ItemRoomStatus,
 } from '@/features/collaboration/itemRoom';
 import { UndoButtons } from '@/features/collaboration/LiveItemControls';
+import { FileActionsTarget } from '@/features/files/fileModeContext';
 import { m } from '@/i18n';
 import { CardDialog } from './CardDialog';
 import { CardGrid, CardTile } from './CardView';
@@ -40,6 +42,9 @@ export function FlashcardsEditor({
 }) {
   const { doc, undo } = room;
   const cards = useCards(doc);
+  // On a set's own page Undo and Redo sit in the header beside View, where
+  // the mock places them; inside a note the card dialog carries them.
+  const headerActions = useContext(FileActionsTarget);
   const [editing, setEditing] = useState<{ id: string; added: boolean } | null>(
     null
   );
@@ -62,10 +67,13 @@ export function FlashcardsEditor({
 
   return (
     <div className="flex flex-col gap-6">
-      {(showTitle || showUndo) && (
+      {showUndo &&
+        headerActions &&
+        createPortal(<UndoButtons manager={undo} />, headerActions)}
+      {(showTitle || (showUndo && !headerActions)) && (
         <div className="flex items-center gap-2">
           {showTitle && <h1 className="t-large-card-title">{title}</h1>}
-          {showUndo && (
+          {showUndo && !headerActions && (
             <div className="ml-auto">
               <UndoButtons manager={undo} />
             </div>

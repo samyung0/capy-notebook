@@ -241,7 +241,7 @@ test('note embedded blocks: quiz and flashcards inserted under the note, a remov
 });
 
 // biome-ignore lint/suspicious/noSkippedTests: card images are not deployed to UAT yet.
-test.fixme('note flashcard front images: shrunk, uploaded on Save and deleted on removal', {
+test.fixme('flashcard front images: shrunk, uploaded at once and deleted on removal', {
   annotation: {
     description: 'card images not deployed to UAT yet',
     type: 'fixme',

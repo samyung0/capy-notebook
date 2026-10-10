@@ -299,3 +299,37 @@ it('applies a peer update with the source provider as its origin', async () => {
   expect(provider.hasUnsyncedChanges).toBe(false);
   provider.destroy();
 });
+
+it('holds joins past the eight the server authenticates at once', async () => {
+  const address = `wss://collab.test/${url++}`;
+  const rooms = Array.from(
+    { length: 10 },
+    (_, i) =>
+      new RoomProvider({
+        document: new Y.Doc(),
+        name: `material:m${i}:schema:1`,
+        token: async () => `token-${i}`,
+        url: address,
+      })
+  );
+  for (const room of rooms) room.connect();
+  const socket = FakeSocket.instances.at(-1) as FakeSocket;
+  socket.open();
+  await flush();
+  // A ninth pending JOIN would close the whole socket (socket.rs).
+  const first = socket.take(MessageKind.Join);
+  expect(first).toHaveLength(8);
+  socket.deliver(
+    message(first[0].channel, MessageKind.Joined, Uint8Array.of(1))
+  );
+  socket.deliver(
+    message(
+      first[1].channel,
+      MessageKind.Refused,
+      text('collaboration-forbidden')
+    )
+  );
+  const next = socket.take(MessageKind.Join);
+  expect(next).toHaveLength(2);
+  expect(new Reader(next[1].payload).varString()).toBe('material:m9:schema:1');
+});

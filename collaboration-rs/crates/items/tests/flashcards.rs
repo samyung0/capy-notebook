@@ -250,6 +250,21 @@ fn shapes_no_editor_writes_are_refused() {
         },
         "an image that is not {assetId}",
     );
+    // Go reads a blank asset id as none and refuses the projection
+    // (`materialdoc` trims it), so the room refuses it first.
+    refused(
+        |doc| {
+            card(doc, "c1").insert(
+                &mut doc.transact_mut(),
+                "image",
+                Any::Map(Arc::new(HashMap::from([(
+                    "assetId".to_owned(),
+                    Any::String(" 	 ".into()),
+                )]))),
+            );
+        },
+        "an image that is not {assetId}",
+    );
     refused(
         |doc| {
             let text = face(doc, "c1", "front");

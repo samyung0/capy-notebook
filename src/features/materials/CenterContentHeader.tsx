@@ -332,7 +332,8 @@ export function Header({
   );
   const right = (
     <>
-      {item.kind === 'file' && office && fileActions}
+      {/* A live item's Undo and Redo portal here in Edit (live-items D5). */}
+      {(item.kind === 'material' || office) && fileActions}
       {item.kind === 'file' && fileControls}
       {!readOnly && modes && modes.length > 1 && activeMode && (
         <MaterialModeToggle mode={activeMode} onChange={onMaterialModeChange} />

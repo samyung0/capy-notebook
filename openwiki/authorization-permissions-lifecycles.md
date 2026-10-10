@@ -419,8 +419,13 @@ and [material editor checks](../server/internal/store/share.go#L209).
 - A user can edit only their own comment.
 - A user can delete their own comment or discussion. Only the workspace owner
   can delete another user's comment or discussion.
-- Viewers get static read-only material rendering and cannot join the
-  collaboration room. Anonymous visitors must sign in to read materials.
+- Signed-in viewers get read-only collaboration tokens for content documents
+  (never quiz keys): the collaboration server joins them read-only, relays no
+  awareness to or from them and sends them no comment relays (Epo 2026-10-10).
+  The app uses them for flashcard sets today; note View stays static. An
+  embedded item's room is reachable exactly as its note is (the server resolves
+  `parent_material_id` first), and a note's access event also evicts its
+  embedded items' rooms. Anonymous visitors must sign in to read materials.
 - Discussions and comments carry their author's display name and avatar. The
   client does not resolve authorship against the current member list, so a
   contributor who has since left the workspace stays attributed and a reader

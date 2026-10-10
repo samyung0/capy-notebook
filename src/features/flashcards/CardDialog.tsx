@@ -94,7 +94,7 @@ export function CardDialog({
               onClick={onRemove}
               size="lg"
               type="button"
-              variant="danger-light"
+              variant="danger-outline"
             >
               {m.editor_remove_card()}
             </Button>
@@ -172,7 +172,7 @@ export function CardDialog({
                     rounded="large"
                     size="sm"
                     type="button"
-                    variant="ghost-hover"
+                    variant="outline"
                   >
                     {m.question_ui_replace()}
                   </Button>
@@ -183,7 +183,7 @@ export function CardDialog({
                     rounded="large"
                     size="sm"
                     type="button"
-                    variant="danger-light"
+                    variant="danger-outline"
                   >
                     {m.action_remove()}
                   </Button>
@@ -198,7 +198,7 @@ export function CardDialog({
                   rounded="large"
                   size="sm"
                   type="button"
-                  variant="ghost-hover"
+                  variant="outline"
                 >
                   {m.flashcards_add_image()}
                 </Button>

@@ -281,10 +281,12 @@ test.describe('workspace sharing', () => {
       canEdit: false,
       canView: true,
     });
+    // A signed-in viewer reads the room live, read-only (Epo 2026-10-10).
     const viewerToken = await otherApi.post(
       `/api/materials/${viewerFixture.id}/collaboration-token`
     );
-    expect(viewerToken.status()).toBe(403);
+    expect(viewerToken.status()).toBe(201);
+    expect(await viewerToken.json()).toMatchObject({ access: 'read' });
     const viewerEdit = await otherApi.patch(
       `/api/materials/${viewerFixture.id}/metadata`,
       {

@@ -137,8 +137,9 @@ test.describe('shared material modes', () => {
       title: 'Collaboration role matrix',
       workspaceId: seed.privateWorkspace.id,
     });
+    // Signed-in viewers read live through a read token (Epo 2026-10-10).
     const actors = [
-      { access: null, api: viewerApi, expectsComment: false },
+      { access: 'read', api: viewerApi, expectsComment: false },
       { access: 'write', api: editorApi, expectsComment: true },
       { access: 'write', api: ownerApi, expectsComment: true },
     ] as const;
@@ -147,12 +148,8 @@ test.describe('shared material modes', () => {
       const token = await actor.api.post(
         `/api/materials/${material.id}/collaboration-token`
       );
-      if (actor.access) {
-        expect(token.status()).toBe(201);
-        expect(await token.json()).toMatchObject({ access: actor.access });
-      } else {
-        expect(token.status()).toBe(403);
-      }
+      expect(token.status()).toBe(201);
+      expect(await token.json()).toMatchObject({ access: actor.access });
 
       const comment = await actor.api.post(
         `/api/materials/${material.id}/discussions`,

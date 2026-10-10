@@ -13,9 +13,12 @@ durable authority for material content after a room is initialized.
 - Yjs owns live material content.
 - Go/PostgreSQL own metadata, permissions, comments, and content projections.
 - `materials.content` is an eventually consistent Plate JSON read projection.
-- Viewers and study routes render that projection without joining Yjs.
+- Note View, quiz study and signed-out or public pages render that projection
+  without joining Yjs.
 - Editors edit and comment in Edit mode; View is a static preview without comments.
-- Viewers never join a room.
+- Flashcard sets are live everywhere (live-items, Epo 2026-10-10): their edit
+  grid, View, study page and note embeds join the set's own room; signed-in
+  viewers join read-only, with no presence and no comment relays.
 
 ## Package boundary
 
@@ -58,7 +61,10 @@ Files and materials remember their last View/Edit mode separately in localStorag
 The permission boundary is layered:
 
 1. Go checks `MaterialEffectiveRole` before minting a short-lived token.
-2. Viewers receive no collaboration token.
+2. Signed-in viewers receive `read` tokens for content documents (never quiz
+   keys); the collaboration server joins them read-only, never relays awareness
+   to or from them and sends them no comment relays (Epo 2026-10-10). Narrowed
+   editors (a frozen account, a full owner) keep presence.
 3. The collaboration server checks the browser origin at the upgrade and, per
    room, the token's signature, issuer, audience, expiry, exact room, schema
    and access.
@@ -399,7 +405,7 @@ Quizzes and flashcard sets never render through Plate. Opened as a file (in a
 workspace or standalone) the center pane shows the quiz page's question list or
 the flashcard grid (`src/features/flashcards/FlashcardGrid.tsx`: fronts as
 tiles, a preview dialog with the front over the back and Previous/Next), each
-under the material title, and flashcard edit mode is the staged card grid
+under the material title, and flashcard edit mode is the live card grid
 described under authoring below (`src/features/materials/CenterContent.tsx`).
 
 Standalone quiz, flashcard, mindmap, and diagram titles live only in relational
@@ -421,9 +427,11 @@ any materials list), and the note stores a void `material_ref` block
 (`src/features/materials/embeds/`): View (note View and the public note page)
 shows the study component in the note's flow (`AttemptBody` / `StudyBody` in
 embedded mode: Submit grades in place, a flashcard flips when clicked), Edit shows the editors in place (`QuizForm`'s Edit and
-Remove per question and Add question; the `FlashcardsEditor` grid with its hover
-toolbar and Add card), each change saved at once through the item's content
-endpoint, one save at a time. Removing the last question or card removes the
+Remove per question and Add question, each change saved at once through the
+quiz content endpoint, one save at a time; the live `FlashcardsEditor` grid with
+its hover toolbar and Add card, editing the set's own room). A set embed joins
+its room only while within about a viewport of the screen, stays joined 30 s
+after it leaves (`useNearScreen.ts`) and while it holds unacknowledged edits. Removing the last question or card removes the
 block itself (the item follows the removed-block trash rule; Undo restores both). The static renderer takes the page's embed renderer from
 `EmbedViewContext` (the app's reads through the account and loads on demand; the
 share page feeds the note's public data). Blocks that need the browser in a read-only
@@ -443,15 +451,15 @@ the quiz, flashcards and mermaid commands do nothing. A reference that lands
 nested (a paste) is lifted to the top level by the plugin's normalizer. Blocks
 pasted while the caret is on a void block (a quiz, an image, an embed) go in
 right after that block with the caret following them (`VoidBlockPastePlugin`
-in `pastePlugins.ts`); Slate alone drops a fragment inserted into a void. Edits
-save through the quiz or flashcard content endpoint, so note undo covers only
-inserting and removing the reference. After any write to an embedded quiz or
-set (UI, agent or API) Go publishes `capy:collaboration:embeds` and the
+in `pastePlugins.ts`); Slate alone drops a fragment inserted into a void. Quiz
+edits save through the quiz content endpoint and set edits go to the set's
+room, so note undo covers only inserting and removing the reference (a set's
+card dialog has its own Undo and Redo). After any API write to an embedded quiz
+or set (UI, agent or API) Go publishes `capy:collaboration:embeds` and the
 collaboration server sends the parent note's room a stateless `embed-changed`
 (`{id, kind}`); every open editor of the note refetches that one item
-(Epo, 2026-10-07). Live editing through each item's own Yjs document is
-planned (see "Live editing for quizzes, flashcard sets and Mermaid" in
-`todo-office.md`). Go and the collaboration server reject inline `quiz`/`flashcards`
+(Epo, 2026-10-07). Quizzes move to live documents of their own next (live-items
+phase 2), which removes this broadcast. Go and the collaboration server reject inline `quiz`/`flashcards`
 nodes in a note and references anywhere but the top level. A markdown fence
 imports as a pending reference (`materialId: ''` plus the fence body in
 `pending`); the mounted editor claims it in the shared document
@@ -777,9 +785,8 @@ An editor that can edit keeps editing while its room cannot be reached: the
 browser went offline, or reconnecting failed for 30 s. Its header shows
 Offline and the `offline` save banner reads "Can't connect to Capy. Your edits
 are saved on this device and will sync when you reconnect. They may be
-rejected or lost." until the room syncs again. Read-only viewers and View
-mode never join a room and are unchanged; opening the app offline is not
-supported.
+rejected or lost." until the room syncs again. Note View never joins a room and
+is unchanged; opening the app offline is not supported.
 
 Unsaved work lives in IndexedDB (`src/lib/editDrafts.ts`, database
 `capy-edit-drafts`, shared with Office and text sources), written by a
@@ -1235,24 +1242,46 @@ the live room's unsaved state and replace one stable custom block through the
 whole document. If the authority is unavailable, Go returns 503 instead of
 falling back to SQL.
 
-Quiz and flashcard authoring sends `expectedRevision` from the loaded draft.
+Quiz authoring sends `expectedRevision` from the loaded draft.
 The server locks the material row and checks that revision and completed
 projection before committing a replacement; its block precondition also checks
-the live Yjs content. Rejected saves retain the local draft. Every flashcard set edits through
-`FlashcardsEditor` (`src/features/flashcards/`): the workspace file's edit mode,
-a standalone set and `/flashcards/$id/edit` for an embedded one. Like the quiz
-edit page it stages everything on screen: the card dialog (a front of at most
-4,000 characters, a back of at most 2,000, one optional image under the front)
-and Remove change
-only the draft, Reset (with a confirmation) restores the loaded set, and Save
-(with a confirmation) uploads the picked card images, then writes the whole set
-atomically through `PATCH /api/flashcards/{id}/content`, preserving study state
-for retained ids and dropping blank cards. There are no single-card endpoints. The
-caps (`fieldlimits.CardFront` and `CardBack`, counted in runes) hold on every
-path: the content API, Go's document check (`ValidateCardText`), the agent's
+the live Yjs content. Rejected saves retain the local draft.
+
+Flashcard sets edit live (live-items, Epo 2026-10-10). Each set has its own
+Yjs document, `material:<id>:schema:<n>` like a note's: the root map `cards`
+holds card id to `{order, front: Y.Text, back: Y.Text, image?: {assetId}}`,
+ordered by fractional-index keys with the card id breaking ties
+(`src/features/flashcards/liveSet.ts`, `src/lib/orderKey.ts`;
+`collaboration-rs/crates/items`). The server admits only that shape (a struct
+anywhere else, a card id outside 1-128 `[A-Za-z0-9_-]`, a non-text face, rich
+text in a face or an image that is not `{assetId}` closes the writer), caps a
+front at 4,000 and a back at 2,000 characters, measures the limits on every
+card, blank ones included, and projects the set to its Plate envelope with blank
+cards left out (a set keeps one card). `FlashcardsEditor` edits it in the
+workspace file's edit mode (a standalone set at `/materials/$id?mode=edit`; the
+old `/flashcards/$id/edit` page is gone) and inside a note. The card dialog
+(front, back, one optional image under the front) writes as you type through
+`useBoundText` (`src/features/collaboration/yText.ts`: the fewest changes to the
+`Y.Text`, the caret carried through remote changes) and uploads a picked image
+at once. There is no Save, Reset or Done: the dialog closes with its X or Esc,
+and its footer holds Undo and Redo (this user's own edits: a `Y.UndoManager`
+over the item document tracking the `LOCAL_EDIT` origin), the live state and
+Remove card. A card added and left blank goes when its dialog closes. On a
+set's own page Undo and Redo sit in the center header beside View (portaled into
+its actions slot). Rooms ride the tab's shared collaboration socket (`ItemRoom`
+in `src/features/collaboration/itemRoom.ts`, one token per room); the socket
+holds JOINs past the eight the server authenticates at once (`socket.ts`), since
+a ninth pending JOIN closes the whole socket. Readers (the
+study page, View, note embeds in View) paint the stored cards first, then follow
+the room (`liveReads.ts`), loading the room code after first paint.
+`PATCH /api/flashcards/{id}/content` stays for API and agent writers: it takes
+no revision (D7) and the server diffs the whole set into the live document,
+keeping ids. There are no single-card endpoints. The caps
+(`fieldlimits.CardFront` and `CardBack`, counted in runes) hold on every path:
+the content API, Go's document check (`ValidateCardText`), the agent's
 `create_material` cards and card commands (refused up front, contract 19) and
-the collaboration server's store (`CARD_FRONT_MAX`/`CARD_BACK_MAX`, which a Go
-test reads), with a card image exactly `{assetId}`.
+the collaboration server (`CARD_FRONT_MAX`/`CARD_BACK_MAX`, which a Go test
+reads), with a card image exactly `{assetId}`.
 Explicit quiz/flashcard study and edit opens fetch fresh content before seeding
 their view or draft; rendering references in a note does not force all their
 detail queries to refresh.
@@ -1479,7 +1508,8 @@ validation and are not rendered.
 
 ## Operational boundaries
 
-- Viewers never connect, reducing room load.
+- Signed-out visitors and note View never connect; signed-in viewers of a set
+  hold read channels (no stores, projections or markers of their own).
 - Run one collaboration server per environment, with Redis available.
 - Persistence uses bounded debounce/max-debounce (notes 2 s / 10 s, sources
   5 s / 30 s) and runs one store at a time per room; a failed store retries

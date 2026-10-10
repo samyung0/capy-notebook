@@ -2371,6 +2371,20 @@ async fn two_writers_converge_in_a_flashcard_set_and_it_stores() {
         .expect("rows")
         .get(0);
     assert!(rows >= 1);
+    // The room unloads after its last channel and folds the set's log (the
+    // fold checks the set's roots, not a note's).
+    drop((a, b));
+    tokio::time::sleep(Duration::from_millis(3000)).await;
+    let log_rows: i32 = db(&env)
+        .await
+        .query_one(
+            "SELECT log_rows FROM material_yjs_documents WHERE material_id=$1",
+            &[&set],
+        )
+        .await
+        .expect("row")
+        .get(0);
+    assert_eq!(log_rows, 0);
 }
 
 #[tokio::test]

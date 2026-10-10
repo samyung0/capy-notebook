@@ -1,4 +1,4 @@
-import { decodeFrame, type Message } from './protocol';
+import { decodeFrame, type Message, MessageKind } from './protocol';
 
 /** One room on the socket (a RoomProvider). */
 export interface ChannelHandler {
@@ -15,6 +15,10 @@ const RETRY_BASE_MS = 1000;
 const RETRY_MAX_MS = 30_000;
 /** A socket with no room left closes after this long (a quick remount reuses it). */
 const IDLE_CLOSE_MS = 5000;
+/** Joins the server authenticates at once per socket; it closes the socket on
+ * one more (`MAX_PENDING_JOINS`, collaboration-rs/crates/server/src/socket.rs).
+ * A note with many embeds on screen queues the rest here. */
+const MAX_PENDING_JOINS = 8;
 
 /**
  * The tab's socket to one collaboration URL, shared by every room open in
@@ -42,6 +46,9 @@ export class CollabSocket {
   private ws: WebSocket | null = null;
   private readonly handlers = new Set<ChannelHandler>();
   private readonly channels = new Map<number, ChannelHandler>();
+  /** Channels whose JOIN went out without an answer yet. */
+  private readonly pending = new Set<number>();
+  private queued: { bytes: Uint8Array<ArrayBuffer>; channel: number }[] = [];
   private nextChannel = 1;
   private attempts = 0;
   private retry: ReturnType<typeof setTimeout> | undefined;
@@ -94,10 +101,37 @@ export class CollabSocket {
 
   release(channel: number) {
     this.channels.delete(channel);
+    this.answered(channel);
   }
 
   send(bytes: Uint8Array<ArrayBuffer>) {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(bytes);
+  }
+
+  /** Sends a channel's JOIN, or holds it while eight others wait for theirs. */
+  join(channel: number, bytes: Uint8Array<ArrayBuffer>) {
+    if (this.pending.size < MAX_PENDING_JOINS) {
+      this.pending.add(channel);
+      this.send(bytes);
+    } else this.queued.push({ bytes, channel });
+  }
+
+  /** The channel's JOIN was answered or the channel ended: the next goes. */
+  private answered(channel: number) {
+    if (!this.pending.delete(channel)) {
+      this.queued = this.queued.filter((join) => join.channel !== channel);
+      return;
+    }
+    while (this.pending.size < MAX_PENDING_JOINS && this.queued.length) {
+      const next = this.queued.shift() as (typeof this.queued)[number];
+      this.pending.add(next.channel);
+      this.send(next.bytes);
+    }
+  }
+
+  private forgetJoins() {
+    this.pending.clear();
+    this.queued = [];
   }
 
   private open() {
@@ -121,14 +155,22 @@ export class CollabSocket {
         ws.close();
         return;
       }
-      for (const message of messages)
+      for (const message of messages) {
+        if (
+          message.kind === MessageKind.Joined ||
+          message.kind === MessageKind.Refused ||
+          message.kind === MessageKind.Closed
+        )
+          this.answered(message.channel);
         this.channels.get(message.channel)?.onMessage(message);
+      }
     };
     ws.onclose = () => {
       if (this.ws !== ws) return;
       this.ws = null;
       this.status = 'disconnected';
       this.channels.clear();
+      this.forgetJoins();
       for (const handler of [...this.handlers]) handler.onSocketClose();
       if (this.handlers.size > 0) this.scheduleRetry();
     };
@@ -150,6 +192,7 @@ export class CollabSocket {
     this.ws = null;
     this.status = 'disconnected';
     this.channels.clear();
+    this.forgetJoins();
     ws?.close();
   }
 }

@@ -116,6 +116,7 @@ const VARIANT = {
   'ghost-hover': 'border-none text-fg hover:bg-surface-hover-bg/80',
   dark: 'border border-transparent bg-action text-action-fg',
   outline: 'border border-line bg-surface text-fg',
+  'danger-outline': 'border border-line bg-surface text-tint-error-fg',
 };
 const btn = (label, { size = 'lg', variant = 'accent', iconLeft, cls = '' } = {}) =>
   `<button type="button" class="${BASE} ${SIZE[size]} ${VARIANT[variant]} ${cls}">${iconLeft ? icon(iconLeft, 16) : ''}${label}</button>`;
@@ -139,7 +140,7 @@ const MK_CSS = `
 .lv-center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:16px}
 .lv-sheet{position:absolute;left:0;right:0;bottom:0}
 .lv-code{font-family:var(--font-mono);font-size:13px;line-height:22px}
-.lv-code .ln{display:inline-block;width:44px;padding-right:14px;text-align:right;color:var(--text-muted);font-variant-numeric:tabular-nums}
+.lv-code .ln{display:inline-block;width:44px;padding-right:14px;text-align:right;color:var(--text-muted)}
 .lv-warn{color:var(--tint-warning-fg)}
 .lv-warnbox{background:var(--tint-warning);color:var(--tint-warning-fg)}
 .lv-chip{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:2px 8px 2px 6px;font-size:12px;font-weight:600;background:var(--tint-warning);color:var(--tint-warning-fg)}
@@ -199,13 +200,13 @@ const question = ({ n, stem, options, incomplete = null, warn = 'line', chosen =
         <p class="text-base leading-relaxed">${stem}</p>
       </div>
     </div>
-    ${phone ? '' : `<div class="flex shrink-0 gap-1">${btn('Edit', { size: 'sm', variant: 'ghost-hover', iconLeft: 'pencil' })}${btn('Remove', { size: 'sm', variant: 'danger-light', iconLeft: 'trash' })}</div>`}
+    ${phone ? '' : `<div class="flex shrink-0 gap-1">${btn('Edit', { size: 'sm', variant: 'outline', iconLeft: 'pencil' })}${btn('Remove', { size: 'sm', variant: 'danger-outline', iconLeft: 'trash' })}</div>`}
   </div>
   <div class="grid gap-2" style="padding-left:36px;grid-template-columns:${phone ? '1fr' : 'repeat(2,minmax(0,1fr))'}">
     ${options.map((o, i) => `<div class="flex items-center gap-3 rounded-input border ${i === chosen ? 'border-action-accent' : 'border-line'} px-3.5 py-2.5 text-sm"><strong class="text-fg-muted">${'ABCD'[i]}</strong>${o}</div>`).join('')}
   </div>
   ${incomplete && warn === 'line' ? `<p class="flex items-center gap-1.5 text-sm font-medium lv-warn" style="padding-left:36px">${icon('alert', 15)}${incomplete}</p>` : ''}
-  ${phone ? `<div class="flex gap-1" style="padding-left:28px">${btn('Edit', { size: 'sm', variant: 'ghost-hover', iconLeft: 'pencil' })}${btn('Remove', { size: 'sm', variant: 'danger-light', iconLeft: 'trash' })}</div>` : ''}
+  ${phone ? `<div class="flex gap-1" style="padding-left:28px">${btn('Edit', { size: 'sm', variant: 'outline', iconLeft: 'pencil' })}${btn('Remove', { size: 'sm', variant: 'danger-outline', iconLeft: 'trash' })}</div>` : ''}
 </div>`;
 
 const quizList = (warn) =>
@@ -249,7 +250,7 @@ const outline = () => `
   ${outlineRow('Solution', 'Active transport uses ATP…', { mark: '' })}
   ${outlineRow('Short answer', 'Name the organelle that…', { mark: 'b' })}
   ${outlineRow('Solution', 'Mitochondria release…', { mark: '' })}
-  <div class="mt-2 px-1">${btn('Add part', { size: 'sm', variant: 'ghost-hover', iconLeft: 'plus' })}</div>
+  <div class="mt-2 px-1">${btn('Add part', { size: 'sm', variant: 'outline', iconLeft: 'plus' })}</div>
 </div>`;
 
 const preview = () => `
@@ -279,7 +280,7 @@ const pageBehind = () => `<div class="lv-fill">${editPanel({ title: 'Edit quiz',
 
 const questionDialog = (variant) => {
   const titleRight = null;
-  const footer = footerA({ state: 'syncing', remove: btn('Remove part', { variant: 'danger-light' }) });
+  const footer = footerA({ state: 'syncing', remove: btn('Remove part', { variant: 'danger-outline' }) });
   const body = variant === 'a-block' ? blockEditorBody() : questionBody();
   return `${pageBehind()}<div class="lv-dim"></div><div class="lv-center">${dialogCard({ width: 920, title: '<span>Edit question</span>', sub: 'Question 2 of 12', titleRight, body, footer })}</div>`;
 };
@@ -289,7 +290,7 @@ const questionDialogPhone = (variant) => {
   const body = `
     <div class="scroll-fade-x mb-3 flex gap-1 inset-shadow-[0_-1px_var(--color-divider)]">${['Outline', 'Preview'].map((t, i) => `<button class="border-b-2 px-3 py-2 text-sm ${i === 0 ? 'border-action font-bold' : 'border-transparent font-semibold text-fg-muted'}">${t}</button>`).join('')}</div>
     ${outline()}`;
-  const footer = footerA({ state: 'syncing', remove: btn('Remove part', { variant: 'danger-light' }) });
+  const footer = footerA({ state: 'syncing', remove: btn('Remove part', { variant: 'danger-outline' }) });
   return `<div class="lv-fill bg-page"></div><div class="lv-dim"></div><div class="lv-sheet">${dialogCard({ width: 390, title: '<span>Edit question</span>', sub: 'Question 2 of 12', titleRight, body, footer, phone: true, sheet: true })}</div>`;
 };
 
@@ -301,7 +302,7 @@ const cardFields = () => `
     <div class="flex h-11 items-center rounded-input border border-action-accent bg-field px-3.5 text-sm">What does the sodium–potassium pump move<span class="lv-caret"></span></div></label>
   <div class="flex flex-col gap-1.5"><div class="t-subtitle font-medium">Image</div>
     <div class="grid h-28 place-items-center rounded-card border border-line p-3 text-xs text-fg-muted">[ pump diagram, uploaded when picked ]</div>
-    <div class="flex justify-end gap-1">${btn('Replace', { size: 'sm', variant: 'ghost-hover', iconLeft: 'upload', cls: 'rounded-button-lg' })}${btn('Remove', { size: 'sm', variant: 'danger-light', iconLeft: 'trash', cls: 'rounded-button-lg' })}</div></div>
+    <div class="flex justify-end gap-1">${btn('Replace', { size: 'sm', variant: 'outline', iconLeft: 'upload', cls: 'rounded-button-lg' })}${btn('Remove', { size: 'sm', variant: 'danger-outline', iconLeft: 'trash', cls: 'rounded-button-lg' })}</div></div>
   <label class="flex flex-col gap-1.5"><div class="t-subtitle flex items-center gap-1 font-medium"><div>Back</div><div class="text-solid-error">*</div><span class="t-meta ml-auto font-normal text-fg-muted">96/2000</span></div>
     <div class="min-h-28 rounded-input border border-line bg-field px-3.5 py-3 text-sm leading-relaxed">Three sodium ions out of the cell and two potassium ions in, for each ATP it uses.</div></label>
 </div>`;
@@ -315,7 +316,7 @@ const cardPreview = () => `
 const cardDialog = (phone = false) => {
   const title = '<span>Edit card</span><span class="font-medium text-fg-muted">4/10</span>';
   const body = `<div class="grid gap-7" style="grid-template-columns:${phone ? '1fr' : '1fr 1fr'}">${cardFields()}${phone ? '' : cardPreview()}</div>`;
-  const footer = footerA({ state: 'offline', remove: btn('Remove card', { variant: 'danger-light' }) });
+  const footer = footerA({ state: 'offline', remove: btn('Remove card', { variant: 'danger-outline' }) });
   const card = dialogCard({ width: phone ? 390 : 920, title, body, footer, phone });
   const behind = phone ? '<div class="lv-fill bg-page"></div>' : `<div class="lv-fill">${FRAMES['fe-b']()}</div>`;
   return `${behind}<div class="lv-dim"></div><div class="lv-center" ${phone ? 'style="align-items:flex-start;padding-top:24px"' : ''}>${card}</div>`;
@@ -371,7 +372,7 @@ const standaloneShell = ({ headerStatus, toggle, barRight, phone = false }) => `
       </div>
       <div class="flex min-h-12 items-center gap-2 border-b border-divider px-4 py-2">
         ${themeMenu()}
-        ${phone ? btn('Preview', { size: 'sm', variant: 'ghost-hover', iconLeft: 'view' }) : ''}
+        ${phone ? btn('Preview', { size: 'sm', variant: 'outline', iconLeft: 'view' }) : ''}
         <div class="ml-auto flex items-center gap-2">${barRight}</div>
       </div>
       <div class="grid min-h-0 flex-1" style="grid-template-columns:${phone ? '1fr' : '1fr 1fr'}">

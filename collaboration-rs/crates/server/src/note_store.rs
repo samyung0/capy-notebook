@@ -246,7 +246,9 @@ pub async fn fold(
     access::lock_material(&tx, material_id).await?;
     let current = tx
         .query(
-            "SELECT state, room_schema FROM material_yjs_documents WHERE material_id=$1 FOR UPDATE",
+            "SELECT d.state, d.room_schema, m.kind
+             FROM material_yjs_documents d JOIN materials m ON m.id=d.material_id
+             WHERE d.material_id=$1 FOR UPDATE OF d",
             &[&material_id],
         )
         .await?;
@@ -257,6 +259,7 @@ pub async fn fold(
         return Ok(None);
     }
     let base: Vec<u8> = current.get("state");
+    let model = Model::of(current.get("kind"));
     let log = rows(&tx, material_id, through).await?;
     let Some(&(last, _)) = log.last() else {
         return Ok(None);
@@ -270,8 +273,7 @@ pub async fn fold(
             .map_err(|error| StoreError::Other(error.to_string()))?;
         use yrs::{ReadTxn, Transact};
         let txn = doc.transact();
-        notes::validate::assert_roots(&txn)
-            .map_err(|error| StoreError::Invalid(error.to_string()))?;
+        model.assert_roots(&txn).map_err(StoreError::Invalid)?;
         Ok(txn.encode_state_as_update_v1(&yrs::StateVector::default()))
     })
     .await

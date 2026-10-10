@@ -1285,11 +1285,11 @@ export async function quizImageRemoved(
 
 /**
  * Flashcard front images, the quiz image rule for cards: one front image per
- * card, shrunk under 2 MB in the browser and uploaded only on Save; removing
- * it and saving trashes the row. Labels from the flashcards session
- * (2026-10-06): "New card" with an "Add card" submit, "Edit card N/M" with
- * "Save", the image's hidden file input behind "Add image", and "Replace" /
- * "Remove" once set. A fixme until card images are deployed to UAT.
+ * card, shrunk under 2 MB in the browser. Sets edit live (Epo 2026-10-10):
+ * the dashed "Add card" tile adds a card and opens "Edit card N/M", the
+ * picked image uploads at once, and removing it trashes the row once the
+ * set projects. No Save; the dialog closes with Esc. A fixme until card
+ * images are deployed to UAT.
  */
 export async function cardImages(run: UatRun) {
   const workspaceId = await workspace(run, 'card-images');
@@ -1298,19 +1298,11 @@ export async function cardImages(run: UatRun) {
   );
   const setId = string(created.id);
   const page = run.owner.page;
-  const uploads: string[] = [];
-  page.on('request', (request) => {
-    if (new URL(request.url()).pathname.includes('/editor-assets/'))
-      uploads.push(request.url());
-  });
-  await page.goto(`${run.env.appUrl}/flashcards/${setId}/edit`);
-  // The edit page is a grid of front tiles plus a dashed "Add card" tile,
-  // which opens "New card"; a front tile opens "Edit card N/M". Dialogs only
-  // stage changes until the page's Save.
+  await page.goto(`${run.env.appUrl}/materials/${setId}?mode=edit`);
   await page
     .getByRole('button', { exact: true, name: m.flashcards_add_card() })
     .click();
-  let dialog = page.getByRole('dialog', { name: m.flashcards_new_card() });
+  let dialog = page.getByRole('dialog', { name: m.flashcards_edit_card() });
   await dialog
     .getByRole('textbox', { name: m.editor_card_front() })
     .fill('Salt marsh');
@@ -1322,21 +1314,18 @@ export async function cardImages(run: UatRun) {
     mimeType: 'image/png',
     name: 'marsh.png',
   });
-  await expect(dialog.locator('img[src^="blob:"]').first()).toBeVisible({
-    timeout: 60_000,
-  });
-  await dialog
-    .getByRole('button', { exact: true, name: m.flashcards_add_card() })
-    .click();
-  assert.deepEqual(uploads, []);
-  await pageSave(page);
   const [asset] = await run.poll(
-    'card image saved',
+    'card image uploaded',
     () => materialAssets(run, setId),
     (rows) => rows.length === 1 && rows[0].status === 'ready'
   );
   assert(Number(asset.size_bytes) <= QUIZ_IMAGE_MAX_BYTES);
-  assert((await contentText(run, setId)).includes(asset.id));
+  await page.keyboard.press('Escape');
+  await run.poll(
+    'card image projected',
+    () => contentText(run, setId),
+    (text) => text.includes(asset.id)
+  );
   await run.record('blob', asset.object_path, { assetId: asset.id, setId });
   await aged(run, setId, [asset.id]);
   await page.getByRole('button', { exact: true, name: 'Salt marsh' }).click();
@@ -1344,10 +1333,7 @@ export async function cardImages(run: UatRun) {
   await dialog
     .getByRole('button', { exact: true, name: m.action_remove() })
     .click();
-  await dialog
-    .getByRole('button', { exact: true, name: m.action_save() })
-    .click();
-  await pageSave(page);
+  await page.keyboard.press('Escape');
   await run.poll(
     'card image trashed',
     () => materialAssets(run, setId),

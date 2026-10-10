@@ -189,7 +189,8 @@ export class RoomProvider implements ChannelHandler {
       return;
     }
     if (this.channel !== channel) return;
-    this.socket.send(
+    this.socket.join(
+      channel,
       message(channel, MessageKind.Join, joinPayload(this.config.name, token))
     );
   }
