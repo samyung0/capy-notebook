@@ -8,7 +8,8 @@ const top = async (locator: Locator) => (await locator.boundingBox())?.y ?? -1;
 
 // An embedded quiz shows its own credits inside the note, and the note's
 // footer, at the end of its scrolling document and outside the editable
-// content, lists the note's sources plus its embed's.
+// content, lists the note's sources plus its embed's, and drops the embed's
+// once it is removed and saved.
 test('a note credits its embedded quiz inside the embed and in its footer', async ({
   ownerPage,
   seed,
@@ -38,11 +39,21 @@ test('a note credits its embedded quiz inside the embed and in its footer', asyn
   await expect(ownerPage.getByText(note.quizPrompt)).toBeVisible();
   await check(ownerPage);
 
+  // The quiz's own page credits it too.
+  await ownerPage.goto(`/quizzes/${note.quizId}/attempt`);
+  await expect(footers(ownerPage)).toContainText(note.quizBook);
+
   await ownerPage.goto(`${base}&mode=edit`);
   await expectEditorLive(ownerPage);
   await check(ownerPage);
 
-  // The quiz's own page credits it too.
-  await ownerPage.goto(`/quizzes/${note.quizId}/attempt`);
-  await expect(footers(ownerPage)).toContainText(note.quizBook);
+  // Removing its last question removes the embed; once the note saves, the
+  // footer is read again and drops the quiz's credit.
+  await ownerPage
+    .getByRole('button', { exact: true, name: m.action_remove() })
+    .click();
+  const noteFooter = footers(ownerPage).filter({ hasText: note.noteBook });
+  await expect(noteFooter).not.toContainText(note.quizBook, {
+    timeout: 20_000,
+  });
 });

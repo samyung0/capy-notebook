@@ -3,6 +3,7 @@ import {
   lazy,
   type ReactNode,
   Suspense,
+  useContext,
   useEffect,
   useRef,
   useState,
@@ -19,6 +20,7 @@ import type {
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { TabContent } from '@/components/app/tabPanel';
 import { BannerStack, FileBanner } from '@/components/banners/FileBanner';
+import { FloatingBarContext } from '@/components/ui/floatingBarContext';
 import { Icon } from '@/components/ui/Icon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import {
@@ -338,6 +340,7 @@ export function MaterialContent({
   // The open room turned read-only (a frozen account or an owner at its storage
   // limit): view mode under a grey strip; unsaved edits are discarded.
   const [readOnly, setReadOnly] = useState(false);
+  const overBar = useContext(FloatingBarContext);
   useEffect(() => {
     if (mode === 'edit') void loadPreview();
   }, [mode]);
@@ -397,7 +400,7 @@ export function MaterialContent({
               />
             )}
             <MaterialAttributionFooter
-              className="pb-28 lg:pb-4"
+              className={cn(overBar && 'pb-20')}
               inline
               provenance={material.provenance}
             />
@@ -482,8 +485,8 @@ export function MaterialContent({
 
 /** A material's credits after its document, in the reading column the static
  * renderer uses for it, so View and Edit (NoteEditorCore) end alike. Like
- * every footer ending a view here, it clears the workspace's floating bar,
- * which shows below lg. */
+ * every footer ending a view here, it keeps room under the workspace's
+ * floating bar where that shows, and some space above the page's end. */
 function DocumentAttribution({
   kind,
   provenance,
@@ -492,10 +495,12 @@ function DocumentAttribution({
   provenance: Provenance | undefined;
 }) {
   const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
+  const overBar = useContext(FloatingBarContext);
   return (
     <MaterialAttributionFooter
       className={cn(
-        'mx-auto w-full px-5 pb-28 sm:px-10 lg:pb-4',
+        'mx-auto w-full px-5 sm:px-10',
+        overBar ? 'pb-28' : 'pb-12',
         (kind !== 'note' || displayWidth === 'half') && 'md:max-w-3xl'
       )}
       inline
@@ -525,6 +530,7 @@ function QuizPreview({
   title: string;
 }) {
   const navigate = useNavigate();
+  const overBar = useContext(FloatingBarContext);
   useEffect(() => {
     if (!target) return;
     document
@@ -552,7 +558,7 @@ function QuizPreview({
       </div>
       <QuizQuestionList disabled questions={questions} />
       <MaterialAttributionFooter
-        className="pb-28 lg:pb-4"
+        className={cn(overBar && 'pb-20')}
         inline
         provenance={provenance}
       />
