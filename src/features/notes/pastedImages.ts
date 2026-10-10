@@ -36,6 +36,9 @@ export function forgetPastedImage(id: string) {
 }
 
 const EXTENSION = /\.[^.]*$/;
+/** Control characters, which Go refuses in a file name (a `%0A` in a URL). */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching them is the point.
+const CONTROL = /[\u0000-\u001f\u007f]/g;
 
 /** A name for the file: the URL's last path segment without its extension
  * (Go's file names stop at 120 characters), the extension from the type. */
@@ -44,7 +47,9 @@ function fileName(url: string, extension: string) {
   if (!url.startsWith('data:'))
     try {
       const last = new URL(url).pathname.split('/').pop() ?? '';
-      base = decodeURIComponent(last).replace(EXTENSION, '') || base;
+      base =
+        decodeURIComponent(last).replace(CONTROL, '').replace(EXTENSION, '') ||
+        base;
     } catch {
       // A malformed escape: the default name.
     }

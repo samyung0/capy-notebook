@@ -395,6 +395,8 @@ describe('reading a pasted image', () => {
     ['https://pbs.twimg.com/media/X?format=jpg', 'image/jpeg', 'X.jpg'],
     ['https://cdn.example/photo.jpg', 'image/webp', 'photo.webp'],
     ['https://cors.example/100%ZZ.png', 'image/png', 'pasted-image.png'],
+    // Go refuses control characters in a name (REVIEW5 recheck).
+    ['https://cors.example/a%0Ab%7F.png', 'image/png', 'ab.png'],
   ])('names %s from its type', async (url, type, name) => {
     vi.stubGlobal('fetch', serving(type));
     const file = await readPastedImage(url);
