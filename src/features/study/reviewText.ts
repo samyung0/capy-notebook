@@ -28,11 +28,13 @@ export const REVIEW_MODE: Record<
 export const itemCount = (count: number) =>
   count === 1 ? m.review_items_one() : m.review_items({ count });
 
-/** Why a suggestion is worth reviewing, worded from its evidence.
- * ponytail: phrasing to be tuned (Epo, 2026-10-10). */
+/** Why a suggestion is worth reviewing, worded from its evidence. Items mix
+ * flashcards and questions, so the wording says "difficult for you" rather
+ * than "wrong". */
 export function reviewReason(s: ReviewSuggestion): string {
   const { evidence: ev } = s;
   if (s.mode === 'tricky') {
+    if (ev.missed === 1) return m.review_reason_tricky_missed_one();
     if (ev.missed > 0 && ev.repeated > 0)
       return m.review_reason_tricky_both({
         missed: ev.missed,
@@ -40,12 +42,14 @@ export function reviewReason(s: ReviewSuggestion): string {
       });
     if (ev.missed > 0)
       return m.review_reason_tricky_missed({ missed: ev.missed });
-    return m.review_reason_tricky_slipping();
+    return m.review_reason_tricky_before();
   }
   const when = relativeTime(ev.lastPractisedAt);
   if (s.mode === 'learned') return m.review_reason_learned({ when });
+  if (ev.forgotten <= 1)
+    return m.review_reason_fading_one({ items: s.items, when });
   return m.review_reason_fading({
-    forgotten: Math.max(ev.forgotten, 1),
+    forgotten: ev.forgotten,
     items: s.items,
     when,
   });
