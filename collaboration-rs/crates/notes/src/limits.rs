@@ -252,14 +252,57 @@ enum Place {
     Entry(Arc<str>, Option<BranchID>),
 }
 
-/// The element attributes an update writes (the last value per key) or
-/// clears (the room's current entry deleted), and the elements it creates
-/// with their parent: for [required_keys].
+/// What an update does to the keys [required_keys] reads ([guarded]): the
+/// entries it writes per element and key, the keys whose current entry in the
+/// room it deletes, and the elements it creates with their parent.
 #[derive(Default)]
 struct Shape {
-    set: HashMap<BranchID, HashMap<Arc<str>, (u32, Any)>>,
+    set: HashMap<BranchID, HashMap<Arc<str>, Vec<Written>>>,
     cleared: HashMap<BranchID, HashSet<Arc<str>>>,
     created: HashMap<BranchID, Option<BranchID>>,
+}
+
+/// An entry the update writes under a key: its id and last unit, the entry it
+/// was written after (`origin`), whether it names a right origin, and its
+/// value (none for deleted content).
+struct Written {
+    id: yrs::ID,
+    last: yrs::ID,
+    origin: Option<yrs::ID>,
+    right: bool,
+    value: Option<Any>,
+}
+
+/// Each type's keys the store requires besides `type` (and `id` at the top
+/// level): `material::assert_canonical`.
+const OWN_KEYS: [(&str, &[&str]); 7] = [
+    ("quiz_question", &["question", "id"]),
+    ("mermaid", &["source"]),
+    ("chart", &["block"]),
+    ("graph", &["block"]),
+    (crate::material::HTML_EMBED_TYPE, &["html"]),
+    (
+        crate::material::MATERIAL_REF_TYPE,
+        &["materialId", "refKind"],
+    ),
+    ("video", &["provider", "videoId"]),
+];
+
+/// The keys an element of type `kind` needs besides `type` and `id`.
+fn own_keys(kind: Option<&Any>) -> &'static [&'static str] {
+    match kind {
+        Some(Any::String(kind)) => OWN_KEYS
+            .iter()
+            .find(|(name, _)| *name == kind.as_ref())
+            .map_or(&[], |(_, keys)| keys),
+        _ => &[],
+    }
+}
+
+/// Whether some element may need `key`: an update that writes or deletes
+/// only other keys leaves every required key as it was.
+fn guarded(key: &str) -> bool {
+    key == "type" || key == "id" || OWN_KEYS.iter().any(|(_, keys)| keys.contains(&key))
 }
 
 /// What a note may hold: its texts strings, formats and element texts, every
@@ -372,12 +415,28 @@ fn plain_content<T: ReadTxn>(
         if let (Place::Sequence(parent), ItemContent::Type(_)) = (&at, item.content()) {
             shape.created.insert(BranchID::Nested(*id), parent.clone());
         }
+        if let Place::Entry(key, Some(parent)) = &at
+            && guarded(key)
+        {
+            let value = match item.content() {
+                ItemContent::Any(values) => Some(values.last().cloned().unwrap_or(Any::Null)),
+                _ => None,
+            };
+            shape
+                .set
+                .entry(parent.clone())
+                .or_default()
+                .entry(key.clone())
+                .or_default()
+                .push(Written {
+                    id: *id,
+                    last: yrs::ID::new(id.client, id.clock + item.len().saturating_sub(1)),
+                    origin: item.origin().copied(),
+                    right: item.right_origin().is_some(),
+                    value,
+                });
+        }
         if let (Place::Entry(key, Some(parent)), ItemContent::Any(values)) = (&at, item.content()) {
-            let written = shape.set.entry(parent.clone()).or_default();
-            if written.get(key).is_none_or(|(clock, _)| *clock <= id.clock) {
-                let value = values.last().cloned().unwrap_or(Any::Null);
-                written.insert(key.clone(), (id.clock, value));
-            }
             let media_type = || {
                 matches!(values.last(), Some(Any::String(kind))
                     if crate::material::MEDIA_TYPES.contains(&&**kind))
@@ -412,9 +471,10 @@ fn plain_content<T: ReadTxn>(
                     if &**key == "assetId" {
                         media.insert(parent.id());
                     }
-                    if parent
-                        .map_items()
-                        .any(|(current, entry)| current == key && entry.id() == item.id())
+                    // The key's current entry, looked up, not scanned for
+                    // (REVIEW5 M3: a scan per deleted entry was quadratic).
+                    if guarded(key)
+                        && entry_of(parent, key).is_some_and(|current| current.id() == item.id())
                     {
                         shape
                             .cleared
@@ -429,10 +489,9 @@ fn plain_content<T: ReadTxn>(
     media.retain(|id| {
         typed.contains(id)
             || held_branch(txn, id).is_none_or(|branch| {
-                branch
-                    .map_items()
-                    .find(|(key, item)| &***key == "type" && !item.is_deleted())
-                    .is_none_or(|(_, item)| match item.content() {
+                entry_of(branch, "type")
+                    .filter(|item| !item.is_deleted())
+                    .is_none_or(|item| match item.content() {
                         ItemContent::Any(values) => matches!(values.last(),
                             Some(Any::String(kind)) if crate::material::MEDIA_TYPES.contains(&&**kind)),
                         _ => true,
@@ -444,12 +503,18 @@ fn plain_content<T: ReadTxn>(
 
 /// Whether admitting `update` takes the room's thread off the async workers
 /// (`block_in_place`): a large update ([ydoc::applies_inline]), or one that
-/// touches a media block's attributes, which [Validator::admit] checks on a
-/// copy of the room (REVIEW5 M1).
+/// [Validator::admit] checks on a copy of the room: it touches a media
+/// block's attributes (REVIEW5 M1), or writes a required key that Yjs's
+/// conflict order places (REVIEW5 R2b).
 pub fn heavy<T: ReadTxn>(txn: &T, update: &Update, bytes: usize) -> bool {
     let incoming = ydoc::Incoming::new(update);
-    !ydoc::applies_inline(txn, &incoming, bytes)
-        || plain_content(txn, &incoming, &mut Shape::default()).is_ok_and(|media| !media.is_empty())
+    if !ydoc::applies_inline(txn, &incoming, bytes) {
+        return true;
+    }
+    let mut shape = Shape::default();
+    plain_content(txn, &incoming, &mut shape).is_ok_and(|media| {
+        !media.is_empty() || matches!(required_keys(txn, &incoming, &shape, None), Ok(true))
+    })
 }
 
 /// [Refusal::Content] for an update that leaves an element without a key the
@@ -466,31 +531,98 @@ fn held_branch<T: ReadTxn>(txn: &T, id: &BranchID) -> Option<yrs::branch::Branch
     }
 }
 
-/// Whether the update itself deletes the item `id`.
+/// Whether the update itself deletes the item `id` (a binary search).
 fn deleted_by(incoming: &ydoc::Incoming, id: &yrs::ID) -> bool {
-    incoming.delete_ranges().any(|(client, ranges)| {
-        *client == id.client
-            && ranges
-                .iter()
-                .any(|&(from, to)| from <= id.clock && id.clock < to)
+    incoming.deletes(&id.client, id.clock, id.clock + 1)
+}
+
+/// The current entry of `key` in an element's map (live or deleted), a
+/// counted lookup.
+fn entry_of(branch: yrs::branch::BranchPtr, key: &str) -> Option<yrs::block::ItemPtr> {
+    ydoc::steps::step(ydoc::steps::Walk::Entries);
+    branch.entry_item(key)
+}
+
+/// The plain value an entry holds while it is live.
+fn live_value(item: yrs::block::ItemPtr) -> Option<Any> {
+    match item.content() {
+        ItemContent::Any(values) if !item.is_deleted() => {
+            Some(values.last().cloned().unwrap_or(Any::Null))
+        }
+        _ => None,
+    }
+}
+
+/// A key's value after the update, read without applying it (REVIEW5 R2b).
+/// With no entry written: the room's current one, unless the update deletes
+/// it. Otherwise the update's entries must chain from the room's current
+/// entry (or from none when the room never held the key), each written right
+/// after the one before with no right origin, as a writer's own sets are;
+/// the last one is the value, unless the update deletes it. `None` when they
+/// do not chain (a stale or concurrent write, writers merged into one
+/// update): Yjs's conflict order places those, read on the result instead.
+fn value_after(
+    current: Option<yrs::block::ItemPtr>,
+    written: &[Written],
+    cleared: bool,
+    incoming: &ydoc::Incoming,
+) -> Option<Option<Any>> {
+    if written.is_empty() {
+        return Some(if cleared {
+            None
+        } else {
+            current.and_then(live_value)
+        });
+    }
+    // Each entry by the one it was written after; two after the same one
+    // (or one with a right origin) is a conflict for Yjs to order.
+    let mut after: HashMap<Option<yrs::ID>, &Written> = HashMap::with_capacity(written.len());
+    for entry in written {
+        ydoc::steps::step(ydoc::steps::Walk::Entries);
+        if entry.right || after.insert(entry.origin, entry).is_some() {
+            return None;
+        }
+    }
+    let mut tail =
+        current.map(|item| yrs::ID::new(item.id().client, item.id().clock + item.len() - 1));
+    let mut last = None;
+    let mut chained: HashSet<yrs::ID> = HashSet::with_capacity(written.len());
+    for _ in written {
+        ydoc::steps::step(ydoc::steps::Walk::Entries);
+        let entry = after.get(&tail)?;
+        if !chained.insert(entry.id) {
+            return None;
+        }
+        tail = Some(entry.last);
+        last = Some(*entry);
+    }
+    let last = last?;
+    Some(match &last.value {
+        Some(value) if !deleted_by(incoming, &last.last) => Some(value.clone()),
+        _ => None,
     })
 }
 
 /// Elements keep the keys the store requires (`material::assert_canonical`;
-/// REVIEW5 R2): after the update, an element it touches (writes or clears an
-/// attribute of, or creates) still has each key it had of a non-empty `type`,
-/// an `id` at the top level and its type's own keys, and an element it
-/// creates or retypes has them all. Read from the room's current entries and
-/// the update's, without a copy; media keys and values are [media_assets]'s,
-/// other values the store's. Refused here, so only this writer's update is
-/// lost: the store would discard the room.
+/// REVIEW5 R2): after the update, an element whose [guarded] keys it writes
+/// or clears, or that it creates, still has each key it had of a non-empty
+/// `type`, an `id` at the top level and its type's own keys, and an element
+/// it creates or retypes has them all. Each key is looked up, in the room and
+/// in the update's entries ([value_after]), without a copy. An element whose
+/// entries Yjs's conflict order places is read on `result`, the room with the
+/// update applied; without one the answer is `Ok(true)`, a copy needed
+/// (which [heavy] reports, so it is made off the async workers). Refused
+/// here, so only this writer's update is lost: the store would discard the
+/// room.
 fn required_keys<T: ReadTxn>(
     txn: &T,
     incoming: &ydoc::Incoming,
     shape: &Shape,
-) -> Result<(), Refusal> {
-    fn holds(keys: &HashMap<Arc<str>, Any>, key: &str) -> bool {
-        match (key, keys.get(key)) {
+    result: Option<&yrs::Doc>,
+) -> Result<bool, Refusal> {
+    use yrs::Transact;
+    fn holds(key: &str, value: Option<&Any>) -> bool {
+        match (key, value) {
             ("type" | "id", Some(Any::String(value))) => {
                 !crate::questions::js_trim(value).is_empty()
             }
@@ -498,20 +630,7 @@ fn required_keys<T: ReadTxn>(
             (_, value) => value.is_some_and(|value| !matches!(value, Any::Null | Any::Undefined)),
         }
     }
-    fn own(keys: &HashMap<Arc<str>, Any>) -> &'static [&'static str] {
-        match keys.get("type") {
-            Some(Any::String(kind)) => match kind.as_ref() {
-                "quiz_question" => &["question", "id"],
-                "mermaid" => &["source"],
-                "chart" | "graph" => &["block"],
-                crate::material::HTML_EMBED_TYPE => &["html"],
-                crate::material::MATERIAL_REF_TYPE => &["materialId", "refKind"],
-                "video" => &["provider", "videoId"],
-                _ => &[],
-            },
-            _ => &[],
-        }
-    }
+    let result = result.map(|doc| doc.transact());
     let root = BranchID::Root(plate::CONTENT_ROOT.into());
     let touched: HashSet<&BranchID> = shape
         .set
@@ -520,7 +639,7 @@ fn required_keys<T: ReadTxn>(
         .chain(shape.created.keys())
         .collect();
     for id in touched {
-        let (before, parent, created) = match (id, held_branch(txn, id)) {
+        let (branch, parent, created) = match (id, held_branch(txn, id)) {
             (BranchID::Root(_), _) => continue,
             (_, Some(branch)) => {
                 let Some(item) = branch.item() else { continue };
@@ -530,56 +649,80 @@ fn required_keys<T: ReadTxn>(
                 {
                     continue;
                 }
-                let keys: HashMap<Arc<str>, Any> = branch
-                    .map_items()
-                    .filter(|(_, entry)| !entry.is_deleted())
-                    .filter_map(|(key, entry)| match entry.content() {
-                        ItemContent::Any(values) => {
-                            Some((key.clone(), values.last().cloned().unwrap_or(Any::Null)))
-                        }
-                        _ => None,
-                    })
-                    .collect();
-                (keys, item.parent_branch().map(|p| p.id()), false)
+                (Some(branch), item.parent_branch().map(|p| p.id()), false)
             }
             (BranchID::Nested(item), None) => match shape.created.get(id) {
-                Some(parent) if !deleted_by(incoming, item) => {
-                    (HashMap::new(), parent.clone(), true)
-                }
+                Some(parent) if !deleted_by(incoming, item) => (None, parent.clone(), true),
                 _ => continue,
             },
         };
-        let mut after = before.clone();
-        for key in shape.cleared.get(id).into_iter().flatten() {
-            after.remove(key);
-        }
-        let set = shape.set.get(id);
-        for (key, (_, value)) in set.into_iter().flatten() {
-            after.insert(key.clone(), value.clone());
-        }
-        let retyped = set.is_some_and(|set| set.contains_key("type"))
-            || shape
-                .cleared
-                .get(id)
-                .is_some_and(|keys| keys.contains("type"));
-        let mut required = vec!["type"];
-        if parent.as_ref() == Some(&root) {
-            required.push("id");
-        }
-        required.extend_from_slice(own(&after));
-        for key in required {
-            if holds(&after, key) {
+        let before = |key: &str| {
+            branch
+                .and_then(|branch| entry_of(branch, key))
+                .and_then(live_value)
+        };
+        let written = shape.set.get(id);
+        let cleared = shape.cleared.get(id);
+        let resolved = |key: &str| {
+            value_after(
+                branch.and_then(|branch| entry_of(branch, key)),
+                written
+                    .and_then(|keys| keys.get(key))
+                    .map_or(&[], Vec::as_slice),
+                cleared.is_some_and(|keys| keys.contains(key)),
+                incoming,
+            )
+        };
+        let top = parent.as_ref() == Some(&root);
+        let retyped = written.is_some_and(|keys| keys.contains_key("type"))
+            || cleared.is_some_and(|keys| keys.contains("type"));
+        // Ok(true) when a key's value is not known without the result.
+        let check = |after: &dyn Fn(&str) -> Option<Option<Any>>| -> Result<bool, Refusal> {
+            let Some(kind) = after("type") else {
+                return Ok(true);
+            };
+            let own = own_keys(kind.as_ref());
+            let mut required = vec!["type"];
+            if top {
+                required.push("id");
+            }
+            required.extend_from_slice(own);
+            for key in required {
+                let value = if key == "type" {
+                    kind.clone()
+                } else {
+                    match after(key) {
+                        Some(value) => value,
+                        None => return Ok(true),
+                    }
+                };
+                if holds(key, value.as_ref()) {
+                    continue;
+                }
+                // A key the element already lacked is not this update's
+                // doing, unless the update created it or gave it the type
+                // that needs it.
+                let imposed = created || (retyped && (key == "type" || own.contains(&key)));
+                if imposed || holds(key, before(key).as_ref()) {
+                    return Err(Refusal::Content(MISSING_KEY));
+                }
+            }
+            Ok(false)
+        };
+        if check(&resolved)? {
+            let Some(result) = &result else {
+                return Ok(true);
+            };
+            let Some(branch) = id.get_branch(result) else {
+                continue;
+            };
+            if branch.item().is_some_and(|item| item.is_deleted()) {
                 continue;
             }
-            // A key the element already lacked is not this update's doing,
-            // unless the update created it or gave it the type that needs it.
-            let imposed = created || (retyped && (key == "type" || own(&after).contains(&key)));
-            if imposed || holds(&before, key) {
-                return Err(Refusal::Content(MISSING_KEY));
-            }
+            check(&|key: &str| Some(entry_of(branch, key).and_then(live_value)))?;
         }
     }
-    Ok(())
+    Ok(false)
 }
 
 /// Media blocks name their file (Epo, 2026-10-10): an `img`, `image`,
@@ -647,6 +790,9 @@ pub struct Validator {
     pub exact_checks: u64,
     /// Copies of the room taken for the media check alone.
     pub media_copies: u64,
+    /// Copies of the room taken to read required keys whose entries Yjs's
+    /// conflict order places ([required_keys]).
+    pub key_copies: u64,
 }
 
 impl Validator {
@@ -704,7 +850,10 @@ impl Validator {
                 node_count: bound.node_count + growth.node_count,
             };
             if limit_code(&next).is_none() {
-                required_keys(&txn, &incoming, &shape)?;
+                if required_keys(&txn, &incoming, &shape, trial.as_ref())? {
+                    self.key_copies += 1;
+                    required_keys(&txn, &incoming, &shape, Some(&candidate_of(&txn, update)?))?;
+                }
                 self.bound = Some(next);
                 return Ok(Admission::Accepted);
             }
@@ -731,7 +880,8 @@ impl Validator {
         {
             return Err(Refusal::Limit { code, metrics });
         }
-        required_keys(&txn, &incoming, &shape)?;
+        drop(candidate_txn);
+        required_keys(&txn, &incoming, &shape, Some(&candidate))?;
         self.bound = Some(metrics);
         self.metrics = Some(metrics);
         Ok(Admission::Accepted)

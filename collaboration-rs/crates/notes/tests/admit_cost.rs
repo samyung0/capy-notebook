@@ -504,3 +504,61 @@ fn a_costly_update_is_refused_within_the_budget() {
         assert!(steps <= STEPS_PER_BYTE * bytes, "{name}: {steps} steps");
     }
 }
+
+/// A paragraph with `keys` plain attributes besides its own, and a writer's
+/// update deleting them all: one delete range of a few bytes (REVIEW5 M3).
+fn cleared_attributes(keys: u32) -> (Doc, Vec<u8>) {
+    let room = room("wide");
+    let writer = copy(&room, 2);
+    let element = paragraph(&writer);
+    let mut txn = writer.transact_mut();
+    for key in 0..keys {
+        element.insert_attribute(&mut txn, format!("k{key}"), "v");
+    }
+    drop(txn);
+    let attributes = since(&room, &writer);
+    room.transact_mut()
+        .apply_update(Update::decode_v1(&attributes).unwrap())
+        .unwrap();
+    let eraser = copy(&room, 3);
+    let element = paragraph(&eraser);
+    let mut txn = eraser.transact_mut();
+    for key in 0..keys {
+        element.remove_attribute(&mut txn, &format!("k{key}"));
+    }
+    drop(txn);
+    let update = since(&room, &eraser);
+    (room, update)
+}
+
+/// Security regression (REVIEW5 M3: an 8-byte update deleting all 32,000
+/// attributes of one element scanned the element's map once per deleted
+/// entry, seconds on an async worker). The key checks look a key up only
+/// when an element may require it, each lookup counted (`Walk::Entries`):
+/// the update stays inline (`heavy` false) and goes in, and `heavy`'s and
+/// admission's walks stay within [STEPS_PER_BYTE] per byte, none of them on
+/// these keys. A scan per deleted entry, counted as every walk here is,
+/// takes about 500 million steps.
+#[test]
+fn deleting_every_attribute_of_a_wide_element_stays_inline_and_linear() {
+    let (room, update) = cleared_attributes(32_000);
+    assert!(update.len() < 32, "{} bytes", update.len());
+    let decoded = ydoc::decode(&update).unwrap();
+    ydoc::steps::take();
+    assert!(!notes::limits::heavy(
+        &room.transact(),
+        &decoded,
+        update.len()
+    ));
+    let heavy = ydoc::steps::take();
+    let (admission, admitted) = admit_steps(&room, &update);
+    assert!(admitted);
+    let bytes = update.len() as u64 + room_bytes(&room);
+    for (name, walks) in [("heavy", &heavy), ("admit", &admission)] {
+        let steps = walks.total();
+        eprintln!("{name}: {steps} steps for {bytes} bytes");
+        assert!(steps <= STEPS_PER_BYTE * bytes, "{name}: {steps} steps");
+        assert_eq!(walks.of(Walk::Entries), 0, "{name}");
+    }
+    assert!(admission.of(Walk::DeleteRanges) >= 32_000);
+}

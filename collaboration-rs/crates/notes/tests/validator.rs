@@ -693,14 +693,92 @@ fn an_element_left_without_a_required_key_is_refused_at_admit() {
         );
     }
     assert_eq!(
-        (validator.media_copies, validator.exact_checks),
-        (0, copies)
+        (
+            validator.media_copies,
+            validator.key_copies,
+            validator.exact_checks
+        ),
+        (0, 0, copies)
     );
     // The same on the exact path (no bound yet, as a room's first update).
     assert!(matches!(
         Validator::default().admit_bytes(&room, &unset(0, "type")),
         Err(Refusal::Content(what)) if what == limits::MISSING_KEY
     ));
+}
+
+/// Security regression (REVIEW5 R2b: two crafted shapes still took a block's
+/// `type`, and the store then discarded the room). The key check reads the
+/// element's state after the update: a `type` overwritten and the new entry
+/// deleted in the same update (a writer's two updates merged), and a stale
+/// writer's `type` that loses the conflict sent with a delete of the current
+/// one, are refused on both paths. The losing write alone goes in. Its entry
+/// does not follow the room's current one, so the key is read on the room
+/// with the update applied: the trial copy that such an update (no small
+/// edit) gets anyway, off the async workers, with no copy of its own.
+#[test]
+fn a_type_deleted_behind_an_overwrite_or_a_losing_write_is_refused_at_admit() {
+    let room = document(&[json!({ "children": [{ "text": "intro" }], "id": "p1", "type": "p" })]);
+    let retype = |peer: &Doc, kind: &str| {
+        block(peer, 0).insert_attribute(&mut peer.transact_mut(), "type", kind);
+    };
+    let untype = |peer: &Doc| {
+        block(peer, 0).remove_attribute(&mut peer.transact_mut(), &"type".to_owned());
+    };
+    // Client 3 retypes from before client 5's newer type, which wins.
+    let stale = copy(&room, 3);
+    apply(&room, &edit(&room, 5, |peer| retype(peer, "h2")));
+    retype(&stale, "h3");
+    let losing = stale
+        .transact()
+        .encode_state_as_update_v1(&room.transact().state_vector());
+    let losing_and_untyped = yrs::merge_updates_v1([&losing, &edit(&room, 8, untype)]).unwrap();
+    // One writer's two updates: a new type, then that entry deleted.
+    let writer = copy(&room, 7);
+    let base = room.transact().state_vector();
+    retype(&writer, "h1");
+    let middle = writer.transact().state_vector();
+    let typed = writer.transact().encode_state_as_update_v1(&base);
+    untype(&writer);
+    let untyped = writer.transact().encode_state_as_update_v1(&middle);
+    let overwritten = yrs::merge_updates_v1([&typed, &untyped]).unwrap();
+    let heavy = |update: &[u8]| {
+        limits::heavy(
+            &room.transact(),
+            &ydoc::decode(update).unwrap(),
+            update.len(),
+        )
+    };
+    let mut validator = Validator::default();
+    let nothing = room
+        .transact()
+        .encode_state_as_update_v1(&room.transact().state_vector());
+    validator.admit_bytes(&room, &nothing).unwrap();
+    for (name, update) in [
+        ("overwritten and deleted", &overwritten),
+        (
+            "a losing type and the current one deleted",
+            &losing_and_untyped,
+        ),
+    ] {
+        for (path, answer) in [
+            ("bound", validator.admit_bytes(&room, update)),
+            ("exact", Validator::default().admit_bytes(&room, update)),
+        ] {
+            assert!(
+                matches!(answer, Err(Refusal::Content(what)) if what == limits::MISSING_KEY),
+                "{name}, {path} path: {answer:?}"
+            );
+        }
+    }
+    assert!(!heavy(&overwritten));
+    assert!(heavy(&losing_and_untyped));
+    assert!(heavy(&losing));
+    assert_eq!(
+        validator.admit_bytes(&room, &losing).unwrap(),
+        Admission::Accepted
+    );
+    assert_eq!((validator.media_copies, validator.key_copies), (0, 0));
 }
 
 /// A writer that already wrote pastes several blocks, an image among them:

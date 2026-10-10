@@ -75,9 +75,12 @@ pub mod steps {
         Adjacent,
         /// The growth bound's walk to the visible unit beside a position.
         Beside,
+        /// The notes key checks' lookups of an element's entries, and their
+        /// walk along the entries an update writes under one key.
+        Entries,
     }
 
-    const WALKS: usize = Walk::Beside as usize + 1;
+    const WALKS: usize = Walk::Entries as usize + 1;
 
     thread_local!(static STEPS: [Cell<u64>; WALKS] = const { [const { Cell::new(0) }; WALKS] });
 
