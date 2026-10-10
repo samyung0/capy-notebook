@@ -30,7 +30,11 @@ import {
   getMaterialCollaborationToken,
   type useMaterialDiscussions,
 } from '@/api/hooks';
-import type { Material, MaterialCollaborationToken } from '@/api/types';
+import type {
+  Material,
+  MaterialCollaborationToken,
+  Provenance,
+} from '@/api/types';
 import { userToast } from '@/components/ui/userToast';
 import { FileLoading } from '@/features/files/FileStates';
 import {
@@ -39,6 +43,7 @@ import {
   type MaterialValue,
   parseMaterialDocument,
 } from '@/features/materials/document';
+import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { NoteToolbar } from '@/features/notes/toolbar/NoteToolbar';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -203,6 +208,26 @@ function DocumentStatsFooter({
         <span className="font-medium text-solid-error">{limitError}</span>
       )}
     </div>
+  );
+}
+
+/** The note's credits after its editable content, outside the Yjs document
+ * and in the column its content uses, where View puts them too. */
+function NoteAttribution({
+  provenance,
+}: {
+  provenance: Provenance | undefined;
+}) {
+  const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
+  return (
+    <MaterialAttributionFooter
+      className={cn(
+        'mx-auto w-full px-5 sm:px-10',
+        displayWidth === 'half' && 'md:max-w-3xl'
+      )}
+      inline
+      provenance={provenance}
+    />
   );
 }
 
@@ -1132,7 +1157,10 @@ export function NoteEditorCore({
           // PlateContent would mount it with the editable surface.
           <PlateSlate>
             <div className="flex min-h-0 flex-1 flex-col" inert={offlineLimit}>
-              <MermaidMaterialEditor title={material.title} />
+              <MermaidMaterialEditor
+                provenance={material.provenance}
+                title={material.title}
+              />
             </div>
           </PlateSlate>
         )}
@@ -1170,6 +1198,7 @@ export function NoteEditorCore({
                         shouldShowStats={shouldShowDocumentStats(documentStats)}
                       />
                     </EditorScrollAreaContext.Provider>
+                    <NoteAttribution provenance={material.provenance} />
                     <DocumentStatsFooter
                       limitError={documentLimitError}
                       stats={documentStats}

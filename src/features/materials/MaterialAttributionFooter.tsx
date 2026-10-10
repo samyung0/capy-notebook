@@ -115,23 +115,27 @@ function Credits({ books, web }: Pick<QuestionCredit, 'books' | 'web'>) {
  * It renders outside the editable document and is not part of the Yjs state,
  * so the attribution survives every edit of the material itself.
  *
- * Pinned under a scrolling panel it is a bordered strip; `inline` is for the
- * end of a page's own content (quiz attempt, flashcard study), set apart by
- * space alone and aligned with the content column.
+ * `inline` ends a page's or document's own content (an open material, quiz
+ * attempt, flashcard study), set apart by space alone; `className` puts it in
+ * the document's reading column. Otherwise it is a bordered strip closing a
+ * block, such as an embedded quiz or flashcard set.
  */
 export function MaterialAttributionFooter({
   provenance,
   inline = false,
+  className,
 }: {
   provenance: Provenance | undefined;
   inline?: boolean;
+  className?: string;
 }) {
   if (!(provenance?.books.length || provenance?.web?.length)) return null;
   return (
     <footer
       className={cn(
         'text-fg-muted text-xs',
-        inline ? 'mt-16 pb-4' : 'border-divider border-t px-5 py-3'
+        inline ? 'mt-16 pb-4' : 'border-divider border-t px-5 py-3',
+        className
       )}
     >
       <p className="font-medium">{m.material_attribution_title()}</p>
