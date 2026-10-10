@@ -159,22 +159,22 @@ export type {
   WorkspaceStats,
 } from './gen/model';
 /* ---------------- enums & scalars (straight from the generated spec) ---------------- */
-export {
-  AccountState,
-  FileStatus,
-  MaterialKind,
-  MaterialRefType,
-  NotificationKind,
-  PlanTier,
-  Privacy,
-  SearchKind,
-  ShareRole,
-  Slot,
-  StorageUsageLevel,
-  SubscriptionStatus,
-  UserColor,
-  WorkspaceRole,
-} from './gen/model';
+/* Each from its own file: the model barrel re-exports all ~370 generated
+   files, and a value export through it loads every one in dev. */
+export { AccountState } from './gen/model/accountState';
+export { FileStatus } from './gen/model/fileStatus';
+export { MaterialKind } from './gen/model/materialKind';
+export { MaterialRefType } from './gen/model/materialRefType';
+export { NotificationKind } from './gen/model/notificationKind';
+export { PlanTier } from './gen/model/planTier';
+export { Privacy } from './gen/model/privacy';
+export { SearchKind } from './gen/model/searchKind';
+export { ShareRole } from './gen/model/shareRole';
+export { Slot } from './gen/model/slot';
+export { StorageUsageLevel } from './gen/model/storageUsageLevel';
+export { SubscriptionStatus } from './gen/model/subscriptionStatus';
+export { UserColor } from './gen/model/userColor';
+export { WorkspaceRole } from './gen/model/workspaceRole';
 
 export interface IngestSlots {
   slotsFree: number;
@@ -569,10 +569,6 @@ export type {
   WorkspaceSummaryChapter,
   WorkspaceSummaryFile,
 } from './gen/model';
-/* ---------------- Raw generated namespace ----------------
-   Reach for `Gen` when you need the exact backend contract (e.g. nullable
-   arrays, request bodies) rather than the UI-facing domain type above. */
-export * as Gen from './gen/model';
 export type PDFAnnotationBody = Omit<
   import('./gen/model').PDFAnnotationBody,
   'rects'
