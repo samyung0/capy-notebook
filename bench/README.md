@@ -1,9 +1,10 @@
 # Benchmarks
 
-Every performance, capacity, and model-quality measurement in the repository.
-Only the editor, collaboration and shared page suites run in CI (the
-`Performance` workflow, dispatched by hand); the rest are manual, and most need
-a VM or a downloaded model runtime.
+Every performance, capacity, and model-quality measurement in the repository,
+plus the Office parity reports. Only the editor, collaboration and shared page
+suites run in CI (the `Performance` workflow, dispatched by hand), and CI checks
+the parity checklists on every push; the rest are manual, and most need a VM or
+a downloaded model runtime.
 
 Each family uses the same three buckets:
 
@@ -14,7 +15,9 @@ Each family uses the same three buckets:
 | `reports/`  | Findings, plans, raw run records. Never executed                    |
 
 Reports are named `YYYY-MM-DD-<topic>.md` by the date of the run they describe.
-Raw run artifacts sit in a sibling `YYYY-MM-DD-<machine>/` directory.
+Raw run artifacts sit in a sibling `YYYY-MM-DD-<machine>/` directory. The one
+exception is `parity/reports/PARITY-<FORMAT>.md`: living reports regenerated in
+place (Epo 2026-10-10).
 
 ## Families
 
@@ -23,6 +26,7 @@ Raw run artifacts sit in a sibling `YYYY-MM-DD-<machine>/` directory.
 | [`collaboration/`](collaboration/) | Collaboration stress: many peers typing with reconnects in one Office and one Plate room, then in a near-limit note and a text source; convergence, lost updates, latency | `pnpm bench:stress` (Docker)     |
 | [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle; DOCX, XLSX and PPTX open, View to Edit, typing at both ends, co-editor update timings and heap (workers from the typing on) in the Office runtime; Office size-ladder fixtures; formula View/Edit parity | `pnpm bench:editor`, `pnpm bench:office`, `pnpm bench:formula` |
 | [`share-pages/`](share-pages/) | Shared workspace, quiz, flashcard and note pages on the deployed UAT site: Lighthouse FCP, LCP, CLS, TBT and bytes, cold and warm at the edge; Workers Cache hits | `pnpm bench:share-pages` (UAT) |
+| [`parity/`](parity/)       | Office feature parity per format against Google Docs, Sheets and Slides: hand-assigned view, edit, save and collab statuses, each Y backed by a test on the pin; ranked remaining work | `python3 bench/parity/scripts/parity.py` (CI: `--check`) |
 | [`parsers/`](parsers/)     | Ingest-host parser accuracy and capacity: OCR modes, concurrency, worker memory, OOM behavior    | `python bench/parsers/scripts/…` (needs VM) |
 | [`grading/`](grading/)     | Small local models against the production quiz-grading rubric, native and in-browser             | `python bench/grading/scripts/benchmark.py` |
 | [`rag/`](rag/scripts/)     | Retrieval and chat-agent quality: live diagnostic plus six frozen experiments                    | see below                                   |
@@ -114,6 +118,47 @@ ladders Plate and Office rooms, concurrent large Office files and idle
 connections with the collaboration service on 1 and 2 cores, and the
 [replica run](collaboration/reports/2026-10-05-office-engine-replicas.md)
 measures the Office engine worker keeping each XLSX room's workbook open.
+
+### parity
+
+One checklist per Office format in `parity/fixtures/` (`docx.tsv`, `xlsx.tsv`,
+`pptx.tsv`; the format is in each file's header): a row per feature a student or
+teacher meets, compared with Google Docs, Sheets and Slides (Office for view and
+save fidelity), with a status per aspect (view, edit, save, collab: Y, P, N, U
+for believed but untested, or –), priority, impact, effort, notes and the
+evidence: a fork or Capy test file plus part of a test name, a DOCX matrix
+generator, or a code or doc path. Statuses are hand edits; every Office landing
+updates the rows it changes. `parity/scripts/parity.py` resolves every reference
+against the pinned `vendor/betteroffice` and Capy, refuses a Y without a test,
+and writes `parity/reports/PARITY-DOCX.md`, `PARITY-XLSX.md` and
+`PARITY-PPTX.md`: aspect counts and weighted parity, the fork's fidelity
+numbers, feature tables, remaining work ranked by priority, impact and effort,
+and the untested claims.
+
+- `python3 bench/parity/scripts/parity.py --check` runs in CI's `office_pin` job
+  (a depth-1 submodule fetch, no builds). It prints each problem and exits 1 on
+  a malformed row, a reference that does not resolve on the pin, or a Y without
+  a test, writing nothing. `--fork <worktree>` checks a fork branch before it is
+  pinned.
+- `python3 bench/parity/scripts/parity.py` regenerates the reports. Run it in
+  every pin bump commit and after editing a checklist; the output depends only
+  on the checklists, the two trees and `fixtures/fidelity.md`.
+- Test names are read from source text, not from the runners (`cargo test --
+  --list` needs the workspace built, `bun test` cannot list, vitest and
+  Playwright list modes need installed dependencies): Rust `#[test]`-style
+  functions, and `test()`/`it()` titles that are string literals, multi-line
+  calls and `test.each` tables included. At pin 82f7d419 that is all 4,379 Rust
+  test attributes; seven TS tests (five in the fork, two in Capy) have a
+  computed title (`test(name, …)`) and are not seen, so cite such a test by its
+  file or a literal part of its title.
+- Fidelity: the fork's Benchmarks workflow (`visual-fidelity.yml`, upstream's
+  real-file corpus scored against Office's own renders, next to upstream's
+  latest release and LibreOffice) runs on every push to capy-ci, without the
+  README commit or render publishing. When a run of the pinned commit succeeds,
+  `gh run download <run> -R samyung0/betteroffice -n visual-fidelity`, copy its
+  `section.md` to `parity/fixtures/fidelity.md` and regenerate; each report
+  names the measured commit and says when it is not the pin.
+- The generator's tests: `python3 -m unittest discover -s bench/parity/scripts -p 'test_*.py'`.
 
 ### parsers
 

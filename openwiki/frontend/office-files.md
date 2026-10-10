@@ -75,6 +75,13 @@ count, a signed base link), and `pnpm office:seed-check <manifest>` re-seeds eac
 with the new pin's engine (`collaboration/src/seedCheck.ts`). It exits 1 when
 any seed hash differs; the pin then ships in a maintenance window whose reset
 covers the formats it lists.
+The Office parity checklists must also resolve on the new pin
+(`python3 bench/parity/scripts/parity.py --check`, run by CI's `office_pin` job);
+the bump commit regenerates `bench/parity/reports/PARITY-<FORMAT>.md` with
+`python3 bench/parity/scripts/parity.py` ([bench/README.md](../../bench/README.md#parity)).
+The fork's own CI (`ci.yml`, `e2e.yml`) and upstream's Office benchmark
+(`visual-fidelity.yml`, without the README commit or render publishing) run on
+every push to capy-ci.
 Until parser-tolerant XLSX binding lands, any change under `crates/xlsx-parse`,
 `crates/xlsx-model` or `crates/betteroffice-xlsx` counts as seed-changing for
 XLSX: a room binds to a fingerprint of the whole parse, which four golden

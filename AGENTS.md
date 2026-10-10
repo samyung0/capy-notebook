@@ -101,6 +101,7 @@ changing any of them.
 | `bench/collaboration` | Many peers typing with reconnects in one Office and one Plate room: convergence, lost updates, latency (`pnpm bench:stress`) | Yes, manual |
 | `bench/editor`  | Editor open cost, typing latency, save cycle, scroll FPS (`pnpm bench:editor`)    | Yes        |
 | `bench/share-pages` | Shared pages on deployed UAT: Lighthouse paint, shift, blocking and bytes; Workers Cache hits (`pnpm bench:share-pages`) | Yes, manual |
+| `bench/parity`  | Office feature parity per format against Google's apps: tested view/edit/save/collab statuses, ranked remaining work, living `PARITY-<FMT>.md` reports (`python3 bench/parity/scripts/parity.py`) | Yes, `--check` |
 | `bench/parsers` | Ingest-host parser accuracy, OCR modes, concurrency, worker memory and OOM        | No, VM     |
 | `bench/grading` | Small local models against the production quiz-grading rubric, native and browser | No         |
 | `bench/rag`     | Live retrieval diagnostic plus six frozen retrieval/agent experiments             | No, lab    |

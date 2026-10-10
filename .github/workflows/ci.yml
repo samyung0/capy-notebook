@@ -44,6 +44,13 @@ jobs:
             echo "Bumped from $previous:"
             git log --oneline --no-decorate "$previous..$pin" || true
           fi
+      # The Office parity checklists (bench/parity) against the pin: every cited
+      # test, file and matrix exists there and every Y cites a test. No builds.
+      - name: Check the Office parity checklists
+        run: |
+          git submodule update --init --depth 1 vendor/betteroffice
+          python3 -m unittest discover -s bench/parity/scripts -p 'test_*.py'
+          python3 bench/parity/scripts/parity.py --check
 
   # The DOCX regression matrix (vendor/betteroffice/shared/matrix) gates a
   # commit that moves the BetterOffice pin, so a regressing pin never reaches

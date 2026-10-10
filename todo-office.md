@@ -403,6 +403,12 @@ slow editor (no handoff outside maintenance since the deferred rebuild).
   maintenance window), the package suites (`bun test --isolate` for xlsx/pptx),
   cargo with `--features wasm`, clippy and fmt. Run every Capy e2e spec that
   touches Office, not just the one you changed.
+- **Parity:** update the checklist rows the change affects in
+  `bench/parity/fixtures/<format>.tsv` (statuses and the tests that show them);
+  check a fork branch with `python3 bench/parity/scripts/parity.py --check --fork <worktree>`,
+  and in the pin bump commit run `python3 bench/parity/scripts/parity.py` and
+  commit the regenerated reports (CI's `--check` fails on a cited test the pin
+  no longer has or a Y without a test).
 - **Review:** loop a read-only reviewer after each round until clean.
 - **Landing:** fast-forward `capy-ci`; pin the exact SHA in Capy with a separate
   `GIT_INDEX_FILE` and `commit-tree` on `origin/main` (other sessions keep

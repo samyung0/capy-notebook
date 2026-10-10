@@ -50,6 +50,7 @@ conversation, reopen to check its active marker, and dismiss with Escape.
 | Local grading comparison         | `python -m unittest discover -s bench/grading/scripts -p test_benchmark.py` |
 | Paired Laya/Jev grading scores    | `python -m unittest discover -s bench/grading/scripts -p test_laya_cpu.py` |
 | Office size split (XML/media/other) | `python -m unittest discover -s bench/editor/scripts -p test_office_sizes.py` |
+| Office parity checklists (CI `office_pin`) | `python3 bench/parity/scripts/parity.py --check`; the generator's own tests `python3 -m unittest discover -s bench/parity/scripts -p test_parity.py` cover Rust and TS test-name scanning (attributes, multi-line titles, `test.each` tables, computed titles skipped), evidence resolution, a Y without a test for its aspect, malformed rows, priority-weighted parity, the benchmark summary and exit 1 with nothing written |
 | Jev question-context comparison | `python bench/grading/scripts/jev_context.py --check` |
 | Jev partial credit and context | `python bench/grading/scripts/jev_partial_credit.py --check` |
 | Jev production contract | `python bench/grading/scripts/jev_contract.py --check` |
