@@ -61,7 +61,9 @@ import (
 // no quizzes, edit_document loses add_question and replace_question, the
 // question format leaves Formats, MediaBlocks carries the media schemas, and a
 // note's quiz fence takes the small shapes.
-const ContractVersion = 20
+// v21: card fronts and backs carry their stored caps (4,000 and 2,000
+// characters) in create_material and edit_document's card commands.
+const ContractVersion = 21
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -321,6 +323,15 @@ func obj(props map[string]any, required ...string) map[string]any {
 	return schema
 }
 
+// A card's front and back carry the stored caps (fieldlimits).
+func cardFront() map[string]any {
+	return map[string]any{"type": "string", "maxLength": fieldlimits.CardFront}
+}
+
+func cardBack() map[string]any {
+	return map[string]any{"type": "string", "maxLength": fieldlimits.CardBack}
+}
+
 func str(desc string) map[string]any {
 	s := map[string]any{"type": "string", "minLength": 1}
 	if desc != "" {
@@ -404,12 +415,12 @@ func editCommandSchema() map[string]any {
 			}, "sheet", "cell", "expected_value", "value"),
 			variant("replace_card", map[string]any{
 				"card_id": str(""),
-				"front":   map[string]any{"type": "string"},
-				"back":    map[string]any{"type": "string"},
+				"front":   cardFront(),
+				"back":    cardBack(),
 			}, "card_id"),
 			variant("add_card", map[string]any{
-				"front":         map[string]any{"type": "string"},
-				"back":          map[string]any{"type": "string"},
+				"front":         cardFront(),
+				"back":          cardBack(),
 				"after_card_id": map[string]any{"type": []string{"string", "null"}},
 			}, "front", "back"),
 			variant("remove_card", map[string]any{"card_id": str("")}, "card_id"),
@@ -810,8 +821,8 @@ func Definitions() []Definition {
 					"type":        "array",
 					"description": "flashcards only",
 					"items": obj(map[string]any{
-						"front": map[string]any{"type": "string"},
-						"back":  map[string]any{"type": "string"},
+						"front": cardFront(),
+						"back":  cardBack(),
 					}, "front", "back"),
 				},
 				"content": map[string]any{

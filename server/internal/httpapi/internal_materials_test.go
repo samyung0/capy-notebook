@@ -427,6 +427,26 @@ func TestInternalMaterialRejectsEmptyContent(t *testing.T) {
 	}
 }
 
+// A generated set's card over a cap is refused, naming the card and the cap,
+// before any document is built (security regression: a stored set Go cannot
+// project breaks the material for everyone).
+func TestInternalMaterialRefusesAnOverLongCard(t *testing.T) {
+	h, st := openInternalHTTP(t)
+	msgID := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
+	body := map[string]any{
+		"kind": "flashcards", "title": "Long cards", "workspaceId": "ws_e2e_private", "userId": "u_editor",
+		"assistantMessageId": msgID, "toolCallId": "call_long_card",
+		"cards": []map[string]string{
+			{"front": "Short", "back": "Fine"},
+			{"front": strings.Repeat("é", materialdoc.MaxCardFrontRunes+1), "back": "b"},
+		},
+	}
+	rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "cards[1]: a flashcard front holds at most 4000 characters") {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 // A curated material stores its attribution and takes the ShareAlike licence
 // of its sources; a mix of CC BY and CC BY-SA is CC BY-SA.
 func TestInternalMaterialStoresProvenanceAndShareAlikeLicense(t *testing.T) {

@@ -485,3 +485,78 @@ fn refuses_content_the_editor_never_writes() {
         Admission::Accepted
     );
 }
+
+fn media(kind: &str, extra: Value) -> Value {
+    let mut node = json!({ "children": [{ "text": "" }], "id": "m1", "type": kind });
+    for (key, value) in extra.as_object().unwrap() {
+        node[key] = value.clone();
+    }
+    node
+}
+
+/// Media blocks name their file (Epo, 2026-10-10): an image, audio or file
+/// element without its asset id, or with a URL, is refused when the update
+/// arrives, whether it brings the element, sets the URL, changes a block's
+/// type or deletes the asset id; one with its asset id goes in.
+#[test]
+fn a_media_block_without_its_asset_id_is_refused_at_admit() {
+    let room = document(&[paragraph("intro"), media("img", json!({ "assetId": "a1" }))]);
+    let refused = |update: &[u8]| {
+        matches!(
+            Validator::default().admit_bytes(&room, update),
+            Err(Refusal::Content(what)) if what == "a media block without its asset id"
+        )
+    };
+    let inserting = |node: Value| edit(&room, 2, |peer| insert_value(peer, &[node]));
+    for kind in ["img", "image", "audio", "file"] {
+        assert!(
+            refused(&inserting(media(kind, json!({})))),
+            "{kind} without an asset id"
+        );
+        assert!(
+            refused(&inserting(media(kind, json!({ "assetId": "" })))),
+            "{kind} empty id"
+        );
+        assert!(
+            refused(&inserting(media(
+                kind,
+                json!({ "assetId": "a2", "url": "https://x.test/a.png" })
+            ))),
+            "{kind} with a url"
+        );
+        assert!(
+            refused(&inserting(media(
+                kind,
+                json!({ "assetId": "a2", "src": "https://x.test/a.png" })
+            ))),
+            "{kind} with a src"
+        );
+        assert_eq!(
+            Validator::default()
+                .admit_bytes(&room, &inserting(media(kind, json!({ "assetId": "a2" }))))
+                .unwrap(),
+            Admission::Accepted,
+            "{kind} with its asset id"
+        );
+    }
+    let set_url = edit(&room, 3, |peer| {
+        block(peer, 1).insert_attribute(&mut peer.transact_mut(), "url", "https://x.test/a.png");
+    });
+    assert!(refused(&set_url), "a url set on an image");
+    let retype = edit(&room, 4, |peer| {
+        block(peer, 0).insert_attribute(&mut peer.transact_mut(), "type", "img");
+    });
+    assert!(refused(&retype), "a paragraph made an image");
+    let unnamed = edit(&room, 5, |peer| {
+        block(peer, 1).remove_attribute(&mut peer.transact_mut(), &"assetId".to_owned())
+    });
+    assert!(refused(&unnamed), "an image's asset id deleted");
+    let renamed = edit(&room, 6, |peer| {
+        block(peer, 1).insert_attribute(&mut peer.transact_mut(), "assetId", "a3");
+    });
+    assert_eq!(
+        Validator::default().admit_bytes(&room, &renamed).unwrap(),
+        Admission::Accepted,
+        "an image's asset replaced"
+    );
+}

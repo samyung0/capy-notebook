@@ -4,11 +4,12 @@
 //! stripped from text leaves, the node count and the deepest node.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use yrs::block::ItemContent;
-use yrs::branch::Branch;
+use yrs::block::{ItemContent, UpdateParent};
+use yrs::branch::{Branch, BranchID};
 use yrs::types::TypeRef;
 use yrs::updates::encoder::Encode;
 use yrs::{Any, ReadTxn, Update};
@@ -243,10 +244,23 @@ pub enum Refusal {
     Content(&'static str),
 }
 
+/// Where an item of an update sits: in a sequence (a text, a root), or an
+/// entry of a map (an attribute or a marker) under `key` of its parent.
+#[derive(Clone)]
+enum Place {
+    Sequence,
+    Entry(Arc<str>, Option<BranchID>),
+}
+
 /// What a note may hold: its texts strings, formats and element texts, every
 /// attribute, mark or marker entry a plain value. Only what the room does not
-/// hold yet counts (Yjs skips the rest).
-fn plain_content<T: ReadTxn>(txn: &T, incoming: &ydoc::Incoming) -> Result<(), Refusal> {
+/// hold yet counts (Yjs skips the rest). Returns the elements whose media
+/// attributes the update sets or deletes (`type` to a media type, `assetId`,
+/// `url`, `src`), for [media_assets] to check on the result.
+fn plain_content<T: ReadTxn>(
+    txn: &T,
+    incoming: &ydoc::Incoming,
+) -> Result<HashSet<BranchID>, Refusal> {
     fn plain(value: &Any) -> bool {
         match value {
             Any::Buffer(_) | Any::BigInt(_) => false,
@@ -255,22 +269,30 @@ fn plain_content<T: ReadTxn>(txn: &T, incoming: &ydoc::Incoming) -> Result<(), R
             _ => true,
         }
     }
+    fn parent_of(item: &yrs::block::Item) -> Option<BranchID> {
+        match item.update_parent() {
+            UpdateParent::Root(name) => Some(BranchID::Root(name.clone())),
+            UpdateParent::Item(id) => Some(BranchID::Nested(*id)),
+            UpdateParent::Branch(branch) => Some(branch.id()),
+            UpdateParent::Unknown => None,
+        }
+    }
     let state = txn.state_vector();
     let store = txn.store();
-    // Whether an item is a map entry (an attribute or a marker), or none when
-    // Yjs drops it (its origin was garbage-collected). An item with an origin
-    // does not encode its parent: it takes its origin's, which the room or
-    // this update holds. Each item resolves once per update (a pasted run
-    // chains every item to the one before it); a chain that loops is none.
-    let mut entries: HashMap<yrs::ID, Option<bool>> = HashMap::new();
-    let mut entry = |start: &yrs::block::Item| -> Option<bool> {
+    // Where each item sits, or none when Yjs drops it (its origin was
+    // garbage-collected). An item with an origin does not encode its parent
+    // or key: it takes its origin's, which the room or this update holds.
+    // Each item resolves once per update (a pasted run chains every item to
+    // the one before it); a chain that loops is none.
+    let mut places: HashMap<yrs::ID, Option<Place>> = HashMap::new();
+    let mut place = |start: &yrs::block::Item| -> Option<Place> {
         let mut chain: Vec<yrs::ID> = Vec::new();
         let mut seen: HashSet<yrs::ID> = HashSet::new();
         let mut item = start;
         let found = loop {
             ydoc::steps::step(ydoc::steps::Walk::Content);
-            if let Some(known) = entries.get(item.id()) {
-                break *known;
+            if let Some(known) = places.get(item.id()) {
+                break known.clone();
             }
             // A cycle check per step, not a scan of the chain (REVIEW3 M7). Its
             // cost also stays bounded because a long chain cannot get here
@@ -282,19 +304,20 @@ fn plain_content<T: ReadTxn>(txn: &T, incoming: &ydoc::Incoming) -> Result<(), R
                 break None;
             }
             chain.push(*item.id());
-            if item.parent_sub().is_some() {
-                break Some(true);
+            if let Some(key) = item.parent_sub() {
+                break Some(Place::Entry(key.clone(), parent_of(item)));
             }
-            if !matches!(item.update_parent(), yrs::block::UpdateParent::Unknown) {
-                break Some(false);
+            if !matches!(item.update_parent(), UpdateParent::Unknown) {
+                break Some(Place::Sequence);
             }
             let Some(origin) = item.origin().or(item.right_origin()) else {
                 break None;
             };
             if origin.clock < state.get(&origin.client) {
-                break store
-                    .get_item(origin)
-                    .map(|held| held.parent_sub().is_some());
+                break store.get_item(origin).map(|held| match held.parent_sub() {
+                    Some(key) => Place::Entry(key.clone(), held.parent_branch().map(|b| b.id())),
+                    None => Place::Sequence,
+                });
             }
             match incoming.item_at(origin) {
                 Some(next) => item = next,
@@ -302,35 +325,121 @@ fn plain_content<T: ReadTxn>(txn: &T, incoming: &ydoc::Incoming) -> Result<(), R
             }
         };
         for id in chain {
-            entries.insert(id, found);
+            places.insert(id, found.clone());
         }
         found
     };
+    let mut media = HashSet::new();
     for item in incoming.items() {
         let id = item.id();
         if id.clock + item.len() <= state.get(&id.client) {
             continue;
         }
-        let Some(entry) = entry(item) else {
+        let Some(at) = place(item) else {
             continue;
         };
-        let refused = match (entry, item.content()) {
+        let refused = match (&at, item.content()) {
             (_, ItemContent::Deleted(_)) => None,
-            (true, ItemContent::Any(values)) if values.iter().all(plain) => None,
-            (true, _) => Some("a non-plain attribute value"),
-            (false, ItemContent::String(_)) => None,
-            (false, ItemContent::Format(_, value)) if plain(value) => None,
-            (false, ItemContent::Type(branch)) if matches!(branch.type_ref(), TypeRef::XmlText) => {
+            (Place::Entry(..), ItemContent::Any(values)) if values.iter().all(plain) => None,
+            (Place::Entry(..), _) => Some("a non-plain attribute value"),
+            (Place::Sequence, ItemContent::String(_)) => None,
+            (Place::Sequence, ItemContent::Format(_, value)) if plain(value) => None,
+            (Place::Sequence, ItemContent::Type(branch))
+                if matches!(branch.type_ref(), TypeRef::XmlText) =>
+            {
                 None
             }
-            (false, ItemContent::Format(..)) => Some("a non-plain mark value"),
-            (false, _) => Some("content other than text in a note text"),
+            (Place::Sequence, ItemContent::Format(..)) => Some("a non-plain mark value"),
+            (Place::Sequence, _) => Some("content other than text in a note text"),
         };
         if let Some(what) = refused {
             return Err(Refusal::Content(what));
         }
+        if let (Place::Entry(key, Some(parent)), ItemContent::Any(values)) = (&at, item.content()) {
+            let media_type = || {
+                matches!(values.last(), Some(Any::String(kind))
+                    if crate::material::MEDIA_TYPES.contains(&&**kind))
+            };
+            if matches!(&**key, "assetId" | "url" | "src") || (&**key == "type" && media_type()) {
+                media.insert(parent.clone());
+            }
+        }
+    }
+    // A deleted asset id leaves its block without one.
+    for (client, ranges) in incoming.delete_ranges() {
+        let end = state.get(client);
+        for &(from, to) in ranges {
+            let until = to.min(end);
+            let mut clock = from;
+            while clock < until {
+                ydoc::steps::step(ydoc::steps::Walk::DeleteRanges);
+                let Some((range, item)) = store.get_block_range(&yrs::ID::new(*client, clock))
+                else {
+                    break;
+                };
+                clock = range.clock + range.len;
+                if let Some(item) = item
+                    && !item.is_deleted()
+                    && item.parent_sub().is_some_and(|key| &**key == "assetId")
+                    && let Some(parent) = item.parent_branch()
+                {
+                    media.insert(parent.id());
+                }
+            }
+        }
+    }
+    Ok(media)
+}
+
+/// Media blocks name their file (Epo, 2026-10-10): an `img`, `image`,
+/// `audio` or `file` element the update touched carries a non-empty
+/// `assetId` and no `url` or `src` in `candidate`, the room with the update
+/// applied. Refused here, when the update arrives, so only this writer's
+/// update is lost; the store's check would discard the room.
+fn media_assets(candidate: &yrs::Doc, touched: &HashSet<BranchID>) -> Result<(), Refusal> {
+    use yrs::Transact;
+    let txn = candidate.transact();
+    for id in touched {
+        let Some(branch) = id.get_branch(&txn) else {
+            continue;
+        };
+        if branch.item().is_some_and(|item| item.is_deleted()) {
+            continue;
+        }
+        let attributes: HashMap<Arc<str>, Any> = plate::properties(&branch)?.into_iter().collect();
+        let media = matches!(attributes.get("type"), Some(Any::String(kind))
+            if crate::material::MEDIA_TYPES.contains(&&**kind));
+        if !media {
+            continue;
+        }
+        let named =
+            matches!(attributes.get("assetId"), Some(Any::String(asset)) if !asset.is_empty());
+        let linked = ["url", "src"].iter().any(|key| {
+            attributes
+                .get(*key)
+                .is_some_and(|value| !matches!(value, Any::Null))
+        });
+        if !named || linked {
+            return Err(Refusal::Content("a media block without its asset id"));
+        }
     }
     Ok(())
+}
+
+/// The room with `update` applied, on a copy.
+fn candidate_of<T: ReadTxn>(txn: &T, update: &Update) -> Result<yrs::Doc, Refusal> {
+    use yrs::Transact;
+    let candidate = ydoc::scratch_doc();
+    let mut copy = candidate.transact_mut();
+    let state = txn.encode_state_as_update_v1(&yrs::StateVector::default());
+    // yrs applies an update by value: the copy takes it re-encoded.
+    let update = update.encode_v1();
+    for bytes in [state.as_slice(), update.as_slice()] {
+        copy.apply_update(ydoc::decode(bytes)?)
+            .map_err(|error| ydoc::UpdateError::Decode(error.to_string()))?;
+    }
+    drop(copy);
+    Ok(candidate)
 }
 
 /// One note room's limit state between exact measurements (`RoomValidator`):
@@ -365,8 +474,19 @@ impl Validator {
         // An update outside the roots goes to the exact check, which refuses
         // it as such; one inside them must hold only what the editor writes.
         let keeps_roots = crate::validate::keeps_roots(&inspection.containers);
+        let mut trial = inspection.trial;
         if keeps_roots {
-            plain_content(&txn, &incoming)?;
+            let media = plain_content(&txn, &incoming)?;
+            if !media.is_empty() {
+                // Rare (an image inserted, a file named): the room is copied
+                // only when inspect did not already.
+                let candidate = match trial.take() {
+                    Some(trial) => trial,
+                    None => candidate_of(&txn, update)?,
+                };
+                media_assets(&candidate, &media)?;
+                trial = Some(candidate);
+            }
         }
         // The common case: the room's bound plus this update's growth bound
         // stays within every limit, so the room is not copied per keystroke.
@@ -391,20 +511,9 @@ impl Validator {
         }
         self.exact_checks += 1;
         // The trial copy when inspect made one; for a small edit, a copy now.
-        let candidate = if let Some(trial) = inspection.trial {
-            trial
-        } else {
-            let candidate = ydoc::scratch_doc();
-            let mut copy = candidate.transact_mut();
-            let state = txn.encode_state_as_update_v1(&yrs::StateVector::default());
-            // yrs applies an update by value: the copy takes it re-encoded.
-            let update = update.encode_v1();
-            for bytes in [state.as_slice(), update.as_slice()] {
-                copy.apply_update(ydoc::decode(bytes)?)
-                    .map_err(|error| ydoc::UpdateError::Decode(error.to_string()))?;
-            }
-            drop(copy);
-            candidate
+        let candidate = match trial {
+            Some(trial) => trial,
+            None => candidate_of(&txn, update)?,
         };
         let candidate_txn = candidate.transact();
         crate::validate::assert_roots(&candidate_txn)?;

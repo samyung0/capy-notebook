@@ -67,6 +67,11 @@ const (
 	QuizOpenAnswer    = 5_000
 	// AnonymousLocalID bounds the reporting id a signed-out browser sends.
 	AnonymousLocalID = 64
+	// A flashcard's front and back (human/frontend/plate-editor.md for the
+	// back); the collaboration server's copy is
+	// collaboration-rs/crates/notes/src/material.rs.
+	CardFront = 4_000
+	CardBack  = 2_000
 )
 
 // QuestionBounds is exported into frontend and pipeline contracts; a Go test

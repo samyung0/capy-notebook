@@ -681,6 +681,9 @@ func normalizeMaterialCommands(kind string, raw []json.RawMessage, insertMarkdow
 			if kind != "flashcards" {
 				return nil, refusal(agenttools.ErrUnsupportedOperation, "%s only applies to flashcard sets", c.Type)
 			}
+			if err := materialdoc.ValidateCardText(deref(c.Front), deref(c.Back)); err != nil {
+				return nil, refusal(agenttools.ErrInvalidInput, "%s: %v", c.Type, err)
+			}
 			switch c.Type {
 			case "replace_card":
 				if c.Front == nil || c.Back == nil {

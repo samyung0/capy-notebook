@@ -257,6 +257,51 @@ describe('Universal Plate material documents', () => {
     expect(valid(chart, 300)).toBe(false);
   });
 
+  // As Go and the collaboration server (Epo, 2026-10-10): no compatibility
+  // path for the interactive block's old `title`, nor any other field.
+  it('refuses unknown fields on interactive blocks and figures', () => {
+    const embed = htmlEmbedNode('<p>hi</p>', 'Caption');
+    const valid = (node: object) =>
+      isMaterialDocument({ schemaVersion: 1, value: [node] });
+    expect(valid(embed)).toBe(true);
+    expect(valid({ ...embed, title: 'Old title' })).toBe(false);
+    const chart = customBlockNode(
+      'chart',
+      JSON.stringify({
+        kind: 'bar',
+        labels: ['A'],
+        series: [{ name: 'Total', values: [3] }],
+        title: 'Counts',
+        type: 'chart',
+      })
+    );
+    expect(valid(chart)).toBe(true);
+    expect(valid({ ...chart, caption: 'x' })).toBe(false);
+  });
+
+  // Figures and interactive blocks are top-level blocks only.
+  it('refuses a nested figure or interactive block', () => {
+    const embed = htmlEmbedNode('<p>hi</p>', undefined);
+    const nested = (node: object) =>
+      isMaterialDocument({
+        schemaVersion: 1,
+        value: [{ children: [node], id: 'q', type: 'blockquote' }],
+      });
+    expect(nested({ children: [{ text: 'x' }], type: 'p' })).toBe(true);
+    expect(nested(embed)).toBe(false);
+    const graph = customBlockNode(
+      'chart',
+      JSON.stringify({
+        kind: 'bar',
+        labels: ['A'],
+        series: [{ name: 'Total', values: [3] }],
+        title: 'Counts',
+        type: 'chart',
+      })
+    );
+    expect(nested(graph)).toBe(false);
+  });
+
   it('accepts only validated YouTube video nodes', () => {
     const node = {
       children: [{ text: '' }],

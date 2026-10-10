@@ -275,7 +275,13 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 		chapterID = &req.ChapterID
 	}
 	cards := make([][2]string, 0, len(req.Cards))
-	for _, c := range req.Cards {
+	for i, c := range req.Cards {
+		if err := materialdoc.ValidateCardText(c.Front, c.Back); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"code": "invalid_input", "message": fmt.Sprintf("cards[%d]: %v", i, err),
+			})
+			return
+		}
 		cards = append(cards, [2]string{c.Front, c.Back})
 	}
 	content, embedded := req.Content, []store.EmbeddedDraft(nil)

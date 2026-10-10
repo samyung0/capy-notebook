@@ -178,6 +178,19 @@ const RESIZABLE_TYPES = new Set([
   'plot',
   'graph',
 ]);
+// The only fields a figure and an interactive block store; anything else
+// (the interactive block's old `title`) is refused, as Go and the
+// collaboration server refuse it. IMPORTANT: KEEP IN SYNC WITH
+// server/internal/materialdoc/document.go and
+// collaboration-rs/crates/notes/src/material.rs.
+const FIGURE_FIELDS = new Set(['id', 'type', 'block', 'children', 'width']);
+const HTML_EMBED_FIELDS = new Set([
+  'id',
+  'type',
+  'html',
+  'caption',
+  'children',
+]);
 const YOUTUBE_VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -209,12 +222,23 @@ function hasId(value: MaterialElement): boolean {
   return typeof value.id === 'string' && value.id.length > 0;
 }
 
-function validateCustomElement(element: MaterialElement): boolean {
+function onlyFields(element: MaterialElement, fields: Set<string>): boolean {
+  return Object.keys(element).every((key) => fields.has(key));
+}
+
+/** `depth` 0 is a top-level block: figures and interactive blocks are only
+ * top-level. */
+function validateCustomElement(
+  element: MaterialElement,
+  depth: number
+): boolean {
   switch (element.type) {
     case 'chart':
     case 'plot':
     case 'graph': {
       if (
+        depth !== 0 ||
+        !onlyFields(element, FIGURE_FIELDS) ||
         !hasId(element) ||
         element.children.length !== 1 ||
         !isTextNode(element.children[0]) ||
@@ -302,6 +326,8 @@ function validateCustomElement(element: MaterialElement): boolean {
       );
     case HTML_EMBED_TYPE:
       return (
+        depth === 0 &&
+        onlyFields(element, HTML_EMBED_FIELDS) &&
         hasId(element) &&
         typeof element.html === 'string' &&
         htmlBytes(element.html) <= HTML_EMBED_MAX_BYTES &&
@@ -353,10 +379,14 @@ function validateMediaElement(element: MaterialElement): boolean {
   );
 }
 
-export function isMaterialNode(value: unknown): value is MaterialNode {
+export function isMaterialNode(
+  value: unknown,
+  depth = 0
+): value is MaterialNode {
   if (isTextNode(value)) return true;
   if (!isElementNode(value)) return false;
-  if (!value.children.every(isMaterialNode)) return false;
+  if (!value.children.every((child) => isMaterialNode(child, depth + 1)))
+    return false;
   if (!validateMediaElement(value)) return false;
   if (
     RESIZABLE_TYPES.has(value.type) &&
@@ -364,7 +394,7 @@ export function isMaterialNode(value: unknown): value is MaterialNode {
     (typeof value.width !== 'string' || !MEDIA_WIDTH.test(value.width))
   )
     return false;
-  return !CUSTOM_TYPES.has(value.type) || validateCustomElement(value);
+  return !CUSTOM_TYPES.has(value.type) || validateCustomElement(value, depth);
 }
 
 export function isMaterialDocument(value: unknown): value is MaterialDocument {

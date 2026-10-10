@@ -15,6 +15,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
 )
 
@@ -95,9 +96,25 @@ type CardImage struct {
 	AssetID string `json:"assetId"`
 }
 
-// MaxCardBackRunes caps a card's back (human/frontend/plate-editor.md); the
-// card save API carries the same limit.
-const MaxCardBackRunes = 2000
+// A card's front and back caps (fieldlimits), in runes; the card save API,
+// the agent tools and the collaboration server carry the same limits.
+const (
+	MaxCardFrontRunes = fieldlimits.CardFront
+	MaxCardBackRunes  = fieldlimits.CardBack
+)
+
+// ValidateCardText checks a card's front and back against the stored caps,
+// for callers that build a card from text (the agent's card commands and
+// generated sets) to refuse it with a clear error before the document check.
+func ValidateCardText(front, back string) error {
+	if utf8.RuneCountInString(front) > MaxCardFrontRunes {
+		return fmt.Errorf("a flashcard front holds at most %d characters", MaxCardFrontRunes)
+	}
+	if utf8.RuneCountInString(back) > MaxCardBackRunes {
+		return fmt.Errorf("a flashcard back holds at most %d characters", MaxCardBackRunes)
+	}
+	return nil
+}
 
 func Empty() Envelope {
 	return Envelope{
@@ -246,10 +263,12 @@ func stripRuntimeCommentMarks(nodes []map[string]any) []map[string]any {
 	return result
 }
 
-// Parse decodes and structurally validates a stored document. It intentionally
-// applies no size or shape cap: those gate writes, and a read that refuses to
-// decode would turn an over-limit material into a blank page. Inbound request
-// bodies are bounded by the HTTP layer, not here.
+// Parse decodes and validates a stored document with Validate, its field caps
+// included (interactive html size and count, card text, quiz bounds, widths),
+// so a stored document breaking one does not decode. The document size limits
+// (bytes, nodes, depth: DocumentMetrics.LimitError) gate writes only: a read
+// that refused them would turn an over-limit material into a blank page.
+// Inbound request bodies are bounded by the HTTP layer, not here.
 func Parse(raw string) (Envelope, error) {
 	if len(raw) == 0 {
 		return Envelope{}, fmt.Errorf("%w: document is empty", ErrInvalid)
@@ -344,9 +363,7 @@ func validateKind(nodes []map[string]any, kind string) error {
 	case "flashcards":
 		valid = find(nodes, "flashcards") != nil
 	case "mindmap", "diagram":
-		valid = find(nodes, "mermaid") != nil ||
-			find(nodes, "diagram") != nil ||
-			find(nodes, "mindmap") != nil
+		valid = find(nodes, "mermaid") != nil
 	case "note":
 		return validateNoteReferences(nodes)
 	default:
@@ -610,7 +627,14 @@ func validateNode(node map[string]any, depth int) error {
 		if err := validateMediaWidth(node); err != nil {
 			return err
 		}
-		return questions.ValidateBlock(block, questions.Policy{})
+		if err := questions.ValidateBlock(block, questions.Policy{}); err != nil {
+			return err
+		}
+		// A note draws a graph from its own SVG; a URL image is for questions.
+		if image, _ := block["image"].(map[string]any); typ == "graph" && image["url"] != nil {
+			return errors.New("note graphs require inline SVG")
+		}
+		return nil
 	case HTMLEmbedType:
 		return validateHTMLEmbed(node, depth)
 
@@ -622,12 +646,17 @@ func validateNode(node map[string]any, depth int) error {
 		return validateFlashcards(node)
 	case "flashcard":
 		return validateFlashcard(node)
-	case "mermaid", "diagram", "mindmap":
+	case "mermaid":
 		return validateDiagram(node)
 	case "video":
 		return validateYouTube(node)
 	case "img":
+		if err := validateMedia(node, typ); err != nil {
+			return err
+		}
 		return validateMediaWidth(node)
+	case "image", "audio", "file":
+		return validateMedia(node, typ)
 	case RefType:
 		return validateMaterialRef(node)
 	}
@@ -680,6 +709,21 @@ func validateYouTube(node map[string]any) error {
 		}
 	}
 	return validateMediaWidth(node)
+}
+
+// validateMedia: an image, audio or file block names its editor asset and
+// carries no URL (human/frontend/plate-editor.md 2026-10-10), as the browser
+// and the collaboration server refuse otherwise.
+func validateMedia(node map[string]any, typ string) error {
+	if assetID, _ := node["assetId"].(string); assetID == "" {
+		return fmt.Errorf("%s requires an assetId", typ)
+	}
+	for _, key := range []string{"url", "src"} {
+		if node[key] != nil {
+			return fmt.Errorf("%s cannot contain %s", typ, key)
+		}
+	}
+	return nil
 }
 
 func validateMediaWidth(node map[string]any) error {
@@ -796,8 +840,8 @@ func validateFlashcard(node map[string]any) error {
 		children[1].(map[string]any)["type"] != "flashcard_back" {
 		return errors.New("flashcard children must be front then back")
 	}
-	if utf8.RuneCountInString(nodeText(children[1].(map[string]any))) > MaxCardBackRunes {
-		return fmt.Errorf("a flashcard back holds at most %d characters", MaxCardBackRunes)
+	if err := ValidateCardText(nodeText(children[0].(map[string]any)), nodeText(children[1].(map[string]any))); err != nil {
+		return err
 	}
 	if raw, ok := node["image"]; ok {
 		image, ok := raw.(map[string]any)
@@ -1063,7 +1107,7 @@ func ExtractIndexText(raw string) (string, error) {
 var (
 	indexContainers = set("callout", "column_group", "column", "toggle", "details")
 	indexSkipped    = set("hr", "toc", "equation", "inline_equation", "img", "image", "audio", "file",
-		"video", "mermaid", "diagram", "mindmap", HTMLEmbedType, RefType, "quiz", "flashcards")
+		"video", "mermaid", HTMLEmbedType, RefType, "quiz", "flashcards")
 )
 
 func writeIndexBlock(node map[string]any, out *[]string) {

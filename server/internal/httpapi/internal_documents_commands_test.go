@@ -2,7 +2,13 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
+
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 // replace_block converts its markdown like insert_markdown and keeps the
@@ -37,5 +43,29 @@ func TestReplaceBlockConvertsItsMarkdown(t *testing.T) {
 		`{"type":"replace_block","block_id":"b1","expected_text":"x","markdown":"y"}`,
 	)}, nil); err == nil {
 		t.Fatal("replace_block accepted on a quiz")
+	}
+}
+
+// The agent's card commands refuse an over-long front or back with a clear
+// message before any document is built (security regression: a stored set
+// Go cannot project breaks the material for everyone).
+func TestCardCommandsRefuseOverLongText(t *testing.T) {
+	long := func(n int) string { return strings.Repeat("é", n+1) }
+	cases := []struct{ command, message string }{
+		{`{"type":"add_card","front":"` + long(materialdoc.MaxCardFrontRunes) + `","back":"b"}`, "add_card: a flashcard front holds at most 4000 characters"},
+		{`{"type":"add_card","front":"f","back":"` + long(materialdoc.MaxCardBackRunes) + `"}`, "add_card: a flashcard back holds at most 2000 characters"},
+		{`{"type":"replace_card","card_id":"c1","front":"f","back":"` + long(materialdoc.MaxCardBackRunes) + `"}`, "replace_card: a flashcard back holds at most 2000 characters"},
+	}
+	for _, tc := range cases {
+		_, err := normalizeMaterialCommands("flashcards", []json.RawMessage{json.RawMessage(tc.command)}, nil)
+		var refused *store.EditRefusal
+		if !errors.As(err, &refused) || refused.Code != agenttools.ErrInvalidInput || refused.Message != tc.message {
+			t.Fatalf("%.40s: %v", tc.command, err)
+		}
+	}
+	if _, err := normalizeMaterialCommands("flashcards", []json.RawMessage{json.RawMessage(
+		`{"type":"add_card","front":"` + strings.Repeat("é", materialdoc.MaxCardFrontRunes) + `","back":"` + strings.Repeat("é", materialdoc.MaxCardBackRunes) + `"}`,
+	)}, nil); err != nil {
+		t.Fatalf("a card at the caps: %v", err)
 	}
 }

@@ -16,6 +16,12 @@ pub const HTML_EMBED_MAX_BYTES: usize = 64 * 1024;
 pub const HTML_EMBED_MAX_COUNT: usize = 10;
 /// The void block a note stores for an embedded quiz or flashcard set.
 pub const MATERIAL_REF_TYPE: &str = "material_ref";
+/// A card's front and back, in characters as Go counts them (runes): Go's
+/// `fieldlimits.CardFront` and `CardBack`, which a Go test reads here.
+pub const CARD_FRONT_MAX: usize = 4_000;
+pub const CARD_BACK_MAX: usize = 2_000;
+/// Media blocks name their file: an asset id, never a URL (Epo, 2026-10-10).
+pub const MEDIA_TYPES: [&str; 4] = ["img", "image", "audio", "file"];
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("invalid material document: {0}")]
@@ -175,6 +181,56 @@ fn validate_flashcard(node: &Node) -> Check {
         || kind(cards[1]).as_deref() != Some("flashcard_back")
     {
         return fail("flashcard children must be front then back");
+    }
+    // Go's limits and image shape (validateFlashcard): a set Go cannot
+    // project breaks the material for everyone.
+    if text_chars(cards[0]) > CARD_FRONT_MAX {
+        return fail(format!(
+            "a flashcard front holds at most {CARD_FRONT_MAX} characters"
+        ));
+    }
+    if text_chars(cards[1]) > CARD_BACK_MAX {
+        return fail(format!(
+            "a flashcard back holds at most {CARD_BACK_MAX} characters"
+        ));
+    }
+    if let Some(image) = node.get("image") {
+        let valid = image.as_object().is_some_and(|image| {
+            image.len() == 1
+                && image
+                    .get("assetId")
+                    .and_then(Value::as_str)
+                    .is_some_and(|id| !id.trim().is_empty() && id.len() <= 128)
+        });
+        if !valid {
+            return fail("flashcard image must be {assetId}");
+        }
+    }
+    Ok(())
+}
+
+/// The characters of a node's text, counted as Go counts runes.
+fn text_chars(node: &Node) -> usize {
+    match node.get("text").and_then(Value::as_str) {
+        Some(text) => text.chars().count(),
+        None => children(node).into_iter().map(text_chars).sum(),
+    }
+}
+
+/// An image, audio or file block carries its asset id and no URL
+/// (`validateMediaElement`).
+fn validate_media(node: &Node, kind: &str) -> Check {
+    if !node
+        .get("assetId")
+        .and_then(Value::as_str)
+        .is_some_and(|id| !id.is_empty())
+    {
+        return fail(format!("{kind} requires an assetId"));
+    }
+    for key in ["url", "src"] {
+        if node.get(key).is_some_and(|value| !value.is_null()) {
+            return fail(format!("{kind} cannot contain {key}"));
+        }
     }
     Ok(())
 }
@@ -348,8 +404,12 @@ fn validate_node(node: &Node, depth: usize, policy: &Policy) -> Check {
         "quiz_prompt" | "quiz_option" | "quiz_explanation" => fail("obsolete quiz child node"),
         "flashcards" => validate_flashcards(node),
         "flashcard" => validate_flashcard(node),
-        "mermaid" | "diagram" | "mindmap" => validate_diagram(node),
-        "img" => validate_width(node),
+        "mermaid" => validate_diagram(node),
+        "img" => {
+            validate_media(node, kind)?;
+            validate_width(node)
+        }
+        "image" | "audio" | "file" => validate_media(node, kind),
         MATERIAL_REF_TYPE => validate_material_ref(node),
         "video" => {
             if node.get("provider").and_then(Value::as_str) != Some("youtube") {
@@ -501,7 +561,7 @@ pub fn assert_canonical_with(value: &[Value], kind: &str, policy: &Policy) -> Ch
     let required: &[&str] = match kind {
         "quiz" => &["quiz"],
         "flashcards" => &["flashcards"],
-        "mindmap" | "diagram" => &["mermaid", "diagram", "mindmap"],
+        "mindmap" | "diagram" => &["mermaid"],
         "note" => return validate_note_references(&nodes),
         _ => return Ok(()),
     };

@@ -6,9 +6,13 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/samyung0/capy-notebook/server/internal/questions"
 )
 
 func TestQuestionVoidIdentityAndEmptyQuiz(t *testing.T) {
@@ -549,6 +553,15 @@ func TestFlashcardImagesAreFoundRewrittenAndChecked(t *testing.T) {
 	if err := ValidateKind(atLimit, "flashcards"); err != nil {
 		t.Fatalf("a back at the limit was refused: %v", err)
 	}
+	// The front is capped too, at 4,000 runes (security regression: a stored
+	// set Go cannot project breaks the material for everyone).
+	if _, err := FlashcardsDocument([]Card{{ID: "c", Front: strings.Repeat("é", MaxCardFrontRunes+1), Back: "b"}}); err == nil ||
+		!strings.Contains(err.Error(), "a flashcard front holds at most 4000 characters") {
+		t.Fatalf("a front over the limit: %v", err)
+	}
+	if _, err := FlashcardsDocument([]Card{{ID: "c", Front: strings.Repeat("é", MaxCardFrontRunes), Back: "b"}}); err != nil {
+		t.Fatalf("a front at the limit was refused: %v", err)
+	}
 	badImage := strings.Replace(raw, `"assetId":"asset-ready"`, `"assetId":"asset-ready","url":"https://x"`, 1)
 	if err := ValidateKind(badImage, "flashcards"); err == nil {
 		t.Fatal("an image with extra keys was accepted")
@@ -986,5 +999,123 @@ func TestEveryBlockNoteFixtureIsValid(t *testing.T) {
 	}
 	if err := metrics.LimitError(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The collaboration server checks stored sets with its own copy of the card
+// caps (collaboration-rs/crates/notes/src/material.rs); each must equal Go's.
+func TestCollaborationCardCapsMatchGo(t *testing.T) {
+	raw, err := os.ReadFile("../../../collaboration-rs/crates/notes/src/material.rs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]int{"CARD_FRONT_MAX": MaxCardFrontRunes, "CARD_BACK_MAX": MaxCardBackRunes} {
+		match := regexp.MustCompile(`pub const ` + name + `: usize = ([\d_]+);`).FindSubmatch(raw)
+		if match == nil {
+			t.Fatalf("%s not found in material.rs", name)
+		}
+		got, err := strconv.Atoi(strings.ReplaceAll(string(match[1]), "_", ""))
+		if err != nil || got != want {
+			t.Errorf("material.rs %s = %s, Go has %d", name, match[1], want)
+		}
+	}
+}
+
+// Agent and generated cards are refused with a clear message before the
+// document check: the front's and the back's caps, in runes.
+func TestValidateCardText(t *testing.T) {
+	if err := ValidateCardText(strings.Repeat("é", MaxCardFrontRunes), strings.Repeat("é", MaxCardBackRunes)); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateCardText(strings.Repeat("é", MaxCardFrontRunes+1), "b"); err == nil || err.Error() != "a flashcard front holds at most 4000 characters" {
+		t.Fatalf("long front: %v", err)
+	}
+	if err := ValidateCardText("f", strings.Repeat("é", MaxCardBackRunes+1)); err == nil || err.Error() != "a flashcard back holds at most 2000 characters" {
+		t.Fatalf("long back: %v", err)
+	}
+}
+
+func validateNote(nodes ...map[string]any) error {
+	return Validate(Envelope{SchemaVersion: SchemaVersion, Value: nodes})
+}
+
+// Image, audio and file blocks name their editor asset and carry no URL, as
+// the browser and the collaboration server refuse otherwise.
+func TestMediaBlocksNameTheirAsset(t *testing.T) {
+	for _, typ := range []string{"img", "image", "audio", "file"} {
+		node := func(extra map[string]any) map[string]any {
+			node := map[string]any{"type": typ, "id": "m", "children": []any{textLeaf("")}}
+			for key, value := range extra {
+				node[key] = value
+			}
+			return node
+		}
+		if err := validateNote(node(map[string]any{"assetId": "a1"})); err != nil {
+			t.Fatalf("%s with its asset: %v", typ, err)
+		}
+		if err := validateNote(node(map[string]any{"assetId": "a1", "url": nil})); err != nil {
+			t.Fatalf("%s with a null url: %v", typ, err)
+		}
+		for _, extra := range []map[string]any{{}, {"assetId": ""}, {"assetId": 7}} {
+			if err := validateNote(node(extra)); err == nil || !strings.Contains(err.Error(), typ+" requires an assetId") {
+				t.Fatalf("%s %v: %v", typ, extra, err)
+			}
+		}
+		for _, key := range []string{"url", "src"} {
+			if err := validateNote(node(map[string]any{"assetId": "a1", key: "https://x.test/a.png"})); err == nil ||
+				!strings.Contains(err.Error(), typ+" cannot contain "+key) {
+				t.Fatalf("%s with %s: %v", typ, key, err)
+			}
+		}
+	}
+}
+
+// A note's graph draws from inline SVG; a URL image belongs to questions.
+func TestNoteGraphRequiresInlineSVG(t *testing.T) {
+	raw, err := os.ReadFile("../questions/testdata/rich-blocks.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct{ Question map[string]any }
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	graph := func(image map[string]any) map[string]any {
+		block := map[string]any{}
+		for key, value := range fixture.Question["stem"].([]any)[1].(map[string]any) {
+			block[key] = value
+		}
+		block["image"] = image
+		return map[string]any{"type": "graph", "id": "g", "block": block, "children": []any{textLeaf("")}}
+	}
+	if err := validateNote(graph(map[string]any{"svg": `<svg xmlns="http://www.w3.org/2000/svg"></svg>`})); err != nil {
+		t.Fatalf("svg graph: %v", err)
+	}
+	// A copied bank figure's URL passes the question check; a note still
+	// refuses it.
+	previous := questions.QuizBankAssetsURL
+	questions.QuizBankAssetsURL = "https://bank.example/assets"
+	t.Cleanup(func() { questions.QuizBankAssetsURL = previous })
+	if err := validateNote(graph(map[string]any{"url": "https://bank.example/assets/g.png"})); err == nil ||
+		!strings.Contains(err.Error(), "note graphs require inline SVG") {
+		t.Fatalf("url graph: %v", err)
+	}
+}
+
+// diagram and mindmap are material kinds, not node types: their material
+// holds a mermaid block.
+func TestDiagramAndMindmapAreNotNodeTypes(t *testing.T) {
+	block := func(typ string) map[string]any {
+		return map[string]any{"type": typ, "id": "d", "source": "flowchart LR", "children": []any{
+			map[string]any{"type": "mermaid_caption", "children": []any{textLeaf("")}},
+		}}
+	}
+	for _, kind := range []string{"diagram", "mindmap"} {
+		if err := validateKind([]map[string]any{block("mermaid")}, kind); err != nil {
+			t.Fatalf("%s with a mermaid block: %v", kind, err)
+		}
+		if err := validateKind([]map[string]any{block(kind)}, kind); err == nil {
+			t.Fatalf("%s accepted a %s node", kind, kind)
+		}
 	}
 }
