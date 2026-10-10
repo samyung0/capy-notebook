@@ -98,7 +98,7 @@ export function ReviewTab() {
           <h3 className="mb-1 font-bold text-fg-muted text-sm">
             {m.review_all_workspaces()}
           </h3>
-          {data.workspaces.map((ws) => (
+          {byLastReviewed(data.workspaces).map((ws) => (
             <Row
               action={
                 <UnderlineLink
@@ -129,6 +129,13 @@ export function ReviewTab() {
       )}
     </div>
   );
+}
+
+/** Most recently reviewed first; never-reviewed workspaces keep the server's
+ * name order below them. */
+function byLastReviewed<T extends { lastReviewedAt?: string }>(list: T[]) {
+  const at = (w: T) => (w.lastReviewedAt ? Date.parse(w.lastReviewedAt) : 0);
+  return [...list].sort((a, b) => at(b) - at(a));
 }
 
 function SuggestionRow({
