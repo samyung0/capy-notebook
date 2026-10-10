@@ -6,6 +6,8 @@ import type { FlashcardContent } from '@/features/materials/blocks';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { type Frame, NoFrame } from '@/features/quizzes/AttemptBody';
 import { type Crumb, QuizPageHeader } from '@/features/quizzes/QuizPage';
+import { StepNav } from '@/features/study/StepNav';
+import { currentStep, useSteps } from '@/features/study/steps';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import type { SrsRating } from '@/lib/srs';
@@ -52,55 +54,47 @@ export function StudyBody({
   const Shell = frame ?? NoFrame;
   const studyIds = () =>
     cards.filter((c) => c.front.trim() || c.back.trim()).map((c) => c.id);
-  const [queue, setQueue] = useState(studyIds);
-  // Cards shown before the current one, most recent last, for Previous.
-  const [history, setHistory] = useState<string[]>([]);
-  const [total, setTotal] = useState(queue.length);
+  const [ids, setIds] = useState(studyIds);
+  const steps = useSteps<SrsRating>(ids);
   const stack = useCardStack();
-  const card = cards.find((c) => c.id === queue[0]);
-
-  function move(next: string[], nextHistory: string[], back = false) {
-    stack.move(card, back);
-    setQueue(next);
-    setHistory(nextHistory);
-  }
+  const shown = steps.current;
+  const card = shown && cards.find((c) => c.id === shown.key);
 
   function rate(rating: SrsRating) {
     if (!card) return;
     onRate(card, rating);
-    const [head, ...rest] = queue;
-    const next = rating === 'again' ? [...rest, head] : rest;
-    move(next, [...history, head]);
-    if (next.length === 0) onFinished?.(total);
+    const next = steps.answer(rating, { requeue: rating === 'again' });
+    stack.move(card);
+    if (!currentStep(next)) onFinished?.(ids.length);
   }
 
-  /** Skips without rating: the card waits at the end of the session. */
-  function skip() {
-    const [head, ...rest] = queue;
-    move([...rest, head], [...history, head]);
+  /** Skips without rating, or moves forward again after Previous. */
+  function next() {
+    stack.move(card ?? undefined);
+    steps.next();
   }
 
   function previous() {
-    const prev = history.at(-1);
-    if (!prev) return;
-    move(
-      [prev, ...queue.filter((id) => id !== prev)],
-      history.slice(0, -1),
-      true
-    );
+    stack.move(card ?? undefined, true);
+    steps.previous();
   }
 
   function studyAgain() {
-    const ids = studyIds();
-    setQueue(ids);
-    setHistory([]);
-    setTotal(ids.length);
+    const fresh = studyIds();
+    setIds(fresh);
+    steps.reset(fresh);
     stack.reset();
   }
 
+  // The card's own place in the set, which stays put as it is skipped or
+  // shown again.
   const position =
     card &&
-    m.flashcards_card_of_total({ position: total - queue.length + 1, total });
+    m.flashcards_card_of_total({
+      position: ids.indexOf(card.id) + 1,
+      total: ids.length,
+    });
+  const total = ids.length;
 
   return (
     <Shell
@@ -133,29 +127,17 @@ export function StudyBody({
                   card={card}
                   compact={embedded}
                   onRate={rate}
+                  rated={shown.record}
                   stack={stack}
                 />
               </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  disabled={history.length === 0}
-                  iconLeft="navigationBack"
-                  onClick={previous}
-                  rounded="large"
-                  variant="outline"
-                >
-                  {m.action_previous()}
-                </Button>
-                <Button
-                  disabled={queue.length < 2}
-                  iconRight="navigationForward"
-                  onClick={skip}
-                  rounded="large"
-                  variant="outline"
-                >
-                  {m.action_next()}
-                </Button>
-              </div>
+              <StepNav
+                canNext={!!shown?.past || steps.steps.queue.length > 1}
+                canPrevious={steps.steps.cursor > 0}
+                className="pt-2"
+                onNext={next}
+                onPrevious={previous}
+              />
             </>
           ) : (
             <div className="flex flex-col items-center gap-4 py-16 text-center">

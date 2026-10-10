@@ -11,11 +11,12 @@ export interface QuestionResult {
   id: string;
   marks: number;
   number: number;
-  /** The question's first part's answer type, which groups it by type. */
-  type: QuestionType;
+  /** The question's first part's answer type, which groups it by type; a
+   * review's flashcards have none. */
+  type?: QuestionType;
 }
 
-type Outcome = 'full' | 'partial' | 'wrong' | 'none';
+export type Outcome = 'full' | 'partial' | 'wrong' | 'none';
 
 export function outcomeOf({ awarded, marks }: QuestionResult): Outcome {
   if (awarded === null) return 'none';
@@ -23,7 +24,7 @@ export function outcomeOf({ awarded, marks }: QuestionResult): Outcome {
   return awarded > 0 ? 'partial' : 'wrong';
 }
 
-const FILL: Record<Outcome, string> = {
+export const OUTCOME_FILL: Record<Outcome, string> = {
   full: 'bg-solid-success',
   none: 'bg-surface-hover-bg',
   partial: 'bg-solid-warning',
@@ -61,26 +62,33 @@ export function ResultScore({
   );
 }
 
+const LEGEND: Record<Outcome, (count: number) => string> = {
+  full: (count) => m.result_full({ count }),
+  none: (count) => m.result_unanswered({ count }),
+  partial: (count) => m.result_partial({ count }),
+  wrong: (count) => m.result_wrong({ count }),
+};
+
 /**
  * One numbered square per question, green for full marks, amber for partial,
  * red for none (blank answers are wrong) and grey without an answer; with
- * `onOpen` each square opens its question. A legend counts each colour.
+ * `onOpen` each square opens its question. A legend counts each colour;
+ * `legend` rewords it (a review counts card ratings and skips too).
  */
 export function ResultSquares({
   results,
   onOpen,
+  legend: wording = LEGEND,
 }: {
   results: QuestionResult[];
   onOpen?: (id: string) => void;
+  legend?: Record<Outcome, (count: number) => string>;
 }) {
   const counts = { full: 0, none: 0, partial: 0, wrong: 0 };
   for (const result of results) counts[outcomeOf(result)]++;
-  const legend = [
-    ['full', m.result_full({ count: counts.full })],
-    ['partial', m.result_partial({ count: counts.partial })],
-    ['wrong', m.result_wrong({ count: counts.wrong })],
-    ['none', m.result_unanswered({ count: counts.none })],
-  ] as const;
+  const legend = (['full', 'partial', 'wrong', 'none'] as const).map(
+    (outcome) => [outcome, wording[outcome](counts[outcome])] as const
+  );
   return (
     <div>
       <ol
@@ -92,7 +100,7 @@ export function ResultSquares({
           const label = squareLabel(outcome, result.number);
           const className = cn(
             'grid size-6.5 place-items-center rounded-md font-bold text-[#1d2330] text-[0.72rem]',
-            FILL[outcome],
+            OUTCOME_FILL[outcome],
             outcome === 'none' && 'text-fg-secondary'
           );
           return (
@@ -123,7 +131,10 @@ export function ResultSquares({
               <span className="inline-flex items-center gap-1.5" key={outcome}>
                 <span
                   aria-hidden
-                  className={cn('size-2.5 rounded-[3px]', FILL[outcome])}
+                  className={cn(
+                    'size-2.5 rounded-[3px]',
+                    OUTCOME_FILL[outcome]
+                  )}
                 />
                 {text}
               </span>
@@ -158,7 +169,7 @@ export function ResultsByType({ results }: { results: QuestionResult[] }) {
                   aria-label={squareLabel(outcomeOf(result), result.number)}
                   className={cn(
                     'size-3.5 rounded-[4px]',
-                    FILL[outcomeOf(result)]
+                    OUTCOME_FILL[outcomeOf(result)]
                   )}
                   key={result.id}
                 />
@@ -178,5 +189,33 @@ export function ResultsByType({ results }: { results: QuestionResult[] }) {
         );
       })}
     </section>
+  );
+}
+
+/** A question's number on its result colour; a button when small. */
+export function ResultNumber({
+  result,
+  small,
+  onClick,
+}: {
+  result: QuestionResult;
+  small?: boolean;
+  onClick?: () => void;
+}) {
+  const outcome = outcomeOf(result);
+  const className = cn(
+    'grid shrink-0 place-items-center font-bold text-[#1d2330]',
+    small
+      ? 'size-5.5 cursor-pointer rounded-[5px] text-[0.7rem] hover:opacity-80'
+      : 'size-6.5 rounded-md text-xs',
+    OUTCOME_FILL[outcome],
+    outcome === 'none' && 'text-fg-secondary'
+  );
+  return onClick ? (
+    <button className={className} onClick={onClick} type="button">
+      {result.number}
+    </button>
+  ) : (
+    <span className={className}>{result.number}</span>
   );
 }

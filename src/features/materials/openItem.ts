@@ -18,12 +18,15 @@ export type OpenItem =
       regions?: Region[];
       citation?: OfficeCitation;
     }
-  | { kind: 'material'; id: string };
+  /** `target` is a quiz question or flashcard to bring into view. */
+  | { kind: 'material'; id: string; target?: string };
 
 /** URL search params for the open item — mutually exclusive `file` | `material`. */
 export type WorkspaceOpenSearch = {
   file?: string;
   material?: string;
+  /** A question or card in the open material, e.g. from a review summary. */
+  item?: string;
   page?: number;
   mode?: MaterialMode;
 };
@@ -78,7 +81,9 @@ export function parseWorkspaceOpenSearch(
   }
   if (material) {
     const mode = parseDocumentMode(search.mode);
-    return mode ? { material, mode } : { material };
+    const item =
+      typeof search.item === 'string' && search.item ? search.item : undefined;
+    return { material, ...(mode ? { mode } : {}), ...(item ? { item } : {}) };
   }
   return {};
 }
@@ -87,13 +92,19 @@ export function openItemFromSearch(
   search: WorkspaceOpenSearch
 ): OpenItem | null {
   if (search.file) return { id: search.file, kind: 'file', page: search.page };
-  if (search.material) return { id: search.material, kind: 'material' };
+  if (search.material)
+    return search.item
+      ? { id: search.material, kind: 'material', target: search.item }
+      : { id: search.material, kind: 'material' };
   return null;
 }
 
 export function searchFromOpenItem(item: OpenItem | null): WorkspaceOpenSearch {
   if (!item) return {};
-  if (item.kind === 'material') return { material: item.id };
+  if (item.kind === 'material')
+    return item.target
+      ? { item: item.target, material: item.id }
+      : { material: item.id };
   // Bounding boxes stay in memory. Putting them in search params would create
   // long links and make highlights survive ordinary file navigation.
   return item.page ? { file: item.id, page: item.page } : { file: item.id };

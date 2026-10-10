@@ -217,6 +217,7 @@ export function CenterContent({
                         mode={materialMode}
                         onEditorStatusChange={setEditorStatus}
                         readOnly={readOnly}
+                        target={item.target}
                         workspaceId={workspaceId}
                       />
                     )}
@@ -257,6 +258,7 @@ function MaterialBody({
   allowExternalAssets,
   onEditorStatusChange,
   readOnly,
+  target,
 }: {
   centerQuiz: boolean;
   materialId: string;
@@ -265,6 +267,7 @@ function MaterialBody({
   allowExternalAssets: boolean;
   onEditorStatusChange: (status: NoteEditorStatus | null) => void;
   readOnly: boolean;
+  target?: string;
 }) {
   const { data: materials, isPending } = useMaterials(workspaceId);
   const [choice, setChoice] = useState<HeavyMaterialChoice | null>(null);
@@ -295,6 +298,7 @@ function MaterialBody({
       materialId={materialId}
       mode={mode}
       onEditorStatusChange={onEditorStatusChange}
+      target={target}
     />
   );
 }
@@ -306,6 +310,7 @@ export function MaterialContent({
   allowExternalAssets,
   forceReadOnly,
   onEditorStatusChange,
+  target,
 }: {
   centerQuiz: boolean;
   materialId: string;
@@ -313,6 +318,8 @@ export function MaterialContent({
   allowExternalAssets: boolean;
   forceReadOnly: boolean;
   onEditorStatusChange: (status: NoteEditorStatus | null) => void;
+  /** A question or card to bring into view once the material shows. */
+  target?: string;
 }) {
   const {
     data: material,
@@ -378,6 +385,7 @@ export function MaterialContent({
               <FlashcardGrid
                 action={<StudySetLink setId={materialId} />}
                 cards={cards}
+                openCardId={target}
                 title={material.title}
               />
             )}
@@ -420,6 +428,7 @@ export function MaterialContent({
                 centered={centerQuiz}
                 content={material.content}
                 quizId={materialId}
+                target={target}
                 title={material.title}
               />
             ) : (
@@ -461,14 +470,23 @@ function QuizPreview({
   centered,
   content,
   quizId,
+  target,
   title,
 }: {
   centered: boolean;
   content: MaterialDocument;
   quizId: string;
+  /** A question to scroll to, e.g. from a review summary. */
+  target?: string;
   title: string;
 }) {
   const navigate = useNavigate();
+  useEffect(() => {
+    if (!target) return;
+    document
+      .querySelector(`[data-question-id="${CSS.escape(target)}"]`)
+      ?.scrollIntoView({ block: 'start' });
+  }, [target]);
   const quiz = content.value.find(
     (node): node is QuizElement => node.type === 'quiz'
   );

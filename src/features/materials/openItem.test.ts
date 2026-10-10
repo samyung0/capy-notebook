@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  openItemFromSearch,
   parseDocumentModeSearch,
   parseWorkspaceOpenSearch,
   readDocumentMode,
@@ -12,6 +13,16 @@ describe('parseWorkspaceOpenSearch', () => {
     expect(
       parseWorkspaceOpenSearch({ material: 'mat_1', mode: 'view' })
     ).toEqual({ material: 'mat_1', mode: 'view' });
+  });
+
+  it('keeps the question or card a review summary opens', () => {
+    const search = parseWorkspaceOpenSearch({ item: 'q4', material: 'qz_1' });
+    expect(search).toEqual({ item: 'q4', material: 'qz_1' });
+    expect(openItemFromSearch(search)).toEqual({
+      id: 'qz_1',
+      kind: 'material',
+      target: 'q4',
+    });
   });
 
   it('drops an invalid material mode', () => {

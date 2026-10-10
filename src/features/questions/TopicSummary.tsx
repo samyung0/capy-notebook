@@ -5,12 +5,12 @@ import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import {
   outcomeOf,
   type QuestionResult,
+  ResultNumber,
   ResultScore,
   ResultSquares,
   ResultsByType,
 } from '@/features/quizzes/ResultSummary';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
 import { CopyToQuizDialog } from './CopyToQuizDialog';
 import { answerLabels } from './editorFields';
 import type { QuestionType } from './types';
@@ -86,13 +86,13 @@ export function TopicSummary({
                 className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3.5 border-divider border-t py-3 sm:grid-cols-[auto_minmax(0,1fr)_auto_auto] sm:items-center"
                 key={result.id}
               >
-                <MissedNumber result={result} />
+                <ResultNumber result={result} />
                 <div className="min-w-0">
                   <div className="line-clamp-2 font-semibold sm:truncate">
                     {question?.preview}
                   </div>
                   <div className="text-fg-muted text-xs">
-                    {answerLabels[result.type]()} ·{' '}
+                    {result.type && answerLabels[result.type]()} ·{' '}
                     {result.marks === 1
                       ? m.question_ui_one_mark()
                       : m.question_ui_marks({ count: result.marks })}
@@ -118,7 +118,7 @@ export function TopicSummary({
                 })}
               </span>
               {missed.slice(MISSED_ROWS).map((result) => (
-                <MissedNumber
+                <ResultNumber
                   key={result.id}
                   onClick={() => onOpen(result.id)}
                   result={result}
@@ -159,31 +159,5 @@ export function TopicSummary({
         />
       )}
     </div>
-  );
-}
-
-/** A missed question's number on its result colour; a button when small. */
-function MissedNumber({
-  result,
-  small,
-  onClick,
-}: {
-  result: QuestionResult;
-  small?: boolean;
-  onClick?: () => void;
-}) {
-  const className = cn(
-    'grid shrink-0 place-items-center font-bold text-[#1d2330]',
-    small
-      ? 'size-5.5 cursor-pointer rounded-[5px] text-[0.7rem] hover:opacity-80'
-      : 'size-6.5 rounded-md text-xs',
-    outcomeOf(result) === 'partial' ? 'bg-solid-warning' : 'bg-solid-error'
-  );
-  return onClick ? (
-    <button className={className} onClick={onClick} type="button">
-      {result.number}
-    </button>
-  ) : (
-    <span className={className}>{result.number}</span>
   );
 }

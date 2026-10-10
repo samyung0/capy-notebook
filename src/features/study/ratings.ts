@@ -11,7 +11,9 @@ export const RATING_LABEL: Record<SrsRating, () => string> = {
 };
 
 /** A review card item as the shared card shows it. */
-export function reviewCard(item: ReviewItem): FlashcardContent {
+export function reviewCard(
+  item: Pick<ReviewItem, 'back' | 'front' | 'image' | 'itemId'>
+): FlashcardContent {
   return {
     back: item.back ?? '',
     front: item.front ?? '',

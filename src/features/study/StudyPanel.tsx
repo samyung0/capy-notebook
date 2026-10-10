@@ -18,6 +18,8 @@ import { userToast } from '@/components/ui/userToast';
 import { CardStack, useCardStack } from '@/features/flashcards/CardStack';
 import type { OpenItem } from '@/features/materials/openItem';
 import { MiniTrail } from '@/features/questions/trailMap/TrailMap';
+import { StepNav } from '@/features/study/StepNav';
+import { currentStep, useSteps } from '@/features/study/steps';
 import '@/features/study/railMap/railMap.css';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import type { TabAction } from '@/features/workspace/PanelTabRow';
@@ -348,7 +350,8 @@ function ReviewLink({
 }
 
 /** One missed flashcard at a time; a rating is recorded like any review
- * rating, so a card rated Good drops down the list on the next refresh. */
+ * rating, so a card rated Good drops down the list on the next refresh. Next
+ * skips a card to the end of the round; Previous shows a rated one read only. */
 function QuickReview({
   items,
   workspaceId,
@@ -359,13 +362,16 @@ function QuickReview({
   // The list as it was when this round began: ratings refresh the summary,
   // and the round should not reshuffle under the learner.
   const [round, setRound] = useState(items);
-  const [index, setIndex] = useState(0);
+  const keyOf = (it: ReviewItem) => `${it.materialId}/${it.itemId}`;
+  const steps = useSteps<SrsRating>(round.map(keyOf));
   const stack = useCardStack();
   const { mutateAsync: rateItem } = useRateReviewItem(workspaceId);
-  const card = round[index];
+  const shown = steps.current;
+  const card = shown && round.find((it) => keyOf(it) === shown.key);
   if (!card) return null;
 
   function rate(rating: SrsRating) {
+    if (!card) return;
     rateItem({
       itemId: card.itemId,
       materialId: card.materialId,
@@ -378,10 +384,10 @@ function QuickReview({
       })
     );
     stack.move(reviewCard(card));
-    if (index + 1 < round.length) setIndex(index + 1);
-    else {
+    // A finished round starts over on the list as it is now.
+    if (!currentStep(steps.answer(rating))) {
       setRound(items);
-      setIndex(0);
+      steps.reset(items.map(keyOf));
     }
   }
 
@@ -389,7 +395,10 @@ function QuickReview({
     <Section
       aside={
         <span className="t-meta px-1.5 text-fg-muted">
-          {m.study_quick_position({ current: index + 1, total: round.length })}
+          {m.study_quick_position({
+            current: round.indexOf(card) + 1,
+            total: round.length,
+          })}
         </span>
       }
       title={m.study_quick_review()}
@@ -399,9 +408,23 @@ function QuickReview({
           card={reviewCard(card)}
           compact
           onRate={rate}
+          rated={shown.record}
           stack={stack}
         />
         <p className="t-meta text-center text-fg-muted">{card.materialTitle}</p>
+        <StepNav
+          canNext={shown.past || steps.steps.queue.length > 1}
+          canPrevious={steps.steps.cursor > 0}
+          className="pt-2"
+          onNext={() => {
+            stack.move(reviewCard(card));
+            steps.next();
+          }}
+          onPrevious={() => {
+            stack.move(reviewCard(card), true);
+            steps.previous();
+          }}
+        />
       </div>
     </Section>
   );

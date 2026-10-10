@@ -11,12 +11,18 @@ export function FlashcardGrid({
   title,
   cards,
   action,
+  openCardId,
 }: {
   title: string;
   cards: FlashcardContent[];
   action?: ReactNode;
+  /** A card to open in the preview at once, e.g. from a review summary. */
+  openCardId?: string;
 }) {
-  const [open, setOpen] = useState<number | null>(null);
+  const [open, setOpen] = useState<number | null>(() => {
+    const at = cards.findIndex((card) => card.id === openCardId);
+    return at < 0 ? null : at;
+  });
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-baseline gap-4">

@@ -44,11 +44,14 @@ export function CardStack({
   card,
   compact,
   onRate,
+  rated,
   stack,
 }: {
   card: FlashcardContent;
   compact?: boolean;
   onRate: (rating: SrsRating) => void;
+  /** A card shown again after it was rated: its ratings are read only. */
+  rated?: SrsRating;
   stack: CardStackState;
 }) {
   const { flipped, leaving, setFlipped, setLeaving, turn } = stack;
@@ -79,6 +82,7 @@ export function CardStack({
         key={turn.n}
         onFlip={() => setFlipped((f) => !f)}
         onRate={onRate}
+        rated={rated}
       />
       {leaving && (
         <StudyCard
@@ -111,11 +115,13 @@ function StudyCard({
   onAnimationEnd,
   onFlip,
   onRate,
+  rated,
 }: {
   card: FlashcardContent;
   className?: string;
   compact?: boolean;
   flipped: boolean;
+  rated?: SrsRating;
   /** The copy swiping away: shown only, never focused or clicked. */
   inert?: boolean;
   onAnimationEnd?: () => void;
@@ -181,7 +187,7 @@ function StudyCard({
       </button>
       {flipped && (
         <div className={cn(compact ? 'px-3 pb-3' : 'px-4 pb-4')}>
-          <RatingTiles onRate={(rating) => onRate?.(rating)} />
+          <RatingTiles chosen={rated} onRate={(rating) => onRate?.(rating)} />
         </div>
       )}
       {leaving !== null && (

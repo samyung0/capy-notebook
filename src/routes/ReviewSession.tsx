@@ -7,12 +7,14 @@ import {
   useFinishReviewSession,
   useRateReviewItem,
   useResumeReviewSession,
+  useReviewOverview,
   useWorkspace,
   useWorkspaceReview,
 } from '@/api/hooks';
 import type {
   CheckReviewItemReq,
   GradedQuestion,
+  ReviewAnswer,
   ReviewItem,
   ReviewSessionRef,
   ReviewStart,
@@ -23,12 +25,46 @@ import { Button, ErrorAction } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
 import { CardStack, useCardStack } from '@/features/flashcards/CardStack';
+import { relativeTime } from '@/features/materials/MaterialListCard';
+import type { Question } from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
+import {
+  type ReviewRecord,
+  ReviewSummary,
+} from '@/features/study/ReviewSummary';
 import { ratingQueue, reviewCard } from '@/features/study/ratings';
 import type { ReviewSearch } from '@/features/study/reviewSearch';
+import { StepNav } from '@/features/study/StepNav';
+import {
+  currentStep,
+  recordOf,
+  type Step,
+  type Steps,
+  useSteps,
+} from '@/features/study/steps';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { SRS_RATINGS } from '@/lib/srs';
+
+/** A checked question's record keeps what it showed: the answers and the
+ * graded question with its key. */
+type ItemRecord = ReviewRecord & { answers?: Answers; question?: Question };
+
+const keyOf = (it: { materialId: string; itemId: string }) =>
+  `${it.materialId}/${it.itemId}`;
+
+function recordOfAnswer(a: ReviewAnswer): ItemRecord {
+  return a.kind === 'card'
+    ? { rating: a.rating }
+    : {
+        answers: a.answers,
+        correct: a.correct,
+        question: a.question,
+        rating: a.rating,
+        total: a.total,
+      };
+}
 
 function ratingFailed() {
   userToast({
@@ -39,13 +75,39 @@ function ratingFailed() {
 }
 
 /** A review of one workspace: a suggestion's items, the whole workspace's,
- * or an unfinished session continued. The session is recorded with its first
- * answer; Back returns to where it started. */
+ * or an unfinished session continued. Keyed by its search, so starting the
+ * next suggestion from the summary is a new session. */
 export default function ReviewSession() {
   const { workspaceId } = useParams({ strict: false }) as {
     workspaceId: string;
   };
   const search = useSearch({ strict: false }) as ReviewSearch;
+  return (
+    <Session
+      key={[
+        workspaceId,
+        search.session,
+        search.group,
+        search.chapterId,
+        search.reviewMode,
+      ].join('|')}
+      search={search}
+      workspaceId={workspaceId}
+    />
+  );
+}
+
+/** The session is recorded with its first answer; Back returns to where it
+ * started. Items come one at a time with Previous and Next: Next skips an
+ * item to the end once, and an item rated or checked is read only when shown
+ * again. The last item opens the summary. */
+function Session({
+  search,
+  workspaceId,
+}: {
+  search: ReviewSearch;
+  workspaceId: string;
+}) {
   const navigate = useNavigate();
   const { data: ws } = useWorkspace(workspaceId);
   // Continue reads the recorded session; Review more starts a new one on
@@ -74,16 +136,29 @@ export default function ReviewSession() {
   );
   const { data, isFetching, isError, refetch } =
     'resume' in source ? resumed : fresh;
+  const steps = useSteps<ItemRecord>([], { skipOnce: true });
   // The session is the batch fetched when it began: ratings change the order
-  // the server would give, and the learner should not see it reshuffle.
+  // the server would give, and the learner should not see it reshuffle. A
+  // continued session starts after its answered items, which Previous reaches.
   const [session, setSession] = useState<{
     ref: ReviewSessionRef;
-    items: ReviewItem[];
+    /** Items still to answer, questions answer-free. */
+    live: Map<string, ReviewItem>;
+    /** A continued session's answered items, questions graded. */
+    done: Map<string, ReviewAnswer>;
+    order: string[];
   } | null>(null);
-  const [index, setIndex] = useState(0);
-  if (session === null && data && !isFetching && !isError)
+  if (session === null && data && !isFetching && !isError) {
+    const live = new Map(data.items.map((it) => [keyOf(it), it]));
+    const done = new Map(data.done.map((it) => [keyOf(it), it]));
+    const doneSteps: Step<ItemRecord>[] = data.done.map((a) => ({
+      key: keyOf(a),
+      record: recordOfAnswer(a),
+    }));
     setSession({
-      items: data.items,
+      done,
+      live,
+      order: [...done.keys(), ...live.keys()],
       ref: {
         chapterId: data.chapterId,
         evidence: data.evidence,
@@ -97,6 +172,8 @@ export default function ReviewSession() {
         workspaceId,
       },
     });
+    steps.reset([...live.keys()], doneSteps);
+  }
   const [loadingMore, setLoadingMore] = useState(false);
   // Cards rise from one stack across the session, the rated one swiping away.
   const stack = useCardStack();
@@ -113,16 +190,41 @@ export default function ReviewSession() {
     },
     [qc, ratings, workspaceId]
   );
-  const item = session?.items[index];
-  const ended = !!session && !item;
-  // At the end every item is answered; a continued session whose items left
-  // their material is finished here, once its answers are saved.
+  const shown = steps.current;
+  const itemOf = (key: string) =>
+    session?.live.get(key) ?? session?.done.get(key);
+  const item = shown ? itemOf(shown.key) : undefined;
+  const liveItem = shown ? session?.live.get(shown.key) : undefined;
+  const ended = !!session && !shown;
+  // A session ends once its answers are saved, skipped items or not; one
+  // whose items all left their material is finished here too.
   const sessionId = session?.ref.id;
-  const answeredAny = index > 0;
+  const answeredAny = steps.steps.timeline.some((step) => step.record);
   useEffect(() => {
     if (!ended || !answeredAny || !sessionId) return;
     void ratings.saved().then(() => finish(sessionId));
   }, [ended, answeredAny, sessionId, ratings, finish]);
+  const { data: overview } = useReviewOverview();
+  const nextSuggestion = overview?.suggestions.find(
+    (s) =>
+      !(
+        s.workspaceId === workspaceId &&
+        s.group === session?.ref.group &&
+        s.chapterId === session?.ref.chapterId
+      )
+  );
+
+  /** A card swipes away only over another card. */
+  function animate(after: Steps<ItemRecord>, back: boolean, from = item) {
+    const to = currentStep(after);
+    const nextItem = to ? itemOf(to.key) : undefined;
+    stack.move(
+      from?.kind === 'card' && nextItem?.kind === 'card'
+        ? reviewCard(from)
+        : undefined,
+      back
+    );
+  }
 
   function back() {
     if (search.from === 'review')
@@ -144,7 +246,6 @@ export default function ReviewSession() {
           },
         });
       setSession(null);
-      setIndex(0);
       stack.reset();
     } finally {
       setLoadingMore(false);
@@ -169,13 +270,13 @@ export default function ReviewSession() {
           >
             {m.review_back()}
           </Button>
-          {item && session && (
+          {shown && !shown.past && (
             <span className="t-meta text-fg-muted">
-              {m.review_left({ count: session.items.length - index })}
+              {m.review_left({ count: steps.steps.queue.length })}
             </span>
           )}
         </div>
-        {session === null ? (
+        {session === null || loadingMore ? (
           isError ? (
             <ErrorState
               action={
@@ -189,57 +290,131 @@ export default function ReviewSession() {
           ) : (
             <SkeletonList count={3} rowHeight={64} />
           )
-        ) : item ? (
-          item.kind === 'card' ? (
-            <div className="mx-auto w-full max-w-160">
+        ) : item && shown ? (
+          <div
+            className={cn(
+              'mx-auto flex w-full flex-col gap-4',
+              item.kind === 'card' ? 'max-w-160' : 'max-w-3xl'
+            )}
+          >
+            {item.kind === 'card' ? (
               <CardStack
                 card={reviewCard(item)}
                 onRate={(rating) => {
+                  const value = SRS_RATINGS.indexOf(rating) + 1;
                   ratings.rate({
                     itemId: item.itemId,
                     materialId: item.materialId,
-                    rating: SRS_RATINGS.indexOf(rating) + 1,
+                    rating: value,
                     session: session.ref,
                   });
-                  // Only a card swipes away over the next card.
-                  const next = session.items[index + 1];
-                  stack.move(
-                    next?.kind === 'card' ? reviewCard(item) : undefined
-                  );
-                  setIndex(index + 1);
+                  animate(steps.answer({ rating: value }), false);
                 }}
+                rated={
+                  shown.record?.rating
+                    ? SRS_RATINGS[shown.record.rating - 1]
+                    : undefined
+                }
                 stack={stack}
               />
-            </div>
-          ) : (
-            <QuestionItem
-              item={item}
-              key={`${item.materialId}/${item.itemId}`}
-              onNext={() => setIndex(index + 1)}
-              session={session.ref}
+            ) : shown.record?.question || !liveItem ? (
+              <CheckedQuestion item={item} record={shown.record ?? {}} />
+            ) : (
+              <QuestionItem
+                item={liveItem}
+                key={shown.key}
+                onChecked={(graded, answers) =>
+                  steps.answer(
+                    {
+                      answers,
+                      correct: graded.correct,
+                      question: graded.question,
+                      total: graded.total,
+                    },
+                    { stay: true }
+                  )
+                }
+                session={session.ref}
+              />
+            )}
+            <StepNav
+              canNext
+              canPrevious={steps.steps.cursor > 0}
+              className="pt-4"
+              onNext={() => animate(steps.next(), false)}
+              onPrevious={() => animate(steps.previous(), true)}
             />
-          )
-        ) : (
-          <div className="m-auto flex flex-col items-center gap-4 text-center">
-            <p className="t-card-title">
-              {session.items.length
-                ? m.review_done({ count: session.items.length })
-                : m.review_nothing()}
-            </p>
-            <div className="flex gap-2">
-              <Button onClick={back} variant="outline">
-                {m.review_finish()}
-              </Button>
-              {session.items.length > 0 && (
-                <Button disabled={loadingMore} onClick={() => void more()}>
-                  {m.review_more()}
-                </Button>
-              )}
-            </div>
           </div>
+        ) : session.order.length === 0 ? (
+          <p className="t-card-title m-auto">{m.review_nothing()}</p>
+        ) : (
+          <ReviewSummary
+            items={session.order.flatMap((key) => {
+              const it = itemOf(key);
+              return it
+                ? [{ item: it, record: recordOf(steps.steps, key) }]
+                : [];
+            })}
+            mode={session.ref.mode}
+            next={nextSuggestion}
+            onMore={() => void more()}
+            onNext={(s) =>
+              navigate({
+                params: { workspaceId: s.workspaceId },
+                search: {
+                  chapterId: s.chapterId,
+                  from: search.from,
+                  group: s.group,
+                  reviewMode: s.mode,
+                },
+                to: '/learning/review/$workspaceId',
+              })
+            }
+            onOpen={(it) =>
+              navigate({
+                params: { workspaceId },
+                // The read view, where a question scrolls into view and a
+                // card opens in its preview.
+                search: {
+                  item: it.itemId,
+                  material: it.materialId,
+                  mode: 'view',
+                },
+                to: '/workspaces/$workspaceId',
+              })
+            }
+            title={ws?.name ?? ''}
+            when={relativeTime(new Date().toISOString())}
+          />
         )}
       </div>
     </PanelWithInvertedRadius>
+  );
+}
+
+/** A question already checked in this session: its result, read only. */
+function CheckedQuestion({
+  item,
+  record,
+}: {
+  item: ReviewItem | ReviewAnswer;
+  record: ItemRecord;
+}) {
+  const question = record.question;
+  return (
+    <>
+      {question && (
+        <QuestionRunner
+          answers={record.answers ?? {}}
+          disabled
+          question={question}
+          review
+        />
+      )}
+      <span className="t-meta text-fg-muted">
+        {m.review_from({ title: item.materialTitle })}
+      </span>
+    </>
   );
 }
 
@@ -247,19 +422,15 @@ export default function ReviewSession() {
  * server grades them, records the rating and returns the question's key. */
 function QuestionItem({
   item,
-  onNext,
+  onChecked,
   session,
 }: {
   item: ReviewItem;
-  onNext: () => void;
+  onChecked: (graded: GradedQuestion, answers: Answers) => void;
   session: ReviewSessionRef;
 }) {
   const [answers, setAnswers] = useState<Answers>({});
-  const {
-    data: checked,
-    isPending: grading,
-    mutate: check,
-  } = useMutation({
+  const { isPending: grading, mutate: check } = useMutation({
     meta: { errorToast: false },
     mutationFn: () =>
       api.post<GradedQuestion>('/review/check', {
@@ -274,32 +445,27 @@ function QuestionItem({
         title: m.review_grade_failed(),
         variant: 'error',
       }),
+    onSuccess: (graded) => onChecked(graded, answers),
   });
-  const graded = checked?.question;
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+    <>
       <QuestionRunner
         answers={answers}
-        disabled={!!graded || grading}
+        disabled={grading}
         onChange={(partId, value) =>
           setAnswers((a) => ({ ...a, [partId]: value }))
         }
-        question={graded ?? item.question!}
-        review={!!graded}
+        question={item.question!}
       />
       <div className="flex items-center justify-between gap-3">
         <span className="t-meta text-fg-muted">
           {m.review_from({ title: item.materialTitle })}
         </span>
-        {graded ? (
-          <Button onClick={onNext}>{m.review_next()}</Button>
-        ) : (
-          <Button disabled={grading} onClick={() => check()}>
-            {m.review_check()}
-          </Button>
-        )}
+        <Button disabled={grading} onClick={() => check()} rounded="large">
+          {m.review_check()}
+        </Button>
       </div>
-    </div>
+    </>
   );
 }
