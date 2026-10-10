@@ -307,7 +307,8 @@ fn a_reference_forward_in_its_own_client_is_malformed() {
 
 /// Two sections for one client whose structs overlap (found by the fuzz):
 /// yrs would place the struct twice and free the first while the text still
-/// links it. Malformed.
+/// links it. Malformed: the patched yrs refuses it at decode, the inspection
+/// if it ever decodes.
 #[test]
 fn overlapping_structs_of_one_client_are_malformed() {
     use yrs::encoding::write::Write;
@@ -326,7 +327,7 @@ fn overlapping_structs_of_one_client_are_malformed() {
         bytes.write_string("x");
     }
     bytes.write_var(0u32);
-    let inspected = inspect_update(&room.transact(), &decode(&bytes).unwrap());
+    let inspected = decode(&bytes).and_then(|update| inspect_update(&room.transact(), &update));
     assert!(
         matches!(inspected, Err(UpdateError::Decode(_))),
         "{inspected:?}"
