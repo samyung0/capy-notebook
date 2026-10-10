@@ -388,23 +388,28 @@ def test_a_reuse_without_a_bundle_shares_the_identical_files_key(workspace, tmp_
 
 
 @pytest.mark.integration
-def test_a_reuse_never_shares_another_owners_key(workspace, tmp_path):
+@pytest.mark.parametrize("same_owner", [False, True], ids=["other-owner", "same-owner"])
+def test_a_reuse_never_shares_a_key_from_another_workspace(
+    workspace, tmp_path, same_owner
+):
     """Security regression (review 1 M1): a key names its file and a file id
-    leads to its workspace, so a reused file never takes the key of another
-    owner's file, even one in a link or public workspace."""
+    leads to its workspace, so a reused file never takes the key of a file in
+    another workspace: another owner's link workspace, or the same owner's
+    other workspace (a link workspace's key would show in a public one)."""
     sha = "cd" * 32
-    other_owner = f"u_{secrets.token_hex(4)}"
+    owner = workspace.user_id if same_owner else f"u_{secrets.token_hex(4)}"
     other_workspace = f"ws_{secrets.token_hex(6)}"
     donor = f"f_{secrets.token_hex(6)}"
     key = f"thumbs/{donor}/{'d' * 64}.webp"
     with workspace._connect() as conn:
-        conn.execute(
-            "INSERT INTO users (id, name, email) VALUES (%s, 'Other', %s)",
-            (other_owner, f"{other_owner}@capynotebook.test"),
-        )
+        if not same_owner:
+            conn.execute(
+                "INSERT INTO users (id, name, email) VALUES (%s, 'Other', %s)",
+                (owner, f"{owner}@capynotebook.test"),
+            )
         conn.execute(
             "INSERT INTO workspaces (id, user_id, name, privacy) VALUES (%s, %s, 'Shared', 'link')",
-            (other_workspace, other_owner),
+            (other_workspace, owner),
         )
         conn.execute(
             """INSERT INTO files (id, workspace_id, name, kind, size_bytes, status,
@@ -432,4 +437,6 @@ def test_a_reuse_never_shares_another_owners_key(workspace, tmp_path):
         assert shared is None
     finally:
         with workspace._connect() as conn:
-            conn.execute("DELETE FROM users WHERE id=%s", (other_owner,))
+            conn.execute("DELETE FROM workspaces WHERE id=%s", (other_workspace,))
+            if not same_owner:
+                conn.execute("DELETE FROM users WHERE id=%s", (owner,))

@@ -27,19 +27,20 @@ thumbs/{file id}/{sha256 of the WebP}.webp
   fire the row trigger).
 - A trashed file keeps its thumbnail until the 30-day purge.
 - A key names its file, and a file id leads to the file's workspace (a link
-  workspace's id is its share link), so a key is shared only where its file id
-  is no secret:
-  - The owner's own workspace clone copies `thumbnail_key` and shares the
-    object; the reaper re-checks references before every delete, so the clone
-    keeps it alive after the original goes. A later capture of the clone writes
-    under the clone's own file id and releases the shared key.
-  - Anyone else's clone gets no shared key: the clone leaves it empty, and after
-    the clone commits the gateway copies the object inside the bucket
-    (`blob.Copy`, S3 CopyObject) to `thumbs/{clone file id}/{same hash}.webp`
-    and records it (`SetCloneThumbnail`; a file gone or captured meanwhile takes
-    nothing and the copy is queued for deletion). A failed copy leaves the file
-    without a thumbnail until its next capture: logged, never retried. The
-    copies run in the clone request, one CopyObject per thumbnail.
+  workspace's id is its share link), so the file id in a key's path is always
+  a file of the same workspace as the row holding it:
+  - A workspace clone never shares a key, the owner's own clone included (a
+    link workspace cloned into a public one would show the source ids). The
+    clone leaves `thumbnail_key` empty, and after it commits the gateway copies
+    the object inside the bucket (`blob.Copy`, S3 CopyObject) to
+    `thumbs/{clone file id}/{same hash}.webp` and records it
+    (`SetCloneThumbnail`; a file gone or captured meanwhile takes nothing and
+    the copy is queued for deletion). A failed copy leaves the file without a
+    thumbnail until its next capture: logged, never retried. The copies run in
+    the clone request, one CopyObject per thumbnail.
+  - Only a reuse within one workspace shares a key (below); the reaper
+    re-checks references before every delete, so the sharing file keeps the
+    object alive after the original goes.
 - An unchanged capture (same key) skips the upload and the update.
 - Thumbnails are a platform cost: no storage quota, no reservation, and
   `size_bytes` and the storage triggers ignore them (about 1-8 KB each).
@@ -54,7 +55,7 @@ Sources: [migration](../server/migrations/0073_thumbnails.sql),
 [reference-count test](../server/internal/store/blobs_test.go)
 (`TestThumbnailKeyIsACountedReference`),
 [clone copies](../server/internal/httpapi/huma_share.go)
-(`TestCrossOwnerCloneCopiesThumbnails`, a security regression test).
+(`TestCloneCopiesThumbnails`, a security regression test).
 
 ## Links and access
 
@@ -109,13 +110,13 @@ the donor-reuse, content-reuse and indexed exits all reach it.
 - A PDF or Office file the parse job reused from identical indexed bytes (the
   donor path, `_reuse_donor` called from the parse job in
   `pipeline/ingest/worker.py`) has no bundle, so it takes the thumbnail key of
-  a live file holding the same bytes in the same workspace or owned by the
-  same owner (`db.share_file_thumbnail`; this workspace first). Another
-  owner's file never lends its key, link or public workspace or not
-  (`test_a_reuse_never_shares_another_owners_key`, a security regression
-  test). The key is shared like the owner's clone's and outlives the original
-  while the copy references it. Text sources need no copy: their preview is
-  read from the reused bytes, which are identical.
+  a live file holding the same bytes in the same workspace
+  (`db.share_file_thumbnail`). A file in any other workspace never lends its
+  key, the same owner's included
+  (`test_a_reuse_never_shares_a_key_from_another_workspace`, a security
+  regression test). The shared key outlives the original while the copy
+  references it. Text sources need no copy: their preview is read from the
+  reused bytes, which are identical.
 - The parser's page render is optional too: a failure prints `page thumbnail
   skipped` and the parse goes on without `page1.png`. Its time is the
   `thumbnail` phase of the parse receipt. The worker's bundle check refuses a

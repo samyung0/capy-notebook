@@ -7,7 +7,7 @@ file's conversion): the worker never renders or converts a document itself. A
 bundle without the image (an older parser, a failed render) means no
 thumbnail. A parse that reused identical indexed bytes builds no bundle; the
 file then shares the key of a file with the same bytes in the same workspace
-or of the same owner. Uploaded images go through Pillow. The 200 px wide WebP
+only. Uploaded images go through Pillow. The 200 px wide WebP
 is stored content-addressed at ``thumbs/{file id}/{sha256}.webp`` and
 ``files.thumbnail_key`` points at it; the blob triggers release the key it
 replaces. Text sources store their first 600 characters in ``files.preview``

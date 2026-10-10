@@ -1472,36 +1472,25 @@ def share_file_thumbnail(
 ) -> bool:
     """Give a file reused from identical indexed bytes, with no parse bundle to
     take a page from, the thumbnail of a live file holding the same bytes in
-    the same workspace or owned by the same owner. A key names its file, and a
-    file id leads to its workspace, so a key from anyone else's workspace,
-    shared by link or not, would hand that workspace to this file's readers.
-    The blob triggers count the shared key."""
+    the same workspace. A key names its file, and a file id leads to its
+    workspace, so a key from any other workspace, the same owner's included,
+    would hand that workspace to this file's readers. The blob triggers count
+    the shared key."""
     cur.execute(
         """
         UPDATE files f SET thumbnail_key = src.thumbnail_key
         FROM (
             SELECT s.thumbnail_key
             FROM files s
-            JOIN workspaces w ON w.id = s.workspace_id
-            WHERE s.source_sha256 = %s AND s.id <> %s AND s.thumbnail_key IS NOT NULL
-              AND s.trashed_at IS NULL
-              AND (w.id = %s
-                   OR w.user_id = (SELECT user_id FROM workspaces WHERE id = %s))
-            ORDER BY (w.id = %s) DESC, s.added_at DESC
+            WHERE s.workspace_id = %s AND s.source_sha256 = %s AND s.id <> %s
+              AND s.thumbnail_key IS NOT NULL AND s.trashed_at IS NULL
+            ORDER BY s.added_at DESC
             LIMIT 1
         ) src
         WHERE f.id = %s AND f.source_sha256 = %s AND f.trashed_at IS NULL
           AND f.thumbnail_key IS DISTINCT FROM src.thumbnail_key
         """,
-        (
-            source_sha256,
-            file_id,
-            workspace_id,
-            workspace_id,
-            workspace_id,
-            file_id,
-            source_sha256,
-        ),
+        (workspace_id, source_sha256, file_id, file_id, source_sha256),
     )
     return cur.rowcount == 1
 
