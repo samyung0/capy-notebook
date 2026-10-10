@@ -153,7 +153,19 @@ test('workspace cards open settings and statistics without entering the workspac
   await expect(
     settings.getByText(m.stats_average_score(), { exact: true })
   ).toBeVisible();
-  await expect(settings.locator('.tabular-nums')).toHaveCount(5);
+  // The five statistics, each a label followed by its number.
+  await expect(settings).toMatchAriaSnapshot(`
+    - paragraph: ${JSON.stringify(m.quiz_col_chapters())}
+    - paragraph: /^\\d+$/
+    - paragraph: ${JSON.stringify(m.nav_files())}
+    - paragraph: /^\\d+$/
+    - paragraph: ${JSON.stringify(m.nav_quizzes())}
+    - paragraph: /^\\d+$/
+    - paragraph: ${JSON.stringify(m.stats_attempts())}
+    - paragraph: /^\\d+$/
+    - paragraph: ${JSON.stringify(m.stats_average_score())}
+    - paragraph: /^\\d+%$/
+  `);
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_general() })
     .click();
