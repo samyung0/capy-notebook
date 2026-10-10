@@ -521,13 +521,13 @@ export function ChatPanel({
                   type="button"
                   variant="ghost-hover"
                 >
-                  {/* The date wraps under the title, aligned to its start, when the row is too narrow. */}
-                  <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                  {/* Phones always put the date under the title; wider rows wrap it only when too narrow. */}
+                  <span className="flex min-w-0 flex-1 flex-col gap-y-0.5 sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-3">
                     <span className="wrap-anywhere min-w-0 grow whitespace-normal">
                       {c.title || m.chat_untitled()}
                     </span>
                     <time
-                      className="whitespace-nowrap text-fg-muted text-sm"
+                      className="whitespace-nowrap text-fg-muted text-xs sm:text-sm"
                       dateTime={c.createdAt}
                     >
                       {formatConversationDate(c.createdAt)}

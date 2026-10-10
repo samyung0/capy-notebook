@@ -158,21 +158,21 @@ export function PhotoEditorDialog({
           <Button
             className="mr-auto"
             disabled={applying}
-            onClick={() => setView(START)}
-            size="lg"
-            type="button"
-            variant="ghost-hover"
-          >
-            {m.action_reset()}
-          </Button>
-          <Button
-            disabled={applying}
             onClick={onClose}
             size="lg"
             type="button"
             variant="ghost-hover"
           >
             {m.action_cancel()}
+          </Button>
+          <Button
+            disabled={applying}
+            onClick={() => setView(START)}
+            size="lg"
+            type="button"
+            variant="ghost-hover"
+          >
+            {m.action_reset()}
           </Button>
           <Button
             disabled={!bitmap || applying}

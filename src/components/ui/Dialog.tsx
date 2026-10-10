@@ -148,10 +148,11 @@ function DialogFooter({
         '-mx-4 -mb-3 flex flex-row justify-end gap-2 px-4 pt-5.5 pb-3',
         // Phones split a multi-button footer: the first (secondary) action goes
         // to the left edge, and a borderless one sheds most of its padding so
-        // its label sits just inside the content edge.
-        '[&>:first-child:not(:only-child)]:mr-auto sm:[&>:first-child:not(:only-child)]:mr-0',
-        '[&>[data-variant=ghost-hover][data-size=lg]:first-child:not(:only-child)]:-ml-4 sm:[&>[data-variant=ghost-hover][data-size=lg]:first-child:not(:only-child)]:ml-0',
-        '[&>[data-variant=ghost-hover][data-size=md]:first-child:not(:only-child)]:-ml-3 sm:[&>[data-variant=ghost-hover][data-size=md]:first-child:not(:only-child)]:ml-0',
+        // its label sits just inside the content edge. max-sm (not an sm reset)
+        // so a footer's own mr-auto split still applies on wider screens.
+        'max-sm:[&>:first-child:not(:only-child)]:mr-auto',
+        'max-sm:[&>[data-variant=ghost-hover][data-size=lg]:first-child:not(:only-child)]:-ml-4',
+        'max-sm:[&>[data-variant=ghost-hover][data-size=md]:first-child:not(:only-child)]:-ml-3',
         className
       )}
       data-slot="dialog-footer"
