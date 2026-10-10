@@ -76,6 +76,7 @@ import {
   initErrorReporting,
   log,
   reportHttpError,
+  withRequestTrace,
 } from './observability.js';
 import {
   endOfficeResync,
@@ -1553,7 +1554,10 @@ const sourceHandoff = new SourceHandoff(
   activeInstanceIds,
   persistSource,
   config.uatPublicationHold,
-  (error) => captureError(error, { stage: 'source_rebuild' }),
+  // Tagged with the file: a rebuild runs outside any request, so it has no
+  // trace id, and the UAT journeys find their files' events by it.
+  (error, fileId) =>
+    captureError(error, { file_id: fileId, stage: 'source_rebuild' }),
   (room) =>
     failedStores.has(room) ||
     pendingSources.has(room) ||
@@ -1728,21 +1732,24 @@ async function handleHttpRequest(
 // retaining Hocuspocus's WebSocket upgrade listener.
 server.httpServer.removeAllListeners('request');
 server.httpServer.on('request', (request, response) => {
-  void handleHttpRequest(request, response).catch((error) => {
-    reportHttpError(response, error);
-    if (!response.headersSent) {
-      jsonResponse(
-        response,
-        500,
-        {
-          message: error instanceof Error ? error.message : String(error),
-        },
-        error
-      );
-    } else if (!response.writableEnded) {
-      response.end();
-    }
-  });
+  // The catch runs inside the trace scope too, so its capture is tagged.
+  void withRequestTrace(request.headers.traceparent, () =>
+    handleHttpRequest(request, response).catch((error) => {
+      reportHttpError(response, error);
+      if (!response.headersSent) {
+        jsonResponse(
+          response,
+          500,
+          {
+            message: error instanceof Error ? error.message : String(error),
+          },
+          error
+        );
+      } else if (!response.writableEnded) {
+        response.end();
+      }
+    })
+  );
 });
 
 /**
@@ -2453,7 +2460,7 @@ const rebuildTimer = setInterval(() => {
           rebuildBackoff.set(fileId, now + 5 * 60_000);
       } catch (error) {
         rebuildBackoff.set(fileId, now + 10 * 60_000);
-        captureError(error, { stage: 'source_rebuild' });
+        captureError(error, { file_id: fileId, stage: 'source_rebuild' });
       }
     }
   })()

@@ -12,7 +12,7 @@ openpyxl, python-pptx and reportlab. Codex's bundled Python provides these libra
 | digital.pdf | One text-layer page with wetland fact and launch code. Tests browser upload and API annotation ownership; visual rendering/annotation gestures are not asserted. Bytes remain unchanged. |
 | notes.txt | UTF-8 source with wetland fact, launch code and marker. Browser edit must reach Y.Text and automatic publication with exact UTF-8 bytes. |
 | grades.csv | UTF-8 CSV with header, scores, quoted fact and marker. Available for local import fixtures; the initial UAT suite does not claim positive CSV editing coverage. |
-| delimiter-limit.csv | Run marker followed by 100,000 commas. Intended terminal direct-ingest error is `delimited table exceeds the cell limit`, telemetry code `terminalerror`. No parser or model content should publish. |
+| delimiter-limit.csv | Run marker followed by 100,000 commas. Intended job error is `delimited table exceeds the cell limit`, telemetry code `tabular_cell_limit`, no Sentry event; the file ends ready and unindexed with `index_limit='tabular_cell_limit'`. No parser or model content should publish. |
 
 The runner replaces run markers in temporary in-memory copies of Office/text
 inputs. PDF bytes stay fixed; that case permits exact-source reuse and does not

@@ -1,4 +1,5 @@
 import type { SourceFile } from '@/api/types';
+import { m } from '@/i18n';
 
 const IMAGE_EXTS = new Set([
   'png',
@@ -54,4 +55,12 @@ export function isImageFile(file: Pick<SourceFile, 'kind' | 'name'>) {
 /** True while ingest is waiting for a parser slot or actively running. */
 export function fileIsIngesting(status?: string) {
   return status === 'pending' || status === 'processing';
+}
+
+/** Why a ready file is not searchable: its content is over an ingest limit,
+ * or it was stored without processing. */
+export function notIndexedMessage(file: Pick<SourceFile, 'indexLimit'>) {
+  return file.indexLimit
+    ? m.files_not_indexed_too_large()
+    : m.files_not_indexed();
 }

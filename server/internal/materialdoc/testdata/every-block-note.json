@@ -1,0 +1,304 @@
+{
+  "schemaVersion": 1,
+  "value": [
+    {
+      "id": "fx_h1",
+      "type": "h1",
+      "children": [{ "text": "Every block heading one" }]
+    },
+    { "id": "fx_toc", "type": "toc", "children": [{ "text": "" }] },
+    {
+      "id": "fx_h2",
+      "type": "h2",
+      "children": [{ "text": "Every block heading two" }]
+    },
+    {
+      "id": "fx_h3",
+      "type": "h3",
+      "children": [{ "text": "Every block heading three" }]
+    },
+    {
+      "id": "fx_h4",
+      "type": "h4",
+      "children": [{ "text": "Every block heading four" }]
+    },
+    {
+      "id": "fx_h5",
+      "type": "h5",
+      "children": [{ "text": "Every block heading five" }]
+    },
+    {
+      "id": "fx_h6",
+      "type": "h6",
+      "children": [{ "text": "Every block heading six" }]
+    },
+    {
+      "id": "fx_marks",
+      "type": "p",
+      "align": "center",
+      "children": [
+        { "text": "Marks: " },
+        { "text": "bold", "bold": true },
+        { "text": " " },
+        { "text": "italic", "italic": true },
+        { "text": " " },
+        { "text": "underline", "underline": true },
+        { "text": " " },
+        { "text": "strike", "strikethrough": true },
+        { "text": " " },
+        { "text": "code", "code": true },
+        { "text": " x" },
+        { "text": "2", "superscript": true },
+        { "text": " H" },
+        { "text": "2", "subscript": true },
+        { "text": "O " },
+        { "text": "highlight", "highlight": true },
+        { "text": " " },
+        { "text": "Ctrl", "kbd": true },
+        { "text": " " },
+        { "text": "red", "color": "#c0392b" },
+        { "text": " " },
+        { "text": "shaded", "backgroundColor": "#fdebd0" },
+        { "text": " " },
+        { "text": "large", "fontSize": "20px" },
+        { "text": " " },
+        { "text": "serif", "fontFamily": "serif" }
+      ]
+    },
+    {
+      "id": "fx_inlines",
+      "type": "p",
+      "children": [
+        { "text": "Inlines: " },
+        {
+          "type": "a",
+          "url": "https://example.com/every-block",
+          "children": [{ "text": "a link" }]
+        },
+        { "text": ", " },
+        {
+          "type": "mention",
+          "key": "user_every_block",
+          "value": "Every Block Reader",
+          "children": [{ "text": "" }]
+        },
+        { "text": " and " },
+        {
+          "type": "inline_equation",
+          "texExpression": "e^{i\\pi}+1=0",
+          "children": [{ "text": "" }]
+        },
+        { "text": "." }
+      ]
+    },
+    {
+      "id": "fx_bullet",
+      "type": "p",
+      "indent": 1,
+      "listStyleType": "disc",
+      "children": [{ "text": "Bulleted item" }]
+    },
+    {
+      "id": "fx_number",
+      "type": "p",
+      "indent": 1,
+      "listStyleType": "decimal",
+      "listStart": 1,
+      "children": [{ "text": "Numbered item" }]
+    },
+    {
+      "id": "fx_todo",
+      "type": "p",
+      "indent": 1,
+      "listStyleType": "todo",
+      "checked": true,
+      "children": [{ "text": "Done task" }]
+    },
+    {
+      "id": "fx_quote",
+      "type": "blockquote",
+      "children": [{ "type": "p", "children": [{ "text": "A quoted line" }] }]
+    },
+    { "id": "fx_hr", "type": "hr", "children": [{ "text": "" }] },
+    {
+      "id": "fx_code",
+      "type": "code_block",
+      "lang": "javascript",
+      "children": [
+        {
+          "type": "code_line",
+          "children": [{ "text": "const tide = 'high';" }]
+        },
+        { "type": "code_line", "children": [{ "text": "console.log(tide);" }] }
+      ]
+    },
+    {
+      "id": "fx_table",
+      "type": "table",
+      "children": [
+        {
+          "type": "tr",
+          "children": [
+            {
+              "type": "th",
+              "children": [{ "type": "p", "children": [{ "text": "Site" }] }]
+            },
+            {
+              "type": "th",
+              "children": [
+                { "type": "p", "children": [{ "text": "Salinity" }] }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "tr",
+          "children": [
+            {
+              "type": "td",
+              "children": [{ "type": "p", "children": [{ "text": "Marsh" }] }]
+            },
+            {
+              "type": "td",
+              "children": [{ "type": "p", "children": [{ "text": "12" }] }]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fx_callout",
+      "type": "callout",
+      "variant": "tip",
+      "children": [{ "type": "p", "children": [{ "text": "A callout tip" }] }]
+    },
+    {
+      "id": "fx_columns",
+      "type": "column_group",
+      "children": [
+        {
+          "type": "column",
+          "width": "50%",
+          "children": [{ "type": "p", "children": [{ "text": "Left column" }] }]
+        },
+        {
+          "type": "column",
+          "width": "50%",
+          "children": [
+            { "type": "p", "children": [{ "text": "Right column" }] }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fx_equation",
+      "type": "equation",
+      "texExpression": "\\int_0^1 x\\,dx = \\tfrac{1}{2}",
+      "children": [{ "text": "" }]
+    },
+    {
+      "id": "fx_image",
+      "type": "img",
+      "assetId": "asset_every_block_image",
+      "name": "marsh.png",
+      "contentType": "image/png",
+      "sizeBytes": 1024,
+      "width": "60%",
+      "caption": [{ "text": "A marsh" }],
+      "children": [{ "text": "" }]
+    },
+    {
+      "id": "fx_audio",
+      "type": "audio",
+      "assetId": "asset_every_block_audio",
+      "name": "tide.wav",
+      "contentType": "audio/wav",
+      "sizeBytes": 2048,
+      "children": [{ "text": "" }]
+    },
+    {
+      "id": "fx_file",
+      "type": "file",
+      "assetId": "asset_every_block_file",
+      "name": "readings.txt",
+      "contentType": "text/plain",
+      "sizeBytes": 64,
+      "children": [{ "text": "" }]
+    },
+    {
+      "id": "fx_video",
+      "type": "video",
+      "provider": "youtube",
+      "videoId": "dQw4w9WgXcQ",
+      "width": "80%",
+      "children": [{ "text": "" }]
+    },
+    {
+      "id": "fx_mermaid",
+      "type": "mermaid",
+      "source": "flowchart LR\n  Tide --> Marsh",
+      "theme": "linearLight",
+      "width": "70%",
+      "children": [
+        { "type": "mermaid_caption", "children": [{ "text": "Tide flow" }] }
+      ]
+    },
+    {
+      "id": "fx_chart",
+      "type": "chart",
+      "width": "60%",
+      "block": {
+        "type": "chart",
+        "kind": "line",
+        "title": "Salinity",
+        "labels": ["a", "b"],
+        "series": [{ "name": "S", "values": [1, 2] }]
+      },
+      "children": [{ "text": "" }]
+    },
+    {
+      "id": "fx_graph",
+      "type": "graph",
+      "block": {
+        "type": "graph",
+        "board": { "bbox": [-5, 5, 5, -5], "axis": true, "grid": false },
+        "elements": [
+          { "type": "point", "id": "a", "coords": [0, 0] },
+          { "type": "point", "id": "b", "coords": [1, 1] },
+          { "type": "line", "id": "line", "points": ["a", "b"] }
+        ],
+        "image": {
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 320 190\"><rect width=\"320\" height=\"190\" fill=\"#eeeeee\"/></svg>"
+        },
+        "width": 320,
+        "height": 190,
+        "description": "A line through two points"
+      },
+      "children": [{ "text": "" }]
+    },
+    {
+      "id": "fx_html",
+      "type": "html_embed",
+      "caption": "Every block snippet",
+      "html": "<style>html,body{margin:0}</style><div id=\"every\" style=\"height:120px\">Every block snippet</div>",
+      "children": [{ "text": "" }]
+    },
+    {
+      "id": "fx_quiz",
+      "type": "material_ref",
+      "refKind": "quiz",
+      "materialId": "",
+      "pending": "{\"questions\":[{\"id\":\"q_every\",\"labels\":\"letters\",\"layout\":\"paper\",\"stem\":[],\"parts\":[{\"id\":\"q_every:part:1\",\"marks\":1,\"solution\":[],\"blocks\":[{\"type\":\"text\",\"text\":\"A salt marsh floods with the tide.\"}],\"answer\":{\"type\":\"boolean\",\"correct\":true}}]}]}",
+      "children": [{ "text": "" }]
+    },
+    {
+      "id": "fx_cards",
+      "type": "material_ref",
+      "refKind": "flashcards",
+      "materialId": "",
+      "pending": "{\"cards\":[{\"front\":\"Salt marsh\",\"back\":\"Coastal grassland flooded by tides\"}]}",
+      "children": [{ "text": "" }]
+    },
+    { "id": "fx_end", "type": "p", "children": [{ "text": "Every block end" }] }
+  ]
+}

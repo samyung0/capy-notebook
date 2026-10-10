@@ -118,6 +118,23 @@ func (a *api) stripeSubscriptionUser(
 	return userID, nil
 }
 
+// failWebhookClaim answers a delivery whose event another delivery is still
+// processing with 409, which Svix and Stripe both retry later. It is not a
+// server failure: the first delivery either completes the event, so the retry
+// answers "already processed", or clears its lease on failure so the retry
+// claims it. Answering 200 instead would lose the event if that first delivery
+// fails after the provider stopped waiting for it.
+func (a *api) failWebhookClaim(w http.ResponseWriter, err error) {
+	if errors.Is(err, store.ErrWebhookInProgress) {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"code":    "webhook_in_progress",
+			"message": "this event is already being processed; retry later",
+		})
+		return
+	}
+	a.fail(w, err)
+}
+
 func (a *api) clerkWebhook(w http.ResponseWriter, r *http.Request) {
 	if a.cfg.ClerkWebhookSecret == "" {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "webhook not configured"})
@@ -182,7 +199,7 @@ func (a *api) clerkWebhook(w http.ResponseWriter, r *http.Request) {
 		r.Context(), eventID, "clerk", evt.Type, claimUserID, body,
 	)
 	if err != nil {
-		a.fail(w, err)
+		a.failWebhookClaim(w, err)
 		return
 	}
 	if done {
@@ -290,7 +307,7 @@ func (a *api) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 		r.Context(), event.ID, "stripe", string(event.Type), "", event.Data.Raw,
 	)
 	if err != nil {
-		a.fail(w, err)
+		a.failWebhookClaim(w, err)
 		return
 	}
 	if done {

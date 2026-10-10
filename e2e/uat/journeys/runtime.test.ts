@@ -8,7 +8,6 @@ import { request } from '@playwright/test';
 import { savedTokenStatus } from './accounts';
 import {
   cleanupRun,
-  expectedFailure,
   validateCleanupTarget,
   validateRegistrationOwnership,
 } from './cleanup';
@@ -191,33 +190,6 @@ test('the republication wait fails on any failed refresh and needs a second auto
   );
   await assert.rejects(
     republication(fake([], 'true', null), 'file_fixture', 12, before)
-  );
-});
-
-test('an intentional-failure trace accepts only its recorded exception', () => {
-  const csv = {
-    exceptionType: 'TerminalError',
-    value: 'delimited table exceeds the cell limit',
-  };
-  const one = (type: string, value: string) => [{ type, value }];
-  assert(expectedFailure(csv, one('TerminalError', csv.value)));
-  assert(!expectedFailure(csv, one('TerminalError', `${csv.value}.`)));
-  assert(!expectedFailure(csv, one('ValueError', csv.value)));
-  assert(
-    !expectedFailure(csv, [
-      ...one('TerminalError', csv.value),
-      ...one('TerminalError', csv.value),
-    ])
-  );
-  // A record without an exception type or a value accepts nothing.
-  assert(
-    !expectedFailure({ errorCode: 'terminalerror' }, one('TerminalError', ''))
-  );
-  assert(
-    !expectedFailure(
-      { exceptionType: 'TerminalError' },
-      one('TerminalError', 'anything')
-    )
   );
 });
 

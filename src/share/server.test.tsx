@@ -116,7 +116,7 @@ describe('renderSharePage', () => {
     // Charts and graphs hydrate for their click-to-preview.
     expect(html).toContain('data-island="figure"');
     expect(html).toContain('data-island="html"');
-    // View source needs the app's router, so shared pages leave it out.
+    // Visitors don't get an interactive block's View source.
     expect(html).not.toContain('View source');
   });
 

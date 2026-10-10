@@ -10,6 +10,7 @@ const probe = vi.hoisted(() => {
   return {
     events: [] as Array<{
       event_id?: string;
+      tags?: Record<string, string>;
       request?: {
         data?: unknown;
         cookies?: unknown;
@@ -59,6 +60,7 @@ import {
   reportHttpError,
   retryEventHeaders,
   withEventId,
+  withRequestTrace,
   withRetryEvent,
 } from './observability.js';
 import type { YjsDocumentStore } from './persistence.js';
@@ -205,6 +207,30 @@ it('reports each causal failure once across catch, HTTP relay and projection cle
   ]);
   expect(retryEventHeaders()).toEqual({});
   vi.unstubAllGlobals();
+});
+
+it('tags captures in a request with its W3C trace id and the service', async () => {
+  initErrorReporting();
+  const trace = 'ab'.repeat(16);
+  const tagged = await withRequestTrace(
+    `00-${trace}-${'c'.repeat(16)}-01`,
+    async () => {
+      await Promise.resolve();
+      return captureError(new Error('publish failed'));
+    }
+  );
+  const untagged = withRequestTrace(
+    `00-${'0'.repeat(32)}-${'c'.repeat(16)}-01`,
+    () => captureError(new Error('no trace'))
+  );
+  await Sentry.flush(1000);
+  const tags = (id: string | undefined) =>
+    probe.events.find((event) => event.event_id === id)?.tags;
+  expect(tags(tagged)).toMatchObject({
+    service: 'collaboration',
+    trace_id: trace,
+  });
+  expect(tags(untagged)?.trace_id).toBeUndefined();
 });
 
 afterAll(async () => {

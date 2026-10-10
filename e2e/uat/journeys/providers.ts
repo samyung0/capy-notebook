@@ -331,38 +331,10 @@ export async function verifyOutboxDelivery(
 export type SentryScope = {
   traceIds: string[];
   actorIds: string[];
+  /** Run files, for collaboration's rebuild events (no trace or user). */
+  fileIds?: string[];
   start: string;
 };
-export async function readSentryEvent(
-  env: UatEnvironment,
-  event: Record<string, unknown>
-) {
-  const project = stringField(event, 'project');
-  const id = stringField(event, 'id');
-  if (!env.sentryToken || !env.sentryOrganization)
-    throw new Error('UAT Sentry read configuration is required');
-  if (!env.sentryProjectSlugs.includes(project) || !/^[a-f0-9]{32}$/.test(id))
-    throw new Error('Sentry event is outside the configured run projects');
-  const url = new URL(
-    `/api/0/projects/${encodeURIComponent(env.sentryOrganization)}/${encodeURIComponent(project)}/events/${id}/`,
-    env.sentryBaseUrl
-  );
-  if (
-    url.protocol !== 'https:' ||
-    !['sentry.io', 'de.sentry.io', 'us.sentry.io'].includes(url.hostname)
-  )
-    throw new Error('Unexpected Sentry API host');
-  return object(
-    (
-      await providerJSON(
-        url,
-        { headers: { Authorization: `Bearer ${env.sentryToken}` } },
-        'Sentry'
-      )
-    ).body
-  );
-}
-
 export async function readSentryEvents(
   env: UatEnvironment,
   scope: SentryScope
@@ -373,7 +345,8 @@ export async function readSentryEvents(
     !env.sentryProjectSlugs.length
   )
     throw new Error('UAT Sentry read configuration is required');
-  if (!scope.traceIds.length && !scope.actorIds.length)
+  const fileIds = scope.fileIds ?? [];
+  if (!scope.traceIds.length && !scope.actorIds.length && !fileIds.length)
     throw new Error('Sentry reads must be scoped to this run');
   const clauses = [
     ...scope.traceIds.map((id) => {
@@ -384,6 +357,10 @@ export async function readSentryEvents(
       if (!/^user_[a-zA-Z0-9]+$/.test(id))
         throw new Error('Invalid run actor ID');
       return `user.id:${id}`;
+    }),
+    ...fileIds.map((id) => {
+      if (!/^f_[a-zA-Z0-9]+$/.test(id)) throw new Error('Invalid run file ID');
+      return `file_id:${id}`;
     }),
   ];
   const url = new URL(

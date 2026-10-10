@@ -47,6 +47,7 @@ from ..jobs import (
     POLICIES,
     PROVIDER_WAITS_MAX,
     CapacityWait,
+    InputLimitError,
     RetryableError,
     TerminalError,
     backoff_s,
@@ -390,7 +391,10 @@ def _finish_source_refresh(
         response = requests.post(
             cfg.gateway_url.rstrip("/") + "/api/internal/source-refresh/publish",
             json=body,
-            headers={"X-Pipeline-Secret": cfg.pipeline_secret},
+            headers={
+                "X-Pipeline-Secret": cfg.pipeline_secret,
+                **obs.outbound_headers(),
+            },
             timeout=_SOURCE_PUBLISH_TIMEOUT_S,
         )
     except (requests.Timeout, requests.ConnectionError) as exc:
@@ -536,7 +540,11 @@ def _finish_fail(
     workspace_id: str = "",
     error_category: str = "",
     error_code: str = "",
+    index_limit: str = "",
 ) -> bool:
+    """Fail the job. The file fails too, unless ``index_limit`` names the
+    ingest limit its content is over: then it is ready and unindexed, still
+    usable, and only search and chat skip it."""
     with db.connect() as conn:
         with conn.cursor() as cur:
             boundary_payload = None
@@ -556,8 +564,10 @@ def _finish_fail(
                     db.require_current_file_source(
                         cur, file_id, source_revision, source_etag
                     )
-                db.set_file_status(cur, file_id, "failed")
+                db.set_file_status(cur, file_id, "ready" if index_limit else "failed")
                 db.set_file_indexed(cur, file_id, False)
+                if index_limit:
+                    db.set_file_index_limit(cur, file_id, index_limit)
             db.set_job(cur, job_id, "failed", error[:500])
             db.close_credit_reservation(cur, reservation_id)
             if file_id:
@@ -680,6 +690,7 @@ def _notify_ingest_terminal(
     payload: dict | None = None,
     error_category: str = "",
     error_code: str = "",
+    index_limit: str = "",
 ) -> None:
     reservation_id = _reservation_id(payload or {})
     if not file_id:
@@ -712,8 +723,14 @@ def _notify_ingest_terminal(
         workspace_id=str((payload or {}).get("workspaceId") or ws or ""),
         error_category=error_category,
         error_code=error_code,
+        index_limit=index_limit,
     )
     if not committed:
+        return
+    if index_limit:
+        if ws:
+            _publish_progress(ws, file_id, "done", 100, status="ready", indexed=False)
+        log.info("ingest %s is over its %s and stays unindexed", name, index_limit)
         return
     # A refused Office rebase leaves the published file as it was and due for
     # a fresh publication, so the workspace sees no failure.
@@ -1324,11 +1341,10 @@ async def _ensure_document_artifact(
             name,
             job["id"],
         )
-    except (
-        parser_client.ParserTooManyScannedPagesError,
-        parser_client.ParserTooManyPagesError,
-    ) as exc:
-        raise TerminalError(str(exc)) from exc
+    except parser_client.ParserTooManyScannedPagesError as exc:
+        raise InputLimitError("scanned_page_limit", str(exc)) from exc
+    except parser_client.ParserTooManyPagesError as exc:
+        raise InputLimitError("page_limit", str(exc)) from exc
     except parser_client.ParserTerminalResourceError as exc:
         raise TerminalError(
             "this file hit a terminal parser resource limit and is "
@@ -2627,8 +2643,22 @@ async def _handle_job_failure_bound(job: dict, exc: BaseException) -> None:
             )
         log.info("job %s requeued (%s)", job["id"], outcome)
         return
-    log.exception("%s job %s failed", job_type, job["id"])
-    obs.capture_error(exc, stage=f"{job_type}_terminal")
+    index_limit = ""
+    if isinstance(exc, InputLimitError):
+        # The user's file is over a documented limit and nothing on our side
+        # broke. The job fails with the limit's code; the file stays usable,
+        # unindexed. An edited source over it keeps its published version, like
+        # any refused refresh.
+        log.info("%s job %s refused its input: %s", job_type, job["id"], exc)
+        if payload.get("sourceRefresh") is not True:
+            index_limit = exc.code
+    elif isinstance(exc, db.SourceRebaseRefusedError):
+        # A documented engine refusal: the file stays due and the next
+        # publication captures the edits.
+        log.warning("%s job %s rebase refused: %s", job_type, job["id"], exc)
+    else:
+        log.exception("%s job %s failed", job_type, job["id"])
+        obs.capture_error(exc, stage=f"{job_type}_terminal")
     try:
         await asyncio.to_thread(
             _notify_ingest_terminal,
@@ -2640,6 +2670,7 @@ async def _handle_job_failure_bound(job: dict, exc: BaseException) -> None:
             payload,
             error_category,
             error_code,
+            index_limit,
         )
     except db.SourceSupersededError:
         await asyncio.to_thread(

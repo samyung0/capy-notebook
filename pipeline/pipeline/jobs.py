@@ -25,6 +25,21 @@ class TerminalError(Exception):
     """Do not retry. The job is failed and, for ingest, the file is failed."""
 
 
+class InputLimitError(TerminalError):
+    """The user's file is over a documented size or shape limit.
+
+    The job fails with ``code`` as its attempt error code, while the file ends
+    ready and unindexed with ``files.index_limit = code``: it still opens, only
+    search and chat skip it. This is an expected outcome, not a server failure,
+    so the worker does not report it to Sentry. ``code`` is one of the
+    ``FileIndexLimit`` values in server/internal/store/enums.go.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
 class CapacityWait(Exception):
     """Parser slots are full. The job returns to pending.
 

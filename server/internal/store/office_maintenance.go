@@ -373,7 +373,7 @@ func applyExportTx(ctx context.Context, tx pgx.Tx, fileID string, p exportPublic
 	if _, err := tx.Exec(ctx, `DELETE FROM image_caption_associations WHERE file_id=$1`, fileID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE files SET blob_path=$2,source_sha256=$3,size_bytes=$4,source_etag=$5,content_hash=NULL,indexed=false,status='ready',revision=revision+1,caption_blob_path=NULL WHERE id=$1`, fileID, p.sourcePath, p.sha, p.size, p.etag); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE files SET blob_path=$2,source_sha256=$3,size_bytes=$4,source_etag=$5,content_hash=NULL,indexed=false,index_limit=NULL,status='ready',revision=revision+1,caption_blob_path=NULL WHERE id=$1`, fileID, p.sourcePath, p.sha, p.size, p.etag); err != nil {
 		return err
 	}
 	if p.deferred {
@@ -436,7 +436,7 @@ func (s *Store) reprocessTx(ctx context.Context, tx pgx.Tx, result SourceProcess
 	if _, err = tx.Exec(ctx, `INSERT INTO jobs(id,type,payload) VALUES($1,$2,$3)`, result.JobID, initialPipelineJobType(plan), payload); err != nil {
 		return result, err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE files SET status='pending' WHERE id=$1`, result.FileID); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE files SET status='pending',index_limit=NULL WHERE id=$1`, result.FileID); err != nil {
 		return result, err
 	}
 	if _, err = tx.Exec(ctx, `UPDATE source_documents SET reprocess_at=now()+interval '1 day' WHERE file_id=$1`, result.FileID); err != nil {

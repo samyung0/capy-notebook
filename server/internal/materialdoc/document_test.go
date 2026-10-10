@@ -936,3 +936,27 @@ func TestResizableBlocksTakeOnlyTheResizeWidth(t *testing.T) {
 		}
 	}
 }
+
+// The every-block note (testdata/every-block-note.json) holds each Plate type
+// a note stores. The collaboration validator and the UAT note journey read the
+// same file, so a renamed or newly strict field fails here before a saved note
+// stops loading (an unreadable note made GET /api/public/notes/{token} a 500).
+func TestEveryBlockNoteFixtureIsValid(t *testing.T) {
+	raw, err := os.ReadFile("testdata/every-block-note.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Parse(string(raw)); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateKind(string(raw), "note"); err != nil {
+		t.Fatal(err)
+	}
+	metrics, err := Metrics(string(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := metrics.LimitError(); err != nil {
+		t.Fatal(err)
+	}
+}

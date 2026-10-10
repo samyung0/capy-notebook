@@ -741,6 +741,7 @@
   "files_text_failed": "Couldn't load this file.",
   "files_not_indexed": "This file is not indexed, so AI won't know about its contents.",
   "files_not_indexed_failed": "Indexing failed, so AI won't know about its contents. You can still use the file normally.",
+  "files_not_indexed_too_large": "This file is too large to index, so AI won't know about its contents. You can still use the file normally.",
   "files_pdf_failed": "Couldn't load this PDF.",
   "files_sheet_empty": "This spreadsheet is empty.",
   "files_sheet_failed": "Failed to load spreadsheet",

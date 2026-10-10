@@ -396,7 +396,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	if _, err = tx.Exec(ctx, `INSERT INTO rag_file_contents(file_id,workspace_id,content_id) VALUES($1,$2,$3) ON CONFLICT(file_id) DO UPDATE SET content_id=EXCLUDED.content_id`, fileID, ws, in.ContentID); err != nil {
 		return doc, err
 	}
-	publishedRow, err := tx.Exec(ctx, `UPDATE files SET blob_path=$2,source_sha256=$3,size_bytes=$4,source_etag=$5,content_hash=$6,indexed=true,status='ready',revision=revision+1,ever_parsed_successfully=ever_parsed_successfully OR $7,caption_blob_path=NULL WHERE id=$1 AND trashed_at IS NULL`, fileID, source, sha, size, in.SourceETag, in.ContentHash, doc.Format != "text")
+	publishedRow, err := tx.Exec(ctx, `UPDATE files SET blob_path=$2,source_sha256=$3,size_bytes=$4,source_etag=$5,content_hash=$6,indexed=true,index_limit=NULL,status='ready',revision=revision+1,ever_parsed_successfully=ever_parsed_successfully OR $7,caption_blob_path=NULL WHERE id=$1 AND trashed_at IS NULL`, fileID, source, sha, size, in.SourceETag, in.ContentHash, doc.Format != "text")
 	if err != nil {
 		return doc, err
 	}
@@ -526,23 +526,24 @@ func (s *Store) FailSourceRefresh(ctx context.Context, fileID, jobID, lease, det
 
 // WorkspaceIndexCounts partitions logical files by their current searchable
 // alias and the canonical upload route, independent of a transient job status.
+// A file over an ingest limit counts as not indexable, like a store-only one.
 func (s *Store) workspaceIndexCounts(ctx context.Context, ws string, stats *WorkspaceStats) error {
-	rows, err := s.pool.Query(ctx, `SELECT f.name,f.kind,EXISTS(SELECT 1 FROM rag_file_contents a JOIN rag_contents c ON c.id=a.content_id WHERE a.file_id=f.id AND c.status='ready') FROM files f WHERE f.workspace_id=$1 AND f.trashed_at IS NULL`, ws)
+	rows, err := s.pool.Query(ctx, `SELECT f.name,f.kind,EXISTS(SELECT 1 FROM rag_file_contents a JOIN rag_contents c ON c.id=a.content_id WHERE a.file_id=f.id AND c.status='ready'),f.index_limit IS NOT NULL FROM files f WHERE f.workspace_id=$1 AND f.trashed_at IS NULL`, ws)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var name, kind string
-		var indexed bool
-		if err = rows.Scan(&name, &kind, &indexed); err != nil {
+		var indexed, overLimit bool
+		if err = rows.Scan(&name, &kind, &indexed, &overLimit); err != nil {
 			return err
 		}
 		plan, e := sourceupload.BuildProcessingPlan(name, kind, "fast")
 		switch {
 		case indexed:
 			stats.Indexed++
-		case e == nil && plan.Route != sourceupload.RouteStoreOnly:
+		case e == nil && plan.Route != sourceupload.RouteStoreOnly && !overLimit:
 			stats.NotIndexed++
 		default:
 			stats.NotIndexable++

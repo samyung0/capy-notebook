@@ -45,6 +45,8 @@ type pastDueCall struct {
 type fakeStore struct {
 	// processed lets a test pretend an event id was already handled.
 	processed map[string]bool
+	// inProgress lets a test pretend another delivery holds the event's claim.
+	inProgress map[string]bool
 	// stripeCustomers maps customer id -> user id for UserIDByStripeCustomer.
 	stripeCustomers map[string]string
 	// subscriptionOwners maps subscription id -> user id for failed invoices.
@@ -75,6 +77,7 @@ type fakeStore struct {
 func newFakeStore() *fakeStore {
 	return &fakeStore{
 		processed:          map[string]bool{},
+		inProgress:         map[string]bool{},
 		stripeCustomers:    map[string]string{},
 		subscriptionOwners: map[string]string{},
 		accountStates:      map[string]store.AccountState{},
@@ -89,6 +92,9 @@ func newFakeStore() *fakeStore {
 func (f *fakeStore) ClaimWebhookEvent(_ context.Context, id, source, eventType, userID string, payload json.RawMessage) (string, bool, error) {
 	if f.processed[id] {
 		return "", true, nil
+	}
+	if f.inProgress[id] {
+		return "", false, store.ErrWebhookInProgress
 	}
 	f.recorded = append(f.recorded, recordedEvent{
 		id: id, source: source, eventType: eventType, userID: userID, payload: payload,
@@ -483,6 +489,33 @@ func TestClerkWebhook_Idempotent(t *testing.T) {
 	}
 	if len(f.upserts) != 0 {
 		t.Errorf("already-processed event must not re-run side effects: %v", f.upserts)
+	}
+}
+
+func TestWebhooks_InFlightDuplicateAsksForRetry(t *testing.T) {
+	f := newFakeStore()
+	f.inProgress["evt_busy"] = true
+	f.inProgress["evt_busy_stripe"] = true
+	srv := newTestServer(t, f, Config{
+		ClerkWebhookSecret: testClerkSecret, StripeWebhookSecret: testStripeSecret,
+	})
+
+	clerk := clerkBody(t, "evt_busy", "user.created", map[string]any{"id": "user_busy"})
+	stripeEvt := stripeBody(t, "evt_busy_stripe", "customer.subscription.updated", map[string]any{
+		"id": "sub_busy", "customer": "cus_busy", "status": "active",
+	})
+	for _, resp := range []*http.Response{
+		post(t, srv.URL+"/webhooks/clerk", signSvix(t, testClerkSecret, clerk), clerk),
+		post(t, srv.URL+"/webhooks/stripe", signStripe(t, testStripeSecret, stripeEvt), stripeEvt),
+	} {
+		resp.Body.Close()
+		// Non-2xx so the provider retries; not 5xx, which is reported as a failure.
+		if resp.StatusCode != http.StatusConflict {
+			t.Fatalf("status = %d, want 409", resp.StatusCode)
+		}
+	}
+	if len(f.upserts) != 0 || len(f.subUpserts) != 0 || len(f.marked) != 0 {
+		t.Errorf("an in-flight duplicate must not run or mark the event")
 	}
 }
 

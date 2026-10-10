@@ -647,19 +647,20 @@ ingest worker slot is occupied.
 Admission also caps the OCR backlog. On arrival the API counts a PDF source's
 text-less pages with the same test the parse uses; an Office source counts
 none until its parse (its PDF exists only after LibreOffice). A document whose
-count exceeds `CAPY_PARSE_OCR_PAGE_CAP` (1,000) is refused with the terminal
+count exceeds `CAPY_PARSE_OCR_PAGE_CAP` (500) is refused with the terminal
 `parse_too_many_scanned_pages`; one that would lift the admitted-but-unread
 pages past the cap waits as `429 parser_capacity`. At the handoff the parsed
 PDF's exact count replaces the estimate, and an Office or font-repaired
-document over the cap fails with the same terminal code. Before the OCR stage
+document over the cap is refused with the same terminal code. Before the OCR stage
 such documents timed out at about 320 scanned pages.
 
 Admission also refuses a PDF with more than `CAPY_PARSE_MAX_PAGES` (1,400)
 pages, counted from the uploaded bytes in the same pass, with the terminal
 `parse_too_many_pages` before it takes a parse child. An Office source is
 checked in its parse child right after LibreOffice, before the Java run. The
-coordinator maps both page codes to a terminal file failure carrying the
-parser's reason (no quarantine, no retry). The API serves the same two env
+coordinator maps both page codes to an input limit (`scanned_page_limit`,
+`page_limit`) carrying the parser's reason (no quarantine, no retry): the file
+ends ready and unindexed, see Ingest limits below. The API serves the same two env
 values in the upload policy (`parseModes[fast].maxPages`, `maxOcrPages`) and
 refuses a fast-parse reservation whose claimed `pageCount` exceeds `maxPages`;
 the browser checks both caps before upload (see
@@ -806,6 +807,30 @@ chat/generate cannot search it. A failed ingest keeps the original blob and
 lands `failed`/unindexed; the UI shows a banner rather than replacing the
 viewer.
 
+#### Ingest limits
+
+Six limits are checked on the real content during ingest. A file over one is
+not failed: the worker raises `InputLimitError(code)`, the job and its attempt
+fail with that `error_code` (logged at info, no Sentry event), and the file
+ends `ready`, `indexed=false`, with `files.index_limit` set to the code
+(migration `0072`). It opens, downloads, edits and clones like any file; only
+search, chat and generate skip it. The file banner and the upload panel say it
+is too large to index (`files_not_indexed_too_large`), Retry processing is not
+offered (that is for `failed` files), and the Indexing tab counts it as not
+indexable. A new published source (a source refresh or a maintenance
+republish) clears `index_limit`. An edited source over a limit is a refused
+refresh like any other: the published version and its index stay, and the
+Indexing tab lists the change as failed.
+
+| Code | Measures | Limit | Checked before upload |
+| --- | --- | --- | --- |
+| `page_limit` | Pages in a fast-parse PDF/DOCX/PPTX/XLSX | `CAPY_PARSE_MAX_PAGES` (1,400) | Browser analysis blocks submit; the reservation refuses a claimed `pageCount` over it. Imports and edited Office sources are only checked by the parser. |
+| `scanned_page_limit` | Text-less pages in one document | `CAPY_PARSE_OCR_PAGE_CAP` (500) | Browser blocks a PDF estimated over 105% of it and warns from 95%; Office only warns. The server does not check. |
+| `image_pixel_limit` | Decoded pixels of an image, all frames of an animated one | `CAPY_IMAGE_MAX_PIXELS` (100M) | No |
+| `audio_duration_limit` | `ffprobe` duration | `CAPY_AUDIO_MAX_DURATION_SECONDS` (10 h) | Browser blocks submit from the policy's `audioMaxDurationSeconds` (a fixed 10 h in Go); the server does not check. |
+| `tabular_cell_limit` | Raw delimiter bytes in a CSV/TSV | 100,000 | No |
+| `tabular_text_limit` | Characters of rendered CSV/TSV row text | 64 Mi | No |
+
 ### Provider source imports
 
 Login/signup uses Clerk's baseline identity scopes. Explicit cloud-import
@@ -902,6 +927,9 @@ performs the planned work:
   other 4xx responses fail the ingest as provider refusals;
 - CSV/TSV is decoded as text, detects a likely header, and emits deterministic
   row text with explicit field names. Formulas remain literal source values.
+  The file stops before parsing when it has more than 100,000 delimiter bytes
+  (counted in the raw bytes, so quoted delimiters count too), and while
+  rendering when the row text passes 64 Mi characters (see Ingest limits).
 
 Audio derived text is stored under
 `derived-text/{source_sha256}/...` and registered as `derived_text` in

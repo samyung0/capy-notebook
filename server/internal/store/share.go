@@ -515,6 +515,7 @@ type workspaceCloneFile struct {
 	position                    int64
 	indexed, everParsed         bool
 	parseMode                   string
+	indexLimit                  *string
 	provenance                  []byte
 }
 
@@ -677,7 +678,7 @@ func (s *Store) snapshotWorkspaceForClone(
 			)),
 			parser, blob_path, source_etag,
 			content_hash, source_sha256, parse_mode, ever_parsed_successfully,
-			provenance
+			index_limit, provenance
 		 FROM files
 		 WHERE workspace_id=$1 AND status='ready' AND trashed_at IS NULL
 		 ORDER BY added_at`,
@@ -704,6 +705,7 @@ func (s *Store) snapshotWorkspaceForClone(
 			&file.sourceSHA256,
 			&file.parseMode,
 			&file.everParsed,
+			&file.indexLimit,
 			&file.provenance,
 		); err != nil {
 			rows.Close()
@@ -987,10 +989,10 @@ func (s *Store) cloneWorkspaceOnce(
 			// Attribution travels with the copy, as it does for materials.
 			if _, err := tx.Exec(ctx, `INSERT INTO files
 				(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, parser, blob_path,
-				 source_etag, content_hash, source_sha256, parse_mode, ever_parsed_successfully, provenance)
-				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+				 source_etag, content_hash, source_sha256, parse_mode, ever_parsed_successfully, index_limit, provenance)
+				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
 				nid, newID, userID, chapterID, f.position, f.name, f.kind, f.sizeBytes, time.Now().UTC(), f.status, f.indexed, f.parser, f.blobPath,
-				f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.everParsed, f.provenance); err != nil {
+				f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.everParsed, f.indexLimit, f.provenance); err != nil {
 				return Workspace{}, err
 			}
 		}

@@ -261,3 +261,20 @@ describe('resizable block width', () => {
       );
   });
 });
+
+// The every-block note shared with the Go validator (TestEveryBlockNoteFixtureIsValid)
+// and the UAT note journey: both validators accept every type a note stores.
+describe('every-block note', () => {
+  it('is a valid note', () => {
+    const { value } = JSON.parse(
+      readFileSync(
+        new URL(
+          '../../server/internal/materialdoc/testdata/every-block-note.json',
+          import.meta.url
+        ),
+        'utf8'
+      )
+    ) as { value: unknown[] };
+    expect(() => assertCanonicalMaterialValue(value, 'note')).not.toThrow();
+  });
+});

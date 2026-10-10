@@ -37,6 +37,6 @@ export const StaticMathContext = createContext<
 >(null);
 
 /** Set on shared pages, on the server and in their islands: they leave out
- * the app's own actions, such as an interactive block's View source (its
- * dialog needs the app's router). */
+ * the app's own actions, such as an interactive block's View source:
+ * visitors read the block, they don't need its source. */
 export const PublicPageContext = createContext(false);

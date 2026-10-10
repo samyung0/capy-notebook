@@ -45,6 +45,8 @@ export function initErrorReporting(): void {
     },
     dsn: DSN,
     environment: SENTRY_ENVIRONMENT,
+    // The same tag the gateway, retrieval and workers set.
+    initialScope: { tags: { service: 'collaboration' } },
     release: process.env.RELEASE_SHA || undefined,
     sendDefaultPii: false,
     // Tracing is off here rather than sampled: every connection is a
@@ -122,6 +124,29 @@ export function captureError(
     withEventId(error, eventId);
   });
   return eventId;
+}
+
+const TRACEPARENT = /^00-([a-f0-9]{32})-[a-f0-9]{16}-[a-f0-9]{2}$/;
+
+/**
+ * Runs an internal HTTP request's work with the caller's W3C trace id (the
+ * gateway injects `traceparent`) as the `trace_id` tag on every event it
+ * captures, as the gateway tags its own, so one id finds the failure in both
+ * services. A malformed or all-zero header tags nothing.
+ */
+export function withRequestTrace<T>(
+  traceparent: string | string[] | undefined,
+  work: () => T
+): T {
+  const traceId =
+    typeof traceparent === 'string'
+      ? TRACEPARENT.exec(traceparent.trim().toLowerCase())?.[1]
+      : undefined;
+  return Sentry.withIsolationScope((scope) => {
+    if (traceId && traceId !== '0'.repeat(32))
+      scope.setTag('trace_id', traceId);
+    return work();
+  });
 }
 
 export const ERROR_EVENT_HEADER = 'X-Sentry-Event-Id';

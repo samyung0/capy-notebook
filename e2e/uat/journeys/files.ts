@@ -120,7 +120,7 @@ export async function fixture(
 
 export async function fileRow(run: UatRun, fileId: string) {
   const rows = await run.query(
-    `SELECT id,workspace_id,user_id,name,kind,status,indexed,parse_mode,
+    `SELECT id,workspace_id,user_id,name,kind,status,indexed,index_limit,parse_mode,
     blob_path,source_sha256,size_bytes,revision,trashed_at,trash_episode_id FROM files WHERE id=%s`,
     [fileId]
   );

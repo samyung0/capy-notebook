@@ -382,6 +382,8 @@ export const fileLinks: Record<string, { previewUrl?: string; url: string }> = {
       },
     ])
   ),
+  // A ready file over an ingest limit: it opens, only search skips it.
+  'bio-state-too-large': { url: textUrl('species,count\nfrog,12\nnewt,4\n') },
   f_1: {
     url: 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf',
   },
@@ -450,6 +452,21 @@ export const files: SourceFile[] = [
       ...(status === 'processing' ? { ingestPct: 45 } : {}),
     })
   ),
+  {
+    addedAt: hours(1),
+    chapterId: null,
+    hasBytes: true,
+    id: 'bio-state-too-large',
+    indexed: false,
+    indexLimit: 'tabular_cell_limit',
+    kind: 'sheet',
+    name: 'Field counts - too large to index.csv',
+    position: dialogFiles.length + 4 + biologyOfficeFixtures.length,
+    revision: 1,
+    sizeBytes: 100_048,
+    status: 'ready',
+    workspaceId: 'ws_bio',
+  },
   {
     addedAt: days(20),
     chapterId: 'ch_1',

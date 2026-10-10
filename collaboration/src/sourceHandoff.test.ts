@@ -1059,7 +1059,8 @@ test('a refused rebuild sends the file back to the scheduler and is not retried;
     if (endpoint === 'rebuild-refusal') refused = true;
     if (endpoint === 'publish') refused = false;
   });
-  await expect(f.handoff.rebuild('f')).rejects.toThrow(REFUSAL);
+  // Recorded and logged, not thrown: nothing reaches Sentry.
+  await expect(f.handoff.rebuild('f')).resolves.toBe(false);
   expect(f.order).toEqual(['rebase', 'rebuild-refusal']);
   expect(f.request).toHaveBeenCalledWith('f', 'rebuild-refusal', {
     epoch: 1,

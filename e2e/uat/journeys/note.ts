@@ -1,13 +1,14 @@
 /* biome-ignore-all lint/suspicious/noMisplacedAssertion: These steps execute only inside the UAT tests. */
 // Steps of the Plate note journey (note.spec.ts): live collaboration, note
-// and quiz images, embedded quiz and flashcard blocks, the Markdown export and
-// the read view with an interactive block. See openwiki/frontend/plate-editor.md
+// media and quiz images, the every-block note, embedded quiz and flashcard
+// blocks, the Markdown export, the read view with an interactive block and the
+// signed-out share page. See openwiki/frontend/plate-editor.md
 // and the editor assets in openwiki/backend-storage-quota.md.
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { crc32, deflateSync } from 'node:zlib';
-import type { Locator, Page } from '@playwright/test';
+import type { Browser, Locator, Page } from '@playwright/test';
 import { unzipSync } from 'fflate';
 import { m } from '../../i18n';
 import {
@@ -272,25 +273,32 @@ export async function emptyLine(
   return editor;
 }
 
+/** The slash command's media blocks: its option, and the placeholder's picker. */
+const MEDIA = {
+  audio: { option: () => m.editor_audio(), pick: () => m.editor_add_audio() },
+  file: { option: () => m.editor_file(), pick: () => m.editor_add_file() },
+  img: { option: () => m.editor_image(), pick: () => m.editor_add_image() },
+};
+
 /**
- * Note image through the slash command's file picker (the editor, under the
- * line `after`): one ready row named by the note and charged to the owner,
- * the stored bytes are the picked ones and the image renders.
+ * A note image, audio or file through the slash command's file picker (the
+ * actor, under the line `after`): one ready row named by the note and charged
+ * to the owner, and the stored bytes are the picked ones. Images also render.
  */
-export async function insertNoteImage(
+export async function insertNoteMedia(
   run: UatRun,
   actor: Actor,
   workspaceId: string,
   noteId: string,
   after: string,
-  png: Buffer,
-  name: string
+  kind: keyof typeof MEDIA,
+  file: { buffer: Buffer; mimeType: string; name: string }
 ) {
   const { page } = actor;
   const editor = await emptyLine(run, actor, workspaceId, noteId, after);
   await page.keyboard.type('/');
   await page
-    .getByRole('option', { exact: true, name: m.editor_image() })
+    .getByRole('option', { exact: true, name: MEDIA[kind].option() })
     .click();
   const uploaded = page.waitForResponse(
     (response) =>
@@ -300,21 +308,23 @@ export async function insertNoteImage(
   );
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),
-    editor.getByRole('button', { name: m.editor_add_image() }).click(),
+    editor.getByRole('button', { name: MEDIA[kind].pick() }).click(),
   ]);
-  await chooser.setFiles({ buffer: png, mimeType: 'image/png', name });
+  await chooser.setFiles(file);
   const completed = await uploaded;
   assert.equal(completed.status(), 201);
   const assetId = string(object(await completed.json()).assetId);
-  const image = editor.locator(`img[alt="${name}"]`);
-  await expect(image).toBeVisible({ timeout: 60_000 });
-  await expect
-    .poll(() =>
-      image.evaluate((element) => (element as HTMLImageElement).naturalWidth)
-    )
-    .toBeGreaterThan(0);
+  if (kind === 'img') {
+    const image = editor.locator(`img[alt="${file.name}"]`);
+    await expect(image).toBeVisible({ timeout: 60_000 });
+    await expect
+      .poll(() =>
+        image.evaluate((element) => (element as HTMLImageElement).naturalWidth)
+      )
+      .toBeGreaterThan(0);
+  }
   await run.poll(
-    'the note projects the image',
+    `the note projects the ${kind}`,
     () => contentText(run, noteId),
     (text) => text.includes(assetId)
   );
@@ -325,10 +335,29 @@ export async function insertNoteImage(
   assert.equal(asset.material_id, noteId);
   assert.equal(asset.created_by, actor.id);
   assert.equal(asset.user_id, run.owner.id);
-  assert.equal(Number(asset.size_bytes), png.length);
+  assert.equal(Number(asset.size_bytes), file.buffer.length);
   await run.record('blob', asset.object_path, { assetId, noteId });
-  assert.equal((await run.blob(asset.object_path)).sha256, sha256(png));
+  assert.equal((await run.blob(asset.object_path)).sha256, sha256(file.buffer));
   return asset;
+}
+
+/** A 0.1 s silent mono 8 kHz WAV, the smallest audio the asset check accepts. */
+export function silentWav() {
+  const samples = 800;
+  const out = Buffer.alloc(44 + samples * 2);
+  out.write('RIFF', 0);
+  out.writeUInt32LE(36 + samples * 2, 4);
+  out.write('WAVEfmt ', 8);
+  out.writeUInt32LE(16, 16);
+  out.writeUInt16LE(1, 20);
+  out.writeUInt16LE(1, 22);
+  out.writeUInt32LE(8000, 24);
+  out.writeUInt32LE(16_000, 28);
+  out.writeUInt16LE(2, 32);
+  out.writeUInt16LE(16, 34);
+  out.write('data', 36);
+  out.writeUInt32LE(samples * 2, 40);
+  return out;
 }
 
 /**
@@ -412,6 +441,23 @@ function embedMarkdown(marker: string) {
   ].join('\n');
 }
 
+/** Toolbar Import document → `option`, picking `file`; the import goes in
+ * at the caret. */
+async function importFile(
+  page: Page,
+  option: string,
+  file: { buffer: Buffer; mimeType: string; name: string }
+) {
+  await page
+    .getByRole('button', { exact: true, name: m.editor_import() })
+    .click();
+  const [chooser] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    page.getByRole('button', { exact: true, name: option }).click(),
+  ]);
+  await chooser.setFiles(file);
+}
+
 /**
  * The editor has no insert command for an interactive block; the toolbar's
  * Import document → Import Markdown brings in an `html-embed` fence (as the
@@ -426,16 +472,7 @@ export async function importHtmlEmbed(
   marker: string
 ) {
   await lineAfter(page, editor, after);
-  await page
-    .getByRole('button', { exact: true, name: m.editor_import() })
-    .click();
-  const [chooser] = await Promise.all([
-    page.waitForEvent('filechooser'),
-    page
-      .getByRole('button', { exact: true, name: m.editor_import_md() })
-      .click(),
-  ]);
-  await chooser.setFiles({
+  await importFile(page, m.editor_import_md(), {
     buffer: Buffer.from(embedMarkdown(marker)),
     mimeType: 'text/markdown',
     name: 'tide.md',
@@ -446,6 +483,231 @@ export async function importHtmlEmbed(
     (blocks) => blocks.length === 1 && Boolean(blocks[0].html?.includes(marker))
   );
   return { caption: string(block.caption), id: block.id, marker };
+}
+
+/**
+ * The every-block note: each Plate type and mark a note stores. The Go and
+ * collaboration validator tests read the same file
+ * (TestEveryBlockNoteFixtureIsValid, materialDocument.test.ts).
+ */
+const EVERY_BLOCK = new URL(
+  '../../../server/internal/materialdoc/testdata/every-block-note.json',
+  import.meta.url
+);
+/** Blocks backed by an editor asset. Imported, they would name assets that do
+ * not exist (the collaboration service drops those), so the journey uploads
+ * its own through the picker instead. */
+const ASSET_BLOCKS = new Set(['img', 'audio', 'file']);
+
+type PlateNode = {
+  type?: string;
+  text?: string;
+  children?: PlateNode[];
+  [key: string]: unknown;
+};
+
+async function everyBlockValue() {
+  return (
+    JSON.parse(await readFile(EVERY_BLOCK, 'utf8')) as { value: PlateNode[] }
+  ).value;
+}
+
+/** Element types and text marks anywhere in a material value. */
+function kinds(value: PlateNode[]) {
+  const types = new Set<string>();
+  const marks = new Set<string>();
+  const visit = (node: PlateNode) => {
+    if (typeof node.text === 'string') {
+      for (const key of Object.keys(node)) if (key !== 'text') marks.add(key);
+      return;
+    }
+    types.add(string(node.type));
+    node.children?.forEach(visit);
+  };
+  value.forEach(visit);
+  return { marks, types };
+}
+
+/** The types and marks (`mark:<key>`) of `want` that `value` lacks. */
+function missingKinds(value: PlateNode[], want: ReturnType<typeof kinds>) {
+  const got = kinds(value);
+  return [
+    ...[...want.types].filter((type) => !got.types.has(type)),
+    ...[...want.marks]
+      .filter((mark) => !got.marks.has(mark))
+      .map((mark) => `mark:${mark}`),
+  ];
+}
+
+const savedValue = async (run: UatRun, noteId: string) =>
+  (object((await materialRow(run, noteId)).content) as { value: PlateNode[] })
+    .value;
+
+const refNodes = (value: PlateNode[]) =>
+  value.filter((node) => node.type === 'material_ref');
+
+/**
+ * Import document → Import JSON of the every-block note (less its asset
+ * blocks) under the line `after`: the projection holds every imported type
+ * and mark, and the importing editor turned its quiz and flashcard fences
+ * into rows embedded in the note.
+ */
+export async function importEveryBlock(
+  page: Page,
+  editor: Locator,
+  run: UatRun,
+  noteId: string,
+  after: string
+) {
+  const value = (await everyBlockValue()).filter(
+    (node) => !ASSET_BLOCKS.has(string(node.type))
+  );
+  await lineAfter(page, editor, after);
+  await importFile(page, m.editor_import_json(), {
+    buffer: Buffer.from(JSON.stringify({ schemaVersion: 1, value })),
+    mimeType: 'application/json',
+    name: 'every-block.json',
+  });
+  const want = kinds(value);
+  const saved = await run.poll(
+    'the note projects every imported block, its quiz and flashcards created',
+    () => savedValue(run, noteId),
+    (nodes) =>
+      missingKinds(nodes, want).length === 0 &&
+      refNodes(nodes).length === 2 &&
+      refNodes(nodes).every((node) => node.materialId && !node.pending),
+    120_000
+  );
+  for (const ref of refNodes(saved)) {
+    const row = await materialRow(run, string(ref.materialId));
+    assert.equal(row.kind, ref.refKind);
+    assert.equal(row.parent_material_id, noteId);
+  }
+}
+
+/** Every type and mark of the every-block note is in the saved projection
+ * and in the authenticated material read. */
+export async function everyBlockSaved(run: UatRun, noteId: string) {
+  const want = kinds(await everyBlockValue());
+  assert.deepEqual(missingKinds(await savedValue(run, noteId), want), []);
+  const material = object(await api(run.owner, `/api/materials/${noteId}`));
+  assert.deepEqual(
+    missingKinds(
+      (object(material.content) as { value: PlateNode[] }).value,
+      want
+    ),
+    []
+  );
+}
+
+/** Opens a dialog once the island holding `trigger` hydrated (the HTML shows
+ * first, and a click before React attached does nothing), then closes it. */
+async function openAndClose(page: Page, trigger: Locator) {
+  await expect
+    .poll(() =>
+      trigger.evaluate((element) =>
+        Object.keys(element).some((key) => key.startsWith('__reactProps$'))
+      )
+    )
+    .toBe(true);
+  await trigger.click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+}
+
+/**
+ * The public note page. Only a standalone note has a link, so the owner
+ * clones the note (images and embedded rows come along) and sets the clone
+ * to anyone with the link. A signed-out browser then reads
+ * `GET /api/public/notes/{token}` (200 with every type and both embeds) and
+ * opens `/share/notes/{token}`: every type and mark renders, the image loads,
+ * each preview opens and closes, View source is absent, and the page logs no
+ * error.
+ */
+export async function sharedNote(
+  run: UatRun,
+  browser: Browser,
+  noteId: string
+) {
+  const clone = string(
+    object(
+      await api(
+        run.owner,
+        `/api/materials/${noteId}/clone`,
+        'POST',
+        undefined,
+        201
+      )
+    ).id
+  );
+  await api(run.owner, `/api/materials/${clone}/sharing`, 'PATCH', {
+    privacy: 'link',
+  });
+  const { items } = object(
+    await api(run.owner, '/api/materials?kind=note&location=standalone')
+  ) as { items: { id: string; sharePath?: string }[] };
+  const sharePath = string(items.find((item) => item.id === clone)?.sharePath);
+  const token = string(sharePath.split('/').pop());
+  const want = kinds(await everyBlockValue());
+  const context = await browser.newContext({
+    baseURL: run.env.appUrl,
+    locale: 'en-US',
+  });
+  try {
+    const read = await context.request.get(
+      `${run.env.apiUrl}/api/public/notes/${token}`
+    );
+    assert.equal(read.status(), 200, await read.text());
+    const note = object(await read.json());
+    assert.deepEqual(
+      missingKinds(
+        (object(note.content) as { value: PlateNode[] }).value,
+        want
+      ),
+      []
+    );
+    assert.equal((note.embeds as unknown[]).length, 2);
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`));
+    page.on('console', (message) => {
+      if (message.type() === 'error') errors.push(message.text());
+    });
+    const opened = await page.goto(sharePath);
+    assert.equal(opened?.status(), 200);
+    for (const type of want.types)
+      await expect(page.locator(`.slate-${type}`).first(), type).toBeAttached();
+    // Leaf classes are kebab-case: backgroundColor → slate-background-color.
+    for (const mark of want.marks) {
+      const name = mark.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`);
+      await expect(page.locator(`.slate-${name}`).first(), mark).toBeAttached();
+    }
+    const image = page.locator('.slate-img img');
+    await expect
+      .poll(
+        () =>
+          image.evaluate(
+            (element) => (element as HTMLImageElement).naturalWidth
+          ),
+        { timeout: 60_000 }
+      )
+      .toBeGreaterThan(0);
+    // Click-to-preview: the image, the diagram (once drawn), chart and graph.
+    const previews = page.locator('[data-island] .cursor-zoom-in');
+    await expect(previews).toHaveCount(4, { timeout: 60_000 });
+    for (let index = 0; index < 4; index++)
+      await openAndClose(page, previews.nth(index));
+    // Visitors don't get an interactive block's View source.
+    await expect(
+      page.getByRole('button', { name: m.html_embed_view_source() })
+    ).toHaveCount(0);
+    assert.deepEqual(errors, [], 'the shared note page logged errors');
+    return { clone, token };
+  } finally {
+    await context.close();
+  }
 }
 
 /**

@@ -1,4 +1,5 @@
 import type { SourceFile } from '@/api/types';
+import { notIndexedMessage } from '@/features/files/fileUtils';
 import { m } from '@/i18n';
 import type { SourceTransfer } from './sourceTransfers';
 
@@ -62,12 +63,12 @@ export function transferStatus(
     };
   }
   // Ready, or a file without a status, which the app treats as done. A file
-  // without an index is usually one the user chose not to parse: information,
-  // not a warning.
+  // without an index is one the user chose not to parse or one over an ingest
+  // limit: information, not a warning.
   return file.indexed
     ? { kind: 'done', label: m.source_transfer_ready() }
     : {
-        detail: m.files_not_indexed(),
+        detail: notIndexedMessage(file),
         kind: 'info',
         label: m.source_transfer_not_searchable(),
       };

@@ -736,6 +736,32 @@ def test_a_refused_office_rebase_publishes_no_failed_progress(
     assert [args[2] for args in events] == (["failed"] if published else [])
 
 
+def test_a_file_over_a_limit_publishes_a_ready_unindexed_event(monkeypatch):
+    events: list[tuple] = []
+    monkeypatch.setattr(worker, "_read_name", lambda *_a: "big.csv")
+    monkeypatch.setattr(worker, "_finish_fail", lambda **_k: True)
+    monkeypatch.setattr(worker.db, "source_refresh_for", lambda _f: None)
+    monkeypatch.setattr(
+        worker.progress,
+        "publish",
+        lambda *args, **kwargs: events.append((args[2], kwargs)),
+    )
+
+    worker._notify_ingest_terminal(
+        "f_1",
+        "ws_1",
+        "job_1",
+        "delimited table exceeds the cell limit",
+        1,
+        _ingest_payload(),
+        "input",
+        "tabular_cell_limit",
+        "tabular_cell_limit",
+    )
+
+    assert events == [("done", {"status": "ready", "indexed": False})]
+
+
 async def test_parsed_document_continuation_rechecks_account_lifecycle(monkeypatch):
     class ReachedPostProcessing(RuntimeError):
         pass
@@ -1451,6 +1477,101 @@ async def test_final_provider_receipt_failure_does_not_requeue_ingest(monkeypatc
     assert events == [("terminal", "job_ingest")]
 
 
+_CELL_LIMIT = worker.InputLimitError(
+    "tabular_cell_limit", "delimited table exceeds the cell limit"
+)
+
+
+@pytest.mark.parametrize(
+    ("error", "refresh", "captured", "code", "index_limit"),
+    [
+        (_CELL_LIMIT, False, False, "tabular_cell_limit", "tabular_cell_limit"),
+        # An edited source over the limit keeps its published version.
+        (_CELL_LIMIT, True, False, "tabular_cell_limit", ""),
+        (
+            worker.TerminalError("source blob is missing"),
+            False,
+            True,
+            "terminalerror",
+            "",
+        ),
+    ],
+)
+async def test_input_limit_leaves_the_file_unindexed_without_a_sentry_event(
+    monkeypatch, error, refresh, captured, code, index_limit
+):
+    """A file over a documented limit is not an error: the job fails with the
+    limit's code and the file keeps it as its index limit."""
+    captures: list[BaseException] = []
+    terminal: list[tuple] = []
+    payload = _ingest_payload()
+    if refresh:
+        payload["sourceRefresh"] = True
+        monkeypatch.setattr(worker, "_source_refresh_published", lambda *_a: False)
+    monkeypatch.setattr(worker, "_require_current_source", lambda *_a: None)
+    monkeypatch.setattr(worker, "_cleanup_payload_source", lambda _p: None)
+    monkeypatch.setattr(
+        worker.obs, "capture_error", lambda exc, **_k: captures.append(exc)
+    )
+    monkeypatch.setattr(
+        worker, "_notify_ingest_terminal", lambda *a: terminal.append(a)
+    )
+
+    await worker._handle_job_failure(
+        {"id": "job_1", "type": "ingest", "attempts": 1, "payload": payload},
+        error,
+    )
+
+    assert captures == ([error] if captured else [])
+    ((*_rest, _category, error_code, limit),) = terminal
+    assert (error_code, limit) == (code, index_limit)
+
+
+@pytest.mark.parametrize("index_limit", ["", "tabular_cell_limit"])
+def test_finish_fail_keeps_a_file_over_a_limit_ready(monkeypatch, index_limit):
+    writes: list[tuple] = []
+    monkeypatch.setattr(worker.db, "connect", lambda: _Conn())
+    monkeypatch.setattr(worker, "_lost_claim", lambda *_a: False)
+    monkeypatch.setattr(worker.db, "source_refresh_for", lambda _f: None)
+    for name in (
+        "set_file_status",
+        "set_file_indexed",
+        "set_file_index_limit",
+        "set_job",
+        "close_credit_reservation",
+    ):
+        monkeypatch.setattr(
+            worker.db, name, lambda _cur, *a, _n=name: writes.append((_n, *a))
+        )
+    monkeypatch.setattr(worker.db, "finish_job_attempt", lambda _cur, **_k: None)
+
+    assert worker._finish_fail(
+        file_id="f_1",
+        job_id="job_1",
+        error="delimited table exceeds the cell limit",
+        index_limit=index_limit,
+    )
+
+    file_writes = [w for w in writes if w[0].startswith("set_file")]
+    if index_limit:
+        assert file_writes == [
+            ("set_file_status", "f_1", "ready"),
+            ("set_file_indexed", "f_1", False),
+            ("set_file_index_limit", "f_1", "tabular_cell_limit"),
+        ]
+    else:
+        assert file_writes == [
+            ("set_file_status", "f_1", "failed"),
+            ("set_file_indexed", "f_1", False),
+        ]
+    assert (
+        "set_job",
+        "job_1",
+        "failed",
+        "delimited table exceeds the cell limit",
+    ) in writes
+
+
 @pytest.mark.parametrize("direct", ["image", "audio"])
 async def test_direct_donor_cache_failure_falls_through(monkeypatch, direct):
     async def embedding_pin(_workspace_id):
@@ -1653,8 +1774,8 @@ async def test_provider_busy_repends_until_the_cap_then_fails_the_file(monkeypat
     job["provider_waits"] = PROVIDER_WAITS_MAX
     await worker._handle_job_failure(job, busy)
     assert len(yields) == 1 and requeued == []
-    ((_fid, _ws, _job_id, _message, _attempts, _payload, category, code),) = terminal
-    assert (category, code) == ("provider", "provider_busy")
+    ((*_args, category, code, index_limit),) = terminal
+    assert (category, code, index_limit) == ("provider", "provider_busy", "")
 
 
 @pytest.mark.asyncio

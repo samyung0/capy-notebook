@@ -27,7 +27,7 @@ from typing import Any
 import httpx
 
 from ..config import cfg
-from ..jobs import CapacityWait, RetryableError, TerminalError
+from ..jobs import CapacityWait, InputLimitError, RetryableError, TerminalError
 from ..prompts.captioning import IMAGE_PROMPT
 from ..retrieval import accounting
 from ..store import blobstore, db
@@ -177,11 +177,14 @@ def _encode_image(path: Path, name: str) -> str:
                     width, height = source.size
                     pixels = width * height
                     if pixels <= 0 or pixels > cfg.image_max_pixels:
-                        raise TerminalError("image exceeds the decoded-pixel limit")
+                        raise InputLimitError(
+                            "image_pixel_limit", "image exceeds the decoded-pixel limit"
+                        )
                     total_pixels += pixels
                     if total_pixels > cfg.image_max_pixels:
-                        raise TerminalError(
-                            "animated image exceeds the decoded-pixel limit"
+                        raise InputLimitError(
+                            "image_pixel_limit",
+                            "animated image exceeds the decoded-pixel limit",
                         )
                     frame = ImageOps.exif_transpose(source.copy()).convert("RGBA")
                     frame.thumbnail(
@@ -194,7 +197,9 @@ def _encode_image(path: Path, name: str) -> str:
     except TerminalError:
         raise
     except (Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
-        raise TerminalError("image exceeds the decoded-pixel limit") from exc
+        raise InputLimitError(
+            "image_pixel_limit", "image exceeds the decoded-pixel limit"
+        ) from exc
     except (OSError, UnidentifiedImageError, ValueError):
         # Some provider-supported formats may not be compiled into the local
         # Pillow build. Sending their original MIME payload preserves support
@@ -472,7 +477,9 @@ async def transcribe_audio_source(
 
         duration = await asyncio.to_thread(audio_duration_seconds, Path(local_path))
         if duration > cfg.audio_max_duration_seconds:
-            raise TerminalError("audio exceeds the 10-hour duration limit")
+            raise InputLimitError(
+                "audio_duration_limit", "audio exceeds the 10-hour duration limit"
+            )
         billable_seconds = math.ceil(duration)
         concurrency_units = audio_concurrency_units(duration)
         lease_id = db.uid("pcl")
@@ -581,7 +588,9 @@ def tabular_text(path: str, name: str) -> str:
         while block := raw.read(1 << 20):
             cell_count += block.count(delimiter_byte)
             if cell_count > _TABULAR_MAX_CELLS:
-                raise TerminalError("delimited table exceeds the cell limit")
+                raise InputLimitError(
+                    "tabular_cell_limit", "delimited table exceeds the cell limit"
+                )
 
     csv.field_size_limit(_TABULAR_MAX_FIELD_CHARS)
     with open(path, "r", encoding="utf-8-sig", errors="replace", newline="") as source:
@@ -616,7 +625,10 @@ def tabular_text(path: str, name: str) -> str:
         nonlocal output_chars
         extra = len(line) + (1 if parts else 0)
         if output_chars + extra > _TABULAR_MAX_OUTPUT_CHARS:
-            raise TerminalError("delimited table exceeds the searchable-text limit")
+            raise InputLimitError(
+                "tabular_text_limit",
+                "delimited table exceeds the searchable-text limit",
+            )
         parts.append(line)
         output_chars += extra
 

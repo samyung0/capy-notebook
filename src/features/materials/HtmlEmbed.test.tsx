@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import HtmlEmbedSourceDialog from '@/features/notes/blocks/HtmlEmbedSourceDialog';
 import { EmbedFrame, frameResizeHeight } from './HtmlEmbed';
 
 const CSP_LINE = /^\s*Content-Security-Policy:\s*(.+)$/m;
@@ -60,5 +61,14 @@ describe('interactive block frame', () => {
     expect(height(own, null)).toBeNull();
     expect(height(own, { height: 1e9, type: 'resize' })).toBe(600);
     expect(height(own, { height: -5, type: 'resize' })).toBe(32);
+  });
+
+  // Share pages (share.html) have no TanStack router; View source must still open.
+  it('opens the source dialog without a router', () => {
+    expect(() =>
+      renderToStaticMarkup(
+        <HtmlEmbedSourceDialog html="<p>snippet</p>" onClose={() => {}} />
+      )
+    ).not.toThrow();
   });
 });

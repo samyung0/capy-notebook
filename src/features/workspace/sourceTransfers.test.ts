@@ -129,6 +129,20 @@ describe('transfer status', () => {
     expect(
       transferStatus(transfer, file({ indexed: false, status: 'ready' })).kind
     ).toBe('info');
+    // So is a file over an ingest limit: it opens, only search skips it.
+    expect(
+      transferStatus(
+        transfer,
+        file({
+          indexed: false,
+          indexLimit: 'tabular_cell_limit',
+          status: 'ready',
+        })
+      )
+    ).toMatchObject({
+      detail: m.files_not_indexed_too_large(),
+      kind: 'info',
+    });
     expect(
       transferStatus(transfer, file({ indexed: false, status: 'failed' })).kind
     ).toBe('error');

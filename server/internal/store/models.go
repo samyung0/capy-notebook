@@ -147,6 +147,10 @@ type File struct {
 	// stored without parsing stay false: they are viewable but invisible to
 	// chat and generate.
 	Indexed bool `json:"indexed"`
+	// IndexLimit names the ingest limit a ready, unindexed file's content is
+	// over (too many pages, pixels, audio hours, CSV cells or text). The file
+	// opens and downloads as usual; only search and chat skip it.
+	IndexLimit *FileIndexLimit `json:"indexLimit,omitempty"`
 	// HasBytes says a source object exists. Bytes are read through the links
 	// endpoint's presigned URLs; the row never carries a fetchable URL.
 	HasBytes bool `json:"hasBytes"`

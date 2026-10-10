@@ -4,6 +4,7 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { FileIndexLimit } from './fileIndexLimit.ts';
 import type { FileKind } from './fileKind.ts';
 import type { FileStatus } from './fileStatus.ts';
 import type { Provenance } from './provenance.ts';
@@ -16,6 +17,7 @@ export interface File {
   chapterId: string | null;
   hasBytes: boolean;
   id: string;
+  indexLimit?: FileIndexLimit;
   indexed: boolean;
   kind: FileKind;
   name: string;

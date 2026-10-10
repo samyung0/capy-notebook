@@ -285,29 +285,41 @@ test('digital PDF: reader annotations are private and source bytes stay unchange
   await trashRestorePurge(run, fileId);
 });
 
-test('oversized delimited structure: terminal ingest failure never publishes an index', async ({
+test('oversized delimited structure: the file opens unindexed and never publishes an index', async ({
   run,
 }) => {
   test.setTimeout(600_000);
   const workspaceId = await workspace(run, 'invalid-csv');
-  const fileId = await upload(
-    run,
-    workspaceId,
+  const bytes = await fixture(
     'delimiter-limit.csv',
-    await fixture(
-      'delimiter-limit.csv',
-      `UAT_${randomUUID().replaceAll('-', '')}`
-    )
+    `UAT_${randomUUID().replaceAll('-', '')}`
   );
-  await run.poll(
-    'terminal CSV failure',
+  const fileId = await upload(run, workspaceId, 'delimiter-limit.csv', bytes);
+  // Over an ingest limit the file is not failed: it is ready, unindexed, and
+  // names the limit.
+  const row = await run.poll(
+    'CSV over the cell limit settles',
     () => fileRow(run, fileId),
-    (row) => row.status === 'failed',
+    (current) => {
+      assert.notEqual(current.status, 'failed', `file ${fileId} failed`);
+      return current.status === 'ready';
+    },
     300_000
   );
-  assert.equal((await fileRow(run, fileId)).indexed, false);
+  assert.equal(row.indexed, false);
+  assert.equal(row.index_limit, 'tabular_cell_limit');
+  // It still opens: the owner gets its bytes and the file page says why it is
+  // not searchable.
+  const links = object(await api(run.owner, `/api/files/${fileId}/links`));
+  const source = await fetch(string(links.url));
+  assert.equal(source.status, 200);
+  assert.equal(sha256(Buffer.from(await source.arrayBuffer())), sha256(bytes));
+  await openFile(run, run.owner, workspaceId, fileId);
+  await expect(run.owner.page.getByTestId('file-not-indexed')).toHaveText(
+    m.files_not_indexed_too_large()
+  );
   await run.poll(
-    'terminal CSV job finalized',
+    'CSV job finalized',
     () =>
       run.query("SELECT status FROM jobs WHERE payload->>'fileId'=%s", [
         fileId,
@@ -331,28 +343,17 @@ test('oversized delimited structure: terminal ingest failure never publishes an 
     attempts.some(
       (attempt) =>
         attempt.status === 'failed' &&
-        attempt.error_code === 'terminalerror' &&
+        attempt.error_code === 'tabular_cell_limit' &&
         attempt.job_error === 'delimited table exceeds the cell limit'
     )
   );
   for (const attempt of attempts) {
+    // A file over a documented limit is an expected outcome: cleanup's
+    // correlated-trace check requires that no Sentry error carries this trace.
     await run.record('trace', string(attempt.trace_id), {
       fileId,
       jobId: attempt.job_id,
     });
-    if (
-      attempt.status === 'failed' &&
-      attempt.error_code === 'terminalerror' &&
-      attempt.job_error === 'delimited table exceeds the cell limit'
-    ) {
-      await run.record('sentry-expected', string(attempt.trace_id), {
-        errorCode: 'terminalerror',
-        exceptionType: 'TerminalError',
-        fileId,
-        jobId: attempt.job_id,
-        value: 'delimited table exceeds the cell limit',
-      });
-    }
     assert.equal(attempt.release_sha, run.env.expectedRevision);
     assert.equal(attempt.environment, 'uat');
   }
@@ -364,7 +365,7 @@ test('oversized delimited structure: terminal ingest failure never publishes an 
     await run.record('job', string(job.id), { fileId });
     assert.equal(job.status, 'failed');
   }
-  await run.attach(`${fileId}-terminal-failure`, attempts);
+  await run.attach(`${fileId}-index-limit`, attempts);
   await settledSpend(run, fileId, true);
   await trashRestorePurge(run, fileId);
 });

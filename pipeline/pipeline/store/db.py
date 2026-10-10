@@ -1292,6 +1292,16 @@ def set_file_indexed(cur, file_id: str, indexed: bool) -> None:
         )
 
 
+def set_file_index_limit(cur, file_id: str, code: str) -> None:
+    """Record the ingest limit an unindexed file's content is over."""
+    if source_refresh_for(file_id) is not None:
+        return
+    cur.execute(
+        "UPDATE files SET index_limit=%s WHERE id=%s AND trashed_at IS NULL",
+        (code, file_id),
+    )
+
+
 def set_file_content_hash(cur, file_id: str, content_hash: str) -> None:
     """Record the hash of the parsed text, used to skip duplicate indexing."""
     if stage_source_candidate(cur, file_id, {"content_hash": content_hash}):

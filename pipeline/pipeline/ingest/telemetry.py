@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ..jobs import InputLimitError
 from ..store import db
 
 _SAFE_CODE = re.compile(r"[^a-z0-9]+")
@@ -58,6 +59,8 @@ def classify_error(exc: BaseException) -> tuple[str, str, int | None]:
     status = (
         raw_status if isinstance(raw_status, int) and 100 <= raw_status <= 599 else None
     )
+    if isinstance(exc, InputLimitError):
+        return "input", exc.code, status
     if isinstance(exc, db.SourceRebaseRefusedError):
         return "source_refresh", "office_rebase_refused", status
     if isinstance(exc, TimeoutError):

@@ -32,6 +32,7 @@ browser  →  Go gateway  →  Python retrieval  →  provider
 | Python | continues | `pipeline/pipeline/obs.py` middleware |
 | Python → parser service | injects | `obs.outbound_headers()` in `parse/parser_client.py` |
 | Ingest worker | mints per job | `ingest/worker.py` claim loop |
+| Node collaboration | continues as the Sentry `trace_id` tag of internal HTTP requests | `withRequestTrace` in `collaboration/src/observability.ts` |
 
 The gateway echoes it as `X-Request-Id`, so a user can quote the id from a
 failed request.
@@ -247,7 +248,22 @@ error-boundary rendering do not add another capture call.
 
 Expected 4xx responses, interactive provider-busy responses, and client aborts
 stay quiet. Ingest retryable failures still requeue without capture; terminal
-ingest failures keep their explicit reporting. Go, Python, and collaboration exclude request
+ingest failures keep their explicit reporting, except `InputLimitError`: a user
+file over a documented limit (page or scanned-page count, image pixels, audio
+duration, CSV/TSV cells or searchable text) fails the job with the limit's
+attempt `error_code` (`page_limit`, `scanned_page_limit`, `image_pixel_limit`,
+`audio_duration_limit`, `tabular_cell_limit`, `tabular_text_limit`) and logs at
+info, with no Sentry event. The file itself ends ready and unindexed with
+`files.index_limit` (see Ingest limits in
+[agentic-retrieval.md](agentic-retrieval.md)). A refused Office rebase is the same kind of
+expected outcome: the ingest worker logs the refused publication
+(`office_rebase_refused`) and collaboration logs a refused rebuild
+(`office_rebuild_refused`), and neither captures it. Sentry holds failures
+only, so the UAT journeys, which cause these outcomes on purpose, must leave
+no event: their cleanup fails on any Sentry event carrying a run trace, actor
+or file id. Collaboration tags its events `service: collaboration`, an internal
+request's events with the caller's `trace_id`, and a source rebuild's (which
+runs outside any request, on a room unload or the sweep) with its `file_id`. Go, Python, and collaboration exclude request
 bodies and internal authentication headers from Sentry because requests carry
 note content, prompts, and service credentials. Python stack locals are also
 excluded.

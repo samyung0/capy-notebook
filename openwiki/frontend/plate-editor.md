@@ -458,7 +458,8 @@ the page would paint the frame opaque), `accent-color: var(--accent)`, and a
 body with no margin, `16px/1.5 var(--font)` in `--fg` on a transparent
 background, with form controls inheriting the font; the snippet's own CSS
 overrides it. The agent guidance names the variables and the base. The share
-page hydrates the same `HtmlEmbedView` island (without View source) and
+page hydrates the same `HtmlEmbedView` island without View source (visitors
+read the block, they don't need its source) and
 loads the same Fustat file, so it renders identically. The host accepts only `{type: 'resize', height}`
 from that iframe's own window with a finite height, clamped to 32 to 600 px;
 a taller snippet scrolls inside the frame. The wrapper reports its height right

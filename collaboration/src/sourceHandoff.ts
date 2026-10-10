@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Document, Hocuspocus } from '@hocuspocus/server';
 import type { Redis } from 'ioredis';
 import type { Pool } from 'pg';
+import { log } from './observability.js';
 import { CALL_TIMEOUT_MS } from './officeRuntime.js';
 import {
   CAPTURED_STATE_SEED_SQL,
@@ -108,7 +109,7 @@ export class SourceHandoff {
   private readonly activeInstances: () => Promise<Set<string>>;
   private readonly persist: (document: Document) => Promise<void>;
   private readonly publicationHold: boolean;
-  private readonly onError: (error: unknown) => void;
+  private readonly onError: (error: unknown, fileId: string) => void;
   private readonly pendingStore: (room: string) => boolean;
   constructor(
     instanceId: string,
@@ -119,7 +120,7 @@ export class SourceHandoff {
     activeInstances: () => Promise<Set<string>>,
     persist: (document: Document) => Promise<void>,
     publicationHold: boolean,
-    onError: (error: unknown) => void = (error) =>
+    onError: (error: unknown, fileId: string) => void = (error) =>
       console.warn('source rebuild failed:', error),
     /** A store of the room still running or waiting for its retry. */
     pendingStore: (room: string) => boolean = () => false
@@ -466,7 +467,7 @@ export class SourceHandoff {
 
   /** A rebuild attempt in the background; a failure waits for the sweep. */
   scheduleRebuild(fileId: string) {
-    void this.rebuild(fileId).catch((error) => this.onError(error));
+    void this.rebuild(fileId).catch((error) => this.onError(error, fileId));
   }
 
   /**
@@ -480,8 +481,10 @@ export class SourceHandoff {
    * room's latest state, whose own rebuild then lands.
    */
   async rebuild(fileId: string) {
+    // A trashed file has nothing to rebuild, though its room unloading (its
+    // editors closed by the trash) still schedules one.
     const pending = await this.pool.query<{ pending: boolean }>(
-      'SELECT rebuild_pending AND rebuild_refusal IS NULL AS pending FROM source_documents WHERE file_id=$1',
+      'SELECT d.rebuild_pending AND d.rebuild_refusal IS NULL AS pending FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1 AND f.trashed_at IS NULL',
       [fileId]
     );
     if (!pending.rows[0]?.pending) return false;
@@ -511,8 +514,13 @@ export class SourceHandoff {
           return false;
         throw recording;
       }
-      // Reported once: neither the sweep nor a room unloading retries it.
-      throw error;
+      // A documented outcome, not a failure: logged once and never sent to
+      // Sentry. Neither the sweep nor a room unloading retries it.
+      log('warn', 'office_rebuild_refused', {
+        error: error.message,
+        room: session.room,
+      });
+      return false;
     }
     const id = `rebuild:${randomUUID()}`;
     const room = session.room;

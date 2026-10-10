@@ -1069,6 +1069,17 @@ func TestWorkspaceSourceIndexCountsAndSettings(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// A CSV over an ingest limit is ready, unindexed and not indexable.
+	limited, err := s.createReadyFile(ctx, ws.ID, owner, "too-large.csv", "sheet", nil, "", 10, "sources/"+uid("count"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.pool.Exec(ctx, `UPDATE files SET index_limit='tabular_cell_limit' WHERE id=$1`, limited.ID); err != nil {
+		t.Fatal(err)
+	}
+	if limited, err = s.GetFile(ctx, limited.ID); err != nil || limited.IndexLimit == nil || *limited.IndexLimit != "tabular_cell_limit" {
+		t.Fatalf("index limit not read: %+v %v", limited, err)
+	}
 	doc := sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "below-threshold")
 	if _, err = s.pool.Exec(ctx, `UPDATE source_documents SET net_tokens=1 WHERE file_id=$1`, doc.FileID); err != nil {
 		t.Fatal(err)
@@ -1084,7 +1095,7 @@ func TestWorkspaceSourceIndexCountsAndSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.Indexed != 1 || stats.NotIndexed != 1 || stats.NotIndexable != 1 || len(stats.FileChanges) != 1 || stats.FileChanges[0].FileID != file.ID || stats.FileChanges[0].State != "waiting" {
+	if stats.Indexed != 1 || stats.NotIndexed != 1 || stats.NotIndexable != 2 || len(stats.FileChanges) != 1 || stats.FileChanges[0].FileID != file.ID || stats.FileChanges[0].State != "waiting" {
 		t.Fatalf("wrong partition: %+v", stats)
 	}
 }

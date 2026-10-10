@@ -16,7 +16,7 @@ export const HOLD_MARKER = '[hold-publication]';
 export const REFUSAL_PREFIX = 'Office rebase:';
 
 /** Sets or clears the hold marker through the rename API (editor rights). */
-export async function setHold(
+async function setHold(
   run: UatRun,
   fileId: string,
   name: string,
@@ -27,6 +27,30 @@ export async function setHold(
     await api(run.owner, `/api/files/${fileId}`, 'PATCH', { name: renamed })
   );
   assert.equal(file.name, renamed);
+}
+
+/**
+ * Runs `work` with the hold set and releases it after, also when `work` fails:
+ * a hold left set times the publication out after 60 s with a 503, an error
+ * event (Sentry CAPY-BACKEND-Q, the failed run of 2026-09-29).
+ */
+export async function whileHeld<T>(
+  run: UatRun,
+  fileId: string,
+  name: string,
+  work: () => Promise<T>
+) {
+  await setHold(run, fileId, name, true);
+  let result: T;
+  try {
+    result = await work();
+  } catch (error) {
+    // The release must not replace the failure that left the hold set.
+    await setHold(run, fileId, name, false).catch(() => undefined);
+    throw error;
+  }
+  await setHold(run, fileId, name, false);
+  return result;
 }
 
 /**

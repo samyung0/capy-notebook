@@ -14,7 +14,7 @@ import { Spinner } from '@/components/ui/feedback';
 import type { IconName } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { useOnlineStatus } from '@/lib/online';
-import { fileIsIngesting } from './fileUtils';
+import { fileIsIngesting, notIndexedMessage } from './fileUtils';
 
 export function FileLoading({
   message = m.files_loading_preview(),
@@ -138,13 +138,13 @@ export function SourceReplacedBanner({ paused }: { paused?: boolean }) {
 export function FileNotIndexedBanner({
   file,
 }: {
-  file: Pick<SourceFile, 'indexed' | 'status'>;
+  file: Pick<SourceFile, 'indexed' | 'indexLimit' | 'status'>;
 }) {
   if (fileIsIngesting(file.status) || file.indexed) return null;
   const failed = file.status === 'failed';
   return (
     <FileBanner
-      message={failed ? m.files_not_indexed_failed() : m.files_not_indexed()}
+      message={failed ? m.files_not_indexed_failed() : notIndexedMessage(file)}
       testId="file-not-indexed"
       tone={failed ? 'error' : 'neutral'}
     />

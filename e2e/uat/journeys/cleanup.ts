@@ -20,7 +20,6 @@ import {
   cleanupStripeTestClock,
   expireStripeCheckout,
   object,
-  readSentryEvent,
   readSentryEvents,
   stringField,
   stripeRequest,
@@ -90,22 +89,6 @@ export function validateRegistrationOwnership(
     (tag && tag !== manifest.id)
   )
     throw new Error('Registration ownership mismatch');
-}
-
-/**
- * An event on an intentional-failure trace carries exactly one exception: the
- * type the journey recorded, with its exact `value`.
- */
-export function expectedFailure(
-  expected: Record<string, unknown>,
-  exceptions: Record<string, unknown>[]
-) {
-  if (exceptions.length !== 1 || typeof expected.exceptionType !== 'string')
-    return false;
-  const [{ type, value }] = exceptions;
-  if (type !== expected.exceptionType || typeof value !== 'string')
-    return false;
-  return typeof expected.value === 'string' && value === expected.value;
 }
 
 export async function cleanupRun(id: string) {
@@ -458,76 +441,53 @@ export async function cleanupRun(id: string) {
             });
         });
     }
-    const traceIds = [
-      ...new Set(
-        [...resources('trace'), ...resources('sentry-expected')].map(
-          (resource) => resource.id
-        )
-      ),
-    ];
-    if (traceIds.length || actorIds.length)
-      await step(
-        'Verify correlated Sentry errors and expected failure delivery',
-        async () => {
-          const expected = new Map(
-            resources('sentry-expected').map((resource) => [
-              resource.id,
-              resource.details,
-            ])
-          );
-          // Allow the final requests' asynchronous error delivery before the negative check.
-          await new Promise((resolve) => setTimeout(resolve, 30_000));
-          const readEvents = async () => {
-            const found = new Map<string, Record<string, unknown>>();
-            const scopes = [{ actorIds, traceIds: [] as string[] }];
-            for (let offset = 0; offset < traceIds.length; offset += 30)
-              scopes.push({
-                actorIds: [],
-                traceIds: traceIds.slice(offset, offset + 30),
-              });
-            for (const scope of scopes)
-              if (scope.traceIds.length || scope.actorIds.length) {
-                for (const event of await readSentryEvents(env, {
-                  ...scope,
-                  start: manifest.startedAt,
-                }))
-                  found.set(`${event.project}:${event.id}`, event);
-              }
-            return [...found.values()];
-          };
-          const events = await poll(
-            'Expected Sentry failure received',
-            readEvents,
-            (rows) =>
-              [...expected.keys()].every((trace) =>
-                rows.some((event) => event.trace_id === trace)
-              ),
-            expected.size ? 90_000 : 1
-          );
-          for (const event of events) {
-            const failure = expected.get(String(event.trace_id));
-            if (!failure) throw new Error('Unexpected correlated Sentry error');
-            const details = await readSentryEvent(env, event);
-            const exceptions = arrayField(details, 'entries')
-              .map(object)
-              .filter((entry) => entry.type === 'exception')
-              .flatMap((entry) => arrayField(entry.data, 'values'))
-              .map(object);
-            if (!expectedFailure(failure, exceptions))
-              throw new Error(
-                'Unexpected error on the intentional failure trace'
-              );
-          }
+    // A healthy run sends Sentry nothing: no event may carry a run trace,
+    // actor or file. Expected outcomes (a file over a limit, a refused Office
+    // rebase) are logged, not captured.
+    const traceIds = [...new Set(resources('trace').map((entry) => entry.id))];
+    const fileIds = resources('file').map((entry) => entry.id);
+    if (traceIds.length || actorIds.length || fileIds.length)
+      await step('Verify no Sentry event for the run', async () => {
+        // Allow the final requests' asynchronous error delivery first.
+        await new Promise((resolve) => setTimeout(resolve, 30_000));
+        const events = new Map<string, Record<string, unknown>>();
+        const scopes = [
+          { actorIds, fileIds: [] as string[], traceIds: [] as string[] },
+        ];
+        for (let offset = 0; offset < traceIds.length; offset += 30)
+          scopes.push({
+            actorIds: [],
+            fileIds: [],
+            traceIds: traceIds.slice(offset, offset + 30),
+          });
+        for (let offset = 0; offset < fileIds.length; offset += 30)
+          scopes.push({
+            actorIds: [],
+            fileIds: fileIds.slice(offset, offset + 30),
+            traceIds: [],
+          });
+        for (const scope of scopes)
+          if (
+            scope.traceIds.length ||
+            scope.actorIds.length ||
+            scope.fileIds.length
+          )
+            for (const event of await readSentryEvents(env, {
+              ...scope,
+              start: manifest.startedAt,
+            }))
+              events.set(`${event.project}:${event.id}`, event);
+        if (events.size) {
           retained.push({
             action:
-              'No deletion required; scope investigations to these exact event/trace IDs.',
-            events,
+              'Investigate these exact event/trace IDs: each is a failure the run caused.',
+            events: [...events.values()],
             kind: 'sentry',
-            reason:
-              'Expected terminal ingest errors remain in monitoring history.',
+            reason: 'A run correlated with Sentry events.',
           });
+          throw new Error('Run correlated with Sentry events');
         }
-      );
+      });
     await step('Verify release remained unchanged during the run', () =>
       verifyRelease(env)
     );

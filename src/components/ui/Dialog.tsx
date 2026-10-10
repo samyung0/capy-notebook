@@ -1,7 +1,6 @@
-import { useRouterState } from '@tanstack/react-router';
+import { useRouter } from '@tanstack/react-router';
 import { Dialog as DialogPrimitive } from 'radix-ui';
 import * as React from 'react';
-import { useRef } from 'react';
 import { Card } from '@/components/ui/Card';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -207,19 +206,18 @@ function SimpleDialog({
   cardClassName?: string;
   cardScrollContainerClassName?: string;
 }) {
-  const originalPathname = useRef<string | null>(null);
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-
-  React.useEffect(() => {
-    if (
-      originalPathname.current === null ||
-      originalPathname.current === pathname
-    ) {
-      originalPathname.current = pathname;
-      return;
-    }
-    onClose();
-  }, [pathname]);
+  // Close when the app navigates to another path. The /share/* entry has no
+  // router, so the context is empty there and the dialog only closes itself.
+  const router = useRouter({ warn: false }) as ReturnType<
+    typeof useRouter
+  > | null;
+  React.useEffect(
+    () =>
+      router?.subscribe('onBeforeNavigate', ({ pathChanged }) => {
+        if (pathChanged) onClose();
+      }),
+    [router, onClose]
+  );
 
   const body = (
     <>

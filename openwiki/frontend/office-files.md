@@ -1944,11 +1944,13 @@ take 60 s to arrive, the service's own timeout for those calls
 (`sourceBodyDeadline` in `huma_source_documents.go`): at 5 s an 11 MB text
 checkpoint was answered 408 on a loaded host. A room in
 use, a save or a publication in between leaves it for later. It runs when a
-room unloads on an instance and from a sweep every minute (a room found in use
+room unloads on an instance and from a sweep every minute (never for a
+trashed file) (a room found in use
 waits five minutes, an error ten). A room that never empties keeps the old
 base, and the kept capture, until it does. A rebase the engine refuses
-(`RebaseError`; any other error retries as above) is reported once and
-recorded through the gateway (`POST
+(`RebaseError`; any other error retries as above) is an expected outcome:
+logged once (`office_rebuild_refused`, with its room), never sent to Sentry,
+and recorded through the gateway (`POST
 /internal/collaboration/files/{id}/rebuild-refusal`, the row's
 `rebuild_refusal`, migration 0047), and no instance tries that rebuild again.
 The file is due again whatever its edits weigh, as after a refused
