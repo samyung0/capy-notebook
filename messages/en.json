@@ -1010,6 +1010,8 @@
   "material_ref_minutes": "{count} min",
   "material_ref_cards_one": "1 card",
   "material_ref_cards": "{count} cards",
+  "material_preview_items_one": "1 item",
+  "material_preview_items": "{count} items",
   "action_study": "Study",
   "editor_mermaid": "Mermaid diagram",
   "editor_cmd_turn_into": "Turn the current block into {label}",

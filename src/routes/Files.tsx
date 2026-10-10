@@ -40,6 +40,10 @@ import {
   collectSelectionPages,
   useFileSelection,
 } from '@/features/files/useFileSelection';
+import {
+  cardCountLabel,
+  questionCountLabel,
+} from '@/features/materials/countLabels';
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import { MaterialsTab } from '@/features/materials/MaterialsTab';
 import { ContentActions } from '@/features/workspace/ContentActions';
@@ -585,6 +589,7 @@ function TrashTab({
                   }
                   thumbnail={{
                     fileKind: trashFileKind(item),
+                    pill: trashPill(item),
                     preview: item.preview,
                     thumbnailUrl: item.thumbnailUrl,
                   }}
@@ -656,6 +661,17 @@ function trashIconName(item: TrashItem) {
     kind: trashFileKind(item) ?? 'unknown',
     name: item.title,
   });
+}
+
+/** Trash rows carry no counts of their own; a trashed quiz or set's preview
+ * does. */
+function trashPill(item: TrashItem): string | undefined {
+  const { preview } = item;
+  if (preview && 'kind' in preview) {
+    if (preview.kind === 'quiz')
+      return questionCountLabel(preview.questionCount);
+    if (preview.kind === 'flashcards') return cardCountLabel(preview.cardCount);
+  }
 }
 
 function trashFileKind(item: TrashItem): FileKind | undefined {

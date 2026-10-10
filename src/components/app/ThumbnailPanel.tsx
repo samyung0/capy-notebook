@@ -2,10 +2,6 @@ import { memo, type ReactNode, useState } from 'react';
 import type { FileKind, FileTextPreview, MaterialPreview } from '@/api/types';
 import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
 import {
-  cardCountLabel,
-  questionCountLabel,
-} from '@/features/materials/countLabels';
-import {
   CardsLive,
   NoteLive,
   QuizLive,
@@ -19,6 +15,8 @@ import { cn } from '@/lib/cn';
 export interface Thumbnail {
   /** A file row's kind: picks the image crop and the dark-mode dim. */
   fileKind?: FileKind;
+  /** The row's own question or card count, shown even without a preview. */
+  pill?: string;
   preview?: FileTextPreview | MaterialPreview;
   thumbnailUrl?: string;
 }
@@ -35,6 +33,7 @@ export const ThumbnailPanel = memo(function ThumbnailPanel({
   fileKind,
   thumbnailUrl,
   preview,
+  pill,
   small = false,
 }: Thumbnail & { icon: FileIconName; small?: boolean }) {
   const [failedUrl, setFailedUrl] = useState<string>();
@@ -44,7 +43,6 @@ export const ThumbnailPanel = memo(function ThumbnailPanel({
     </div>
   );
   let body: ReactNode = null;
-  let pill: string | undefined;
   if (thumbnailUrl && thumbnailUrl !== failedUrl) {
     body = (
       <img
@@ -73,11 +71,9 @@ export const ThumbnailPanel = memo(function ThumbnailPanel({
         if (preview.blocks.length) body = <NoteLive blocks={preview.blocks} />;
         break;
       case 'quiz':
-        pill = questionCountLabel(preview.questionCount);
         if (preview.first) body = <QuizLive question={preview.first} />;
         break;
       case 'flashcards':
-        pill = cardCountLabel(preview.cardCount);
         if (preview.first)
           body = (
             <CardsLive
@@ -88,7 +84,9 @@ export const ThumbnailPanel = memo(function ThumbnailPanel({
           );
         break;
       default:
-        body = <MermaidPreview fallback={fallback} source={preview.source} />;
+        // Previews arrive as open JSON; one without its source keeps the icon.
+        if (preview.source)
+          body = <MermaidPreview fallback={fallback} source={preview.source} />;
     }
   }
   return (

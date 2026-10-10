@@ -1872,7 +1872,6 @@ export const handlers = [
         maxDepth: mt.maxDepth,
         nodeCount: mt.nodeCount,
         position: mt.position,
-        preview: db.materialPreview(mt),
         sizeBytes: mt.contentBytes,
         title: mt.title,
         type: refType(mt.kind),

@@ -237,12 +237,14 @@ export type PreviewBlock =
   | { t: 'code'; text: string; lang?: string }
   | { t: 'quote'; text: string }
   | { t: 'image' };
-/** A quiz's first question; a `gaps` stem marks each blank with U+0001. */
+/** A quiz's first question; a `gaps` stem marks each blank with U+0001.
+ * Matching carries only its left-hand prompts and ordering only its item
+ * count, so no preview gives an answer away. */
 export interface QuizPreviewQuestion {
   hasChart?: boolean;
-  items?: string[];
+  itemCount?: number;
   options?: string[];
-  pairs?: [string, string][];
+  prompts?: string[];
   stem: string;
   type: QuestionType;
 }
