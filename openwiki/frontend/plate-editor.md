@@ -261,22 +261,32 @@ on the elements whose `type`, `assetId`, `url` or `src` the update set or
 deleted), so only that writer's update is lost, and its store checks it again.
 
 Pasted images take the same asset path (`pastedImages.ts`): clipboard image
-files become upload placeholders, as dropped files do (Plate's placeholder
-plugin takes files pasted alone, `pastedImagesPlugin`'s `onPaste` those that
-come with HTML, as a browser's Copy image gives; a drop stays with the DnD
-plugin's `onDropFiles`, so it makes one placeholder); an `<img>` in pasted
-HTML and a markdown image pasted as text (VS Code's markdown included) or
-imported from a `.md` file, which Plate's parsers turn into URL-only nodes,
-become a placeholder in their place whose element fetches the URL in the
-browser (a `data:` URL, a host that allows CORS) and uploads the bytes, or a
-link to the URL showing the image's alt text when the browser cannot read it
-(a non-web URL goes). Nothing is fetched by a server: markdown images in
-agent-written notes become those links in the converter (`urlImageLink` in
-`markdownImport.ts`, shared by the browser's import and the server's V8
-bundle), and an image inside a link leaves its alt text there. Without asset
-uploads (`allowExternalAssets` off) a pasted or imported image is a link. The
-image plugin's URL embed (`disableEmbedInsert`) is off, so no URL-only image
-node is made.
+files become upload placeholders, as dropped files do. Plate's placeholder
+plugin takes files pasted alone; `pastedImagesPlugin`'s `onPaste` takes them
+only beside a browser's Copy image HTML, nothing but `<img>` elements
+(`onlyImages`), so an Excel, PowerPoint or OneNote copy, whose HTML sits beside
+a rendered picture, pastes as HTML (REVIEW5 M2); a drop stays with the DnD
+plugin's `onDropFiles`, so it makes one placeholder. An `<img>` in pasted HTML,
+a markdown image pasted as text (VS Code's markdown included) or imported from
+a `.md` file, and a picture in an imported `.docx` (mammoth gives it as a
+`data:` URL; Epo 2026-10-10, main 1be046ea), which Plate's parsers turn into
+URL-only nodes, become a placeholder in their place whose element fetches the
+URL in the browser and uploads the bytes, or a link to the URL showing the
+image's alt text when it cannot. Only absolute http(s) and `data:` URLs are
+read, never a path on this app; the file's extension comes from the served
+type through the types the server stores (`IMAGE_EXTENSIONS` in
+`src/lib/fitImage.ts`), and a type it refuses (an icon, SVG) or any failed
+read ends as the link, or nothing for a non-web URL, with the URL forgotten,
+so no skeleton stays (REVIEW5 S1). Pasted images read and upload four at a
+time; the rest wait as skeletons (REVIEW5 N6). Nothing is fetched by a
+server: markdown images in agent-written notes become those links in the
+converter (`urlImageLink` in `markdownImport.ts`, shared by the browser's
+import and the server's V8 bundle), an image inside a link leaves its alt text
+there, and an element left empty by a dropped image (a quote, a cell) keeps an
+empty text, a list item an empty item (REVIEW5 S2). Without asset uploads
+(`allowExternalAssets` off) a pasted or imported image is a link. The image
+plugin's URL embed (`disableEmbedInsert`) is off, so no URL-only image node is
+made.
 
 An uploading image is a skeleton (`MediaPlaceholderElement`), from the first
 render of a dropped or pasted file and while a pasted URL is read, and the
@@ -299,10 +309,13 @@ each placeholder subscribes to awareness on its own
 a presence change re-renders only the placeholders whose answer changed, not
 the editor. When the uploader disconnects (the room nulls its presence) or
 its awareness times out, the block is the empty placeholder again; nothing
-about an upload is stored in the note. An id (at most 21 characters) costs
-~24 bytes of the server's 64 KiB awareness entry, so one tab can name about
-2,500 uploads at once.
-Viewers that do not join the room (the static projection) do not see it.
+about an upload is stored in the note. A tab names at most 100 uploads (an id
+is at most 21 characters, so under 3 KiB of the server's 64 KiB awareness
+entry, past which the room closes the channel), and a received list counts
+only its first 100 ids of up to 32 characters (REVIEW5 E1, E3). The room drops
+the list from a read-only channel's presence (`without_uploads` in
+`room.rs`), so a viewer cannot show blocks as uploading (REVIEW5 E2). Viewers
+that do not join the room (the static projection) do not see it.
 
 Each asset belongs to one note, and the server keeps it that way; the browser
 does nothing but render. A save that stops using an asset (once it was
