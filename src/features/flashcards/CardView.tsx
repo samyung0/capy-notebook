@@ -1,4 +1,5 @@
 import { type ReactNode, useContext } from 'react';
+import { Card } from '@/components/ui/Card';
 import type { FlashcardContent } from '@/features/materials/blocks';
 import {
   AssetUrlContext,
@@ -111,17 +112,23 @@ export function CardTile({
   children?: ReactNode;
 }) {
   return (
-    <div className="group/tile relative aspect-[4/3]">
+    // The Card lifts on hover like the Add card tile, the toolbar with it.
+    <Card
+      className="group/tile relative aspect-[4/3] gap-0 p-0"
+      interactive
+      radius="card-lg"
+      theme="transparent"
+    >
       <button
         aria-label={label}
-        className="flex size-full items-center justify-center overflow-hidden rounded-card-lg border border-line bg-surface p-5 transition-shadow hover:shadow-card focus-visible:ring-2 focus-visible:ring-action"
+        className="flex size-full items-center justify-center overflow-hidden rounded-card-lg border border-line bg-surface p-5 focus-visible:ring-2 focus-visible:ring-action"
         onClick={onOpen}
         type="button"
       >
         <CardFront card={card} className="size-full" />
       </button>
       {children}
-    </div>
+    </Card>
   );
 }
 
