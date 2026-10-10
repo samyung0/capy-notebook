@@ -176,7 +176,10 @@ export function pastedImagesPlugin(allowExternalAssets: boolean) {
             file.type.startsWith('image/')
           );
           if (allowExternalAssets && images.length) {
-            editor.getTransforms(PlaceholderPlugin).insert.media(images);
+            // insert.media reads its files with Array.from.
+            editor
+              .getTransforms(PlaceholderPlugin)
+              .insert.media(images as unknown as FileList);
             return;
           }
           insertData(data);
