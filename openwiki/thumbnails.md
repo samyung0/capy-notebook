@@ -7,9 +7,10 @@ mindmap, diagram) gets a live preview drawn in the browser from a small JSON
 summary of its content. Decisions: `human/authorization-permissions-lifecycles.md`
 and `human/backend-storage-quota.md` (2026-10-11).
 
-Ingest renders file thumbnails (phase 1). Edited PPTX and XLSX files are
-captured in the browser and posted to Go ([Browser captures](#browser-captures-phase-2a),
-phase 2a). DOCX captures and agent-edit captures come later (see the end).
+Ingest renders file thumbnails (phase 1). Edited Office files are captured in
+the browser and posted to Go ([Browser captures](#browser-captures): PPTX and
+XLSX in phase 2a, DOCX in phase 2b). Agent-edit captures come later (see the
+end).
 
 ## Storage and lifecycle
 
@@ -109,7 +110,7 @@ the donor-reuse, content-reuse and indexed exits all reach it.
 - A source refresh (an edited text or Office source) publishes and ingests
   again, so the new bytes replace the thumbnail or text preview, unless an
   editor's browser has captured the file
-  ([Ingest after a capture](#browser-captures-phase-2a)).
+  ([Ingest after a capture](#browser-captures)).
 - A PDF or Office file the parse job reused from identical indexed bytes (the
   donor path, `_reuse_donor` called from the parse job in
   `pipeline/ingest/worker.py`) has no bundle, so it takes the thumbnail key of
@@ -166,9 +167,9 @@ Sources: [extractor](../server/internal/materialdoc/preview.go),
 [table test](../server/internal/materialdoc/preview_test.go),
 [writers test](../server/internal/store/material_preview_test.go).
 
-## Browser captures (phase 2a)
+## Browser captures
 
-An edit frame of a PPTX or XLSX file redraws the file's thumbnail as it is
+An edit frame of a DOCX, PPTX or XLSX file redraws the file's thumbnail as it is
 edited and Capy posts it to Go, which writes it to B2 itself (no upload
 session, no quota).
 
@@ -208,7 +209,7 @@ success ([handler](../server/internal/httpapi/huma_thumbnails.go)):
 **Browser** ([scheduler](../src/features/files/thumbnailCapture.ts), wired in
 `useOfficeRuntime`):
 
-- Only in an edit frame of PPTX or XLSX, and only where a canvas encodes WebP
+- Only in an edit frame, and only where a canvas encodes WebP
   (`OffscreenCanvas.convertToBlob` answers `image/webp`; Safari answers PNG and
   captures nothing).
 - A local edit (the runtime's `update`) starts a cycle. 5 s after the last
@@ -245,6 +246,15 @@ Chrome writes an sRGB ICC profile before the image (`VP8X` with the ICC flag,
 `ICCP`), which Go refuses and browsers assume anyway, so the runtime keeps the
 image chunk alone (`imageOnlyWebP`; 464 bytes smaller).
 
+- DOCX (phase 2b): page 1 whole, as ingest stores it (a Letter or A4 page is
+  200 x 259 or 200 x 283), from Print's raster of it: the editor's
+  `renderPages` draws the page at twice its CSS size on the main thread, where
+  the document's fonts are, from the display list the frames keep current, and
+  the capture draws it down to 200 px (`imageSmoothingQuality: 'high'`; the
+  default smoothing aliases text badly). `renderPages` draws every page, so the
+  capture ends its loop after page 1 (`pageThumbnail`): no later page is
+  rastered. Host only, no fork change: the layout worker, its `relayout`
+  request and frame queue are untouched.
 - PPTX: slide 1 (`layoutSlide(0)` and `paintSlide`, as Print, with its
   pictures decoded once for the drawing), on the main thread, where the
   slide's fonts are.
@@ -267,7 +277,11 @@ three runs): XLSX at most about 1 ms in one task (the worker's own paint and
 encode take about 350 ms of wall time); PPTX `lecture.pptx` 2-3 ms; slide 1 of
 `jp_llm2.pptx` (Japanese text) one task of 19-23 ms, the canvas
 rasterizing its glyphs at the new size when it is encoded. Painted on the main
-thread, the XLSX cells were one 40-55 ms task.
+thread, the XLSX cells were one 40-55 ms task. DOCX (phase 2b, the same
+setup): page 1 of `exchange-plan.docx` (a title page) one task of 14-20 ms, of
+`long-handbook.docx` (a full page of text) one of 37-39 ms: the page raster at
+twice its size is most of it, the high-quality downscale about 10 ms (the
+default smoothing took 10 and 29 ms, unreadable). Captures are 2.5 and 7.1 KB.
 
 The new key raises the tree event like any thumbnail change, so open lists
 refetch and show it.
@@ -281,11 +295,11 @@ for deletion like any capture no row takes (decided 2026-10-11, review T3 S4).
 Sources: [endpoint test](../server/internal/httpapi/thumbnail_capture_test.go),
 [store test](../server/internal/store/thumbnail_capture_test.go),
 [scheduler test](../src/features/files/thumbnailCapture.test.ts),
+[runtime test](../src/office-runtime/thumbnail.test.ts),
 [e2e](../e2e/editor/thumbnail-capture.spec.ts).
 
 ## Phase 2
 
-- DOCX browser captures after the lean editing work lands.
 - Captures after an agent's `edit_document` on Office files need an export of
   the current Office state; an open design question.
 - Note preview images and flashcard image fronts need a small copy of editor

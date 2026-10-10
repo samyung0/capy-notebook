@@ -1,6 +1,6 @@
 /**
  * Browser captures of edited Office files for the list cards
- * (openwiki/thumbnails.md, phase 2a). The runtime draws the WebP in its idle
+ * (openwiki/thumbnails.md, Browser captures). The runtime draws the WebP in its idle
  * time, never on the keystroke or save path; Capy uploads it to Go. Failures
  * are logged once and never retried: the card keeps its old image until the
  * next capture.

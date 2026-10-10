@@ -25,7 +25,9 @@ import {
   canvasPage,
   type OfficeMenuReporter,
   type OfficeRenderer,
+  type OfficeThumbnailer,
 } from './runtimeMenus';
+import { pageThumbnail } from './thumbnail';
 import { readViewToggle, writeViewToggle } from './viewToggles';
 
 // Before any editor mounts: the engine measures with the bundled faces.
@@ -48,6 +50,7 @@ export function DocxEditorHost({
   onError,
   onPendingChange,
   onSave,
+  onThumbnailer,
   onZoomChange,
   readOnly,
 }: {
@@ -68,6 +71,7 @@ export function DocxEditorHost({
   onError: (error: Error) => void;
   onPendingChange: (pending: boolean) => void;
   onSave: () => void;
+  onThumbnailer: (thumbnailer: OfficeThumbnailer | null) => void;
   onZoomChange: (zoom: number) => void;
   /** Recovery: selection and copy only. */
   readOnly: boolean;
@@ -120,6 +124,15 @@ export function DocxEditorHost({
     });
     return () => onRenderer(null);
   }, [onRenderer]);
+  // Page 1 for the list cards; Capy asks after edits settle.
+  useEffect(() => {
+    onThumbnailer(async () => {
+      const editor = editorRef.current;
+      if (!editor) throw new Error('Editor is still loading');
+      return pageThumbnail(editor.renderPages);
+    });
+    return () => onThumbnailer(null);
+  }, [onThumbnailer]);
   const reportMenus = useCallback(
     (model: DocxMenuModel | null) => {
       if (model) onZoomChange(model.zoom);

@@ -1134,7 +1134,7 @@ routes carry a tighter budget on top of the general one, and so do the
 browser's editing incident reports (`/api/edit-incidents`, 60/hour with burst
 20; a working client sends a few an hour) and browser thumbnail captures
 (`/api/files/{id}/thumbnail`, 60/hour per user, beside the handler's one per
-file per 60 s; [thumbnails.md](thumbnails.md#browser-captures-phase-2a)). Credits remain the money bound;
+file per 60 s; [thumbnails.md](thumbnails.md#browser-captures)). Credits remain the money bound;
 these limits only stop abuse patterns.
 
 **Never limited:** `/webhooks/*`. Stripe and Clerk deliver subscription and

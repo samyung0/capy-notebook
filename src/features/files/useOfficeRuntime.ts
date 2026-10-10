@@ -163,7 +163,7 @@ export function useOfficeRuntime({
       { resolve: (bytes: ArrayBuffer) => void; reject: (error: Error) => void }
     >()
   );
-  // An edit frame's list-card capture (PPTX and XLSX), fed its local edits.
+  // An edit frame's list-card capture, fed its local edits.
   const captureRef = useRef<ThumbnailCapture | null>(null);
   const renderRequests = useRef(
     new Map<
@@ -639,10 +639,9 @@ export function useOfficeRuntime({
     [post]
   );
 
-  // Browsers that cannot encode WebP (Safari) capture nothing; DOCX waits
-  // for its lean editing work.
+  // Browsers that cannot encode WebP (Safari) capture nothing.
   useEffect(() => {
-    if (mode !== 'edit' || format === 'docx') return;
+    if (mode !== 'edit') return;
     let cancelled = false;
     void canEncodeWebp().then((supported) => {
       if (!supported || cancelled) return;
@@ -676,7 +675,7 @@ export function useOfficeRuntime({
       captureRef.current?.dispose();
       captureRef.current = null;
     };
-  }, [file.id, format, mode, render]);
+  }, [file.id, mode, render]);
 
   /** A menu item or header action: Capy's own commands run here. */
   const runMenuCommand = useCallback(

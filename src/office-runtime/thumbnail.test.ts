@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { imageOnlyWebP } from './thumbnail';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { imageOnlyWebP, pageThumbnail } from './thumbnail';
 
 // A capture as Chrome's OffscreenCanvas.convertToBlob encodes it: VP8X with
 // the ICC flag, a 456-byte ICCP sRGB profile, then the 450-byte VP8 image.
@@ -51,5 +51,56 @@ describe('a capture as Go takes it', () => {
     );
     // A capture already in that form stays the same.
     expect(new Uint8Array(imageOnlyWebP(image))).toEqual(new Uint8Array(image));
+  });
+});
+
+describe('a DOCX capture', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('draws page 1 down to 200 px wide and no later page', async () => {
+    const drawn: number[][] = [];
+    vi.stubGlobal(
+      'OffscreenCanvas',
+      class {
+        width: number;
+        height: number;
+        constructor(width: number, height: number) {
+          this.width = width;
+          this.height = height;
+        }
+        getContext() {
+          const skip = () => {};
+          return {
+            drawImage: (_: unknown, ...box: number[]) => drawn.push(box),
+            fillRect: skip,
+            restore: skip,
+            save: skip,
+            setTransform: skip,
+          };
+        }
+        async convertToBlob({ type }: { type: string }) {
+          return new Blob([new Uint8Array(imageOnlyWebP(chrome))], { type });
+        }
+      }
+    );
+    // As the editor's renderPages: each page rastered, then handed over.
+    let rastered = 0;
+    const renderPages = async (
+      count: number,
+      each: Parameters<Parameters<typeof pageThumbnail>[0]>[0]
+    ) => {
+      const results: unknown[] = [];
+      for (let page = 0; page < count; page++) {
+        rastered++;
+        const canvas = {} as HTMLCanvasElement;
+        results.push(await each({ canvas, height: 1056, width: 816 }));
+      }
+      return results;
+    };
+    const page = await pageThumbnail((each) => renderPages(3, each));
+    expect(rastered).toBe(1);
+    expect(page).toMatchObject({ height: 259, width: 200 });
+    expect(drawn).toEqual([[0, 0, 200, (1056 * 200) / 816]]);
+    expect(await pageThumbnail((each) => renderPages(0, each))).toBeNull();
   });
 });

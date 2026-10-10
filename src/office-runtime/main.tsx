@@ -639,6 +639,7 @@ function OfficeRuntime() {
               onPendingChange={reportHostPending}
               onRenderer={reportRenderer}
               onSave={save}
+              onThumbnailer={reportThumbnailer}
               onZoomChange={reportZoom}
               readOnly={readOnly}
             />

@@ -52,6 +52,55 @@ export async function encodeThumbnail(
   return { bytes: imageOnlyWebP(await blob.arrayBuffer()), height, width };
 }
 
+/** A DOCX editor's print pages, drawn one at a time (`renderPages`). */
+type RenderPages = (
+  each: (page: {
+    canvas: HTMLCanvasElement;
+    height: number;
+    width: number;
+  }) => Promise<unknown>
+) => Promise<unknown[]>;
+
+/** Ends `renderPages` once page 1 is captured: no later page is drawn. */
+class FirstPage extends Error {
+  readonly page: OfficeRenderedPage;
+  constructor(page: OfficeRenderedPage) {
+    super('Page 1 is captured');
+    this.page = page;
+  }
+}
+
+/**
+ * DOCX page 1 as a list-card capture, as ingest renders it: Print's raster of
+ * the page (twice its CSS size, on the main thread, where the document's
+ * fonts are) drawn down to 200 px wide. Null for a document with no pages.
+ */
+export async function pageThumbnail(
+  renderPages: RenderPages
+): Promise<OfficeRenderedPage | null> {
+  try {
+    await renderPages(async ({ canvas, height, width }) => {
+      const capture = thumbnailCanvas(width, height);
+      // An 8x reduction: the default smoothing leaves text unreadable.
+      capture.context.imageSmoothingQuality = 'high';
+      capture.context.drawImage(
+        canvas,
+        0,
+        0,
+        capture.canvas.width,
+        height * capture.scale
+      );
+      throw new FirstPage(
+        await encodeThumbnail(capture.canvas, capture.context)
+      );
+    });
+    return null;
+  } catch (error) {
+    if (error instanceof FirstPage) return error.page;
+    throw error;
+  }
+}
+
 const ascii = (text: string) => Array.from(text, (c) => c.charCodeAt(0));
 
 /**
