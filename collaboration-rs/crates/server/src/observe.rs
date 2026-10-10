@@ -158,12 +158,9 @@ pub fn init() -> Option<sentry::ClientInitGuard> {
     let release = std::env::var("RELEASE_SHA")
         .ok()
         .filter(|value| !value.is_empty());
-    // Tracing stays off (the default rate is 0): every connection is a
-    // long-lived socket, so transactions would measure session length.
-    let mut options = sentry::ClientOptions::default();
+    let mut options = client_options();
     options.environment = Some(environment.clone().into());
     options.release = release.map(Into::into);
-    options.send_default_pii = false;
     let guard = sentry::init((dsn, options));
     log(
         Level::Info,
@@ -171,6 +168,58 @@ pub fn init() -> Option<sentry::ClientInitGuard> {
         json!({ "environment": environment }),
     );
     Some(guard)
+}
+
+/// What every event of this service carries. Tracing stays off (the default
+/// rate is 0): every connection is a long-lived socket, so transactions would
+/// measure session length.
+fn client_options() -> sentry::ClientOptions {
+    let mut options = sentry::ClientOptions::default();
+    options.send_default_pii = false;
+    // The same tag the gateway, retrieval and workers set.
+    options.before_send = Some(std::sync::Arc::new(|mut event| {
+        event
+            .tags
+            .entry("service".into())
+            .or_insert_with(|| "collaboration".into());
+        Some(event)
+    }));
+    options
+}
+
+/// The W3C trace id of a `traceparent` header (`00-<trace>-<span>-<flags>`),
+/// none when malformed or all zero.
+pub fn trace_id(traceparent: Option<&str>) -> Option<String> {
+    let value = traceparent?.trim().to_ascii_lowercase();
+    let parts: Vec<&str> = value.split('-').collect();
+    let hex = |part: &str, len: usize| {
+        part.len() == len
+            && part
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    };
+    match parts.as_slice() {
+        ["00", trace, span, flags]
+            if hex(trace, 32)
+                && hex(span, 16)
+                && hex(flags, 2)
+                && trace.bytes().any(|b| b != b'0') =>
+        {
+            Some((*trace).to_owned())
+        }
+        _ => None,
+    }
+}
+
+/// A hub for one internal request: every event it captures carries the
+/// caller's trace id (the gateway sends `traceparent`) as `trace_id`, as the
+/// gateway tags its own, so one id finds a failure in both services.
+pub fn request_hub(traceparent: Option<&str>) -> std::sync::Arc<sentry::Hub> {
+    let hub = std::sync::Arc::new(sentry::Hub::new_from_top(sentry::Hub::current()));
+    if let Some(trace) = trace_id(traceparent) {
+        hub.configure_scope(|scope| scope.set_tag("trace_id", trace));
+    }
+    hub
 }
 
 fn valid_event_id(value: &str) -> bool {
@@ -219,6 +268,67 @@ pub fn capture(message: &str, existing: Option<&str>, tags: &[(&str, &str)]) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_traceparent_names_its_trace_unless_malformed_or_zero() {
+        let trace = "ab".repeat(16);
+        let header = format!("00-{trace}-{}-01", "c".repeat(16));
+        assert_eq!(trace_id(Some(&header)).as_deref(), Some(trace.as_str()));
+        assert_eq!(
+            trace_id(Some(&format!(" {} ", header.to_uppercase()))).as_deref(),
+            Some(trace.as_str())
+        );
+        for refused in [
+            format!("00-{}-{}-01", "0".repeat(32), "c".repeat(16)),
+            format!("01-{trace}-{}-01", "c".repeat(16)),
+            format!("00-{trace}-{}-1", "c".repeat(16)),
+            format!("00-{}-{}-01", "g".repeat(32), "c".repeat(16)),
+            "garbage".to_owned(),
+        ] {
+            assert_eq!(trace_id(Some(&refused)), None, "{refused}");
+        }
+        assert_eq!(trace_id(None), None);
+    }
+
+    /// A request's captures carry its trace id, every capture the service
+    /// tag; an all-zero trace tags nothing.
+    #[test]
+    fn captures_carry_the_service_and_the_request_trace() {
+        let trace = "ab".repeat(16);
+        let events = sentry::test::with_captured_events_options(
+            || {
+                let tagged = request_hub(Some(&format!("00-{trace}-{}-01", "c".repeat(16))));
+                sentry::Hub::run(tagged, || capture("publish failed", None, &[]));
+                let untagged = request_hub(Some(&format!(
+                    "00-{}-{}-01",
+                    "0".repeat(32),
+                    "c".repeat(16)
+                )));
+                sentry::Hub::run(untagged, || capture("no trace", None, &[]));
+            },
+            client_options(),
+        );
+        assert_eq!(events.len(), 2);
+        let tags = |message: &str| {
+            events
+                .iter()
+                .find(|event| event.message.as_deref() == Some(message))
+                .map(|event| event.tags.clone())
+                .unwrap()
+        };
+        let tagged = tags("publish failed");
+        assert_eq!(tagged.get("trace_id"), Some(&trace));
+        assert_eq!(
+            tagged.get("service").map(String::as_str),
+            Some("collaboration")
+        );
+        let untagged = tags("no trace");
+        assert_eq!(untagged.get("trace_id"), None);
+        assert_eq!(
+            untagged.get("service").map(String::as_str),
+            Some("collaboration")
+        );
+    }
 
     #[test]
     fn iso_time_has_the_javascript_shape() {

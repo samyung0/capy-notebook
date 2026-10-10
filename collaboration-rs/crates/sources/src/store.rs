@@ -1389,6 +1389,20 @@ impl Sources {
 
     /// Files published while editing stayed on the old base, with no refresh
     /// in flight and no refused rebuild, oldest first, except `skip`.
+    /// Whether a file waits for its rebuild: pending, never refused, and not
+    /// trashed (a trashed file's room still unloads and schedules one).
+    pub async fn rebuild_pending(&self, file_id: &str) -> Result<bool, SourceError> {
+        let client = self.db.get().await.map_err(db_error)?;
+        let row = client
+            .query_opt(
+                "SELECT d.rebuild_pending AND d.rebuild_refusal IS NULL FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1 AND f.trashed_at IS NULL",
+                &[&file_id],
+            )
+            .await
+            .map_err(db_error)?;
+        Ok(row.is_some_and(|row| row.get::<_, Option<bool>>(0) == Some(true)))
+    }
+
     pub async fn pending_rebuilds(&self, skip: &[String]) -> Result<Vec<String>, SourceError> {
         let client = self.db.get().await.map_err(db_error)?;
         let rows = client

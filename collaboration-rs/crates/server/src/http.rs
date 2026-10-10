@@ -34,10 +34,24 @@ pub fn router(app: Shared) -> Router {
         .route("/internal/documents/undo", post(document))
         .route("/internal/commands", post(command))
         .route("/internal/markdown/convert", post(markdown))
+        .route_layer(axum::middleware::from_fn(request_trace))
         // Internal bodies reach MAX_INTERNAL_BODY; each handler refuses past it.
         .layer(axum::extract::DefaultBodyLimit::max(MAX_INTERNAL_BODY + 1))
         .fallback(any(fallback))
         .with_state(app)
+}
+
+/// Runs a request with its caller's trace id on everything it captures
+/// (`observe::request_hub`); the routes' error captures happen inside it.
+async fn request_trace(request: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    use sentry::SentryFutureExt;
+    let hub = crate::observe::request_hub(
+        request
+            .headers()
+            .get("traceparent")
+            .and_then(|value| value.to_str().ok()),
+    );
+    next.run(request).bind_hub(hub).await
 }
 
 fn json_response(status: StatusCode, value: Value) -> Response {
@@ -392,5 +406,42 @@ async fn project(
             StatusCode::SERVICE_UNAVAILABLE,
             json!({ "message": message }),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::body::Body;
+    use axum::http::Request;
+    use tower::ServiceExt;
+
+    use super::*;
+
+    /// An internal route's captures carry the caller's `traceparent` trace.
+    #[test]
+    fn a_routes_captures_carry_the_callers_trace() {
+        let trace = "cd".repeat(16);
+        let events = sentry::test::with_captured_events(|| {
+            let router: Router = Router::new()
+                .route(
+                    "/internal/x",
+                    post(|| async {
+                        crate::observe::capture("in a request", None, &[]);
+                        "ok"
+                    }),
+                )
+                .route_layer(axum::middleware::from_fn(request_trace));
+            let request = Request::post("/internal/x")
+                .header("traceparent", format!("00-{trace}-{}-01", "e".repeat(16)))
+                .body(Body::empty())
+                .unwrap();
+            tokio::runtime::Builder::new_current_thread()
+                .build()
+                .unwrap()
+                .block_on(router.oneshot(request))
+                .unwrap();
+        });
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].tags.get("trace_id"), Some(&trace));
     }
 }

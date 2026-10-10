@@ -235,7 +235,12 @@ pub async fn run_rebuilds(app: Shared) {
                     backoff.insert(file_id, now + REBUILD_BUSY_BACKOFF);
                 }
                 Err(error) => {
-                    observe::capture(&error.to_string(), None, &[("stage", "source_rebuild")]);
+                    // Tagged with the file: the sweep runs outside any request.
+                    observe::capture(
+                        &error.to_string(),
+                        None,
+                        &[("stage", "source_rebuild"), ("file_id", &file_id)],
+                    );
                     backoff.insert(file_id, now + REBUILD_ERROR_BACKOFF);
                 }
             }

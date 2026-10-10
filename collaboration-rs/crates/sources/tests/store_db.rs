@@ -540,6 +540,32 @@ async fn a_moved_checkpoint_measures_again_over_the_rows_saved_meanwhile() {
     assert_eq!(effects[0]["after"], ">abc!");
 }
 
+/// A trashed file waits for no rebuild, though its room unloading (its
+/// editors closed by the trash) still schedules one.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn a_trashed_file_waits_for_no_rebuild() {
+    let h = harness().await;
+    let room = h.file("docx", "lesson.docx", b"base").await;
+    let client = h.fake.db.get().await.unwrap();
+    client
+        .execute(
+            "UPDATE source_documents SET rebuild_pending=true WHERE file_id=$1",
+            &[&room.file_id],
+        )
+        .await
+        .unwrap();
+    assert!(h.sources.rebuild_pending(&room.file_id).await.unwrap());
+    client
+        .execute(
+            "UPDATE files SET trashed_at=now() WHERE id=$1",
+            &[&room.file_id],
+        )
+        .await
+        .unwrap();
+    assert!(!h.sources.rebuild_pending(&room.file_id).await.unwrap());
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
 async fn an_ended_epoch_refuses_the_save_for_good() {

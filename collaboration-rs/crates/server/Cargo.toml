@@ -35,7 +35,9 @@ ydoc.workspace = true
 yrs.workspace = true
 
 [dev-dependencies]
+sentry = { workspace = true, features = ["test"] }
 tokio-tungstenite = "0.29"
+tower = { version = "0.5", features = ["util"] }
 
 [lints]
 workspace = true

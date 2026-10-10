@@ -500,23 +500,15 @@ impl Handoff {
     /// short lock to confirm the room is empty everywhere and the gateway's
     /// compare-and-swap. A refused rebase is recorded and never tried again.
     pub async fn rebuild(&self, file_id: &str) -> Result<bool, SourceError> {
+        if !self.sources.rebuild_pending(file_id).await? {
+            return Ok(false);
+        }
         let client = self
             .sources
             .db()
             .get()
             .await
             .map_err(|error| SourceError::Other(error.to_string()))?;
-        let pending = client
-            .query_opt(
-                "SELECT rebuild_pending AND rebuild_refusal IS NULL AS pending FROM source_documents WHERE file_id=$1",
-                &[&file_id],
-            )
-            .await
-            .map_err(|error| SourceError::Other(error.to_string()))?
-            .is_some_and(|row| row.get::<_, Option<bool>>(0) == Some(true));
-        if !pending {
-            return Ok(false);
-        }
         // The pause closed every writer; a viewer left open must not hold the
         // maintenance window.
         let writers_only: bool = client
@@ -555,8 +547,17 @@ impl Handoff {
                     // A publication or rebuild since: a later attempt rebuilds that.
                     Err(recording) if recording.status() == Some(409) => Ok(false),
                     Err(recording) => Err(recording),
-                    // Reported once: neither the sweep nor an unload retries it.
-                    Ok(_) => Err(error),
+                    // A documented outcome, not a failure: logged once and
+                    // never sent to Sentry. Neither the sweep nor an unload
+                    // retries it.
+                    Ok(_) => {
+                        crate::observe::log(
+                            "warn",
+                            "office_rebuild_refused",
+                            json!({ "error": error.to_string(), "room": session.room }),
+                        );
+                        Ok(false)
+                    }
                 };
             }
             Err(error) => return Err(error),
