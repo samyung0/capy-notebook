@@ -193,15 +193,11 @@ export function AttemptBody({
   const parts = questions.flatMap(
     (q): (QuestionPart | LearnerPart)[] => q.parts
   );
-  // An ordering part holds its shown order from the start, so it counts only
-  // once the learner has moved an item.
-  const answered = parts.filter((part) => {
-    const value = answers[part.id];
-    return part.answer.type === 'ordering'
-      ? Array.isArray(value) &&
-          value.join('\n') !== part.answer.items.join('\n')
-      : isAnswered(value);
-  }).length;
+  // An ordering part always counts: its shown order is the answer, and the
+  // shown order may already be the right one.
+  const answered = parts.filter(
+    (part) => part.answer.type === 'ordering' || isAnswered(answers[part.id])
+  ).length;
 
   return (
     <Shell header={header(actions)}>
