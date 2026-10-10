@@ -212,8 +212,10 @@ function DocumentStatsFooter({
 }
 
 /** The note's credits after its editable content, outside the Yjs document
- * and in the column its content uses, where View puts them too. */
-function NoteAttribution({
+ * and in the column its content uses, where View puts them too. Memoized:
+ * the editor re-renders on every save acknowledgement, the credits only when
+ * the material is read again. */
+const NoteAttribution = memo(function NoteAttribution({
   provenance,
 }: {
   provenance: Provenance | undefined;
@@ -230,7 +232,7 @@ function NoteAttribution({
       provenance={provenance}
     />
   );
-}
+});
 
 // Keep this component identity stable: changing Editable's `as` remounts Slate.
 function NoteEditorSurface({ children, ...props }: ComponentProps<'div'>) {
