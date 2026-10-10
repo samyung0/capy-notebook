@@ -1,6 +1,6 @@
 import { onlineManager } from '@tanstack/react-query';
 import { HttpHandler, matchRequestUrl } from 'msw';
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import { qk } from '@/api/client';
@@ -9,18 +9,16 @@ import { resetSourceTransfers } from '@/features/workspace/sourceTransfers';
 import { m } from '@/i18n';
 import { cancelMockAuthRequests } from '@/mocks/auth';
 import { worker } from '@/mocks/browser';
-import { setChaosPeers } from '@/mocks/chaosPeers';
 import { dialogFiles } from '@/mocks/dialogFiles';
 import { errorMaterials } from '@/mocks/errorMaterials';
-import { scenarioDriver } from '@/mocks/scenarioDriver';
-import { resetScenarioFixtures } from '@/mocks/scenarioFixtures';
 import {
   type JourneyId,
   journeyGroup,
   journeyOptions,
   journeyUnavailable,
-  runJourney,
-} from '@/mocks/scenarioJourneys';
+} from '@/mocks/journeyOptions';
+import { scenarioDriver } from '@/mocks/scenarioDriver';
+import { resetScenarioFixtures } from '@/mocks/scenarioFixtures';
 import {
   getMockScenarioHandlers,
   LAST_SCENARIO,
@@ -28,8 +26,15 @@ import {
   permanentScenarios,
 } from '@/mocks/scenarios';
 import { router } from '@/router';
-import MockDialogPreview from './MockDialogPreview';
 import { type MockDialogId, mockDialogOptions } from './mockDialogOptions';
+
+// The journeys and dialog previews import the editors and most dialogs; they
+// load on the first scenario that needs them, not with every dev page.
+const MockDialogPreview = lazy(() => import('./MockDialogPreview'));
+let chaosPeers: typeof import('@/mocks/chaosPeers') | undefined;
+const FIXTURE_ID = /^(file|material|dialog):/;
+const isJourney = (id: string | null): id is JourneyId =>
+  !!id && !FIXTURE_ID.test(id) && id !== 'page-not-found';
 
 const groups = [...new Set(journeyOptions.map(({ id }) => journeyGroup(id)))];
 
@@ -56,7 +61,7 @@ export default function MockScenarioPanel() {
   useEffect(
     () => () => {
       controller.current?.abort();
-      setChaosPeers(false);
+      chaosPeers?.setChaosPeers(false);
       onlineManager.setOnline(true);
     },
     []
@@ -77,9 +82,18 @@ export default function MockScenarioPanel() {
     const task = previous.current
       .catch(() => {})
       .then(async () => {
+        // Load before the reset below: pages refetch while a first import is
+        // still loading, before the journey has installed its handlers.
+        const journeys = isJourney(id)
+          ? await Promise.all([
+              import('@/mocks/scenarioJourneys'),
+              import('@/mocks/chaosPeers'),
+            ])
+          : null;
+        if (journeys) chaosPeers = journeys[1];
         current.signal.throwIfAborted();
         worker.resetHandlers();
-        setChaosPeers(false);
+        chaosPeers?.setChaosPeers(false);
         onlineManager.setOnline(true);
         toast.dismiss();
         queryClient.setQueryData(qk.eventStream, { status: 'connected' });
@@ -142,6 +156,7 @@ export default function MockScenarioPanel() {
         }
         const unavailable = journeyUnavailable(id);
         if (unavailable) throw new Error(unavailable);
+        if (!journeys) throw new Error(`Unknown scenario ${id}`);
         let matchedRequests = 0;
         const expected = getMockScenarioHandlers(id as MockScenarioId).filter(
           (handler): handler is HttpHandler => handler instanceof HttpHandler
@@ -166,7 +181,7 @@ export default function MockScenarioPanel() {
         const event = id === 'auth-busy' ? 'request:start' : 'request:match';
         worker.events.on(event, observed);
         try {
-          const note = await runJourney(
+          const note = await journeys[0].runJourney(
             id as JourneyId,
             current.signal,
             openDialog
@@ -228,11 +243,13 @@ export default function MockScenarioPanel() {
   return createPortal(
     <>
       {dialog && (
-        <MockDialogPreview
-          dialog={dialog}
-          key={dialogVersion}
-          onClose={() => setDialog(null)}
-        />
+        <Suspense fallback={null}>
+          <MockDialogPreview
+            dialog={dialog}
+            key={dialogVersion}
+            onClose={() => setDialog(null)}
+          />
+        </Suspense>
       )}
       <details
         className="pointer-events-auto fixed right-3 bottom-3 z-10000 max-h-[85dvh] w-80 max-w-[calc(100vw-24px)] overflow-y-auto rounded-card border border-line bg-surface p-2 text-fg text-xs shadow-lg"

@@ -485,6 +485,179 @@
       "version": 4
     },
     {
+      "id": "advanced-waterworks-mathematics",
+      "title": "Advanced Waterworks Mathematics",
+      "authors": [
+        "Michael Alvord",
+        "Regina Blasberg",
+        "Stephanie Anagnoson",
+        "Ernesto Velazquez"
+      ],
+      "edition": "Version 1.6, 2021",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/advanced-waterworks-mathematics",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/1147",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "file:///C:/WEB/capy-notebook/data/knowledge-base/sources/c20f6470a0e109563f5eebc9f69335c4b6a31f2e3cd45f93a3727dbb462d5e31.pdf#page=3",
+      "license_evidence_quote": "3 | A d v a n c e d W a t e r w o r k s M a t h e m a t i c s Acknowledgements College of the Canyons would like to extend appreciation to the following people and organizations for allowing this textbook to be created: California Community Colleges Chancellor’s Office Chancellor Dianne G. Van Hook Santa Clarita Community College District College of the Canyons Online Education © 2018, California Community Colleges, Chancellor’s Office. Except where otherwise noted, the content in this book is licensed under a Creative Commons Attribution 4.0 International License.",
+      "attribution_reviewed": true,
+      "attribution": "Advanced Waterworks Mathematics: Learning and Understanding Mathematical Concepts in Water Distribution and Water Treatment, by Michael Alvord, Regina Blasberg, Stephanie Anagnoson, and Ernesto Velazquez. Edited by Regina Blasberg. Published by College of the Canyons. Version 1.6, 2021. © 2018, California Community Colleges, Chancellor’s Office. Except where otherwise noted, the content in this book is licensed under a Creative Commons Attribution 4.0 International License. https://creativecommons.org/licenses/by/4.0/",
+      "pdf_path": "data/knowledge-base/sources/c20f6470a0e109563f5eebc9f69335c4b6a31f2e3cd45f93a3727dbb462d5e31.pdf",
+      "sha256": "c20f6470a0e109563f5eebc9f69335c4b6a31f2e3cd45f93a3727dbb462d5e31",
+      "bytes": 10474637,
+      "pages": 384,
+      "first_content_page": 6,
+      "figure_exclusions": [
+        {
+          "page": 22,
+          "bbox": [
+            331.503,
+            263.535,
+            727.271,
+            671.301
+          ],
+          "figure": "Figure 2.1",
+          "figure_id": "fig_5c50c979b8095d_153",
+          "credit": "Photo used with permission of Stephanie Anagnoson"
+        },
+        {
+          "page": 23,
+          "bbox": [
+            272.059,
+            146.389,
+            786.356,
+            443.712
+          ],
+          "figure": "Figure 2.2",
+          "figure_id": "fig_5c50c979b8095d_159",
+          "credit": "Photo used with permission of SCV Water"
+        },
+        {
+          "page": 23,
+          "bbox": [
+            382.353,
+            533.144,
+            676.471,
+            836.174
+          ],
+          "figure": "Figure 2.3",
+          "figure_id": "fig_5c50c979b8095d_162",
+          "credit": "Photo used with permission of Stephanie Anagnoson"
+        },
+        {
+          "page": 24,
+          "bbox": [
+            252.451,
+            146.402,
+            806.307,
+            467.487
+          ],
+          "figure": "Figure 2.4",
+          "figure_id": "fig_5c50c979b8095d_167",
+          "credit": "Photo used with permission of SCV Water"
+        },
+        {
+          "page": 52,
+          "bbox": [
+            255.719,
+            90.909,
+            803.072,
+            408.081
+          ],
+          "figure": "Figure 2.19",
+          "figure_id": "fig_5c50c979b8095d_480",
+          "credit": "Photo used with permission of SCV Water"
+        },
+        {
+          "page": 117,
+          "bbox": [
+            337.01,
+            183.384,
+            720.588,
+            419.179
+          ],
+          "figure": "Figure 5.2: Sharp crested weir",
+          "figure_id": "fig_5c50c979b8095d_1005",
+          "credit": "Image by Regina Blasberg is used with permission"
+        },
+        {
+          "page": 117,
+          "bbox": [
+            379.902,
+            450.96,
+            678.889,
+            758.914
+          ],
+          "figure": "Figure 5.3: Broad crested weir",
+          "figure_id": "fig_5c50c979b8095d_1007",
+          "credit": "Image by Ernesto Velazquez is used with permisison"
+        },
+        {
+          "page": 173,
+          "bbox": [
+            261.438,
+            300.53,
+            796.732,
+            610.758
+          ],
+          "figure": "Figure 8.1",
+          "figure_id": "fig_5c50c979b8095d_1441",
+          "credit": "Photo used with permission of SCV Water"
+        },
+        {
+          "page": 201,
+          "bbox": [
+            240.196,
+            337.513,
+            818.382,
+            635.366
+          ],
+          "figure": "Figure 10.1",
+          "figure_id": "fig_5c50c979b8095d_1630",
+          "credit": "Photo used with permission of SCV Water"
+        },
+        {
+          "page": 202,
+          "bbox": [
+            147.059,
+            90.909,
+            852.941,
+            467.803
+          ],
+          "figure": "Figure 10.2",
+          "figure_id": "fig_5c50c979b8095d_1635",
+          "credit": "Photo used with permission of SCV Water"
+        },
+        {
+          "page": 253,
+          "bbox": [
+            286.16,
+            245.038,
+            772.647,
+            526.982
+          ],
+          "figure": "Figure 13.1",
+          "figure_id": "fig_5c50c979b8095d_1961",
+          "credit": "Photo used with permission of SCV Water"
+        },
+        {
+          "page": 255,
+          "bbox": [
+            176.471,
+            164.886,
+            882.353,
+            463.371
+          ],
+          "figure": "Figure 13.3",
+          "figure_id": "fig_5c50c979b8095d_1976",
+          "credit": "Photo used with permission of SCV Water"
+        }
+      ],
+      "rights_notes": [],
+      "subject_id": "applied-mathematics",
+      "version": 1
+    },
+    {
       "id": "aerodynamics-and-aircraft-performance",
       "title": "Aerodynamics and Aircraft Performance",
       "authors": [
@@ -671,6 +844,32 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "discrete-mathematics",
+      "version": 1
+    },
+    {
+      "id": "an-open-guide-to-data-structures-and-algorithms",
+      "title": "An Open Guide to Data Structures and Algorithms",
+      "authors": [
+        "Paul W. Bible",
+        "Lucas Moser"
+      ],
+      "edition": "",
+      "source_url": "https://pressbooks.palni.org/anopenguidetodatastructuresandalgorithms/",
+      "download_url": "https://pressbooks.palni.org/anopenguidetodatastructuresandalgorithms/open/download?type=pdf",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://pressbooks.palni.org/anopenguidetodatastructuresandalgorithms/",
+      "license_evidence_quote": "An Open Guide to Data Structures and Algorithms by Paul W. Bible and Lucas Moser is licensed under a Creative Commons Attribution 4.0 International License , except where otherwise noted.",
+      "attribution_reviewed": false,
+      "attribution": "An Open Guide to Data Structures and Algorithms by Paul W. Bible and Lucas Moser. PALNI Open Press. Illustrations by Mia M. Scarlato. Licensed under CC BY 4.0, except where otherwise noted.",
+      "pdf_path": "data/knowledge-base/sources/0dc6e2835b84b9c72dcc7eff6b44b08e22a7b7413ef3fafeff0939e5fee10bc9.pdf",
+      "sha256": "0dc6e2835b84b9c72dcc7eff6b44b08e22a7b7413ef3fafeff0939e5fee10bc9",
+      "bytes": 11898488,
+      "pages": 350,
+      "first_content_page": 9,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "computer-science-foundations",
       "version": 1
     },
     {
@@ -2416,6 +2615,36 @@
       "version": 6
     },
     {
+      "id": "deep-into-pharo",
+      "title": "Deep into Pharo",
+      "authors": [
+        "Alexandre Bergel",
+        "Damien Cassou",
+        "Stéphane Ducasse",
+        "Jannik Laval"
+      ],
+      "edition": "First Edition, August, 2013",
+      "source_url": "https://books.pharo.org/deep-into-pharo/",
+      "download_url": "https://books.pharo.org/deep-into-pharo/pdf/2023-09-02-DeepIntoPharo.pdf",
+      "license": "CC BY-SA 3.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/3.0/",
+      "license_evidence_url": "https://books.pharo.org/deep-into-pharo/pdf/2023-09-02-DeepIntoPharo.pdf#page=2",
+      "license_evidence_quote": "The contents of this book are protected under Creative Commons Attribution-ShareAlike 3.0 Unported license.",
+      "attribution_reviewed": true,
+      "attribution": "Deep into Pharo, First Edition, August, 2013. Copyright © 2013 by Alexandre Bergel, Damien Cassou, Stéphane Ducasse and Jannik Laval. Published by Square Bracket Associates, Switzerland. CC BY-SA 3.0 Unported. Preserve the printed acknowledgments and contributor credits, including Jérôme Bergel cover art and Vassili Bykov Regex documentation.",
+      "pdf_path": "data/knowledge-base/sources/3827d95ffd62fa66ed0d405754a6137488a79e156324a249186aa3ca76cf17e3.pdf",
+      "sha256": "3827d95ffd62fa66ed0d405754a6137488a79e156324a249186aa3ca76cf17e3",
+      "bytes": 7675247,
+      "pages": 420,
+      "first_content_page": 9,
+      "figure_exclusions": [],
+      "rights_notes": [
+        "User approved 2026-10-05 retaining the source despite an unmatched Jerome Bergel cover-art credit on PDF2. PDF1 is text-only; preserve printed credit and absent-cover note, do not import online artwork. Regex adaptation credits and Bykov implementation notes have no separately restrictive terms in inspected source, consistent with Pharo By Example 5 handling; preserve attribution."
+      ],
+      "subject_id": "object-oriented-programming",
+      "version": 1
+    },
+    {
       "id": "educational-administration-the-roles-of-leadership-and-manag",
       "title": "Educational Administration: The Roles of Leadership and Management",
       "authors": [
@@ -3998,6 +4227,32 @@
       ],
       "rights_notes": [],
       "subject_id": "anatomy-physiology",
+      "version": 1
+    },
+    {
+      "id": "high-performance-computing",
+      "title": "High Performance Computing",
+      "authors": [
+        "Charles Severance",
+        "Kevin Dowd"
+      ],
+      "edition": "Connexions edition, introduction dated November 12, 2009",
+      "source_url": "https://archive.org/details/cnx-org-col11136",
+      "download_url": "https://archive.org/download/cnx-org-col11136/high-performance-computing.pdf",
+      "license": "CC BY 3.0",
+      "license_url": "http://creativecommons.org/licenses/by/3.0/",
+      "license_evidence_url": "https://archive.org/details/cnx-org-col11136",
+      "license_evidence_quote": "Usage Attribution 3.0",
+      "attribution_reviewed": true,
+      "attribution": "High Performance Computing, Charles Severance, Kevin Dowd, Connexions edition, introduction dated November 12, 2009. CC BY 3.0. https://archive.org/details/cnx-org-col11136",
+      "pdf_path": "data/knowledge-base/sources/21098676c765f39ba4a49ba67eb56baaf5faccb4a00e5847ffcfece1d99e977f.pdf",
+      "sha256": "21098676c765f39ba4a49ba67eb56baaf5faccb4a00e5847ffcfece1d99e977f",
+      "bytes": 3966557,
+      "pages": 455,
+      "first_content_page": 8,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "computer-science-foundations",
       "version": 1
     },
     {
@@ -8418,6 +8673,33 @@
       "version": 1
     },
     {
+      "id": "introduction-to-arithmetic-groups",
+      "title": "Introduction to Arithmetic Groups",
+      "authors": [
+        "Dave Witte Morris"
+      ],
+      "edition": "Version 1.0 of April 2015",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/introduction-to-arithmetic-groups",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/3501",
+      "license": "CC0 1.0",
+      "license_url": "http://creativecommons.org/publicdomain/zero/1.0/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/formats/3501#page=2",
+      "license_evidence_quote": "To the extent possible under law, Dave Witte Morris has waived all copyright and related or neighboring rights to this work.",
+      "attribution_reviewed": true,
+      "attribution": "Introduction to Arithmetic Groups, Dave Witte Morris, Version 1.0 of April 2015. CC0 1.0. https://open.umn.edu/opentextbooks/textbooks/introduction-to-arithmetic-groups",
+      "pdf_path": "data/knowledge-base/sources/b08e0faff5dd1e26a96dc838ffd1497e05a8a0f5fe46ce75a87c79d470c799fa.pdf",
+      "sha256": "b08e0faff5dd1e26a96dc838ffd1497e05a8a0f5fe46ce75a87c79d470c799fa",
+      "bytes": 1822188,
+      "pages": 491,
+      "first_content_page": 19,
+      "figure_exclusions": [],
+      "rights_notes": [
+        "PDF2 credits Cover photo © Depositphotos.com/jbryson. Used with permission. The opening leaf is text-only and the eligibility reviewer found no matching photograph. Developer approved retaining this frozen PDF with the credit and absence note preserved; do not import outside cover artwork."
+      ],
+      "subject_id": "abstract-algebra",
+      "version": 1
+    },
+    {
       "id": "introduction-to-basic-legal-citation",
       "title": "Introduction to Basic Legal Citation",
       "authors": [
@@ -8868,6 +9150,31 @@
       "version": 6
     },
     {
+      "id": "introduction-to-statistical-thinking",
+      "title": "Introduction to Statistical Thinking",
+      "authors": [
+        "Benjamin Yakir"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/introduction-to-statistical-thinking",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/2565",
+      "license": "CC BY 3.0",
+      "license_url": "http://creativecommons.org/licenses/by/3.0/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/formats/2565#page=15",
+      "license_evidence_quote": "Creative Commons Attribution License (CC-BY 3.0)",
+      "attribution_reviewed": true,
+      "attribution": "Introduction to Statistical Thinking by Benjamin Yakir. Licensed under Creative Commons Attribution 3.0, http://creativecommons.org/licenses/by/3.0/. The preface is dated Jerusalem, June 2011. It credits material from Collaborative Statistics by Barbara Illowsky and Susan Dean, Connexions, March 2, 2010, http://cnx.org/content/col10522/1.37/, and case studies from Rice Virtual Lab in Statistics, http://onlinestatbook.com/rvls.html and http://onlinestatbook.com/case_studies_rvls/.",
+      "pdf_path": "data/knowledge-base/sources/612aefbdeb4f0f668efa5f554137ef6d2c42091a8f01356b63e5dca339215563.pdf",
+      "sha256": "612aefbdeb4f0f668efa5f554137ef6d2c42091a8f01356b63e5dca339215563",
+      "bytes": 2376991,
+      "pages": 380,
+      "first_content_page": 17,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "statistics",
+      "version": 1
+    },
+    {
       "id": "introductory-business-statistics",
       "title": "Introductory Business Statistics",
       "authors": [
@@ -8915,7 +9222,7 @@
       "first_content_page": 17,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "programming",
+      "subject_id": "object-oriented-programming",
       "version": 4
     },
     {
@@ -9091,6 +9398,94 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "data-science",
+      "version": 1
+    },
+    {
+      "id": "laboratory-manual-for-introductory-geology",
+      "title": "Laboratory Manual for Introductory Geology",
+      "authors": [
+        "Bradley Deline",
+        "Randa Harris",
+        "Karen Tefend"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/laboratory-manual-for-introductory-geology",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/766",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/formats/766#page=3",
+      "license_evidence_quote": "Laboratory Manual for Introductory Geology is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.",
+      "attribution_reviewed": true,
+      "attribution": "Laboratory Manual for Introductory Geology by Bradley Deline, Randa Harris, and Karen Tefend. Original source: University System of Georgia. Published by University of North Georgia Press. Licensed under CC BY-SA 4.0, except separately credited content.",
+      "pdf_path": "data/knowledge-base/sources/70f794ae0c783630405df7ac762e52dc1b01bee90de80b74011a91d905749b36.pdf",
+      "sha256": "70f794ae0c783630405df7ac762e52dc1b01bee90de80b74011a91d905749b36",
+      "bytes": 104468346,
+      "pages": 361,
+      "first_content_page": 5,
+      "figure_exclusions": [
+        {
+          "page": 72,
+          "bbox": [
+            495.065,
+            372.98,
+            866.618,
+            641.477
+          ],
+          "figure": "Figure 4.2",
+          "figure_id": "fig_824c7697f17b1d_3310",
+          "credit": "Author: The Queensland Museum Source: The Queensland Museum License: CC BY-NC-ND 3.0"
+        },
+        {
+          "page": 251,
+          "bbox": [
+            167.647,
+            86.818,
+            827.778,
+            514.596
+          ],
+          "figure": "Figure 10.4, Photo I; entire parsed A-I composite",
+          "figure_id": "fig_824c7697f17b1d_4636",
+          "credit": "Photo I Author: Diueine Monteiro; Source: Wikimedia Commons; License: CC BY-NC-SA 2.0"
+        },
+        {
+          "page": 318,
+          "bbox": [
+            534.026,
+            626.326,
+            866.134,
+            802.758
+          ],
+          "figure": "Figure 13.2",
+          "figure_id": "fig_824c7697f17b1d_5147",
+          "credit": "Author: Unknown; Source: Wikimedia Commons; License: GNU Free Documentation"
+        },
+        {
+          "page": 327,
+          "bbox": [
+            156.863,
+            87.184,
+            843.137,
+            442.614
+          ],
+          "figure": "Figure 13.13",
+          "figure_id": "fig_824c7697f17b1d_5218",
+          "credit": "Author: Google Earth; Source: Google Earth; License: Used with attribution per Google’s Permissions Guidelines"
+        },
+        {
+          "page": 350,
+          "bbox": [
+            135.294,
+            91.477,
+            463.48,
+            390.53
+          ],
+          "figure": "Figure 14.14",
+          "figure_id": "fig_824c7697f17b1d_5401",
+          "credit": "Author: Stanislav Vitebskiy; Source: Flickr; License: CC BY-ND 2.0"
+        }
+      ],
+      "rights_notes": [],
+      "subject_id": "geology",
       "version": 1
     },
     {
@@ -9468,6 +9863,35 @@
       "version": 7
     },
     {
+      "id": "math-in-society",
+      "title": "Math in Society",
+      "authors": [
+        "David Lippman"
+      ],
+      "edition": "Edition 2.5",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/math-in-society",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/87",
+      "license": "CC BY-SA 3.0 US",
+      "license_url": "http://creativecommons.org/licenses/by-sa/3.0/us/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/formats/87#page=2",
+      "license_evidence_quote": "This text is licensed under a Creative Commons Attribution-Share Alike 3.0 United States License.",
+      "attribution_reviewed": true,
+      "attribution": "Math in Society, Edition 2.5. David Lippman, author/editor, with contributions by Mike Kenyon, Jeff Eldridge, Lawrence Morales, Melonie Rasmussen, Morgan Chase and onlinestatbook.com. Copyright 2017. CC BY-SA 3.0 US.",
+      "pdf_path": "data/knowledge-base/sources/82078aaaff0b55726cceab4274199da321807e6b2e41873784402d62cf9a9bc5.pdf",
+      "sha256": "82078aaaff0b55726cceab4274199da321807e6b2e41873784402d62cf9a9bc5",
+      "bytes": 8696290,
+      "pages": 476,
+      "first_content_page": 5,
+      "figure_exclusions": [],
+      "rights_notes": [
+        "PDF2 credits the front cover photo to Jan Tik, http://www.flickr.com/photos/jantik/, CC-BY 2.0. The actual PDF begins with a text-only title/contents page, so the credited front-cover photograph is not present there. No outside cover image was imported and no image was assigned that credit by guesswork. Preserve the credit and absent-cover observation.",
+        "PDF371 has precisely placed plain source credits: footnote 1 Wikipedia Cauliflower_Fractal_AVM.JPG for broccoli, footnote 2 flickr.com/photos/cjewel/3261398909/ for fern. Under existing WORKER_CONDITIONS plain-source-credit rule, retain with credits; no restrictive terms or book-wide exception found. Footnote 3 Openstreetmap.org, CC-BY-SA belongs to the Portugal coast maps on PDF372.",
+        "Preserve all component authors and source credits from PDF1-2, chapter footers and PDF378, including www.onlinestatbook.com public-domain portions and Precalculus CC-BY-SA portions. These attributions do not establish a whole-book duplicate."
+      ],
+      "subject_id": "quantitative-reasoning",
+      "version": 1
+    },
+    {
       "id": "mathematics-for-elementary-teachers",
       "title": "Mathematics for Elementary Teachers",
       "authors": [
@@ -9612,6 +10036,179 @@
       "rights_notes": [],
       "subject_id": "arithmetic-prealgebra",
       "version": 8
+    },
+    {
+      "id": "media-innovation-and-entrepreneurship",
+      "title": "Media Innovation and Entrepreneurship",
+      "authors": [
+        "Michelle Ferrier",
+        "Elizabeth Mays"
+      ],
+      "edition": "Updated through Fall 2020",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/media-innovation-and-entrepreneurship",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/915",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "file:///C:/WEB/capy-notebook/data/knowledge-base/sources/b331a81ef8d23de37b48551a51f65780d6bde7d4a2b55b0b67b5e4b482fcc50b.pdf#page=4",
+      "license_evidence_quote": "Media Innovation and Entrepreneurship by Edited by Michelle Ferrier & Elizabeth Mays is licensed under a Creative Commons Attribution 4.0 International License, except where otherwise noted. ©2017-2020 Michelle Ferrier, Elizabeth Mays, Jake Batsell, CJ Cornell, Geoffrey Graybeal, Mike Green, Mark Poepsel, Jessica Pucci, Cindy Royal, Ingrid Sturgis, Betty Tsakarestou, Jan Schaffer, Abel Asrat, Rediat Belehu, Lori Benjamin, Dana Coester, Chris Dell, Dalton Dellsperger, John Dille, Amy Eisman, Melanie Faizer, Francine Hardaway, Gretchen Macchiarella, Hodan Osman, Mark Scarp, Coury Turczyn, Georgann Yara. All authors retain the copyright on their work. Except where otherwise noted, all work in this book is licensed under a Creative Commons Attribution license (CC BY 4.0), meaning you can use it, adapt it, and redistribute it as you like, but you must provide attribution to the original authors, by retaining this license notice. We request that you keep this full notice when you use the book. You can find free copies of this book in multiple formats (web, PDF, EPUB) at: https://press.rebus.community/ media-innovation-and-entrepreneurship/ Do you have comments about this book? Please visit https://forum.rebus.community/category/20/ jmc-media-innovation-entrepreneurship-lead-dr-michelle-ferrier-ohio-university. Rebus Community This book was created with support from the Rebus Community for Open Textbook Creation, where we are building new collaborative models for creating & sustaining open textbooks. Would you like to collaborate on an open textbook? Join the Rebus Community at forum.rebus.community. Are you a faculty member or administrator with questions about this book, or about open textbooks generally? Please get in touch with us at contact@rebus.community. Credits on PDF page 3: MEDIA INNOVATION AND ENTREPRENEURSHIP Edited by Michelle Ferrier & Elizabeth Mays Jake Batsell, CJ Cornell, Geoffrey Graybeal, Mike Green, Mark Poepsel, Jessica Pucci, Cindy Royal, Ingrid Sturgis, Betty Tsakarestou, Jan Schaffer, Abel Asrat, Rediat Belehu, Lori Benjamin, Dana Coester, Chris Dell, John Dille, Dalton Dellsperger, Amy Eisman, Melanie Faizer, Francine Hardaway, Gretchen Macchiarella, Hodan Osman, Mark J. Scarp, Coury Turczyn, Georgann Yara, Kat Friedrich, Ebony Reed, Daniel Zayas, and Cheryl Cuillier",
+      "attribution_reviewed": true,
+      "attribution": "Media Innovation and Entrepreneurship, Updated through Fall 2020. Edited by Michelle Ferrier and Elizabeth Mays. Edited by Michelle Ferrier & Elizabeth Mays. Contributors credited on PDF3: Jake Batsell, CJ Cornell, Geoffrey Graybeal, Mike Green, Mark Poepsel, Jessica Pucci, Cindy Royal, Ingrid Sturgis, Betty Tsakarestou, Jan Schaffer, Abel Asrat, Rediat Belehu, Lori Benjamin, Dana Coester, Chris Dell, John Dille, Dalton Dellsperger, Amy Eisman, Melanie Faizer, Francine Hardaway, Gretchen Macchiarella, Hodan Osman, Mark J. Scarp, Coury Turczyn, Georgann Yara, Kat Friedrich, Ebony Reed, Daniel Zayas, Cheryl Cuillier. Preserve the complete copyright and licence notice on PDF4 and attribution instructions on PDF407-409, including Rebus Community support; preserve each chapter author and figure credit. Copyright notice uses Mark Scarp while title/attribution pages use Mark J. Scarp; retain source notices rather than silently rewriting them. Full printed notice: Media Innovation and Entrepreneurship by Edited by Michelle Ferrier & Elizabeth Mays is licensed under a Creative Commons Attribution 4.0 International License, except where otherwise noted. ©2017-2020 Michelle Ferrier, Elizabeth Mays, Jake Batsell, CJ Cornell, Geoffrey Graybeal, Mike Green, Mark Poepsel, Jessica Pucci, Cindy Royal, Ingrid Sturgis, Betty Tsakarestou, Jan Schaffer, Abel Asrat, Rediat Belehu, Lori Benjamin, Dana Coester, Chris Dell, Dalton Dellsperger, John Dille, Amy Eisman, Melanie Faizer, Francine Hardaway, Gretchen Macchiarella, Hodan Osman, Mark Scarp, Coury Turczyn, Georgann Yara. All authors retain the copyright on their work. Except where otherwise noted, all work in this book is licensed under a Creative Commons Attribution license (CC BY 4.0), meaning you can use it, adapt it, and redistribute it as you like, but you must provide attribution to the original authors, by retaining this license notice. We request that you keep this full notice when you use the book. You can find free copies of this book in multiple formats (web, PDF, EPUB) at: https://press.rebus.community/ media-innovation-and-entrepreneurship/ Do you have comments about this book? Please visit https://forum.rebus.community/category/20/ jmc-media-innovation-entrepreneurship-lead-dr-michelle-ferrier-ohio-university. Rebus Community This book was created with support from the Rebus Community for Open Textbook Creation, where we are building new collaborative models for creating & sustaining open textbooks. Would you like to collaborate on an open textbook? Join the Rebus Community at forum.rebus.community. Are you a faculty member or administrator with questions about this book, or about open textbooks generally? Please get in touch with us at contact@rebus.community. Credits on PDF page 3: MEDIA INNOVATION AND ENTREPRENEURSHIP Edited by Michelle Ferrier & Elizabeth Mays Jake Batsell, CJ Cornell, Geoffrey Graybeal, Mike Green, Mark Poepsel, Jessica Pucci, Cindy Royal, Ingrid Sturgis, Betty Tsakarestou, Jan Schaffer, Abel Asrat, Rediat Belehu, Lori Benjamin, Dana Coester, Chris Dell, John Dille, Dalton Dellsperger, Amy Eisman, Melanie Faizer, Francine Hardaway, Gretchen Macchiarella, Hodan Osman, Mark J. Scarp, Coury Turczyn, Georgann Yara, Kat Friedrich, Ebony Reed, Daniel Zayas, and Cheryl Cuillier",
+      "pdf_path": "data/knowledge-base/sources/b331a81ef8d23de37b48551a51f65780d6bde7d4a2b55b0b67b5e4b482fcc50b.pdf",
+      "sha256": "b331a81ef8d23de37b48551a51f65780d6bde7d4a2b55b0b67b5e4b482fcc50b",
+      "bytes": 13879134,
+      "pages": 418,
+      "first_content_page": 9,
+      "figure_exclusions": [
+        {
+          "page": 69,
+          "bbox": [
+            104.216,
+            86.102,
+            895.784,
+            627.162
+          ],
+          "figure": "Figure 3. New and emerging realities",
+          "figure_id": "fig_ff050e112b4d1e_593",
+          "credit": "From “The Big Thaw: Charting a New Future for Journalism” by Tony Deifell. This image is Copyright The Media Consortium. All Rights Reserved. Used with permission."
+        },
+        {
+          "page": 70,
+          "bbox": [
+            104.216,
+            86.102,
+            895.784,
+            691.956
+          ],
+          "figure": "Figure 4. Old/new media paradigm",
+          "figure_id": "fig_ff050e112b4d1e_599",
+          "credit": "From “The Big Thaw: Charting a New Future for Journalism” by Tony Deifell of Q Media Labs. This image is copyright The Media Consortium. All Rights Reserved. Used with permission."
+        },
+        {
+          "page": 72,
+          "bbox": [
+            104.216,
+            110.496,
+            895.784,
+            609.352
+          ],
+          "figure": "Figure 5. Stakeholder Mapping Card",
+          "figure_id": "fig_ff050e112b4d1e_615",
+          "credit": "Source: Innovating for People: Human-Centered Design Planning Cards. Copyright by LUMA Institute LLC. Reproduced via single-use permission from LUMA Institute LLC for the purpose of this chapter and its adaptations. www.luma-institute.com. Image watermark says “for the purpose of this textbook and its adaptations.”"
+        },
+        {
+          "page": 72,
+          "bbox": [
+            111.593,
+            621.403,
+            888.338,
+            649.038
+          ],
+          "figure": "Figure 5. Stakeholder Mapping Card",
+          "figure_id": "fig_ff050e112b4d1e_616",
+          "credit": "Source: Innovating for People: Human-Centered Design Planning Cards. Copyright by LUMA Institute LLC. Reproduced via single-use permission from LUMA Institute LLC for the purpose of this chapter and its adaptations. www.luma-institute.com. Image watermark says “for the purpose of this textbook and its adaptations.”"
+        },
+        {
+          "page": 75,
+          "bbox": [
+            104.216,
+            86.102,
+            895.784,
+            584.958
+          ],
+          "figure": "Figure 7. Statement Starters",
+          "figure_id": "fig_ff050e112b4d1e_631",
+          "credit": "Source: Innovating for People: Human-Centered Design Planning Cards. Copyright by LUMA Institute LLC. Reproduced via single-use permission from LUMA Institute LLC for the purpose of this chapter and its adaptations. www.luma-institute.com. Image watermark says “for the purpose of this textbook and its adaptations.”"
+        },
+        {
+          "page": 75,
+          "bbox": [
+            111.34,
+            597.009,
+            888.511,
+            624.644
+          ],
+          "figure": "Figure 7. Statement Starters",
+          "figure_id": "fig_ff050e112b4d1e_632",
+          "credit": "Source: Innovating for People: Human-Centered Design Planning Cards. Copyright by LUMA Institute LLC. Reproduced via single-use permission from LUMA Institute LLC for the purpose of this chapter and its adaptations. www.luma-institute.com. Image watermark says “for the purpose of this textbook and its adaptations.”"
+        },
+        {
+          "page": 111,
+          "bbox": [
+            104.216,
+            283.577,
+            895.784,
+            627.64
+          ],
+          "figure": "Figure 3. Empathy map",
+          "figure_id": "fig_ff050e112b4d1e_888",
+          "credit": "Empathy map by Paul Boag, Copyright Boagworld, used with permission. https://boagworld.com/usability/adapting-empathy-maps-for-ux-design/"
+        },
+        {
+          "page": 111,
+          "bbox": [
+            118.688,
+            639.691,
+            881.011,
+            653.095
+          ],
+          "figure": "Figure 3. Empathy map",
+          "figure_id": "fig_ff050e112b4d1e_889",
+          "credit": "Empathy map by Paul Boag, Copyright Boagworld, used with permission. https://boagworld.com/usability/adapting-empathy-maps-for-ux-design/"
+        },
+        {
+          "page": 316,
+          "bbox": [
+            104.216,
+            334.436,
+            895.784,
+            808.423
+          ],
+          "figure": "Slate Facebook screenshot",
+          "figure_id": "fig_ff050e112b4d1e_2664",
+          "credit": "This image is linked to, not embedded. It is not CC BY."
+        },
+        {
+          "page": 317,
+          "bbox": [
+            104.216,
+            632.453,
+            715.735,
+            899.499
+          ],
+          "figure": "Evan video still",
+          "figure_id": "fig_ff050e112b4d1e_2670",
+          "credit": "This video is linked to, not embedded. It is not CC BY."
+        },
+        {
+          "page": 360,
+          "bbox": [
+            146.6,
+            86.102,
+            853.4,
+            858.83
+          ],
+          "figure": "Figure 1. Does Europe lack a start-up culture?",
+          "figure_id": "fig_ff050e112b4d1e_2963",
+          "credit": "Infographic copyright Debating Europe. All Rights Reserved. Included with permission here. Download the original here: http://www.debatingeurope.eu/2016/12/15/europe-lack-start-culture/#.WWl-KoqQw0r"
+        },
+        {
+          "page": 360,
+          "bbox": [
+            105.306,
+            870.879,
+            894.417,
+            898.514
+          ],
+          "figure": "Figure 1. Does Europe lack a start-up culture?",
+          "figure_id": "fig_ff050e112b4d1e_2964",
+          "credit": "Infographic copyright Debating Europe. All Rights Reserved. Included with permission here. Download the original here: http://www.debatingeurope.eu/2016/12/15/europe-lack-start-culture/#.WWl-KoqQw0r"
+        }
+      ],
+      "rights_notes": [
+        "Whole-book CC BY 4.0, except where otherwise noted. User decision 2026-10-05: omit Jake Batsell Nonprofit Model Development and its own notes, preserve unrelated notes; exclude Slate screenshot PDF316 and Evan still PDF317. Six permission-only images on PDF69/70/72/75/111/360 excluded under existing policy. Original source, credits and review evidence preserved."
+      ],
+      "subject_id": "entrepreneurship",
+      "version": 1
     },
     {
       "id": "media-society-culture-and-you",
@@ -10199,6 +10796,33 @@
       "version": 3
     },
     {
+      "id": "notes-on-diffy-qs-differential-equations-for-engineers",
+      "title": "Notes on Diffy Qs: Differential Equations for Engineers",
+      "authors": [
+        "Jiří Lebl"
+      ],
+      "edition": "Edition 6 (version 6.11), May 18, 2026",
+      "source_url": "https://www.jirka.org/diffyqs/",
+      "download_url": "https://www.jirka.org/diffyqs/diffyqs.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.jirka.org/diffyqs/diffyqs.pdf#page=2",
+      "license_evidence_quote": "This work is dual licensed under the Creative Commons Attribution-Noncommercial-Share Alike 4.0 International License and the Creative Commons Attribution-Share Alike 4.0 International License.",
+      "attribution_reviewed": true,
+      "attribution": "Notes on Diffy Qs: Differential Equations for Engineers, Jiří Lebl, Edition 6 (version 6.11), May 18, 2026. CC BY-SA 4.0. https://www.jirka.org/diffyqs/",
+      "pdf_path": "data/knowledge-base/sources/0676c6d9f060b06fb62e15d3b3da1af584d84e73e4b8a42d89ade8a7ad91f07b.pdf",
+      "sha256": "0676c6d9f060b06fb62e15d3b3da1af584d84e73e4b8a42d89ade8a7ad91f07b",
+      "bytes": 4104777,
+      "pages": 466,
+      "first_content_page": 10,
+      "figure_exclusions": [],
+      "rights_notes": [
+        "PDF page 2 explicitly offers a choice of CC BY-NC-SA 4.0 or CC BY-SA 4.0; this intake chooses CC BY-SA 4.0. Preserve the printed notice that derivative works must be prominently marked as such."
+      ],
+      "subject_id": "differential-equations",
+      "version": 1
+    },
+    {
       "id": "nursing-mental-health-and-community-concepts-2e",
       "title": "Nursing Mental Health and Community Concepts - 2e",
       "authors": [
@@ -10355,6 +10979,33 @@
       ],
       "rights_notes": [],
       "subject_id": "nursing",
+      "version": 1
+    },
+    {
+      "id": "object-oriented-reengineering-patterns",
+      "title": "Object-Oriented Reengineering Patterns",
+      "authors": [
+        "Serge Demeyer",
+        "Stéphane Ducasse",
+        "Oscar Nierstrasz"
+      ],
+      "edition": "Version of 2013-11-27",
+      "source_url": "https://github.com/SquareBracketAssociates/OORP",
+      "download_url": "http://scg.unibe.ch/download/oorp/OORP.pdf",
+      "license": "CC BY-SA 3.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/3.0/",
+      "license_evidence_url": "http://scg.unibe.ch/download/oorp/OORP.pdf#page=4",
+      "license_evidence_quote": "The contents of this book are protected under Creative Commons Attribution-ShareAlike 3.0 Unported license.",
+      "attribution_reviewed": false,
+      "attribution": "Object-Oriented Reengineering Patterns, Serge Demeyer, Stéphane Ducasse and Oscar Nierstrasz. Version of 2013-11-27. Square Bracket Associates, Switzerland. CC BY-SA 3.0 Unported. http://scg.unibe.ch/download/oorp/OORP.pdf",
+      "pdf_path": "data/knowledge-base/sources/0eddb6b41e9bd47d32027259dee9f6eba8f060370183ed2dac4c30cb340535fa.pdf",
+      "sha256": "0eddb6b41e9bd47d32027259dee9f6eba8f060370183ed2dac4c30cb340535fa",
+      "bytes": 2808177,
+      "pages": 360,
+      "first_content_page": 13,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "computer-science-foundations",
       "version": 1
     },
     {
@@ -11155,6 +11806,34 @@
       "version": 3
     },
     {
+      "id": "pharo-by-example-5",
+      "title": "Pharo By Example 5",
+      "authors": [
+        "Stéphane Ducasse",
+        "Dimitris Chloupis",
+        "Nicolai Hess",
+        "Dmitri Zagidulin"
+      ],
+      "edition": "second edition",
+      "source_url": "https://books.pharo.org/updated-pharo-by-example/",
+      "download_url": "http://books.pharo.org/updated-pharo-by-example/pdf/2018-09-29-UpdatedPharoByExample.pdf",
+      "license": "CC BY-SA 3.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/3.0/",
+      "license_evidence_url": "http://books.pharo.org/updated-pharo-by-example/pdf/2018-09-29-UpdatedPharoByExample.pdf#page=2",
+      "license_evidence_quote": "The contents of this book are protected under the Creative Commons Attribution-ShareAlike 3.0 Unported license.",
+      "attribution_reviewed": true,
+      "attribution": "Pharo By Example 5, second edition, September 29, 2018. Copyright 2017 by Stéphane Ducasse, Dimitris Chloupis, Nicolai Hess, and Dmitri Zagidulin. Licensed CC BY-SA 3.0 Unported, http://creativecommons.org/licenses/by-sa/3.0/. Based on the previous version by Andrew P. Black, Stéphane Ducasse, Oscar Nierstrasz, Damien Pollet, Damien Cassou and Marcus Denker. Layout and typography based on the sbabook LaTeX class by Damien Pollet.",
+      "pdf_path": "data/knowledge-base/sources/568d2fa8fcd098cdec0adaf95f4cfb779b55ef11063722c53a499ff3426f7a4f.pdf",
+      "sha256": "568d2fa8fcd098cdec0adaf95f4cfb779b55ef11063722c53a499ff3426f7a4f",
+      "bytes": 18352979,
+      "pages": 376,
+      "first_content_page": 17,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "object-oriented-programming",
+      "version": 1
+    },
+    {
       "id": "philosophical-ethics",
       "title": "Philosophical Ethics",
       "authors": [
@@ -11423,7 +12102,7 @@
       "first_content_page": 7,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "programming",
+      "subject_id": "object-oriented-programming",
       "version": 5
     },
     {
@@ -11473,7 +12152,7 @@
       "first_content_page": 1,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "programming",
+      "subject_id": "software-engineering-open-source",
       "version": 1
     },
     {
@@ -11700,6 +12379,63 @@
       "version": 7
     },
     {
+      "id": "sou-ccj230-introduction-to-the-american-criminal-justice-sys",
+      "title": "SOU-CCJ230 Introduction to the American Criminal Justice System",
+      "authors": [
+        "Alison S. Burke",
+        "David E. Carter",
+        "Brian Fedorek",
+        "Tiffany L. Morey",
+        "Lore Rutz-Burri",
+        "Shanell Sanchez"
+      ],
+      "edition": "First Edition",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/introduction-to-the-american-criminal-justice-system",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/1187",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "file:///C:/WEB/capy-notebook/data/knowledge-base/sources/f1b6434f95d2ead57770bf2e97a205ebb90ea67c134800cfb7db7be22b3fa8b3.pdf#page=4",
+      "license_evidence_quote": "SOU-CCJ230 Introduction to the American Criminal Justice System Copyright © 2019 by Alison S. Burke, David Carter, Brian Fedorek, Tiffany Morey, Lore Rutz-Burri, and Shanell Sanchez is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License, except where otherwise noted.",
+      "attribution_reviewed": true,
+      "attribution": "SOU-CCJ230 Introduction to the American Criminal Justice System, First Edition. Copyright 2019 by Alison S. Burke, David Carter, Brian Fedorek, Tiffany Morey, Lore Rutz-Burri, and Shanell Sanchez. Published by Open Oregon Educational Resources. Christina Richardson is credited as contributing editor and glossary creator. Licensed CC BY-SA 4.0, except where otherwise noted. https://creativecommons.org/licenses/by-sa/4.0/. Source: https://open.umn.edu/opentextbooks/textbooks/introduction-to-the-american-criminal-justice-system",
+      "pdf_path": "data/knowledge-base/sources/f1b6434f95d2ead57770bf2e97a205ebb90ea67c134800cfb7db7be22b3fa8b3.pdf",
+      "sha256": "f1b6434f95d2ead57770bf2e97a205ebb90ea67c134800cfb7db7be22b3fa8b3",
+      "bytes": 48642822,
+      "pages": 360,
+      "first_content_page": 19,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "criminology-criminal-justice",
+      "version": 1
+    },
+    {
+      "id": "statistics-using-technology",
+      "title": "Statistics Using Technology",
+      "authors": [
+        "Kathryn Kozak"
+      ],
+      "edition": "Third Edition, 2020-08-13",
+      "source_url": "https://collection.bccampus.ca/textbook/8GQkBmBM/",
+      "download_url": "https://cdn2.repo.bccws.ca/resources/textbooks/326/formats/statistics_using_technology_3rd_edition_0034879657.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://collection.bccampus.ca/textbook/8GQkBmBM/",
+      "license_evidence_quote": "This resource is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.",
+      "attribution_reviewed": true,
+      "attribution": "Statistics Using Technology, Third Edition, 2020-08-13, by Kathryn Kozak. Licensed under Creative Commons Attribution-ShareAlike 4.0 International, as stated in the BCcampus individual textbook entry: https://collection.bccampus.ca/textbook/8GQkBmBM/. Licence: https://creativecommons.org/licenses/by-sa/4.0/.",
+      "pdf_path": "data/knowledge-base/sources/77a1d4247be6b85c7c351336b5cf06098353f4e86f5d3b018e0e2172dc711548.pdf",
+      "sha256": "77a1d4247be6b85c7c351336b5cf06098353f4e86f5d3b018e0e2172dc711548",
+      "bytes": 2936628,
+      "pages": 386,
+      "first_content_page": 9,
+      "figure_exclusions": [],
+      "rights_notes": [
+        "The attached PDF credits Kathryn Kozak alone on its title page and does not print a whole-book licence notice. CC BY-SA 4.0 is explicitly assigned by the BCcampus individual third-edition textbook entry, which links the exact attached filename. Its catalog author list differs; the source title-page attribution is retained and the catalog credit is preserved in the eligibility evidence."
+      ],
+      "subject_id": "statistics",
+      "version": 1
+    },
+    {
       "id": "symbiotic-posthumanist-ecologies-in-western-literature-philo",
       "title": "Symbiotic Posthumanist Ecologies in Western Literature, Philosophy and Art: Towards Theory and Practice",
       "authors": [
@@ -11722,7 +12458,8 @@
       "first_content_page": 9,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "literature"
+      "subject_id": "literature",
+      "version": 1
     },
     {
       "id": "technology-tools-for-leaders",
@@ -11776,6 +12513,31 @@
       "version": 3
     },
     {
+      "id": "the-bible-and-music",
+      "title": "The Bible and Music",
+      "authors": [
+        "James F. McGrath"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/the-bible-and-music",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/3575",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/formats/3575#page=4",
+      "license_evidence_quote": "The Bible and Music by James F. McGrath is licensed under a Creative Commons Attribution 4.0 International License, except where otherwise noted.",
+      "attribution_reviewed": false,
+      "attribution": "The Bible and Music, James F. McGrath. PALNI Open Press. CC BY 4.0, except where otherwise noted. https://open.umn.edu/opentextbooks/textbooks/the-bible-and-music",
+      "pdf_path": "data/knowledge-base/sources/65341ebbbf80c4481ccc0e4ed96c41b992a23083312bc5398533e23b22bd421a.pdf",
+      "sha256": "65341ebbbf80c4481ccc0e4ed96c41b992a23083312bc5398533e23b22bd421a",
+      "bytes": 2013121,
+      "pages": 346,
+      "first_content_page": 12,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "music",
+      "version": 1
+    },
+    {
       "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
       "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
       "authors": [
@@ -11799,6 +12561,192 @@
       "rights_notes": [],
       "subject_id": "data-science",
       "version": 5
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-volume-two-foundations-f",
+      "title": "The Crystal Ball Instruction Manual Volume Two: Foundations for Data Science",
+      "authors": [
+        "Stephen Davies",
+        "Evan Coleman"
+      ],
+      "edition": "version 1.5",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/the-crystal-ball-instruction-manual-volume-two-foundations-for-data-science",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/4353",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/formats/4353#page=4",
+      "license_evidence_quote": "Permission is granted to copy, distribute, transmit and adapt this work under a Creative Commons Attribution-ShareAlike 4.0 International License:",
+      "attribution_reviewed": false,
+      "attribution": "The Crystal Ball Instruction Manual Volume Two: Foundations for Data Science, Stephen Davies, Evan Coleman, version 1.5. CC BY-SA 4.0. https://open.umn.edu/opentextbooks/textbooks/the-crystal-ball-instruction-manual-volume-two-foundations-for-data-science",
+      "pdf_path": "data/knowledge-base/sources/1a473f6b57c32d6f47e55f8932b1cba32807cde764783dd8cb010cb5ca587f17.pdf",
+      "sha256": "1a473f6b57c32d6f47e55f8932b1cba32807cde764783dd8cb010cb5ca587f17",
+      "bytes": 15206058,
+      "pages": 330,
+      "first_content_page": 7,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "data-science",
+      "version": 1
+    },
+    {
+      "id": "the-fundamentals-of-healthcare-administration-navigating-cha",
+      "title": "The Fundamentals of Healthcare Administration: Navigating Challenges and Coordinating Care",
+      "authors": [
+        "Whitney N. Hamilton",
+        "Dorothy J. Howell",
+        "Melissa Jordan"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/the-fundamentals-of-healthcare-administration-navigating-challenges-and-coordinating-care",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/3097",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/formats/3097#page=2",
+      "license_evidence_quote": "is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.",
+      "attribution_reviewed": false,
+      "attribution": "The Fundamentals of Healthcare Administration: Navigating Challenges and Coordinating Care, Whitney N. Hamilton, Dorothy J. Howell, Melissa Jordan. Original source: University System of Georgia. Published by University of North Georgia Press. CC BY-SA 4.0, except separately credited content. https://open.umn.edu/opentextbooks/textbooks/the-fundamentals-of-healthcare-administration-navigating-challenges-and-coordinating-care",
+      "pdf_path": "data/knowledge-base/sources/e2c4d25daeec4de0169e20a671999d65828fc3c905af54c3a0f5beb8c79c7b90.pdf",
+      "sha256": "e2c4d25daeec4de0169e20a671999d65828fc3c905af54c3a0f5beb8c79c7b90",
+      "bytes": 16217707,
+      "pages": 344,
+      "first_content_page": 19,
+      "figure_exclusions": [
+        {
+          "page": 28,
+          "bbox": [
+            211.154,
+            188.826,
+            788.846,
+            486.426
+          ],
+          "figure": "Figure 1.3: Health/Healthcare",
+          "figure_id": "fig_109a0f208f0f6e_144",
+          "credit": "Source: Clipart Library; Attribution: Clipart Library; License: © Clipart Library. Used with permission."
+        },
+        {
+          "page": 28,
+          "bbox": [
+            176.471,
+            489.277,
+            397.346,
+            501.553
+          ],
+          "figure": "Figure 1.3: Health/Healthcare",
+          "figure_id": "fig_109a0f208f0f6e_145",
+          "credit": "Source: Clipart Library; Attribution: Clipart Library; License: © Clipart Library. Used with permission."
+        },
+        {
+          "page": 58,
+          "bbox": [
+            243.552,
+            551.831,
+            756.448,
+            816.049
+          ],
+          "figure": "Figure 2.3: Talent Management",
+          "figure_id": "fig_109a0f208f0f6e_400",
+          "credit": "Source: 123rf.com; Attribution: 123rf.com; License: © 123rf.com. Used with permission."
+        },
+        {
+          "page": 58,
+          "bbox": [
+            176.471,
+            820.716,
+            405.856,
+            832.992
+          ],
+          "figure": "Figure 2.3: Talent Management",
+          "figure_id": "fig_109a0f208f0f6e_401",
+          "credit": "Source: 123rf.com; Attribution: 123rf.com; License: © 123rf.com. Used with permission."
+        },
+        {
+          "page": 91,
+          "bbox": [
+            263.078,
+            849.125,
+            494.373,
+            861.402
+          ],
+          "figure": "Figure 3.1: Information System",
+          "figure_id": "fig_109a0f208f0f6e_p91_263_599",
+          "credit": "Source: 123rf.com; Attribution: User “aurielaki”; License: aurielaki © 123rf.com. Used with permission."
+        },
+        {
+          "page": 100,
+          "bbox": [
+            176.471,
+            86.818,
+            823.529,
+            386.193
+          ],
+          "figure": "Figure 3.4: Electronic Prescriptions",
+          "figure_id": "fig_109a0f208f0f6e_743",
+          "credit": "Source: 123rf.com; Attribution: Andrey Mitrofanov; License: Andrey Mitrofanov © 123rf.com. Used with permission."
+        },
+        {
+          "page": 100,
+          "bbox": [
+            176.471,
+            389.845,
+            434.471,
+            402.121
+          ],
+          "figure": "Figure 3.4: Electronic Prescriptions",
+          "figure_id": "fig_109a0f208f0f6e_744",
+          "credit": "Source: 123rf.com; Attribution: Andrey Mitrofanov; License: Andrey Mitrofanov © 123rf.com. Used with permission."
+        },
+        {
+          "page": 103,
+          "bbox": [
+            249.265,
+            409.785,
+            750.735,
+            688.952
+          ],
+          "figure": "Figure 3.5: The Personal Health Record",
+          "figure_id": "fig_109a0f208f0f6e_771",
+          "credit": "Source: Wikimedia Commons; Attribution: User “DaCarpenther”; License: GNU General Public License"
+        },
+        {
+          "page": 103,
+          "bbox": [
+            176.471,
+            692.875,
+            464.17,
+            705.152
+          ],
+          "figure": "Figure 3.5: The Personal Health Record",
+          "figure_id": "fig_109a0f208f0f6e_772",
+          "credit": "Source: Wikimedia Commons; Attribution: User “DaCarpenther”; License: GNU General Public License"
+        },
+        {
+          "page": 104,
+          "bbox": [
+            270.353,
+            466.604,
+            729.647,
+            748.313
+          ],
+          "figure": "Figure 3.6: EMR",
+          "figure_id": "fig_109a0f208f0f6e_780",
+          "credit": "Source: Pixabay; Attribution: User “mcmurryjulie”; License: Pixabay License"
+        },
+        {
+          "page": 104,
+          "bbox": [
+            176.471,
+            754.428,
+            292.105,
+            766.705
+          ],
+          "figure": "Figure 3.6: EMR",
+          "figure_id": "fig_109a0f208f0f6e_781",
+          "credit": "Source: Pixabay; Attribution: User “mcmurryjulie”; License: Pixabay License"
+        }
+      ],
+      "rights_notes": [],
+      "subject_id": "health-sciences",
+      "version": 1
     },
     {
       "id": "the-impact-of-open-source-software-on-education",

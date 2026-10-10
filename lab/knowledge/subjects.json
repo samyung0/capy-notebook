@@ -999,6 +999,43 @@
       }
     },
     {
+      "id": "software-engineering-open-source",
+      "area": "computing",
+      "label": "Software engineering and open source",
+      "aliases": [
+        "software engineering",
+        "open source software",
+        "version control",
+        "release management",
+        "software licensing",
+        "open source community"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": [],
+        "libretexts": []
+      }
+    },
+    {
+      "id": "object-oriented-programming",
+      "area": "computing",
+      "label": "Object-oriented programming",
+      "aliases": [
+        "OOP",
+        "Java",
+        "Smalltalk",
+        "Pharo",
+        "classes and objects",
+        "inheritance and polymorphism",
+        "design patterns"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": [],
+        "libretexts": []
+      }
+    },
+    {
       "id": "computer-science-foundations",
       "area": "computing",
       "label": "Computer science foundations",
