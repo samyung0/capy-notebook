@@ -110,3 +110,23 @@ func TestFileAndAccountDeletionDoNotWaitForWorkerHeldJobRows(t *testing.T) {
 		}
 	})
 }
+
+// All results filters attempts by the quiz's workspace.
+func TestListAttemptsCarriesWorkspaceID(t *testing.T) {
+	f := newStudyFixture(t, "u_attempt_workspace")
+	ctx := context.Background()
+	quiz, err := f.s.CreateQuiz(ctx, Quiz{UserID: f.user, Name: "Quiz", WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name, Questions: json.RawMessage(studyQuestions), Privacy: PrivacyPrivate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.CreateAttempt(ctx, f.user, quiz.ID, 1, 2, json.RawMessage(`{}`), json.RawMessage(studySnapshot)); err != nil {
+		t.Fatal(err)
+	}
+	list, err := f.s.ListAttempts(ctx, f.user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].WorkspaceID == nil || *list[0].WorkspaceID != f.ws.ID {
+		t.Fatalf("attempts = %+v", list)
+	}
+}

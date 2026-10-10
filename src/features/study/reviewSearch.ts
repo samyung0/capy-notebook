@@ -79,3 +79,26 @@ export function pastReviewParams(search: PastReviewsSearch): PastReviewParams {
     workspaceIds: commaList(search.workspace),
   };
 }
+
+/* Learning → All results: the same keys, sorted and filtered in the browser
+ * since the attempts list arrives whole. */
+export const RESULT_SORTS = ['date', 'score'] as const;
+export type ResultSort = (typeof RESULT_SORTS)[number];
+export const RESULT_SORT_DEFAULT: ResultSort = 'date';
+export type ResultsSearch = {
+  sort?: ResultSort;
+  dir?: 'asc';
+  workspace?: string;
+};
+
+export function parseResultsSearch(
+  search: Record<string, unknown>
+): ResultsSearch {
+  const out: ResultsSearch = {};
+  const sort = RESULT_SORTS.find((s) => s === search.sort);
+  if (sort && sort !== RESULT_SORT_DEFAULT) out.sort = sort;
+  if (search.dir === 'asc') out.dir = 'asc';
+  const workspace = commaList(text(search.workspace));
+  if (workspace.length) out.workspace = workspace.join(',');
+  return out;
+}

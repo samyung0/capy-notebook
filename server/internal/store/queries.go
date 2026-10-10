@@ -1940,8 +1940,9 @@ func (s *Store) UpdateQuizMetadata(ctx context.Context, id string, p QuizMetadat
 }
 
 func (s *Store) ListAttempts(ctx context.Context, userID string) ([]Attempt, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id, material_id, quiz_name, workspace_name, chapters, correct, total, pct, taken_at
-		FROM attempts WHERE user_id=$1 ORDER BY taken_at DESC`, userID)
+	rows, err := s.pool.Query(ctx, `SELECT a.id, a.material_id, m.workspace_id, a.quiz_name, a.workspace_name, a.chapters, a.correct, a.total, a.pct, a.taken_at
+		FROM attempts a LEFT JOIN materials m ON m.id=a.material_id
+		WHERE a.user_id=$1 ORDER BY a.taken_at DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1949,7 +1950,7 @@ func (s *Store) ListAttempts(ctx context.Context, userID string) ([]Attempt, err
 	out := []Attempt{}
 	for rows.Next() {
 		var a Attempt
-		if err := rows.Scan(&a.ID, &a.MaterialID, &a.QuizName, &a.WorkspaceName, &a.Chapters, &a.Correct, &a.Total, &a.Pct, &a.TakenAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.MaterialID, &a.WorkspaceID, &a.QuizName, &a.WorkspaceName, &a.Chapters, &a.Correct, &a.Total, &a.Pct, &a.TakenAt); err != nil {
 			return nil, err
 		}
 		out = append(out, a)
@@ -1977,7 +1978,7 @@ func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, co
 		pct = int(float64(correct) / float64(total) * 100.0)
 	}
 	a := Attempt{
-		ID: uid("at"), MaterialID: linkedMaterial, QuizName: quizName, WorkspaceName: workspaceName,
+		ID: uid("at"), MaterialID: linkedMaterial, WorkspaceID: &mt.WorkspaceID, QuizName: quizName, WorkspaceName: workspaceName,
 		Chapters: chapters, Correct: correct, Total: total, Pct: pct, TakenAt: time.Now().UTC(),
 	}
 	if a.Chapters == nil {
@@ -2019,9 +2020,10 @@ func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, co
 // the owner via the attempts.user_id column recorded at submit time.
 func (s *Store) GetAttempt(ctx context.Context, id, userID string) (AttemptDetail, error) {
 	var d AttemptDetail
-	err := s.pool.QueryRow(ctx, `SELECT id, material_id, quiz_name, workspace_name, chapters, correct, total, pct, taken_at, answers, questions
-		FROM attempts WHERE id=$1 AND user_id=$2`, id, userID).
-		Scan(&d.ID, &d.MaterialID, &d.QuizName, &d.WorkspaceName, &d.Chapters, &d.Correct, &d.Total, &d.Pct, &d.TakenAt, &d.Answers, &d.Questions)
+	err := s.pool.QueryRow(ctx, `SELECT a.id, a.material_id, m.workspace_id, a.quiz_name, a.workspace_name, a.chapters, a.correct, a.total, a.pct, a.taken_at, a.answers, a.questions
+		FROM attempts a LEFT JOIN materials m ON m.id=a.material_id
+		WHERE a.id=$1 AND a.user_id=$2`, id, userID).
+		Scan(&d.ID, &d.MaterialID, &d.WorkspaceID, &d.QuizName, &d.WorkspaceName, &d.Chapters, &d.Correct, &d.Total, &d.Pct, &d.TakenAt, &d.Answers, &d.Questions)
 	if isNoRows(err) {
 		return d, ErrNotFound
 	}

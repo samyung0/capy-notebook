@@ -55,6 +55,7 @@ import {
 import { parseQuizEditSearch } from '@/features/quizzes/quizNavigation';
 import {
   parsePastReviewsSearch,
+  parseResultsSearch,
   parseReviewSearch,
 } from '@/features/study/reviewSearch';
 import { features } from '@/lib/features';
@@ -246,10 +247,15 @@ const appRoutes = [
       void qc.prefetchQuery(reviewOverviewQuery());
     },
     path: '/learning',
-    validateSearch: (search: Record<string, unknown>) => ({
-      ...parseLearningSearch(search),
-      ...parsePastReviewsSearch(search),
-    }),
+    validateSearch: (search: Record<string, unknown>) => {
+      const tab = parseLearningSearch(search);
+      return {
+        ...tab,
+        ...(tab.tab === 'results'
+          ? parseResultsSearch(search)
+          : parsePastReviewsSearch(search)),
+      };
+    },
   }),
   createRoute({
     component: lazyRouteComponent(() => import('@/routes/ReviewSession')),

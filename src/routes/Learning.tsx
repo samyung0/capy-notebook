@@ -1,17 +1,15 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import type { CSSProperties } from 'react';
-import { useAttempts, useLearningProgress } from '@/api/hooks';
-import type { Attempt, ProgressMap, ProgressWorkspace } from '@/api/types';
+import { useLearningProgress } from '@/api/hooks';
+import type { ProgressMap, ProgressWorkspace } from '@/api/types';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Skeleton, SkeletonList } from '@/components/ui/feedback';
-import { Menu } from '@/components/ui/Menu';
 import { Tabs } from '@/components/ui/Tabs';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
-import { BillingTable } from '@/features/billing/BillingTable';
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import { MiniTrail } from '@/features/questions/trailMap/TrailMap';
-import { formatPoints } from '@/features/quizzes/grade';
+import { AllResults } from '@/features/study/AllResults';
 import { PastReviews } from '@/features/study/PastReviews';
 import { ReviewTab } from '@/features/study/ReviewTab';
 import { RailMap } from '@/features/study/railMap/RailMap';
@@ -22,100 +20,6 @@ import { coverInk } from '@/lib/coverInk';
 import { iconUrl } from '@/lib/icon-catalog';
 import type { LearningTab } from '@/lib/tabSearch';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
-
-function PastAttempts() {
-  const { data, fetchStatus, isLoading } = useAttempts();
-  const revealRef = useLoadingReveal(isLoading);
-  const navigate = useNavigate();
-  // Attempts of a deleted quiz have no quiz to redo.
-  const redo = (quizId: string | null) =>
-    quizId
-      ? [
-          {
-            icon: 'refresh' as const,
-            label: m.quiz_redo(),
-            onClick: () =>
-              navigate({ params: { quizId }, to: '/quizzes/$quizId/attempt' }),
-          },
-        ]
-      : [];
-  if (fetchStatus === 'paused') return <QueryPausedState />;
-  if (isLoading) return <SkeletonList count={6} rowHeight={52} />;
-  if (!data?.length)
-    return (
-      <p className="py-8 text-center text-fg-muted">{m.quiz_no_attempts()}</p>
-    );
-
-  const score = (a: Attempt) =>
-    `${formatPoints(a.correct)} / ${formatPoints(a.total)}`;
-  const date = (a: Attempt) => new Date(a.takenAt).toLocaleDateString();
-  const menu = (a: Attempt) => (
-    <Menu
-      items={[
-        {
-          icon: 'list',
-          label: m.quiz_check_result(),
-          onClick: () =>
-            navigate({
-              params: { attemptId: a.id },
-              to: '/quizzes/attempts/$attemptId',
-            }),
-        },
-        ...redo(a.materialId),
-      ]}
-    />
-  );
-
-  return (
-    <div ref={revealRef}>
-      {/* Phones: Billing's plain table, scrolling sideways. */}
-      <div className="md:hidden">
-        <BillingTable
-          columns={[
-            { id: 'quiz', label: m.quiz_col_quiz() },
-            { id: 'workspace', label: m.quiz_col_workspace() },
-            { id: 'score', label: m.quiz_col_score() },
-            { id: 'date', label: m.quiz_col_date(), muted: true },
-            { align: 'right', id: 'menu', label: '' },
-          ]}
-          rows={data.map((a) => ({
-            cells: {
-              date: date(a),
-              menu: <div className="-my-2 flex justify-end">{menu(a)}</div>,
-              quiz: a.quizName,
-              score: score(a),
-              workspace: a.workspaceName,
-            },
-            key: a.id,
-          }))}
-        />
-      </div>
-      <div className="hidden overflow-hidden rounded-card border border-line md:block">
-        <div className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_7rem_7rem_2.25rem] items-center bg-surface-hover-bg py-3 pr-2 pl-4 font-bold text-fg-muted text-xs uppercase tracking-wide *:pr-4">
-          <div>{m.quiz_col_quiz()}</div>
-          <div>{m.quiz_col_workspace()}</div>
-          <div>{m.quiz_col_score()}</div>
-          <div>{m.quiz_col_date()}</div>
-          <div />
-        </div>
-        {data.map((a: Attempt) => (
-          <div
-            className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_7rem_7rem_2.25rem] items-center border-divider border-t pr-2 pl-4 text-sm"
-            key={a.id}
-          >
-            <div className="truncate py-3 pr-4">{a.quizName}</div>
-            <div className="truncate py-3 pr-4">{a.workspaceName}</div>
-            <div className="whitespace-nowrap py-3 pr-4">{score(a)}</div>
-            <div className="whitespace-nowrap py-3 pr-4 text-fg-muted">
-              {date(a)}
-            </div>
-            <div className="-my-2 flex justify-end">{menu(a)}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 /** Learning → Progress: the most recently studied workspace as a map with
  * its Continue, the other workspaces in progress as rows with a small trail,
@@ -335,8 +239,15 @@ export default function Learning() {
         ]}
         value={tab}
       />
-      {/* Settings' tab padding, without its width cap: the map runs to the panel's edges. */}
-      <div className="flex flex-1 flex-col gap-4 px-4 pt-5 pb-8 sm:px-6 sm:pt-8 lg:px-10 xl:px-16">
+      {/* Settings' tab padding, without its width cap: the map runs to the
+       * panel's edges. The table tabs start with their toolbar right under
+       * the tabs, as Files does. */}
+      <div
+        className={cn(
+          'flex flex-1 flex-col gap-4 px-4 pb-8 sm:px-6 lg:px-10 xl:px-16',
+          tab === 'past' || tab === 'results' ? 'pt-0' : 'pt-5 sm:pt-8'
+        )}
+      >
         {tab === 'progress' ? (
           <Progress />
         ) : tab === 'review' ? (
@@ -344,7 +255,7 @@ export default function Learning() {
         ) : tab === 'past' ? (
           <PastReviews />
         ) : (
-          <PastAttempts />
+          <AllResults />
         )}
       </div>
     </PanelWithInvertedRadius>

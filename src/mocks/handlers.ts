@@ -2773,6 +2773,7 @@ export const handlers = [
       quizName: quiz.name,
       takenAt: new Date().toISOString(),
       total: graded.max,
+      workspaceId: quizMt.workspaceId,
       workspaceName: quiz.workspaceName,
     };
     // An embedded quiz records nothing: graded, returned without an id.

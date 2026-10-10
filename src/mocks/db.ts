@@ -1146,7 +1146,13 @@ function seedAttempt(
   answers: Answers,
   fields: Omit<
     SeedAttempt,
-    'answers' | 'correct' | 'materialId' | 'pct' | 'questions' | 'total'
+    | 'answers'
+    | 'correct'
+    | 'materialId'
+    | 'pct'
+    | 'questions'
+    | 'total'
+    | 'workspaceId'
   >,
   /** Open parts' item marks, standing in for Jev's. */
   itemAwards: Record<string, number[]> = {}
@@ -1169,6 +1175,7 @@ function seedAttempt(
     pct: Math.round((correct / graded.max) * 100),
     questions,
     total: graded.max,
+    workspaceId: quiz.workspaceId,
   };
 }
 

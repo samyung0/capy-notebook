@@ -337,8 +337,18 @@ spent) and filter (workspace, has quiz questions or flashcards) kept in the URL
 cards rated Good or Easy. A session ended early shows "Stopped after
 N of M" under Status. Scores are plain "x / y" text. Below xl the Files table
 gives way to Billing's plain table (`BillingTable`, no border, scrolls
-sideways) without Time and Status. All results does the same below md (Quiz,
-Workspace, Score, Date, ⋮) with the same plain scores. Thirty rows a page.
+sideways) without Time and Status, its toolbar nudged half a step left to
+line up with the plain table's text. Thirty rows a page. Both table tabs put
+their toolbar right under the tabs, as Files does.
+
+### All results tab
+
+`src/features/study/AllResults.tsx`: quiz attempts (Quiz, Workspace, Score,
+Date, ⋮ with Check result and Redo), the same table switch below md. `GET
+/api/attempts` returns every attempt with `workspaceId` (the quiz's current
+workspace, null once the quiz is deleted), so sort (newest, score) and the
+workspace filter run in the browser and live in the URL
+(`parseResultsSearch`; the route picks the parser by `tab`).
 
 ### Progress tab
 

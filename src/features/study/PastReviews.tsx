@@ -71,9 +71,10 @@ export function PastReviews() {
     });
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* Lifted so the toolbar's centred labels start where Settings' headings do. */}
-      <div className="-mx-4 -mt-3 sm:-mx-6">
+    <div className="flex flex-col">
+      {/* Lifted so the toolbar's labels start at the table's edge; nudged
+       * left over the plain table, whose text has no inset. */}
+      <div className="-mx-4 -translate-x-0.5 sm:-mx-6 xl:translate-x-0">
         <ListToolbar
           ascending={params.dir === 'asc'}
           filters={[
@@ -111,67 +112,69 @@ export function PastReviews() {
           sorts={sorts}
         />
       </div>
-      {fetchStatus === 'paused' && !data ? (
-        <QueryPausedState />
-      ) : isLoading ? (
-        <SkeletonList count={6} rowHeight={52} />
-      ) : rows.length === 0 ? (
-        <p className="py-8 text-center text-fg-muted">{m.past_empty()}</p>
-      ) : (
-        <div className="flex flex-col gap-3" ref={revealRef}>
-          {/* Phones and tablets: Billing's plain table, scrolling sideways,
-           * without Time and Status. */}
-          <div className="xl:hidden">
-            <BillingTable
-              columns={[
-                { id: 'date', label: m.quiz_col_date(), muted: true },
-                { id: 'workspace', label: m.quiz_col_workspace() },
-                { id: 'chapter', label: m.past_col_chapter() },
-                { id: 'quiz', label: m.past_col_quiz() },
-                { id: 'cards', label: m.past_col_cards() },
-                { align: 'right', id: 'menu', label: '' },
-              ]}
-              rows={rows.map((r) => ({
-                cells: {
-                  cards: <ScoreText score={r.cards} />,
-                  chapter: groupName(r.group, r.chapterName),
-                  date: formatDate(r.startedAt),
-                  menu: <AgainMenu onAgain={() => again(r)} />,
-                  quiz: <ScoreText score={r.quiz} />,
-                  workspace: <WorkspaceCell review={r} />,
-                },
-                key: r.id,
-              }))}
-            />
-          </div>
-          <div className="hidden overflow-hidden rounded-card border border-line xl:block">
-            <div className="grid grid-cols-[7rem_minmax(0,1fr)_minmax(0,1.1fr)_6rem_6rem_5rem_8.5rem_40px] bg-surface-hover-bg py-2.5 pr-2 pl-4 font-bold text-fg-muted text-xs uppercase tracking-wide *:pr-4">
-              <div>{m.quiz_col_date()}</div>
-              <div>{m.quiz_col_workspace()}</div>
-              <div>{m.past_col_chapter()}</div>
-              <div>{m.past_col_quiz()}</div>
-              <div>{m.past_col_cards()}</div>
-              <div>{m.past_col_time()}</div>
-              <div>{m.past_col_status()}</div>
-              <div />
+      <div className="pt-2">
+        {fetchStatus === 'paused' && !data ? (
+          <QueryPausedState />
+        ) : isLoading ? (
+          <SkeletonList count={6} rowHeight={52} />
+        ) : rows.length === 0 ? (
+          <p className="py-8 text-center text-fg-muted">{m.past_empty()}</p>
+        ) : (
+          <div className="flex flex-col gap-3" ref={revealRef}>
+            {/* Phones and tablets: Billing's plain table, scrolling sideways,
+             * without Time and Status. */}
+            <div className="xl:hidden">
+              <BillingTable
+                columns={[
+                  { id: 'date', label: m.quiz_col_date() },
+                  { id: 'workspace', label: m.quiz_col_workspace() },
+                  { id: 'chapter', label: m.past_col_chapter() },
+                  { id: 'quiz', label: m.past_col_quiz() },
+                  { id: 'cards', label: m.past_col_cards() },
+                  { align: 'right', id: 'menu', label: '' },
+                ]}
+                rows={rows.map((r) => ({
+                  cells: {
+                    cards: <ScoreText score={r.cards} />,
+                    chapter: groupName(r.group, r.chapterName),
+                    date: formatDate(r.startedAt),
+                    menu: <AgainMenu onAgain={() => again(r)} />,
+                    quiz: <ScoreText score={r.quiz} />,
+                    workspace: <WorkspaceCell review={r} />,
+                  },
+                  key: r.id,
+                }))}
+              />
             </div>
-            {rows.map((r) => (
-              <Row key={r.id} onAgain={() => again(r)} review={r} />
-            ))}
+            <div className="hidden overflow-hidden rounded-card border border-line xl:block">
+              <div className="grid grid-cols-[7rem_minmax(0,1fr)_minmax(0,1.1fr)_6rem_6rem_5rem_8.5rem_40px] bg-surface-hover-bg py-2.5 pr-2 pl-4 font-bold text-fg-muted text-xs uppercase tracking-wide *:pr-4">
+                <div>{m.quiz_col_date()}</div>
+                <div>{m.quiz_col_workspace()}</div>
+                <div>{m.past_col_chapter()}</div>
+                <div>{m.past_col_quiz()}</div>
+                <div>{m.past_col_cards()}</div>
+                <div>{m.past_col_time()}</div>
+                <div>{m.past_col_status()}</div>
+                <div />
+              </div>
+              {rows.map((r) => (
+                <Row key={r.id} onAgain={() => again(r)} review={r} />
+              ))}
+            </div>
+            {hasNextPage && (
+              <Button
+                className="self-center"
+                disabled={isFetchingNextPage}
+                onClick={() => fetchNextPage()}
+                size="sm"
+                variant="ghost-hover"
+              >
+                {m.list_load_more()}
+              </Button>
+            )}
           </div>
-          {hasNextPage && (
-            <Button
-              className="self-center"
-              disabled={isFetchingNextPage}
-              onClick={() => fetchNextPage()}
-              size="sm"
-              variant="ghost-hover"
-            >
-              {m.list_load_more()}
-            </Button>
-          )}
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -195,9 +198,7 @@ function Row({
     m.past_stopped({ answered: r.answered, total: r.total });
   return (
     <div className="grid grid-cols-[7rem_minmax(0,1fr)_minmax(0,1.1fr)_6rem_6rem_5rem_8.5rem_40px] items-center border-divider border-t pr-2 pl-4 text-sm">
-      <p className="whitespace-nowrap py-3 pr-4 text-fg-muted">
-        {formatDate(r.startedAt)}
-      </p>
+      <p className="whitespace-nowrap py-3 pr-4">{formatDate(r.startedAt)}</p>
       <div className="py-3 pr-4">
         <WorkspaceCell review={r} />
       </div>

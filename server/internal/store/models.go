@@ -195,7 +195,9 @@ type Attempt struct {
 	ID string `json:"id"`
 	// MaterialID becomes null when the source quiz is deleted. QuizName and
 	// WorkspaceName are the submit-time snapshot that keeps the row readable.
-	MaterialID    *string   `json:"materialId"`
+	MaterialID *string `json:"materialId"`
+	// WorkspaceID is the quiz's current workspace, null with MaterialID.
+	WorkspaceID   *string   `json:"workspaceId"`
 	QuizName      string    `json:"quizName"`
 	WorkspaceName string    `json:"workspaceName"`
 	Chapters      []string  `json:"chapters" nullable:"false"`

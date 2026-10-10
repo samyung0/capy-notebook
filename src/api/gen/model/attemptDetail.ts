@@ -21,5 +21,7 @@ export interface AttemptDetail {
   quizName: string;
   takenAt: string;
   total: number;
+  /** @nullable */
+  workspaceId: string | null;
   workspaceName: string;
 }

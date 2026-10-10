@@ -163,6 +163,7 @@ export const ListAttemptsResponseItem = zod.object({
   "quizName": zod.string(),
   "takenAt": zod.iso.datetime({"offset":true}),
   "total": zod.number(),
+  "workspaceId": zod.string().nullable(),
   "workspaceName": zod.string()
 })
 export const ListAttemptsResponse = zod.array(ListAttemptsResponseItem)
@@ -187,6 +188,7 @@ export const GetAttemptResponse = zod.object({
   "quizName": zod.string(),
   "takenAt": zod.iso.datetime({"offset":true}),
   "total": zod.number(),
+  "workspaceId": zod.string().nullable(),
   "workspaceName": zod.string()
 })
 
@@ -4269,6 +4271,7 @@ export const CreateAttemptResponse = zod.object({
   "quizName": zod.string(),
   "takenAt": zod.iso.datetime({"offset":true}),
   "total": zod.number(),
+  "workspaceId": zod.string().nullable(),
   "workspaceName": zod.string()
 })
 
@@ -6548,6 +6551,7 @@ export const GetWorkspaceStudyResponse = zod.object({
   "quizName": zod.string(),
   "takenAt": zod.iso.datetime({"offset":true}),
   "total": zod.number(),
+  "workspaceId": zod.string().nullable(),
   "workspaceName": zod.string()
 })),
   "reviewable": zod.int(),

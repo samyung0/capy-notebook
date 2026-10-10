@@ -376,11 +376,15 @@ components:
         total:
           format: double
           type: number
+        workspaceId:
+          nullable: true
+          type: string
         workspaceName:
           type: string
       required:
         - id
         - materialId
+        - workspaceId
         - quizName
         - workspaceName
         - chapters
@@ -429,6 +433,9 @@ components:
         total:
           format: double
           type: number
+        workspaceId:
+          nullable: true
+          type: string
         workspaceName:
           type: string
       required:
@@ -436,6 +443,7 @@ components:
         - questions
         - id
         - materialId
+        - workspaceId
         - quizName
         - workspaceName
         - chapters
