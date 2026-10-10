@@ -359,6 +359,75 @@ export const chapters: Chapter[] = [
   },
 ];
 
+/** Biology 101 text sources, one per text format the source editor opens
+ * collaboratively (Office formats come from `biologyOfficeFixtures`). */
+const biologyTextSources = [
+  {
+    body: `species,habitat,count
+frog,pond,12
+newt,pond,4
+heron,shore,2
+`,
+    id: 'bio-text-csv',
+    kind: 'sheet',
+    name: 'Pond survey.csv',
+  },
+  {
+    body: `organelle\tfunction
+nucleus\tstores DNA
+mitochondria\tmakes ATP
+ribosome\tbuilds proteins
+`,
+    id: 'bio-text-tsv',
+    kind: 'sheet',
+    name: 'Organelle functions.tsv',
+  },
+  {
+    body: `{
+  "cross": "Aa x Aa",
+  "genotypes": { "AA": 0.25, "Aa": 0.5, "aa": 0.25 },
+  "phenotypeRatio": "3:1"
+}
+`,
+    id: 'bio-text-json',
+    kind: 'json',
+    name: 'Monohybrid cross.json',
+  },
+  {
+    body: `topic: Cell respiration
+stages:
+  - glycolysis
+  - krebs cycle
+  - electron transport chain
+atp_per_glucose: 30
+`,
+    id: 'bio-text-yaml',
+    kind: 'txt',
+    name: 'Respiration outline.yaml',
+  },
+  {
+    body: `def punnett(a: str, b: str) -> list[str]:
+    """Every offspring genotype of two parent genotypes."""
+    return ["".join(sorted(x + y)) for x in a for y in b]
+
+
+print(punnett("Aa", "Aa"))
+`,
+    id: 'bio-text-py',
+    kind: 'txt',
+    name: 'punnett.py',
+  },
+  {
+    body: String.raw`\section{Photosynthesis}
+
+\[ 6\,CO_2 + 6\,H_2O \rightarrow C_6H_{12}O_6 + 6\,O_2 \]
+`,
+    id: 'bio-text-tex',
+    kind: 'txt',
+    name: 'Photosynthesis.tex',
+  },
+] as const;
+
 /** Inline text sources for MSW: the links handler hands this back as the
  * presigned URL, and `fetch` reads data: URLs like any other. */
 export function textUrl(body: string): string {
@@ -384,6 +453,9 @@ export const fileLinks: Record<string, { previewUrl?: string; url: string }> = {
   ),
   // A ready file over an ingest limit: it opens, only search skips it.
   'bio-state-too-large': { url: textUrl('species,count\nfrog,12\nnewt,4\n') },
+  ...Object.fromEntries(
+    biologyTextSources.map((file) => [file.id, { url: textUrl(file.body) }])
+  ),
   f_1: {
     url: 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf',
   },
@@ -571,6 +643,23 @@ export const files: SourceFile[] = [
     sizeBytes: 10_000 * 1024,
     workspaceId: 'ws_bio',
   },
+  // After the chat fixtures' cited files, which take the first indexed rows.
+  ...biologyTextSources.map(
+    (file, position): SourceFile => ({
+      addedAt: hours(2),
+      chapterId: null,
+      hasBytes: true,
+      id: file.id,
+      indexed: true,
+      kind: file.kind,
+      name: file.name,
+      position:
+        position + dialogFiles.length + 5 + biologyOfficeFixtures.length,
+      revision: 1,
+      sizeBytes: new TextEncoder().encode(file.body).byteLength,
+      workspaceId: 'ws_bio',
+    })
+  ),
 ];
 
 // A populated shared workspace for local summary and sharing previews.
