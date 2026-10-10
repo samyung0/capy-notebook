@@ -119,13 +119,13 @@ export function PastReviews() {
       ) : (
         <div className="flex flex-col gap-3" ref={revealRef}>
           <div className="overflow-hidden rounded-card border border-line">
-            <div className="hidden bg-surface-hover-bg px-4 py-2.5 font-bold text-fg-muted text-xs uppercase tracking-wide md:grid md:grid-cols-[7rem_minmax(0,1.2fr)_minmax(0,1.1fr)_7rem_7rem_4rem_8.5rem_40px] md:gap-3">
+            <div className="hidden bg-surface-hover-bg px-4 py-2.5 font-bold text-fg-muted text-xs uppercase tracking-wide xl:grid xl:grid-cols-[7rem_minmax(0,1fr)_minmax(0,1.1fr)_6rem_6rem_5rem_8.5rem_40px] xl:gap-3">
               <div>{m.quiz_col_date()}</div>
               <div>{m.quiz_col_workspace()}</div>
               <div>{m.past_col_chapter()}</div>
               <div>{m.past_col_quiz()}</div>
               <div>{m.past_col_cards()}</div>
-              <div className="text-right">{m.past_col_time()}</div>
+              <div>{m.past_col_time()}</div>
               <div>{m.past_col_status()}</div>
               <div />
             </div>
@@ -172,17 +172,19 @@ function Row({
     r.answered < r.total &&
     m.past_stopped({ answered: r.answered, total: r.total });
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto_40px] items-center gap-x-3 gap-y-0.5 border-divider border-t py-2.5 pr-2 pl-4 md:grid-cols-[7rem_minmax(0,1.2fr)_minmax(0,1.1fr)_7rem_7rem_4rem_8.5rem_40px] md:gap-3">
-      {/* Phones: what, where and when, then both scores at the right. */}
-      <div className="min-w-0 md:hidden">
+    <div className="grid grid-cols-[minmax(0,1fr)_auto_40px] items-center gap-x-3 gap-y-0.5 border-divider border-t py-2.5 pr-2 pl-4 xl:grid-cols-[7rem_minmax(0,1fr)_minmax(0,1.1fr)_6rem_6rem_5rem_8.5rem_40px] xl:gap-3">
+      {/* Phones and tablets: what, where, when and whether it was finished,
+       * then both scores at the right. */}
+      <div className="min-w-0 xl:hidden">
         <p className="truncate font-semibold text-fg">
           {group || r.workspaceName}
         </p>
         <p className="truncate text-fg-muted text-xs">
           {group ? `${r.workspaceName} · ${date}` : date}
         </p>
+        {stopped && <p className="truncate text-fg-muted text-xs">{stopped}</p>}
       </div>
-      <div className="flex flex-col items-end text-fg-secondary text-sm md:hidden">
+      <div className="flex flex-col items-end text-fg-secondary text-sm xl:hidden">
         {r.quiz && (
           <span>{m.past_phone_quiz({ score: scoreText(r.quiz) })}</span>
         )}
@@ -190,8 +192,8 @@ function Row({
           <span>{m.past_phone_cards({ score: scoreText(r.cards) })}</span>
         )}
       </div>
-      <p className="t-meta hidden text-fg-secondary md:block">{date}</p>
-      <div className="hidden min-w-0 items-center gap-2.5 md:flex">
+      <p className="t-meta hidden text-fg-secondary xl:block">{date}</p>
+      <div className="hidden min-w-0 items-center gap-2.5 xl:flex">
         <img
           alt=""
           className="size-4 shrink-0 rounded-[4px]"
@@ -199,17 +201,17 @@ function Row({
           src={iconUrl(r.iconId)}
           width={16}
         />
-        <span className="truncate font-bold">{r.workspaceName}</span>
+        <span className="truncate">{r.workspaceName}</span>
       </div>
-      <p className="t-meta hidden truncate text-fg-secondary md:block">
+      <p className="t-meta hidden truncate text-fg-secondary xl:block">
         {group}
       </p>
       <ScoreCell score={r.quiz} />
       <ScoreCell score={r.cards} />
-      <p className="t-meta hidden text-right text-fg-muted md:block">
+      <p className="t-meta hidden text-fg-muted xl:block">
         {m.past_minutes({ count: minutes })}
       </p>
-      <div className="hidden min-w-0 md:block">
+      <div className="hidden min-w-0 xl:block">
         <p className="t-meta text-fg-secondary">
           {stopped ? m.past_status_incomplete() : m.past_status_completed()}
         </p>
@@ -231,6 +233,6 @@ const scoreText = (s: SessionScore) =>
 
 /** A quiz or flashcard result: marks, or cards rated Good or Easy. */
 function ScoreCell({ score }: { score?: SessionScore }) {
-  if (!score) return <p className="t-meta hidden text-fg-muted md:block">-</p>;
-  return <p className="hidden font-bold md:block">{scoreText(score)}</p>;
+  if (!score) return <p className="t-meta hidden text-fg-muted xl:block">-</p>;
+  return <p className="hidden font-bold xl:block">{scoreText(score)}</p>;
 }
