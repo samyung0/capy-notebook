@@ -5,8 +5,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -36,24 +36,6 @@ func mustBase64(s string) []byte {
 	return b
 }
 
-// paddedWebP wraps the 20x12 lossless capture in the extended format with an
-// XMP chunk of pad bytes: a valid WebP of any size, which decodes.
-func paddedWebP(pad int) []byte {
-	chunk := func(id string, data []byte) []byte {
-		out := append([]byte(id), binary.LittleEndian.AppendUint32(nil, uint32(len(data)))...)
-		out = append(out, data...)
-		if len(data)%2 == 1 {
-			out = append(out, 0)
-		}
-		return out
-	}
-	vp8x := []byte{0, 0, 0, 0, 19, 0, 0, 11, 0, 0} // canvas 20x12, minus one
-	body := append([]byte("WEBP"), chunk("VP8X", vp8x)...)
-	body = append(body, chunk("XMP ", make([]byte, pad))...)
-	body = append(body, webpLossless[12:]...) // the VP8L chunk
-	return append(append([]byte("RIFF"), binary.LittleEndian.AppendUint32(nil, uint32(len(body)))...), body...)
-}
-
 type thumbnailHarness struct {
 	h     http.Handler
 	st    *store.Store
@@ -61,6 +43,21 @@ type thumbnailHarness struct {
 }
 
 func openThumbnailHarness(t *testing.T) thumbnailHarness {
+	t.Helper()
+	return openThumbnailHarnessWith(t, nil)
+}
+
+// failingPuts is a bucket whose puts fail after writing, as a put whose answer
+// was lost would.
+type failingPuts struct{ *blob.Memory }
+
+func (f failingPuts) PutObjectOnce(ctx context.Context, key string, body []byte, contentType, cacheControl string) error {
+	_ = f.Memory.PutObjectOnce(ctx, key, body, contentType, cacheControl)
+	return errors.New("the bucket did not answer")
+}
+
+// openThumbnailHarnessWith serves captures into bucket (a memory one when nil).
+func openThumbnailHarnessWith(t *testing.T, bucket blob.Store) thumbnailHarness {
 	t.Helper()
 	ctx := context.Background()
 	st, err := store.New(ctx, testdb.URL(t))
@@ -74,7 +71,10 @@ func openThumbnailHarness(t *testing.T) thumbnailHarness {
 	}
 	st.SetModelRegistry(reg)
 	blobs := blob.NewMemory()
-	h := httpapi.New(st, blobs, nil, nil, "docling", httpapi.Config{
+	if bucket == nil {
+		bucket = blobs
+	}
+	h := httpapi.New(st, bucket, nil, nil, "docling", httpapi.Config{
 		AuthDisabled:  true,
 		E2EAuth:       true,
 		E2ESecret:     "e2e-test-secret",
@@ -212,17 +212,16 @@ func TestThumbnailCaptureRefusesAnotherWorkspace(t *testing.T) {
 // TestThumbnailCaptureRefusesBadBodies (security regression: browser captures
 // are WebP only, at most 64 KB and 200x400). Each body is refused and writes
 // nothing: not WebP, bytes after the RIFF size, a RIFF size past the end, a
-// valid WebP over 64 KB, and images one pixel too wide or too tall.
+// body over 64 KB (413 from the cap, 422 without it), and images one pixel
+// too wide or too tall. Chunks inside the RIFF size are checkThumbnailWebP's
+// unit tests (thumbnail_webp_test.go).
 func TestThumbnailCaptureRefusesBadBodies(t *testing.T) {
 	th := openThumbnailHarness(t)
 	th.file(t, "f_capture_bodies", "ws_e2e_private", "deck.pptx", "slides")
 	png := append([]byte("\x89PNG\r\n\x1a\n"), webpCapture[8:]...)
 	trailing := append(append([]byte(nil), webpCapture...), 0, 0)
 	short := webpCapture[:len(webpCapture)-2]
-	oversized := paddedWebP(64 << 10)
-	if len(oversized) <= 64<<10 {
-		t.Fatalf("the oversized fixture is %d bytes", len(oversized))
-	}
+	oversized := append(append([]byte(nil), webpCapture...), make([]byte, 64<<10)...)
 	cases := []struct {
 		name   string
 		body   []byte
@@ -244,8 +243,6 @@ func TestThumbnailCaptureRefusesBadBodies(t *testing.T) {
 	if got := th.key(t, "f_capture_bodies"); got != "" {
 		t.Errorf("thumbnail_key = %q after refused bodies", got)
 	}
-	// The padded fixture is a WebP the check accepts once small enough.
-	expectStatus(t, th.post(t, "u_editor", "f_capture_bodies", paddedWebP(64)), http.StatusNoContent, "small padded WebP")
 }
 
 // TestThumbnailCaptureEnforcesTheInterval (security regression: Go enforces a
@@ -272,4 +269,28 @@ func TestThumbnailCaptureEnforcesTheInterval(t *testing.T) {
 	if got, want := th.key(t, "f_capture_interval"), captureKey("f_capture_interval", webpLossless); got != want {
 		t.Fatalf("thumbnail_key = %q, want %q", got, want)
 	}
+}
+
+// A put that fails may still have written the object: its key goes to the
+// deletion outbox, and the file keeps no key (review T3 S6).
+func TestThumbnailCaptureQueuesAFailedPut(t *testing.T) {
+	th := openThumbnailHarnessWith(t, failingPuts{blob.NewMemory()})
+	th.file(t, "f_capture_failed_put", "ws_e2e_private", "deck.pptx", "slides")
+
+	expectStatus(t, th.post(t, "u_editor", "f_capture_failed_put", webpCapture), http.StatusServiceUnavailable, "failed put")
+	if got := th.key(t, "f_capture_failed_put"); got != "" {
+		t.Fatalf("thumbnail_key = %q after a failed put", got)
+	}
+	key := captureKey("f_capture_failed_put", webpCapture)
+	var queued bool
+	if err := th.st.Pool().QueryRow(context.Background(),
+		`SELECT EXISTS (SELECT 1 FROM pending_blob_deletions WHERE object_path=$1)`, key).Scan(&queued); err != nil {
+		t.Fatal(err)
+	}
+	if !queued {
+		t.Fatal("the failed put's key was not queued for deletion")
+	}
+	t.Cleanup(func() {
+		_, _ = th.st.Pool().Exec(context.Background(), `DELETE FROM pending_blob_deletions WHERE object_path=$1`, key)
+	})
 }

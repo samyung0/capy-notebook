@@ -49,7 +49,34 @@ export async function encodeThumbnail(
   canvas.height = 0;
   if (blob.type !== 'image/webp')
     throw new Error('This browser does not encode WebP');
-  return { bytes: await blob.arrayBuffer(), height, width };
+  return { bytes: imageOnlyWebP(await blob.arrayBuffer()), height, width };
+}
+
+const ascii = (text: string) => Array.from(text, (c) => c.charCodeAt(0));
+
+/**
+ * The WebP as its image chunk alone, the only layout Go takes besides one
+ * with alpha. Chrome writes an sRGB ICC profile before the image (VP8X with
+ * the ICC flag, then ICCP), which browsers assume without it; a capture is
+ * opaque, so there is no ALPH chunk to keep.
+ */
+export function imageOnlyWebP(webp: ArrayBuffer): ArrayBuffer {
+  const view = new DataView(webp);
+  for (let at = 12; at + 8 <= webp.byteLength; ) {
+    const id = String.fromCharCode(...new Uint8Array(webp, at, 4));
+    const size = view.getUint32(at + 4, true);
+    const length = 8 + size + (size % 2);
+    if (id === 'ALPH') throw new Error('The capture has an alpha channel');
+    if (id === 'VP8 ' || id === 'VP8L') {
+      const out = new Uint8Array(12 + length);
+      out.set([...ascii('RIFF'), 0, 0, 0, 0, ...ascii('WEBP')]);
+      new DataView(out.buffer).setUint32(4, 4 + length, true);
+      out.set(new Uint8Array(webp, at, length), 12);
+      return out.buffer;
+    }
+    at += length;
+  }
+  throw new Error('The capture has no image');
 }
 
 /**

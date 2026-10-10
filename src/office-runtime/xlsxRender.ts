@@ -69,8 +69,15 @@ function canvas(width: number, height: number) {
 export const THUMBNAIL_AREA = { height: 550, width: 800, x: 0, y: 0 };
 
 /**
+ * How long the thumbnail worker may take, inside the host's 60 s wait for a
+ * `render` (it takes about 350 ms): past it the worker is ended.
+ */
+const THUMBNAIL_WORKER_MS = 30_000;
+
+/**
  * The first sheet's top-left as a list-card capture (`thumbnail.ts`), painted
- * and encoded in a thumbnail worker of its own, which ends with it.
+ * and encoded in a thumbnail worker of its own, which ends with it: on its
+ * answer, an error, a message it cannot read, or the time limit.
  */
 export function sheetThumbnail(frame: DisplayList) {
   return new Promise<OfficeRenderedPage>((resolve, reject) => {
@@ -78,15 +85,23 @@ export function sheetThumbnail(frame: DisplayList) {
       new URL('./thumbnail.worker.ts', import.meta.url),
       { type: 'module' }
     );
-    worker.onmessage = (event: MessageEvent<ThumbnailResponse>) => {
+    const end = (error?: Error) => {
+      clearTimeout(timer);
       worker.terminate();
+      if (error) reject(error);
+    };
+    const timer = setTimeout(
+      () => end(new Error('The thumbnail worker took too long')),
+      THUMBNAIL_WORKER_MS
+    );
+    worker.onmessage = (event: MessageEvent<ThumbnailResponse>) => {
+      end();
       if ('page' in event.data) resolve(event.data.page);
       else reject(new Error(event.data.message));
     };
-    worker.onerror = (event) => {
-      worker.terminate();
-      reject(new Error(event.message));
-    };
+    worker.onerror = (event) => end(new Error(event.message));
+    worker.onmessageerror = () =>
+      end(new Error('The thumbnail worker answered unreadably'));
     worker.postMessage({
       area: THUMBNAIL_AREA,
       frame,

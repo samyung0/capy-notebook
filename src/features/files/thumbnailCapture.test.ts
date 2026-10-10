@@ -1,19 +1,33 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setAuthTokenGetter } from '@/api/auth';
 import {
   createThumbnailCapture,
   DRAW_AFTER_MS,
+  type DrawnThumbnail,
+  MAX_UPLOAD_BYTES,
   UPLOAD_AFTER_MS,
   UPLOAD_WITHIN_MS,
   uploadThumbnail,
 } from './thumbnailCapture';
 
-const drawn = new ArrayBuffer(8);
+const bytes = new ArrayBuffer(8);
+const drawn: DrawnThumbnail = {
+  bytes,
+  headers: { Authorization: 'Bearer drawn' },
+};
+/** An upload of the drawn capture. */
+const sent = (keepalive: boolean) => [
+  expect.objectContaining({ bytes }),
+  keepalive,
+];
 
 function setup({
   allowed = true,
-  draw = vi.fn(async (): Promise<ArrayBuffer | null> => drawn),
+  draw = vi.fn(async (): Promise<DrawnThumbnail | null> => drawn),
 } = {}) {
-  const upload = vi.fn(async (_bytes: ArrayBuffer, _keepalive: boolean) => {});
+  const upload = vi.fn(
+    async (_drawn: DrawnThumbnail, _keepalive: boolean) => {}
+  );
   const state = { allowed };
   const capture = createThumbnailCapture({
     allowed: () => state.allowed,
@@ -42,7 +56,7 @@ describe('thumbnail capture scheduling', () => {
     expect(draw).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(UPLOAD_AFTER_MS - DRAW_AFTER_MS);
     expect(draw).toHaveBeenCalledTimes(1);
-    expect(upload).toHaveBeenCalledExactlyOnceWith(drawn, false);
+    expect(upload).toHaveBeenCalledExactlyOnceWith(...sent(false));
     await vi.advanceTimersByTimeAsync(UPLOAD_WITHIN_MS);
     expect(upload).toHaveBeenCalledTimes(1);
   });
@@ -70,7 +84,24 @@ describe('thumbnail capture scheduling', () => {
     }
     // Never 5 s idle: the 10-minute mark drew the one capture it sent.
     expect(draw).toHaveBeenCalledTimes(1);
-    expect(upload).toHaveBeenCalledExactlyOnceWith(drawn, false);
+    expect(upload).toHaveBeenCalledExactlyOnceWith(...sent(false));
+    // Nothing is drawn or sent again for the edits the capture covered.
+    await vi.advanceTimersByTimeAsync(UPLOAD_AFTER_MS);
+    expect(draw).toHaveBeenCalledTimes(1);
+    expect(upload).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the idle upload when the 10-minute mark comes while saving', async () => {
+    const { capture, state, upload } = setup({ allowed: false });
+    for (let elapsed = 0; elapsed < UPLOAD_WITHIN_MS; elapsed += 2000) {
+      capture.edited();
+      await vi.advanceTimersByTimeAsync(2000);
+    }
+    expect(upload).not.toHaveBeenCalled();
+    // The room has the edits now: the upload 60 s after the last one goes.
+    state.allowed = true;
+    await vi.advanceTimersByTimeAsync(UPLOAD_AFTER_MS);
+    expect(upload).toHaveBeenCalledExactlyOnceWith(...sent(false));
   });
 
   it('captures nothing without a change, and uploads nothing while not allowed', async () => {
@@ -86,7 +117,7 @@ describe('thumbnail capture scheduling', () => {
     // The next chance once the room has the edits and editing is allowed.
     state.allowed = true;
     capture.leave();
-    expect(upload).toHaveBeenCalledExactlyOnceWith(drawn, true);
+    expect(upload).toHaveBeenCalledExactlyOnceWith(...sent(true));
   });
 
   it('uploads the drawn capture with keepalive when the page hides, once', async () => {
@@ -98,11 +129,11 @@ describe('thumbnail capture scheduling', () => {
     capture.leave();
     capture.leave();
     await vi.advanceTimersByTimeAsync(UPLOAD_WITHIN_MS);
-    expect(upload).toHaveBeenCalledExactlyOnceWith(drawn, true);
+    expect(upload).toHaveBeenCalledExactlyOnceWith(...sent(true));
   });
 
   it('logs a failed draw once and never retries it', async () => {
-    const draw = vi.fn(async (): Promise<ArrayBuffer | null> => {
+    const draw = vi.fn(async (): Promise<DrawnThumbnail | null> => {
       throw new Error('no canvas');
     });
     const { capture, upload } = setup({ draw });
@@ -117,19 +148,55 @@ describe('thumbnail capture scheduling', () => {
     expect(console.warn).toHaveBeenCalledTimes(1);
   });
 
-  it('never retries a failed upload', async () => {
+  it('never retries a failed upload, and leaving sends its edits again', async () => {
     const { capture, draw, upload } = setup();
-    upload.mockRejectedValue(new Error('429'));
+    upload.mockRejectedValueOnce(new Error('429'));
     capture.edited();
     await vi.advanceTimersByTimeAsync(UPLOAD_WITHIN_MS);
-    capture.leave();
-    expect(draw).toHaveBeenCalledTimes(1);
     expect(upload).toHaveBeenCalledTimes(1);
     expect(console.warn).toHaveBeenCalledTimes(1);
+    capture.leave();
+    expect(draw).toHaveBeenCalledTimes(1);
+    expect(upload).toHaveBeenLastCalledWith(...sent(true));
+    expect(upload).toHaveBeenCalledTimes(2);
+  });
+
+  it('a refused 10-minute upload goes again 60 s after the last edit', async () => {
+    const { capture, upload } = setup();
+    upload.mockRejectedValueOnce(new Error('429'));
+    for (let elapsed = 0; elapsed < UPLOAD_WITHIN_MS; elapsed += 2000) {
+      capture.edited();
+      await vi.advanceTimersByTimeAsync(2000);
+    }
+    expect(upload).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(UPLOAD_AFTER_MS);
+    expect(upload).toHaveBeenCalledTimes(2);
+  });
+
+  it(`never sends a capture of ${MAX_UPLOAD_BYTES} bytes or more`, async () => {
+    const big = vi.fn(async () => ({
+      bytes: new ArrayBuffer(MAX_UPLOAD_BYTES),
+      headers: {},
+    }));
+    const refused = setup({ draw: big });
+    refused.capture.edited();
+    await vi.advanceTimersByTimeAsync(UPLOAD_WITHIN_MS);
+    refused.capture.leave();
+    expect(refused.upload).not.toHaveBeenCalled();
+
+    const fits = setup({
+      draw: vi.fn(async () => ({
+        bytes: new ArrayBuffer(MAX_UPLOAD_BYTES - 1),
+        headers: {},
+      })),
+    });
+    fits.capture.edited();
+    await vi.advanceTimersByTimeAsync(UPLOAD_AFTER_MS);
+    expect(fits.upload).toHaveBeenCalledTimes(1);
   });
 
   it('ends quietly when there is nothing to capture', async () => {
-    const draw = vi.fn(async (): Promise<ArrayBuffer | null> => null);
+    const draw = vi.fn(async (): Promise<DrawnThumbnail | null> => null);
     const { capture, upload } = setup({ draw });
     capture.edited();
     await vi.advanceTimersByTimeAsync(UPLOAD_WITHIN_MS);
@@ -185,19 +252,35 @@ describe('WebP feature detection', () => {
 });
 
 describe('thumbnail upload', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setAuthTokenGetter(null);
+  });
 
-  it('posts the WebP to the file, keepalive when asked', async () => {
+  it('sends a keepalive upload at once, with the headers fetched when drawing', () => {
     const fetch = vi.fn(async () => new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetch);
-    const bytes = new ArrayBuffer(4);
-    await uploadThumbnail('f_1', bytes, true);
+    setAuthTokenGetter(async () => 'fresh');
+    void uploadThumbnail('f_1', drawn, true);
+    // Called before anything is awaited: the page may be going away.
     expect(fetch).toHaveBeenCalledExactlyOnceWith(
       '/api/files/f_1/thumbnail',
       expect.objectContaining({ body: bytes, keepalive: true, method: 'POST' })
     );
     const [, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
-    expect(init.headers).toMatchObject({ 'Content-Type': 'image/webp' });
+    expect(init.headers).toMatchObject({
+      Authorization: 'Bearer drawn',
+      'Content-Type': 'image/webp',
+    });
+  });
+
+  it('fetches fresh headers for any other upload', async () => {
+    const fetch = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetch);
+    setAuthTokenGetter(async () => 'fresh');
+    await uploadThumbnail('f_1', drawn, false);
+    const [, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.headers).toMatchObject({ Authorization: 'Bearer fresh' });
   });
 
   it('rejects a refused capture', async () => {
@@ -205,8 +288,6 @@ describe('thumbnail upload', () => {
       'fetch',
       vi.fn(async () => new Response(null, { status: 429 }))
     );
-    await expect(
-      uploadThumbnail('f_1', new ArrayBuffer(4), false)
-    ).rejects.toThrow('429');
+    await expect(uploadThumbnail('f_1', drawn, false)).rejects.toThrow('429');
   });
 });

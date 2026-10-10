@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
+import { authHeaders } from '@/api/auth';
 import { api } from '@/api/client';
 import type { SourceFile, SourceSession, ViewableFile } from '@/api/types';
 import { userToast } from '@/components/ui/userToast';
@@ -647,9 +648,16 @@ export function useOfficeRuntime({
       if (!supported || cancelled) return;
       captureRef.current = createThumbnailCapture({
         allowed: () => captureAllowed.current(),
-        draw: async () => (await render('thumbnail')).pages[0]?.bytes ?? null,
-        upload: (bytes, keepalive) =>
-          uploadThumbnail(file.id, bytes, keepalive),
+        draw: async () => {
+          const [rendered, headers] = await Promise.all([
+            render('thumbnail'),
+            authHeaders(),
+          ]);
+          const bytes = rendered.pages[0]?.bytes;
+          return bytes ? { bytes, headers } : null;
+        },
+        upload: (drawn, keepalive) =>
+          uploadThumbnail(file.id, drawn, keepalive),
       });
     });
     const leave = () => captureRef.current?.leave();

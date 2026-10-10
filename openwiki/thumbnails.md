@@ -107,7 +107,9 @@ the donor-reuse, content-reuse and indexed exits all reach it.
   queued for deletion at once (`blob_enqueue_deletion`), as it is when the
   update fails after the B2 write.
 - A source refresh (an edited text or Office source) publishes and ingests
-  again, so the new bytes replace the thumbnail or text preview.
+  again, so the new bytes replace the thumbnail or text preview, unless an
+  editor's browser has captured the file
+  ([Ingest after a capture](#browser-captures-phase-2a)).
 - A PDF or Office file the parse job reused from identical indexed bytes (the
   donor path, `_reuse_donor` called from the parse job in
   `pipeline/ingest/worker.py`) has no bundle, so it takes the thumbnail key of
@@ -174,9 +176,13 @@ success ([handler](../server/internal/httpapi/huma_thumbnails.go)):
   files that open in an Office editor (`store.SourceEditFormat` is docx, xlsx
   or pptx; anything else `422`).
 - At most 64 KB (`413` past it). The body must be one RIFF WebP whose RIFF size
-  equals its length (nothing trailing), at most 200 x 400 by its header, and it
-  must decode in full with `golang.org/x/image/webp` (pure Go; the header's
-  size is checked first and x/image holds the frame to it). Otherwise `422`.
+  equals its length and whose chunks are one image and nothing else: a lone
+  `VP8 ` or `VP8L` chunk, or `VP8X` with only its alpha flag, an optional
+  `ALPH` and then the image chunk, which ends exactly at the RIFF end (no
+  `JUNK`, metadata, ICC profile, animation, second image or stray bytes). The
+  image is at most 200 x 400 by its header and must decode in full with
+  `golang.org/x/image/webp` (pure Go; the header's size is checked first and
+  x/image holds the frame to it). Otherwise `422`.
 - The key is `thumbs/{file id}/{sha256}.webp`. The current key answers `204`
   and writes nothing.
 - One accepted capture per file per 60 s: `files.thumbnail_captured_at`
@@ -191,8 +197,10 @@ success ([handler](../server/internal/httpapi/huma_thumbnails.go)):
   the update fails (an enqueue that fails too leaves it to the orphan sweep).
 - Nothing retries: the put is one request (`blob.Store.PutObjectOnce`, the S3
   client's retryer limited to one attempt for this call only; the shared
-  client keeps its retries elsewhere), a failed put is a `503`, and the
-  browser drops it.
+  client keeps its retries elsewhere), and a failed put is a `503`. A put that
+  failed may still have written the object, so its key is queued for deletion
+  too; these enqueues run past the request's cancellation
+  (`EnqueueBlobDeletion`, `context.WithoutCancel`).
 
 **Browser** ([scheduler](../src/features/files/thumbnailCapture.ts), wired in
 `useOfficeRuntime`):
@@ -206,13 +214,22 @@ success ([handler](../server/internal/httpapi/huma_thumbnails.go)):
   keeps the bytes. 60 s after the last edit, or 10 minutes after the cycle's
   first edit while editing goes on, it uploads them (drawing again first when
   edits came after the drawing). `pagehide`, or the page turning hidden,
-  uploads what was drawn with `fetch(…, {keepalive: true})`.
+  uploads what was drawn with `fetch(…, {keepalive: true})`, sent at once with
+  the auth headers fetched when it was drawn (any other upload fetches fresh
+  ones).
+- A capture of 65,535 bytes or more is never sent: Go refuses a 64 KiB body
+  and keepalive uploads share a 64 KiB budget.
 - An upload needs the room to have every edit (the session reads `saved`) and
   the user to be able to edit (not paused, handoff, recovery or offline at its
   bound). Remote edits start nothing: the peer who edits captures.
+- An upload due while the room is still saving (or editing is paused) waits:
+  the 60-second upload stays pending when the 10-minute mark finds the room
+  saving.
 - Failures are logged once (`Thumbnail capture failed`) and never retried: a
-  failed drawing ends its cycle, a refused upload (a `429` included) is
-  dropped, and the card keeps its image until the next capture.
+  failed drawing ends its cycle. A refused upload (a `429` included) is not
+  sent again by itself, but its edits stay uncaptured, so the next upload (the
+  one still due 60 s after the last edit, the next edit's, leaving) carries
+  them. The card keeps its image until then.
 - Leaving the file inside the app (View, another file, another page) uploads
   what was drawn the same way, from the capture's effect cleanup.
 
@@ -221,6 +238,9 @@ frame, when its main thread is next idle (`requestIdleCallback`), never on the
 keystroke or save path, from what the engine holds (pending input is not
 flushed). 200 px wide, cut at 400 px tall, on white, WebP at quality 60
 (`OffscreenCanvas.convertToBlob`); the canvas is released after encoding.
+Chrome writes an sRGB ICC profile before the image (`VP8X` with the ICC flag,
+`ICCP`), which Go refuses and browsers assume anyway, so the runtime keeps the
+image chunk alone (`imageOnlyWebP`; 464 bytes smaller).
 
 - PPTX: slide 1 (`layoutSlide(0)` and `paintSlide`, as Print, with its
   pictures decoded once for the drawing), on the main thread, where the
@@ -229,8 +249,8 @@ flushed). 200 px wide, cut at 400 px tall, on white, WebP at quality 60
   (200 x 138, the cards' 16:11 panel: cards crop pages from the top, and
   painting cells is the main cost). The workbook worker builds the display
   list and a thumbnail worker of its own (`thumbnail.worker.ts`, ended with the
-  capture) paints and encodes it, with the system fonts it falls back to (the
-  same at that scale). The engine draws only the active sheet, so the request
+  capture, or on an error, an unreadable message or 30 s) paints and encodes
+  it, with the system fonts it falls back to (the same at that scale). The engine draws only the active sheet, so the request
   names the first sheet (`onSheet`): while another sheet is active there is
   nothing to capture.
 - Known limit (deferred 2026-10-11): a cycle whose drawing finds another
@@ -248,6 +268,12 @@ thread, the XLSX cells were one 40-55 ms task.
 
 The new key raises the tree event like any thumbnail change, so open lists
 refetch and show it.
+
+**Ingest after a capture.** Once a file has a browser capture
+(`thumbnail_captured_at` is set), the browser owns its thumbnail: an ingest
+refresh neither writes its page-1 key (`set_file_thumbnail`) nor shares a
+reused file's key (`share_file_thumbnail`), and the key it rendered is queued
+for deletion like any capture no row takes (decided 2026-10-11, review T3 S4).
 
 Sources: [endpoint test](../server/internal/httpapi/thumbnail_capture_test.go),
 [store test](../server/internal/store/thumbnail_capture_test.go),

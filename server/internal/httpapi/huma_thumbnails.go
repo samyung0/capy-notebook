@@ -79,6 +79,10 @@ func (a *api) captureFileThumbnail(ctx context.Context, in *captureThumbnailInpu
 	}
 	if err := a.blob.PutObjectOnce(ctx, key, in.RawBody, "image/webp", thumbnailCacheControl); err != nil {
 		obs.Log(ctx).Warn("thumbnail capture upload failed", "file_id", in.ID, "error", err)
+		// A put that failed may still have written the object.
+		if err := a.s.EnqueueBlobDeletion(ctx, key); err != nil {
+			obs.Log(ctx).Warn("thumbnail capture not queued for deletion", "file_id", in.ID, "key", key, "error", err)
+		}
 		return nil, huma.Error503ServiceUnavailable("thumbnail storage is unavailable")
 	}
 	if err := a.s.SetFileThumbnail(ctx, in.ID, key); err != nil {
@@ -88,16 +92,21 @@ func (a *api) captureFileThumbnail(ctx context.Context, in *captureThumbnailInpu
 	return &Empty{}, nil
 }
 
-// checkThumbnailWebP accepts exactly one RIFF WebP image (nothing after the
-// size its header declares) of at most thumbnailMaxWidth x thumbnailMaxHeight
-// that decodes in full. The header's dimensions are checked before the
-// decode, which x/image holds to them.
+// checkThumbnailWebP accepts exactly one RIFF WebP image and nothing else:
+// a lone "VP8 " or "VP8L" chunk, or "VP8X" with only its alpha flag, an
+// optional "ALPH" and then the image chunk, which ends exactly where the RIFF
+// size says the body ends. The image is at most thumbnailMaxWidth x
+// thumbnailMaxHeight by its header, checked before the decode (x/image holds
+// the frame to it), and must decode in full.
 func checkThumbnailWebP(body []byte) error {
 	if len(body) < 12 || string(body[:4]) != "RIFF" || string(body[8:12]) != "WEBP" {
 		return errors.New("the thumbnail is not a WebP image")
 	}
 	if uint64(binary.LittleEndian.Uint32(body[4:8]))+8 != uint64(len(body)) {
 		return errors.New("the thumbnail's RIFF size does not match its length")
+	}
+	if err := checkWebPChunks(body[12:]); err != nil {
+		return err
 	}
 	config, err := webp.DecodeConfig(bytes.NewReader(body))
 	if err != nil {
@@ -111,4 +120,41 @@ func checkThumbnailWebP(body []byte) error {
 		return errors.New("the thumbnail does not decode")
 	}
 	return nil
+}
+
+// vp8xAlpha is the one VP8X flag a capture may set.
+const vp8xAlpha = 0x10
+
+// checkWebPChunks walks the chunks after "WEBP": each one's size (padded to
+// even) must fit, and together they must be one of the layouts above with
+// nothing before, between or after them.
+func checkWebPChunks(data []byte) error {
+	refuse := errors.New("the thumbnail holds more than one WebP image")
+	var ids []string
+	var vp8x []byte
+	for len(data) > 0 {
+		if len(data) < 8 || len(ids) == 3 {
+			return refuse
+		}
+		size := uint64(binary.LittleEndian.Uint32(data[4:8]))
+		end := 8 + size + size&1
+		if end > uint64(len(data)) {
+			return refuse
+		}
+		id := string(data[:4])
+		if id == "VP8X" {
+			vp8x = data[8 : 8+size]
+		}
+		ids = append(ids, id)
+		data = data[end:]
+	}
+	image := func(id string) bool { return id == "VP8 " || id == "VP8L" }
+	switch {
+	case len(ids) == 1 && image(ids[0]):
+		return nil
+	case len(ids) >= 2 && ids[0] == "VP8X" && len(vp8x) == 10 && vp8x[0]&^vp8xAlpha == 0 &&
+		image(ids[len(ids)-1]) && (len(ids) == 2 || ids[1] == "ALPH"):
+		return nil
+	}
+	return refuse
 }

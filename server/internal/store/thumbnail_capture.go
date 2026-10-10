@@ -56,16 +56,25 @@ func (s *Store) ClaimThumbnailCapture(ctx context.Context, fileID string) error 
 // SetFileThumbnail points a live file at a captured key, which releases the
 // old one through the blob reference triggers. A file trashed or deleted
 // since takes nothing and the new key is queued for deletion at once; so is
-// the key when the update fails (an enqueue that fails too leaves the object
-// to the monthly orphan sweep).
+// the key when the update fails.
 func (s *Store) SetFileThumbnail(ctx context.Context, fileID, key string) error {
 	err := s.setFileThumbnail(ctx, fileID, key)
 	if err == nil {
 		return nil
 	}
-	if _, enqueueErr := s.pool.Exec(ctx, `SELECT blob_enqueue_deletion($1, make_interval(secs => 0))`, key); enqueueErr != nil {
+	if enqueueErr := s.EnqueueBlobDeletion(ctx, key); enqueueErr != nil {
 		return errors.Join(err, enqueueErr)
 	}
+	return err
+}
+
+// EnqueueBlobDeletion queues an object the bucket may hold with no row naming
+// it, for the reaper, now; a path still referenced is skipped. It runs past
+// the caller's cancellation (a request that ended), so the object is not left
+// to the monthly orphan sweep.
+func (s *Store) EnqueueBlobDeletion(ctx context.Context, path string) error {
+	_, err := s.pool.Exec(context.WithoutCancel(ctx),
+		`SELECT blob_enqueue_deletion($1, make_interval(secs => 0))`, path)
 	return err
 }
 

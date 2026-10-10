@@ -440,3 +440,36 @@ def test_a_reuse_never_shares_a_key_from_another_workspace(
             conn.execute("DELETE FROM workspaces WHERE id=%s", (other_workspace,))
             if not same_owner:
                 conn.execute("DELETE FROM users WHERE id=%s", (owner,))
+
+
+@pytest.mark.integration
+def test_ingest_leaves_a_browser_capture_alone(workspace):
+    """Once an editor's browser captured a file (review T3 S4), an ingest
+    refresh neither writes its page-1 key nor shares a reused file's key over
+    the capture: the browser owns the thumbnail."""
+    sha = "ef" * 32
+    donor = workspace.add_file("deck.pptx")
+    captured = workspace.add_file("deck again.pptx")
+    donor_key = f"thumbs/{donor}/{'d' * 64}.webp"
+    capture_key = f"thumbs/{captured}/{'b' * 64}.webp"
+    with workspace._connect() as conn:
+        conn.execute(
+            "UPDATE files SET kind='slides', source_sha256=%s WHERE id IN (%s, %s)",
+            (sha, donor, captured),
+        )
+        conn.execute(
+            "UPDATE files SET thumbnail_key=%s WHERE id=%s", (donor_key, donor)
+        )
+        conn.execute(
+            "UPDATE files SET thumbnail_key=%s, thumbnail_captured_at=now() WHERE id=%s",
+            (capture_key, captured),
+        )
+    with workspace._connect() as conn, conn.cursor() as cur:
+        assert not thumbnail.db.set_file_thumbnail(
+            cur, captured, sha, f"thumbs/{captured}/{'a' * 64}.webp"
+        )
+        assert not thumbnail.db.share_file_thumbnail(cur, captured, workspace.id, sha)
+    assert (
+        workspace.scalar("SELECT thumbnail_key FROM files WHERE id=%s", (captured,))
+        == capture_key
+    )

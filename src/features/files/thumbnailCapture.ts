@@ -14,13 +14,25 @@ export const DRAW_AFTER_MS = 5000;
 export const UPLOAD_AFTER_MS = 60_000;
 /** Or this long after the first change since the last capture. */
 export const UPLOAD_WITHIN_MS = 10 * 60_000;
+/**
+ * Captures this size or larger are never sent: Go refuses a 64 KiB body, and
+ * a keepalive upload shares a 64 KiB budget.
+ */
+export const MAX_UPLOAD_BYTES = 65_535;
+
+/** A drawn capture, with the auth headers fetched when it was drawn. */
+export interface DrawnThumbnail {
+  bytes: ArrayBuffer;
+  /** For an upload as the page goes away, which has no time to fetch them. */
+  headers: Record<string, string>;
+}
 
 export interface ThumbnailCaptureOptions {
   /** The room has every edit and the user may edit now. */
   allowed: () => boolean;
   /** The WebP of the document as the editor holds it now; null for nothing to capture. */
-  draw: () => Promise<ArrayBuffer | null>;
-  upload: (bytes: ArrayBuffer, keepalive: boolean) => Promise<void>;
+  draw: () => Promise<DrawnThumbnail | null>;
+  upload: (drawn: DrawnThumbnail, keepalive: boolean) => Promise<void>;
 }
 
 export interface ThumbnailCapture {
@@ -31,6 +43,8 @@ export interface ThumbnailCapture {
   leave: () => void;
 }
 
+type Ready = DrawnThumbnail & { edits: number };
+
 export function createThumbnailCapture({
   allowed,
   draw,
@@ -39,7 +53,7 @@ export function createThumbnailCapture({
   // Local edits seen, and how many the last capture covered (or gave up on).
   let edits = 0;
   let captured = 0;
-  let ready: { bytes: ArrayBuffer; edits: number } | null = null;
+  let ready: Ready | null = null;
   let drawTimer: ReturnType<typeof setTimeout> | undefined;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   let deadline: ReturnType<typeof setTimeout> | undefined;
@@ -59,28 +73,33 @@ export function createThumbnailCapture({
   };
   const drawNow = async () => {
     const at = edits;
-    const bytes = await draw();
+    const drawn = await draw();
     if (disposed) return null;
+    if (drawn && drawn.bytes.byteLength >= MAX_UPLOAD_BYTES)
+      throw new Error(`The capture is ${drawn.bytes.byteLength} bytes`);
     // Nothing to capture (an XLSX on another sheet) ends the cycle quietly.
-    if (!bytes) captured = at;
-    ready = bytes ? { bytes, edits: at } : null;
+    if (!drawn) captured = at;
+    ready = drawn ? { ...drawn, edits: at } : null;
     return ready;
   };
-  const send = (
-    blob: { bytes: ArrayBuffer; edits: number },
-    keepalive: boolean
-  ) => {
+  const send = (blob: Ready, keepalive: boolean) => {
+    const before = captured;
     captured = blob.edits;
     ready = null;
     clearTimeout(deadline);
     deadline = undefined;
-    void upload(blob.bytes, keepalive).catch(log);
+    void upload(blob, keepalive).catch((error: unknown) => {
+      // The edits are not captured: the next upload (a pending idle one,
+      // the next edit's or leaving) sends them. Nothing is retried here.
+      if (captured === blob.edits) {
+        captured = before;
+        ready ??= blob;
+      }
+      log(error);
+    });
   };
   const capture = async () => {
-    clearTimeout(drawTimer);
-    clearTimeout(idleTimer);
-    clearTimeout(deadline);
-    deadline = undefined;
+    // Saving or paused: the pending timers stay, for a later upload.
     if (edits === captured || !allowed()) return;
     try {
       // Fresh after a pause; the 10-minute mark during typing draws now.
@@ -102,9 +121,14 @@ export function createThumbnailCapture({
       edits++;
       clearTimeout(drawTimer);
       clearTimeout(idleTimer);
-      drawTimer = setTimeout(() => void drawNow().catch(fail), DRAW_AFTER_MS);
+      drawTimer = setTimeout(() => {
+        if (edits !== captured) drawNow().catch(fail);
+      }, DRAW_AFTER_MS);
       idleTimer = setTimeout(() => void capture(), UPLOAD_AFTER_MS);
-      deadline ??= setTimeout(() => void capture(), UPLOAD_WITHIN_MS);
+      deadline ??= setTimeout(() => {
+        deadline = undefined;
+        void capture();
+      }, UPLOAD_WITHIN_MS);
     },
     leave: () => {
       if (ready && edits !== captured && allowed()) send(ready, true);
@@ -126,17 +150,22 @@ export function canEncodeWebp(): Promise<boolean> {
   return webp;
 }
 
-/** POST /api/files/{id}/thumbnail; `keepalive` outlives the page. */
+/**
+ * POST /api/files/{id}/thumbnail. A `keepalive` upload outlives the page and
+ * sends at once with the headers fetched when the capture was drawn; any
+ * other fetches fresh ones.
+ */
 export async function uploadThumbnail(
   fileId: string,
-  bytes: ArrayBuffer,
+  drawn: DrawnThumbnail,
   keepalive: boolean
 ) {
+  const headers = keepalive ? drawn.headers : await authHeaders();
   const response = await fetch(
     `${API_BASE}/files/${encodeURIComponent(fileId)}/thumbnail`,
     {
-      body: bytes,
-      headers: { ...(await authHeaders()), 'Content-Type': 'image/webp' },
+      body: drawn.bytes,
+      headers: { ...headers, 'Content-Type': 'image/webp' },
       keepalive,
       method: 'POST',
     }
