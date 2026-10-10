@@ -296,9 +296,13 @@ function ChoiceRow({
       {(label !== null || review) && (
         <OptionKey className={optionKeyClass(state)}>
           {marked ? (
-            <Icon name={state === 'right' ? 'check' : 'x'} size={13} />
+            <Icon
+              name={state === 'right' ? 'check' : 'x'}
+              size={13}
+              strokeWidth={2.25}
+            />
           ) : state === 'missed' && label === null ? (
-            <Icon name="check" size={13} />
+            <Icon name="check" size={13} strokeWidth={2.25} />
           ) : (
             label
           )}
@@ -336,14 +340,18 @@ function KeyList({
       <h4 className="mb-1 font-bold text-tint-success-fg text-xs">{title}</h4>
       <ol className="grid">
         {rows.map((row) => (
+          // A long note (what the learner wrote) wraps under the answer on
+          // narrow areas and beside it, capped, on wide ones.
           <li
-            className="flex min-h-7.5 items-baseline gap-3 py-1"
+            className="grid min-h-7.5 @md:grid-cols-[auto_minmax(0,1fr)_minmax(0,40%)] grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 py-1"
             key={row.key}
           >
             <OptionKey className="h-auto">{row.key}</OptionKey>
-            <TextView className="min-w-0 flex-1" text={row.text} />
+            <TextView className="wrap-anywhere min-w-0" text={row.text} />
             {row.note && (
-              <span className="shrink-0 text-fg-muted text-xs">{row.note}</span>
+              <span className="wrap-anywhere @md:col-start-3 col-start-2 min-w-0 @md:text-right text-fg-muted text-xs">
+                {row.note}
+              </span>
             )}
           </li>
         ))}
@@ -572,7 +580,11 @@ function PartRunner({
                   right ? 'bg-tint-success-fg' : 'bg-tint-error-fg'
                 )}
               >
-                <Icon name={right ? 'check' : 'x'} size={12} />
+                <Icon
+                  name={right ? 'check' : 'x'}
+                  size={12}
+                  strokeWidth={2.25}
+                />
               </span>
             )}
           </div>
