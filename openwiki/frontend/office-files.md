@@ -119,7 +119,14 @@ costs the browser time that rises with the memory's size (0.1 ms at 16 MiB,
 1.6 ms at 512 MiB in Chrome), so a 248-page DOCX took 69 s to open in View,
 54 s of it growing memory, against 16 s with the steps (Chrome on Windows,
 median of three, 2026-10-09). Memory can run ahead of what an engine holds by
-one step.
+one step. A DOCX engine keeps copies of measured paragraph extents only for a
+document with floating content (wrapped pictures, text boxes, floating
+tables): only layout passes that measure around floating zones re-measure
+every block, so only they read and store that cache, and every other pass
+reuses the engine's retained measurements. A document without floats keeps no
+copies (about 56 MB per engine at 243 pages before); one with floats keeps the
+cache, so typing beside a floating shape measures only the paragraphs the edit
+moved.
 Viewer analysis reuses the already-open handle, so sheet/slide metadata does not
 trigger a second parse. Every viewer and editor sends `ready` once its first
 pages, grid or slide (pictures included) are painted, with the runtime's own
@@ -140,11 +147,20 @@ starts when the worker begins it; a request the worker never starts gives up
 after 60 s. Either way the main thread then takes over, and editing continues on
 the main thread's frames rather than failing the editor. Range and caret queries
 read only the pages a range touches, and a query object superseded by a newer
-layout answers from its current shifted pages. In documents over 12 pages the
+layout answers from its current shifted pages. The query facade keeps no
+whole-list JSON once the layout module's store holds the parsed list (24 MB at
+62 pages, 52 MB at 243); a query that falls back to JSON serializes the list
+again. In documents over 12 pages the
 screen-reader mirror under the canvas is positioned only for pages within two of
 the viewport; the others get a plain-text copy (roles, links and language kept),
 swapped in at idle, so screen readers reach the whole document while scrolling
-stays cheap. The positioned mirror follows the viewport only once the scroll
+stays cheap. That copy is built from the display list's joined glyph runs, one
+text node and one link per run where the positioned mirror keeps one per
+character, split per cluster only where a clip hides part of a run (a 62-page
+document's far pages hold 1,426 text nodes instead of 101,763). It has no
+`content-visibility`, so an accessibility client started after the document
+opened still reads far pages; the check with a real screen reader and
+find-in-page comes at the end of the rust round (Epo 2026-10-11). The positioned mirror follows the viewport only once the scroll
 has held still for 300 ms, so pages that scroll past keep their plain text.
 
 The XLSX editor keeps its workbook (the engine and its Yrs document) in a
@@ -1445,7 +1461,13 @@ DOCX and PPTX measure and paint with the fork's bundled metric-compatible
 fonts (`@betteroffice/fonts`: Carlito for Calibri, Caladea for Cambria,
 Liberation for Arial, Times New Roman and Courier New). `DocxEditorHost`
 configures them at module scope and the DOCX viewer worker configures them
-before layout. Each face the engine loads is also registered as a `FontFace`
+before layout. Font bytes stay only in the engines' WASM: the bundled-font
+loader shares a load in flight and keeps nothing once it settles, the DOCX
+editing session keeps registration ids rather than bytes, a layout-worker
+bootstrap or restart reads each face back out of the main-thread engine (one
+copy, transferred and dropped once the worker registers it), and the DOCX
+measurement store gives bytes identical to an earlier registration that
+registration's id instead of keeping a second copy. Each face the engine loads is also registered as a `FontFace`
 under the Office family it stands in for, in the runtime iframe, so the page
 paints what was measured (the viewer worker reports its faces with the display
 list). The runtime's own interface names only Fustat and generic families
